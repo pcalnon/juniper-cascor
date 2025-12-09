@@ -1,0 +1,278 @@
+#!/bin/bash
+########################################################################################################################################################################################
+# Application: Juniper
+# Script Name: try.bash
+# Script Path: <Project>/util/try.bash
+#
+# Description: This script performs the following actions for the current Project:
+#
+#                 1.  Applies the cargo linter to the source files
+#                 2.  Builds the current project with the debug target
+#                 3.  Sets the expected Environment Variables for the Application
+#                 4.  Adds the expected command line arguments
+#                 5.  Executes the project's binary
+#
+# -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+# Notes:
+#     
+#
+#
+#######################################################################################################################################################################################
+
+#####################################################################################################
+# Define Debug Constants
+#####################################################################################################
+TRUE="true"
+FALSE="false"
+
+DEBUG="${TRUE}"
+# DEBUG="${FALSE}"
+
+
+#####################################################################################################
+# Read Input Parameters for the Python script:
+####################################################################################################
+PARAMS="$@"
+PROTO_NAME_DEFAULT="cascor"
+[[ "$1" != "" ]] && PROTO_NAME="$1" || PROTO_NAME="${PROTO_NAME_DEFAULT}"
+[[ ${DEBUG} == "${TRUE}" ]] && echo "PROTO_NAME: ${PROTO_NAME}"
+
+
+#####################################################################################################
+# Define Global Functions
+####################################################################################################
+# Define local Functions
+get_script_path() {
+    local source="${BASH_SOURCE[0]}"
+    while [ -L "$source" ]; do
+        local dir="$(cd -P "$(dirname "$source")" && pwd)"
+        source="$(readlink "$source")"
+        [[ $source != /* ]] && source="$dir/$source"
+    done
+    echo "$(cd -P "$(dirname "$source")" && pwd)/$(basename "$source")"
+}
+
+####################################################################################################
+# Define GLobal Constants for Prototype Util Shell Script code
+####################################################################################################
+# SCRIPT_PATH = /home/pcalnon/Development/python/Juniper/src/prototypes/cascor/util/try.bash -> symlink to:
+# SCRIPT_PATH = /home/pcalnon/Development/python/Juniper/src/prototypes/util/try.bash
+export SCRIPT_PATH="$(get_script_path)"
+[[ ${DEBUG} == "${TRUE}" ]] && echo "SCRIPT_PATH: ${SCRIPT_PATH}"
+export SCRIPT_NAME="$(basename $BASH_SOURCE)"
+[[ ${DEBUG} == "${TRUE}" ]] && echo "SCRIPT_NAME: ${SCRIPT_NAME}"
+
+# SCRIPT_PATH = /home/pcalnon/Development/python/Juniper/src/prototypes/util
+export PYTHON_PARENT_UTIL_PATH="${SCRIPT_PATH}"
+[[ ${DEBUG} == "${TRUE}" ]] && echo "PYTHON_PARENT_UTIL_PATH: ${PYTHON_PARENT_UTIL_PATH}"
+export PYTHON_UTIL_NAME="$(basename "${SCRIPT_PATH}")"
+[[ ${DEBUG} == "${TRUE}" ]] && echo "PYTHON_UTIL_NAME: ${PYTHON_UTIL_NAME}"
+
+# SCRIPT_PATH = /home/pcalnon/Development/python/Juniper/src/prototypes/util
+export PYTHON_PARENT_PROTO_PATH="$(dirname "${PYTHON_PARENT_UTIL_PATH}")"
+[[ ${DEBUG} == "${TRUE}" ]] && echo "PYTHON_PARENT_PROTO_PATH: ${PYTHON_PARENT_PROTO_PATH}"
+export PYTHON_PARENT_PROTO_NAME="$(basename "${PYTHON_PARENT_PROTO_PATH}")"
+[[ ${DEBUG} == "${TRUE}" ]] && echo "PYTHON_PARENT_PROTO_NAME: ${PYTHON_PARENT_PROTO_NAME}"
+
+# SCRIPT_PATH = /home/pcalnon/Development/python/Juniper/src/prototypes
+export PYTHON_PROTO_PATH="${PYTHON_PARENT_PROTO_PATH}/${PROTO_NAME}"
+[[ ${DEBUG} == "${TRUE}" ]] && echo "PYTHON_PROTO_NAME: ${PYTHON_PROTO_NAME}"
+export PYTHON_PROTO_NAME="$(basename "${PYTHON_PROTO_PATH}")"
+
+
+####################################################################################################
+# Define Sourced Config File Constants
+####################################################################################################
+export PYTHON_CONF_NAME="conf"
+[[ ${DEBUG} == "${TRUE}" ]] && echo "PYTHON_CONF_NAME: ${PYTHON_CONF_NAME}"
+export PYTHON_CONF_PATH="${PYTHON_PROTO_PATH}/${PYTHON_CONF_NAME}"
+[[ ${DEBUG} == "${TRUE}" ]] && echo "PYTHON_CONF_PATH: ${PYTHON_CONF_PATH}"
+export CONF_FILE_NAME="script_util.cfg"
+[[ ${DEBUG} == "${TRUE}" ]] && echo "CONF_FILE_NAME: ${CONF_FILE_NAME}"
+export PYTHON_CONF_FILE="${PYTHON_CONF_PATH}/${CONF_FILE_NAME}"
+[[ ${DEBUG} == "${TRUE}" ]] && echo "PYTHON_CONF_FILE: ${PYTHON_CONF_FILE}"
+
+
+####################################################################################################
+# Source config files
+####################################################################################################
+source ${PYTHON_CONF_FILE}
+source "${DATE_FUNCTIONS_SCRIPT}"
+
+
+####################################################################################################
+# Define global constants for Cascor Prototype directory tree constants
+####################################################################################################
+# SCRIPT_PATH = /home/pcalnon/Development/python/Juniper/src/prototypes/cascor/src
+export PYTHON_SRC_NAME="src"
+[[ ${DEBUG} == "${TRUE}" ]] && echo "PYTHON_SRC_NAME: ${PYTHON_SRC_NAME}"
+export PYTHON_SRC_PATH="${PYTHON_PROTO_PATH}/${PYTHON_SRC_NAME}"
+[[ ${DEBUG} == "${TRUE}" ]] && echo "PYTHON_SRC_PATH: ${PYTHON_SRC_PATH}"
+export PYTHON_DATA_NAME="data"
+[[ ${DEBUG} == "${TRUE}" ]] && echo "PYTHON_DATA_NAME: ${PYTHON_DATA_NAME}"
+export PYTHON_DATA_PATH="${PYTHON_PROTO_PATH}/${PYTHON_DATA_NAME}"
+[[ ${DEBUG} == "${TRUE}" ]] && echo "PYTHON_DATA_PATH: ${PYTHON_DATA_PATH}"
+export PYTHON_DOCS_NAME="docs"
+[[ ${DEBUG} == "${TRUE}" ]] && echo "PYTHON_DOCS_NAME: ${PYTHON_DOCS_NAME}"
+export PYTHON_DOCS_PATH="${PYTHON_PROTO_PATH}/${PYTHON_DOCS_NAME}"
+[[ ${DEBUG} == "${TRUE}" ]] && echo "PYTHON_DOCS_PATH: ${PYTHON_DOCS_PATH}"
+export PYTHON_LOGS_NAME="logs"
+[[ ${DEBUG} == "${TRUE}" ]] && echo "PYTHON_LOGS_NAME: ${PYTHON_LOGS_NAME}"
+export PYTHON_LOGS_PATH="${PYTHON_PROTO_PATH}/${PYTHON_LOGS_NAME}"
+[[ ${DEBUG} == "${TRUE}" ]] && echo "PYTHON_LOGS_PATH: ${PYTHON_LOGS_PATH}"
+
+
+####################################################################################################
+# Define global constants for Prototype directory tree
+####################################################################################################
+# /home/pcalnon/Development/python/Juniper/src/prototypes/cascor
+export PYTHON_PROTO_ROOT_PATH="$(dirname "${PYTHON_PROTO_PATH}")"
+[[ ${DEBUG} == "${TRUE}" ]] && echo "PYTHON_PROTO_ROOT_PATH: ${PYTHON_PROTO_ROOT_PATH}"
+export PYTHON_PROTO_ROOT_NAME="$(basename "${PYTHON_PROTO_ROOT_PATH}")"
+[[ ${DEBUG} == "${TRUE}" ]] && echo "PYTHON_PROTO_ROOT_NAME: ${PYTHON_PROTO_ROOT_NAME}"
+# /home/pcalnon/Development/python/Juniper/src/prototypes
+export SRC_PATH="$(dirname "${PYTHON_PROTO_ROOT_PATH}")"
+[[ ${DEBUG} == "${TRUE}" ]] && echo "SRC_PATH: ${SRC_PATH}"
+export SRC_NAME="$(basename ${SRC_PATH}")"
+[[ ${DEBUG} == "${TRUE}" ]] && echo "SRC_NAME: ${SRC_NAME}"
+# /home/pcalnon/Development/python/Juniper/src
+export PROJ_PATH="$(dirname "${SRC_PATH}")"
+[[ ${DEBUG} == "${TRUE}" ]] && echo "PROJ_PATH: ${PROJ_PATH}"
+export PROJ_NAME="$(basename "${PROJ_PATH}")"
+[[ ${DEBUG} == "${TRUE}" ]] && echo "PROJ_NAME: ${PROJ_NAME}"
+
+
+####################################################################################################
+# Define Global Environmebnt File Confiiguration Constants
+####################################################################################################
+export CONF_NAME="conf"
+[[ ${DEBUG} == "${TRUE}" ]] && echo "CONF_NAME: ${CONF_NAME}"
+export CONF_PATH="${PROJ_PATH}/${CONF_NAME}"
+[[ ${DEBUG} == "${TRUE}" ]] && echo "CONF_PATH: ${CONF_PATH}"
+export DATA_NAME="data"
+[[ ${DEBUG} == "${TRUE}" ]] && echo "DATA_NAME: ${DATA_NAME}"
+export DATA_PATH="${PROJ_PATH}/${DATA_NAME}"
+[[ ${DEBUG} == "${TRUE}" ]] && echo "DATA_PATH: ${DATA_PATH}"
+export IMAGES_NAME="images"
+[[ ${DEBUG} == "${TRUE}" ]] && echo "IMAGES_NAME: ${IMAGES_NAME}"
+export IMAGES_PATH="${PROJ_PATH}/${IMAGES_NAME}"
+[[ ${DEBUG} == "${TRUE}" ]] && echo "IMAGES_PATH: ${IMAGES_PATH}"
+export JUPYTER_NAME="jupyter"
+[[ ${DEBUG} == "${TRUE}" ]] && echo "JUPYTER_NAME: ${_NAME}"
+export JUPYTER_PATH="${PROJ_PATH}/${JUPYTER_NAME}"
+[[ ${DEBUG} == "${TRUE}" ]] && echo "JUPYTER_PATH: ${JUPYTER_PATH}"
+export KAGGLE_NAME="kaggle"
+[[ ${DEBUG} == "${TRUE}" ]] && echo "KAGGLE_NAME: ${KAGGLE_NAME}"
+export KAGGLE_PATH="${PROJ_PATH}/${KAGGLE_NAME}"
+[[ ${DEBUG} == "${TRUE}" ]] && echo "KAGGLE_PATH: ${KAGGLE_PATH}"
+export LOGS_NAME="logs"
+[[ ${DEBUG} == "${TRUE}" ]] && echo "LOGS_NAME: ${LOGS_NAME}"
+export LOGS_PATH="${PROJ_PATH}/${LOGS_NAME}"
+[[ ${DEBUG} == "${TRUE}" ]] && echo "LOGS_PATH: ${LOGS_PATH}"
+export NOTES_NAME="notes"
+[[ ${DEBUG} == "${TRUE}" ]] && echo "NOTES_NAME: ${NOTES_NAME}"
+export NOTES_PATH="${PROJ_PATH}/${NOTES_NAME}"
+[[ ${DEBUG} == "${TRUE}" ]] && echo "NOTES_PATH: ${NOTES_PATH}"
+export PAPERS_NAME="papers"
+[[ ${DEBUG} == "${TRUE}" ]] && echo "PAPERS_NAME: ${PAPERS_NAME}"
+export PAPERS_PATH="${PROJ_PATH}/${PAPERS_NAME}"
+[[ ${DEBUG} == "${TRUE}" ]] && echo "PAPERS_PATH: ${PAPERS_PATH}"
+export PROMPTS_NAME="prompts"
+[[ ${DEBUG} == "${TRUE}" ]] && echo "PROMPTS_NAME: ${PROMPTS_NAME}"
+export PROMPTS_PATH="${PROJ_PATH}/${PROMPTS_NAME}"
+[[ ${DEBUG} == "${TRUE}" ]] && echo "PROMPTS_PATH: ${PROMPTS_PATH}"
+export REFS_NAME="refs"
+[[ ${DEBUG} == "${TRUE}" ]] && echo "REFS_NAME: ${REFS_NAME}"
+export REFS_PATH="${PROJ_PATH}/${REFS_NAME}"
+[[ ${DEBUG} == "${TRUE}" ]] && echo "REFS_PATH: ${REFS_PATH}"
+export SCRIPTS_NAME="scripts"
+[[ ${DEBUG} == "${TRUE}" ]] && echo "SCRIPTS_NAME: ${SCRIPTS_NAME}"
+export SCRIPTS_PATH="${PROJ_PATH}/${SCRIPTS_NAME}"
+[[ ${DEBUG} == "${TRUE}" ]] && echo "SCRIPTS_PATH: ${SCRIPTS_PATH}"
+export SRC_NAME="src"
+[[ ${DEBUG} == "${TRUE}" ]] && echo "SRC_NAME: ${SRC_NAME}"
+export SRC_PATH="${PROJ_PATH}/${SRC_NAME}"
+[[ ${DEBUG} == "${TRUE}" ]] && echo "SRC_PATH: ${SRC_PATH}"
+export UTIL_NAME="util"
+[[ ${DEBUG} == "${TRUE}" ]] && echo "UTIL_NAME: ${UTIL_NAME}"
+export UTIL_PATH="${PROJ_PATH}/${UTIL_NAME}"
+[[ ${DEBUG} == "${TRUE}" ]] && echo "UTIL_PATH: ${UTIL_PATH}"
+export VIZ_NAME="viz"
+[[ ${DEBUG} == "${TRUE}" ]] && echo "VIZ_NAME: ${VIZ_NAME}"
+export VIZ_PATH="${PROJ_PATH}/${VIZ_NAME}"
+[[ ${DEBUG} == "${TRUE}" ]] && echo "VIZ_PATH: ${VIZ_PATH}"
+
+
+####################################################################################################
+#  Define Root Directory Tree 
+####################################################################################################
+# /home/pcalnon/Development/python/Juniper
+export LANG_PATH="$(dirname "${PROJ_PATH}")"
+[[ ${DEBUG} == "${TRUE}" ]] && echo "LANG_PATH: ${LANG_PATH}"
+export LANG_NAME="$(basename "${LANG_PATH}")"
+[[ ${DEBUG} == "${TRUE}" ]] && echo "LANG_NAME: ${LANG_NAME}"
+# /home/pcalnon/Development/python
+export DEV_PATH="$(dirname "${LANG_PATH}")"
+[[ ${DEBUG} == "${TRUE}" ]] && echo "DEV_PATH: ${DEV_PATH}"
+export DEV_NAME="$(basename "${DEV_PATH}")"
+[[ ${DEBUG} == "${TRUE}" ]] && echo "DEV_NAME: ${DEV_NAME}"
+# /home/pcalnon/Development
+export ROOT_PATH="$(dirname "${ROOT_PATH}")"
+[[ ${DEBUG} == "${TRUE}" ]] && echo "ROOT_PATH: ${ROOT_PATH}"
+export ROOT_NAME="${ROOT_PATH}"
+[[ ${DEBUG} == "${TRUE}" ]] && echo "ROOT_NAME: ${ROOT_NAME}"
+
+
+
+#####################################################################################################
+# Specify the Python script to run:
+####################################################################################################
+export PYTHON_EXT="py"
+[[ ${DEBUG} == "${TRUE}" ]] && echo "PYTHON_EXT: ${PYTHON_EXT}"
+export PYTHON_PROTO_SCRIPT_NAME="${PYTHON_PROTO_ROOT_NAME}.${PYTHON_EXT}"
+[[ ${DEBUG} == "${TRUE}" ]] && echo "PYTHON_PROTO_SCRIPT_NAME: ${PYTHON_PROTO_SCRIPT_NAME}"
+export PYTHON_PROTO_SCRIPT="${PYTHON_SRC_PATH}/${PYTHON_PROTO_SCRIPT_NAME}"
+[[ ${DEBUG} == "${TRUE}" ]] && echo "PYTHON_PROTO_SCRIPT: ${PYTHON_PROTO_SCRIPT}"
+
+
+####################################################################################################
+# Configure Script Environment
+####################################################################################################
+export CURRENT_OS=$(${GET_OS_SCRIPT})
+[[ ${DEBUG} == "${TRUE}" ]] && echo "CURRENT_OS: ${CURRENT_OS}"
+export PYTHON="$(which python3)"
+[[ ${DEBUG} == "${TRUE}" ]] && echo "PYTHON: ${PYTHON}"
+
+
+####################################################################################################
+# Update the Python Path for the script
+####################################################################################################
+PATH_DEL=":"
+PATH_FOUND="$(echo "${PYTHONPATH}" | grep "${PYTHON_SRC_PATH}")"
+if [[ "${PATH_FOUND}" == "" ]]; then
+    [[ ( "${PYTHONPATH}" == "" ) || ( "${PYTHONPATH: -1}" == "${PATH_DEL}" ) ]] && PATH_DEL=""
+fi
+export PYTHONPATH="${PYTHONPATH}${PATH_DEL}${SOURCE_DIR}"
+
+
+####################################################################################################
+# Display Environment Values
+####################################################################################################
+echo "PYTHON_PROTO_PATH: ${PYTHON_PROTO_PATH}"
+echo "CURRENT OS: ${CURRENT_OS}"
+echo "PYTHON: ${PYTHON} (ver: $(${PYTHON} --version))"
+echo "PYTHON PATH: ${PYTHONPATH}"
+echo "PYTHON SCRIPT: ${PYTHON_PROTO_SCRIPT}"
+echo " "
+
+
+####################################################################################################
+# Execute Python script
+####################################################################################################
+echo "time ${PYTHON} ${PYTHON_PROTO_SCRIPT} ${PARAMS}"
+
+time ${PYTHON} ${PYTHON_PROTO_SCRIPT} ${PARAMS}
+
+
+
+

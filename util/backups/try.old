@@ -1,0 +1,174 @@
+#!/bin/bash
+########################################################################################################################################################################################
+# Application: Juniper
+# Script Name: try.bash
+# Script Path: <Project>/util/try.bash
+#
+# Description: This script performs the following actions for the current Project:
+#
+#                 1.  Applies the cargo linter to the source files
+#                 2.  Builds the current project with the debug target
+#                 3.  Sets the expected Environment Variables for the Application
+#                 4.  Adds the expected command line arguments
+#                 5.  Executes the project's binary
+#
+# -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+# Notes:
+#     
+#
+#
+#######################################################################################################################################################################################
+
+#####################################################################################################
+# Read Input Parameters for the Python script:
+####################################################################################################
+PARAMS="$@"
+
+
+#####################################################################################################
+# Specify the Constants for the script:
+####################################################################################################
+export SOURCE_DIR_NAME="src"
+echo "Source dir name: ${SOURCE_DIR_NAME}"
+export ROOT_CONF_NAME="conf"
+echo "Project Conf dir name: ${ROOT_CONF_NAME}"
+
+export ROOT_CONF_FILE_NAME="script_util.cfg"
+
+
+PYTHON_EXT="py"
+echo "Python ext: ${PYTHON_EXT}"
+
+
+#####################################################################################################
+# Specify the Python script to run:
+####################################################################################################
+SCRIPT_PATH="$(realpath "$(dirname "${BASH_SOURCE[0]}")")"
+echo "Script path: ${SCRIPT_PATH}"
+
+# NOTE: This assumes that the symlink version of this script is run.
+SOURCE_DIR="${SCRIPT_PATH}/${SOURCE_DIR_NAME}"
+echo "Source dir: ${SOURCE_DIR}"
+
+
+PYTHON_PROTO_NAME="$(basename "${SCRIPT_PATH}")"
+echo "Python proto name: ${PYTHON_PROTO_NAME}"
+PYTHON_PROTO_FILE="${PYTHON_PROTO_NAME}.${PYTHON_EXT}"
+echo "Python proto file: ${PYTHON_PROTO_FILE}"
+PYTHON_PROTO="${SOURCE_DIR}/${PYTHON_PROTO_FILE}"
+echo "Python proto: ${PYTHON_PROTO}"
+
+
+#####################################################################################################
+# Define Global Python Script Constants
+#####################################################################################################
+export PYTHON_SCRIPT_NAME="${PYTHON_PROTO_FILE}"
+echo "Python Script Name: ${PYTHON_SCRIPT_NAME}"
+export PYTHON_SCRIPT_DIR="${SOURCE_DIR}"
+echo "Python Script Dir: ${PYTHON_SCRIPT_DIR}"
+export PYTHON_SCRIPT_PATH="${PYTHON_SCRIPT_DIR}/${PYTHON_SCRIPT_NAME}"
+echo "Python Script Path: ${PYTHON_SCRIPT_PATH}"
+
+
+#####################################################################################################
+# Define Global Configuration File Constants
+####################################################################################################
+# /home/pcalnon/Development/python/dynamic_nn/src/prototypes
+export PROTOTYPE_DIR="$(dirname "${SCRIPT_PATH}")"
+echo "Prototype Dir: ${PROTOTYPE_DIR}"
+export PROTOTYPE_DIR_NAME="$(basename "${PROTOTYPE_DIR}")"
+echo "Prototype Dir Name: ${PROTOTYPE_DIR_NAME}"
+
+# /home/pcalnon/Development/python/dynamic_nn/src
+export PROJECT_SOURCE_DIR="$(dirname "${PROTOTYPE_DIR}")"
+echo "Project Source Dir: ${PROJECT_SOURCE_DIR}"
+export PROJECT_SOURCE_DIR_NAME="$(basename "${PROJECT_SOURCE_DIR}")"
+echo "Project Source Dir Name: ${PROJECT_SOURCE_DIR_NAME}"
+
+# /home/pcalnon/Development/python/dynamic_nn
+export ROOT_PROJ_DIR="$(dirname "${PROJECT_SOURCE_DIR}")"
+echo "Root Project Dir: ${ROOT_PROJ_DIR}"
+export ROOT_PROJ_NAME="$(basename "${ROOT_PROJ_DIR}")"
+echo "Root Project Name: ${ROOT_PROJ_NAME}"
+
+# /home/pcalnon/Development/python
+export PYTHON_DEV_DIR="$(dirname "${ROOT_PROJ_DIR}")"
+echo "Python Dev Dir: ${PYTHON_DEV_DIR}"
+export PYTHON_DEV_DIR_NAME="$(basename "${PYTHON_DEV_DIR}")"
+echo "Python Dev Dir Name: ${PYTHON_DEV_DIR_NAME}"
+
+# /home/pcalnon/Development
+export DEVELOPMENT_DIR="$(dirname "${PYTHON_DEV_DIR}")"
+echo "Development Dir: ${DEVELOPMENT_DIR}"
+export DEVELOPMENT_DIR_NAME="$(basename "${DEVELOPMENT_DIR}")"
+echo "Development Dir Name: ${DEVELOPMENT_DIR_NAME}"
+
+
+export ROOT_CONF_DIR="${ROOT_PROJ_DIR}/${ROOT_CONF_NAME}"
+echo "Root Conf Dir: ${ROOT_CONF_DIR}"
+export ROOT_CONF_FILE="${ROOT_CONF_DIR}/${ROOT_CONF_FILE_NAME}"
+echo "Root Conf File: ${ROOT_CONF_FILE}"
+
+####################################################################################################
+# Source Global Dev Config file
+####################################################################################################
+source "${ROOT_CONF_FILE}"
+
+
+####################################################################################################
+# Configure Script Environment
+####################################################################################################
+# Determine Project Dir
+export BASE_DIR=$(${GET_PROJECT_SCRIPT} "${BASH_SOURCE}")
+# Determine Host OS
+export CURRENT_OS=$(${GET_OS_SCRIPT})
+# Define Script Functions
+source "${DATE_FUNCTIONS_SCRIPT}"
+
+
+####################################################################################################
+# Define Script Constants
+####################################################################################################
+export DATA_DIR="${BASE_DIR}/${DATA_DIR_NAME}"
+export SOURCE_DIR="${BASE_DIR}/${SOURCE_DIR_NAME}"
+export CONFIG_DIR="${BASE_DIR}/${CONFIG_DIR_NAME}"
+export LOGGING_DIR="${BASE_DIR}/${LOGGING_DIR_NAME}"
+export UTILITY_DIR="${BASE_DIR}/${UTILITY_DIR_NAME}"
+
+export PYTHON="$(which python3)"
+
+# export PYTHON_SCRIPT="${SOURCE_DIR}/${PYTHON_SCRIPT_PATH}"
+export PYTHON_SCRIPT="${PYTHON_SCRIPT_PATH}"
+
+
+####################################################################################################
+# Update the Python Path for the script
+####################################################################################################
+PATH_DEL=":"
+#PATH_FOUND="$(grep "${SOURCE_DIR}" "${PYTHONPATH}")"
+PATH_FOUND="$(echo "${PYTHONPATH}" | grep "${SOURCE_DIR}")"
+if [[ "${PATH_FOUND}" == "" ]]; then
+    [[ ( "${PYTHONPATH}" == "" ) || ( "${PYTHONPATH: -1}" == "${PATH_DEL}" ) ]] && PATH_DEL=""
+fi
+export PYTHONPATH="${PYTHONPATH}${PATH_DEL}${SOURCE_DIR}"
+
+
+####################################################################################################
+# Display Environment Values
+####################################################################################################
+echo "Base Dir: ${BASE_DIR}"
+echo "Current OS: ${CURRENT_OS}"
+echo "Python: ${PYTHON} (ver: $(${PYTHON} --version))"
+echo "Python Path: ${PYTHONPATH}"
+echo "Python Script: ${PYTHON_SCRIPT}"
+echo " "
+
+
+####################################################################################################
+# Execute Python script
+####################################################################################################
+#echo "time ${PYTHON} ${PYTHON_SCRIPT} >./output.log"
+echo "time ${PYTHON} ${PYTHON_SCRIPT} ${PARAMS}"
+
+#time ${PYTHON} ${PYTHON_SCRIPT} >./output.log
+time ${PYTHON} ${PYTHON_SCRIPT} ${PARAMS}

@@ -1,0 +1,19 @@
+{
+  "cSpell.words": [
+    "allclose",
+    "coeff",
+    "coeffs",
+    "cudnn",
+    "GELU",
+    "getaffinity",
+    "getpid",
+    "HARDTANH",
+    "pytestmark",
+    "PYTHONHASHSEED",
+    "randn",
+    "rtol",
+    "SOFTPLUS",
+    "szip",
+    "torchexplorer"
+  ]
+}

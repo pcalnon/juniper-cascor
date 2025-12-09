@@ -1,0 +1,81 @@
+#####################################################################################################################################################################################################
+# Project:       Juniper
+# Application:   JuniperCasCor
+# File Name:     logging_config.yaml
+# Author:        Paul Calnon
+# Version:       1.3.1 (0.7.3)
+#
+# Date:          2025-06-11
+# Last Modified: 2025-12-08
+#
+# License:       MIT License
+# Copyright:     Copyright (c) 2024-2025 Paul Calnon
+#
+# Description:
+#    Cascade Correlation Neural Network with N-Spiral Dataset Generator.
+#    This yaml config file provides logging configuration for the Cascade Correlation Neural Network with N-Spiral Dataset Generator.
+#
+#####################################################################################################################################################################################################
+# Notes:
+#    - This file is used to configure the logging for the Cascade Correlation Neural Network with N-Spiral Dataset Generator.
+#    - It defines formatters, handlers, loggers, and the root logger.
+#    - The logging levels can be adjusted as needed (e.g., TRACE, DEBUG, INFO).
+#    - The file paths for the log files can be modified to suit your directory structure.
+#    - The logging configuration is designed to be flexible and can be extended or modified as needed.
+#    - The logging configuration is loaded using the `logging.config.dictConfig` method in Python's logging module.
+#    - The `TRACE` level is used for detailed debugging information, while `DEBUG`, `INFO`, and other levels can be used for less verbose logging.
+#
+#####################################################################################################################################################################################################
+# References:
+#
+#
+#####################################################################################################################################################################################################
+# TODO :
+#
+#
+#####################################################################################################################################################################################################
+version: 1
+formatters:
+  formatter_console:
+    format: "[%(filename)s:%(lineno)d] (%(asctime)s) [%(levelname)s] %(message)s"
+    datefmt: "%y-%m-%d %H:%M:%S"
+  formatter_file:
+    format: "[%(filename)s: %(funcName)s:%(lineno)d] (%(asctime)s) [%(levelname)s] %(message)s"
+    datefmt: "%Y-%m-%d %H:%M:%S"
+handlers:
+  handler_console:
+    class: logging.StreamHandler
+    level: TRACE
+    # level: VERBOSE
+    # level: DEBUG
+    # level: INFO
+    formatter: formatter_console
+    stream: ext://sys.stdout
+  handler_file:
+    class: logging.FileHandler
+    level: TRACE
+    # level: VERBOSE
+    # level: DEBUG
+    # level: INFO
+    formatter: formatter_file
+    # filename: logs/dynamic_nn.log
+    # filename: ~/Development/python/juniper/src/prototypes/cascor/logs/juniper_cascor.log
+    # filepath: /home/pcalnon/Development/python/Juniper/src/prototypes/cascor/logs/spiral_problem.log
+    # filepath: /home/pcalnon/Development/python/Juniper/src/prototypes/cascor/logs
+    # filepath: /home/pcalnon/Development/python/Juniper/src/prototypes/cascor/logs/juniper_cascor.log
+    filename: juniper_cascor.log
+    encoding: utf-8
+    mode: a
+loggers:
+  juniper:
+    level: TRACE
+    # level: VERBOSE
+    # level: DEBUG
+    # level: INFO
+    handlers: [handler_console, handler_file]
+    propagate: False
+root:
+  handlers: [handler_console, handler_file]
+  level: TRACE
+  # level: DEBUG
+  # level: INFO

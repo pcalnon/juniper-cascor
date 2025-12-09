@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="1" failures="0" skipped="0" tests="1" time="0.976" timestamp="2025-10-27T00:05:16.479601-05:00" hostname="turing.midcoip.net"><testcase classname="" name="integration.test_spiral_problem" time="0.000"><error message="collection failure">ImportError while importing test module '/Users/pcalnon/Development/python/Juniper/src/prototypes/cascor/src/tests/integration/test_spiral_problem.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+/usr/local/miniforge3/envs/JuniperPython/lib/python3.13/importlib/__init__.py:88: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+integration/test_spiral_problem.py:28: in &lt;module&gt;
+    from test_data.generators import SpiralDataGenerator   # sourcery skip: dont-import-test-modules
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   ModuleNotFoundError: No module named 'test_data'</error></testcase></testsuite></testsuites>
