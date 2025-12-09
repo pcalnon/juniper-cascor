@@ -36,7 +36,7 @@ The HDF5 serialization system captures the complete state and structure of a Cas
 
 ### File Format (Version 2.0)
 
-```
+```bash
 network.h5
 ├── @format = "juniper.cascor"
 ├── @format_version = "2"
@@ -205,7 +205,7 @@ The system safely handles multiprocessing state by:
 
 1. **Configuration Only**: Stores MP configuration (role, address, authkey), not live objects
 2. **Deterministic Recreation**: Recreates managers/queues with same settings on restore
-3. **Role-Based Restoration**: 
+3. **Role-Based Restoration**:
    - `server`: Starts new manager server with saved settings
    - `client`: Sets up connection parameters for later use
    - `none`: No multiprocessing restoration
@@ -247,7 +247,8 @@ python cascade_correlation/hdf5/test_hdf5.py
 ```
 
 Expected output:
-```
+
+```bash
 Testing HDF5 serialization...
 ✓ Created network with UUID: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
 ✓ Network saved successfully
@@ -262,6 +263,7 @@ Testing HDF5 serialization...
 The new implementation replaces multiple overlapping HDF5 classes:
 
 ### Old Files (Deprecated)
+
 - `snapshots/hdf5_shapshots.py` → **Replaced by `snapshots/snapshot_serializer.py`**
 - `snapshots/core_hdf5_manager.py` → **Functionality moved to `snapshot_serializer.py`**
 - `snapshots/hdf5_utilities/hdf5_utilities.py` → **Replaced by `snapshots/snapshot_utils.py`**
@@ -269,6 +271,7 @@ The new implementation replaces multiple overlapping HDF5 classes:
 - `snapshots/hdf5_manager.py` → **Replaced by `snapshots/snapshot_cli.py`**
 
 ### New Import Paths
+
 ```python
 # Old imports (deprecated)
 from cascade_correlation.hdf5_serializer.cascade_hdf5_serializer import CascadeHDF5Serializer
@@ -279,6 +282,7 @@ from cascade_correlation.hdf5 import HDF5Utils
 ```
 
 ### Breaking Changes
+
 - Default `include_training_state=False` (was `True`)
 - Improved error handling with debug traces
 - String attributes now properly handle UTF-8 encoding
@@ -312,19 +316,23 @@ When modifying the HDF5 implementation:
 
 ### Common Error Messages
 
-**"Missing required group: config"**
+**"Missing required group: config":**
+
 - File is corrupted or not a valid network snapshot
 - Try with `verify` command to see full error details
 
-**"Could not restore multiprocessing state"**
+**"Could not restore multiprocessing state":**
+
 - Non-critical warning, network will work without multiprocessing
 - Check if ports are available or processes are running
 
-**"Input size mismatch: X != Y"**
+**"Input size mismatch: X != Y":**
+
 - Network architecture changed between save/load
 - Configuration may be incompatible
 
-**"Format validation failed"**
+**"Format validation failed":**
+
 - File format is too old or corrupted
 - Try saving with current version first
 

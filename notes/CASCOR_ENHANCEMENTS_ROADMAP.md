@@ -54,11 +54,13 @@ This document consolidates enhancement plans from `P2_ENHANCEMENTS_PLAN.md` and 
 Two integration tests are failing due to incorrect module usage in the test helper method `_load_and_validate_network_helper()`.
 
 **Root Cause**:
+
 - `test_numpy_random_state_restoration`: Uses `torch.rand()` instead of `numpy.random.rand()`
 - `test_python_random_state_restoration`: Uses `torch.rand()` instead of `random.random()`
 
 **Error Output**:
-```
+
+```bash
 AttributeError: module 'numpy' has no attribute 'rand'. Did you mean: 'random'?
 AttributeError: module 'random' has no attribute 'rand'. Did you mean: 'random'?
 ```
@@ -95,6 +97,7 @@ def _load_and_validate_network_helper(self, serializer, temp_snapshot_file, rng_
 ```
 
 **Verification**:
+
 ```bash
 cd src/prototypes/cascor
 pytest src/tests/integration/test_serialization.py::TestRandomStateRestoration::test_numpy_random_state_restoration -v
@@ -114,7 +117,8 @@ pytest src/tests/integration/test_serialization.py::TestRandomStateRestoration::
 When attempting to plot decision boundaries using multiprocessing, a `PicklingError` occurs because logger instances cannot be pickled.
 
 **Error Stack**:
-```
+
+```bash
 File "/usr/local/miniforge3/envs/JuniperPython/lib/python3.13/multiprocessing/reduction.py", line 60, in dump
     ForkingPickler(file, protocol).dump(obj)
 File "/usr/local/miniforge3/envs/JuniperPython/lib/python3.13/logging/__init__.py", line 1826, in __reduce__
@@ -207,11 +211,13 @@ def plot_decision_boundary_async(self, x, y, title="Decision Boundary"):
 **Recommended Approach**: Implement **Option A** for CascadeCorrelationNetwork and all classes that contain loggers (CandidateUnit, etc.)
 
 **Files to Modify**:
+
 1. `src/cascade_correlation/cascade_correlation.py` - Add `__getstate__` and `__setstate__`
 2. `src/candidate_unit/candidate_unit.py` - Add `__getstate__` and `__setstate__`
 3. `src/cascor_plotter/cascor_plotter.py` - Ensure plotter doesn't hold non-picklable references
 
 **Verification**:
+
 ```bash
 cd src/prototypes/cascor
 python src/cascor.py  # Should complete without PicklingError
@@ -232,6 +238,7 @@ python src/cascor.py  # Should complete without PicklingError
 Complete the serialization test suite as outlined in NEXT_STEPS.md.
 
 **Tests Needed**:
+
 - ✅ `test_uuid_persistence` - Exists
 - ✅ `test_python_random_state_restoration` - Exists (needs fix)
 - ✅ `test_numpy_random_state_restoration` - Exists (needs fix)
@@ -368,6 +375,7 @@ class TestSerializationComprehensive(unittest.TestCase):
 ```
 
 **Verification**:
+
 ```bash
 cd src/prototypes/cascor
 pytest src/tests/integration/test_serialization.py -v --cov=snapshots --cov-report=html
@@ -483,6 +491,7 @@ def _load_hidden_units(self, hdf5_file: h5py.File, network) -> None:
 ```
 
 **Verification**:
+
 ```bash
 cd src/prototypes/cascor
 pytest src/tests/integration/test_serialization.py::test_hidden_units_preservation -v
@@ -1085,6 +1094,7 @@ Create tests for loading snapshots from older format versions.
 **Decision**: REMOVE optimizer state from serialization for MVP
 
 **Rationale**:
+
 - Training recreates optimizer on resume anyway
 - Low value for current use cases
 - Adds complexity to serialization
@@ -1100,6 +1110,7 @@ Create tests for loading snapshots from older format versions.
 **Decision**: Partial restore - save config but don't auto-restart manager
 
 **Rationale**:
+
 - Full restore is complex and error-prone
 - Manager restart should be explicit user action
 - Config save allows manual reconstruction
@@ -1111,22 +1122,26 @@ Create tests for loading snapshots from older format versions.
 ## Implementation Timeline
 
 ### Phase 1: Critical Bugs (Week 1)
+
 - **Day 1-2**: BUG-001 - Fix random state restoration tests
 - **Day 3-5**: BUG-002 - Fix logger pickling issue
 
 ### Phase 2: High Priority (Week 2-3)
+
 - **Day 1-3**: ENH-001 - Complete test suite
 - **Day 4-5**: ENH-002 - Hidden units checksums
 - **Day 6-7**: ENH-003 - Shape validation
 - **Day 8**: ENH-004 - Format validation
 
 ### Phase 3: Medium Priority (Week 4-5)
+
 - **Day 1-2**: ENH-005 - Candidate instantiation refactor
 - **Day 3-5**: ENH-006 - Flexible optimizer system
 - **Day 6-10**: ENH-007 - N-best candidate selection
 - **Day 11-12**: ENH-008 - Worker cleanup
 
 ### Phase 4: Polish & Documentation (Week 6)
+
 - Integration testing
 - Performance benchmarking
 - Documentation updates
@@ -1137,6 +1152,7 @@ Create tests for loading snapshots from older format versions.
 ## Testing Strategy
 
 ### Unit Tests
+
 Location: `src/tests/unit/`
 
 - `test_snapshot_components.py` - Individual serialization functions
@@ -1145,6 +1161,7 @@ Location: `src/tests/unit/`
 - `test_shape_validation.py` - Shape validation logic
 
 ### Integration Tests  
+
 Location: `src/tests/integration/`
 
 - `test_serialization.py` - Full save/load cycles ✓
@@ -1152,6 +1169,7 @@ Location: `src/tests/integration/`
 - `test_deterministic_training.py` - Training reproducibility
 
 ### End-to-End Tests
+
 Location: `src/tests/e2e/`
 
 - `test_spiral_problem.py` - 2-spiral problem solving
@@ -1210,11 +1228,13 @@ pytest src/tests/integration/test_serialization.py::TestRandomStateRestoration::
 ## References
 
 ### Related Documents
+
 - [NEXT_STEPS.md](NEXT_STEPS.md) - Original MVP plan
 - [P2_ENHANCEMENTS_PLAN.md](P2_ENHANCEMENTS_PLAN.md) - P2 optimization plan
 - [SERIALIZATION_FIXES_SUMMARY.md](SERIALIZATION_FIXES_SUMMARY.md) - Previous fixes
 
 ### Key Files
+
 - `src/snapshots/snapshot_serializer.py` - Main serialization logic
 - `src/snapshots/snapshot_common.py` - Utility functions
 - `src/tests/integration/test_serialization.py` - Integration tests
@@ -1225,6 +1245,7 @@ pytest src/tests/integration/test_serialization.py::TestRandomStateRestoration::
 ## Changelog
 
 ### 2025-10-28 - v1.0 Initial Release
+
 - Consolidated P2_ENHANCEMENTS_PLAN.md and NEXT_STEPS.md
 - Added BUG-001 and BUG-002 critical fixes
 - Designed comprehensive test suite (ENH-001)

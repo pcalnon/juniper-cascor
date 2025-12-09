@@ -15,40 +15,49 @@ from .snapshot_serializer import CascadeHDF5Serializer
 from .snapshot_utils import HDF5Utils
 
 
-def save_network_snapshot(network_file: str, output_file: str, include_training: bool = False):
+def save_network_snapshot(
+    network_file: str,
+    output_file: str,
+    include_training: bool = False,
+) -> bool:
     """Save a network snapshot to HDF5."""
     print(f"Saving network snapshot to {output_file}...")
 
     try:
-        # For demonstration, create a simple network
-        # In practice, you would load an existing network
-        from cascade_correlation.cascade_correlation import CascadeCorrelationNetwork
-        from cascade_correlation_config.cascade_correlation_config import CascadeCorrelationConfig
+        return _object_to_file(output_file, include_training)
+    except Exception as e:
+        print(f"✗ Error saving snapshot: {e}")
+        return False
 
-        # Create a simple network for demonstration
-        config = CascadeCorrelationConfig(input_size=2, output_size=1)
-        network = CascadeCorrelationNetwork(config=config)
 
-        if success := network.save_to_hdf5(
+def _object_to_file(output_file, include_training) -> bool:
+    # For demonstration, create a simple network. In practice, you would load an existing network
+    from cascade_correlation.cascade_correlation import CascadeCorrelationNetwork
+    from cascade_correlation_config.cascade_correlation_config import CascadeCorrelationConfig
+
+    # Create a simple network for demonstration
+    config = CascadeCorrelationConfig(input_size=2, output_size=1)
+    network = CascadeCorrelationNetwork(config=config)
+
+    if success := network.save_to_hdf5(
             filepath=output_file,
             include_training_state=include_training,
             include_training_data=False,
         ):
-            print(f"✓ Successfully saved network snapshot to {output_file}, success: {success}")
+        return _get_saved_snapshot_file_data(output_file, success)
+    print("✗ Failed to save network snapshot")
+    return False
 
-            # Show file info
-            info = HDF5Utils.get_file_info(output_file)
-            print(f"  File size: {info.get('size_mb', 0):.2f} MB")
-            print(f"  Groups: {len(info.get('groups', []))}")
-            print(f"  Datasets: {len(info.get('datasets', []))}")
-            return True
-        else:
-            print("✗ Failed to save network snapshot")
-            return False
 
-    except Exception as e:
-        print(f"✗ Error saving snapshot: {e}")
-        return False
+def _get_saved_snapshot_file_data(output_file, success) -> bool:
+    print(f"✓ Successfully saved network snapshot to {output_file}, success: {success}")
+
+    # Show file info
+    info = HDF5Utils.get_file_info(output_file)
+    print(f"  File size: {info.get('size_mb', 0):.2f} MB")
+    print(f"  Groups: {len(info.get('groups', []))}")
+    print(f"  Datasets: {len(info.get('datasets', []))}")
+    return True
 
 
 def load_network_snapshot(snapshot_file: str, output_file: str = None):

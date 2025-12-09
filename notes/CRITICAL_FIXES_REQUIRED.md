@@ -17,6 +17,7 @@ The cascor prototype has **critical architectural failures** that prevent it fro
 **Lines:** 76-89
 
 **Current:**
+
 ```python
 @dataclass
 class CandidateTrainingResult:
@@ -29,6 +30,7 @@ class CandidateTrainingResult:
 ```
 
 **Fix:**
+
 ```python
 @dataclass
 class CandidateTrainingResult:
@@ -56,6 +58,7 @@ class CandidateTrainingResult:
 **Current:** Returns tuple `(candidate_index, candidate_uuid, correlation, candidate)`
 
 **Fix:** Return CandidateTrainingResult object
+
 ```python
 @staticmethod
 def train_candidate_worker(task_data_input: tuple=None, parallel: bool=True) -> CandidateTrainingResult:
@@ -98,11 +101,13 @@ def train_candidate_worker(task_data_input: tuple=None, parallel: bool=True) -> 
 **Lines:** 1942-1986
 
 **Current:**
+
 ```python
 (candidates_attribute_list, best_candidate_attributes, max_correlation_attributes) = self.train_candidates(...)
 ```
 
 **Fix:**
+
 ```python
 # Get training results as dataclass object
 training_results = self.train_candidates(x=x_train, y=y_train, residual_error=residual_error)
@@ -129,12 +134,14 @@ failed_candidates = training_results.failed_count
 **Lines:** 1366-1373
 
 **Current:**
+
 ```python
 def get_single_candidate_data(self, results: list, id: int, field: str, default: Any) -> Any:
     return results[id].get(field) if id >= 0 and id < len(results) and results[id].get(field) is not None else default
 ```
 
 **Fix:**
+
 ```python
 def get_single_candidate_data(self, results: list, id: int, field: str, default: Any) -> Any:
     """Get single candidate data field using getattr for dataclass objects."""
@@ -152,12 +159,14 @@ def get_single_candidate_data(self, results: list, id: int, field: str, default:
 **Lines:** 603-606
 
 **Current:**
+
 ```python
 self.weights += candidate_parameters_update.learning_rate * grad_w  # WRONG!
 self.bias += candidate_parameters_update.learning_rate * grad_b
 ```
 
 **Fix Option 1 (Change loss sign):**
+
 ```python
 # Line 584, change from:
 loss = -torch.abs(correlation)
@@ -170,6 +179,7 @@ self.bias += candidate_parameters_update.learning_rate * grad_b
 ```
 
 **Fix Option 2 (Change update direction):**
+
 ```python
 # Keep loss = -torch.abs(correlation) but change updates:
 self.weights -= candidate_parameters_update.learning_rate * grad_w  # Use -= for descent
@@ -186,11 +196,13 @@ self.bias -= candidate_parameters_update.learning_rate * grad_b
 **Line:** 533
 
 **Current:**
+
 ```python
 logits = candidate_parameters_update.x @ weights_param + bias_param
 ```
 
 **Fix:**
+
 ```python
 logits = torch.sum(candidate_parameters_update.x * weights_param, dim=1) + bias_param
 ```
@@ -205,6 +217,7 @@ logits = torch.sum(candidate_parameters_update.x * weights_param, dim=1) + bias_
 **After Line:** 479
 
 **Add:**
+
 ```python
 # Update instance correlation for monitoring
 self.correlation = float(candidate_training_result.best_correlation)
@@ -218,6 +231,7 @@ self.correlation = float(candidate_training_result.best_correlation)
 **Lines:** 154-173
 
 **Add to dataclass:**
+
 ```python
 @dataclass
 class TrainingResults:
@@ -226,6 +240,7 @@ class TrainingResults:
 ```
 
 **Populate in _process_training_results (line 1305):**
+
 ```python
 training_results = TrainingResults(
     # ... existing assignments ...
@@ -241,11 +256,13 @@ training_results = TrainingResults(
 **Line:** 1701
 
 **Current:**
+
 ```python
 result_queue.put(result)  # No timeout!
 ```
 
 **Fix:**
+
 ```python
 try:
     result_queue.put(result, timeout=30)
@@ -289,6 +306,7 @@ if self.early_stopping:
 ```
 
 **Add initialization before loop:**
+
 ```python
 best_correlation_so_far = 0.0
 patience_counter = 0
@@ -301,6 +319,7 @@ patience_counter = 0
 **File:** `src/snapshots/snapshot_serializer.py`  
 
 **In _save_parameters() method (after line 421):**
+
 ```python
 # Save optimizer state if it exists
 if hasattr(network, 'output_optimizer') and network.output_optimizer:
@@ -318,11 +337,13 @@ if hasattr(network, 'output_optimizer') and network.output_optimizer:
 ## Testing Commands
 
 Before running any tests, activate the conda environment:
+
 ```bash
 conda activate JuniperPython-ORIG
 ```
 
 ### Minimal Test Script
+
 ```python
 from cascade_correlation.cascade_correlation import CascadeCorrelationNetwork
 from cascade_correlation_config.cascade_correlation_config import CascadeCorrelationConfig
@@ -355,13 +376,14 @@ except Exception as e:
 5. **Fix gradient direction** (2 minutes) - candidate_unit.py
 6. **Fix matrix multiplication** (2 minutes) - candidate_unit.py
 
-**Total time for P0 fixes: ~30 minutes**
+**Total time for P0 fixes: ~30 minutes:**
 
 ---
 
 ## Validation Checklist
 
 After implementing P0 fixes, verify:
+
 - [ ] `train_candidates()` returns CandidateTrainingResult objects
 - [ ] `grow_network()` successfully unpacks training results  
 - [ ] No AttributeError on dataclass field access

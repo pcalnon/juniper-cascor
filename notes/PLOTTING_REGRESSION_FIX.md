@@ -8,11 +8,12 @@
 
 ## Problem
 
-```
+```bash
 AttributeError: Can't get local object 'CascadeCorrelationNetwork.plot_decision_boundary.<locals>._plot_worker'
 ```
 
 **Stack Trace Location**:
+
 - File: `cascade_correlation.py`
 - Method: `plot_decision_boundary()`
 - Line: 3395 (`plot_process.start()`)
@@ -24,6 +25,7 @@ AttributeError: Can't get local object 'CascadeCorrelationNetwork.plot_decision_
 The plotting methods (`plot_decision_boundary` and `plot_training_history`) defined local worker functions (`_plot_worker`) inside the method bodies. When using the forkserver multiprocessing context (set in `_init_multiprocessing()`), these local functions cannot be pickled for transfer to worker processes.
 
 **Why It Failed**:
+
 1. `_init_multiprocessing()` sets `self._mp_ctx = mp.get_context('forkserver')`
 2. Plotting code used `self._mp_ctx.Process(target=_plot_worker, ...)`
 3. Forkserver requires all targets to be picklable
@@ -103,15 +105,19 @@ plot_process = plot_ctx.Process(
 ## Alternative Solutions Considered
 
 ### Option A: Use Spawn for Everything
+
 **Rejected**: Forkserver is better for candidate training (faster, cleaner)
 
 ### Option B: Make Methods Instead of Functions
+
 **Rejected**: Methods still need pickling, and class instance must be pickled
 
 ### Option C: Use Threading Instead
+
 **Rejected**: Matplotlib/plotting can have thread-safety issues, process isolation better
 
 ### Option D: Remove Async Plotting
+
 **Rejected**: User wants non-blocking plotting during training
 
 ---
@@ -119,12 +125,14 @@ plot_process = plot_ctx.Process(
 ## Impact
 
 ### Fixed ✓
+
 - Decision boundary plotting works
 - Training history plotting works
 - No more AttributeError on multiprocessing start
 - Both sync and async plotting modes functional
 
 ### Not Changed
+
 - Candidate training still uses forkserver context (optimal)
 - Existing API unchanged (backward compatible)
 - Synchronous plotting still works (fallback mode)
@@ -134,6 +142,7 @@ plot_process = plot_ctx.Process(
 ## Testing
 
 ### Manual Test
+
 ```bash
 cd src/prototypes/cascor
 python3 src/cascor.py
@@ -142,6 +151,7 @@ python3 src/cascor.py
 Expected: Network trains and generates decision boundary plot without error
 
 ### Verification
+
 - Check that plot process starts without AttributeError
 - Verify PID logged: "Started plotting process PID: XXXX"
 - Confirm plot image generated
@@ -178,11 +188,13 @@ Expected: Network trains and generates decision boundary plot without error
 This fix addresses one of the common pitfalls in Python multiprocessing:
 
 **Python Multiprocessing Contexts**:
+
 - **fork**: Fastest, not safe on macOS (deprecated), copies full state
 - **spawn**: Safest, slowest, requires picklable targets
 - **forkserver**: Middle ground, requires picklable targets, used for candidate training
 
 **Pickling Requirements**:
+
 - Module-level functions: ✓ Picklable
 - Class methods: ✓ Picklable (with instance)
 - Nested/local functions: ✗ NOT picklable
@@ -205,7 +217,6 @@ This fix addresses one of the common pitfalls in Python multiprocessing:
 
 ## References
 
-- Python multiprocessing documentation: https://docs.python.org/3/library/multiprocessing.html
-- Pickle limitations: https://docs.python.org/3/library/pickle.html#what-can-be-pickled-and-unpickled
-- Forkserver context: https://docs.python.org/3/library/multiprocessing.html#contexts-and-start-methods
-
+- Python multiprocessing documentation: <https://docs.python.org/3/library/multiprocessing.html>
+- Pickle limitations: <https://docs.python.org/3/library/pickle.html#what-can-be-pickled-and-unpickled>
+- Forkserver context: <https://docs.python.org/3/library/multiprocessing.html#contexts-and-start-methods>

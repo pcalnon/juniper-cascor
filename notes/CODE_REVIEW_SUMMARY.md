@@ -30,21 +30,25 @@ Conducted comprehensive architectural review of CascadeCorrelationNetwork and Ca
 ## Analysis Methodology
 
 ### Agent 1: Multiprocessing Architecture Analysis
+
 - Reviewed manager setup, queue lifecycle, worker processes
 - Analyzed serialization requirements and thread safety
 - Identified 5 critical issues in multiprocessing implementation
 
 ### Agent 2: CandidateUnit Training Workflow Analysis
+
 - Reviewed training algorithm, correlation calculation, gradient computation
-- Analyzed serialization compatibility (__getstate__/__setstate__)
+- Analyzed serialization compatibility (**getstate**/**setstate**)
 - Identified 14 logical/mathematical/serialization issues
 
 ### Agent 3: HDF5 Serialization Implementation Analysis
+
 - Reviewed state capture in snapshot_serializer.py and snapshot_common.py
 - Analyzed restoration completeness and data integrity
 - Identified major gaps in optimizer state, training counters, display components
 
 ### Agent 4: Core Network Architecture Analysis
+
 - Reviewed initialization, training loops, forward pass logic
 - Analyzed hidden unit management and state consistency
 - Identified critical type mismatch in grow_network() and train_candidates()
@@ -88,7 +92,7 @@ Conducted comprehensive architectural review of CascadeCorrelationNetwork and Ca
 | 15 | Early stopping defined but not implemented | MEDIUM | Add to CandidateUnit.train() loop |
 | 16 | Global queue state anti-pattern | MEDIUM | Refactor to instance-specific queues |
 | 17 | Worker process zombie cleanup | MEDIUM | Improve _stop_workers() termination |
-| 18 | Activation wrapper recreated on every forward pass | LOW | Cache in __init__ |
+| 18 | Activation wrapper recreated on every forward pass | LOW | Cache in **init** |
 
 ---
 
@@ -99,11 +103,13 @@ Conducted comprehensive architectural review of CascadeCorrelationNetwork and Ca
 **Root Cause:** Incomplete refactoring when switching to TrainingResults dataclass
 
 **Before:**
+
 ```python
 (candidates_attr, best_attr, max_attr) = self.train_candidates(...)
 ```
 
 **After:**
+
 ```python
 training_results = self.train_candidates(...)
 candidate_ids = training_results.candidate_ids
@@ -120,11 +126,13 @@ best_candidate = training_results.best_candidate
 **Root Cause:** Inconsistent naming between dataclass definition and usage sites
 
 **Changes:**
+
 - `candidate_index` → `candidate_id`
 - `best_correlation` → `correlation`  
 - Added `candidate: Optional[any]` field
 
 **Files Modified:**
+
 - candidate_unit.py:76-89 (dataclass definition)
 - candidate_unit.py:479-481, 524, 531-532 (usage sites)
 - candidate_unit.py:626-629 (_get_correlations creation)
@@ -136,6 +144,7 @@ best_candidate = training_results.best_candidate
 **Root Cause:** Loss is `-abs(correlation)`, so gradient points toward increasing correlation, but code used `+=` (ascent) instead of `-=` (descent)
 
 **Mathematical Analysis:**
+
 - Loss function: `L = -|ρ|` where ρ is correlation
 - Goal: Minimize L ⟹ Maximize |ρ|
 - Gradients from `loss.backward()`: `∂L/∂w`
@@ -153,12 +162,14 @@ best_candidate = training_results.best_candidate
 **Root Cause:** Inconsistent dimension handling between forward() and _update_weights_and_bias()
 
 **Before:**
+
 ```python
 logits = candidate_parameters_update.x @ weights_param + bias_param
 # Shape error: [batch, features] @ [features] → [batch] (correct by luck)
 ```
 
 **After:**
+
 ```python
 logits = torch.sum(candidate_parameters_update.x * weights_param, dim=1) + bias_param
 # [batch, features] * [features] → [batch, features] → sum(dim=1) → [batch]
@@ -184,11 +195,13 @@ logits = torch.sum(candidate_parameters_update.x * weights_param, dim=1) + bias_
 **Root Cause:** Worker returns tuple but system expects CandidateTrainingResult
 
 **Before:**
+
 ```python
 return (candidate_index, candidate_uuid, correlation, candidate)
 ```
 
 **After:**
+
 ```python
 return CandidateTrainingResult(
     candidate_id=candidate_index,
@@ -254,17 +267,20 @@ print("✅ Network training succeeded")
 ### Multiprocessing Design
 
 **Strengths:**
+
 - Proper use of forkserver context for clean process isolation
 - Factory functions for queue creation avoid lambda pickling issues
 - Worker loop with timeout prevents indefinite blocking
 
 **Weaknesses:**
+
 - Global queue state creates multi-instance conflicts (P2)
 - Manager lifecycle not thread-safe (no locks)
 - No timeout on result_queue.put() (P1)
 - Worker cleanup could leave zombies (P2)
 
 **Recommendations:**
+
 - Add per-instance queue management
 - Implement proper manager shutdown ordering
 - Add queue operation timeouts
@@ -275,6 +291,7 @@ print("✅ Network training succeeded")
 ### HDF5 Serialization Completeness
 
 **State Captured:** ✅
+
 - Network architecture (input/output/hidden sizes)
 - Output layer weights and biases
 - Hidden unit weights, biases, correlations
@@ -283,6 +300,7 @@ print("✅ Network training succeeded")
 - Basic training history
 
 **State NOT Captured:** ❌
+
 - **Optimizer state** (momentum buffers, step counts, LR schedules)
 - **Training progress counters** (snapshot_counter, current_epoch, patience)
 - **Display function state** (progress tracking closures)
@@ -291,6 +309,7 @@ print("✅ Network training succeeded")
 - **Validation history** (inconsistent key names)
 
 **Verdict:**
+
 - ✅ **Suitable for inference:** Restored network produces identical outputs
 - ❌ **NOT suitable for resumed training:** Missing optimizer/training state
 - ⚠️ **Multiprocessing broken after restore:** Live connections cannot be serialized
@@ -300,12 +319,14 @@ print("✅ Network training succeeded")
 ## Code Quality Metrics
 
 ### Before Fixes
+
 - **Functionality:** 0% (non-functional, crashes on train)
 - **Type Safety:** 30% (multiple type mismatches)
 - **Serialization:** 60% (partial state capture)
 - **Test Coverage:** Unknown (tests exist but may not cover critical paths)
 
 ### After Fixes
+
 - **Functionality:** 70% (basic training works, advanced features pending)
 - **Type Safety:** 85% (dataclass fields now consistent)
 - **Serialization:** 60% (unchanged - needs P1 fixes)
@@ -356,7 +377,7 @@ print("✅ Network training succeeded")
 3. **logger.py** ↔ **All files**
    - Custom logging levels (TRACE, VERBOSE, FATAL)
    - Singleton pattern for global configuration
-   - Must be excluded from serialization (__getstate__)
+   - Must be excluded from serialization (**getstate**)
 
 ---
 
@@ -415,6 +436,7 @@ print("✅ Network training succeeded")
 ## Contact & Support
 
 For questions about:
+
 - **Architecture decisions:** Review agent reports in this document
 - **Fix implementation:** See FIXES_IMPLEMENTED.md
 - **Testing procedures:** See Testing & Validation section above
@@ -425,6 +447,7 @@ For questions about:
 ## Appendix: Complete Issue List
 
 ### P0 Issues (All Fixed ✅)
+
 1. ✅ Type mismatch between train_candidates() and grow_network()
 2. ✅ Field name: candidate_index → candidate_id
 3. ✅ Field name: best_correlation → correlation
@@ -437,12 +460,14 @@ For questions about:
 10. ✅ self.correlation not updated during training
 
 ### P1 Issues (Pending)
+
 11. ⏳ Missing optimizer state in HDF5
 12. ⏳ Training counters not saved
 13. ⏳ Display functions not restored
 14. ⏳ No timeout on result_queue.put()
 
 ### P2 Issues (Future Work)
+
 15. ⏳ Early stopping not implemented
 16. ⏳ Global queue state anti-pattern
 17. ⏳ Worker zombie cleanup

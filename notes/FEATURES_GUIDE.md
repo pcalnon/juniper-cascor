@@ -343,6 +343,7 @@ client.start_workers(num_workers=4)  # Add 4 remote workers
 ### Automatic Checksums
 
 All saved networks include SHA256 checksums for:
+
 - Output layer weights
 - Output layer bias
 - Each hidden unit's weights
@@ -524,21 +525,25 @@ config = CascadeCorrelationConfig(
 ### Serialization
 
 1. **Always set random_seed for reproducibility**:
+
    ```python
    config = CascadeCorrelationConfig(random_seed=42)
    ```
 
 2. **Include training state for resume**:
+
    ```python
    network.save_to_hdf5(filepath, include_training_state=True)
    ```
 
 3. **Exclude training data** (it's large and unnecessary):
+
    ```python
    network.save_to_hdf5(filepath, include_training_data=False)
    ```
 
 4. **Verify snapshots after saving**:
+
    ```python
    from snapshots.snapshot_utils import HDF5Utils
    info = HDF5Utils.validate_network_file(filepath)
@@ -548,11 +553,13 @@ config = CascadeCorrelationConfig(
 ### Training
 
 1. **Use validation data for early stopping**:
+
    ```python
    network.fit(x_train, y_train, x_val=x_val, y_val=y_val)
    ```
 
 2. **Monitor training with history**:
+
    ```python
    history = network.history
    if history['train_accuracy'][-1] > 0.95:
@@ -560,6 +567,7 @@ config = CascadeCorrelationConfig(
    ```
 
 3. **Save checkpoints periodically**:
+
    ```python
    for epoch in range(0, 1000, 100):
        network.fit(x_train, y_train, epochs=100)
@@ -569,6 +577,7 @@ config = CascadeCorrelationConfig(
 ### Multiprocessing
 
 1. **Use forkserver context** (safest):
+
    ```python
    config = CascadeCorrelationConfig(
        candidate_training_context_type="forkserver"
@@ -590,6 +599,7 @@ config = CascadeCorrelationConfig(
 ### Issue: Snapshot won't load
 
 **Check**:
+
 ```python
 from snapshots.snapshot_serializer import CascadeHDF5Serializer
 
@@ -603,6 +613,7 @@ else:
 ```
 
 **Solutions**:
+
 - Ensure file is not corrupted
 - Check format version compatibility
 - Verify all required groups present
@@ -610,11 +621,13 @@ else:
 ### Issue: Training not deterministic
 
 **Check**:
+
 - Random seed set in config
 - No external randomness (e.g., data shuffling without seed)
 - CUDA randomness seeded (if using GPU)
 
 **Verify**:
+
 ```python
 # Train twice with same seed
 config = CascadeCorrelationConfig(random_seed=42)
@@ -636,11 +649,13 @@ print(f"Difference: {torch.abs(test_out1 - test_out2).max().item()}")
 ### Issue: PicklingError during plotting
 
 **If you see**:
-```
+
+```bash
 pickle.PicklingError: logger cannot be pickled
 ```
 
 **Solution**: Already fixed in BUG-002  
+
 - Ensure you have latest cascade_correlation.py
 - Ensure you have latest cascor_plotter.py
 - Logger is now excluded from pickling
@@ -648,16 +663,19 @@ pickle.PicklingError: logger cannot be pickled
 ### Issue: Checksum verification failed
 
 **If you see**:
-```
+
+```bash
 ERROR: Hidden unit 5 weights checksum verification failed!
 ```
 
 **Possible causes**:
+
 - File corruption
 - Manual editing of HDF5 file
 - Incompatible load/save versions
 
 **Solution**:
+
 - Use most recent snapshot
 - Check file integrity
 - Verify not using damaged storage media
@@ -695,11 +713,13 @@ python -m snapshots.snapshot_cli cleanup ./snapshots/ --keep 5
 ### Serialization Performance
 
 1. **Use compression** (default gzip level 4):
+
    ```python
    network.save_to_hdf5(filepath, compression="gzip", compression_opts=4)
    ```
 
 2. **Adjust compression for speed vs size**:
+
    ```python
    # Faster saves (larger files)
    compression_opts=1
@@ -716,17 +736,20 @@ python -m snapshots.snapshot_cli cleanup ./snapshots/ --keep 5
 ### Training Performance
 
 1. **Optimize candidate pool size**:
+
    ```python
    # Balance: More candidates = better selection, slower training
    candidate_pool_size=10  # Good for 4-8 CPU cores
    ```
 
 2. **Use N-best for faster convergence**:
+
    ```python
    candidates_per_layer=3  # Add multiple units, fewer iterations
    ```
 
 3. **Tune patience for speed**:
+
    ```python
    patience=10  # Less patience = faster (but may underfit)
    ```
@@ -830,16 +853,19 @@ print(f"Best config: {best['params']}, accuracy: {best['accuracy']:.2%}")
 ## API Reference Quick Links
 
 ### Core Classes
+
 - `CascadeCorrelationNetwork` - Main network class
 - `CascadeCorrelationConfig` - Configuration object
 - `OptimizerConfig` - Optimizer configuration
 - `CandidateUnit` - Individual candidate node
 
 ### Serialization Classes
+
 - `CascadeHDF5Serializer` - HDF5 save/load operations
 - `HDF5Utils` - Utility functions for HDF5 management
 
 ### Support Classes
+
 - `CascadeCorrelationPlotter` - Plotting utilities
 - `RemoteWorkerClient` - Remote multiprocessing client
 

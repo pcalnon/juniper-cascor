@@ -1,0 +1,16 @@
+{
+    "config": {
+        "MD013": 200,
+        "code-block-style": "consistent",
+        "default": {
+            "line-length": 200,
+            "code-block-style": "consistent"
+        }
+    },
+    "emphasis-style": false,
+    "ol-prefix": false,
+    "fix": true,
+    "gitignore": true,
+    "markdownlintignore": true,
+    "MD013": false
+}

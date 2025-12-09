@@ -18,22 +18,26 @@ def test_1_dataclass_fields():
     """Test that CandidateTrainingResult has correct field names."""
     print("\n[Test 1] CandidateTrainingResult dataclass fields...")
     try:
-        from candidate_unit.candidate_unit import CandidateTrainingResult
-        result = CandidateTrainingResult(
-            candidate_id=0,
-            correlation=0.5,
-            candidate=None
-        )
-        assert hasattr(result, 'candidate_id'), "Missing candidate_id field"
-        assert hasattr(result, 'correlation'), "Missing correlation field"
-        assert hasattr(result, 'candidate'), "Missing candidate field"
-        assert not hasattr(result, 'candidate_index'), "Old candidate_index field still exists"
-        assert not hasattr(result, 'best_correlation'), "Old best_correlation field still exists"
-        print("✅ PASS: CandidateTrainingResult has correct fields")
-        return True
+        return _check_dataclass_attributes()
     except Exception as e:
         print(f"❌ FAIL: {e}")
         return False
+
+
+def _check_dataclass_attributes():
+    from candidate_unit.candidate_unit import CandidateTrainingResult
+    result = CandidateTrainingResult(
+        candidate_id=0,
+        correlation=0.5,
+        candidate=None
+    )
+    assert hasattr(result, 'candidate_id'), "Missing candidate_id field"
+    assert hasattr(result, 'correlation'), "Missing correlation field"
+    assert hasattr(result, 'candidate'), "Missing candidate field"
+    assert not hasattr(result, 'candidate_index'), "Old candidate_index field still exists"
+    assert not hasattr(result, 'best_correlation'), "Old best_correlation field still exists"
+    print("✅ PASS: CandidateTrainingResult has correct fields")
+    return True
 
 def test_2_network_creation():
     """Test that network can be created with snapshot_counter."""
@@ -163,29 +167,27 @@ def test_5_training_results_dataclass():
 
 def main():
     """Run all validation tests."""
-    results = []
-    
-    results.append(("Dataclass Fields", test_1_dataclass_fields()))
+    results = [("Dataclass Fields", test_1_dataclass_fields())]
     results.append(("Network Creation", test_2_network_creation()))
     results.append(("Candidate Training", test_3_candidate_training()))
     results.append(("get_single_candidate_data", test_4_get_single_candidate_data()))
     results.append(("TrainingResults Dataclass", test_5_training_results_dataclass()))
-    
+
     print("\n" + "="*70)
     print("Test Results Summary")
     print("="*70)
-    
+
     for test_name, passed in results:
         status = "✅ PASS" if passed else "❌ FAIL"
         print(f"{status}: {test_name}")
-    
+
     total = len(results)
-    passed = sum(1 for _, p in results if p)
-    
+    passed = sum(bool(p) for _, p in results)
+
     print("="*70)
     print(f"Total: {passed}/{total} tests passed ({100*passed//total}%)")
     print("="*70)
-    
+
     if passed == total:
         print("\n🎉 ALL CRITICAL FIXES VALIDATED SUCCESSFULLY")
         return 0

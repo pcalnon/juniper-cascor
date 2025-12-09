@@ -1,0 +1,11 @@
+{
+  "config": {
+    "ol-prefix": false,
+    "line-length": 200,
+    "code-block-style": "consistent",
+    "emphasis-style": false
+  },
+  "fix": true,
+  "gitignore": true,
+  "markdownlintignore": true
+}

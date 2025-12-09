@@ -41,87 +41,91 @@ def test_hdf5_serialization():
             test_file = tmp_file.name
 
         try:
-            # Test saving
-            print(f"Saving network to {test_file}...")
-            success = network.save_to_hdf5(test_file, include_training_state=False)
-
-            if not success:  # sourcery skip: no-conditionals-in-tests
-                print("✗ Failed to save network")
-                return False
-
-            print("✓ Network saved successfully")
-
-            # Verify the file
-            print("Verifying saved file...")
-            verification = network.verify_hdf5_file(test_file)
-
-            if not verification.get('valid', False):  # sourcery skip: no-conditionals-in-tests
-                print(f"✗ File verification failed: {verification.get('error', 'Unknown error')}")
-                return False
-
-            print("✓ File verification passed")
-            print(f"  Format: {verification.get('format', 'unknown')} v{verification.get('format_version', 'unknown')}")
-
-            # Test loading
-            print("Loading network from file...")
-            loaded_network = CascadeCorrelationNetwork.load_from_hdf5(test_file)
-
-            if not loaded_network:  # sourcery skip: no-conditionals-in-tests
-                print("✗ Failed to load network")
-                return False
-
-            print("✓ Network loaded successfully")
-            print(f"  Loaded UUID: {loaded_network.get_uuid()}")
-
-            # Verify loaded network matches original
-            if str(network.get_uuid()) != str(loaded_network.get_uuid()):  # sourcery skip: no-conditionals-in-tests
-                print("✗ UUIDs don't match!")
-                return False
-
-            if network.input_size != loaded_network.input_size:  # sourcery skip: no-conditionals-in-tests
-                print("✗ Input sizes don't match!")
-                return False
-            
-            if network.output_size != loaded_network.output_size:  # sourcery skip: no-conditionals-in-tests
-                print("✗ Output sizes don't match!")
-                return False
-            
-            if network.activation_function_name != loaded_network.activation_function_name:  # sourcery skip: no-conditionals-in-tests
-                print("✗ Activation functions don't match!")
-                return False
-            
-            print("✓ All network properties match")
-            
-            # Test utilities
-            print("Testing HDF5 utilities...")
-            file_info = HDF5Utils.get_file_info(test_file)
-            
-            if not file_info.get('exists', False):  # sourcery skip: no-conditionals-in-tests
-                print("✗ File info failed")
-                return False
-            
-            print(f"✓ File info: {file_info.get('size_mb', 0):.2f} MB, {len(file_info.get('groups', []))} groups")
-            
-            # Test network summary
-            if summary := HDF5Utils.get_network_summary(test_file):  # sourcery skip: no-conditionals-in-tests
-                print(f"✓ Network summary: {summary['input_size']}→{summary['output_size']}, {summary['num_hidden_units']} hidden units")
-            else:
-                print("✗ Failed to get network summary")
-                return False
-            
-            print("\n✓ All tests passed!")
-            return True
-            
+            return _check_hdf5_snapshot(test_file, network, CascadeCorrelationNetwork, HDF5Utils)
         finally:
             # Cleanup
             if os.path.exists(test_file):  # sourcery skip: no-conditionals-in-tests
                 os.remove(test_file)
-        
+
     except Exception as e:
         print(f"✗ Test failed with error: {e}")
         import traceback
         traceback.print_exc()
         return False
+
+
+# TODO Rename this here and in `test_hdf5_serialization`
+def _check_hdf5_snapshot(test_file: str, network: CascadeCorrelationNetwork, HDF5Utils: HDF5Utils) -> bool:
+    # Test saving
+    print(f"Saving network to {test_file}...")
+    success = network.save_to_hdf5(test_file, include_training_state=False)
+
+    if not success:  # sourcery skip: no-conditionals-in-tests
+        print("✗ Failed to save network")
+        return False
+
+    print("✓ Network saved successfully")
+
+    # Verify the file
+    print("Verifying saved file...")
+    verification = network.verify_hdf5_file(test_file)
+
+    if not verification.get('valid', False):  # sourcery skip: no-conditionals-in-tests
+        print(f"✗ File verification failed: {verification.get('error', 'Unknown error')}")
+        return False
+
+    print("✓ File verification passed")
+    print(f"  Format: {verification.get('format', 'unknown')} v{verification.get('format_version', 'unknown')}")
+
+    # Test loading
+    print("Loading network from file...")
+    loaded_network = CascadeCorrelationNetwork.load_from_hdf5(test_file)
+
+    if not loaded_network:  # sourcery skip: no-conditionals-in-tests
+        print("✗ Failed to load network")
+        return False
+
+    print("✓ Network loaded successfully")
+    print(f"  Loaded UUID: {loaded_network.get_uuid()}")
+
+    # Verify loaded network matches original
+    if str(network.get_uuid()) != str(loaded_network.get_uuid()):  # sourcery skip: no-conditionals-in-tests
+        print("✗ UUIDs don't match!")
+        return False
+
+    if network.input_size != loaded_network.input_size:  # sourcery skip: no-conditionals-in-tests
+        print("✗ Input sizes don't match!")
+        return False
+
+    if network.output_size != loaded_network.output_size:  # sourcery skip: no-conditionals-in-tests
+        print("✗ Output sizes don't match!")
+        return False
+
+    if network.activation_function_name != loaded_network.activation_function_name:  # sourcery skip: no-conditionals-in-tests
+        print("✗ Activation functions don't match!")
+        return False
+
+    print("✓ All network properties match")
+
+    # Test utilities
+    print("Testing HDF5 utilities...")
+    file_info = HDF5Utils.get_file_info(test_file)
+
+    if not file_info.get('exists', False):  # sourcery skip: no-conditionals-in-tests
+        print("✗ File info failed")
+        return False
+
+    print(f"✓ File info: {file_info.get('size_mb', 0):.2f} MB, {len(file_info.get('groups', []))} groups")
+
+    # Test network summary
+    if summary := HDF5Utils.get_network_summary(test_file):  # sourcery skip: no-conditionals-in-tests
+        print(f"✓ Network summary: {summary['input_size']}→{summary['output_size']}, {summary['num_hidden_units']} hidden units")
+    else:
+        print("✗ Failed to get network summary")
+        return False
+
+    print("\n✓ All tests passed!")
+    return True
 
 if __name__ == '__main__':
     success = test_hdf5_serialization()

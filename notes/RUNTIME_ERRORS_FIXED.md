@@ -22,22 +22,27 @@ Analyzed runtime errors from production run of cascor.py with spiral problem. Id
 ## Error #1: Method Name Collision ✅ FIXED
 
 ### Error Message
-```
+
+```bash
 TypeError: CandidateUnit._init_display_progress() takes from 1 to 2 positional arguments but 4 were given
 ```
 
 ### Root Cause
+
 **File:** `candidate_unit/candidate_unit.py`  
 **Lines:** 531, 570, 1120
 
 Two methods with same name `_init_display_progress()`:
+
 - Line 570: Display controller that takes 3 parameters (epoch, params, error)
 - Line 1120: Actual initializer that takes 1 parameter (display_frequency)
 
 Line 531 tried to call the display controller but Python found the initializer first.
 
 ### Solution
+
 Renamed display controller method:
+
 ```python
 # Line 570: Renamed from _init_display_progress to _display_training_progress
 def _display_training_progress(self, epoch, candidate_parameters_update, residual_error):
@@ -46,6 +51,7 @@ def _display_training_progress(self, epoch, candidate_parameters_update, residua
 ```
 
 Updated call site:
+
 ```python
 # Line 531: Updated method call
 self._display_training_progress(epoch, candidate_parameters_update, residual_error)
@@ -57,26 +63,31 @@ self._display_training_progress(epoch, candidate_parameters_update, residual_err
 
 ## Error #2: Dummy Results Format Mismatch ✅ FIXED
 
-### Error Message
-```
+### Error Message, Error 2
+
+```bash
 AttributeError: 'tuple' object has no attribute 'correlation'
   File "cascade_correlation.py", line 1328, in _process_training_results
     results.sort(key=lambda r: (r.correlation is not None, np.abs(r.correlation)), reverse=True)
 ```
 
-### Root Cause
+### Root Caus, Error 2
+
 **File:** `cascade_correlation/cascade_correlation.py`  
 **Line:** 1166
 
 When parallel processing failed, dummy results were created as tuples:
+
 ```python
 results = [(i, None, 0.0, None) for i in range(len(tasks))]
 ```
 
 But `_process_training_results()` expects CandidateTrainingResult objects.
 
-### Solution
+### Solution, Error 2
+
 Use existing `get_dummy_results()` method which creates proper dataclass objects:
+
 ```python
 # Line 1166: Changed from tuples to proper dataclass
 results = self.get_dummy_results(len(tasks))
@@ -88,26 +99,31 @@ results = self.get_dummy_results(len(tasks))
 
 ## Error #3: Trailing Comma Bug ✅ FIXED
 
-### Error Message
-```
+### Error Message, Error 3
+
+```bash
 TypeError: '>=' not supported between instances of 'tuple' and 'int'
   File "cascade_correlation.py", line 1428, in get_single_candidate_data
     if id >= 0 and id < len(results):
 ```
 
-### Root Cause
+### Root Cause, Error 3
+
 **File:** `cascade_correlation/cascade_correlation.py`  
 **Line:** 1351
 
 Trailing comma made `best_candidate_id` a single-element tuple instead of int:
+
 ```python
 best_candidate_id=self.get_single_candidate_data(results, 0, "candidate_id", -1),  # <-- COMMA!
 ```
 
 When used in comparisons, caused type error.
 
-### Solution
+### Solution, Error 3
+
 Removed trailing comma:
+
 ```python
 # Line 1351: Removed trailing comma
 best_candidate_id = self.get_single_candidate_data(results, 0, "candidate_id", -1)
@@ -119,16 +135,19 @@ best_candidate_id = self.get_single_candidate_data(results, 0, "candidate_id", -
 
 ## Error #4: Incorrect Validation Logic ✅ FIXED
 
-### Error Message
-```
+### Error Message, Error 4
+
+```bash
 ValueError: CandidateUnit: _validate_correlation_params: Output and residual error must have the same batch size.
 ```
 
-### Root Cause
+### Root Cause, Error 4
+
 **File:** `cascade_correlation/cascade_correlation.py`  
 **Lines:** 1854-1859
 
 The validation incorrectly checked if x and y have same number of FEATURES (dim 1):
+
 ```python
 if x.shape[1] != y.shape[1]:  # WRONG! input_size != output_size
     # Failed validation, returned empty tensor
@@ -137,13 +156,16 @@ if x.shape[1] != y.shape[1]:  # WRONG! input_size != output_size
 This caused `calculate_residual_error()` to return `torch.Size([0, 1])` - an empty tensor.
 
 **Mathematical Error:**  
+
 - Input x: `[batch_size, input_size]` e.g., `[10, 2]`
 - Target y: `[batch_size, output_size]` e.g., `[10, 1]`  
 - Validation should only check `x.shape[0] == y.shape[0]` (batch sizes match)
 - NOT `x.shape[1] == y.shape[1]` (features are SUPPOSED to be different!)
 
-### Solution
+### Solution, Error 4
+
 Fixed validation logic to only check batch size:
+
 ```python
 # Lines 1854-1858: Changed to only check dim 0 (batch size)
 # Only check batch size (dim 0) - x features != y features is expected
@@ -160,23 +182,28 @@ else:
 
 ## Error #5: Worker Cleanup Warnings ⏳ IN PROGRESS
 
-### Error Message
-```
+### Error Message, Error 5
+
+```bash
 [WARNING] CascadeCorrelationNetwork: _stop_workers: Worker CandidateWorker-14 did not stop, terminating
 ```
 
-### Analysis
+### Analysis, Error 5
+
 Workers are being forcibly terminated instead of stopping gracefully. This suggests:
+
 1. Workers may be stuck in computation
 2. Sentinel values not reaching workers
 3. Timeout too short for complex tasks
 
-### Current Status
+### Current Status, Error 5
+
 - Workers DO complete tasks successfully (logs show task completion)
 - Issue may be timing-related with cleanup phase
 - Not blocking functionality, but indicates cleanup could be improved
 
-### Recommended Solution
+### Recommended Solution, Error 5
+
 ```python
 def _stop_workers(self, workers: list, task_queue) -> None:
     """Stop worker processes gracefully."""
@@ -203,7 +230,8 @@ def _stop_workers(self, workers: list, task_queue) -> None:
 ## Test Results After Fixes
 
 ### Before Fixes
-```
+
+```bash
 RuntimeError: Parallel processing failed to return results
 AttributeError: 'tuple' object has no attribute 'correlation'
 TypeError: CandidateUnit._init_display_progress() takes from 1 to 2 positional arguments but 4 were given
@@ -211,7 +239,8 @@ ValueError: Output and residual error must have the same batch size
 ```
 
 ### After Fixes (Expected)
-```
+
+```bash
 ✅ Workers complete tasks successfully
 ✅ Results returned as CandidateTrainingResult objects  
 ✅ No TypeError from display method
@@ -226,6 +255,7 @@ ValueError: Output and residual error must have the same batch size
 ### candidate_unit/candidate_unit.py
 
 **Line 570:** Renamed method
+
 ```python
 # OLD: def _init_display_progress(self, epoch, candidate_parameters_update, residual_error):
 # NEW:
@@ -234,6 +264,7 @@ def _display_training_progress(self, epoch, candidate_parameters_update, residua
 ```
 
 **Line 531:** Updated method call
+
 ```python
 # OLD: self._init_display_progress(epoch, candidate_parameters_update, residual_error)
 # NEW:
@@ -243,6 +274,7 @@ self._display_training_progress(epoch, candidate_parameters_update, residual_err
 ### cascade_correlation/cascade_correlation.py
 
 **Line 1166:** Fixed dummy results format
+
 ```python
 # OLD: results = [(i, None, 0.0, None) for i in range(len(tasks))]
 # NEW:
@@ -250,6 +282,7 @@ results = self.get_dummy_results(len(tasks))
 ```
 
 **Line 1351:** Removed trailing comma
+
 ```python
 # OLD: best_candidate_id=self.get_single_candidate_data(results, 0, "candidate_id", -1),
 # NEW:
@@ -257,6 +290,7 @@ best_candidate_id = self.get_single_candidate_data(results, 0, "candidate_id", -
 ```
 
 **Lines 1854-1858:** Fixed validation logic
+
 ```python
 # OLD: if x.shape[1] != y.shape[1]:  # Checked feature dimension (WRONG)
 # NEW:
@@ -272,6 +306,7 @@ if x.shape[0] != y.shape[0]:
 ### Unit Tests
 
 All P0 and P1 tests still passing:
+
 - ✅ P0 Critical Fixes: 5/5 passing
 - ✅ P1 High Priority Fixes: 5/5 passing
 
@@ -283,6 +318,7 @@ cd /home/pcalnon/Development/python/Juniper/src/prototypes/cascor/src
 ```
 
 **Expected Outcome:**
+
 - Workers complete candidate training
 - Results collected successfully
 - Network grows with hidden units
@@ -305,13 +341,15 @@ None were fundamental architecture issues - all were implementation bugs that sl
 
 ## Impact Assessment
 
-### Before Fixes
+### Before Fixes, Impact Assessment
+
 - **Workers:** Crashed with TypeError
 - **Result Collection:** Failed, fell back to dummy tuples
 - **Result Processing:** Crashed on tuple attribute access
 - **Overall Status:** Non-functional for parallel training
 
-### After Fixes
+### After Fixes, Impact Assessment
+
 - **Workers:** Complete tasks successfully
 - **Result Collection:** Returns proper CandidateTrainingResult objects
 - **Result Processing:** Sorts and processes results correctly

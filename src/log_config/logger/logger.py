@@ -410,6 +410,7 @@ class Logger(logging.getLoggerClass()):
 
     ####################################################################################################################################
     # Define the init method for the Logger class
+    # TODO: Need to clean-up this steaming pile
     def __init__(
         self,
         _Logger__log_config: logging.config = None,

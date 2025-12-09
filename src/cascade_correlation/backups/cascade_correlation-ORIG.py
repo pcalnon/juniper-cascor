@@ -24,7 +24,7 @@
 #
 #####################################################################################################################################################################################################
 # References:
-#
+#     - Fahlman, S. E., & Lebiere, C. (1990). The cascade-correlation learning architecture. In Advances in neural information processing systems (pp. 524-532).
 #
 #####################################################################################################################################################################################################
 # TODO :
@@ -116,8 +116,6 @@ from utils.utils import display_progress
 
 # Add current dir to Python path for imports
 # sys.path.append(os.path.dirname(os.path.abspath(__file__)))
-
-
 
 
 # Add current dir to Python path for imports
@@ -3529,10 +3527,17 @@ class CascadeCorrelationNetwork:
 
     def get_display_frequency_epoch(self):
         return (
-            self.display_frequency_epoch if hasattr(self, "display_frequency_epoch") else None
+            self.display_frequency_epoch
+            if hasattr(self, "display_frequency_epoch")
+            else None
+        )
 
     def get_display_frequency_units(self):
-        return self.display_frequency_units if hasattr(self, "display_frequency_units") else None
+        return (
+            self.display_frequency_units
+            if hasattr(self, "display_frequency_units")
+            else None
+        )
 
     def get_generate_plots(self):
         return self.generate_plots if hasattr(self, "generate_plots") else None
@@ -3542,6 +3547,7 @@ class CascadeCorrelationNetwork:
 
     def get_history(self):
         return self.history if hasattr(self, "history") else None
+
     def get_input_size(self):
         return self.input_size if hasattr(self, "input_size") else None
 
@@ -3570,4 +3576,4 @@ class CascadeCorrelationNetwork:
         return self.random_value_scale if hasattr(self, "random_value_scale") else None
 
     def get_status_display_frequency(self):
-        return self.status_display_frequency if hasattr(self, "status_display_frequency") else None
+        return ( self.status_display_frequency if hasattr(self, "status_display_frequency") else None)

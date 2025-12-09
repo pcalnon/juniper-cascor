@@ -12,6 +12,7 @@
 **Files Modified:** `candidate_unit/candidate_unit.py`
 
 **Changes:**
+
 - Line 182-184: Cache activation function in `__init__`
 - Line 418: Use cached `self.activation_fn` instead of recreating
 - Line 954: Use cached function in gradient computation
@@ -28,6 +29,7 @@
 **Method:** `_stop_workers()` (around line 1289)
 
 **Implementation:**
+
 ```python
 def _stop_workers(self, workers: list, task_queue) -> None:
     """Stop worker processes with improved termination handling."""
@@ -69,6 +71,7 @@ def _stop_workers(self, workers: list, task_queue) -> None:
 **Implementation Approach:**
 
 1. Create `QueueManager` class:
+
 ```python
 class CascorQueueManager:
     """Per-instance queue manager for CascadeCorrelationNetwork."""
@@ -99,6 +102,7 @@ class CascorQueueManager:
 **Files:** `snapshots/snapshot_serializer.py`, `snapshots/snapshot_utils.py`
 
 **Implementation:**
+
 ```python
 import hashlib
 
@@ -141,6 +145,7 @@ def load_network(self, filepath, verify_checksum=True):
 **Analysis Required:** Compare `fit()` line 707 and `train_candidate_worker()` line 1475
 
 **Implementation:**
+
 ```python
 def _create_candidate_unit(
     self,
@@ -177,6 +182,7 @@ def _create_candidate_unit(
 ```
 
 Then use in both locations:
+
 ```python
 # In fit() and train_candidate_worker():
 candidate = self._create_candidate_unit(
@@ -195,6 +201,7 @@ candidate = self._create_candidate_unit(
 **Design:**
 
 1. Add `OptimizerConfig` dataclass:
+
 ```python
 @dataclass
 class OptimizerConfig:
@@ -209,6 +216,7 @@ class OptimizerConfig:
 ```
 
 2. Add optimizer factory method:
+
 ```python
 def _create_optimizer(self, parameters, config: OptimizerConfig = None):
     """Create optimizer based on configuration."""
@@ -252,6 +260,7 @@ def _create_optimizer(self, parameters, config: OptimizerConfig = None):
 ```
 
 3. Update `train_output_layer()`:
+
 ```python
 # Line ~920
 self.output_optimizer = self._create_optimizer(
@@ -273,6 +282,7 @@ self.output_optimizer = self._create_optimizer(
 **Implementation:**
 
 1. Add configuration:
+
 ```python
 class CascadeCorrelationConfig:
     # ... existing fields ...
@@ -281,6 +291,7 @@ class CascadeCorrelationConfig:
 ```
 
 2. Modify `_process_training_results()`:
+
 ```python
 def _select_best_candidates(self, results, num_candidates=1):
     """Select top N candidates for layer addition."""
@@ -301,6 +312,7 @@ def _select_best_candidates(self, results, num_candidates=1):
 ```
 
 3. Modify `add_unit()` to support batch:
+
 ```python
 def add_units_as_layer(self, candidates: List[CandidateUnit], x: torch.Tensor):
     """Add multiple candidates as a new layer."""
@@ -312,6 +324,7 @@ def add_units_as_layer(self, candidates: List[CandidateUnit], x: torch.Tensor):
 ```
 
 4. Update `grow_network()`:
+
 ```python
 # Select candidates based on config
 selected_candidates = self._select_best_candidates(
@@ -330,6 +343,7 @@ if selected_candidates:
 **Files:** `cascade_correlation/cascade_correlation.py`, `cascor_plotter/cascor_plotter.py`
 
 **Implementation:**
+
 ```python
 def plot_decision_boundary_async(self, x, y, title="Decision Boundary"):
     """Plot decision boundary in separate process to avoid blocking."""
@@ -363,17 +377,20 @@ Similarly for `plot_training_history_async()`.
 ## Implementation Priority
 
 ### High Priority (Immediate)
+
 1. ✅ Activation function caching - **DONE**
 2. ⏳ Refactor candidate instantiation - **Next**
 3. ⏳ Flexible optimizer management - **Next**
 4. ⏳ N-best candidate selection - **High value feature**
 
 ### Medium Priority (Soon)
+
 5. ⏳ Worker cleanup improvements
 6. ⏳ Process-based plotting
 7. ⏳ HDF5 checksum validation
 
 ### Low Priority (Future)
+
 8. ⏳ Per-instance queue management (requires significant refactoring)
 
 ---
@@ -383,6 +400,7 @@ Similarly for `plot_training_history_async()`.
 ### After Each Enhancement
 
 Run validation:
+
 ```bash
 /opt/miniforge3/envs/JuniperPython/bin/python test_critical_fixes.py
 /opt/miniforge3/envs/JuniperPython/bin/python test_p1_fixes.py
@@ -391,6 +409,7 @@ Run validation:
 ### Integration Testing
 
 Test with spiral problem:
+
 ```bash
 /opt/miniforge3/envs/JuniperPython/bin/python cascor.py
 ```
@@ -398,6 +417,7 @@ Test with spiral problem:
 ### Performance Benchmarks
 
 Compare before/after for:
+
 - Candidate training time (early stopping impact)
 - Forward pass speed (activation caching impact)
 - Memory usage (optimizer management impact)

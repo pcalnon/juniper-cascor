@@ -2,7 +2,7 @@
 #####################################################################################################################################################################################################
 # Project:       Juniper
 # Prototype:     Cascade Correlation Neural Network
-# File Name:     cascade_correlation_excepetions.py
+# File Name:     cascade_correlation_exceptions.py
 # Author:        Paul Calnon
 # Version:       0.3.2 (0.7.3)
 #

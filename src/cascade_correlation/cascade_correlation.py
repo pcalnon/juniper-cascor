@@ -1976,6 +1976,7 @@ class CascadeCorrelationNetwork:
                 self._task_queue = None
                 self._result_queue = None
 
+    # TODO: maybe break this up
     @staticmethod
     def _worker_loop(
         task_queue: Queue,

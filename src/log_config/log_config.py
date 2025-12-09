@@ -75,6 +75,7 @@ class LogConfig(object):
 
     ####################################################################################################################################
     # Define the init method for the LogConfig class
+    # TODO: Need to clean up this crazy
     def __init__(
         self,
         _LogConfig__log_config: logging.config = None,

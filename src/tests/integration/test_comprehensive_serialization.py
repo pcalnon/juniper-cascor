@@ -111,44 +111,47 @@ class TestHiddenUnitsPreservation(unittest.TestCase):
         with tempfile.NamedTemporaryFile(suffix=".h5", delete=False) as f:
             temp_file = f.name
         try:
-            success = serializer.save_network(network, temp_file)
-            self.assertTrue(success, "Failed to save network")
-            loaded_network = serializer.load_network(temp_file)
-            self.assertIsNotNone(loaded_network, "Failed to load network")
-
-            # Verify unit count
-            self.assertEqual(
-                len(network.hidden_units),
-                len(loaded_network.hidden_units),
-                "Hidden unit count mismatch",
-            )
-
-            # Verify each unit's data
-            for idx, (orig, loaded) in enumerate(
-                zip(network.hidden_units, loaded_network.hidden_units, strict=False)
-            ):
-                np.testing.assert_array_almost_equal(
-                    orig["weights"].numpy(),
-                    loaded["weights"].numpy(),
-                    decimal=6,
-                    err_msg=f"Hidden unit {idx} weights mismatch",
-                )
-                np.testing.assert_array_almost_equal(
-                    orig["bias"].numpy(),
-                    loaded["bias"].numpy(),
-                    decimal=6,
-                    err_msg=f"Hidden unit {idx} bias mismatch",
-                )
-                self.assertAlmostEqual(
-                    orig["correlation"],
-                    loaded["correlation"],
-                    places=6,
-                    msg=f"Hidden unit {idx} correlation mismatch",
-                )
-            print(f"✓ Hidden units preservation test passed ({len(network.hidden_units)} units)")
+            self._node_preservation(serializer, network, temp_file)
         finally:
             if os.path.exists(temp_file):
                 os.unlink(temp_file)
+
+    def _node_preservation(self, serializer, network, temp_file):
+        success = serializer.save_network(network, temp_file)
+        self.assertTrue(success, "Failed to save network")
+        loaded_network = serializer.load_network(temp_file)
+        self.assertIsNotNone(loaded_network, "Failed to load network")
+
+        # Verify unit count
+        self.assertEqual(
+            len(network.hidden_units),
+            len(loaded_network.hidden_units),
+            "Hidden unit count mismatch",
+        )
+
+        # Verify each unit's data
+        for idx, (orig, loaded) in enumerate(
+            zip(network.hidden_units, loaded_network.hidden_units, strict=False)
+        ):
+            np.testing.assert_array_almost_equal(
+                orig["weights"].numpy(),
+                loaded["weights"].numpy(),
+                decimal=6,
+                err_msg=f"Hidden unit {idx} weights mismatch",
+            )
+            np.testing.assert_array_almost_equal(
+                orig["bias"].numpy(),
+                loaded["bias"].numpy(),
+                decimal=6,
+                err_msg=f"Hidden unit {idx} bias mismatch",
+            )
+            self.assertAlmostEqual(
+                orig["correlation"],
+                loaded["correlation"],
+                places=6,
+                msg=f"Hidden unit {idx} correlation mismatch",
+            )
+        print(f"✓ Hidden units preservation test passed ({len(network.hidden_units)} units)")
 
 
 class TestConfigRoundtrip(unittest.TestCase):
@@ -180,29 +183,32 @@ class TestConfigRoundtrip(unittest.TestCase):
         with tempfile.NamedTemporaryFile(suffix=".h5", delete=False) as f:
             temp_file = f.name
         try:
-            success = serializer.save_network(network, temp_file)
-            self.assertTrue(success, "Failed to save network")
-            loaded_network = serializer.load_network(temp_file)
-            self.assertIsNotNone(loaded_network, "Failed to load network")
-
-            # Verify critical config parameters
-            config_checks = {
-                "input_size": (network.input_size, loaded_network.input_size),
-                "output_size": (network.output_size, loaded_network.output_size),
-                "max_hidden_units": (network.max_hidden_units, loaded_network.max_hidden_units),
-                "activation_function_name": ( network.activation_function_name, loaded_network.activation_function_name,),
-                "learning_rate": (network.learning_rate, loaded_network.learning_rate),
-                "candidate_learning_rate": ( network.candidate_learning_rate, loaded_network.candidate_learning_rate,),
-                "candidate_pool_size": ( network.candidate_pool_size, loaded_network.candidate_pool_size,),
-                "correlation_threshold": ( network.correlation_threshold, loaded_network.correlation_threshold,),
-                "random_seed": (network.random_seed, loaded_network.random_seed),
-            }
-            for param_name, (orig_val, loaded_val) in config_checks.items():
-                self.assertEqual( orig_val, loaded_val, f"Config parameter '{param_name}' not preserved: {orig_val} != {loaded_val}",)
-            print(f"✓ Config roundtrip test passed ({len(config_checks)} parameters verified)")
+            self._retrieved_nodes_match_original(serializer, network, temp_file)
         finally:
             if os.path.exists(temp_file):
                 os.unlink(temp_file)
+
+    def _retrieved_nodes_match_original(self, serializer, network, temp_file):
+        success = serializer.save_network(network, temp_file)
+        self.assertTrue(success, "Failed to save network")
+        loaded_network = serializer.load_network(temp_file)
+        self.assertIsNotNone(loaded_network, "Failed to load network")
+
+        # Verify critical config parameters
+        config_checks = {
+            "input_size": (network.input_size, loaded_network.input_size),
+            "output_size": (network.output_size, loaded_network.output_size),
+            "max_hidden_units": (network.max_hidden_units, loaded_network.max_hidden_units),
+            "activation_function_name": ( network.activation_function_name, loaded_network.activation_function_name,),
+            "learning_rate": (network.learning_rate, loaded_network.learning_rate),
+            "candidate_learning_rate": ( network.candidate_learning_rate, loaded_network.candidate_learning_rate,),
+            "candidate_pool_size": ( network.candidate_pool_size, loaded_network.candidate_pool_size,),
+            "correlation_threshold": ( network.correlation_threshold, loaded_network.correlation_threshold,),
+            "random_seed": (network.random_seed, loaded_network.random_seed),
+        }
+        for param_name, (orig_val, loaded_val) in config_checks.items():
+            self.assertEqual( orig_val, loaded_val, f"Config parameter '{param_name}' not preserved: {orig_val} != {loaded_val}",)
+        print(f"✓ Config roundtrip test passed ({len(config_checks)} parameters verified)")
 
 
 class TestActivationFunctionRestoration(unittest.TestCase):
@@ -330,32 +336,37 @@ class TestHistoryPreservation(unittest.TestCase):
         with tempfile.NamedTemporaryFile(suffix=".h5", delete=False) as f:
             temp_file = f.name
         try:
-            success = serializer.save_network( network, temp_file, include_training_state=True)
-            self.assertTrue(success, "Failed to save network")
-            loaded_network = serializer.load_network(temp_file)
-            self.assertIsNotNone(loaded_network, "Failed to load network")
-
-            # Verify history keys exist
-            self.assertIn("train_loss", loaded_network.history)
-            self.assertIn("train_accuracy", loaded_network.history)
-            self.assertIn("value_loss", loaded_network.history)
-            self.assertIn("value_accuracy", loaded_network.history)
-
-            # Verify history values match
-            np.testing.assert_array_almost_equal(
-                network.history["train_loss"],
-                loaded_network.history["train_loss"],
-                decimal=6,
+            self._training_attribute_preservation(
+                serializer, network, temp_file
             )
-            np.testing.assert_array_almost_equal(
-                network.history["train_accuracy"],
-                loaded_network.history["train_accuracy"],
-                decimal=6,
-            )
-            print("✓ History preservation test passed")
         finally:
             if os.path.exists(temp_file):
                 os.unlink(temp_file)
+
+    def _training_attribute_preservation(self, serializer, network, temp_file):
+        success = serializer.save_network( network, temp_file, include_training_state=True)
+        self.assertTrue(success, "Failed to save network")
+        loaded_network = serializer.load_network(temp_file)
+        self.assertIsNotNone(loaded_network, "Failed to load network")
+
+        # Verify history keys exist
+        self.assertIn("train_loss", loaded_network.history)
+        self.assertIn("train_accuracy", loaded_network.history)
+        self.assertIn("value_loss", loaded_network.history)
+        self.assertIn("value_accuracy", loaded_network.history)
+
+        # Verify history values match
+        np.testing.assert_array_almost_equal(
+            network.history["train_loss"],
+            loaded_network.history["train_loss"],
+            decimal=6,
+        )
+        np.testing.assert_array_almost_equal(
+            network.history["train_accuracy"],
+            loaded_network.history["train_accuracy"],
+            decimal=6,
+        )
+        print("✓ History preservation test passed")
 
 
 if __name__ == "__main__":

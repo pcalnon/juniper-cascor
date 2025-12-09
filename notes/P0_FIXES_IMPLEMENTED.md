@@ -17,6 +17,7 @@ Fixed **6 critical blocking issues** that prevented the cascor prototype from fu
 **Lines:** 76-89
 
 **Changes:**
+
 - Renamed `candidate_index` → `candidate_id` (for consistency with cascade_correlation.py)
 - Renamed `best_correlation` → `correlation` (matches usage throughout codebase)
 - **Added** `candidate: Optional[any]` field to store trained CandidateUnit object
@@ -31,6 +32,7 @@ Fixed **6 critical blocking issues** that prevented the cascor prototype from fu
 **Lines:** 603-606 (now 993-996)
 
 **Changes:**
+
 ```python
 # OLD (WRONG - gradient ascent):
 self.weights += learning_rate * grad_w
@@ -51,6 +53,7 @@ self.bias -= learning_rate * grad_b
 **Line:** 533 (now 923)
 
 **Changes:**
+
 ```python
 # OLD (WRONG - dimension mismatch):
 logits = candidate_parameters_update.x @ weights_param + bias_param
@@ -69,6 +72,7 @@ logits = torch.sum(candidate_parameters_update.x * weights_param, dim=1) + bias_
 **Lines:** 626-629
 
 **Changes:**
+
 - Changed `candidate_index=` → `candidate_id=`
 - Changed `best_correlation=` → `correlation=`
 
@@ -82,6 +86,7 @@ logits = torch.sum(candidate_parameters_update.x * weights_param, dim=1) + bias_
 **Lines:** 479-481, 524, 531-532
 
 **Changes:**
+
 - All references to `candidate_training_result.best_correlation` → `candidate_training_result.correlation`
 - Fixed epochs_completed to use `epochs` parameter instead of loop variable `epoch`
 
@@ -95,6 +100,7 @@ logits = torch.sum(candidate_parameters_update.x * weights_param, dim=1) + bias_
 **After Line:** 500
 
 **Changes:**
+
 ```python
 # Added after weight update:
 # Update instance correlation for monitoring during training
@@ -111,6 +117,7 @@ self.correlation = float(candidate_training_result.correlation)
 **Lines:** 1559-1609
 
 **Changes:**
+
 - Return type: `tuple` → `CandidateTrainingResult`
 - Receives `CandidateTrainingResult` from `candidate.train()`
 - Populates `candidate_id`, `candidate_uuid`, `candidate` fields
@@ -127,6 +134,7 @@ self.correlation = float(candidate_training_result.correlation)
 **Lines:** 1941-1977
 
 **Changes:**
+
 ```python
 # OLD (WRONG - tuple unpacking):
 (candidates_attribute_list, best_candidate_attributes, max_correlation_attributes) = self.train_candidates(...)
@@ -148,6 +156,7 @@ candidate_uuids = training_results.candidate_uuids
 **Lines:** 1366-1376
 
 **Changes:**
+
 ```python
 # OLD (WRONG - dict access on dataclass):
 return results[id].get(field) if ...
@@ -169,6 +178,7 @@ return default
 **Line:** 335
 
 **Changes:**
+
 ```python
 # Added to _init_network_parameters():
 # Initialize snapshot counter for HDF5 serialization
@@ -277,6 +287,7 @@ python test_critical_fixes.py
 ## Remaining Issues (P1/P2 - Not Blocking)
 
 ### P1 Issues (High Priority - Fix Soon)
+
 - Missing optimizer state serialization in HDF5
 - Display functions not restored from HDF5
 - Training progress counters not saved in HDF5
@@ -285,6 +296,7 @@ python test_critical_fixes.py
 - Early stopping not implemented in CandidateUnit.train()
 
 ### P2 Issues (Medium Priority)
+
 - Global queue state anti-pattern
 - Worker process zombie risk with better cleanup
 - Activation function recreated on every forward pass
@@ -326,6 +338,7 @@ python test_critical_fixes.py
 ## Verification Checklist
 
 Before deploying:
+
 - [ ] All P0 tests pass
 - [ ] Network can create and initialize
 - [ ] Candidate units can train
@@ -337,6 +350,7 @@ Before deploying:
 ## Code Quality
 
 Run diagnostics to check for remaining issues:
+
 ```bash
 cd /home/pcalnon/Development/python/Juniper/src/prototypes/cascor/src
 pytest  # If tests exist
