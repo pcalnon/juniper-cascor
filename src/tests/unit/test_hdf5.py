@@ -6,6 +6,9 @@ Simple test script to verify HDF5 serialization functionality.
 import os
 import sys
 import tempfile
+from cascade_correlation.cascade_correlation import CascadeCorrelationNetwork
+from cascade_correlation_config.cascade_correlation_config import CascadeCorrelationConfig
+
 # from pathlib import Path
 
 # Add parent directories for imports

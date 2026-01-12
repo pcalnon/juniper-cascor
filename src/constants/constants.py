@@ -29,9 +29,20 @@
 # COMPLETED:
 #
 #####################################################################################################################################################################################################
+import os
 import pathlib
-# import numpy as np
+import sys
 
+
+#####################################################################################################################################################################################################
+# Add current and parent dir to Python path for imports
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+
+
+#####################################################################################################################################################################################################
+#
+#    constants.constants_model.constants_model._PROJECT_MODEL_INPUT_SIZE
 from constants.constants_model.constants_model import(
     _PROJECT_MODEL_INPUT_SIZE,
     _PROJECT_MODEL_OUTPUT_SIZE, # trunk-ignore(ruff/F401)

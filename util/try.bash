@@ -35,7 +35,8 @@
 #     SCRIPT_PATH = /home/pcalnon/Development/python/Juniper/src/prototypes/util
 #
 #####################################################################################################################################################################################################
-# TODO :
+# TODO:
+#     Integrate config infrastructure from juniper canopy into this sub-project
 #
 #####################################################################################################################################################################################################
 # COMPLETED:
@@ -45,8 +46,10 @@
 #####################################################################################################
 # Define Debug Constants
 #####################################################################################################
-TRUE="true"
-FALSE="false" # trunk-ignore(shellcheck/SC2034)
+# export TRUE="true"
+export TRUE="0"
+# export FALSE="false" # trunk-ignore(shellcheck/SC2034)
+export FALSE="1" # trunk-ignore(shellcheck/SC2034)
 
 DEBUG="${TRUE}"
 # DEBUG="${FALSE}"
@@ -57,7 +60,7 @@ CURRENT_SCRIPT="prototypes/cascor/util/try.bash:"
 # Define Global Functions
 ####################################################################################################
 # Define local Functions
-get_script_path() {
+function get_script_path() {
 	local source="${BASH_SOURCE[0]}"
 	while [[ -L ${source} ]]; do
 		# local dir="$(cd -P "$(dirname "${source}")" && pwd)"
@@ -70,45 +73,66 @@ get_script_path() {
 	echo "$(cd -P "$(dirname "${source}")" && pwd)/$(basename "${source}")"
 }
 
+export -f get_script_path
+
+####################################################################################################
+export CURRENT_SCRIPT="prototypes/cascor/util/try.bash:"
+
+
 ####################################################################################################
 # Get Python path
 ####################################################################################################
 # PYTHON_PATH="$(which python)"
 # trunk-ignore(shellcheck/SC2034)
-PYTHON_PATH="/opt/miniforge3/envs/JuniperPython/bin/python"
+export PYTHON_PATH="/opt/miniforge3/envs/JuniperCascor/bin/python"
+
 
 ####################################################################################################
 # Define GLobal Constants for Prototype Util Shell Script code
 ####################################################################################################
+# shellcheck disable=SC2155
 export SCRIPT_FULL_PATH="$(get_script_path)"
 [[ ${DEBUG} == "${TRUE}" ]] && echo "${CURRENT_SCRIPT} SCRIPT_FULL_PATH: ${SCRIPT_FULL_PATH}"
+# shellcheck disable=SC2155
 export SCRIPT_NAME="$(basename "${SCRIPT_FULL_PATH}")"
 [[ ${DEBUG} == "${TRUE}" ]] && echo "${CURRENT_SCRIPT} SCRIPT_NAME: ${SCRIPT_NAME}"
+# shellcheck disable=SC2155
 export SCRIPT_PATH="$(dirname "${SCRIPT_FULL_PATH}")"
 [[ ${DEBUG} == "${TRUE}" ]] && echo "${CURRENT_SCRIPT} SCRIPT_PATH: ${SCRIPT_PATH}"
 
+# shellcheck disable=SC2155
 export PYTHON_UTIL_PATH="${SCRIPT_PATH}"
 [[ ${DEBUG} == "${TRUE}" ]] && echo "${CURRENT_SCRIPT} PYTHON_UTIL_PATH: ${PYTHON_UTIL_PATH}"
+# shellcheck disable=SC2155
 export PYTHON_UTIL_NAME="$(basename "${PYTHON_UTIL_PATH}")"
 [[ ${DEBUG} == "${TRUE}" ]] && echo "${CURRENT_SCRIPT} PYTHON_UTIL_NAME: ${PYTHON_UTIL_NAME}"
+# shellcheck disable=SC2155
 
+# shellcheck disable=SC2155
 export PYTHON_PROTO_PATH="$(dirname "${PYTHON_UTIL_PATH}")"
 [[ ${DEBUG} == "${TRUE}" ]] && echo "${CURRENT_SCRIPT} PYTHON_PROTO_PATH: ${PYTHON_PROTO_PATH}"
+# shellcheck disable=SC2155
 export PYTHON_PROTO_NAME="$(basename "${PYTHON_PROTO_PATH}")"
 [[ ${DEBUG} == "${TRUE}" ]] && echo "${CURRENT_SCRIPT} PYTHON_PROTO_NAME: ${PYTHON_PROTO_NAME}"
 
+# shellcheck disable=SC2155
 export PYTHON_PARENT_PROTO_PATH="$(dirname "${PYTHON_PROTO_PATH}")"
 [[ ${DEBUG} == "${TRUE}" ]] && echo "${CURRENT_SCRIPT} PYTHON_PARENT_PROTO_PATH: ${PYTHON_PARENT_PROTO_PATH}"
+# shellcheck disable=SC2155
 export PYTHON_PARENT_PROTO_NAME="$(basename "${PYTHON_PARENT_PROTO_PATH}")"
 [[ ${DEBUG} == "${TRUE}" ]] && echo "${CURRENT_SCRIPT} PYTHON_PARENT_PROTO_NAME: ${PYTHON_PARENT_PROTO_NAME}"
 
+# shellcheck disable=SC2155
 export PYTHON_PARENT_UTIL_NAME="util"
 [[ ${DEBUG} == "${TRUE}" ]] && echo "${CURRENT_SCRIPT} PYTHON_PARENT_UTIL_NAME: ${PYTHON_PARENT_UTIL_NAME}"
+# shellcheck disable=SC2155
 export PYTHON_PARENT_UTIL_PATH="${PYTHON_PARENT_PROTO_PATH}/${PYTHON_PARENT_UTIL_NAME}"
 [[ ${DEBUG} == "${TRUE}" ]] && echo "${CURRENT_SCRIPT} PYTHON_PARENT_UTIL_PATH: ${PYTHON_PARENT_UTIL_PATH}"
 
+# shellcheck disable=SC2155
 export PYTHON_PARENT_SCRIPT_NAME="${SCRIPT_NAME}"
 [[ ${DEBUG} == "${TRUE}" ]] && echo "${CURRENT_SCRIPT} PYTHON_PARENT_SCRIPT_NAME: ${PYTHON_PARENT_SCRIPT_NAME}"
+# shellcheck disable=SC2155
 export PYTHON_PARENT_SCRIPT="${PYTHON_PARENT_UTIL_PATH}/${PYTHON_PARENT_SCRIPT_NAME}"
 [[ ${DEBUG} == "${TRUE}" ]] && echo "${CURRENT_SCRIPT} PYTHON_PARENT_SCRIPT: ${PYTHON_PARENT_SCRIPT}"
 
