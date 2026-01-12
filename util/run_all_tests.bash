@@ -7,17 +7,16 @@
 #
 # Author:        Paul Calnon
 # Version:       0.1.4 (0.7.3)
-# File Name:     last_mod_update.bash
+# File Name:     run_all_tests.bash
 # File Path:     <Project>/<Sub-Project>/<Application>/util/
 #
-# Date:          2025-12-03
+# Date:          2025-10-11
 # Last Modified: 2026-01-03
 #
 # License:       MIT License
 # Copyright:     Copyright (c) 2024,2025,2026 Paul Calnon
 #
 # Description:
-#     This script returns the ages of the current git branches.  Help to identify orphaned branches, etc.
 #
 #####################################################################################################################################################################################################
 # Notes:
@@ -26,7 +25,7 @@
 # References:
 #
 #####################################################################################################################################################################################################
-# TODO:
+# TODO :
 #
 #####################################################################################################################################################################################################
 # COMPLETED:
@@ -35,7 +34,7 @@
 
 
 #####################################################################################################################################################################################################
-# Initialize script by sourcing the init_conf.bash config file
+# Source script config file
 #####################################################################################################################################################################################################
 set -o functrace
 # shellcheck disable=SC2155
@@ -45,39 +44,40 @@ export PARENT_PATH_PARAM="$(realpath "${BASH_SOURCE[0]}")" && INIT_CONF="$(dirna
 
 
 #####################################################################################################################################################################################################
-# Parse input parameters
+# Verify Operating System
 #####################################################################################################################################################################################################
-log_trace "Parsing input parameters"
-FILENAME="$1"
-if [[ "${FILENAME}" == "" ]]; then
-    echo "Error, Input file name not specified. Exiting..."
-    exit 1
+log_trace "Verify Operating System"
+# trunk-ignore(shellcheck/SC2015)
+# trunk-ignore(shellcheck/SC2312)
+# shellcheck disable=SC2015
+[[ "$(uname)" == "${OS_NAME_LINUX}" ]]  && export HOME_DIR="/home/${USERNAME}" || { [[ "$(uname)" == "${OS_NAME_MACOS}"  ]] && export HOME_DIR="/Users/${USERNAME}" || { echo "Error: Invalid OS Type! Exiting..."  && set -e && exit 1; }; }
+log_verbose "HOME_DIR: ${HOME_DIR}"
+cd "${PROJ_DIR}"
+log_verbose "Current Directory: $(pwd)"
+
+
+#####################################################################################################################################################################################################
+# Run Tests with designated reports
+#####################################################################################################################################################################################################
+log_trace "Run Tests with designated reports"
+if [[ "${COVERAGE_REPORT}" == "${FALSE}" ]]; then
+    RUN_TESTS_NO_COV_RPT="pytest -v src/tests"
+    log_verbose "RUN_TESTS_NO_COV_RPT: ${RUN_TESTS_NO_COV_RPT}"
+    eval "${RUN_TESTS_NO_COV_RPT}"; SUCCESS="$?"
+elif [[ "${COVERAGE_REPORT}" == "${TRUE}" ]]; then
+    RUN_TESTS_WITH_COV_RPT="pytest -v ./src/tests \
+        --cov=src \
+        --cov-report=xml:src/tests/reports/coverage.xml \
+        --cov-report=term-missing \
+        --cov-report=html:src/tests/reports/coverage \
+        --junit-xml=src/tests/reports/junit/results.xml \
+        --continue-on-collection-errors \
+    "
+    log_verbose "RUN_TESTS_WITH_COV_RPT: ${RUN_TESTS_WITH_COV_RPT}"
+    eval "${RUN_TESTS_WITH_COV_RPT}"; SUCCESS="$?"
+else
+    log_critical "Coverage Report flag has an Invalid Value"
 fi
+log_info "Running the Juniper Canopy project's Full Test Suite $( [[ "${SUCCESS}" == "${TRUE}" ]] && echo "Succeeded!" || echo "Failed." )"
 
-
-#####################################################################################################################################################################################################
-# Perform Debug Specific Actions
-#####################################################################################################################################################################################################
-log_debug "Perform Debug Specific Actions"
-if [[ ${DEBUG} == "${TRUE}" ]]; then
-    BACKUP_FILE="${DIRNAME}/.${BASENAME}-BAK"
-    if [[ ! -f "${TARGET_FILE}" && ! -f "${BACKUP_FILE}" ]]; then
-        echo "Error: Neither Input File or Backup File are valid, non-empty files.  Exiting"
-        exit 2
-    elif [[ ! -f "${TARGET_FILE}" && -f "${BACKUP_FILE}" ]]; then
-        echo "Warning: Restoring Target File: ${TARGET_FILE} from Backup File: ${BACKUP_FILE}"
-        cp -a "${BACKUP_FILE}" "${TARGET_FILE}"
-    else
-        echo "Updating Backup File: ${BACKUP_FILE} from Target File: ${TARGET_FILE}"
-        cp -a "${TARGET_FILE}" "${BACKUP_FILE}"
-    fi
-fi
-
-
-#####################################################################################################################################################################################################
-# Update Last Modified Date of Target File
-#####################################################################################################################################################################################################
-log_trace "Update Last Modified Date of Target File"
-sed -i "" -e "s/^[[:space:]]*#[[:space:]]*Last[[:space:]]*Modified:[[:space:]]*[0-9.:_-]*[[:space:]]*[A-Z]*[[:space:]]*[#]*$/# Last Modified: $(date "+%F %T %Z")/g" "${TARGET_FILE}"
-
-exit $(( TRUE ))
+exit $(( SUCCESS ))

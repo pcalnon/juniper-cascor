@@ -6,27 +6,29 @@
 # Purpose:       Monitoring and Diagnostic Frontend for Cascade Correlation Neural Network
 #
 # Author:        Paul Calnon
-# Version:       0.1.4 (0.7.3)
-# File Name:     last_mod_update.bash
+# Version:       1.0.0
+# File Name:     get_script_path.bash
 # File Path:     <Project>/<Sub-Project>/<Application>/util/
 #
-# Date:          2025-12-03
-# Last Modified: 2026-01-03
+# Date:          2025-08-01
+# Last Modified: 2026-01-04
 #
 # License:       MIT License
 # Copyright:     Copyright (c) 2024,2025,2026 Paul Calnon
 #
 # Description:
-#     This script returns the ages of the current git branches.  Help to identify orphaned branches, etc.
+#     This script finds the actual path of source files in the Juniper python project code base
 #
 #####################################################################################################################################################################################################
 # Notes:
 #
-########################################################################################################)#############################################################################################
+#####################################################################################################################################################################################################
 # References:
 #
 #####################################################################################################################################################################################################
-# TODO:
+# TODO :
+#     Move function def to fn config file
+#     Add logic to source fn config file to primary config file
 #
 #####################################################################################################################################################################################################
 # COMPLETED:
@@ -35,7 +37,7 @@
 
 
 #####################################################################################################################################################################################################
-# Initialize script by sourcing the init_conf.bash config file
+# Source script config file
 #####################################################################################################################################################################################################
 set -o functrace
 # shellcheck disable=SC2155
@@ -44,40 +46,13 @@ export PARENT_PATH_PARAM="$(realpath "${BASH_SOURCE[0]}")" && INIT_CONF="$(dirna
 [[ -f "${INIT_CONF}" ]] && source "${INIT_CONF}" || { echo "Init Config File Not Found. Unable to Continue."; exit 1; }
 
 
-#####################################################################################################################################################################################################
-# Parse input parameters
-#####################################################################################################################################################################################################
-log_trace "Parsing input parameters"
-FILENAME="$1"
-if [[ "${FILENAME}" == "" ]]; then
-    echo "Error, Input file name not specified. Exiting..."
-    exit 1
-fi
-
 
 #####################################################################################################################################################################################################
-# Perform Debug Specific Actions
+# Get the path and return it
 #####################################################################################################################################################################################################
-log_debug "Perform Debug Specific Actions"
-if [[ ${DEBUG} == "${TRUE}" ]]; then
-    BACKUP_FILE="${DIRNAME}/.${BASENAME}-BAK"
-    if [[ ! -f "${TARGET_FILE}" && ! -f "${BACKUP_FILE}" ]]; then
-        echo "Error: Neither Input File or Backup File are valid, non-empty files.  Exiting"
-        exit 2
-    elif [[ ! -f "${TARGET_FILE}" && -f "${BACKUP_FILE}" ]]; then
-        echo "Warning: Restoring Target File: ${TARGET_FILE} from Backup File: ${BACKUP_FILE}"
-        cp -a "${BACKUP_FILE}" "${TARGET_FILE}"
-    else
-        echo "Updating Backup File: ${BACKUP_FILE} from Target File: ${TARGET_FILE}"
-        cp -a "${TARGET_FILE}" "${BACKUP_FILE}"
-    fi
-fi
+log_trace "Get the path and return it"
+# shellcheck disable=SC2155
+export SCRIPT_PATH="$(get_script_path)"
+log_verbose "SCRIPT_PATH: ${SCRIPT_PATH}"
 
-
-#####################################################################################################################################################################################################
-# Update Last Modified Date of Target File
-#####################################################################################################################################################################################################
-log_trace "Update Last Modified Date of Target File"
-sed -i "" -e "s/^[[:space:]]*#[[:space:]]*Last[[:space:]]*Modified:[[:space:]]*[0-9.:_-]*[[:space:]]*[A-Z]*[[:space:]]*[#]*$/# Last Modified: $(date "+%F %T %Z")/g" "${TARGET_FILE}"
-
-exit $(( TRUE ))
+return $(( TRUE ))

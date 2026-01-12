@@ -7,17 +7,17 @@
 #
 # Author:        Paul Calnon
 # Version:       0.1.4 (0.7.3)
-# File Name:     last_mod_update.bash
+# File Name:     rsink.bash
 # File Path:     <Project>/<Sub-Project>/<Application>/util/
 #
-# Date:          2025-12-03
+# Date:          2024-04-01
 # Last Modified: 2026-01-03
 #
 # License:       MIT License
 # Copyright:     Copyright (c) 2024,2025,2026 Paul Calnon
 #
 # Description:
-#     This script returns the ages of the current git branches.  Help to identify orphaned branches, etc.
+#     This script is used to sync data from the JuniperCanopy application primary server to all secondary servers that perform candidate correlation calculations.
 #
 #####################################################################################################################################################################################################
 # Notes:
@@ -26,7 +26,7 @@
 # References:
 #
 #####################################################################################################################################################################################################
-# TODO:
+# TODO :
 #
 #####################################################################################################################################################################################################
 # COMPLETED:
@@ -35,7 +35,7 @@
 
 
 #####################################################################################################################################################################################################
-# Initialize script by sourcing the init_conf.bash config file
+# Source script config file
 #####################################################################################################################################################################################################
 set -o functrace
 # shellcheck disable=SC2155
@@ -45,39 +45,40 @@ export PARENT_PATH_PARAM="$(realpath "${BASH_SOURCE[0]}")" && INIT_CONF="$(dirna
 
 
 #####################################################################################################################################################################################################
-# Parse input parameters
+# Process input parameters
 #####################################################################################################################################################################################################
-log_trace "Parsing input parameters"
-FILENAME="$1"
-if [[ "${FILENAME}" == "" ]]; then
-    echo "Error, Input file name not specified. Exiting..."
-    exit 1
+log_trace "Process input parameters"
+dest="./dest"
+src="./source"
+
+if [[ "$1" != "" ]]; then
+  log_trace "Evaluate Input Parameters"
+  test "$2" && dest="$2"
+  test "$1" && src="$1"
 fi
+log_trace "Source: ${src}, Destination: ${dest}"
 
 
 #####################################################################################################################################################################################################
-# Perform Debug Specific Actions
+# Perform rsync
 #####################################################################################################################################################################################################
-log_debug "Perform Debug Specific Actions"
-if [[ ${DEBUG} == "${TRUE}" ]]; then
-    BACKUP_FILE="${DIRNAME}/.${BASENAME}-BAK"
-    if [[ ! -f "${TARGET_FILE}" && ! -f "${BACKUP_FILE}" ]]; then
-        echo "Error: Neither Input File or Backup File are valid, non-empty files.  Exiting"
-        exit 2
-    elif [[ ! -f "${TARGET_FILE}" && -f "${BACKUP_FILE}" ]]; then
-        echo "Warning: Restoring Target File: ${TARGET_FILE} from Backup File: ${BACKUP_FILE}"
-        cp -a "${BACKUP_FILE}" "${TARGET_FILE}"
-    else
-        echo "Updating Backup File: ${BACKUP_FILE} from Target File: ${TARGET_FILE}"
-        cp -a "${TARGET_FILE}" "${BACKUP_FILE}"
-    fi
-fi
+log_trace "Performing rsync from ${src} to ${dest}"
+log_debug "rsync -a --safe-links \"${src}/\" \"${dest}/\""
+rsync -a --safe-links "${src}"/ "${dest}"/ ; SUCCESS="$?"
+[[ "${SUCCESS}" != "${TRUE}" ]] && log_fatal "Rsync failed with status ${SUCCESS}"
+log_info "Rsync completed with status ${SUCCESS}"
 
 
 #####################################################################################################################################################################################################
-# Update Last Modified Date of Target File
+# Validate rsync Transfer
 #####################################################################################################################################################################################################
-log_trace "Update Last Modified Date of Target File"
-sed -i "" -e "s/^[[:space:]]*#[[:space:]]*Last[[:space:]]*Modified:[[:space:]]*[0-9.:_-]*[[:space:]]*[A-Z]*[[:space:]]*[#]*$/# Last Modified: $(date "+%F %T %Z")/g" "${TARGET_FILE}"
+log_trace "Validate rsync Transfer"
+abs_src="$(realpath -- "${src}")"
+while read -r filename; do
+  target="$(target="$(readlink -f -- "${filename}")" && echo "${target%/*}")"
+  while [[ $target && ( ! $abs_src -ef "${target}" ) ]]; do target="${target%/*}"; done
+  test ! "${target}" && rsync -aL "${filename}" "${filename/$src/$dest}"
+done <<< "$(find "${src}" -type l)"
+log_trace "Rsync completed successfully"
 
 exit $(( TRUE ))

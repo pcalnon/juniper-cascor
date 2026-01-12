@@ -6,27 +6,28 @@
 # Purpose:       Monitoring and Diagnostic Frontend for Cascade Correlation Neural Network
 #
 # Author:        Paul Calnon
-# Version:       0.1.4 (0.7.3)
-# File Name:     last_mod_update.bash
+# Version:       1.0.0
+# File Name:     get_todo_comments.bash
 # File Path:     <Project>/<Sub-Project>/<Application>/util/
 #
 # Date:          2025-12-03
-# Last Modified: 2026-01-03
+# Last Modified: 2026-01-04
 #
 # License:       MIT License
 # Copyright:     Copyright (c) 2024,2025,2026 Paul Calnon
 #
 # Description:
-#     This script returns the ages of the current git branches.  Help to identify orphaned branches, etc.
+#     This script collects Descriptions associated with all TODO Comments in the Juniper python project code base
 #
 #####################################################################################################################################################################################################
 # Notes:
 #
-########################################################################################################)#############################################################################################
+#####################################################################################################################################################################################################
 # References:
 #
 #####################################################################################################################################################################################################
 # TODO:
+#     - Move this to a fn config file
 #
 #####################################################################################################################################################################################################
 # COMPLETED:
@@ -35,7 +36,7 @@
 
 
 #####################################################################################################################################################################################################
-# Initialize script by sourcing the init_conf.bash config file
+# Source script config file
 #####################################################################################################################################################################################################
 set -o functrace
 # shellcheck disable=SC2155
@@ -45,39 +46,59 @@ export PARENT_PATH_PARAM="$(realpath "${BASH_SOURCE[0]}")" && INIT_CONF="$(dirna
 
 
 #####################################################################################################################################################################################################
-# Parse input parameters
+# Process Script's Command Line Argument(s)
+#     usage 1 "Error: Invalid command line params: \"${@}\"\n"
 #####################################################################################################################################################################################################
-log_trace "Parsing input parameters"
-FILENAME="$1"
-if [[ "${FILENAME}" == "" ]]; then
-    echo "Error, Input file name not specified. Exiting..."
-    exit 1
+log_trace "Process Script's Command Line Argument(s)"
+if [[ "$1" != "" ]]; then
+    [[ "$1" == "${HELP_SHORT}" || "$1" == "${HELP_LONG}" ]] && usage $(( TRUE )) || SEARCH_TERM="$1"
+else
+    [[ "${DEBUG}" == "${TRUE}" ]] && SEARCH_TERM="${SEARCH_TERM_DEFAULT}" || usage
 fi
 
 
 #####################################################################################################################################################################################################
-# Perform Debug Specific Actions
+# Sanitize Inputs
 #####################################################################################################################################################################################################
-log_debug "Perform Debug Specific Actions"
-if [[ ${DEBUG} == "${TRUE}" ]]; then
-    BACKUP_FILE="${DIRNAME}/.${BASENAME}-BAK"
-    if [[ ! -f "${TARGET_FILE}" && ! -f "${BACKUP_FILE}" ]]; then
-        echo "Error: Neither Input File or Backup File are valid, non-empty files.  Exiting"
-        exit 2
-    elif [[ ! -f "${TARGET_FILE}" && -f "${BACKUP_FILE}" ]]; then
-        echo "Warning: Restoring Target File: ${TARGET_FILE} from Backup File: ${BACKUP_FILE}"
-        cp -a "${BACKUP_FILE}" "${TARGET_FILE}"
-    else
-        echo "Updating Backup File: ${BACKUP_FILE} from Target File: ${TARGET_FILE}"
-        cp -a "${TARGET_FILE}" "${BACKUP_FILE}"
+log_trace "Sanitize Inputs"
+DASHES=$(echo "${SEARCH_TERM}" | grep -e '^-.*')
+if [[ ${DASHES} != "" ]]; then
+    SEARCH_TERM="\\${SEARCH_TERM}"
+    log_debug  "Sanitized SEARCH_TERM Input: ${SEARCH_TERM}"
+fi
+
+
+#####################################################################################################################################################################################################
+# Search for a specific TODO reference in source code
+#####################################################################################################################################################################################################
+log_trace "Search for a specific TODO reference in source code"
+while read -r i; do
+    SOURCE_FILE=$(echo "${i}" | grep "\.${SRC_FILE_SUFFIX}\$")
+    [[ "${SOURCE_FILE}" != "" ]] && SOURCE_FILE=$(echo "${SOURCE_FILE}" | grep -v "${INIT_PYTHON_FILE}")
+	if [[ "${SOURCE_FILE}" != "" ]]; then
+        if [[ -f "${SOURCE_FILE}" ]]; then
+            FOUND=$(cat "${SOURCE_FILE}" | grep "${SEARCH_TERM}")
+            if [[ "${FOUND}" != "" ]]; then
+                FOUND_COUNT="$((FOUND_COUNT + 1))"
+                if [[ "${DEBUG}" == "${TRUE}" || "${FULL_OUTPUT}" == "${TRUE}" ]]; then
+                    echo -ne "${SOURCE_FILE}\n${FOUND}\n\n"
+                fi
+            else
+                DONE_COUNT="$((DONE_COUNT + 1))"
+                if [[ "${FULL_OUTPUT}" == "${TRUE}" && "${DEBUG}" == "${TRUE}" ]]; then
+                    echo -ne "${SOURCE_FILE}\n\tNot Found: **********************\n\n"
+                fi
+            fi
+        fi
     fi
-fi
+done <<< "$(find "${SRC_DIR}" -type f)"
 
 
 #####################################################################################################################################################################################################
-# Update Last Modified Date of Target File
+# Display Results
 #####################################################################################################################################################################################################
-log_trace "Update Last Modified Date of Target File"
-sed -i "" -e "s/^[[:space:]]*#[[:space:]]*Last[[:space:]]*Modified:[[:space:]]*[0-9.:_-]*[[:space:]]*[A-Z]*[[:space:]]*[#]*$/# Last Modified: $(date "+%F %T %Z")/g" "${TARGET_FILE}"
+echo "Search Term: \"${SEARCH_TERM}\""
+echo "Found in Files: ${FOUND_COUNT}"
+echo "Files Complete: ${DONE_COUNT}"
 
-exit $(( TRUE ))
+return $(( TRUE ))

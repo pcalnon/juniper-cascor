@@ -1,0 +1,405 @@
+---
+#####################################################################################################################################################################################################
+# Project:       Juniper
+# Sub-Project:   JuniperCanopy
+# Application:   juniper_canopy
+# Purpose:       Monitoring and Diagnostics for CasCor NN
+
+# Author:        Paul Calnon
+# Version:       0.1.4 (0.7.3)
+# File Name:     app_config.yaml
+# File Path:     <Project>/<Sub-Project>/<Application>/conf/
+#
+# Date:          2025-10-11
+# Last Modified: 2026-01-02
+#
+# License:       MIT License
+# Copyright:     Copyright (c) 2024,2025,2026 Paul Calnon
+#
+# Description:
+#    This file contains the configuration settings for the Juniper prototype
+#    Frontend application to monitor the Cascade Correlation Neural Network
+#    including training, state, and architecture.
+#
+#####################################################################################################################################################################################################
+# Notes:
+#
+#   Juniper Canopy Application Configuration
+#   This file contains all configuration parameters for the CasCor
+#   frontend application
+#
+#####################################################################################################################################################################################################
+# References:
+#
+#####################################################################################################################################################################################################
+# TODO :
+#
+#####################################################################################################################################################################################################
+# COMPLETED:
+#
+#####################################################################################################################################################################################################
+
+application:
+  name: Juniper Canopy
+  version: 0.1.0
+  description: Real-time monitoring frontend for CasCor neural networks
+
+  # Server configuration
+  server:
+    host: 127.0.0.1
+    port: 8050
+    debug: true
+    threaded: true
+    processes: 1
+
+  # Environment settings
+  environment: development  # development, testing, production
+
+# Logging configuration
+logging:
+  version: 1
+
+  # Global settings
+  global:
+    log_directory: logs/
+    max_file_size_mb: 500
+    backup_count: 5
+    date_format: "%Y-%m-%d %H:%M:%S"
+
+  # Console logging configuration
+  console:
+    enabled: true
+    # level: INFO
+    level: DEBUG
+    colored: true
+    format: >-
+      [%(asctime)s] | (%(funcName)s:%(lineno)d) | [%(levelname)s]> | %(message)s
+
+  # File logging configuration
+  file:
+    enabled: true
+    level: DEBUG
+    format: >-
+      [%(asctime)s] | %(name)s | (%(funcName)s:%(lineno)d)
+      | [%(levelname)s] | %(message)s
+    json_format: false
+    structured_fields:
+      - timestamp
+      - logger_name
+      - function_name
+      - line_number
+      - level
+      - message
+      - context_data
+
+  # Category-specific settings
+  categories:
+    training:
+      # console_level: INFO
+      console_level: DEBUG
+      file_level: DEBUG
+      metrics_logging: true
+
+    ui:
+      # console_level: WARNING
+      console_level: DEBUG
+      file_level: INFO
+      interaction_tracking: true
+
+    system:
+      # console_level: ERROR
+      console_level: DEBUG
+      file_level: DEBUG
+      performance_monitoring: true
+
+    communication:
+      # console_level: WARNING
+      console_level: DEBUG
+      file_level: DEBUG
+      connection_tracking: true
+
+  # Log rotation settings
+  rotation:
+    when: midnight
+    interval: 1
+    backup_count: 30
+    compress: true
+
+  # Remote logging (optional)
+  remote:
+    enabled: false
+    endpoint: http://log-aggregator:8080/logs
+    api_key: "${LOG_API_KEY}"
+    batch_size: 100
+    flush_interval: 30
+
+# Training parameter constraints
+training:
+  # Training parameters with min/max/default values
+  parameters:
+    epochs:
+      min: 10
+      max: 1000
+      default: 500  # Override: increased from constant default (200) for longer training runs
+      description: Number of training epochs to run
+      modifiable_during_training: true
+
+    learning_rate:
+      min: 0.0001
+      max: 1.0
+      default: 0.01
+      description: Learning rate for training algorithm
+      modifiable_during_training: true
+
+    hidden_units:
+      min: 0
+      max: 100  # Override: increased from constant max (20) for complex networks
+      default: 40  # Override: increased from constant default (10) for better capacity
+      description: Maximum number of hidden units to add
+      modifiable_during_training: false
+
+  # Training behavior
+  behavior:
+    auto_save_checkpoints: true
+    checkpoint_interval_epochs: 50
+    early_stopping_enabled: false
+    early_stopping_patience: 10
+
+  # Training monitoring
+  monitoring:
+    metrics_update_interval_ms: 1000
+    stats_update_interval_ms: 5000
+    log_frequency_epochs: 1
+
+# Frontend component configuration
+frontend:
+  # Dashboard settings
+  dashboard:
+    title: CasCor Training Monitor
+    # plotly, plotly_white, plotly_dark, ggplot2, seaborn, simple_white
+    theme: plotly_dark
+    update_interval_ms: 1000  # Milliseconds between automatic updates
+    max_data_points: 10000  # Maximum data points to display
+
+  # Training metrics visualization
+  training_metrics:
+    enabled: true
+    buffer_size: 5000
+    update_frequency_hz: 10
+    smoothing_window: 10
+    auto_scale: true
+    export_enabled: true
+
+    # Plot configuration
+    plots:
+      loss_curve:
+        enabled: true
+        color: "#1f77b4"
+        line_width: 2
+        show_validation: true
+
+      accuracy_plot:
+        enabled: true
+        color: "#ff7f0e"
+        line_width: 2
+        show_validation: true
+
+      combined_view:
+        enabled: true
+        dual_axis: true
+
+  # Network topology visualization
+  network_topology:
+    enabled: true
+    layout_algorithm: spring  # spring, circular, random, shell
+    node_size_range: [10, 50]
+    edge_width_range: [1, 10]
+    color_scheme: category10
+    animation_enabled: true
+    3d_view_enabled: false
+
+    # Node styling
+    node_colors:
+      input: "#2ca02c"
+      hidden: "#1f77b4"
+      output: "#ff7f0e"
+      cascade: "#d62728"
+
+  # Decision boundary visualization
+  decision_boundary:
+    enabled: true
+    resolution: 100
+    opacity: 0.7
+    contour_levels: 20
+    color_scale: Viridis
+    show_data_points: true
+    show_misclassified: true
+
+  # Dataset visualization
+  dataset:
+    enabled: true
+    max_display_points: 10000
+    scatter_size: 5
+    color_palette: Set1
+    show_distributions: true
+    show_correlations: true
+
+  # Configuration panel
+  config_panel:
+    enabled: true
+    collapsible_sections: true
+    real_time_validation: true
+    save_presets: true
+
+# Backend integration configuration
+backend:
+  # CasCor network integration
+  cascor_integration:
+    enabled: true
+    monitoring_hooks: true
+    state_polling_interval_ms: 500
+    # backend_path: ~/Development/python/JuniperCanopy/juniper_cascor
+    backend_path: ~/Development/python/JuniperCascor/juniper_cascor
+
+  # Communication settings
+  communication:
+    websocket:
+      enabled: true
+      max_connections: 50
+      heartbeat_interval: 30
+      reconnect_attempts: 5
+      reconnect_delay: 2
+
+    rest_api:
+      enabled: true
+      base_url: http://localhost:8000
+      timeout: 30
+      retry_attempts: 3
+
+  # Data caching
+  cache:
+    enabled: true
+    type: redis  # redis, memory
+    redis_url: redis://localhost:6379/0
+    ttl_seconds: 3600
+    max_memory_mb: 100
+
+# Performance settings
+performance:
+  # Resource limits
+  memory:
+    max_usage_mb: 1000
+    gc_threshold: 800
+    warning_threshold: 700
+
+  # CPU usage
+  max_cpu_percent: 50
+  monitoring_interval: 10
+
+  # Network performance
+  max_bandwidth_kbps: 1000
+  compression_enabled: true
+
+  # Rendering performance
+  max_render_time_ms: 2000
+  frame_rate_limit: 30
+  progressive_rendering: true
+
+# Data management
+data:
+  # Dataset handling
+  datasets:
+    max_file_size_mb: 500
+    supported_formats: [csv, json, npy, h5]
+    auto_preprocessing: true
+
+  # Export settings
+  exports:
+    enabled: true
+    formats: [png, svg, pdf, html, json]
+    quality: high
+
+  # Storage settings
+  storage:
+    data_directory: data/
+    temp_directory: temp/
+    cleanup_interval_hours: 24
+
+# Security settings
+security:
+  # Authentication (optional)
+  authentication:
+    enabled: false
+    method: jwt  # jwt, session
+    secret_key: "${JWT_SECRET_KEY}"
+    token_expiry_hours: 24
+
+  # CORS settings
+  cors:
+    enabled: true
+    allowed_origins: >
+      - http://localhost:*
+      - http://127.0.0.1:*
+    allowed_methods: [GET, POST, PUT, DELETE]
+    allowed_headers: [Content-Type, Authorization]
+
+  # Rate limiting
+  rate_limiting:
+    enabled: false
+    requests_per_minute: 100
+    burst_size: 10
+
+# Development settings
+development:
+  # Hot reloading
+  hot_reload: true
+  auto_restart: true
+
+  # Debug features
+  debug_mode: true
+  profiling_enabled: false
+  mock_data_enabled: false
+
+  # Testing
+  testing:
+    enabled: true
+    coverage_threshold: 0.9
+    performance_tests: true
+
+# Deployment settings
+deployment:
+  # Docker configuration
+  docker:
+    enabled: false
+    image_name: juniper_canopy
+    tag: latest
+    port_mapping: 8050:8050
+
+  # Production settings
+  production:
+    workers: 4
+    worker_class: uvicorn.workers.UvicornWorker
+    max_requests: 1000
+    max_requests_jitter: 100
+    timeout: 120
+
+# Feature flags
+features:
+  # Experimental features
+  experimental:
+    3d_visualization: false
+    real_time_collaboration: false
+    advanced_analytics: false
+
+  # Beta features
+  beta:
+    gpu_acceleration: false
+    cloud_integration: false
+    custom_themes: true
+
+# Environment variable substitution patterns.  Use ${VAR_NAME} or ${VAR_NAME:default_value} syntax
+environment_variables:
+  - JWT_SECRET_KEY
+  - LOG_API_KEY
+  - REDIS_URL
+  - CASCOR_BACKEND_URL

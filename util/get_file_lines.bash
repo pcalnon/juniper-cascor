@@ -6,8 +6,8 @@
 # Purpose:       Monitoring and Diagnostic Frontend for Cascade Correlation Neural Network
 #
 # Author:        Paul Calnon
-# Version:       0.1.4 (0.7.3)
-# File Name:     last_mod_update.bash
+# Version:       1.0.0
+# File Name:     get_file_lines.bash
 # File Path:     <Project>/<Sub-Project>/<Application>/util/
 #
 # Date:          2025-12-03
@@ -17,16 +17,16 @@
 # Copyright:     Copyright (c) 2024,2025,2026 Paul Calnon
 #
 # Description:
-#     This script returns the ages of the current git branches.  Help to identify orphaned branches, etc.
+#     This script is used to get the number of lines in a file.
 #
 #####################################################################################################################################################################################################
 # Notes:
 #
-########################################################################################################)#############################################################################################
+#####################################################################################################################################################################################################
 # References:
 #
 #####################################################################################################################################################################################################
-# TODO:
+# TODO :
 #
 #####################################################################################################################################################################################################
 # COMPLETED:
@@ -35,7 +35,7 @@
 
 
 #####################################################################################################################################################################################################
-# Initialize script by sourcing the init_conf.bash config file
+# Source script config file
 #####################################################################################################################################################################################################
 set -o functrace
 # shellcheck disable=SC2155
@@ -45,39 +45,27 @@ export PARENT_PATH_PARAM="$(realpath "${BASH_SOURCE[0]}")" && INIT_CONF="$(dirna
 
 
 #####################################################################################################################################################################################################
-# Parse input parameters
+# Calculate lines in each file
 #####################################################################################################################################################################################################
-log_trace "Parsing input parameters"
-FILENAME="$1"
-if [[ "${FILENAME}" == "" ]]; then
-    echo "Error, Input file name not specified. Exiting..."
-    exit 1
-fi
+for i in $(${GET_FILENAMES_SCRIPT_NAME}); do
+  export TOTAL_FILES=$(( TOTAL_FILES + 1 ))
+  # shellcheck disable=SC2155
+  export CURRENT_LINES="$(cat "${i}" | wc -l)"
+  export TOTAL_LINES=$(( TOTAL_LINES + CURRENT_LINES ))
+  # shellcheck disable=SC2155
+  export CURRENT_TODOS="$(${TODO_SEARCH_SCRIPT} "${i}")"
+  export TOTAL_TODOS=$(( TOTAL_TODOS + CURRENT_TODOS ))
+  # shellcheck disable=SC2155
+  export CURRENT_SIZE="$(du -sh "${i}")"
+  echo -ne "File: ${i}\tLines: ${CURRENT_LINES}\tTODOs: ${CURRENT_TODOS}"
+done
 
 
 #####################################################################################################################################################################################################
-# Perform Debug Specific Actions
+# Display Results Summary
 #####################################################################################################################################################################################################
-log_debug "Perform Debug Specific Actions"
-if [[ ${DEBUG} == "${TRUE}" ]]; then
-    BACKUP_FILE="${DIRNAME}/.${BASENAME}-BAK"
-    if [[ ! -f "${TARGET_FILE}" && ! -f "${BACKUP_FILE}" ]]; then
-        echo "Error: Neither Input File or Backup File are valid, non-empty files.  Exiting"
-        exit 2
-    elif [[ ! -f "${TARGET_FILE}" && -f "${BACKUP_FILE}" ]]; then
-        echo "Warning: Restoring Target File: ${TARGET_FILE} from Backup File: ${BACKUP_FILE}"
-        cp -a "${BACKUP_FILE}" "${TARGET_FILE}"
-    else
-        echo "Updating Backup File: ${BACKUP_FILE} from Target File: ${TARGET_FILE}"
-        cp -a "${TARGET_FILE}" "${BACKUP_FILE}"
-    fi
-fi
+echo "Search Term: \"${SEARCH_TERM}\""
+echo "Found in Files: ${FOUND_COUNT}"
+echo "Files Complete: ${DONE_COUNT}"
 
-
-#####################################################################################################################################################################################################
-# Update Last Modified Date of Target File
-#####################################################################################################################################################################################################
-log_trace "Update Last Modified Date of Target File"
-sed -i "" -e "s/^[[:space:]]*#[[:space:]]*Last[[:space:]]*Modified:[[:space:]]*[0-9.:_-]*[[:space:]]*[A-Z]*[[:space:]]*[#]*$/# Last Modified: $(date "+%F %T %Z")/g" "${TARGET_FILE}"
-
-exit $(( TRUE ))
+[[ "${DEBUG}" == "${TRUE}" ]] && exit $(( TRUE )) || return $(( TRUE ))

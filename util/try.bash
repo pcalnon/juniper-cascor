@@ -54,14 +54,15 @@ export FALSE="1" # trunk-ignore(shellcheck/SC2034)
 DEBUG="${TRUE}"
 # DEBUG="${FALSE}"
 
-CURRENT_SCRIPT="prototypes/cascor/util/try.bash:"
+# CURRENT_SCRIPT="prototypes/cascor/util/try.bash:"
 
 #####################################################################################################
 # Define Global Functions
 ####################################################################################################
 # Define local Functions
 function get_script_path() {
-	local source="${BASH_SOURCE[0]}"
+	# local source="${BASH_SOURCE[0]}"
+	local source="realpath ${BASH_SOURCE[0]}"
 	while [[ -L ${source} ]]; do
 		# local dir="$(cd -P "$(dirname "${source}")" && pwd)"
 		local dir
@@ -76,7 +77,8 @@ function get_script_path() {
 export -f get_script_path
 
 ####################################################################################################
-export CURRENT_SCRIPT="prototypes/cascor/util/try.bash:"
+# export CURRENT_SCRIPT="prototypes/cascor/util/try.bash:"
+export CURRENT_SCRIPT="juniper_canopy/util/try.bash:"
 
 
 ####################################################################################################

@@ -1,0 +1,1 @@
+[0;97;41m(2026-01-12_08:48:39) common_functions.conf:(133): validate_conf_file:     [CRITICAL]  Error: Config File: "/home/pcalnon/Development/python/Juniper/JuniperCascor/juniper_cascor/conf/__git_log_weeks.conf" is empty or does not exist[0m

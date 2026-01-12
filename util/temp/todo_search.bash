@@ -7,17 +7,17 @@
 #
 # Author:        Paul Calnon
 # Version:       0.1.4 (0.7.3)
-# File Name:     last_mod_update.bash
-# File Path:     <Project>/<Sub-Project>/<Application>/util/
+# File Name:     todo_search.bash
+# File Path:     <Project>/<Sub-Project>/<Application>/conf/
 #
-# Date:          2025-12-03
-# Last Modified: 2026-01-03
+# Date:          2025-10-11
+# Last Modified: 2026-01-02
 #
 # License:       MIT License
 # Copyright:     Copyright (c) 2024,2025,2026 Paul Calnon
 #
 # Description:
-#     This script returns the ages of the current git branches.  Help to identify orphaned branches, etc.
+#     This script files in the source directory of the current project for a specific search term and then displays the number of files that do and do not contain the search term.
 #
 #####################################################################################################################################################################################################
 # Notes:
@@ -26,7 +26,7 @@
 # References:
 #
 #####################################################################################################################################################################################################
-# TODO:
+# TODO :
 #
 #####################################################################################################################################################################################################
 # COMPLETED:
@@ -35,7 +35,7 @@
 
 
 #####################################################################################################################################################################################################
-# Initialize script by sourcing the init_conf.bash config file
+# Source script config file
 #####################################################################################################################################################################################################
 set -o functrace
 # shellcheck disable=SC2155
@@ -45,39 +45,69 @@ export PARENT_PATH_PARAM="$(realpath "${BASH_SOURCE[0]}")" && INIT_CONF="$(dirna
 
 
 #####################################################################################################################################################################################################
-# Parse input parameters
+# Process Script's Command Line Argument(s)
 #####################################################################################################################################################################################################
-log_trace "Parsing input parameters"
-FILENAME="$1"
-if [[ "${FILENAME}" == "" ]]; then
-    echo "Error, Input file name not specified. Exiting..."
-    exit 1
-fi
-
-
-#####################################################################################################################################################################################################
-# Perform Debug Specific Actions
-#####################################################################################################################################################################################################
-log_debug "Perform Debug Specific Actions"
-if [[ ${DEBUG} == "${TRUE}" ]]; then
-    BACKUP_FILE="${DIRNAME}/.${BASENAME}-BAK"
-    if [[ ! -f "${TARGET_FILE}" && ! -f "${BACKUP_FILE}" ]]; then
-        echo "Error: Neither Input File or Backup File are valid, non-empty files.  Exiting"
-        exit 2
-    elif [[ ! -f "${TARGET_FILE}" && -f "${BACKUP_FILE}" ]]; then
-        echo "Warning: Restoring Target File: ${TARGET_FILE} from Backup File: ${BACKUP_FILE}"
-        cp -a "${BACKUP_FILE}" "${TARGET_FILE}"
+log_trace "Process Script's Command Line Argument(s)"
+if [[ "$1" != "" ]]; then
+    if [[ "$1" == "${HELP_SHORT}" || "$1" == "${HELP_LONG}" ]]; then
+        usage 0
     else
-        echo "Updating Backup File: ${BACKUP_FILE} from Target File: ${TARGET_FILE}"
-        cp -a "${TARGET_FILE}" "${BACKUP_FILE}"
+        SEARCH_TERM="$1"
+    fi
+else
+    if [[ "${DEBUG}" == "${TRUE}" ]]; then
+        SEARCH_TERM="${SEARCH_TERM_DEFAULT}"
+    else
+        usage
     fi
 fi
 
 
 #####################################################################################################################################################################################################
-# Update Last Modified Date of Target File
+# Sanitize Inputs
 #####################################################################################################################################################################################################
-log_trace "Update Last Modified Date of Target File"
-sed -i "" -e "s/^[[:space:]]*#[[:space:]]*Last[[:space:]]*Modified:[[:space:]]*[0-9.:_-]*[[:space:]]*[A-Z]*[[:space:]]*[#]*$/# Last Modified: $(date "+%F %T %Z")/g" "${TARGET_FILE}"
+log_trace "Sanitizing Input Params for TODO search script"
+DASHES="$(echo "${SEARCH_TERM}" | grep -e '^-.*')"
+if [[ "${DASHES}" != "" ]]; then
+    SEARCH_TERM="\\${SEARCH_TERM}"
+    log_debug "Sanitized SEARCH_TERM Input: ${SEARCH_TERM}"
+fi
+
+
+#####################################################################################################################################################################################################
+# Search for a specific TODO reference in source code
+#####################################################################################################################################################################################################
+log_trace "Search for a specific TODO reference in source code"
+DONE_COUNT=0
+FOUND_COUNT=0
+while read -r i; do
+    SOURCE_FILE="$(echo "${i}" | grep "\.${SRC_FILE_SUFFIX}\$")"
+    if [[ ${SOURCE_FILE} != "" ]]; then
+        SOURCE_FILE="$(echo "${SOURCE_FILE}" | grep -v "${INIT_PYTHON_FILE}")"
+        if [[ ( ${SOURCE_FILE} != "" ) && ( -f ${SOURCE_FILE} ) ]]; then
+            FOUND="$(cat "${SOURCE_FILE}" | grep "${SEARCH_TERM}")"
+            if [[ ${FOUND} != "" ]]; then
+                FOUND_COUNT="$((FOUND_COUNT + 1))"
+                if [[ ( "${DEBUG}" == "${TRUE}" ) || ( "${FULL_OUTPUT}" == "${TRUE}" ) ]]; then
+                    echo -ne "${SOURCE_FILE}\n${FOUND}\n\n"
+                fi
+            else
+                DONE_COUNT="$((DONE_COUNT + 1))"
+                if [[ ( "${FULL_OUTPUT}" == "${TRUE}" ) && ( "${DEBUG}" == "${TRUE}" ) ]]; then
+                    echo -ne "${SOURCE_FILE}\n\tNot Found: **********************\n\n"
+                fi
+            fi
+        fi
+    fi
+done < "$(find "${SRC_DIR}" -type f)"
+
+
+#####################################################################################################################################################################################################
+# Display Results
+#####################################################################################################################################################################################################
+log_trace "Display Results of TODO search"
+echo "Search Term: \"${SEARCH_TERM}\""
+echo "Found in Files: ${FOUND_COUNT}"
+echo "Files Complete: ${DONE_COUNT}"
 
 exit $(( TRUE ))

@@ -1,0 +1,110 @@
+{
+  "testing_123": {
+    "name": "testing_123",
+    "created": "2026-01-09T21:35:57.636602+00:00Z",
+    "description": "",
+    "selected_metrics": [
+      "loss",
+      "accuracy"
+    ],
+    "zoom_ranges": {},
+    "smoothing_window": 10,
+    "hyperparameters": {}
+  },
+  "test_layout": {
+    "name": "test_layout",
+    "created": "2026-01-12T10:33:31.321780+00:00Z",
+    "description": "Test layout",
+    "selected_metrics": [
+      "loss",
+      "accuracy"
+    ],
+    "zoom_ranges": {},
+    "smoothing_window": 10,
+    "hyperparameters": {}
+  },
+  "metrics_test_layout": {
+    "name": "metrics_test_layout",
+    "created": "2026-01-12T10:33:31.330383+00:00Z",
+    "description": "",
+    "selected_metrics": [
+      "loss",
+      "accuracy"
+    ],
+    "zoom_ranges": {},
+    "smoothing_window": 20,
+    "hyperparameters": {}
+  },
+  "get_test_layout": {
+    "name": "get_test_layout",
+    "created": "2026-01-12T10:33:31.337279+00:00Z",
+    "description": "",
+    "selected_metrics": [
+      "loss",
+      "accuracy"
+    ],
+    "zoom_ranges": {},
+    "smoothing_window": 10,
+    "hyperparameters": {}
+  },
+  "hyper_layout": {
+    "name": "hyper_layout",
+    "created": "2026-01-12T10:33:31.986925+00:00Z",
+    "description": "",
+    "selected_metrics": [
+      "loss",
+      "accuracy"
+    ],
+    "zoom_ranges": {},
+    "smoothing_window": 15,
+    "hyperparameters": {}
+  },
+  "smoothing_test_layout": {
+    "name": "smoothing_test_layout",
+    "created": "2026-01-12T10:33:31.997254+00:00Z",
+    "description": "",
+    "selected_metrics": [
+      "loss",
+      "accuracy"
+    ],
+    "zoom_ranges": {},
+    "smoothing_window": 25,
+    "hyperparameters": {}
+  },
+  "first_layout": {
+    "name": "first_layout",
+    "created": "2026-01-12T10:33:32.123704+00:00Z",
+    "description": "",
+    "selected_metrics": [
+      "loss",
+      "accuracy"
+    ],
+    "zoom_ranges": {},
+    "smoothing_window": 10,
+    "hyperparameters": {}
+  },
+  "second_layout": {
+    "name": "second_layout",
+    "created": "2026-01-12T10:33:32.125137+00:00Z",
+    "description": "",
+    "selected_metrics": [
+      "loss",
+      "accuracy"
+    ],
+    "zoom_ranges": {},
+    "smoothing_window": 10,
+    "hyperparameters": {}
+  },
+  "default_metrics_layout": {
+    "name": "default_metrics_layout",
+    "created": "2026-01-12T10:33:32.132949+00:00Z",
+    "description": "",
+    "selected_metrics": [
+      "loss",
+      "accuracy"
+    ],
+    "zoom_ranges": {},
+    "smoothing_window": 10,
+    "hyperparameters": {}
+  }
+}
