@@ -1,17 +1,17 @@
 #!/usr/bin/env bash
 #####################################################################################################################################################################################################
 # Project:       Juniper
-# Sub-Project:   JuniperCanopy
-# Application:   juniper_canopy
-# Purpose:       Monitoring and Diagnostic Frontend for Cascade Correlation Neural Network
+# Sub-Project:   JuniperCascor
+# Application:   juniper_cascor
+# Purpose:       Juniper Project Cascade Correlation Neural Network
 #
 # Author:        Paul Calnon
 # Version:       0.1.4 (0.7.3)
 # File Name:     last_mod_update.bash
 # File Path:     <Project>/<Sub-Project>/<Application>/util/
 #
-# Date:          2025-12-03
-# Last Modified: 2026-01-03
+# Date Created:  2025-12-03
+# Last Modified: 2026-01-12
 #
 # License:       MIT License
 # Copyright:     Copyright (c) 2024,2025,2026 Paul Calnon
@@ -78,6 +78,6 @@ fi
 # Update Last Modified Date of Target File
 #####################################################################################################################################################################################################
 log_trace "Update Last Modified Date of Target File"
-sed -i "" -e "s/^[[:space:]]*#[[:space:]]*Last[[:space:]]*Modified:[[:space:]]*[0-9.:_-]*[[:space:]]*[A-Z]*[[:space:]]*[#]*$/# Last Modified: $(date "+%F %T %Z")/g" "${TARGET_FILE}"
+sed -i "" -e "s/^[[:space:]]*#[[:space:]]*Last[[:space:]]*Modified:[[:space:]]*[0-9.:_-]*[[:space:]]*[A-Z]*[[:space:]]*[#]*$/# Last Modified: 2026-01-12
 
 exit $(( TRUE ))

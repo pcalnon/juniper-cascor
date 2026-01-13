@@ -33,5 +33,5 @@ if [[ ${DEBUG} == "${TRUE}" ]]; then
     fi 
 fi 
 
- # sed -i "" -e "s/^[[:space:]]*#[[:space:]]*Last[[:space:]]*Modified:[[:space:]]*[0-9.:_-]*[[:space:]]*[#]*$/# Last Modified: $(date "+%F %T %Z")/g" ${TARGET_FILE}
- sed -i "" -e "s/^[[:space:]]*#[[:space:]]*Last[[:space:]]*Modified:[[:space:]]*[0-9.:_-]*[[:space:]]*[A-Z]*[[:space:]]*[#]*$/# Last Modified: $(date "+%F %T %Z")/g" ${TARGET_FILE}
+ # sed -i "" -e "s/^[[:space:]]*#[[:space:]]*Last[[:space:]]*Modified:[[:space:]]*[0-9.:_-]*[[:space:]]*[#]*$/# Last Modified: 2026-01-12
+ sed -i "" -e "s/^[[:space:]]*#[[:space:]]*Last[[:space:]]*Modified:[[:space:]]*[0-9.:_-]*[[:space:]]*[A-Z]*[[:space:]]*[#]*$/# Last Modified: 2026-01-12

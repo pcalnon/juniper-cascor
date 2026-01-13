@@ -24,7 +24,9 @@
 
 ## Executive Summary
 
-This document consolidates enhancement plans from `P2_ENHANCEMENTS_PLAN.md` and `NEXT_STEPS.md`, adds critical bug fixes, and provides a prioritized roadmap for the Cascor prototype. The roadmap addresses serialization, multiprocessing, performance optimization, and architectural improvements.
+This document consolidates enhancement plans from `P2_ENHANCEMENTS_PLAN.md` and `NEXT_STEPS.md`.
+It adds critical bug fixes, and provides a prioritized roadmap for the Cascor prototype.
+The roadmap addresses serialization, multiprocessing, performance optimization, and architectural improvements.
 
 ---
 
@@ -51,7 +53,9 @@ This document consolidates enhancement plans from `P2_ENHANCEMENTS_PLAN.md` and 
 **Impact**: High - Breaks deterministic reproducibility tests
 
 **Description**:
-Two integration tests are failing due to incorrect module usage in the test helper method `_load_and_validate_network_helper()`.
+Two integration tests are failing due to incorrect module usage in the test helper method
+
+- `_load_and_validate_network_helper()`.
 
 **Root Cause**:
 

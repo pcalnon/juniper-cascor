@@ -1,28 +1,28 @@
 #!/usr/bin/env bash
 #####################################################################################################################################################################################################
 # Project:       Juniper
-# Sub-Project:   JuniperCanopy
-# Application:   juniper_canopy
-# Purpose:       Monitoring and Diagnostic Frontend for Cascade Correlation Neural Network
+# Sub-Project:   JuniperCascor
+# Application:   juniper_cascor
+# Purpose:       Juniper Project Cascade Correlation Neural Network
 #
 # Author:        Paul Calnon
 # Version:       0.1.4 (0.7.3)
 # File Name:     setup_environment.bash
 # File Path:     <Project>/<Sub-Project>/<Application>/util/
 #
-# Date:          2025-10-11
-# Last Modified: 2026-01-04
+# Date Created:  2025-10-11
+# Last Modified: 2026-01-12
 #
 # License:       MIT License
 # Copyright:     Copyright (c) 2024,2025,2026 Paul Calnon
 #
 # Description:
-#    This script sets up the development environment for the Juniper Canopy application.
+#    This script sets up the development environment for the Juniper Cascor application.
 #
 #####################################################################################################################################################################################################
 # Notes:
-#     Juniper Canopy Environment Setup Script
-#     This script sets up the development environment for the Juniper Canopy application
+#     Juniper Cascor Environment Setup Script
+#     This script sets up the development environment for the Juniper Cascor application
 #
 ########################################################################################################)#############################################################################################
 # References:
@@ -270,7 +270,7 @@ log_trace "Creating test script..."
 cat >test_setup.py <<'EOF'
 #!/usr/bin/env python3
 """
-Simple test script to verify Juniper Canopy setup
+Simple test script to verify Juniper Cascor setup
 """
 
 import sys
@@ -332,7 +332,7 @@ def test_directories():
 
 def main():
     print("=" * 50)
-    print("Juniper Canopy Setup Verification")
+    print("Juniper Cascor Setup Verification")
     print("=" * 50)
     print(f"Python version: {sys.version}")
     print(f"Test time: {datetime.now()}")
@@ -392,7 +392,7 @@ log_info "Setup completed successfully!"
 
 echo "Setup completed successfully!"
 echo
-echo "To start working with the Juniper Canopy:"
+echo "To start working with the Juniper Cascor:"
 echo "1. Activate the environment: conda activate ${ENV_NAME}"
 echo "2. Navigate to project directory: cd ${PROJECT_DIR}"
 echo "3. Start development server: python -m src.main"

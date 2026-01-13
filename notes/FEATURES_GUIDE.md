@@ -6,6 +6,10 @@
 
 ---
 
+> **⚠️ Thread Safety Warning**: The `CascadeCorrelationNetwork` class is NOT thread-safe. Do not share network instances between threads without proper synchronization. For concurrent training, create separate network instances per thread.
+
+---
+
 ## Table of Contents
 
 1. [HDF5 Serialization](#hdf5-serialization)

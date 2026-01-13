@@ -21,10 +21,10 @@ All planned enhancements from `CASCOR_ENHANCEMENTS_ROADMAP.md` have been either:
 
 ### P0: Critical Bugs
 
-| ID | Enhancement | Status | Time |
-|----|-------------|--------|------|
-| BUG-001 | Test Random State Restoration | ✅ FIXED | 30m |
-| BUG-002 | Logger Pickling Error | ✅ FIXED | 1h |
+| ID      | Enhancement                   | Status   | Time |
+| ------- | ----------------------------- | -------- | ---- |
+| BUG-001 | Test Random State Restoration | ✅ FIXED | 30m  |
+| BUG-002 | Logger Pickling Error         | ✅ FIXED | 1h   |
 
 **Total P0 Time**: 1.5 hours
 
@@ -32,13 +32,13 @@ All planned enhancements from `CASCOR_ENHANCEMENTS_ROADMAP.md` have been either:
 
 ### P1: High Priority
 
-| ID | Enhancement | Status | Notes |
-|----|-------------|--------|-------|
-| ENH-001 | Comprehensive Test Suite | ✅ IMPLEMENTED | 6 new tests created |
-| ENH-002 | Hidden Units Checksums | ✅ ALREADY DONE | Found in existing code |
-| ENH-003 | Shape Validation | ✅ ALREADY DONE | Found in existing code |
-| ENH-004 | Format Validation | ✅ ALREADY DONE | Found in existing code |
-| ENH-005 | Candidate Factory | ✅ ALREADY DONE | Factory method exists |
+| ID      | Enhancement              | Status          | Notes                  |
+| ------- | ------------------------ | --------------- | ---------------------- |
+| ENH-001 | Comprehensive Test Suite | ✅ IMPLEMENTED  | 6 new tests created    |
+| ENH-002 | Hidden Units Checksums   | ✅ ALREADY DONE | Found in existing code |
+| ENH-003 | Shape Validation         | ✅ ALREADY DONE | Found in existing code |
+| ENH-004 | Format Validation        | ✅ ALREADY DONE | Found in existing code |
+| ENH-005 | Candidate Factory        | ✅ ALREADY DONE | Factory method exists  |
 
 **Total P1 Time**: 2 hours (test suite creation)
 
@@ -46,11 +46,11 @@ All planned enhancements from `CASCOR_ENHANCEMENTS_ROADMAP.md` have been either:
 
 ### P2: Medium Priority
 
-| ID | Enhancement | Status | Notes |
-|----|-------------|--------|-------|
-| ENH-006 | Flexible Optimizer | ✅ ALREADY DONE | _create_optimizer exists |
-| ENH-007 | N-Best Selection | ✅ ALREADY DONE | _select_best_candidates exists |
-| ENH-008 | Worker Cleanup | ✅ ENHANCED | Added better logging |
+| ID      | Enhancement        | Status          | Notes                          |
+| ------- | ------------------ | --------------- | ------------------------------ |
+| ENH-006 | Flexible Optimizer | ✅ ALREADY DONE | _create_optimizer exists       |
+| ENH-007 | N-Best Selection   | ✅ ALREADY DONE | _select_best_candidates exists |
+| ENH-008 | Worker Cleanup     | ✅ ENHANCED     | Added better logging           |
 
 **Total P2 Time**: 30m (enhancement to worker cleanup)
 

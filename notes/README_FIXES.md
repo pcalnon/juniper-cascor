@@ -93,14 +93,14 @@ restored.grow_network(x_train, y_train, max_epochs=50)  # Continues from saved s
 
 ## Files Modified
 
-| File | P0 Changes | P1 Changes | Total Changes |
-|------|------------|------------|---------------|
-| cascade_correlation.py | 6 | 5 | 11 |
-| candidate_unit.py | 8 | 3 | 11 |
-| snapshot_serializer.py | 0 | 5 | 5 |
-| snapshot_common.py | 1 | 2 | 3 |
-| utils.py | 1 | 0 | 1 |
-| **Total** | **16** | **15** | **31** |
+| File                   | P0 Changes | P1 Changes | Total Changes |
+| ---------------------- | ---------- | ---------- | ------------- |
+| cascade_correlation.py | 6          | 5          | 11            |
+| candidate_unit.py      | 8          | 3          | 11            |
+| snapshot_serializer.py | 0          | 5          | 5             |
+| snapshot_common.py     | 1          | 2          | 3             |
+| utils.py               | 1          | 0          | 1             |
+| **Total**              | **16**     | **15**     | **31**        |
 
 ---
 

@@ -5,11 +5,11 @@
 # Author:        Paul Calnon
 # Version:       1.3.1 (0.7.3)
 #
-# Date:          2025-06-11
-# Last Modified: 2025-12-08
+# Date Created:  2025-06-11
+# Last Modified: 2026-01-12
 #
 # License:       MIT License
-# Copyright:     Copyright (c) 2024-2025 Paul Calnon
+# Copyright:     Copyright (c) 2024, 2025, 2026 Paul Calnon
 #
 # Description:
 #    Cascade Correlation Neural Network with N-Spiral Dataset Generator.

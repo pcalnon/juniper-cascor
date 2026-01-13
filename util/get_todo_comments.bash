@@ -1,17 +1,17 @@
 #!/usr/bin/env bash
 #####################################################################################################################################################################################################
 # Project:       Juniper
-# Sub-Project:   JuniperCanopy
-# Application:   juniper_canopy
-# Purpose:       Monitoring and Diagnostic Frontend for Cascade Correlation Neural Network
+# Sub-Project:   JuniperCascor
+# Application:   juniper_cascor
+# Purpose:       Juniper Project Cascade Correlation Neural Network
 #
 # Author:        Paul Calnon
 # Version:       1.0.0
 # File Name:     get_todo_comments.bash
 # File Path:     <Project>/<Sub-Project>/<Application>/util/
 #
-# Date:          2025-12-03
-# Last Modified: 2026-01-04
+# Date Created:  2025-12-03
+# Last Modified: 2026-01-12
 #
 # License:       MIT License
 # Copyright:     Copyright (c) 2024,2025,2026 Paul Calnon
@@ -26,8 +26,7 @@
 # References:
 #
 #####################################################################################################################################################################################################
-# TODO:
-#     - Move this to a fn config file
+# TODO :
 #
 #####################################################################################################################################################################################################
 # COMPLETED:
@@ -53,6 +52,7 @@ log_trace "Process Script's Command Line Argument(s)"
 if [[ "$1" != "" ]]; then
     [[ "$1" == "${HELP_SHORT}" || "$1" == "${HELP_LONG}" ]] && usage $(( TRUE )) || SEARCH_TERM="$1"
 else
+    # shellcheck disable=SC2015
     [[ "${DEBUG}" == "${TRUE}" ]] && SEARCH_TERM="${SEARCH_TERM_DEFAULT}" || usage
 fi
 

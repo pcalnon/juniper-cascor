@@ -1,23 +1,23 @@
 #!/usr/bin/env bash
 #####################################################################################################################################################################################################
 # Project:       Juniper
-# Sub-Project:   JuniperCanopy
-# Application:   juniper_canopy
-# Purpose:       Monitoring and Diagnostic Frontend for Cascade Correlation Neural Network
+# Sub-Project:   JuniperCascor
+# Application:   juniper_cascor
+# Purpose:       Juniper Project Cascade Correlation Neural Network
 #
 # Author:        Paul Calnon
 # Version:       0.1.4 (0.7.3)
 # File Name:     rsink.bash
 # File Path:     <Project>/<Sub-Project>/<Application>/util/
 #
-# Date:          2024-04-01
-# Last Modified: 2026-01-03
+# Date Created:  2024-04-01
+# Last Modified: 2026-01-12
 #
 # License:       MIT License
 # Copyright:     Copyright (c) 2024,2025,2026 Paul Calnon
 #
 # Description:
-#     This script is used to sync data from the JuniperCanopy application primary server to all secondary servers that perform candidate correlation calculations.
+#     This script is used to sync data from the JuniperCascor application primary server to all secondary servers that perform candidate correlation calculations.
 #
 #####################################################################################################################################################################################################
 # Notes:

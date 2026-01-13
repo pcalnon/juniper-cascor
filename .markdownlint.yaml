@@ -1,22 +1,31 @@
 ---
-###############################################################################
-# Project: Juniper
-# Application: Juniper Cascor
-# Filename: .markdownlist.yaml
+#####################################################################################################################################################################################################
+# Project:       Juniper
+# Sub-Project:   JuniperCanopy
+# Application:   juniper_canopy
+# Purpose:       Monitoring and Diagnostic Frontend for Cascade Correlation Neural Network
 #
-# Author: Paul Calnon
-# Created: 2025-12-09
-# Modified: 2025-12-09
+# Author:        Paul Calnon
+# Version:       0.1.4 (0.7.3)
+# File Name:     .markdownlint.yaml
+# File Path:     <Project>/<Sub-Project>/<Application>/conf/
 #
-# Description: Markdown Linter Config file
-###############################################################################
+# Date:          2025-12-09
+# Last Modified: 2026-01-12
+#
+# License:       MIT License
+# Copyright:     Copyright (c) 2024,2025,2026 Paul Calnon
+#
+# Description:
+#     Markdown Linter Config file
+#
+#####################################################################################################################################################################################################
 # Notes:
-#
 #     MD029/ol-prefix: Ordered list item prefix [Expected: 1; Actual: 7; Style: 1/2/3]
 #     MD013/line-length: Line length [Expected: 80; Actual: 89]
 #     MD046/code-block-style: Code block style [Expected: fenced; Actual: indented]
 #
-###############################################################################
+########################################################################################################)#############################################################################################
 # References:
 #
 #     [MD001](https://github.com/DavidAnson/markdownlint/blob/v0.38.0/doc/md001.md) heading-increment                - Heading levels should only increment by one level at a time
@@ -72,7 +81,13 @@
 #     [MD058](https://github.com/DavidAnson/markdownlint/blob/v0.38.0/doc/md058.md) blanks-around-tables             - Tables should be surrounded by blank lines 
 #     [MD059](https://github.com/DavidAnson/markdownlint/blob/v0.38.0/doc/md059.md) descriptive-link-text            - Link text should be descriptive
 #
-###############################################################################
+#####################################################################################################################################################################################################
+# TODO :
+#
+#####################################################################################################################################################################################################
+# COMPLETED:
+#
+#####################################################################################################################################################################################################
 
 # Set custom configuration settings
 config:
@@ -90,9 +105,7 @@ gitignore: true
 # Ignore any files included within .markdownlintignore
 markdownlintignore: true
 
-# Ignore any files included within .gitignore
-ignore: .gitignore
-
-# Ignore any files included within .markdownlintignore
-ignore: .markdownlintignore
-
+# Ignore specific files
+ignore:
+  .gitignore
+  .markdownlintignore

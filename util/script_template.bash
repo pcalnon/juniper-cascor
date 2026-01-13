@@ -1,17 +1,17 @@
 #!/usr/bin/env bash
 #####################################################################################################################################################################################################
 # Project:       Juniper
-# Sub-Project:   JuniperCanopy
-# Application:   juniper_canopy
-# Purpose:       Monitoring and Diagnostic Frontend for Cascade Correlation Neural Network
+# Sub-Project:   JuniperCascor
+# Application:   juniper_cascor
+# Purpose:       Juniper Project Cascade Correlation Neural Network
 #
 # Author:        Paul Calnon
 # Version:       0.1.4 (0.7.3)
 # File Name:     proto.bash
 # File Path:     <Project>/<Sub-Project>/<Application>/util/
 #
-# Date:          2025-10-11
-# Last Modified: 2026-01-02
+# Date Created:  2025-10-11
+# Last Modified: 2026-01-12
 #
 # License:       MIT License
 # Copyright:     Copyright (c) 2024,2025,2026 Paul Calnon
@@ -54,8 +54,8 @@ export FUNCTION_NAME="${0##*/}"
 # PROJ_NAME="dynamic_nn"
 # PROJ_NAME="juniper"
 export PROJ_NAME="Juniper"
-export SUB_PROJ_NAME="JuniperCanopy"
-export APP_NAME="juniper_canopy"
+export SUB_PROJ_NAME="JuniperCascor"
+export APP_NAME="juniper_cascor"
 
 
 #PROJ_LANG_DIR_NAME="rust/rust_mudgeon"

@@ -1,29 +1,29 @@
 ---
 #####################################################################################################################################################################################################
 # Project:       Juniper
-# Sub-Project:   JuniperCanopy
-# Application:   juniper_canopy
-# Purpose:       Monitoring and Diagnostics for CasCor NN
+# Sub-Project:   JuniperCascor
+# Application:   juniper_cascor
+# Purpose:       Cascade Correlation Neural Network
 
 # Author:        Paul Calnon
 # Version:       0.1.4 (0.7.3)
 # File Name:     logging_config.yaml
 # File Path:     <Project>/<Sub-Project>/<Application>/conf/
 #
-# Date:          2025-10-11
-# Last Modified: 2026-01-02
+# Date Created:  2025-10-11
+# Last Modified: 2026-01-12
 #
 # License:       MIT License
 # Copyright:     Copyright (c) 2024,2025,2026 Paul Calnon
 #
 # Description:
 #    This file contains the configuration settings for the Juniper prototype
-#    Frontend application logging.
+#    Cascade Correlation Neural Network application logging.
 #
 #####################################################################################################################################################################################################
 # Notes:
 #
-#   Juniper Canopy Application Configuration
+#   Juniper Cascor Application Configuration
 #   This file contains all configuration parameters for the CasCor
 #   frontend application
 #
@@ -56,7 +56,7 @@ handlers:
     class: logging.FileHandler
     level: INFO
     formatter: formatter_file
-    filename: logs/juniper_canopy.log
+    filename: logs/juniper_cascor.log
     mode: w
 loggers:
   juniper:

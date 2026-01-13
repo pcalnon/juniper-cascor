@@ -19,3 +19,9 @@ Juniper is an AI/ML research platform for investigating dynamic neural network a
 ## Research Philosophy
 
 Juniper prioritizes **transparency over convenience** and **understanding over abstraction**. By implementing algorithms from first principles, the platform provides researchers with increased visibility into network behavior, enabling a more rigorous and more controlled investigation of learning dynamics and architectural innovations.
+
+## Important Notices
+
+### Thread Safety Warning
+
+**The `CascadeCorrelationNetwork` class is NOT thread-safe.** Do not share network instances between threads without proper synchronization. For concurrent training scenarios, create separate network instances per thread. The internal multiprocessing for candidate training is handled within the class and does not require external synchronization.

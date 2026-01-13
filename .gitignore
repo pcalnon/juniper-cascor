@@ -25,6 +25,8 @@ images/*
 **/logs
 **/backup
 **/backups
+**/temp
+**/temp/*
 **/resources/*
 __pycache__
 **/__pycache__

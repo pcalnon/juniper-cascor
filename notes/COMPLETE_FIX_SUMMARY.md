@@ -167,15 +167,15 @@ if x.shape[0] != y.shape[0]:  # ✅ Checks batch size only
 
 ## System Capabilities Matrix
 
-| Capability | Before Review | After P0 | After P1 | After Runtime Fixes |
-|------------|---------------|----------|----------|---------------------|
-| Network Creation | ❌ Crashes | ✅ Works | ✅ Works | ✅ Works |
-| Candidate Training | ❌ Gradient wrong | ✅ Correct | ✅ + Early stop | ✅ + No errors |
-| Multiprocessing | ❌ Type errors | ✅ Basic | ✅ + Timeouts | ✅ Fully functional |
-| HDF5 Save | ⚠️ Partial | ⚠️ Partial | ✅ Complete | ✅ Complete |
-| HDF5 Load | ⚠️ Inference only | ⚠️ Inference only | ✅ Training | ✅ Training |
-| Early Stopping | ❌ Missing | ❌ Missing | ✅ Implemented | ✅ Implemented |
-| Production Ready | ❌ No | ⚠️ Basic | ✅ Yes | ✅ Yes |
+| Capability         | Before Review       | After P0            | After P1        | After Runtime Fixes |
+| ------------------ | ------------------- | ------------------- | --------------- | ------------------- |
+| Network Creation   | ❌ Crashes          | ✅ Works            | ✅ Works        | ✅ Works            |
+| Candidate Training | ❌ Gradient wrong   | ✅ Correct          | ✅ + Early stop | ✅ + No errors      |
+| Multiprocessing    | ❌ Type errors      | ✅ Basic            | ✅ + Timeouts   | ✅ Fully functional |
+| HDF5 Save          | ⚠️ Partial          | ⚠️ Partial          | ✅ Complete     | ✅ Complete         |
+| HDF5 Load          | ⚠️ Inference only   | ⚠️ Inference only   | ✅ Training     | ✅ Training         |
+| Early Stopping     | ❌ Missing          | ❌ Missing          | ✅ Implemented  | ✅ Implemented      |
+| Production Ready   | ❌ No               | ⚠️ Basic            | ✅ Yes          | ✅ Yes              |
 
 ---
 
@@ -211,14 +211,14 @@ if x.shape[0] != y.shape[0]:  # ✅ Checks batch size only
 
 ## Complete File Modification List
 
-| File | P0 Changes | P1 Changes | Runtime Fixes | Total |
-|------|------------|------------|---------------|-------|
-| cascade_correlation.py | 6 | 5 | 3 | 14 |
-| candidate_unit.py | 8 | 3 | 1 | 12 |
-| snapshot_serializer.py | 0 | 5 | 0 | 5 |
-| snapshot_common.py | 1 | 2 | 0 | 3 |
-| utils.py | 1 | 0 | 0 | 1 |
-| **TOTAL** | **16** | **15** | **4** | **35** |
+| File                   | P0 Changes | P1 Changes | Runtime Fixes | Total  |
+| ---------------------- | ---------- | ---------- | ------------- | ------ |
+| cascade_correlation.py | 6          | 5          | 3             | 14     |
+| candidate_unit.py      | 8          | 3          | 1             | 12     |
+| snapshot_serializer.py | 0          | 5          | 0             | 5      |
+| snapshot_common.py     | 1          | 2          | 0             | 3      |
+| utils.py               | 1          | 0          | 0             | 1      |
+| **TOTAL**              | **16**     | **15**     | **4**         | **35** |
 
 ---
 

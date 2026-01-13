@@ -1,19 +1,19 @@
 #!/usr/bin/env bash
 #####################################################################################################################################################################################################
 # Project:       Juniper
-# Prototype:     juniper_canopy
+# Prototype:     juniper_cascor
 # File Name:     try.bash
 # Author:        Paul Calnon
 # Version:       0.1.4 (0.7.3)
 #
-# Date:          2025-11-05
-# Last Modified: 2025-11-11
+# Date Created:  2025-11-05
+# Last Modified: 2026-01-12
 #
 # License:       MIT License
 # Copyright:     Copyright (c) 2024-2025 Paul Calnon
 #
 # Description:
-#    This try.bash file--and its symlinks--launch the juniper_canopy prototype.
+#    This try.bash file--and its symlinks--launch the juniper_cascor prototype.
 #
 #####################################################################################################################################################################################################
 # Notes:
@@ -35,8 +35,8 @@
 #     SCRIPT_PATH = /home/pcalnon/Development/python/Juniper/src/prototypes/util
 #
 #####################################################################################################################################################################################################
-# TODO:
-#     Integrate config infrastructure from juniper canopy into this sub-project
+# TODO :
+#     Integrate config infrastructure from juniper cascor into this sub-project
 #
 #####################################################################################################################################################################################################
 # COMPLETED:
@@ -78,7 +78,7 @@ export -f get_script_path
 
 ####################################################################################################
 # export CURRENT_SCRIPT="prototypes/cascor/util/try.bash:"
-export CURRENT_SCRIPT="juniper_canopy/util/try.bash:"
+export CURRENT_SCRIPT="juniper_cascor/util/try.bash:"
 
 
 ####################################################################################################

@@ -1,11 +1,27 @@
 {
+  "fix": true,
+  "gitignore": true,
+  "markdownlintignore": true,
+  "MD013": {
+    "line_length": 512
+  },
+  "MD033": {
+    "allowed_elements": [
+      "span",
+      "link",
+      "img",
+      "div",
+      "br",
+      "a"
+    ]
+  },
+  "MD041": false,
+  "MD025": false,
+  "MD022": false,
   "config": {
     "ol-prefix": false,
     "line-length": 200,
     "code-block-style": "consistent",
     "emphasis-style": false
-  },
-  "fix": true,
-  "gitignore": true,
-  "markdownlintignore": true
+  }
 }

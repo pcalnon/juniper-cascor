@@ -59,18 +59,18 @@ Conducted comprehensive architectural review of CascadeCorrelationNetwork and Ca
 
 ### 🔴 P0: Blocking Issues (FIXED)
 
-| # | Issue | Files | Severity | Status |
-|---|-------|-------|----------|--------|
-| 1 | Type mismatch: train_candidates() returns TrainingResults but grow_network() expects tuple | cascade_correlation.py:1945 | CRITICAL | ✅ FIXED |
-| 2 | CandidateTrainingResult field name mismatch: candidate_index vs candidate_id | candidate_unit.py:78 | CRITICAL | ✅ FIXED |
-| 3 | CandidateTrainingResult field name mismatch: best_correlation vs correlation | candidate_unit.py:80 | CRITICAL | ✅ FIXED |
-| 4 | Missing 'candidate' field in CandidateTrainingResult dataclass | candidate_unit.py:76-89 | CRITICAL | ✅ FIXED |
-| 5 | Gradient direction backwards (+= instead of -=) | candidate_unit.py:603-606 | CRITICAL | ✅ FIXED |
-| 6 | Matrix multiplication dimension mismatch in weight updates | candidate_unit.py:533 | CRITICAL | ✅ FIXED |
-| 7 | get_single_candidate_data() uses .get() on dataclass instead of getattr() | cascade_correlation.py:1373 | HIGH | ✅ FIXED |
-| 8 | train_candidate_worker returns tuple instead of CandidateTrainingResult | cascade_correlation.py:1596 | CRITICAL | ✅ FIXED |
-| 9 | snapshot_counter never initialized | cascade_correlation.py:334 | MEDIUM | ✅ FIXED |
-| 10 | self.correlation never updated during training loop | candidate_unit.py:479 | HIGH | ✅ FIXED |
+| #   | Issue                                                                                      | Files                       | Severity | Status   |
+| --- | ------------------------------------------------------------------------------------------ | --------------------------- | -------- | -------- |
+| 1   | Type mismatch: train_candidates() returns TrainingResults but grow_network() expects tuple | cascade_correlation.py:1945 | CRITICAL | ✅ FIXED |
+| 2   | CandidateTrainingResult field name mismatch: candidate_index vs candidate_id               | candidate_unit.py:78        | CRITICAL | ✅ FIXED |
+| 3   | CandidateTrainingResult field name mismatch: best_correlation vs correlation               | candidate_unit.py:80        | CRITICAL | ✅ FIXED |
+| 4   | Missing 'candidate' field in CandidateTrainingResult dataclass                             | candidate_unit.py:76-89     | CRITICAL | ✅ FIXED |
+| 5   | Gradient direction backwards (+= instead of -=)                                            | candidate_unit.py:603-606   | CRITICAL | ✅ FIXED |
+| 6   | Matrix multiplication dimension mismatch in weight updates                                 | candidate_unit.py:533       | CRITICAL | ✅ FIXED |
+| 7   | get_single_candidate_data() uses .get() on dataclass instead of getattr()                  | cascade_correlation.py:1373 | HIGH     | ✅ FIXED |
+| 8   | train_candidate_worker returns tuple instead of CandidateTrainingResult                    | cascade_correlation.py:1596 | CRITICAL | ✅ FIXED |
+| 9   | snapshot_counter never initialized                                                         | cascade_correlation.py:334  | MEDIUM   | ✅ FIXED |
+| 10  | self.correlation never updated during training loop                                        | candidate_unit.py:479       | HIGH     | ✅ FIXED |
 
 ---
 
@@ -78,21 +78,21 @@ Conducted comprehensive architectural review of CascadeCorrelationNetwork and Ca
 
 ### 🟠 P1: High Priority (Fix Before Production)
 
-| # | Issue | Files | Severity | Action Needed |
-|---|-------|-------|----------|---------------|
-| 11 | Missing optimizer state in HDF5 serialization | snapshot_serializer.py | HIGH | Add _save_optimizer_state() |
-| 12 | Training counters not saved (snapshot_counter, current_epoch) | snapshot_serializer.py:193-206 | HIGH | Add to _save_metadata() |
-| 13 | Display functions not restored from HDF5 | snapshot_serializer.py:load_network() | MEDIUM | Add _load_display_state() |
-| 14 | No timeout on result_queue.put() - deadlock risk | cascade_correlation.py:1701 | HIGH | Add timeout=30 parameter |
+| #   | Issue                                                         | Files                                 | Severity | Action Needed               |
+| --- | ------------------------------------------------------------- | ------------------------------------- | -------- | --------------------------- |
+| 11  | Missing optimizer state in HDF5 serialization                 | snapshot_serializer.py                | HIGH     | Add _save_optimizer_state() |
+| 12  | Training counters not saved (snapshot_counter, current_epoch) | snapshot_serializer.py:193-206        | HIGH     | Add to _save_metadata()     |
+| 13  | Display functions not restored from HDF5                      | snapshot_serializer.py:load_network() | MEDIUM   | Add _load_display_state()   |
+| 14  | No timeout on result_queue.put() - deadlock risk              | cascade_correlation.py:1701           | HIGH     | Add timeout=30 parameter    |
 
 ### 🔵 P2: Medium Priority (Future Enhancements)
 
-| # | Issue | Severity | Notes |
-|---|-------|----------|-------|
-| 15 | Early stopping defined but not implemented | MEDIUM | Add to CandidateUnit.train() loop |
-| 16 | Global queue state anti-pattern | MEDIUM | Refactor to instance-specific queues |
-| 17 | Worker process zombie cleanup | MEDIUM | Improve _stop_workers() termination |
-| 18 | Activation wrapper recreated on every forward pass | LOW | Cache in **init** |
+| #   | Issue                                              | Severity | Notes                                |
+| --- | -------------------------------------------------- | -------- | ------------------------------------ |
+| 15  | Early stopping defined but not implemented         | MEDIUM   | Add to CandidateUnit.train() loop    |
+| 16  | Global queue state anti-pattern                    | MEDIUM   | Refactor to instance-specific queues |
+| 17  | Worker process zombie cleanup                      | MEDIUM   | Improve _stop_workers() termination  |
+| 18  | Activation wrapper recreated on every forward pass | LOW      | Cache in **init**                    |
 
 ---
 

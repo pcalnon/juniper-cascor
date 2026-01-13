@@ -362,15 +362,15 @@ loaded = CascadeCorrelationNetwork.load_from_hdf5("model.h5")
 
 ## Comparison: Before vs After P1
 
-| Feature | Before P1 | After P1 | Improvement |
-|---------|-----------|----------|-------------|
-| Training Resumption | ❌ Not possible | ✅ Full state | ∞% |
-| Early Stopping | ❌ Not implemented | ✅ Working | 50-70% speedup |
-| Queue Deadlock Risk | ⚠️ High | ✅ Low | Timeout protection |
-| Optimizer Persistence | ❌ Lost | ✅ Saved | Training continuity |
-| NumPy 2.0 Compat | ❌ Broken | ✅ Fixed | Modern deps |
-| Type Safety | 70% | 95% | +25% |
-| Production Ready | ❌ No | ✅ Yes | Ready for deployment |
+| Feature               | Before P1          | After P1      | Improvement          |
+| --------------------- | ------------------ | ------------- | -------------------- |
+| Training Resumption   | ❌ Not possible    | ✅ Full state | ∞%                   |
+| Early Stopping        | ❌ Not implemented | ✅ Working    | 50-70% speedup       |
+| Queue Deadlock Risk   | ⚠️ High            | ✅ Low        | Timeout protection   |
+| Optimizer Persistence | ❌ Lost            | ✅ Saved      | Training continuity  |
+| NumPy 2.0 Compat      | ❌ Broken          | ✅ Fixed      | Modern deps          |
+| Type Safety           | 70%                | 95%           | +25%                 |
+| Production Ready      | ❌ No              | ✅ Yes        | Ready for deployment |
 
 ---
 
@@ -472,13 +472,13 @@ loaded.grow_network(x_train, y_train, max_epochs=50)  # Continues from where it 
 
 ### Code Quality
 
-| Metric | Before Review | After P0 | After P1 | Total Improvement |
-|--------|---------------|----------|----------|-------------------|
-| Functionality | 0% | 70% | 90% | +90% |
-| Type Safety | 30% | 85% | 95% | +65% |
-| Serialization | 60% | 60% | 95% | +35% |
-| Multiprocessing | 50% | 75% | 95% | +45% |
-| Production Ready | ❌ | ⚠️ | ✅ | Complete |
+| Metric           | Before Review | After P0 | After P1 | Total Improvement |
+| ---------------- | ------------- | -------- | -------- | ----------------- |
+| Functionality    | 0%            | 70%      | 90%      | +90%              |
+| Type Safety      | 30%           | 85%      | 95%      | +65%              |
+| Serialization    | 60%           | 60%      | 95%      | +35%              |
+| Multiprocessing  | 50%           | 75%      | 95%      | +45%              |
+| Production Ready | ❌            | ⚠️       | ✅       | Complete          |
 
 ### Test Coverage
 
