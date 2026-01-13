@@ -6,8 +6,8 @@
 # Author:        Paul Calnon
 # Version:       0.7.3
 #
-# Date:          2024-04-02
-# Last Modified: 2025-09-05
+# Date Created:  2024-04-02
+# Last Modified: 2026-01-12
 #
 # License:       MIT License
 # Copyright:     Copyright (c) 2024-2025 Paul Calnon
@@ -178,6 +178,25 @@ class LogConfig(object):
         self.logger.debug(f"LogConfig: __init__: Default Log Level set to {self.get_log_level()}")
         self.logger.info("LogConfig: __init__: Completed Initialization of LogConfig class")
         self.logger.trace("LogConfig: __init__: Completed the LogConfig class __init__ method")
+
+
+    ####################################################################################################################################
+    # Serialization support for multiprocessing
+    def __getstate__(self):
+        """Remove non-picklable items for multiprocessing serialization."""
+        state = self.__dict__.copy()
+        # Remove non-serializable items (loggers cannot be pickled)
+        state.pop('logger', None)
+        state.pop('custom_logger', None)
+        return state
+
+    def __setstate__(self, state):
+        """Restore instance from serialized state."""
+        self.__dict__.update(state)
+        # Recreate logger after unpickling
+        self.custom_logger = None
+        self.logger = Logger
+        self.logger.set_level(state.get('log_level_name', 'INFO'))
 
 
     # ####################################################################################################################################

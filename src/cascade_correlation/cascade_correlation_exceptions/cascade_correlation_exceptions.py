@@ -6,8 +6,8 @@
 # Author:        Paul Calnon
 # Version:       0.3.2 (0.7.3)
 #
-# Date:          2025-09-26
-# Last Modified: 2025-09-26
+# Date Created:  2025-09-26
+# Last Modified: 2026-01-12
 #
 # License:       MIT License
 # Copyright:     Copyright (c) 2024-2025 Paul Calnon

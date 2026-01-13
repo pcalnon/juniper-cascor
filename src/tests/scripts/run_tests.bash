@@ -6,8 +6,8 @@
 # Author:        Paul Calnon
 # Version:       0.1.0
 #
-# Date:          2025-09-26
-# Last Modified: 2025-12-08
+# Date Created:  2025-09-26
+# Last Modified: 2026-01-12
 #
 # License:       MIT License
 # Copyright:     Copyright (c) 2024-2025 Paul Calnon
@@ -267,7 +267,7 @@ fi
 
 # Add specific test if provided
 if [[ "${SPECIFIC_TEST}" != "" ]]; then
-	PYTEST_CMD="${PYTEST_CMD $SPECIFIC_TEST"
+	PYTEST_CMD="${PYTEST_CMD} ${SPECIFIC_TEST}"
 fi
 
 # Print configuration

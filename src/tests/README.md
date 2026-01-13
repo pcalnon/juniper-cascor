@@ -5,6 +5,7 @@ This directory contains a comprehensive testing framework for the Cascade Correl
 ## Overview
 
 The test suite is designed with the following principles:
+
 - **Clarity**: Easy to understand test structure and naming
 - **Ease of Use**: Simple commands to run specific test categories
 - **Scalability**: Modular structure that grows with the codebase
@@ -12,7 +13,7 @@ The test suite is designed with the following principles:
 
 ## Directory Structure
 
-```
+```bash
 tests/
 ├── conftest.py                 # Pytest configuration and shared fixtures
 ├── pytest.ini                 # Pytest settings and markers
@@ -64,12 +65,14 @@ tests/
 ## Quick Start
 
 ### Run All Unit Tests
+
 ```bash
 cd src/tests
 ./scripts/run_tests.sh
 ```
 
 ### Run Specific Test Categories
+
 ```bash
 # Unit tests only
 ./scripts/run_tests.sh -u
@@ -85,12 +88,14 @@ cd src/tests
 ```
 
 ### Run Specific Test Files
+
 ```bash
 ./scripts/run_tests.sh -t unit/test_forward_pass.py
 ./scripts/run_tests.sh -t integration/test_spiral_problem.py
 ```
 
 ### Run with Different Options
+
 ```bash
 # Verbose output with coverage
 ./scripts/run_tests.sh -v -c
@@ -232,14 +237,18 @@ class TestNewAlgorithm:
 ## Configuration Files
 
 ### pytest.ini
+
 Contains pytest configuration including:
+
 - Test discovery patterns
 - Coverage settings
 - Marker definitions
 - Output formatting
 
 ### conftest.py
+
 Provides shared fixtures including:
+
 - Network instances with different configurations
 - Test data generators
 - Mock objects
@@ -287,6 +296,7 @@ The test structure is designed to work well with CI/CD systems:
 ### Debug Mode
 
 Run tests with maximum verbosity for debugging:
+
 ```bash
 ./scripts/run_tests.sh -v -s --tb=long
 ```

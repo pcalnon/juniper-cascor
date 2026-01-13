@@ -6,8 +6,8 @@
 # Author:        Paul Calnon
 # Version:       0.3.2 (0.7.3)
 #
-# Date:          2025-09-26
-# Last Modified: 2025-10-25 01:43:26 CDT
+# Date Created:  2025-09-26
+# Last Modified: 2026-01-12
 #
 # License:       MIT License
 # Copyright:     Copyright (c) 2024-2025 Paul Calnon
@@ -242,6 +242,19 @@ class CascadeCorrelationConfig:
 
         # UUID
         self.uuid = uuid
+
+    def __getstate__(self):
+        """Remove non-picklable items for multiprocessing serialization."""
+        state = self.__dict__.copy()
+        # Remove non-serializable items (log_config contains loggers)
+        state.pop('log_config', None)
+        return state
+
+    def __setstate__(self, state):
+        """Restore instance from serialized state."""
+        self.__dict__.update(state)
+        # Set log_config to None - it will be recreated if needed
+        self.log_config = None
 
     @classmethod
     def create_simple_config(

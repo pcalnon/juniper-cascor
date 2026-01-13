@@ -4,8 +4,8 @@
 # File Name:     cascade_correlation.py
 # Author:        Paul Calnon
 # Version:       1.0.1
-# Date:          2025-06-11
-# Last Modified: 2025-06-11
+# Date Created:  2025-06-11
+# Last Modified: 2026-01-12
 # License:       MIT License
 #
 # Description:

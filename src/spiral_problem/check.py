@@ -4,8 +4,8 @@
 # File Name:     spiral_problem.py
 # Author:        Paul Calnon
 # Version:       1.0.1
-# Date:          2025-07-29
-# Last Modified: 2025-07-29
+# Date Created:  2025-07-29
+# Last Modified: 2026-01-12
 # License:       MIT License
 #
 # Description:

@@ -6,8 +6,8 @@
 # Author:        Paul Calnon
 # Version:       0.3.2 (0.7.3)
 #
-# Date:          2025-06-11
-# Last Modified: 2025-10-29 02:19:05 CDT
+# Date Created:  2025-06-11
+# Last Modified: 2026-01-12
 #
 # License:       MIT License
 # Copyright:     Copyright (c) 2024-2025 Paul Calnon
@@ -261,6 +261,19 @@ def _plot_training_history_worker(history_data):
 # Class definition for the Cascade Correlation Network
 #####################################################################################################################################################################################################
 class CascadeCorrelationNetwork:
+    """
+    Cascade Correlation Neural Network implementation.
+    
+    This class implements the Cascade Correlation algorithm (Fahlman & Lebiere, 1990)
+    for constructive learning with automatic network growth.
+    
+    Warning:
+        **NOT THREAD-SAFE**: Do not share CascadeCorrelationNetwork instances between 
+        threads without proper synchronization. For concurrent training scenarios, 
+        create separate network instances per thread. The internal multiprocessing 
+        for candidate training is handled within the class and does not require 
+        external synchronization.
+    """
 
     #################################################################################################################################################################################################
     # Constructor for the Cascade Correlation Network
@@ -1634,6 +1647,11 @@ class CascadeCorrelationNetwork:
         state.pop('_network_display_progress', None)
         state.pop('_status_display_progress', None)
         state.pop('_candidate_display_progress', None)
+        # Remove log_config (contains loggers that cannot be pickled)
+        state.pop('log_config', None)
+        # Remove activation functions (local closures cannot be pickled)
+        state.pop('activation_fn', None)
+        state.pop('activation_fn_no_diff', None)
         # Remove locks and other non-picklable objects
         state.pop('_thread.lock', None)
         # Remove large training data (should not be in snapshot anyway)
@@ -1654,6 +1672,10 @@ class CascadeCorrelationNetwork:
         from log_config.logger.logger import Logger
         Logger.set_level(self.log_level_name if hasattr(self, 'log_level_name') else 'INFO')
         self.logger = Logger
+        # Set log_config to None - it was removed during pickling
+        self.log_config = None
+        # Reinitialize activation function
+        self._init_activation_function()
         # Reinitialize plotter if needed
         if not hasattr(self, 'plotter'):
             from cascor_plotter.cascor_plotter import CascadeCorrelationPlotter
@@ -1779,7 +1801,7 @@ class CascadeCorrelationNetwork:
             logger.verbose( f"CascadeCorrelationNetwork: train_candidate_worker: Created CandidateUnit object: Worker ID: {worker_id}, Worker UUID: {worker_uuid}, Candidate Index: {candidate_inputs.get('candidate_index')}, Candidate UUID: {candidate.get_uuid()}, Candidate Object: {candidate}")
 
             # Train the candidate unit
-            result = CascadeCorrelationNetwork._train_candidate_worker(
+            result = CascadeCorrelationNetwork._train_candidate_unit(
                 candidate=candidate,
                 candidate_uuid=candidate_inputs.get("candidate_uuid"),
                 candidate_index=candidate_inputs.get("candidate_index"),
@@ -1795,6 +1817,7 @@ class CascadeCorrelationNetwork:
             return result
 
         except Exception as e:
+            import traceback
             logger.error( f"CascadeCorrelationNetwork: train_candidate_worker: Caught Exception while training CandidateUnit object: Worker ID: {worker_id}, Worker UUID: {worker_uuid}, Error during candidate training:\nException:\n{e}")
             logger.error( f"CascadeCorrelationNetwork: train_candidate_worker: Error during Candidate Training: Worker ID: {worker_id}, Worker UUID: {worker_uuid}\nTraceback:\n{traceback.format_exc()}")
             candidate_index = ( candidate_inputs.get("candidate_index") if candidate_inputs else -1)
