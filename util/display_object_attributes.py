@@ -10,7 +10,7 @@ module_name="logging"
 logging = __import__(module_name)
 # module = importlib.import_module(module_name, package=None)
 
-# Define global constnats
+# Define global constants
 debug = False
 # debug = True
 
