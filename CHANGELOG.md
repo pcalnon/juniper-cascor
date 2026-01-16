@@ -5,6 +5,38 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.6] - 2026-01-15
+
+### Fixed: [0.3.6]
+
+- **P0-016**: Fixed multiprocessing spawn context module import error
+  - Added missing `__init__.py` files to all source directories for proper Python package recognition
+  - This resolves `ModuleNotFoundError: No module named 'constants.constants_model'; 'constants' is not a package` error
+  - Affected directories: constants/, constants_model/, constants_candidates/, constants_hdf5/, constants_activation/, constants_problem/, constants_logging/, cascade_correlation/, cascade_correlation_config/, cascade_correlation_exceptions/, log_config/, logger/, candidate_unit/, spiral_problem/, cascor_plotter/, remote_client/
+  - Root cause: Python's multiprocessing `spawn` context re-imports the module, requiring proper package structure
+
+- **P0-017**: Fixed critical bug in best_candidate_id selection causing network to never grow
+  - Fixed `_process_training_results()` where `best_candidate_id` was incorrectly set as a tuple `(value,)` instead of an int
+  - The trailing comma in the assignment created a tuple, causing all subsequent lookups to fail
+  - Since lookups always returned `None`, `best_candidate` was always `None` and `grow_network()` exited immediately
+  - This caused the network to remain linear with no hidden units, unable to solve nonlinear problems like spiral classification
+  - Changed to directly access `results[0].candidate_id` after sorting (best correlation at index 0)
+  - Also simplified best_candidate data extraction to use direct attribute access on sorted results
+
+- **P0-018**: Fixed test_forward_pass_nan_input test expectation
+  - Updated test to expect `ValidationError` exception for NaN inputs (correct behavior)
+  - Fixed import path from `cascade_correlation.cascade_correlation_exceptions` to `cascade_correlation_exceptions` to match runtime module resolution
+  - Previous test incorrectly expected NaN values to propagate through the network
+
+### Files Changed: [0.3.6]
+
+- Created `src/constants/__init__.py` and all subdirectory `__init__.py` files
+- Created `src/cascade_correlation/__init__.py` and all subdirectory `__init__.py` files
+- Created `src/log_config/__init__.py` and `src/log_config/logger/__init__.py`
+- Created `src/candidate_unit/__init__.py`, `src/spiral_problem/__init__.py`, `src/cascor_plotter/__init__.py`, `src/remote_client/__init__.py`
+- `src/cascade_correlation/cascade_correlation.py` - Fixed `_process_training_results()` best_candidate_id bug (lines 1562-1591)
+- `src/tests/unit/test_forward_pass.py` - Fixed NaN input test expectation
+
 ## [0.3.5] - 2025-01-15
 
 ### Fixed: [0.3.5]

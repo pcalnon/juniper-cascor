@@ -8547,3 +8547,245 @@ tensor([[ 0.8768,  0.9239],
 [log_config.py: __init__:171] (2026-01-15 09:11:31) [INFO] LogConfig: __init__: Created custom logger by instantiating Logger class
 [log_config.py: __init__:179] (2026-01-15 09:11:31) [INFO] LogConfig: __init__: Completed Initialization of LogConfig class
 [cascade_correlation.py: _init_multiprocessing:466] (2026-01-15 09:11:31) [WARNING] CascadeCorrelationNetwork: _init_multiprocessing: Failed to set forkserver preload: BaseContext.set_forkserver_preload() takes 2 positional arguments but 11 were given
+[log_config.py: __init__:171] (2026-01-15 21:44:35) [INFO] LogConfig: __init__: Created custom logger by instantiating Logger class
+[log_config.py: __init__:176] (2026-01-15 21:44:35) [DEBUG] LogConfig: __init__: UUID set to: 8554c8c4-5472-43c1-8bca-ad62db1018c6
+[log_config.py: __init__:178] (2026-01-15 21:44:35) [DEBUG] LogConfig: __init__: Default Log Level set to 20
+[log_config.py: __init__:179] (2026-01-15 21:44:35) [INFO] LogConfig: __init__: Completed Initialization of LogConfig class
+[cascade_correlation.py: _init_logging_system:382] (2026-01-15 21:44:35) [DEBUG] CascadeCorrelationNetwork: _init_logging_system: Logger initialized with level: 20
+[cascade_correlation.py: _roll_sequence_number:644] (2026-01-15 21:44:35) [DEBUG] CascadeCorrelationNetwork: _roll_sequence_number: Rolling sequence number to: 3 with max value: 10 using generator: <bound method RandomState.randint of RandomState(MT19937) at 0x7D869DBB4840>
+[cascade_correlation.py: _roll_sequence_number:644] (2026-01-15 21:44:35) [DEBUG] CascadeCorrelationNetwork: _roll_sequence_number: Rolling sequence number to: 10 with max value: 10 using generator: <bound method Random.randint of <random.Random object at 0x5d636398ad50>>
+[cascade_correlation.py: _roll_sequence_number:644] (2026-01-15 21:44:35) [DEBUG] CascadeCorrelationNetwork: _roll_sequence_number: Rolling sequence number to: 9 with max value: 10 using generator: <function CascadeCorrelationNetwork._initialize_randomness.<locals>.<lambda> at 0x7d869dd48a90>
+[cascade_correlation.py: _init_activation_with_derivative:677] (2026-01-15 21:44:35) [DEBUG] CascadeCorrelationNetwork: _init_activation_with_derivative: Using activation function: Tanh()
+[cascade_correlation.py: _init_network_parameters:437] (2026-01-15 21:44:35) [DEBUG] CascadeCorrelationNetwork: _init_network_parameters: Network parameters initialized
+[cascade_correlation.py: _init_multiprocessing:466] (2026-01-15 21:44:35) [WARNING] CascadeCorrelationNetwork: _init_multiprocessing: Failed to set forkserver preload: BaseContext.set_forkserver_preload() takes 2 positional arguments but 11 were given
+[cascade_correlation.py: _init_multiprocessing:479] (2026-01-15 21:44:35) [DEBUG] CascadeCorrelationNetwork: _init_multiprocessing: Multiprocessing components initialized
+[cascade_correlation.py: _init_display_components:499] (2026-01-15 21:44:35) [DEBUG] CascadeCorrelationNetwork: _init_display_components: Display components initialized
+[log_config.py: __init__:171] (2026-01-15 21:44:50) [INFO] LogConfig: __init__: Created custom logger by instantiating Logger class
+[log_config.py: __init__:176] (2026-01-15 21:44:50) [DEBUG] LogConfig: __init__: UUID set to: eaeeb652-b7a3-4ec3-866a-28c1ab9af067
+[log_config.py: __init__:178] (2026-01-15 21:44:50) [DEBUG] LogConfig: __init__: Default Log Level set to 20
+[log_config.py: __init__:179] (2026-01-15 21:44:50) [INFO] LogConfig: __init__: Completed Initialization of LogConfig class
+[cascade_correlation.py: _init_logging_system:382] (2026-01-15 21:44:50) [DEBUG] CascadeCorrelationNetwork: _init_logging_system: Logger initialized with level: 20
+[cascade_correlation.py: _roll_sequence_number:644] (2026-01-15 21:44:50) [DEBUG] CascadeCorrelationNetwork: _roll_sequence_number: Rolling sequence number to: 0 with max value: 10 using generator: <bound method RandomState.randint of RandomState(MT19937) at 0x7B415D174940>
+[cascade_correlation.py: _roll_sequence_number:644] (2026-01-15 21:44:50) [DEBUG] CascadeCorrelationNetwork: _roll_sequence_number: Rolling sequence number to: 10 with max value: 10 using generator: <bound method Random.randint of <random.Random object at 0x60ba83770d50>>
+[cascade_correlation.py: _roll_sequence_number:644] (2026-01-15 21:44:50) [DEBUG] CascadeCorrelationNetwork: _roll_sequence_number: Rolling sequence number to: 9 with max value: 10 using generator: <function CascadeCorrelationNetwork._initialize_randomness.<locals>.<lambda> at 0x7b415d314670>
+[cascade_correlation.py: _init_activation_with_derivative:677] (2026-01-15 21:44:50) [DEBUG] CascadeCorrelationNetwork: _init_activation_with_derivative: Using activation function: Tanh()
+[cascade_correlation.py: _init_network_parameters:437] (2026-01-15 21:44:50) [DEBUG] CascadeCorrelationNetwork: _init_network_parameters: Network parameters initialized
+[cascade_correlation.py: _init_multiprocessing:466] (2026-01-15 21:44:50) [WARNING] CascadeCorrelationNetwork: _init_multiprocessing: Failed to set forkserver preload: BaseContext.set_forkserver_preload() takes 2 positional arguments but 11 were given
+[cascade_correlation.py: _init_multiprocessing:479] (2026-01-15 21:44:50) [DEBUG] CascadeCorrelationNetwork: _init_multiprocessing: Multiprocessing components initialized
+[cascade_correlation.py: _init_display_components:499] (2026-01-15 21:44:50) [DEBUG] CascadeCorrelationNetwork: _init_display_components: Display components initialized
+[log_config.py: __init__:171] (2026-01-15 21:46:06) [INFO] LogConfig: __init__: Created custom logger by instantiating Logger class
+[log_config.py: __init__:176] (2026-01-15 21:46:06) [DEBUG] LogConfig: __init__: UUID set to: be2d7ba9-fe85-402c-b2ee-93814ceb1174
+[log_config.py: __init__:178] (2026-01-15 21:46:06) [DEBUG] LogConfig: __init__: Default Log Level set to 20
+[log_config.py: __init__:179] (2026-01-15 21:46:06) [INFO] LogConfig: __init__: Completed Initialization of LogConfig class
+[cascade_correlation.py: _init_logging_system:382] (2026-01-15 21:46:06) [DEBUG] CascadeCorrelationNetwork: _init_logging_system: Logger initialized with level: 20
+[cascade_correlation.py: _roll_sequence_number:644] (2026-01-15 21:46:06) [DEBUG] CascadeCorrelationNetwork: _roll_sequence_number: Rolling sequence number to: 6 with max value: 10 using generator: <bound method RandomState.randint of RandomState(MT19937) at 0x7AE6C06F8940>
+[cascade_correlation.py: _roll_sequence_number:644] (2026-01-15 21:46:06) [DEBUG] CascadeCorrelationNetwork: _roll_sequence_number: Rolling sequence number to: 10 with max value: 10 using generator: <bound method Random.randint of <random.Random object at 0x6246eb033d50>>
+[cascade_correlation.py: _roll_sequence_number:644] (2026-01-15 21:46:06) [DEBUG] CascadeCorrelationNetwork: _roll_sequence_number: Rolling sequence number to: 9 with max value: 10 using generator: <function CascadeCorrelationNetwork._initialize_randomness.<locals>.<lambda> at 0x7ae6c069c670>
+[cascade_correlation.py: _init_activation_with_derivative:677] (2026-01-15 21:46:06) [DEBUG] CascadeCorrelationNetwork: _init_activation_with_derivative: Using activation function: Tanh()
+[cascade_correlation.py: _init_network_parameters:437] (2026-01-15 21:46:06) [DEBUG] CascadeCorrelationNetwork: _init_network_parameters: Network parameters initialized
+[cascade_correlation.py: _init_multiprocessing:466] (2026-01-15 21:46:06) [WARNING] CascadeCorrelationNetwork: _init_multiprocessing: Failed to set forkserver preload: BaseContext.set_forkserver_preload() takes 2 positional arguments but 11 were given
+[cascade_correlation.py: _init_multiprocessing:479] (2026-01-15 21:46:06) [DEBUG] CascadeCorrelationNetwork: _init_multiprocessing: Multiprocessing components initialized
+[cascade_correlation.py: _init_display_components:499] (2026-01-15 21:46:06) [DEBUG] CascadeCorrelationNetwork: _init_display_components: Display components initialized
+[log_config.py: __init__:171] (2026-01-15 21:51:57) [INFO] LogConfig: __init__: Created custom logger by instantiating Logger class
+[log_config.py: __init__:176] (2026-01-15 21:51:57) [DEBUG] LogConfig: __init__: UUID set to: 2051dcb4-12af-4719-9b96-66698a93a694
+[log_config.py: __init__:178] (2026-01-15 21:51:57) [DEBUG] LogConfig: __init__: Default Log Level set to 20
+[log_config.py: __init__:179] (2026-01-15 21:51:57) [INFO] LogConfig: __init__: Completed Initialization of LogConfig class
+[cascade_correlation.py: _init_logging_system:382] (2026-01-15 21:51:57) [DEBUG] CascadeCorrelationNetwork: _init_logging_system: Logger initialized with level: 20
+[cascade_correlation.py: _roll_sequence_number:644] (2026-01-15 21:51:57) [DEBUG] CascadeCorrelationNetwork: _roll_sequence_number: Rolling sequence number to: 3 with max value: 10 using generator: <bound method RandomState.randint of RandomState(MT19937) at 0x7B6659590940>
+[cascade_correlation.py: _roll_sequence_number:644] (2026-01-15 21:51:57) [DEBUG] CascadeCorrelationNetwork: _roll_sequence_number: Rolling sequence number to: 10 with max value: 10 using generator: <bound method Random.randint of <random.Random object at 0x629630e7e810>>
+[cascade_correlation.py: _roll_sequence_number:644] (2026-01-15 21:51:57) [DEBUG] CascadeCorrelationNetwork: _roll_sequence_number: Rolling sequence number to: 9 with max value: 10 using generator: <function CascadeCorrelationNetwork._initialize_randomness.<locals>.<lambda> at 0x7b6659730510>
+[cascade_correlation.py: _init_activation_with_derivative:677] (2026-01-15 21:51:57) [DEBUG] CascadeCorrelationNetwork: _init_activation_with_derivative: Using activation function: Tanh()
+[cascade_correlation.py: _init_network_parameters:437] (2026-01-15 21:51:57) [DEBUG] CascadeCorrelationNetwork: _init_network_parameters: Network parameters initialized
+[cascade_correlation.py: _init_multiprocessing:466] (2026-01-15 21:51:57) [WARNING] CascadeCorrelationNetwork: _init_multiprocessing: Failed to set forkserver preload: BaseContext.set_forkserver_preload() takes 2 positional arguments but 11 were given
+[cascade_correlation.py: _init_multiprocessing:479] (2026-01-15 21:51:57) [DEBUG] CascadeCorrelationNetwork: _init_multiprocessing: Multiprocessing components initialized
+[cascade_correlation.py: _init_display_components:499] (2026-01-15 21:51:57) [DEBUG] CascadeCorrelationNetwork: _init_display_components: Display components initialized
+[cascade_correlation.py: forward:1034] (2026-01-15 21:51:57) [DEBUG] CascadeCorrelationNetwork: forward: Input shape: torch.Size([10, 2])
+[cascade_correlation.py: forward:1056] (2026-01-15 21:51:57) [DEBUG] CascadeCorrelationNetwork: forward: Output shape: torch.Size([10, 2])
+[log_config.py: __init__:171] (2026-01-15 21:51:59) [INFO] LogConfig: __init__: Created custom logger by instantiating Logger class
+[log_config.py: __init__:179] (2026-01-15 21:51:59) [INFO] LogConfig: __init__: Completed Initialization of LogConfig class
+[cascade_correlation.py: _init_multiprocessing:466] (2026-01-15 21:51:59) [WARNING] CascadeCorrelationNetwork: _init_multiprocessing: Failed to set forkserver preload: BaseContext.set_forkserver_preload() takes 2 positional arguments but 11 were given
+[log_config.py: __init__:171] (2026-01-15 21:52:02) [INFO] LogConfig: __init__: Created custom logger by instantiating Logger class
+[log_config.py: __init__:179] (2026-01-15 21:52:02) [INFO] LogConfig: __init__: Completed Initialization of LogConfig class
+[cascade_correlation.py: _init_multiprocessing:466] (2026-01-15 21:52:02) [WARNING] CascadeCorrelationNetwork: _init_multiprocessing: Failed to set forkserver preload: BaseContext.set_forkserver_preload() takes 2 positional arguments but 11 were given
+[log_config.py: __init__:171] (2026-01-15 21:52:05) [INFO] LogConfig: __init__: Created custom logger by instantiating Logger class
+[log_config.py: __init__:179] (2026-01-15 21:52:05) [INFO] LogConfig: __init__: Completed Initialization of LogConfig class
+[cascade_correlation.py: _init_multiprocessing:466] (2026-01-15 21:52:05) [WARNING] CascadeCorrelationNetwork: _init_multiprocessing: Failed to set forkserver preload: BaseContext.set_forkserver_preload() takes 2 positional arguments but 11 were given
+[log_config.py: __init__:171] (2026-01-15 21:52:08) [INFO] LogConfig: __init__: Created custom logger by instantiating Logger class
+[log_config.py: __init__:179] (2026-01-15 21:52:08) [INFO] LogConfig: __init__: Completed Initialization of LogConfig class
+[cascade_correlation.py: _init_multiprocessing:466] (2026-01-15 21:52:08) [WARNING] CascadeCorrelationNetwork: _init_multiprocessing: Failed to set forkserver preload: BaseContext.set_forkserver_preload() takes 2 positional arguments but 11 were given
+[log_config.py: __init__:171] (2026-01-15 21:52:11) [INFO] LogConfig: __init__: Created custom logger by instantiating Logger class
+[log_config.py: __init__:179] (2026-01-15 21:52:11) [INFO] LogConfig: __init__: Completed Initialization of LogConfig class
+[cascade_correlation.py: _init_multiprocessing:466] (2026-01-15 21:52:11) [WARNING] CascadeCorrelationNetwork: _init_multiprocessing: Failed to set forkserver preload: BaseContext.set_forkserver_preload() takes 2 positional arguments but 11 were given
+[log_config.py: __init__:171] (2026-01-15 21:52:14) [INFO] LogConfig: __init__: Created custom logger by instantiating Logger class
+[log_config.py: __init__:179] (2026-01-15 21:52:14) [INFO] LogConfig: __init__: Completed Initialization of LogConfig class
+[cascade_correlation.py: _init_multiprocessing:466] (2026-01-15 21:52:14) [WARNING] CascadeCorrelationNetwork: _init_multiprocessing: Failed to set forkserver preload: BaseContext.set_forkserver_preload() takes 2 positional arguments but 11 were given
+[log_config.py: __init__:171] (2026-01-15 21:52:16) [INFO] LogConfig: __init__: Created custom logger by instantiating Logger class
+[log_config.py: __init__:179] (2026-01-15 21:52:16) [INFO] LogConfig: __init__: Completed Initialization of LogConfig class
+[cascade_correlation.py: _init_multiprocessing:466] (2026-01-15 21:52:16) [WARNING] CascadeCorrelationNetwork: _init_multiprocessing: Failed to set forkserver preload: BaseContext.set_forkserver_preload() takes 2 positional arguments but 11 were given
+[log_config.py: __init__:171] (2026-01-15 21:52:19) [INFO] LogConfig: __init__: Created custom logger by instantiating Logger class
+[log_config.py: __init__:179] (2026-01-15 21:52:19) [INFO] LogConfig: __init__: Completed Initialization of LogConfig class
+[cascade_correlation.py: _init_multiprocessing:466] (2026-01-15 21:52:19) [WARNING] CascadeCorrelationNetwork: _init_multiprocessing: Failed to set forkserver preload: BaseContext.set_forkserver_preload() takes 2 positional arguments but 11 were given
+[log_config.py: __init__:171] (2026-01-15 21:52:21) [INFO] LogConfig: __init__: Created custom logger by instantiating Logger class
+[log_config.py: __init__:179] (2026-01-15 21:52:21) [INFO] LogConfig: __init__: Completed Initialization of LogConfig class
+[cascade_correlation.py: _init_multiprocessing:466] (2026-01-15 21:52:21) [WARNING] CascadeCorrelationNetwork: _init_multiprocessing: Failed to set forkserver preload: BaseContext.set_forkserver_preload() takes 2 positional arguments but 11 were given
+[log_config.py: __init__:171] (2026-01-15 21:52:24) [INFO] LogConfig: __init__: Created custom logger by instantiating Logger class
+[log_config.py: __init__:179] (2026-01-15 21:52:24) [INFO] LogConfig: __init__: Completed Initialization of LogConfig class
+[cascade_correlation.py: _init_multiprocessing:466] (2026-01-15 21:52:24) [WARNING] CascadeCorrelationNetwork: _init_multiprocessing: Failed to set forkserver preload: BaseContext.set_forkserver_preload() takes 2 positional arguments but 11 were given
+[log_config.py: __init__:171] (2026-01-15 21:52:26) [INFO] LogConfig: __init__: Created custom logger by instantiating Logger class
+[log_config.py: __init__:179] (2026-01-15 21:52:26) [INFO] LogConfig: __init__: Completed Initialization of LogConfig class
+[cascade_correlation.py: _init_multiprocessing:466] (2026-01-15 21:52:26) [WARNING] CascadeCorrelationNetwork: _init_multiprocessing: Failed to set forkserver preload: BaseContext.set_forkserver_preload() takes 2 positional arguments but 11 were given
+[log_config.py: __init__:171] (2026-01-15 21:52:29) [INFO] LogConfig: __init__: Created custom logger by instantiating Logger class
+[log_config.py: __init__:179] (2026-01-15 21:52:29) [INFO] LogConfig: __init__: Completed Initialization of LogConfig class
+[cascade_correlation.py: _init_multiprocessing:466] (2026-01-15 21:52:29) [WARNING] CascadeCorrelationNetwork: _init_multiprocessing: Failed to set forkserver preload: BaseContext.set_forkserver_preload() takes 2 positional arguments but 11 were given
+[log_config.py: __init__:171] (2026-01-15 21:52:31) [INFO] LogConfig: __init__: Created custom logger by instantiating Logger class
+[log_config.py: __init__:179] (2026-01-15 21:52:31) [INFO] LogConfig: __init__: Completed Initialization of LogConfig class
+[cascade_correlation.py: _init_multiprocessing:466] (2026-01-15 21:52:31) [WARNING] CascadeCorrelationNetwork: _init_multiprocessing: Failed to set forkserver preload: BaseContext.set_forkserver_preload() takes 2 positional arguments but 11 were given
+[log_config.py: __init__:171] (2026-01-15 21:52:34) [INFO] LogConfig: __init__: Created custom logger by instantiating Logger class
+[log_config.py: __init__:179] (2026-01-15 21:52:34) [INFO] LogConfig: __init__: Completed Initialization of LogConfig class
+[cascade_correlation.py: _init_multiprocessing:466] (2026-01-15 21:52:34) [WARNING] CascadeCorrelationNetwork: _init_multiprocessing: Failed to set forkserver preload: BaseContext.set_forkserver_preload() takes 2 positional arguments but 11 were given
+[log_config.py: __init__:171] (2026-01-15 21:52:37) [INFO] LogConfig: __init__: Created custom logger by instantiating Logger class
+[log_config.py: __init__:179] (2026-01-15 21:52:37) [INFO] LogConfig: __init__: Completed Initialization of LogConfig class
+[cascade_correlation.py: _init_multiprocessing:466] (2026-01-15 21:52:37) [WARNING] CascadeCorrelationNetwork: _init_multiprocessing: Failed to set forkserver preload: BaseContext.set_forkserver_preload() takes 2 positional arguments but 11 were given
+[log_config.py: __init__:171] (2026-01-15 21:52:40) [INFO] LogConfig: __init__: Created custom logger by instantiating Logger class
+[log_config.py: __init__:179] (2026-01-15 21:52:40) [INFO] LogConfig: __init__: Completed Initialization of LogConfig class
+[cascade_correlation.py: _init_multiprocessing:466] (2026-01-15 21:52:40) [WARNING] CascadeCorrelationNetwork: _init_multiprocessing: Failed to set forkserver preload: BaseContext.set_forkserver_preload() takes 2 positional arguments but 11 were given
+[log_config.py: __init__:171] (2026-01-15 21:52:42) [INFO] LogConfig: __init__: Created custom logger by instantiating Logger class
+[log_config.py: __init__:179] (2026-01-15 21:52:42) [INFO] LogConfig: __init__: Completed Initialization of LogConfig class
+[cascade_correlation.py: _init_multiprocessing:466] (2026-01-15 21:52:42) [WARNING] CascadeCorrelationNetwork: _init_multiprocessing: Failed to set forkserver preload: BaseContext.set_forkserver_preload() takes 2 positional arguments but 11 were given
+[log_config.py: __init__:171] (2026-01-15 21:52:45) [INFO] LogConfig: __init__: Created custom logger by instantiating Logger class
+[log_config.py: __init__:179] (2026-01-15 21:52:45) [INFO] LogConfig: __init__: Completed Initialization of LogConfig class
+[cascade_correlation.py: _init_multiprocessing:466] (2026-01-15 21:52:45) [WARNING] CascadeCorrelationNetwork: _init_multiprocessing: Failed to set forkserver preload: BaseContext.set_forkserver_preload() takes 2 positional arguments but 11 were given
+[log_config.py: __init__:171] (2026-01-15 21:52:48) [INFO] LogConfig: __init__: Created custom logger by instantiating Logger class
+[log_config.py: __init__:179] (2026-01-15 21:52:48) [INFO] LogConfig: __init__: Completed Initialization of LogConfig class
+[cascade_correlation.py: _init_multiprocessing:466] (2026-01-15 21:52:48) [WARNING] CascadeCorrelationNetwork: _init_multiprocessing: Failed to set forkserver preload: BaseContext.set_forkserver_preload() takes 2 positional arguments but 11 were given
+[log_config.py: __init__:171] (2026-01-15 21:52:50) [INFO] LogConfig: __init__: Created custom logger by instantiating Logger class
+[log_config.py: __init__:179] (2026-01-15 21:52:50) [INFO] LogConfig: __init__: Completed Initialization of LogConfig class
+[cascade_correlation.py: _init_multiprocessing:466] (2026-01-15 21:52:50) [WARNING] CascadeCorrelationNetwork: _init_multiprocessing: Failed to set forkserver preload: BaseContext.set_forkserver_preload() takes 2 positional arguments but 11 were given
+[log_config.py: __init__:171] (2026-01-15 21:52:53) [INFO] LogConfig: __init__: Created custom logger by instantiating Logger class
+[log_config.py: __init__:179] (2026-01-15 21:52:53) [INFO] LogConfig: __init__: Completed Initialization of LogConfig class
+[cascade_correlation.py: _init_multiprocessing:466] (2026-01-15 21:52:53) [WARNING] CascadeCorrelationNetwork: _init_multiprocessing: Failed to set forkserver preload: BaseContext.set_forkserver_preload() takes 2 positional arguments but 11 were given
+[log_config.py: __init__:171] (2026-01-15 21:52:56) [INFO] LogConfig: __init__: Created custom logger by instantiating Logger class
+[log_config.py: __init__:179] (2026-01-15 21:52:56) [INFO] LogConfig: __init__: Completed Initialization of LogConfig class
+[cascade_correlation.py: _init_multiprocessing:466] (2026-01-15 21:52:56) [WARNING] CascadeCorrelationNetwork: _init_multiprocessing: Failed to set forkserver preload: BaseContext.set_forkserver_preload() takes 2 positional arguments but 11 were given
+[log_config.py: __init__:171] (2026-01-15 21:52:59) [INFO] LogConfig: __init__: Created custom logger by instantiating Logger class
+[log_config.py: __init__:179] (2026-01-15 21:52:59) [INFO] LogConfig: __init__: Completed Initialization of LogConfig class
+[cascade_correlation.py: _init_multiprocessing:466] (2026-01-15 21:52:59) [WARNING] CascadeCorrelationNetwork: _init_multiprocessing: Failed to set forkserver preload: BaseContext.set_forkserver_preload() takes 2 positional arguments but 11 were given
+[log_config.py: __init__:171] (2026-01-15 21:53:01) [INFO] LogConfig: __init__: Created custom logger by instantiating Logger class
+[log_config.py: __init__:179] (2026-01-15 21:53:01) [INFO] LogConfig: __init__: Completed Initialization of LogConfig class
+[cascade_correlation.py: _init_multiprocessing:466] (2026-01-15 21:53:01) [WARNING] CascadeCorrelationNetwork: _init_multiprocessing: Failed to set forkserver preload: BaseContext.set_forkserver_preload() takes 2 positional arguments but 11 were given
+[log_config.py: __init__:171] (2026-01-15 21:53:04) [INFO] LogConfig: __init__: Created custom logger by instantiating Logger class
+[log_config.py: __init__:179] (2026-01-15 21:53:04) [INFO] LogConfig: __init__: Completed Initialization of LogConfig class
+[cascade_correlation.py: _init_multiprocessing:466] (2026-01-15 21:53:04) [WARNING] CascadeCorrelationNetwork: _init_multiprocessing: Failed to set forkserver preload: BaseContext.set_forkserver_preload() takes 2 positional arguments but 11 were given
+[log_config.py: __init__:171] (2026-01-15 21:53:07) [INFO] LogConfig: __init__: Created custom logger by instantiating Logger class
+[log_config.py: __init__:179] (2026-01-15 21:53:07) [INFO] LogConfig: __init__: Completed Initialization of LogConfig class
+[cascade_correlation.py: _init_multiprocessing:466] (2026-01-15 21:53:07) [WARNING] CascadeCorrelationNetwork: _init_multiprocessing: Failed to set forkserver preload: BaseContext.set_forkserver_preload() takes 2 positional arguments but 11 were given
+[log_config.py: __init__:171] (2026-01-15 21:53:09) [INFO] LogConfig: __init__: Created custom logger by instantiating Logger class
+[log_config.py: __init__:179] (2026-01-15 21:53:09) [INFO] LogConfig: __init__: Completed Initialization of LogConfig class
+[cascade_correlation.py: _init_multiprocessing:466] (2026-01-15 21:53:09) [WARNING] CascadeCorrelationNetwork: _init_multiprocessing: Failed to set forkserver preload: BaseContext.set_forkserver_preload() takes 2 positional arguments but 11 were given
+[log_config.py: __init__:171] (2026-01-15 21:53:12) [INFO] LogConfig: __init__: Created custom logger by instantiating Logger class
+[log_config.py: __init__:179] (2026-01-15 21:53:12) [INFO] LogConfig: __init__: Completed Initialization of LogConfig class
+[cascade_correlation.py: _init_multiprocessing:466] (2026-01-15 21:53:12) [WARNING] CascadeCorrelationNetwork: _init_multiprocessing: Failed to set forkserver preload: BaseContext.set_forkserver_preload() takes 2 positional arguments but 11 were given
+[log_config.py: __init__:171] (2026-01-15 21:53:14) [INFO] LogConfig: __init__: Created custom logger by instantiating Logger class
+[log_config.py: __init__:179] (2026-01-15 21:53:14) [INFO] LogConfig: __init__: Completed Initialization of LogConfig class
+[cascade_correlation.py: _init_multiprocessing:466] (2026-01-15 21:53:14) [WARNING] CascadeCorrelationNetwork: _init_multiprocessing: Failed to set forkserver preload: BaseContext.set_forkserver_preload() takes 2 positional arguments but 11 were given
+[log_config.py: __init__:171] (2026-01-15 21:58:10) [INFO] LogConfig: __init__: Created custom logger by instantiating Logger class
+[log_config.py: __init__:176] (2026-01-15 21:58:10) [DEBUG] LogConfig: __init__: UUID set to: 9de517e0-ca26-46ef-8979-75c88ebeed56
+[log_config.py: __init__:178] (2026-01-15 21:58:10) [DEBUG] LogConfig: __init__: Default Log Level set to 20
+[log_config.py: __init__:179] (2026-01-15 21:58:10) [INFO] LogConfig: __init__: Completed Initialization of LogConfig class
+[cascade_correlation.py: _init_logging_system:382] (2026-01-15 21:58:10) [DEBUG] CascadeCorrelationNetwork: _init_logging_system: Logger initialized with level: 20
+[cascade_correlation.py: _roll_sequence_number:644] (2026-01-15 21:58:10) [DEBUG] CascadeCorrelationNetwork: _roll_sequence_number: Rolling sequence number to: 5 with max value: 10 using generator: <bound method RandomState.randint of RandomState(MT19937) at 0x7337471F4940>
+[cascade_correlation.py: _roll_sequence_number:644] (2026-01-15 21:58:10) [DEBUG] CascadeCorrelationNetwork: _roll_sequence_number: Rolling sequence number to: 10 with max value: 10 using generator: <bound method Random.randint of <random.Random object at 0x5ecb0e0398e0>>
+[cascade_correlation.py: _roll_sequence_number:644] (2026-01-15 21:58:10) [DEBUG] CascadeCorrelationNetwork: _roll_sequence_number: Rolling sequence number to: 9 with max value: 10 using generator: <function CascadeCorrelationNetwork._initialize_randomness.<locals>.<lambda> at 0x733747198670>
+[cascade_correlation.py: _init_activation_with_derivative:677] (2026-01-15 21:58:10) [DEBUG] CascadeCorrelationNetwork: _init_activation_with_derivative: Using activation function: Tanh()
+[cascade_correlation.py: _init_network_parameters:437] (2026-01-15 21:58:10) [DEBUG] CascadeCorrelationNetwork: _init_network_parameters: Network parameters initialized
+[cascade_correlation.py: _init_multiprocessing:466] (2026-01-15 21:58:10) [WARNING] CascadeCorrelationNetwork: _init_multiprocessing: Failed to set forkserver preload: BaseContext.set_forkserver_preload() takes 2 positional arguments but 11 were given
+[cascade_correlation.py: _init_multiprocessing:479] (2026-01-15 21:58:10) [DEBUG] CascadeCorrelationNetwork: _init_multiprocessing: Multiprocessing components initialized
+[cascade_correlation.py: _init_display_components:499] (2026-01-15 21:58:10) [DEBUG] CascadeCorrelationNetwork: _init_display_components: Display components initialized
+[log_config.py: __init__:171] (2026-01-15 21:58:12) [INFO] LogConfig: __init__: Created custom logger by instantiating Logger class
+[log_config.py: __init__:179] (2026-01-15 21:58:12) [INFO] LogConfig: __init__: Completed Initialization of LogConfig class
+[cascade_correlation.py: _init_multiprocessing:466] (2026-01-15 21:58:12) [WARNING] CascadeCorrelationNetwork: _init_multiprocessing: Failed to set forkserver preload: BaseContext.set_forkserver_preload() takes 2 positional arguments but 11 were given
+[log_config.py: __init__:171] (2026-01-15 21:58:15) [INFO] LogConfig: __init__: Created custom logger by instantiating Logger class
+[log_config.py: __init__:179] (2026-01-15 21:58:15) [INFO] LogConfig: __init__: Completed Initialization of LogConfig class
+[cascade_correlation.py: _init_multiprocessing:466] (2026-01-15 21:58:15) [WARNING] CascadeCorrelationNetwork: _init_multiprocessing: Failed to set forkserver preload: BaseContext.set_forkserver_preload() takes 2 positional arguments but 11 were given
+[log_config.py: __init__:171] (2026-01-15 21:58:18) [INFO] LogConfig: __init__: Created custom logger by instantiating Logger class
+[log_config.py: __init__:179] (2026-01-15 21:58:18) [INFO] LogConfig: __init__: Completed Initialization of LogConfig class
+[cascade_correlation.py: _init_multiprocessing:466] (2026-01-15 21:58:18) [WARNING] CascadeCorrelationNetwork: _init_multiprocessing: Failed to set forkserver preload: BaseContext.set_forkserver_preload() takes 2 positional arguments but 11 were given
+[log_config.py: __init__:171] (2026-01-15 21:58:44) [INFO] LogConfig: __init__: Created custom logger by instantiating Logger class
+[log_config.py: __init__:176] (2026-01-15 21:58:44) [DEBUG] LogConfig: __init__: UUID set to: 5e79dbe0-ddc3-4176-8e0a-71f82038c617
+[log_config.py: __init__:178] (2026-01-15 21:58:44) [DEBUG] LogConfig: __init__: Default Log Level set to 20
+[log_config.py: __init__:179] (2026-01-15 21:58:44) [INFO] LogConfig: __init__: Completed Initialization of LogConfig class
+[cascade_correlation.py: _init_logging_system:382] (2026-01-15 21:58:44) [DEBUG] CascadeCorrelationNetwork: _init_logging_system: Logger initialized with level: 20
+[cascade_correlation.py: _roll_sequence_number:644] (2026-01-15 21:58:44) [DEBUG] CascadeCorrelationNetwork: _roll_sequence_number: Rolling sequence number to: 8 with max value: 10 using generator: <bound method RandomState.randint of RandomState(MT19937) at 0x7A3D0BC98A40>
+[cascade_correlation.py: _roll_sequence_number:644] (2026-01-15 21:58:44) [DEBUG] CascadeCorrelationNetwork: _roll_sequence_number: Rolling sequence number to: 10 with max value: 10 using generator: <bound method Random.randint of <random.Random object at 0x6106ddb8bdb0>>
+[cascade_correlation.py: _roll_sequence_number:644] (2026-01-15 21:58:44) [DEBUG] CascadeCorrelationNetwork: _roll_sequence_number: Rolling sequence number to: 9 with max value: 10 using generator: <function CascadeCorrelationNetwork._initialize_randomness.<locals>.<lambda> at 0x7a3d0bc48670>
+[cascade_correlation.py: _init_activation_with_derivative:677] (2026-01-15 21:58:44) [DEBUG] CascadeCorrelationNetwork: _init_activation_with_derivative: Using activation function: Tanh()
+[cascade_correlation.py: _init_network_parameters:437] (2026-01-15 21:58:44) [DEBUG] CascadeCorrelationNetwork: _init_network_parameters: Network parameters initialized
+[cascade_correlation.py: _init_multiprocessing:466] (2026-01-15 21:58:44) [WARNING] CascadeCorrelationNetwork: _init_multiprocessing: Failed to set forkserver preload: BaseContext.set_forkserver_preload() takes 2 positional arguments but 11 were given
+[cascade_correlation.py: _init_multiprocessing:479] (2026-01-15 21:58:44) [DEBUG] CascadeCorrelationNetwork: _init_multiprocessing: Multiprocessing components initialized
+[cascade_correlation.py: _init_display_components:499] (2026-01-15 21:58:44) [DEBUG] CascadeCorrelationNetwork: _init_display_components: Display components initialized
+[cascade_correlation.py: _accuracy:3325] (2026-01-15 21:58:44) [DEBUG] CascadeCorrelationNetwork: _accuracy: Input shape: torch.Size([10, 2]), Output shape: torch.Size([10, 2])
+[cascade_correlation.py: _accuracy:3342] (2026-01-15 21:58:44) [INFO] CascadeCorrelationNetwork: _accuracy: Calculated accuracy: 1.0000, Percentage: 100.0000%
+[log_config.py: __init__:171] (2026-01-15 21:58:47) [INFO] LogConfig: __init__: Created custom logger by instantiating Logger class
+[log_config.py: __init__:179] (2026-01-15 21:58:47) [INFO] LogConfig: __init__: Completed Initialization of LogConfig class
+[cascade_correlation.py: _init_multiprocessing:466] (2026-01-15 21:58:47) [WARNING] CascadeCorrelationNetwork: _init_multiprocessing: Failed to set forkserver preload: BaseContext.set_forkserver_preload() takes 2 positional arguments but 11 were given
+[cascade_correlation.py: _accuracy:3342] (2026-01-15 21:58:47) [INFO] CascadeCorrelationNetwork: _accuracy: Calculated accuracy: 0.0000, Percentage: 0.0000%
+[log_config.py: __init__:171] (2026-01-15 21:58:49) [INFO] LogConfig: __init__: Created custom logger by instantiating Logger class
+[log_config.py: __init__:179] (2026-01-15 21:58:49) [INFO] LogConfig: __init__: Completed Initialization of LogConfig class
+[cascade_correlation.py: _init_multiprocessing:466] (2026-01-15 21:58:49) [WARNING] CascadeCorrelationNetwork: _init_multiprocessing: Failed to set forkserver preload: BaseContext.set_forkserver_preload() takes 2 positional arguments but 11 were given
+[cascade_correlation.py: _accuracy:3342] (2026-01-15 21:58:49) [INFO] CascadeCorrelationNetwork: _accuracy: Calculated accuracy: 0.5000, Percentage: 50.0000%
+[cascade_correlation.py: calculate_accuracy:3291] (2026-01-15 21:58:49) [INFO] CascadeCorrelationNetwork: calculate_accuracy: Calculated accuracy: 0.5000, Percentage: 50.00%
+[log_config.py: __init__:171] (2026-01-15 21:58:52) [INFO] LogConfig: __init__: Created custom logger by instantiating Logger class
+[log_config.py: __init__:179] (2026-01-15 21:58:52) [INFO] LogConfig: __init__: Completed Initialization of LogConfig class
+[cascade_correlation.py: _init_multiprocessing:466] (2026-01-15 21:58:52) [WARNING] CascadeCorrelationNetwork: _init_multiprocessing: Failed to set forkserver preload: BaseContext.set_forkserver_preload() takes 2 positional arguments but 11 were given
+[cascade_correlation.py: fit:958] (2026-01-15 21:58:52) [INFO] CascadeCorrelationNetwork: fit: Initial training of output layer
+[cascade_correlation.py: train_output_layer:1154] (2026-01-15 21:58:53) [INFO] CascadeCorrelationNetwork: train_output_layer: Final output layer training loss: 0.125355
+[__init__.py: <module>:47] (2026-01-15 21:58:53) [DEBUG] Creating converter from 7 to 5
+[__init__.py: <module>:47] (2026-01-15 21:58:53) [DEBUG] Creating converter from 5 to 7
+[__init__.py: <module>:47] (2026-01-15 21:58:53) [DEBUG] Creating converter from 7 to 5
+[__init__.py: <module>:47] (2026-01-15 21:58:53) [DEBUG] Creating converter from 5 to 7
+[snapshot_serializer.py: save_network:86] (2026-01-15 21:58:53) [INFO] CascadeHDF5Serializer: Saving network to /home/pcalnon/Development/python/Juniper/JuniperCascor/juniper_cascor/src/cascor_snapshots/cascor_snapshot_20260115_215853_4238e588-a0e1-4a5e-b74f-b8e3cf6acb93.h5
+[dataset.py: make_new_dset:180] (2026-01-15 21:58:53) [DEBUG] Creating converter from 5 to 3
+[snapshot_serializer.py: save_network:107] (2026-01-15 21:58:53) [INFO] CascadeHDF5Serializer: Successfully saved network to /home/pcalnon/Development/python/Juniper/JuniperCascor/juniper_cascor/src/cascor_snapshots/cascor_snapshot_20260115_215853_4238e588-a0e1-4a5e-b74f-b8e3cf6acb93.h5
+[cascade_correlation.py: _save_to_hdf5:2858] (2026-01-15 21:58:53) [INFO] CascadeCorrelationNetwork: save_to_hdf5: Successfully saved to /home/pcalnon/Development/python/Juniper/JuniperCascor/juniper_cascor/src/cascor_snapshots/cascor_snapshot_20260115_215853_4238e588-a0e1-4a5e-b74f-b8e3cf6acb93.h5
+[cascade_correlation.py: _save_to_hdf5:2866] (2026-01-15 21:58:53) [INFO] CascadeCorrelationNetwork: save_to_hdf5: Verified saved HDF5 file is valid: /home/pcalnon/Development/python/Juniper/JuniperCascor/juniper_cascor/src/cascor_snapshots/cascor_snapshot_20260115_215853_4238e588-a0e1-4a5e-b74f-b8e3cf6acb93.h5
+[cascade_correlation.py: create_snapshot:2658] (2026-01-15 21:58:53) [INFO] CascadeCorrelationNetwork: create_snapshot: Created snapshot at /home/pcalnon/Development/python/Juniper/JuniperCascor/juniper_cascor/src/cascor_snapshots/cascor_snapshot_20260115_215853_4238e588-a0e1-4a5e-b74f-b8e3cf6acb93.h5
+[cascade_correlation.py: train_output_layer:1156] (2026-01-15 21:58:53) [INFO] CascadeCorrelationNetwork: train_output_layer: Created network snapshot at: True
+[cascade_correlation.py: fit:969] (2026-01-15 21:58:53) [INFO] CascadeCorrelationNetwork: fit: Initial - Train Loss: 0.125355
+[cascade_correlation.py: _accuracy:3342] (2026-01-15 21:58:53) [INFO] CascadeCorrelationNetwork: _accuracy: Calculated accuracy: 0.9000, Percentage: 90.0000%
+[cascade_correlation.py: calculate_accuracy:3291] (2026-01-15 21:58:53) [INFO] CascadeCorrelationNetwork: calculate_accuracy: Calculated accuracy: 0.9000, Percentage: 90.00%
+[cascade_correlation.py: fit:979] (2026-01-15 21:58:53) [INFO] CascadeCorrelationNetwork: fit: Initial - Train Accuracy: 0.9000
+[cascade_correlation.py: fit:985] (2026-01-15 21:58:53) [INFO] CascadeCorrelationNetwork: fit: Starting main training loop with max epochs: 5, early stopping: True
+[cascade_correlation.py: _prepare_candidate_input:1233] (2026-01-15 21:58:57) [INFO] CascadeCorrelationNetwork: _prepare_candidate_input: Hidden units: 0
+[cascade_correlation.py: train_candidates:1197] (2026-01-15 21:58:57) [INFO] CascadeCorrelationNetwork: train_candidates: Executing candidate training with 7 processes.
+[cascade_correlation.py: _execute_candidate_training:1308] (2026-01-15 21:58:57) [INFO] CascadeCorrelationNetwork: _execute_candidate_training: Training 8 candidates with 7 processes
+[cascade_correlation.py: _start_manager:2032] (2026-01-15 21:58:59) [INFO] CascadeCorrelationNetwork: _start_manager: Manager started at 127.0.0.1
+[cascade_correlation.py: _stop_workers:1491] (2026-01-15 22:00:21) [INFO] CascadeCorrelationNetwork: _stop_workers: Stopping 7 worker processes
+[cascade_correlation.py: _stop_workers:1530] (2026-01-15 22:00:21) [INFO] CascadeCorrelationNetwork: _stop_workers: ✓ All 7 workers stopped successfully (7 gracefully)
+[cascade_correlation.py: _stop_manager:2043] (2026-01-15 22:00:21) [INFO] CascadeCorrelationNetwork: _stop_manager: Manager shutdown completed
+[cascade_correlation.py: _process_training_results:1545] (2026-01-15 22:00:21) [INFO] CascadeCorrelationNetwork: _process_training_results: Training duration: 0:01:24.439797
+[cascade_correlation.py: grow_network:2403] (2026-01-15 22:00:21) [WARNING] CascadeCorrelationNetwork: grow_network: Training results are None or best candidate is None, stopping growth of the network.
+[cascade_correlation.py: grow_network:2464] (2026-01-15 22:00:21) [WARNING] CascadeCorrelationNetwork: grow_network: Validation failed at epoch 1/5.
+[cascade_correlation.py: grow_network:2473] (2026-01-15 22:00:21) [INFO] CascadeCorrelationNetwork: grow_network: Finished training after 1 epochs. Total hidden units: 0
+[cascade_correlation.py: fit:1010] (2026-01-15 22:00:21) [INFO] CascadeCorrelationNetwork: fit: Training completed.
+[cascade_correlation.py: _accuracy:3342] (2026-01-15 22:00:21) [INFO] CascadeCorrelationNetwork: _accuracy: Calculated accuracy: 0.9000, Percentage: 90.0000%
+[cascade_correlation.py: calculate_accuracy:3291] (2026-01-15 22:00:21) [INFO] CascadeCorrelationNetwork: calculate_accuracy: Calculated accuracy: 0.9000, Percentage: 90.00%
+[log_config.py: __init__:171] (2026-01-15 22:00:25) [INFO] LogConfig: __init__: Created custom logger by instantiating Logger class
+[log_config.py: __init__:179] (2026-01-15 22:00:25) [INFO] LogConfig: __init__: Completed Initialization of LogConfig class
+[cascade_correlation.py: _init_multiprocessing:466] (2026-01-15 22:00:25) [WARNING] CascadeCorrelationNetwork: _init_multiprocessing: Failed to set forkserver preload: BaseContext.set_forkserver_preload() takes 2 positional arguments but 11 were given
+[cascade_correlation.py: _accuracy:3342] (2026-01-15 22:00:25) [INFO] CascadeCorrelationNetwork: _accuracy: Calculated accuracy: 1.0000, Percentage: 100.0000%
+[cascade_correlation.py: calculate_accuracy:3291] (2026-01-15 22:00:25) [INFO] CascadeCorrelationNetwork: calculate_accuracy: Calculated accuracy: 1.0000, Percentage: 100.00%
+[log_config.py: __init__:171] (2026-01-15 22:00:29) [INFO] LogConfig: __init__: Created custom logger by instantiating Logger class
+[log_config.py: __init__:179] (2026-01-15 22:00:29) [INFO] LogConfig: __init__: Completed Initialization of LogConfig class
+[cascade_correlation.py: _init_multiprocessing:466] (2026-01-15 22:00:29) [WARNING] CascadeCorrelationNetwork: _init_multiprocessing: Failed to set forkserver preload: BaseContext.set_forkserver_preload() takes 2 positional arguments but 11 were given
+[cascade_correlation.py: _accuracy:3342] (2026-01-15 22:00:29) [INFO] CascadeCorrelationNetwork: _accuracy: Calculated accuracy: 0.2000, Percentage: 20.0000%
+[cascade_correlation.py: calculate_accuracy:3291] (2026-01-15 22:00:29) [INFO] CascadeCorrelationNetwork: calculate_accuracy: Calculated accuracy: 0.2000, Percentage: 20.00%
+[log_config.py: __init__:171] (2026-01-15 22:00:33) [INFO] LogConfig: __init__: Created custom logger by instantiating Logger class
+[log_config.py: __init__:179] (2026-01-15 22:00:33) [INFO] LogConfig: __init__: Completed Initialization of LogConfig class
+[cascade_correlation.py: _init_multiprocessing:466] (2026-01-15 22:00:33) [WARNING] CascadeCorrelationNetwork: _init_multiprocessing: Failed to set forkserver preload: BaseContext.set_forkserver_preload() takes 2 positional arguments but 11 were given
+[cascade_correlation.py: _accuracy:3342] (2026-01-15 22:00:33) [INFO] CascadeCorrelationNetwork: _accuracy: Calculated accuracy: 0.5000, Percentage: 50.0000%
+[cascade_correlation.py: calculate_accuracy:3291] (2026-01-15 22:00:33) [INFO] CascadeCorrelationNetwork: calculate_accuracy: Calculated accuracy: 0.5000, Percentage: 50.00%
+[log_config.py: __init__:171] (2026-01-15 22:00:38) [INFO] LogConfig: __init__: Created custom logger by instantiating Logger class
+[log_config.py: __init__:179] (2026-01-15 22:00:38) [INFO] LogConfig: __init__: Completed Initialization of LogConfig class
+[cascade_correlation.py: _init_multiprocessing:466] (2026-01-15 22:00:38) [WARNING] CascadeCorrelationNetwork: _init_multiprocessing: Failed to set forkserver preload: BaseContext.set_forkserver_preload() takes 2 positional arguments but 11 were given
+[cascade_correlation.py: _accuracy:3342] (2026-01-15 22:00:38) [INFO] CascadeCorrelationNetwork: _accuracy: Calculated accuracy: 0.5200, Percentage: 52.0000%
+[cascade_correlation.py: calculate_accuracy:3291] (2026-01-15 22:00:38) [INFO] CascadeCorrelationNetwork: calculate_accuracy: Calculated accuracy: 0.5200, Percentage: 52.00%

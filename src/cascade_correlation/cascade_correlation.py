@@ -1561,8 +1561,9 @@ class CascadeCorrelationNetwork:
         # Extract candidates data from results: list of CandidateTrainingResult objects
         valid_candidates = [ r.candidate_id is not None and r.candidate_uuid is not None and r.correlation is not None and r.candidate is not None for r in results ]
 
-        # Identify best candidate
-        best_candidate_id = ( self.get_single_candidate_data(results, 0, "candidate_id", -1),)
+        # Identify best candidate - results are sorted by correlation descending, so first is best
+        # Note: The first result after sorting has the highest correlation, so its candidate_id is the best
+        best_candidate_id = results[0].candidate_id if results else -1
 
         # Compile statistics
         successful_candidates = self.get_candidates_data_count( results, "correlation", lambda c: c >= self.correlation_threshold)
@@ -1571,6 +1572,8 @@ class CascadeCorrelationNetwork:
             self.logger.warning( f"CascadeCorrelationNetwork: _process_training_results: Mismatch in success counts: success_count: {success_count}, successful_candidates: {successful_candidates}")
 
         # Building TrainingResults object
+        # Note: results are sorted by correlation descending, so index 0 has the best candidate
+        best_result = results[0] if results else None
         training_results = TrainingResults(
             epochs_completed=self.get_candidates_data(results, "epochs_completed"),
             candidate_ids=self.get_candidates_data(results, "candidate_id"),
@@ -1578,14 +1581,14 @@ class CascadeCorrelationNetwork:
             correlations=self.get_candidates_data(results, "correlation"),
             candidate_objects=self.get_candidates_data(results, "candidate"),
             best_candidate_id=best_candidate_id,
-            best_candidate_uuid=self.get_single_candidate_data( results, best_candidate_id, "candidate_uuid", None),
-            best_correlation=self.get_single_candidate_data( results, best_candidate_id, "correlation", 0.0),
-            best_candidate=self.get_single_candidate_data( results, best_candidate_id, "candidate", None),
+            best_candidate_uuid=getattr(best_result, "candidate_uuid", None) if best_result else None,
+            best_correlation=getattr(best_result, "correlation", 0.0) if best_result else 0.0,
+            best_candidate=getattr(best_result, "candidate", None) if best_result else None,
             success_count=success_count,
             successful_candidates=successful_candidates,
             failed_count=len(results) - successful_candidates,
             error_messages=self.get_candidates_error_messages( results, valid_candidates),
-            max_correlation=self.get_single_candidate_data( results, 0, "correlation", 0.0),
+            max_correlation=getattr(best_result, "correlation", 0.0) if best_result else 0.0,
             start_time=start_time,
             end_time=end_time,
         )

@@ -216,13 +216,18 @@ class TestForwardPassValidation:
     
     @pytest.mark.unit
     def test_forward_pass_nan_input(self, simple_network):
-        """Test forward pass with NaN input."""
+        """Test forward pass with NaN input raises ValidationError.
+        
+        The network validates inputs and rejects NaN values to prevent
+        silent propagation of invalid data through the network.
+        """
+        from cascade_correlation_exceptions.cascade_correlation_exceptions import ValidationError
+        
         nan_input = torch.full((5, simple_network.input_size), float('nan'))
         
-        output = simple_network.forward(nan_input)
-        
-        # Output should contain NaN values
-        assert torch.isnan(output).any()  # trunk-ignore(bandit/B101)
+        # Network should reject NaN inputs with a ValidationError
+        with pytest.raises(ValidationError, match="contains NaN values"):
+            simple_network.forward(nan_input)
 
 
 class TestForwardPassCascading:

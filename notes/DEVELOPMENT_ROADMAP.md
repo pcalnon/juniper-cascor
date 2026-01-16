@@ -1265,6 +1265,33 @@ The codebase contains 40+ TODO comments. Key ones to address:
 
 ## Changelog
 
+### 2026-01-15 - Phase 0 Critical Bug Fixes (v0.3.6)
+
+- **P0-016**: Fixed multiprocessing spawn context module import error (COMPLETED)
+  - Added missing `__init__.py` files to all source directories
+  - Resolves `ModuleNotFoundError: No module named 'constants.constants_model'; 'constants' is not a package`
+  - Root cause: Python's multiprocessing `spawn` context re-imports modules, requiring proper package structure
+  - All 16 directories now have proper `__init__.py` files
+
+- **P0-017**: Fixed critical bug in `best_candidate_id` selection (COMPLETED)
+  - **Root Cause**: `_process_training_results()` set `best_candidate_id` as a tuple `(value,)` due to trailing comma
+  - This caused `best_candidate` to always be `None`, so `grow_network()` exited immediately
+  - Network never added hidden units, remaining purely linear (unable to solve spiral problems)
+  - Test symptoms: `initial_loss=0.243668, final_loss=0.243668` (no learning)
+  - Fixed by directly accessing `results[0].candidate_id` after sorting by correlation
+  - Also simplified best_candidate data extraction using direct attribute access
+
+- **P0-018**: Fixed test_forward_pass_nan_input test expectation (COMPLETED)
+  - Updated test to expect `ValidationError` for NaN inputs (correct behavior)
+  - Fixed import path to match runtime module resolution
+  - Network correctly validates and rejects NaN inputs
+
+- **Remaining Issues Identified**:
+  - Multiprocessing manager port conflicts (`OSError: [Errno 98] Address already in use`)
+  - When parallel training fails, dummy results are used (all zero correlation)
+  - Spiral problem tests may still fail if multiprocessing doesn't work correctly
+  - Consider adding sequential training fallback for CI/test environments
+
 ### 2025-01-15 - Phase 0 API Compatibility Fixes (v0.3.5)
 
 - **P0-010**: Fixed `CandidateUnit.train()` return type for backward compatibility (COMPLETED)
