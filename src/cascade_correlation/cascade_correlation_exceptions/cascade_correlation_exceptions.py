@@ -54,8 +54,12 @@ class TrainingError(CascadeCorrelationError):
     pass
 
 
-class ValidationError(CascadeCorrelationError):
-    """Raised when input validation fails."""
+class ValidationError(CascadeCorrelationError, ValueError):
+    """Raised when input validation fails.
+    
+    Subclasses both CascadeCorrelationError (for internal hierarchy) and
+    ValueError (for compatibility with code expecting standard exceptions).
+    """
     pass
 
 

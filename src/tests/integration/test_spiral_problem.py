@@ -16,7 +16,6 @@ Description:
     Integration tests for spiral problem solving with Cascade Correlation Network.
     Tests the network's ability to solve the classic N-spiral classification problem.
 """
-
 import pytest
 import torch
 # import numpy as np
@@ -25,7 +24,7 @@ from helpers.assertions import (
     assert_accuracy_valid, assert_network_learns
 )
 from helpers.utilities import set_deterministic_behavior, measure_training_time
-from test_data.generators import SpiralDataGenerator   # sourcery skip: dont-import-test-modules
+from unit.test_data.generators import SpiralDataGenerator   # sourcery skip: dont-import-test-modules
 
 
 class TestSpiralProblemBasic:
@@ -39,7 +38,8 @@ class TestSpiralProblemBasic:
         set_deterministic_behavior(42)
 
         # Generate 2-spiral data
-        x, y, info = SpiralDataGenerator.generate_2_spiral(
+        # x, y, info = SpiralDataGenerator.generate_2_spiral(
+        x, y, _ = SpiralDataGenerator.generate_2_spiral(
             n_per_spiral=50,
             noise=0.05,
             seed=42
@@ -76,7 +76,8 @@ class TestSpiralProblemBasic:
         set_deterministic_behavior(42)
 
         # Generate 3-spiral data
-        x, y, info = SpiralDataGenerator.generate_n_spiral(
+        # x, y, info = SpiralDataGenerator.generate_n_spiral(
+        x, y, _ = SpiralDataGenerator.generate_n_spiral(
             n_spirals=3,
             n_per_spiral=40,
             noise=0.03,
@@ -129,7 +130,8 @@ class TestSpiralProblemProgressive:
         )
 
         # Generate n-spiral data
-        x, y, info = SpiralDataGenerator.generate_n_spiral(
+        # x, y, info = SpiralDataGenerator.generate_n_spiral(
+        x, y, _ = SpiralDataGenerator.generate_n_spiral(
             n_spirals=n_spirals,
             n_per_spiral=30,
             noise=0.02,
@@ -165,7 +167,8 @@ class TestSpiralProblemRobustness:
         set_deterministic_behavior(42)
 
         # Generate noisy spiral data
-        x, y, info = SpiralDataGenerator.generate_2_spiral(
+        # x, y, info = SpiralDataGenerator.generate_2_spiral(
+        x, y, _ = SpiralDataGenerator.generate_2_spiral(
             n_per_spiral=40,
             noise=noise_level,
             seed=42
@@ -197,7 +200,8 @@ class TestSpiralProblemRobustness:
         set_deterministic_behavior(42)
 
         # Generate spiral data of different sizes
-        x, y, info = SpiralDataGenerator.generate_2_spiral(
+        # x, y, info = SpiralDataGenerator.generate_2_spiral(
+        x, y, _ = SpiralDataGenerator.generate_2_spiral(
             n_per_spiral=n_per_spiral,
             noise=0.03,
             seed=42
@@ -228,7 +232,8 @@ class TestSpiralProblemVisualization:
         set_deterministic_behavior(42)
 
         # Generate spiral data
-        x, y, info = SpiralDataGenerator.generate_2_spiral(
+        # x, y, info = SpiralDataGenerator.generate_2_spiral(
+        x, y, _ = SpiralDataGenerator.generate_2_spiral(
             n_per_spiral=60,
             noise=0.04,
             seed=42
@@ -284,7 +289,8 @@ class TestSpiralProblemEdgeCases:
         set_deterministic_behavior(42)
 
         # Very small dataset
-        x, y, info = SpiralDataGenerator.generate_2_spiral(
+        # x, y, info = SpiralDataGenerator.generate_2_spiral(
+        x, y, _ = SpiralDataGenerator.generate_2_spiral(
             n_per_spiral=5,  # Very small
             noise=0.01,
             seed=42
@@ -310,7 +316,8 @@ class TestSpiralProblemEdgeCases:
         set_deterministic_behavior(42)
 
         # Generate data with no noise (perfect separation)
-        x, y, info = SpiralDataGenerator.generate_2_spiral(
+        # x, y, info = SpiralDataGenerator.generate_2_spiral(
+        x, y, _ = SpiralDataGenerator.generate_2_spiral(
             n_per_spiral=30,
             noise=0.0,  # No noise - perfect separation
             seed=42
@@ -365,13 +372,15 @@ class TestSpiralProblemComparison:
 
             # Generate data
             if config["n_spirals"] == 2:  # sourcery skip: no-conditionals-in-tests
-                x, y, info = SpiralDataGenerator.generate_2_spiral(
+                # x, y, info = SpiralDataGenerator.generate_2_spiral(
+                x, y, _ = SpiralDataGenerator.generate_2_spiral(
                     n_per_spiral=config["n_per_spiral"],
                     noise=config["noise"],
                     seed=42
                 )
             else:
-                x, y, info = SpiralDataGenerator.generate_n_spiral(
+                # x, y, info = SpiralDataGenerator.generate_n_spiral(
+                x, y, _ = SpiralDataGenerator.generate_n_spiral(
                     n_spirals=config["n_spirals"],
                     n_per_spiral=config["n_per_spiral"],
                     noise=config["noise"],
@@ -380,9 +389,8 @@ class TestSpiralProblemComparison:
 
             # Train and measure
             initial_accuracy = network.calculate_accuracy(x, y)
-            history, elapsed_time = measure_training_time(
-                network, x, y, max_epochs=6
-            )
+            # history, elapsed_time = measure_training_time(network, x, y, max_epochs=6)
+            _, elapsed_time = measure_training_time(network, x, y, max_epochs=6)
             final_accuracy = network.calculate_accuracy(x, y)
 
             result = {

@@ -2,9 +2,9 @@
 
 ########################################################################################################################################################################################################################################################
 # References:
-#     DIR="./conf/" && for i in $(ls "${DIR}"); do if [[ -f "${DIR}${i}" ]]; then echo "${i}"; sed -i "s/# Purpose:       Monitoring and Diagnostic Frontend for Cascade Correlation Neural Network/# Purpose:       Juniper Project Cascade Correlation Neural Network/g" "${DIR}${i}"; else echo "Nope! ${i}"; fi; done
-#     DIR="./util/" && for i in $(ls "${DIR}"); do if [[ -f "${DIR}${i}" ]]; then echo "${i}"; sed -i "s/CANOPY/CASCOR/g" "${DIR}${i}"; else echo "Nope! ${i}"; fi; done^C
-#     DIR="./conf/" && for i in $(ls "${DIR}"); do if [[ -f "${DIR}${i}" ]]; then echo "${i}"; sed -i "s/# Last Modified: .*/# Last Modified: 2026-01-12/g" "${DIR}${i}"; else echo "Nope! ${i}"; fi; done
+#     DIR="./conf/" && for i in $(ls "${DIR}"); do if [[ -f "${DIR}${i}" ]]; then echo "${i}"; sed -i "s/# Purpose:       Juniper Project Cascade Correlation Neural Network/# Purpose:       Juniper Project Cascade Correlation Neural Network/g" "${DIR}${i}"; else echo "Nope! ${i}"; fi; done
+#     DIR="./util/" && for i in $(ls "${DIR}"); do if [[ -f "${DIR}${i}" ]]; then echo "${i}"; sed -i "s/CASCOR/CASCOR/g" "${DIR}${i}"; else echo "Nope! ${i}"; fi; done^C
+#     DIR="./conf/" && for i in $(ls "${DIR}"); do if [[ -f "${DIR}${i}" ]]; then echo "${i}"; sed -i "s/# Last Modified: 2026-01-12
 #
 ########################################################################################################################################################################################################################################################
 
@@ -15,19 +15,19 @@
 DIR_LIST="./conf/ ./util/ ./src/"
 
 STRING_LIST_OLD=(\
-"CANOPY" \
-"Canopy" \
-"canopy" \
-"# Last Modified: .*" \
-"# Date:          " \
-"# Purpose:       Monitoring and Diagnostic Frontend for Cascade Correlation Neural Network" \
+"CASCOR" \
+"Cascor" \
+"cascor" \
+"# Last Modified: 2026-01-12
+"# Date Created:  " \
+"# Purpose:       Juniper Project Cascade Correlation Neural Network" \
 )
 
 STRING_LIST_NEW=(\
 "CASCOR" \
 "Cascor" \
 "cascor" \
-"# Last Modified: 2026-01-12" \
+"# Last Modified: 2026-01-12
 "# Date Created:  " \
 "# Purpose:       Juniper Project Cascade Correlation Neural Network" \
 )

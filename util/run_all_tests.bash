@@ -61,18 +61,35 @@ log_verbose "Current Directory: $(pwd)"
 #####################################################################################################################################################################################################
 log_trace "Run Tests with designated reports"
 if [[ "${COVERAGE_REPORT}" == "${FALSE}" ]]; then
-    RUN_TESTS_NO_COV_RPT="pytest -v src/tests"
+    RUN_TESTS_NO_COV_RPT="\
+pytest \
+--slow \
+--integration \
+--junit-xml=src/tests/reports/junit/results.xml \
+--continue-on-collection-errors \
+--ignore=src/tests \
+-v ./src/tests \
+"
     log_verbose "RUN_TESTS_NO_COV_RPT: ${RUN_TESTS_NO_COV_RPT}"
     eval "${RUN_TESTS_NO_COV_RPT}"; SUCCESS="$?"
 elif [[ "${COVERAGE_REPORT}" == "${TRUE}" ]]; then
-    RUN_TESTS_WITH_COV_RPT="pytest -v ./src/tests \
-        --cov=src \
-        --cov-report=xml:src/tests/reports/coverage.xml \
-        --cov-report=term-missing \
-        --cov-report=html:src/tests/reports/coverage \
-        --junit-xml=src/tests/reports/junit/results.xml \
-        --continue-on-collection-errors \
-    "
+    RUN_TESTS_WITH_COV_RPT="\
+pytest \
+--slow \
+--integration \
+--junit-xml=src/tests/reports/junit/results.xml \
+--continue-on-collection-errors \
+--cov=cascade_correlation \
+--cov=candidate_unit \
+--cov-report=html:htmlcov \
+--cov-report=xml \
+--cov=src \
+--cov-report=xml:src/tests/reports/coverage.xml  \
+--cov-report=term-missing \
+--cov-report=html:src/tests/reports/coverage \
+--ignore=src/tests \
+-v ./src/tests \
+"
     log_verbose "RUN_TESTS_WITH_COV_RPT: ${RUN_TESTS_WITH_COV_RPT}"
     eval "${RUN_TESTS_WITH_COV_RPT}"; SUCCESS="$?"
 else

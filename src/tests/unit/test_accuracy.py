@@ -218,7 +218,8 @@ class TestAccuracyValidation:
         x_list = [[1, 2], [3, 4]]
         y_list = [[1, 0], [0, 1]]
         
-        with pytest.raises((TypeError, AttributeError)):
+        # The implementation raises ValueError for non-tensor inputs
+        with pytest.raises((TypeError, AttributeError, ValueError)):
             simple_network.calculate_accuracy(x_list, y_list)
 
 

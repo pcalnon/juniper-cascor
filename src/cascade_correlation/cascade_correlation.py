@@ -220,7 +220,39 @@ def _create_result_queue():
 # Define CandidateTrainingManager Class and global functions
 class CandidateTrainingManager(BaseManager):
     """Custom manager for handling candidate training queues."""
-    pass
+    
+    def start(self, method: str = None, initializer=None, initargs=()):
+        """
+        Start the manager server, optionally validating a requested start method.
+        
+        Args:
+            method: Optional multiprocessing start method ('fork', 'spawn', 'forkserver').
+                    If provided, validates the method is supported on this platform.
+            initializer: Optional initializer function for worker processes.
+            initargs: Arguments for the initializer function.
+        
+        Raises:
+            ValueError: If an invalid start method is provided.
+            NotImplementedError: If the start method is not supported on this platform.
+        
+        Returns:
+            Result from BaseManager.start()
+        """
+        if method is not None:
+            valid_methods = {"fork", "spawn", "forkserver"}
+            if method not in valid_methods:
+                raise ValueError(f"Invalid start method: {method}")
+            
+            # Verify that the context exists on this platform
+            try:
+                mp.get_context(method)
+            except Exception as exc:
+                raise NotImplementedError(
+                    f"Start method '{method}' not implemented on this platform"
+                ) from exc
+        
+        # Delegate to BaseManager.start() with supported arguments
+        return super().start(initializer=initializer, initargs=initargs)
 
 # Register picklable factory functions instead of lambda functions
 CandidateTrainingManager.register("get_task_queue", callable=_create_task_queue)
@@ -670,13 +702,14 @@ class CascadeCorrelationNetwork:
     #################################################################################################################################################################################################
     # Input validation methods
     #################################################################################################################################################################################################
-    def _validate_tensor_input( self, x: torch.Tensor, param_name: str = "x", allow_none: bool = False) -> None:
+    def _validate_tensor_input( self, x: torch.Tensor, param_name: str = "x", allow_none: bool = False, allow_empty: bool = False) -> None:
         """
         Validate tensor input parameters.
         Args:
             x: Input tensor to validate
             param_name: Name of the parameter for error messages
             allow_none: Whether to allow None values
+            allow_empty: Whether to allow empty (zero-batch) tensors
         Raises:
             ValidationError: If tensor is invalid
         """
@@ -686,12 +719,14 @@ class CascadeCorrelationNetwork:
             raise ValidationError(f"Parameter '{param_name}' cannot be None")
         if not isinstance(x, torch.Tensor):
             raise ValidationError( f"Parameter '{param_name}' must be a torch.Tensor, got {type(x)}")
-        if x.numel() == 0:
+        if x.numel() == 0 and not allow_empty:
             raise ValidationError(f"Parameter '{param_name}' cannot be an empty tensor")
-        if torch.isnan(x).any():
-            raise ValidationError(f"Parameter '{param_name}' contains NaN values")
-        if torch.isinf(x).any():
-            raise ValidationError(f"Parameter '{param_name}' contains infinite values")
+        # Skip NaN/Inf checks for empty tensors
+        if x.numel() > 0:
+            if torch.isnan(x).any():
+                raise ValidationError(f"Parameter '{param_name}' contains NaN values")
+            if torch.isinf(x).any():
+                raise ValidationError(f"Parameter '{param_name}' contains infinite values")
 
     def _validate_tensor_shapes(
         self,
@@ -859,6 +894,7 @@ class CascadeCorrelationNetwork:
         x_val: Optional[torch.Tensor] = None,
         y_val: Optional[torch.Tensor] = None,
         max_epochs: int = None,
+        epochs: int = None,
         early_stopping: bool = True,
     ) -> Dict[str, List]:
         """
@@ -869,13 +905,23 @@ class CascadeCorrelationNetwork:
             x_val: Validation input tensor (batch_size, input_features), optional
             y_val: Validation target tensor (batch_size, output_features), optional
             max_epochs: Maximum number of epochs to train (default: from config)
+            epochs: Backward-compatible alias for max_epochs
             early_stopping: Whether to use early stopping
         Raises:
             ValidationError: If input tensors are invalid or have wrong shapes
             TrainingError: If training fails due to configuration issues
+            ValueError: If both epochs and max_epochs are provided with different values
         Returns:
             Training history dictionary containing losses and accuracies
         """
+        # Handle epochs/max_epochs alias for backward compatibility
+        if epochs is not None and max_epochs is not None and epochs != max_epochs:
+            raise ValueError(
+                f"CascadeCorrelationNetwork: fit: Conflicting values for epochs ({epochs}) and max_epochs ({max_epochs})"
+            )
+        if max_epochs is None and epochs is not None:
+            max_epochs = epochs
+        
         # Validate training data
         self._validate_tensor_input(x_train, "x_train")
         self._validate_tensor_input(y_train, "y_train")
@@ -978,8 +1024,8 @@ class CascadeCorrelationNetwork:
         Returns:
             Network output tensor (batch_size, output_features)
         """
-        # Validate input
-        self._validate_tensor_input(x, "x")
+        # Validate input (allow empty tensors for edge case handling)
+        self._validate_tensor_input(x, "x", allow_empty=True)
         self._validate_tensor_shapes(x, expected_input_features=self.input_size)
         # Start with the input features
         self.logger.trace( "CascadeCorrelationNetwork: forward: Starting forward pass through the network.")
@@ -2118,12 +2164,13 @@ class CascadeCorrelationNetwork:
             x = torch.empty(0, self.input_size)
             y = torch.empty(0, self.output_size)
             self.logger.debug( f"CascadeCorrelationNetwork: calculate_residual_error: After defaulting, input shape: {x.shape}, target shape: {y.shape}")
-        if x.shape[1] != y.shape[1]:
-            self.logger.debug( f"CascadeCorrelationNetwork: calculate_residual_error: Input and target must have the same number of features for dim: 1, x shape: {x.shape}, y shape: {y.shape}")
-            # raise ValueError("Input and target must have the same number of features")
-        elif x.shape[0] != y.shape[0]:
-            self.logger.debug( f"CascadeCorrelationNetwork: calculate_residual_error: Input and target must have the same number of features for dim: 0, x shape: {x.shape}, y shape: {y.shape}")
-            # raise ValueError("Input and target must have the same number of samples")
+        # Check batch size match (x and y must have same number of samples)
+        if x.shape[0] != y.shape[0]:
+            self.logger.debug( f"CascadeCorrelationNetwork: calculate_residual_error: Input and target must have the same batch size (dim 0), x shape: {x.shape}, y shape: {y.shape}")
+            # Return empty residual for mismatched batch sizes
+        elif y.shape[1] != self.output_size:
+            self.logger.debug( f"CascadeCorrelationNetwork: calculate_residual_error: Target must have same output size as network, expected {self.output_size}, got {y.shape[1]}")
+            # Return empty residual for mismatched output size
         else:
             # result = torch.empty(0, simple_network.input_size)
             self.logger.debug( "CascadeCorrelationNetwork: calculate_residual_error: Forward pass to calculate output for residual error computation")
@@ -3276,6 +3323,11 @@ class CascadeCorrelationNetwork:
         self.logger.verbose( f"CascadeCorrelationNetwork: _accuracy: Input shape: {y.shape}, Input: {y}")
         self.logger.verbose( f"CascadeCorrelationNetwork: _accuracy: Output shape: {output.shape}, Output: {output}")
 
+        # Handle empty batch case
+        if y.shape[0] == 0:
+            self.logger.debug( "CascadeCorrelationNetwork: _accuracy: Empty batch, returning NaN for accuracy")
+            return float('nan')
+        
         # Find predicted and target values
         predicted = torch.argmax(output, dim=1)
         self.logger.verbose( f"CascadeCorrelationNetwork: _accuracy: Predicted shape: {predicted.shape}, Predicted: {predicted}")

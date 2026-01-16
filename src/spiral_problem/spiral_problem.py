@@ -1180,8 +1180,9 @@ class SpiralProblem(object):
             # plotter = mp.Process(target=self.network.plot_dataset, args=(self.x_full, self.y_full), kwargs={"title":f"N Spiral Problem: {self.n_spirals} Spirals, {self.n_points} Points Each, Noise Factor: {self.noise}",})
             # plotter_data = (self.x_full, self.y_full, {"title":f"N Spiral Problem: {self.n_spirals} Spirals, {self.n_points} Points Each, Noise Factor: {self.noise}"})
             plotter_data = (self.x_full, self.y_full, f"N Spiral Problem: {self.n_spirals} Spirals, {self.n_points} Points Each, Noise Factor: {self.noise}")
-            # plotter = mp.Process(target=self.network.plot_dataset, args=plotter_data)
-            self.plotter = mp.Process(target=CascadeCorrelationNetwork.plot_dataset, args=plotter_data)
+            # Use spawn context to avoid forkserver module reimport issues
+            spawn_ctx = mp.get_context("spawn")
+            self.plotter = spawn_ctx.Process(target=CascadeCorrelationNetwork.plot_dataset, args=plotter_data)
             self.plotter.start()
             # plotter.join()
             self.logger.trace("SpiralProblem: solve_n_spiral_problem: Completed initial plot of the N Spiral Problem dataset")

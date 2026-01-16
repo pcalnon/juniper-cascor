@@ -434,10 +434,50 @@ class CandidateUnit:
         residual_error: torch.Tensor = None,
         learning_rate: float = _CANDIDATE_UNIT_LEARNING_RATE,
         display_frequency: int = _CANDIDATE_UNIT_DISPLAY_FREQUENCY,
-    ) -> (float, float):
+    ) -> float:
         """
         Description:
             Train the candidate unit to maximize correlation with residual error.
+            Backward-compatible API that returns only the final correlation value.
+        Args:
+            x: Input tensor
+            residual_error: Residual error from the network
+            learning_rate: Learning rate for training
+            epochs: Number of training epochs
+            display_frequency: Frequency of displaying training progress
+        Notes:
+            This method delegates to train_detailed() but returns only the correlation float.
+            For full training details including the CandidateTrainingResult object, use train_detailed().
+            The full result is also stored in self.last_training_result for introspection.
+        Raises:
+            ValueError: If input tensor and residual error tensor have incompatible shapes
+        Returns:
+            Final correlation value as a float
+        """
+        result = self.train_detailed(
+            x=x,
+            epochs=epochs,
+            residual_error=residual_error,
+            learning_rate=learning_rate,
+            display_frequency=display_frequency,
+        )
+        # Store for introspection
+        self.last_training_result = result
+        # Preserve original contract: return correlation as float
+        return float(result.correlation)
+
+    def train_detailed(
+        self,
+        x: torch.Tensor = None,
+        epochs: int = _CANDIDATE_UNIT_EPOCHS_MAX,
+        residual_error: torch.Tensor = None,
+        learning_rate: float = _CANDIDATE_UNIT_LEARNING_RATE,
+        display_frequency: int = _CANDIDATE_UNIT_DISPLAY_FREQUENCY,
+    ) -> CandidateTrainingResult:
+        """
+        Description:
+            Train the candidate unit to maximize correlation with residual error.
+            Returns full training details as a CandidateTrainingResult dataclass.
         Args:
             x: Input tensor
             residual_error: Residual error from the network
@@ -448,11 +488,11 @@ class CandidateUnit:
             This method takes the input tensor, residual error, learning rate, and number of epochs.
             It performs a forward pass, calculates the correlation with the residual error, and updates the weights and bias accordingly.
             It handles both single-output and multi-output networks.
-            The method returns the final correlation value after training.
+            For backward compatibility, use train() which returns only the correlation float.
         Raises:
             ValueError: If input tensor and residual error tensor have incompatible shapes
         Returns:
-            Final correlation value
+            CandidateTrainingResult containing full training details
         """
         self.logger.trace("CandidateUnit: train: Starting training of Candidate Unit")
         self.logger.debug(f"CandidateUnit: train: Input parameters - epochs: Type: {type(epochs)}, Value: {epochs}, learning_rate: Type: {type(learning_rate)}, Value: {learning_rate}, display_frequency: Type: {type(display_frequency)}, Value: {display_frequency}")
