@@ -447,23 +447,28 @@ class CascadeCorrelationNetwork:
         """Initialize multiprocessing context and manager attributes."""
         self.logger.trace( "CascadeCorrelationNetwork: _init_multiprocessing: Initializing multiprocessing components")
 
-        # Initialize multiprocessing context
-        self._mp_ctx = mp.get_context("forkserver")
-        try:
-            self._mp_ctx.set_forkserver_preload(
-                "os",
-                "uuid",
-                "torch",
-                "numpy",
-                "random",
-                "logging",
-                "datetime",
-                "typing.Optional",
-                "utils.utils.display_progress",
-                "log_config.logger.logger.Logger",
-            )
-        except Exception as e:
-            self.logger.warning( f"CascadeCorrelationNetwork: _init_multiprocessing: Failed to set forkserver preload: {e}")
+        # Initialize multiprocessing context using configured context type
+        # Use 'fork' context for better compatibility with BaseManager on Linux
+        context_type = self.config.candidate_training_context_type or "fork"
+        self._mp_ctx = mp.get_context(context_type)
+        
+        # Only set forkserver preload if using forkserver context
+        if context_type == "forkserver":
+            try:
+                self._mp_ctx.set_forkserver_preload(
+                    "os",
+                    "uuid",
+                    "torch",
+                    "numpy",
+                    "random",
+                    "logging",
+                    "datetime",
+                    "typing.Optional",
+                    "utils.utils.display_progress",
+                    "log_config.logger.logger.Logger",
+                )
+            except Exception as e:
+                self.logger.warning( f"CascadeCorrelationNetwork: _init_multiprocessing: Failed to set forkserver preload: {e}")
 
         # Initialize manager attributes
         self._manager = None
@@ -1327,9 +1332,16 @@ class CascadeCorrelationNetwork:
             import traceback
             self.logger.error( f"CascadeCorrelationNetwork: _execute_candidate_training: Traceback: {traceback.format_exc()}")
 
-            # Create dummy failure results for each task
-            self.logger.warning( "CascadeCorrelationNetwork: _execute_candidate_training: Creating dummy results for failed training")
-            results = self._get_dummy_results(len(tasks))
+            # Fall back to sequential training when parallel fails
+            self.logger.warning( "CascadeCorrelationNetwork: _execute_candidate_training: Parallel training failed, falling back to sequential training")
+            try:
+                results = self._execute_sequential_training(tasks)
+                self.logger.info( "CascadeCorrelationNetwork: _execute_candidate_training: Sequential training completed successfully")
+            except Exception as seq_error:
+                self.logger.error( f"CascadeCorrelationNetwork: _execute_candidate_training: Sequential training also failed: {seq_error}")
+                # Create dummy failure results for each task only if sequential also fails
+                self.logger.warning( "CascadeCorrelationNetwork: _execute_candidate_training: Creating dummy results for failed training")
+                results = self._get_dummy_results(len(tasks))
         self.logger.debug( f"CascadeCorrelationNetwork: _execute_candidate_training: Obtained {len(results)} results")
 
         # Ensure we have some results:  For empty results list, create an intelligently empty dummy results

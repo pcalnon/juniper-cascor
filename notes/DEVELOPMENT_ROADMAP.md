@@ -198,6 +198,194 @@ python main.py
 
 ---
 
+### P0-005: Fix Shell Script Path Resolution (BLOCKING)
+
+**Priority**: P0 (Must)  
+**Effort**: M  
+**Status**: 🔴 NOT STARTED
+
+**Description**: The `./try` convenience script fails to launch the application due to shell script path resolution errors. The application cannot be executed until this is fixed.
+
+**Root Cause Analysis**:
+
+1. **Helper Script Path Override Bug**: In `util/juniper_cascor.bash` (lines 61-63), the helper scripts are assigned as bare filenames:
+
+   ```bash
+   GET_OS_SCRIPT="__get_os_name.bash"
+   GET_PROJECT_SCRIPT="__get_project_dir.bash"
+   DATE_FUNCTIONS_SCRIPT="__git_log_weeks.bash"
+   ```
+
+   These override any paths defined in `script_util.cfg` and result in "command not found" errors since the scripts are not on `$PATH`.
+
+2. **Empty BASE_DIR**: Because `__get_project_dir.bash` command fails, `BASE_DIR` becomes empty, causing `SOURCE_DIR` to resolve to `/src` instead of the actual project `src/` directory.
+
+3. **Invalid Python Script Path**: The final `PYTHON_SCRIPT` path becomes `/src/./main.py` which does not exist.
+
+4. **Config/Layout Mismatch**: `script_util.cfg` computes `ROOT_PROJECT_DIR` as `/home/pcalnon/Development/python/JuniperCascor` but the actual project path is `/home/pcalnon/Development/python/Juniper/JuniperCascor/juniper_cascor`.
+
+**Error Output**:
+
+```bash
+juniper_cascor.bash: line 67: __get_project_dir.bash: command not found
+Base Dir: 
+Python Script: /src/./main.py
+python3: can't open file '/src/./main.py': [Errno 2] No such file or directory
+```
+
+**Tasks**:
+
+- [ ] Fix `util/juniper_cascor.bash` to use absolute paths for helper scripts (derive from `BASH_SOURCE[0]`)
+- [ ] Update `conf/script_util.cfg` to correctly compute `ROOT_PROJECT_DIR` with proper project hierarchy
+- [ ] Align helper script names in config (`DATE_FUNCTIONS_NAME` vs actual `__git_log_weeks.bash`)
+- [ ] Verify helper scripts are executable (`chmod +x util/__*.bash`)
+- [ ] Test `./try` script successfully launches `main.py`
+
+**Files Affected**:
+
+- `util/juniper_cascor.bash`
+- `conf/script_util.cfg`
+- `util/__get_project_dir.bash`
+- `util/__get_os_name.bash`
+- `util/__git_log_weeks.bash`
+
+**Dependencies**: None (BLOCKING - must be fixed first)
+
+---
+
+### P0-006: Add Missing Dependencies (BLOCKING)
+
+**Priority**: P0 (Must)  
+**Effort**: S  
+**Status**: ✅ COMPLETED (2025-01-15)
+
+**Description**: Several packages were missing from the conda environment, causing import failures when running the application or tests.
+
+**Root Cause Analysis**:
+
+1. **Missing Dependency**: The `src/log_config/logger/logger.py` file imports `yaml` (line 57), but `PyYAML` is not listed in `conf/conda_environment.yaml`.
+
+2. **Import Chain Failure**: When running tests, the import chain fails:
+
+   ```bash
+   conftest.py → cascade_correlation.py → candidate_unit.py → logger.py → yaml
+   ModuleNotFoundError: No module named 'yaml'
+   ```
+
+3. **Documentation Mismatch**: `notes/PROJECT_ANALYSIS.md` and `AGENTS.md` list PyYAML as a required dependency, but it's missing from the conda environment specification.
+
+**Error Output**:
+
+```bash
+ImportError while loading conftest '/home/.../src/tests/conftest.py'.
+src/log_config/logger/logger.py:57: in <module>
+    import yaml
+E   ModuleNotFoundError: No module named 'yaml'
+```
+
+**Tasks**:
+
+- [x] Install PyYAML in the JuniperCascor conda environment (already installed)
+- [x] Install h5py for HDF5 serialization support
+- [x] Install pytest-cov for test coverage reporting
+- [x] Install psutil for test utilities
+- [x] Verify application and tests can import required modules successfully
+
+**Installed Packages**:
+
+- `pyyaml` (6.0.3) - already installed
+- `h5py` (3.15.1)
+- `pytest-cov` (7.0.0)
+- `psutil` (7.2.1)
+
+**Files Affected**:
+
+- `conf/conda_environment.yaml` (should be updated to include these dependencies)
+
+**Dependencies**: None (COMPLETED)
+
+---
+
+### P0-007: Fix Test Runner Script Dependencies
+
+**Priority**: P0 (Must)  
+**Effort**: S-M  
+**Status**: 🔴 NOT STARTED
+
+**Description**: The `./tests` convenience script may fail due to missing configuration or logging function dependencies.
+
+**Root Cause Analysis**:
+
+1. **Dependency on init.conf**: `util/run_all_tests.bash` sources `conf/init.conf` which in turn sources `conf/common.conf`.
+
+2. **Logging Functions**: The script uses `log_trace`, `log_verbose`, `log_info`, `log_critical` functions that must be defined in the sourced config files.
+
+3. **Environment Assumptions**: The script assumes `COVERAGE_REPORT`, `OS_NAME_LINUX`, `OS_NAME_MACOS`, `USERNAME`, `PROJ_DIR` variables are set.
+
+**Tasks**:
+
+- [ ] Verify `conf/common.conf` exists and defines all required logging functions
+- [ ] Verify all required environment variables are defined in config chain
+- [ ] Test `./tests` script successfully runs pytest after P0-006 is fixed
+- [ ] Document test runner dependencies
+
+**Files Affected**:
+
+- `util/run_all_tests.bash`
+- `conf/init.conf`
+- `conf/common.conf`
+
+**Dependencies**: P0-006 (PyYAML must be installed first)
+
+---
+
+### P0-008: Fix Multiprocessing Context for Plotting (BLOCKING)
+
+**Priority**: P0 (Must)  
+**Effort**: S  
+**Status**: ✅ COMPLETED (2025-01-15)
+
+**Description**: The plotting subprocess in `spiral_problem.py` was using the default multiprocessing context (forkserver), causing module import failures in child processes.
+
+**Root Cause Analysis**:
+
+1. **Forkserver Module Reimport Issue**: When using `forkserver` context, child processes reimport the main module. The relative imports in `constants/constants.py` fail because the import context differs in child processes.
+
+2. **Error Chain**:
+
+   ```bash
+   spiral_problem.py:1185 → mp.Process().start() → forkserver reimports main.py
+   main.py → constants/constants.py → "ModuleNotFoundError: No module named 'constants.constants_model'; 'constants' is not a package"
+   ```
+
+3. **Context Mismatch**: The `mp.Process()` call didn't specify a context, inheriting the default `forkserver` context set elsewhere in the application.
+
+**Error Output**:
+
+```bash
+ModuleNotFoundError: No module named 'constants.constants_model'; 'constants' is not a package
+ConnectionResetError: [Errno 104] Connection reset by peer
+```
+
+**Solution**:
+
+- Changed plotting subprocess to explicitly use `spawn` context which handles module imports more reliably.
+
+**Tasks**:
+
+- [x] Identify root cause of multiprocessing module import error
+- [x] Change `mp.Process()` to use `spawn` context for plotting in `spiral_problem.py`
+- [x] Verify application executes successfully without ConnectionResetError
+- [x] Test that plotting subprocess starts correctly
+
+**Files Changed**:
+
+- `src/spiral_problem/spiral_problem.py` (line ~1184): Changed from `mp.Process()` to `spawn_ctx.Process()`
+
+**Dependencies**: None (COMPLETED)
+
+---
+
 ### P0-010: Fix CandidateUnit.train() Return Type
 
 **Priority**: P0 (Must)  
@@ -331,213 +519,43 @@ python main.py
 
 ---
 
-### P0-005: Fix Shell Script Path Resolution (BLOCKING)
-
-**Priority**: P0 (Must)  
-**Effort**: M  
-**Status**: 🔴 NOT STARTED
-
-**Description**: The `./try` convenience script fails to launch the application due to shell script path resolution errors. The application cannot be executed until this is fixed.
-
-**Root Cause Analysis**:
-
-1. **Helper Script Path Override Bug**: In `util/juniper_cascor.bash` (lines 61-63), the helper scripts are assigned as bare filenames:
-
-   ```bash
-   GET_OS_SCRIPT="__get_os_name.bash"
-   GET_PROJECT_SCRIPT="__get_project_dir.bash"
-   DATE_FUNCTIONS_SCRIPT="__git_log_weeks.bash"
-   ```
-
-   These override any paths defined in `script_util.cfg` and result in "command not found" errors since the scripts are not on `$PATH`.
-
-2. **Empty BASE_DIR**: Because `__get_project_dir.bash` command fails, `BASE_DIR` becomes empty, causing `SOURCE_DIR` to resolve to `/src` instead of the actual project `src/` directory.
-
-3. **Invalid Python Script Path**: The final `PYTHON_SCRIPT` path becomes `/src/./main.py` which does not exist.
-
-4. **Config/Layout Mismatch**: `script_util.cfg` computes `ROOT_PROJECT_DIR` as `/home/pcalnon/Development/python/JuniperCascor` but the actual project path is `/home/pcalnon/Development/python/Juniper/JuniperCascor/juniper_cascor`.
-
-**Error Output**:
-
-```bash
-juniper_cascor.bash: line 67: __get_project_dir.bash: command not found
-Base Dir: 
-Python Script: /src/./main.py
-python3: can't open file '/src/./main.py': [Errno 2] No such file or directory
-```
-
-**Tasks**:
-
-- [ ] Fix `util/juniper_cascor.bash` to use absolute paths for helper scripts (derive from `BASH_SOURCE[0]`)
-- [ ] Update `conf/script_util.cfg` to correctly compute `ROOT_PROJECT_DIR` with proper project hierarchy
-- [ ] Align helper script names in config (`DATE_FUNCTIONS_NAME` vs actual `__git_log_weeks.bash`)
-- [ ] Verify helper scripts are executable (`chmod +x util/__*.bash`)
-- [ ] Test `./try` script successfully launches `main.py`
-
-**Files Affected**:
-
-- `util/juniper_cascor.bash`
-- `conf/script_util.cfg`
-- `util/__get_project_dir.bash`
-- `util/__get_os_name.bash`
-- `util/__git_log_weeks.bash`
-
-**Dependencies**: None (BLOCKING - must be fixed first)
-
----
-
-### P0-006: Add Missing Dependencies (BLOCKING)
-
-**Priority**: P0 (Must)  
-**Effort**: S  
-**Status**: ✅ COMPLETED (2025-01-15)
-
-**Description**: Several packages were missing from the conda environment, causing import failures when running the application or tests.
-
-**Root Cause Analysis**:
-
-1. **Missing Dependency**: The `src/log_config/logger/logger.py` file imports `yaml` (line 57), but `PyYAML` is not listed in `conf/conda_environment.yaml`.
-
-2. **Import Chain Failure**: When running tests, the import chain fails:
-
-   ```bash
-   conftest.py → cascade_correlation.py → candidate_unit.py → logger.py → yaml
-   ModuleNotFoundError: No module named 'yaml'
-   ```
-
-3. **Documentation Mismatch**: `notes/PROJECT_ANALYSIS.md` and `AGENTS.md` list PyYAML as a required dependency, but it's missing from the conda environment specification.
-
-**Error Output**:
-
-```bash
-ImportError while loading conftest '/home/.../src/tests/conftest.py'.
-src/log_config/logger/logger.py:57: in <module>
-    import yaml
-E   ModuleNotFoundError: No module named 'yaml'
-```
-
-**Tasks**:
-
-- [x] Install PyYAML in the JuniperCascor conda environment (already installed)
-- [x] Install h5py for HDF5 serialization support
-- [x] Install pytest-cov for test coverage reporting
-- [x] Install psutil for test utilities
-- [x] Verify application and tests can import required modules successfully
-
-**Installed Packages**:
-
-- `pyyaml` (6.0.3) - already installed
-- `h5py` (3.15.1)
-- `pytest-cov` (7.0.0)
-- `psutil` (7.2.1)
-
-**Files Affected**:
-
-- `conf/conda_environment.yaml` (should be updated to include these dependencies)
-
-**Dependencies**: None (COMPLETED)
-
----
-
-### P0-008: Fix Multiprocessing Context for Plotting (BLOCKING)
-
-**Priority**: P0 (Must)  
-**Effort**: S  
-**Status**: ✅ COMPLETED (2025-01-15)
-
-**Description**: The plotting subprocess in `spiral_problem.py` was using the default multiprocessing context (forkserver), causing module import failures in child processes.
-
-**Root Cause Analysis**:
-
-1. **Forkserver Module Reimport Issue**: When using `forkserver` context, child processes reimport the main module. The relative imports in `constants/constants.py` fail because the import context differs in child processes.
-
-2. **Error Chain**:
-
-   ```bash
-   spiral_problem.py:1185 → mp.Process().start() → forkserver reimports main.py
-   main.py → constants/constants.py → "ModuleNotFoundError: No module named 'constants.constants_model'; 'constants' is not a package"
-   ```
-
-3. **Context Mismatch**: The `mp.Process()` call didn't specify a context, inheriting the default `forkserver` context set elsewhere in the application.
-
-**Error Output**:
-
-```bash
-ModuleNotFoundError: No module named 'constants.constants_model'; 'constants' is not a package
-ConnectionResetError: [Errno 104] Connection reset by peer
-```
-
-**Solution**:
-
-- Changed plotting subprocess to explicitly use `spawn` context which handles module imports more reliably.
-
-**Tasks**:
-
-- [x] Identify root cause of multiprocessing module import error
-- [x] Change `mp.Process()` to use `spawn` context for plotting in `spiral_problem.py`
-- [x] Verify application executes successfully without ConnectionResetError
-- [x] Test that plotting subprocess starts correctly
-
-**Files Changed**:
-
-- `src/spiral_problem/spiral_problem.py` (line ~1184): Changed from `mp.Process()` to `spawn_ctx.Process()`
-
-**Dependencies**: None (COMPLETED)
-
----
-
-### P0-007: Fix Test Runner Script Dependencies
-
-**Priority**: P0 (Must)  
-**Effort**: S-M  
-**Status**: 🔴 NOT STARTED
-
-**Description**: The `./tests` convenience script may fail due to missing configuration or logging function dependencies.
-
-**Root Cause Analysis**:
-
-1. **Dependency on init.conf**: `util/run_all_tests.bash` sources `conf/init.conf` which in turn sources `conf/common.conf`.
-
-2. **Logging Functions**: The script uses `log_trace`, `log_verbose`, `log_info`, `log_critical` functions that must be defined in the sourced config files.
-
-3. **Environment Assumptions**: The script assumes `COVERAGE_REPORT`, `OS_NAME_LINUX`, `OS_NAME_MACOS`, `USERNAME`, `PROJ_DIR` variables are set.
-
-**Tasks**:
-
-- [ ] Verify `conf/common.conf` exists and defines all required logging functions
-- [ ] Verify all required environment variables are defined in config chain
-- [ ] Test `./tests` script successfully runs pytest after P0-006 is fixed
-- [ ] Document test runner dependencies
-
-**Files Affected**:
-
-- `util/run_all_tests.bash`
-- `conf/init.conf`
-- `conf/common.conf`
-
-**Dependencies**: P0-006 (PyYAML must be installed first)
-
----
-
 ## Phase 0 Summary
 
 ### Blocking Issues Status
 
-| Issue  | Description                                     | Status                               |
-| ------ | ----------------------------------------------- | ------------------------------------ |
-| P0-005 | Shell script path resolution                    | 🔴 NOT STARTED                       |
-| P0-006 | Missing dependencies (h5py, pytest-cov, psutil) | ✅ COMPLETED (2025-01-15)            |
-| P0-007 | Test runner script dependencies                 | ✅ RESOLVED (tests run successfully) |
-| P0-008 | Multiprocessing context for plotting            | ✅ COMPLETED (2025-01-15)            |
+| Issue  | Description                                           | Status                               |
+| ------ | ----------------------------------------------------- | ------------------------------------ |
+| p0-001 | Fix Candidate Training Runtime Errors                 | ✅ COMPLETED (2025-01-13)            |
+| p0-002 | Complete Serialization Test Coverage                  | 🏗️ In Progress                       |
+| p0-003 | Verify BUG-001 and BUG-002 Fixes                      | 📋 Verification Pending              |
+| p0-004 | Document Thread Safety Constraints                    | ✅ COMPLETED (2025-01-13)            |
+| P0-005 | Shell script path resolution                          | 🔴 NOT STARTED                       |
+| P0-006 | Missing dependencies (h5py, pytest-cov, psutil)       | ✅ COMPLETED (2025-01-15)            |
+| P0-007 | Test runner script dependencies                       | ✅ RESOLVED (tests run successfully) |
+| P0-008 | Multiprocessing context for plotting                  | ✅ COMPLETED (2025-01-15)            |
+| p0-010 | Fix CandidateUnit.train() Return Type                 | ✅ COMPLETED (2025-01-15)            |
+| p0-011 | Fix CandidateTrainingManager.start() Method Signature | ✅ COMPLETED (2025-01-15)            |
+| p0-012 | Fix ValidationError Exception Hierarchy               | ✅ COMPLETED (2025-01-15)            |
+| p0-013 | Fix fit() Method Parameter Alias                      | ✅ COMPLETED (2025-01-15)            |
+| p0-014 | Fix Tensor Validation and Edge Case Handling          | ✅ COMPLETED (2025-01-15)            |
+| p0-015 | Fix Test Expectations                                 | ✅ COMPLETED (2025-01-15)            |
 
 ### Fix Order
 
-1. ~~**P0-006**: Install missing dependencies~~ ✅ COMPLETED
-2. ~~**P0-008**: Fix multiprocessing context~~ ✅ COMPLETED  
-3. ~~**P0-007**: Verify test runner works~~ ✅ COMPLETED
-4. **P0-005**: Fix shell script paths (1-2 hours) - still pending
-5. **P0-002**: Verify previous bug fixes (1-2 hours)
-6. **P0-003**: Complete serialization test coverage (2-4 hours)
+1. ~~**p0-001**: Fix Candidate Training Runtime Errors~~ ✅ COMPLETED
+2. ~~**p0-004**: Document Thread Safety Constraints~~ ✅ COMPLETED
+3. ~~**P0-006**: Install missing dependencies~~ ✅ COMPLETED
+4. ~~**P0-008**: Fix multiprocessing context~~ ✅ COMPLETED  
+5. ~~**P0-007**: Verify test runner works~~ ✅ COMPLETED
+6. ~~**p0-010**: Fix CandidateUnit.train() Return Type~~ ✅ COMPLETED
+7. ~~**p0-011**: Fix CandidateTrainingManager.start() Method Signature~~ ✅ COMPLETED
+8. ~~**p0-012**: Fix ValidationError Exception Hierarchy~~ ✅ COMPLETED
+9. ~~**p0-013**: Fix fit() Method Parameter Alias~~ ✅ COMPLETED
+10. ~~**p0-014**: Fix Tensor Validation and Edge Case Handling~~ ✅ COMPLETED
+11. ~~**p0-015**: Fix Test Expectations~~ ✅ COMPLETED
+12. **P0-005**: Fix Shell script path resolution-- 🔴 NOT STARTED
+13. **P0-002**: Complete serialization test coverage -- 🏗️ IN PROGRESS
+14. **P0-003**: Verify previous bug fixes (1-2 hours) -- 📋 VERIFICATION PENDING
 
 ---
 
@@ -1286,11 +1304,27 @@ The codebase contains 40+ TODO comments. Key ones to address:
   - Fixed import path to match runtime module resolution
   - Network correctly validates and rejects NaN inputs
 
-- **Remaining Issues Identified**:
-  - Multiprocessing manager port conflicts (`OSError: [Errno 98] Address already in use`)
-  - When parallel training fails, dummy results are used (all zero correlation)
-  - Spiral problem tests may still fail if multiprocessing doesn't work correctly
-  - Consider adding sequential training fallback for CI/test environments
+- **P0-019**: Fixed Multiprocessing Manager Port Conflict and Sequential Fallback (COMPLETED - 2026-01-16)
+  - **Root Cause 1**: `_CASCADE_CORRELATION_NETWORK_BASE_MANAGER_ADDRESS` was set to just the IP string `'127.0.0.1'` instead of a tuple `('127.0.0.1', port)`
+  - **Root Cause 2**: Fixed port 50000 was hardcoded, causing "Address already in use" when multiple tests run
+  - **Root Cause 3**: `forkserver` context has issues with custom Manager classes in Python 3.14
+  - **Root Cause 4**: When parallel training failed, dummy results with zero correlation were used, preventing network growth
+  - **Fixes Applied**:
+    - Changed default port from 50000 to 0 (dynamic OS allocation) in `constants_model.py`
+    - Changed default multiprocessing context from `forkserver` to `spawn`
+    - Fixed address constant to use tuple `('127.0.0.1', 0)` instead of just IP string
+    - Updated `_init_multiprocessing()` to use configured context type
+    - Added sequential training fallback in `_execute_candidate_training()` when parallel fails
+  - **Result**: Network now uses sequential training as fallback, producing real correlation values and allowing hidden units to be added
+  - **Files Changed**:
+    - `src/constants/constants_model/constants_model.py`
+    - `src/constants/constants.py`
+    - `src/cascade_correlation/cascade_correlation.py`
+
+- **Remaining Issues**:
+  - Parallel training with BaseManager still fails (pickling/process issues in Python 3.14)
+  - Sequential fallback works correctly but is slower than parallel
+  - Integration tests run slowly due to sequential candidate training
 
 ### 2025-01-15 - Phase 0 API Compatibility Fixes (v0.3.5)
 
