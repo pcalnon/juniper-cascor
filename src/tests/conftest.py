@@ -2,21 +2,49 @@
 #####################################################################################################################################################################################################
 # Project:       Juniper
 # Prototype:     Cascade Correlation Neural Network  
-# File Name:     conftest.py
 # Author:        Paul Calnon
-# Version:       0.1.0
 # 
-# Date Created:  2025-09-26
 # Last Modified: 2026-01-12
 # 
 # License:       MIT License
 # Copyright:     Copyright (c) 2024-2025 Paul Calnon
 # 
 # Description:
+#####################################################################################################################################################################################################
+#####################################################################################################################################################################################################
+# Project:       Juniper
+# Sub-Project:   JuniperCascor
+# Application:   juniper_cascor
+# Purpose:       Juniper Project Cascade Correlation Neural Network
+#
+# Author:        Paul Calnon
+# Version:       0.1.0
+# File Name:     conftest.py
+# File Path:     <Project>/<Sub-Project>/<Application>/src/tests/
+#
+# Date Created:  2025-09-26
+# Last Modified: 2026-01-17
+#
+# License:       MIT License
+# Copyright:     Copyright (c) 2024,2025,2026 Paul Calnon
+#
+# Description:
 #     Pytest configuration and shared fixtures for Cascade Correlation Network tests.
 #     Provides common test setup, data generation, and network instances.
+#
 #####################################################################################################################################################################################################
-
+# Notes:
+#
+########################################################################################################)#############################################################################################
+# References:
+#
+#####################################################################################################################################################################################################
+# TODO :
+#
+#####################################################################################################################################################################################################
+# COMPLETED:
+#
+#####################################################################################################################################################################################################
 import os
 import sys
 import pytest
@@ -31,7 +59,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from cascade_correlation.cascade_correlation import CascadeCorrelationNetwork
-from cascade_correlation_config.cascade_correlation_config import CascadeCorrelationConfig
+from cascade_correlation.cascade_correlation_config.cascade_correlation_config import CascadeCorrelationConfig
 from candidate_unit.candidate_unit import CandidateUnit
 
 

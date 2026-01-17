@@ -43,7 +43,7 @@ from multiprocessing import current_process
 
 from log_config.logger.logger import Logger
 
-from cascade_correlation_exceptions.cascade_correlation_exceptions import (
+from cascade_correlation.cascade_correlation_exceptions.cascade_correlation_exceptions import (
     ValidationError
 )
 

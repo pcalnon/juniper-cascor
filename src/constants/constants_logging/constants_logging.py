@@ -2,7 +2,7 @@
 #####################################################################################################################################################################################################
 # Project:       Juniper
 # Prototype:     Cascade Correlation Neural Network
-# File Name:     constants_model.py
+# File Name:     constants_logging.py
 # Author:        Paul Calnon
 # Version:       0.3.1 (0.7.3)
 #
@@ -130,8 +130,8 @@ _LOGGER_PREFIX_FIELD_NAME_LINE_NUMBER = "lineno"
 _LOGGER_PREFIX_FIELD_NAME_FUNCTION_NAME = "function"
 _LOGGER_PREFIX_FIELD_NAME_ASCTIME = "asctime"
 
-_LOGGER_CONTENT_FIELD_NAME_LEVELNAME = "levelname"
-_LOGGER_CONTENT_FIELD_NAME_MESSAGE = "message"
+_LOGGER_CONTENT_FIELD_NAMES_LEVELNAME = "levelname"
+_LOGGER_CONTENT_FIELD_NAMES_MESSAGE = "message"
 
 _LOGGER_PREFIX_FRAME_FILE_NAME = _LOGGER_PREFIX_FIELD_NAME_FILENAME
 _LOGGER_PREFIX_FRAME_LINE_NAME = _LOGGER_PREFIX_FIELD_NAME_LINE_NUMBER
@@ -144,8 +144,8 @@ _LOGGER_PREFIX_FILENAME = f"%({_LOGGER_PREFIX_FIELD_NAME_FILENAME})s"
 _LOGGER_PREFIX_LINE_NUMBER = f"%({_LOGGER_PREFIX_FIELD_NAME_LINE_NUMBER})d"
 _LOGGER_PREFIX_FUNCTION_NAME = f"%({_LOGGER_PREFIX_FIELD_NAME_FUNCTION_NAME})s"
 _LOGGER_PREFIX_ASCTIME = f"%({_LOGGER_PREFIX_FIELD_NAME_ASCTIME})s"
-_LOGGER_CONTENT_LEVELNAME = f"%({_LOGGER_CONTENT_FIELD_NAME_LEVELNAME})s"
-_LOGGER_CONTENT_MESSAGE = f"%({_LOGGER_CONTENT_FIELD_NAME_MESSAGE})s"
+_LOGGER_CONTENT_LEVELNAME = f"%({_LOGGER_CONTENT_FIELD_NAMES_LEVELNAME})s"
+_LOGGER_CONTENT_MESSAGE = f"%({_LOGGER_CONTENT_FIELD_NAMES_MESSAGE})s"
 
 
 #####################################################################################################################################################################################################
@@ -193,7 +193,7 @@ _LOGGER_CONTENT_NAME = "content"
 
 #####################################################################################################################################################################################################
 # Logging field names complete list
-_LOGGER_DATA_FIELD_NAMES = [ _LOGGER_PREFIX_FIELD_NAME_FILENAME, _LOGGER_PREFIX_FIELD_NAME_LINE_NUMBER, _LOGGER_PREFIX_FIELD_NAME_FUNCTION_NAME, _LOGGER_PREFIX_FIELD_NAME_ASCTIME, _LOGGER_CONTENT_FIELD_NAME_LEVELNAME, _LOGGER_CONTENT_FIELD_NAME_MESSAGE, ]
+_LOGGER_DATA_FIELD_NAMES = [ _LOGGER_PREFIX_FIELD_NAME_FILENAME, _LOGGER_PREFIX_FIELD_NAME_LINE_NUMBER, _LOGGER_PREFIX_FIELD_NAME_FUNCTION_NAME, _LOGGER_PREFIX_FIELD_NAME_ASCTIME, _LOGGER_CONTENT_FIELD_NAMES_LEVELNAME, _LOGGER_CONTENT_FIELD_NAMES_MESSAGE, ]
 _LOGGER_FORMAT_FIELD_NAMES = [ _LOGGER_PREFIX_FILENAME, _LOGGER_PREFIX_LINE_NUMBER, _LOGGER_PREFIX_FUNCTION_NAME, _LOGGER_PREFIX_ASCTIME, _LOGGER_CONTENT_LEVELNAME, _LOGGER_CONTENT_MESSAGE, ]
 
 _LOGGER_FIELD_NAMES_DICT = dict(zip(_LOGGER_DATA_FIELD_NAMES, _LOGGER_FORMAT_FIELD_NAMES, strict=False))
@@ -209,7 +209,7 @@ _LOGGER_PREFIX_CONSOLE_DICT = dict(zip(_LOGGER_PREFIX_FIELD_NAMES_CONSOLE, _LOGG
 
 #####################################################################################################################################################################################################
 # Console logging Content field names
-_LOGGER_CONTENT_FIELD_NAMES_CONSOLE = [_LOGGER_CONTENT_FIELD_NAME_LEVELNAME, _LOGGER_CONTENT_FIELD_NAME_MESSAGE]
+_LOGGER_CONTENT_FIELD_NAMES_CONSOLE = [_LOGGER_CONTENT_FIELD_NAMES_LEVELNAME, _LOGGER_CONTENT_FIELD_NAMES_MESSAGE]
 _LOGGER_CONTENT_FIELDS_CONSOLE = [_LOGGER_CONTENT_LEVELNAME, _LOGGER_CONTENT_MESSAGE]
 
 _LOGGER_CONTENT_CONSOLE_DICT = dict(zip(_LOGGER_CONTENT_FIELD_NAMES_CONSOLE, _LOGGER_CONTENT_FIELDS_CONSOLE, strict=False))
@@ -225,7 +225,7 @@ _LOGGER_PREFIX_FILE_DICT = dict(zip(_LOGGER_PREFIX_FIELD_NAMES_FILE, _LOGGER_PRE
 
 #####################################################################################################################################################################################################
 # File logging Content field names
-_LOGGER_CONTENT_FIELD_NAMES_FILE = [_LOGGER_CONTENT_FIELD_NAME_LEVELNAME, _LOGGER_CONTENT_FIELD_NAME_MESSAGE]
+_LOGGER_CONTENT_FIELD_NAMES_FILE = [_LOGGER_CONTENT_FIELD_NAMES_LEVELNAME, _LOGGER_CONTENT_FIELD_NAMES_MESSAGE]
 _LOGGER_CONTENT_FIELDS_FILE = [_LOGGER_CONTENT_LEVELNAME, _LOGGER_CONTENT_MESSAGE]
 
 _LOGGER_CONTENT_FILE_DICT = dict(zip(_LOGGER_CONTENT_FIELD_NAMES_FILE, _LOGGER_CONTENT_FIELDS_FILE, strict=False))

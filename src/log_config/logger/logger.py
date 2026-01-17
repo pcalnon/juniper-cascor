@@ -12,7 +12,7 @@
 # License:       MIT License
 # Copyright:     Copyright (c) 2024-2025 Paul Calnon
 #
-# Description: 
+# Description:
 #     This module provides a custom logger with custom log levels and a logging configuration.
 #
 #####################################################################################################################################################################################################
@@ -36,7 +36,7 @@
 #####################################################################################################################################################################################################
 # References:
 #     References to setting custom log levels in Python's logging module
-#     https://docs.python.org/3/library/logging.html#logging.addLevelName  
+#     https://docs.python.org/3/library/logging.html#logging.addLevelName
 #     https://docs.python.org/3/library/logging.html#logging.Logger.setLevel
 #     https://stackoverflow.com/questions/2183233/how-to-add-a-custom-loglevel-to-pythons-logging-facility/35804945
 #
@@ -49,81 +49,62 @@
 #
 #####################################################################################################################################################################################################
 import datetime
-import logging
+
+# import logging
 import logging.config
 import os
 import traceback
 import uuid
-import yaml
 
 # from inspect import currentframe, getframeinfo, getouterframes
 from inspect import currentframe, getouterframes
-
 from logging import (
     addLevelName,
 )
+
+import yaml
+
 from constants.constants import (
-    _LOGGER_LOG_DATE_FORMAT,
+    _LOGGER_CONTENT_FIELD_NAMES_LEVELNAME,
+    _LOGGER_CONTENT_FIELD_NAMES_MESSAGE,
+    _LOGGER_CONTENT_FIELD_NAMES_CONSOLE,
+    _LOGGER_CONTENT_FIELD_NAMES_FILE,
+    _LOGGER_CONTENT_NAME,
+    _LOGGER_DESTINATION_NAME_CONSOLE,
+    _LOGGER_DESTINATION_NAME_FILE,
     _LOGGER_LOG_CONFIG_FILE_NAME,
     _LOGGER_LOG_CONFIG_FILE_PATH,
+    _LOGGER_LOG_DATE_FORMAT,
     _LOGGER_LOG_FILE_NAME,
     _LOGGER_LOG_FILE_PATH,
     _LOGGER_LOG_FORMATTER_STRING,
-    # _LOGGER_LOG_LEVEL,
+    _LOGGER_LOG_FORMATTER_STRING_CONSOLE,
+    _LOGGER_LOG_FORMATTER_STRING_CONSOLE_CONTENT,
+    _LOGGER_LOG_FORMATTER_STRING_CONSOLE_PREFIX,
+    _LOGGER_LOG_FORMATTER_STRING_FILE,
+    _LOGGER_LOG_FORMATTER_STRING_FILE_CONTENT,
+    _LOGGER_LOG_FORMATTER_STRING_FILE_PREFIX,
     _LOGGER_LOG_LEVEL_CUSTOM_NAMES_LIST,
     _LOGGER_LOG_LEVEL_LOGGING_CONFIG,
-    _LOGGER_LOG_LEVEL_NAME,
-    _LOGGER_LOG_LEVEL_NUMBERS_DICT,
-    _LOGGER_LOG_LEVEL_NUMBERS_LIST,
-    _LOGGER_LOG_LEVEL_NAMES_LIST,
     _LOGGER_LOG_LEVEL_METHODS_DICT,
     _LOGGER_LOG_LEVEL_METHODS_LIST,
+    _LOGGER_LOG_LEVEL_NAME,
+    _LOGGER_LOG_LEVEL_NAMES_LIST,
+    _LOGGER_LOG_LEVEL_NUMBERS_DICT,
+    _LOGGER_LOG_LEVEL_NUMBERS_LIST,
     _LOGGER_LOG_LEVEL_REDEFINITION,
     _LOGGER_LOG_LOGGING_CONFIGURED_DEFAULT,
     _LOGGER_LOG_MESSAGE_DEFAULT,
-    #_LOGGER_NAME,
-    _LOGGER_PREFIX_FIELD_NAME_FILENAME,
-    _LOGGER_PREFIX_FIELD_NAME_LINE_NUMBER,
-    # The above code seems to be defining a constant variable named
-    # `_LOGGER_PREFIX_FIELD_NAME_FUNCTION_NAME` in Python.
-    _LOGGER_PREFIX_FIELD_NAME_FUNCTION_NAME,
     _LOGGER_PREFIX_FIELD_NAME_ASCTIME,
-    _LOGGER_CONTENT_FIELD_NAME_LEVELNAME,
-    _LOGGER_CONTENT_FIELD_NAME_MESSAGE,
-    # _LOGGER_PREFIX_FRAME_FUNCTION_NAME,
-    # _LOGGER_PREFIX_FILENAME,
-    # _LOGGER_PREFIX_LINE_NUMBER,
-    # _LOGGER_PREFIX_FUNCTION_NAME,
-    # _LOGGER_PREFIX_ASCTIME,
-    # _LOGGER_CONTENT_LEVELNAME,
-    # _LOGGER_CONTENT_MESSAGE,
-    # _LOGGER_DATA_FIELD_NAMES,
-    # _LOGGER_FORMAT_FIELD_NAMES,
-    _LOGGER_PREFIX_FRAME_FILE_NAME,
-    _LOGGER_PREFIX_FRAME_LINE_NAME,
-    _LOGGER_PREFIX_FRAME_FUNC_NAME,
+    _LOGGER_PREFIX_FIELD_NAME_FILENAME,
+    _LOGGER_PREFIX_FIELD_NAME_FUNCTION_NAME,
+    _LOGGER_PREFIX_FIELD_NAME_LINE_NUMBER,
     _LOGGER_PREFIX_FIELD_NAMES_CONSOLE,
-    _LOGGER_CONTENT_FIELD_NAMES_CONSOLE,
-    # _LOGGER_PREFIX_FIELDS_CONSOLE,
-    # _LOGGER_CONTENT_FIELDS_CONSOLE,
     _LOGGER_PREFIX_FIELD_NAMES_FILE,
-    _LOGGER_CONTENT_FIELD_NAMES_FILE,
-    # _LOGGER_PREFIX_FIELDS_FILE,
-    # _LOGGER_CONTENT_FIELDS_FILE,
-    # _LOGGER_PREFIX_FORMAT_CONSOLE,
-    # _LOGGER_PREFIX_FORMAT_FILE,
-    # _LOGGER_CONTENT_FORMAT_CONSOLE,
-    # _LOGGER_CONTENT_FORMAT_FILE,
-    _LOGGER_DESTINATION_NAME_CONSOLE,
-    _LOGGER_DESTINATION_NAME_FILE,
+    _LOGGER_PREFIX_FRAME_FILE_NAME,
+    _LOGGER_PREFIX_FRAME_FUNC_NAME,
+    _LOGGER_PREFIX_FRAME_LINE_NAME,
     _LOGGER_PREFIX_NAME,
-    _LOGGER_CONTENT_NAME,
-    _LOGGER_LOG_FORMATTER_STRING_FILE,
-    _LOGGER_LOG_FORMATTER_STRING_FILE_PREFIX,
-    _LOGGER_LOG_FORMATTER_STRING_FILE_CONTENT,
-    _LOGGER_LOG_FORMATTER_STRING_CONSOLE,
-    _LOGGER_LOG_FORMATTER_STRING_CONSOLE_PREFIX,
-    _LOGGER_LOG_FORMATTER_STRING_CONSOLE_CONTENT,
 )
 
 
@@ -131,7 +112,6 @@ from constants.constants import (
 # Define the Logger class that extends the logging.Logger class (to add custom log levels)
 ########################################################################################################################################
 class Logger(logging.getLoggerClass()):
-
 
     ####################################################################################################################################
     # Define Singleton to determine if Logging has already been Configured
@@ -145,13 +125,12 @@ class Logger(logging.getLoggerClass()):
     def set_configured(cls):
         cls.SingletonLoggingConfigured = True
 
-
     ####################################################################################################################################
     # Logger Class Attributes
     _frm = currentframe
     _tsp = datetime.datetime.now
 
-    _date_format=_LOGGER_LOG_DATE_FORMAT
+    _date_format = _LOGGER_LOG_DATE_FORMAT
 
     _console_name = _LOGGER_DESTINATION_NAME_CONSOLE
     _file_name = _LOGGER_DESTINATION_NAME_FILE
@@ -177,15 +156,28 @@ class Logger(logging.getLoggerClass()):
     _line_number = _LOGGER_PREFIX_FIELD_NAME_LINE_NUMBER
     _function_name = _LOGGER_PREFIX_FIELD_NAME_FUNCTION_NAME
     _asctime = _LOGGER_PREFIX_FIELD_NAME_ASCTIME
-    _level_name = _LOGGER_CONTENT_FIELD_NAME_LEVELNAME
-    _message_name = _LOGGER_CONTENT_FIELD_NAME_MESSAGE
+    _level_name = _LOGGER_CONTENT_FIELD_NAMES_LEVELNAME
+    _message_name = _LOGGER_CONTENT_FIELD_NAMES_MESSAGE
 
     _level_logger_config = _LOGGER_LOG_LEVEL_LOGGING_CONFIG
     # _level_logger_name = _LOGGER_LOG_LEVEL_NAME
     _level_logger_name = "INFO"
 
-    _field_names_file = [_file_name, _function_name, _line_number, _asctime, _level_name, _message_name]
-    _field_names_console = [_file_name, _line_number, _asctime, _level_name, _message_name]
+    _field_names_file = [
+        _file_name,
+        _function_name,
+        _line_number,
+        _asctime,
+        _level_name,
+        _message_name,
+    ]
+    _field_names_console = [
+        _file_name,
+        _line_number,
+        _asctime,
+        _level_name,
+        _message_name,
+    ]
 
     _formatter_string_file = _LOGGER_LOG_FORMATTER_STRING_FILE
     _formatter_string_console = _LOGGER_LOG_FORMATTER_STRING_CONSOLE
@@ -230,85 +222,133 @@ class Logger(logging.getLoggerClass()):
         "FATAL": 60,
     }
 
-
     ####################################################################################################################################
     # Logger Class Methods
     @classmethod
     def _date(cls, format=None):
         return lambda d: d.strftime(format)
 
-
     ####################################################################################################################################
     @classmethod
-    def _frame_info(cls, frame=None,):
+    def _frame_info(
+        cls,
+        frame=None,
+    ):
         return lambda name: getattr(getouterframes(frame)[1], name)
-
 
     ####################################################################################################################################
     @classmethod
     def _console_dict(cls, frame=None, tsp=None, level=None, message=None):
-        _get_frame_info=cls._frame_info(frame=frame)
+        _get_frame_info = cls._frame_info(frame=frame)
         _time_info = cls._date(format=cls._date_format)
-        return dict(zip(cls._field_names_console, [os.path.basename(_get_frame_info(cls._frame_file)), _get_frame_info(cls._frame_line), _time_info(tsp), level, message], strict=False))
+        return dict(
+            zip(
+                cls._field_names_console,
+                [
+                    os.path.basename(_get_frame_info(cls._frame_file)),
+                    _get_frame_info(cls._frame_line),
+                    _time_info(tsp),
+                    level,
+                    message,
+                ],
+                strict=False,
+            )
+        )
 
     @classmethod
     def _file_dict(cls, frame=None, tsp=None, level=None, message=None):
-        _get_frame_info=cls._frame_info(frame=frame)
+        _get_frame_info = cls._frame_info(frame=frame)
         _time_info = cls._date(format=cls._date_format)
-        return dict(zip(cls._field_names_file, [os.path.basename(_get_frame_info(cls._frame_file)), _get_frame_info(cls._frame_func), _get_frame_info(cls._frame_line), _time_info(tsp), level, message], strict=False))
-
+        return dict(
+            zip(
+                cls._field_names_file,
+                [
+                    os.path.basename(_get_frame_info(cls._frame_file)),
+                    _get_frame_info(cls._frame_func),
+                    _get_frame_info(cls._frame_line),
+                    _time_info(tsp),
+                    level,
+                    message,
+                ],
+                strict=False,
+            )
+        )
 
     ####################################################################################################################################
     # Define class methods to Test for valid log level name or number
     @classmethod
-    def is_valid_level(cls, level = None) -> bool:
-        return  cls._is_valid_level_name(level=level) or cls._is_valid_level_number(level==level)
+    def is_valid_level(cls, level=None) -> bool:
+        return cls._is_valid_level_name(level=level) or cls._is_valid_level_number(
+            level == level
+        )
 
     @classmethod
-    def _is_valid_level_name(cls, level: str = None,) -> bool:
+    def _is_valid_level_name(
+        cls,
+        level: str = None,
+    ) -> bool:
         if isinstance(level, str):
             return level.upper() in cls._level_names.values()
         return False
 
     @classmethod
-    def _is_valid_level_number(cls, level: int = None,) -> bool:
+    def _is_valid_level_number(
+        cls,
+        level: int = None,
+    ) -> bool:
         if isinstance(level, int):
             return level in cls._level_numbers.values()
         return False
 
-
     ####################################################################################################################################
     # Define class methods to get log level name or number
     @classmethod
-    def _get_level_number(cls, level: str = None,) -> int or None:
+    def _get_level_number(
+        cls,
+        level: str = None,
+    ) -> int or None:
         if isinstance(level, str):
-            valid_name = level.upper() if level.upper() in cls._level_names.values() else None
-            return cls._level_numbers.get(valid_name) if valid_name is not None else None
+            valid_name = (
+                level.upper() if level.upper() in cls._level_names.values() else None
+            )
+            return (
+                cls._level_numbers.get(valid_name) if valid_name is not None else None
+            )
         return None
 
     @classmethod
-    def _get_level_name(cls, level: int = None,) -> str or None:
+    def _get_level_name(
+        cls,
+        level: int = None,
+    ) -> str or None:
         if isinstance(level, int):
             valid_level = level if level in cls._level_numbers.values() else None
-            return cls._level_names.get(valid_level) if valid_level is not None else None
+            return (
+                cls._level_names.get(valid_level) if valid_level is not None else None
+            )
         return None
-
 
     ####################################################################################################################################
     # Define class methods to determine if Logger config level of Logger normal level should be used for log level filtering
     @classmethod
-    def _get_log_level(cls, config_lvl=None, norm_lvl=None,) -> int:
+    def _get_log_level(
+        cls,
+        config_lvl=None,
+        norm_lvl=None,
+    ) -> int:
         return lambda c: norm_lvl if c else config_lvl
 
     @classmethod
     def _get_log_level_check(cls, config_lvl=None, norm_lvl=None):
         return cls._get_log_level(config_lvl=config_lvl, norm_lvl=norm_lvl)
 
-
     ####################################################################################################################################
     # Define class methods to convert log level from Number to and/or from Name.
     @classmethod
-    def getLevelName(cls, level=None,) -> str or None:
+    def getLevelName(
+        cls,
+        level=None,
+    ) -> str or None:
         if cls._is_valid_level_number(level=level):
             return cls._get_level_name(level=level)
         elif cls._is_valid_level_name(level=level):
@@ -317,7 +357,10 @@ class Logger(logging.getLoggerClass()):
             return None
 
     @classmethod
-    def getLevelNumber(cls, level=None,) -> int or None:
+    def getLevelNumber(
+        cls,
+        level=None,
+    ) -> int or None:
         if cls._is_valid_level_name(level=level):
             return cls._get_level_number(level=level)
         elif cls._is_valid_level_number(level=level):
@@ -326,14 +369,19 @@ class Logger(logging.getLoggerClass()):
             return None
 
     @classmethod
-    def getLevelFrom(cls, level=None,) -> str or int:
+    def getLevelFrom(
+        cls,
+        level=None,
+    ) -> str or int:
         return cls.getLevelNumber(level=level) or cls.getLevelName(level=level)
-
 
     ####################################################################################################################################
     # Define log level methods
     @classmethod
-    def set_level(cls, level=None,) -> None:
+    def set_level(
+        cls,
+        level=None,
+    ) -> None:
         if cls._is_valid_level_name(level=level):
             cls._log_level = level.upper() or _LOGGER_LOG_LEVEL_NAME
         elif cls._is_valid_level_number(level=level):
@@ -342,71 +390,131 @@ class Logger(logging.getLoggerClass()):
             cls._log_level = _LOGGER_LOG_LEVEL_NAME
 
     @classmethod
-    def get_level(cls,) -> str:
+    def get_level(
+        cls,
+    ) -> str:
         return cls._log_level if hasattr(cls, "_log_level") else _LOGGER_LOG_LEVEL_NAME
-
 
     ####################################################################################################################################
     @classmethod
-    def _logging_message(cls, formatter_string=None, dict_method=None, a=None, b=None,) -> str:
-        return lambda frame, tsp, level, message: formatter_string % dict_method(frame=frame, tsp=tsp, level=level, message=message)
-
+    def _logging_message(
+        cls,
+        formatter_string=None,
+        dict_method=None,
+        a=None,
+        b=None,
+    ) -> str:
+        return lambda frame, tsp, level, message: formatter_string % dict_method(
+            frame=frame, tsp=tsp, level=level, message=message
+        )
 
     ####################################################################################################################################
     @classmethod
     def _filter_by_level(cls, level=None, log_level=None) -> bool:
-        if ( valid_level_num := cls.getLevelNumber(cls.is_valid_level(level=level)) )  and  ( valid_loglevel_num := cls.getLevelNumber(cls.is_valid_level(level=log_level)) ):
+        if (
+            valid_level_num := cls.getLevelNumber(cls.is_valid_level(level=level))
+        ) and (
+            valid_loglevel_num := cls.getLevelNumber(
+                cls.is_valid_level(level=log_level)
+            )
+        ):
             return valid_loglevel_num >= valid_level_num
         else:
             return False
-
 
     ####################################################################################################################################
     # Define Logger class log level Logging with Filtering methods
     @classmethod
     def _log_at_level(cls, frame=None, tsp=None, level=None, message=None) -> None:
-        if cls._filter_by_level(level=level, log_level=cls._get_log_level_check(config_lvl=cls._level_logger_config, norm_lvl=cls._level_logger_name)(cls.is_configured())):
-            _console_message = cls._logging_message(cls._formatter_string_console, cls._console_dict)
-            _file_message = cls._logging_message(cls._formatter_string_file, cls._file_dict)
+        if cls._filter_by_level(
+            level=level,
+            log_level=cls._get_log_level_check(
+                config_lvl=cls._level_logger_config, norm_lvl=cls._level_logger_name
+            )(cls.is_configured()),
+        ):
+            _console_message = cls._logging_message(
+                cls._formatter_string_console, cls._console_dict
+            )
+            _file_message = cls._logging_message(
+                cls._formatter_string_file, cls._file_dict
+            )
             print(f"+{_console_message(frame, tsp, level, message)}")
             with open(cls._logging_file, "a") as f:
                 f.write(f"+{_file_message(frame, tsp, level, message)}\n")
 
-
     ####################################################################################################################################
     # Define logging methods
     @classmethod
-    def trace(cls, message=None,) -> None:
-        cls._log_at_level(frame=cls._frm(), tsp=cls._tsp(), level=cls._level_trace, message=message)
+    def trace(
+        cls,
+        message=None,
+    ) -> None:
+        cls._log_at_level(
+            frame=cls._frm(), tsp=cls._tsp(), level=cls._level_trace, message=message
+        )
 
     @classmethod
-    def verbose(cls, message=None,) -> None:
-        cls._log_at_level(frame=cls._frm(), tsp=cls._tsp(), level=cls._level_verbose, message=message)
+    def verbose(
+        cls,
+        message=None,
+    ) -> None:
+        cls._log_at_level(
+            frame=cls._frm(), tsp=cls._tsp(), level=cls._level_verbose, message=message
+        )
 
     @classmethod
-    def debug(cls, message=None,) -> None:
-        cls._log_at_level(frame=cls._frm(), tsp=cls._tsp(), level=cls._level_debug, message=message)
+    def debug(
+        cls,
+        message=None,
+    ) -> None:
+        cls._log_at_level(
+            frame=cls._frm(), tsp=cls._tsp(), level=cls._level_debug, message=message
+        )
 
     @classmethod
-    def info(cls, message=None,) -> None:
-        cls._log_at_level(frame=cls._frm(), tsp=cls._tsp(), level=cls._level_info, message=message)
+    def info(
+        cls,
+        message=None,
+    ) -> None:
+        cls._log_at_level(
+            frame=cls._frm(), tsp=cls._tsp(), level=cls._level_info, message=message
+        )
 
     @classmethod
-    def warning(cls, message=None,) -> None:
-        cls._log_at_level(frame=cls._frm(), tsp=cls._tsp(), level=cls._level_warning, message=message)
+    def warning(
+        cls,
+        message=None,
+    ) -> None:
+        cls._log_at_level(
+            frame=cls._frm(), tsp=cls._tsp(), level=cls._level_warning, message=message
+        )
 
     @classmethod
-    def error(cls, message=None,) -> None:
-        cls._log_at_level(frame=cls._frm(), tsp=cls._tsp(), level=cls._level_error, message=message)
+    def error(
+        cls,
+        message=None,
+    ) -> None:
+        cls._log_at_level(
+            frame=cls._frm(), tsp=cls._tsp(), level=cls._level_error, message=message
+        )
 
     @classmethod
-    def critical(cls, message=None,) -> None:
-        cls._log_at_level(frame=cls._frm(), tsp=cls._tsp(), level=cls._level_critical, message=message)
+    def critical(
+        cls,
+        message=None,
+    ) -> None:
+        cls._log_at_level(
+            frame=cls._frm(), tsp=cls._tsp(), level=cls._level_critical, message=message
+        )
 
     @classmethod
-    def fatal(cls, message=None,) -> None:
-        cls._log_at_level(frame=cls._frm(), tsp=cls._tsp(), level=cls._level_fatal, message=message)
-
+    def fatal(
+        cls,
+        message=None,
+    ) -> None:
+        cls._log_at_level(
+            frame=cls._frm(), tsp=cls._tsp(), level=cls._level_fatal, message=message
+        )
 
     ####################################################################################################################################
     # Define the init method for the Logger class
@@ -435,151 +543,276 @@ class Logger(logging.getLoggerClass()):
         **kwargs,
     ):
 
-        Logger.debug("Logger: __init__: Starting Logger initialization with parameters:")
+        Logger.debug(
+            "Logger: __init__: Starting Logger initialization with parameters:"
+        )
         for key, value in kwargs.items():
             Logger.debug(f"Logger: __init__:   {key}: {value}")
 
-
         # Initialize Logger class file name and path attributes
-        Logger.debug("Logger: __init__: Initializing Logger class file name and path attributes")
+        Logger.debug(
+            "Logger: __init__: Initializing Logger class file name and path attributes"
+        )
         self.log_file_name = _Logger__log_file_name or __name__
-        self.log_file_path = _Logger__log_file_path or str(os.path.join(os.getcwd(), "logs"))
+        self.log_file_path = _Logger__log_file_path or str(
+            os.path.join(os.getcwd(), "logs")
+        )
 
         # Initialize Logger class config file name and path attributes
-        Logger.debug("Logger: __init__: Initializing Logger class config file name and path attributes")
-        self.log_config_file_name = str(_Logger__log_config_file_name or _LOGGER_LOG_CONFIG_FILE_NAME)
-        self.log_config_file_path = _Logger__log_config_file_path or str(os.path.join(os.getcwd(), "conf"))
-        self.log_config_file = str(os.path.join(self.log_config_file_path, self.log_config_file_name))
+        Logger.debug(
+            "Logger: __init__: Initializing Logger class config file name and path attributes"
+        )
+        self.log_config_file_name = str(
+            _Logger__log_config_file_name or _LOGGER_LOG_CONFIG_FILE_NAME
+        )
+        self.log_config_file_path = _Logger__log_config_file_path or str(
+            os.path.join(os.getcwd(), "conf")
+        )
+        self.log_config_file = str(
+            os.path.join(self.log_config_file_path, self.log_config_file_name)
+        )
 
         # Initialize Logger class attributes for log formatting and config
-        Logger.debug("Logger: __init__: Initializing Logger class attributes for log formatting and config")
-        self.log_formatter_string = _Logger__log_formatter_string or _LOGGER_LOG_FORMATTER_STRING
-        self.log_message_default = _Logger__log_message_default or _LOGGER_LOG_MESSAGE_DEFAULT
-        self.log_level_redefinition = _Logger__log_level_redefinition or _LOGGER_LOG_LEVEL_REDEFINITION
+        Logger.debug(
+            "Logger: __init__: Initializing Logger class attributes for log formatting and config"
+        )
+        self.log_formatter_string = (
+            _Logger__log_formatter_string or _LOGGER_LOG_FORMATTER_STRING
+        )
+        self.log_message_default = (
+            _Logger__log_message_default or _LOGGER_LOG_MESSAGE_DEFAULT
+        )
+        self.log_level_redefinition = (
+            _Logger__log_level_redefinition or _LOGGER_LOG_LEVEL_REDEFINITION
+        )
 
         # Initialize Logger class attributes for logging configuration
-        Logger.debug("Logger: __init__: Initializing Logger class attributes for logging configuration")
-        self.log_level_custom_names_list = _Logger__log_level_custom_names_list or _LOGGER_LOG_LEVEL_CUSTOM_NAMES_LIST
-        self.log_level_methods_dict = _Logger__log_level_methods_dict or _LOGGER_LOG_LEVEL_METHODS_DICT
-        self.log_level_methods_list = _Logger__log_level_methods_list or _LOGGER_LOG_LEVEL_METHODS_LIST
+        Logger.debug(
+            "Logger: __init__: Initializing Logger class attributes for logging configuration"
+        )
+        self.log_level_custom_names_list = (
+            _Logger__log_level_custom_names_list or _LOGGER_LOG_LEVEL_CUSTOM_NAMES_LIST
+        )
+        self.log_level_methods_dict = (
+            _Logger__log_level_methods_dict or _LOGGER_LOG_LEVEL_METHODS_DICT
+        )
+        self.log_level_methods_list = (
+            _Logger__log_level_methods_list or _LOGGER_LOG_LEVEL_METHODS_LIST
+        )
         self.log_level_name = _Logger__log_level_name or _LOGGER_LOG_LEVEL_NAME
-        self.log_level_logging_config = _Logger__log_level_logging_config or _LOGGER_LOG_LEVEL_LOGGING_CONFIG
-        self.log_level_names_list = _Logger__log_level_names_list or _LOGGER_LOG_LEVEL_NAMES_LIST
-        self.log_level_numbers_dict = _Logger__log_level_numbers_dict or _LOGGER_LOG_LEVEL_NUMBERS_DICT
-        self.log_level_numbers_list = _Logger__log_level_numbers_list or _LOGGER_LOG_LEVEL_NUMBERS_LIST
+        self.log_level_logging_config = (
+            _Logger__log_level_logging_config or _LOGGER_LOG_LEVEL_LOGGING_CONFIG
+        )
+        self.log_level_names_list = (
+            _Logger__log_level_names_list or _LOGGER_LOG_LEVEL_NAMES_LIST
+        )
+        self.log_level_numbers_dict = (
+            _Logger__log_level_numbers_dict or _LOGGER_LOG_LEVEL_NUMBERS_DICT
+        )
+        self.log_level_numbers_list = (
+            _Logger__log_level_numbers_list or _LOGGER_LOG_LEVEL_NUMBERS_LIST
+        )
 
         # Initialize Logger class attributes for log date formatting
-        Logger.debug("Logger: __init__: Initializing Logger class attributes for log date formatting")
+        Logger.debug(
+            "Logger: __init__: Initializing Logger class attributes for log date formatting"
+        )
         self.log_date_format = _Logger__log_date_format or _LOGGER_LOG_DATE_FORMAT
 
         # Call the superclass __init__ method for Logging class using the named logger instead of root logger
-        Logger.debug(f"Logger: __init__: Calling superclass __init__ method for Logger class with name: {self.log_file_name}, level: {self.log_level_logging_config}")
-        super().__init__(name=self.log_file_name, level=self.log_level_logging_config)  # Use project logger name
+        Logger.debug(
+            f"Logger: __init__: Calling superclass __init__ method for Logger class with name: {self.log_file_name}, level: {self.log_level_logging_config}"
+        )
+        super().__init__(
+            name=self.log_file_name, level=self.log_level_logging_config
+        )  # Use project logger name
         # super().__init__(name=_LOGGER_NAME, level=self.log_level_logging_config)  # Use project logger name
 
-        Logger.debug(f"Logger: __init__: Logging Config: logging.config: Type: {type(logging.config)} Value: {logging.config}")
-        Logger.debug(f"Logger: __init__: Logging Config: _Logger__log_config: Type: {type(_Logger__log_config)} Value: {_Logger__log_config}")
+        Logger.debug(
+            f"Logger: __init__: Logging Config: logging.config: Type: {type(logging.config)} Value: {logging.config}"
+        )
+        Logger.debug(
+            f"Logger: __init__: Logging Config: _Logger__log_config: Type: {type(_Logger__log_config)} Value: {_Logger__log_config}"
+        )
         # add the logging.config to the Logger class for config file loading and initialization
-        Logger.debug("Logger: __init__: add the logging.config to the Logger class for config file loading and initialization")
-        if _Logger__log_config and hasattr(_Logger__log_config, 'dictConfig'):
+        Logger.debug(
+            "Logger: __init__: add the logging.config to the Logger class for config file loading and initialization"
+        )
+        if _Logger__log_config and hasattr(_Logger__log_config, "dictConfig"):
             self.config = _Logger__log_config
         else:
             # Use logging.config when _Logger__log_config is None or not a valid logging config object
-            Logger.debug("Logger: __init__: Use logging.config when _Logger__log_config is None or not a valid logging config object")
+            Logger.debug(
+                "Logger: __init__: Use logging.config when _Logger__log_config is None or not a valid logging config object"
+            )
             self.config = logging.config
             if _Logger__log_config is None:
-                Logger.warning("Logger: __init__: Warning: _Logger__log_config doesn't have dictConfig method, using logging.config instead")
+                Logger.warning(
+                    "Logger: __init__: Warning: _Logger__log_config doesn't have dictConfig method, using logging.config instead"
+                )
 
-        Logger.debug(f"Logger: __init__: Added Logging.config to the Logger class instance: Type: {type(self.config)} Value set to: {self.config}")
-        Logger.debug(f"Logger: __init__: Config has dictConfig method: {hasattr(self.config, 'dictConfig')}")
+        Logger.debug(
+            f"Logger: __init__: Added Logging.config to the Logger class instance: Type: {type(self.config)} Value set to: {self.config}"
+        )
+        Logger.debug(
+            f"Logger: __init__: Config has dictConfig method: {hasattr(self.config, 'dictConfig')}"
+        )
 
         # Configure the logger with all custom log levels FIRST. This must happen before loading the YAML configuration
-        Logger.debug("Logger: __init__: Configure the logger with all custom log levels FIRST. This must happen before loading the YAML configuration")
-        Logger.debug(f"Logger: __init__: Configuring custom log levels for Logger class with names: {self.log_level_names_list}, numbers: {self.log_level_numbers_dict}, methods: {self.log_level_methods_dict}")
+        Logger.debug(
+            "Logger: __init__: Configure the logger with all custom log levels FIRST. This must happen before loading the YAML configuration"
+        )
+        Logger.debug(
+            f"Logger: __init__: Configuring custom log levels for Logger class with names: {self.log_level_names_list}, numbers: {self.log_level_numbers_dict}, methods: {self.log_level_methods_dict}"
+        )
         self._init_custom_log_levels(
-            custom_names_list = self.log_level_custom_names_list,
-            numbers_dict = self.log_level_numbers_dict,
-            methods_dict = self.log_level_methods_dict,
-            allow_redefinition = self.log_level_redefinition,
+            custom_names_list=self.log_level_custom_names_list,
+            numbers_dict=self.log_level_numbers_dict,
+            methods_dict=self.log_level_methods_dict,
+            allow_redefinition=self.log_level_redefinition,
         )
 
         # TODO: This might be a good place to check if custom log levels are being successfully assigned
         # Update the Logger instance simple logging config with the provided log config values
-        Logger.debug(f"Logger: __init__: Updating Logger instance config with handler values: {self.handlers}")
+        Logger.debug(
+            f"Logger: __init__: Updating Logger instance config with handler values: {self.handlers}"
+        )
         if not self.handlers:
             handler = logging.StreamHandler()
-            formatter = logging.Formatter(fmt=self.log_formatter_string, datefmt=self.log_date_format)
+            formatter = logging.Formatter(
+                fmt=self.log_formatter_string, datefmt=self.log_date_format
+            )
             handler.setFormatter(formatter)
             self.addHandler(handler)
-        Logger.debug(f"Logger: __init__: Completed Updating Logger instance config with handler values: {self.handlers}")
+        Logger.debug(
+            f"Logger: __init__: Completed Updating Logger instance config with handler values: {self.handlers}"
+        )
 
         # Only configure logging once globally to avoid conflicts:   if not self.__class__._LOGGER_SINGLETON_LOGGING_CONFIGURED
         # IMPORTANT: Custom log levels must be defined before configuring Logging using the log config yaml file.
-        Logger.debug("Logger: __init__: Only configure logging once globally to avoid conflicts:   if not self.__class__._LOGGER_SINGLETON_LOGGING_CONFIGURED")
-        Logger.debug("Logger: __init__: IMPORTANT: Custom log levels must be defined before configuring Logging using the log config yaml file.")
+        Logger.debug(
+            "Logger: __init__: Only configure logging once globally to avoid conflicts:   if not self.__class__._LOGGER_SINGLETON_LOGGING_CONFIGURED"
+        )
+        Logger.debug(
+            "Logger: __init__: IMPORTANT: Custom log levels must be defined before configuring Logging using the log config yaml file."
+        )
         if not Logger.is_configured():
-            Logger.debug(f"Logger: __init__: Configuring logging using the config dict read from logging config file: {self.log_config_file}")
+            Logger.debug(
+                f"Logger: __init__: Configuring logging using the config dict read from logging config file: {self.log_config_file}"
+            )
             try:
                 with open(self.log_config_file, "r") as self.log_conf:
-                    self.logger_configs = yaml.safe_load(self.log_conf.read())           # Read logging config yaml and create Config Dict
-                    Logger.debug(f"Logger: __init__: self.logger_configs: Type: {type(self.logger_configs)}, Has dictConfig: {hasattr(self.logger_configs, 'dictConfig')}")
-                Logger.debug(f"Logger: __init__: self.logger_configs: Type: {type(self.logger_configs)}, Has dictConfig: {hasattr(self.logger_configs, 'dictConfig')}")
+                    self.logger_configs = yaml.safe_load(
+                        self.log_conf.read()
+                    )  # Read logging config yaml and create Config Dict
+                    Logger.debug(
+                        f"Logger: __init__: self.logger_configs: Type: {type(self.logger_configs)}, Has dictConfig: {hasattr(self.logger_configs, 'dictConfig')}"
+                    )
+                Logger.debug(
+                    f"Logger: __init__: self.logger_configs: Type: {type(self.logger_configs)}, Has dictConfig: {hasattr(self.logger_configs, 'dictConfig')}"
+                )
             except Exception as e:
-                Logger.error(f"Logger: __init__: Error reading config file for Juniper project logging: {e}")
+                Logger.error(
+                    f"Logger: __init__: Error reading config file for Juniper project logging: {e}"
+                )
                 traceback.print_exc()
 
             # Logger.info(f"Logger: __init__: Loaded logging config from {self.log_config_file_path}")
-            Logger.debug(f"Logger: __init__: Loaded logging config from {self.log_config_file_path}")
+            Logger.debug(
+                f"Logger: __init__: Loaded logging config from {self.log_config_file_path}"
+            )
             # Logger.info(f"Logger: __init__: self.config: Type: {type(self.config)}, Has dictConfig: {hasattr(self.config, 'dictConfig')}")
-            Logger.debug(f"Logger: __init__: self.config: Type: {type(self.config)}, Has dictConfig: {hasattr(self.config, 'dictConfig')}")
+            Logger.debug(
+                f"Logger: __init__: self.config: Type: {type(self.config)}, Has dictConfig: {hasattr(self.config, 'dictConfig')}"
+            )
 
-            Logger.debug(f"Logger: __init__: Configure as Singleton: Class Variable: logging configured flag: {self.__class__.SingletonLoggingConfigured}")
-            Logger.debug("Logger: __init__: Configuring logging using the config dict read from logging config file")
-            Logger.debug(f"Logger: __init__: Loaded logging config from {self.log_config_file_path}")
-            Logger.debug(f"Logger: __init__: self.config: Type: {type(self.config)}, Has dictConfig: {hasattr(self.config, 'dictConfig')}")
+            Logger.debug(
+                f"Logger: __init__: Configure as Singleton: Class Variable: logging configured flag: {self.__class__.SingletonLoggingConfigured}"
+            )
+            Logger.debug(
+                "Logger: __init__: Configuring logging using the config dict read from logging config file"
+            )
+            Logger.debug(
+                f"Logger: __init__: Loaded logging config from {self.log_config_file_path}"
+            )
+            Logger.debug(
+                f"Logger: __init__: self.config: Type: {type(self.config)}, Has dictConfig: {hasattr(self.config, 'dictConfig')}"
+            )
 
             # Only configure if we have a valid config dictionary and a valid config object
-            if self.logger_configs and isinstance(self.logger_configs, dict) and hasattr(self.config, 'dictConfig'):
-                Logger.debug(f"Logger: __init__: Applying dictConfig with loaded configuration: {self.logger_configs}")
-                self.config.dictConfig(self.logger_configs)                              # Load the config Dict into Logging Object
+            if (
+                self.logger_configs
+                and isinstance(self.logger_configs, dict)
+                and hasattr(self.config, "dictConfig")
+            ):
+                Logger.debug(
+                    f"Logger: __init__: Applying dictConfig with loaded configuration: {self.logger_configs}"
+                )
+                self.config.dictConfig(
+                    self.logger_configs
+                )  # Load the config Dict into Logging Object
                 # Logger.info(f"Logger: __init__: Successfully applied dictConfig: {self.config}")
-                Logger.debug(f"Logger: __init__: Successfully applied dictConfig: {self.config}")
+                Logger.debug(
+                    f"Logger: __init__: Successfully applied dictConfig: {self.config}"
+                )
                 Logger.set_configured()
                 # Logger.info("Logger: __init__: Successfully applied dictConfig")
                 Logger.debug("Logger: __init__: Successfully applied dictConfig")
             else:
-                Logger.warning("Logger: __init__: Falling back to basic logging configuration")
-                Logger.warning(f"Logger: __init__: Skipping dictConfig - configs invalid: {bool(self.logger_configs)}, is dict: {isinstance(self.logger_configs, dict)}, has dictConfig: {hasattr(self.config, 'dictConfig')}")
+                Logger.warning(
+                    "Logger: __init__: Falling back to basic logging configuration"
+                )
+                Logger.warning(
+                    f"Logger: __init__: Skipping dictConfig - configs invalid: {bool(self.logger_configs)}, is dict: {isinstance(self.logger_configs, dict)}, has dictConfig: {hasattr(self.config, 'dictConfig')}"
+                )
         else:
-            Logger.warning("Logger: __init__: Logging already configured globally, skipping YAML configuration")
+            Logger.warning(
+                "Logger: __init__: Logging already configured globally, skipping YAML configuration"
+            )
 
         # Set the logger to the current instance
         # Logger.info("Logger: __init__: Setting Logger instance to self")
         Logger.debug("Logger: __init__: Setting Logger instance to self")
         self.set_logger(self)
-        Logger.debug(f"Logger: __init__: Logger instance set to self: Type: {type(self.logger)}, Value: {self.logger}")
+        Logger.debug(
+            f"Logger: __init__: Logger instance set to self: Type: {type(self.logger)}, Value: {self.logger}"
+        )
         # self.debug(f"Logger: __init__: Logger instance set to self: Type: {type(self.logger)}, Value: {self.logger}")
 
         # Set log level to the provided log level
         # Logger.info(f"Logger: __init__: Setting Temporary log level for configuring Logger instance: {_Logger__log_level_logging_config}")
-        Logger.debug(f"Logger: __init__: Setting Temporary log level for configuring Logger instance: {_Logger__log_level_logging_config}")
+        Logger.debug(
+            f"Logger: __init__: Setting Temporary log level for configuring Logger instance: {_Logger__log_level_logging_config}"
+        )
         # self.info(f"Logger: __init__: Setting Temporary log level for configuring Logger instance: {_Logger__log_level_logging_config}")
-        self.set_log_level(_Logger__log_level_logging_config)  # Set the log level for the Logger instance
+        self.set_log_level(
+            _Logger__log_level_logging_config
+        )  # Set the log level for the Logger instance
 
         # Logger.info(f"Logger: __init__: Logger instance log level set to: {self.get_log_level()}, log level name: {self.get_log_level_name()}")
         # self.info(f"Logger: __init__: Logger instance log level set to: {self.get_log_level()}, log level name: {self.get_log_level_name()}")
-        self.debug(f"Logger: __init__: Logger instance log level set to: {self.get_log_level()}, log level name: {self.get_log_level_name()}")
+        self.debug(
+            f"Logger: __init__: Logger instance log level set to: {self.get_log_level()}, log level name: {self.get_log_level_name()}"
+        )
 
         # Logger.debug(f"Logger: __init__: Logger class custom log levels configured with names: {self.log_level_names_list}, numbers: {self.log_level_numbers_dict}, methods: {self.log_level_methods_dict}")
-        self.debug(f"Logger: __init__: Logger class custom log levels configured with names: {self.log_level_names_list}, numbers: {self.log_level_numbers_dict}, methods: {self.log_level_methods_dict}")
+        self.debug(
+            f"Logger: __init__: Logger class custom log levels configured with names: {self.log_level_names_list}, numbers: {self.log_level_numbers_dict}, methods: {self.log_level_methods_dict}"
+        )
         # Logger.debug(f"Logger: __init__: Logger class custom log levels configured with updated level set: Value: {self.getEffectiveLevel()}, Name: {logging.getLevelName(self.getEffectiveLevel())}")
-        self.debug(f"Logger: __init__: Logger class custom log levels configured with updated level set: Value: {self.getEffectiveLevel()}, Name: {logging.getLevelName(self.getEffectiveLevel())}")
+        self.debug(
+            f"Logger: __init__: Logger class custom log levels configured with updated level set: Value: {self.getEffectiveLevel()}, Name: {logging.getLevelName(self.getEffectiveLevel())}"
+        )
         # Logger.debug("Logger: __init__: Completed configuration of custom log levels for Logger class.")
-        self.debug("Logger: __init__: Completed configuration of custom log levels for Logger class.")
+        self.debug(
+            "Logger: __init__: Completed configuration of custom log levels for Logger class."
+        )
 
         # Logger.info("Logger: __init__: Completed initialization of Logging for Logger class.")
         # self.info("Logger: __init__: Completed initialization of Logging for Logger class.")
-        self.debug("Logger: __init__: Completed initialization of Logging for Logger class.")
+        self.debug(
+            "Logger: __init__: Completed initialization of Logging for Logger class."
+        )
 
         # self.trace("Logger: __init__: Completed configuration of Logger class.")
         # self.verbose("Logger: __init__: Completed configuration of Logger class.")
@@ -589,8 +822,6 @@ class Logger(logging.getLoggerClass()):
         # self.error("Logger: __init__: Completed configuration of Logger class.")
         # self.critical("Logger: __init__: Completed configuration of Logger class.")
         # self.fatal("Logger: __init__: Completed configuration of Logger class.")
-
-
 
     ####################################################################################################################################
     # Define private methods for the Logger class
@@ -622,25 +853,41 @@ class Logger(logging.getLoggerClass()):
         """
         # Configure the logger with all custom log levels
         # self.debug("Logger: __init_custom_log_levels: Configuring custom log levels for Logger class")
-        Logger.debug("Logger: __init_custom_log_levels: Configuring custom log levels for Logger class")
+        Logger.debug(
+            "Logger: __init_custom_log_levels: Configuring custom log levels for Logger class"
+        )
         # self.debug(f"Logger: __init_custom_log_levels: Custom Log Level Names List: {custom_names_list}")
-        Logger.debug(f"Logger: __init_custom_log_levels: Custom Log Level Names List: {custom_names_list}")
+        Logger.debug(
+            f"Logger: __init_custom_log_levels: Custom Log Level Names List: {custom_names_list}"
+        )
         # self.debug(f"Logger: __init_custom_log_levels: Log Level Numbers Dict: {numbers_dict}")
-        Logger.debug(f"Logger: __init_custom_log_levels: Log Level Numbers Dict: {numbers_dict}")
+        Logger.debug(
+            f"Logger: __init_custom_log_levels: Log Level Numbers Dict: {numbers_dict}"
+        )
         # self.debug(f"Logger: __init_custom_log_levels: Log Level Methods Dict: {methods_dict}")
-        Logger.debug(f"Logger: __init_custom_log_levels: Log Level Methods Dict: {methods_dict}")
+        Logger.debug(
+            f"Logger: __init_custom_log_levels: Log Level Methods Dict: {methods_dict}"
+        )
         # self.debug(f"Logger: __init_custom_log_levels: Log Allow Log Level Redefinition: {allow_redefinition}")
-        Logger.debug(f"Logger: __init_custom_log_levels: Log Allow Log Level Redefinition: {allow_redefinition}")
+        Logger.debug(
+            f"Logger: __init_custom_log_levels: Log Allow Log Level Redefinition: {allow_redefinition}"
+        )
         for custom_log_level_name in custom_names_list:
             # self.debug(f"Logger: __init_custom_log_levels: Configuring custom log level: {custom_log_level_name}")
-            Logger.debug(f"Logger: __init_custom_log_levels: Configuring custom log level: {custom_log_level_name}")
+            Logger.debug(
+                f"Logger: __init_custom_log_levels: Configuring custom log level: {custom_log_level_name}"
+            )
 
             custom_log_level_number = numbers_dict.get(custom_log_level_name)
             # self.debug(f"Logger: __init_custom_log_levels: Custom log level number for {custom_log_level_name}: {custom_log_level_number}")
-            Logger.debug(f"Logger: __init_custom_log_levels: Custom log level number for {custom_log_level_name}: {custom_log_level_number}")
+            Logger.debug(
+                f"Logger: __init_custom_log_levels: Custom log level number for {custom_log_level_name}: {custom_log_level_number}"
+            )
             custom_log_level_method = methods_dict.get(custom_log_level_name)
             # self.debug(f"Logger: __init_custom_log_levels: Custom log level method for {custom_log_level_name}: {custom_log_level_method}")
-            Logger.debug(f"Logger: __init_custom_log_levels: Custom log level method for {custom_log_level_name}: {custom_log_level_method}")
+            Logger.debug(
+                f"Logger: __init_custom_log_levels: Custom log level method for {custom_log_level_name}: {custom_log_level_method}"
+            )
 
             # Validate custom log level names, methods, and numbers
             if not self._init_validate_custom_log_level(
@@ -650,19 +897,27 @@ class Logger(logging.getLoggerClass()):
                 allow_redefinition=allow_redefinition,
             ):
                 # self.warning(f"Logger: __init_custom_log_levels: Warning: Custom log level {custom_log_level_name} is invalid. Skipping...")
-                Logger.warning(f"Logger: __init_custom_log_levels: Warning: Custom log level {custom_log_level_name} is invalid. Skipping...")
+                Logger.warning(
+                    f"Logger: __init_custom_log_levels: Warning: Custom log level {custom_log_level_name} is invalid. Skipping..."
+                )
                 continue
             # self.debug(f"Logger: __init_custom_log_levels: Validated Custom log level name: {custom_log_level_name}, number: {custom_log_level_number}, method: {custom_log_level_method}")
-            Logger.debug(f"Logger: __init_custom_log_levels: Validated Custom log level name: {custom_log_level_name}, number: {custom_log_level_number}, method: {custom_log_level_method}")
+            Logger.debug(
+                f"Logger: __init_custom_log_levels: Validated Custom log level name: {custom_log_level_name}, number: {custom_log_level_number}, method: {custom_log_level_method}"
+            )
 
             # Add the custom log level attribute for custom log level name and number
             # self.debug("Logger: __init_custom_log_levels: Add the custom log level attributes for current custom name and number")
-            Logger.debug("Logger: __init_custom_log_levels: Add the custom log level attributes for current custom name and number")
+            Logger.debug(
+                "Logger: __init_custom_log_levels: Add the custom log level attributes for current custom name and number"
+            )
             addLevelName(custom_log_level_number, custom_log_level_name)
 
             # Assign the custom log level method to the logger class
             # self.debug(f"Logger: __init_custom_log_levels: Assigning custom log level method: {custom_log_level_method} for custom log level name: {custom_log_level_name}")
-            Logger.debug(f"Logger: __init_custom_log_levels: Assigning custom log level method: {custom_log_level_method} for custom log level name: {custom_log_level_name}")
+            Logger.debug(
+                f"Logger: __init_custom_log_levels: Assigning custom log level method: {custom_log_level_method} for custom log level name: {custom_log_level_name}"
+            )
             setattr(
                 self,
                 custom_log_level_method,
@@ -674,10 +929,13 @@ class Logger(logging.getLoggerClass()):
 
             # self.info(f"Logger: __init_custom_log_levels: Added custom log level Name: {custom_log_level_name}, Number: {custom_log_level_number}, Method: {custom_log_level_method} for Logger class")
             # Logger.info(f"Logger: __init_custom_log_levels: Added custom log level Name: {custom_log_level_name}, Number: {custom_log_level_number}, Method: {custom_log_level_method} for Logger class")
-            Logger.debug(f"Logger: __init_custom_log_levels: Added custom log level Name: {custom_log_level_name}, Number: {custom_log_level_number}, Method: {custom_log_level_method} for Logger class")
+            Logger.debug(
+                f"Logger: __init_custom_log_levels: Added custom log level Name: {custom_log_level_name}, Number: {custom_log_level_number}, Method: {custom_log_level_method} for Logger class"
+            )
             # self.debug(f"Logger: __init_custom_log_levels: Added custom log level method: {getattr(self, custom_log_level_method)} for Logger class")
-            Logger.debug(f"Logger: __init_custom_log_levels: Added custom log level method: {getattr(self, custom_log_level_method)} for Logger class")
-
+            Logger.debug(
+                f"Logger: __init_custom_log_levels: Added custom log level method: {getattr(self, custom_log_level_method)} for Logger class"
+            )
 
     ####################################################################################################################################
     # Define a private method to validate custom log level names, numbers, and methods
@@ -701,25 +959,53 @@ class Logger(logging.getLoggerClass()):
         """
         # Validate the custom log level name, number, and method
         # self.debug(f"Logger: _init_validate_custom_log_level: Validating custom log level: {custom_log_level_name}, number: {custom_log_level_number}, method: {custom_log_level_method}")
-        Logger.debug(f"Logger: _init_validate_custom_log_level: Validating custom log level: {custom_log_level_name}, number: {custom_log_level_number}, method: {custom_log_level_method}")
+        Logger.debug(
+            f"Logger: _init_validate_custom_log_level: Validating custom log level: {custom_log_level_name}, number: {custom_log_level_number}, method: {custom_log_level_method}"
+        )
         invalid = False
-        if (invalid := (custom_log_level_name is None or not isinstance(custom_log_level_name, str))):
+        if invalid := (
+            custom_log_level_name is None or not isinstance(custom_log_level_name, str)
+        ):
             # self.warning(f"Logger: _init_validate_custom_log_level: Custom log level name is invalid for {custom_log_level_name}.")
-            Logger.warning(f"Logger: _init_validate_custom_log_level: Custom log level name is invalid for {custom_log_level_name}.")
-        elif (invalid := (custom_log_level_number is None or not isinstance(custom_log_level_number, int))):
+            Logger.warning(
+                f"Logger: _init_validate_custom_log_level: Custom log level name is invalid for {custom_log_level_name}."
+            )
+        elif invalid := (
+            custom_log_level_number is None
+            or not isinstance(custom_log_level_number, int)
+        ):
             # self.warning(f"Logger: _init_validate_custom_log_level: Custom log level number is invalid for {custom_log_level_name}.")
-            Logger.warning(f"Logger: _init_validate_custom_log_level: Custom log level number is invalid for {custom_log_level_name}.")
-        elif (invalid := (custom_log_level_method is None or not isinstance(custom_log_level_method, str))):
+            Logger.warning(
+                f"Logger: _init_validate_custom_log_level: Custom log level number is invalid for {custom_log_level_name}."
+            )
+        elif invalid := (
+            custom_log_level_method is None
+            or not isinstance(custom_log_level_method, str)
+        ):
             # self.warning(f"Logger: _init_validate_custom_log_level: Custom log level method (Name) is invalid for {custom_log_level_name}.")
-            Logger.warning(f"Logger: _init_validate_custom_log_level: Custom log level method (Name) is invalid for {custom_log_level_name}.")
-        elif (invalid := (not allow_redefinition and (hasattr(self, custom_log_level_name) or hasattr(self, str(custom_log_level_number)) or hasattr(self, custom_log_level_method)))):
+            Logger.warning(
+                f"Logger: _init_validate_custom_log_level: Custom log level method (Name) is invalid for {custom_log_level_name}."
+            )
+        elif invalid := (
+            not allow_redefinition
+            and (
+                hasattr(self, custom_log_level_name)
+                or hasattr(self, str(custom_log_level_number))
+                or hasattr(self, custom_log_level_method)
+            )
+        ):
             # self.warning(f"Logger: _init_validate_custom_log_level: Log level redefinition is disabled and Custom log level name, number, or method already exists for {custom_log_level_name}.")
-            Logger.warning(f"Logger: _init_validate_custom_log_level: Log level redefinition is disabled and Custom log level name, number, or method already exists for {custom_log_level_name}.")
+            Logger.warning(
+                f"Logger: _init_validate_custom_log_level: Log level redefinition is disabled and Custom log level name, number, or method already exists for {custom_log_level_name}."
+            )
         else:
             # self.debug(f"Logger: _init_validate_custom_log_level: Custom log level validation for {custom_log_level_name} returned: {not invalid}")
-            Logger.debug(f"Logger: _init_validate_custom_log_level: Custom log level validation for {custom_log_level_name} returned: {not invalid}")
-        return not invalid  # Return True if the custom log level is valid, False otherwise
-
+            Logger.debug(
+                f"Logger: _init_validate_custom_log_level: Custom log level validation for {custom_log_level_name} returned: {not invalid}"
+            )
+        return (
+            not invalid
+        )  # Return True if the custom log level is valid, False otherwise
 
     ####################################################################################################################################
     # Define the init method that dynamically generates the named logging method for custom log levels
@@ -741,7 +1027,10 @@ class Logger(logging.getLoggerClass()):
             return lambda message=_LOGGER_LOG_MESSAGE_DEFAULT, *args, **kwargs: None
 
         # self.debug(f"Logger: _init_log_method: make_log_method: Creating custom log method for level name: {level_name}, level number: {level_number}")
-        Logger.debug(f"Logger: _init_log_method: make_log_method: Creating custom log method for level name: {level_name}, level number: {level_number}")
+        Logger.debug(
+            f"Logger: _init_log_method: make_log_method: Creating custom log method for level name: {level_name}, level number: {level_number}"
+        )
+
         def log_for_level(
             message: str = _LOGGER_LOG_MESSAGE_DEFAULT,
             *args,
@@ -769,7 +1058,7 @@ class Logger(logging.getLoggerClass()):
                 # self.debug("Logger: log_for_level: Set stacklevel to 2 to skip this wrapper function and point to the actual caller. This ensures the correct file and line number are logged")
                 # self.trace("Logger: log_for_level: Set stacklevel to 2 to skip this wrapper function and point to the actual caller. This ensures the correct file and line number are logged")
                 # Logger.debug("Logger: log_for_level: Set stacklevel to 2 to skip this wrapper function and point to the actual caller. This ensures the correct file and line number are logged")
-                kwargs.setdefault('stacklevel', 2)
+                kwargs.setdefault("stacklevel", 2)
                 # Call the logger's log method with the custom log level number
                 # self.trace("Logger: log_for_level: Call the logger's log method with the custom log level number")
                 # Logger.debug("Logger: log_for_level: Call the logger's log method with the custom log level number")
@@ -779,7 +1068,6 @@ class Logger(logging.getLoggerClass()):
         # self.verbose(f"Logger: _init_log_method: Returning log method for custom log level: {level_name}, number: {level_number}")
         # self.verbose(f"Logger: _init_log_method: log_for_level: Returning custom level log Function: {log_for_level}")
         return log_for_level
-
 
     def _generate_uuid(self) -> str:
         """
@@ -806,12 +1094,15 @@ class Logger(logging.getLoggerClass()):
         """
         # return super().isEnabledFor(level or self.log_level or logging.NOTSET)
         # return level >= self._get_level_number(level=self.log_level_name)
-        return level >= self.log_level_numbers_dict.get(self.log_level_name, logging.NOTSET)
-
+        return level >= self.log_level_numbers_dict.get(
+            self.log_level_name, logging.NOTSET
+        )
 
     ####################################################################################################################################
     # Define the Logger Class Public Update methods
-    def update_log_level(self, log_level_name: str = None, log_level: int = None) -> None:
+    def update_log_level(
+        self, log_level_name: str = None, log_level: int = None
+    ) -> None:
         """
         Description:
             Update the log level for the Logger class.
@@ -824,14 +1115,17 @@ class Logger(logging.getLoggerClass()):
             This method updates the log level for the Logger class based on the provided name or number.
         """
         # self.logger.info("Logger: update_log_level: Updating log level for Logger class")
-        self.logger.debug("Logger: update_log_level: Updating log level for Logger class")
+        self.logger.debug(
+            "Logger: update_log_level: Updating log level for Logger class"
+        )
         if log_level is not None:
             self.set_log_level(log_level=log_level, sync_level_name=True)
         elif log_level_name is not None:
             self.set_log_level_name(log_level_name=log_level_name, sync_level=True)
         else:
-            self.warning("Logger: update_log_level: No valid log level name or number provided. No changes made.")
-
+            self.warning(
+                "Logger: update_log_level: No valid log level name or number provided. No changes made."
+            )
 
     ####################################################################################################################################
     # Define the Logger Class Public setter methods
@@ -884,11 +1178,7 @@ class Logger(logging.getLoggerClass()):
         """
         self.setLevel(level or self.log_level or logging.NOTSET)
 
-    def set_log_level(
-        self,
-        log_level: int = None,
-        sync_level_name: bool = True
-    ):
+    def set_log_level(self, log_level: int = None, sync_level_name: bool = True):
         """
         Description:
             Set the logging level for the Logger class.
@@ -902,19 +1192,24 @@ class Logger(logging.getLoggerClass()):
         Returns:
             None
         """
-        self.log_level = log_level if log_level and self.get_name_from_level(log_level) else None
-        self.debug(f"Logger: set_log_level: Completed Setting log level to: {self.log_level}")
+        self.log_level = (
+            log_level if log_level and self.get_name_from_level(log_level) else None
+        )
+        self.debug(
+            f"Logger: set_log_level: Completed Setting log level to: {self.log_level}"
+        )
         self._set_level(self.log_level)
         if log_level and sync_level_name:
             log_level_name = self.get_name_from_level(log_level) or None
-            self.set_log_level_name(log_level_name=log_level_name, sync_level=False,)
-        self.debug(f"Logger: set_log_level: Completed Setting log level to: {self.log_level} with name: {self.log_level_name}")
+            self.set_log_level_name(
+                log_level_name=log_level_name,
+                sync_level=False,
+            )
+        self.debug(
+            f"Logger: set_log_level: Completed Setting log level to: {self.log_level} with name: {self.log_level_name}"
+        )
 
-    def set_log_level_name(
-        self,
-        log_level_name: str = None,
-        sync_level: bool = True
-    ):
+    def set_log_level_name(self, log_level_name: str = None, sync_level: bool = True):
         """
         Description:
             Set the logging level name for the Logger class.
@@ -928,13 +1223,23 @@ class Logger(logging.getLoggerClass()):
         Returns:
             None
         """
-        self.log_level_name = log_level_name if log_level_name and self.get_name_from_level(self.log_level) else None
-        self.debug(f"Logger: set_log_level_name: Completed Setting log level name to: {self.log_level_name}")
+        self.log_level_name = (
+            log_level_name
+            if log_level_name and self.get_name_from_level(self.log_level)
+            else None
+        )
+        self.debug(
+            f"Logger: set_log_level_name: Completed Setting log level name to: {self.log_level_name}"
+        )
         if log_level_name and sync_level:
             log_level = self.log_level_numbers_dict.get(log_level_name, logging.NOTSET)
-            self.debug(f"Logger: set_log_level_name: Setting log level to: {log_level} for log level name: {log_level_name}")
+            self.debug(
+                f"Logger: set_log_level_name: Setting log level to: {log_level} for log level name: {log_level_name}"
+            )
             self.set_log_level(log_level=log_level, sync_level_name=False)
-        self.debug(f"Logger: set_log_level_name: Completed Setting log level name to: {self.log_level_name} with level: {self.log_level}")
+        self.debug(
+            f"Logger: set_log_level_name: Completed Setting log level name to: {self.log_level_name} with level: {self.log_level}"
+        )
 
     def set_log_date_format(self, log_date_format: str):
         """
@@ -1008,7 +1313,9 @@ class Logger(logging.getLoggerClass()):
         """
         self.log_level_methods_dict = log_level_methods_dict or None
 
-    def set_log_allow_log_level_redefinition(self, log_allow_log_level_redefinition: bool):
+    def set_log_allow_log_level_redefinition(
+        self, log_allow_log_level_redefinition: bool
+    ):
         """
         Description:
             Set the log allow log level redefinition flag for the Logger class.
@@ -1031,11 +1338,14 @@ class Logger(logging.getLoggerClass()):
             None
         """
         if not hasattr(self, "uuid") or self.uuid is None:
-            self.uuid = (uuid, self._generate_uuid())[uuid is None]  # Generate a new UUID if none is provided
+            self.uuid = (uuid, self._generate_uuid())[
+                uuid is None
+            ]  # Generate a new UUID if none is provided
         else:
-            self.fatal(f"Logger: set_uuid: Fatal Error: UUID already set: {self.uuid}. Changing UUID is bad Juju.  Exiting...")
+            self.fatal(
+                f"Logger: set_uuid: Fatal Error: UUID already set: {self.uuid}. Changing UUID is bad Juju.  Exiting..."
+            )
             os._exit(1)
-
 
     ####################################################################################################################################
     # Define the Logger Class Public getter methods
@@ -1128,8 +1438,16 @@ class Logger(logging.getLoggerClass()):
         Returns:
             str or None: The log level name for the given log level number.
         """
-        log_level_name = list(self.log_level_numbers_dict.keys())[list(self.log_level_numbers_dict.values()).index(log_level)] if log_level in self.log_level_numbers_dict.values() else None
-        self.debug(f"Logger: get_name_from_level: Returning log level name: {log_level_name} for log level: {log_level}")
+        log_level_name = (
+            list(self.log_level_numbers_dict.keys())[
+                list(self.log_level_numbers_dict.values()).index(log_level)
+            ]
+            if log_level in self.log_level_numbers_dict.values()
+            else None
+        )
+        self.debug(
+            f"Logger: get_name_from_level: Returning log level name: {log_level_name} for log level: {log_level}"
+        )
         return log_level_name
 
     def get_log_date_format(self) -> str or None:
@@ -1152,7 +1470,9 @@ class Logger(logging.getLoggerClass()):
         Returns:
             str or None: The log formatter string for the Logger class.
         """
-        return self.log_formatter_string if hasattr(self, "log_formatter_string") else None
+        return (
+            self.log_formatter_string if hasattr(self, "log_formatter_string") else None
+        )
 
     def get_log_message_default(self) -> str or None:
         """
@@ -1163,7 +1483,9 @@ class Logger(logging.getLoggerClass()):
         Returns:
             str or None: The default log message for the Logger class.
         """
-        return self.log_message_default if hasattr(self, "log_message_default") else None
+        return (
+            self.log_message_default if hasattr(self, "log_message_default") else None
+        )
 
     def get_log_level_custom_names_list(self) -> list[str] or None:
         """
@@ -1174,7 +1496,11 @@ class Logger(logging.getLoggerClass()):
         Returns:
             list[str] or None: The custom names list for the log levels.
         """
-        return self.log_level_custom_names_list if hasattr(self, "log_level_custom_names_list") else None
+        return (
+            self.log_level_custom_names_list
+            if hasattr(self, "log_level_custom_names_list")
+            else None
+        )
 
     def get_log_level_numbers_dict(self) -> dict[str, int] or None:
         """
@@ -1185,7 +1511,11 @@ class Logger(logging.getLoggerClass()):
         Returns:
             dict[str, int] or None: The log level numbers dictionary for the Logger class.
         """
-        return self.log_level_numbers_dict if hasattr(self, "log_level_numbers_dict") else None
+        return (
+            self.log_level_numbers_dict
+            if hasattr(self, "log_level_numbers_dict")
+            else None
+        )
 
     def get_log_level_methods_dict(self) -> dict[str, str] or None:
         """
@@ -1196,7 +1526,11 @@ class Logger(logging.getLoggerClass()):
         Returns:
             dict[str, str] or None: The log level methods dictionary for the Logger class.
         """
-        return self.log_level_methods_dict if hasattr(self, "log_level_methods_dict") else None
+        return (
+            self.log_level_methods_dict
+            if hasattr(self, "log_level_methods_dict")
+            else None
+        )
 
     def get_log_allow_log_level_redefinition(self) -> bool or None:
         """
@@ -1207,4 +1541,8 @@ class Logger(logging.getLoggerClass()):
         Returns:
             bool or None: The log allow log level redefinition for the Logger class.
         """
-        return self.log_allow_log_level_redefinition if hasattr(self, "log_allow_log_level_redefinition") else None
+        return (
+            self.log_allow_log_level_redefinition
+            if hasattr(self, "log_allow_log_level_redefinition")
+            else None
+        )

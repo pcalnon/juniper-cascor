@@ -50,14 +50,18 @@
 _PROJECT_MODEL_AUTHKEY = "Juniper_Cascade_Correlation_Multiprocessing_Authkey"
 
 # Use 'spawn' context for BaseManager to avoid socket inheritance issues with 'fork'
-# 'forkserver' has issues with custom Manager classes in Python 3.14
-_PROJECT_MODEL_CANDIDATE_TRAINING_CONTEXT = "spawn"
+# NOTE:  Forkserver is the default multiprocess method in Python 3.14.  Custom manager classes work properly in Python 3.14  ---'forkserver' has issues with custom Manager classes in Python 3.14---
+# _PROJECT_MODEL_CANDIDATE_TRAINING_CONTEXT = "fork"
+# _PROJECT_MODEL_CANDIDATE_TRAINING_CONTEXT = "spawn"
+_PROJECT_MODEL_CANDIDATE_TRAINING_CONTEXT = "forkserver"
 
 # Define base manager server address and port for remote multiprocessing shared queues
 # _PROJECT_MODEL_BASE_MANAGER_ADDRESS = 'localhost'
 _PROJECT_MODEL_BASE_MANAGER_ADDRESS_IP = '127.0.0.1'
+
 # Use port 0 for dynamic port allocation by the OS to avoid "Address already in use" conflicts
 # when multiple network instances or test runs start managers concurrently
+# _PROJECT_MODEL_BASE_MANAGER_ADDRESS_PORT = 50000
 _PROJECT_MODEL_BASE_MANAGER_ADDRESS_PORT = 0
 
 _PROJECT_MODEL_WORKER_STANDBY_SLEEPYTIME = 2.0
