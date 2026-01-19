@@ -11,7 +11,7 @@
 # File Path:     <Project>/<Sub-Project>/<Application>/util/
 #
 # Date Created:  2025-11-05
-# Last Modified: 2026-01-12
+# Last Modified: 2026-01-19
 #
 # License:       MIT License
 # Copyright:     Copyright (c) 2024-2025 Paul Calnon
@@ -51,36 +51,28 @@
 #####################################################################################################################################################################################################
 # Define Debug Constants
 #####################################################################################################################################################################################################
-# export TRUE="true"
 export TRUE="0"
-# export FALSE="false" # trunk-ignore(shellcheck/SC2034)
 export FALSE="1" # trunk-ignore(shellcheck/SC2034)
 
+# shellcheck disable=SC2034
 DEBUG="${TRUE}"
 # DEBUG="${FALSE}"
-
-# CURRENT_SCRIPT="prototypes/cascor/util/try.bash:"
 
 
 #####################################################################################################################################################################################################
 # Define Global Functions
 #####################################################################################################################################################################################################
-# Define local Functions
 function get_script_path() {
-	# local source="${BASH_SOURCE[0]}"
-	# shellcheck disable=SC2155
+    # shellcheck disable=SC2155
 	local source="$(realpath "${BASH_SOURCE[0]}")"
 	while [[ -L ${source} ]]; do
-		# local dir="$(cd -P "$(dirname "${source}")" && pwd)"
 		local dir
 		dir="$(cd -P "$(dirname "${source}")" && pwd)"
 		source="$(readlink "${source}")"
 		[[ ${source} != /* ]] && source="${dir}/${source}"
 	done
-	# trunk-ignore(shellcheck/SC2312)
 	echo "$(cd -P "$(dirname "${source}")" && pwd)/$(basename "${source}")"
 }
-
 export -f get_script_path
 
 
@@ -93,10 +85,8 @@ export CURRENT_SCRIPT="juniper_cascor/util/try.bash:"
 
 #####################################################################################################################################################################################################
 # Get Python path
-#####################################################################################################################################################################################################
-# PYTHON_PATH="$(which python)"
-# trunk-ignore(shellcheck/SC2034)
 # TODO: Extract this from env
+#####################################################################################################################################################################################################
 export PYTHON_PATH="/opt/miniforge3/envs/JuniperCascor/bin/python"
 
 
@@ -105,57 +95,41 @@ export PYTHON_PATH="/opt/miniforge3/envs/JuniperCascor/bin/python"
 #####################################################################################################################################################################################################
 # shellcheck disable=SC2155
 export SCRIPT_FULL_PATH="$(get_script_path)"
-[[ ${DEBUG} == "${TRUE}" ]] && echo "${CURRENT_SCRIPT} SCRIPT_FULL_PATH: ${SCRIPT_FULL_PATH}"
+log_debug "${CURRENT_SCRIPT} SCRIPT_FULL_PATH: ${SCRIPT_FULL_PATH}"
 # shellcheck disable=SC2155
 export SCRIPT_NAME="$(basename "${SCRIPT_FULL_PATH}")"
-[[ ${DEBUG} == "${TRUE}" ]] && echo "${CURRENT_SCRIPT} SCRIPT_NAME: ${SCRIPT_NAME}"
+log_debug "${CURRENT_SCRIPT} SCRIPT_NAME: ${SCRIPT_NAME}"
 # shellcheck disable=SC2155
 export SCRIPT_PATH="$(dirname "${SCRIPT_FULL_PATH}")"
-[[ ${DEBUG} == "${TRUE}" ]] && echo "${CURRENT_SCRIPT} SCRIPT_PATH: ${SCRIPT_PATH}"
+log_debug "${CURRENT_SCRIPT} SCRIPT_PATH: ${SCRIPT_PATH}"
 
-# shellcheck disable=SC2155
 export PYTHON_UTIL_PATH="${SCRIPT_PATH}"
-[[ ${DEBUG} == "${TRUE}" ]] && echo "${CURRENT_SCRIPT} PYTHON_UTIL_PATH: ${PYTHON_UTIL_PATH}"
+log_debug "${CURRENT_SCRIPT} PYTHON_UTIL_PATH: ${PYTHON_UTIL_PATH}"
 # shellcheck disable=SC2155
 export PYTHON_UTIL_NAME="$(basename "${PYTHON_UTIL_PATH}")"
-[[ ${DEBUG} == "${TRUE}" ]] && echo "${CURRENT_SCRIPT} PYTHON_UTIL_NAME: ${PYTHON_UTIL_NAME}"
-# shellcheck disable=SC2155
+log_debug "${CURRENT_SCRIPT} PYTHON_UTIL_NAME: ${PYTHON_UTIL_NAME}"
 
 # shellcheck disable=SC2155
 export PYTHON_PROTO_PATH="$(dirname "${PYTHON_UTIL_PATH}")"
-[[ ${DEBUG} == "${TRUE}" ]] && echo "${CURRENT_SCRIPT} PYTHON_PROTO_PATH: ${PYTHON_PROTO_PATH}"
+log_debug "${CURRENT_SCRIPT} PYTHON_PROTO_PATH: ${PYTHON_PROTO_PATH}"
 # shellcheck disable=SC2155
 export PYTHON_PROTO_NAME="$(basename "${PYTHON_PROTO_PATH}")"
-[[ ${DEBUG} == "${TRUE}" ]] && echo "${CURRENT_SCRIPT} PYTHON_PROTO_NAME: ${PYTHON_PROTO_NAME}"
+log_debug "${CURRENT_SCRIPT} PYTHON_PROTO_NAME: ${PYTHON_PROTO_NAME}"
 
 BASH_EXT="bash"
 export PYTHON_PROTO_SCRIPT_NAME="${PYTHON_PROTO_NAME}.${BASH_EXT}"
-[[ ${DEBUG} == "${TRUE}" ]] && echo "${CURRENT_SCRIPT} PYTHON_PROTO_SCRIPT_NAME: ${PYTHON_PROTO_SCRIPT_NAME}"
+log_debug "${CURRENT_SCRIPT} PYTHON_PROTO_SCRIPT_NAME: ${PYTHON_PROTO_SCRIPT_NAME}"
 
 PYTHON_PROTO_SCRIPT_DIR_NAME="util"
 export PYTHON_PROTO_SCRIPT="${PYTHON_PROTO_PATH}/${PYTHON_PROTO_SCRIPT_DIR_NAME}/${PYTHON_PROTO_SCRIPT_NAME}"
-[[ ${DEBUG} == "${TRUE}" ]] && echo "${CURRENT_SCRIPT} PYTHON_PROTO_SCRIPT: ${PYTHON_PROTO_SCRIPT}"
+log_debug "${CURRENT_SCRIPT} PYTHON_PROTO_SCRIPT: ${PYTHON_PROTO_SCRIPT}"
 
 # shellcheck disable=SC2155
 export PYTHON_PARENT_PROTO_PATH="$(dirname "${PYTHON_PROTO_PATH}")"
-[[ ${DEBUG} == "${TRUE}" ]] && echo "${CURRENT_SCRIPT} PYTHON_PARENT_PROTO_PATH: ${PYTHON_PARENT_PROTO_PATH}"
+log_debug "${CURRENT_SCRIPT} PYTHON_PARENT_PROTO_PATH: ${PYTHON_PARENT_PROTO_PATH}"
 # shellcheck disable=SC2155
 export PYTHON_PARENT_PROTO_NAME="$(basename "${PYTHON_PARENT_PROTO_PATH}")"
-[[ ${DEBUG} == "${TRUE}" ]] && echo "${CURRENT_SCRIPT} PYTHON_PARENT_PROTO_NAME: ${PYTHON_PARENT_PROTO_NAME}"
-
-# # shellcheck disable=SC2155
-# export PYTHON_PARENT_UTIL_NAME="util"
-# [[ ${DEBUG} == "${TRUE}" ]] && echo "${CURRENT_SCRIPT} PYTHON_PARENT_UTIL_NAME: ${PYTHON_PARENT_UTIL_NAME}"
-# # shellcheck disable=SC2155
-# export PYTHON_PARENT_UTIL_PATH="${PYTHON_PARENT_PROTO_PATH}/${PYTHON_PARENT_UTIL_NAME}"
-# [[ ${DEBUG} == "${TRUE}" ]] && echo "${CURRENT_SCRIPT} PYTHON_PARENT_UTIL_PATH: ${PYTHON_PARENT_UTIL_PATH}"
-
-# # shellcheck disable=SC2155
-# export PYTHON_PARENT_SCRIPT_NAME="${SCRIPT_NAME}"
-# [[ ${DEBUG} == "${TRUE}" ]] && echo "${CURRENT_SCRIPT} PYTHON_PARENT_SCRIPT_NAME: ${PYTHON_PARENT_SCRIPT_NAME}"
-# # shellcheck disable=SC2155
-# export PYTHON_PARENT_SCRIPT="${PYTHON_PARENT_UTIL_PATH}/${PYTHON_PARENT_SCRIPT_NAME}"
-# [[ ${DEBUG} == "${TRUE}" ]] && echo "${CURRENT_SCRIPT} PYTHON_PARENT_SCRIPT: ${PYTHON_PARENT_SCRIPT}"
+log_debug "${CURRENT_SCRIPT} PYTHON_PARENT_PROTO_NAME: ${PYTHON_PARENT_PROTO_NAME}"
 
 
 #####################################################################################################################################################################################################
@@ -182,10 +156,7 @@ truncate -s 0 "${PYTHON_PROTO_LOG_FILE_BORKED}"
 #####################################################################################################################################################################################################
 # Call Parent Util script passing in Prototype Name
 #####################################################################################################################################################################################################
-# echo "${CURRENT_SCRIPT} ${PYTHON_PARENT_SCRIPT} \"${PYTHON_PROTO_NAME}\""
-echo "${CURRENT_SCRIPT} ${PYTHON_PROTO_SCRIPT} \"${PYTHON_PROTO_NAME}\""
-
-# ${PYTHON_PARENT_SCRIPT} "${PYTHON_PROTO_NAME}"
-${PYTHON_PROTO_SCRIPT} "${PYTHON_PROTO_NAME}"
+echo "time ${CURRENT_SCRIPT} ${PYTHON_PROTO_SCRIPT} \"${PYTHON_PROTO_NAME}\""
+time ${PYTHON_PROTO_SCRIPT} "${PYTHON_PROTO_NAME}"
 
 
