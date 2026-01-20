@@ -70,7 +70,8 @@ def test_2_optimizer_serialization():
 
 def _verify_optimizer_saved_to_hdf5_helper():
     from cascade_correlation.cascade_correlation import CascadeCorrelationNetwork
-    from cascade_correlation_config.cascade_correlation_config import CascadeCorrelationConfig
+    # from cascade_correlation_config.cascade_correlation_config import CascadeCorrelationConfig
+    from cascade_correlation.cascade_correlation_config.cascade_correlation_config import CascadeCorrelationConfig
 
     # Create network and train to create optimizer
     config = CascadeCorrelationConfig(input_size=2, output_size=1)
@@ -121,7 +122,8 @@ def test_3_training_counters_persistence():
 
 def _save_cascor_network_to_hdf5_helper():
     from cascade_correlation.cascade_correlation import CascadeCorrelationNetwork
-    from cascade_correlation_config.cascade_correlation_config import CascadeCorrelationConfig
+    # from cascade_correlation_config.cascade_correlation_config import CascadeCorrelationConfig
+    from cascade_correlation.cascade_correlation_config.cascade_correlation_config import CascadeCorrelationConfig
 
     # Create network
     config = CascadeCorrelationConfig(input_size=2, output_size=1)
@@ -192,7 +194,8 @@ def test_5_optimizer_initialization():
 
 def _validate_cascor_network_optimizer_helper():
     from cascade_correlation.cascade_correlation import CascadeCorrelationNetwork
-    from cascade_correlation_config.cascade_correlation_config import CascadeCorrelationConfig
+    # from cascade_correlation_config.cascade_correlation_config import CascadeCorrelationConfig
+    from cascade_correlation.cascade_correlation_config.cascade_correlation_config import CascadeCorrelationConfig
 
     config = CascadeCorrelationConfig(input_size=2, output_size=1)
     network = CascadeCorrelationNetwork(config=config)

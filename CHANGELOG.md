@@ -5,6 +5,28 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.8] - 2026-01-20
+
+### Fixed: [0.3.8]
+
+- **CASCOR-P0-003**: Fixed test collection errors caused by incorrect module import paths
+  - Multiple test files were using incorrect import path `from cascade_correlation_config...` instead of `from cascade_correlation.cascade_correlation_config...`
+  - The `cascade_correlation_config` module is a submodule of `cascade_correlation`, not a top-level module
+  - This caused `ModuleNotFoundError: No module named 'cascade_correlation_config'` during test collection
+  - **Files Fixed**:
+    - `src/tests/unit/test_hdf5.py` (lines 10, 24)
+    - `src/tests/integration/test_serialization.py` (line 34)
+    - `src/tests/unit/test_p1_fixes.py` (lines 73, 124, 195)
+    - `src/tests/unit/test_critical_fixes.py` (lines 47, 102)
+  - **Result**: All 152 Cascor tests now collect successfully with 0 errors (previously 2 collection errors)
+
+### Integration: [0.3.8]
+
+- Integration analysis with Juniper Canopy documented in `notes/INTEGRATION_ROADMAP.md`
+- Environment compatibility verified with JuniperCascor conda environment
+
+---
+
 ## [0.3.7] - 2026-01-16
 
 ### Fixed: [0.3.7]

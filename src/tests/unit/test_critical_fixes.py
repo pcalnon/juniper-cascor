@@ -39,12 +39,13 @@ def _check_dataclass_attributes():
     print("✅ PASS: CandidateTrainingResult has correct fields")
     return True
 
-def test_2_network_creation():
+def test_2_network_creation():  # sourcery skip: extract-method
     """Test that network can be created with snapshot_counter."""
     print("\n[Test 2] Network creation and initialization...")
     try:
         from cascade_correlation.cascade_correlation import CascadeCorrelationNetwork
-        from cascade_correlation_config.cascade_correlation_config import CascadeCorrelationConfig
+        # from cascade_correlation_config.cascade_correlation_config import CascadeCorrelationConfig
+        from cascade_correlation.cascade_correlation_config.cascade_correlation_config import CascadeCorrelationConfig
         
         config = CascadeCorrelationConfig(input_size=2, output_size=1, candidate_pool_size=2)
         network = CascadeCorrelationNetwork(config=config)
@@ -59,7 +60,7 @@ def test_2_network_creation():
         traceback.print_exc()
         return False
 
-def test_3_candidate_training():
+def test_3_candidate_training():  # sourcery skip: extract-method
     """Test that candidate unit can train without crashes."""
     print("\n[Test 3] Candidate unit training...")
     try:
@@ -94,12 +95,13 @@ def test_3_candidate_training():
         traceback.print_exc()
         return False
 
-def test_4_get_single_candidate_data():
+def test_4_get_single_candidate_data():  # sourcery skip: extract-method
     """Test that get_single_candidate_data uses getattr correctly."""
     print("\n[Test 4] get_single_candidate_data() method...")
     try:
         from cascade_correlation.cascade_correlation import CascadeCorrelationNetwork
-        from cascade_correlation_config.cascade_correlation_config import CascadeCorrelationConfig
+        # from cascade_correlation_config.cascade_correlation_config import CascadeCorrelationConfig
+        from cascade_correlation.cascade_correlation_config.cascade_correlation_config import CascadeCorrelationConfig
         from candidate_unit.candidate_unit import CandidateTrainingResult
         
         config = CascadeCorrelationConfig(input_size=2, output_size=1)
@@ -128,7 +130,7 @@ def test_4_get_single_candidate_data():
         traceback.print_exc()
         return False
 
-def test_5_training_results_dataclass():
+def test_5_training_results_dataclass():  # sourcery skip: extract-method
     """Test that TrainingResults dataclass has max_correlation field."""
     print("\n[Test 5] TrainingResults dataclass...")
     try:

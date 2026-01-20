@@ -31,7 +31,10 @@ pytestmark = pytest.mark.integration
 sys.path.insert(
     0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 )
-from cascade_correlation_config.cascade_correlation_config import (  # trunk-ignore(ruff/E402)
+# from cascade_correlation_config.cascade_correlation_config import (  # trunk-ignore(ruff/E402)
+#     CascadeCorrelationConfig,
+# )
+from cascade_correlation.cascade_correlation_config.cascade_correlation_config import (  # trunk-ignore(ruff/E402)
     CascadeCorrelationConfig,
 )
 

@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="2" failures="12" skipped="3" tests="134" time="12132.455" timestamp="2026-01-17T03:44:41.024508-06:00" hostname="yamaguchi"><testcase classname="" name="integration.test_serialization" time="0.000"><error message="collection failure">ImportError while importing test module '/home/pcalnon/Development/python/Juniper/JuniperCascor/juniper_cascor/src/tests/integration/test_serialization.py'.
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="2" failures="11" skipped="0" tests="25" time="10308.432" timestamp="2026-01-19T15:27:08.285069-06:00" hostname="yamaguchi"><testcase classname="" name="integration.test_serialization" time="0.000"><error message="collection failure">ImportError while importing test module '/home/pcalnon/Development/python/Juniper/JuniperCascor/juniper_cascor/src/tests/integration/test_serialization.py'.
 Hint: make sure your test modules/packages have valid Python names.
 Traceback:
 /opt/miniforge3/envs/JuniperCascor/lib/python3.14/importlib/__init__.py:88: in import_module
@@ -14,7 +14,7 @@ Traceback:
            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 src/tests/unit/test_hdf5.py:10: in &lt;module&gt;
     from cascade_correlation_config.cascade_correlation_config import CascadeCorrelationConfig
-E   ModuleNotFoundError: No module named 'cascade_correlation_config'</error></testcase><testcase classname="integration.test_comprehensive_serialization.TestDeterministicTrainingResume" name="test_deterministic_training_resume" time="186.927"><failure message="AssertionError: &#10;Arrays are not almost equal to 5 decimals&#10;Resumed training diverged from continuous training&#10;Mismatched elements: 10 / 10 (100%)&#10;First 5 mismatches are at indices:&#10; [0, 0]: -0.06055125594139099 (ACTUAL), -0.09020629525184631 (DESIRED)&#10; [1, 0]: 0.17347075045108795 (ACTUAL), 0.14152517914772034 (DESIRED)&#10; [2, 0]: 0.6829667091369629 (ACTUAL), 0.6615568399429321 (DESIRED)&#10; [3, 0]: -0.4994625747203827 (ACTUAL), -0.5184578895568848 (DESIRED)&#10; [4, 0]: 0.5226701498031616 (ACTUAL), 0.5043010711669922 (DESIRED)&#10;Max absolute difference among violations: 0.03194557&#10;Max relative difference among violations: 0.5111792&#10; ACTUAL: array([[-0.06055],&#10;       [ 0.17347],&#10;       [ 0.68297],...&#10; DESIRED: array([[-0.09021],&#10;       [ 0.14153],&#10;       [ 0.66156],...">self = &lt;test_comprehensive_serialization.TestDeterministicTrainingResume testMethod=test_deterministic_training_resume&gt;
+E   ModuleNotFoundError: No module named 'cascade_correlation_config'</error></testcase><testcase classname="integration.test_comprehensive_serialization.TestDeterministicTrainingResume" name="test_deterministic_training_resume" time="149.544"><failure message="AssertionError: &#10;Arrays are not almost equal to 5 decimals&#10;Resumed training diverged from continuous training&#10;Mismatched elements: 10 / 10 (100%)&#10;First 5 mismatches are at indices:&#10; [0, 0]: -0.06055125594139099 (ACTUAL), -0.09020629525184631 (DESIRED)&#10; [1, 0]: 0.17347075045108795 (ACTUAL), 0.14152517914772034 (DESIRED)&#10; [2, 0]: 0.6829667091369629 (ACTUAL), 0.6615568399429321 (DESIRED)&#10; [3, 0]: -0.4994625747203827 (ACTUAL), -0.5184578895568848 (DESIRED)&#10; [4, 0]: 0.5226701498031616 (ACTUAL), 0.5043010711669922 (DESIRED)&#10;Max absolute difference among violations: 0.03194557&#10;Max relative difference among violations: 0.5111792&#10; ACTUAL: array([[-0.06055],&#10;       [ 0.17347],&#10;       [ 0.68297],...&#10; DESIRED: array([[-0.09021],&#10;       [ 0.14153],&#10;       [ 0.66156],...">self = &lt;test_comprehensive_serialization.TestDeterministicTrainingResume testMethod=test_deterministic_training_resume&gt;
 
     def test_deterministic_training_resume(self):
         """
@@ -88,7 +88,7 @@ E            DESIRED: array([[-0.09021],
 E                  [ 0.14153],
 E                  [ 0.66156],...
 
-src/tests/integration/test_comprehensive_serialization.py:79: AssertionError</failure></testcase><testcase classname="integration.test_comprehensive_serialization.TestHiddenUnitsPreservation" name="test_hidden_units_preservation" time="1.880" /><testcase classname="integration.test_comprehensive_serialization.TestConfigRoundtrip" name="test_config_roundtrip" time="1.762" /><testcase classname="integration.test_comprehensive_serialization.TestActivationFunctionRestoration" name="test_activation_function_restoration" time="5.541" /><testcase classname="integration.test_comprehensive_serialization.TestTorchRandomStateRestoration" name="test_torch_random_state_restoration" time="3.139" /><testcase classname="integration.test_comprehensive_serialization.TestHistoryPreservation" name="test_history_preservation" time="1.769" /><testcase classname="integration.test_spiral_problem.TestSpiralProblemBasic" name="test_2_spiral_learning" time="712.241"><failure message="AssertionError: Network did not learn: initial_loss=0.243668, final_loss=0.243668: improvement=0.000000 &lt; min_improvement=0.01">self = &lt;test_spiral_problem.TestSpiralProblemBasic object at 0x7cecd1e67110&gt;, spiral_network = &lt;cascade_correlation.cascade_correlation.CascadeCorrelationNetwork object at 0x7cecd1a578c0&gt;
+src/tests/integration/test_comprehensive_serialization.py:79: AssertionError</failure></testcase><testcase classname="integration.test_comprehensive_serialization.TestHiddenUnitsPreservation" name="test_hidden_units_preservation" time="1.698" /><testcase classname="integration.test_comprehensive_serialization.TestConfigRoundtrip" name="test_config_roundtrip" time="1.685" /><testcase classname="integration.test_comprehensive_serialization.TestActivationFunctionRestoration" name="test_activation_function_restoration" time="4.834" /><testcase classname="integration.test_comprehensive_serialization.TestTorchRandomStateRestoration" name="test_torch_random_state_restoration" time="2.452" /><testcase classname="integration.test_comprehensive_serialization.TestHistoryPreservation" name="test_history_preservation" time="1.644" /><testcase classname="integration.test_spiral_problem.TestSpiralProblemBasic" name="test_2_spiral_learning" time="612.889"><failure message="AssertionError: Network did not learn: initial_loss=0.243668, final_loss=0.243668: improvement=0.000000 &lt; min_improvement=0.01">self = &lt;test_spiral_problem.TestSpiralProblemBasic object at 0x77066287fb10&gt;, spiral_network = &lt;cascade_correlation.cascade_correlation.CascadeCorrelationNetwork object at 0x770662843a10&gt;
 
     @pytest.mark.integration
     @pytest.mark.spiral
@@ -119,7 +119,7 @@ src/tests/integration/test_comprehensive_serialization.py:79: AssertionError</fa
         )
 
 src/tests/integration/test_spiral_problem.py:55: 
-_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
 
 initial_loss = 0.2436680942773819, final_loss = 0.2436680942773819, min_improvement = 0.01, msg = 'Network did not learn: initial_loss=0.243668, final_loss=0.243668'
 
@@ -146,7 +146,7 @@ initial_loss = 0.2436680942773819, final_loss = 0.2436680942773819, min_improvem
                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 E       AssertionError: Network did not learn: initial_loss=0.243668, final_loss=0.243668: improvement=0.000000 &lt; min_improvement=0.01
 
-src/tests/helpers/assertions.py:340: AssertionError</failure></testcase><testcase classname="integration.test_spiral_problem.TestSpiralProblemBasic" name="test_3_spiral_learning" time="820.323"><failure message="assert 0.35 &gt; 0.35">self = &lt;test_spiral_problem.TestSpiralProblemBasic object at 0x7cecd1e674d0&gt;, spiral_network = &lt;cascade_correlation.cascade_correlation.CascadeCorrelationNetwork object at 0x7cecc5d1b0e0&gt;
+src/tests/helpers/assertions.py:340: AssertionError</failure></testcase><testcase classname="integration.test_spiral_problem.TestSpiralProblemBasic" name="test_3_spiral_learning" time="763.440"><failure message="assert 0.35 &gt; 0.35">self = &lt;test_spiral_problem.TestSpiralProblemBasic object at 0x77066287fed0&gt;, spiral_network = &lt;cascade_correlation.cascade_correlation.CascadeCorrelationNetwork object at 0x770656be7380&gt;
 
     @pytest.mark.integration
     @pytest.mark.spiral
@@ -180,7 +180,7 @@ src/tests/helpers/assertions.py:340: AssertionError</failure></testcase><testcas
         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 E       assert 0.35 &gt; 0.35
 
-src/tests/integration/test_spiral_problem.py:100: AssertionError</failure></testcase><testcase classname="integration.test_spiral_problem.TestSpiralProblemProgressive" name="test_n_spiral_difficulty_progression[2]" time="558.994"><failure message="assert 0.5 &gt;= 0.5166666666666667">self = &lt;test_spiral_problem.TestSpiralProblemProgressive object at 0x7cecd1e67890&gt;, n_spirals = 2
+src/tests/integration/test_spiral_problem.py:100: AssertionError</failure></testcase><testcase classname="integration.test_spiral_problem.TestSpiralProblemProgressive" name="test_n_spiral_difficulty_progression[2]" time="450.225"><failure message="assert 0.5 &gt;= 0.5166666666666667">self = &lt;test_spiral_problem.TestSpiralProblemProgressive object at 0x7706628842d0&gt;, n_spirals = 2
 
     @pytest.mark.integration
     @pytest.mark.spiral
@@ -220,7 +220,7 @@ src/tests/integration/test_spiral_problem.py:100: AssertionError</failure></test
         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 E       assert 0.5 &gt;= 0.5166666666666667
 
-src/tests/integration/test_spiral_problem.py:147: AssertionError</failure></testcase><testcase classname="integration.test_spiral_problem.TestSpiralProblemProgressive" name="test_n_spiral_difficulty_progression[3]" time="851.679"><failure message="assert 0.37777777777777777 &gt; (0.3333333333333333 * 1.2)">self = &lt;test_spiral_problem.TestSpiralProblemProgressive object at 0x7cecd1e679d0&gt;, n_spirals = 3
+src/tests/integration/test_spiral_problem.py:147: AssertionError</failure></testcase><testcase classname="integration.test_spiral_problem.TestSpiralProblemProgressive" name="test_n_spiral_difficulty_progression[3]" time="580.515"><failure message="assert 0.37777777777777777 &gt; (0.3333333333333333 * 1.2)">self = &lt;test_spiral_problem.TestSpiralProblemProgressive object at 0x770662884410&gt;, n_spirals = 3
 
     @pytest.mark.integration
     @pytest.mark.spiral
@@ -265,7 +265,7 @@ src/tests/integration/test_spiral_problem.py:147: AssertionError</failure></test
         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 E       assert 0.37777777777777777 &gt; (0.3333333333333333 * 1.2)
 
-src/tests/integration/test_spiral_problem.py:152: AssertionError</failure></testcase><testcase classname="integration.test_spiral_problem.TestSpiralProblemProgressive" name="test_n_spiral_difficulty_progression[4]" time="964.073"><failure message="assert 0.26666666666666666 &gt; (0.25 * 1.2)">self = &lt;test_spiral_problem.TestSpiralProblemProgressive object at 0x7cecd1e55810&gt;, n_spirals = 4
+src/tests/integration/test_spiral_problem.py:152: AssertionError</failure></testcase><testcase classname="integration.test_spiral_problem.TestSpiralProblemProgressive" name="test_n_spiral_difficulty_progression[4]" time="708.897"><failure message="assert 0.26666666666666666 &gt; (0.25 * 1.2)">self = &lt;test_spiral_problem.TestSpiralProblemProgressive object at 0x7706627f1350&gt;, n_spirals = 4
 
     @pytest.mark.integration
     @pytest.mark.spiral
@@ -310,7 +310,7 @@ src/tests/integration/test_spiral_problem.py:152: AssertionError</failure></test
         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 E       assert 0.26666666666666666 &gt; (0.25 * 1.2)
 
-src/tests/integration/test_spiral_problem.py:152: AssertionError</failure></testcase><testcase classname="integration.test_spiral_problem.TestSpiralProblemRobustness" name="test_spiral_noise_robustness[0.01]" time="780.250"><failure message="assert 0.525 &gt; 0.55">self = &lt;test_spiral_problem.TestSpiralProblemRobustness object at 0x7cecd1e67390&gt;, spiral_network = &lt;cascade_correlation.cascade_correlation.CascadeCorrelationNetwork object at 0x7cecc5d1ba10&gt;, noise_level = 0.01
+src/tests/integration/test_spiral_problem.py:152: AssertionError</failure></testcase><testcase classname="integration.test_spiral_problem.TestSpiralProblemRobustness" name="test_spiral_noise_robustness[0.01]" time="596.895"><failure message="assert 0.525 &gt; 0.55">self = &lt;test_spiral_problem.TestSpiralProblemRobustness object at 0x77066287fd90&gt;, spiral_network = &lt;cascade_correlation.cascade_correlation.CascadeCorrelationNetwork object at 0x770656be7cb0&gt;, noise_level = 0.01
 
     @pytest.mark.integration
     @pytest.mark.spiral
@@ -342,7 +342,7 @@ src/tests/integration/test_spiral_problem.py:152: AssertionError</failure></test
             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 E           assert 0.525 &gt; 0.55
 
-src/tests/integration/test_spiral_problem.py:188: AssertionError</failure></testcase><testcase classname="integration.test_spiral_problem.TestSpiralProblemRobustness" name="test_spiral_noise_robustness[0.05]" time="657.431"><failure message="assert 0.55 &gt; 0.55">self = &lt;test_spiral_problem.TestSpiralProblemRobustness object at 0x7cecd1e67b10&gt;, spiral_network = &lt;cascade_correlation.cascade_correlation.CascadeCorrelationNetwork object at 0x7cecc5d1be00&gt;, noise_level = 0.05
+src/tests/integration/test_spiral_problem.py:188: AssertionError</failure></testcase><testcase classname="integration.test_spiral_problem.TestSpiralProblemRobustness" name="test_spiral_noise_robustness[0.05]" time="598.973"><failure message="assert 0.55 &gt; 0.55">self = &lt;test_spiral_problem.TestSpiralProblemRobustness object at 0x770662884550&gt;, spiral_network = &lt;cascade_correlation.cascade_correlation.CascadeCorrelationNetwork object at 0x7706560f01a0&gt;, noise_level = 0.05
 
     @pytest.mark.integration
     @pytest.mark.spiral
@@ -374,7 +374,7 @@ src/tests/integration/test_spiral_problem.py:188: AssertionError</failure></test
             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 E           assert 0.55 &gt; 0.55
 
-src/tests/integration/test_spiral_problem.py:188: AssertionError</failure></testcase><testcase classname="integration.test_spiral_problem.TestSpiralProblemRobustness" name="test_spiral_noise_robustness[0.1]" time="1149.649" /><testcase classname="integration.test_spiral_problem.TestSpiralProblemRobustness" name="test_spiral_data_size_scaling[20]" time="582.706"><failure message="assert 0.5 &gt; 0.525">self = &lt;test_spiral_problem.TestSpiralProblemRobustness object at 0x7cecd1e55ba0&gt;, spiral_network = &lt;cascade_correlation.cascade_correlation.CascadeCorrelationNetwork object at 0x7cecc52b41a0&gt;, n_per_spiral = 20
+src/tests/integration/test_spiral_problem.py:188: AssertionError</failure></testcase><testcase classname="integration.test_spiral_problem.TestSpiralProblemRobustness" name="test_spiral_noise_robustness[0.1]" time="606.776" /><testcase classname="integration.test_spiral_problem.TestSpiralProblemRobustness" name="test_spiral_data_size_scaling[20]" time="608.843"><failure message="assert 0.5 &gt; 0.525">self = &lt;test_spiral_problem.TestSpiralProblemRobustness object at 0x7706627f16e0&gt;, spiral_network = &lt;cascade_correlation.cascade_correlation.CascadeCorrelationNetwork object at 0x7706560f0590&gt;, n_per_spiral = 20
 
     @pytest.mark.integration
     @pytest.mark.spiral
@@ -401,7 +401,7 @@ src/tests/integration/test_spiral_problem.py:188: AssertionError</failure></test
         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 E       assert 0.5 &gt; 0.525
 
-src/tests/integration/test_spiral_problem.py:216: AssertionError</failure></testcase><testcase classname="integration.test_spiral_problem.TestSpiralProblemRobustness" name="test_spiral_data_size_scaling[50]" time="570.641" /><testcase classname="integration.test_spiral_problem.TestSpiralProblemRobustness" name="test_spiral_data_size_scaling[100]" time="556.806" /><testcase classname="integration.test_spiral_problem.TestSpiralProblemVisualization" name="test_spiral_training_progression" time="608.915"><failure message="assert 0.5 &gt; 0.5">self = &lt;test_spiral_problem.TestSpiralProblemVisualization object at 0x7cecd1e67ed0&gt;, spiral_network = &lt;cascade_correlation.cascade_correlation.CascadeCorrelationNetwork object at 0x7cecc52b4440&gt;
+src/tests/integration/test_spiral_problem.py:216: AssertionError</failure></testcase><testcase classname="integration.test_spiral_problem.TestSpiralProblemRobustness" name="test_spiral_data_size_scaling[50]" time="625.065" /><testcase classname="integration.test_spiral_problem.TestSpiralProblemRobustness" name="test_spiral_data_size_scaling[100]" time="631.105" /><testcase classname="integration.test_spiral_problem.TestSpiralProblemVisualization" name="test_spiral_training_progression" time="617.018"><failure message="assert 0.5 &gt; 0.5">self = &lt;test_spiral_problem.TestSpiralProblemVisualization object at 0x770662884910&gt;, spiral_network = &lt;cascade_correlation.cascade_correlation.CascadeCorrelationNetwork object at 0x7706560f06e0&gt;
 
     @pytest.mark.integration
     @pytest.mark.spiral
@@ -447,7 +447,7 @@ src/tests/integration/test_spiral_problem.py:216: AssertionError</failure></test
             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 E           assert 0.5 &gt; 0.5
 
-src/tests/integration/test_spiral_problem.py:268: AssertionError</failure></testcase><testcase classname="integration.test_spiral_problem.TestSpiralProblemEdgeCases" name="test_minimal_spiral_data" time="340.760" /><testcase classname="integration.test_spiral_problem.TestSpiralProblemEdgeCases" name="test_perfect_spiral_separation" time="641.067"><failure message="assert 0.5166666666666667 &gt; 0.5166666666666667">self = &lt;test_spiral_problem.TestSpiralProblemEdgeCases object at 0x7cecd19902d0&gt;, spiral_network = &lt;cascade_correlation.cascade_correlation.CascadeCorrelationNetwork object at 0x7cecc52b42f0&gt;
+src/tests/integration/test_spiral_problem.py:268: AssertionError</failure></testcase><testcase classname="integration.test_spiral_problem.TestSpiralProblemEdgeCases" name="test_minimal_spiral_data" time="336.431" /><testcase classname="integration.test_spiral_problem.TestSpiralProblemEdgeCases" name="test_perfect_spiral_separation" time="595.083"><failure message="assert 0.5166666666666667 &gt; 0.5166666666666667">self = &lt;test_spiral_problem.TestSpiralProblemEdgeCases object at 0x770662884cd0&gt;, spiral_network = &lt;cascade_correlation.cascade_correlation.CascadeCorrelationNetwork object at 0x7706560f0440&gt;
 
     @pytest.mark.integration
     @pytest.mark.spiral
@@ -473,86 +473,4 @@ src/tests/integration/test_spiral_problem.py:268: AssertionError</failure></test
         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 E       assert 0.5166666666666667 &gt; 0.5166666666666667
 
-src/tests/integration/test_spiral_problem.py:332: AssertionError</failure></testcase><testcase classname="integration.test_spiral_problem.TestSpiralProblemComparison" name="test_spiral_configuration_comparison" time="1924.045" /><testcase classname="unit.test_accuracy.TestAccuracyCalculation" name="test_perfect_accuracy" time="0.941" /><testcase classname="unit.test_accuracy.TestAccuracyCalculation" name="test_zero_accuracy" time="0.759" /><testcase classname="unit.test_accuracy.TestAccuracyCalculation" name="test_random_accuracy" time="0.826" /><testcase classname="unit.test_accuracy.TestAccuracyCalculation" name="test_accuracy_with_trained_network" time="79.892" /><testcase classname="unit.test_accuracy.TestAccuracyShapes" name="test_accuracy_batch_sizes[1]" time="0.855" /><testcase classname="unit.test_accuracy.TestAccuracyShapes" name="test_accuracy_batch_sizes[5]" time="0.848" /><testcase classname="unit.test_accuracy.TestAccuracyShapes" name="test_accuracy_batch_sizes[10]" time="0.882" /><testcase classname="unit.test_accuracy.TestAccuracyShapes" name="test_accuracy_batch_sizes[50]" time="0.980" /><testcase classname="unit.test_accuracy.TestAccuracyShapes" name="test_accuracy_batch_sizes[100]" time="0.880" /><testcase classname="unit.test_accuracy.TestAccuracyShapes" name="test_accuracy_output_sizes[2]" time="0.769" /><testcase classname="unit.test_accuracy.TestAccuracyShapes" name="test_accuracy_output_sizes[3]" time="0.741" /><testcase classname="unit.test_accuracy.TestAccuracyShapes" name="test_accuracy_output_sizes[5]" time="0.733" /><testcase classname="unit.test_accuracy.TestAccuracyShapes" name="test_accuracy_output_sizes[10]" time="0.769" /><testcase classname="unit.test_accuracy.TestAccuracyValidation" name="test_accuracy_none_inputs" time="0.860" /><testcase classname="unit.test_accuracy.TestAccuracyValidation" name="test_accuracy_mismatched_batch_sizes" time="0.860" /><testcase classname="unit.test_accuracy.TestAccuracyValidation" name="test_accuracy_wrong_shapes" time="0.889" /><testcase classname="unit.test_accuracy.TestAccuracyValidation" name="test_accuracy_non_tensor_inputs" time="0.797" /><testcase classname="unit.test_accuracy.TestAccuracyArgmax" name="test_accuracy_argmax_behavior" time="0.783" /><testcase classname="unit.test_accuracy.TestAccuracyArgmax" name="test_accuracy_tie_breaking" time="0.690" /><testcase classname="unit.test_accuracy.TestAccuracyEdgeCases" name="test_accuracy_empty_batch" time="0.709" /><testcase classname="unit.test_accuracy.TestAccuracyEdgeCases" name="test_accuracy_single_sample" time="0.736" /><testcase classname="unit.test_accuracy.TestAccuracyEdgeCases" name="test_accuracy_extreme_predictions" time="0.765" /><testcase classname="unit.test_accuracy.TestAccuracyConsistency" name="test_accuracy_methods_consistency" time="0.701" /><testcase classname="unit.test_accuracy.TestAccuracyConsistency" name="test_accuracy_deterministic" time="0.753" /><testcase classname="unit.test_accuracy.TestAccuracyMulticlass" name="test_multiclass_accuracy[3]" time="0.664" /><testcase classname="unit.test_accuracy.TestAccuracyMulticlass" name="test_multiclass_accuracy[5]" time="0.596" /><testcase classname="unit.test_accuracy.TestAccuracyMulticlass" name="test_multiclass_accuracy[10]" time="0.639" /><testcase classname="unit.test_accuracy.TestAccuracyMulticlass" name="test_imbalanced_accuracy" time="0.760" /><testcase classname="unit.test_candidate_training_manager" name="test_candidate_training_manager_inheritance[happy-path-candidate-training-manager]" time="0.001" /><testcase classname="unit.test_candidate_training_manager" name="test_candidate_training_manager_inheritance[base-manager-direct]" time="0.002" /><testcase classname="unit.test_candidate_training_manager" name="test_candidate_training_manager_register[register_args0-register_kwargs0-None-register-method-happy-path]" time="0.001" /><testcase classname="unit.test_candidate_training_manager" name="test_candidate_training_manager_register[register_args1-register_kwargs1-None-register-method-with-callable]" time="0.001" /><testcase classname="unit.test_candidate_training_manager" name="test_candidate_training_manager_register[register_args2-register_kwargs2-TypeError-register-method-none-name]" time="0.001" /><testcase classname="unit.test_candidate_training_manager" name="test_candidate_training_manager_register[register_args3-register_kwargs3-TypeError-register-method-missing-args]" time="0.001" /><testcase classname="unit.test_candidate_training_manager" name="test_candidate_training_manager_start_method[fork-None-start-method-fork]" time="0.002"><skipped type="pytest.skip" message="Skipping actual start() call for 'fork' to avoid multiprocessing complexity">/home/pcalnon/Development/python/Juniper/JuniperCascor/juniper_cascor/src/tests/unit/test_candidate_training_manager.py:98: Skipping actual start() call for 'fork' to avoid multiprocessing complexity</skipped></testcase><testcase classname="unit.test_candidate_training_manager" name="test_candidate_training_manager_start_method[spawn-None-start-method-spawn]" time="0.001"><skipped type="pytest.skip" message="Skipping actual start() call for 'spawn' to avoid multiprocessing complexity">/home/pcalnon/Development/python/Juniper/JuniperCascor/juniper_cascor/src/tests/unit/test_candidate_training_manager.py:98: Skipping actual start() call for 'spawn' to avoid multiprocessing complexity</skipped></testcase><testcase classname="unit.test_candidate_training_manager" name="test_candidate_training_manager_start_method[forkserver-None-start-method-forkserver]" time="0.001"><skipped type="pytest.skip" message="Skipping actual start() call for 'forkserver' to avoid multiprocessing complexity">/home/pcalnon/Development/python/Juniper/JuniperCascor/juniper_cascor/src/tests/unit/test_candidate_training_manager.py:98: Skipping actual start() call for 'forkserver' to avoid multiprocessing complexity</skipped></testcase><testcase classname="unit.test_candidate_training_manager" name="test_candidate_training_manager_start_method[invalid_method-ValueError-start-method-invalid]" time="0.001" /><testcase classname="unit.test_candidate_training_manager" name="test_candidate_training_manager_repr_and_str" time="0.001" /><testcase classname="unit.test_candidate_training_manager" name="test_candidate_training_manager_address_property" time="0.001" /><testcase classname="unit.test_candidate_training_manager" name="test_candidate_training_manager_shutdown_without_start" time="0.002" /><testcase classname="unit.test_cascor_fix" name="test_sequential_candidate_training" time="12.577" /><testcase classname="unit.test_cascor_fix" name="test_individual_candidates" time="11.740" /><testcase classname="unit.test_critical_fixes" name="test_1_dataclass_fields" time="0.002" /><testcase classname="unit.test_critical_fixes" name="test_2_network_creation" time="0.701" /><testcase classname="unit.test_critical_fixes" name="test_3_candidate_training" time="5.626" /><testcase classname="unit.test_critical_fixes" name="test_4_get_single_candidate_data" time="0.655" /><testcase classname="unit.test_critical_fixes" name="test_5_training_results_dataclass" time="0.002" /><testcase classname="unit.test_final" name="test_candidate_units_simple" time="17.855" /><testcase classname="unit.test_forward_pass.TestForwardPassBasics" name="test_forward_pass_no_hidden_units" time="2.284" /><testcase classname="unit.test_forward_pass.TestForwardPassBasics" name="test_forward_pass_single_hidden_unit" time="0.780" /><testcase classname="unit.test_forward_pass.TestForwardPassBasics" name="test_forward_pass_multiple_hidden_units" time="0.737" /><testcase classname="unit.test_forward_pass.TestForwardPassBasics" name="test_forward_pass_deterministic" time="0.737" /><testcase classname="unit.test_forward_pass.TestForwardPassShapes" name="test_forward_pass_batch_sizes[1]" time="0.768" /><testcase classname="unit.test_forward_pass.TestForwardPassShapes" name="test_forward_pass_batch_sizes[5]" time="0.812" /><testcase classname="unit.test_forward_pass.TestForwardPassShapes" name="test_forward_pass_batch_sizes[10]" time="1.000" /><testcase classname="unit.test_forward_pass.TestForwardPassShapes" name="test_forward_pass_batch_sizes[50]" time="0.975" /><testcase classname="unit.test_forward_pass.TestForwardPassShapes" name="test_forward_pass_input_sizes[1]" time="0.890" /><testcase classname="unit.test_forward_pass.TestForwardPassShapes" name="test_forward_pass_input_sizes[2]" time="0.776" /><testcase classname="unit.test_forward_pass.TestForwardPassShapes" name="test_forward_pass_input_sizes[5]" time="0.767" /><testcase classname="unit.test_forward_pass.TestForwardPassShapes" name="test_forward_pass_input_sizes[10]" time="0.627" /><testcase classname="unit.test_forward_pass.TestForwardPassShapes" name="test_forward_pass_output_sizes[1]" time="0.742" /><testcase classname="unit.test_forward_pass.TestForwardPassShapes" name="test_forward_pass_output_sizes[2]" time="0.681" /><testcase classname="unit.test_forward_pass.TestForwardPassShapes" name="test_forward_pass_output_sizes[5]" time="0.696" /><testcase classname="unit.test_forward_pass.TestForwardPassShapes" name="test_forward_pass_output_sizes[10]" time="0.767" /><testcase classname="unit.test_forward_pass.TestForwardPassValidation" name="test_forward_pass_invalid_input_shape" time="0.834" /><testcase classname="unit.test_forward_pass.TestForwardPassValidation" name="test_forward_pass_1d_input" time="0.901" /><testcase classname="unit.test_forward_pass.TestForwardPassValidation" name="test_forward_pass_empty_input" time="0.868" /><testcase classname="unit.test_forward_pass.TestForwardPassValidation" name="test_forward_pass_nan_input" time="0.848"><failure message="cascade_correlation.cascade_correlation_exceptions.cascade_correlation_exceptions.ValidationError: Parameter 'x' contains NaN values">self = &lt;test_forward_pass.TestForwardPassValidation object at 0x7cecd1974640&gt;, simple_network = &lt;cascade_correlation.cascade_correlation.CascadeCorrelationNetwork object at 0x7cecc52b46e0&gt;
-
-    @pytest.mark.unit
-    def test_forward_pass_nan_input(self, simple_network):
-        """Test forward pass with NaN input raises ValidationError.
-    
-        The network validates inputs and rejects NaN values to prevent
-        silent propagation of invalid data through the network.
-        """
-        from cascade_correlation_exceptions.cascade_correlation_exceptions import ValidationError
-    
-        nan_input = torch.full((5, simple_network.input_size), float('nan'))
-    
-        # Network should reject NaN inputs with a ValidationError
-        with pytest.raises(ValidationError, match="contains NaN values"):
-&gt;           simple_network.forward(nan_input)
-
-src/tests/unit/test_forward_pass.py:230: 
-_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
-
-self = &lt;cascade_correlation.cascade_correlation.CascadeCorrelationNetwork object at 0x7cecc52b46e0&gt;, x = tensor([[nan, nan],
-        [nan, nan],
-        [nan, nan],
-        [nan, nan],
-        [nan, nan]])
-
-    def forward(self, x: torch.Tensor = None) -&gt; torch.Tensor:
-        """
-        Perform a forward pass through the network.
-        Args:
-            x: Input tensor (batch_size, input_features)
-        Raises:
-            ValidationError: If input tensor is invalid or has wrong shape
-        Returns:
-            Network output tensor (batch_size, output_features)
-        """
-        # Validate input (allow empty tensors for edge case handling)
-&gt;       self._validate_tensor_input(x, "x", allow_empty=True)
-
-src/cascade_correlation/cascade_correlation.py:1357: 
-_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
-
-self = &lt;cascade_correlation.cascade_correlation.CascadeCorrelationNetwork object at 0x7cecc52b46e0&gt;, x = tensor([[nan, nan],
-        [nan, nan],
-        [nan, nan],
-        [nan, nan],
-        [nan, nan]]), param_name = 'x', allow_none = False
-allow_empty = True
-
-    def _validate_tensor_input(
-        self,
-        x: torch.Tensor,
-        param_name: str = "x",
-        allow_none: bool = False,
-        allow_empty: bool = False,
-    ) -&gt; None:
-        """
-        Validate tensor input parameters.
-        Args:
-            x: Input tensor to validate
-            param_name: Name of the parameter for error messages
-            allow_none: Whether to allow None values
-            allow_empty: Whether to allow empty (zero-batch) tensors
-        Raises:
-            ValidationError: If tensor is invalid
-        """
-        if allow_none and x is None:
-            return
-        if x is None:
-            raise ValidationError(f"Parameter '{param_name}' cannot be None")
-        if not isinstance(x, torch.Tensor):
-            raise ValidationError(
-                f"Parameter '{param_name}' must be a torch.Tensor, got {type(x)}"
-            )
-        if x.numel() == 0 and not allow_empty:
-            raise ValidationError(f"Parameter '{param_name}' cannot be an empty tensor")
-        # Skip NaN/Inf checks for empty tensors
-        if x.numel() &gt; 0:
-            if torch.isnan(x).any():
-&gt;               raise ValidationError(f"Parameter '{param_name}' contains NaN values")
-E               cascade_correlation.cascade_correlation_exceptions.cascade_correlation_exceptions.ValidationError: Parameter 'x' contains NaN values
-
-src/cascade_correlation/cascade_correlation.py:976: ValidationError</failure></testcase><testcase classname="unit.test_forward_pass.TestForwardPassCascading" name="test_cascading_connections" time="0.929" /><testcase classname="unit.test_forward_pass.TestForwardPassCascading" name="test_hidden_unit_output_shapes" time="0.844" /><testcase classname="unit.test_forward_pass.TestForwardPassGradients" name="test_forward_pass_gradients_enabled" time="0.790" /><testcase classname="unit.test_forward_pass.TestForwardPassGradients" name="test_forward_pass_no_grad" time="0.776" /><testcase classname="unit.test_forward_pass.TestForwardPassActivationFunctions" name="test_forward_pass_different_activations[tanh]" time="0.752" /><testcase classname="unit.test_forward_pass.TestForwardPassActivationFunctions" name="test_forward_pass_different_activations[sigmoid]" time="0.725" /><testcase classname="unit.test_forward_pass.TestForwardPassActivationFunctions" name="test_forward_pass_different_activations[relu]" time="0.761" /><testcase classname="unit.test_forward_pass.TestForwardPassEdgeCases" name="test_forward_pass_single_sample" time="0.735" /><testcase classname="unit.test_forward_pass.TestForwardPassEdgeCases" name="test_forward_pass_large_batch" time="0.812" /><testcase classname="unit.test_forward_pass.TestForwardPassEdgeCases" name="test_forward_pass_extreme_weights" time="0.732" /><testcase classname="unit.test_p1_fixes" name="test_1_early_stopping" time="3.966" /><testcase classname="unit.test_p1_fixes" name="test_2_optimizer_serialization" time="1.509" /><testcase classname="unit.test_p1_fixes" name="test_3_training_counters_persistence" time="1.464" /><testcase classname="unit.test_p1_fixes" name="test_4_queue_timeout" time="0.002" /><testcase classname="unit.test_p1_fixes" name="test_5_optimizer_initialization" time="0.679" /><testcase classname="unit.test_residual_error.TestResidualErrorBasics" name="test_residual_error_perfect_prediction" time="0.801" /><testcase classname="unit.test_residual_error.TestResidualErrorBasics" name="test_residual_error_computation" time="0.794" /><testcase classname="unit.test_residual_error.TestResidualErrorBasics" name="test_residual_error_symmetric" time="0.746" /><testcase classname="unit.test_residual_error.TestResidualErrorBasics" name="test_residual_error_no_grad" time="0.783" /><testcase classname="unit.test_residual_error.TestResidualErrorShapes" name="test_residual_error_batch_sizes[1]" time="0.824" /><testcase classname="unit.test_residual_error.TestResidualErrorShapes" name="test_residual_error_batch_sizes[5]" time="0.774" /><testcase classname="unit.test_residual_error.TestResidualErrorShapes" name="test_residual_error_batch_sizes[10]" time="0.770" /><testcase classname="unit.test_residual_error.TestResidualErrorShapes" name="test_residual_error_batch_sizes[50]" time="0.731" /><testcase classname="unit.test_residual_error.TestResidualErrorShapes" name="test_residual_error_output_sizes[1]" time="0.607" /><testcase classname="unit.test_residual_error.TestResidualErrorShapes" name="test_residual_error_output_sizes[2]" time="0.612" /><testcase classname="unit.test_residual_error.TestResidualErrorShapes" name="test_residual_error_output_sizes[5]" time="0.683" /><testcase classname="unit.test_residual_error.TestResidualErrorShapes" name="test_residual_error_output_sizes[10]" time="0.670" /><testcase classname="unit.test_residual_error.TestResidualErrorMagnitude" name="test_residual_error_magnitude_untrained" time="0.800" /><testcase classname="unit.test_residual_error.TestResidualErrorMagnitude" name="test_residual_error_zero_targets" time="0.707" /><testcase classname="unit.test_residual_error.TestResidualErrorMagnitude" name="test_residual_error_distribution" time="0.771" /><testcase classname="unit.test_residual_error.TestResidualErrorValidation" name="test_residual_error_mismatched_shapes" time="0.773" /><testcase classname="unit.test_residual_error.TestResidualErrorValidation" name="test_residual_error_wrong_target_size" time="0.733" /><testcase classname="unit.test_residual_error.TestResidualErrorValidation" name="test_residual_error_empty_input" time="0.767" /><testcase classname="unit.test_residual_error.TestResidualErrorNumericalStability" name="test_residual_error_extreme_values" time="0.820" /><testcase classname="unit.test_residual_error.TestResidualErrorNumericalStability" name="test_residual_error_inf_nan_handling" time="0.760" /><testcase classname="unit.test_residual_error.TestResidualErrorWithHiddenUnits" name="test_residual_error_with_hidden_units" time="0.775" /><testcase classname="unit.test_residual_error.TestResidualErrorWithHiddenUnits" name="test_residual_error_changes_with_training" time="0.839" /><testcase classname="unit.test_residual_error.TestResidualErrorCorrelation" name="test_residual_error_for_correlation" time="0.778" /><testcase classname="unit.test_residual_error.TestResidualErrorCorrelation" name="test_residual_error_mean_centering" time="0.745" /></testsuite></testsuites>
+src/tests/integration/test_spiral_problem.py:332: AssertionError</failure></testcase><testcase time="0.001" /></testsuite></testsuites>

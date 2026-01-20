@@ -7,7 +7,8 @@ import os
 import sys
 import tempfile
 from cascade_correlation.cascade_correlation import CascadeCorrelationNetwork
-from cascade_correlation_config.cascade_correlation_config import CascadeCorrelationConfig
+# from cascade_correlation_config.cascade_correlation_config import CascadeCorrelationConfig
+from cascade_correlation.cascade_correlation_config.cascade_correlation_config import CascadeCorrelationConfig
 
 # from pathlib import Path
 
@@ -21,7 +22,8 @@ def test_hdf5_serialization():
 
         # Import required modules
         from cascade_correlation.cascade_correlation import CascadeCorrelationNetwork
-        from cascade_correlation_config.cascade_correlation_config import CascadeCorrelationConfig
+        # from cascade_correlation_config.cascade_correlation_config import CascadeCorrelationConfig
+        from cascade_correlation.cascade_correlation_config.cascade_correlation_config import CascadeCorrelationConfig
         # from cascade_correlation.hdf5.serializer import CascadeHDF5Serializer
         # from cascade_correlation.hdf5.utils import HDF5Utils
         from cascade_correlation.snapshots.snapshot_utils import HDF5Utils
