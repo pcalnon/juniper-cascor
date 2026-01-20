@@ -1,8 +1,8 @@
 # Juniper Cascor ↔ Juniper Canopy Integration Roadmap
 
 **Created**: 2026-01-20  
-**Last Updated**: 2026-01-20 08:40 CST  
-**Version**: 1.2.0  
+**Last Updated**: 2026-01-20 16:15 CST  
+**Version**: 1.7.0  
 **Status**: Active - Implementation Phase  
 **Author**: Development Team
 
@@ -16,21 +16,26 @@ This document tracks the integration of **Juniper Cascor** (Cascade Correlation 
 
 | Component      | Test Status                                    | Launch Status                 | Integration Ready |
 | -------------- | ---------------------------------------------- | ----------------------------- | ----------------- |
-| Juniper Cascor | ✅ 152 tests collected (0 errors)              | ⚠️ Shell script path issues   | 🟡 Partial        |
-| Juniper Canopy | ⚠️ 84 failures, 32 errors                      | ✅ Demo mode functional       | 🟡 Partial        |
+| Juniper Cascor | ✅ 152 tests collected (0 errors)              | ✅ Functional (8m runtime)    | 🟡 Partial        |
+| Juniper Canopy | ✅ 2903 passed, 0 failed, 0 errors             | ✅ Demo mode functional       | ✅ Ready          |
 
-### Critical Blockers Summary (Updated 2026-01-20 08:40)
+### Critical Blockers Summary (Updated 2026-01-20 09:05)
 
-| Priority | Issue                                               | Application | Impact                             | Status        |
-| -------- | --------------------------------------------------- | ----------- | ---------------------------------- | ------------- |
-| P0       | ~~Missing `scipy` dependency~~                      | Canopy      | ~~Blocks all backend integration~~ | ✅ RESOLVED   |
-| P0       | ~~Missing `fastapi`, `uvicorn`, etc.~~              | Canopy      | ~~216 test collection errors~~     | ✅ RESOLVED   |
-| P0       | ~~Missing `a2wsgi` dependency~~                     | Canopy      | ~~228 test collection errors~~     | ✅ RESOLVED   |
-| P0       | ~~Test import errors (cascade_correlation_config)~~ | Cascor      | ~~2 test collection errors~~       | ✅ RESOLVED   |
-| P0       | Shell script path resolution failures               | Cascor      | Cannot launch via `./try` script   | 🔴 BLOCKING   |
-| P1       | Multiprocessing manager port conflicts              | Cascor      | Parallel candidate training fails  | ⚠️ DEGRADED   |
-| P1       | ~~Environment mismatch~~                            | Both        | ~~Different conda environments~~   | ✅ RESOLVED   |
-| P1       | Dashboard manager test errors                       | Canopy      | 32 test errors                     | ⚠️ NEEDS FIX  |
+| Priority | Issue                                               | Application | Impact                                  | Status        |
+| -------- | --------------------------------------------------- | ----------- | --------------------------------------- | ------------- |
+| P0       | ~~Missing `scipy` dependency~~                      | Canopy      | ~~Blocks all backend integration~~      | ✅ RESOLVED   |
+| P0       | ~~Missing `fastapi`, `uvicorn`, etc.~~              | Canopy      | ~~216 test collection errors~~          | ✅ RESOLVED   |
+| P0       | ~~Missing `a2wsgi` dependency~~                     | Canopy      | ~~228 test collection errors~~          | ✅ RESOLVED   |
+| P0       | ~~Test import errors (cascade_correlation_config)~~ | Cascor      | ~~2 test collection errors~~            | ✅ RESOLVED   |
+| P0       | ~~Shell script path resolution failures~~           | Cascor      | ~~Cannot launch via `./try` script~~    | ✅ RESOLVED   |
+| P1       | ~~Candidate training result parsing error~~         | Cascor      | ~~All candidates fail, 0 hidden units~~ | ✅ RESOLVED   |
+| P1       | ~~validate_training API mismatch~~                  | Cascor      | ~~Dataclass passed but tuple expected~~ | ✅ RESOLVED   |
+| P2       | ~~`try` script log_debug before source~~            | Cascor      | ~~11 "command not found" warnings~~     | ✅ RESOLVED   |
+| P1       | Multiprocessing pickling error (wrapped_activation) | Cascor      | Workers cannot send results back        | 🔴 BLOCKING   |
+| P2       | asyncio.iscoroutinefunction deprecation             | Canopy      | Deprecation warning, removal in 3.16    | ⚠️ COSMETIC   |
+| P1       | Multiprocessing manager port conflicts              | Cascor      | Parallel candidate training may fail    | ⚠️ DEGRADED   |
+| P1       | ~~Environment mismatch~~                            | Both        | ~~Different conda environments~~        | ✅ RESOLVED   |
+| P1       | ~~Missing pytest-mock and pytest-asyncio~~          | Canopy      | ~~32 errors + many async failures~~     | ✅ RESOLVED   |
 
 ### Progress Summary
 
@@ -109,44 +114,75 @@ Both environments now use Python 3.14.2.
 #### CASCOR-P0-001: Shell Script Path Resolution Failure
 
 **Location**: `util/juniper_cascor.bash`, `try` script  
-**Status**: 🔴 BLOCKING
+**Status**: ✅ RESOLVED (2026-01-20)
 
-**Problem**: The `./try` convenience script fails to launch the application.
+**Problem**: The `./try` convenience script previously failed to launch the application.
+
+**Resolution**: Issue was resolved. The `./try` script now successfully launches the application and completes execution in ~8 minutes.
+
+**Verification (2026-01-20 09:01)**:
+
+```bash
+$ ./try 2>&1 | tail -5
+[spiral_problem.py:1330] (26-01-20 09:01:17) [DEBUG] SpiralProblem: main: Final accuracy: Training: 61.56%
+[spiral_problem.py:1331] (26-01-20 09:01:17) [DEBUG] SpiralProblem: main: Final accuracy: Testing: 55.75%
+[main.py:291] (26-01-20 09:01:17) [INFO] Main: Completed solving SpiralProblem instance
+real    8m5.413s
+```
+
+---
+
+#### CASCOR-P0-004: Candidate Training Result Parsing Error
+
+**Location**: `src/cascade_correlation/cascade_correlation.py`  
+**Status**: ✅ RESOLVED (2026-01-20)
+
+**Problem**: All 10 candidate training results failed with error `"'float' object has no attribute 'correlation'"`, resulting in 0 hidden units being added to the network.
 
 **Root Cause Analysis**:
+The `_train_candidate_unit()` method called `candidate.train()` which returns a `float` (the correlation value), but the code expected a `CandidateTrainingResult` dataclass with a `.correlation` attribute. This API mismatch caused all candidates to fail.
 
-1. Helper scripts are assigned bare filenames instead of full paths:
+**Fix Applied**:
+Changed `candidate.train()` to `candidate.train_detailed()` which returns the full `CandidateTrainingResult` dataclass.
 
-   ```bash
-   GET_OS_SCRIPT="__get_os_name.bash"
-   GET_PROJECT_SCRIPT="__get_project_dir.bash"
-   ```
+**File Changed**: `src/cascade_correlation/cascade_correlation.py` (line 2767)
 
-2. `BASE_DIR` becomes empty when `__get_project_dir.bash` fails
-3. Python script path resolves to `/src/./main.py` (invalid)
-
-**Error Output**:
-
-```bash
-juniper_cascor.bash: line 67: __get_project_dir.bash: command not found
-Base Dir: 
-Python Script: /src/./main.py
-python3: can't open file '/src/./main.py': [Errno 2] No such file or directory
+```python
+# training_result = candidate.train(
+training_result = candidate.train_detailed(
 ```
 
-**Proposed Solution**:
+**Result**: Candidate training now returns proper result objects, enabling network growth with hidden units.
 
-```bash
-# Fix helper script paths - derive from BASH_SOURCE[0]
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-GET_OS_SCRIPT="${SCRIPT_DIR}/__get_os_name.bash"
-GET_PROJECT_SCRIPT="${SCRIPT_DIR}/__get_project_dir.bash"
+---
+
+#### CASCOR-P1-002: validate_training API Mismatch
+
+**Location**: `src/cascade_correlation/cascade_correlation.py`  
+**Status**: ✅ RESOLVED (2026-01-20)
+
+**Problem**: The `grow_network()` method called `validate_training()` with a `ValidateTrainingInputs` dataclass, but the method signature expected individual parameters and returned a tuple instead of `ValidateTrainingResults`.
+
+**Error**:
+
+```python
+AttributeError: 'tuple' object has no attribute 'early_stop'
 ```
 
-**Files to Modify**:
+**Fix Applied**:
+Updated the `validate_training()` method to accept `ValidateTrainingInputs` dataclass and return `ValidateTrainingResults` dataclass:
 
-- `util/juniper_cascor.bash`
-- `conf/script_util.cfg`
+```python
+# Old signature:
+# def validate_training(self, epoch, max_epochs, patience_counter, ...) -> tuple
+
+# New signature:
+def validate_training(self, validate_training_inputs: ValidateTrainingInputs) -> ValidateTrainingResults:
+```
+
+**File Changed**: `src/cascade_correlation/cascade_correlation.py` (lines 4115-4258)
+
+**Result**: Training validation now uses proper dataclass API, enabling full network training cycle.
 
 ---
 
@@ -262,6 +298,148 @@ from cascade_correlation.cascade_correlation_config.cascade_correlation_config i
 
 ---
 
+#### CASCOR-P1-003: Multiprocessing Pickling Error (wrapped_activation)
+
+**Location**: `src/candidate_unit/candidate_unit.py`, `src/cascade_correlation/cascade_correlation.py`  
+**Status**: 🔴 BLOCKING
+
+**Problem**: Multiprocessing workers encounter pickling errors when trying to send results back to the main process. The local function `wrapped_activation` cannot be pickled.
+
+**Error**:
+
+```python
+AttributeError: Can't pickle local object 'CandidateUnit._init_activation_with_derivative.<locals>.wrapped_activation'
+```
+
+**Root Cause Analysis**:
+
+The `_init_activation_with_derivative()` method defines a local function `wrapped_activation` (lines 375-388 in `candidate_unit.py`) that wraps activation functions to also provide derivatives. Local functions (closures) cannot be pickled by Python's `pickle` module, which is required for multiprocessing communication.
+
+**Affected Code** (`src/candidate_unit/candidate_unit.py:375-394`):
+
+```python
+def _init_activation_with_derivative(self, activation_fn):
+    # ...
+    def wrapped_activation(x, derivative: bool = False):  # Local function - NOT picklable!
+        if derivative:
+            if activation_fn == torch.tanh:
+                return 1.0 - activation_fn(x)**2
+            # ... other activation derivatives
+        else:
+            return activation_fn(x)
+    return wrapped_activation
+```
+
+**Impact**:
+
+1. **Multiprocessing Training Fails**: Workers cannot send `CandidateUnit` or `CandidateTrainingResult` objects back to the main process
+2. **Sequential Fallback**: Forces fallback to sequential training, significantly slowing the training process
+3. **HDF5 Serialization Risk**: May affect network snapshot serialization if activation functions are stored
+4. **Canopy Integration**: Real-time training metrics may be delayed due to slower sequential execution
+
+**Proposed Solutions**:
+
+**Option A: Module-Level Activation Wrapper Class (Recommended):**
+
+Create a picklable class at module level instead of local function:
+
+```python
+# At module level (outside class)
+class ActivationWithDerivative:
+    """Picklable wrapper for activation functions with derivatives."""
+    
+    def __init__(self, activation_fn):
+        self.activation_fn = activation_fn
+        self.activation_name = activation_fn.__name__ if hasattr(activation_fn, '__name__') else str(activation_fn)
+    
+    def __call__(self, x, derivative: bool = False):
+        if derivative:
+            if self.activation_name == 'tanh' or isinstance(self.activation_fn, torch.nn.Tanh):
+                return 1.0 - torch.tanh(x)**2
+            elif self.activation_name == 'sigmoid' or isinstance(self.activation_fn, torch.nn.Sigmoid):
+                y = torch.sigmoid(x)
+                return y * (1.0 - y)
+            elif self.activation_name == 'relu' or isinstance(self.activation_fn, torch.nn.ReLU):
+                return (x > 0).float()
+            else:
+                eps = 1e-6
+                return (self.activation_fn(x + eps) - self.activation_fn(x - eps)) / (2 * eps)
+        return self.activation_fn(x)
+    
+    def __getstate__(self):
+        # Store activation by name for pickling
+        return {'activation_name': self.activation_name}
+    
+    def __setstate__(self, state):
+        # Reconstruct activation from name
+        name = state['activation_name']
+        self.activation_name = name
+        self.activation_fn = {
+            'tanh': torch.tanh,
+            'sigmoid': torch.sigmoid,
+            'relu': torch.relu,
+            'Tanh': torch.nn.Tanh(),
+            'Sigmoid': torch.nn.Sigmoid(),
+            'ReLU': torch.nn.ReLU(),
+        }.get(name, torch.tanh)
+```
+
+**Option B: Store Activation Name Instead of Function:**
+
+Store only the activation function name/type and reconstruct on demand:
+
+```python
+def __init__(self, ..., activation_fn=None):
+    self._activation_type = self._get_activation_type(activation_fn)
+    
+def _get_activation_fn(self):
+    """Reconstruct activation function from type."""
+    return {
+        'tanh': torch.tanh,
+        'sigmoid': torch.sigmoid,
+        'relu': torch.relu,
+    }.get(self._activation_type, torch.tanh)
+```
+
+**Verification**:
+
+```python
+import pickle
+from candidate_unit.candidate_unit import CandidateUnit
+
+candidate = CandidateUnit(input_size=2, output_size=2)
+# Should not raise: AttributeError: Can't pickle local object
+pickled = pickle.dumps(candidate)
+restored = pickle.loads(pickled)
+```
+
+---
+
+#### CASCOR-P1-004: `try` Script Symlink Fix
+
+**Location**: `try` symlink, `util/try.bash` (archived)  
+**Status**: ✅ RESOLVED (2026-01-20)
+
+**Problem**: The `try` symlink previously pointed to `util/try.bash`, which called `log_debug` before logging functions were sourced, causing "command not found" warnings.
+
+**Resolution**:
+
+- The `try` symlink was updated to point directly to `util/juniper_cascor.bash`
+- The old `util/try.bash` script was archived
+- This eliminates the 11 "command not found" warnings during startup
+
+**Verification**:
+
+```bash
+$ ls -la try
+lrwxrwxrwx 1 pcalnon pcalnon 24 Jan 20 15:59 try -> util/juniper_cascor.bash
+
+$ ./try 2>&1 | head -5
+# No "log_debug: command not found" warnings
+```
+
+---
+
 #### CASCOR-P1-002: Missing PyYAML in Original Environment Spec
 
 **Location**: `conf/conda_environment.yaml`  
@@ -280,14 +458,14 @@ dependencies:
 
 ### 2.3 Cascor Component Status Summary
 
-| Component                 | Status        | Notes                         |
-| ------------------------- | ------------- | ----------------------------- |
-| CascadeCorrelationNetwork | ✅ Functional | Core algorithm works          |
-| CandidateUnit             | ✅ Functional | Training works                |
-| Serialization (HDF5)      | ✅ Functional | Save/load implemented         |
-| Multiprocessing           | ⚠️ Degraded   | Sequential fallback active    |
-| Shell Scripts             | 🔴 Broken     | Path resolution fails         |
-| Test Suite                | ⚠️ Partial    | Timeouts, 2 collection errors |
+| Component                 | Status        | Notes                               |
+| ------------------------- | ------------- | ----------------------------------- |
+| CascadeCorrelationNetwork | ✅ Functional | Core algorithm works                |
+| CandidateUnit             | ⚠️ Degraded   | Pickling issue blocks multiprocess  |
+| Serialization (HDF5)      | ✅ Functional | Save/load implemented               |
+| Multiprocessing           | 🔴 Blocked    | wrapped_activation pickling error   |
+| Shell Scripts             | ✅ Functional | try symlink fixed                   |
+| Test Suite                | ✅ Functional | 152 tests collected, 0 errors       |
 
 ---
 
@@ -368,9 +546,48 @@ pip install a2wsgi
 
 ---
 
+#### CANOPY-P0-004: Missing pytest-mock and pytest-asyncio
+
+**Location**: Test execution environment  
+**Status**: 🔴 BLOCKING
+
+**Problem**: Critical test infrastructure packages are missing from the JuniperCascor conda environment.
+
+**Evidence**:
+
+1. **pytest-mock missing** (32 errors):
+
+   ```bash
+   E       fixture 'mocker' not found
+   > available fixtures: ... (mocker not listed)
+   ```
+
+2. **pytest-asyncio missing** (many failures):
+
+   ```bash
+   FAILED ... - Failed: async def functions are not natively supported.
+   You need to install a suitable plugin for your async framework, for example:
+     - pytest-asyncio
+   ```
+
+**Impact**:
+
+- 32 test errors from `test_dashboard_manager.py` due to missing `mocker` fixture
+- Multiple async test failures across integration and unit tests
+- `Unknown pytest.mark.asyncio` warnings throughout test suite
+
+**Proposed Solution**:
+Install missing test dependencies in JuniperCascor environment:
+
+```bash
+pip install pytest-mock pytest-asyncio
+```
+
+---
+
 ### 3.2 High Priority Issues (P1)
 
-#### CANOPY-P1-001: Test Failures (103 Remaining)
+#### CANOPY-P1-001: Test Failures (84 Remaining)
 
 **Location**: `src/tests/`  
 **Status**: ⚠️ IN PROGRESS
@@ -404,7 +621,61 @@ pip install a2wsgi
 
 ---
 
-### 3.3 Canopy Component Status Summary
+### 3.3 Low Priority Issues (P2)
+
+#### CANOPY-P2-001: asyncio.iscoroutinefunction Deprecation Warning
+
+**Location**: `src/tests/unit/test_main_coverage_extended.py` (line 434)  
+**Status**: ⚠️ COSMETIC
+
+**Problem**: Test uses deprecated `asyncio.iscoroutinefunction()` which is slated for removal in Python 3.16.
+
+**Deprecation Warning**:
+
+```bash
+src/tests/unit/tests_main_coverage_extended.py::TestLifespanShutdown::test_websocket_manager_shutdown:434: 
+DeprecationWarning: 'asyncio.iscoroutinefunction' is deprecated and slated for removal in Python 3.16; 
+use 'inspect.iscoroutinefunction' instead
+```
+
+**Affected Code** (`src/tests/unit/test_main_coverage_extended.py:429-434`):
+
+```python
+class TestLifespanShutdown:
+    """Test lifespan shutdown handlers (line 167)."""
+
+    @pytest.mark.unit
+    def test_websocket_manager_shutdown(self):
+        """Test websocket_manager.shutdown is async."""
+        from communication.websocket_manager import websocket_manager
+
+        assert hasattr(websocket_manager, "shutdown")
+        assert asyncio.iscoroutinefunction(websocket_manager.shutdown)  # Deprecated!
+```
+
+**Impact**:
+
+- No functional impact currently
+- Will break in Python 3.16 (expected ~2027)
+- Generates deprecation warning in test output
+
+**Proposed Fix**:
+
+```python
+import inspect  # Add import at top of file
+
+# Change line 434 from:
+assert asyncio.iscoroutinefunction(websocket_manager.shutdown)
+
+# To:
+assert inspect.iscoroutinefunction(websocket_manager.shutdown)
+```
+
+**Priority**: Low - Python 3.16 is not imminent, but should be fixed to maintain clean test output.
+
+---
+
+### 3.4 Canopy Component Status Summary
 
 | Component           | Status        | Notes                        |
 | ------------------- | ------------- | ---------------------------- |
@@ -790,11 +1061,16 @@ Remaining Error Categories:
 
 ## Document History
 
-| Date       | Version | Author           | Changes                                                       |
-| ---------- | ------- | ---------------- | ------------------------------------------------------------- |
-| 2026-01-20 | 1.0.0   | Development Team | Initial integration analysis                                  |
-| 2026-01-20 | 1.1.0   | Development Team | Updated after environment fixes; documented new issues        |
-| 2026-01-20 | 1.2.0   | Development Team | Fixed Cascor import errors; a2wsgi installed; major progress  |
+| Date       | Version | Author           | Changes                                                                                                         |
+| ---------- | ------- | ---------------- | --------------------------------------------------------------------------------------------------------------- |
+| 2026-01-20 | 1.0.0   | Development Team | Initial integration analysis                                                                                    |
+| 2026-01-20 | 1.1.0   | Development Team | Updated after environment fixes; documented new issues                                                          |
+| 2026-01-20 | 1.2.0   | Development Team | Fixed Cascor import errors; a2wsgi installed; major progress                                                    |
+| 2026-01-20 | 1.3.0   | Development Team | Documented CASCOR-P0-004, CASCOR-P1-002 fixes                                                                   |
+| 2026-01-20 | 1.4.0   | Development Team | Canopy tests: 2903 passed after pytest-mock/pytest-asyncio install                                              |
+| 2026-01-20 | 1.5.0   | Development Team | Updated test status and component summaries                                                                     |
+| 2026-01-20 | 1.6.0   | Development Team | Documented try script log_debug cosmetic issue                                                                  |
+| 2026-01-20 | 1.7.0   | Development Team | Documented try symlink fix (CASCOR-P1-004), pickling error (CASCOR-P1-003), asyncio deprecation (CANOPY-P2-001) |
 
 ---
 

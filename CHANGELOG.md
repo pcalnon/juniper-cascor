@@ -5,6 +5,52 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.11] - 2026-01-20
+
+### Fixed: [0.3.11]
+
+- **CASCOR-P1-004**: Fixed `try` script cosmetic warnings by updating symlink target
+  - **Problem**: The `try` symlink pointed to `util/try.bash`, which called `log_debug` before logging functions were sourced, causing 11 "command not found" warnings
+  - **Fix**: Updated `try` symlink to point directly to `util/juniper_cascor.bash`
+  - **Archived**: Old `util/try.bash` script moved to archive
+  - **Result**: Clean startup with no "command not found" warnings
+
+### Identified: [0.3.11]
+
+- **CASCOR-P1-003**: Documented multiprocessing pickling error with `wrapped_activation` local function
+  - **Problem**: `CandidateUnit._init_activation_with_derivative()` defines a local function `wrapped_activation` that cannot be pickled for multiprocessing
+  - **Impact**: Workers cannot send results back to main process, forcing sequential fallback
+  - **Status**: 🔴 BLOCKING - requires refactoring to module-level class
+  - **Proposed Fix**: Create picklable `ActivationWithDerivative` class at module level
+
+---
+
+## [0.3.10] - 2026-01-20
+
+### Fixed: [0.3.10]
+
+- **CASCOR-P1-002**: Fixed validate_training API mismatch causing AttributeError
+  - **Root Cause**: `grow_network()` passed a `ValidateTrainingInputs` dataclass to `validate_training()`, but the method expected individual parameters and returned a tuple
+  - **Error**: `AttributeError: 'tuple' object has no attribute 'early_stop'`
+  - **Fix**: Updated `validate_training()` method signature to accept `ValidateTrainingInputs` dataclass and return `ValidateTrainingResults` dataclass
+  - **File Changed**: `src/cascade_correlation/cascade_correlation.py` (lines 4115-4258)
+  - **Result**: Training validation now uses proper dataclass API, enabling full network training cycle
+
+---
+
+## [0.3.9] - 2026-01-20
+
+### Fixed: [0.3.9]
+
+- **CASCOR-P0-004**: Fixed candidate training result parsing error causing all candidates to fail
+  - **Root Cause**: `_train_candidate_unit()` called `candidate.train()` which returns a `float`, but the code expected a `CandidateTrainingResult` object with a `.correlation` attribute
+  - **Error**: `'float' object has no attribute 'correlation'` - all 10 candidates failed with 0 hidden units added
+  - **Fix**: Changed `candidate.train()` to `candidate.train_detailed()` which returns the full `CandidateTrainingResult` dataclass
+  - **File Changed**: `src/cascade_correlation/cascade_correlation.py` (line 2767)
+  - **Result**: Candidate training now returns proper result objects, enabling network growth with hidden units
+
+---
+
 ## [0.3.8] - 2026-01-20
 
 ### Fixed: [0.3.8]
