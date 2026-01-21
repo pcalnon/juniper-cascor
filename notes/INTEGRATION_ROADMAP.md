@@ -1,8 +1,8 @@
 # Juniper Cascor ↔ Juniper Canopy Integration Roadmap
 
 **Created**: 2026-01-20  
-**Last Updated**: 2026-01-20 16:15 CST  
-**Version**: 1.7.0  
+**Last Updated**: 2026-01-21 02:30 CST  
+**Version**: 1.9.0  
 **Status**: Active - Implementation Phase  
 **Author**: Development Team
 
@@ -21,21 +21,21 @@ This document tracks the integration of **Juniper Cascor** (Cascade Correlation 
 
 ### Critical Blockers Summary (Updated 2026-01-20 09:05)
 
-| Priority | Issue                                               | Application | Impact                                  | Status        |
-| -------- | --------------------------------------------------- | ----------- | --------------------------------------- | ------------- |
-| P0       | ~~Missing `scipy` dependency~~                      | Canopy      | ~~Blocks all backend integration~~      | ✅ RESOLVED   |
-| P0       | ~~Missing `fastapi`, `uvicorn`, etc.~~              | Canopy      | ~~216 test collection errors~~          | ✅ RESOLVED   |
-| P0       | ~~Missing `a2wsgi` dependency~~                     | Canopy      | ~~228 test collection errors~~          | ✅ RESOLVED   |
-| P0       | ~~Test import errors (cascade_correlation_config)~~ | Cascor      | ~~2 test collection errors~~            | ✅ RESOLVED   |
-| P0       | ~~Shell script path resolution failures~~           | Cascor      | ~~Cannot launch via `./try` script~~    | ✅ RESOLVED   |
-| P1       | ~~Candidate training result parsing error~~         | Cascor      | ~~All candidates fail, 0 hidden units~~ | ✅ RESOLVED   |
-| P1       | ~~validate_training API mismatch~~                  | Cascor      | ~~Dataclass passed but tuple expected~~ | ✅ RESOLVED   |
-| P2       | ~~`try` script log_debug before source~~            | Cascor      | ~~11 "command not found" warnings~~     | ✅ RESOLVED   |
-| P1       | Multiprocessing pickling error (wrapped_activation) | Cascor      | Workers cannot send results back        | 🔴 BLOCKING   |
-| P2       | asyncio.iscoroutinefunction deprecation             | Canopy      | Deprecation warning, removal in 3.16    | ⚠️ COSMETIC   |
-| P1       | Multiprocessing manager port conflicts              | Cascor      | Parallel candidate training may fail    | ⚠️ DEGRADED   |
-| P1       | ~~Environment mismatch~~                            | Both        | ~~Different conda environments~~        | ✅ RESOLVED   |
-| P1       | ~~Missing pytest-mock and pytest-asyncio~~          | Canopy      | ~~32 errors + many async failures~~     | ✅ RESOLVED   |
+| Priority | Issue                                                   | Application | Impact                                  | Status        |
+| -------- | ------------------------------------------------------- | ----------- | --------------------------------------- | ------------- |
+| P0       | ~~Missing `scipy` dependency~~                          | Canopy      | ~~Blocks all backend integration~~      | ✅ RESOLVED   |
+| P0       | ~~Missing `fastapi`, `uvicorn`, etc.~~                  | Canopy      | ~~216 test collection errors~~          | ✅ RESOLVED   |
+| P0       | ~~Missing `a2wsgi` dependency~~                         | Canopy      | ~~228 test collection errors~~          | ✅ RESOLVED   |
+| P0       | ~~Test import errors (cascade_correlation_config)~~     | Cascor      | ~~2 test collection errors~~            | ✅ RESOLVED   |
+| P0       | ~~Shell script path resolution failures~~               | Cascor      | ~~Cannot launch via `./try` script~~    | ✅ RESOLVED   |
+| P1       | ~~Candidate training result parsing error~~             | Cascor      | ~~All candidates fail, 0 hidden units~~ | ✅ RESOLVED   |
+| P1       | ~~validate_training API mismatch~~                      | Cascor      | ~~Dataclass passed but tuple expected~~ | ✅ RESOLVED   |
+| P2       | ~~`try` script log_debug before source~~                | Cascor      | ~~11 "command not found" warnings~~     | ✅ RESOLVED   |
+| P1       | ~~Multiprocessing pickling error (wrapped_activation)~~ | Cascor      | ~~Workers cannot send results back~~    | ✅ RESOLVED   |
+| P2       | ~~asyncio.iscoroutinefunction deprecation~~             | Canopy      | ~~Deprecation warning, removal in 3.16~~| ✅ RESOLVED   |
+| P1       | Multiprocessing manager port conflicts                  | Cascor      | Parallel candidate training may fail    | ⚠️ DEGRADED   |
+| P1       | ~~Environment mismatch~~                                | Both        | ~~Different conda environments~~        | ✅ RESOLVED   |
+| P1       | ~~Missing pytest-mock and pytest-asyncio~~              | Canopy      | ~~32 errors + many async failures~~     | ✅ RESOLVED   |
 
 ### Progress Summary
 
@@ -189,7 +189,7 @@ def validate_training(self, validate_training_inputs: ValidateTrainingInputs) ->
 #### CASCOR-P0-002: Test Suite Timeout/Hang Issues
 
 **Location**: Test execution  
-**Status**: 🔴 BLOCKING
+**Status**: ✅ RESOLVED (2026-01-21)
 
 **Problem**: Tests timeout after 180 seconds, never completing the full suite.
 
@@ -212,6 +212,18 @@ src/tests/integration/test_comprehensive_serialization.py F...EXIT_CODE: 124
 - Mark slow tests with `@pytest.mark.slow`
 - Add `--timeout=60` default for individual tests
 - Configure pytest-timeout in pytest.ini
+
+**Resolution** (2026-01-21):
+
+- Installed `pytest-timeout` package
+- Added timeout configuration to `src/tests/pytest.ini`:
+
+  ```ini
+  timeout = 60
+  timeout_method = signal
+  ```
+
+- Individual tests now timeout after 60 seconds instead of hanging indefinitely
 
 ---
 
@@ -301,7 +313,7 @@ from cascade_correlation.cascade_correlation_config.cascade_correlation_config i
 #### CASCOR-P1-003: Multiprocessing Pickling Error (wrapped_activation)
 
 **Location**: `src/candidate_unit/candidate_unit.py`, `src/cascade_correlation/cascade_correlation.py`  
-**Status**: 🔴 BLOCKING
+**Status**: ✅ RESOLVED (2026-01-21)
 
 **Problem**: Multiprocessing workers encounter pickling errors when trying to send results back to the main process. The local function `wrapped_activation` cannot be pickled.
 
@@ -374,14 +386,39 @@ class ActivationWithDerivative:
         # Reconstruct activation from name
         name = state['activation_name']
         self.activation_name = name
-        self.activation_fn = {
-            'tanh': torch.tanh,
-            'sigmoid': torch.sigmoid,
+        self.activation_fn 
+
+        ACTIVATION_MAP = {
+            'elu': torch.nn.elu,
+            'hardshrink': torch.nn.hardshrink,
             'relu': torch.relu,
-            'Tanh': torch.nn.Tanh(),
-            'Sigmoid': torch.nn.Sigmoid(),
+            'sigmoid': torch.sigmoid,
+            'tanh': torch.tanh,
+            'ELU': torch.nn.ELU(),
+            'Hardshrink': torch.nn.Hardshrink(),
+            'Hardsigmoid': torch.nn.Hardsigmoid(),
+            'Hardtanh': torch.nn.Hardtanh(),
+            'Hardswish': torch.nn.Hardswish(),
+            'LeakyReLU': torch.nn.LeakyReLU(),
+            'LogSigmoid': torch.nn.LogSigmoid(),
+            'PReLU': torch.nn.PReLU(),
             'ReLU': torch.nn.ReLU(),
-        }.get(name, torch.tanh)
+            'ReLU6': torch.nn.ReLU6(),
+            'RReLU': torch.nn.RReLU(),
+            'SELU': torch.nn.SELU(),
+            'CELU': torch.nn.CELU(),
+            'GELU': torch.nn.GELU(),
+            'Sigmoid': torch.nn.Sigmoid(),
+            'SiLU': torch.nn.SiLU(),
+            'Mish': torch.nn.Mish(),
+            'Softplus': torch.nn.Softplus(),
+            'Softshrink': torch.nn.Softshrink(),
+            'Softsign': torch.nn.Softsign(),
+            'Tanh': torch.nn.Tanh(),
+            'Tanhshrink': torch.nn.Tanhshrink(),
+            'Threshold': torch.nn.Threshold(),
+            'GLU': torch.nn.GLU(),
+        }.get(name, torch.nn.ReLU)
 ```
 
 **Option B: Store Activation Name Instead of Function:**
@@ -412,6 +449,35 @@ candidate = CandidateUnit(input_size=2, output_size=2)
 pickled = pickle.dumps(candidate)
 restored = pickle.loads(pickled)
 ```
+
+**Resolution** (2026-01-21):
+
+Implemented Option A with the expanded ACTIVATION_MAP. Created `ActivationWithDerivative` class in both:
+
+- `src/candidate_unit/candidate_unit.py`
+- `src/cascade_correlation/cascade_correlation.py`
+
+**Changes Applied**:
+
+1. Added `ActivationWithDerivative` class at module level (before class definitions)
+2. Modified `_init_activation_with_derivative()` method to return `ActivationWithDerivative` instance instead of local function
+3. Original local function code commented out with `# OLD:` prefix
+4. New code added with `# NEW:` prefix and CASCOR-P1-003 reference
+
+**Test Results**:
+
+```bash
+$ python -m pytest tests/unit/test_activation_with_derivative.py -v
+======================== 23 passed in 7.55s ========================
+```
+
+Tests verify:
+
+- Pickling/unpickling of activation wrappers
+- Derivative calculations for tanh, sigmoid, relu
+- CandidateUnit pickling with new wrapper
+- Forward pass functionality after unpickling
+- Both module implementations are compatible
 
 ---
 
@@ -458,14 +524,14 @@ dependencies:
 
 ### 2.3 Cascor Component Status Summary
 
-| Component                 | Status        | Notes                               |
-| ------------------------- | ------------- | ----------------------------------- |
-| CascadeCorrelationNetwork | ✅ Functional | Core algorithm works                |
-| CandidateUnit             | ⚠️ Degraded   | Pickling issue blocks multiprocess  |
-| Serialization (HDF5)      | ✅ Functional | Save/load implemented               |
-| Multiprocessing           | 🔴 Blocked    | wrapped_activation pickling error   |
-| Shell Scripts             | ✅ Functional | try symlink fixed                   |
-| Test Suite                | ✅ Functional | 152 tests collected, 0 errors       |
+| Component                 | Status        | Notes                                 |
+| ------------------------- | ------------- | ------------------------------------- |
+| CascadeCorrelationNetwork | ✅ Functional | Core algorithm works                  |
+| CandidateUnit             | ✅ Functional | Pickling fix applied (CASCOR-P1-003)  |
+| Serialization (HDF5)      | ✅ Functional | Save/load implemented                 |
+| Multiprocessing           | ✅ Functional | ActivationWithDerivative is picklable |
+| Shell Scripts             | ✅ Functional | try symlink fixed                     |
+| Test Suite                | ✅ Functional | 152+ tests collected, 0 errors        |
 
 ---
 
@@ -626,7 +692,7 @@ pip install pytest-mock pytest-asyncio
 #### CANOPY-P2-001: asyncio.iscoroutinefunction Deprecation Warning
 
 **Location**: `src/tests/unit/test_main_coverage_extended.py` (line 434)  
-**Status**: ⚠️ COSMETIC
+**Status**: ✅ RESOLVED (2026-01-21)
 
 **Problem**: Test uses deprecated `asyncio.iscoroutinefunction()` which is slated for removal in Python 3.16.
 
@@ -673,6 +739,13 @@ assert inspect.iscoroutinefunction(websocket_manager.shutdown)
 
 **Priority**: Low - Python 3.16 is not imminent, but should be fixed to maintain clean test output.
 
+**Resolution** (2026-01-21):
+
+- Added `import inspect` to the test file
+- Replaced `asyncio.iscoroutinefunction()` with `inspect.iscoroutinefunction()`
+- Original line commented out with CANOPY-P2-001 reference
+- Test passes without deprecation warning
+
 ---
 
 ### 3.4 Canopy Component Status Summary
@@ -691,6 +764,8 @@ assert inspect.iscoroutinefunction(websocket_manager.shutdown)
 ## 4. Integration-Specific Issues
 
 ### 4.1 Path Configuration for Backend Integration
+
+**Status**: ✅ RESOLVED (2026-01-21)
 
 **Issue**: Canopy needs to locate Cascor backend.
 
@@ -721,6 +796,27 @@ backend:
 Or use environment variable:
 
 ```bash
+export CASCOR_BACKEND_PATH="/home/pcalnon/Development/python/Juniper/JuniperCascor/juniper_cascor"
+```
+
+**Resolution** (2026-01-21):
+
+- Updated `conf/app_config.yaml` to use environment variable with default fallback:
+
+  ```yaml
+  backend_path: "${CASCOR_BACKEND_PATH:../JuniperCascor/juniper_cascor}"
+  ```
+
+- Added `CASCOR_BACKEND_PATH` to the `environment_variables` list
+- Original hardcoded path commented out
+
+**Usage**:
+
+```bash
+# Option 1: Use default path (relative to Juniper workspace)
+# No environment variable needed
+
+# Option 2: Set custom path via environment variable
 export CASCOR_BACKEND_PATH="/home/pcalnon/Development/python/Juniper/JuniperCascor/juniper_cascor"
 ```
 
@@ -1071,9 +1167,11 @@ Remaining Error Categories:
 | 2026-01-20 | 1.5.0   | Development Team | Updated test status and component summaries                                                                     |
 | 2026-01-20 | 1.6.0   | Development Team | Documented try script log_debug cosmetic issue                                                                  |
 | 2026-01-20 | 1.7.0   | Development Team | Documented try symlink fix (CASCOR-P1-004), pickling error (CASCOR-P1-003), asyncio deprecation (CANOPY-P2-001) |
+| 2026-01-21 | 1.8.0   | Development Team | Implemented CASCOR-P1-003 fix: ActivationWithDerivative class for multiprocessing pickling support              |
+| 2026-01-21 | 1.9.0   | Development Team | Implemented CASCOR-P0-002 (pytest-timeout), CANOPY-P2-001 (asyncio fix), 4.1 (backend path config)              |
 
 ---
 
-**Next Review**: After remaining test failures addressed  
+**Next Review**: After API/Protocol compatibility verification (4.2) and data format alignment (4.3)  
 **Owner**: Development Team  
 **Document Status**: Active

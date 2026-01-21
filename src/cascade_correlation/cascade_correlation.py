@@ -298,6 +298,128 @@ def _plot_training_history_worker(history_data):
 
 
 #####################################################################################################################################################################################################
+# Picklable Activation Function Wrapper
+# CASCOR-P1-003: Multiprocessing Pickling Error Fix
+# This class replaces the local function 'wrapped_activation' which cannot be pickled for multiprocessing.
+# The local function defined inside _init_activation_with_derivative() created a closure that Python's
+# pickle module cannot serialize, causing multiprocessing workers to fail when sending results back.
+#####################################################################################################################################################################################################
+class ActivationWithDerivative:
+    """
+    Picklable wrapper for activation functions that also provides derivatives.
+    
+    This class solves the multiprocessing pickling issue where local functions
+    cannot be serialized. It stores the activation function type by name and
+    reconstructs the function on unpickling.
+    
+    Supports: All standard PyTorch activation functions (tanh, sigmoid, relu, etc.)
+    """
+    
+    # Mapping of activation names to functions for reconstruction after unpickling
+    ACTIVATION_MAP = {
+        'elu': torch.nn.functional.elu,
+        'hardshrink': torch.nn.functional.hardshrink,
+        'relu': torch.relu,
+        'sigmoid': torch.sigmoid,
+        'tanh': torch.tanh,
+        'ELU': torch.nn.ELU(),
+        'Hardshrink': torch.nn.Hardshrink(),
+        'Hardsigmoid': torch.nn.Hardsigmoid(),
+        'Hardtanh': torch.nn.Hardtanh(),
+        'Hardswish': torch.nn.Hardswish(),
+        'LeakyReLU': torch.nn.LeakyReLU(),
+        'LogSigmoid': torch.nn.LogSigmoid(),
+        'PReLU': torch.nn.PReLU(),
+        'ReLU': torch.nn.ReLU(),
+        'ReLU6': torch.nn.ReLU6(),
+        'RReLU': torch.nn.RReLU(),
+        'SELU': torch.nn.SELU(),
+        'CELU': torch.nn.CELU(),
+        'GELU': torch.nn.GELU(),
+        'Sigmoid': torch.nn.Sigmoid(),
+        'SiLU': torch.nn.SiLU(),
+        'Mish': torch.nn.Mish(),
+        'Softplus': torch.nn.Softplus(),
+        'Softshrink': torch.nn.Softshrink(),
+        'Softsign': torch.nn.Softsign(),
+        'Tanh': torch.nn.Tanh(),
+        'Tanhshrink': torch.nn.Tanhshrink(),
+        'Threshold': torch.nn.Threshold(0.1, 0.0),  # Default threshold=0.1, value=0.0
+        'GLU': torch.nn.GLU(),
+    }
+    
+    def __init__(self, activation_fn):
+        """
+        Initialize with an activation function.
+        
+        Args:
+            activation_fn: A PyTorch activation function (e.g., torch.tanh, torch.nn.Tanh())
+        """
+        self.activation_fn = activation_fn
+        self._activation_name = self._get_activation_name(activation_fn)
+    
+    def _get_activation_name(self, activation_fn) -> str:
+        """
+        Extract a string name from the activation function for serialization.
+        
+        Args:
+            activation_fn: The activation function to get the name from
+            
+        Returns:
+            String name of the activation function
+        """
+        if hasattr(activation_fn, '__name__'):
+            return activation_fn.__name__
+        elif hasattr(activation_fn, '__class__'):
+            return activation_fn.__class__.__name__
+        else:
+            return str(activation_fn)
+    
+    def __call__(self, x, derivative: bool = False):
+        """
+        Apply activation function or compute its derivative.
+        
+        Args:
+            x: Input tensor
+            derivative: If True, compute the derivative instead of the activation
+            
+        Returns:
+            Activation output or derivative value
+        """
+        if not derivative:
+            return self.activation_fn(x)
+        name = self._activation_name.lower()
+        if name == 'tanh':
+            return 1.0 - torch.tanh(x) ** 2
+        elif name == 'sigmoid':
+            y = torch.sigmoid(x)
+            return y * (1.0 - y)
+        elif name == 'relu':
+            return (x > 0).float()
+        else:
+            # Numerical approximation for other activation functions
+            eps = 1e-6
+            return (self.activation_fn(x + eps) - self.activation_fn(x - eps)) / (2 * eps)
+
+    def __getstate__(self):
+        """Serialize by storing activation name instead of function (for pickle/multiprocessing)."""
+        return {'_activation_name': self._activation_name}
+
+    def __setstate__(self, state):
+        """Reconstruct activation function from name after unpickling."""
+        self._activation_name = state['_activation_name']
+        # Try to reconstruct from map, fall back to ReLU as default
+        self.activation_fn = self.ACTIVATION_MAP.get(
+            self._activation_name, 
+            self.ACTIVATION_MAP.get(self._activation_name.lower(), torch.nn.ReLU())
+        )
+    
+    def __repr__(self):
+        """String representation for debugging."""
+        return f"ActivationWithDerivative({self._activation_name})"
+
+
+#####################################################################################################################################################################################################
 # Class definition for the Cascade Correlation Network
 #####################################################################################################################################################################################################
 class CascadeCorrelationNetwork:
@@ -878,7 +1000,7 @@ class CascadeCorrelationNetwork:
     # Helper method to add hidden units to the network
     def _init_activation_with_derivative(
         self, activation_fn: callable = None
-    ) -> callable:
+    ) -> ActivationWithDerivative:
         """
         Description:
             Wrap activation function to also provide its derivative.
@@ -886,8 +1008,9 @@ class CascadeCorrelationNetwork:
             activation_fn: Base activation function
         Note:
             This method wraps the activation function to also provide its derivative.
+            CASCOR-P1-003: Now returns ActivationWithDerivative class instance instead of local function.
         Returns:
-            Function that can compute both activation and its derivative
+            ActivationWithDerivative instance that can compute both activation and its derivative
         """
         # Validate the activation function
         self.logger.trace(
@@ -901,35 +1024,41 @@ class CascadeCorrelationNetwork:
             f"CascadeCorrelationNetwork: _init_activation_with_derivative: Using activation function: {activation_fn}"
         )
 
-        # Wrapping the activation function with its derivative
+        # CASCOR-P1-003: Use picklable ActivationWithDerivative class instead of local function
+        # OLD: Local function - NOT picklable for multiprocessing!
+        # self.logger.trace(
+        #     "CascadeCorrelationNetwork: _init_activation_with_derivative: Wrapping activation function to provide its derivative."
+        # )
+        # def wrapped_activation(x, derivative: bool = False):
+        #     if derivative:
+        #         if activation_fn in [
+        #             _CASCADE_CORRELATION_NETWORK_ACTIVATION_FUNCTION_NN_TANH,
+        #             _CASCADE_CORRELATION_NETWORK_ACTIVATION_FUNCTION_TANH,
+        #         ]:  # For tanh, derivative is 1 - tanh^2(x)
+        #             return 1.0 - activation_fn(x) ** 2
+        #         elif activation_fn in [
+        #             _CASCADE_CORRELATION_NETWORK_ACTIVATION_FUNCTION_NN_SIGMOID,
+        #             _CASCADE_CORRELATION_NETWORK_ACTIVATION_FUNCTION_SIGMOID,
+        #         ]:  # For sigmoid, derivative is sigmoid(x) * (1 - sigmoid(x))
+        #             y = activation_fn(x)
+        #             return y * (1.0 - y)
+        #         elif activation_fn in [
+        #             _CASCADE_CORRELATION_NETWORK_ACTIVATION_FUNCTION_NN_RELU,
+        #             _CASCADE_CORRELATION_NETWORK_ACTIVATION_FUNCTION_RELU,
+        #         ]:  # For ReLU, derivative is 1 for x > 0, 0 otherwise
+        #             return (x > 0).float()
+        #         else:  # Numerical approximation for other functions
+        #             eps = 1e-6
+        #             return (activation_fn(x + eps) - activation_fn(x - eps)) / (2 * eps)
+        #     else:
+        #         return activation_fn(x)
+        # return wrapped_activation
+        
+        # NEW: Picklable class instance for multiprocessing compatibility
         self.logger.trace(
-            "CascadeCorrelationNetwork: _init_activation_with_derivative: Wrapping activation function to provide its derivative."
+            "CascadeCorrelationNetwork: _init_activation_with_derivative: Creating ActivationWithDerivative wrapper."
         )
-
-        def wrapped_activation(x, derivative: bool = False):
-            if derivative:
-                if activation_fn in [
-                    _CASCADE_CORRELATION_NETWORK_ACTIVATION_FUNCTION_NN_TANH,
-                    _CASCADE_CORRELATION_NETWORK_ACTIVATION_FUNCTION_TANH,
-                ]:  # For tanh, derivative is 1 - tanh^2(x)
-                    return 1.0 - activation_fn(x) ** 2
-                elif activation_fn in [
-                    _CASCADE_CORRELATION_NETWORK_ACTIVATION_FUNCTION_NN_SIGMOID,
-                    _CASCADE_CORRELATION_NETWORK_ACTIVATION_FUNCTION_SIGMOID,
-                ]:  # For sigmoid, derivative is sigmoid(x) * (1 - sigmoid(x))
-                    y = activation_fn(x)
-                    return y * (1.0 - y)
-                elif activation_fn in [
-                    _CASCADE_CORRELATION_NETWORK_ACTIVATION_FUNCTION_NN_RELU,
-                    _CASCADE_CORRELATION_NETWORK_ACTIVATION_FUNCTION_RELU,
-                ]:  # For ReLU, derivative is 1 for x > 0, 0 otherwise
-                    return (x > 0).float()
-                else:  # Numerical approximation for other functions
-                    eps = 1e-6
-                    return (activation_fn(x + eps) - activation_fn(x - eps)) / (2 * eps)
-            else:
-                return activation_fn(x)
-
+        wrapped_activation = ActivationWithDerivative(activation_fn)
         self.logger.verbose(
             f"CascadeCorrelationNetwork: _init_activation_with_derivative: Returning wrapped activation function: {wrapped_activation}."
         )
@@ -2479,6 +2608,134 @@ class CascadeCorrelationNetwork:
             ),
         }
 
+# Implements Adadelta algorithm.
+"Adadelta": lambda: optim.Adadelta(
+    parameters,
+    lr=config.learning_rate,
+    rho=config.rho,
+    eps=config.epsilon,
+),
+# Implements Adafactor algorithm.
+"Adafactor": lambda: optim.Adafactor(
+    parameters,
+    lr=config.learning_rate,
+    eps=config.epsilon,
+),
+# Implements Adagrad algorithm.
+"Adagrad": lambda: optim.Adagrad(
+    parameters,
+    lr=config.learning_rate,
+    lr_decay=config.lr_decay,
+    weight_decay=config.weight_decay,
+),
+# Implements Adam algorithm.
+"Adam": lambda: optim.Adam(
+    parameters,
+    lr=config.learning_rate,
+    betas=(config.beta1, config.beta2),
+    eps=config.epsilon,
+    weight_decay=config.weight_decay,
+    amsgrad=getattr(config, "amsgrad", False),
+),
+# Implements AdamW algorithm, where weight decay does not accumulate in the momentum nor variance.
+"AdamW": lambda: optim.AdamW(
+    parameters,
+    lr=config.learning_rate,
+    betas=(config.beta1, config.beta2),
+    eps=config.epsilon,
+    weight_decay=config.weight_decay,
+    amsgrad=getattr(config, "amsgrad", False),
+)
+
+# SparseAdam implements a masked version of the Adam algorithm suitable for sparse gradients.
+"SparseAdam": lambda: optim.SparseAdam(
+    parameters,
+    lr=config.learning_rate,
+    betas=(config.beta1, config.beta2),
+    eps=config.epsilon,
+)
+
+# Implements Adamax algorithm (a variant of Adam based on infinity norm).
+"Adamax": lambda: optim.Adamax(
+    parameters,
+    lr=config.learning_rate,
+    betas=(config.beta1, config.beta2),
+    eps=config.epsilon,
+)
+
+# Implements Averaged Stochastic Gradient Descent.
+"ASGD": lambda: optim.ASGD(
+    parameters,
+    lr=config.learning_rate,
+    lambd=config.lambd,
+    alpha=config.alpha,
+    t0=config.t0,
+    weight_decay=config.weight_decay,
+)
+
+# Implements L-BFGS algorithm.
+"LBFGS": lambda: optim.LBFGS(
+    parameters,
+    lr=config.learning_rate,
+    max_iter=config.max_iter,
+    max_eval=config.max_eval,
+    tolerance_grad=config.tolerance_grad,
+    tolerance_change=config.tolerance_change,
+    history_size=config.history_size,
+    line_search_fn=config.line_search_fn,
+)
+
+# Implements Muon algorithm.
+"Muon": lambda: optim.Muon(
+    parameters,
+    lr=config.learning_rate,
+    eps=config.epsilon,
+)
+
+# Implements NAdam algorithm.
+"NAdam": lambda: optim.NAdam(
+    parameters,
+    lr=config.learning_rate,
+    betas=(config.beta1, config.beta2),
+    eps=config.epsilon,
+    weight_decay=config.weight_decay,
+)
+
+# Implements RAdam algorithm.
+"RAdam": lambda: optim.RAdam(
+    parameters,
+    lr=config.learning_rate,
+    betas=(config.beta1, config.beta2),
+    eps=config.epsilon,
+    weight_decay=config.weight_decay,
+)
+
+# Implements RMSprop algorithm.
+"RMSprop": lambda: optim.RMSprop(
+    parameters,
+    lr=config.learning_rate,
+    momentum=config.momentum,
+    eps=config.epsilon,
+    weight_decay=config.weight_decay,
+)
+
+# Implements the resilient backpropagation algorithm.
+"Rprop": lambda: optim.Rprop(
+    parameters,
+    lr=config.learning_rate,
+    etas=(config.eta_min, config.eta_max),
+    step_sizes=(config.step_size_min, config.step_size_max),
+)
+
+# Implements stochastic gradient descent (optionally with momentum).
+"SGD": lambda: optim.SGD(
+    parameters,
+    lr=config.learning_rate,
+    momentum=config.momentum,
+    weight_decay=config.weight_decay,
+)
+
+
         if config.optimizer_type not in optimizer_map:
             self.logger.warning(
                 f"CascadeCorrelationNetwork: _create_optimizer: Unknown optimizer type '{config.optimizer_type}', defaulting to Adam"
@@ -2492,102 +2749,51 @@ class CascadeCorrelationNetwork:
         return optimizer
 
     @staticmethod
-    def train_candidate_worker(
-        task_data_input: tuple = None, parallel: bool = True
-    ) -> None:
+    def train_candidate_worker( task_data_input: tuple = None, parallel: bool = True) -> None:
         logger = Logger
-        logger.info(
-            "CascadeCorrelationNetwork: train_candidate_worker: Starting training of Candidate Units in Pool."
-        )
+        logger.info( "CascadeCorrelationNetwork: train_candidate_worker: Starting training of Candidate Units in Pool.")
         try:  # Get task data for process worker
-            (worker_id, worker_uuid) = (
-                (mp.current_process().pid, str(uuid.uuid4()))
-                if parallel
-                else (0, "None")
-            )
-            logger.debug(
-                f"CascadeCorrelationNetwork: train_candidate_worker: Retrieved worker ID and UUID: Worker ID: {worker_id}, Worker UUID: {worker_uuid}"
-            )
+            (worker_id, worker_uuid) = ( (mp.current_process().pid, str(uuid.uuid4())) if parallel else (0, "None"))
+            logger.debug( f"CascadeCorrelationNetwork: train_candidate_worker: Retrieved worker ID and UUID: Worker ID: {worker_id}, Worker UUID: {worker_uuid}")
         except Exception as e:
-            logger.error(
-                f"CascadeCorrelationNetwork: train_candidate_worker: Error retrieving worker ID and UUID: {e}"
-            )
+            logger.error( f"CascadeCorrelationNetwork: train_candidate_worker: Error retrieving worker ID and UUID: {e}")
             (worker_id, worker_uuid) = (0, "None")
         try:
             if task_data_input is None:
-                logger.error(
-                    "CascadeCorrelationNetwork: train_candidate_worker: No task data input provided."
-                )
+                logger.error( "CascadeCorrelationNetwork: train_candidate_worker: No task data input provided.")
                 return (None, None, 0.0, None)
-            candidate_inputs = CascadeCorrelationNetwork._build_candidate_inputs(
-                task_data_input=task_data_input,
-                worker_id=worker_id,
-                worker_uuid=worker_uuid,
-            )
-            if (
-                candidate_inputs is None
-                or not isinstance(candidate_inputs, dict)
-                or len(candidate_inputs) == 0
-            ):
-                logger.error(
-                    f"CascadeCorrelationNetwork: train_candidate_worker: No candidate inputs built: Worker ID: {worker_id}, Worker UUID: {worker_uuid}"
-                )
+            candidate_inputs = CascadeCorrelationNetwork._build_candidate_inputs( task_data_input=task_data_input, worker_id=worker_id, worker_uuid=worker_uuid,)
+            if ( candidate_inputs is None or not isinstance(candidate_inputs, dict) or len(candidate_inputs) == 0):
+                logger.error( f"CascadeCorrelationNetwork: train_candidate_worker: No candidate inputs built: Worker ID: {worker_id}, Worker UUID: {worker_uuid}")
                 return (None, None, 0.0, None)
-            logger.debug(
-                f"CascadeCorrelationNetwork: train_candidate_worker: Built candidate inputs: Worker ID: {worker_id}, Worker UUID: {worker_uuid}, Candidate Inputs: {str(candidate_inputs)}"
-            )
+            logger.debug( f"CascadeCorrelationNetwork: train_candidate_worker: Built candidate inputs: Worker ID: {worker_id}, Worker UUID: {worker_uuid}, Candidate Inputs: {str(candidate_inputs)}")
 
             # Instantiate a CandidateUnit using factory method (Note: needs network instance for factory)
-            logger.debug(
-                f"CascadeCorrelationNetwork: train_candidate_worker: Instantiate a CandidateUnit using factory method (Note: needs network instance for factory, candidate_inputs: {candidate_inputs}): Worker ID: {worker_id}, Worker UUID: {worker_uuid}"
-            )
-            logger.debug(
-                f"CascadeCorrelationNetwork: train_candidate_worker: Candidate Inputs Key Values: {candidate_inputs.get('candidate_display_frequency')}, Candidate Index: {candidate_inputs.get('candidate_index')}, Candidate UUID: {candidate_inputs.get('candidate_uuid')}"
-            )
+            logger.debug( f"CascadeCorrelationNetwork: train_candidate_worker: Instantiate a CandidateUnit using factory method (Note: needs network instance for factory, candidate_inputs: {candidate_inputs}): Worker ID: {worker_id}, Worker UUID: {worker_uuid}")
+            logger.debug( f"CascadeCorrelationNetwork: train_candidate_worker: Candidate Inputs Key Values: {candidate_inputs.get('candidate_display_frequency')}, Candidate Index: {candidate_inputs.get('candidate_index')}, Candidate UUID: {candidate_inputs.get('candidate_uuid')}")
             try:
-                logger.debug(
-                    f"CascadeCorrelationNetwork: train_candidate_worker: Instantiating CandidateUnit Worker ID: {worker_id}, Worker UUID: {worker_uuid}, Candidate Inputs: {str(candidate_inputs)}"
-                )
+                logger.debug( f"CascadeCorrelationNetwork: train_candidate_worker: Instantiating CandidateUnit Worker ID: {worker_id}, Worker UUID: {worker_uuid}, Candidate Inputs: {str(candidate_inputs)}")
                 candidate = CandidateUnit(
-                    CandidateUnit__activation_function=candidate_inputs.get(
-                        "activation_fn"
-                    ),
-                    CandidateUnit__display_frequency=candidate_inputs.get(
-                        "candidate_display_frequency"
-                    ),
+                    CandidateUnit__activation_function=candidate_inputs.get( "activation_fn"),
+                    CandidateUnit__display_frequency=candidate_inputs.get( "candidate_display_frequency"),
                     CandidateUnit__epochs=candidate_inputs.get("epochs"),
                     CandidateUnit__input_size=candidate_inputs.get("input_size"),
                     CandidateUnit__learning_rate=candidate_inputs.get("learning_rate"),
                     CandidateUnit__log_level_name="INFO",
-                    CandidateUnit__sequence_max_value=candidate_inputs.get(
-                        "sequence_max_value"
-                    ),
+                    CandidateUnit__sequence_max_value=candidate_inputs.get( "sequence_max_value"),
                     CandidateUnit__random_seed=candidate_inputs.get("random_seed"),
-                    CandidateUnit__random_max_value=candidate_inputs.get(
-                        "random_value_max"
-                    ),
-                    CandidateUnit__random_value_scale=candidate_inputs.get(
-                        "random_value_scale"
-                    ),
+                    CandidateUnit__random_max_value=candidate_inputs.get( "random_value_max"),
+                    CandidateUnit__random_value_scale=candidate_inputs.get( "random_value_scale"),
                     CandidateUnit__uuid=candidate_inputs.get("candidate_uuid"),
-                    CandidateUnit__candidate_index=candidate_inputs.get(
-                        "candidate_index"
-                    ),
+                    CandidateUnit__candidate_index=candidate_inputs.get( "candidate_index"),
                 )
-                logger.debug(
-                    f"CascadeCorrelationNetwork: train_candidate_worker: Completed Instantiating CandidateUnit object: Worker ID: {worker_id}, Worker UUID: {worker_uuid}, Candidate UUID: {candidate.get_uuid()}"
-                )
+                logger.debug( f"CascadeCorrelationNetwork: train_candidate_worker: Completed Instantiating CandidateUnit object: Worker ID: {worker_id}, Worker UUID: {worker_uuid}, Candidate UUID: {candidate.get_uuid()}")
             except Exception as e:
-                logger.error(
-                    f"CascadeCorrelationNetwork: train_candidate_worker: Caught Exception while instantiating CandidateUnit object: Worker ID: {worker_id}, Worker UUID: {worker_uuid}, Candidate Index: {candidate_inputs.get('candidate_index')}, Candidate UUID: {candidate_inputs.get('candidate_uuid')}, Error during candidate instantiation:\nException:\n{e}"
-                )
+                logger.error( f"CascadeCorrelationNetwork: train_candidate_worker: Caught Exception while instantiating CandidateUnit object: Worker ID: {worker_id}, Worker UUID: {worker_uuid}, Candidate Index: {candidate_inputs.get('candidate_index')}, Candidate UUID: {candidate_inputs.get('candidate_uuid')}, Error during candidate instantiation:\nException:\n{e}")
                 import traceback
-
                 traceback.print_exc()
                 raise
-            logger.verbose(
-                f"CascadeCorrelationNetwork: train_candidate_worker: Created CandidateUnit object: Worker ID: {worker_id}, Worker UUID: {worker_uuid}, Candidate Index: {candidate_inputs.get('candidate_index')}, Candidate UUID: {candidate.get_uuid()}, Candidate Object: {candidate}"
-            )
+            logger.verbose( f"CascadeCorrelationNetwork: train_candidate_worker: Created CandidateUnit object: Worker ID: {worker_id}, Worker UUID: {worker_uuid}, Candidate Index: {candidate_inputs.get('candidate_index')}, Candidate UUID: {candidate.get_uuid()}, Candidate Object: {candidate}")
 
             # Train the candidate unit
             result = CascadeCorrelationNetwork._train_candidate_unit(
@@ -2604,26 +2810,16 @@ class CascadeCorrelationNetwork:
                 worker_id=worker_id,
                 worker_uuid=worker_uuid,
             )
-            logger.info(
-                f"CascadeCorrelationNetwork: train_candidate_worker: Returning from Candidate Unit Training: Worker ID: {worker_id}, Worker UUID: {worker_uuid}, Candidate ID: {result.candidate_id}, Candidate UUID: {result.candidate_uuid}, Candidate Correlation: {float(result.correlation):.6f}"
-            )
+            logger.info( f"CascadeCorrelationNetwork: train_candidate_worker: Returning from Candidate Unit Training: Worker ID: {worker_id}, Worker UUID: {worker_uuid}, Candidate ID: {result.candidate_id}, Candidate UUID: {result.candidate_uuid}, Candidate Correlation: {float(result.correlation):.6f}")
             return result
 
         except Exception as e:
             import traceback
 
-            logger.error(
-                f"CascadeCorrelationNetwork: train_candidate_worker: Caught Exception while training CandidateUnit object: Worker ID: {worker_id}, Worker UUID: {worker_uuid}, Error during candidate training:\nException:\n{e}"
-            )
-            logger.error(
-                f"CascadeCorrelationNetwork: train_candidate_worker: Error during Candidate Training: Worker ID: {worker_id}, Worker UUID: {worker_uuid}\nTraceback:\n{traceback.format_exc()}"
-            )
-            candidate_index = (
-                candidate_inputs.get("candidate_index") if candidate_inputs else -1
-            )
-            candidate_uuid = (
-                candidate_inputs.get("candidate_uuid") if candidate_inputs else None
-            )
+            logger.error( f"CascadeCorrelationNetwork: train_candidate_worker: Caught Exception while training CandidateUnit object: Worker ID: {worker_id}, Worker UUID: {worker_uuid}, Error during candidate training:\nException:\n{e}")
+            logger.error( f"CascadeCorrelationNetwork: train_candidate_worker: Error during Candidate Training: Worker ID: {worker_id}, Worker UUID: {worker_uuid}\nTraceback:\n{traceback.format_exc()}")
+            candidate_index = ( candidate_inputs.get("candidate_index") if candidate_inputs else -1)
+            candidate_uuid = ( candidate_inputs.get("candidate_uuid") if candidate_inputs else None)
             return CandidateTrainingResult(
                 candidate_id=candidate_index,
                 candidate_uuid=candidate_uuid,
@@ -2641,36 +2837,18 @@ class CascadeCorrelationNetwork:
         worker_id: int = None,
     ):
         logger = Logger
-        logger.debug(
-            f"CascadeCorrelationNetwork: _build_candidate_inputs: Building candidate inputs: Worker ID: {worker_id}, Worker UUID: {worker_uuid}"
-        )
+        logger.debug( f"CascadeCorrelationNetwork: _build_candidate_inputs: Building candidate inputs: Worker ID: {worker_id}, Worker UUID: {worker_uuid}")
 
         # Unpack task data
         # TODO: consider using data classes for task data, candidate data, and training inputs
-        logger.debug(
-            f"CascadeCorrelationNetwork: _build_candidate_inputs: Attempting to Unpack Task data, Candidate data, and Training inputs: Worker ID: {worker_id}, Worker UUID: {worker_uuid}"
-        )
-        logger.verbose(
-            f"CascadeCorrelationNetwork: _build_candidate_inputs: Task data: length: {len(task_data_input)}, Type: {type(task_data_input)}, Content:\n{task_data_input}"
-        )
-        logger.debug(
-            f"CascadeCorrelationNetwork: _build_candidate_inputs: Task data unpacked: Worker ID: {worker_id}, Worker UUID: {worker_uuid}"
-        )
-        (candidate_index, candidate_data, training_inputs) = (
-            task_data_input  # Unpack training task data
-        )
-        logger.debug(
-            f"CascadeCorrelationNetwork: _build_candidate_inputs: Successfully Unpacked Task data: Worker ID: {worker_id}, Worker UUID: {worker_uuid}"
-        )
-        logger.verbose(
-            f"CascadeCorrelationNetwork: _build_candidate_inputs: Candidate Index: {candidate_index}, Type: {type(candidate_index)}, Value: {candidate_index}: Worker ID: {worker_id}, Worker UUID: {worker_uuid}"
-        )
-        logger.verbose(
-            f"CascadeCorrelationNetwork: _build_candidate_inputs: Candidate Inputs: Length: {len(training_inputs)}, Type: {type(training_inputs)}, Content:\n{training_inputs}: Worker ID: {worker_id}, Worker UUID: {worker_uuid}"
-        )
-        logger.verbose(
-            f"CascadeCorrelationNetwork: _build_candidate_inputs: Candidate Data: length: {len(candidate_data)}, Type: {type(candidate_data)}, Content:\n{candidate_data}: Worker ID: {worker_id}, Worker UUID: {worker_uuid}"
-        )
+        logger.debug( f"CascadeCorrelationNetwork: _build_candidate_inputs: Attempting to Unpack Task data, Candidate data, and Training inputs: Worker ID: {worker_id}, Worker UUID: {worker_uuid}")
+        logger.verbose( f"CascadeCorrelationNetwork: _build_candidate_inputs: Task data: length: {len(task_data_input)}, Type: {type(task_data_input)}, Content:\n{task_data_input}")
+        logger.debug( f"CascadeCorrelationNetwork: _build_candidate_inputs: Task data unpacked: Worker ID: {worker_id}, Worker UUID: {worker_uuid}")
+        (candidate_index, candidate_data, training_inputs) = ( task_data_input  # Unpack training task data)
+        logger.debug( f"CascadeCorrelationNetwork: _build_candidate_inputs: Successfully Unpacked Task data: Worker ID: {worker_id}, Worker UUID: {worker_uuid}")
+        logger.verbose( f"CascadeCorrelationNetwork: _build_candidate_inputs: Candidate Index: {candidate_index}, Type: {type(candidate_index)}, Value: {candidate_index}: Worker ID: {worker_id}, Worker UUID: {worker_uuid}")
+        logger.verbose( f"CascadeCorrelationNetwork: _build_candidate_inputs: Candidate Inputs: Length: {len(training_inputs)}, Type: {type(training_inputs)}, Content:\n{training_inputs}: Worker ID: {worker_id}, Worker UUID: {worker_uuid}")
+        logger.verbose( f"CascadeCorrelationNetwork: _build_candidate_inputs: Candidate Data: length: {len(candidate_data)}, Type: {type(candidate_data)}, Content:\n{candidate_data}: Worker ID: {worker_id}, Worker UUID: {worker_uuid}")
         (
             input_size,
             activation_name,
@@ -2680,18 +2858,10 @@ class CascadeCorrelationNetwork:
             random_max_value,
             sequence_max_value,
         ) = candidate_data[1:]
-        logger.debug(
-            f"CascadeCorrelationNetwork: _build_candidate_inputs: Successfully Unpacked Candidate Data: Worker ID: {worker_id}, Worker UUID: {worker_uuid}, Candidate UUID: {candidate_uuid}."
-        )
-        logger.verbose(
-            f"CascadeCorrelationNetwork: _build_candidate_inputs: Candidate data unpacked: Candidate ID: {id}, Input Size: {input_size}, Activation Function Name: {activation_name}, Random Value Scale: {random_value_scale}, Candidate UUID: {candidate_uuid}, Random Seed: {candidate_seed}, Random Value Max: {random_max_value}, Sequence Max Value: {sequence_max_value}: Worker ID: {worker_id}, Worker UUID: {worker_uuid}, Candidate UUID: {candidate_uuid}."
-        )
-        logger.debug(
-            f"CascadeCorrelationNetwork: _build_candidate_inputs: Attempting to unpack Training inputs: Worker ID: {worker_id}, Worker UUID: {worker_uuid}, Candidate UUID: {candidate_uuid}"
-        )
-        logger.verbose(
-            f"CascadeCorrelationNetwork: _build_candidate_inputs: Training inputs: length: {len(training_inputs)}, Type: {type(training_inputs)}, Content:\n{training_inputs}: Worker ID: {worker_id}, Worker UUID: {worker_uuid}, Candidate UUID: {candidate_uuid}"
-        )
+        logger.debug( f"CascadeCorrelationNetwork: _build_candidate_inputs: Successfully Unpacked Candidate Data: Worker ID: {worker_id}, Worker UUID: {worker_uuid}, Candidate UUID: {candidate_uuid}.")
+        logger.verbose( f"CascadeCorrelationNetwork: _build_candidate_inputs: Candidate data unpacked: Candidate ID: {id}, Input Size: {input_size}, Activation Function Name: {activation_name}, Random Value Scale: {random_value_scale}, Candidate UUID: {candidate_uuid}, Random Seed: {candidate_seed}, Random Value Max: {random_max_value}, Sequence Max Value: {sequence_max_value}: Worker ID: {worker_id}, Worker UUID: {worker_uuid}, Candidate UUID: {candidate_uuid}.")
+        logger.debug( f"CascadeCorrelationNetwork: _build_candidate_inputs: Attempting to unpack Training inputs: Worker ID: {worker_id}, Worker UUID: {worker_uuid}, Candidate UUID: {candidate_uuid}")
+        logger.verbose( f"CascadeCorrelationNetwork: _build_candidate_inputs: Training inputs: length: {len(training_inputs)}, Type: {type(training_inputs)}, Content:\n{training_inputs}: Worker ID: {worker_id}, Worker UUID: {worker_uuid}, Candidate UUID: {candidate_uuid}")
         (
             candidate_input,
             candidate_epochs,
@@ -2700,21 +2870,11 @@ class CascadeCorrelationNetwork:
             candidate_learning_rate,
             candidate_display_frequency,
         ) = training_inputs
-        logger.debug(
-            f"CascadeCorrelationNetwork: _build_candidate_inputs: Successfully Unpacked Training inputs: Worker ID: {worker_id}, Worker UUID: {worker_uuid}, Candidate UUID: {candidate_uuid}."
-        )
-        logger.debug(
-            f"CascadeCorrelationNetwork: _build_candidate_inputs: Unpacked Task data, Candidate data, and Training inputs: Worker ID: {worker_id}, Worker UUID: {worker_uuid}, Candidate Index: {candidate_index}, Candidate UUID: {candidate_uuid}, Training Inputs: x shape: {candidate_input.shape}, epochs: {candidate_epochs}, y shape: {y.shape}, residual_error shape: {residual_error.shape}, learning_rate: {candidate_learning_rate}, display_frequency: {candidate_display_frequency}"
-        )
-        logger.verbose(
-            f"CascadeCorrelationNetwork: _build_candidate_inputs: Training inputs: x shape: {candidate_input.shape}, epochs: {candidate_epochs}, y shape: {y.shape}, residual_error shape: {residual_error.shape}, learning_rate: {candidate_learning_rate}, display_frequency: {candidate_display_frequency}"
-        )
-        activation_fn = CascadeCorrelationNetwork._get_activation_function(
-            activation_name
-        )
-        logger.debug(
-            f"CascadeCorrelationNetwork: _build_candidate_inputs: Retrieved wrapped activation function: Worker ID: {worker_id}, Worker UUID: {worker_uuid}, Candidate Index: {candidate_index}, Candidate UUID: {candidate_uuid}, Activation Function: Name: {activation_name}, Function: {activation_fn}"
-        )
+        logger.debug( f"CascadeCorrelationNetwork: _build_candidate_inputs: Successfully Unpacked Training inputs: Worker ID: {worker_id}, Worker UUID: {worker_uuid}, Candidate UUID: {candidate_uuid}.")
+        logger.debug( f"CascadeCorrelationNetwork: _build_candidate_inputs: Unpacked Task data, Candidate data, and Training inputs: Worker ID: {worker_id}, Worker UUID: {worker_uuid}, Candidate Index: {candidate_index}, Candidate UUID: {candidate_uuid}, Training Inputs: x shape: {candidate_input.shape}, epochs: {candidate_epochs}, y shape: {y.shape}, residual_error shape: {residual_error.shape}, learning_rate: {candidate_learning_rate}, display_frequency: {candidate_display_frequency}")
+        logger.verbose( f"CascadeCorrelationNetwork: _build_candidate_inputs: Training inputs: x shape: {candidate_input.shape}, epochs: {candidate_epochs}, y shape: {y.shape}, residual_error shape: {residual_error.shape}, learning_rate: {candidate_learning_rate}, display_frequency: {candidate_display_frequency}")
+        activation_fn = CascadeCorrelationNetwork._get_activation_function( activation_name)
+        logger.debug( f"CascadeCorrelationNetwork: _build_candidate_inputs: Retrieved wrapped activation function: Worker ID: {worker_id}, Worker UUID: {worker_uuid}, Candidate Index: {candidate_index}, Candidate UUID: {candidate_uuid}, Activation Function: Name: {activation_name}, Function: {activation_fn}")
 
         # TODO: reference data values from input tuples?
         # Build candidate inputs dictionary
@@ -2738,9 +2898,7 @@ class CascadeCorrelationNetwork:
             "candidate_display_frequency": candidate_display_frequency,
             "activation_fn": activation_fn,
         }
-        logger.debug(
-            f"CascadeCorrelationNetwork: _build_candidate_inputs: Successfully built candidate inputs: {candidate_inputs}"
-        )
+        logger.debug( f"CascadeCorrelationNetwork: _build_candidate_inputs: Successfully built candidate inputs: {candidate_inputs}")
         return candidate_inputs
 
     @staticmethod
@@ -2761,9 +2919,7 @@ class CascadeCorrelationNetwork:
         logger = Logger
 
         try:
-            logger.debug(
-                f"CascadeCorrelationNetwork: _train_candidate_unit: Training CandidateUnit object: Worker ID: {worker_id}, Worker UUID: {worker_uuid}, Candidate Index: {candidate_index}, Candidate UUID: {candidate.get_uuid()}, Candidate Object: {candidate}"
-            )
+            logger.debug( f"CascadeCorrelationNetwork: _train_candidate_unit: Training CandidateUnit object: Worker ID: {worker_id}, Worker UUID: {worker_uuid}, Candidate Index: {candidate_index}, Candidate UUID: {candidate.get_uuid()}, Candidate Object: {candidate}")
             # training_result = candidate.train(
             training_result = candidate.train_detailed(
                 x=candidate_input,
@@ -2772,20 +2928,12 @@ class CascadeCorrelationNetwork:
                 learning_rate=candidate_learning_rate,
                 display_frequency=candidate_display_frequency,
             )
-            logger.info(
-                f"CascadeCorrelationNetwork: _train_candidate_unit: Completed Training CandidateUnit object: Worker ID: {worker_id}, Worker UUID: {worker_uuid}, Candidate Index: {candidate_index}, Candidate UUID: {candidate_uuid}, Correlation: {float(training_result.correlation):.6f}"
-            )
-            logger.debug(
-                f"CascadeCorrelationNetwork: _train_candidate_unit: Clearing Display Progress and Display Status for Candidate Unit: Worker ID: {worker_id}, Worker UUID: {worker_uuid}, Candidate Index: {candidate_index}, Candidate UUID: {candidate_uuid}"
-            )
+            logger.info( f"CascadeCorrelationNetwork: _train_candidate_unit: Completed Training CandidateUnit object: Worker ID: {worker_id}, Worker UUID: {worker_uuid}, Candidate Index: {candidate_index}, Candidate UUID: {candidate_uuid}, Correlation: {float(training_result.correlation):.6f}")
+            logger.debug( f"CascadeCorrelationNetwork: _train_candidate_unit: Clearing Display Progress and Display Status for Candidate Unit: Worker ID: {worker_id}, Worker UUID: {worker_uuid}, Candidate Index: {candidate_index}, Candidate UUID: {candidate_uuid}")
             candidate.clear_display_progress()  # Clear display progress for candidate unit, to avoid issues with multiprocessing--nested functions are not pickleable
-            logger.debug(
-                f"CascadeCorrelationNetwork: _train_candidate_unit: Cleared Display Progress for Candidate Unit: Worker ID: {worker_id}, Worker UUID: {worker_uuid}, Candidate Index: {candidate_index}, Candidate UUID: {candidate_uuid}"
-            )
+            logger.debug( f"CascadeCorrelationNetwork: _train_candidate_unit: Cleared Display Progress for Candidate Unit: Worker ID: {worker_id}, Worker UUID: {worker_uuid}, Candidate Index: {candidate_index}, Candidate UUID: {candidate_uuid}")
             candidate.clear_display_status()  # Clear display status for candidate unit, to avoid issues with multiprocessing--nested functions are not pickleable
-            logger.debug(
-                f"CascadeCorrelationNetwork: _train_candidate_unit: Cleared Display Status for Candidate Unit: Worker ID: {worker_id}, Worker UUID: {worker_uuid}, Candidate Index: {candidate_index}, Candidate UUID: {candidate_uuid}"
-            )
+            logger.debug( f"CascadeCorrelationNetwork: _train_candidate_unit: Cleared Display Status for Candidate Unit: Worker ID: {worker_id}, Worker UUID: {worker_uuid}, Candidate Index: {candidate_index}, Candidate UUID: {candidate_uuid}")
 
             # Return CandidateTrainingResult with updated values
             training_result.candidate_id = candidate_index
@@ -2793,9 +2941,7 @@ class CascadeCorrelationNetwork:
             training_result.candidate = candidate
             return training_result
         except Exception as e:
-            logger.error(
-                f"CascadeCorrelationNetwork: _train_candidate_unit: Caught Exception while training CandidateUnit object: Worker ID: {worker_id}, Worker UUID: {worker_uuid}, Candidate Index: {candidate_index}, Candidate UUID: {candidate_uuid}, Error during candidate training:\nException:\n{e}"
-            )
+            logger.error( f"CascadeCorrelationNetwork: _train_candidate_unit: Caught Exception while training CandidateUnit object: Worker ID: {worker_id}, Worker UUID: {worker_uuid}, Candidate Index: {candidate_index}, Candidate UUID: {candidate_uuid}, Error during candidate training:\nException:\n{e}")
             import traceback
 
             traceback.print_exc()

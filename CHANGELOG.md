@@ -5,6 +5,63 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.13] - 2026-01-21
+
+### Fixed: [0.3.13]
+
+- **CASCOR-P0-002**: Fixed test suite timeout/hang issues
+  - **Problem**: Tests would timeout after 180 seconds, never completing the full suite
+  - **Solution**: Installed `pytest-timeout` and configured 60-second per-test timeout
+  - **File Changed**: `src/tests/pytest.ini`
+  - **Configuration Added**:
+
+    ```ini
+    timeout = 60
+    timeout_method = signal
+    ```
+
+  - **Result**: Tests now timeout individually after 60 seconds instead of hanging indefinitely
+
+### Technical Notes: [0.3.13]
+
+- **SemVer impact**: PATCH – Test infrastructure improvement; no application code changes
+- Removed duplicate `--tb=long` from pytest.ini (was conflicting with `--tb=short`)
+
+---
+
+## [0.3.12] - 2026-01-21
+
+### Fixed: [0.3.12]
+
+- **CASCOR-P1-003**: Fixed multiprocessing pickling error with `wrapped_activation` local function
+  - **Problem**: `CandidateUnit._init_activation_with_derivative()` defined a local function `wrapped_activation` that cannot be pickled for multiprocessing, causing workers to fail when sending results back
+  - **Error**: `AttributeError: Can't pickle local object 'CandidateUnit._init_activation_with_derivative.<locals>.wrapped_activation'`
+  - **Solution**: Created picklable `ActivationWithDerivative` class at module level with `__getstate__`/`__setstate__` methods
+  - **Files Changed**:
+    - `src/candidate_unit/candidate_unit.py` - Added `ActivationWithDerivative` class, modified `_init_activation_with_derivative()` method
+    - `src/cascade_correlation/cascade_correlation.py` - Added `ActivationWithDerivative` class, modified `_init_activation_with_derivative()` method
+  - **Features**:
+    - Stores activation function name for serialization
+    - Reconstructs activation from comprehensive ACTIVATION_MAP on unpickling
+    - Supports 30+ PyTorch activation functions
+    - Includes analytical derivatives for tanh, sigmoid, relu; numerical approximation for others
+  - **Result**: CandidateUnit objects can now be pickled for multiprocessing, enabling parallel candidate training
+
+### Added: [0.3.12]
+
+- **New Test Suite**: `src/tests/unit/test_activation_with_derivative.py`
+  - 23 unit tests for `ActivationWithDerivative` class
+  - Tests cover pickling, derivatives, CandidateUnit integration, and both module implementations
+  - All tests pass
+
+### Technical Notes: [0.3.12]
+
+- **SemVer impact**: PATCH – Bug fix enabling multiprocessing; no API changes
+- Original local function code preserved as comments with `# OLD:` prefix
+- New code marked with `# NEW:` prefix and CASCOR-P1-003 reference
+
+---
+
 ## [0.3.11] - 2026-01-20
 
 ### Fixed: [0.3.11]
@@ -20,8 +77,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **CASCOR-P1-003**: Documented multiprocessing pickling error with `wrapped_activation` local function
   - **Problem**: `CandidateUnit._init_activation_with_derivative()` defines a local function `wrapped_activation` that cannot be pickled for multiprocessing
   - **Impact**: Workers cannot send results back to main process, forcing sequential fallback
-  - **Status**: 🔴 BLOCKING - requires refactoring to module-level class
-  - **Proposed Fix**: Create picklable `ActivationWithDerivative` class at module level
+  - **Status**: ✅ RESOLVED in v0.3.12
+  - **Fix Applied**: Created picklable `ActivationWithDerivative` class at module level
 
 ---
 
