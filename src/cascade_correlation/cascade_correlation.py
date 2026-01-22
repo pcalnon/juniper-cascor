@@ -705,7 +705,7 @@ class CascadeCorrelationNetwork:
         # Only set forkserver preload if using forkserver context
         if context_type == "forkserver":
             try:
-                self._mp_ctx.set_forkserver_preload(
+                self._mp_ctx.set_forkserver_preload([
                     "os",
                     "uuid",
                     "torch",
@@ -713,10 +713,7 @@ class CascadeCorrelationNetwork:
                     "random",
                     "logging",
                     "datetime",
-                    "typing.Optional",
-                    "utils.utils.display_progress",
-                    "log_config.logger.logger.Logger",
-                )
+                ])
             except Exception as e:
                 self.logger.warning(
                     f"CascadeCorrelationNetwork: _init_multiprocessing: Failed to set forkserver preload: {e}"

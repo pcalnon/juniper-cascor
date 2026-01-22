@@ -49,8 +49,11 @@
 # _PROJECT_MODEL_AUTHKEY = 'Juniper_Cascade_Correlation_Multiprocessing_Authkey'
 _PROJECT_MODEL_AUTHKEY = "Juniper_Cascade_Correlation_Multiprocessing_Authkey"
 
-# Use 'spawn' context for BaseManager to avoid socket inheritance issues with 'fork'
-# NOTE:  Forkserver is the default multiprocess method in Python 3.14.  Custom manager classes work properly in Python 3.14  ---'forkserver' has issues with custom Manager classes in Python 3.14---
+# Multiprocessing context for candidate training
+# NOTE: 'forkserver' is the preferred context for parallel candidate training:
+#   - Provides clean process isolation without socket inheritance issues from 'fork'
+#   - Custom Manager classes work properly in Python 3.14.2+ (fixed from 3.14.0 issues)
+#   - Better performance than 'spawn' for repeated process creation
 # _PROJECT_MODEL_CANDIDATE_TRAINING_CONTEXT = "fork"
 # _PROJECT_MODEL_CANDIDATE_TRAINING_CONTEXT = "spawn"
 _PROJECT_MODEL_CANDIDATE_TRAINING_CONTEXT = "forkserver"

@@ -290,23 +290,22 @@ from cascade_correlation.cascade_correlation_config.cascade_correlation_config i
 #### CASCOR-P1-001: Multiprocessing Manager Port Conflicts
 
 **Location**: `src/cascade_correlation/cascade_correlation.py`  
-**Status**: ⚠️ Known issue, sequential fallback active
+**Status**: ✅ RESOLVED (2026-01-22)
 
-**Problem**: BaseManager with fixed port causes "Address already in use" errors.
+**Problem**: BaseManager with fixed port caused "Address already in use" errors.
 
-**Current Workaround**: Sequential training fallback is active.
+**Resolution**:
 
-**Impact**:
+- Port changed to 0 (dynamic OS allocation) - eliminates port conflicts
+- `forkserver` context retained as preferred method (Python 3.14.2 fixes compatibility with custom Manager classes)
+- Sequential fallback available as safety net but parallel training is now functional
+- Fixed `set_forkserver_preload()` to use list argument format
 
-- Parallel candidate training disabled
-- Training is slower but functional
-- Integration with Canopy will work but performance is degraded
+**Verification**:
 
-**Proposed Solution** (from existing DEVELOPMENT_ROADMAP.md):
-
-- Port already changed to 0 (dynamic allocation)
-- Context changed from `forkserver` to `spawn`
-- Sequential fallback implemented
+- Multiple concurrent managers start successfully with unique dynamic ports
+- `CandidateTrainingManager` works correctly with `forkserver` context
+- Parallel candidate training is operational
 
 ---
 
@@ -828,8 +827,8 @@ export CASCOR_BACKEND_PATH="/home/pcalnon/Development/python/Juniper/JuniperCasc
 
 **Integration Points**:
 
-| Interface        | Cascor Export       | Canopy Import       | Status       |
-| ---------------- | ------------------- | ------------------- | ------------ |
+| Interface        | Cascor Export       | Canopy Import       | Status        |
+| ---------------- | ------------------- | ------------------- | ------------- |
 | Network Topology | HDF5 snapshots      | CascorIntegration   | ✅ Compatible |
 | Training Metrics | Real-time state     | WebSocket broadcast | ✅ Compatible |
 | Control Commands | Multiprocess queues | REST/WebSocket      | ✅ Compatible |
@@ -868,13 +867,15 @@ export CASCOR_BACKEND_PATH="/home/pcalnon/Development/python/Juniper/JuniperCasc
 **Problem**: Canopy has `src/constants.py` (module) and Cascor has `src/constants/` (package). When both are on `sys.path`, Python may find Canopy's module first, shadowing Cascor's package.
 
 **Impact**: Direct imports of Cascor classes from Canopy test code may fail with:
-```
+
+```python
 ModuleNotFoundError: No module named 'constants.constants'; 'constants' is not a package
 ```
 
 **Workaround**: `CascorIntegration._add_backend_to_path()` adds Cascor's `src/` at index 0 of `sys.path`, ensuring Cascor's `constants/` package is found first during runtime. This is handled automatically.
 
 **Recommendation for Future**: Consider renaming one of the modules to avoid collision:
+
 - Option A: Rename Canopy's `constants.py` to `canopy_constants.py`
 - Option B: Rename Cascor's `constants/` to `cascor_constants/`
 

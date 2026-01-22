@@ -137,19 +137,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **P0-019**: Fixed Multiprocessing Manager Port Conflict and Sequential Training Fallback
   - **Root Cause 1**: `_CASCADE_CORRELATION_NETWORK_BASE_MANAGER_ADDRESS` was set to just the IP string `'127.0.0.1'` instead of a tuple `('127.0.0.1', port)`
   - **Root Cause 2**: Fixed port 50000 was hardcoded, causing "Address already in use" errors when multiple tests or instances run
-  - **Root Cause 3**: `forkserver` multiprocessing context has issues with custom Manager classes in Python 3.14
+  - **Root Cause 3**: `forkserver` multiprocessing context had issues with custom Manager classes in Python 3.14.0 (resolved in Python 3.14.2)
   - **Root Cause 4**: When parallel training failed, dummy results with zero correlation were used, preventing network growth
   - **Fixes Applied**:
     - Changed default port from 50000 to 0 (dynamic OS allocation) in `constants_model.py`
-    - Changed default multiprocessing context from `forkserver` to `spawn`
     - Fixed address constant to use tuple `('127.0.0.1', 0)` instead of just IP string in `constants.py`
-    - Updated `_init_multiprocessing()` to use configured context type instead of hardcoded `forkserver`
+    - Updated `_init_multiprocessing()` to use configured context type
     - Added sequential training fallback in `_execute_candidate_training()` when parallel training fails
-  - **Result**: Network now falls back to sequential training when parallel fails, producing real correlation values and allowing hidden units to be added. Spiral problems can now be solved.
+    - Retained `forkserver` context as preferred method (Python 3.14.2 fixes compatibility with custom Manager classes)
+  - **Result**: Network uses `forkserver` for optimal parallel training performance, with sequential fallback available when needed.
 
 ### Files Changed: [0.3.7]
 
-- `src/constants/constants_model/constants_model.py` - Changed port to 0, context to 'spawn'
+- `src/constants/constants_model/constants_model.py` - Changed port to 0, retained `forkserver` context
 - `src/constants/constants.py` - Added import for `_PROJECT_MODEL_BASE_MANAGER_ADDRESS`, fixed address constant to use tuple
 - `src/cascade_correlation/cascade_correlation.py` - Updated `_init_multiprocessing()` to use config context, added sequential fallback in `_execute_candidate_training()`
 

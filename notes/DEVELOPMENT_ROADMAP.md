@@ -1304,27 +1304,26 @@ The codebase contains 40+ TODO comments. Key ones to address:
   - Fixed import path to match runtime module resolution
   - Network correctly validates and rejects NaN inputs
 
-- **P0-019**: Fixed Multiprocessing Manager Port Conflict and Sequential Fallback (COMPLETED - 2026-01-16)
+- **P0-019**: Fixed Multiprocessing Manager Port Conflict and Sequential Fallback (COMPLETED - 2026-01-16, UPDATED - 2026-01-22)
   - **Root Cause 1**: `_CASCADE_CORRELATION_NETWORK_BASE_MANAGER_ADDRESS` was set to just the IP string `'127.0.0.1'` instead of a tuple `('127.0.0.1', port)`
   - **Root Cause 2**: Fixed port 50000 was hardcoded, causing "Address already in use" when multiple tests run
-  - **Root Cause 3**: `forkserver` context has issues with custom Manager classes in Python 3.14
+  - **Root Cause 3**: `forkserver` context had issues with custom Manager classes in Python 3.14.0 (resolved in Python 3.14.2)
   - **Root Cause 4**: When parallel training failed, dummy results with zero correlation were used, preventing network growth
   - **Fixes Applied**:
     - Changed default port from 50000 to 0 (dynamic OS allocation) in `constants_model.py`
-    - Changed default multiprocessing context from `forkserver` to `spawn`
     - Fixed address constant to use tuple `('127.0.0.1', 0)` instead of just IP string
     - Updated `_init_multiprocessing()` to use configured context type
     - Added sequential training fallback in `_execute_candidate_training()` when parallel fails
-  - **Result**: Network now uses sequential training as fallback, producing real correlation values and allowing hidden units to be added
+    - Retained `forkserver` context as preferred method (Python 3.14.2 fixes compatibility with custom Manager classes)
+  - **Result**: Network uses `forkserver` for optimal parallel training performance, with sequential fallback available when needed
   - **Files Changed**:
     - `src/constants/constants_model/constants_model.py`
     - `src/constants/constants.py`
     - `src/cascade_correlation/cascade_correlation.py`
 
-- **Remaining Issues**:
-  - Parallel training with BaseManager still fails (pickling/process issues in Python 3.14)
-  - Sequential fallback works correctly but is slower than parallel
-  - Integration tests run slowly due to sequential candidate training
+- **Resolved Issues** (as of Python 3.14.2 upgrade):
+  - `forkserver` context now works correctly with custom Manager classes
+  - Parallel candidate training is functional and performant
 
 ### 2025-01-15 - Phase 0 API Compatibility Fixes (v0.3.5)
 
