@@ -1,256 +1,252 @@
-<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="1" failures="22" skipped="3" tests="178" time="2885.772" timestamp="2026-01-21T08:35:19.985132-06:00" hostname="yamaguchi"><testcase classname="integration.test_comprehensive_serialization.TestDeterministicTrainingResume" name="test_deterministic_training_resume" time="60.134"><failure message="Failed: Timeout (&gt;60.0s) from pytest-timeout.">src/tests/integration/test_comprehensive_serialization.py:55: in test_deterministic_training_resume
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="1" failures="22" skipped="3" tests="178" time="2934.117" timestamp="2026-01-22T06:41:15.662418-06:00" hostname="yamaguchi"><testcase classname="integration.test_comprehensive_serialization.TestDeterministicTrainingResume" name="test_deterministic_training_resume" time="60.122"><failure message="Failed: Timeout (&gt;60.0s) from pytest-timeout.">src/tests/integration/test_comprehensive_serialization.py:55: in test_deterministic_training_resume
     network_a.fit(
-src/cascade_correlation/cascade_correlation.py:1439: in fit
+src/cascade_correlation/cascade_correlation.py:1408: in fit
     self.grow_network(
-src/cascade_correlation/cascade_correlation.py:3510: in grow_network
+src/cascade_correlation/cascade_correlation.py:3210: in grow_network
     if ( not ( training_results := self._get_training_results( x_train=x_train, y_train=y_train, residual_error=residual_error)) or not training_results.best_candidate):
                                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-src/cascade_correlation/cascade_correlation.py:3667: in _get_training_results
+src/cascade_correlation/cascade_correlation.py:3367: in _get_training_results
     training_results = self.train_candidates(
-src/cascade_correlation/cascade_correlation.py:1739: in train_candidates
+src/cascade_correlation/cascade_correlation.py:1634: in train_candidates
     results = self._execute_candidate_training(tasks, process_count)
               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-src/cascade_correlation/cascade_correlation.py:1912: in _execute_candidate_training
+src/cascade_correlation/cascade_correlation.py:1807: in _execute_candidate_training
     results = self._execute_parallel_training(tasks, process_count)
               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-src/cascade_correlation/cascade_correlation.py:2070: in _execute_parallel_training
+src/cascade_correlation/cascade_correlation.py:1965: in _execute_parallel_training
     time.sleep(sleepytime)
-E   Failed: Timeout (&gt;60.0s) from pytest-timeout.</failure></testcase><testcase classname="integration.test_comprehensive_serialization.TestHiddenUnitsPreservation" name="test_hidden_units_preservation" time="2.002" /><testcase classname="integration.test_comprehensive_serialization.TestConfigRoundtrip" name="test_config_roundtrip" time="1.744" /><testcase classname="integration.test_comprehensive_serialization.TestActivationFunctionRestoration" name="test_activation_function_restoration" time="5.341" /><testcase classname="integration.test_comprehensive_serialization.TestTorchRandomStateRestoration" name="test_torch_random_state_restoration" time="2.481" /><testcase classname="integration.test_comprehensive_serialization.TestHistoryPreservation" name="test_history_preservation" time="1.863" /><testcase classname="integration.test_serialization.TestUUIDPersistence" name="test_uuid_preserved_after_load" time="1.947" /><testcase classname="integration.test_serialization.TestUUIDPersistence" name="test_multiple_save_load_cycles_preserve_uuid" time="3.712" /><testcase classname="integration.test_serialization.TestRandomSeedPreservation" name="test_random_seed_parameters_preserved" time="1.867" /><testcase classname="integration.test_serialization.TestRandomSeedPreservation" name="test_deterministic_forward_pass" time="2.051" /><testcase classname="integration.test_serialization.TestRandomSeedPreservation" name="test_random_state_data_in_file" time="1.013" /><testcase classname="integration.test_serialization.TestHistoryPreservation" name="test_history_keys_preserved" time="2.006" /><testcase classname="integration.test_serialization.TestHistoryPreservation" name="test_hidden_units_history_preserved" time="2.075" /><testcase classname="integration.test_serialization.TestConfigRoundtrip" name="test_config_serialization_excludes_non_serializable" time="1.872" /><testcase classname="integration.test_serialization.TestConfigRoundtrip" name="test_config_values_preserved" time="2.331" /><testcase classname="integration.test_serialization.TestActivationFunctionRestoration" name="test_activation_function_name_restored" time="2.373" /><testcase classname="integration.test_serialization.TestActivationFunctionRestoration" name="test_activation_function_callable_restored" time="1.896" /><testcase classname="integration.test_serialization.TestHiddenUnitsPreservation" name="test_hidden_units_count_preserved" time="2.099" /><testcase classname="integration.test_serialization.TestHiddenUnitsPreservation" name="test_hidden_units_weights_preserved" time="2.009" /><testcase classname="integration.test_serialization.TestHiddenUnitsPreservation" name="test_hidden_units_checksums_verified" time="1.831" /><testcase classname="integration.test_serialization.TestShapeValidation" name="test_output_weights_shape_validated" time="1.744" /><testcase classname="integration.test_serialization.TestShapeValidation" name="test_hidden_units_shape_validated" time="2.102" /><testcase classname="integration.test_serialization.TestFormatValidation" name="test_valid_format_accepted" time="2.156" /><testcase classname="integration.test_serialization.TestFormatValidation" name="test_format_verification_info" time="0.992" /><testcase classname="integration.test_serialization.TestRandomStateRestoration" name="test_python_random_state_restoration" time="2.953" /><testcase classname="integration.test_serialization.TestRandomStateRestoration" name="test_numpy_random_state_restoration" time="2.868" /><testcase classname="integration.test_serialization.TestRandomStateRestoration" name="test_torch_random_state_restoration" time="2.921" /><testcase classname="integration.test_serialization.TestRandomStateRestoration" name="test_deterministic_training_resume" time="3.509" /><testcase classname="integration.test_spiral_problem.TestSpiralProblemBasic" name="test_2_spiral_learning" time="60.357"><failure message="Failed: Timeout (&gt;60.0s) from pytest-timeout.">src/tests/integration/test_spiral_problem.py:50: in test_2_spiral_learning
+E   Failed: Timeout (&gt;60.0s) from pytest-timeout.</failure></testcase><testcase classname="integration.test_comprehensive_serialization.TestHiddenUnitsPreservation" name="test_hidden_units_preservation" time="2.260" /><testcase classname="integration.test_comprehensive_serialization.TestConfigRoundtrip" name="test_config_roundtrip" time="2.264" /><testcase classname="integration.test_comprehensive_serialization.TestActivationFunctionRestoration" name="test_activation_function_restoration" time="6.511" /><testcase classname="integration.test_comprehensive_serialization.TestTorchRandomStateRestoration" name="test_torch_random_state_restoration" time="3.489" /><testcase classname="integration.test_comprehensive_serialization.TestHistoryPreservation" name="test_history_preservation" time="2.263" /><testcase classname="integration.test_serialization.TestUUIDPersistence" name="test_uuid_preserved_after_load" time="2.378" /><testcase classname="integration.test_serialization.TestUUIDPersistence" name="test_multiple_save_load_cycles_preserve_uuid" time="4.877" /><testcase classname="integration.test_serialization.TestRandomSeedPreservation" name="test_random_seed_parameters_preserved" time="2.334" /><testcase classname="integration.test_serialization.TestRandomSeedPreservation" name="test_deterministic_forward_pass" time="2.334" /><testcase classname="integration.test_serialization.TestRandomSeedPreservation" name="test_random_state_data_in_file" time="1.206" /><testcase classname="integration.test_serialization.TestHistoryPreservation" name="test_history_keys_preserved" time="2.627" /><testcase classname="integration.test_serialization.TestHistoryPreservation" name="test_hidden_units_history_preserved" time="2.588" /><testcase classname="integration.test_serialization.TestConfigRoundtrip" name="test_config_serialization_excludes_non_serializable" time="2.397" /><testcase classname="integration.test_serialization.TestConfigRoundtrip" name="test_config_values_preserved" time="2.391" /><testcase classname="integration.test_serialization.TestActivationFunctionRestoration" name="test_activation_function_name_restored" time="2.353" /><testcase classname="integration.test_serialization.TestActivationFunctionRestoration" name="test_activation_function_callable_restored" time="2.302" /><testcase classname="integration.test_serialization.TestHiddenUnitsPreservation" name="test_hidden_units_count_preserved" time="2.386" /><testcase classname="integration.test_serialization.TestHiddenUnitsPreservation" name="test_hidden_units_weights_preserved" time="2.425" /><testcase classname="integration.test_serialization.TestHiddenUnitsPreservation" name="test_hidden_units_checksums_verified" time="2.405" /><testcase classname="integration.test_serialization.TestShapeValidation" name="test_output_weights_shape_validated" time="2.471" /><testcase classname="integration.test_serialization.TestShapeValidation" name="test_hidden_units_shape_validated" time="2.586" /><testcase classname="integration.test_serialization.TestFormatValidation" name="test_valid_format_accepted" time="2.355" /><testcase classname="integration.test_serialization.TestFormatValidation" name="test_format_verification_info" time="1.234" /><testcase classname="integration.test_serialization.TestRandomStateRestoration" name="test_python_random_state_restoration" time="3.813" /><testcase classname="integration.test_serialization.TestRandomStateRestoration" name="test_numpy_random_state_restoration" time="3.576" /><testcase classname="integration.test_serialization.TestRandomStateRestoration" name="test_torch_random_state_restoration" time="3.598" /><testcase classname="integration.test_serialization.TestRandomStateRestoration" name="test_deterministic_training_resume" time="4.113" /><testcase classname="integration.test_spiral_problem.TestSpiralProblemBasic" name="test_2_spiral_learning" time="60.264"><failure message="Failed: Timeout (&gt;60.0s) from pytest-timeout.">src/tests/integration/test_spiral_problem.py:50: in test_2_spiral_learning
     history, elapsed_time = measure_training_time(
 src/tests/helpers/utilities.py:197: in measure_training_time
     history = network.fit(x, y, **fit_kwargs)
               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-src/cascade_correlation/cascade_correlation.py:1439: in fit
+src/cascade_correlation/cascade_correlation.py:1408: in fit
     self.grow_network(
-src/cascade_correlation/cascade_correlation.py:3510: in grow_network
+src/cascade_correlation/cascade_correlation.py:3210: in grow_network
     if ( not ( training_results := self._get_training_results( x_train=x_train, y_train=y_train, residual_error=residual_error)) or not training_results.best_candidate):
                                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-src/cascade_correlation/cascade_correlation.py:3667: in _get_training_results
+src/cascade_correlation/cascade_correlation.py:3367: in _get_training_results
     training_results = self.train_candidates(
-src/cascade_correlation/cascade_correlation.py:1739: in train_candidates
+src/cascade_correlation/cascade_correlation.py:1634: in train_candidates
     results = self._execute_candidate_training(tasks, process_count)
               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-src/cascade_correlation/cascade_correlation.py:1912: in _execute_candidate_training
+src/cascade_correlation/cascade_correlation.py:1807: in _execute_candidate_training
     results = self._execute_parallel_training(tasks, process_count)
               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-src/cascade_correlation/cascade_correlation.py:2070: in _execute_parallel_training
+src/cascade_correlation/cascade_correlation.py:1965: in _execute_parallel_training
     time.sleep(sleepytime)
-E   Failed: Timeout (&gt;60.0s) from pytest-timeout.</failure></testcase><testcase classname="integration.test_spiral_problem.TestSpiralProblemBasic" name="test_3_spiral_learning" time="60.437"><failure message="Failed: Timeout (&gt;60.0s) from pytest-timeout.">src/tests/integration/test_spiral_problem.py:96: in test_3_spiral_learning
+E   Failed: Timeout (&gt;60.0s) from pytest-timeout.</failure></testcase><testcase classname="integration.test_spiral_problem.TestSpiralProblemBasic" name="test_3_spiral_learning" time="60.379"><failure message="Failed: Timeout (&gt;60.0s) from pytest-timeout.">src/tests/integration/test_spiral_problem.py:96: in test_3_spiral_learning
     history = spiral_network.fit(x, y, max_epochs=8)
               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-src/cascade_correlation/cascade_correlation.py:1439: in fit
+src/cascade_correlation/cascade_correlation.py:1408: in fit
     self.grow_network(
-src/cascade_correlation/cascade_correlation.py:3510: in grow_network
+src/cascade_correlation/cascade_correlation.py:3210: in grow_network
     if ( not ( training_results := self._get_training_results( x_train=x_train, y_train=y_train, residual_error=residual_error)) or not training_results.best_candidate):
                                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-src/cascade_correlation/cascade_correlation.py:3667: in _get_training_results
+src/cascade_correlation/cascade_correlation.py:3367: in _get_training_results
     training_results = self.train_candidates(
-src/cascade_correlation/cascade_correlation.py:1739: in train_candidates
+src/cascade_correlation/cascade_correlation.py:1634: in train_candidates
     results = self._execute_candidate_training(tasks, process_count)
               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-src/cascade_correlation/cascade_correlation.py:1912: in _execute_candidate_training
+src/cascade_correlation/cascade_correlation.py:1807: in _execute_candidate_training
     results = self._execute_parallel_training(tasks, process_count)
               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-src/cascade_correlation/cascade_correlation.py:2070: in _execute_parallel_training
+src/cascade_correlation/cascade_correlation.py:1965: in _execute_parallel_training
     time.sleep(sleepytime)
-E   Failed: Timeout (&gt;60.0s) from pytest-timeout.</failure></testcase><testcase classname="integration.test_spiral_problem.TestSpiralProblemProgressive" name="test_n_spiral_difficulty_progression[2]" time="61.027"><failure message="Failed: Timeout (&gt;60.0s) from pytest-timeout.">src/tests/integration/test_spiral_problem.py:143: in test_n_spiral_difficulty_progression
+E   Failed: Timeout (&gt;60.0s) from pytest-timeout.</failure></testcase><testcase classname="integration.test_spiral_problem.TestSpiralProblemProgressive" name="test_n_spiral_difficulty_progression[2]" time="60.685"><failure message="Failed: Timeout (&gt;60.0s) from pytest-timeout.">src/tests/integration/test_spiral_problem.py:143: in test_n_spiral_difficulty_progression
     history = network.fit(x, y, max_epochs=6)
               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-src/cascade_correlation/cascade_correlation.py:1439: in fit
+src/cascade_correlation/cascade_correlation.py:1408: in fit
     self.grow_network(
-src/cascade_correlation/cascade_correlation.py:3510: in grow_network
+src/cascade_correlation/cascade_correlation.py:3210: in grow_network
     if ( not ( training_results := self._get_training_results( x_train=x_train, y_train=y_train, residual_error=residual_error)) or not training_results.best_candidate):
                                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-src/cascade_correlation/cascade_correlation.py:3667: in _get_training_results
+src/cascade_correlation/cascade_correlation.py:3367: in _get_training_results
     training_results = self.train_candidates(
-src/cascade_correlation/cascade_correlation.py:1739: in train_candidates
+src/cascade_correlation/cascade_correlation.py:1634: in train_candidates
     results = self._execute_candidate_training(tasks, process_count)
               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-src/cascade_correlation/cascade_correlation.py:1912: in _execute_candidate_training
+src/cascade_correlation/cascade_correlation.py:1807: in _execute_candidate_training
     results = self._execute_parallel_training(tasks, process_count)
               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-src/cascade_correlation/cascade_correlation.py:2070: in _execute_parallel_training
+src/cascade_correlation/cascade_correlation.py:1965: in _execute_parallel_training
     time.sleep(sleepytime)
-E   Failed: Timeout (&gt;60.0s) from pytest-timeout.</failure></testcase><testcase classname="integration.test_spiral_problem.TestSpiralProblemProgressive" name="test_n_spiral_difficulty_progression[3]" time="60.975"><failure message="Failed: Timeout (&gt;60.0s) from pytest-timeout.">src/tests/integration/test_spiral_problem.py:143: in test_n_spiral_difficulty_progression
+E   Failed: Timeout (&gt;60.0s) from pytest-timeout.</failure></testcase><testcase classname="integration.test_spiral_problem.TestSpiralProblemProgressive" name="test_n_spiral_difficulty_progression[3]" time="60.787"><failure message="Failed: Timeout (&gt;60.0s) from pytest-timeout.">src/tests/integration/test_spiral_problem.py:143: in test_n_spiral_difficulty_progression
     history = network.fit(x, y, max_epochs=6)
               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-src/cascade_correlation/cascade_correlation.py:1439: in fit
+src/cascade_correlation/cascade_correlation.py:1408: in fit
     self.grow_network(
-src/cascade_correlation/cascade_correlation.py:3510: in grow_network
+src/cascade_correlation/cascade_correlation.py:3210: in grow_network
     if ( not ( training_results := self._get_training_results( x_train=x_train, y_train=y_train, residual_error=residual_error)) or not training_results.best_candidate):
                                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-src/cascade_correlation/cascade_correlation.py:3667: in _get_training_results
+src/cascade_correlation/cascade_correlation.py:3367: in _get_training_results
     training_results = self.train_candidates(
-src/cascade_correlation/cascade_correlation.py:1739: in train_candidates
+src/cascade_correlation/cascade_correlation.py:1634: in train_candidates
     results = self._execute_candidate_training(tasks, process_count)
               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-src/cascade_correlation/cascade_correlation.py:1912: in _execute_candidate_training
+src/cascade_correlation/cascade_correlation.py:1807: in _execute_candidate_training
     results = self._execute_parallel_training(tasks, process_count)
               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-src/cascade_correlation/cascade_correlation.py:2070: in _execute_parallel_training
+src/cascade_correlation/cascade_correlation.py:1965: in _execute_parallel_training
     time.sleep(sleepytime)
-E   Failed: Timeout (&gt;60.0s) from pytest-timeout.</failure></testcase><testcase classname="integration.test_spiral_problem.TestSpiralProblemProgressive" name="test_n_spiral_difficulty_progression[4]" time="60.555"><failure message="Failed: Timeout (&gt;60.0s) from pytest-timeout.">src/tests/integration/test_spiral_problem.py:143: in test_n_spiral_difficulty_progression
+E   Failed: Timeout (&gt;60.0s) from pytest-timeout.</failure></testcase><testcase classname="integration.test_spiral_problem.TestSpiralProblemProgressive" name="test_n_spiral_difficulty_progression[4]" time="60.233"><failure message="Failed: Timeout (&gt;60.0s) from pytest-timeout.">src/tests/integration/test_spiral_problem.py:143: in test_n_spiral_difficulty_progression
     history = network.fit(x, y, max_epochs=6)
               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-src/cascade_correlation/cascade_correlation.py:1439: in fit
+src/cascade_correlation/cascade_correlation.py:1408: in fit
     self.grow_network(
-src/cascade_correlation/cascade_correlation.py:3510: in grow_network
+src/cascade_correlation/cascade_correlation.py:3210: in grow_network
     if ( not ( training_results := self._get_training_results( x_train=x_train, y_train=y_train, residual_error=residual_error)) or not training_results.best_candidate):
                                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-src/cascade_correlation/cascade_correlation.py:3667: in _get_training_results
+src/cascade_correlation/cascade_correlation.py:3367: in _get_training_results
     training_results = self.train_candidates(
-src/cascade_correlation/cascade_correlation.py:1739: in train_candidates
+src/cascade_correlation/cascade_correlation.py:1634: in train_candidates
     results = self._execute_candidate_training(tasks, process_count)
               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-src/cascade_correlation/cascade_correlation.py:1912: in _execute_candidate_training
+src/cascade_correlation/cascade_correlation.py:1807: in _execute_candidate_training
     results = self._execute_parallel_training(tasks, process_count)
               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-src/cascade_correlation/cascade_correlation.py:2070: in _execute_parallel_training
+src/cascade_correlation/cascade_correlation.py:1965: in _execute_parallel_training
     time.sleep(sleepytime)
-E   Failed: Timeout (&gt;60.0s) from pytest-timeout.</failure></testcase><testcase classname="integration.test_spiral_problem.TestSpiralProblemRobustness" name="test_spiral_noise_robustness[0.01]" time="61.192"><failure message="Failed: Timeout (&gt;60.0s) from pytest-timeout.">src/tests/integration/test_spiral_problem.py:179: in test_spiral_noise_robustness
+E   Failed: Timeout (&gt;60.0s) from pytest-timeout.</failure></testcase><testcase classname="integration.test_spiral_problem.TestSpiralProblemRobustness" name="test_spiral_noise_robustness[0.01]" time="60.711"><failure message="Failed: Timeout (&gt;60.0s) from pytest-timeout.">src/tests/integration/test_spiral_problem.py:179: in test_spiral_noise_robustness
     history = spiral_network.fit(x, y, max_epochs=6)
               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-src/cascade_correlation/cascade_correlation.py:1439: in fit
+src/cascade_correlation/cascade_correlation.py:1408: in fit
     self.grow_network(
-src/cascade_correlation/cascade_correlation.py:3510: in grow_network
+src/cascade_correlation/cascade_correlation.py:3210: in grow_network
     if ( not ( training_results := self._get_training_results( x_train=x_train, y_train=y_train, residual_error=residual_error)) or not training_results.best_candidate):
                                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-src/cascade_correlation/cascade_correlation.py:3667: in _get_training_results
+src/cascade_correlation/cascade_correlation.py:3367: in _get_training_results
     training_results = self.train_candidates(
-src/cascade_correlation/cascade_correlation.py:1739: in train_candidates
+src/cascade_correlation/cascade_correlation.py:1634: in train_candidates
     results = self._execute_candidate_training(tasks, process_count)
               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-src/cascade_correlation/cascade_correlation.py:1912: in _execute_candidate_training
+src/cascade_correlation/cascade_correlation.py:1807: in _execute_candidate_training
     results = self._execute_parallel_training(tasks, process_count)
               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-src/cascade_correlation/cascade_correlation.py:2070: in _execute_parallel_training
+src/cascade_correlation/cascade_correlation.py:1965: in _execute_parallel_training
     time.sleep(sleepytime)
-E   Failed: Timeout (&gt;60.0s) from pytest-timeout.</failure></testcase><testcase classname="integration.test_spiral_problem.TestSpiralProblemRobustness" name="test_spiral_noise_robustness[0.05]" time="61.344"><failure message="Failed: Timeout (&gt;60.0s) from pytest-timeout.">src/tests/integration/test_spiral_problem.py:179: in test_spiral_noise_robustness
+E   Failed: Timeout (&gt;60.0s) from pytest-timeout.</failure></testcase><testcase classname="integration.test_spiral_problem.TestSpiralProblemRobustness" name="test_spiral_noise_robustness[0.05]" time="61.369"><failure message="Failed: Timeout (&gt;60.0s) from pytest-timeout.">src/tests/integration/test_spiral_problem.py:179: in test_spiral_noise_robustness
     history = spiral_network.fit(x, y, max_epochs=6)
               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-src/cascade_correlation/cascade_correlation.py:1439: in fit
+src/cascade_correlation/cascade_correlation.py:1408: in fit
     self.grow_network(
-src/cascade_correlation/cascade_correlation.py:3510: in grow_network
+src/cascade_correlation/cascade_correlation.py:3210: in grow_network
     if ( not ( training_results := self._get_training_results( x_train=x_train, y_train=y_train, residual_error=residual_error)) or not training_results.best_candidate):
                                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-src/cascade_correlation/cascade_correlation.py:3667: in _get_training_results
+src/cascade_correlation/cascade_correlation.py:3367: in _get_training_results
     training_results = self.train_candidates(
-src/cascade_correlation/cascade_correlation.py:1739: in train_candidates
+src/cascade_correlation/cascade_correlation.py:1634: in train_candidates
     results = self._execute_candidate_training(tasks, process_count)
               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-src/cascade_correlation/cascade_correlation.py:1912: in _execute_candidate_training
+src/cascade_correlation/cascade_correlation.py:1807: in _execute_candidate_training
     results = self._execute_parallel_training(tasks, process_count)
               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-src/cascade_correlation/cascade_correlation.py:2070: in _execute_parallel_training
+src/cascade_correlation/cascade_correlation.py:1965: in _execute_parallel_training
     time.sleep(sleepytime)
-E   Failed: Timeout (&gt;60.0s) from pytest-timeout.</failure></testcase><testcase classname="integration.test_spiral_problem.TestSpiralProblemRobustness" name="test_spiral_noise_robustness[0.1]" time="61.192"><failure message="Failed: Timeout (&gt;60.0s) from pytest-timeout.">src/tests/integration/test_spiral_problem.py:179: in test_spiral_noise_robustness
+E   Failed: Timeout (&gt;60.0s) from pytest-timeout.</failure></testcase><testcase classname="integration.test_spiral_problem.TestSpiralProblemRobustness" name="test_spiral_noise_robustness[0.1]" time="61.855"><failure message="Failed: Timeout (&gt;60.0s) from pytest-timeout.">src/tests/integration/test_spiral_problem.py:179: in test_spiral_noise_robustness
     history = spiral_network.fit(x, y, max_epochs=6)
               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-src/cascade_correlation/cascade_correlation.py:1439: in fit
+src/cascade_correlation/cascade_correlation.py:1408: in fit
     self.grow_network(
-src/cascade_correlation/cascade_correlation.py:3510: in grow_network
+src/cascade_correlation/cascade_correlation.py:3210: in grow_network
     if ( not ( training_results := self._get_training_results( x_train=x_train, y_train=y_train, residual_error=residual_error)) or not training_results.best_candidate):
                                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-src/cascade_correlation/cascade_correlation.py:3667: in _get_training_results
+src/cascade_correlation/cascade_correlation.py:3367: in _get_training_results
     training_results = self.train_candidates(
-src/cascade_correlation/cascade_correlation.py:1739: in train_candidates
+src/cascade_correlation/cascade_correlation.py:1634: in train_candidates
     results = self._execute_candidate_training(tasks, process_count)
               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-src/cascade_correlation/cascade_correlation.py:1912: in _execute_candidate_training
+src/cascade_correlation/cascade_correlation.py:1807: in _execute_candidate_training
     results = self._execute_parallel_training(tasks, process_count)
               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-src/cascade_correlation/cascade_correlation.py:2070: in _execute_parallel_training
+src/cascade_correlation/cascade_correlation.py:1965: in _execute_parallel_training
     time.sleep(sleepytime)
-E   Failed: Timeout (&gt;60.0s) from pytest-timeout.</failure></testcase><testcase classname="integration.test_spiral_problem.TestSpiralProblemRobustness" name="test_spiral_data_size_scaling[20]" time="61.344"><failure message="Failed: Timeout (&gt;60.0s) from pytest-timeout.">src/tests/integration/test_spiral_problem.py:212: in test_spiral_data_size_scaling
+E   Failed: Timeout (&gt;60.0s) from pytest-timeout.</failure></testcase><testcase classname="integration.test_spiral_problem.TestSpiralProblemRobustness" name="test_spiral_data_size_scaling[20]" time="61.401"><failure message="Failed: Timeout (&gt;60.0s) from pytest-timeout.">src/tests/integration/test_spiral_problem.py:212: in test_spiral_data_size_scaling
     history = spiral_network.fit(x, y, max_epochs=5)
               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-src/cascade_correlation/cascade_correlation.py:1439: in fit
+src/cascade_correlation/cascade_correlation.py:1408: in fit
     self.grow_network(
-src/cascade_correlation/cascade_correlation.py:3510: in grow_network
+src/cascade_correlation/cascade_correlation.py:3210: in grow_network
     if ( not ( training_results := self._get_training_results( x_train=x_train, y_train=y_train, residual_error=residual_error)) or not training_results.best_candidate):
                                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-src/cascade_correlation/cascade_correlation.py:3667: in _get_training_results
+src/cascade_correlation/cascade_correlation.py:3367: in _get_training_results
     training_results = self.train_candidates(
-src/cascade_correlation/cascade_correlation.py:1739: in train_candidates
+src/cascade_correlation/cascade_correlation.py:1634: in train_candidates
     results = self._execute_candidate_training(tasks, process_count)
               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-src/cascade_correlation/cascade_correlation.py:1912: in _execute_candidate_training
+src/cascade_correlation/cascade_correlation.py:1807: in _execute_candidate_training
     results = self._execute_parallel_training(tasks, process_count)
               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-src/cascade_correlation/cascade_correlation.py:2070: in _execute_parallel_training
+src/cascade_correlation/cascade_correlation.py:1965: in _execute_parallel_training
     time.sleep(sleepytime)
-E   Failed: Timeout (&gt;60.0s) from pytest-timeout.</failure></testcase><testcase classname="integration.test_spiral_problem.TestSpiralProblemRobustness" name="test_spiral_data_size_scaling[50]" time="60.727"><failure message="Failed: Timeout (&gt;60.0s) from pytest-timeout.">src/tests/integration/test_spiral_problem.py:212: in test_spiral_data_size_scaling
+E   Failed: Timeout (&gt;60.0s) from pytest-timeout.</failure></testcase><testcase classname="integration.test_spiral_problem.TestSpiralProblemRobustness" name="test_spiral_data_size_scaling[50]" time="62.059"><failure message="Failed: Timeout (&gt;60.0s) from pytest-timeout.">src/tests/integration/test_spiral_problem.py:212: in test_spiral_data_size_scaling
     history = spiral_network.fit(x, y, max_epochs=5)
               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-src/cascade_correlation/cascade_correlation.py:1439: in fit
+src/cascade_correlation/cascade_correlation.py:1408: in fit
     self.grow_network(
-src/cascade_correlation/cascade_correlation.py:3510: in grow_network
+src/cascade_correlation/cascade_correlation.py:3210: in grow_network
     if ( not ( training_results := self._get_training_results( x_train=x_train, y_train=y_train, residual_error=residual_error)) or not training_results.best_candidate):
                                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-src/cascade_correlation/cascade_correlation.py:3667: in _get_training_results
+src/cascade_correlation/cascade_correlation.py:3367: in _get_training_results
     training_results = self.train_candidates(
-src/cascade_correlation/cascade_correlation.py:1739: in train_candidates
+src/cascade_correlation/cascade_correlation.py:1634: in train_candidates
     results = self._execute_candidate_training(tasks, process_count)
               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-src/cascade_correlation/cascade_correlation.py:1912: in _execute_candidate_training
+src/cascade_correlation/cascade_correlation.py:1807: in _execute_candidate_training
     results = self._execute_parallel_training(tasks, process_count)
               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-src/cascade_correlation/cascade_correlation.py:2070: in _execute_parallel_training
-    time.sleep(sleepytime)
-E   Failed: Timeout (&gt;60.0s) from pytest-timeout.</failure></testcase><testcase classname="integration.test_spiral_problem.TestSpiralProblemRobustness" name="test_spiral_data_size_scaling[100]" time="60.770"><failure message="Failed: Timeout (&gt;60.0s) from pytest-timeout.">src/tests/integration/test_spiral_problem.py:212: in test_spiral_data_size_scaling
+src/cascade_correlation/cascade_correlation.py:1908: in _execute_parallel_training
+    task_queue.put(task)
+&lt;string&gt;:2: in put
+    ???
+/opt/miniforge3/envs/JuniperCascor/lib/python3.14/multiprocessing/managers.py:832: in _callmethod
+    kind, result = conn.recv()
+                   ^^^^^^^^^^^
+/opt/miniforge3/envs/JuniperCascor/lib/python3.14/multiprocessing/connection.py:256: in recv
+    buf = self._recv_bytes()
+          ^^^^^^^^^^^^^^^^^^
+/opt/miniforge3/envs/JuniperCascor/lib/python3.14/multiprocessing/connection.py:447: in _recv_bytes
+    buf = self._recv(4)
+          ^^^^^^^^^^^^^
+/opt/miniforge3/envs/JuniperCascor/lib/python3.14/multiprocessing/connection.py:412: in _recv
+    chunk = read(handle, to_read)
+            ^^^^^^^^^^^^^^^^^^^^^
+E   Failed: Timeout (&gt;60.0s) from pytest-timeout.</failure></testcase><testcase classname="integration.test_spiral_problem.TestSpiralProblemRobustness" name="test_spiral_data_size_scaling[100]" time="60.856"><failure message="Failed: Timeout (&gt;60.0s) from pytest-timeout.">src/tests/integration/test_spiral_problem.py:212: in test_spiral_data_size_scaling
     history = spiral_network.fit(x, y, max_epochs=5)
               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-src/cascade_correlation/cascade_correlation.py:1439: in fit
+src/cascade_correlation/cascade_correlation.py:1408: in fit
     self.grow_network(
-src/cascade_correlation/cascade_correlation.py:3510: in grow_network
+src/cascade_correlation/cascade_correlation.py:3210: in grow_network
     if ( not ( training_results := self._get_training_results( x_train=x_train, y_train=y_train, residual_error=residual_error)) or not training_results.best_candidate):
                                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-src/cascade_correlation/cascade_correlation.py:3667: in _get_training_results
+src/cascade_correlation/cascade_correlation.py:3367: in _get_training_results
     training_results = self.train_candidates(
-src/cascade_correlation/cascade_correlation.py:1739: in train_candidates
+src/cascade_correlation/cascade_correlation.py:1634: in train_candidates
     results = self._execute_candidate_training(tasks, process_count)
               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-src/cascade_correlation/cascade_correlation.py:1912: in _execute_candidate_training
+src/cascade_correlation/cascade_correlation.py:1807: in _execute_candidate_training
     results = self._execute_parallel_training(tasks, process_count)
               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-src/cascade_correlation/cascade_correlation.py:2070: in _execute_parallel_training
+src/cascade_correlation/cascade_correlation.py:1965: in _execute_parallel_training
     time.sleep(sleepytime)
-E   Failed: Timeout (&gt;60.0s) from pytest-timeout.</failure></testcase><testcase classname="integration.test_spiral_problem.TestSpiralProblemVisualization" name="test_spiral_training_progression" time="61.160"><failure message="Failed: Timeout (&gt;60.0s) from pytest-timeout.">src/tests/integration/test_spiral_problem.py:251: in test_spiral_training_progression
+E   Failed: Timeout (&gt;60.0s) from pytest-timeout.</failure></testcase><testcase classname="integration.test_spiral_problem.TestSpiralProblemVisualization" name="test_spiral_training_progression" time="60.104"><failure message="Failed: Timeout (&gt;60.0s) from pytest-timeout.">src/tests/integration/test_spiral_problem.py:251: in test_spiral_training_progression
     history = spiral_network.fit(
-src/cascade_correlation/cascade_correlation.py:1439: in fit
+src/cascade_correlation/cascade_correlation.py:1408: in fit
     self.grow_network(
-src/cascade_correlation/cascade_correlation.py:3510: in grow_network
+src/cascade_correlation/cascade_correlation.py:3210: in grow_network
     if ( not ( training_results := self._get_training_results( x_train=x_train, y_train=y_train, residual_error=residual_error)) or not training_results.best_candidate):
                                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-src/cascade_correlation/cascade_correlation.py:3667: in _get_training_results
+src/cascade_correlation/cascade_correlation.py:3367: in _get_training_results
     training_results = self.train_candidates(
-src/cascade_correlation/cascade_correlation.py:1739: in train_candidates
+src/cascade_correlation/cascade_correlation.py:1634: in train_candidates
     results = self._execute_candidate_training(tasks, process_count)
               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-src/cascade_correlation/cascade_correlation.py:1912: in _execute_candidate_training
+src/cascade_correlation/cascade_correlation.py:1807: in _execute_candidate_training
     results = self._execute_parallel_training(tasks, process_count)
               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-src/cascade_correlation/cascade_correlation.py:2070: in _execute_parallel_training
-    time.sleep(sleepytime)
-E   Failed: Timeout (&gt;60.0s) from pytest-timeout.</failure></testcase><testcase classname="integration.test_spiral_problem.TestSpiralProblemEdgeCases" name="test_minimal_spiral_data" time="60.212"><failure message="Failed: Timeout (&gt;60.0s) from pytest-timeout.">src/tests/integration/test_spiral_problem.py:301: in test_minimal_spiral_data
-    history = spiral_network.fit(x, y, max_epochs=3)
-              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-src/cascade_correlation/cascade_correlation.py:1439: in fit
-    self.grow_network(
-src/cascade_correlation/cascade_correlation.py:3510: in grow_network
-    if ( not ( training_results := self._get_training_results( x_train=x_train, y_train=y_train, residual_error=residual_error)) or not training_results.best_candidate):
-                                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-src/cascade_correlation/cascade_correlation.py:3667: in _get_training_results
-    training_results = self.train_candidates(
-src/cascade_correlation/cascade_correlation.py:1739: in train_candidates
-    results = self._execute_candidate_training(tasks, process_count)
-              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-src/cascade_correlation/cascade_correlation.py:1912: in _execute_candidate_training
-    results = self._execute_parallel_training(tasks, process_count)
-              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-src/cascade_correlation/cascade_correlation.py:1994: in _execute_parallel_training
+src/cascade_correlation/cascade_correlation.py:1889: in _execute_parallel_training
     self._start_manager()
-src/cascade_correlation/cascade_correlation.py:2991: in _start_manager
+src/cascade_correlation/cascade_correlation.py:2805: in _start_manager
     self._manager.start()  # Non-blocking - server runs in background
     ^^^^^^^^^^^^^^^^^^^^^
 src/cascade_correlation/cascade_correlation.py:260: in start
@@ -268,104 +264,177 @@ src/cascade_correlation/cascade_correlation.py:260: in start
 /opt/miniforge3/envs/JuniperCascor/lib/python3.14/multiprocessing/connection.py:412: in _recv
     chunk = read(handle, to_read)
             ^^^^^^^^^^^^^^^^^^^^^
-E   Failed: Timeout (&gt;60.0s) from pytest-timeout.</failure></testcase><testcase classname="integration.test_spiral_problem.TestSpiralProblemEdgeCases" name="test_perfect_spiral_separation" time="60.645"><failure message="Failed: Timeout (&gt;60.0s) from pytest-timeout.">src/tests/integration/test_spiral_problem.py:328: in test_perfect_spiral_separation
-    history = spiral_network.fit(x, y, max_epochs=8)
+E   Failed: Timeout (&gt;60.0s) from pytest-timeout.</failure></testcase><testcase classname="integration.test_spiral_problem.TestSpiralProblemEdgeCases" name="test_minimal_spiral_data" time="60.167"><failure message="Failed: Timeout (&gt;60.0s) from pytest-timeout.">src/tests/integration/test_spiral_problem.py:301: in test_minimal_spiral_data
+    history = spiral_network.fit(x, y, max_epochs=3)
               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-src/cascade_correlation/cascade_correlation.py:1439: in fit
+src/cascade_correlation/cascade_correlation.py:1408: in fit
     self.grow_network(
-src/cascade_correlation/cascade_correlation.py:3510: in grow_network
+src/cascade_correlation/cascade_correlation.py:3210: in grow_network
     if ( not ( training_results := self._get_training_results( x_train=x_train, y_train=y_train, residual_error=residual_error)) or not training_results.best_candidate):
                                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-src/cascade_correlation/cascade_correlation.py:3667: in _get_training_results
+src/cascade_correlation/cascade_correlation.py:3367: in _get_training_results
     training_results = self.train_candidates(
-src/cascade_correlation/cascade_correlation.py:1739: in train_candidates
+src/cascade_correlation/cascade_correlation.py:1634: in train_candidates
     results = self._execute_candidate_training(tasks, process_count)
               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-src/cascade_correlation/cascade_correlation.py:1912: in _execute_candidate_training
+src/cascade_correlation/cascade_correlation.py:1807: in _execute_candidate_training
     results = self._execute_parallel_training(tasks, process_count)
               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-src/cascade_correlation/cascade_correlation.py:2070: in _execute_parallel_training
-    time.sleep(sleepytime)
-E   Failed: Timeout (&gt;60.0s) from pytest-timeout.</failure></testcase><testcase classname="integration.test_spiral_problem.TestSpiralProblemComparison" name="test_spiral_configuration_comparison" time="60.324"><failure message="Failed: Timeout (&gt;60.0s) from pytest-timeout.">src/tests/integration/test_spiral_problem.py:393: in test_spiral_configuration_comparison
+src/cascade_correlation/cascade_correlation.py:1889: in _execute_parallel_training
+    self._start_manager()
+src/cascade_correlation/cascade_correlation.py:2805: in _start_manager
+    self._manager.start()  # Non-blocking - server runs in background
+    ^^^^^^^^^^^^^^^^^^^^^
+src/cascade_correlation/cascade_correlation.py:260: in start
+    return super().start(initializer=initializer, initargs=initargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/opt/miniforge3/envs/JuniperCascor/lib/python3.14/multiprocessing/managers.py:570: in start
+    self._address = reader.recv()
+                    ^^^^^^^^^^^^^
+/opt/miniforge3/envs/JuniperCascor/lib/python3.14/multiprocessing/connection.py:256: in recv
+    buf = self._recv_bytes()
+          ^^^^^^^^^^^^^^^^^^
+/opt/miniforge3/envs/JuniperCascor/lib/python3.14/multiprocessing/connection.py:447: in _recv_bytes
+    buf = self._recv(4)
+          ^^^^^^^^^^^^^
+/opt/miniforge3/envs/JuniperCascor/lib/python3.14/multiprocessing/connection.py:412: in _recv
+    chunk = read(handle, to_read)
+            ^^^^^^^^^^^^^^^^^^^^^
+E   Failed: Timeout (&gt;60.0s) from pytest-timeout.</failure></testcase><testcase classname="integration.test_spiral_problem.TestSpiralProblemEdgeCases" name="test_perfect_spiral_separation" time="60.025"><failure message="Failed: Timeout (&gt;60.0s) from pytest-timeout.">src/tests/integration/test_spiral_problem.py:328: in test_perfect_spiral_separation
+    history = spiral_network.fit(x, y, max_epochs=8)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/cascade_correlation/cascade_correlation.py:1408: in fit
+    self.grow_network(
+src/cascade_correlation/cascade_correlation.py:3210: in grow_network
+    if ( not ( training_results := self._get_training_results( x_train=x_train, y_train=y_train, residual_error=residual_error)) or not training_results.best_candidate):
+                                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/cascade_correlation/cascade_correlation.py:3367: in _get_training_results
+    training_results = self.train_candidates(
+src/cascade_correlation/cascade_correlation.py:1634: in train_candidates
+    results = self._execute_candidate_training(tasks, process_count)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/cascade_correlation/cascade_correlation.py:1807: in _execute_candidate_training
+    results = self._execute_parallel_training(tasks, process_count)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/cascade_correlation/cascade_correlation.py:1889: in _execute_parallel_training
+    self._start_manager()
+src/cascade_correlation/cascade_correlation.py:2805: in _start_manager
+    self._manager.start()  # Non-blocking - server runs in background
+    ^^^^^^^^^^^^^^^^^^^^^
+src/cascade_correlation/cascade_correlation.py:260: in start
+    return super().start(initializer=initializer, initargs=initargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/opt/miniforge3/envs/JuniperCascor/lib/python3.14/multiprocessing/managers.py:570: in start
+    self._address = reader.recv()
+                    ^^^^^^^^^^^^^
+/opt/miniforge3/envs/JuniperCascor/lib/python3.14/multiprocessing/connection.py:256: in recv
+    buf = self._recv_bytes()
+          ^^^^^^^^^^^^^^^^^^
+/opt/miniforge3/envs/JuniperCascor/lib/python3.14/multiprocessing/connection.py:447: in _recv_bytes
+    buf = self._recv(4)
+          ^^^^^^^^^^^^^
+/opt/miniforge3/envs/JuniperCascor/lib/python3.14/multiprocessing/connection.py:412: in _recv
+    chunk = read(handle, to_read)
+            ^^^^^^^^^^^^^^^^^^^^^
+E   Failed: Timeout (&gt;60.0s) from pytest-timeout.</failure></testcase><testcase classname="integration.test_spiral_problem.TestSpiralProblemComparison" name="test_spiral_configuration_comparison" time="60.854"><failure message="Failed: Timeout (&gt;60.0s) from pytest-timeout.">src/tests/integration/test_spiral_problem.py:393: in test_spiral_configuration_comparison
     _, elapsed_time = measure_training_time(network, x, y, max_epochs=6)
                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 src/tests/helpers/utilities.py:197: in measure_training_time
     history = network.fit(x, y, **fit_kwargs)
               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-src/cascade_correlation/cascade_correlation.py:1439: in fit
+src/cascade_correlation/cascade_correlation.py:1408: in fit
     self.grow_network(
-src/cascade_correlation/cascade_correlation.py:3510: in grow_network
+src/cascade_correlation/cascade_correlation.py:3210: in grow_network
     if ( not ( training_results := self._get_training_results( x_train=x_train, y_train=y_train, residual_error=residual_error)) or not training_results.best_candidate):
                                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-src/cascade_correlation/cascade_correlation.py:3667: in _get_training_results
+src/cascade_correlation/cascade_correlation.py:3367: in _get_training_results
     training_results = self.train_candidates(
-src/cascade_correlation/cascade_correlation.py:1739: in train_candidates
+src/cascade_correlation/cascade_correlation.py:1634: in train_candidates
     results = self._execute_candidate_training(tasks, process_count)
               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-src/cascade_correlation/cascade_correlation.py:1912: in _execute_candidate_training
+src/cascade_correlation/cascade_correlation.py:1807: in _execute_candidate_training
     results = self._execute_parallel_training(tasks, process_count)
               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-src/cascade_correlation/cascade_correlation.py:1994: in _execute_parallel_training
-    self._start_manager()
-src/cascade_correlation/cascade_correlation.py:2991: in _start_manager
-    self._manager.start()  # Non-blocking - server runs in background
-    ^^^^^^^^^^^^^^^^^^^^^
-src/cascade_correlation/cascade_correlation.py:260: in start
-    return super().start(initializer=initializer, initargs=initargs)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-/opt/miniforge3/envs/JuniperCascor/lib/python3.14/multiprocessing/managers.py:570: in start
-    self._address = reader.recv()
-                    ^^^^^^^^^^^^^
-/opt/miniforge3/envs/JuniperCascor/lib/python3.14/multiprocessing/connection.py:256: in recv
-    buf = self._recv_bytes()
-          ^^^^^^^^^^^^^^^^^^
-/opt/miniforge3/envs/JuniperCascor/lib/python3.14/multiprocessing/connection.py:447: in _recv_bytes
-    buf = self._recv(4)
-          ^^^^^^^^^^^^^
-/opt/miniforge3/envs/JuniperCascor/lib/python3.14/multiprocessing/connection.py:412: in _recv
-    chunk = read(handle, to_read)
-            ^^^^^^^^^^^^^^^^^^^^^
-E   Failed: Timeout (&gt;60.0s) from pytest-timeout.</failure></testcase><testcase classname="unit.test_accuracy.TestAccuracyCalculation" name="test_perfect_accuracy" time="12.473" /><testcase classname="unit.test_accuracy.TestAccuracyCalculation" name="test_zero_accuracy" time="11.389" /><testcase classname="unit.test_accuracy.TestAccuracyCalculation" name="test_random_accuracy" time="13.906" /><testcase classname="unit.test_accuracy.TestAccuracyCalculation" name="test_accuracy_with_trained_network" time="61.495"><error message="failed on setup with &quot;Failed: Timeout (&gt;60.0s) from pytest-timeout.&quot;">/opt/miniforge3/envs/JuniperCascor/lib/python3.14/site-packages/pytest_asyncio/plugin.py:728: in pytest_fixture_setup
+src/cascade_correlation/cascade_correlation.py:1965: in _execute_parallel_training
+    time.sleep(sleepytime)
+E   Failed: Timeout (&gt;60.0s) from pytest-timeout.</failure></testcase><testcase classname="unit.test_accuracy.TestAccuracyCalculation" name="test_perfect_accuracy" time="18.930" /><testcase classname="unit.test_accuracy.TestAccuracyCalculation" name="test_zero_accuracy" time="17.253" /><testcase classname="unit.test_accuracy.TestAccuracyCalculation" name="test_random_accuracy" time="21.593" /><testcase classname="unit.test_accuracy.TestAccuracyCalculation" name="test_accuracy_with_trained_network" time="61.055"><error message="failed on setup with &quot;Failed: Timeout (&gt;60.0s) from pytest-timeout.&quot;">/opt/miniforge3/envs/JuniperCascor/lib/python3.14/site-packages/pytest_asyncio/plugin.py:728: in pytest_fixture_setup
     return (yield)
             ^^^^^
 src/tests/conftest.py:300: in trained_simple_network
     simple_network.fit(x, y, max_epochs=5)
-src/cascade_correlation/cascade_correlation.py:1439: in fit
+src/cascade_correlation/cascade_correlation.py:1408: in fit
     self.grow_network(
-src/cascade_correlation/cascade_correlation.py:3510: in grow_network
+src/cascade_correlation/cascade_correlation.py:3210: in grow_network
     if ( not ( training_results := self._get_training_results( x_train=x_train, y_train=y_train, residual_error=residual_error)) or not training_results.best_candidate):
                                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-src/cascade_correlation/cascade_correlation.py:3667: in _get_training_results
+src/cascade_correlation/cascade_correlation.py:3367: in _get_training_results
     training_results = self.train_candidates(
-src/cascade_correlation/cascade_correlation.py:1739: in train_candidates
+src/cascade_correlation/cascade_correlation.py:1634: in train_candidates
     results = self._execute_candidate_training(tasks, process_count)
               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-src/cascade_correlation/cascade_correlation.py:1912: in _execute_candidate_training
+src/cascade_correlation/cascade_correlation.py:1807: in _execute_candidate_training
     results = self._execute_parallel_training(tasks, process_count)
               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-src/cascade_correlation/cascade_correlation.py:2070: in _execute_parallel_training
+src/cascade_correlation/cascade_correlation.py:1965: in _execute_parallel_training
     time.sleep(sleepytime)
-E   Failed: Timeout (&gt;60.0s) from pytest-timeout.</error></testcase><testcase classname="unit.test_accuracy.TestAccuracyShapes" name="test_accuracy_batch_sizes[1]" time="14.429" /><testcase classname="unit.test_accuracy.TestAccuracyShapes" name="test_accuracy_batch_sizes[5]" time="22.196" /><testcase classname="unit.test_accuracy.TestAccuracyShapes" name="test_accuracy_batch_sizes[10]" time="19.398" /><testcase classname="unit.test_accuracy.TestAccuracyShapes" name="test_accuracy_batch_sizes[50]" time="14.619" /><testcase classname="unit.test_accuracy.TestAccuracyShapes" name="test_accuracy_batch_sizes[100]" time="18.194" /><testcase classname="unit.test_accuracy.TestAccuracyShapes" name="test_accuracy_output_sizes[2]" time="12.355" /><testcase classname="unit.test_accuracy.TestAccuracyShapes" name="test_accuracy_output_sizes[3]" time="19.828" /><testcase classname="unit.test_accuracy.TestAccuracyShapes" name="test_accuracy_output_sizes[5]" time="12.035" /><testcase classname="unit.test_accuracy.TestAccuracyShapes" name="test_accuracy_output_sizes[10]" time="10.386" /><testcase classname="unit.test_accuracy.TestAccuracyValidation" name="test_accuracy_none_inputs" time="10.233" /><testcase classname="unit.test_accuracy.TestAccuracyValidation" name="test_accuracy_mismatched_batch_sizes" time="18.296" /><testcase classname="unit.test_accuracy.TestAccuracyValidation" name="test_accuracy_wrong_shapes" time="18.345" /><testcase classname="unit.test_accuracy.TestAccuracyValidation" name="test_accuracy_non_tensor_inputs" time="18.870" /><testcase classname="unit.test_accuracy.TestAccuracyArgmax" name="test_accuracy_argmax_behavior" time="16.901" /><testcase classname="unit.test_accuracy.TestAccuracyArgmax" name="test_accuracy_tie_breaking" time="20.525" /><testcase classname="unit.test_accuracy.TestAccuracyEdgeCases" name="test_accuracy_empty_batch" time="9.369" /><testcase classname="unit.test_accuracy.TestAccuracyEdgeCases" name="test_accuracy_single_sample" time="17.170" /><testcase classname="unit.test_accuracy.TestAccuracyEdgeCases" name="test_accuracy_extreme_predictions" time="17.253" /><testcase classname="unit.test_accuracy.TestAccuracyConsistency" name="test_accuracy_methods_consistency" time="12.388" /><testcase classname="unit.test_accuracy.TestAccuracyConsistency" name="test_accuracy_deterministic" time="17.094" /><testcase classname="unit.test_accuracy.TestAccuracyMulticlass" name="test_multiclass_accuracy[3]" time="11.567" /><testcase classname="unit.test_accuracy.TestAccuracyMulticlass" name="test_multiclass_accuracy[5]" time="14.168" /><testcase classname="unit.test_accuracy.TestAccuracyMulticlass" name="test_multiclass_accuracy[10]" time="11.037" /><testcase classname="unit.test_accuracy.TestAccuracyMulticlass" name="test_imbalanced_accuracy" time="18.217" /><testcase classname="unit.test_activation_with_derivative.TestActivationWithDerivativePickling" name="test_pickle_tanh_function" time="0.063" /><testcase classname="unit.test_activation_with_derivative.TestActivationWithDerivativePickling" name="test_pickle_tanh_module" time="0.062" /><testcase classname="unit.test_activation_with_derivative.TestActivationWithDerivativePickling" name="test_pickle_sigmoid" time="0.076" /><testcase classname="unit.test_activation_with_derivative.TestActivationWithDerivativePickling" name="test_pickle_relu" time="0.043" /><testcase classname="unit.test_activation_with_derivative.TestActivationWithDerivativePickling" name="test_pickle_relu_module" time="0.040" /><testcase classname="unit.test_activation_with_derivative.TestActivationWithDerivativeDerivatives" name="test_tanh_derivative" time="0.037" /><testcase classname="unit.test_activation_with_derivative.TestActivationWithDerivativeDerivatives" name="test_sigmoid_derivative" time="0.041" /><testcase classname="unit.test_activation_with_derivative.TestActivationWithDerivativeDerivatives" name="test_relu_derivative" time="0.053" /><testcase classname="unit.test_activation_with_derivative.TestActivationWithDerivativeDerivatives" name="test_derivative_after_unpickling" time="0.023" /><testcase classname="unit.test_activation_with_derivative.TestCandidateUnitPickling" name="test_candidate_unit_pickling" time="8.199" /><testcase classname="unit.test_activation_with_derivative.TestCandidateUnitPickling" name="test_candidate_unit_forward_after_unpickling" time="10.924" /><testcase classname="unit.test_activation_with_derivative.TestCascorActivationWithDerivative" name="test_cascor_activation_pickling" time="0.033" /><testcase classname="unit.test_activation_with_derivative.TestCascorActivationWithDerivative" name="test_both_implementations_compatible" time="0.005" /><testcase classname="unit.test_activation_with_derivative.TestActivationMapCoverage" name="test_activation_map_entries[tanh-tanh]" time="0.004" /><testcase classname="unit.test_activation_with_derivative.TestActivationMapCoverage" name="test_activation_map_entries[sigmoid-sigmoid]" time="0.008" /><testcase classname="unit.test_activation_with_derivative.TestActivationMapCoverage" name="test_activation_map_entries[relu-relu]" time="0.007" /><testcase classname="unit.test_activation_with_derivative.TestActivationMapCoverage" name="test_activation_map_entries[Tanh-Tanh]" time="0.008" /><testcase classname="unit.test_activation_with_derivative.TestActivationMapCoverage" name="test_activation_map_entries[Sigmoid-Sigmoid]" time="0.020" /><testcase classname="unit.test_activation_with_derivative.TestActivationMapCoverage" name="test_activation_map_entries[ReLU-ReLU]" time="0.004" /><testcase classname="unit.test_activation_with_derivative.TestActivationMapCoverage" name="test_activation_map_entries[GELU-GELU]" time="0.040" /><testcase classname="unit.test_activation_with_derivative.TestActivationMapCoverage" name="test_activation_map_entries[SELU-SELU]" time="0.016" /><testcase classname="unit.test_activation_with_derivative.TestActivationMapCoverage" name="test_activation_map_entries[LeakyReLU-LeakyReLU]" time="0.020" /><testcase classname="unit.test_activation_with_derivative.TestActivationMapCoverage" name="test_unknown_activation_fallback" time="0.030" /><testcase classname="unit.test_candidate_training_manager" name="test_candidate_training_manager_inheritance[happy-path-candidate-training-manager]" time="0.012" /><testcase classname="unit.test_candidate_training_manager" name="test_candidate_training_manager_inheritance[base-manager-direct]" time="0.016" /><testcase classname="unit.test_candidate_training_manager" name="test_candidate_training_manager_register[register_args0-register_kwargs0-None-register-method-happy-path]" time="0.019" /><testcase classname="unit.test_candidate_training_manager" name="test_candidate_training_manager_register[register_args1-register_kwargs1-None-register-method-with-callable]" time="0.031" /><testcase classname="unit.test_candidate_training_manager" name="test_candidate_training_manager_register[register_args2-register_kwargs2-TypeError-register-method-none-name]" time="0.020" /><testcase classname="unit.test_candidate_training_manager" name="test_candidate_training_manager_register[register_args3-register_kwargs3-TypeError-register-method-missing-args]" time="0.011" /><testcase classname="unit.test_candidate_training_manager" name="test_candidate_training_manager_start_method[fork-None-start-method-fork]" time="0.021"><skipped type="pytest.skip" message="Skipping actual start() call for 'fork' to avoid multiprocessing complexity">/home/pcalnon/Development/python/Juniper/JuniperCascor/juniper_cascor/src/tests/unit/test_candidate_training_manager.py:98: Skipping actual start() call for 'fork' to avoid multiprocessing complexity</skipped></testcase><testcase classname="unit.test_candidate_training_manager" name="test_candidate_training_manager_start_method[spawn-None-start-method-spawn]" time="0.014"><skipped type="pytest.skip" message="Skipping actual start() call for 'spawn' to avoid multiprocessing complexity">/home/pcalnon/Development/python/Juniper/JuniperCascor/juniper_cascor/src/tests/unit/test_candidate_training_manager.py:98: Skipping actual start() call for 'spawn' to avoid multiprocessing complexity</skipped></testcase><testcase classname="unit.test_candidate_training_manager" name="test_candidate_training_manager_start_method[forkserver-None-start-method-forkserver]" time="0.034"><skipped type="pytest.skip" message="Skipping actual start() call for 'forkserver' to avoid multiprocessing complexity">/home/pcalnon/Development/python/Juniper/JuniperCascor/juniper_cascor/src/tests/unit/test_candidate_training_manager.py:98: Skipping actual start() call for 'forkserver' to avoid multiprocessing complexity</skipped></testcase><testcase classname="unit.test_candidate_training_manager" name="test_candidate_training_manager_start_method[invalid_method-ValueError-start-method-invalid]" time="0.010" /><testcase classname="unit.test_candidate_training_manager" name="test_candidate_training_manager_repr_and_str" time="0.009" /><testcase classname="unit.test_candidate_training_manager" name="test_candidate_training_manager_address_property" time="0.028" /><testcase classname="unit.test_candidate_training_manager" name="test_candidate_training_manager_shutdown_without_start" time="0.017" /><testcase classname="unit.test_cascor_fix" name="test_sequential_candidate_training" time="60.314"><failure message="Failed: Timeout (&gt;60.0s) from pytest-timeout.">src/tests/unit/test_cascor_fix.py:46: in test_sequential_candidate_training
+E   Failed: Timeout (&gt;60.0s) from pytest-timeout.</error></testcase><testcase classname="unit.test_accuracy.TestAccuracyShapes" name="test_accuracy_batch_sizes[1]" time="14.327" /><testcase classname="unit.test_accuracy.TestAccuracyShapes" name="test_accuracy_batch_sizes[5]" time="21.246" /><testcase classname="unit.test_accuracy.TestAccuracyShapes" name="test_accuracy_batch_sizes[10]" time="5.056" /><testcase classname="unit.test_accuracy.TestAccuracyShapes" name="test_accuracy_batch_sizes[50]" time="24.030" /><testcase classname="unit.test_accuracy.TestAccuracyShapes" name="test_accuracy_batch_sizes[100]" time="14.006" /><testcase classname="unit.test_accuracy.TestAccuracyShapes" name="test_accuracy_output_sizes[2]" time="17.947" /><testcase classname="unit.test_accuracy.TestAccuracyShapes" name="test_accuracy_output_sizes[3]" time="11.705" /><testcase classname="unit.test_accuracy.TestAccuracyShapes" name="test_accuracy_output_sizes[5]" time="15.698" /><testcase classname="unit.test_accuracy.TestAccuracyShapes" name="test_accuracy_output_sizes[10]" time="20.752" /><testcase classname="unit.test_accuracy.TestAccuracyValidation" name="test_accuracy_none_inputs" time="9.695" /><testcase classname="unit.test_accuracy.TestAccuracyValidation" name="test_accuracy_mismatched_batch_sizes" time="19.892" /><testcase classname="unit.test_accuracy.TestAccuracyValidation" name="test_accuracy_wrong_shapes" time="23.013" /><testcase classname="unit.test_accuracy.TestAccuracyValidation" name="test_accuracy_non_tensor_inputs" time="9.675" /><testcase classname="unit.test_accuracy.TestAccuracyArgmax" name="test_accuracy_argmax_behavior" time="14.991" /><testcase classname="unit.test_accuracy.TestAccuracyArgmax" name="test_accuracy_tie_breaking" time="10.209" /><testcase classname="unit.test_accuracy.TestAccuracyEdgeCases" name="test_accuracy_empty_batch" time="13.101" /><testcase classname="unit.test_accuracy.TestAccuracyEdgeCases" name="test_accuracy_single_sample" time="22.578" /><testcase classname="unit.test_accuracy.TestAccuracyEdgeCases" name="test_accuracy_extreme_predictions" time="11.864" /><testcase classname="unit.test_accuracy.TestAccuracyConsistency" name="test_accuracy_methods_consistency" time="15.429" /><testcase classname="unit.test_accuracy.TestAccuracyConsistency" name="test_accuracy_deterministic" time="9.891" /><testcase classname="unit.test_accuracy.TestAccuracyMulticlass" name="test_multiclass_accuracy[3]" time="5.332" /><testcase classname="unit.test_accuracy.TestAccuracyMulticlass" name="test_multiclass_accuracy[5]" time="10.892" /><testcase classname="unit.test_accuracy.TestAccuracyMulticlass" name="test_multiclass_accuracy[10]" time="14.986" /><testcase classname="unit.test_accuracy.TestAccuracyMulticlass" name="test_imbalanced_accuracy" time="17.748" /><testcase classname="unit.test_activation_with_derivative.TestActivationWithDerivativePickling" name="test_pickle_tanh_function" time="0.051" /><testcase classname="unit.test_activation_with_derivative.TestActivationWithDerivativePickling" name="test_pickle_tanh_module" time="0.057" /><testcase classname="unit.test_activation_with_derivative.TestActivationWithDerivativePickling" name="test_pickle_sigmoid" time="0.050" /><testcase classname="unit.test_activation_with_derivative.TestActivationWithDerivativePickling" name="test_pickle_relu" time="0.068" /><testcase classname="unit.test_activation_with_derivative.TestActivationWithDerivativePickling" name="test_pickle_relu_module" time="0.070" /><testcase classname="unit.test_activation_with_derivative.TestActivationWithDerivativeDerivatives" name="test_tanh_derivative" time="0.073" /><testcase classname="unit.test_activation_with_derivative.TestActivationWithDerivativeDerivatives" name="test_sigmoid_derivative" time="0.064" /><testcase classname="unit.test_activation_with_derivative.TestActivationWithDerivativeDerivatives" name="test_relu_derivative" time="0.071" /><testcase classname="unit.test_activation_with_derivative.TestActivationWithDerivativeDerivatives" name="test_derivative_after_unpickling" time="0.085" /><testcase classname="unit.test_activation_with_derivative.TestCandidateUnitPickling" name="test_candidate_unit_pickling" time="10.373" /><testcase classname="unit.test_activation_with_derivative.TestCandidateUnitPickling" name="test_candidate_unit_forward_after_unpickling" time="8.305" /><testcase classname="unit.test_activation_with_derivative.TestCascorActivationWithDerivative" name="test_cascor_activation_pickling" time="0.073" /><testcase classname="unit.test_activation_with_derivative.TestCascorActivationWithDerivative" name="test_both_implementations_compatible" time="0.119" /><testcase classname="unit.test_activation_with_derivative.TestActivationMapCoverage" name="test_activation_map_entries[tanh-tanh]" time="0.124" /><testcase classname="unit.test_activation_with_derivative.TestActivationMapCoverage" name="test_activation_map_entries[sigmoid-sigmoid]" time="0.090" /><testcase classname="unit.test_activation_with_derivative.TestActivationMapCoverage" name="test_activation_map_entries[relu-relu]" time="0.133" /><testcase classname="unit.test_activation_with_derivative.TestActivationMapCoverage" name="test_activation_map_entries[Tanh-Tanh]" time="0.086" /><testcase classname="unit.test_activation_with_derivative.TestActivationMapCoverage" name="test_activation_map_entries[Sigmoid-Sigmoid]" time="0.156" /><testcase classname="unit.test_activation_with_derivative.TestActivationMapCoverage" name="test_activation_map_entries[ReLU-ReLU]" time="0.056" /><testcase classname="unit.test_activation_with_derivative.TestActivationMapCoverage" name="test_activation_map_entries[GELU-GELU]" time="0.140" /><testcase classname="unit.test_activation_with_derivative.TestActivationMapCoverage" name="test_activation_map_entries[SELU-SELU]" time="0.064" /><testcase classname="unit.test_activation_with_derivative.TestActivationMapCoverage" name="test_activation_map_entries[LeakyReLU-LeakyReLU]" time="0.087" /><testcase classname="unit.test_activation_with_derivative.TestActivationMapCoverage" name="test_unknown_activation_fallback" time="0.067" /><testcase classname="unit.test_candidate_training_manager" name="test_candidate_training_manager_inheritance[happy-path-candidate-training-manager]" time="0.078" /><testcase classname="unit.test_candidate_training_manager" name="test_candidate_training_manager_inheritance[base-manager-direct]" time="0.038" /><testcase classname="unit.test_candidate_training_manager" name="test_candidate_training_manager_register[register_args0-register_kwargs0-None-register-method-happy-path]" time="0.052" /><testcase classname="unit.test_candidate_training_manager" name="test_candidate_training_manager_register[register_args1-register_kwargs1-None-register-method-with-callable]" time="0.078" /><testcase classname="unit.test_candidate_training_manager" name="test_candidate_training_manager_register[register_args2-register_kwargs2-TypeError-register-method-none-name]" time="0.100" /><testcase classname="unit.test_candidate_training_manager" name="test_candidate_training_manager_register[register_args3-register_kwargs3-TypeError-register-method-missing-args]" time="0.077" /><testcase classname="unit.test_candidate_training_manager" name="test_candidate_training_manager_start_method[fork-None-start-method-fork]" time="0.083"><skipped type="pytest.skip" message="Skipping actual start() call for 'fork' to avoid multiprocessing complexity">/home/pcalnon/Development/python/Juniper/JuniperCascor/juniper_cascor/src/tests/unit/test_candidate_training_manager.py:98: Skipping actual start() call for 'fork' to avoid multiprocessing complexity</skipped></testcase><testcase classname="unit.test_candidate_training_manager" name="test_candidate_training_manager_start_method[spawn-None-start-method-spawn]" time="0.121"><skipped type="pytest.skip" message="Skipping actual start() call for 'spawn' to avoid multiprocessing complexity">/home/pcalnon/Development/python/Juniper/JuniperCascor/juniper_cascor/src/tests/unit/test_candidate_training_manager.py:98: Skipping actual start() call for 'spawn' to avoid multiprocessing complexity</skipped></testcase><testcase classname="unit.test_candidate_training_manager" name="test_candidate_training_manager_start_method[forkserver-None-start-method-forkserver]" time="0.055"><skipped type="pytest.skip" message="Skipping actual start() call for 'forkserver' to avoid multiprocessing complexity">/home/pcalnon/Development/python/Juniper/JuniperCascor/juniper_cascor/src/tests/unit/test_candidate_training_manager.py:98: Skipping actual start() call for 'forkserver' to avoid multiprocessing complexity</skipped></testcase><testcase classname="unit.test_candidate_training_manager" name="test_candidate_training_manager_start_method[invalid_method-ValueError-start-method-invalid]" time="0.153" /><testcase classname="unit.test_candidate_training_manager" name="test_candidate_training_manager_repr_and_str" time="0.096" /><testcase classname="unit.test_candidate_training_manager" name="test_candidate_training_manager_address_property" time="0.137" /><testcase classname="unit.test_candidate_training_manager" name="test_candidate_training_manager_shutdown_without_start" time="0.073" /><testcase classname="unit.test_cascor_fix" name="test_sequential_candidate_training" time="60.532"><failure message="Failed: Timeout (&gt;60.0s) from pytest-timeout.">src/tests/unit/test_cascor_fix.py:46: in test_sequential_candidate_training
     return _get_candidate_training_stats(network, x, y)
            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 src/tests/unit/test_cascor_fix.py:64: in _get_candidate_training_stats
     training_stats = network.train_candidates(x, y, residual_error)
                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-src/cascade_correlation/cascade_correlation.py:1739: in train_candidates
+src/cascade_correlation/cascade_correlation.py:1634: in train_candidates
     results = self._execute_candidate_training(tasks, process_count)
               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-src/cascade_correlation/cascade_correlation.py:1929: in _execute_candidate_training
+src/cascade_correlation/cascade_correlation.py:1824: in _execute_candidate_training
     results = self._execute_sequential_training(tasks)
               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-src/cascade_correlation/cascade_correlation.py:2113: in _execute_sequential_training
+src/cascade_correlation/cascade_correlation.py:2008: in _execute_sequential_training
     candidate_training_result = self.train_candidate_worker(
-src/cascade_correlation/cascade_correlation.py:2681: in train_candidate_worker
+src/cascade_correlation/cascade_correlation.py:2589: in train_candidate_worker
     candidate = CandidateUnit(
-src/candidate_unit/candidate_unit.py:296: in __init__
-    self._initialize_randomness(seed=unique_seed, max_value=self.sequence_max_value)
-src/candidate_unit/candidate_unit.py:406: in _initialize_randomness
-    self.logger.trace("CandidateUnit: _initialize_randomness: Completed initialization of torch random generator with seed and sequence for the candidate unit")
-src/log_config/logger/logger.py:452: in trace
+src/candidate_unit/candidate_unit.py:345: in __init__
+    self.set_uuid(CandidateUnit__uuid)
+src/candidate_unit/candidate_unit.py:1477: in set_uuid
+    self.logger.debug(f"CandidateUnit: set_uuid: UUID set to: {self.uuid}")
+src/log_config/logger/logger.py:470: in debug
+    cls._log_at_level(
+src/log_config/logger/logger.py:443: in _log_at_level
+    f.write(f"+{_file_message(frame, tsp, level, message)}\n")
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/log_config/logger/logger.py:407: in &lt;lambda&gt;
+    return lambda frame, tsp, level, message: formatter_string % dict_method(
+src/log_config/logger/logger.py:266: in _file_dict
+    os.path.basename(_get_frame_info(cls._frame_file)),
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/log_config/logger/logger.py:237: in &lt;lambda&gt;
+    return lambda name: getattr(getouterframes(frame)[1], name)
+                                ^^^^^^^^^^^^^^^^^^^^^
+/opt/miniforge3/envs/JuniperCascor/lib/python3.14/inspect.py:1635: in getouterframes
+    traceback_info = getframeinfo(frame, context)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/opt/miniforge3/envs/JuniperCascor/lib/python3.14/inspect.py:1581: in getframeinfo
+    positions = _get_code_position(frame.f_code, frame.f_lasti)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/opt/miniforge3/envs/JuniperCascor/lib/python3.14/inspect.py:1565: in _get_code_position
+    return next(itertools.islice(positions_gen, instruction_index // 2, None))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   Failed: Timeout (&gt;60.0s) from pytest-timeout.</failure></testcase><testcase classname="unit.test_cascor_fix" name="test_individual_candidates" time="60.446"><failure message="Failed: Timeout (&gt;60.0s) from pytest-timeout.">src/tests/unit/test_cascor_fix.py:123: in test_individual_candidates
+    correlation = candidate.train(
+src/candidate_unit/candidate_unit.py:588: in train
+    result = self.train_detailed(
+src/candidate_unit/candidate_unit.py:660: in train_detailed
+    candidate_training_result = self._get_correlations(output=output, residual_error=residual_error)
+                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/candidate_unit/candidate_unit.py:798: in _get_correlations
+    candidate_correlations = self._multi_output_correlation(residual_error=residual_error, output=output)
+                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/candidate_unit/candidate_unit.py:897: in _multi_output_correlation
+    (correlation, norm_output, norm_error, numerator, denominator) = self._calculate_correlation(output=output, residual_error=error_i)
+                                                                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/candidate_unit/candidate_unit.py:1079: in _calculate_correlation
+    self.logger.debug(f"CandidateUnit: _calculate_correlation: Absolute correlation: {correlation:.6f}")
+src/log_config/logger/logger.py:470: in debug
     cls._log_at_level(
 src/log_config/logger/logger.py:443: in _log_at_level
     f.write(f"+{_file_message(frame, tsp, level, message)}\n")
@@ -384,43 +453,12 @@ src/log_config/logger/logger.py:237: in &lt;lambda&gt;
 /opt/miniforge3/envs/JuniperCascor/lib/python3.14/inspect.py:1597: in getframeinfo
     lines, lnum = findsource(frame)
                   ^^^^^^^^^^^^^^^^^
-/opt/miniforge3/envs/JuniperCascor/lib/python3.14/inspect.py:969: in findsource
-    module = getmodule(object, file)
-             ^^^^^^^^^^^^^^^^^^^^^^^
-/opt/miniforge3/envs/JuniperCascor/lib/python3.14/inspect.py:906: in getmodule
-    return sys.modules.get(modulesbyfile[_filename])
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-E   Failed: Timeout (&gt;60.0s) from pytest-timeout.</failure></testcase><testcase classname="unit.test_cascor_fix" name="test_individual_candidates" time="60.328"><failure message="Failed: Timeout (&gt;60.0s) from pytest-timeout.">src/tests/unit/test_cascor_fix.py:123: in test_individual_candidates
-    correlation = candidate.train(
-src/candidate_unit/candidate_unit.py:588: in train
-    result = self.train_detailed(
-src/candidate_unit/candidate_unit.py:660: in train_detailed
-    candidate_training_result = self._get_correlations(output=output, residual_error=residual_error)
-                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-src/candidate_unit/candidate_unit.py:826: in _get_correlations
-    self.logger.debug(f"CandidateUnit: _get_correlations: Best correlation: {best_correlation}, Best corr idx: {best_corr_idx}")
-src/log_config/logger/logger.py:470: in debug
-    cls._log_at_level(
-src/log_config/logger/logger.py:443: in _log_at_level
-    f.write(f"+{_file_message(frame, tsp, level, message)}\n")
-                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-src/log_config/logger/logger.py:407: in &lt;lambda&gt;
-    return lambda frame, tsp, level, message: formatter_string % dict_method(
-src/log_config/logger/logger.py:267: in _file_dict
-    _get_frame_info(cls._frame_func),
-    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-src/log_config/logger/logger.py:237: in &lt;lambda&gt;
-    return lambda name: getattr(getouterframes(frame)[1], name)
-                                ^^^^^^^^^^^^^^^^^^^^^
-/opt/miniforge3/envs/JuniperCascor/lib/python3.14/inspect.py:1635: in getouterframes
-    traceback_info = getframeinfo(frame, context)
-                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-/opt/miniforge3/envs/JuniperCascor/lib/python3.14/inspect.py:1597: in getframeinfo
-    lines, lnum = findsource(frame)
-                  ^^^^^^^^^^^^^^^^^
-/opt/miniforge3/envs/JuniperCascor/lib/python3.14/inspect.py:949: in findsource
-    def findsource(object):
-E   Failed: Timeout (&gt;60.0s) from pytest-timeout.</failure></testcase><testcase classname="unit.test_critical_fixes" name="test_1_dataclass_fields" time="0.068" /><testcase classname="unit.test_critical_fixes" name="test_2_network_creation" time="16.669" /><testcase classname="unit.test_critical_fixes" name="test_3_candidate_training" time="60.189"><failure message="Failed: Timeout (&gt;60.0s) from pytest-timeout.">src/tests/unit/test_critical_fixes.py:78: in test_3_candidate_training
+/opt/miniforge3/envs/JuniperCascor/lib/python3.14/inspect.py:960: in findsource
+    linecache.checkcache(file)
+/opt/miniforge3/envs/JuniperCascor/lib/python3.14/linecache.py:104: in checkcache
+    stat = os.stat(fullname)
+           ^^^^^^^^^^^^^^^^^
+E   Failed: Timeout (&gt;60.0s) from pytest-timeout.</failure></testcase><testcase classname="unit.test_critical_fixes" name="test_1_dataclass_fields" time="0.016" /><testcase classname="unit.test_critical_fixes" name="test_2_network_creation" time="14.206" /><testcase classname="unit.test_critical_fixes" name="test_3_candidate_training" time="60.102"><failure message="Failed: Timeout (&gt;60.0s) from pytest-timeout.">src/tests/unit/test_critical_fixes.py:78: in test_3_candidate_training
     result = candidate.train(
 src/candidate_unit/candidate_unit.py:588: in train
     result = self.train_detailed(
@@ -430,42 +468,14 @@ src/candidate_unit/candidate_unit.py:660: in train_detailed
 src/candidate_unit/candidate_unit.py:798: in _get_correlations
     candidate_correlations = self._multi_output_correlation(residual_error=residual_error, output=output)
                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-src/candidate_unit/candidate_unit.py:896: in _multi_output_correlation
-    self.logger.verbose(f"CandidateUnit: _multi_output_correlation: Before Corr Calc: Residual Error for output index {i}: Residual Error: Shape: {residual_error.shape}, Shape Length: {len(residual_error.shape)}, Type: {type(residual_error)}, Dimensions: {residual_error.dim()}, Dtype: {residual_error.dtype}\nResidual Error Value:\n{residual_error}")
-src/log_config/logger/logger.py:461: in verbose
-    cls._log_at_level(
-src/log_config/logger/logger.py:441: in _log_at_level
-    print(f"+{_console_message(frame, tsp, level, message)}")
-              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-src/log_config/logger/logger.py:407: in &lt;lambda&gt;
-    return lambda frame, tsp, level, message: formatter_string % dict_method(
-src/log_config/logger/logger.py:248: in _console_dict
-    os.path.basename(_get_frame_info(cls._frame_file)),
-                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-src/log_config/logger/logger.py:237: in &lt;lambda&gt;
-    return lambda name: getattr(getouterframes(frame)[1], name)
-                                ^^^^^^^^^^^^^^^^^^^^^
-/opt/miniforge3/envs/JuniperCascor/lib/python3.14/inspect.py:1635: in getouterframes
-    traceback_info = getframeinfo(frame, context)
-                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-/opt/miniforge3/envs/JuniperCascor/lib/python3.14/inspect.py:1597: in getframeinfo
-    lines, lnum = findsource(frame)
-                  ^^^^^^^^^^^^^^^^^
-/opt/miniforge3/envs/JuniperCascor/lib/python3.14/inspect.py:969: in findsource
-    module = getmodule(object, file)
-             ^^^^^^^^^^^^^^^^^^^^^^^
-/opt/miniforge3/envs/JuniperCascor/lib/python3.14/inspect.py:897: in getmodule
-    def getmodule(object, _filename=None):
-E   Failed: Timeout (&gt;60.0s) from pytest-timeout.</failure></testcase><testcase classname="unit.test_critical_fixes" name="test_4_get_single_candidate_data" time="12.186" /><testcase classname="unit.test_critical_fixes" name="test_5_training_results_dataclass" time="0.005" /><testcase classname="unit.test_final" name="test_candidate_units_simple" time="60.141"><failure message="Failed: Timeout (&gt;60.0s) from pytest-timeout.">src/tests/unit/test_final.py:44: in test_candidate_units_simple
-    final_correlation = candidate.train(
-src/candidate_unit/candidate_unit.py:588: in train
-    result = self.train_detailed(
-src/candidate_unit/candidate_unit.py:680: in train_detailed
-    epoch_trained_candidate = self._update_weights_and_bias(candidate_parameters_update=candidate_parameters_update)
-                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-src/candidate_unit/candidate_unit.py:1154: in _update_weights_and_bias
-    self.logger.verbose(f"CandidateUnit: _update_weights_and_bias: Error mean: {error_mean}")
-src/log_config/logger/logger.py:461: in verbose
+src/candidate_unit/candidate_unit.py:897: in _multi_output_correlation
+    (correlation, norm_output, norm_error, numerator, denominator) = self._calculate_correlation(output=output, residual_error=error_i)
+                                                                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/candidate_unit/candidate_unit.py:1026: in _calculate_correlation
+    self._validate_correlation_params(output=output, residual_error=residual_error)
+src/candidate_unit/candidate_unit.py:1258: in _validate_correlation_params
+    self.logger.debug(f"CandidateUnit: _validate_correlation_params: Output shape: {output.shape}, Residual error shape: {residual_error.shape}")
+src/log_config/logger/logger.py:470: in debug
     cls._log_at_level(
 src/log_config/logger/logger.py:443: in _log_at_level
     f.write(f"+{_file_message(frame, tsp, level, message)}\n")
@@ -481,28 +491,21 @@ src/log_config/logger/logger.py:237: in &lt;lambda&gt;
 /opt/miniforge3/envs/JuniperCascor/lib/python3.14/inspect.py:1635: in getouterframes
     traceback_info = getframeinfo(frame, context)
                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-/opt/miniforge3/envs/JuniperCascor/lib/python3.14/inspect.py:1607: in getframeinfo
-    return Traceback(filename, lineno, frame.f_code.co_name, lines,
-/opt/miniforge3/envs/JuniperCascor/lib/python3.14/inspect.py:1545: in __new__
-    def __new__(cls, filename, lineno, function, code_context, index, *, positions=None):
-E   Failed: Timeout (&gt;60.0s) from pytest-timeout.</failure></testcase><testcase classname="unit.test_forward_pass.TestForwardPassBasics" name="test_forward_pass_no_hidden_units" time="18.179" /><testcase classname="unit.test_forward_pass.TestForwardPassBasics" name="test_forward_pass_single_hidden_unit" time="12.348" /><testcase classname="unit.test_forward_pass.TestForwardPassBasics" name="test_forward_pass_multiple_hidden_units" time="12.086" /><testcase classname="unit.test_forward_pass.TestForwardPassBasics" name="test_forward_pass_deterministic" time="16.333" /><testcase classname="unit.test_forward_pass.TestForwardPassShapes" name="test_forward_pass_batch_sizes[1]" time="11.439" /><testcase classname="unit.test_forward_pass.TestForwardPassShapes" name="test_forward_pass_batch_sizes[5]" time="16.932" /><testcase classname="unit.test_forward_pass.TestForwardPassShapes" name="test_forward_pass_batch_sizes[10]" time="13.232" /><testcase classname="unit.test_forward_pass.TestForwardPassShapes" name="test_forward_pass_batch_sizes[50]" time="13.566" /><testcase classname="unit.test_forward_pass.TestForwardPassShapes" name="test_forward_pass_input_sizes[1]" time="12.632" /><testcase classname="unit.test_forward_pass.TestForwardPassShapes" name="test_forward_pass_input_sizes[2]" time="12.701" /><testcase classname="unit.test_forward_pass.TestForwardPassShapes" name="test_forward_pass_input_sizes[5]" time="14.851" /><testcase classname="unit.test_forward_pass.TestForwardPassShapes" name="test_forward_pass_input_sizes[10]" time="15.477" /><testcase classname="unit.test_forward_pass.TestForwardPassShapes" name="test_forward_pass_output_sizes[1]" time="16.753" /><testcase classname="unit.test_forward_pass.TestForwardPassShapes" name="test_forward_pass_output_sizes[2]" time="12.510" /><testcase classname="unit.test_forward_pass.TestForwardPassShapes" name="test_forward_pass_output_sizes[5]" time="15.147" /><testcase classname="unit.test_forward_pass.TestForwardPassShapes" name="test_forward_pass_output_sizes[10]" time="8.538" /><testcase classname="unit.test_forward_pass.TestForwardPassValidation" name="test_forward_pass_invalid_input_shape" time="16.991" /><testcase classname="unit.test_forward_pass.TestForwardPassValidation" name="test_forward_pass_1d_input" time="11.691" /><testcase classname="unit.test_forward_pass.TestForwardPassValidation" name="test_forward_pass_empty_input" time="17.518" /><testcase classname="unit.test_forward_pass.TestForwardPassValidation" name="test_forward_pass_nan_input" time="8.741"><failure message="cascade_correlation.cascade_correlation_exceptions.cascade_correlation_exceptions.ValidationError: Parameter 'x' contains NaN values">src/tests/unit/test_forward_pass.py:230: in test_forward_pass_nan_input
-    simple_network.forward(nan_input)
-src/cascade_correlation/cascade_correlation.py:1487: in forward
-    self._validate_tensor_input(x, "x", allow_empty=True)
-src/cascade_correlation/cascade_correlation.py:1106: in _validate_tensor_input
-    raise ValidationError(f"Parameter '{param_name}' contains NaN values")
-E   cascade_correlation.cascade_correlation_exceptions.cascade_correlation_exceptions.ValidationError: Parameter 'x' contains NaN values</failure></testcase><testcase classname="unit.test_forward_pass.TestForwardPassCascading" name="test_cascading_connections" time="15.202" /><testcase classname="unit.test_forward_pass.TestForwardPassCascading" name="test_hidden_unit_output_shapes" time="15.610" /><testcase classname="unit.test_forward_pass.TestForwardPassGradients" name="test_forward_pass_gradients_enabled" time="14.616" /><testcase classname="unit.test_forward_pass.TestForwardPassGradients" name="test_forward_pass_no_grad" time="10.083" /><testcase classname="unit.test_forward_pass.TestForwardPassActivationFunctions" name="test_forward_pass_different_activations[tanh]" time="17.277" /><testcase classname="unit.test_forward_pass.TestForwardPassActivationFunctions" name="test_forward_pass_different_activations[sigmoid]" time="13.385" /><testcase classname="unit.test_forward_pass.TestForwardPassActivationFunctions" name="test_forward_pass_different_activations[relu]" time="8.321" /><testcase classname="unit.test_forward_pass.TestForwardPassEdgeCases" name="test_forward_pass_single_sample" time="18.278" /><testcase classname="unit.test_forward_pass.TestForwardPassEdgeCases" name="test_forward_pass_large_batch" time="14.405" /><testcase classname="unit.test_forward_pass.TestForwardPassEdgeCases" name="test_forward_pass_extreme_weights" time="18.796" /><testcase classname="unit.test_hdf5" name="test_hdf5_serialization" time="0.070" /><testcase classname="unit.test_p1_fixes" name="test_1_early_stopping" time="60.310"><failure message="Failed: Timeout (&gt;60.0s) from pytest-timeout.">src/tests/unit/test_p1_fixes.py:23: in test_1_early_stopping
-    return _validate_candidate_early_stopping_helper(candidate=None)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-src/tests/unit/test_p1_fixes.py:46: in _validate_candidate_early_stopping_helper
-    result = candidate.train(
+/opt/miniforge3/envs/JuniperCascor/lib/python3.14/inspect.py:1581: in getframeinfo
+    positions = _get_code_position(frame.f_code, frame.f_lasti)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/opt/miniforge3/envs/JuniperCascor/lib/python3.14/inspect.py:1565: in _get_code_position
+    return next(itertools.islice(positions_gen, instruction_index // 2, None))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   Failed: Timeout (&gt;60.0s) from pytest-timeout.</failure></testcase><testcase classname="unit.test_critical_fixes" name="test_4_get_single_candidate_data" time="12.477" /><testcase classname="unit.test_critical_fixes" name="test_5_training_results_dataclass" time="0.004" /><testcase classname="unit.test_final" name="test_candidate_units_simple" time="60.573"><failure message="Failed: Timeout (&gt;60.0s) from pytest-timeout.">src/tests/unit/test_final.py:44: in test_candidate_units_simple
+    final_correlation = candidate.train(
 src/candidate_unit/candidate_unit.py:588: in train
     result = self.train_detailed(
 src/candidate_unit/candidate_unit.py:680: in train_detailed
     epoch_trained_candidate = self._update_weights_and_bias(candidate_parameters_update=candidate_parameters_update)
                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-src/candidate_unit/candidate_unit.py:1164: in _update_weights_and_bias
-    self.logger.debug("CandidateUnit: _update_weights_and_bias: Compute correlation")
+src/candidate_unit/candidate_unit.py:1121: in _update_weights_and_bias
+    self.logger.debug("CandidateUnit: _update_weights_and_bias: Converting weights and bias to require gradients temporarily")
 src/log_config/logger/logger.py:470: in debug
     cls._log_at_level(
 src/log_config/logger/logger.py:441: in _log_at_level
@@ -519,15 +522,33 @@ src/log_config/logger/logger.py:237: in &lt;lambda&gt;
 /opt/miniforge3/envs/JuniperCascor/lib/python3.14/inspect.py:1635: in getouterframes
     traceback_info = getframeinfo(frame, context)
                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-/opt/miniforge3/envs/JuniperCascor/lib/python3.14/inspect.py:1597: in getframeinfo
-    lines, lnum = findsource(frame)
-                  ^^^^^^^^^^^^^^^^^
-/opt/miniforge3/envs/JuniperCascor/lib/python3.14/inspect.py:957: in findsource
-    file = getsourcefile(object)
-           ^^^^^^^^^^^^^^^^^^^^^
-/opt/miniforge3/envs/JuniperCascor/lib/python3.14/inspect.py:866: in getsourcefile
-    elif any(filename.endswith(s) for s in
-         ^^^
-/opt/miniforge3/envs/JuniperCascor/lib/python3.14/inspect.py:866: in &lt;genexpr&gt;
-    elif any(filename.endswith(s) for s in
-E   Failed: Timeout (&gt;60.0s) from pytest-timeout.</failure></testcase><testcase classname="unit.test_p1_fixes" name="test_2_optimizer_serialization" time="24.325" /><testcase classname="unit.test_p1_fixes" name="test_3_training_counters_persistence" time="35.821" /><testcase classname="unit.test_p1_fixes" name="test_4_queue_timeout" time="0.051" /><testcase classname="unit.test_p1_fixes" name="test_5_optimizer_initialization" time="13.321" /><testcase classname="unit.test_residual_error.TestResidualErrorBasics" name="test_residual_error_perfect_prediction" time="14.685" /><testcase classname="unit.test_residual_error.TestResidualErrorBasics" name="test_residual_error_computation" time="13.473" /><testcase classname="unit.test_residual_error.TestResidualErrorBasics" name="test_residual_error_symmetric" time="8.464" /><testcase classname="unit.test_residual_error.TestResidualErrorBasics" name="test_residual_error_no_grad" time="21.603" /><testcase classname="unit.test_residual_error.TestResidualErrorShapes" name="test_residual_error_batch_sizes[1]" time="19.833" /><testcase classname="unit.test_residual_error.TestResidualErrorShapes" name="test_residual_error_batch_sizes[5]" time="12.134" /><testcase classname="unit.test_residual_error.TestResidualErrorShapes" name="test_residual_error_batch_sizes[10]" time="15.665" /><testcase classname="unit.test_residual_error.TestResidualErrorShapes" name="test_residual_error_batch_sizes[50]" time="12.198" /><testcase classname="unit.test_residual_error.TestResidualErrorShapes" name="test_residual_error_output_sizes[1]" time="6.106" /><testcase classname="unit.test_residual_error.TestResidualErrorShapes" name="test_residual_error_output_sizes[2]" time="13.928" /><testcase classname="unit.test_residual_error.TestResidualErrorShapes" name="test_residual_error_output_sizes[5]" time="15.711" /><testcase classname="unit.test_residual_error.TestResidualErrorShapes" name="test_residual_error_output_sizes[10]" time="7.201" /><testcase classname="unit.test_residual_error.TestResidualErrorMagnitude" name="test_residual_error_magnitude_untrained" time="21.003" /><testcase classname="unit.test_residual_error.TestResidualErrorMagnitude" name="test_residual_error_zero_targets" time="16.993" /><testcase classname="unit.test_residual_error.TestResidualErrorMagnitude" name="test_residual_error_distribution" time="17.474" /><testcase classname="unit.test_residual_error.TestResidualErrorValidation" name="test_residual_error_mismatched_shapes" time="22.727" /><testcase classname="unit.test_residual_error.TestResidualErrorValidation" name="test_residual_error_wrong_target_size" time="14.868" /><testcase classname="unit.test_residual_error.TestResidualErrorValidation" name="test_residual_error_empty_input" time="10.847" /><testcase classname="unit.test_residual_error.TestResidualErrorNumericalStability" name="test_residual_error_extreme_values" time="16.227" /><testcase classname="unit.test_residual_error.TestResidualErrorNumericalStability" name="test_residual_error_inf_nan_handling" time="11.778" /><testcase classname="unit.test_residual_error.TestResidualErrorWithHiddenUnits" name="test_residual_error_with_hidden_units" time="18.716" /><testcase classname="unit.test_residual_error.TestResidualErrorWithHiddenUnits" name="test_residual_error_changes_with_training" time="17.386" /><testcase classname="unit.test_residual_error.TestResidualErrorCorrelation" name="test_residual_error_for_correlation" time="13.379" /><testcase classname="unit.test_residual_error.TestResidualErrorCorrelation" name="test_residual_error_mean_centering" time="17.484" /></testsuite></testsuites>
+/opt/miniforge3/envs/JuniperCascor/lib/python3.14/inspect.py:1581: in getframeinfo
+    positions = _get_code_position(frame.f_code, frame.f_lasti)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/opt/miniforge3/envs/JuniperCascor/lib/python3.14/inspect.py:1565: in _get_code_position
+    return next(itertools.islice(positions_gen, instruction_index // 2, None))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   Failed: Timeout (&gt;60.0s) from pytest-timeout.</failure></testcase><testcase classname="unit.test_forward_pass.TestForwardPassBasics" name="test_forward_pass_no_hidden_units" time="7.919" /><testcase classname="unit.test_forward_pass.TestForwardPassBasics" name="test_forward_pass_single_hidden_unit" time="14.405" /><testcase classname="unit.test_forward_pass.TestForwardPassBasics" name="test_forward_pass_multiple_hidden_units" time="23.546" /><testcase classname="unit.test_forward_pass.TestForwardPassBasics" name="test_forward_pass_deterministic" time="24.812" /><testcase classname="unit.test_forward_pass.TestForwardPassShapes" name="test_forward_pass_batch_sizes[1]" time="14.430" /><testcase classname="unit.test_forward_pass.TestForwardPassShapes" name="test_forward_pass_batch_sizes[5]" time="16.922" /><testcase classname="unit.test_forward_pass.TestForwardPassShapes" name="test_forward_pass_batch_sizes[10]" time="18.284" /><testcase classname="unit.test_forward_pass.TestForwardPassShapes" name="test_forward_pass_batch_sizes[50]" time="13.724" /><testcase classname="unit.test_forward_pass.TestForwardPassShapes" name="test_forward_pass_input_sizes[1]" time="14.524" /><testcase classname="unit.test_forward_pass.TestForwardPassShapes" name="test_forward_pass_input_sizes[2]" time="12.767" /><testcase classname="unit.test_forward_pass.TestForwardPassShapes" name="test_forward_pass_input_sizes[5]" time="11.847" /><testcase classname="unit.test_forward_pass.TestForwardPassShapes" name="test_forward_pass_input_sizes[10]" time="15.604" /><testcase classname="unit.test_forward_pass.TestForwardPassShapes" name="test_forward_pass_output_sizes[1]" time="13.002" /><testcase classname="unit.test_forward_pass.TestForwardPassShapes" name="test_forward_pass_output_sizes[2]" time="8.891" /><testcase classname="unit.test_forward_pass.TestForwardPassShapes" name="test_forward_pass_output_sizes[5]" time="12.132" /><testcase classname="unit.test_forward_pass.TestForwardPassShapes" name="test_forward_pass_output_sizes[10]" time="12.581" /><testcase classname="unit.test_forward_pass.TestForwardPassValidation" name="test_forward_pass_invalid_input_shape" time="11.575" /><testcase classname="unit.test_forward_pass.TestForwardPassValidation" name="test_forward_pass_1d_input" time="10.855" /><testcase classname="unit.test_forward_pass.TestForwardPassValidation" name="test_forward_pass_empty_input" time="6.135" /><testcase classname="unit.test_forward_pass.TestForwardPassValidation" name="test_forward_pass_nan_input" time="3.888"><failure message="cascade_correlation.cascade_correlation_exceptions.cascade_correlation_exceptions.ValidationError: Parameter 'x' contains NaN values">src/tests/unit/test_forward_pass.py:230: in test_forward_pass_nan_input
+    simple_network.forward(nan_input)
+src/cascade_correlation/cascade_correlation.py:1450: in forward
+    self._validate_tensor_input(x, "x", allow_empty=True)
+src/cascade_correlation/cascade_correlation.py:1105: in _validate_tensor_input
+    raise ValidationError(f"Parameter '{param_name}' contains NaN values")
+E   cascade_correlation.cascade_correlation_exceptions.cascade_correlation_exceptions.ValidationError: Parameter 'x' contains NaN values</failure></testcase><testcase classname="unit.test_forward_pass.TestForwardPassCascading" name="test_cascading_connections" time="16.820" /><testcase classname="unit.test_forward_pass.TestForwardPassCascading" name="test_hidden_unit_output_shapes" time="15.799" /><testcase classname="unit.test_forward_pass.TestForwardPassGradients" name="test_forward_pass_gradients_enabled" time="18.870" /><testcase classname="unit.test_forward_pass.TestForwardPassGradients" name="test_forward_pass_no_grad" time="9.245" /><testcase classname="unit.test_forward_pass.TestForwardPassActivationFunctions" name="test_forward_pass_different_activations[tanh]" time="9.775" /><testcase classname="unit.test_forward_pass.TestForwardPassActivationFunctions" name="test_forward_pass_different_activations[sigmoid]" time="8.118" /><testcase classname="unit.test_forward_pass.TestForwardPassActivationFunctions" name="test_forward_pass_different_activations[relu]" time="10.062" /><testcase classname="unit.test_forward_pass.TestForwardPassEdgeCases" name="test_forward_pass_single_sample" time="13.643" /><testcase classname="unit.test_forward_pass.TestForwardPassEdgeCases" name="test_forward_pass_large_batch" time="19.348" /><testcase classname="unit.test_forward_pass.TestForwardPassEdgeCases" name="test_forward_pass_extreme_weights" time="19.007" /><testcase classname="unit.test_hdf5" name="test_hdf5_serialization" time="0.037" /><testcase classname="unit.test_p1_fixes" name="test_1_early_stopping" time="60.591"><failure message="Failed: Timeout (&gt;60.0s) from pytest-timeout.">src/tests/unit/test_p1_fixes.py:23: in test_1_early_stopping
+    return _validate_candidate_early_stopping_helper(candidate=None)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/tests/unit/test_p1_fixes.py:46: in _validate_candidate_early_stopping_helper
+    result = candidate.train(
+src/candidate_unit/candidate_unit.py:588: in train
+    result = self.train_detailed(
+src/candidate_unit/candidate_unit.py:727: in train_detailed
+    candidate_training_result = self._get_correlations(output=output, residual_error=residual_error)
+                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/candidate_unit/candidate_unit.py:792: in _get_correlations
+    self.logger.debug(f"CandidateUnit: _get_correlations: Input Params: Residual Error: Shape: {residual_error.shape}, Shape Length: {len(residual_error.shape)}, Type: {type(residual_error)}, Dimensions: {residual_error.dim()}, Dtype: {residual_error.dtype}\nResidual Error:\n{residual_error}")
+src/log_config/logger/logger.py:470: in debug
+    cls._log_at_level(
+src/log_config/logger/logger.py:442: in _log_at_level
+    with open(cls._logging_file, "a") as f:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   Failed: Timeout (&gt;60.0s) from pytest-timeout.</failure></testcase><testcase classname="unit.test_p1_fixes" name="test_2_optimizer_serialization" time="41.579" /><testcase classname="unit.test_p1_fixes" name="test_3_training_counters_persistence" time="26.203" /><testcase classname="unit.test_p1_fixes" name="test_4_queue_timeout" time="0.019" /><testcase classname="unit.test_p1_fixes" name="test_5_optimizer_initialization" time="13.104" /><testcase classname="unit.test_residual_error.TestResidualErrorBasics" name="test_residual_error_perfect_prediction" time="18.746" /><testcase classname="unit.test_residual_error.TestResidualErrorBasics" name="test_residual_error_computation" time="19.320" /><testcase classname="unit.test_residual_error.TestResidualErrorBasics" name="test_residual_error_symmetric" time="17.637" /><testcase classname="unit.test_residual_error.TestResidualErrorBasics" name="test_residual_error_no_grad" time="12.302" /><testcase classname="unit.test_residual_error.TestResidualErrorShapes" name="test_residual_error_batch_sizes[1]" time="24.720" /><testcase classname="unit.test_residual_error.TestResidualErrorShapes" name="test_residual_error_batch_sizes[5]" time="20.884" /><testcase classname="unit.test_residual_error.TestResidualErrorShapes" name="test_residual_error_batch_sizes[10]" time="20.923" /><testcase classname="unit.test_residual_error.TestResidualErrorShapes" name="test_residual_error_batch_sizes[50]" time="15.645" /><testcase classname="unit.test_residual_error.TestResidualErrorShapes" name="test_residual_error_output_sizes[1]" time="23.194" /><testcase classname="unit.test_residual_error.TestResidualErrorShapes" name="test_residual_error_output_sizes[2]" time="16.238" /><testcase classname="unit.test_residual_error.TestResidualErrorShapes" name="test_residual_error_output_sizes[5]" time="16.716" /><testcase classname="unit.test_residual_error.TestResidualErrorShapes" name="test_residual_error_output_sizes[10]" time="14.641" /><testcase classname="unit.test_residual_error.TestResidualErrorMagnitude" name="test_residual_error_magnitude_untrained" time="17.405" /><testcase classname="unit.test_residual_error.TestResidualErrorMagnitude" name="test_residual_error_zero_targets" time="21.109" /><testcase classname="unit.test_residual_error.TestResidualErrorMagnitude" name="test_residual_error_distribution" time="16.897" /><testcase classname="unit.test_residual_error.TestResidualErrorValidation" name="test_residual_error_mismatched_shapes" time="9.539" /><testcase classname="unit.test_residual_error.TestResidualErrorValidation" name="test_residual_error_wrong_target_size" time="22.931" /><testcase classname="unit.test_residual_error.TestResidualErrorValidation" name="test_residual_error_empty_input" time="13.039" /><testcase classname="unit.test_residual_error.TestResidualErrorNumericalStability" name="test_residual_error_extreme_values" time="10.518" /><testcase classname="unit.test_residual_error.TestResidualErrorNumericalStability" name="test_residual_error_inf_nan_handling" time="6.152" /><testcase classname="unit.test_residual_error.TestResidualErrorWithHiddenUnits" name="test_residual_error_with_hidden_units" time="15.636" /><testcase classname="unit.test_residual_error.TestResidualErrorWithHiddenUnits" name="test_residual_error_changes_with_training" time="12.709" /><testcase classname="unit.test_residual_error.TestResidualErrorCorrelation" name="test_residual_error_for_correlation" time="14.986" /><testcase classname="unit.test_residual_error.TestResidualErrorCorrelation" name="test_residual_error_mean_centering" time="8.559" /></testsuite></testsuites>
