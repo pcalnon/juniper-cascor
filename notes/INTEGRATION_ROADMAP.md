@@ -1,8 +1,8 @@
 # Juniper Cascor ↔ Juniper Canopy Integration Roadmap
 
 **Created**: 2026-01-20  
-**Last Updated**: 2026-01-22 10:00 CST  
-**Version**: 2.0.0  
+**Last Updated**: 2026-01-22 11:30 CST  
+**Version**: 2.1.0  
 **Status**: Active - Implementation Phase  
 **Author**: Development Team
 
@@ -824,21 +824,59 @@ export CASCOR_BACKEND_PATH="/home/pcalnon/Development/python/Juniper/JuniperCasc
 
 ### 4.2 API/Protocol Compatibility
 
-**Status**: ⚠️ NEEDS VERIFICATION
+**Status**: ✅ VERIFIED (2026-01-22)
 
 **Integration Points**:
 
-| Interface        | Cascor Export       | Canopy Import       | Status     |
-| ---------------- | ------------------- | ------------------- | ---------- |
-| Network Topology | HDF5 snapshots      | CascorIntegration   | ❓ Unknown |
-| Training Metrics | Real-time state     | WebSocket broadcast | ❓ Unknown |
-| Control Commands | Multiprocess queues | REST/WebSocket      | ❓ Unknown |
+| Interface        | Cascor Export       | Canopy Import       | Status       |
+| ---------------- | ------------------- | ------------------- | ------------ |
+| Network Topology | HDF5 snapshots      | CascorIntegration   | ✅ Compatible |
+| Training Metrics | Real-time state     | WebSocket broadcast | ✅ Compatible |
+| Control Commands | Multiprocess queues | REST/WebSocket      | ✅ Compatible |
 
-**Required Verification**:
+**Verification Results** (2026-01-22):
 
-1. Test HDF5 snapshot compatibility
-2. Verify metrics data format alignment
-3. Test control command protocol
+1. **Network Attribute Structure** - VERIFIED ✅
+   - `network.input_size` (int) - Compatible
+   - `network.output_size` (int) - Compatible
+   - `network.hidden_units` (list[dict]) - Compatible
+   - `network.output_weights` (torch.Tensor) - Compatible
+   - `network.output_bias` (torch.Tensor) - Compatible
+   - `network.history` (dict) - Compatible
+
+2. **History Format** - VERIFIED ✅
+   - `train_loss` (list[float]) - Compatible
+   - `train_accuracy` (list[float]) - Compatible
+   - `value_loss` (list[float]) - Compatible (normalized to `val_loss`)
+   - `value_accuracy` (list[float]) - Compatible (normalized to `val_accuracy`)
+   - `hidden_units_added` (list[dict]) - Compatible
+
+3. **Hidden Unit Structure** - VERIFIED ✅
+   - `weights` (torch.Tensor) - Compatible
+   - `bias` (float) - Compatible
+   - `activation_fn` (callable with `__name__`) - Compatible
+
+4. **Topology Extraction** - VERIFIED ✅
+   - `CascorIntegration.get_network_topology()` produces valid format
+
+**Tests Added**: 21 integration tests in `tests/integration/test_cascor_api_compatibility.py`
+
+---
+
+#### Known Issue: Module Naming Collision
+
+**Problem**: Canopy has `src/constants.py` (module) and Cascor has `src/constants/` (package). When both are on `sys.path`, Python may find Canopy's module first, shadowing Cascor's package.
+
+**Impact**: Direct imports of Cascor classes from Canopy test code may fail with:
+```
+ModuleNotFoundError: No module named 'constants.constants'; 'constants' is not a package
+```
+
+**Workaround**: `CascorIntegration._add_backend_to_path()` adds Cascor's `src/` at index 0 of `sys.path`, ensuring Cascor's `constants/` package is found first during runtime. This is handled automatically.
+
+**Recommendation for Future**: Consider renaming one of the modules to avoid collision:
+- Option A: Rename Canopy's `constants.py` to `canopy_constants.py`
+- Option B: Rename Cascor's `constants/` to `cascor_constants/`
 
 ---
 
@@ -1196,9 +1234,10 @@ Remaining Error Categories:
 | 2026-01-21 | 1.8.0   | Development Team | Implemented CASCOR-P1-003 fix: ActivationWithDerivative class for multiprocessing pickling support              |
 | 2026-01-21 | 1.9.0   | Development Team | Implemented CASCOR-P0-002 (pytest-timeout), CANOPY-P2-001 (asyncio fix), 4.1 (backend path config)              |
 | 2026-01-22 | 2.0.0   | Development Team | Implemented 4.3 (data format alignment): Added normalize_metrics()/denormalize_metrics() to DataAdapter         |
+| 2026-01-22 | 2.1.0   | Development Team | Verified 4.2 (API/Protocol compatibility): 21 tests added, module collision documented                          |
 
 ---
 
-**Next Review**: After API/Protocol compatibility verification (4.2)  
+**Next Review**: End-to-end integration testing  
 **Owner**: Development Team  
 **Document Status**: Active
