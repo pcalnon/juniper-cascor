@@ -1,8 +1,8 @@
 # Juniper Cascor ↔ Juniper Canopy Integration Roadmap
 
 **Created**: 2026-01-20  
-**Last Updated**: 2026-01-21 02:30 CST  
-**Version**: 1.9.0  
+**Last Updated**: 2026-01-22 10:00 CST  
+**Version**: 2.0.0  
 **Status**: Active - Implementation Phase  
 **Author**: Development Team
 
@@ -844,13 +844,17 @@ export CASCOR_BACKEND_PATH="/home/pcalnon/Development/python/Juniper/JuniperCasc
 
 ### 4.3 Data Format Alignment
 
+**Status**: ✅ RESOLVED (2026-01-22)
+
 **Cascor Output Format** (from training):
 
 ```python
 {
     'epoch': int,
-    'loss': float,
-    'accuracy': float,
+    'train_loss': float,       # Cascor uses 'train_loss'
+    'train_accuracy': float,   # Cascor uses 'train_accuracy'
+    'value_loss': float,       # Cascor uses 'value_' prefix
+    'value_accuracy': float,   # Cascor uses 'value_' prefix
     'hidden_units': int,
     'phase': str,  # 'output' | 'candidate'
     'correlation': float,
@@ -862,16 +866,38 @@ export CASCOR_BACKEND_PATH="/home/pcalnon/Development/python/Juniper/JuniperCasc
 ```python
 {
     'epoch': int,
-    'train_loss': float,      # Note: different key name
-    'train_accuracy': float,  # Note: different key name
+    'train_loss': float,       # Same as Cascor
+    'train_accuracy': float,   # Same as Cascor
+    'val_loss': float,         # Canopy uses 'val_' prefix
+    'val_accuracy': float,     # Canopy uses 'val_' prefix
     'hidden_units': int,
     'phase': str,
 }
 ```
 
-**Issue**: Key naming mismatch between applications.
+**Issue**: Key naming mismatch for validation metrics (`value_` vs `val_` prefix).
 
-**Proposed Solution**: Implement data adapter in Canopy (`src/backend/data_adapter.py`) to normalize keys.
+**Resolution** (2026-01-22):
+
+Added `normalize_metrics()` and `denormalize_metrics()` methods to `DataAdapter` class:
+
+- **File Changed**: `src/backend/data_adapter.py` (version 0.1.4 → 0.1.5)
+- **Key Mappings**:
+  - `value_loss` → `val_loss`
+  - `value_accuracy` → `val_accuracy`
+  - `loss` → `train_loss` (legacy format support)
+  - `accuracy` → `train_accuracy` (legacy format support)
+- **Tests Added**: 20 unit tests in `tests/unit/backend/test_data_adapter_normalization.py`
+- **Usage**:
+
+  ```python
+  from backend.data_adapter import DataAdapter
+  
+  adapter = DataAdapter()
+  cascor_metrics = {'epoch': 5, 'value_loss': 0.3, 'value_accuracy': 0.9}
+  canopy_metrics = adapter.normalize_metrics(cascor_metrics)
+  # Returns: {'epoch': 5, 'val_loss': 0.3, 'val_accuracy': 0.9}
+  ```
 
 ---
 
@@ -1169,9 +1195,10 @@ Remaining Error Categories:
 | 2026-01-20 | 1.7.0   | Development Team | Documented try symlink fix (CASCOR-P1-004), pickling error (CASCOR-P1-003), asyncio deprecation (CANOPY-P2-001) |
 | 2026-01-21 | 1.8.0   | Development Team | Implemented CASCOR-P1-003 fix: ActivationWithDerivative class for multiprocessing pickling support              |
 | 2026-01-21 | 1.9.0   | Development Team | Implemented CASCOR-P0-002 (pytest-timeout), CANOPY-P2-001 (asyncio fix), 4.1 (backend path config)              |
+| 2026-01-22 | 2.0.0   | Development Team | Implemented 4.3 (data format alignment): Added normalize_metrics()/denormalize_metrics() to DataAdapter         |
 
 ---
 
-**Next Review**: After API/Protocol compatibility verification (4.2) and data format alignment (4.3)  
+**Next Review**: After API/Protocol compatibility verification (4.2)  
 **Owner**: Development Team  
 **Document Status**: Active
