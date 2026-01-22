@@ -2524,9 +2524,7 @@ class CascadeCorrelationNetwork:
         # Reinitialize logger
         from log_config.logger.logger import Logger
 
-        Logger.set_level(
-            self.log_level_name if hasattr(self, "log_level_name") else "INFO"
-        )
+        Logger.set_level( self.log_level_name if hasattr(self, "log_level_name") else "INFO")
         self.logger = Logger
         # Set log_config to None - it was removed during pickling
         self.log_config = None
@@ -2535,23 +2533,16 @@ class CascadeCorrelationNetwork:
         # Reinitialize plotter if needed
         if not hasattr(self, "plotter"):
             from cascor_plotter.cascor_plotter import CascadeCorrelationPlotter
-
             self.plotter = CascadeCorrelationPlotter(logger=self.logger)
         # Reinitialize display progress functions
         from utils.utils import display_progress
 
         if not hasattr(self, "_network_display_progress"):
-            self._network_display_progress = display_progress(
-                display_frequency=getattr(self, "epoch_display_frequency", 10)
-            )
+            self._network_display_progress = display_progress( display_frequency=getattr(self, "epoch_display_frequency", 10))
         if not hasattr(self, "_status_display_progress"):
-            self._status_display_progress = display_progress(
-                display_frequency=getattr(self, "status_display_frequency", 100)
-            )
+            self._status_display_progress = display_progress( display_frequency=getattr(self, "status_display_frequency", 100))
         if not hasattr(self, "_candidate_display_progress"):
-            self._candidate_display_progress = display_progress(
-                display_frequency=getattr(self, "candidate_display_frequency", 10)
-            )
+            self._candidate_display_progress = display_progress( display_frequency=getattr(self, "candidate_display_frequency", 10))
         # Set default values for removed data
         if not hasattr(self, "_training_data"):
             self._training_data = None
@@ -2569,15 +2560,57 @@ class CascadeCorrelationNetwork:
         Returns:
             Configured optimizer instance
         """
-        from cascade_correlation_config.cascade_correlation_config import (
-            OptimizerConfig,
-        )
+        from cascade_correlation_config.cascade_correlation_config import ( OptimizerConfig)
 
-        config = optimizer_config or getattr(
-            self.config, "optimizer_config", OptimizerConfig()
-        )
+        config = optimizer_config or getattr( self.config, "optimizer_config", OptimizerConfig())
         optimizer_map = {
-            "Adam": lambda: optim.Adam(
+            # "Adam": lambda: optim.Adam(
+            #     parameters,
+            #     lr=config.learning_rate,
+            #     betas=(config.beta1, config.beta2),
+            #     eps=config.epsilon,
+            #     weight_decay=config.weight_decay,
+            #     amsgrad=getattr(config, "amsgrad", False),
+            # ),
+            # "SGD": lambda: optim.SGD(
+            #     parameters,
+            #     lr=config.learning_rate,
+            #     momentum=config.momentum,
+            #     weight_decay=config.weight_decay,
+            # ),
+            # "RMSprop": lambda: optim.RMSprop(
+            #     parameters,
+            #     lr=config.learning_rate,
+            #     momentum=config.momentum,
+            #     eps=config.epsilon,
+            #     weight_decay=config.weight_decay,
+            # ),
+            # "AdamW": lambda: optim.AdamW(
+            #     parameters,
+            #     lr=config.learning_rate,
+            #     betas=(config.beta1, config.beta2),
+            #     eps=config.epsilon,
+            #     weight_decay=config.weight_decay,
+            #     amsgrad=getattr(config, "amsgrad", False),
+            # ),
+            "Adadelta": lambda: optim.Adadelta(       # Implements Adadelta algorithm.
+                parameters,
+                lr=config.learning_rate,
+                rho=config.rho,
+                eps=config.epsilon,
+            ),
+            "Adafactor": lambda: optim.Adafactor(     # Implements Adafactor algorithm.
+                parameters,
+                lr=config.learning_rate,
+                eps=config.epsilon,
+            )  ,
+            "Adagrad": lambda: optim.Adagrad(         # Implements Adagrad algorithm.
+                parameters,
+                lr=config.learning_rate,
+                lr_decay=config.lr_decay,
+                weight_decay=config.weight_decay,
+            ),
+            "Adam": lambda: optim.Adam(               # Implements Adam algorithm.
                 parameters,
                 lr=config.learning_rate,
                 betas=(config.beta1, config.beta2),
@@ -2585,167 +2618,90 @@ class CascadeCorrelationNetwork:
                 weight_decay=config.weight_decay,
                 amsgrad=getattr(config, "amsgrad", False),
             ),
-            "SGD": lambda: optim.SGD(
-                parameters,
-                lr=config.learning_rate,
-                momentum=config.momentum,
-                weight_decay=config.weight_decay,
-            ),
-            "RMSprop": lambda: optim.RMSprop(
-                parameters,
-                lr=config.learning_rate,
-                momentum=config.momentum,
-                eps=config.epsilon,
-                weight_decay=config.weight_decay,
-            ),
-            "AdamW": lambda: optim.AdamW(
+            "AdamW": lambda: optim.AdamW(             # Implements AdamW algorithm, where weight decay does not accumulate in the momentum nor variance.
                 parameters,
                 lr=config.learning_rate,
                 betas=(config.beta1, config.beta2),
                 eps=config.epsilon,
                 weight_decay=config.weight_decay,
                 amsgrad=getattr(config, "amsgrad", False),
+            ),
+            "SparseAdam": lambda: optim.SparseAdam(   # SparseAdam implements a masked version of the Adam algorithm suitable for sparse gradients.
+                parameters,
+                lr=config.learning_rate,
+                betas=(config.beta1, config.beta2),
+                eps=config.epsilon,
+            ),
+            "Adamax": lambda: optim.Adamax(           # Implements Adamax algorithm (a variant of Adam based on infinity norm).
+                parameters,
+                lr=config.learning_rate,
+                betas=(config.beta1, config.beta2),
+                eps=config.epsilon,
+            ),
+            "ASGD": lambda: optim.ASGD(               # Implements Averaged Stochastic Gradient Descent.
+                parameters,
+                lr=config.learning_rate,
+                lambd=config.lambd,
+                alpha=config.alpha,
+                t0=config.t0,
+                weight_decay=config.weight_decay,
+            ),
+            "LBFGS": lambda: optim.LBFGS(             # Implements L-BFGS algorithm.
+                parameters,
+                lr=config.learning_rate,
+                max_iter=config.max_iter,
+                max_eval=config.max_eval,
+                tolerance_grad=config.tolerance_grad,
+                tolerance_change=config.tolerance_change,
+                history_size=config.history_size,
+                line_search_fn=config.line_search_fn,
+            ),
+            "Muon": lambda: optim.Muon(               # Implements Muon algorithm.
+                parameters,
+                lr=config.learning_rate,
+                eps=config.epsilon,
+            ),
+            "NAdam": lambda: optim.NAdam(             # Implements NAdam algorithm.
+                parameters,
+                lr=config.learning_rate,
+                betas=(config.beta1, config.beta2),
+                eps=config.epsilon,
+                weight_decay=config.weight_decay,
+            ),
+            "RAdam": lambda: optim.RAdam(             # Implements RAdam algorithm.
+                parameters,
+                lr=config.learning_rate,
+                betas=(config.beta1, config.beta2),
+                eps=config.epsilon,
+                weight_decay=config.weight_decay,
+            ),
+            "RMSprop": lambda: optim.RMSprop(         # Implements RMSprop algorithm.
+                parameters,
+                lr=config.learning_rate,
+                momentum=config.momentum,
+                eps=config.epsilon,
+                weight_decay=config.weight_decay,
+            ),
+            "Rprop": lambda: optim.Rprop(             # Implements the resilient backpropagation algorithm.
+                parameters,
+                lr=config.learning_rate,
+                etas=(config.eta_min, config.eta_max),
+                step_sizes=(config.step_size_min, config.step_size_max),
+            ),
+            "SGD": lambda: optim.SGD(                # Implements stochastic gradient descent (optionally with momentum).
+                parameters,
+                lr=config.learning_rate,
+                momentum=config.momentum,
+                weight_decay=config.weight_decay,
             ),
         }
 
-# Implements Adadelta algorithm.
-"Adadelta": lambda: optim.Adadelta(
-    parameters,
-    lr=config.learning_rate,
-    rho=config.rho,
-    eps=config.epsilon,
-),
-# Implements Adafactor algorithm.
-"Adafactor": lambda: optim.Adafactor(
-    parameters,
-    lr=config.learning_rate,
-    eps=config.epsilon,
-),
-# Implements Adagrad algorithm.
-"Adagrad": lambda: optim.Adagrad(
-    parameters,
-    lr=config.learning_rate,
-    lr_decay=config.lr_decay,
-    weight_decay=config.weight_decay,
-),
-# Implements Adam algorithm.
-"Adam": lambda: optim.Adam(
-    parameters,
-    lr=config.learning_rate,
-    betas=(config.beta1, config.beta2),
-    eps=config.epsilon,
-    weight_decay=config.weight_decay,
-    amsgrad=getattr(config, "amsgrad", False),
-),
-# Implements AdamW algorithm, where weight decay does not accumulate in the momentum nor variance.
-"AdamW": lambda: optim.AdamW(
-    parameters,
-    lr=config.learning_rate,
-    betas=(config.beta1, config.beta2),
-    eps=config.epsilon,
-    weight_decay=config.weight_decay,
-    amsgrad=getattr(config, "amsgrad", False),
-)
-
-# SparseAdam implements a masked version of the Adam algorithm suitable for sparse gradients.
-"SparseAdam": lambda: optim.SparseAdam(
-    parameters,
-    lr=config.learning_rate,
-    betas=(config.beta1, config.beta2),
-    eps=config.epsilon,
-)
-
-# Implements Adamax algorithm (a variant of Adam based on infinity norm).
-"Adamax": lambda: optim.Adamax(
-    parameters,
-    lr=config.learning_rate,
-    betas=(config.beta1, config.beta2),
-    eps=config.epsilon,
-)
-
-# Implements Averaged Stochastic Gradient Descent.
-"ASGD": lambda: optim.ASGD(
-    parameters,
-    lr=config.learning_rate,
-    lambd=config.lambd,
-    alpha=config.alpha,
-    t0=config.t0,
-    weight_decay=config.weight_decay,
-)
-
-# Implements L-BFGS algorithm.
-"LBFGS": lambda: optim.LBFGS(
-    parameters,
-    lr=config.learning_rate,
-    max_iter=config.max_iter,
-    max_eval=config.max_eval,
-    tolerance_grad=config.tolerance_grad,
-    tolerance_change=config.tolerance_change,
-    history_size=config.history_size,
-    line_search_fn=config.line_search_fn,
-)
-
-# Implements Muon algorithm.
-"Muon": lambda: optim.Muon(
-    parameters,
-    lr=config.learning_rate,
-    eps=config.epsilon,
-)
-
-# Implements NAdam algorithm.
-"NAdam": lambda: optim.NAdam(
-    parameters,
-    lr=config.learning_rate,
-    betas=(config.beta1, config.beta2),
-    eps=config.epsilon,
-    weight_decay=config.weight_decay,
-)
-
-# Implements RAdam algorithm.
-"RAdam": lambda: optim.RAdam(
-    parameters,
-    lr=config.learning_rate,
-    betas=(config.beta1, config.beta2),
-    eps=config.epsilon,
-    weight_decay=config.weight_decay,
-)
-
-# Implements RMSprop algorithm.
-"RMSprop": lambda: optim.RMSprop(
-    parameters,
-    lr=config.learning_rate,
-    momentum=config.momentum,
-    eps=config.epsilon,
-    weight_decay=config.weight_decay,
-)
-
-# Implements the resilient backpropagation algorithm.
-"Rprop": lambda: optim.Rprop(
-    parameters,
-    lr=config.learning_rate,
-    etas=(config.eta_min, config.eta_max),
-    step_sizes=(config.step_size_min, config.step_size_max),
-)
-
-# Implements stochastic gradient descent (optionally with momentum).
-"SGD": lambda: optim.SGD(
-    parameters,
-    lr=config.learning_rate,
-    momentum=config.momentum,
-    weight_decay=config.weight_decay,
-)
-
-
         if config.optimizer_type not in optimizer_map:
-            self.logger.warning(
-                f"CascadeCorrelationNetwork: _create_optimizer: Unknown optimizer type '{config.optimizer_type}', defaulting to Adam"
-            )
+            self.logger.warning( f"CascadeCorrelationNetwork: _create_optimizer: Unknown optimizer type '{config.optimizer_type}', defaulting to Adam")
             config.optimizer_type = "Adam"
 
         optimizer = optimizer_map[config.optimizer_type]()
-        self.logger.debug(
-            f"CascadeCorrelationNetwork: _create_optimizer: Created {config.optimizer_type} optimizer with lr={config.learning_rate}"
-        )
+        self.logger.debug( f"CascadeCorrelationNetwork: _create_optimizer: Created {config.optimizer_type} optimizer with lr={config.learning_rate}")
         return optimizer
 
     @staticmethod
@@ -2844,32 +2800,17 @@ class CascadeCorrelationNetwork:
         logger.debug( f"CascadeCorrelationNetwork: _build_candidate_inputs: Attempting to Unpack Task data, Candidate data, and Training inputs: Worker ID: {worker_id}, Worker UUID: {worker_uuid}")
         logger.verbose( f"CascadeCorrelationNetwork: _build_candidate_inputs: Task data: length: {len(task_data_input)}, Type: {type(task_data_input)}, Content:\n{task_data_input}")
         logger.debug( f"CascadeCorrelationNetwork: _build_candidate_inputs: Task data unpacked: Worker ID: {worker_id}, Worker UUID: {worker_uuid}")
-        (candidate_index, candidate_data, training_inputs) = ( task_data_input  # Unpack training task data)
+        (candidate_index, candidate_data, training_inputs) = ( task_data_input )  # Unpack training task data)
         logger.debug( f"CascadeCorrelationNetwork: _build_candidate_inputs: Successfully Unpacked Task data: Worker ID: {worker_id}, Worker UUID: {worker_uuid}")
         logger.verbose( f"CascadeCorrelationNetwork: _build_candidate_inputs: Candidate Index: {candidate_index}, Type: {type(candidate_index)}, Value: {candidate_index}: Worker ID: {worker_id}, Worker UUID: {worker_uuid}")
         logger.verbose( f"CascadeCorrelationNetwork: _build_candidate_inputs: Candidate Inputs: Length: {len(training_inputs)}, Type: {type(training_inputs)}, Content:\n{training_inputs}: Worker ID: {worker_id}, Worker UUID: {worker_uuid}")
         logger.verbose( f"CascadeCorrelationNetwork: _build_candidate_inputs: Candidate Data: length: {len(candidate_data)}, Type: {type(candidate_data)}, Content:\n{candidate_data}: Worker ID: {worker_id}, Worker UUID: {worker_uuid}")
-        (
-            input_size,
-            activation_name,
-            random_value_scale,
-            candidate_uuid,
-            candidate_seed,
-            random_max_value,
-            sequence_max_value,
-        ) = candidate_data[1:]
+        (input_size, activation_name, random_value_scale, candidate_uuid, candidate_seed, random_max_value, sequence_max_value,) = candidate_data[1:]
         logger.debug( f"CascadeCorrelationNetwork: _build_candidate_inputs: Successfully Unpacked Candidate Data: Worker ID: {worker_id}, Worker UUID: {worker_uuid}, Candidate UUID: {candidate_uuid}.")
         logger.verbose( f"CascadeCorrelationNetwork: _build_candidate_inputs: Candidate data unpacked: Candidate ID: {id}, Input Size: {input_size}, Activation Function Name: {activation_name}, Random Value Scale: {random_value_scale}, Candidate UUID: {candidate_uuid}, Random Seed: {candidate_seed}, Random Value Max: {random_max_value}, Sequence Max Value: {sequence_max_value}: Worker ID: {worker_id}, Worker UUID: {worker_uuid}, Candidate UUID: {candidate_uuid}.")
         logger.debug( f"CascadeCorrelationNetwork: _build_candidate_inputs: Attempting to unpack Training inputs: Worker ID: {worker_id}, Worker UUID: {worker_uuid}, Candidate UUID: {candidate_uuid}")
         logger.verbose( f"CascadeCorrelationNetwork: _build_candidate_inputs: Training inputs: length: {len(training_inputs)}, Type: {type(training_inputs)}, Content:\n{training_inputs}: Worker ID: {worker_id}, Worker UUID: {worker_uuid}, Candidate UUID: {candidate_uuid}")
-        (
-            candidate_input,
-            candidate_epochs,
-            y,
-            residual_error,
-            candidate_learning_rate,
-            candidate_display_frequency,
-        ) = training_inputs
+        (candidate_input, candidate_epochs, y, residual_error, candidate_learning_rate, candidate_display_frequency,) = training_inputs
         logger.debug( f"CascadeCorrelationNetwork: _build_candidate_inputs: Successfully Unpacked Training inputs: Worker ID: {worker_id}, Worker UUID: {worker_uuid}, Candidate UUID: {candidate_uuid}.")
         logger.debug( f"CascadeCorrelationNetwork: _build_candidate_inputs: Unpacked Task data, Candidate data, and Training inputs: Worker ID: {worker_id}, Worker UUID: {worker_uuid}, Candidate Index: {candidate_index}, Candidate UUID: {candidate_uuid}, Training Inputs: x shape: {candidate_input.shape}, epochs: {candidate_epochs}, y shape: {y.shape}, residual_error shape: {residual_error.shape}, learning_rate: {candidate_learning_rate}, display_frequency: {candidate_display_frequency}")
         logger.verbose( f"CascadeCorrelationNetwork: _build_candidate_inputs: Training inputs: x shape: {candidate_input.shape}, epochs: {candidate_epochs}, y shape: {y.shape}, residual_error shape: {residual_error.shape}, learning_rate: {candidate_learning_rate}, display_frequency: {candidate_display_frequency}")
@@ -4618,19 +4559,11 @@ class CascadeCorrelationNetwork:
         Returns:
             bool: Whether target accuracy has been reached
         """
-        self.logger.trace(
-            "CascadeCorrelationNetwork: check_training_accuracy: Starting to check if training accuracy has reached the target."
-        )
+        self.logger.trace( "CascadeCorrelationNetwork: check_training_accuracy: Starting to check if training accuracy has reached the target.")
         if train_accuracy_reached := (train_accuracy >= accuracy_target):
-            self.logger.info(
-                f"CascadeCorrelationNetwork: check_training_accuracy: Reached target training accuracy: {train_accuracy:.4f} >= {accuracy_target:.4f}"
-            )
-        self.logger.debug(
-            f"CascadeCorrelationNetwork: check_training_accuracy: Current Training Accuracy: {train_accuracy:.4f}, Target Accuracy: {accuracy_target:.4f}"
-        )
-        self.logger.trace(
-            "CascadeCorrelationNetwork: check_training_accuracy: Completed checking if training accuracy has reached the target."
-        )
+            self.logger.info( f"CascadeCorrelationNetwork: check_training_accuracy: Reached target training accuracy: {train_accuracy:.4f} >= {accuracy_target:.4f}")
+        self.logger.debug( f"CascadeCorrelationNetwork: check_training_accuracy: Current Training Accuracy: {train_accuracy:.4f}, Target Accuracy: {accuracy_target:.4f}")
+        self.logger.trace( "CascadeCorrelationNetwork: check_training_accuracy: Completed checking if training accuracy has reached the target.")
         return train_accuracy_reached
 
     ##################################################################################################################################################################################################
@@ -4663,83 +4596,48 @@ class CascadeCorrelationNetwork:
 
         # Validate input tensors
         if x is None or y is None:
-            self.logger.error(
-                "CascadeCorrelationNetwork: calculate_accuracy: Missing required tensors for accuracy calculation, using safe defaults."
-            )
-            self.logger.debug(
-                f"CascadeCorrelationNetwork: calculate_accuracy: input size: {self.input_size}, output size: {self.output_size}"
-            )
+            self.logger.error( "CascadeCorrelationNetwork: calculate_accuracy: Missing required tensors for accuracy calculation, using safe defaults.")
+            self.logger.debug( f"CascadeCorrelationNetwork: calculate_accuracy: input size: {self.input_size}, output size: {self.output_size}")
             x = torch.empty(0, self.input_size)
             y = torch.empty(0, self.output_size)
             # raise ValueError("CascadeCorrelationNetwork: calculate_accuracy: Missing required tensors for accuracy calculation.")
         if not (isinstance(x, torch.Tensor) and isinstance(y, torch.Tensor)):
-            self.logger.error(
-                f"CascadeCorrelationNetwork: calculate_accuracy: Input and target tensors must be of type torch.Tensor. Input (x): {type(x)}, Target (y): {type(y)}"
-            )
-            raise ValueError(
-                "CascadeCorrelationNetwork: calculate_accuracy: Input and target tensors must be of type torch.Tensor."
-            )
+            self.logger.error( f"CascadeCorrelationNetwork: calculate_accuracy: Input and target tensors must be of type torch.Tensor. Input (x): {type(x)}, Target (y): {type(y)}")
+            raise ValueError( "CascadeCorrelationNetwork: calculate_accuracy: Input and target tensors must be of type torch.Tensor.")
         # elif x.shape[-1] != y.shape[-1]:
         #     self.logger.error( f"CascadeCorrelationNetwork: calculate_accuracy: Input shape: {x.shape}, Target shape: {y.shape}")
         #     raise ValueError( "CascadeCorrelationNetwork: calculate_accuracy: Input and target tensors must have the same number of features.")
         elif x.shape[0] != y.shape[0]:
-            self.logger.error(
-                f"CascadeCorrelationNetwork: calculate_accuracy: Input and target tensors must have compatible shapes. Input (x): {x.shape}, Target (y): {y.shape}, input size: {self.input_size}, output size: {self.output_size}"
-            )
-            raise ValueError(
-                "CascadeCorrelationNetwork: calculate_accuracy: Input and target tensors must have compatible shapes."
-            )
+            self.logger.error( f"CascadeCorrelationNetwork: calculate_accuracy: Input and target tensors must have compatible shapes. Input (x): {x.shape}, Target (y): {y.shape}, input size: {self.input_size}, output size: {self.output_size}")
+            raise ValueError( "CascadeCorrelationNetwork: calculate_accuracy: Input and target tensors must have compatible shapes.")
         else:
-            self.logger.debug(
-                f"CascadeCorrelationNetwork: calculate_accuracy: Validated input shape: {x.shape}, Target shape: {y.shape}"
-            )
+            self.logger.debug( f"CascadeCorrelationNetwork: calculate_accuracy: Validated input shape: {x.shape}, Target shape: {y.shape}")
 
             # Calculating accuracy
-            self.logger.debug(
-                f"CascadeCorrelationNetwork: calculate_accuracy: Calculating accuracy for input shape: {x.shape}, target shape: {y.shape}"
-            )
+            self.logger.debug( f"CascadeCorrelationNetwork: calculate_accuracy: Calculating accuracy for input shape: {x.shape}, target shape: {y.shape}")
             with torch.no_grad():
                 output = self.forward(x)
-                self.logger.debug(
-                    f"CascadeCorrelationNetwork: calculate_accuracy: Output shape: {output.shape}, Output: {output}"
-                )
+                self.logger.debug( f"CascadeCorrelationNetwork: calculate_accuracy: Output shape: {output.shape}, Output: {output}")
 
                 # Validate Output Tensor
                 if not isinstance(output, torch.Tensor):
-                    self.logger.error(
-                        f"CascadeCorrelationNetwork: calculate_accuracy: Output tensor must be of type torch.Tensor. Output: Type: {type(output)}"
-                    )
-                    raise ValueError(
-                        "CascadeCorrelationNetwork: calculate_accuracy: Output tensor must be of type torch.Tensor."
-                    )
+                    self.logger.error( f"CascadeCorrelationNetwork: calculate_accuracy: Output tensor must be of type torch.Tensor. Output: Type: {type(output)}")
+                    raise ValueError( "CascadeCorrelationNetwork: calculate_accuracy: Output tensor must be of type torch.Tensor.")
                 elif output.shape[-1] != y.shape[-1]:
-                    self.logger.error(
-                        f"CascadeCorrelationNetwork: calculate_accuracy: Output shape: {output.shape}, Target shape: {y.shape}"
-                    )
-                    raise ValueError(
-                        "CascadeCorrelationNetwork: calculate_accuracy: Output and target tensors must have the same number of features."
-                    )
+                    self.logger.error( f"CascadeCorrelationNetwork: calculate_accuracy: Output shape: {output.shape}, Target shape: {y.shape}")
+                    raise ValueError( "CascadeCorrelationNetwork: calculate_accuracy: Output and target tensors must have the same number of features.")
                 elif output.shape[0] != y.shape[0]:
-                    self.logger.error(
-                        f"CascadeCorrelationNetwork: calculate_accuracy: Output and target tensors must have compatible shapes. Output Tensor: {output.shape}, Target (y): {y.shape}, Output size: {output.size()}, Target size: {self.output_size}"
-                    )
-                    raise ValueError(
-                        "CascadeCorrelationNetwork: calculate_accuracy: Output and target tensors must have compatible shapes."
-                    )
+                    self.logger.error( f"CascadeCorrelationNetwork: calculate_accuracy: Output and target tensors must have compatible shapes. Output Tensor: {output.shape}, Target (y): {y.shape}, Output size: {output.size()}, Target size: {self.output_size}")
+                    raise ValueError( "CascadeCorrelationNetwork: calculate_accuracy: Output and target tensors must have compatible shapes.")
                 else:
-                    self.logger.debug(
-                        f"CascadeCorrelationNetwork: calculate_accuracy: Validated Output shape: {output.shape}, Target shape: {y.shape}"
-                    )
+                    self.logger.debug( f"CascadeCorrelationNetwork: calculate_accuracy: Validated Output shape: {output.shape}, Target shape: {y.shape}")
                 accuracy = self._accuracy(y=y, output=output)
-            self.logger.info(
-                f"CascadeCorrelationNetwork: calculate_accuracy: Calculated accuracy: {accuracy:.4f}, Percentage: {accuracy * 100:.2f}%"
-            )
+            self.logger.info( f"CascadeCorrelationNetwork: calculate_accuracy: Calculated accuracy: {accuracy:.4f}, Percentage: {accuracy * 100:.2f}%")
 
         # Returning accuracy
-        self.logger.trace(
-            "CascadeCorrelationNetwork: calculate_accuracy: Completed calculating accuracy."
-        )
+        self.logger.trace( "CascadeCorrelationNetwork: calculate_accuracy: Completed calculating accuracy.")
         return accuracy
+
 
     #################################################################################################################################################################################################
     def _accuracy(
@@ -4761,69 +4659,37 @@ class CascadeCorrelationNetwork:
         Returns:
             Accuracy as a float
         """
-        self.logger.trace(
-            "CascadeCorrelationNetwork: _accuracy: Starting to calculate accuracy."
-        )
+        self.logger.trace( "CascadeCorrelationNetwork: _accuracy: Starting to calculate accuracy.")
 
         # Validate input tensors
         if y is None or output is None:
-            self.logger.error(
-                "CascadeCorrelationNetwork: _accuracy: Missing required tensors for accuracy calculation."
-            )
-            raise ValueError(
-                "CascadeCorrelationNetwork: _accuracy: Missing required tensors for accuracy calculation."
-            )
+            self.logger.error( "CascadeCorrelationNetwork: _accuracy: Missing required tensors for accuracy calculation.")
+            raise ValueError( "CascadeCorrelationNetwork: _accuracy: Missing required tensors for accuracy calculation.")
         elif not (isinstance(y, torch.Tensor) and isinstance(output, torch.Tensor)):
-            self.logger.error(
-                "CascadeCorrelationNetwork: _accuracy: All inputs must be torch tensors."
-            )
-            raise TypeError(
-                "CascadeCorrelationNetwork: _accuracy: All inputs must be torch tensors."
-            )
+            self.logger.error( "CascadeCorrelationNetwork: _accuracy: All inputs must be torch tensors.")
+            raise TypeError( "CascadeCorrelationNetwork: _accuracy: All inputs must be torch tensors.")
         elif y.shape[0] != output.shape[0]:
-            self.logger.error(
-                f"CascadeCorrelationNetwork: _accuracy: Output and Target tensors must have the same number of samples. Got {y.shape[0]} and {output.shape[0]}."
-            )
-            raise ValueError(
-                "CascadeCorrelationNetwork: _accuracy: Output and Target tensors must have the same number of samples."
-            )
-        self.logger.debug(
-            f"CascadeCorrelationNetwork: _accuracy: Input shape: {y.shape}, Output shape: {output.shape}"
-        )
-        self.logger.verbose(
-            f"CascadeCorrelationNetwork: _accuracy: Input shape: {y.shape}, Input: {y}"
-        )
-        self.logger.verbose(
-            f"CascadeCorrelationNetwork: _accuracy: Output shape: {output.shape}, Output: {output}"
-        )
+            self.logger.error( f"CascadeCorrelationNetwork: _accuracy: Output and Target tensors must have the same number of samples. Got {y.shape[0]} and {output.shape[0]}.")
+            raise ValueError( "CascadeCorrelationNetwork: _accuracy: Output and Target tensors must have the same number of samples.")
+        self.logger.debug( f"CascadeCorrelationNetwork: _accuracy: Input shape: {y.shape}, Output shape: {output.shape}")
+        self.logger.verbose( f"CascadeCorrelationNetwork: _accuracy: Input shape: {y.shape}, Input: {y}")
+        self.logger.verbose( f"CascadeCorrelationNetwork: _accuracy: Output shape: {output.shape}, Output: {output}")
 
         # Handle empty batch case
         if y.shape[0] == 0:
-            self.logger.debug(
-                "CascadeCorrelationNetwork: _accuracy: Empty batch, returning NaN for accuracy"
-            )
+            self.logger.debug( "CascadeCorrelationNetwork: _accuracy: Empty batch, returning NaN for accuracy")
             return float("nan")
 
         # Find predicted and target values
         predicted = torch.argmax(output, dim=1)
-        self.logger.verbose(
-            f"CascadeCorrelationNetwork: _accuracy: Predicted shape: {predicted.shape}, Predicted: {predicted}"
-        )
+        self.logger.verbose( f"CascadeCorrelationNetwork: _accuracy: Predicted shape: {predicted.shape}, Predicted: {predicted}")
         target = torch.argmax(y, dim=1)
-        self.logger.verbose(
-            f"CascadeCorrelationNetwork: _accuracy: Target shape: {target.shape}, Target: {target}"
-        )
+        self.logger.verbose( f"CascadeCorrelationNetwork: _accuracy: Target shape: {target.shape}, Target: {target}")
         correct = (predicted == target).sum().item()
-        self.logger.verbose(
-            f"CascadeCorrelationNetwork: _accuracy: Number of correct predictions: {correct}, Total samples: {len(target)}"
-        )
+        self.logger.verbose( f"CascadeCorrelationNetwork: _accuracy: Number of correct predictions: {correct}, Total samples: {len(target)}")
         accuracy = correct / len(target)
-        self.logger.info(
-            f"CascadeCorrelationNetwork: _accuracy: Calculated accuracy: {accuracy:.4f}, Percentage: {accuracy * 100:.4f}%"
-        )
-        self.logger.trace(
-            "CascadeCorrelationNetwork: _accuracy: Completed calculating accuracy."
-        )
+        self.logger.info( f"CascadeCorrelationNetwork: _accuracy: Calculated accuracy: {accuracy:.4f}, Percentage: {accuracy * 100:.4f}%")
+        self.logger.trace( "CascadeCorrelationNetwork: _accuracy: Completed calculating accuracy.")
         return accuracy
 
     #################################################################################################################################################################################################
@@ -4848,17 +4714,11 @@ class CascadeCorrelationNetwork:
 
         # Return the predicted output
         self.logger.debug(f"CascadeCorrelationNetwork: predict: Input shape: {x.shape}")
-        self.logger.trace(
-            "CascadeCorrelationNetwork: predict: Starting to make predictions."
-        )
+        self.logger.trace( "CascadeCorrelationNetwork: predict: Starting to make predictions.")
         with torch.no_grad():
             predicted_value = self.forward(x)
-            self.logger.trace(
-                "CascadeCorrelationNetwork: predict: Finished making predictions."
-            )
-        self.logger.debug(
-            f"CascadeCorrelationNetwork: predict: Predicted shape: {predicted_value.shape}, Predicted: {predicted_value}"
-        )
+            self.logger.trace( "CascadeCorrelationNetwork: predict: Finished making predictions.")
+        self.logger.debug( f"CascadeCorrelationNetwork: predict: Predicted shape: {predicted_value.shape}, Predicted: {predicted_value}")
         return predicted_value
 
     #################################################################################################################################################################################################
@@ -4880,19 +4740,14 @@ class CascadeCorrelationNetwork:
         self._validate_tensor_shapes(x, expected_input_features=self.input_size)
 
         # Return the predicted class labels
-        self.logger.debug(
-            f"CascadeCorrelationNetwork: predict_classes: Input shape: {x.shape}"
-        )
-        self.logger.trace(
-            "CascadeCorrelationNetwork: predict_classes: Starting to predict class labels."
-        )
+        self.logger.debug( f"CascadeCorrelationNetwork: predict_classes: Input shape: {x.shape}")
+        self.logger.trace( "CascadeCorrelationNetwork: predict_classes: Starting to predict class labels.")
         with torch.no_grad():
             output = self.forward(x)
             prediction = torch.argmax(output, dim=1)
-            self.logger.info(
-                f"CascadeCorrelationNetwork: predict_classes: Predicted class labels shape: {prediction.shape}, Prediction: {prediction}"
-            )
+            self.logger.info( f"CascadeCorrelationNetwork: predict_classes: Predicted class labels shape: {prediction.shape}, Prediction: {prediction}")
         return prediction
+
 
     #################################################################################################################################################################################################
     # Public Method to print a summary of the network architecture
@@ -4910,60 +4765,35 @@ class CascadeCorrelationNetwork:
         Returns:
             None
         """
-        self.logger.trace(
-            "CascadeCorrelationNetwork: summary: Starting to print network summary."
-        )
-        self.logger.info(
-            "CascadeCorrelationNetwork: summary: Display Cascade Correlation Network Summary:"
-        )
-        self.logger.info(
-            f"CascadeCorrelationNetwork: summary: Input size: {self.input_size}"
-        )
-        self.logger.info(
-            f"CascadeCorrelationNetwork: summary: Output size: {self.output_size}"
-        )
-        self.logger.info(
-            f"CascadeCorrelationNetwork: summary: Number of hidden units: {len(self.hidden_units)}"
-        )
+        self.logger.trace( "CascadeCorrelationNetwork: summary: Starting to print network summary.")
+        self.logger.info( "CascadeCorrelationNetwork: summary: Display Cascade Correlation Network Summary:")
+        self.logger.info( f"CascadeCorrelationNetwork: summary: Input size: {self.input_size}")
+        self.logger.info( f"CascadeCorrelationNetwork: summary: Output size: {self.output_size}")
+        self.logger.info( f"CascadeCorrelationNetwork: summary: Number of hidden units: {len(self.hidden_units)}")
 
         # Display hidden unit info if present
         if self.hidden_units:
             self.logger.info("CascadeCorrelationNetwork: summary: Hidden Units:\n")
             for i, unit in enumerate(self.hidden_units):
                 self.logger.info(f"CascadeCorrelationNetwork: summary:   Unit {i+1}:")
-                self.logger.info(
-                    f"CascadeCorrelationNetwork: summary:     Input size: {len(unit['weights'])}"
-                )
-                self.logger.info(
-                    f"CascadeCorrelationNetwork: summary:     Correlation: {unit['correlation']:.6f}"
-                )
+                self.logger.info( f"CascadeCorrelationNetwork: summary:     Input size: {len(unit['weights'])}")
+                self.logger.info( f"CascadeCorrelationNetwork: summary:     Correlation: {unit['correlation']:.6f}")
 
         # Display Training Parameters
         self.logger.info("CascadeCorrelationNetwork: summary: Training Parameters:")
-        self.logger.info(
-            f"CascadeCorrelationNetwork: summary:   Learning rate: {self.learning_rate}"
-        )
-        self.logger.info(
-            f"CascadeCorrelationNetwork: summary:   Candidate pool size: {self.candidate_pool_size}"
-        )
-        self.logger.info(
-            f"CascadeCorrelationNetwork: summary:   Correlation threshold: {self.correlation_threshold}"
-        )
+        self.logger.info( f"CascadeCorrelationNetwork: summary:   Learning rate: {self.learning_rate}")
+        self.logger.info( f"CascadeCorrelationNetwork: summary:   Candidate pool size: {self.candidate_pool_size}")
+        self.logger.info( f"CascadeCorrelationNetwork: summary:   Correlation threshold: {self.correlation_threshold}")
 
         # Display final training accuracy if attribute exists
         if self.history["train_accuracy"]:
-            self.logger.info(
-                f"CascadeCorrelationNetwork: summary: Final training accuracy:\n{self.history['train_accuracy'][-1]:.6f}"
-            )
+            self.logger.info( f"CascadeCorrelationNetwork: summary: Final training accuracy:\n{self.history['train_accuracy'][-1]:.6f}")
 
         # Display final value accuracy if validation was used
         if "value_accuracy" in self.history and self.history["value_accuracy"]:
-            self.logger.info(
-                f"CascadeCorrelationNetwork: summary: Final validation accuracy:\n{self.history['value_accuracy'][-1]:.6f}"
-            )
-        self.logger.trace(
-            "CascadeCorrelationNetwork: summary: Completed printing network summary."
-        )
+            self.logger.info( f"CascadeCorrelationNetwork: summary: Final validation accuracy:\n{self.history['value_accuracy'][-1]:.6f}")
+        self.logger.trace( "CascadeCorrelationNetwork: summary: Completed printing network summary.")
+
 
     #################################################################################################################################################################################################
     # Define public methods for plotting the dataset, decision boundary and training history
@@ -5015,9 +4845,7 @@ class CascadeCorrelationNetwork:
                 name="PlotDecisionBoundary",
             )
             plot_process.start()
-            self.logger.info(
-                f"CascadeCorrelationNetwork: plot_decision_boundary: Started plotting process PID: {plot_process.pid}"
-            )
+            self.logger.info( f"CascadeCorrelationNetwork: plot_decision_boundary: Started plotting process PID: {plot_process.pid}")
             return plot_process
         else:
             self.plotter.plot_decision_boundary(self, x, y, title)
@@ -5044,9 +4872,7 @@ class CascadeCorrelationNetwork:
                 name="PlotTrainingHistory",
             )
             plot_process.start()
-            self.logger.info(
-                f"CascadeCorrelationNetwork: plot_training_history: Started plotting process PID: {plot_process.pid}"
-            )
+            self.logger.info( f"CascadeCorrelationNetwork: plot_training_history: Started plotting process PID: {plot_process.pid}")
             return plot_process
         else:
             self.plotter.plot_training_history(self.history)
@@ -5067,44 +4893,26 @@ class CascadeCorrelationNetwork:
         Returns:
             str: The generated UUID.
         """
-        logger = (
-            self.logger
-            if hasattr(self, "logger") and self.logger is not None
-            else Logger
-        )
-        logger.trace(
-            "CascadeCorrelationNetwork: _generate_uuid: Inside the CascadeCorrelationNetwork class Generate UUID method"
-        )
+        logger = ( self.logger if hasattr(self, "logger") and self.logger is not None else Logger)
+        logger.trace( "CascadeCorrelationNetwork: _generate_uuid: Inside the CascadeCorrelationNetwork class Generate UUID method")
         new_uuid = str(uuid.uuid4())
         logger.debug(f"CascadeCorrelationNetwork: _generate_uuid: UUID: {new_uuid}")
-        logger.trace(
-            "CascadeCorrelationNetwork: _generate_uuid: Completed the CascadeCorrelationNetwork class Generate UUID method"
-        )
+        logger.trace( "CascadeCorrelationNetwork: _generate_uuid: Completed the CascadeCorrelationNetwork class Generate UUID method")
         return new_uuid
 
     ####################################################################################################################################
     # Define CascadeCorrelationNetwork class Setters
     ####################################################################################################################################
-    def set_candidate_training_queue_authkey(
-        self, candidate_training_queue_authkey: bytes = None
-    ):
+    def set_candidate_training_queue_authkey( self, candidate_training_queue_authkey: bytes = None):
         self.candidate_training_queue_authkey = candidate_training_queue_authkey
 
-    def set_candidate_training_queue_address(
-        self, candidate_training_queue_address: str = None
-    ):
+    def set_candidate_training_queue_address( self, candidate_training_queue_address: str = None):
         self.candidate_training_queue_address = candidate_training_queue_address
 
-    def set_candidate_training_tasks_queue_timeout(
-        self, candidate_training_tasks_queue_timeout: int = None
-    ):
-        self.candidate_training_tasks_queue_timeout = (
-            candidate_training_tasks_queue_timeout
-        )
+    def set_candidate_training_tasks_queue_timeout( self, candidate_training_tasks_queue_timeout: int = None):
+        self.candidate_training_tasks_queue_timeout = ( candidate_training_tasks_queue_timeout)
 
-    def set_candidate_training_shutdown_timeout(
-        self, candidate_training_shutdown_timeout: int = None
-    ):
+    def set_candidate_training_shutdown_timeout( self, candidate_training_shutdown_timeout: int = None):
         self.candidate_training_shutdown_timeout = candidate_training_shutdown_timeout
 
     def set_activation_fn(self, activation_fn: str = None):
@@ -5146,9 +4954,7 @@ class CascadeCorrelationNetwork:
     def set_learning_rate(self, learning_rate: float = None):
         """Set learning rate with validation."""
         if learning_rate is not None:
-            self._validate_numeric_parameter(
-                learning_rate, "learning_rate", min_val=0.0, max_val=10.0
-            )
+            self._validate_numeric_parameter( learning_rate, "learning_rate", min_val=0.0, max_val=10.0)
         self.learning_rate = learning_rate
 
     def set_max_hidden_units(self, max_hidden_units: int = None):
@@ -5159,12 +4965,8 @@ class CascadeCorrelationNetwork:
 
     def set_output_bias(self, output_bias: float = None):
         """Set output bias with validation."""
-        if output_bias is not None and not isinstance(
-            output_bias, (int, float, torch.Tensor)
-        ):
-            raise ValidationError(
-                f"output_bias must be numeric or tensor, got {type(output_bias)}"
-            )
+        if output_bias is not None and not isinstance( output_bias, (int, float, torch.Tensor)):
+            raise ValidationError( f"output_bias must be numeric or tensor, got {type(output_bias)}")
         self.output_bias = output_bias
 
     def set_output_epochs(self, output_epochs: int = None):
@@ -5197,30 +4999,18 @@ class CascadeCorrelationNetwork:
         Returns:
             None
         """
-        logger = (
-            self.logger
-            if hasattr(self, "logger") and self.logger is not None
-            else Logger
-        )
+        logger = ( self.logger if hasattr(self, "logger") and self.logger is not None else Logger)
 
-        logger.trace(
-            "CascadeCorrelationNetwork: set_uuid: Starting to set UUID for CascadeCorrelationNetwork class"
-        )
+        logger.trace( "CascadeCorrelationNetwork: set_uuid: Starting to set UUID for CascadeCorrelationNetwork class")
         logger.debug(f"CascadeCorrelationNetwork: set_uuid: Setting UUID to: {uuid}")
         if not hasattr(self, "uuid") or self.uuid is None:
-            self.uuid = (uuid, self._generate_uuid())[
-                uuid is None
-            ]  # Generate a new UUID if none is provided
+            self.uuid = (uuid, self._generate_uuid())[ uuid is None ]  # Generate a new UUID if none is provided
         else:
             error_msg = f"UUID already set: {self.uuid}. Cannot change UUID after initialization."
-            logger.fatal(
-                f"CascadeCorrelationNetwork: set_uuid: Fatal Error: {error_msg}"
-            )
+            logger.fatal( f"CascadeCorrelationNetwork: set_uuid: Fatal Error: {error_msg}")
             raise ConfigurationError(error_msg)
         logger.debug(f"CascadeCorrelationNetwork: set_uuid: UUID set to: {self.uuid}")
-        logger.trace(
-            "CascadeCorrelationNetwork: set_uuid: Completed setting UUID for CascadeCorrelationNetwork class"
-        )
+        logger.trace( "CascadeCorrelationNetwork: set_uuid: Completed setting UUID for CascadeCorrelationNetwork class")
 
     ####################################################################################################################################
     # Define CascadeCorrelationNetwork class Getters
@@ -5237,98 +5027,54 @@ class CascadeCorrelationNetwork:
         Returns:
             str: The UUID for the CascadeCorrelationNetwork class.
         """
-        self.logger.trace(
-            "CascadeCorrelationNetwork: get_uuid: Starting to get UUID for CascadeCorrelationNetwork class"
-        )
-        self.logger.debug(
-            f"CascadeCorrelationNetwork: get_uuid: Current UUID: {getattr(self, 'uuid', None)}"
-        )
+        self.logger.trace( "CascadeCorrelationNetwork: get_uuid: Starting to get UUID for CascadeCorrelationNetwork class")
+        self.logger.debug( f"CascadeCorrelationNetwork: get_uuid: Current UUID: {getattr(self, 'uuid', None)}")
 
         # Ensure UUID is set:  if not, generate a new one
         if not hasattr(self, "uuid"):
             self.set_uuid()  # Ensure UUID is set if not already
-            self.logger.debug(
-                "CascadeCorrelationNetwork: get_uuid: UUID was not set, generated a new one."
-            )
+            self.logger.debug( "CascadeCorrelationNetwork: get_uuid: UUID was not set, generated a new one.")
 
         # Return the UUID
-        self.logger.debug(
-            f"CascadeCorrelationNetwork: get_uuid: Returning UUID: {self.uuid}"
-        )
-        self.logger.trace(
-            "CascadeCorrelationNetwork: get_uuid: Completed getting UUID for CascadeCorrelationNetwork class"
-        )
+        self.logger.debug( f"CascadeCorrelationNetwork: get_uuid: Returning UUID: {self.uuid}")
+        self.logger.trace( "CascadeCorrelationNetwork: get_uuid: Completed getting UUID for CascadeCorrelationNetwork class")
         return self.uuid
 
     def get_candidate_training_queue_authkey(self):
-        return (
-            self.candidate_training_queue_authkey
-            if hasattr(self, "candidate_training_queue_authkey")
-            else None
-        )
+        return ( self.candidate_training_queue_authkey if hasattr(self, "candidate_training_queue_authkey") else None)
 
     def get_candidate_training_queue_address(self):
-        return (
-            self.candidate_training_queue_address
-            if hasattr(self, "candidate_training_queue_address")
-            else None
-        )
+        return ( self.candidate_training_queue_address if hasattr(self, "candidate_training_queue_address") else None)
 
     def get_candidate_training_tasks_queue_timeout(self):
-        return (
-            self.candidate_training_tasks_queue_timeout
-            if hasattr(self, "candidate_training_tasks_queue_timeout")
-            else None
-        )
+        return ( self.candidate_training_tasks_queue_timeout if hasattr(self, "candidate_training_tasks_queue_timeout") else None)
 
     def get_candidate_training_shutdown_timeout(self):
-        return (
-            self.candidate_training_shutdown_timeout
-            if hasattr(self, "candidate_training_shutdown_timeout")
-            else None
-        )
+        return ( self.candidate_training_shutdown_timeout if hasattr(self, "candidate_training_shutdown_timeout") else None)
 
     def get_activation_fn(self):
         return self.activation_fn if hasattr(self, "activation_fn") else None
 
     def get_activation_fn_no_diff(self):
-        return (
-            self.activation_fn_no_diff
-            if hasattr(self, "activation_fn_no_diff")
-            else None
-        )
+        return ( self.activation_fn_no_diff if hasattr(self, "activation_fn_no_diff") else None)
 
     def get_candidate_epochs(self):
         return self.candidate_epochs if hasattr(self, "candidate_epochs") else None
 
     def get_candidate_pool_size(self):
-        return (
-            self.candidate_pool_size if hasattr(self, "candidate_pool_size") else None
-        )
+        return ( self.candidate_pool_size if hasattr(self, "candidate_pool_size") else None)
 
     def get_candidate_unit(self) -> CandidateUnit:
         return self.candidate_unit if hasattr(self, "candidate_unit") else None
 
     def get_correlation_threshold(self):
-        return (
-            self.correlation_threshold
-            if hasattr(self, "correlation_threshold")
-            else None
-        )
+        return ( self.correlation_threshold if hasattr(self, "correlation_threshold") else None)
 
     def get_display_frequency_epoch(self):
-        return (
-            self.display_frequency_epoch
-            if hasattr(self, "display_frequency_epoch")
-            else None
-        )
+        return ( self.display_frequency_epoch if hasattr(self, "display_frequency_epoch") else None)
 
     def get_display_frequency_units(self):
-        return (
-            self.display_frequency_units
-            if hasattr(self, "display_frequency_units")
-            else None
-        )
+        return ( self.display_frequency_units if hasattr(self, "display_frequency_units") else None)
 
     def get_generate_plots(self):
         return self.generate_plots if hasattr(self, "generate_plots") else None
@@ -5367,8 +5113,4 @@ class CascadeCorrelationNetwork:
         return self.random_value_scale if hasattr(self, "random_value_scale") else None
 
     def get_status_display_frequency(self):
-        return (
-            self.status_display_frequency
-            if hasattr(self, "status_display_frequency")
-            else None
-        )
+        return ( self.status_display_frequency if hasattr(self, "status_display_frequency") else None)
