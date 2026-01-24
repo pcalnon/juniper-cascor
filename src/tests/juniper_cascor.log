@@ -70031,3 +70031,15 @@ tensor([[ 0.6892, -0.6062],
 [cascade_correlation.py: _init_network_parameters:665] (2026-01-22 10:13:02) [DEBUG] CascadeCorrelationNetwork: _init_network_parameters: Network parameters initialized
 [cascade_correlation.py: _init_multiprocessing:746] (2026-01-22 10:13:02) [DEBUG] CascadeCorrelationNetwork: _init_multiprocessing: Multiprocessing components initialized
 [cascade_correlation.py: _init_display_components:790] (2026-01-22 10:13:02) [DEBUG] CascadeCorrelationNetwork: _init_display_components: Display components initialized
+[log_config.py: __init__:171] (2026-01-23 20:31:27) [INFO] LogConfig: __init__: Created custom logger by instantiating Logger class
+[log_config.py: __init__:176] (2026-01-23 20:31:27) [DEBUG] LogConfig: __init__: UUID set to: 9fbffdba-d934-4328-824b-bbcda63a9f33
+[log_config.py: __init__:178] (2026-01-23 20:31:27) [DEBUG] LogConfig: __init__: Default Log Level set to 20
+[log_config.py: __init__:179] (2026-01-23 20:31:27) [INFO] LogConfig: __init__: Completed Initialization of LogConfig class
+[cascade_correlation.py: _init_logging_system:543] (2026-01-23 20:31:27) [DEBUG] CascadeCorrelationNetwork: _init_logging_system: Logger initialized with level: 20
+[cascade_correlation.py: _roll_sequence_number:973] (2026-01-23 20:31:27) [DEBUG] CascadeCorrelationNetwork: _roll_sequence_number: Rolling sequence number to: 3 with max value: 10 using generator: <bound method RandomState.randint of RandomState(MT19937) at 0x79EF21ECE440>
+[cascade_correlation.py: _roll_sequence_number:973] (2026-01-23 20:31:27) [DEBUG] CascadeCorrelationNetwork: _roll_sequence_number: Rolling sequence number to: 10 with max value: 10 using generator: <bound method Random.randint of <random.Random object at 0x5efb380b43e0>>
+[cascade_correlation.py: _roll_sequence_number:973] (2026-01-23 20:31:27) [DEBUG] CascadeCorrelationNetwork: _roll_sequence_number: Rolling sequence number to: 9 with max value: 10 using generator: <function CascadeCorrelationNetwork._initialize_randomness.<locals>.<lambda> at 0x79ef21d5a820>
+[cascade_correlation.py: _init_activation_with_derivative:1020] (2026-01-23 20:31:27) [DEBUG] CascadeCorrelationNetwork: _init_activation_with_derivative: Using activation function: Tanh()
+[cascade_correlation.py: _init_network_parameters:665] (2026-01-23 20:31:27) [DEBUG] CascadeCorrelationNetwork: _init_network_parameters: Network parameters initialized
+[cascade_correlation.py: _init_multiprocessing:746] (2026-01-23 20:31:27) [DEBUG] CascadeCorrelationNetwork: _init_multiprocessing: Multiprocessing components initialized
+[cascade_correlation.py: _init_display_components:790] (2026-01-23 20:31:27) [DEBUG] CascadeCorrelationNetwork: _init_display_components: Display components initialized

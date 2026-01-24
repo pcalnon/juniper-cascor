@@ -73,6 +73,7 @@ pybind11-abi=11=hc364b38_1
 pybind11-global=3.0.1=pyhc7ab6ef_0
 pygments=2.19.2=pyhd8ed1ab_0
 pytest=9.0.2=pyhcf101f3_0
+pyyaml=6.0.3=pyh7db6752_0
 python=3.14.2=h32b2ec7_100_cp314
 python_abi=3.14=8_cp314
 readline=8.3=h853b02a_0

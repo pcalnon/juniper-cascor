@@ -1,7 +1,7 @@
 # Juniper Cascor ↔ Juniper Canopy Integration Roadmap
 
 **Created**: 2026-01-20  
-**Last Updated**: 2026-01-22 11:30 CST  
+**Last Updated**: 2026-01-22 15:15 CST  
 **Version**: 2.1.0  
 **Status**: Active - Implementation Phase  
 **Author**: Development Team
@@ -33,7 +33,7 @@ This document tracks the integration of **Juniper Cascor** (Cascade Correlation 
 | P2       | ~~`try` script log_debug before source~~                | Cascor      | ~~11 "command not found" warnings~~     | ✅ RESOLVED   |
 | P1       | ~~Multiprocessing pickling error (wrapped_activation)~~ | Cascor      | ~~Workers cannot send results back~~    | ✅ RESOLVED   |
 | P2       | ~~asyncio.iscoroutinefunction deprecation~~             | Canopy      | ~~Deprecation warning, removal in 3.16~~| ✅ RESOLVED   |
-| P1       | Multiprocessing manager port conflicts                  | Cascor      | Parallel candidate training may fail    | ⚠️ DEGRADED   |
+| P1       | ~~Multiprocessing manager port conflicts~~              | Cascor      | ~~Parallel candidate training may fail~~| ✅ RESOLVED   |
 | P1       | ~~Environment mismatch~~                                | Both        | ~~Different conda environments~~        | ✅ RESOLVED   |
 | P1       | ~~Missing pytest-mock and pytest-asyncio~~              | Canopy      | ~~32 errors + many async failures~~     | ✅ RESOLVED   |
 
@@ -508,16 +508,11 @@ $ ./try 2>&1 | head -5
 #### CASCOR-P1-002: Missing PyYAML in Original Environment Spec
 
 **Location**: `conf/conda_environment.yaml`  
-**Status**: ⚠️ Previously identified
+**Status**: ✅ RESOLVED (2026-01-22)
 
 **Problem**: `pyyaml` was not listed in environment spec.
 
-**Proposed Solution**: Add to conda environment:
-
-```yaml
-dependencies:
-  - pyyaml=6.0.3
-```
+**Resolution**: Added `pyyaml=6.0.3=pyh7db6752_0` to `conf/conda_environment.yaml`.
 
 ---
 

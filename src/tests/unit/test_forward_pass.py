@@ -221,7 +221,9 @@ class TestForwardPassValidation:
         The network validates inputs and rejects NaN values to prevent
         silent propagation of invalid data through the network.
         """
-        from cascade_correlation_exceptions.cascade_correlation_exceptions import ValidationError
+        # Import from the correct module path (cascade_correlation subdirectory)
+        # OLD: from cascade_correlation_exceptions.cascade_correlation_exceptions import ValidationError
+        from cascade_correlation.cascade_correlation_exceptions.cascade_correlation_exceptions import ValidationError
         
         nan_input = torch.full((5, simple_network.input_size), float('nan'))
         
