@@ -59,6 +59,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - Random state and config preservation tests
   - **File Created**: `src/tests/unit/test_snapshot_serializer.py`
 
+- **CASCOR-P1-009**: Fixed `get_candidates_data_count()` summing values instead of counting
+  - **Problem**: Method used `sum(getattr(r, field)...)` which summed field values instead of counting items
+  - **Solution**: Changed to `sum(1 for r in results...)` to properly count matching items
+  - **File Changed**: `src/cascade_correlation/cascade_correlation.py` (line 2355)
+
 ### Removed: [0.3.15]
 
 - **Module Duplication Cleanup**: Deleted duplicate module copies from `src/utils/`

@@ -523,7 +523,7 @@ This builds a **list** of length `sequence`, which can be extremely large with u
 
 **Application**: Juniper Cascor  
 **Location**: `src/cascade_correlation/cascade_correlation.py`  
-**Status**: ⚠️ RISK  
+**Status**: ✅ FIXED (2026-01-24)  
 **Impact**: Wrong candidate may be selected for network growth
 
 **Problem**: `best_candidate_id` is computed as a tuple, then used as an index. If best candidate has `candidate_id=7`, code reads `results[7]` instead of finding the candidate with id=7.
@@ -532,9 +532,13 @@ This builds a **list** of length `sequence`, which can be extremely large with u
 
 **Required Actions**:
 
-- [ ] Fix best candidate selection to use proper lookup
-- [ ] Fix count method to actually count (not sum)
+- [x] Fix best candidate selection to use proper lookup (verified already correct)
+- [x] Fix count method to actually count (not sum)
 - [ ] Add unit test reproducing the mis-index case
+
+**Resolution** (2026-01-24):
+1. Verified `best_candidate_id` logic at lines 2232-2248 is correct - uses `results[0].candidate_id` as value, not index
+2. Fixed `get_candidates_data_count()` at line 2355: changed `sum(getattr(r, field)...)` to `sum(1...)` to count items instead of summing values
 
 **Effort**: M (2-3 hours)  
 **Dependencies**: None

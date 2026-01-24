@@ -2352,7 +2352,10 @@ class CascadeCorrelationNetwork:
         Returns:
             Count of candidate data for the specified field
         """
-        return sum( getattr(r, field) for r in results if getattr(r, field) is not None and constraint(getattr(r, field)))
+        # CASCOR-P1-009 FIX: Changed from sum(getattr(r, field)...) to sum(1...) to count items, not sum values
+        # OLD (buggy - summed field values instead of counting):
+        # return sum( getattr(r, field) for r in results if getattr(r, field) is not None and constraint(getattr(r, field)))
+        return sum(1 for r in results if getattr(r, field) is not None and constraint(getattr(r, field)))
 
     def get_candidates_error_messages( self, results: list, valid_candidates: list) -> dict:
         """
