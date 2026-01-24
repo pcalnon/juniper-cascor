@@ -5,6 +5,36 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.14] - 2026-01-22
+
+### Fixed: [0.3.14]
+
+- **CASCOR-P1-001**: Resolved multiprocessing manager port conflicts
+  - **Problem**: `forkserver` context with custom Manager classes had compatibility issues
+  - **Solution**: 
+    - Fixed `set_forkserver_preload()` to use list argument format (was incorrectly passing multiple arguments)
+    - Retained `forkserver` as preferred context (Python 3.14.2 fixes compatibility issues)
+    - Dynamic port allocation (port 0) prevents "Address already in use" conflicts
+  - **Files Changed**:
+    - `src/cascade_correlation/cascade_correlation.py` - Fixed `set_forkserver_preload()` call
+    - `src/constants/constants_model/constants_model.py` - Updated comments
+
+- **CASCOR-P1-002**: Added missing PyYAML to environment spec
+  - **File Changed**: `conf/conda_environment.yaml` - Added `pyyaml=6.0.3=pyh7db6752_0`
+
+- **Test Fix**: Fixed `test_forward_pass_nan_input` import path
+  - **Problem**: Test imported `ValidationError` from wrong module path
+  - **Solution**: Changed import from `cascade_correlation_exceptions.cascade_correlation_exceptions` to `cascade_correlation.cascade_correlation_exceptions.cascade_correlation_exceptions`
+  - **File Changed**: `src/tests/unit/test_forward_pass.py`
+
+### Technical Notes: [0.3.14]
+
+- **SemVer impact**: PATCH – Bug fixes and documentation; no API changes
+- All Cascor unit tests now pass (152+ tests)
+- Canopy tests also verified passing (2942 passed, 41 skipped)
+
+---
+
 ## [0.3.13] - 2026-01-21
 
 ### Fixed: [0.3.13]
