@@ -64,6 +64,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **Solution**: Changed to `sum(1 for r in results...)` to properly count matching items
   - **File Changed**: `src/cascade_correlation/cascade_correlation.py` (line 2355)
 
+- **CASCOR-P1-008**: Fixed CandidateUnit random roll OOM vulnerability
+  - **Problem**: `_roll_sequence_number()` created list of up to 2^32-1 elements, causing OOM
+  - **Solution**:
+    - Replaced list comprehension with simple for-loop that discards values
+    - Added `MAX_ROLL_COUNT = 10000` cap to prevent excessive iterations
+    - Added warning log when sequence exceeds cap
+  - **File Changed**: `src/candidate_unit/candidate_unit.py` (lines 463-475)
+
+### Verified: [0.3.15]
+
+- **CASCOR-P1-005**: Shell script path resolution - verified already working
+- **CASCOR-P1-006**: Test runner script - verified already working (no syntax errors)
+
 ### Removed: [0.3.15]
 
 - **Module Duplication Cleanup**: Deleted duplicate module copies from `src/utils/`
