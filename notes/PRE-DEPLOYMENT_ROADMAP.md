@@ -30,14 +30,14 @@ This document consolidates all outstanding issues from the INTEGRATION_ROADMAP.m
 
 ### Critical P0 Issues (Identified via Oracle Analysis)
 
-| Issue ID      | Description                                 | Status            |
-| ------------- | ------------------------------------------- | ----------------- |
-| CASCOR-P0-001 | Multiprocessing can hang indefinitely       | ✅ FIXED          |
+| Issue ID      | Description                                 | Status             |
+| ------------- | ------------------------------------------- | ------------------ |
+| CASCOR-P0-001 | Multiprocessing can hang indefinitely       | ✅ FIXED           |
 | CASCOR-P0-002 | Serialization test coverage below target    | ✅ IMPROVED (78%+) |
-| CASCOR-P0-003 | Previous bug fixes need verification        | ✅ VERIFIED       |
-| CASCOR-P0-004 | Snapshot serializer save_object() TypeError | ✅ FIXED          |
-| CASCOR-P0-005 | Candidate task parameter wiring bug         | ✅ FIXED          |
-| CASCOR-P0-006 | Residual error shape logic bug              | ✅ ALREADY FIXED  |
+| CASCOR-P0-003 | Previous bug fixes need verification        | ✅ VERIFIED        |
+| CASCOR-P0-004 | Snapshot serializer save_object() TypeError | ✅ FIXED           |
+| CASCOR-P0-005 | Candidate task parameter wiring bug         | ✅ FIXED           |
+| CASCOR-P0-006 | Residual error shape logic bug              | ✅ ALREADY FIXED   |
 
 ---
 
@@ -123,12 +123,13 @@ Replaced the unreliable busy-wait loop with a bounded timeout loop that checks w
 
 **Coverage Results** (2026-01-24):
 
-| Module | Before | After | Tests Added |
-|--------|--------|-------|-------------|
-| `snapshot_serializer.py` | 78% | 78%+ | 20 unit tests |
-| Integration tests | 22 | 22 | (existing) |
+| Module                   | Before | After | Tests Added   |
+| ------------------------ | ------ | ----- | ------------- |
+| `snapshot_serializer.py` | 78%    | 78%+  | 20 unit tests |
+| Integration tests        | 22     | 22    | (existing)    |
 
 **New Test File**: `src/tests/unit/test_snapshot_serializer.py`
+
 - Tests for `save_object()`, `save_network()`, `load_network()`
 - Tests for `verify_saved_network()`
 - Edge case tests (invalid paths, hidden units, error handling)
