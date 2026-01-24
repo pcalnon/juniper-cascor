@@ -30,9 +30,39 @@ cd src/tests && bash scripts/run_tests.bash -v -c
 # Run a specific test file
 cd src/tests && python -m pytest unit/test_forward_pass.py -v
 
-# Type checking (Python uses type hints - no dedicated type checker configured)
+# Type checking with mypy (configured in pyproject.toml)
+cd src && python -m mypy cascade_correlation/ candidate_unit/ --ignore-missing-imports
+
+# Linting with flake8
+cd src && python -m flake8 . --max-line-length=120 --extend-ignore=E203,E266,E501,W503
+
+# Format checking with black
+cd src && python -m black --check --diff .
+
+# Import sorting check with isort
+cd src && python -m isort --check-only --diff .
+
 # Linting via trunk (if available)
 trunk check
+```
+
+### Environment Variables
+
+| Variable           | Description                            | Example Values                      |
+| ------------------ | -------------------------------------- | ----------------------------------- |
+| `CASCOR_LOG_LEVEL` | Override log level at runtime (P2-003) | `WARNING`, `INFO`, `DEBUG`, `ERROR` |
+
+**Log Level Override Examples:**
+
+```bash
+# Quiet mode for production/benchmarking (less verbose)
+export CASCOR_LOG_LEVEL=WARNING
+
+# Debug mode for verbose output
+export CASCOR_LOG_LEVEL=DEBUG
+
+# Trace mode for maximum verbosity
+export CASCOR_LOG_LEVEL=TRACE
 ```
 
 ### Key Entry Points

@@ -29,10 +29,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - JUnit XML reports for CI tool integration
     - Disk space cleanup for GitHub Actions runners
 
+- **CASCOR-P2-002**: Type Checker Configuration - Mypy integration complete
+  - Added mypy configuration to `pyproject.toml` with permissive settings
+  - Python 3.14 target, `ignore_missing_imports = true`
+  - Module overrides for torch, numpy, h5py, matplotlib, yaml
+  - Updated `AGENTS.md` with type checking commands
+
+- **CASCOR-P2-003**: Logging Performance Optimization
+  - Added `CASCOR_LOG_LEVEL` environment variable support in `src/constants/constants.py`
+  - Validates against known log levels: TRACE, VERBOSE, DEBUG, INFO, WARNING, ERROR, CRITICAL, FATAL
+  - Falls back to INFO if env var not set or invalid
+  - Documented quiet mode presets in `AGENTS.md`:
+    - `export CASCOR_LOG_LEVEL=WARNING` for production/benchmarking
+    - `export CASCOR_LOG_LEVEL=DEBUG` for verbose debugging
+
 ### Technical Notes: [0.3.16]
 
-- **SemVer impact**: MINOR – New CI/CD infrastructure; no API changes
-- Part of PRE-DEPLOYMENT_ROADMAP.md P1 issue resolution (Phase 2: Quality Infrastructure)
+- **SemVer impact**: MINOR – New CI/CD infrastructure and configuration; no API changes
+- Part of PRE-DEPLOYMENT_ROADMAP.md P1/P2 issue resolution (Phase 2: Quality Infrastructure)
 - Linting jobs use `continue-on-error: true` for gradual codebase cleanup
 
 ---

@@ -399,8 +399,23 @@ _PROJECT_LOG_LEVEL_CUSTOM_NAMES_LIST = [
 # _PROJECT_LOG_LEVEL_NAME_DEFAULT = _PROJECT_LOG_LEVEL_NAME_CRITICAL #  NOTE: This must be set to an existing predefined logging level
 # _PROJECT_LOG_LEVEL_NAME_DEFAULT = _PROJECT_LOG_LEVEL_NAME_ERROR #     NOTE: This must be set to an existing predefined logging level
 # _PROJECT_LOG_LEVEL_NAME_DEFAULT = _PROJECT_LOG_LEVEL_NAME_WARNING #   NOTE: This must be set to an existing predefined logging level
-_PROJECT_LOG_LEVEL_NAME_DEFAULT = _PROJECT_LOG_LEVEL_NAME_INFO  #      NOTE: This must be set to an existing predefined logging level
+# _PROJECT_LOG_LEVEL_NAME_DEFAULT = _PROJECT_LOG_LEVEL_NAME_INFO  #      NOTE: This must be set to an existing predefined logging level
 # _PROJECT_LOG_LEVEL_NAME_DEFAULT = _PROJECT_LOG_LEVEL_NAME_DEBUG #       NOTE: This must be set to an existing predefined logging level
+
+#####################################################################################################################################################################################################
+# CASCOR-P2-003: Environment variable override for log level
+# Supports: CASCOR_LOG_LEVEL environment variable to override log level at runtime
+# Valid values: TRACE, VERBOSE, DEBUG, INFO, WARNING, ERROR, CRITICAL, FATAL
+# Example: export CASCOR_LOG_LEVEL=WARNING (for quieter production/benchmarking mode)
+# Example: export CASCOR_LOG_LEVEL=DEBUG (for verbose debugging)
+_CASCOR_LOG_LEVEL_ENV = os.environ.get("CASCOR_LOG_LEVEL", "").upper()
+
+# Validate and apply environment variable override if set
+if _CASCOR_LOG_LEVEL_ENV and _CASCOR_LOG_LEVEL_ENV in _PROJECT_LOG_LEVEL_NUMBERS_DICT:
+    _PROJECT_LOG_LEVEL_NAME_DEFAULT = _CASCOR_LOG_LEVEL_ENV
+else:
+    # Fallback to INFO if env var not set or invalid
+    _PROJECT_LOG_LEVEL_NAME_DEFAULT = _PROJECT_LOG_LEVEL_NAME_INFO
 
 _PROJECT_LOG_LEVEL_DEFAULT = _PROJECT_LOG_LEVEL_NUMBERS_DICT[
     _PROJECT_LOG_LEVEL_NAME_DEFAULT

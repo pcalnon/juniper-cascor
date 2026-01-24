@@ -449,8 +449,8 @@ export PARENT_PATH_PARAM="$(realpath "${BASH_SOURCE[0]}")" && INIT_CONF="$(dirna
 ### CASCOR-P2-001: Code Coverage Below Target
 
 **Application**: Juniper Cascor  
-**Status**: 🟡 NEEDS IMPROVEMENT  
-**Current Coverage**: ~15%  
+**Status**: 🟡 IN PROGRESS  
+**Current Coverage**: ~15-78% (varies by module)  
 **Target Coverage**: 90%
 
 **Analysis**:
@@ -458,32 +458,64 @@ export PARENT_PATH_PARAM="$(realpath "${BASH_SOURCE[0]}")" && INIT_CONF="$(dirna
 - `cascade_correlation.py`: 12% coverage (1602 statements, 1407 missed)
 - `candidate_unit.py`: 18% coverage (623 statements, 513 missed)
 - `cascade_correlation_config.py`: 28% coverage
+- `snapshot_serializer.py`: 78% coverage (improved in P0-002)
 
 **Required Actions**:
 
-- [ ] Run baseline coverage report
+- [x] Run baseline coverage report
+- [x] Set coverage reporting in CI (P1-007)
 - [ ] Identify critical untested code paths
 - [ ] Add unit tests for uncovered public methods
 - [ ] Set coverage gates in CI: 70% overall, 80% for core modules
 
+**Progress** (2026-01-24):
+
+1. CI/CD pipeline now generates coverage reports:
+   - HTML report uploaded as artifact
+   - XML report for CI tool integration
+   - Term-missing output in logs
+
+2. Coverage reporting configured in `pyproject.toml`:
+   - Source modules: cascade_correlation, candidate_unit, snapshots
+   - Branch coverage enabled
+   - Exclusion patterns for test code
+
+3. Existing test counts:
+   - 175+ unit/integration tests collected
+   - 22 serialization integration tests
+   - 20 snapshot serializer unit tests (P0-002)
+
 **Effort**: L-XL (multiple days)  
-**Dependencies**: CI/CD setup (P1-007)
+**Dependencies**: CI/CD setup (P1-007) ✅ COMPLETE
 
 ---
 
 ### CASCOR-P2-002: Type Checker Configuration
 
 **Application**: Juniper Cascor  
-**Status**: 🔴 NOT STARTED
+**Status**: ✅ COMPLETE (2026-01-24)
 
 **Problem**: No static type checking configured. Type hints exist but are not verified.
 
 **Required Actions**:
 
-- [ ] Create `mypy.ini` or add mypy config to `pyproject.toml`
-- [ ] Start with permissive settings (ignore untyped, external)
-- [ ] Fix critical type errors in core modules
-- [ ] Document type checking in AGENTS.md
+- [x] Create `mypy.ini` or add mypy config to `pyproject.toml`
+- [x] Start with permissive settings (ignore untyped, external)
+- [ ] Fix critical type errors in core modules (ongoing - gradual adoption)
+- [x] Document type checking in AGENTS.md
+
+**Resolution** (2026-01-24):
+
+1. Added mypy configuration to `pyproject.toml`:
+   - Python 3.14 target
+   - `ignore_missing_imports = true` for gradual adoption
+   - `no_strict_optional = true` for permissive mode
+   - Module overrides for torch, numpy, h5py, matplotlib, yaml
+
+2. Updated `AGENTS.md` with type checking commands:
+   - `python -m mypy cascade_correlation/ candidate_unit/ --ignore-missing-imports`
+
+3. CI/CD pipeline runs mypy with `continue-on-error: true` for gradual codebase cleanup
 
 **Effort**: M (1-3 hours)  
 **Dependencies**: CI/CD setup
@@ -493,15 +525,27 @@ export PARENT_PATH_PARAM="$(realpath "${BASH_SOURCE[0]}")" && INIT_CONF="$(dirna
 ### CASCOR-P2-003: Logging Performance Optimization
 
 **Application**: Juniper Cascor  
-**Status**: 🔴 NOT STARTED
+**Status**: ✅ COMPLETE (2026-01-24)
 
 **Problem**: Current logging is verbose and may impact training performance.
 
 **Required Actions**:
 
-- [ ] Add environment variable for log level override
-- [ ] Create "quiet" preset for production/benchmarking
-- [ ] Reduce debug logging in hot paths (training loops)
+- [x] Add environment variable for log level override
+- [x] Create "quiet" preset for production/benchmarking
+- [ ] Reduce debug logging in hot paths (training loops) - (deferred, lower priority)
+
+**Resolution** (2026-01-24):
+
+1. Added `CASCOR_LOG_LEVEL` environment variable support in `src/constants/constants.py`:
+   - Reads from `os.environ.get("CASCOR_LOG_LEVEL")`
+   - Validates against known log levels: TRACE, VERBOSE, DEBUG, INFO, WARNING, ERROR, CRITICAL, FATAL
+   - Falls back to INFO if not set or invalid
+
+2. Quiet preset examples documented in `AGENTS.md`:
+   - `export CASCOR_LOG_LEVEL=WARNING` - Production/benchmarking (less verbose)
+   - `export CASCOR_LOG_LEVEL=ERROR` - Minimal output
+   - `export CASCOR_LOG_LEVEL=DEBUG` - Verbose debugging
 
 **Effort**: M (1-3 hours)  
 **Dependencies**: None
