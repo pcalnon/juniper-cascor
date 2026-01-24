@@ -312,4 +312,4 @@ if [ "${COVERAGE}" = true ]; then
 fi
 print_color "${BLUE}" "JUnit XML report: ${OUTPUT_DIR}/junit.xml"
 
-exit "${TEST_EXIT_CODE}"
+exit $((TEST_EXIT_CODE))

@@ -1,0 +1,143 @@
+#####################################################################################################################################################################################################
+# Project:       Juniper
+# Sub-Project:   JuniperCascor
+# Application:   juniper_cascor
+# File Name:     pyproject.toml
+# Author:        Paul Calnon
+# Version:       0.3.16
+#
+# Date Created:  2026-01-24
+# Last Modified: 2026-01-24
+#
+# License:       MIT License
+# Copyright:     Copyright (c) 2024-2026 Paul Calnon
+#
+# Description:
+#    Python project configuration for Juniper Cascor
+#    Configures Black, isort, pytest, coverage, and mypy
+#
+# References:
+#    - CASCOR-P1-007: CI/CD Pipeline Setup
+#    - CASCOR-P2-002: Type Checker Configuration
+#####################################################################################################################################################################################################
+
+[project]
+name = "juniper-cascor"
+version = "0.3.16"
+description = "Cascade Correlation Neural Network implementation for the Juniper project"
+readme = "README.md"
+license = { text = "MIT" }
+authors = [{ name = "Paul Calnon" }]
+requires-python = ">=3.11"
+
+[tool.black]
+line-length = 120
+target-version = ["py311", "py312", "py313", "py314"]
+include = '\.pyi?$'
+extend-exclude = '''
+/(
+    \.git
+    | \.pytest_cache
+    | \.trunk
+    | __pycache__
+    | data
+    | logs
+    | reports
+    | htmlcov
+    | images
+)/
+'''
+
+[tool.isort]
+profile = "black"
+line_length = 120
+skip = [".git", "__pycache__", ".pytest_cache", ".trunk", "data", "logs", "reports", "htmlcov"]
+skip_glob = ["*/data/*", "*/logs/*", "*/reports/*"]
+known_first_party = ["cascade_correlation", "candidate_unit", "spiral_problem", "snapshots", "log_config", "constants", "utils"]
+sections = ["FUTURE", "STDLIB", "THIRDPARTY", "FIRSTPARTY", "LOCALFOLDER"]
+default_section = "THIRDPARTY"
+
+[tool.pytest.ini_options]
+minversion = "6.0"
+testpaths = ["src/tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = [
+    "-ra",
+    "-q",
+    "-p", "no:warnings",
+    "--strict-markers",
+    "--strict-config",
+    "--continue-on-collection-errors",
+    "--tb=short",
+]
+markers = [
+    "unit: Unit tests for individual components",
+    "integration: Integration tests for full workflows",
+    "performance: Performance and benchmarking tests",
+    "slow: Tests that take a long time to run",
+    "gpu: Tests that require GPU/CUDA",
+    "multiprocessing: Tests that use multiprocessing",
+    "spiral: Tests specifically for spiral problem solving",
+    "correlation: Tests for correlation coefficient calculations",
+    "network_growth: Tests for network growth algorithms",
+    "candidate_training: Tests for candidate unit training",
+    "validation: Tests for input validation functions",
+    "accuracy: Tests for accuracy calculation methods",
+    "early_stopping: Tests for early stopping logic",
+]
+timeout = 60
+timeout_method = "signal"
+
+[tool.coverage.run]
+source = ["src/cascade_correlation", "src/candidate_unit", "src/snapshots"]
+omit = [
+    "*/tests/*",
+    "*/__pycache__/*",
+    "*/data/*",
+    "*/logs/*",
+]
+branch = true
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+]
+show_missing = true
+precision = 2
+
+[tool.coverage.html]
+directory = "src/tests/reports/htmlcov"
+
+[tool.coverage.xml]
+output = "src/tests/reports/coverage.xml"
+
+[tool.mypy]
+python_version = "3.14"
+warn_return_any = false
+warn_unused_configs = true
+ignore_missing_imports = true
+no_strict_optional = true
+exclude = [
+    "^data/",
+    "^logs/",
+    "^reports/",
+    "^htmlcov/",
+    "^tests/",
+]
+
+[[tool.mypy.overrides]]
+module = [
+    "torch.*",
+    "numpy.*",
+    "h5py.*",
+    "matplotlib.*",
+    "yaml.*",
+]
+ignore_missing_imports = true

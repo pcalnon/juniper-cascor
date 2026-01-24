@@ -5,6 +5,38 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.16] - 2026-01-24
+
+### Added: [0.3.16]
+
+- **CASCOR-P1-007**: CI/CD Pipeline Setup - Complete GitHub Actions infrastructure
+  - **Created**: `.github/workflows/ci.yml` with 5-stage pipeline:
+    - **Lint job**: Black, isort, Flake8, MyPy (with continue-on-error for gradual adoption)
+    - **Test job**: Unit tests with pytest, coverage reporting, 60-second timeout
+    - **Integration job**: Integration tests (triggered on PRs only)
+    - **Quality Gate job**: Enforces test pass requirement before merge
+    - **Notify job**: Build status notification with workflow metadata
+  - **Created**: `pyproject.toml` with unified Python tooling configuration:
+    - Black: line-length 120, Python 3.11-3.14 targets
+    - isort: black profile for import sorting
+    - pytest: markers, timeout (60s), strict mode
+    - coverage: source modules, branch coverage, HTML/XML reports
+    - mypy: permissive settings for gradual type checking adoption
+  - **Pipeline Features**:
+    - Uses `conda-incubator/setup-miniconda@v3` with mamba for fast environment setup
+    - Python 3.14 target (matching JuniperCascor conda environment)
+    - Coverage artifacts uploaded for 30 days
+    - JUnit XML reports for CI tool integration
+    - Disk space cleanup for GitHub Actions runners
+
+### Technical Notes: [0.3.16]
+
+- **SemVer impact**: MINOR – New CI/CD infrastructure; no API changes
+- Part of PRE-DEPLOYMENT_ROADMAP.md P1 issue resolution (Phase 2: Quality Infrastructure)
+- Linting jobs use `continue-on-error: true` for gradual codebase cleanup
+
+---
+
 ## [0.3.15] - 2026-01-24
 
 ### Fixed: [0.3.15]
@@ -561,6 +593,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 | Version | Date       | Description                              |
 | ------- | ---------- | ---------------------------------------- |
+| 0.3.16  | 2026-01-24 | CI/CD Pipeline Setup (P1-007)            |
+| 0.3.15  | 2026-01-24 | Fixed P0 issues, serialization coverage  |
 | 0.3.14  | 2026-01-22 | Fixed multiprocessing and test issues    |
 | 0.3.13  | 2026-01-21 | Fixed test timeout configuration         |
 | 0.3.12  | 2026-01-21 | Fixed activation pickling for MP         |

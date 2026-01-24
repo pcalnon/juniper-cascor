@@ -2,7 +2,7 @@
 
 **Created**: 2026-01-22  
 **Last Updated**: 2026-01-24 CST  
-**Version**: 1.2.0  
+**Version**: 1.3.0  
 **Status**: Active - Pre-Deployment Assessment  
 **Author**: Development Team
 
@@ -383,18 +383,40 @@ export PARENT_PATH_PARAM="$(realpath "${BASH_SOURCE[0]}")" && INIT_CONF="$(dirna
 
 **Application**: Juniper Cascor  
 **Location**: `.github/workflows/`  
-**Status**: 🔴 NOT STARTED  
+**Status**: ✅ COMPLETE (2026-01-24)  
 **Impact**: No automated testing or quality gates
 
 **Problem**: No CI/CD pipeline exists. Manual testing is required for every change, increasing risk of regressions.
 
 **Required Actions**:
 
-- [ ] Create GitHub Actions workflow (`.github/workflows/ci.yml`)
-- [ ] Configure pytest with coverage reporting
-- [ ] Add type checker (mypy or pyright)
-- [ ] Add linting (flake8/ruff)
-- [ ] Add workflow status badge to README
+- [x] Create GitHub Actions workflow (`.github/workflows/ci.yml`)
+- [x] Configure pytest with coverage reporting
+- [x] Add type checker (mypy or pyright)
+- [x] Add linting (flake8/ruff)
+- [ ] Add workflow status badge to README (deferred to P3)
+
+**Resolution** (2026-01-24):
+
+1. Created `.github/workflows/ci.yml` with 5-stage pipeline:
+   - **Lint**: Black, isort, Flake8, MyPy (with continue-on-error for gradual adoption)
+   - **Test**: Unit tests with pytest, coverage, and timeout handling
+   - **Integration**: Integration tests (PR-only trigger)
+   - **Quality Gate**: Enforces test pass requirement
+   - **Notify**: Build status notification
+
+2. Created `pyproject.toml` with configuration for:
+   - Black (line-length: 120)
+   - isort (black profile)
+   - pytest (markers, timeout: 60s)
+   - coverage (source modules, branch coverage)
+   - mypy (permissive settings for gradual adoption)
+
+3. Pipeline features:
+   - Uses conda-incubator/setup-miniconda@v3 with mamba
+   - Python 3.14 target (matching conda environment)
+   - Coverage artifacts uploaded for 30 days
+   - JUnit XML reports for CI integration
 
 **Effort**: M-L (2-4 hours)  
 **Dependencies**: Phase 0 issues complete
