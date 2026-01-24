@@ -324,15 +324,169 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.3.1] - 2025-12-09
+
+### Fixed: [0.3.1]
+
+- Code refactoring and cleanup across multiple modules (Commit: 1ee6d00)
+- Updated execution counts in Jupyter notebook checkpoints
+- Removed unnecessary import statements and added comments for clarity
+- Improved readability of getter methods in `CascadeCorrelationNetwork` class
+- Fixed typos in exception file names
+- Improved documentation in README
+
+### Changed: [0.3.1]
+
+- Enhanced snapshot saving and loading functions for better error handling
+- Refactored test cases for better organization and clarity
+- Cleaned up bash script for running tests, improving readability and consistency
+- Added markdownlint configuration files (`.markdownlint.json`, `.markdownlint.jsonc`, `.markdownlint.yaml`)
+
+### Technical Notes: [0.3.1]
+
+- 36 files changed with 1,150 insertions and 468 deletions
+- Test suite reorganized for better maintainability
+
+---
+
+## [0.3.0] - 2025-12-08
+
+### Added: [0.3.0]
+
+- Initial standalone Juniper Cascor project structure (Commit: 2076d21)
+- VS Code configuration for development
+- Logging configuration (`conf/logging_config.yaml`)
+- Script utilities configuration (`conf/script_util.cfg`)
+- Pre-generated spiral datasets for testing (2, 4, 5, 8 spiral variants)
+- Sample training images and visualizations
+- Comprehensive project documentation:
+  - `ANALYSIS_COMPLETE.md`
+  - `CASCOR_ENHANCEMENTS_ROADMAP.md`
+  - `CODE_REVIEW_SUMMARY.md`
+  - `CRITICAL_FIXES_REQUIRED.md`
+  - `FEATURES_GUIDE.md`
+  - `IMPLEMENTATION_SUMMARY.md`
+  - `PHASE1_COMPLETE.md`
+  - `SERIALIZATION_FIXES_SUMMARY.md`
+
+### Changed: [0.3.0]
+
+- Separated Juniper Cascor from parent Juniper project as standalone package
+- Reorganized source directory structure under `src/`
+
+---
+
+## [0.2.0] - 2025-10-28
+
+### Fixed: [0.2.0]
+
+- **BUG-001**: Fixed test random state restoration failures
+  - Test helper method used wrong RNG function for different modules
+  - `torch.rand()` was incorrectly called on `random` and `numpy` modules
+  - Modified `_load_and_validate_network_helper()` to detect module type and call correct function
+  - Files Changed: `src/tests/integration/test_serialization.py`
+
+- **BUG-002**: Fixed logger pickling error in multiprocessing
+  - `PicklingError: logger cannot be pickled` when spawning multiprocessing for plots
+  - Enhanced `CascadeCorrelationNetwork.__getstate__()` to remove 15+ non-picklable objects
+  - Enhanced `CascadeCorrelationNetwork.__setstate__()` to properly restore logger, plotter, display functions
+  - Added pickling support to `CascadeCorrelationPlotter`
+  - Files Changed: `src/cascade_correlation/cascade_correlation.py`, `src/cascor_plotter/cascor_plotter.py`
+
+### Added: [0.2.0]
+
+- **ENH-001**: Comprehensive test suite for serialization
+  - Created `src/tests/integration/test_comprehensive_serialization.py` (370 lines)
+  - 6 new integration tests for full serialization round-trip
+
+- **ENH-008**: Enhanced worker cleanup with better logging
+
+### Technical Notes: [0.2.0]
+
+- Phase 1 implementation complete (P0 + P1 + P2)
+- Total implementation time: ~4 hours
+
+---
+
+## [0.1.1] - 2025-10-25
+
+### Fixed: [0.1.1]
+
+- **Critical HDF5 Serialization Fixes**:
+  - Fixed UUID not being restored during network load (was generating new UUID each time)
+  - Fixed Python random module state not being persisted (only NumPy and PyTorch were saved)
+  - Fixed config JSON serialization errors for `activation_functions_dict`, `log_config`, `logger`
+  - Fixed history key mismatch (`value_loss`/`value_accuracy` vs `val_loss`/`val_accuracy`)
+  - Fixed activation function not being reinitialized after load
+
+### Changed: [0.1.1]
+
+- Updated `snapshot_serializer.py` to handle UUID restoration in `_create_network_from_file()`
+- Added Python random state save/load using `pickle.dumps()`/`pickle.loads()`
+- Added exclusion list for non-serializable config attributes
+- Updated history save/load to use correct network keys
+
+---
+
+## [0.1.0] - 2025-10-15
+
+### Fixed: [0.1.0]
+
+- **P0 Critical Blocking Issues** (6 fixes enabling basic training):
+  1. Fixed `CandidateTrainingResult` dataclass field names (`candidate_index` → `candidate_id`, `best_correlation` → `correlation`)
+  2. Fixed gradient descent direction in `CandidateUnit` (was gradient ascent: `+=` → `-=`)
+  3. Fixed matrix multiplication in weight updates (dimension mismatch with `@` operator)
+  4. Fixed `_get_correlations` field names for consistency
+  5. Updated train method to use correct field names
+  6. Added instance correlation update during training
+
+- **P1 High Priority Fixes** (5 fixes for production readiness):
+  1. Implemented optimizer state serialization to HDF5
+  2. Added training counter persistence (snapshot_counter, current_epoch, patience_counter, best_value_loss)
+  3. Added queue operation timeouts (30 second timeout for `result_queue.put()`)
+  4. Implemented early stopping for candidate training
+  5. Fixed type annotations and added public `save_to_hdf5()`/`load_from_hdf5()` API methods
+
+### Changed: [0.1.0]
+
+- Fixed `np.string_` → `np.bytes_` for NumPy 2.0+ compatibility
+- Improved error handling for queue full scenarios in multiprocessing
+
+### Technical Notes: [0.1.0]
+
+- All P1 tests passed: 5/5 (100%)
+- Early stopping reduces training times by ~50-70%
+
+---
+
+## [0.0.1] - 2023-06-13
+
+### Added: [0.0.1]
+
+- Initial commit of Cascade Correlation Neural Network prototype (Commit: 681c2e9)
+- Core implementation based on Fahlman & Lebiere, 1990 paper
+- Basic network architecture with input/output layers
+- Candidate unit training infrastructure
+- Forward pass algorithm
+
+---
+
 ## Version History
 
 | Version | Date       | Description                              |
 | ------- | ---------- | ---------------------------------------- |
+| 0.3.14  | 2026-01-22 | Fixed multiprocessing and test issues    |
+| 0.3.13  | 2026-01-21 | Fixed test timeout configuration         |
+| 0.3.12  | 2026-01-21 | Fixed activation pickling for MP         |
+| 0.3.7   | 2026-01-16 | Fixed port conflicts, sequential fallback|
+| 0.3.6   | 2026-01-15 | Fixed spawn context module imports       |
 | 0.3.5   | 2025-01-15 | Fixed API compatibility and test suite   |
 | 0.3.4   | 2025-01-15 | Fixed multiprocessing and dependencies   |
 | 0.3.3   | 2025-01-12 | Addressed critical runtime errors        |
 | 0.3.2   | 2025-01-12 | MVP Complete                             |
-| 0.3.1   | 2025-01-10 | Bug fixes and stability improvements     |
-| 0.3.0   | 2025-01-08 | Added HDF5 serialization                 |
-| 0.2.0   | 2025-01-01 | Added multiprocessing support            |
-| 0.1.0   | 2024-12-15 | Initial development release              |
+| 0.3.1   | 2025-12-09 | Code refactoring and cleanup             |
+| 0.3.0   | 2025-12-08 | Standalone project structure             |
+| 0.2.0   | 2025-10-28 | Phase 1 complete, serialization fixes    |
+| 0.1.1   | 2025-10-25 | HDF5 serialization critical fixes        |
+| 0.1.0   | 2025-10-15 | P0/P1 critical bug fixes                 |
+| 0.0.1   | 2023-06-13 | Initial development release              |
