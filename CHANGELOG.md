@@ -11,7 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **CASCOR-P1-001**: Resolved multiprocessing manager port conflicts
   - **Problem**: `forkserver` context with custom Manager classes had compatibility issues
-  - **Solution**: 
+  - **Solution**:
     - Fixed `set_forkserver_preload()` to use list argument format (was incorrectly passing multiple arguments)
     - Retained `forkserver` as preferred context (Python 3.14.2 fixes compatibility issues)
     - Dynamic port allocation (port 0) prevents "Address already in use" conflicts
