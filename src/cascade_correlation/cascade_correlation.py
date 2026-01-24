@@ -1955,19 +1955,41 @@ class CascadeCorrelationNetwork:
             )
 
             # Joining worker processes when training is complete
+            # self.logger.debug(
+            #     "CascadeCorrelationNetwork: _execute_parallel_training: Waiting for workers to complete all tasks: {len(tasks)}."
+            # )
+            # CASCOR-P0-001 FIX: Replaced unreliable busy-wait using empty()/qsize() with bounded timeout and worker liveness checks
+            # OLD (unreliable - can hang indefinitely if worker crashes):
+            # while not task_queue.empty() or result_queue.qsize() < len(tasks):
+            #     time.sleep(sleepytime)
+            # NEW: Wait for workers with bounded timeout and liveness checks
+            # We rely on _collect_training_results for proper timeout-based result collection
+            # This loop only checks worker liveness and provides early exit if all workers die
+            max_wait_time = queue_timeout
+            wait_start = time.time()
             self.logger.debug(
-                "CascadeCorrelationNetwork: _execute_parallel_training: Waiting for workers to complete all tasks: {len(tasks)}."
+                f"CascadeCorrelationNetwork: _execute_parallel_training: Waiting for workers to complete {len(tasks)} tasks (max {max_wait_time}s)."
             )
-            while not task_queue.empty() or result_queue.qsize() < len(tasks):
+            while time.time() - wait_start < max_wait_time:
+                alive_workers = [w for w in workers if w.is_alive()]
+                if not alive_workers:
+                    self.logger.debug(
+                        "CascadeCorrelationNetwork: _execute_parallel_training: All workers have exited."
+                    )
+                    break
                 time.sleep(sleepytime)
+            elapsed = time.time() - wait_start
+            # self.logger.debug(
+            #     f"CascadeCorrelationNetwork: _execute_parallel_training: Completed Wait for workers to complete all tasks: Task Queue: {task_queue.qsize()}, Result Queue: {result_queue.qsize()}."
+            # )
+            # self.logger.debug(
+            #     f"CascadeCorrelationNetwork: _execute_parallel_training: Successfully Completed Joining {len(workers)} workers"
+            # )
+            # self.logger.debug(
+            #     f"CascadeCorrelationNetwork: _execute_parallel_training: Final Queue Sizes: Task Queue: {task_queue.qsize()}, Result Queue: {result_queue.qsize()}"
+            # )
             self.logger.debug(
-                f"CascadeCorrelationNetwork: _execute_parallel_training: Completed Wait for workers to complete all tasks: Task Queue: {task_queue.qsize()}, Result Queue: {result_queue.qsize()}."
-            )
-            self.logger.debug(
-                f"CascadeCorrelationNetwork: _execute_parallel_training: Successfully Completed Joining {len(workers)} workers"
-            )
-            self.logger.debug(
-                f"CascadeCorrelationNetwork: _execute_parallel_training: Final Queue Sizes: Task Queue: {task_queue.qsize()}, Result Queue: {result_queue.qsize()}"
+                f"CascadeCorrelationNetwork: _execute_parallel_training: Wait completed after {elapsed:.2f}s. Workers alive: {len([w for w in workers if w.is_alive()])}"
             )
 
             # Collect results, NOTE: results is of type list of data class: [candidate_training_result, ...]
@@ -2583,16 +2605,22 @@ class CascadeCorrelationNetwork:
             logger.debug( f"CascadeCorrelationNetwork: train_candidate_worker: Candidate Inputs Key Values: {candidate_inputs.get('candidate_display_frequency')}, Candidate Index: {candidate_inputs.get('candidate_index')}, Candidate UUID: {candidate_inputs.get('candidate_uuid')}")
             try:
                 logger.debug( f"CascadeCorrelationNetwork: train_candidate_worker: Instantiating CandidateUnit Worker ID: {worker_id}, Worker UUID: {worker_uuid}, Candidate Inputs: {str(candidate_inputs)}")
+                # CASCOR-P0-005 FIX: Corrected parameter key names to match _build_candidate_inputs dictionary
+                # OLD (incorrect keys - returned None):
+                # CandidateUnit__epochs=candidate_inputs.get("epochs"),
+                # CandidateUnit__learning_rate=candidate_inputs.get("learning_rate"),
+                # CandidateUnit__random_seed=candidate_inputs.get("random_seed"),
+                # NEW (correct keys matching _build_candidate_inputs):
                 candidate = CandidateUnit(
                     CandidateUnit__activation_function=candidate_inputs.get( "activation_fn"),
                     CandidateUnit__display_frequency=candidate_inputs.get( "candidate_display_frequency"),
-                    CandidateUnit__epochs=candidate_inputs.get("epochs"),
+                    CandidateUnit__epochs=candidate_inputs.get("candidate_epochs"),
                     CandidateUnit__input_size=candidate_inputs.get("input_size"),
-                    CandidateUnit__learning_rate=candidate_inputs.get("learning_rate"),
+                    CandidateUnit__learning_rate=candidate_inputs.get("candidate_learning_rate"),
                     CandidateUnit__log_level_name="INFO",
                     CandidateUnit__sequence_max_value=candidate_inputs.get( "sequence_max_value"),
-                    CandidateUnit__random_seed=candidate_inputs.get("random_seed"),
-                    CandidateUnit__random_max_value=candidate_inputs.get( "random_value_max"),
+                    CandidateUnit__random_seed=candidate_inputs.get("candidate_seed"),
+                    CandidateUnit__random_max_value=candidate_inputs.get( "random_max_value"),
                     CandidateUnit__random_value_scale=candidate_inputs.get( "random_value_scale"),
                     CandidateUnit__uuid=candidate_inputs.get("candidate_uuid"),
                     CandidateUnit__candidate_index=candidate_inputs.get( "candidate_index"),

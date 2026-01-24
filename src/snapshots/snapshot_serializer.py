@@ -134,7 +134,10 @@ class CascadeHDF5Serializer:
             Path(filepath).parent.mkdir(parents=True, exist_ok=True)
 
             with h5py.File(filepath, "w") as hdf5_file:
-                self._save_root_attributes( hdf5_file, objectify, compression, compression_opts)
+                # CASCOR-P0-004 FIX: Changed from _save_root_attributes (wrong arg count) to _save_network_objects_helper
+                # OLD (TypeError - 4 args passed to 2-arg method):
+                # self._save_root_attributes( hdf5_file, objectify, compression, compression_opts)
+                self._save_network_objects_helper(hdf5_file, objectify, compression, compression_opts)
             self.logger.info( f"CascadeHDF5Serializer: Successfully saved object to {filepath}")
             return True
 
@@ -230,41 +233,9 @@ class CascadeHDF5Serializer:
         except Exception as e:
             return {"valid": False, "error": str(e)}
 
-    def _save_root_attributes(self, hdf5_file: h5py.File, network) -> None:
-        """Save root-level file attributes."""
-        write_str_attr(hdf5_file, "format", self.format_name)
-        write_str_attr(hdf5_file, "format_version", self.format_version)
-        write_str_attr(hdf5_file, "serializer_version", self.version)
-        write_str_attr(hdf5_file, "created", datetime.datetime.now().isoformat())
-        write_str_attr(hdf5_file, "juniper_version", "0.3.2")
-
-        self.logger.debug("CascadeHDF5Serializer: Saved root attributes")
-
-    def _save_metadata(self, hdf5_file: h5py.File, network) -> None:
-        """Save metadata information."""
-        meta_group = hdf5_file.create_group("meta")
-
-        # Network metadata
-        write_str_attr(meta_group, "uuid", str(network.get_uuid()))
-        write_str_attr(meta_group, "creation_timestamp", str(datetime.datetime.now()))
-
-        # Environment metadata
-        write_str_attr(meta_group, "python_version", sys.version)
-        write_str_attr(meta_group, "torch_version", torch.__version__)
-        write_str_attr(meta_group, "h5py_version", h5py.__version__)
-
-        # Network statistics
-        meta_group.attrs["num_hidden_units"] = len(network.hidden_units)
-        meta_group.attrs["input_size"] = network.input_size
-        meta_group.attrs["output_size"] = network.output_size
-
-        # Training state counters for resuming training
-        meta_group.attrs["snapshot_counter"] = getattr(network, "snapshot_counter", 0)
-        meta_group.attrs["current_epoch"] = getattr(network, "current_epoch", 0)
-        meta_group.attrs["patience_counter"] = getattr(network, "patience_counter", 0)
-        meta_group.attrs["best_value_loss"] = getattr( network, "best_value_loss", float("inf"))
-
-        self.logger.debug( "CascadeHDF5Serializer: Saved metadata with training counters")
+    # CASCOR-P0-004 FIX: Removed duplicate _save_root_attributes and _save_metadata definitions
+    # that existed here (lines 236-270). The canonical definitions are at lines 147-174.
+    # Python would silently use these later definitions, making the earlier ones dead code.
 
     def _save_configuration(
         self,

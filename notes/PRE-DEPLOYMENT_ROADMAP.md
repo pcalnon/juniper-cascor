@@ -1,8 +1,8 @@
 # Juniper Pre-Deployment Roadmap
 
 **Created**: 2026-01-22  
-**Last Updated**: 2026-01-22 17:00 CST  
-**Version**: 1.1.0  
+**Last Updated**: 2026-01-24 CST  
+**Version**: 1.2.0  
 **Status**: Active - Pre-Deployment Assessment  
 **Author**: Development Team
 
@@ -30,14 +30,14 @@ This document consolidates all outstanding issues from the INTEGRATION_ROADMAP.m
 
 ### Critical P0 Issues (Identified via Oracle Analysis)
 
-| Issue ID       | Description                                    | Status         |
-| -------------- | ---------------------------------------------- | -------------- |
-| CASCOR-P0-001  | Multiprocessing can hang indefinitely          | 🔴 BLOCKING    |
-| CASCOR-P0-002  | Serialization test coverage below target       | 🏗️ IN PROGRESS |
-| CASCOR-P0-003  | Previous bug fixes need verification           | 📋 PENDING     |
-| CASCOR-P0-004  | Snapshot serializer save_object() TypeError    | 🔴 BLOCKING    |
-| CASCOR-P0-005  | Candidate task parameter wiring bug            | 🔴 BLOCKING    |
-| CASCOR-P0-006  | Residual error shape logic bug                 | 🔴 BLOCKING    |
+| Issue ID      | Description                                 | Status            |
+| ------------- | ------------------------------------------- | ----------------- |
+| CASCOR-P0-001 | Multiprocessing can hang indefinitely       | ✅ FIXED          |
+| CASCOR-P0-002 | Serialization test coverage below target    | 🏗️ IN PROGRESS    |
+| CASCOR-P0-003 | Previous bug fixes need verification        | 📋 PENDING        |
+| CASCOR-P0-004 | Snapshot serializer save_object() TypeError | ✅ FIXED          |
+| CASCOR-P0-005 | Candidate task parameter wiring bug         | ✅ FIXED          |
+| CASCOR-P0-006 | Residual error shape logic bug              | ✅ ALREADY FIXED  |
 
 ---
 
@@ -59,8 +59,8 @@ This document consolidates all outstanding issues from the INTEGRATION_ROADMAP.m
 ### CASCOR-P0-001: Multiprocessing Completion Logic Can Hang Indefinitely
 
 **Application**: Juniper Cascor  
-**Location**: `src/cascade_correlation/cascade_correlation.py` (lines ~1870-2000), `src/utils/cascade_correlation/cascade_correlation.py`  
-**Status**: 🔴 BLOCKING  
+**Location**: `src/cascade_correlation/cascade_correlation.py` (lines ~1957-1993)  
+**Status**: ✅ FIXED (2026-01-24)  
 **Impact**: Training jobs can hang forever, Canopy UI stuck in "candidate phase"
 
 **Problem**: The multiprocessing completion logic uses `empty()` and `qsize()` on Manager queues, which are **not reliable** for multiprocessing and can be unsupported or approximate (platform-dependent).
@@ -80,10 +80,18 @@ Issues:
 
 **Required Actions**:
 
-- [ ] Remove busy-wait loop relying on `empty()`/`qsize()`
-- [ ] Add bounded deadline with explicit timeout
-- [ ] Add worker liveness checks
-- [ ] Implement graceful fallback to sequential training on timeout
+- [x] Remove busy-wait loop relying on `empty()`/`qsize()`
+- [x] Add bounded deadline with explicit timeout
+- [x] Add worker liveness checks
+- [ ] Implement graceful fallback to sequential training on timeout (deferred to P2)
+
+**Resolution** (2026-01-24):
+Replaced the unreliable busy-wait loop with a bounded timeout loop that checks worker liveness. The existing `_collect_training_results` method already has proper timeout-based result collection using `queue.get(timeout=...)`. The new implementation:
+
+- Uses `queue_timeout` as the maximum wait time
+- Checks `worker.is_alive()` to detect crashed workers early
+- Exits immediately when all workers have completed
+- Falls through to `_collect_training_results` for proper result collection with timeouts
 
 **Effort**: M-L (4-8 hours)  
 **Dependencies**: None  
@@ -170,7 +178,7 @@ python main.py
 
 **Application**: Juniper Cascor  
 **Location**: `src/snapshots/snapshot_serializer.py`  
-**Status**: 🔴 BLOCKING  
+**Status**: ✅ FIXED (2026-01-24)  
 **Impact**: `save_object()` method will crash at runtime
 
 **Problem**: In `CascadeHDF5Serializer.save_object()`:
@@ -187,9 +195,14 @@ But `_save_root_attributes(self, hdf5_file, network)` is defined with **only 2 a
 
 **Required Actions**:
 
-- [ ] Fix `save_object()` call to match `_save_root_attributes()` signature
-- [ ] Remove duplicate method definitions
+- [x] Fix `save_object()` call to match `_save_root_attributes()` signature
+- [x] Remove duplicate method definitions
 - [ ] Add test for `save_object()` method
+
+**Resolution** (2026-01-24):
+
+1. Changed `save_object()` to call `_save_network_objects_helper()` instead of `_save_root_attributes()` directly
+2. Removed duplicate `_save_root_attributes` and `_save_metadata` definitions (lines 236-270)
 
 **Effort**: S (1-2 hours)  
 **Dependencies**: None
@@ -199,8 +212,8 @@ But `_save_root_attributes(self, hdf5_file, network)` is defined with **only 2 a
 ### CASCOR-P0-005: Candidate Task Parameter Wiring Bug
 
 **Application**: Juniper Cascor  
-**Location**: `src/cascade_correlation/cascade_correlation.py` (train_candidate_worker)  
-**Status**: 🔴 BLOCKING  
+**Location**: `src/cascade_correlation/cascade_correlation.py` (train_candidate_worker, lines 2608-2627)  
+**Status**: ✅ FIXED (2026-01-24)  
 **Impact**: Candidate seeds ignored, reducing training diversity
 
 **Problem**: Tasks generate per-candidate seeds but worker uses wrong dictionary keys:
@@ -220,9 +233,17 @@ CandidateUnit__epochs=candidate_inputs.get("epochs")  # Returns None!
 
 **Required Actions**:
 
-- [ ] Fix key names in `train_candidate_worker` to match task dictionary
+- [x] Fix key names in `train_candidate_worker` to match task dictionary
 - [ ] Add test verifying candidate seeds differ between candidates
-- [ ] Verify epochs and learning rate are passed correctly
+- [x] Verify epochs and learning rate are passed correctly
+
+**Resolution** (2026-01-24):
+Fixed the `.get()` key names in `train_candidate_worker` to match the keys defined in `_build_candidate_inputs`:
+
+- `"epochs"` → `"candidate_epochs"`
+- `"learning_rate"` → `"candidate_learning_rate"`
+- `"random_seed"` → `"candidate_seed"`
+- `"random_value_max"` → `"random_max_value"`
 
 **Effort**: S (1 hour)  
 **Dependencies**: None
@@ -233,7 +254,7 @@ CandidateUnit__epochs=candidate_inputs.get("epochs")  # Returns None!
 
 **Application**: Juniper Cascor  
 **Location**: `src/cascade_correlation/cascade_correlation.py` (calculate_residual_error)  
-**Status**: 🔴 BLOCKING  
+**Status**: ✅ ALREADY FIXED (verified 2026-01-24)  
 **Impact**: Residual error may remain empty, breaking candidate training
 
 **Problem**: In `calculate_residual_error()`:
@@ -252,8 +273,20 @@ These are **not supposed to match**. So for most real models, residual error rem
 
 **Required Actions**:
 
-- [ ] Change comparison from `x.shape` vs `y.shape` to `output.shape` vs `y.shape`
+- [x] Change comparison from `x.shape` vs `y.shape` to `output.shape` vs `y.shape`
 - [ ] Add test for typical input/output size combinations
+
+**Resolution** (verified 2026-01-24):
+The main file (`src/cascade_correlation/cascade_correlation.py`) already contains the correct logic at lines 2992-2997:
+
+```python
+if x.shape[0] != y.shape[0]:  # Correct: batch size check
+    ...
+elif y.shape[1] != self.output_size:  # Correct: output size check
+    ...
+```
+
+The bug existed only in a duplicate file at `src/utils/cascade_correlation/cascade_correlation.py`, which has been deleted (see Architectural Concerns - Module Duplication).
 
 **Effort**: S (1 hour)  
 **Dependencies**: None
@@ -683,14 +716,14 @@ The following critical issues were identified through Oracle (GPT-5.2) analysis 
 
 ### Highest Risk Production Issues
 
-1. **Multiprocessing Hang**: Training jobs can hang indefinitely due to unreliable `qsize()`/`empty()` usage
-2. **Candidate Parameter Bug**: Per-candidate seeds are generated but ignored due to key name mismatch
-3. **Residual Error Bug**: Shape comparison logic is inverted, causing residual errors to remain empty
-4. **Serializer TypeError**: `save_object()` method will crash due to argument count mismatch
+1. **Multiprocessing Hang**: ✅ FIXED - Training jobs can hang indefinitely due to unreliable `qsize()`/`empty()` usage
+2. **Candidate Parameter Bug**: ✅ FIXED - Per-candidate seeds are generated but ignored due to key name mismatch
+3. **Residual Error Bug**: ✅ ALREADY FIXED - Shape comparison logic is inverted, causing residual errors to remain empty (bug was only in deleted duplicate file)
+4. **Serializer TypeError**: ✅ FIXED - `save_object()` method will crash due to argument count mismatch
 
 ### Architectural Concerns
 
-1. **Module Duplication**: Multiple copies of `cascade_correlation.py` and `candidate_unit.py` exist in different paths
+1. **Module Duplication**: ✅ RESOLVED (2026-01-24) - Duplicate copies of `cascade_correlation.py` and `candidate_unit.py` that existed in `src/utils/` have been deleted. Only the canonical versions in `src/cascade_correlation/` and `src/candidate_unit/` remain.
 2. **sys.path Mutation**: Both applications manipulate `sys.path` for imports, creating deployment fragility
 3. **Thread Safety**: Canopy's monitoring thread reads Cascor state without proper synchronization
 

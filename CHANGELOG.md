@@ -5,6 +5,54 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.15] - 2026-01-24
+
+### Fixed: [0.3.15]
+
+- **CASCOR-P0-001**: Fixed multiprocessing completion logic that could hang indefinitely
+  - **Problem**: The busy-wait loop in `_execute_parallel_training` used `task_queue.empty()` and `result_queue.qsize()` which are unreliable for multiprocessing Manager proxies and can cause infinite hangs if a worker crashes
+  - **Solution**:
+    - Replaced unreliable `empty()`/`qsize()` busy-wait with bounded timeout loop
+    - Added worker liveness checks using `worker.is_alive()`
+    - Loop now exits early when all workers have completed
+    - Relies on existing `_collect_training_results` for proper timeout-based result collection
+  - **File Changed**: `src/cascade_correlation/cascade_correlation.py` (lines 1957-1993)
+
+- **CASCOR-P0-005**: Fixed candidate task parameter wiring bug
+  - **Problem**: `train_candidate_worker` used incorrect dictionary keys when instantiating `CandidateUnit`, causing per-candidate seeds, epochs, and learning rates to be ignored (returned `None`)
+  - **Solution**: Fixed `.get()` key names to match `_build_candidate_inputs` dictionary:
+    - `"epochs"` → `"candidate_epochs"`
+    - `"learning_rate"` → `"candidate_learning_rate"`
+    - `"random_seed"` → `"candidate_seed"`
+    - `"random_value_max"` → `"random_max_value"`
+  - **File Changed**: `src/cascade_correlation/cascade_correlation.py` (lines 2608-2627)
+
+- **CASCOR-P0-006**: Verified already fixed (residual error shape logic)
+  - **Status**: Main file already had correct logic; bug existed only in duplicate file
+  - **Resolution**: Duplicate files in `src/utils/cascade_correlation/` and `src/utils/candidate_unit/` deleted
+
+- **CASCOR-P0-004**: Fixed snapshot serializer save_object() TypeError
+  - **Problem**: `save_object()` called `_save_root_attributes()` with 4 arguments, but method only accepts 2
+  - **Additional Problem**: `_save_root_attributes` and `_save_metadata` were defined twice (dead code)
+  - **Solution**:
+    - Changed `save_object()` to call `_save_network_objects_helper()` instead
+    - Removed duplicate method definitions (lines 236-270)
+  - **File Changed**: `src/snapshots/snapshot_serializer.py`
+
+### Removed: [0.3.15]
+
+- **Module Duplication Cleanup**: Deleted duplicate module copies from `src/utils/`
+  - `src/utils/cascade_correlation/cascade_correlation.py` - contained outdated code with bugs
+  - `src/utils/candidate_unit/candidate_unit.py` - duplicate of canonical version
+  - Only canonical versions in `src/cascade_correlation/` and `src/candidate_unit/` remain
+
+### Technical Notes: [0.3.15]
+
+- **SemVer impact**: PATCH – Critical bug fix; no API changes
+- Part of PRE-DEPLOYMENT_ROADMAP.md P0 issue resolution
+
+---
+
 ## [0.3.14] - 2026-01-22
 
 ### Fixed: [0.3.14]
