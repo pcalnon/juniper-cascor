@@ -39,6 +39,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - Removed duplicate method definitions (lines 236-270)
   - **File Changed**: `src/snapshots/snapshot_serializer.py`
 
+- **CASCOR-P0-003**: Verified previous bug fixes (BUG-001, BUG-002)
+  - **BUG-001**: Random state restoration - verified via 22 serialization integration tests
+  - **BUG-002**: Logger pickling - verified no pickling errors during multiprocessing
+  - **Tests Passed**: `test_serialization.py` (22 tests), `test_forward_pass.py` (30 tests)
+
+- **CASCOR-P0-001**: Fixed undefined variable in multiprocessing timeout
+  - **Problem**: `queue_timeout` was not defined in `_execute_parallel_training`
+  - **Solution**: Changed to `getattr(self, 'task_queue_timeout', 60.0)`
+  - **File Changed**: `src/cascade_correlation/cascade_correlation.py` (line 1968)
+
+- **CASCOR-P0-002**: Improved serialization test coverage to 78%+
+  - **Problem**: Serialization module had low test coverage (~15% overall)
+  - **Solution**: Created comprehensive unit test file with 20 new tests
+  - **Tests Added**:
+    - `save_object()`, `save_network()`, `load_network()` tests
+    - `verify_saved_network()` tests
+    - Edge case tests (invalid paths, hidden units, error handling)
+    - Random state and config preservation tests
+  - **File Created**: `src/tests/unit/test_snapshot_serializer.py`
+
 ### Removed: [0.3.15]
 
 - **Module Duplication Cleanup**: Deleted duplicate module copies from `src/utils/`

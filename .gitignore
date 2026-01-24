@@ -28,9 +28,16 @@ images/*
 **/temp
 **/temp/*
 **/resources/*
+
 __pycache__
+__pycache__/
+__pycache__/*
 **/__pycache__
+**/__pycache__/
 **/__pycache__/*
+
+__init__.cpython*
+**/__init__.cpython*
 
 # CascadeCorrelationNetwork class snapshots
 **/cascor/cascor_snapshots/*
@@ -68,7 +75,9 @@ dist/
 *.prof
 
 # Compiled Python bytecode
+*.pyc
 *.py[cod]
+**/*.pyc
 
 # Log files
 *.log

@@ -1965,7 +1965,7 @@ class CascadeCorrelationNetwork:
             # NEW: Wait for workers with bounded timeout and liveness checks
             # We rely on _collect_training_results for proper timeout-based result collection
             # This loop only checks worker liveness and provides early exit if all workers die
-            max_wait_time = queue_timeout
+            max_wait_time = getattr(self, 'task_queue_timeout', 60.0)
             wait_start = time.time()
             self.logger.debug(
                 f"CascadeCorrelationNetwork: _execute_parallel_training: Waiting for workers to complete {len(tasks)} tasks (max {max_wait_time}s)."
