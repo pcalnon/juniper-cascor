@@ -2,7 +2,7 @@
 
 **Created**: 2026-01-22  
 **Last Updated**: 2026-01-24 CST  
-**Version**: 1.3.0  
+**Version**: 1.4.0  
 **Status**: Active - Pre-Deployment Assessment  
 **Author**: Development Team
 
@@ -21,12 +21,12 @@ This document consolidates all outstanding issues from the INTEGRATION_ROADMAP.m
 
 ### Outstanding Issues Summary
 
-| Priority | Count | Description                              |
-| -------- | ----- | ---------------------------------------- |
-| P0       | 6     | Critical blocking issues (MUST FIX)      |
-| P1       | 4     | High-priority fixes for deployment       |
-| P2       | 3     | Important quality improvements           |
-| P3       | 5     | Nice-to-have enhancements                |
+| Priority | Count | Description                               |
+| -------- | ----- | ----------------------------------------- |
+| P0       | 6     | Critical blocking issues (ALL FIXED)      |
+| P1       | 11    | High-priority fixes (ALL RESOLVED)        |
+| P2       | 3     | Important quality improvements (ALL DONE) |
+| P3       | 5     | Nice-to-have enhancements (3 COMPLETE)    |
 
 ### Critical P0 Issues (Identified via Oracle Analysis)
 
@@ -318,6 +318,90 @@ The bug existed only in a duplicate file at `src/utils/cascade_correlation/casca
 
 ## 2. High Priority Issues (P1)
 
+### CASCOR-P1-001: Multiprocessing Manager Port Conflicts
+
+**Application**: Juniper Cascor  
+**Location**: `src/cascade_correlation/cascade_correlation.py`  
+**Status**: ✅ RESOLVED (2026-01-22)  
+**Impact**: Multiple concurrent managers fail with "Address already in use" errors
+
+**Problem**: BaseManager with fixed port caused port conflicts when running multiple training sessions.
+
+**Resolution** (2026-01-22):
+
+- Port changed to 0 (dynamic OS allocation) - eliminates port conflicts
+- `forkserver` context retained as preferred method (Python 3.14.2 fixes compatibility)
+- Fixed `set_forkserver_preload()` to use list argument format
+
+**Effort**: M (2-3 hours)  
+**Dependencies**: None
+
+---
+
+### CASCOR-P1-002: validate_training API Mismatch
+
+**Application**: Juniper Cascor  
+**Location**: `src/cascade_correlation/cascade_correlation.py`  
+**Status**: ✅ RESOLVED (2026-01-20)  
+**Impact**: Training fails with AttributeError
+
+**Problem**: `grow_network()` passed `ValidateTrainingInputs` dataclass to `validate_training()`, but method expected individual parameters and returned tuple.
+
+**Error**: `AttributeError: 'tuple' object has no attribute 'early_stop'`
+
+**Resolution** (2026-01-20):
+
+Updated `validate_training()` method signature to accept `ValidateTrainingInputs` dataclass and return `ValidateTrainingResults` dataclass.
+
+**Effort**: M (1-2 hours)  
+**Dependencies**: None
+
+---
+
+### CASCOR-P1-003: Multiprocessing Pickling Error (wrapped_activation)
+
+**Application**: Juniper Cascor  
+**Location**: `src/candidate_unit/candidate_unit.py`, `src/cascade_correlation/cascade_correlation.py`  
+**Status**: ✅ RESOLVED (2026-01-21)  
+**Impact**: Multiprocessing workers fail to send results, forcing sequential fallback
+
+**Problem**: Local function `wrapped_activation` cannot be pickled for multiprocessing.
+
+**Error**: `AttributeError: Can't pickle local object 'CandidateUnit._init_activation_with_derivative.<locals>.wrapped_activation'`
+
+**Resolution** (2026-01-21):
+
+Created picklable `ActivationWithDerivative` class at module level:
+- Stores activation function name for serialization
+- Reconstructs activation from ACTIVATION_MAP on unpickling
+- Supports 30+ PyTorch activation functions
+- Includes analytical derivatives for tanh, sigmoid, relu
+
+**Effort**: M-L (3-4 hours)  
+**Dependencies**: None
+
+---
+
+### CASCOR-P1-004: `try` Script Symlink Fix
+
+**Application**: Juniper Cascor  
+**Location**: `try` symlink, `util/try.bash`  
+**Status**: ✅ RESOLVED (2026-01-20)  
+**Impact**: Cosmetic "command not found" warnings during startup
+
+**Problem**: The `try` symlink pointed to `util/try.bash`, which called `log_debug` before logging functions were sourced.
+
+**Resolution** (2026-01-20):
+
+- Updated `try` symlink to point directly to `util/juniper_cascor.bash`
+- Archived old `util/try.bash` script
+- Eliminates 11 "command not found" warnings
+
+**Effort**: S (< 1 hour)  
+**Dependencies**: None
+
+---
+
 ### CASCOR-P1-005: Shell Script Path Resolution
 
 **Application**: Juniper Cascor  
@@ -427,14 +511,23 @@ export PARENT_PATH_PARAM="$(realpath "${BASH_SOURCE[0]}")" && INIT_CONF="$(dirna
 
 **Application**: Both  
 **Location**: `src/constants.py` (Canopy), `src/constants/` (Cascor)  
-**Status**: ⚠️ KNOWN ISSUE  
+**Status**: ✅ MITIGATED (2026-01-24) - Workaround in place  
 **Impact**: May cause import failures in integrated environment
 
 **Problem**: Canopy has `src/constants.py` (module) and Cascor has `src/constants/` (package). When both are on `sys.path`, Python may find Canopy's module first.
 
-**Current Workaround**: `CascorIntegration._add_backend_to_path()` adds Cascor's `src/` at index 0 of `sys.path`, ensuring priority.
+**Mitigation** (verified 2026-01-24):
 
-**Recommendation for Future**:
+`CascorIntegration._add_backend_to_path()` adds Cascor's `src/` at index 0 of `sys.path`, ensuring Cascor modules take priority:
+
+```python
+# src/backend/cascor_integration.py line 220
+sys.path.insert(0, str(backend_src))
+```
+
+This workaround is effective and well-documented in code comments.
+
+**Recommendation for Future** (deferred to post-deployment):
 
 - Option A: Rename Canopy's `constants.py` to `canopy_constants.py`
 - Option B: Rename Cascor's `constants/` to `cascor_constants/`
@@ -484,6 +577,11 @@ export PARENT_PATH_PARAM="$(realpath "${BASH_SOURCE[0]}")" && INIT_CONF="$(dirna
    - 175+ unit/integration tests collected
    - 22 serialization integration tests
    - 20 snapshot serializer unit tests (P0-002)
+
+4. New test files added (2026-01-24):
+   - `src/tests/unit/test_cascor_getters_setters.py` - 30+ tests for getter/setter methods
+   - `src/tests/unit/test_candidate_unit_coverage.py` - 25+ tests for CandidateUnit class
+   - Tests cover: initialization, properties, forward pass, pickling, correlation
 
 **Effort**: L-XL (multiple days)  
 **Dependencies**: CI/CD setup (P1-007) ✅ COMPLETE
@@ -617,15 +715,25 @@ This builds a **list** of length `sequence`, which can be extremely large with u
 
 **Application**: Juniper Canopy  
 **Location**: `src/backend/cascor_integration.py` (_monitoring_loop)  
-**Status**: ⚠️ RISK  
+**Status**: ✅ FIXED (2026-01-24)  
 **Impact**: Intermittent exceptions or inconsistent reads
 
 **Problem**: `_monitoring_loop()` reads `network.history` while training mutates it. There is a lock for topology extraction, but not for metrics extraction. Cascor explicitly warns "NOT THREAD SAFE."
 
 **Required Actions**:
 
-- [ ] Add lock around metrics extraction
-- [ ] Or use thread-safe data structures for shared state
+- [x] Add lock around metrics extraction
+- [x] Or use thread-safe data structures for shared state
+
+**Resolution** (2026-01-24):
+
+1. Added `self.metrics_lock = threading.Lock()` to `CascorIntegration.__init__()`
+2. Updated `_extract_current_metrics()` to use `with self.metrics_lock:` for thread-safe access
+3. Added defensive copying of history lists while holding lock
+4. Added exception handling for concurrent modification edge cases
+
+**Files Changed**:
+- `JuniperCanopy/juniper_canopy/src/backend/cascor_integration.py` (lines 117-121, 765-789)
 
 **Effort**: S-M (1-2 hours)  
 **Dependencies**: None

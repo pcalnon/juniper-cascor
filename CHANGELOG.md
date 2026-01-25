@@ -49,6 +49,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Configurable iterations, quiet mode, output file support
   - Integrates with `CASCOR_LOG_LEVEL` for quiet benchmarking
 
+- **CASCOR-P2-001**: Code Coverage Improvement - New test files added
+  - Created `src/tests/unit/test_cascor_getters_setters.py` (30+ tests)
+    - Tests for getter/setter methods in CascadeCorrelationNetwork
+    - Tests for candidate data helper methods
+    - Tests for network properties and _create_candidate_unit factory
+    - Tests for _select_best_candidates method
+  - Created `src/tests/unit/test_candidate_unit_coverage.py` (25+ tests)
+    - Tests for CandidateUnit initialization and properties
+    - Tests for forward pass and correlation calculation
+    - Tests for pickling support (multiprocessing)
+    - Tests for ActivationWithDerivative class
+    - Tests for CandidateTrainingResult dataclass
+
 ### Verified: [0.3.16]
 
 - **CASCOR-P3-002**: Flexible Optimizer System - Already implemented
@@ -63,11 +76,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Factory exists at `_create_candidate_unit()`
   - Other instantiation sites have valid design reasons (multiprocessing, grow_network)
 
+### Documentation: [0.3.16]
+
+- **PRE-DEPLOYMENT_ROADMAP.md**: Added missing P1 issues (P1-001 through P1-004)
+  - CASCOR-P1-001: Multiprocessing Manager Port Conflicts (was in INTEGRATION_ROADMAP only)
+  - CASCOR-P1-002: validate_training API Mismatch (was in INTEGRATION_ROADMAP only)
+  - CASCOR-P1-003: Multiprocessing Pickling Error (was in INTEGRATION_ROADMAP only)
+  - CASCOR-P1-004: try Script Symlink Fix (was in INTEGRATION_ROADMAP only)
+  - All were already fixed, now properly tracked in consolidated roadmap
+
+- **CANOPY-P1-002**: Module Naming Collision - Verified workaround in place
+  - `CascorIntegration._add_backend_to_path()` ensures Cascor modules take priority
+  - Full rename deferred to post-deployment
+
+- **CANOPY-P1-003**: Monitoring Thread Race Condition - Fixed
+  - Added `metrics_lock` to `CascorIntegration` for thread-safe metrics extraction
+  - File changed: `JuniperCanopy/juniper_canopy/src/backend/cascor_integration.py`
+
 ### Technical Notes: [0.3.16]
 
 - **SemVer impact**: MINOR – New CI/CD infrastructure and configuration; no API changes
-- Part of PRE-DEPLOYMENT_ROADMAP.md P1/P2 issue resolution (Phase 2: Quality Infrastructure)
+- Part of PRE-DEPLOYMENT_ROADMAP.md P1/P2/P3 issue resolution (Phase 2: Quality Infrastructure)
 - Linting jobs use `continue-on-error: true` for gradual codebase cleanup
+- All Cascor P1 issues now properly tracked (P1-001 through P1-009)
 
 ---
 
