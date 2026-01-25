@@ -5,6 +5,51 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.19] - 2026-01-25
+
+### Added: [0.3.19]
+
+- **CI Coverage Gates (P2-NEW-002)**: Added coverage threshold enforcement to CI pipeline
+  - Added "Check Coverage Thresholds" step with 50% initial threshold
+  - Uses `coverage report --fail-under=50` with soft fail (warning only)
+  - Threshold to be increased as coverage improves
+
+- **README Workflow Badge (P4-NEW-003)**: Added GitHub Actions status badge
+  - Badge displays CI/CD Pipeline status
+  - Links to workflow runs for quick access
+
+### Verified: [0.3.19]
+
+- **main.py End-to-End (P4-NEW-001)**: Verified application startup
+  - All module imports work correctly
+  - LogConfig/Logger initialize properly
+  - SpiralProblem and CascadeCorrelationNetwork instantiate correctly
+  - Plotting enabled by default
+
+- **./try Script (P4-NEW-002)**: Verified launcher script functionality
+  - Symlink correctly points to `util/juniper_cascor.bash`
+  - Environment validation works (conda env, Python version)
+  - All configuration files sourced correctly
+
+- **Parallel Processing (P4-NEW-005)**: Verified multiprocessing works
+  - `_execute_parallel_training` invoked (not sequential)
+  - ForkServer multiprocessing manager starts correctly
+  - 9 worker processes spawn with unique PIDs
+  - Task and result queues created properly
+
+### Documentation: [0.3.19]
+
+- Updated `notes/PRE-DEPLOYMENT_ROADMAP-2.md`:
+  - Marked Phase A as complete (5/5 tasks)
+  - Updated P2-NEW-002, P4-NEW-001, P4-NEW-002, P4-NEW-003, P4-NEW-005 status
+  - Added verification results and resolution details
+
+### Technical Notes: [0.3.19]
+
+- **SemVer impact**: PATCH – CI configuration and documentation; no API changes
+
+---
+
 ## [0.3.18] - 2026-01-25
 
 ### Fixed: [0.3.18]

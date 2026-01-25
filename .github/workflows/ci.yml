@@ -232,6 +232,24 @@ jobs:
           retention-days: 30
         if: always()
 
+      # P2-NEW-002: Enforce coverage thresholds in CI
+      - name: Check Coverage Thresholds
+        shell: bash -el {0}
+        run: |
+          echo "Checking Coverage Thresholds..."
+          echo -ne "\n╔════════════════════════════════════════════════════════════╗\n"
+          echo "║       Juniper Cascor - Coverage Gate Check                  ║"
+          echo "╚════════════════════════════════════════════════════════════╝"
+          cd src/tests
+          # Extract total coverage percentage from coverage report
+          # Using coverage report with --fail-under for enforcement
+          # Starting with 50% threshold - to be increased as coverage improves
+          python -m coverage report --fail-under=50 || {
+            echo "::warning::Coverage below 50% threshold"
+            echo "Coverage gate: SOFT FAIL (warning only during initial phase)"
+          }
+        continue-on-error: true
+
       - name: Test Summary
         shell: bash -el {0}
         run: |
