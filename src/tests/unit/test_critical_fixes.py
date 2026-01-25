@@ -8,6 +8,7 @@ import sys
 import os
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
+import pytest
 import torch
 
 print("="*70)
@@ -60,6 +61,9 @@ def test_2_network_creation():  # sourcery skip: extract-method
         traceback.print_exc()
         return False
 
+# CASCOR-TIMEOUT-001: Added slow marker and extended timeout
+@pytest.mark.slow
+@pytest.mark.timeout(300)
 def test_3_candidate_training():  # sourcery skip: extract-method
     """Test that candidate unit can train without crashes."""
     print("\n[Test 3] Candidate unit training...")

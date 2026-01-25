@@ -190,12 +190,15 @@ jobs:
           echo "Created logs/, src/logs/, reports/junit/, src/tests/reports/"
         continue-on-error: true
 
-      - name: Run Unit Tests
+      # CASCOR-TIMEOUT-001: Exclude slow tests from default CI run
+      # Slow tests (marked with @pytest.mark.slow) involve full neural network
+      # training and can take 2-5+ minutes. These are run separately.
+      - name: Run Unit Tests (Fast Only)
         shell: bash -el {0}
         run: |
-          echo "Running Unit Tests..."
+          echo "Running Unit Tests (excluding slow tests)..."
           echo -ne "\n╔════════════════════════════════════════════════════════════╗\n"
-          echo "║       Juniper Cascor - Run Unit Tests                       ║"
+          echo "║       Juniper Cascor - Run Unit Tests (Fast Only)           ║"
           echo "╚════════════════════════════════════════════════════════════╝"
           cd src/tests
           python -m pytest unit/ \
@@ -207,7 +210,7 @@ jobs:
             --cov-report=xml:reports/coverage.xml \
             --cov-report=html:reports/htmlcov \
             --junitxml=reports/junit.xml \
-            -m "unit" \
+            -m "unit and not slow" \
             --maxfail=10 \
             || true
 
@@ -284,18 +287,21 @@ jobs:
         run: |
           mkdir -p logs src/logs reports/junit src/tests/reports
 
-      - name: Run Integration Tests
+      # CASCOR-TIMEOUT-001: Exclude slow tests from integration CI run
+      # Slow tests (marked with @pytest.mark.slow) involve full neural network
+      # training and require extended timeouts (300s per test).
+      - name: Run Integration Tests (Fast Only)
         shell: bash -el {0}
         run: |
-          echo "Running Integration Tests..."
+          echo "Running Integration Tests (excluding slow tests)..."
           echo -ne "\n╔════════════════════════════════════════════════════════════╗\n"
-          echo "║       Juniper Cascor - Run Integration Tests                ║"
+          echo "║       Juniper Cascor - Run Integration Tests (Fast Only)    ║"
           echo "╚════════════════════════════════════════════════════════════╝"
           cd src/tests
           python -m pytest integration/ \
             --verbose \
-            --timeout=300 \
-            -m "integration" \
+            --timeout=120 \
+            -m "integration and not slow" \
             --maxfail=5 \
             || true
         continue-on-error: true

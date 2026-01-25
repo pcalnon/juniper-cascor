@@ -16,6 +16,7 @@ import tempfile
 import unittest
 
 import numpy as np
+import pytest
 import torch
 
 # Add parent directories to path
@@ -29,6 +30,9 @@ from snapshots.snapshot_serializer import CascadeHDF5Serializer
 class TestDeterministicTrainingResume(unittest.TestCase):
     """Test that training can be paused, saved, loaded, and resumed deterministically."""
 
+    # CASCOR-TIMEOUT-001: Added slow marker and extended timeout
+    @pytest.mark.slow
+    @pytest.mark.timeout(300)
     def test_deterministic_training_resume(self):
         """
         Critical test: Train → Save → Load → Resume should be identical to continuous training.

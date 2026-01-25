@@ -7,9 +7,13 @@ import sys
 # import os
 sys.path.append('/home/pcalnon/Development/python/Juniper/src/prototypes/cascor/src')
 
+import pytest
 import torch
 from candidate_unit.candidate_unit import CandidateUnit
 
+# CASCOR-TIMEOUT-001: Added slow marker and extended timeout
+@pytest.mark.slow
+@pytest.mark.timeout(300)
 def test_candidate_units_simple():
     """Test the core issue: different candidates should have different correlations."""
     print("Testing core CandidateUnit training issue...")

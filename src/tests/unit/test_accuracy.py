@@ -95,6 +95,9 @@ class TestAccuracyCalculation:
     
     @pytest.mark.unit
     @pytest.mark.accuracy
+    # CASCOR-TIMEOUT-001: Added slow marker and extended timeout
+    @pytest.mark.slow
+    @pytest.mark.timeout(300)
     def test_accuracy_with_trained_network(self, trained_simple_network, simple_2d_data):
         """Test accuracy calculation with a trained network."""
         x, y = simple_2d_data

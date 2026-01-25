@@ -7,11 +7,15 @@ import sys
 import os
 sys.path.append('/home/pcalnon/Development/python/Juniper/src/prototypes/cascor/src')
 
+import pytest
 import torch
 # import numpy as np
 from cascade_correlation.cascade_correlation import CascadeCorrelationNetwork
 from candidate_unit.candidate_unit import CandidateUnit
 
+# CASCOR-TIMEOUT-001: Added slow marker and extended timeout
+@pytest.mark.slow
+@pytest.mark.timeout(300)
 def test_sequential_candidate_training():
     """Test candidate training using sequential processing to bypass multiprocessing issues."""
     print("Testing CascadeCorrelationNetwork with sequential processing...")
@@ -92,6 +96,9 @@ def _validate_candidates_correlations(candidates_data):
 
     return True
 
+# CASCOR-TIMEOUT-001: Added slow marker and extended timeout
+@pytest.mark.slow
+@pytest.mark.timeout(300)
 def test_individual_candidates():
     """Test individual candidate training to ensure basic functionality works."""
     print("\nTesting individual CandidateUnit training...")

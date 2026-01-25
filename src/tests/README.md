@@ -128,6 +128,35 @@ The test suite uses pytest markers to categorize tests:
 - `accuracy`: Tests for accuracy calculation methods
 - `early_stopping`: Tests for early stopping logic
 
+## Slow Test Handling
+
+Training-intensive tests are marked with `@pytest.mark.slow` and have individual 300-second timeouts (see `CASCOR-TIMEOUT-001` in pytest.ini).
+
+### Running Slow Tests
+
+```bash
+# Run only slow tests with global timeout disabled
+pytest -m slow --timeout=0
+
+# Run only fast tests (excludes slow tests - default CI behavior)
+pytest -m "not slow"
+
+# Run all tests (both fast and slow)
+pytest --timeout=0
+```
+
+### Marking Tests as Slow
+
+Use the `@pytest.mark.slow` decorator along with `@pytest.mark.timeout(300)` for training-intensive tests:
+
+```python
+@pytest.mark.slow
+@pytest.mark.timeout(300)
+def test_training_intensive_operation():
+    """Test that requires extended time for training."""
+    pass
+```
+
 ## Key Test Components
 
 ### Core Algorithm Tests (Unit)

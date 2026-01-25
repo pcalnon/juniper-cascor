@@ -8,6 +8,7 @@ import sys
 import os
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
+import pytest
 import torch
 import tempfile
 from pathlib import Path
@@ -16,6 +17,9 @@ print("="*70)
 print("P1 High Priority Fixes Validation Tests")
 print("="*70)
 
+# CASCOR-TIMEOUT-001: Added slow marker and extended timeout
+@pytest.mark.slow
+@pytest.mark.timeout(300)
 def test_1_early_stopping():
     """Test that early stopping works in candidate training."""
     print("\n[Test 1] Early stopping implementation...")

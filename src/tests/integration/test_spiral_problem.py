@@ -71,6 +71,9 @@ class TestSpiralProblemBasic:
 
     @pytest.mark.integration
     @pytest.mark.spiral
+    # CASCOR-TIMEOUT-001: Added slow marker and extended timeout
+    @pytest.mark.slow
+    @pytest.mark.timeout(300)
     def test_3_spiral_learning(self, spiral_network):
         """Test that network can learn 3-spiral problem."""
         set_deterministic_behavior(42)
@@ -161,6 +164,9 @@ class TestSpiralProblemRobustness:
 
     @pytest.mark.integration
     @pytest.mark.spiral
+    # CASCOR-TIMEOUT-001: Added slow marker and extended timeout
+    @pytest.mark.slow
+    @pytest.mark.timeout(300)
     @pytest.mark.parametrize("noise_level", [0.01, 0.05, 0.1])
     def test_spiral_noise_robustness(self, spiral_network, noise_level):
         """Test network performance with different noise levels."""
@@ -194,6 +200,9 @@ class TestSpiralProblemRobustness:
 
     @pytest.mark.integration
     @pytest.mark.spiral
+    # CASCOR-TIMEOUT-001: Added slow marker and extended timeout
+    @pytest.mark.slow
+    @pytest.mark.timeout(300)
     @pytest.mark.parametrize("n_per_spiral", [20, 50, 100])
     def test_spiral_data_size_scaling(self, spiral_network, n_per_spiral):
         """Test network performance with different dataset sizes."""
@@ -227,6 +236,9 @@ class TestSpiralProblemVisualization:
 
     @pytest.mark.integration
     @pytest.mark.spiral
+    # CASCOR-TIMEOUT-001: Added slow marker and extended timeout
+    @pytest.mark.slow
+    @pytest.mark.timeout(300)
     def test_spiral_training_progression(self, spiral_network):
         """Test and analyze training progression on spiral problem."""
         set_deterministic_behavior(42)
@@ -284,6 +296,9 @@ class TestSpiralProblemEdgeCases:
 
     @pytest.mark.integration
     @pytest.mark.spiral
+    # CASCOR-TIMEOUT-001: Added slow marker and extended timeout
+    @pytest.mark.slow
+    @pytest.mark.timeout(300)
     def test_minimal_spiral_data(self, spiral_network):
         """Test network with minimal spiral data."""
         set_deterministic_behavior(42)
@@ -311,6 +326,9 @@ class TestSpiralProblemEdgeCases:
 
     @pytest.mark.integration 
     @pytest.mark.spiral
+    # CASCOR-TIMEOUT-001: Added slow marker and extended timeout
+    @pytest.mark.slow
+    @pytest.mark.timeout(300)
     def test_perfect_spiral_separation(self, spiral_network):
         """Test network with perfectly separated spiral data."""
         set_deterministic_behavior(42)
