@@ -637,18 +637,38 @@ This builds a **list** of length `sequence`, which can be extremely large with u
 ### P3-001: Candidate Factory Refactor
 
 **Application**: Juniper Cascor  
-**Status**: Partially Complete
+**Status**: 🟡 PARTIAL - Analysis Complete (2026-01-24)
 
 Ensure all candidate creation routes through `_create_candidate_unit()` factory for consistent initialization.
+
+**Analysis** (2026-01-24):
+
+Found 3 locations creating CandidateUnit instances:
+
+1. `_create_candidate_unit()` (line 1206) - ✅ Factory method
+2. `fit()` method (line 1406) - Uses different parameter style for grow_network
+3. `train_candidate_worker()` (line 2618) - Multiprocessing context, needs special handling
+
+**Recommendation**: The multiprocessing worker cannot easily use the factory due to serialization constraints. The fit() usage is intentionally different (grows network). Consider documenting as design decision rather than refactoring.
 
 ---
 
 ### P3-002: Flexible Optimizer System
 
 **Application**: Juniper Cascor  
-**Status**: 🔴 NOT STARTED
+**Status**: 🟡 PARTIAL - Already Implemented (2026-01-24)
 
 Allow configurable optimizers (Adam, SGD, etc.) instead of hardcoded gradient descent.
+
+**Analysis** (2026-01-24):
+
+Found existing implementation:
+
+- `_create_optimizer()` method at line 1254
+- `OptimizerConfig` class in `cascade_correlation_config.py`
+- Supports: SGD, Adam, AdamW, RMSprop
+
+**Status**: Already implemented in codebase. Mark as complete.
 
 ---
 
@@ -659,23 +679,60 @@ Allow configurable optimizers (Adam, SGD, etc.) instead of hardcoded gradient de
 
 Add CUDA/GPU acceleration for training.
 
+**Notes**: Requires significant refactoring to move tensors to GPU devices. PyTorch CUDA support already available in environment.
+
 ---
 
 ### P3-004: Performance Benchmark Harness
 
 **Application**: Juniper Cascor  
-**Status**: 🔴 NOT STARTED
+**Status**: ✅ COMPLETE (2026-01-24)
 
 Create reproducible performance benchmarks for serialization and training.
+
+**Resolution** (2026-01-24):
+
+Created `src/tests/scripts/run_benchmarks.bash` with:
+
+- Serialization benchmarks (save/load HDF5 with varying hidden units)
+- Forward pass benchmarks (varying batch sizes and network depths)
+- Training benchmarks (output layer training)
+- Configurable iterations, quiet mode, output file support
+- Uses `CASCOR_LOG_LEVEL` for quiet mode
+
+**Usage**:
+
+```bash
+cd src/tests/scripts
+bash run_benchmarks.bash           # Run all benchmarks
+bash run_benchmarks.bash -s -n 10  # Serialization, 10 iterations
+bash run_benchmarks.bash -q        # Quiet mode
+```
 
 ---
 
 ### P3-005: N-Best Candidate Selection
 
 **Application**: Juniper Cascor  
-**Status**: Partially Complete
+**Status**: ✅ COMPLETE (Already Implemented)
 
 Implement selection of N best candidates instead of single best.
+
+**Analysis** (2026-01-24):
+
+Already implemented in codebase:
+
+- `_select_best_candidates()` method (line 3113)
+- `add_units_as_layer()` method (line 3149)
+- `candidates_per_layer` config option in `CascadeCorrelationConfig`
+
+**Usage**:
+
+```python
+config = CascadeCorrelationConfig(
+    candidates_per_layer=3,  # Select top 3 candidates
+)
+```
 
 ---
 

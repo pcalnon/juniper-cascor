@@ -43,6 +43,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - `export CASCOR_LOG_LEVEL=WARNING` for production/benchmarking
     - `export CASCOR_LOG_LEVEL=DEBUG` for verbose debugging
 
+- **CASCOR-P3-004**: Performance Benchmark Harness - Complete
+  - Created `src/tests/scripts/run_benchmarks.bash`
+  - Benchmarks: serialization (save/load HDF5), forward pass, output layer training
+  - Configurable iterations, quiet mode, output file support
+  - Integrates with `CASCOR_LOG_LEVEL` for quiet benchmarking
+
+### Verified: [0.3.16]
+
+- **CASCOR-P3-002**: Flexible Optimizer System - Already implemented
+  - `_create_optimizer()` method supports SGD, Adam, AdamW, RMSprop
+  - `OptimizerConfig` class in cascade_correlation_config.py
+
+- **CASCOR-P3-005**: N-Best Candidate Selection - Already implemented
+  - `_select_best_candidates()` method for selecting top N candidates
+  - `candidates_per_layer` config option in CascadeCorrelationConfig
+
+- **CASCOR-P3-001**: Candidate Factory Refactor - Analysis complete
+  - Factory exists at `_create_candidate_unit()`
+  - Other instantiation sites have valid design reasons (multiprocessing, grow_network)
+
 ### Technical Notes: [0.3.16]
 
 - **SemVer impact**: MINOR – New CI/CD infrastructure and configuration; no API changes

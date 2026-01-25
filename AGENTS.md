@@ -4,7 +4,7 @@
 **Version**: 0.3.2 (0.7.3)  
 **License**: MIT License  
 **Author**: Paul Calnon  
-**Last Updated**: 2025-01-12
+**Last Updated**: 2026-01-24
 
 ---
 
@@ -29,6 +29,11 @@ cd src/tests && bash scripts/run_tests.bash -v -c
 
 # Run a specific test file
 cd src/tests && python -m pytest unit/test_forward_pass.py -v
+
+# Run performance benchmarks (P3-004)
+cd src/tests/scripts && bash run_benchmarks.bash           # All benchmarks
+cd src/tests/scripts && bash run_benchmarks.bash -s        # Serialization only
+cd src/tests/scripts && bash run_benchmarks.bash -q -n 10  # Quiet mode, 10 iterations
 
 # Type checking with mypy (configured in pyproject.toml)
 cd src && python -m mypy cascade_correlation/ candidate_unit/ --ignore-missing-imports
