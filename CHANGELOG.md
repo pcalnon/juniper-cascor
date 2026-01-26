@@ -5,6 +5,46 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.20] - 2026-01-25
+
+**Summary**: Completed Phase D (3/5 tasks) of PRE-DEPLOYMENT_ROADMAP-2.md. Added profiling infrastructure with cProfile, tracemalloc, and py-spy support. Created logging utilities for hot path optimization.
+
+### Added: [0.3.20]
+
+- **Development Profiling Infrastructure (P3-NEW-001)**: Created comprehensive profiling module
+  - Added `src/profiling/` module with deterministic and memory profiling
+  - `--profile` flag for cProfile integration
+  - `--profile-memory` flag for tracemalloc memory profiling
+  - `--profile-output` and `--profile-top-n` configuration options
+  - `ProfileContext` context manager for block profiling
+  - `MemoryTracker` context manager for memory analysis
+  - `profile_function` and `memory_profile` decorators
+
+- **Sampling Profiling Infrastructure (P3-NEW-002)**: Added py-spy integration
+  - Created `util/profile_training.bash` script
+  - SVG flame graph generation
+  - Speedscope JSON format output
+  - Configurable sampling rate, duration, native frames
+
+- **Hot Path Logging Utilities (P4-NEW-004)**: Created logging optimization tools
+  - `SampledLogger` - Sample log messages at configurable rate
+  - `BatchLogger` - Buffer and batch log output
+  - `log_if_enabled()` - Avoid expensive formatting when level disabled
+  - `log_timing()` - Context manager for timing operations
+  - `LogFrequencyTracker` - Track log call frequency
+
+### Changed: [0.3.20]
+
+- Updated `main.py` with `argparse` for command-line profiling options
+- Updated AGENTS.md with profiling commands documentation
+
+### Documentation: [0.3.20]
+
+- Updated PRE-DEPLOYMENT_ROADMAP-2.md to v2.3.0 (14/19 tasks, 74%)
+- Added profiling commands to AGENTS.md Essential Commands section
+
+---
+
 ## [0.3.19] - 2026-01-25
 
 **Summary**: Completed Phase A (5/5 tasks) and Phase B (3/4 tasks) of PRE-DEPLOYMENT_ROADMAP-2.md. Resolved module naming collision (P4-NEW-006) enabling scalable sub-project integration. Added CI coverage gates and README badge. Created new test file for candidate seed diversity.

@@ -35,6 +35,14 @@ cd src/tests/scripts && bash run_benchmarks.bash           # All benchmarks
 cd src/tests/scripts && bash run_benchmarks.bash -s        # Serialization only
 cd src/tests/scripts && bash run_benchmarks.bash -q -n 10  # Quiet mode, 10 iterations
 
+# Profiling commands (P3-NEW-001, P3-NEW-002)
+cd src && python main.py --profile                         # cProfile deterministic profiling
+cd src && python main.py --profile-memory                  # tracemalloc memory profiling
+cd src && python main.py --profile --profile-output ./my_profiles  # Custom output dir
+./util/profile_training.bash                               # py-spy sampling profiler
+./util/profile_training.bash --svg                         # Generate SVG flame graph
+./util/profile_training.bash --speedscope                  # Speedscope JSON format
+
 # Type checking with mypy (configured in pyproject.toml)
 cd src && python -m mypy cascade_correlation/ candidate_unit/ --ignore-missing-imports
 
@@ -72,14 +80,16 @@ export CASCOR_LOG_LEVEL=TRACE
 
 ### Key Entry Points
 
-| File                                             | Purpose                            |
-| ------------------------------------------------ | ---------------------------------- |
-| `src/main.py`                                    | Main application entry point       |
-| `src/cascade_correlation/cascade_correlation.py` | Core neural network implementation |
-| `src/spiral_problem/spiral_problem.py`           | Two-spiral problem solver          |
-| `src/candidate_unit/candidate_unit.py`           | Candidate unit for network growth  |
-| `src/tests/run_tests.bash`                       | Test runner script                 |
-| `src/tests/conftest.py`                          | Test configuration and fixtures    |
+| File                                             | Purpose                              |
+| ------------------------------------------------ | ------------------------------------ |
+| `src/main.py`                                    | Main application entry point         |
+| `src/cascade_correlation/cascade_correlation.py` | Core neural network implementation   |
+| `src/spiral_problem/spiral_problem.py`           | Two-spiral problem solver            |
+| `src/candidate_unit/candidate_unit.py`           | Candidate unit for network growth    |
+| `src/profiling/`                                 | Profiling infrastructure (P3-NEW-001)|
+| `src/tests/run_tests.bash`                       | Test runner script                   |
+| `src/tests/conftest.py`                          | Test configuration and fixtures      |
+| `util/profile_training.bash`                     | py-spy sampling profiler (P3-NEW-002)|
 
 ---
 

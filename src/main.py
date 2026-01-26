@@ -34,9 +34,11 @@
 #
 #
 #####################################################################################################################################################################################################
+import argparse
 import logging
 import logging.config
 import os
+import sys
 # import columnar as col
 # import torch
 # import numpy as np
@@ -291,7 +293,77 @@ def main():
     logger.info("Main: Completed solving SpiralProblem instance")
 
 #####################################################################################################################################################################################################
+# Command Line Argument Parsing
+# P3-NEW-001: Development Profiling Infrastructure
+
+
+def parse_args():
+    """Parse command line arguments."""
+    parser = argparse.ArgumentParser(
+        description="Juniper Cascor - Cascade Correlation Neural Network",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  python main.py                      # Run normally
+  python main.py --profile            # Run with cProfile profiling
+  python main.py --profile-memory     # Run with memory profiling
+  python main.py --profile --profile-output ./my_profiles
+        """
+    )
+    
+    parser.add_argument(
+        "--profile",
+        action="store_true",
+        help="Enable cProfile deterministic profiling"
+    )
+    
+    parser.add_argument(
+        "--profile-memory",
+        action="store_true",
+        help="Enable tracemalloc memory profiling"
+    )
+    
+    parser.add_argument(
+        "--profile-output",
+        type=str,
+        default="./profiles",
+        help="Directory for profile output files (default: ./profiles)"
+    )
+    
+    parser.add_argument(
+        "--profile-top-n",
+        type=int,
+        default=30,
+        help="Number of top functions to display in profile output (default: 30)"
+    )
+    
+    return parser.parse_args()
+
+
+#####################################################################################################################################################################################################
 # Main function to run the two spiral problem solution
 # This is the entry point for the script.
 if __name__ == "__main__":
-    main()
+    args = parse_args()
+    
+    if args.profile:
+        from profiling.deterministic import ProfileContext
+        
+        Logger.info("Cascor: Starting with cProfile profiling enabled")
+        with ProfileContext("main_training", output_dir=args.profile_output) as profiler:
+            main()
+        profiler.print_stats(top_n=args.profile_top_n)
+        profiler.save()
+        
+    elif args.profile_memory:
+        from profiling.memory import MemoryTracker
+        
+        Logger.info("Cascor: Starting with memory profiling enabled")
+        with MemoryTracker("main_training") as tracker:
+            main()
+        tracker.print_summary()
+        tracker.print_top_allocations(top_n=args.profile_top_n)
+        tracker.print_diff(top_n=args.profile_top_n)
+        
+    else:
+        main()
