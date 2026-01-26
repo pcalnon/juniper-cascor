@@ -260,12 +260,12 @@ These issues affect the fundamental architecture of the Cascor-Canopy integratio
 **Status**: ✅ COMPLETE  
 **Completed**: 2026-01-25
 
-| Feature                        | Test Needed    | Original Reference | Status |
-| ------------------------------ | -------------- | ------------------ | ------ |
-| `save_object()` method         | Add unit test  | CASCOR-P0-004      | ✅ Exists in `test_snapshot_serializer.py` |
-| Candidate seeds differ         | Verify seeds   | CASCOR-P0-005      | ✅ Created `test_candidate_seed_diversity.py` |
+| Feature                        | Test Needed    | Original Reference | Status                                                  |
+| ------------------------------ | -------------- | ------------------ | ------------------------------------------------------- |
+| `save_object()` method         | Add unit test  | CASCOR-P0-004      | ✅ Exists in `test_snapshot_serializer.py`              |
+| Candidate seeds differ         | Verify seeds   | CASCOR-P0-005      | ✅ Created `test_candidate_seed_diversity.py`           |
 | Input/output size combinations | Typical combos | CASCOR-P0-006      | ✅ Exists in `test_forward_pass.py`, `test_accuracy.py` |
-| Best candidate mis-index       | Reproduce case | CASCOR-P1-009      | ✅ Exists in `test_cascor_getters_setters.py` |
+| Best candidate mis-index       | Reproduce case | CASCOR-P1-009      | ✅ Exists in `test_cascor_getters_setters.py`           |
 
 **Required Actions**:
 
@@ -465,6 +465,7 @@ grep "execute_parallel\|execute_sequential" training_log.txt
   - Updated AGENTS.md references
 
 **Benefits**:
+
 - Eliminates `sys.path.insert()` workaround
 - Enables clean integration with future sub-projects (JuniperBranch, JuniperBerry)
 - Follows explicit naming convention for scalability
@@ -526,12 +527,12 @@ grep "execute_parallel\|execute_sequential" training_log.txt
 
 The following items are explicitly deferred to post-deployment:
 
-| Item                                   | Reason                | Original Reference | Status     |
-| -------------------------------------- | --------------------- | ------------------ | ---------- |
-| ~~Module naming collision rename~~     | ~~Workaround sufficient~~ | ~~CANOPY-P1-002~~ | ✅ Complete |
-| Remove "roll" concept in CandidateUnit | Low priority, capped  | CASCOR-P1-008      | Deferred   |
-| Candidate factory refactor             | Design decision       | P3-001             | Deferred   |
-| Continuous profiling (Pyroscope)       | Infrastructure needed | Section 11 Phase 3 | Deferred   |
+| Item                                   | Reason                    | Original Reference | Status      |
+| -------------------------------------- | ------------------------- | ------------------ | ----------- |
+| ~~Module naming collision rename~~     | ~~Workaround sufficient~~ | ~~CANOPY-P1-002~~  | ✅ Complete |
+| Remove "roll" concept in CandidateUnit | Low priority, capped      | CASCOR-P1-008      | Deferred    |
+| Candidate factory refactor             | Design decision           | P3-001             | Deferred    |
+| Continuous profiling (Pyroscope)       | Infrastructure needed     | Section 11 Phase 3 | Deferred    |
 
 ---
 
@@ -545,6 +546,7 @@ The following items are explicitly deferred to post-deployment:
 ### Version 2.1.0 Summary
 
 **Phase A Complete (5/5 tasks)**:
+
 - P4-NEW-001: main.py end-to-end verified
 - P4-NEW-002: ./try script verified
 - P4-NEW-005: Parallel processing verified
@@ -552,11 +554,13 @@ The following items are explicitly deferred to post-deployment:
 - P4-NEW-003: README workflow badge added
 
 **P4-NEW-006 Complete**:
+
 - Module naming collision resolved via dual rename
 - Cascor: `constants/` → `cascor_constants/` (9 files)
 - Canopy: `constants.py` → `canopy_constants.py` (16 files)
 
 **Phase B Substantially Complete (3/4 tasks)**:
+
 - P2-NEW-005: Missing unit tests verified/created (4 new tests)
 - P2-NEW-003: Multiprocessing timeout hardening (already implemented)
 - P2-NEW-004: Sequential fallback (already implemented)
