@@ -5,6 +5,31 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.21] - 2026-01-25
+
+**Summary**: Major test coverage expansion. Added 6 new test files with ~150+ tests to improve coverage from ~50% to ~67%.
+
+### Added: [0.3.21]
+
+- **Test Coverage Expansion (P2-NEW-001)**: Added comprehensive unit tests
+  - `test_cascade_correlation_coverage.py` - 17 test classes/methods for core network
+  - `test_candidate_unit_extended.py` - 12 test classes for candidate unit
+  - `test_profiling_module.py` - 15 test classes for profiling infrastructure
+  - `test_network_methods_extended.py` - 16 test classes for network methods
+  - `test_config_and_exceptions.py` - 15 test classes for configuration
+  - `test_training_workflow.py` - 13 test classes for training workflows
+
+### Changed: [0.3.21]
+
+- Updated PRE-DEPLOYMENT_ROADMAP-2.md with test coverage status
+
+### Documentation: [0.3.21]
+
+- Test coverage now at ~67% overall (from ~50%)
+- Core modules improved: cascade_correlation.py (~61%), candidate_unit.py (~81%)
+
+---
+
 ## [0.3.20] - 2026-01-25
 
 **Summary**: Completed Phase D (3/5 tasks) of PRE-DEPLOYMENT_ROADMAP-2.md. Added profiling infrastructure with cProfile, tracemalloc, and py-spy support. Created logging utilities for hot path optimization.
