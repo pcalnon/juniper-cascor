@@ -64,7 +64,7 @@ from logging import (
 
 import yaml
 
-from constants.constants import (
+from cascor_constants.constants import (
     _LOGGER_CONTENT_FIELD_NAMES_LEVELNAME,
     _LOGGER_CONTENT_FIELD_NAMES_MESSAGE,
     _LOGGER_CONTENT_FIELD_NAMES_CONSOLE,

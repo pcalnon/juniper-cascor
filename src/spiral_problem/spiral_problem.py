@@ -49,7 +49,7 @@ from typing import Tuple
 from cascade_correlation.cascade_correlation import CascadeCorrelationNetwork
 from cascade_correlation.cascade_correlation_config.cascade_correlation_config import CascadeCorrelationConfig
 
-from constants.constants import (
+from cascor_constants.constants import (
     _SPIRAL_PROBLEM_ACTIVATION_FUNCTION,
     _SPIRAL_PROBLEM_CANDIDATE_DISPLAY_FREQUENCY,
     _SPIRAL_PROBLEM_CANDIDATE_EPOCHS,

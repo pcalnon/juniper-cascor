@@ -40,7 +40,7 @@ from dataclasses import dataclass
 from log_config.log_config import LogConfig
 
 
-from constants.constants import (
+from cascor_constants.constants import (
     # _CASCADE_CORRELATION_NETWORK_ACTIVATION_FUNCTION_DEFAULT,
     _CASCADE_CORRELATION_NETWORK_ACTIVATION_FUNCTION_NAME,
     _CASCADE_CORRELATION_NETWORK_ACTIVATION_FUNCTIONS_DICT,

@@ -13,8 +13,8 @@ License:       MIT License
 Copyright:     Copyright (c) 2024-2026 Paul Calnon
 
 Description:
-    Package initialization for constants module.
-    This file enables Python to recognize the constants directory as a package,
+    Package initialization for cascor_constants module.
+    This file enables Python to recognize the cascor_constants directory as a package,
     which is required for proper import resolution especially in multiprocessing
     spawn context.
 """

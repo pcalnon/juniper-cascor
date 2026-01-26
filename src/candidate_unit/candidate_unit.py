@@ -48,7 +48,7 @@ import uuid
 from dataclasses import dataclass, field
 from typing import Optional
 
-from constants.constants import (
+from cascor_constants.constants import (
     _CANDIDATE_UNIT_ACTIVATION_FUNCTION,
     _CANDIDATE_UNIT_DISPLAY_FREQUENCY,
     _CANDIDATE_UNIT_EPOCHS_MAX,

@@ -37,7 +37,7 @@ import random
 # import math
 from cascade_correlation.cascade_correlation import CascadeCorrelationNetwork
 
-from constants.constants import (
+from cascor_constants.constants import (
     _SPIRAL_PROBLEM_INPUT_SIZE,
     _SPIRAL_PROBLEM_OUTPUT_SIZE,
     _SPIRAL_PROBLEM_CANDIDATE_POOL_SIZE,

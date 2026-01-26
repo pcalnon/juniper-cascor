@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.3.19] - 2026-01-25
 
+**Summary**: Completed Phase A (5/5 tasks) and Phase B (3/4 tasks) of PRE-DEPLOYMENT_ROADMAP-2.md. Resolved module naming collision (P4-NEW-006) enabling scalable sub-project integration. Added CI coverage gates and README badge. Created new test file for candidate seed diversity.
+
+### Changed: [0.3.19]
+
+- **Module Naming Collision Resolution (P4-NEW-006)**: Renamed constants modules to prevent import conflicts
+  - **Cascor**: Renamed `constants/` → `cascor_constants/` (9 files updated)
+  - **Canopy**: Renamed `constants.py` → `canopy_constants.py` (16 files updated)
+  - Eliminates need for `sys.path.insert()` workaround
+  - Enables scalable integration with future sub-projects (JuniperBranch, JuniperBerry)
+  - Updated AGENTS.md documentation references
+
 ### Added: [0.3.19]
 
 - **CI Coverage Gates (P2-NEW-002)**: Added coverage threshold enforcement to CI pipeline
@@ -37,16 +48,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - 9 worker processes spawn with unique PIDs
   - Task and result queues created properly
 
+### Added: [0.3.19] (Tests)
+
+- **test_candidate_seed_diversity.py** (P2-NEW-005): New unit test file with 4 tests
+  - `test_candidates_have_different_seeds` - Verifies pool candidates have unique seeds
+  - `test_candidates_have_different_initial_weights` - Verifies weight diversity
+  - `test_same_seed_produces_same_weights` - Reproducibility test
+  - `test_different_seeds_produce_different_weights` - Diversity test
+
 ### Documentation: [0.3.19]
 
 - Updated `notes/PRE-DEPLOYMENT_ROADMAP-2.md`:
   - Marked Phase A as complete (5/5 tasks)
-  - Updated P2-NEW-002, P4-NEW-001, P4-NEW-002, P4-NEW-003, P4-NEW-005 status
-  - Added verification results and resolution details
+  - Marked Phase B as substantially complete (B.1-B.3 done, B.4 ongoing)
+  - Updated P4-NEW-006 status (module naming collision resolved)
+  - Verified P2-NEW-003 and P2-NEW-004 already implemented in cascade_correlation.py
+  - Updated P2-NEW-005 status (tests verified/created)
 
 ### Technical Notes: [0.3.19]
 
-- **SemVer impact**: PATCH – CI configuration and documentation; no API changes
+- **SemVer impact**: PATCH – CI configuration, tests, and documentation; no API changes
+- **Phase B Discovery**: Multiprocessing timeout hardening (B.2) and sequential fallback (B.3) were already implemented in the codebase
 
 ---
 

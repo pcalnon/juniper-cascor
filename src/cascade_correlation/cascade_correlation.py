@@ -89,7 +89,7 @@ from candidate_unit.candidate_unit import (
     CandidateUnit,
 )
 from cascor_plotter.cascor_plotter import CascadeCorrelationPlotter
-from constants.constants import (
+from cascor_constants.constants import (
     _CASCADE_CORRELATION_NETWORK_ACTIVATION_FUNCTION_DEFAULT,
     _CASCADE_CORRELATION_NETWORK_ACTIVATION_FUNCTION_NAME,
     _CASCADE_CORRELATION_NETWORK_ACTIVATION_FUNCTION_NN_RELU,

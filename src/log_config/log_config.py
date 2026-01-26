@@ -47,7 +47,7 @@ import logging.config
 
 from logging import setLoggerClass
 from log_config.logger.logger import Logger
-from constants.constants import (
+from cascor_constants.constants import (
     _LOG_CONFIG_LOG_CONFIG_FILE_NAME,
     _LOG_CONFIG_LOG_CONFIG_FILE_PATH,
     _LOG_CONFIG_LOG_LEVEL_CUSTOM_NAMES_LIST,

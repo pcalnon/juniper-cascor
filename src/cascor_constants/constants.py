@@ -39,11 +39,11 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 # sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 
-# from constants.constants_activation.constants_activation import (
+# from cascor_constants.constants_activation.constants_activation import (
 #     _PROJECT_MODEL_INPUT_SIZE
 # )
 
-from constants.constants_activation.constants_activation import (
+from cascor_constants.constants_activation.constants_activation import (
     _PROJECT_MODEL_ACTIVATION_FUNCTION_NAME_NN_ELU,  # trunk-ignore(ruff/F401)
     _PROJECT_MODEL_ACTIVATION_FUNCTION_NAME_NN_GELU,  # trunk-ignore(ruff/F401)
     _PROJECT_MODEL_ACTIVATION_FUNCTION_NAME_NN_HARDTANH,  # trunk-ignore(ruff/F401)
@@ -83,7 +83,7 @@ from constants.constants_activation.constants_activation import (
     _PROJECT_MODEL_ACTIVATION_FUNCTION_TANH,
     _PROJECT_MODEL_ACTIVATION_FUNCTIONS_DICT,
 )
-from constants.constants_candidates.constants_candidates import (
+from cascor_constants.constants_candidates.constants_candidates import (
     _PROJECT_MODEL_CANDIDATE_DISPLAY_FREQUENCY,
     _PROJECT_MODEL_CANDIDATE_EARLY_STOPPING,
     _PROJECT_MODEL_CANDIDATE_EPOCHS,
@@ -92,14 +92,14 @@ from constants.constants_candidates.constants_candidates import (
     _PROJECT_MODEL_CANDIDATE_UNIT_LEARNING_RATE,
     _PROJECT_MODEL_DISPLAY_FREQUENCY,
 )
-from constants.constants_hdf5.constants_hdf5 import (
+from cascor_constants.constants_hdf5.constants_hdf5 import (
     _HDF5_PROJECT_CONSTANTS_DIR,  # trunk-ignore(ruff/F401)
     _HDF5_PROJECT_DIR,  # trunk-ignore(ruff/F401)
     _HDF5_PROJECT_HDF5_CONSTANTS_DIR,  # trunk-ignore(ruff/F401)
     _HDF5_PROJECT_SOURCE_DIR,  # trunk-ignore(ruff/F401)
     _HDF5_PROJECT_SNAPSHOTS_DIR,
 )
-from constants.constants_logging.constants_logging import (
+from cascor_constants.constants_logging.constants_logging import (
     _LOGGER_CLASS_LOGGER_LOG_LEVEL_DEFAULT,  # trunk-ignore(ruff/F401)
     _LOGGER_CONTENT_FIELD_NAMES_CONSOLE,  # trunk-ignore(ruff/F401)
     _LOGGER_CONTENT_FIELD_NAMES_MESSAGE,
@@ -139,7 +139,7 @@ from constants.constants_logging.constants_logging import (
     _LOGGER_LOG_FORMATTER_STRING_CONSOLE,
     _LOGGER_LOG_FORMATTER_STRING_FILE,
 )
-from constants.constants_model.constants_model import (
+from cascor_constants.constants_model.constants_model import (
     _PROJECT_MODEL_OUTPUT_SIZE,  # trunk-ignore(ruff/F401)
     _PROJECT_MODEL_AUTHKEY,
     _PROJECT_MODEL_BASE_MANAGER_ADDRESS,
@@ -160,7 +160,7 @@ from constants.constants_model.constants_model import (
     _PROJECT_MODEL_TASK_QUEUE_TIMEOUT,
     _PROJECT_MODEL_WORKER_STANDBY_SLEEPYTIME,
 )
-from constants.constants_problem.constants_problem import (
+from cascor_constants.constants_problem.constants_problem import (
     _SPIRAL_PROBLEM_CLOCKWISE,
     _SPIRAL_PROBLEM_DEFAULT_ORIGIN,
     _SPIRAL_PROBLEM_DEFAULT_RADIUS,

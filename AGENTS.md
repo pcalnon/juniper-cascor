@@ -1,10 +1,10 @@
 # AGENTS.md - Juniper Cascor Project Guide
 
 **Project**: Juniper Cascade Correlation Neural Network  
-**Version**: 0.3.2 (0.7.3)  
+**Version**: 0.3.19 (0.7.3)  
 **License**: MIT License  
 **Author**: Paul Calnon  
-**Last Updated**: 2026-01-24
+**Last Updated**: 2026-01-25
 
 ---
 
@@ -109,7 +109,7 @@ juniper_cascor/
 │   │   └── candidate_unit.py         # CandidateUnit class
 │   ├── spiral_problem/               # Two-spiral problem implementation
 │   │   └── spiral_problem.py         # SpiralProblem class
-│   ├── constants/                    # All project constants
+│   ├── cascor_constants/             # All project constants (renamed from constants/)
 │   │   ├── constants.py              # Main constants aggregator
 │   │   ├── constants_activation/     # Activation function constants
 │   │   ├── constants_candidates/     # Candidate training constants
@@ -484,7 +484,7 @@ def __setstate__(self, state):
 
 ### Constants Organization
 
-Constants are organized hierarchically in `src/constants/`:
+Constants are organized hierarchically in `src/cascor_constants/`:
 
 - `constants_model/` - Model architecture defaults
 - `constants_candidates/` - Candidate training parameters
@@ -498,7 +498,7 @@ Constants are organized hierarchically in `src/constants/`:
 Log levels are controlled via constants. To change:
 
 ```python
-# In constants/constants.py, uncomment the desired level:
+# In cascor_constants/constants.py, uncomment the desired level:
 # _CASCOR_LOG_LEVEL_NAME = _PROJECT_LOG_LEVEL_NAME_DEBUG
 _CASCOR_LOG_LEVEL_NAME = _PROJECT_LOG_LEVEL_NAME_INFO
 ```
@@ -588,7 +588,7 @@ config = CascadeCorrelationConfig(random_seed=42)
 ### Adding New Features
 
 1. Create feature in appropriate module
-2. Add constants to `src/constants/`
+2. Add constants to `src/cascor_constants/`
 3. Add tests in `src/tests/unit/` or `src/tests/integration/`
 4. Update documentation in `notes/`
 5. Run tests: `bash scripts/run_tests.bash`
@@ -644,4 +644,4 @@ For questions about this codebase, refer to:
 
 - Project documentation in `notes/`
 - Test examples in `src/tests/`
-- Constants definitions in `src/constants/`
+- Constants definitions in `src/cascor_constants/`

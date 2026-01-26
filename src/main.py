@@ -45,7 +45,7 @@ import os
 
 # from inspect import currentframe, getframeinfo
 
-from constants.constants import (
+from cascor_constants.constants import (
     _CASCOR_ACTIVATION_FUNCTION,
     _CASCOR_CANDIDATE_DISPLAY_FREQUENCY,
     _CASCOR_CANDIDATE_EPOCHS,
