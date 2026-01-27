@@ -304,8 +304,11 @@ class TestCandidateUnitCorrelation:
         """Test basic correlation calculation."""
         output = basic_candidate.forward(sample_input)
         # Call _calculate_correlation if it exists
+        # Note: residual_error needs to be 1D (batch_size,) for _calculate_correlation
         if hasattr(basic_candidate, "_calculate_correlation"):
-            result = basic_candidate._calculate_correlation(output, sample_residual_error)
+            # Take first column of residual error for single output correlation
+            residual_1d = sample_residual_error[:, 0]
+            result = basic_candidate._calculate_correlation(output, residual_1d)
             assert result is not None
 
     @pytest.mark.unit
@@ -313,8 +316,10 @@ class TestCandidateUnitCorrelation:
         """Test correlation is in valid range [-1, 1]."""
         output = basic_candidate.forward(sample_input)
         if hasattr(basic_candidate, "_calculate_correlation"):
-            result = basic_candidate._calculate_correlation(output, sample_residual_error)
-            if isinstance(result, tuple):
+            # Take first column of residual error for single output correlation
+            residual_1d = sample_residual_error[:, 0]
+            result = basic_candidate._calculate_correlation(output, residual_1d)
+            if isinstance(result, tuple) and len(result) > 0:
                 correlation = result[0]
             else:
                 correlation = result

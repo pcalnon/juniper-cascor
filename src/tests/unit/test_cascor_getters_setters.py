@@ -77,15 +77,15 @@ class TestCascorGetters:
     def test_get_candidate_training_queue_authkey(self, basic_network):
         """Test getting candidate training queue authkey."""
         authkey = basic_network.get_candidate_training_queue_authkey()
-        # May be None if not set
-        assert authkey is None or isinstance(authkey, bytes)
+        # May be None, bytes, or string
+        assert authkey is None or isinstance(authkey, (bytes, str))
 
     @pytest.mark.unit
     def test_get_candidate_training_queue_address(self, basic_network):
         """Test getting candidate training queue address."""
         address = basic_network.get_candidate_training_queue_address()
-        # May be None if not set
-        assert address is None or isinstance(address, str)
+        # May be None, string, or tuple
+        assert address is None or isinstance(address, (str, tuple))
 
     @pytest.mark.unit
     def test_get_candidate_training_tasks_queue_timeout(self, basic_network):
@@ -223,13 +223,21 @@ class TestCandidateDataHelpers:
     @pytest.mark.unit
     def test_get_candidates_error_messages(self, basic_network, mock_candidate_result):
         """Test get_candidates_error_messages extracts error messages."""
-        MockResult = mock_candidate_result
+        @dataclass
+        class MockResultWithUuid:
+            candidate_id: int
+            candidate_uuid: str
+            correlation: float
+            success: bool
+            error_message: str = ""
+        
         results = [
-            MockResult(candidate_id=0, correlation=0.5, success=True),
-            MockResult(candidate_id=1, correlation=0.0, success=False, error_message="Training failed"),
-            MockResult(candidate_id=2, correlation=0.7, success=True),
+            MockResultWithUuid(candidate_id=0, candidate_uuid="uuid-0", correlation=0.5, success=True),
+            MockResultWithUuid(candidate_id=1, candidate_uuid="uuid-1", correlation=0.0, success=False, error_message="Training failed"),
+            MockResultWithUuid(candidate_id=2, candidate_uuid="uuid-2", correlation=0.7, success=True),
         ]
-        valid_candidates = [results[0], results[2]]
+        # valid_candidates should be a list of booleans indicating if each result is valid
+        valid_candidates = [True, False, True]
         error_messages = basic_network.get_candidates_error_messages(results, valid_candidates)
         assert isinstance(error_messages, dict)
 

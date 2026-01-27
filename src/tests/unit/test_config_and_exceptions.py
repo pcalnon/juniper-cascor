@@ -114,13 +114,13 @@ class TestCascadeCorrelationConfig:
         assert config.random_seed == 42
 
     @pytest.mark.unit
-    def test_config_activation_function(self):
-        """Test config activation function."""
+    def test_config_activation_function_name(self):
+        """Test config activation function name."""
         from cascade_correlation.cascade_correlation_config.cascade_correlation_config import CascadeCorrelationConfig
         
-        config = CascadeCorrelationConfig(activation_function='tanh')
+        config = CascadeCorrelationConfig(activation_function_name='tanh')
         
-        assert config.activation_function == 'tanh'
+        assert config.activation_function_name == 'tanh'
 
     @pytest.mark.unit
     def test_config_to_dict(self):
