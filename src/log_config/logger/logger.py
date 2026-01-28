@@ -418,7 +418,11 @@ class Logger(logging.getLoggerClass()):
                 cls.is_valid_level(level=log_level)
             )
         ):
-            return valid_loglevel_num >= valid_level_num
+            # CASCOR-PERF-002: Fixed inverted filter logic
+            # Message should only be logged if message_level >= configured_log_level
+            # e.g., DEBUG(10) should NOT be logged when log_level is WARNING(30)
+            # return valid_loglevel_num >= valid_level_num  # WRONG - was inverted
+            return valid_level_num >= valid_loglevel_num  # CORRECT - message level must meet threshold
         else:
             return False
 
