@@ -31,14 +31,19 @@ def test_candidate_training_manager_inheritance(manager_cls, expected_type):
     assert isinstance(manager, expected_type)
     assert issubclass(manager_cls, BaseManager)
 
+def _test_callable():
+    """Module-level picklable callable for testing registration."""
+    return 42
+
+
 @pytest.mark.parametrize(
     "register_args, register_kwargs, expected_exception, id",
     [
         pytest.param(
-            ("test",), {}, None, "register-method-happy-path"
+            ("test_isolated",), {}, None, "register-method-happy-path"
         ),
         pytest.param(
-            ("test",), {"callable": lambda: 42}, None, "register-method-with-callable"
+            ("test_with_callable",), {"callable": _test_callable}, None, "register-method-with-callable"
         ),
         pytest.param(
             (None,), {}, TypeError, "register-method-none-name"
@@ -51,7 +56,11 @@ def test_candidate_training_manager_inheritance(manager_cls, expected_type):
 def test_candidate_training_manager_register(register_args, register_kwargs, expected_exception, id):
     #
     # Arrange
-    manager = CandidateTrainingManager()
+    # Create a fresh subclass to avoid polluting the shared CandidateTrainingManager registry
+    class IsolatedTestManager(CandidateTrainingManager):
+        pass
+
+    manager = IsolatedTestManager()
 
     #
     # Act & Assert

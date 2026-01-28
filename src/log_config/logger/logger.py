@@ -411,20 +411,18 @@ class Logger(logging.getLoggerClass()):
     ####################################################################################################################################
     @classmethod
     def _filter_by_level(cls, level=None, log_level=None) -> bool:
-        if (
-            valid_level_num := cls.getLevelNumber(cls.is_valid_level(level=level))
-        ) and (
-            valid_loglevel_num := cls.getLevelNumber(
-                cls.is_valid_level(level=log_level)
-            )
-        ):
-            # CASCOR-PERF-002: Fixed inverted filter logic
-            # Message should only be logged if message_level >= configured_log_level
-            # e.g., DEBUG(10) should NOT be logged when log_level is WARNING(30)
-            # return valid_loglevel_num >= valid_level_num  # WRONG - was inverted
-            return valid_level_num >= valid_loglevel_num  # CORRECT - message level must meet threshold
-        else:
+        # CASCOR-PERF-003: Fixed bug where is_valid_level() result (boolean) was passed
+        # to getLevelNumber() instead of the actual level name/number.
+        # Validate first, then get the number from the original level value.
+        if not cls.is_valid_level(level=level) or not cls.is_valid_level(level=log_level):
             return False
+        valid_level_num = cls.getLevelNumber(level)
+        valid_loglevel_num = cls.getLevelNumber(log_level)
+        if valid_level_num is None or valid_loglevel_num is None:
+            return False
+        # Message should only be logged if message_level >= configured_log_level
+        # e.g., DEBUG(10) should NOT be logged when log_level is WARNING(30)
+        return valid_level_num >= valid_loglevel_num
 
     ####################################################################################################################################
     # Define Logger class log level Logging with Filtering methods
