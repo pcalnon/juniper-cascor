@@ -47,6 +47,20 @@
 #####################################################################################################################################################################################################
 import os
 import sys
+
+# ===================================================================
+# CRITICAL: Set CASCOR_LOG_LEVEL BEFORE any cascor imports
+# ===================================================================
+# The logging level must be set before importing cascor modules because
+# constants.py reads CASCOR_LOG_LEVEL at import time. Setting it in
+# pytest_configure() is too late since test collection imports modules.
+#
+# This dramatically improves test performance by reducing logging overhead.
+# Even simple logging operations add significant time when called thousands
+# of times during training loops.
+if "CASCOR_LOG_LEVEL" not in os.environ:
+    os.environ["CASCOR_LOG_LEVEL"] = "WARNING"
+
 import pytest
 import torch
 import numpy as np
@@ -72,6 +86,15 @@ def pytest_configure(config):
     # Disable GPU by default in tests
     if not config.getoption("--gpu", default=False):
         os.environ["CUDA_VISIBLE_DEVICES"] = ""
+    
+    # PERFORMANCE FIX: Set log level to WARNING to reduce logging overhead in tests
+    # The extensive logging (TRACE, DEBUG, VERBOSE, INFO) adds significant overhead
+    # even when log_level_name is set to 'ERROR' in individual components
+    if config.getoption("--fast-slow", default=False) or os.environ.get("JUNIPER_FAST_SLOW") == "1":
+        os.environ.setdefault("CASCOR_LOG_LEVEL", "WARNING")
+    else:
+        # Even in normal mode, reduce logging overhead for slow tests
+        os.environ.setdefault("CASCOR_LOG_LEVEL", "WARNING")
     
     # Limit thread count to prevent CPU oversubscription when running with pytest-xdist
     # This is critical for parallel test execution performance

@@ -160,8 +160,8 @@ class Logger(logging.getLoggerClass()):
     _message_name = _LOGGER_CONTENT_FIELD_NAMES_MESSAGE
 
     _level_logger_config = _LOGGER_LOG_LEVEL_LOGGING_CONFIG
-    # _level_logger_name = _LOGGER_LOG_LEVEL_NAME
-    _level_logger_name = "INFO"
+    # _level_logger_name = "INFO"  # CASCOR-PERF-001: Was hardcoded, ignoring CASCOR_LOG_LEVEL env var
+    _level_logger_name = _LOGGER_LOG_LEVEL_NAME  # CASCOR-PERF-001: Use configured value to respect CASCOR_LOG_LEVEL
 
     _field_names_file = [
         _file_name,
