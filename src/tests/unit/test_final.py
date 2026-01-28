@@ -4,19 +4,30 @@ Final test to verify the main issue is resolved.
 """
 
 import sys
-# import os
+import os
 sys.path.append('/home/pcalnon/Development/python/Juniper/src/prototypes/cascor/src')
 
 import pytest
 import torch
 from candidate_unit.candidate_unit import CandidateUnit
 
+
+def _get_test_epochs():
+    """Get training epochs based on fast-slow mode."""
+    if os.environ.get("JUNIPER_FAST_SLOW", "0") == "1":
+        return 2  # Fast mode: minimal epochs
+    return 5  # Normal mode
+
+
 # CASCOR-TIMEOUT-001: Added slow marker and extended timeout
 @pytest.mark.slow
 @pytest.mark.timeout(300)
-def test_candidate_units_simple():
+def test_candidate_units_simple(fast_training_params):
     """Test the core issue: different candidates should have different correlations."""
     print("Testing core CandidateUnit training issue...")
+    
+    # Use fast_training_params for epochs in fast-slow mode
+    test_epochs = min(5, fast_training_params.get('candidate_epochs', 5))
     
     # Create test data  
     torch.manual_seed(42)
@@ -24,6 +35,7 @@ def test_candidate_units_simple():
     residual_error = torch.randn(16, 1)
     
     print(f"Input shape: {x.shape}, Residual error shape: {residual_error.shape}")
+    print(f"Training epochs: {test_epochs}")
     
     # Create 3 candidates with different indices
     candidates = []
@@ -35,7 +47,7 @@ def test_candidate_units_simple():
         candidate = CandidateUnit(
             CandidateUnit__input_size=2,
             CandidateUnit__candidate_index=i,
-            CandidateUnit__epochs=5,
+            CandidateUnit__epochs=test_epochs,
             CandidateUnit__learning_rate=0.01,
             CandidateUnit__log_level_name='ERROR',  # Minimal logging
             CandidateUnit__display_frequency=10000  # No display to avoid errors
@@ -47,7 +59,7 @@ def test_candidate_units_simple():
         # Train the candidate
         final_correlation = candidate.train(
             x=x,
-            epochs=5,
+            epochs=test_epochs,
             residual_error=residual_error,
             learning_rate=0.01,
             display_frequency=10000  # No display to avoid errors

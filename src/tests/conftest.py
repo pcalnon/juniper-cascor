@@ -73,6 +73,16 @@ def pytest_configure(config):
     if not config.getoption("--gpu", default=False):
         os.environ["CUDA_VISIBLE_DEVICES"] = ""
     
+    # Limit thread count to prevent CPU oversubscription when running with pytest-xdist
+    # This is critical for parallel test execution performance
+    if os.environ.get("PYTEST_XDIST_WORKER"):
+        os.environ.setdefault("OMP_NUM_THREADS", "1")
+        os.environ.setdefault("MKL_NUM_THREADS", "1")
+        os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
+        os.environ.setdefault("VECLIB_MAXIMUM_THREADS", "1")
+        os.environ.setdefault("NUMEXPR_NUM_THREADS", "1")
+        torch.set_num_threads(1)
+    
     # Set deterministic behavior
     torch.manual_seed(42)
     np.random.seed(42)
@@ -92,6 +102,10 @@ def pytest_addoption(parser):
     )
     parser.addoption(
         "--integration", action="store_true", default=False, help="Run integration tests"
+    )
+    parser.addoption(
+        "--fast-slow", action="store_true", default=False, 
+        help="Run slow tests with reduced training parameters for faster execution"
     )
 
 
@@ -114,6 +128,54 @@ def pytest_collection_modifyitems(config, items):
         for item in items:
             if "integration" in item.keywords:
                 item.add_marker(skip_integration)
+
+
+# ===================================================================
+# FAST-SLOW MODE CONFIGURATION
+# ===================================================================
+
+@pytest.fixture(scope="session")
+def fast_slow_mode(request):
+    """Check if fast-slow mode is enabled via --fast-slow flag or JUNIPER_FAST_SLOW env var."""
+    return request.config.getoption("--fast-slow") or os.environ.get("JUNIPER_FAST_SLOW", "0") == "1"
+
+
+@pytest.fixture(scope="session")
+def training_scale(fast_slow_mode):
+    """Scale factor for training parameters in fast-slow mode (0.1 = 10% of normal)."""
+    return 0.1 if fast_slow_mode else 1.0
+
+
+@pytest.fixture(scope="session")
+def fast_training_params(fast_slow_mode):
+    """Return optimized training parameters for fast-slow mode.
+    
+    These parameters dramatically reduce training time while maintaining test validity.
+    Tests should validate learning signal (improvement from baseline) rather than 
+    absolute performance thresholds.
+    """
+    if fast_slow_mode:
+        return {
+            'candidate_epochs': 3,
+            'output_epochs': 3,
+            'candidate_pool_size': 2,
+            'max_hidden_units': 2,
+            'epochs_max': 5,
+            'patience': 2,
+            'n_per_spiral': 20,
+            'n_samples': 32,
+        }
+    else:
+        return {
+            'candidate_epochs': 50,
+            'output_epochs': 25,
+            'candidate_pool_size': 16,
+            'max_hidden_units': 10,
+            'epochs_max': 100,
+            'patience': 5,
+            'n_per_spiral': 100,
+            'n_samples': 100,
+        }
 
 
 # ===================================================================
@@ -218,56 +280,65 @@ def regression_data() -> Tuple[torch.Tensor, torch.Tensor]:
 # ===================================================================
 
 @pytest.fixture
-def simple_config() -> CascadeCorrelationConfig:
-    """Create a simple configuration for testing."""
+def simple_config(fast_training_params) -> CascadeCorrelationConfig:
+    """Create a simple configuration for testing.
+    
+    Uses fast_training_params when --fast-slow mode is enabled for faster test execution.
+    """
     return CascadeCorrelationConfig.create_simple_config(
         input_size=2,
         output_size=2,
         learning_rate=0.1,
         candidate_learning_rate=0.01,
-        max_hidden_units=5,
-        candidate_pool_size=8,
+        max_hidden_units=min(5, fast_training_params['max_hidden_units']),
+        candidate_pool_size=min(8, fast_training_params['candidate_pool_size']),
         correlation_threshold=0.1,
-        patience=3,
-        candidate_epochs=10,
-        output_epochs=10,
-        epochs_max=20
+        patience=min(3, fast_training_params['patience']),
+        candidate_epochs=min(10, fast_training_params['candidate_epochs']),
+        output_epochs=min(10, fast_training_params['output_epochs']),
+        epochs_max=min(20, fast_training_params['epochs_max'])
     )
 
 
 @pytest.fixture
-def spiral_config() -> CascadeCorrelationConfig:
-    """Create configuration optimized for spiral problems."""
+def spiral_config(fast_training_params) -> CascadeCorrelationConfig:
+    """Create configuration optimized for spiral problems.
+    
+    Uses fast_training_params when --fast-slow mode is enabled for faster test execution.
+    """
     return CascadeCorrelationConfig.create_simple_config(
         input_size=2,
         output_size=2,
         learning_rate=0.05,
         candidate_learning_rate=0.01,
-        max_hidden_units=10,
-        candidate_pool_size=16,
+        max_hidden_units=fast_training_params['max_hidden_units'],
+        candidate_pool_size=fast_training_params['candidate_pool_size'],
         correlation_threshold=0.2,
-        patience=5,
-        candidate_epochs=50,
-        output_epochs=25,
-        epochs_max=100
+        patience=fast_training_params['patience'],
+        candidate_epochs=fast_training_params['candidate_epochs'],
+        output_epochs=fast_training_params['output_epochs'],
+        epochs_max=fast_training_params['epochs_max']
     )
 
 
 @pytest.fixture
-def regression_config() -> CascadeCorrelationConfig:
-    """Create configuration for regression problems."""
+def regression_config(fast_training_params) -> CascadeCorrelationConfig:
+    """Create configuration for regression problems.
+    
+    Uses fast_training_params when --fast-slow mode is enabled for faster test execution.
+    """
     return CascadeCorrelationConfig.create_simple_config(
         input_size=2,
         output_size=1,
         learning_rate=0.01,
         candidate_learning_rate=0.005,
-        max_hidden_units=8,
-        candidate_pool_size=12,
+        max_hidden_units=min(8, fast_training_params['max_hidden_units']),
+        candidate_pool_size=min(12, fast_training_params['candidate_pool_size']),
         correlation_threshold=0.15,
-        patience=5,
-        candidate_epochs=30,
-        output_epochs=15,
-        epochs_max=50
+        patience=min(5, fast_training_params['patience']),
+        candidate_epochs=min(30, fast_training_params['candidate_epochs']),
+        output_epochs=min(15, fast_training_params['output_epochs']),
+        epochs_max=min(50, fast_training_params['epochs_max'])
     )
 
 

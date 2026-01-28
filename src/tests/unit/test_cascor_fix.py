@@ -16,9 +16,13 @@ from candidate_unit.candidate_unit import CandidateUnit
 # CASCOR-TIMEOUT-001: Added slow marker and extended timeout
 @pytest.mark.slow
 @pytest.mark.timeout(300)
-def test_sequential_candidate_training():
+def test_sequential_candidate_training(fast_training_params):
     """Test candidate training using sequential processing to bypass multiprocessing issues."""
     print("Testing CascadeCorrelationNetwork with sequential processing...")
+
+    # Use fast_training_params for optimized test execution
+    test_epochs = min(5, fast_training_params.get('candidate_epochs', 5))
+    test_pool_size = min(3, fast_training_params.get('candidate_pool_size', 3))
 
     # Create simple test data
     torch.manual_seed(42)
@@ -30,13 +34,14 @@ def test_sequential_candidate_training():
     y = torch.randint(0, 2, (batch_size, output_size)).float()
 
     print(f"Input shape: {x.shape}, Output shape: {y.shape}")
+    print(f"Training epochs: {test_epochs}, Pool size: {test_pool_size}")
 
     # Create network with sequential processing (process_count=1 forces sequential)
     network = CascadeCorrelationNetwork(
         input_size=input_size,
         output_size=output_size,
-        candidate_pool_size=3,
-        candidate_epochs=5,
+        candidate_pool_size=test_pool_size,
+        candidate_epochs=test_epochs,
         candidate_learning_rate=0.01,
         learning_rate=0.01,
         log_level_name='WARNING'
@@ -99,9 +104,12 @@ def _validate_candidates_correlations(candidates_data):
 # CASCOR-TIMEOUT-001: Added slow marker and extended timeout
 @pytest.mark.slow
 @pytest.mark.timeout(300)
-def test_individual_candidates():
+def test_individual_candidates(fast_training_params):
     """Test individual candidate training to ensure basic functionality works."""
     print("\nTesting individual CandidateUnit training...")
+    
+    # Use fast_training_params for optimized test execution
+    test_epochs = min(3, fast_training_params.get('candidate_epochs', 3))
     
     # Create test data
     torch.manual_seed(42)
@@ -111,6 +119,8 @@ def test_individual_candidates():
     x = torch.randn(batch_size, input_size)
     residual_error = torch.randn(batch_size, 1)
     
+    print(f"Training epochs: {test_epochs}")
+    
     # Test multiple candidates with different indices
     candidates = []
     correlations = []
@@ -119,7 +129,7 @@ def test_individual_candidates():
         candidate = CandidateUnit(
             CandidateUnit__input_size=input_size,
             CandidateUnit__candidate_index=i,
-            CandidateUnit__epochs=3,
+            CandidateUnit__epochs=test_epochs,
             CandidateUnit__learning_rate=0.01,
             CandidateUnit__log_level_name='ERROR'  # Reduce logging
         )
@@ -129,7 +139,7 @@ def test_individual_candidates():
         # Train candidate
         correlation = candidate.train(
             x=x,
-            epochs=3,
+            epochs=test_epochs,
             residual_error=residual_error,
             learning_rate=0.01
         )

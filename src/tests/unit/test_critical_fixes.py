@@ -64,9 +64,13 @@ def test_2_network_creation():  # sourcery skip: extract-method
 # CASCOR-TIMEOUT-001: Added slow marker and extended timeout
 @pytest.mark.slow
 @pytest.mark.timeout(300)
-def test_3_candidate_training():  # sourcery skip: extract-method
+def test_3_candidate_training(fast_training_params):  # sourcery skip: extract-method
     """Test that candidate unit can train without crashes."""
     print("\n[Test 3] Candidate unit training...")
+    
+    # Use fast_training_params for optimized test execution
+    test_epochs = min(5, fast_training_params.get('candidate_epochs', 5))
+    
     try:
         from candidate_unit.candidate_unit import CandidateUnit, CandidateTrainingResult
         
@@ -79,9 +83,11 @@ def test_3_candidate_training():  # sourcery skip: extract-method
         x = torch.randn(10, 2)
         residual_error = torch.randn(10)
         
+        print(f"Training epochs: {test_epochs}")
+        
         result = candidate.train(
             x=x,
-            epochs=5,
+            epochs=test_epochs,
             residual_error=residual_error,
             learning_rate=0.01
         )
@@ -89,7 +95,7 @@ def test_3_candidate_training():  # sourcery skip: extract-method
         assert isinstance(result, CandidateTrainingResult), "train() should return CandidateTrainingResult"
         assert hasattr(result, 'correlation'), "Result missing correlation field"
         assert hasattr(result, 'epochs_completed'), "Result missing epochs_completed"
-        assert result.epochs_completed == 5, f"Expected 5 epochs, got {result.epochs_completed}"
+        assert result.epochs_completed == test_epochs, f"Expected {test_epochs} epochs, got {result.epochs_completed}"
         
         print(f"✅ PASS: Training completed - correlation: {result.correlation:.6f}, epochs: {result.epochs_completed}")
         return True
