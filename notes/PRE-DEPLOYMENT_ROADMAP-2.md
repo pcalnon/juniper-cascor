@@ -44,6 +44,7 @@ This document consolidates all **remaining incomplete issues** from the original
 4. [P4-NEW: Documentation & Verification](#4-p4-new-documentation--verification)
 5. [Implementation Schedule](#5-implementation-schedule)
 6. [Deferred Items](#6-deferred-items)
+7. [Next Phase Enhancements](#7-next-phase-enhancements)
 
 ---
 
@@ -634,6 +635,51 @@ The following items are explicitly deferred to post-deployment:
 | Candidate factory refactor             | Design decision                    | P3-001             | Deferred    |
 | Continuous profiling (Pyroscope)       | Infrastructure needed              | Section 11 Phase 3 | Deferred    |
 | JuniperBranch worker package           | Future enhancement                 | P1-NEW-002         | Deferred    |
+
+## 7. Next Phase Enhancements
+
+**These enhancements are required prior to the first "beta" release:**
+
+### 7.1. Juniper Canopy Application
+
+| Number  | Application | Module                            | Name                         | Description                                                                                                                                                                                   |
+| ------- | ----------- | --------------------------------- | ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| CAN-001 | Canopy      | Dashboard: Training Metrics       | Training Loss Time Window    | Add a control (e.g., dropdown) to toggle/select the time window to display for the Training Loss over Time graph. "Moving Window".                                                            |
+| CAN-002 | Canopy      | Dashboard: Training Metrics       | Custom Rolling Time Window   | Add the ability to define a custom time window to display Training Loss over Time graph.                                                                                                      |
+| CAN-003 | Canopy      | Dashboard: Training Metrics       | Candidate Pool Availability  | Retain candidate pool data for each node(s) addition operation.  Access that data by expanding "Previous Pools" entry (e.g., "Pool @ Epoch 471 - Best: cand_X (correlation)")                 |
+| CAN-004 | Canopy      | Dashboard: Meta Param Tuning      | Meta Param Tuning tab        | Add a new Tab to Canopy dashboard: Meta Parameter Tuning, in addition to left side menu, that allows all exposed meta params to be set/tuned in Canopy dashboard                              |
+| CAN-005 | Canopy      | Dashboard: Meta Param Tuning      | Meta Param Tuning tab        | Add feature to "Pin" and "Unpin" selected tunable Meta params, from Meta Param Tuning Tab, to Left side Meta Param menu.                                                                      |
+| CAN-006 | Canopy      | Dashboard: Meta Param Tuning      | Network train epoch param    | Add tunable meta parameter for number of full network epochs before the next candidate node addition to be set/tuned in Canopy Dashboard during a training session.                           |
+| CAN-007 | Canopy      | Dashboard: Meta Param Tuning      | Candidate Pool train epoch   | Add tunable meta parameter for number of candidate node pool training epochs to be set/tuned in Canopy dashboard during a training session.                                                   |
+| CAN-008 | Canopy      | Dashboard: Meta Param Tuning      | Candidate Pool Node Param    | Add tunable meta parameter for number of prospective notes in the candidate pool to be set/tuned in Canopy dashboard during a training session.                                               |
+| CAN-009 | Canopy      | Dashboard: Meta Param Tuning      | Correlation Threshold Param  | Add tunable meta parameter for Correlation threshold of candidate pool nodes to be set/tuned in Canopy dashboard during a training session.                                                   |
+| CAN-010 | Canopy      | Dashboard: Meta Param Tuning      | Optimizer Type Meta Param    | Add tunable meta parameter for Network Optimizer to be set/tuned in Canopy dashboard during a training session.                                                                               |
+| CAN-011 | Canopy      | Dashboard: Meta Param Tuning      | Activation Function Param    | Add tunable meta parameter for Network Activation Function to be set/tuned in Canopy dashboard during training session.                                                                       |
+| CAN-012 | Canopy      | Dashboard: Meta Param Tuning      | Candidate Node Select Num    | Add tunable meta parameter for number of top candidate nodes in pool, with correlation values > threshold, that are selected for addition to the full network.                                |
+| CAN-013 | Canopy      | Dashboard: Meta Param Tuning      | Candidate Node Integration   | Add tunable meta parameter for selected nodes' network integration: Input Only, Input & All Hidden, Input & Prev Hidden, All Hidden, and Prev Hidden that is Tunable during Training.         |
+| CAN-014 | Canopy      | Dashboard: Training Metrics       | Snapshot Captures Tuning     | Snapshotting complete (or in progress) network training session captures values of meta params, as they are tuned, throughout the training session, allowing the session to be replayed.      |
+| CAN-015 | Canopy      | Dashboard: Training Metrics       | Snapshot Replay with Tuning  | When replaying a training snapshot, allow tuning of any/all meta params so that training session stops being a replay and becomes a new training session that can, itself, be snapshotted.    |
+| CAN-016 | Canopy      | Dashboard: All                    | Implement Layout Save/Load   | Enhance the "Save Layout" feature in Training Metrics tab to save current state of dashboard including all app customizations ~~and all meta param values~~.                                  |
+| CAN-016 | Canopy      | Dashboard: Dataset                | Import/Generate New Dataset  | Add "New Dataset" button to Dataset Tab allowing loading local dataset file, downloading remote dataset URL, or importing dataset attached resource--Juniper Data via REST API.               |
+| CAN-017 | Canopy      | Dashboard: All                    | Add Tool tips                | Hovering the mouse over any Canopy Dashboard Control should provide a concise "tool-tip" description.  Tool tip should include "Right click for more info" statement.                         |
+| CAN-018 | Canopy      | Dashboard: All                    | Add Tutorial text: controls  | Right-clicking any Canopy Dashboard Control should provide moderately detailed tutorial-style description.  Description includes link to related App Documentation File section.              |
+| CAN-019 | Canopy      | Dashboard: All                    | Add Tutorial Walkthrough     | Add Walk-through style tutorial, with highlighted (and explained) next step in procedure, for Page, Tab, selected menu, or selected control.                                                  |
+| CAN-020 | Canopy      | Dashboard: All                    | Show Network @ the H-Level   | For Hierarchy Level > 0, allow specific network selection via editable dropdown or moving slider with thumbnail preview row--error msg for invalid selection.                                 |
+| CAN-021 | Canopy      | Dashboard: All                    | Show Network in Population   | For Network population > 1 at a given hierarchy, allow specific network selection via dropdown or by moving slider with thumbnail preview row.                                                |
+
+### 7.2. Juniper Cascor Application
+
+| Number  | Application | Module                            | Name                         | Description                                                                                                                                                                                   |
+| ------- | ----------- | --------------------------------- | ---------------------------  | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| CAS-001 | Cascor      | Cascor: Data Generation           | Extract Spiral Generator     | Refactor to Extract Spiral data generating code into its own application: Juniper Data, with REST API--post to provide spiral params, get to return dataset                                   |
+| CAS-002 | Cascor      | Cascor: Epoch Definition          | Separate Epoch Limits        | Separate Epoch limits and Epoch counts for full network & candidate nodes.                                                                                                                    |
+| CAS-003 | Cascor      | Cascor: Training Iterations       | Max Train Session Iterations | Add Max Iterations (per train session) meta param that limits the total number of iterations--a network training & candidate addition set--for a given training session.                      |
+| CAS-004 | Cascor      | Cascor: Candidate Remote Workers  | Extract Remote worker code   | Refactor to extract the Remote Worker node and all it's dependencies into a new application: Juniper Branch.                                                                                  |
+| CAS-005 | Cascor      | Cascor: Common class modules      | Extract Common deps to Mods  | Refactor to extract all classes that are dependencies of both Juniper Cascor and Juniper Branch into importable modules.                                                                      |
+| CAS-006 | Cascor      | Cascor: Auto-Snap Best Network    | Add Accuracy Ratchet         | Add the feature to automatically snapshot a network when new, best accuracy is achieved--after an initial count of full network epochs or training session iterations completed.              |
+| CAS-007 | Cascor      | Cascor: Testing                   | Optimize slow tests          | Numerous Juniper Cascor tests--particularly integration tests--are extremely slow, on the order of 45 min for complete run; optimize these tests for <= 5 min test suite runtime.             |
+| CAS-008 | Cascor      | Cascor: Network Hierarchy         | Add Hierarchy Management     | Add the "Increment Network Hierarchy level" functionality and the functionality to allow training and inference of a multi-hierarchical CasCor network.                                       |
+| CAS-009 | Cascor      | Cascor: Network Population        | Add Population Management    | Add the "Network Population Initialization and Update" functionality, to create a new pop of cascor nn's at a given hierarchical level.                                                       |
 
 ---
 
