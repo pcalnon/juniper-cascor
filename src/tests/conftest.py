@@ -1,18 +1,6 @@
 #!/usr/bin/env python
 #####################################################################################################################################################################################################
 # Project:       Juniper
-# Prototype:     Cascade Correlation Neural Network  
-# Author:        Paul Calnon
-# 
-# Last Modified: 2026-01-12
-# 
-# License:       MIT License
-# Copyright:     Copyright (c) 2024-2025 Paul Calnon
-# 
-# Description:
-#####################################################################################################################################################################################################
-#####################################################################################################################################################################################################
-# Project:       Juniper
 # Sub-Project:   JuniperCascor
 # Application:   juniper_cascor
 # Purpose:       Juniper Project Cascade Correlation Neural Network
@@ -35,7 +23,7 @@
 #####################################################################################################################################################################################################
 # Notes:
 #
-########################################################################################################)#############################################################################################
+#####################################################################################################################################################################################################
 # References:
 #
 #####################################################################################################################################################################################################
@@ -86,16 +74,17 @@ def pytest_configure(config):
     # Disable GPU by default in tests
     if not config.getoption("--gpu", default=False):
         os.environ["CUDA_VISIBLE_DEVICES"] = ""
-    
+
     # PERFORMANCE FIX: Set log level to WARNING to reduce logging overhead in tests
     # The extensive logging (TRACE, DEBUG, VERBOSE, INFO) adds significant overhead
     # even when log_level_name is set to 'ERROR' in individual components
-    if config.getoption("--fast-slow", default=False) or os.environ.get("JUNIPER_FAST_SLOW") == "1":
+    # if config.getoption("--fast-slow", default=False) or os.environ.get("JUNIPER_FAST_SLOW") == "1":
+    if config.getoption("--fast-slow", default=False) or os.environ.get("JUNIPER_FAST_SLOW") == "0":
         os.environ.setdefault("CASCOR_LOG_LEVEL", "WARNING")
     else:
         # Even in normal mode, reduce logging overhead for slow tests
         os.environ.setdefault("CASCOR_LOG_LEVEL", "WARNING")
-    
+
     # Limit thread count to prevent CPU oversubscription when running with pytest-xdist
     # This is critical for parallel test execution performance
     if os.environ.get("PYTEST_XDIST_WORKER"):
@@ -105,11 +94,11 @@ def pytest_configure(config):
         os.environ.setdefault("VECLIB_MAXIMUM_THREADS", "1")
         os.environ.setdefault("NUMEXPR_NUM_THREADS", "1")
         torch.set_num_threads(1)
-    
+
     # Set deterministic behavior
     torch.manual_seed(42)
     np.random.seed(42)
-    
+
     # Configure torch for consistent behavior
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
@@ -117,19 +106,10 @@ def pytest_configure(config):
 
 def pytest_addoption(parser):
     """Add custom command line options."""
-    parser.addoption(
-        "--gpu", action="store_true", default=False, help="Run GPU tests"
-    )
-    parser.addoption(
-        "--slow", action="store_true", default=False, help="Run slow tests"
-    )
-    parser.addoption(
-        "--integration", action="store_true", default=False, help="Run integration tests"
-    )
-    parser.addoption(
-        "--fast-slow", action="store_true", default=False, 
-        help="Run slow tests with reduced training parameters for faster execution"
-    )
+    parser.addoption("--gpu", action="store_true", default=False, help="Run GPU tests")
+    parser.addoption("--slow", action="store_true", default=False, help="Run slow tests")
+    parser.addoption("--integration", action="store_true", default=False, help="Run integration tests")
+    parser.addoption("--fast-slow", action="store_true", default=False, help="Run slow tests with reduced training parameters for faster execution")
 
 
 def pytest_collection_modifyitems(config, items):
@@ -139,13 +119,13 @@ def pytest_collection_modifyitems(config, items):
         for item in items:
             if "gpu" in item.keywords:
                 item.add_marker(skip_gpu)
-    
+
     if not config.getoption("--slow"):
         skip_slow = pytest.mark.skip(reason="need --slow option to run")
         for item in items:
             if "slow" in item.keywords:
                 item.add_marker(skip_slow)
-    
+
     if not config.getoption("--integration"):
         skip_integration = pytest.mark.skip(reason="need --integration option to run")
         for item in items:
@@ -172,7 +152,7 @@ def training_scale(fast_slow_mode):
 @pytest.fixture(scope="session")
 def fast_training_params(fast_slow_mode):
     """Return optimized training parameters for fast-slow mode.
-    
+
     These parameters dramatically reduce training time while maintaining test validity.
     Tests should validate learning signal (improvement from baseline) rather than 
     absolute performance thresholds.
@@ -206,21 +186,21 @@ def fast_training_params(fast_slow_mode):
 # ===================================================================
 
 @pytest.fixture
-def simple_2d_data() -> Tuple[torch.Tensor, torch.Tensor]:
+def simple_2d_data(fast_training_params) -> Tuple[torch.Tensor, torch.Tensor]:
     """Generate simple 2D classification data."""
     torch.manual_seed(42)
-    n_samples = 100
-    
+    n_samples = fast_training_params['n_samples']
     # Create two classes in 2D space
+
     class_0 = torch.randn(n_samples // 2, 2) + torch.tensor([-1.0, -1.0])
     class_1 = torch.randn(n_samples // 2, 2) + torch.tensor([1.0, 1.0])
-    
+
     x = torch.cat([class_0, class_1], dim=0)
     y = torch.cat([
         torch.tensor([[1, 0]] * (n_samples // 2)),
         torch.tensor([[0, 1]] * (n_samples // 2))
     ], dim=0).float()
-    
+
     return x, y
 
 
@@ -229,28 +209,27 @@ def spiral_2d_data() -> Tuple[torch.Tensor, torch.Tensor]:
     """Generate 2-spiral problem data."""
     torch.manual_seed(42)
     n_per_spiral = 100
-    
+
     # Generate spiral data
     t = torch.linspace(0, 4*np.pi, n_per_spiral)
-    
-    # Spiral 1
+
     x1 = t * torch.cos(t) / (4*np.pi)
     y1 = t * torch.sin(t) / (4*np.pi)
-    
+
     # Spiral 2 (rotated)
     x2 = -t * torch.cos(t) / (4*np.pi)
     y2 = -t * torch.sin(t) / (4*np.pi)
-    
+
     x = torch.stack([
         torch.cat([x1, x2]),
         torch.cat([y1, y2])
     ], dim=1)
-    
+
     y = torch.cat([
         torch.tensor([[1, 0]] * n_per_spiral),
         torch.tensor([[0, 1]] * n_per_spiral)
     ], dim=0).float()
-    
+
     return x, y
 
 
@@ -259,29 +238,29 @@ def n_spiral_data() -> callable:
     """Generate N-spiral problem data (parameterized)."""
     def _generate_n_spiral(n_spirals: int = 3, n_per_spiral: int = 50) -> Tuple[torch.Tensor, torch.Tensor]:
         torch.manual_seed(42)
-        
+
         x_data = []
         y_data = []
-        
+
         for i in range(n_spirals):
             t = torch.linspace(0, 4*np.pi, n_per_spiral)
             angle_offset = 2 * np.pi * i / n_spirals
-            
+
             x_spiral = t * torch.cos(t + angle_offset) / (4*np.pi)
             y_spiral = t * torch.sin(t + angle_offset) / (4*np.pi)
-            
+
             x_data.append(torch.stack([x_spiral, y_spiral], dim=1))
-            
+
             # One-hot encoding for class i
             y_spiral = torch.zeros(n_per_spiral, n_spirals)
             y_spiral[:, i] = 1
             y_data.append(y_spiral)
-        
+
         x = torch.cat(x_data, dim=0)
         y = torch.cat(y_data, dim=0)
-        
+
         return x, y
-    
+
     return _generate_n_spiral
 
 
@@ -290,11 +269,11 @@ def regression_data() -> Tuple[torch.Tensor, torch.Tensor]:
     """Generate regression data for testing."""
     torch.manual_seed(42)
     n_samples = 200
-    
+
     x = torch.randn(n_samples, 2)
     # Non-linear target function
     y = (x[:, 0]**2 + x[:, 1]**2).unsqueeze(1)
-    
+
     return x, y
 
 
@@ -305,7 +284,7 @@ def regression_data() -> Tuple[torch.Tensor, torch.Tensor]:
 @pytest.fixture
 def simple_config(fast_training_params) -> CascadeCorrelationConfig:
     """Create a simple configuration for testing.
-    
+
     Uses fast_training_params when --fast-slow mode is enabled for faster test execution.
     """
     return CascadeCorrelationConfig.create_simple_config(
@@ -324,11 +303,14 @@ def simple_config(fast_training_params) -> CascadeCorrelationConfig:
 
 
 @pytest.fixture
-def spiral_config(fast_training_params) -> CascadeCorrelationConfig:
+def spiral_config(fast_training_params, fast_slow_mode) -> CascadeCorrelationConfig:
     """Create configuration optimized for spiral problems.
-    
+
     Uses fast_training_params when --fast-slow mode is enabled for faster test execution.
+    Correlation threshold is lowered in fast mode to allow candidates to be added.
     """
+    # Use lower correlation threshold in fast mode since candidates train fewer epochs
+    correlation_threshold = 0.05 if fast_slow_mode else 0.2
     return CascadeCorrelationConfig.create_simple_config(
         input_size=2,
         output_size=2,
@@ -336,7 +318,7 @@ def spiral_config(fast_training_params) -> CascadeCorrelationConfig:
         candidate_learning_rate=0.01,
         max_hidden_units=fast_training_params['max_hidden_units'],
         candidate_pool_size=fast_training_params['candidate_pool_size'],
-        correlation_threshold=0.2,
+        correlation_threshold=correlation_threshold,
         patience=fast_training_params['patience'],
         candidate_epochs=fast_training_params['candidate_epochs'],
         output_epochs=fast_training_params['output_epochs'],
@@ -347,7 +329,7 @@ def spiral_config(fast_training_params) -> CascadeCorrelationConfig:
 @pytest.fixture
 def regression_config(fast_training_params) -> CascadeCorrelationConfig:
     """Create configuration for regression problems.
-    
+
     Uses fast_training_params when --fast-slow mode is enabled for faster test execution.
     """
     return CascadeCorrelationConfig.create_simple_config(
@@ -505,7 +487,7 @@ def device() -> str:
 
 
 # ===================================================================
-# CLEANUP FIXTURES  
+# CLEANUP FIXTURES
 # ===================================================================
 
 @pytest.fixture(autouse=True)

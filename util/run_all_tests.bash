@@ -61,8 +61,13 @@ log_verbose "Current Directory: $(pwd)"
 #####################################################################################################################################################################################################
 log_trace "Run Tests with designated reports"
 if [[ "${COVERAGE_REPORT}" == "${FALSE}" ]]; then
+
+# TODO: Move these flags to config file
     RUN_TESTS_NO_COV_RPT="\
-pytest \
+${ACTIVATE_CONDA} ${CONDA_ENV_NAME} && \
+CASCOR_LOG_LEVEL=${CASCOR_LOG_LEVEL} \
+timeout=${TESTING_TIMEOUT} \
+python -m pytest \
 --slow \
 --integration \
 --junit-xml=src/tests/reports/junit/results.xml \
@@ -70,17 +75,42 @@ pytest \
 --ignore=src/tests \
 -v ./src/tests \
 "
+#     RUN_TESTS_NO_COV_RPT="\
+# pytest \
+# --slow \
+# --integration \
+# --junit-xml=src/tests/reports/junit/results.xml \
+# --continue-on-collection-errors \
+# --ignore=src/tests \
+# -v ./src/tests \
+# "
     log_verbose "RUN_TESTS_NO_COV_RPT: ${RUN_TESTS_NO_COV_RPT}"
     eval "${RUN_TESTS_NO_COV_RPT}"; SUCCESS="$?"
 elif [[ "${COVERAGE_REPORT}" == "${TRUE}" ]]; then
+
+# TODO: Move these flags to config file
     RUN_TESTS_WITH_COV_RPT="\
-pytest \
+${ACTIVATE_CONDA} ${CONDA_ENV_NAME} && \
+CASCOR_LOG_LEVEL=${CASCOR_LOG_LEVEL} && \
+JUNIPER_FAST_SLOW=${JUNIPER_FAST_SLOW} && \
+CASCOR_BACKEND_AVAILABLE=${CASCOR_BACKEND_AVAILABLE} && \
+RUN_SERVER_TESTS=${RUN_SERVER_TESTS} && \
+ENABLE_DISPLAY_TESTS=${ENABLE_DISPLAY_TESTS} && \
+python -m pytest \
+--timeout=${TESTING_TIMEOUT} \
 --slow \
+--fast-slow \
 --integration \
 --junit-xml=src/tests/reports/junit/results.xml \
 --continue-on-collection-errors \
 --cov=cascade_correlation \
 --cov=candidate_unit \
+--cov=cascor_constants \
+--cov=cascor_plotter \
+--cov=log_config \
+--cov=remote_client \
+--cov=spiral_problem \
+--cov=utils \
 --cov-report=html:htmlcov \
 --cov-report=xml \
 --cov=src \
@@ -90,6 +120,24 @@ pytest \
 --ignore=src/tests \
 -v ./src/tests \
 "
+
+# ${ACTIVATE_CONDA} ${CONDA_ENV_NAME} && \
+# pytest \
+# --slow \
+# --integration \
+# --junit-xml=src/tests/reports/junit/results.xml \
+# --continue-on-collection-errors \
+# --cov=cascade_correlation \
+# --cov=candidate_unit \
+# --cov-report=html:htmlcov \
+# --cov-report=xml \
+# --cov=src \
+# --cov-report=xml:src/tests/reports/coverage.xml  \
+# --cov-report=term-missing \
+# --cov-report=html:src/tests/reports/coverage \
+# --ignore=src/tests \
+# -v ./src/tests \
+# "
     log_verbose "RUN_TESTS_WITH_COV_RPT: ${RUN_TESTS_WITH_COV_RPT}"
     eval "${RUN_TESTS_WITH_COV_RPT}"; SUCCESS="$?"
 else
