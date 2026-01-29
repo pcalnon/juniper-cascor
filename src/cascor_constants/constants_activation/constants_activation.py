@@ -33,11 +33,10 @@
 # import numpy as np
 import torch
 
-
 #####################################################################################################################################################################################################
 # Define the constants for the Cascade Correlation Network Model, Activation Function
 _PROJECT_MODEL_ACTIVATION_FUNCTION_NN_IDENTITY = torch.nn.Identity()
-_PROJECT_MODEL_ACTIVATION_FUNCTION_NN_TANH = torch.nn.Tanh()                   # This value was used with 100% run
+_PROJECT_MODEL_ACTIVATION_FUNCTION_NN_TANH = torch.nn.Tanh()  # This value was used with 100% run
 _PROJECT_MODEL_ACTIVATION_FUNCTION_NN_SIGMOID = torch.nn.Sigmoid()
 _PROJECT_MODEL_ACTIVATION_FUNCTION_NN_RELU = torch.nn.ReLU()
 _PROJECT_MODEL_ACTIVATION_FUNCTION_NN_LEAKY_RELU = torch.nn.LeakyReLU()
@@ -49,7 +48,7 @@ _PROJECT_MODEL_ACTIVATION_FUNCTION_NN_SOFTPLUS = torch.nn.Softplus()
 _PROJECT_MODEL_ACTIVATION_FUNCTION_NN_HARDTANH = torch.nn.Hardtanh()
 _PROJECT_MODEL_ACTIVATION_FUNCTION_NN_SOFTSHRINK = torch.nn.Softshrink()
 _PROJECT_MODEL_ACTIVATION_FUNCTION_NN_TANHSHRINK = torch.nn.Tanhshrink()
-_PROJECT_MODEL_ACTIVATION_FUNCTION_TANH = torch.tanh                      # This is the default value used in the original implementation.
+_PROJECT_MODEL_ACTIVATION_FUNCTION_TANH = torch.tanh  # This is the default value used in the original implementation.
 _PROJECT_MODEL_ACTIVATION_FUNCTION_SIGMOID = torch.sigmoid
 _PROJECT_MODEL_ACTIVATION_FUNCTION_RELU = torch.relu
 

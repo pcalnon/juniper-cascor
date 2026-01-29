@@ -37,7 +37,7 @@
 #         0 	            Causes values to be padded on the left with zeros instead of ASCII space characters 	            0
 #         width 	        Specifies the minimum width of the output 	                                                        Integer value
 #         grouping_option 	Specifies a grouping character for numeric output 	                                                _ or ,
-#         precision 	    Specifies the number of digits after the decimal point for floating-point presentation types, 
+#         precision 	    Specifies the number of digits after the decimal point for floating-point presentation types,
 #                             and the maximum output width for string presentations types 	                                Integer value
 #         type 	            Specifies the presentation type, the type of conversion performed on the corresponding argument 	b, c, d, e, E, f, F, g, G, n, o, s, x, X, or %
 #
@@ -70,8 +70,6 @@
 #
 #####################################################################################################################################################################################################
 import logging
-
-
 
 # #####################################################################################################################################################################################################
 
@@ -106,7 +104,6 @@ import logging
 # }
 
 # #####################################################################################################################################################################################################
-
 
 
 #####################################################################################################################################################################################################
@@ -162,16 +159,15 @@ _LOGGER_LOG_FORMATTER_STRING_CONSOLE_CONTENT = f"[{_LOGGER_CONTENT_LEVELNAME}] {
 _LOGGER_LOG_FORMATTER_STRING_CONSOLE = f"{_LOGGER_LOG_FORMATTER_STRING_CONSOLE_PREFIX}{_LOGGER_LOG_FORMATTER_STRING_CONSOLE_CONTENT}"
 
 
-
 #####################################################################################################################################################################################################
 # Define format_spec Option Values:  [[fill]align][sign]["z"]["#"]["0"][width][grouping_option]["." precision][type]
-_LOGGER_NEGATIVE_ZERO_OPTION_LIST = [ "z" ]
-_LOGGER_ALTERNATE_FORM_OPTION_LIST = [ "#" ]
-_LOGGER_ZERO_PAD_OPTION_LIST = [ "0" ]
-_LOGGER_SIGN_OPTION_LIST = [ "+", "-", " " ]
-_LOGGER_ALIGN_OPTION_LIST = [ "<", ">", "=", "^" ]
-_LOGGER_GROUPING_OPTION_LIST = [ "_", "," ]
-_LOGGER_NUMERIC_TYPE_LIST = [ "b", "c", "d", "e", "E", "f", "F", "g", "G", "n", "o", "s", "x", "X", "%" ]
+_LOGGER_NEGATIVE_ZERO_OPTION_LIST = ["z"]
+_LOGGER_ALTERNATE_FORM_OPTION_LIST = ["#"]
+_LOGGER_ZERO_PAD_OPTION_LIST = ["0"]
+_LOGGER_SIGN_OPTION_LIST = ["+", "-", " "]
+_LOGGER_ALIGN_OPTION_LIST = ["<", ">", "=", "^"]
+_LOGGER_GROUPING_OPTION_LIST = ["_", ","]
+_LOGGER_NUMERIC_TYPE_LIST = ["b", "c", "d", "e", "E", "f", "F", "g", "G", "n", "o", "s", "x", "X", "%"]
 
 
 #####################################################################################################################################################################################################
@@ -186,15 +182,28 @@ _LOGGER_PREFIX_NAME = "prefix"
 _LOGGER_CONTENT_NAME = "content"
 
 
-
 #####################################################################################################################################################################################################
 # Logging field names for console and file logging
 #####################################################################################################################################################################################################
 
 #####################################################################################################################################################################################################
 # Logging field names complete list
-_LOGGER_DATA_FIELD_NAMES = [ _LOGGER_PREFIX_FIELD_NAME_FILENAME, _LOGGER_PREFIX_FIELD_NAME_LINE_NUMBER, _LOGGER_PREFIX_FIELD_NAME_FUNCTION_NAME, _LOGGER_PREFIX_FIELD_NAME_ASCTIME, _LOGGER_CONTENT_FIELD_NAMES_LEVELNAME, _LOGGER_CONTENT_FIELD_NAMES_MESSAGE, ]
-_LOGGER_FORMAT_FIELD_NAMES = [ _LOGGER_PREFIX_FILENAME, _LOGGER_PREFIX_LINE_NUMBER, _LOGGER_PREFIX_FUNCTION_NAME, _LOGGER_PREFIX_ASCTIME, _LOGGER_CONTENT_LEVELNAME, _LOGGER_CONTENT_MESSAGE, ]
+_LOGGER_DATA_FIELD_NAMES = [
+    _LOGGER_PREFIX_FIELD_NAME_FILENAME,
+    _LOGGER_PREFIX_FIELD_NAME_LINE_NUMBER,
+    _LOGGER_PREFIX_FIELD_NAME_FUNCTION_NAME,
+    _LOGGER_PREFIX_FIELD_NAME_ASCTIME,
+    _LOGGER_CONTENT_FIELD_NAMES_LEVELNAME,
+    _LOGGER_CONTENT_FIELD_NAMES_MESSAGE,
+]
+_LOGGER_FORMAT_FIELD_NAMES = [
+    _LOGGER_PREFIX_FILENAME,
+    _LOGGER_PREFIX_LINE_NUMBER,
+    _LOGGER_PREFIX_FUNCTION_NAME,
+    _LOGGER_PREFIX_ASCTIME,
+    _LOGGER_CONTENT_LEVELNAME,
+    _LOGGER_CONTENT_MESSAGE,
+]
 
 _LOGGER_FIELD_NAMES_DICT = dict(zip(_LOGGER_DATA_FIELD_NAMES, _LOGGER_FORMAT_FIELD_NAMES, strict=False))
 
@@ -231,35 +240,33 @@ _LOGGER_CONTENT_FIELDS_FILE = [_LOGGER_CONTENT_LEVELNAME, _LOGGER_CONTENT_MESSAG
 _LOGGER_CONTENT_FILE_DICT = dict(zip(_LOGGER_CONTENT_FIELD_NAMES_FILE, _LOGGER_CONTENT_FIELDS_FILE, strict=False))
 
 
-
 #####################################################################################################################################################################################################
 # Logging format strings for console and file logging
 #####################################################################################################################################################################################################
 
 #####################################################################################################################################################################################################
 #  Define the log format strings for console logging Prefix
-_LOGGER_PREFIX_FORMAT_CONSOLE= f"[{_LOGGER_PREFIX_FILENAME}:{_LOGGER_PREFIX_LINE_NUMBER}] ({_LOGGER_PREFIX_ASCTIME})"
+_LOGGER_PREFIX_FORMAT_CONSOLE = f"[{_LOGGER_PREFIX_FILENAME}:{_LOGGER_PREFIX_LINE_NUMBER}] ({_LOGGER_PREFIX_ASCTIME})"
 
 _LOGGER_PREFIX_CONSOLE_FORMAT_DICT = dict(zip(_LOGGER_PREFIX_FIELD_NAMES_CONSOLE, _LOGGER_PREFIX_FIELDS_CONSOLE, strict=False))
 
 
 #####################################################################################################################################################################################################
 # Define the log format strings for console logging content
-_LOGGER_CONTENT_FORMAT_CONSOLE=f"[{_LOGGER_CONTENT_LEVELNAME}] {_LOGGER_CONTENT_MESSAGE}"
+_LOGGER_CONTENT_FORMAT_CONSOLE = f"[{_LOGGER_CONTENT_LEVELNAME}] {_LOGGER_CONTENT_MESSAGE}"
 
 _LOGGER_CONTENT_CONSOLE_FORMAT_DICT = dict(zip(_LOGGER_CONTENT_FIELD_NAMES_CONSOLE, _LOGGER_CONTENT_FORMAT_CONSOLE, strict=False))
 
 
 #####################################################################################################################################################################################################
 # Define the log format strings for file logging Prefix
-_LOGGER_PREFIX_FORMAT_FILE= f"[{_LOGGER_PREFIX_FILENAME}:{_LOGGER_PREFIX_LINE_NUMBER} - {_LOGGER_PREFIX_FUNCTION_NAME}] ({_LOGGER_PREFIX_ASCTIME})"
+_LOGGER_PREFIX_FORMAT_FILE = f"[{_LOGGER_PREFIX_FILENAME}:{_LOGGER_PREFIX_LINE_NUMBER} - {_LOGGER_PREFIX_FUNCTION_NAME}] ({_LOGGER_PREFIX_ASCTIME})"
 
 _LOGGER_PREFIX_FILE_FORMAT_DICT = dict(zip(_LOGGER_PREFIX_FIELD_NAMES_FILE, _LOGGER_PREFIX_FORMAT_FILE, strict=False))
 
 
 #####################################################################################################################################################################################################
 # Define the log format strings for file logging Content
-_LOGGER_CONTENT_FORMAT_FILE=f"[{_LOGGER_CONTENT_LEVELNAME}] {_LOGGER_CONTENT_MESSAGE}"
+_LOGGER_CONTENT_FORMAT_FILE = f"[{_LOGGER_CONTENT_LEVELNAME}] {_LOGGER_CONTENT_MESSAGE}"
 
 _LOGGER_CONTENT_FILE_FORMAT_DICT = dict(zip(_LOGGER_CONTENT_FIELD_NAMES_FILE, _LOGGER_CONTENT_FORMAT_FILE, strict=False))
-

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 FILENAME="$1"
-if [[ "${FILENAME}" == "" ]]; then 
+if [[ "${FILENAME}" == "" ]]; then
     echo "Error, Input file name not specified. Exiting..."
     exit 1
 fi
@@ -23,6 +23,6 @@ elif [[ ! -f "${TARGET_FILE}" && -f "${BACKUP_FILE}" ]]; then
 else
     echo "Updating Backup File: ${BACKUP_FILE} from Target File: ${TARGET_FILE}"
     cp -a ${TARGET_FILE} ${BACKUP_FILE}
-fi 
+fi
 
  sed -i "" -e "s/^[[:space:]]*#[[:space:]]*Last[[:space:]]*Modified:[[:space:]]*[0-9.:_-]*[[:space:]]*[#]*$/# Last Modified: 2026-01-12

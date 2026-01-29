@@ -101,6 +101,7 @@ python -m pytest \
 --slow \
 --fast-slow \
 --integration \
+--run-long \
 --junit-xml=src/tests/reports/junit/results.xml \
 --continue-on-collection-errors \
 --cov=cascade_correlation \

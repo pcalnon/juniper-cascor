@@ -6,7 +6,9 @@ Simple test script to verify HDF5 serialization functionality.
 import os
 import sys
 import tempfile
+
 from cascade_correlation.cascade_correlation import CascadeCorrelationNetwork
+
 # from cascade_correlation_config.cascade_correlation_config import CascadeCorrelationConfig
 from cascade_correlation.cascade_correlation_config.cascade_correlation_config import CascadeCorrelationConfig
 
@@ -15,6 +17,7 @@ from cascade_correlation.cascade_correlation_config.cascade_correlation_config i
 # Add parent directories for imports
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+
 def test_hdf5_serialization():
     """Test basic HDF5 save/load functionality."""
     try:
@@ -22,27 +25,23 @@ def test_hdf5_serialization():
 
         # Import required modules
         from cascade_correlation.cascade_correlation import CascadeCorrelationNetwork
+
         # from cascade_correlation_config.cascade_correlation_config import CascadeCorrelationConfig
         from cascade_correlation.cascade_correlation_config.cascade_correlation_config import CascadeCorrelationConfig
+
         # from cascade_correlation.hdf5.serializer import CascadeHDF5Serializer
         # from cascade_correlation.hdf5.utils import HDF5Utils
         from cascade_correlation.snapshots.snapshot_utils import HDF5Utils
 
         # Create a simple network
-        config = CascadeCorrelationConfig(
-            input_size=2,
-            output_size=1,
-            max_hidden_units=5,
-            learning_rate=0.1,
-            activation_function_name='tanh'
-        )
+        config = CascadeCorrelationConfig(input_size=2, output_size=1, max_hidden_units=5, learning_rate=0.1, activation_function_name="tanh")
         network = CascadeCorrelationNetwork(config=config)
 
         print(f"✓ Created network with UUID: {network.get_uuid()}")
         print(f"  Architecture: {network.input_size} → {len(network.hidden_units)} → {network.output_size}")
 
         # Create temporary file for testing
-        with tempfile.NamedTemporaryFile(suffix='.h5', delete=False) as tmp_file:
+        with tempfile.NamedTemporaryFile(suffix=".h5", delete=False) as tmp_file:
             test_file = tmp_file.name
 
         try:
@@ -55,6 +54,7 @@ def test_hdf5_serialization():
     except Exception as e:
         print(f"✗ Test failed with error: {e}")
         import traceback
+
         traceback.print_exc()
         return False
 
@@ -75,7 +75,7 @@ def _check_hdf5_snapshot(test_file: str, network: CascadeCorrelationNetwork, HDF
     print("Verifying saved file...")
     verification = network.verify_hdf5_file(test_file)
 
-    if not verification.get('valid', False):  # sourcery skip: no-conditionals-in-tests
+    if not verification.get("valid", False):  # sourcery skip: no-conditionals-in-tests
         print(f"✗ File verification failed: {verification.get('error', 'Unknown error')}")
         return False
 
@@ -116,7 +116,7 @@ def _check_hdf5_snapshot(test_file: str, network: CascadeCorrelationNetwork, HDF
     print("Testing HDF5 utilities...")
     file_info = HDF5Utils.get_file_info(test_file)
 
-    if not file_info.get('exists', False):  # sourcery skip: no-conditionals-in-tests
+    if not file_info.get("exists", False):  # sourcery skip: no-conditionals-in-tests
         print("✗ File info failed")
         return False
 
@@ -132,6 +132,7 @@ def _check_hdf5_snapshot(test_file: str, network: CascadeCorrelationNetwork, HDF
     print("\n✓ All tests passed!")
     return True
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     success = test_hdf5_serialization()
     exit(0 if success else 1)

@@ -128,14 +128,14 @@ def _select_best_candidates(self, results, num_candidates=1):
         key=lambda r: abs(r.correlation),
         reverse=True
     )
-    
+
     # 2. Select top N
     selected = sorted_results[:num_candidates]
-    
+
     # 3. Filter by correlation threshold
-    selected = [r for r in selected 
+    selected = [r for r in selected
                 if abs(r.correlation) >= self.correlation_threshold]
-    
+
     return selected
 ```
 
@@ -217,7 +217,7 @@ network = CascadeCorrelationNetwork(config=config)
 # The network uses _create_optimizer() internally:
 def _create_optimizer(self, parameters, optimizer_config=None):
     config = optimizer_config or self.config.optimizer_config
-    
+
     # Automatically creates appropriate optimizer
     # Supports: Adam, SGD, RMSprop, AdamW
     return optimizer_map[config.optimizer_type]()
@@ -310,11 +310,11 @@ config = CascadeCorrelationConfig(
     # Queue configuration
     candidate_training_queue_authkey="my_secret_key",
     candidate_training_queue_address=("127.0.0.1", 50000),
-    
+
     # Timeout configuration
     candidate_training_task_queue_timeout=5.0,
     candidate_training_shutdown_timeout=10.0,
-    
+
     # Context type
     candidate_training_context_type="forkserver"  # or "spawn", "fork"
 )
@@ -727,7 +727,7 @@ python -m snapshots.snapshot_cli cleanup ./snapshots/ --keep 5
    ```python
    # Faster saves (larger files)
    compression_opts=1
-   
+
    # Smaller files (slower saves)
    compression_opts=9
    ```
@@ -812,10 +812,10 @@ network = CascadeCorrelationNetwork(config=config)
 for milestone in [20, 50, 100, 200]:
     # Train to milestone
     network.fit(x_train, y_train, epochs=milestone)
-    
+
     # Save checkpoint
     network.save_to_hdf5(f"./checkpoints/epoch_{milestone}.h5")
-    
+
     # Evaluate
     acc = network.get_accuracy(x_val, y_val)
     print(f"Epoch {milestone}: {acc:.2%} accuracy, {len(network.hidden_units)} units")
@@ -836,14 +836,14 @@ for params in configs:
     config = CascadeCorrelationConfig(random_seed=42, **params)
     network = CascadeCorrelationNetwork(config=config)
     network.fit(x_train, y_train, epochs=100)
-    
+
     acc = network.get_accuracy(x_test, y_test)
     results.append({
         "params": params,
         "accuracy": acc,
         "hidden_units": len(network.hidden_units)
     })
-    
+
     # Save best config
     network.save_to_hdf5(f"./experiments/lr_{params['learning_rate']}.h5")
 

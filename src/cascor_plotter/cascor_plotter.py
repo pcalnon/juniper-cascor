@@ -21,7 +21,7 @@
 #   - The network uses a correlation-based approach to determine the relevance of each candidate unit.
 #   - The network is trained using a combination of supervised and unsupervised learning techniques.
 #   - The network is designed to handle large-scale and high-dimensional datasets efficiently.
-# 
+#
 #####################################################################################################################################################################################################
 # References:
 #
@@ -35,17 +35,15 @@
 #
 #####################################################################################################################################################################################################
 import os
-import torch
-import numpy as np
-import matplotlib.pyplot as plt
-
 from multiprocessing import current_process
 
+import matplotlib.pyplot as plt
+import numpy as np
+import torch
+
+from cascade_correlation.cascade_correlation_exceptions.cascade_correlation_exceptions import ValidationError
 from log_config.logger.logger import Logger
 
-from cascade_correlation.cascade_correlation_exceptions.cascade_correlation_exceptions import (
-    ValidationError
-)
 
 #####################################################################################################################################################################################################
 # Plotting functionality for Cascade Correlation Network
@@ -65,13 +63,14 @@ class CascadeCorrelationPlotter:
     def __getstate__(self):
         """Remove non-picklable logger for multiprocessing."""
         state = self.__dict__.copy()
-        state.pop('logger', None)
+        state.pop("logger", None)
         return state
 
     def __setstate__(self, state):
         """Restore state and reinitialize logger."""
         self.__dict__.update(state)
         from log_config.logger.logger import Logger
+
         self.logger = Logger
 
     @staticmethod
@@ -96,7 +95,10 @@ class CascadeCorrelationPlotter:
         logger.trace("CascadeCorrelationPlotter: plot_dataset: Starting to plot the dataset.")
 
         process_info = current_process()
-        process = (process_info.pid, process_info.name,)
+        process = (
+            process_info.pid,
+            process_info.name,
+        )
         logger.debug(f"CascadeCorrelationPlotter: plot_dataset: Process ID: {os.getpid()}, Process ID: {process[0]}, Process Name: {process[1]}")
 
         # Validate inputs
@@ -116,7 +118,7 @@ class CascadeCorrelationPlotter:
         logger.info(f"CascadeCorrelationPlotter: plot_dataset: process {process[0]}: Plotting dataset with title: {title}")
         plt.figure(figsize=(10, 8))
         for i in range(len(np.unique(y_np))):
-            plt.scatter(x_np[y_np == i, 0], x_np[y_np == i, 1], label=f'Class {i}')
+            plt.scatter(x_np[y_np == i, 0], x_np[y_np == i, 1], label=f"Class {i}")
         plt.title(title)
         plt.xlabel("X")
         plt.ylabel("Y")
@@ -133,13 +135,13 @@ class CascadeCorrelationPlotter:
     ) -> None:
         """
         Plot the decision boundary of the network.
-        
+
         Args:
             network: CascadeCorrelationNetwork instance
             x: Input tensor (must have 2 features for 2D plotting)
             y: Target tensor (one-hot encoded labels)
             title: Plot title
-            
+
         Raises:
             ValidationError: If input tensors are not valid for plotting
         """
@@ -188,7 +190,7 @@ class CascadeCorrelationPlotter:
         # Plot the training points
         self.logger.debug("CascadeCorrelationPlotter: plot_decision_boundary: Plotting the training points.")
         for i in range(len(np.unique(y_np))):
-            plt.scatter(x_np[y_np == i, 0], x_np[y_np == i, 1], label=f'Class {i}')
+            plt.scatter(x_np[y_np == i, 0], x_np[y_np == i, 1], label=f"Class {i}")
         self._plot_headings(plot=plt, title=title, x_label="X1", y_label="Y1")
         plt.show()
         self.logger.trace("CascadeCorrelationPlotter: plot_decision_boundary: Completed plotting the decision boundary.")
@@ -196,47 +198,47 @@ class CascadeCorrelationPlotter:
     def plot_training_history(self, history: dict):
         """
         Plot the training history of the network.
-        
+
         Args:
             history: Dictionary containing training history data
-            
+
         Raises:
             ValidationError: If training history is empty or invalid
         """
         self.logger.trace("CascadeCorrelationPlotter: plot_training_history: Starting to plot the training history.")
-        
+
         if not isinstance(history, dict):
             raise ValidationError("Training history must be a dictionary.")
-            
-        if not history.get('train_loss'):
+
+        if not history.get("train_loss"):
             raise ValidationError("Training history is empty or missing required data.")
-            
+
         plt.figure(figsize=(15, 10))
         self.logger.debug(f"CascadeCorrelationPlotter: plot_training_history: History: {history}")
 
         # Plot loss
         plt.subplot(2, 2, 1)
-        plt.plot(history['train_loss'], label='Train Loss')
-        if 'value_loss' in history and history['value_loss']:
-            plt.plot(history['value_loss'], label='Validation Loss')
+        plt.plot(history["train_loss"], label="Train Loss")
+        if "value_loss" in history and history["value_loss"]:
+            plt.plot(history["value_loss"], label="Validation Loss")
         self._plot_headings(plot=plt, title="Loss During Training", x_label="Epochs", y_label="Loss")
 
         # Plot accuracy
         plt.subplot(2, 2, 2)
-        plt.plot(history['train_accuracy'], label='Train Accuracy')
-        if 'value_accuracy' in history and history['value_accuracy']:
-            plt.plot(history['value_accuracy'], label='Validation Accuracy')
+        plt.plot(history["train_accuracy"], label="Train Accuracy")
+        if "value_accuracy" in history and history["value_accuracy"]:
+            plt.plot(history["value_accuracy"], label="Validation Accuracy")
         self._plot_headings(plot=plt, title="Accuracy During Training", x_label="Epochs", y_label="Accuracy")
 
         # Plot number of hidden units
         plt.subplot(2, 2, 3)
-        plt.plot(range(len(history['hidden_units_added']) + 1), [0] + [i+1 for i in range(len(history['hidden_units_added']))])
+        plt.plot(range(len(history["hidden_units_added"]) + 1), [0] + [i + 1 for i in range(len(history["hidden_units_added"]))])
         self._plot_headings(plot=plt, title="Number of Hidden Units", x_label="Epochs", y_label="Number of Units", legend=False)
 
         # Plot correlation of added units
-        if history['hidden_units_added']:
+        if history["hidden_units_added"]:
             plt.subplot(2, 2, 4)
-            correlations = [unit['correlation'] for unit in history['hidden_units_added']]
+            correlations = [unit["correlation"] for unit in history["hidden_units_added"]]
             plt.plot(correlations)
             self._plot_headings(plot=plt, title="Correlation of Added Units", x_label="Unit Number", y_label="Correlation", legend=False)
 
@@ -255,14 +257,14 @@ class CascadeCorrelationPlotter:
     ) -> None:
         """
         Set headings for the plot.
-        
+
         Args:
             plot: Matplotlib plot object
             title: Plot title
             x_label: X-axis label
             y_label: Y-axis label
             legend: Whether to display legend
-            
+
         Raises:
             ValidationError: If plot object or parameters are invalid
         """
@@ -281,7 +283,7 @@ class CascadeCorrelationPlotter:
             raise ValidationError("x_label must be a string")
         if not isinstance(y_label, str):
             raise ValidationError("y_label must be a string")
-        if not hasattr(plot, 'title') or not hasattr(plot, 'xlabel') or not hasattr(plot, 'ylabel'):
+        if not hasattr(plot, "title") or not hasattr(plot, "xlabel") or not hasattr(plot, "ylabel"):
             raise ValidationError("plot must have title, xlabel, and ylabel methods")
 
         # Set plot headings
@@ -294,4 +296,3 @@ class CascadeCorrelationPlotter:
             plot.legend()
         self.logger.debug(f"CascadeCorrelationPlotter: _plot_headings: Plot headings set: Title: {title}, X Label: {x_label}, Y Label: {y_label}, Legend: {legend}")
         self.logger.trace("CascadeCorrelationPlotter: _plot_headings: Completed setting plot headings.")
-

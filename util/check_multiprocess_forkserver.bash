@@ -24,4 +24,3 @@ print(f'Address: {config.candidate_training_queue_address}')
 print(f'Type:    {type(config.candidate_training_queue_address)}')
 print(f'Context: {config.candidate_training_context_type}')
 "
-

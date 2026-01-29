@@ -510,9 +510,9 @@ class CascadeHDF5Serializer:
         include_training_state: bool = True,
         include_training_data: bool = False,
     ) -> None
-    
+
     def load_network(self, filepath: str) -> CascadeCorrelationNetwork
-    
+
     def verify_snapshot(self, filepath: str) -> dict
 ```
 
@@ -522,10 +522,10 @@ class CascadeHDF5Serializer:
 class HDF5Utils:
     @staticmethod
     def list_networks_in_directory(directory: str) -> list
-    
+
     @staticmethod
     def compare_networks(path1: str, path2: str) -> dict
-    
+
     @staticmethod
     def cleanup_old_files(directory: str, keep_count: int = 10) -> int
 ```

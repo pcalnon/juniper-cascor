@@ -529,14 +529,14 @@ def method(self, x: torch.Tensor):
     # Validation
     if x is None:
         raise ValidationError("x cannot be None")
-    
+
     # Operation with logging
     try:
         result = self._internal_operation(x)
     except Exception as e:
         self.logger.error(f"Operation failed: {e}")
         raise TrainingError(f"Operation failed: {e}") from e
-    
+
     return result
 ```
 

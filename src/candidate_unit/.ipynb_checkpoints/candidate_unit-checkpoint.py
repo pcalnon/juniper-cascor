@@ -24,15 +24,12 @@
 #
 #####################################################################################################################################################################################################
 
-import torch
-from typing import Optional
 import logging
+from typing import Optional
 
-from constants.constants import (
-    _CANDIDATE_UNIT_INPUT_SIZE,
-    _CANDIDATE_UNIT_ACTIVATION_FUNCTION,
-    _CANDIDATE_UNIT_LOGLEVEL_DEFAULT,
-)
+import torch
+
+from constants.constants import _CANDIDATE_UNIT_ACTIVATION_FUNCTION, _CANDIDATE_UNIT_INPUT_SIZE, _CANDIDATE_UNIT_LOGLEVEL_DEFAULT
 
 # # Define constants for the Cascade Correlation Network
 # _CANDIDATE_UNIT_INPUT_SIZE = 2
@@ -296,7 +293,7 @@ class CandidateUnit:
         torch.Tensor,
         float,
         float,
-    ): 
+    ):
         """
         Calculate correlation for single-output networks.
         Args:

@@ -32,9 +32,6 @@
 # import torch
 
 
-
-
-
 #####################################################################################################################################################################################################
 # Training parameters for the Cascade Correlation Network
 #####################################################################################################################################################################################################
@@ -60,7 +57,7 @@ _PROJECT_MODEL_CANDIDATE_TRAINING_CONTEXT = "forkserver"
 
 # Define base manager server address and port for remote multiprocessing shared queues
 # _PROJECT_MODEL_BASE_MANAGER_ADDRESS = 'localhost'
-_PROJECT_MODEL_BASE_MANAGER_ADDRESS_IP = '127.0.0.1'
+_PROJECT_MODEL_BASE_MANAGER_ADDRESS_IP = "127.0.0.1"
 
 # Use port 0 for dynamic port allocation by the OS to avoid "Address already in use" conflicts
 # when multiple network instances or test runs start managers concurrently
@@ -73,7 +70,7 @@ _PROJECT_MODEL_SHUTDOWN_TIMEOUT = _PROJECT_MODEL_TASK_QUEUE_TIMEOUT * 2.0
 
 _PROJECT_MODEL_BASE_MANAGER_ADDRESS = (_PROJECT_MODEL_BASE_MANAGER_ADDRESS_IP, _PROJECT_MODEL_BASE_MANAGER_ADDRESS_PORT)
 
-_PROJECT_MODEL_TARGET_ACCURACY  = 0.9
+_PROJECT_MODEL_TARGET_ACCURACY = 0.9
 # _PROJECT_MODEL_TARGET_ACCURACY  = 0.99
 # _PROJECT_MODEL_TARGET_ACCURACY  = 0.999
 # _PROJECT_MODEL_TARGET_ACCURACY  = 0.9999
@@ -141,7 +138,7 @@ _PROJECT_MODEL_OUTPUT_SIZE = 1
 # _PROJECT_MODEL_LEARNING_RATE = 0.025
 # _PROJECT_MODEL_LEARNING_RATE = 0.02
 # _PROJECT_MODEL_LEARNING_RATE = 0.015
-_PROJECT_MODEL_LEARNING_RATE = 0.01                                      # This is the default value used in the original implementation and was used with 100% run
+_PROJECT_MODEL_LEARNING_RATE = 0.01  # This is the default value used in the original implementation and was used with 100% run
 # _PROJECT_MODEL_LEARNING_RATE = 0.0095
 # _PROJECT_MODEL_LEARNING_RATE = 0.009
 # _PROJECT_MODEL_LEARNING_RATE = 0.0085

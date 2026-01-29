@@ -32,7 +32,8 @@ requires-python = ">=3.11"
 
 [tool.black]
 line-length = 120
-target-version = ["py311", "py312", "py313", "py314"]
+# target-version = ["py311", "py312", "py313", "py314"]
+target-version = ["py311", "py312", "py313"]
 include = '\.pyi?$'
 extend-exclude = '''
 /(

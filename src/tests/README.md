@@ -240,20 +240,20 @@ def test_training_intensive_operation():
 ```python
 class TestNewAlgorithm:
     """Test basic functionality of new algorithm."""
-    
+
     @pytest.mark.unit
     @pytest.mark.new_algorithm
     def test_basic_functionality(self, simple_network):
         """Test that algorithm works with valid input."""
         # Arrange
         input_data = create_test_input()
-        
+
         # Act
         result = simple_network.new_algorithm(input_data)
-        
+
         # Assert
         assert_valid_output(result)
-    
+
     @pytest.mark.unit
     @pytest.mark.new_algorithm
     @pytest.mark.parametrize("param", [1, 5, 10])

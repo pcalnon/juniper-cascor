@@ -49,25 +49,26 @@ import sys
 if "CASCOR_LOG_LEVEL" not in os.environ:
     os.environ["CASCOR_LOG_LEVEL"] = "WARNING"
 
+# from typing import Tuple, Dict, Any, Optional
+from typing import Dict, Tuple
+from unittest.mock import MagicMock
+
+import numpy as np
 import pytest
 import torch
-import numpy as np
-# from typing import Tuple, Dict, Any, Optional
-from typing import Tuple, Dict
-from unittest.mock import MagicMock
 
 # Add parent directories to Python path for imports
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
+from candidate_unit.candidate_unit import CandidateUnit
 from cascade_correlation.cascade_correlation import CascadeCorrelationNetwork
 from cascade_correlation.cascade_correlation_config.cascade_correlation_config import CascadeCorrelationConfig
-from candidate_unit.candidate_unit import CandidateUnit
-
 
 # ===================================================================
 # PYTEST CONFIGURATION
 # ===================================================================
+
 
 def pytest_configure(config):
     """Configure pytest with custom settings."""
@@ -138,6 +139,7 @@ def pytest_collection_modifyitems(config, items):
 # FAST-SLOW MODE CONFIGURATION
 # ===================================================================
 
+
 @pytest.fixture(scope="session")
 def fast_slow_mode(request):
     """Check if fast-slow mode is enabled via --fast-slow flag or JUNIPER_FAST_SLOW env var."""
@@ -155,39 +157,39 @@ def fast_training_params(fast_slow_mode):
     """Return optimized training parameters for fast-slow mode.
 
     These parameters dramatically reduce training time while maintaining test validity.
-    Tests should validate learning signal (improvement from baseline) rather than 
+    Tests should validate learning signal (improvement from baseline) rather than
     absolute performance thresholds.
     """
     if fast_slow_mode:
         return {
-            'learning_rate': 0.1,
-            'candidate_learning_rate': 0.1,
-            'candidate_epochs': 3,
-            'output_epochs': 3,
-            'candidate_pool_size': 2,
-            'correlation_threshold': 0.02,
-            'max_hidden_units': 2,
-            'epochs_max': 5,
-            'patience': 2,
-            'n_per_spiral': 20,
-            'n_samples': 32,
+            "learning_rate": 0.1,
+            "candidate_learning_rate": 0.1,
+            "candidate_epochs": 3,
+            "output_epochs": 3,
+            "candidate_pool_size": 2,
+            "correlation_threshold": 0.02,
+            "max_hidden_units": 2,
+            "epochs_max": 5,
+            "patience": 2,
+            "n_per_spiral": 20,
+            "n_samples": 32,
         }
     else:
         return {
-            'learning_rate': 0.01,
+            "learning_rate": 0.01,
             # 'learning_rate': 0.02,
             # 'learning_rate': 0.05,
-            'candidate_learning_rate': 0.005,
+            "candidate_learning_rate": 0.005,
             # 'candidate_learning_rate': 0.01,
-            'candidate_epochs': 50,
-            'output_epochs': 25,
-            'candidate_pool_size': 16,
-            'correlation_threshold': 0.1,
-            'max_hidden_units': 10,
-            'epochs_max': 100,
-            'patience': 5,
-            'n_per_spiral': 100,
-            'n_samples': 100,
+            "candidate_epochs": 50,
+            "output_epochs": 25,
+            "candidate_pool_size": 16,
+            "correlation_threshold": 0.1,
+            "max_hidden_units": 10,
+            "epochs_max": 100,
+            "patience": 5,
+            "n_per_spiral": 100,
+            "n_samples": 100,
         }
 
 
@@ -195,21 +197,19 @@ def fast_training_params(fast_slow_mode):
 # DATA GENERATION FIXTURES
 # ===================================================================
 
+
 @pytest.fixture
 def simple_2d_data(fast_training_params) -> Tuple[torch.Tensor, torch.Tensor]:
     """Generate simple 2D classification data."""
     torch.manual_seed(42)
-    n_samples = fast_training_params['n_samples']
+    n_samples = fast_training_params["n_samples"]
     # Create two classes in 2D space
 
     class_0 = torch.randn(n_samples // 2, 2) + torch.tensor([-1.0, -1.0])
     class_1 = torch.randn(n_samples // 2, 2) + torch.tensor([1.0, 1.0])
 
     x = torch.cat([class_0, class_1], dim=0)
-    y = torch.cat([
-        torch.tensor([[1, 0]] * (n_samples // 2)),
-        torch.tensor([[0, 1]] * (n_samples // 2))
-    ], dim=0).float()
+    y = torch.cat([torch.tensor([[1, 0]] * (n_samples // 2)), torch.tensor([[0, 1]] * (n_samples // 2))], dim=0).float()
 
     return x, y
 
@@ -221,24 +221,18 @@ def spiral_2d_data() -> Tuple[torch.Tensor, torch.Tensor]:
     n_per_spiral = 100
 
     # Generate spiral data
-    t = torch.linspace(0, 4*np.pi, n_per_spiral)
+    t = torch.linspace(0, 4 * np.pi, n_per_spiral)
 
-    x1 = t * torch.cos(t) / (4*np.pi)
-    y1 = t * torch.sin(t) / (4*np.pi)
+    x1 = t * torch.cos(t) / (4 * np.pi)
+    y1 = t * torch.sin(t) / (4 * np.pi)
 
     # Spiral 2 (rotated)
-    x2 = -t * torch.cos(t) / (4*np.pi)
-    y2 = -t * torch.sin(t) / (4*np.pi)
+    x2 = -t * torch.cos(t) / (4 * np.pi)
+    y2 = -t * torch.sin(t) / (4 * np.pi)
 
-    x = torch.stack([
-        torch.cat([x1, x2]),
-        torch.cat([y1, y2])
-    ], dim=1)
+    x = torch.stack([torch.cat([x1, x2]), torch.cat([y1, y2])], dim=1)
 
-    y = torch.cat([
-        torch.tensor([[1, 0]] * n_per_spiral),
-        torch.tensor([[0, 1]] * n_per_spiral)
-    ], dim=0).float()
+    y = torch.cat([torch.tensor([[1, 0]] * n_per_spiral), torch.tensor([[0, 1]] * n_per_spiral)], dim=0).float()
 
     return x, y
 
@@ -246,6 +240,7 @@ def spiral_2d_data() -> Tuple[torch.Tensor, torch.Tensor]:
 @pytest.fixture
 def n_spiral_data() -> callable:
     """Generate N-spiral problem data (parameterized)."""
+
     def _generate_n_spiral(n_spirals: int = 3, n_per_spiral: int = 50) -> Tuple[torch.Tensor, torch.Tensor]:
         torch.manual_seed(42)
 
@@ -253,11 +248,11 @@ def n_spiral_data() -> callable:
         y_data = []
 
         for i in range(n_spirals):
-            t = torch.linspace(0, 4*np.pi, n_per_spiral)
+            t = torch.linspace(0, 4 * np.pi, n_per_spiral)
             angle_offset = 2 * np.pi * i / n_spirals
 
-            x_spiral = t * torch.cos(t + angle_offset) / (4*np.pi)
-            y_spiral = t * torch.sin(t + angle_offset) / (4*np.pi)
+            x_spiral = t * torch.cos(t + angle_offset) / (4 * np.pi)
+            y_spiral = t * torch.sin(t + angle_offset) / (4 * np.pi)
 
             x_data.append(torch.stack([x_spiral, y_spiral], dim=1))
 
@@ -282,7 +277,7 @@ def regression_data() -> Tuple[torch.Tensor, torch.Tensor]:
 
     x = torch.randn(n_samples, 2)
     # Non-linear target function
-    y = (x[:, 0]**2 + x[:, 1]**2).unsqueeze(1)
+    y = (x[:, 0] ** 2 + x[:, 1] ** 2).unsqueeze(1)
 
     return x, y
 
@@ -290,6 +285,7 @@ def regression_data() -> Tuple[torch.Tensor, torch.Tensor]:
 # ===================================================================
 # NETWORK CONFIGURATION FIXTURES
 # ===================================================================
+
 
 @pytest.fixture
 def simple_config(fast_training_params) -> CascadeCorrelationConfig:
@@ -300,15 +296,15 @@ def simple_config(fast_training_params) -> CascadeCorrelationConfig:
     return CascadeCorrelationConfig.create_simple_config(
         input_size=2,
         output_size=2,
-        learning_rate=min(0.1, fast_training_params['learning_rate']),
-        candidate_learning_rate=min(0.1, fast_training_params['candidate_learning_rate']),
-        max_hidden_units=min(5, fast_training_params['max_hidden_units']),
-        candidate_pool_size=min(8, fast_training_params['candidate_pool_size']),
-        correlation_threshold=min(0.1, fast_training_params['correlation_threshold']),
-        patience=min(3, fast_training_params['patience']),
-        candidate_epochs=min(10, fast_training_params['candidate_epochs']),
-        output_epochs=min(10, fast_training_params['output_epochs']),
-        epochs_max=min(20, fast_training_params['epochs_max'])
+        learning_rate=min(0.1, fast_training_params["learning_rate"]),
+        candidate_learning_rate=min(0.1, fast_training_params["candidate_learning_rate"]),
+        max_hidden_units=min(5, fast_training_params["max_hidden_units"]),
+        candidate_pool_size=min(8, fast_training_params["candidate_pool_size"]),
+        correlation_threshold=min(0.1, fast_training_params["correlation_threshold"]),
+        patience=min(3, fast_training_params["patience"]),
+        candidate_epochs=min(10, fast_training_params["candidate_epochs"]),
+        output_epochs=min(10, fast_training_params["output_epochs"]),
+        epochs_max=min(20, fast_training_params["epochs_max"]),
     )
 
 
@@ -323,15 +319,15 @@ def spiral_config(fast_training_params, fast_slow_mode) -> CascadeCorrelationCon
     return CascadeCorrelationConfig.create_simple_config(
         input_size=2,
         output_size=2,
-        learning_rate=min(0.1, fast_training_params['learning_rate']),
-        candidate_learning_rate=min(0.1, fast_training_params['candidate_learning_rate']),
-        max_hidden_units=min(5, fast_training_params['max_hidden_units']),
-        candidate_pool_size=min(8, fast_training_params['candidate_pool_size']),
-        correlation_threshold=min(0.1, fast_training_params['correlation_threshold']),
-        patience=min(3, fast_training_params['patience']),
-        candidate_epochs=min(10, fast_training_params['candidate_epochs']),
-        output_epochs=min(10, fast_training_params['output_epochs']),
-        epochs_max=min(20, fast_training_params['epochs_max'])
+        learning_rate=min(0.1, fast_training_params["learning_rate"]),
+        candidate_learning_rate=min(0.1, fast_training_params["candidate_learning_rate"]),
+        max_hidden_units=min(5, fast_training_params["max_hidden_units"]),
+        candidate_pool_size=min(8, fast_training_params["candidate_pool_size"]),
+        correlation_threshold=min(0.1, fast_training_params["correlation_threshold"]),
+        patience=min(3, fast_training_params["patience"]),
+        candidate_epochs=min(10, fast_training_params["candidate_epochs"]),
+        output_epochs=min(10, fast_training_params["output_epochs"]),
+        epochs_max=min(20, fast_training_params["epochs_max"]),
     )
 
 
@@ -344,21 +340,22 @@ def regression_config(fast_training_params) -> CascadeCorrelationConfig:
     return CascadeCorrelationConfig.create_simple_config(
         input_size=2,
         output_size=1,
-        learning_rate=min(0.1, fast_training_params['learning_rate']),
-        candidate_learning_rate=min(0.1, fast_training_params['candidate_learning_rate']),
-        max_hidden_units=min(8, fast_training_params['max_hidden_units']),
-        candidate_pool_size=min(12, fast_training_params['candidate_pool_size']),
+        learning_rate=min(0.1, fast_training_params["learning_rate"]),
+        candidate_learning_rate=min(0.1, fast_training_params["candidate_learning_rate"]),
+        max_hidden_units=min(8, fast_training_params["max_hidden_units"]),
+        candidate_pool_size=min(12, fast_training_params["candidate_pool_size"]),
         correlation_threshold=0.15,
-        patience=min(5, fast_training_params['patience']),
-        candidate_epochs=min(30, fast_training_params['candidate_epochs']),
-        output_epochs=min(15, fast_training_params['output_epochs']),
-        epochs_max=min(50, fast_training_params['epochs_max'])
+        patience=min(5, fast_training_params["patience"]),
+        candidate_epochs=min(30, fast_training_params["candidate_epochs"]),
+        output_epochs=min(15, fast_training_params["output_epochs"]),
+        epochs_max=min(50, fast_training_params["epochs_max"]),
     )
 
 
 # ===================================================================
 # NETWORK INSTANCE FIXTURES
 # ===================================================================
+
 
 @pytest.fixture
 def simple_network(simple_config) -> CascadeCorrelationNetwork:
@@ -390,20 +387,17 @@ def trained_simple_network(simple_network, simple_2d_data) -> CascadeCorrelation
 # CANDIDATE UNIT FIXTURES
 # ===================================================================
 
+
 @pytest.fixture
 def simple_candidate() -> CandidateUnit:
     """Create a simple candidate unit."""
-    return CandidateUnit(
-        _CandidateUnit__input_size=2,
-        _CandidateUnit__learning_rate=0.01,
-        _CandidateUnit__epochs=10,
-        _CandidateUnit__log_level_name="ERROR"
-    )
+    return CandidateUnit(_CandidateUnit__input_size=2, _CandidateUnit__learning_rate=0.01, _CandidateUnit__epochs=10, _CandidateUnit__log_level_name="ERROR")
 
 
 # ===================================================================
 # MOCK FIXTURES
 # ===================================================================
+
 
 @pytest.fixture
 def mock_logger():
@@ -444,6 +438,7 @@ def mock_config():
 # VALIDATION FIXTURES
 # ===================================================================
 
+
 @pytest.fixture
 def valid_tensor_2d() -> torch.Tensor:
     """Valid 2D tensor for testing."""
@@ -463,30 +458,18 @@ def valid_target_2d() -> torch.Tensor:
 @pytest.fixture
 def invalid_tensors() -> Dict[str, torch.Tensor]:
     """Collection of invalid tensors for testing."""
-    return {
-        'empty': torch.tensor([]),
-        'nan_values': torch.tensor([[1.0, float('nan')]]),
-        'inf_values': torch.tensor([[1.0, float('inf')]]),
-        'wrong_shape_1d': torch.tensor([1, 2, 3]),
-        'wrong_shape_3d': torch.randn(5, 2, 3),
-        'mismatched_batch': torch.randn(5, 2)  # when expecting batch size 10
-    }
+    return {"empty": torch.tensor([]), "nan_values": torch.tensor([[1.0, float("nan")]]), "inf_values": torch.tensor([[1.0, float("inf")]]), "wrong_shape_1d": torch.tensor([1, 2, 3]), "wrong_shape_3d": torch.randn(5, 2, 3), "mismatched_batch": torch.randn(5, 2)}  # when expecting batch size 10
 
 
 # ===================================================================
 # UTILITY FIXTURES
 # ===================================================================
 
+
 @pytest.fixture
 def tolerance() -> Dict[str, float]:
     """Standard tolerances for floating point comparisons."""
-    return {
-        'rtol': 1e-5,
-        'atol': 1e-8,
-        'correlation_tol': 1e-4,
-        'accuracy_tol': 1e-3,
-        'loss_tol': 1e-6
-    }
+    return {"rtol": 1e-5, "atol": 1e-8, "correlation_tol": 1e-4, "accuracy_tol": 1e-3, "loss_tol": 1e-6}
 
 
 @pytest.fixture
@@ -498,6 +481,7 @@ def device() -> str:
 # ===================================================================
 # CLEANUP FIXTURES
 # ===================================================================
+
 
 @pytest.fixture(autouse=True)
 def cleanup_temp_files():

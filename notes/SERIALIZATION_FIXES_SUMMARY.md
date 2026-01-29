@@ -234,13 +234,13 @@ These caused JSON serialization failures or type corruption on load.
    def test_deterministic_resume():
        network1 = create_and_train_network(steps=10)
        save_network(network1, "step10.h5")
-       
+
        network2 = load_network("step10.h5")
        train_network(network2, steps=10)
-       
+
        network3 = create_network()
        train_network(network3, steps=20)
-       
+
        # All three should have identical weights
        assert torch.allclose(network2.output_weights, network3.output_weights)
    ```
@@ -253,7 +253,7 @@ These caused JSON serialization failures or type corruption on load.
        network.history['value_loss'] = [1.0, 0.5]
        network.history['value_accuracy'] = [0.5, 0.9]
        save_network(network, "test.h5")
-       
+
        loaded = load_network("test.h5")
        assert 'value_loss' in loaded.history
        assert loaded.history['value_loss'] == [1.0, 0.5]
@@ -265,7 +265,7 @@ These caused JSON serialization failures or type corruption on load.
    def test_config_excludes_non_serializable():
        config = CascadeCorrelationConfig()
        config_dict = serializer._config_to_dict(config)
-       
+
        assert 'activation_functions_dict' not in config_dict
        assert 'log_config' not in config_dict
        assert 'logger' not in config_dict
@@ -277,7 +277,7 @@ These caused JSON serialization failures or type corruption on load.
    def test_activation_function_load():
        network = create_network(activation='tanh')
        save_network(network, "test.h5")
-       
+
        loaded = load_network("test.h5")
        assert loaded.activation_function_name == 'tanh'
        assert loaded.activation_fn is not None

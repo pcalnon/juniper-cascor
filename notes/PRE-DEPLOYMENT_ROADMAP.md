@@ -1322,12 +1322,12 @@ from io import StringIO
 def profile_training():
     profiler = cProfile.Profile()
     profiler.enable()
-    
+
     # Training code here
     network.fit(x_train, y_train, epochs=100)
-    
+
     profiler.disable()
-    
+
     # Output stats
     stream = StringIO()
     stats = pstats.Stats(profiler, stream=stream)

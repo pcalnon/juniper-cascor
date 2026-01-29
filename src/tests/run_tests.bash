@@ -106,7 +106,7 @@ EXAMPLES:
 
 TEST MARKERS:
     unit                   Unit tests for individual components
-    integration            Integration tests for full workflows  
+    integration            Integration tests for full workflows
     performance            Performance and benchmarking tests
     slow                   Tests that take a long time to run
     gpu                    Tests that require GPU/CUDA

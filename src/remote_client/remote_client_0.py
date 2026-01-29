@@ -3,20 +3,23 @@
 Test client for remote multiprocessing manager connection.
 """
 import multiprocessing as mp
-from multiprocessing.managers import BaseManager
+
 # import time
 # import torch
 # import numpy as np
 import sys
+from multiprocessing.managers import BaseManager
+
 # import os
 
 # Add the source directory to Python path
-sys.path.append('/home/pcalnon/Development/python/Juniper/src/prototypes/cascor/src')
+sys.path.append("/home/pcalnon/Development/python/Juniper/src/prototypes/cascor/src")
 
 from candidate_unit.candidate_unit import CandidateUnit
 
+
 class RemoteCandidateTrainingClient:
-    def __init__(self, server_address=('127.0.0.1', 50000), authkey=b'Juniper_Cascade_Correlation_Multiprocessing_Authkey'):
+    def __init__(self, server_address=("127.0.0.1", 50000), authkey=b"Juniper_Cascade_Correlation_Multiprocessing_Authkey"):
         self.server_address = server_address
         self.authkey = authkey
         self.manager = None
@@ -29,14 +32,11 @@ class RemoteCandidateTrainingClient:
                 pass
 
             # Register remote methods
-            CandidateTrainingManager.register('get_tasks_queue')
-            CandidateTrainingManager.register('get_done_queue')
+            CandidateTrainingManager.register("get_tasks_queue")
+            CandidateTrainingManager.register("get_done_queue")
 
             # Connect to remote manager
-            self.manager = CandidateTrainingManager(
-                address=self.server_address,
-                authkey=self.authkey
-            )
+            self.manager = CandidateTrainingManager(address=self.server_address, authkey=self.authkey)
 
             self.manager.connect()
             print(f"Successfully connected to manager at {self.server_address}")
@@ -110,7 +110,7 @@ class RemoteCandidateTrainingClient:
         """Train a candidate unit remotely."""
         try:
             candidate_index, candidate_data, training_inputs = task_data
-            # Unpack candidate data  
+            # Unpack candidate data
             (_, input_size, activation_name, random_value_scale, candidate_uuid, candidate_seed, random_max_value, sequence_max_value) = candidate_data
             # Unpack training inputs
             (candidate_input, candidate_epochs, y, residual_error, candidate_learning_rate, candidate_display_frequency) = training_inputs
@@ -126,19 +126,14 @@ class RemoteCandidateTrainingClient:
             )
 
             # Train the candidate
-            correlation, _ = candidate.train(
-                x=candidate_input,
-                epochs=candidate_epochs,
-                residual_error=residual_error,
-                learning_rate=candidate_learning_rate,
-                display_frequency=candidate_display_frequency
-            )
+            correlation, _ = candidate.train(x=candidate_input, epochs=candidate_epochs, residual_error=residual_error, learning_rate=candidate_learning_rate, display_frequency=candidate_display_frequency)
 
             return (candidate_index, candidate_uuid, correlation, candidate)
 
         except Exception as e:
             print(f"Remote training error: {e}")
-            return (candidate_index if 'candidate_index' in locals() else None, candidate_uuid if 'candidate_uuid' in locals() else None, 0.0, None)
+            return (candidate_index if "candidate_index" in locals() else None, candidate_uuid if "candidate_uuid" in locals() else None, 0.0, None)
+
 
 def test_remote_connection():
     """Test the remote connection functionality."""
@@ -156,6 +151,7 @@ def test_remote_connection():
 
     else:
         print("Connection failed!")
+
 
 if __name__ == "__main__":
     test_remote_connection()

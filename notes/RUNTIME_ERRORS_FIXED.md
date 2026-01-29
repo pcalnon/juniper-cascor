@@ -213,7 +213,7 @@ def _stop_workers(self, workers: list, task_queue) -> None:
             task_queue.put(None, timeout=5)
         except Exception as e:
             self.logger.error(f"Failed to send sentinel: {e}")
-    
+
     # Wait with longer timeout for workers to finish naturally
     for worker in workers:
         worker.join(timeout=15)  # Increased from 10

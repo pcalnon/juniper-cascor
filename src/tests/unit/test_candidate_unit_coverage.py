@@ -22,13 +22,13 @@ import os
 import sys
 from unittest.mock import MagicMock, patch
 
+import numpy as np
 import pytest
 import torch
-import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from candidate_unit.candidate_unit import CandidateUnit, CandidateTrainingResult
+from candidate_unit.candidate_unit import CandidateTrainingResult, CandidateUnit
 
 
 @pytest.fixture
@@ -198,6 +198,7 @@ class TestCandidateUnitPickling:
     def test_pickle_roundtrip(self, basic_candidate):
         """Test pickle/unpickle roundtrip."""
         import pickle
+
         pickled = pickle.dumps(basic_candidate)
         unpickled = pickle.loads(pickled)
         assert unpickled.input_size == basic_candidate.input_size
@@ -243,12 +244,14 @@ class TestActivationWithDerivative:
     def test_import_activation_with_derivative(self):
         """Test ActivationWithDerivative can be imported."""
         from candidate_unit.candidate_unit import ActivationWithDerivative
+
         assert ActivationWithDerivative is not None
 
     @pytest.mark.unit
     def test_create_with_tanh(self):
         """Test creating ActivationWithDerivative with tanh."""
         from candidate_unit.candidate_unit import ActivationWithDerivative
+
         awd = ActivationWithDerivative(torch.tanh)
         assert awd is not None
         assert callable(awd)
@@ -257,6 +260,7 @@ class TestActivationWithDerivative:
     def test_call_forward(self):
         """Test calling ActivationWithDerivative for forward pass."""
         from candidate_unit.candidate_unit import ActivationWithDerivative
+
         awd = ActivationWithDerivative(torch.tanh)
         x = torch.tensor([0.0, 0.5, 1.0])
         output = awd(x, derivative=False)
@@ -267,6 +271,7 @@ class TestActivationWithDerivative:
     def test_call_derivative(self):
         """Test calling ActivationWithDerivative for derivative."""
         from candidate_unit.candidate_unit import ActivationWithDerivative
+
         awd = ActivationWithDerivative(torch.tanh)
         x = torch.tensor([0.0, 0.5, 1.0])
         deriv = awd(x, derivative=True)
@@ -278,7 +283,9 @@ class TestActivationWithDerivative:
     def test_pickle_activation_with_derivative(self):
         """Test ActivationWithDerivative can be pickled."""
         import pickle
+
         from candidate_unit.candidate_unit import ActivationWithDerivative
+
         awd = ActivationWithDerivative(torch.tanh)
         pickled = pickle.dumps(awd)
         unpickled = pickle.loads(pickled)
@@ -290,6 +297,7 @@ class TestActivationWithDerivative:
     def test_repr(self):
         """Test ActivationWithDerivative __repr__."""
         from candidate_unit.candidate_unit import ActivationWithDerivative
+
         awd = ActivationWithDerivative(torch.tanh)
         repr_str = repr(awd)
         assert "ActivationWithDerivative" in repr_str

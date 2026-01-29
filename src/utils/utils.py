@@ -45,8 +45,10 @@
 
 # from typing import Tuple, Dict, Any
 from typing import Dict, Tuple
+
 try:
     import columnar as col
+
     HAS_COLUMNAR = True
 except ImportError:
     HAS_COLUMNAR = False
@@ -56,6 +58,7 @@ import torch
 import yaml
 
 from log_config.logger.logger import Logger
+
 
 def save_dataset(
     x: torch.Tensor,
@@ -89,7 +92,9 @@ def load_dataset(file_path: str) -> Tuple[torch.Tensor, torch.Tensor]:
     return (data["x"], data["y"])
 
 
-def display_progress(display_frequency: int,) -> bool:
+def display_progress(
+    display_frequency: int,
+) -> bool:
     """
     Description:
         Determine if epoch matches display frequency for logging progress of training.
@@ -101,7 +106,7 @@ def display_progress(display_frequency: int,) -> bool:
         This method checks if the current epoch is a multiple of the display frequency.
         If it is, it returns True, indicating that progress should be displayed.
         Otherwise, it returns False.
-        This method is not called directly, but rather returns a lambda function 
+        This method is not called directly, but rather returns a lambda function
         that can be stored as a class attribute and used to check the condition based on the class frequency.
     """
     # if epoch <= 0:
@@ -120,24 +125,21 @@ def get_class_distribution(y: torch.Tensor) -> Dict[int, int]:
     """
     Description:
         Get the distribution of classes in the dataset.
-        
+
     Args:
         y: Target tensor (one-hot encoded)
     Returns:
         Dictionary mapping class indices to counts
     """
     if len(y.shape) > 1 and y.shape[1] > 1:
-        y_indices = torch.argmax(y, dim=1).numpy()   # One-hot encoded
+        y_indices = torch.argmax(y, dim=1).numpy()  # One-hot encoded
     else:
-        y_indices = y.numpy()                        # Class indices
+        y_indices = y.numpy()  # Class indices
     unique, counts = np.unique(y_indices, return_counts=True)
     return dict(zip(unique, counts, strict=False))
 
 
-def convert_to_numpy(
-    x: torch.Tensor,
-    y: torch.Tensor
-) -> Tuple[np.ndarray, np.ndarray]:
+def convert_to_numpy(x: torch.Tensor, y: torch.Tensor) -> Tuple[np.ndarray, np.ndarray]:
     """
     Description:
         Convert PyTorch tensors to NumPy arrays.
@@ -152,6 +154,7 @@ def convert_to_numpy(
     x_np = x.numpy() if isinstance(x, torch.Tensor) else x
     y_np = y.numpy() if isinstance(y, torch.Tensor) else y
     return (x_np, y_np)
+
 
 def convert_to_tensor(x: np.ndarray, y: np.ndarray) -> Tuple[torch.Tensor, torch.Tensor]:
     """
@@ -185,7 +188,7 @@ def display_object_attributes(object_name: str = None, private_attrs: bool = Fal
     Example:
         display_object_attributes(object_name="logging", private_attrs=False)
     """
-    obj = __import__(object_name) if object_name is not None and isinstance(object_name, str) and hasattr( __import__(object_name), '__dict__') and isinstance(private_attrs, bool) else None
+    obj = __import__(object_name) if object_name is not None and isinstance(object_name, str) and hasattr(__import__(object_name), "__dict__") and isinstance(private_attrs, bool) else None
     obj_dict = obj.__dict__ if obj is not None else None
     keys = obj_dict.keys() if obj_dict is not None else None
     return _object_attributes_to_table(obj_dict=obj_dict, keys=keys, private_attrs=private_attrs)
@@ -202,20 +205,23 @@ def _object_attributes_to_table(obj_dict: dict = None, keys: [str] = None, priva
     Returns:
         String representing the object's attributes and their values in a columnar format.
     """
-    if (content := _init_content_list( obj_dict is not None and keys is not None and private_attrs is not None) is not None):
-        for key in keys:                                     # parse attributes from target object
-            if key.startswith("_") and not private_attrs:    # Ignore private attributes
+    if content := _init_content_list(obj_dict is not None and keys is not None and private_attrs is not None) is not None:
+        for key in keys:  # parse attributes from target object
+            if key.startswith("_") and not private_attrs:  # Ignore private attributes
                 continue
-            content.append([key, obj_dict.get(key)],)
-        headers = ['Attribute','Attribute Value']
+            content.append(
+                [key, obj_dict.get(key)],
+            )
+        headers = ["Attribute", "Attribute Value"]
         # Generate the columnar data table containing the attributes and their values for the provided object
         if HAS_COLUMNAR and col is not None:
             no_borders = True
             content = col.columnar(data=content, headers=headers, no_borders=no_borders) if content else None
         else:
             # Fallback to simple string formatting if columnar not available
-            content = '\n'.join([f"{headers[0]}: {row[0]}, {headers[1]}: {row[1]}" for row in content]) if content else None
-    return content                                           # return the columnar table data
+            content = "\n".join([f"{headers[0]}: {row[0]}, {headers[1]}: {row[1]}" for row in content]) if content else None
+    return content  # return the columnar table data
+
 
 def _init_content_list(validity_check: bool = False) -> list[str]:
     """
@@ -239,9 +245,9 @@ def check_object_pickleability(instance: object = None) -> bool:
     Returns:
         bool: True if the object is pickleable, False otherwise
     """
-    import dill # trunk-ignore(bandit/B403)
+    import dill  # trunk-ignore(bandit/B403)
 
-    if instance is None or not hasattr(instance, '__dict__'):
+    if instance is None or not hasattr(instance, "__dict__"):
         return False
 
     logger = Logger
@@ -255,5 +261,3 @@ def check_object_pickleability(instance: object = None) -> bool:
             is_a_pickle = False
             logger.debug(f"Utils: _create_multiprocessing_manager: Instance attribute NOT Pickleable: {i}, \t\t{dill.pickles(instance.__dict__[i])}")
     return is_a_pickle
-
-

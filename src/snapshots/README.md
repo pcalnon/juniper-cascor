@@ -213,7 +213,7 @@ The system safely handles multiprocessing state by:
 ```python
 # Load with multiprocessing restoration
 network = CascadeCorrelationNetwork.load_from_hdf5(
-    'network.h5', 
+    'network.h5',
     restore_multiprocessing=True
 )
 ```

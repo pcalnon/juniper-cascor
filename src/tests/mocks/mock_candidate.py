@@ -186,9 +186,7 @@ class MockCandidatePool:
         n_failed = self.pool_size - n_successful
 
         # Generate successful candidates with varying correlations
-        correlations = torch.linspace(
-            self.correlation_range[0], self.correlation_range[1], n_successful
-        )
+        correlations = torch.linspace(self.correlation_range[0], self.correlation_range[1], n_successful)
 
         # for i, corr in enumerate(correlations):
         for corr in correlations:
@@ -202,9 +200,7 @@ class MockCandidatePool:
         # Generate failed candidates
         # for i in range(n_failed):
         for _ in range(n_failed):
-            candidate = MockCandidateUnit(
-                input_size=self.input_size, correlation=0.0, training_behavior="failure"
-            )
+            candidate = MockCandidateUnit(input_size=self.input_size, correlation=0.0, training_behavior="failure")
             self.candidates.append(candidate)
 
     def get_best_candidate(self) -> MockCandidateUnit:
@@ -219,9 +215,7 @@ class MockCandidatePool:
         return self.candidates.copy()
 
 
-def create_mock_candidate_with_correlation(
-    correlation: float, input_size: int = 2, training_behavior: str = "success"
-) -> MockCandidateUnit:
+def create_mock_candidate_with_correlation(correlation: float, input_size: int = 2, training_behavior: str = "success") -> MockCandidateUnit:
     """
     Create a mock candidate with specific correlation.
 
@@ -250,9 +244,7 @@ def create_mock_failing_candidate(input_size: int = 2) -> MockCandidateUnit:
     Returns:
         Mock candidate that fails training
     """
-    return MockCandidateUnit(
-        input_size=input_size, correlation=0.0, training_behavior="failure"
-    )
+    return MockCandidateUnit(input_size=input_size, correlation=0.0, training_behavior="failure")
 
 
 def create_mock_perfect_candidate(input_size: int = 2) -> MockCandidateUnit:
@@ -265,9 +257,7 @@ def create_mock_perfect_candidate(input_size: int = 2) -> MockCandidateUnit:
     Returns:
         Mock candidate with correlation = 1.0
     """
-    return MockCandidateUnit(
-        input_size=input_size, correlation=1.0, training_behavior="success"
-    )
+    return MockCandidateUnit(input_size=input_size, correlation=1.0, training_behavior="success")
 
 
 class MockCandidateTrainer:
@@ -279,9 +269,7 @@ class MockCandidateTrainer:
         self.success_rate = success_rate
         self.training_calls = 0
 
-    def train_candidates(
-        self, candidate_pool: list, x: torch.Tensor, residual_error: torch.Tensor
-    ) -> list:
+    def train_candidates(self, candidate_pool: list, x: torch.Tensor, residual_error: torch.Tensor) -> list:
         """
         Mock training of candidate pool.
 
@@ -314,9 +302,7 @@ class MockCandidateTrainer:
 # Additional mock utilities for testing specific scenarios
 
 
-def create_mock_training_scenario(
-    scenario_name: str, pool_size: int = 8, input_size: int = 2
-) -> dict:
+def create_mock_training_scenario(scenario_name: str, pool_size: int = 8, input_size: int = 2) -> dict:
     """
     Create predefined training scenarios for testing.
 
@@ -345,9 +331,7 @@ def create_mock_training_scenario(
             "expected_failures": pool_size // 2,
         },
         "single_success": {
-            "pool": MockCandidatePool(
-                pool_size, input_size, success_rate=1 / pool_size
-            ),
+            "pool": MockCandidatePool(pool_size, input_size, success_rate=1 / pool_size),
             "expected_best_correlation": 0.8,
             "expected_failures": pool_size - 1,
         },

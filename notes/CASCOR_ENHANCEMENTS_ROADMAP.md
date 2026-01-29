@@ -77,18 +77,18 @@ Method: `_load_and_validate_network_helper()`
 def _load_and_validate_network_helper(self, serializer, temp_snapshot_file, rng_module):
     """
     Helper to load network and generate random sequence using specified RNG module.
-    
+
     Args:
         serializer: CascadeHDF5Serializer instance
         temp_snapshot_file: Path to snapshot file
         rng_module: Random number generator module (random, numpy, or torch)
-    
+
     Returns:
         List of 5 random values from the specified module
     """
     loaded_network = serializer.load_network(temp_snapshot_file)
     self.assertIsNotNone(loaded_network)
-    
+
     # Generate sequence using the correct module
     if rng_module.__name__ == 'random':
         return [rng_module.random() for _ in range(5)]
@@ -186,7 +186,7 @@ Instead of passing the entire network object, pass only essential data:
 def plot_decision_boundary_async(self, x, y, title="Decision Boundary"):
     """Plot decision boundary in separate process without pickling network."""
     import multiprocessing as mp
-    
+
     # Extract only the data needed for plotting
     network_state = {
         'input_size': self.input_size,
@@ -202,7 +202,7 @@ def plot_decision_boundary_async(self, x, y, title="Decision Boundary"):
         ],
         'activation_function_name': self.activation_function_name,
     }
-    
+
     plot_process = mp.Process(
         target=_plot_decision_boundary_worker,
         args=(network_state, x.cpu().detach().numpy(), y.cpu().detach().numpy(), title),
@@ -261,7 +261,7 @@ File: `src/tests/integration/test_serialization.py`
 ```python
 class TestSerializationComprehensive(unittest.TestCase):
     """Comprehensive serialization tests for MVP completion."""
-    
+
     def test_torch_random_state_restoration(self):
         """Test that PyTorch RNG state is preserved across save/load."""
         # Create network
@@ -269,10 +269,10 @@ class TestSerializationComprehensive(unittest.TestCase):
             input_size=2, output_size=1, random_seed=42
         )
         network = CascadeCorrelationNetwork(config=config)
-        
+
         # Generate first sequence
         first_sequence = [torch.rand(1).item() for _ in range(5)]
-        
+
         # Save network
         serializer = CascadeHDF5Serializer()
         with tempfile.NamedTemporaryFile(suffix='.h5', delete=False) as f:
@@ -280,16 +280,16 @@ class TestSerializationComprehensive(unittest.TestCase):
         try:
             success = serializer.save_network(network, temp_file)
             self.assertTrue(success)
-            
+
             # Load and generate second sequence
             loaded_network = serializer.load_network(temp_file)
             second_sequence = [torch.rand(1).item() for _ in range(5)]
-            
+
             # Verify sequences match
             np.testing.assert_array_almost_equal(first_sequence, second_sequence)
         finally:
             os.unlink(temp_file)
-    
+
     def test_deterministic_training_resume(self):
         """
         Critical test: Train → Save → Load → Resume should be identical to continuous training.
@@ -297,38 +297,38 @@ class TestSerializationComprehensive(unittest.TestCase):
         """
         # Setup
         config = CascadeCorrelationConfig(
-            input_size=2, output_size=1, 
+            input_size=2, output_size=1,
             candidate_pool_size=3, candidate_epochs=10,
             output_epochs=20, max_hidden_units=2,
             random_seed=42
         )
-        
+
         # Create test data
         x_train = torch.randn(50, 2)
         y_train = (x_train[:, 0] > x_train[:, 1]).float().unsqueeze(1)
-        
+
         # Scenario A: Train for 20 epochs, save, train for 20 more
         network_a = CascadeCorrelationNetwork(config=config)
         network_a.fit(x_train, y_train, epochs=20)
-        
+
         serializer = CascadeHDF5Serializer()
         with tempfile.NamedTemporaryFile(suffix='.h5', delete=False) as f:
             temp_file = f.name
-        
+
         try:
             serializer.save_network(network_a, temp_file)
             network_a_resumed = serializer.load_network(temp_file)
             network_a_resumed.fit(x_train, y_train, epochs=20)
-            
+
             # Scenario B: Train continuously for 40 epochs
             network_b = CascadeCorrelationNetwork(config=config)
             network_b.fit(x_train, y_train, epochs=40)
-            
+
             # Verify outputs are identical
             test_x = torch.randn(10, 2)
             output_a = network_a_resumed.forward(test_x)
             output_b = network_b.forward(test_x)
-            
+
             np.testing.assert_array_almost_equal(
                 output_a.detach().numpy(),
                 output_b.detach().numpy(),
@@ -337,13 +337,13 @@ class TestSerializationComprehensive(unittest.TestCase):
             )
         finally:
             os.unlink(temp_file)
-    
+
     def test_hidden_units_preservation(self):
         """Test that all hidden units are correctly saved and loaded."""
         # Create network and add hidden units
         config = CascadeCorrelationConfig(input_size=2, output_size=1)
         network = CascadeCorrelationNetwork(config=config)
-        
+
         # Manually add hidden units for testing
         for i in range(3):
             unit = {
@@ -352,19 +352,19 @@ class TestSerializationComprehensive(unittest.TestCase):
                 'correlation': 0.5 + i * 0.1
             }
             network.hidden_units.append(unit)
-        
+
         # Save and load
         serializer = CascadeHDF5Serializer()
         with tempfile.NamedTemporaryFile(suffix='.h5', delete=False) as f:
             temp_file = f.name
-        
+
         try:
             serializer.save_network(network, temp_file)
             loaded_network = serializer.load_network(temp_file)
-            
+
             # Verify unit count
             self.assertEqual(len(network.hidden_units), len(loaded_network.hidden_units))
-            
+
             # Verify each unit's data
             for orig, loaded in zip(network.hidden_units, loaded_network.hidden_units):
                 np.testing.assert_array_almost_equal(
@@ -406,13 +406,13 @@ def _save_hidden_units(self, hdf5_file: h5py.File, network, compression: str, co
     """Save hidden units with checksum validation."""
     if not hasattr(network, 'hidden_units') or not network.hidden_units:
         return
-    
+
     units_group = hdf5_file.create_group('hidden_units')
     units_group.attrs['num_units'] = len(network.hidden_units)
-    
+
     for i, unit in enumerate(network.hidden_units):
         unit_group = units_group.create_group(f'unit_{i}')
-        
+
         # Save weights and bias
         if 'weights' in unit:
             save_tensor(unit_group, 'weights', unit['weights'], compression, compression_opts)
@@ -420,18 +420,18 @@ def _save_hidden_units(self, hdf5_file: h5py.File, network, compression: str, co
             save_tensor(unit_group, 'bias', unit['bias'], compression, compression_opts)
         if 'correlation' in unit:
             unit_group.attrs['correlation'] = float(unit['correlation'])
-        
+
         # Calculate and save checksums
         checksum_data = {}
         if 'weights' in unit:
             checksum_data['weights'] = calculate_tensor_checksum(unit['weights'])
         if 'bias' in unit:
             checksum_data['bias'] = calculate_tensor_checksum(unit['bias'])
-        
+
         if checksum_data:
             write_str_dataset(unit_group, 'checksums', json.dumps(checksum_data))
             self.logger.debug(f"Saved checksums for hidden unit {i}: {checksum_data}")
-    
+
     self.logger.debug(f"Saved {len(network.hidden_units)} hidden units with checksums")
 
 def _load_hidden_units(self, hdf5_file: h5py.File, network) -> None:
@@ -439,22 +439,22 @@ def _load_hidden_units(self, hdf5_file: h5py.File, network) -> None:
     if 'hidden_units' not in hdf5_file:
         network.hidden_units = []
         return
-    
+
     units_group = hdf5_file['hidden_units']
     num_units = units_group.attrs.get('num_units', 0)
-    
+
     network.hidden_units = []
     corruption_detected = False
-    
+
     for i in range(num_units):
         unit_key = f'unit_{i}'
         if unit_key not in units_group:
             self.logger.warning(f"Missing hidden unit {i}")
             continue
-        
+
         unit_group = units_group[unit_key]
         unit = {}
-        
+
         # Load weights and bias
         if 'weights' in unit_group:
             unit['weights'] = load_tensor(unit_group['weights'])
@@ -462,32 +462,32 @@ def _load_hidden_units(self, hdf5_file: h5py.File, network) -> None:
             unit['bias'] = load_tensor(unit_group['bias'])
         if 'correlation' in unit_group.attrs:
             unit['correlation'] = float(unit_group.attrs['correlation'])
-        
+
         # Verify checksums if present
         if 'checksums' in unit_group:
             try:
                 checksums_json = read_str_dataset(unit_group, 'checksums')
                 checksums = json.loads(checksums_json)
-                
+
                 if 'weights' in checksums and 'weights' in unit:
                     if not verify_tensor_checksum(unit['weights'], checksums['weights']):
                         self.logger.error(f"❌ Hidden unit {i} weights checksum FAILED!")
                         corruption_detected = True
                     else:
                         self.logger.debug(f"✓ Hidden unit {i} weights checksum verified")
-                
+
                 if 'bias' in checksums and 'bias' in unit:
                     if not verify_tensor_checksum(unit['bias'], checksums['bias']):
                         self.logger.error(f"❌ Hidden unit {i} bias checksum FAILED!")
                         corruption_detected = True
                     else:
                         self.logger.debug(f"✓ Hidden unit {i} bias checksum verified")
-            
+
             except Exception as e:
                 self.logger.warning(f"Could not verify checksums for unit {i}: {e}")
-        
+
         network.hidden_units.append(unit)
-    
+
     if corruption_detected:
         self.logger.error("⚠️  Data corruption detected in hidden units!")
     else:
@@ -521,44 +521,44 @@ File: `src/snapshots/snapshot_serializer.py`
 def _validate_shapes(self, network) -> bool:
     """
     Validate tensor shapes match expected dimensions.
-    
+
     Returns:
         bool: True if all shapes valid, False otherwise
     """
     validation_errors = []
-    
+
     # Validate output layer
     expected_output_input = network.input_size + len(network.hidden_units)
-    
+
     if network.output_weights.shape != (expected_output_input, network.output_size):
         validation_errors.append(
             f"Output weights shape mismatch: {network.output_weights.shape} != "
             f"expected ({expected_output_input}, {network.output_size})"
         )
-    
+
     if network.output_bias.shape != (network.output_size,):
         validation_errors.append(
             f"Output bias shape mismatch: {network.output_bias.shape} != "
             f"expected ({network.output_size},)"
         )
-    
+
     # Validate hidden units
     for i, unit in enumerate(network.hidden_units):
         expected_input_size = network.input_size + i
-        
+
         if 'weights' in unit:
             if unit['weights'].shape[0] != expected_input_size:
                 validation_errors.append(
                     f"Hidden unit {i} weights input size mismatch: "
                     f"{unit['weights'].shape[0]} != expected {expected_input_size}"
                 )
-        
+
         if 'bias' in unit:
             if unit['bias'].shape != (1,) and unit['bias'].shape != ():
                 validation_errors.append(
                     f"Hidden unit {i} bias shape invalid: {unit['bias'].shape}"
                 )
-    
+
     # Report results
     if validation_errors:
         self.logger.error("Shape validation failed:")
@@ -572,11 +572,11 @@ def _validate_shapes(self, network) -> bool:
 def load_network(self, filepath: Union[str, Path], restore_multiprocessing: bool = True) -> Optional:
     """Load network with shape validation."""
     # ... existing load code ...
-    
+
     # Validate shapes after loading all parameters
     if not self._validate_shapes(network):
         self.logger.warning("Network loaded but shape validation found issues")
-    
+
     return network
 ```
 
@@ -600,32 +600,32 @@ File: `src/snapshots/snapshot_serializer.py`
 def _validate_format(self, hdf5_file: h5py.File) -> bool:
     """Comprehensive HDF5 file format validation."""
     validation_errors = []
-    
+
     try:
         # Check format identifier
         format_name = read_str_attr(hdf5_file, "format")
         valid_formats = [self.format_name, "cascor_hdf5_v1", "juniper.cascor"]
-        
+
         if format_name not in valid_formats:
             validation_errors.append(f"Invalid format: {format_name}")
-        
+
         # Check format version compatibility
         format_version = read_str_attr(hdf5_file, "format_version", "1")
         major_version = int(format_version.split('.')[0])
         current_major = int(self.format_version.split('.')[0])
-        
+
         if major_version > current_major:
             validation_errors.append(
                 f"Incompatible format version: {format_version} "
                 f"(serializer version: {self.format_version})"
             )
-        
+
         # Check for required groups
         required_groups = ["meta", "config", "params", "arch", "random"]
         for group in required_groups:
             if group not in hdf5_file:
                 validation_errors.append(f"Missing required group: {group}")
-        
+
         # Check for required datasets in params
         if "params" in hdf5_file:
             params_group = hdf5_file["params"]
@@ -635,18 +635,18 @@ def _validate_format(self, hdf5_file: h5py.File) -> bool:
                     validation_errors.append("Missing output layer weights")
                 if "bias" not in output_group:
                     validation_errors.append("Missing output layer bias")
-        
+
         # Verify hidden units consistency
         if "hidden_units" in hdf5_file:
             hidden_group = hdf5_file["hidden_units"]
             num_units = hidden_group.attrs.get("num_units", 0)
             actual_units = len([k for k in hidden_group.keys() if k.startswith("unit_")])
-            
+
             if num_units != actual_units:
                 validation_errors.append(
                     f"Hidden units count mismatch: {num_units} != {actual_units}"
                 )
-        
+
         # Report results
         if validation_errors:
             self.logger.error("Format validation failed:")
@@ -656,7 +656,7 @@ def _validate_format(self, hdf5_file: h5py.File) -> bool:
         else:
             self.logger.debug("✓ Format validation passed")
             return True
-    
+
     except Exception as e:
         self.logger.error(f"Format validation exception: {e}")
         return False
@@ -690,18 +690,18 @@ def _create_candidate_unit(
 ) -> CandidateUnit:
     """
     Factory method to create candidate units with consistent parameters.
-    
+
     Args:
         candidate_index: Index of candidate in pool
         candidate_uuid: UUID for candidate (generates if None)
         input_size: Input size (uses network input_size + hidden_units if None)
         **kwargs: Additional CandidateUnit parameters
-    
+
     Returns:
         Configured CandidateUnit instance
     """
     current_input_size = input_size or (self.input_size + len(self.hidden_units))
-    
+
     return CandidateUnit(
         CandidateUnit__activation_function=kwargs.get(
             'activation_fn', self.activation_fn_no_diff
@@ -772,7 +772,7 @@ class OptimizerConfig:
     weight_decay: float = 0.0
     epsilon: float = 1e-8
     amsgrad: bool = False  # For Adam
-    
+
     def to_dict(self) -> dict:
         """Convert to dictionary for serialization."""
         return {
@@ -785,7 +785,7 @@ class OptimizerConfig:
             'epsilon': self.epsilon,
             'amsgrad': self.amsgrad,
         }
-    
+
     @classmethod
     def from_dict(cls, data: dict) -> 'OptimizerConfig':
         """Create from dictionary during deserialization."""
@@ -798,16 +798,16 @@ File: `src/cascade_correlation/cascade_correlation.py`
 def _create_optimizer(self, parameters, config: OptimizerConfig = None):
     """
     Create optimizer based on configuration.
-    
+
     Args:
         parameters: Model parameters to optimize
         config: OptimizerConfig instance (uses self.optimizer_config if None)
-    
+
     Returns:
         Configured optimizer instance
     """
     config = config or self.optimizer_config
-    
+
     optimizer_map = {
         'Adam': lambda: optim.Adam(
             parameters,
@@ -839,13 +839,13 @@ def _create_optimizer(self, parameters, config: OptimizerConfig = None):
             amsgrad=config.amsgrad
         ),
     }
-    
+
     if config.optimizer_type not in optimizer_map:
         self.logger.warning(
             f"Unknown optimizer {config.optimizer_type}, defaulting to Adam"
         )
         config.optimizer_type = 'Adam'
-    
+
     return optimizer_map[config.optimizer_type]()
 ```
 
@@ -869,7 +869,7 @@ File: `src/cascade_correlation/cascade_correlation_config/cascade_correlation_co
 class CascadeCorrelationConfig:
     def __init__(self, ...):
         # ... existing parameters ...
-        
+
         # N-best candidate selection
         self.candidates_per_layer: int = 1  # Set to N for layer-based addition
         self.layer_selection_strategy: str = 'top_n'  # 'top_n', 'threshold', 'adaptive'
@@ -880,7 +880,7 @@ File: `src/cascade_correlation/cascade_correlation.py`
 
 ```python
 def _select_best_candidates(
-    self, 
+    self,
     training_results: TrainingResults,
     strategy: str = 'top_n',
     n: int = 1,
@@ -888,13 +888,13 @@ def _select_best_candidates(
 ) -> List[CandidateUnit]:
     """
     Select top N candidates for layer addition.
-    
+
     Args:
         training_results: Results from candidate training
         strategy: Selection strategy ('top_n', 'threshold', 'adaptive')
         n: Number of candidates to select (for 'top_n')
         threshold: Minimum correlation threshold
-    
+
     Returns:
         List of selected CandidateUnit objects
     """
@@ -904,16 +904,16 @@ def _select_best_candidates(
         key=lambda x: abs(x[1]),
         reverse=True
     )
-    
+
     if strategy == 'top_n':
         # Select top N candidates
         selected = sorted_results[:n]
-    
+
     elif strategy == 'threshold':
         # Select all above threshold
-        selected = [(obj, corr) for obj, corr in sorted_results 
+        selected = [(obj, corr) for obj, corr in sorted_results
                    if abs(corr) >= threshold]
-    
+
     elif strategy == 'adaptive':
         # Select candidates until correlation drops significantly
         selected = []
@@ -924,32 +924,32 @@ def _select_best_candidates(
                 prev_corr = abs(corr)
             else:
                 break
-    
+
     # Extract candidate objects
     candidates = [obj for obj, corr in selected]
-    
+
     self.logger.info(
         f"Selected {len(candidates)} candidates using '{strategy}' strategy"
     )
     for i, (obj, corr) in enumerate(selected):
         self.logger.debug(f"  Candidate {i}: correlation = {corr:.6f}")
-    
+
     return candidates
 
 def add_units_as_layer(self, candidates: List[CandidateUnit], x: torch.Tensor):
     """
     Add multiple candidates as a new layer.
-    
+
     Args:
         candidates: List of trained CandidateUnit objects
         x: Training data for weight initialization
     """
     self.logger.info(f"Adding layer with {len(candidates)} units")
-    
+
     for i, candidate in enumerate(candidates):
         self.logger.debug(f"  Adding unit {i+1}/{len(candidates)}")
         self.add_unit(candidate, x)
-    
+
     self.logger.info(
         f"Layer added successfully. Total hidden units: {len(self.hidden_units)}"
     )
@@ -990,13 +990,13 @@ File: `src/cascade_correlation/cascade_correlation.py`
 def _stop_workers(self, workers: list, task_queue) -> None:
     """Stop worker processes with improved termination handling."""
     import signal
-    
+
     if not workers:
         self.logger.debug("No workers to stop")
         return
-    
+
     self.logger.info(f"Stopping {len(workers)} worker processes")
-    
+
     # Phase 1: Send sentinel values
     for i in range(len(workers)):
         try:
@@ -1004,7 +1004,7 @@ def _stop_workers(self, workers: list, task_queue) -> None:
             self.logger.debug(f"Sent sentinel to worker {i}")
         except Exception as e:
             self.logger.error(f"Failed to send sentinel to worker {i}: {e}")
-    
+
     # Phase 2: Wait gracefully with increased timeout
     terminated_count = 0
     for worker in workers:
@@ -1016,14 +1016,14 @@ def _stop_workers(self, workers: list, task_queue) -> None:
             self.logger.warning(
                 f"Worker {worker.name} (PID {worker.pid}) did not stop gracefully"
             )
-    
+
     # Phase 3: Terminate remaining workers
     for worker in workers:
         if worker.is_alive():
             self.logger.warning(f"Terminating worker {worker.name}")
             worker.terminate()
             worker.join(timeout=2)
-            
+
             # Phase 4: Force kill if still alive
             if worker.is_alive():
                 self.logger.error(
@@ -1034,7 +1034,7 @@ def _stop_workers(self, workers: list, task_queue) -> None:
                     worker.join(timeout=1)
                 except Exception as e:
                     self.logger.error(f"Failed to SIGKILL worker: {e}")
-    
+
     # Final verification
     alive_workers = [w for w in workers if w.is_alive()]
     if alive_workers:

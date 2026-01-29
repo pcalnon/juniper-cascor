@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-A="/home/pcalnon/Development/python/Juniper/src/prototypes/cascor/src" 
+A="/home/pcalnon/Development/python/Juniper/src/prototypes/cascor/src"
 echo "Current: ${A}"
 B="./src/prototypes/cascor/src/cascade_correlation/candidate_unit/candidate_unit.py"
 echo "Source: ${B}"
@@ -27,4 +27,3 @@ until [[ "${PREFIX}" == "" ]]; do
     echo "Prefix: ${PREFIX}"
 done
 echo "PRE: ${PREFIX}, SUF: ${SUFFIX}"
-

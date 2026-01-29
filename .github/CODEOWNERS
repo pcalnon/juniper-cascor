@@ -1,0 +1,75 @@
+#####################################################################################################################################################################################################
+# Project:       Juniper
+# Sub-Project:   JuniperCascor
+# Application:   juniper_cascor
+# File Name:     CODEOWNERS
+# Author:        Paul Calnon
+# Version:       0.4.0
+#
+# Date Created:  2026-01-29
+# Last Modified: 2026-01-29
+#
+# License:       MIT License
+# Copyright:     Copyright (c) 2024-2026 Paul Calnon
+#
+# Description:
+#    GitHub CODEOWNERS file for Juniper Cascor
+#    Defines code ownership for automatic review requests
+#
+# References:
+#    - https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+#####################################################################################################################################################################################################
+
+# Default owners for everything in the repository
+* @pcalnon
+
+# ═══════════════════════════════════════════════════════════════════════════════════════════════
+# Core Application Code
+# ═══════════════════════════════════════════════════════════════════════════════════════════════
+
+# Cascade Correlation Network - Core ML implementation
+/src/cascade_correlation/ @pcalnon
+
+# Candidate Unit - Neural network candidate training
+/src/candidate_unit/ @pcalnon
+
+# Spiral Problem - Classic ML benchmark implementation
+/src/spiral_problem/ @pcalnon
+
+# Snapshot Serialization - HDF5 persistence
+/src/snapshots/ @pcalnon
+
+# ═══════════════════════════════════════════════════════════════════════════════════════════════
+# Infrastructure & Configuration
+# ═══════════════════════════════════════════════════════════════════════════════════════════════
+
+# GitHub Actions CI/CD workflows
+/.github/ @pcalnon
+
+# Project configuration
+/conf/ @pcalnon
+/pyproject.toml @pcalnon
+
+# Logging configuration
+/src/log_config/ @pcalnon
+
+# Constants and configuration
+/src/cascor_constants/ @pcalnon
+
+# ═══════════════════════════════════════════════════════════════════════════════════════════════
+# Tests
+# ═══════════════════════════════════════════════════════════════════════════════════════════════
+
+# All tests
+/src/tests/ @pcalnon
+
+# ═══════════════════════════════════════════════════════════════════════════════════════════════
+# Documentation
+# ═══════════════════════════════════════════════════════════════════════════════════════════════
+
+# Documentation files
+/docs/ @pcalnon
+/notes/ @pcalnon
+/README.md @pcalnon
+/CHANGELOG.md @pcalnon
+/AGENTS.md @pcalnon

@@ -24,33 +24,37 @@
 #
 #####################################################################################################################################################################################################
 
+import logging
+
+# from typing import List, Tuple, Optional, Dict, Any
+from typing import Dict, List, Optional
+
+import matplotlib
+import matplotlib.pyplot as plt
 import numpy as np
 import torch
-import matplotlib
 import torch.nn as nn
 import torch.optim as optim
-import matplotlib.pyplot as plt
-# from typing import List, Tuple, Optional, Dict, Any
-from typing import List, Optional, Dict
-import logging
+
+from candidate_unit.candidate_unit import CandidateUnit
+from constants.constants import (
+    _CASCADE_CORRELATION_NETWORK_ACTIVATION_FUNCTION,
+    _CASCADE_CORRELATION_NETWORK_CANDIDATE_EPOCHS,
+    _CASCADE_CORRELATION_NETWORK_CANDIDATE_POOL_SIZE,
+    _CASCADE_CORRELATION_NETWORK_INPUT_SIZE,
+    _CASCADE_CORRELATION_NETWORK_LEARNING_RATE,
+    _CASCADE_CORRELATION_NETWORK_LOGLEVEL_DEFAULT,
+    _CASCADE_CORRELATION_NETWORK_MAX_HIDDEN_UNITS,
+    _CASCADE_CORRELATION_NETWORK_NODE_CORRELATION_THRESHOLD,
+    _CASCADE_CORRELATION_NETWORK_OUTPUT_EPOCHS,
+    _CASCADE_CORRELATION_NETWORK_OUTPUT_SIZE,
+    _CASCADE_CORRELATION_NETWORK_PATIENCE,
+)
+
 # import random
 # import math
 
-from candidate_unit.candidate_unit import CandidateUnit
 
-from constants.constants import (
-    _CASCADE_CORRELATION_NETWORK_INPUT_SIZE,
-    _CASCADE_CORRELATION_NETWORK_OUTPUT_SIZE,
-    _CASCADE_CORRELATION_NETWORK_CANDIDATE_POOL_SIZE,
-    _CASCADE_CORRELATION_NETWORK_ACTIVATION_FUNCTION,
-    _CASCADE_CORRELATION_NETWORK_LEARNING_RATE,
-    _CASCADE_CORRELATION_NETWORK_MAX_HIDDEN_UNITS,
-    _CASCADE_CORRELATION_NETWORK_NODE_CORRELATION_THRESHOLD,
-    _CASCADE_CORRELATION_NETWORK_PATIENCE,
-    _CASCADE_CORRELATION_NETWORK_CANDIDATE_EPOCHS,
-    _CASCADE_CORRELATION_NETWORK_OUTPUT_EPOCHS,
-    _CASCADE_CORRELATION_NETWORK_LOGLEVEL_DEFAULT,
-)
 
 
 # # Define constants for the Cascade Correlation Network
@@ -117,7 +121,7 @@ class CascadeCorrelationNetwork:
         train_candidates(self, x: torch.Tensor, residual_error: torch.Tensor) -> List[CandidateUnit]:  Trains the candidate units based on the residual error.
         add_unit(self, candidate: CandidateUnit, x: torch.Tensor) -> None:  Adds a candidate unit to the network.
         calculate_residual_error(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:  Calculates the residual error between the predicted and actual outputs.
-        fit(self, x_train: torch.Tensor, y_train: torch.Tensor, x_val: Optional[torch.Tensor] = None, y_val: Optional[torch.Tensor] = None, max_epochs: int = 1000, early_stopping: bool = True) -> Dict[str, List]:  
+        fit(self, x_train: torch.Tensor, y_train: torch.Tensor, x_val: Optional[torch.Tensor] = None, y_val: Optional[torch.Tensor] = None, max_epochs: int = 1000, early_stopping: bool = True) -> Dict[str, List]:
             Trains the Cascade Correlation Network.  Returns a dictionary containing the training history.
     """
 
@@ -175,13 +179,13 @@ class CascadeCorrelationNetwork:
         self.patience = patience
         self.candidate_epochs = candidate_epochs
         self.output_epochs = output_epochs
-        
+
         # Initialize network Model Parameters
 
         self.hidden_units = []
         self.output_weights = torch.randn(input_size, output_size, requires_grad=True) * 0.1
         self.output_bias = torch.randn(output_size, requires_grad=True) * 0.1
-        
+
         self.history = {
             'train_loss': [],
             'value_loss': [],
@@ -197,10 +201,10 @@ class CascadeCorrelationNetwork:
     def _get_activation_with_derivative(self, activation_fn):
         """
         Wrap activation function to also provide its derivative.
-        
+
         Args:
             activation_fn: Base activation function
-            
+
         Returns:
             Function that can compute both activation and its derivative
         """
@@ -230,10 +234,10 @@ class CascadeCorrelationNetwork:
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
         Forward pass through the network.
-        
+
         Args:
             x: Input tensor
-            
+
         Returns:
             Network output
         """
@@ -264,12 +268,12 @@ class CascadeCorrelationNetwork:
     def train_output_layer(self, x: torch.Tensor, y: torch.Tensor, epochs: int) -> float:
         """
         Train only the output layer of the network.
-        
+
         Args:
             x: Input tensor
             y: Target tensor
             epochs: Number of training epochs
-            
+
         Returns:
             Final loss value
         """
@@ -293,7 +297,7 @@ class CascadeCorrelationNetwork:
         if self.hidden_units:
             input_size += len(self.hidden_units)
         self.logger.debug(f"Adjusted input size for output layer with hidden units: {input_size}")
-        
+
         # Create a temporary linear layer with the same weights as our current output layer
         output_layer = nn.Linear(input_size, self.output_size)
         with torch.no_grad():
@@ -301,7 +305,7 @@ class CascadeCorrelationNetwork:
             self.logger.debug(f"Output weights shape: {self.output_weights.shape}, Transposed weights shape: {output_layer.weight.shape}")
             output_layer.bias.copy_(self.output_bias)
             self.logger.debug(f"Output bias shape: {self.output_bias.shape}, Bias: {output_layer.bias}")
-        
+
         # Use this layer for optimization
         optimizer = optim.Adam(output_layer.parameters(), lr=self.learning_rate)
         self.logger.debug(f"Learning Rate: {self.learning_rate}, Optimizer:\n{optimizer}")
@@ -311,14 +315,14 @@ class CascadeCorrelationNetwork:
         # # Use these parameters for optimization
         # # optimizer = optim.Adam([self.output_weights, self.output_bias], lr=self.learning_rate)
         # optimizer = optim.Adam([output_weights, output_bias], lr=self.learning_rate)
-        
+
         for epoch in range(epochs):
             # Forward pass - use the parameters directly instead of the original tensors
 
             # output_input = torch.cat([x] + [unit['activation_fn'](
             #     torch.sum(torch.cat([x] + hidden_outputs, dim=1) if hidden_outputs else x * unit['weights'], dim=1) + unit['bias']
             # ).unsqueeze(1) for unit, hidden_outputs in self._get_hidden_outputs_for_units(x)], dim=1) if self.hidden_units else x
-        
+
 
             # # Forward pass
             # # output = self.forward(x)
@@ -331,7 +335,7 @@ class CascadeCorrelationNetwork:
                 unit_input = torch.cat([x] + hidden_outputs, dim=1) if hidden_outputs else x
                 unit_output = unit['activation_fn'](torch.sum(unit_input * unit['weights'], dim=1) + unit['bias']).unsqueeze(1)
                 hidden_outputs.append(unit_output)
-            
+
             output_input = torch.cat([x] + hidden_outputs, dim=1) if hidden_outputs else x
             output = output_layer(output_input)
             loss = criterion(output, y)
@@ -340,10 +344,10 @@ class CascadeCorrelationNetwork:
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
-            
+
             if epoch % 50 == 0:
                 self.logger.debug(f"Output Layer Training - Epoch {epoch}, Loss: {loss.item():.6f}")
-        
+
         # # Update the model parameters with the trained values
         # self.output_weights = output_weights.detach().clone()
         # self.output_bias = output_bias.detach().clone()
@@ -425,8 +429,8 @@ class CascadeCorrelationNetwork:
             # Train the candidate unit
             correlation = candidate.train(
                 candidate_input,
-                residual_error, 
-                learning_rate=self.learning_rate, 
+                residual_error,
+                learning_rate=self.learning_rate,
                 epochs=self.candidate_epochs,
             )
             candidates.append(candidate)

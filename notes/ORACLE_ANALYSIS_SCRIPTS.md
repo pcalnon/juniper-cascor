@@ -22,7 +22,7 @@ The user is seeing this error when running ./try:
 
 ```bash
 /home/pcalnon/Development/python/Juniper/JuniperCascor/juniper_cascor/util/juniper_cascor.bash: line 67: __get_project_dir.bash: command not found
-Base Dir: 
+Base Dir:
 Python Script: /src/./main.py
 /opt/miniforge3/envs/JuniperCascor/bin/python3: can't open file '/src/./main.py': [Errno 2] No such file or directory
 ```

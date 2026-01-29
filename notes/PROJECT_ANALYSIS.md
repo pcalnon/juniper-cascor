@@ -170,14 +170,14 @@ The implementation follows the original Fahlman & Lebiere algorithm:
 def forward(self, x: torch.Tensor) -> torch.Tensor:
     features = x
     hidden_outputs = []
-    
+
     for unit in self.hidden_units:
         unit_input = torch.cat([x] + hidden_outputs, dim=1)
         unit_output = unit["activation_fn"](
             torch.sum(unit_input * unit["weights"], dim=1) + unit["bias"]
         ).unsqueeze(1)
         hidden_outputs.append(unit_output)
-    
+
     output_input = torch.cat([x] + hidden_outputs, dim=1)
     output = torch.matmul(output_input, self.output_weights) + self.output_bias
     return output
@@ -190,15 +190,15 @@ def _calculate_correlation(self, output, residual_error):
     # Pearson correlation coefficient
     output_mean = torch.mean(output_flat)
     error_mean = torch.mean(residual_error_flat)
-    
+
     norm_output = output_flat - output_mean
     norm_error = residual_error_flat - error_mean
-    
+
     numerator = torch.sum(norm_output * norm_error)
     denominator = torch.sqrt(
         torch.sum(norm_output**2) * torch.sum(norm_error**2) + 1e-8
     )
-    
+
     correlation = abs(numerator / denominator)
     return correlation
 ```
@@ -348,17 +348,17 @@ from constants.constants import _CONSTANT_NAME
 ```python
 class TestFeatureName:
     """Test description."""
-    
+
     @pytest.mark.unit
     @pytest.mark.feature_marker
     def test_specific_behavior(self, fixture):
         """Test docstring."""
         # Arrange
         data = setup_test_data()
-        
+
         # Act
         result = operation(data)
-        
+
         # Assert
         assert result == expected
 ```
@@ -524,7 +524,7 @@ class CascadeCorrelationConfig:
     output_epochs: int
     epochs_max: int
     random_seed: int
-    
+
     @classmethod
     def create_simple_config(cls, **kwargs) -> CascadeCorrelationConfig
 ```

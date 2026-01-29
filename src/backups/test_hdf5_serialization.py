@@ -19,14 +19,10 @@ sys.path.append(
     os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 )
 
-from cascade_correlation_config.cascade_correlation_config import (
-    CascadeCorrelationConfig,
-)
+from cascade_correlation_config.cascade_correlation_config import CascadeCorrelationConfig
 
 from cascade_correlation.cascade_correlation import CascadeCorrelationNetwork
-from cascade_correlation.hdf5_serializer.cascade_hdf5_serializer import (
-    CascadeHDF5Serializer,
-)
+from cascade_correlation.hdf5_serializer.cascade_hdf5_serializer import CascadeHDF5Serializer
 from cascade_correlation.hdf5_serializer.hdf5_utils import HDF5Utils
 
 

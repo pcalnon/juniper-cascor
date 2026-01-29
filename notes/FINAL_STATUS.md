@@ -261,7 +261,7 @@ network = CascadeCorrelationNetwork(config=config)
 
 serializer = CascadeHDF5Serializer()
 serializer.save_network(
-    network, 
+    network,
     "snapshots/my_network.h5",
     include_training_state=True
 )

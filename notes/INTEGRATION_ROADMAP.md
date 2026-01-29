@@ -358,11 +358,11 @@ Create a picklable class at module level instead of local function:
 # At module level (outside class)
 class ActivationWithDerivative:
     """Picklable wrapper for activation functions with derivatives."""
-    
+
     def __init__(self, activation_fn):
         self.activation_fn = activation_fn
         self.activation_name = activation_fn.__name__ if hasattr(activation_fn, '__name__') else str(activation_fn)
-    
+
     def __call__(self, x, derivative: bool = False):
         if derivative:
             if self.activation_name == 'tanh' or isinstance(self.activation_fn, torch.nn.Tanh):
@@ -376,16 +376,16 @@ class ActivationWithDerivative:
                 eps = 1e-6
                 return (self.activation_fn(x + eps) - self.activation_fn(x - eps)) / (2 * eps)
         return self.activation_fn(x)
-    
+
     def __getstate__(self):
         # Store activation by name for pickling
         return {'activation_name': self.activation_name}
-    
+
     def __setstate__(self, state):
         # Reconstruct activation from name
         name = state['activation_name']
         self.activation_name = name
-        self.activation_fn 
+        self.activation_fn
 
         ACTIVATION_MAP = {
             'elu': torch.nn.elu,
@@ -427,7 +427,7 @@ Store only the activation function name/type and reconstruct on demand:
 ```python
 def __init__(self, ..., activation_fn=None):
     self._activation_type = self._get_activation_type(activation_fn)
-    
+
 def _get_activation_fn(self):
     """Reconstruct activation function from type."""
     return {
@@ -684,8 +684,8 @@ pip install pytest-mock pytest-asyncio
 **Deprecation Warning**:
 
 ```bash
-src/tests/unit/tests_main_coverage_extended.py::TestLifespanShutdown::test_websocket_manager_shutdown:434: 
-DeprecationWarning: 'asyncio.iscoroutinefunction' is deprecated and slated for removal in Python 3.16; 
+src/tests/unit/tests_main_coverage_extended.py::TestLifespanShutdown::test_websocket_manager_shutdown:434:
+DeprecationWarning: 'asyncio.iscoroutinefunction' is deprecated and slated for removal in Python 3.16;
 use 'inspect.iscoroutinefunction' instead
 ```
 
@@ -917,7 +917,7 @@ Added `normalize_metrics()` and `denormalize_metrics()` methods to `DataAdapter`
 
   ```python
   from backend.data_adapter import DataAdapter
-  
+
   adapter = DataAdapter()
   cascor_metrics = {'epoch': 5, 'value_loss': 0.3, 'value_accuracy': 0.9}
   canopy_metrics = adapter.normalize_metrics(cascor_metrics)

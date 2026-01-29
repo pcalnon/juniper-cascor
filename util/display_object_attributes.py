@@ -39,4 +39,3 @@ print(f"Final Content: {content}") if debug else None
 column_table = columnar.columnar(data=content, headers=headers, no_borders=no_borders)
 # Display the columnar table
 print(f"{column_table}")
-

@@ -7,10 +7,11 @@ P2-NEW-001: Coverage improvement.
 Tests cover additional methods not covered by other test files.
 """
 
+from unittest.mock import MagicMock, patch
+
+import numpy as np
 import pytest
 import torch
-import numpy as np
-from unittest.mock import MagicMock, patch
 from helpers.utilities import set_deterministic_behavior
 
 
@@ -22,13 +23,13 @@ class TestValidateTraining:
         """Test validate_training with validation data."""
         set_deterministic_behavior()
         x, y = simple_2d_data
-        
+
         split = len(x) // 2
         x_train, y_train = x[:split], y[:split]
         x_val, y_val = x[split:], y[split:]
-        
+
         from cascade_correlation.cascade_correlation import ValidateTrainingInputs
-        
+
         inputs = ValidateTrainingInputs(
             epoch=0,
             max_epochs=10,
@@ -42,7 +43,7 @@ class TestValidateTraining:
             x_val=x_val,
             y_val=y_val,
         )
-        
+
         result = simple_network.validate_training(inputs)
         assert result is not None
 
@@ -57,10 +58,10 @@ class TestGetTrainingResults:
         """Test _get_training_results returns valid results."""
         set_deterministic_behavior()
         x, y = simple_2d_data
-        
+
         residual = y - simple_network.forward(x)
         results = simple_network._get_training_results(x, y, residual)
-        
+
         assert results is not None or True
 
 
@@ -71,7 +72,7 @@ class TestSelectBestCandidates:
     def test_select_best_candidates_returns_list(self, simple_network):
         """Test _select_best_candidates returns a list."""
         from candidate_unit.candidate_unit import CandidateTrainingResult
-        
+
         candidates = []
         for i in range(5):
             result = CandidateTrainingResult(
@@ -82,8 +83,8 @@ class TestSelectBestCandidates:
                 error_message=None,
             )
             candidates.append(result)
-        
-        if hasattr(simple_network, '_select_best_candidates'):
+
+        if hasattr(simple_network, "_select_best_candidates"):
             selected = simple_network._select_best_candidates(candidates, num_candidates=2)
             assert isinstance(selected, list)
 
@@ -96,18 +97,13 @@ class TestAddBestCandidate:
         """Test adding hidden unit to network."""
         set_deterministic_behavior()
         x, y = simple_2d_data
-        
+
         initial_hidden = len(simple_network.hidden_units)
-        
+
         # Directly add a hidden unit (the approach used by the network)
-        hidden_unit = {
-            'weights': torch.randn(simple_network.input_size),
-            'bias': torch.randn(1),
-            'activation_fn': torch.tanh,
-            'correlation': 0.5
-        }
+        hidden_unit = {"weights": torch.randn(simple_network.input_size), "bias": torch.randn(1), "activation_fn": torch.tanh, "correlation": 0.5}
         simple_network.hidden_units.append(hidden_unit)
-        
+
         assert len(simple_network.hidden_units) > initial_hidden
 
 
@@ -117,14 +113,14 @@ class TestNetworkSerialization:
     @pytest.mark.unit
     def test_create_snapshot(self, simple_network):
         """Test create_snapshot method."""
-        if hasattr(simple_network, 'create_snapshot'):
+        if hasattr(simple_network, "create_snapshot"):
             snapshot = simple_network.create_snapshot()
             assert snapshot is not None
 
     @pytest.mark.unit
     def test_network_has_uuid(self, simple_network):
         """Test network has UUID."""
-        if hasattr(simple_network, 'uuid'):
+        if hasattr(simple_network, "uuid"):
             assert simple_network.uuid is not None
 
 
@@ -154,7 +150,7 @@ class TestNetworkProperties:
     @pytest.mark.unit
     def test_output_bias_property(self, simple_network):
         """Test output_bias property."""
-        if hasattr(simple_network, 'output_bias'):
+        if hasattr(simple_network, "output_bias"):
             assert isinstance(simple_network.output_bias, torch.Tensor)
 
 
@@ -165,23 +161,18 @@ class TestNetworkMethods:
     def test_update_output_weights_for_new_hidden(self, simple_network):
         """Test _update_output_weights_for_new_hidden method."""
         initial_shape = simple_network.output_weights.shape
-        
-        hidden_unit = {
-            'weights': torch.randn(simple_network.input_size),
-            'bias': torch.randn(1),
-            'activation_fn': torch.tanh,
-            'correlation': 0.5
-        }
+
+        hidden_unit = {"weights": torch.randn(simple_network.input_size), "bias": torch.randn(1), "activation_fn": torch.tanh, "correlation": 0.5}
         simple_network.hidden_units.append(hidden_unit)
-        
-        if hasattr(simple_network, '_update_output_weights_for_new_hidden'):
+
+        if hasattr(simple_network, "_update_output_weights_for_new_hidden"):
             simple_network._update_output_weights_for_new_hidden()
             assert simple_network.output_weights.shape[0] > initial_shape[0]
 
     @pytest.mark.unit
     def test_prepare_candidate_input(self, simple_network, valid_tensor_2d):
         """Test _prepare_candidate_input method."""
-        if hasattr(simple_network, '_prepare_candidate_input'):
+        if hasattr(simple_network, "_prepare_candidate_input"):
             result = simple_network._prepare_candidate_input(valid_tensor_2d)
             assert result is not None
 
@@ -192,9 +183,10 @@ class TestTrainingResults:
     @pytest.mark.unit
     def test_training_results_creation(self):
         """Test TrainingResults can be created."""
-        from cascade_correlation.cascade_correlation import TrainingResults
         import datetime
-        
+
+        from cascade_correlation.cascade_correlation import TrainingResults
+
         results = TrainingResults(
             epochs_completed=10,
             candidate_ids=[0, 1, 2],
@@ -213,7 +205,7 @@ class TestTrainingResults:
             start_time=datetime.datetime.now(),
             end_time=datetime.datetime.now(),
         )
-        
+
         assert results.success_count == 3
         assert results.max_correlation == 0.8
 
@@ -224,9 +216,10 @@ class TestValidateTrainingInputs:
     @pytest.mark.unit
     def test_validate_training_inputs_creation(self):
         """Test ValidateTrainingInputs can be created."""
-        from cascade_correlation.cascade_correlation import ValidateTrainingInputs
         import numpy as np
-        
+
+        from cascade_correlation.cascade_correlation import ValidateTrainingInputs
+
         inputs = ValidateTrainingInputs(
             epoch=0,
             max_epochs=100,
@@ -240,7 +233,7 @@ class TestValidateTrainingInputs:
             x_val=np.array([[1, 2]]),
             y_val=np.array([[1, 0]]),
         )
-        
+
         assert inputs.epoch == 0
         assert inputs.max_epochs == 100
 
@@ -252,7 +245,7 @@ class TestValidateTrainingResults:
     def test_validate_training_results_creation(self):
         """Test ValidateTrainingResults can be created."""
         from cascade_correlation.cascade_correlation import ValidateTrainingResults
-        
+
         results = ValidateTrainingResults(
             early_stop=False,
             patience_counter=0,
@@ -261,7 +254,7 @@ class TestValidateTrainingResults:
             value_loss=0.3,
             value_accuracy=0.8,
         )
-        
+
         assert results.early_stop is False
         assert results.value_accuracy == 0.8
 
@@ -274,10 +267,10 @@ class TestNetworkLoss:
         """Test loss calculation."""
         set_deterministic_behavior()
         x, y = simple_2d_data
-        
+
         output = simple_network.forward(x)
-        
-        if hasattr(simple_network, '_calculate_loss'):
+
+        if hasattr(simple_network, "_calculate_loss"):
             loss = simple_network._calculate_loss(output, y)
             assert loss >= 0
 
@@ -286,10 +279,10 @@ class TestNetworkLoss:
         """Test MSE loss calculation."""
         set_deterministic_behavior()
         x, y = simple_2d_data
-        
+
         output = simple_network.forward(x)
         mse = torch.nn.functional.mse_loss(output, y)
-        
+
         assert mse >= 0
 
 
@@ -301,21 +294,18 @@ class TestNetworkGradients:
         """Test output weights have gradients after training."""
         set_deterministic_behavior()
         x, y = simple_2d_data
-        
+
         simple_network.train_output_layer(x, y, epochs=1)
-        
+
         assert simple_network.output_weights.grad is not None or True
 
     @pytest.mark.unit
     def test_zero_grad(self, simple_network):
         """Test gradient zeroing."""
-        if hasattr(simple_network, 'optimizer'):
+        if hasattr(simple_network, "optimizer"):
             simple_network.optimizer.zero_grad()
             if simple_network.output_weights.grad is not None:
-                assert torch.allclose(
-                    simple_network.output_weights.grad,
-                    torch.zeros_like(simple_network.output_weights.grad)
-                )
+                assert torch.allclose(simple_network.output_weights.grad, torch.zeros_like(simple_network.output_weights.grad))
 
 
 class TestMultiprocessingHelpers:
@@ -326,7 +316,7 @@ class TestMultiprocessingHelpers:
         """Test process count with small candidate pool."""
         simple_network.candidate_pool_size = 2
         count = simple_network._calculate_optimal_process_count()
-        
+
         assert count >= 1
 
     @pytest.mark.unit
@@ -334,6 +324,6 @@ class TestMultiprocessingHelpers:
         """Test process count with large candidate pool."""
         simple_network.candidate_pool_size = 100
         count = simple_network._calculate_optimal_process_count()
-        
+
         assert count >= 1
         assert count <= simple_network.candidate_pool_size

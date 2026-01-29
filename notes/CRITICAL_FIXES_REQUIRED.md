@@ -63,13 +63,13 @@ class CandidateTrainingResult:
 @staticmethod
 def train_candidate_worker(task_data_input: tuple=None, parallel: bool=True) -> CandidateTrainingResult:
     # ... existing setup code ...
-    
+
     try:
         # ... existing training code ...
-        
+
         # OLD:
         # return (candidate_index, candidate_uuid, correlation, candidate)
-        
+
         # NEW:
         return CandidateTrainingResult(
             candidate_id=candidate_index,
@@ -299,7 +299,7 @@ if self.early_stopping:
         patience_counter = 0
     else:
         patience_counter += 1
-        
+
     if patience_counter >= self.patience:
         self.logger.info(f"Early stopping at epoch {epoch + 1}")
         break
@@ -325,10 +325,10 @@ patience_counter = 0
 if hasattr(network, 'output_optimizer') and network.output_optimizer:
     opt_group = output_group.create_group('optimizer')
     opt_state = network.output_optimizer.state_dict()
-    write_str_dataset(opt_group, 'optimizer_json', 
+    write_str_dataset(opt_group, 'optimizer_json',
                      json.dumps(opt_state, default=str),
                      compression=compression, compression_opts=compression_opts)
-    write_str_attr(opt_group, 'optimizer_type', 
+    write_str_attr(opt_group, 'optimizer_type',
                   type(network.output_optimizer).__name__)
 ```
 

@@ -14,24 +14,22 @@ Tests cover:
 """
 
 import os
+import pathlib as pl
 import sys
 import tempfile
-import pathlib as pl
+from dataclasses import dataclass
+from unittest.mock import MagicMock, PropertyMock, patch
+
+import numpy as np
 import pytest
 import torch
-import numpy as np
-from unittest.mock import MagicMock, patch, PropertyMock
-from dataclasses import dataclass
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
+from candidate_unit.candidate_unit import CandidateTrainingResult, CandidateUnit
 from cascade_correlation.cascade_correlation import CascadeCorrelationNetwork
-from cascade_correlation.cascade_correlation_config.cascade_correlation_config import (
-    CascadeCorrelationConfig,
-    OptimizerConfig,
-)
-from candidate_unit.candidate_unit import CandidateUnit, CandidateTrainingResult
+from cascade_correlation.cascade_correlation_config.cascade_correlation_config import CascadeCorrelationConfig, OptimizerConfig
 
 
 # ===================================================================
@@ -51,7 +49,7 @@ class TestOptimizerCreation:
         )
         params = [torch.nn.Parameter(torch.randn(2, 2))]
         optimizer = simple_network._create_optimizer(params, config)
-        
+
         assert optimizer is not None
         assert optimizer.__class__.__name__ == "SGD"
 
@@ -67,7 +65,7 @@ class TestOptimizerCreation:
         )
         params = [torch.nn.Parameter(torch.randn(2, 2))]
         optimizer = simple_network._create_optimizer(params, config)
-        
+
         assert optimizer is not None
         assert optimizer.__class__.__name__ == "RMSprop"
 
@@ -84,7 +82,7 @@ class TestOptimizerCreation:
         )
         params = [torch.nn.Parameter(torch.randn(2, 2))]
         optimizer = simple_network._create_optimizer(params, config)
-        
+
         assert optimizer is not None
         assert optimizer.__class__.__name__ == "AdamW"
 
@@ -97,7 +95,7 @@ class TestOptimizerCreation:
         )
         params = [torch.nn.Parameter(torch.randn(2, 2))]
         optimizer = simple_network._create_optimizer(params, config)
-        
+
         assert optimizer is not None
         assert optimizer.__class__.__name__ == "Adam"
 
@@ -112,12 +110,12 @@ class TestAddUnitsAsLayer:
     def test_add_units_as_layer_valid_candidates(self, simple_network, simple_2d_data):
         """Test adding a layer with valid candidates."""
         x, y = simple_2d_data
-        
+
         # Create valid candidate training results
         candidate = CandidateUnit(input_size=2)
         candidate.weights = torch.randn(2)
         candidate.bias = torch.tensor(0.0)
-        
+
         result = CandidateTrainingResult(
             candidate_id=0,
             candidate_uuid="test-uuid",
@@ -125,17 +123,17 @@ class TestAddUnitsAsLayer:
             candidate=candidate,
             success=True,
         )
-        
+
         initial_hidden_count = len(simple_network.hidden_units)
         simple_network.add_units_as_layer([result], x)
-        
+
         assert len(simple_network.hidden_units) == initial_hidden_count + 1
 
     @pytest.mark.unit
     def test_add_units_as_layer_invalid_candidate(self, simple_network, simple_2d_data):
         """Test adding a layer with an invalid candidate (no weights)."""
         x, y = simple_2d_data
-        
+
         # Create invalid candidate training result (no weights attribute)
         result = CandidateTrainingResult(
             candidate_id=0,
@@ -144,10 +142,10 @@ class TestAddUnitsAsLayer:
             candidate=None,  # Invalid - no candidate
             success=False,
         )
-        
+
         initial_hidden_count = len(simple_network.hidden_units)
         simple_network.add_units_as_layer([result], x)
-        
+
         # Should not add invalid candidate
         assert len(simple_network.hidden_units) == initial_hidden_count
 
@@ -155,12 +153,12 @@ class TestAddUnitsAsLayer:
     def test_add_units_as_layer_mixed_valid_invalid(self, simple_network, simple_2d_data):
         """Test adding a layer with mix of valid and invalid candidates."""
         x, y = simple_2d_data
-        
+
         # Valid candidate
         candidate = CandidateUnit(input_size=2)
         candidate.weights = torch.randn(2)
         candidate.bias = torch.tensor(0.0)
-        
+
         valid_result = CandidateTrainingResult(
             candidate_id=0,
             candidate_uuid="valid-uuid",
@@ -168,7 +166,7 @@ class TestAddUnitsAsLayer:
             candidate=candidate,
             success=True,
         )
-        
+
         invalid_result = CandidateTrainingResult(
             candidate_id=1,
             candidate_uuid="invalid-uuid",
@@ -176,10 +174,10 @@ class TestAddUnitsAsLayer:
             candidate=None,
             success=False,
         )
-        
+
         initial_hidden_count = len(simple_network.hidden_units)
         simple_network.add_units_as_layer([valid_result, invalid_result], x)
-        
+
         # Should only add the valid candidate
         assert len(simple_network.hidden_units) == initial_hidden_count + 1
 
@@ -199,9 +197,7 @@ class TestRestoreSnapshot:
     @pytest.mark.unit
     def test_restore_snapshot_nonexistent_path(self, simple_network):
         """Test restore_snapshot with non-existent path."""
-        result = CascadeCorrelationNetwork.restore_snapshot(
-            snapshot_path="/nonexistent/path/to/snapshot.h5"
-        )
+        result = CascadeCorrelationNetwork.restore_snapshot(snapshot_path="/nonexistent/path/to/snapshot.h5")
         assert result is False
 
     @pytest.mark.unit
@@ -211,7 +207,7 @@ class TestRestoreSnapshot:
             # Create an invalid/empty file
             f.write(b"invalid hdf5 content")
             temp_path = f.name
-        
+
         try:
             result = CascadeCorrelationNetwork.restore_snapshot(snapshot_path=temp_path)
             assert result is False
@@ -231,15 +227,12 @@ class TestSaveObject:
         mock_obj = MagicMock()
         mock_obj.get_uuid.return_value = "test-uuid-12345"
         mock_obj.__name__ = "TestObject"
-        
+
         with tempfile.TemporaryDirectory() as temp_dir:
             # The current implementation has a bug using pd.Timestamp incorrectly
             # This exercises the exception handling path
-            result = simple_network.save_object(
-                objectify=mock_obj,
-                snapshot_dir=temp_dir
-            )
-            
+            result = simple_network.save_object(objectify=mock_obj, snapshot_dir=temp_dir)
+
             # Result is None due to the exception in the method
             assert result is None
 
@@ -249,14 +242,11 @@ class TestSaveObject:
         mock_obj = MagicMock()
         mock_obj.get_uuid.return_value = "test-uuid"
         mock_obj.__name__ = "TestObject"
-        
-        with patch.object(simple_network, '_save_to_hdf5', return_value=False):
+
+        with patch.object(simple_network, "_save_to_hdf5", return_value=False):
             with tempfile.TemporaryDirectory() as temp_dir:
-                result = simple_network.save_object(
-                    objectify=mock_obj,
-                    snapshot_dir=temp_dir
-                )
-                
+                result = simple_network.save_object(objectify=mock_obj, snapshot_dir=temp_dir)
+
                 assert result is None
 
     @pytest.mark.unit
@@ -264,13 +254,10 @@ class TestSaveObject:
         """Test save_object when an exception occurs."""
         mock_obj = MagicMock()
         mock_obj.get_uuid.side_effect = Exception("UUID error")
-        
+
         with tempfile.TemporaryDirectory() as temp_dir:
-            result = simple_network.save_object(
-                objectify=mock_obj,
-                snapshot_dir=temp_dir
-            )
-            
+            result = simple_network.save_object(objectify=mock_obj, snapshot_dir=temp_dir)
+
             assert result is None
 
 
@@ -284,10 +271,10 @@ class TestPlotting:
     def test_plot_decision_boundary_sync(self, simple_network, simple_2d_data):
         """Test synchronous plot_decision_boundary."""
         x, y = simple_2d_data
-        
-        with patch.object(simple_network.plotter, 'plot_decision_boundary') as mock_plot:
+
+        with patch.object(simple_network.plotter, "plot_decision_boundary") as mock_plot:
             result = simple_network.plot_decision_boundary(x, y, "Test", async_plot=False)
-            
+
             assert result is None
             mock_plot.assert_called_once()
 
@@ -295,13 +282,13 @@ class TestPlotting:
     def test_plot_decision_boundary_async(self, simple_network, simple_2d_data):
         """Test asynchronous plot_decision_boundary."""
         x, y = simple_2d_data
-        
-        with patch('multiprocessing.get_context') as mock_ctx:
+
+        with patch("multiprocessing.get_context") as mock_ctx:
             mock_process = MagicMock()
             mock_ctx.return_value.Process.return_value = mock_process
-            
+
             result = simple_network.plot_decision_boundary(x, y, "Test", async_plot=True)
-            
+
             assert result is mock_process
             mock_process.start.assert_called_once()
 
@@ -309,10 +296,10 @@ class TestPlotting:
     def test_plot_training_history_sync(self, simple_network):
         """Test synchronous plot_training_history."""
         simple_network.history = {"loss": [0.5, 0.4, 0.3]}
-        
-        with patch.object(simple_network.plotter, 'plot_training_history') as mock_plot:
+
+        with patch.object(simple_network.plotter, "plot_training_history") as mock_plot:
             result = simple_network.plot_training_history(async_plot=False)
-            
+
             assert result is None
             mock_plot.assert_called_once()
 
@@ -320,13 +307,13 @@ class TestPlotting:
     def test_plot_training_history_async(self, simple_network):
         """Test asynchronous plot_training_history."""
         simple_network.history = {"loss": [0.5, 0.4, 0.3]}
-        
-        with patch('multiprocessing.get_context') as mock_ctx:
+
+        with patch("multiprocessing.get_context") as mock_ctx:
             mock_process = MagicMock()
             mock_ctx.return_value.Process.return_value = mock_process
-            
+
             result = simple_network.plot_training_history(async_plot=True)
-            
+
             assert result is mock_process
             mock_process.start.assert_called_once()
 
@@ -396,63 +383,51 @@ class TestSaveObjectHDF5:
     def test_save_object_hdf5_with_backup(self, simple_network):
         """Test _save_object_hdf5 with backup creation."""
         mock_obj = MagicMock()
-        
+
         with tempfile.TemporaryDirectory() as temp_dir:
             filepath = pl.Path(temp_dir) / "test_object.h5"
-            
+
             # Create an initial file to trigger backup
             filepath.write_text("existing content")
-            
-            with patch('snapshots.snapshot_serializer.CascadeHDF5Serializer') as MockSerializer:
+
+            with patch("snapshots.snapshot_serializer.CascadeHDF5Serializer") as MockSerializer:
                 mock_instance = MockSerializer.return_value
                 mock_instance.save_object.return_value = True
-                
-                with patch.object(simple_network, 'verify_hdf5_file', return_value={"valid": True}):
-                    with patch('snapshots.snapshot_utils.HDF5Utils.create_backup', return_value="/backup/path"):
-                        result = simple_network._save_object_hdf5(
-                            objectify=mock_obj,
-                            filepath=filepath,
-                            create_backup=True
-                        )
-                        
+
+                with patch.object(simple_network, "verify_hdf5_file", return_value={"valid": True}):
+                    with patch("snapshots.snapshot_utils.HDF5Utils.create_backup", return_value="/backup/path"):
+                        result = simple_network._save_object_hdf5(objectify=mock_obj, filepath=filepath, create_backup=True)
+
                         assert result is True
 
     @pytest.mark.unit
     def test_save_object_hdf5_verification_failure(self, simple_network):
         """Test _save_object_hdf5 when verification fails."""
         mock_obj = MagicMock()
-        
+
         with tempfile.TemporaryDirectory() as temp_dir:
             filepath = pl.Path(temp_dir) / "test_object.h5"
-            
-            with patch('snapshots.snapshot_serializer.CascadeHDF5Serializer') as MockSerializer:
+
+            with patch("snapshots.snapshot_serializer.CascadeHDF5Serializer") as MockSerializer:
                 mock_instance = MockSerializer.return_value
                 mock_instance.save_object.return_value = True
-                
-                with patch.object(simple_network, 'verify_hdf5_file', return_value={"valid": False, "error": "Checksum mismatch"}):
-                    result = simple_network._save_object_hdf5(
-                        objectify=mock_obj,
-                        filepath=filepath,
-                        create_backup=False
-                    )
-                    
+
+                with patch.object(simple_network, "verify_hdf5_file", return_value={"valid": False, "error": "Checksum mismatch"}):
+                    result = simple_network._save_object_hdf5(objectify=mock_obj, filepath=filepath, create_backup=False)
+
                     assert result is False
 
     @pytest.mark.unit
     def test_save_object_hdf5_exception(self, simple_network):
         """Test _save_object_hdf5 when an exception occurs."""
         mock_obj = MagicMock()
-        
+
         with tempfile.TemporaryDirectory() as temp_dir:
             filepath = pl.Path(temp_dir) / "test_object.h5"
-            
-            with patch('snapshots.snapshot_serializer.CascadeHDF5Serializer', side_effect=Exception("Serializer error")):
-                result = simple_network._save_object_hdf5(
-                    objectify=mock_obj,
-                    filepath=filepath,
-                    create_backup=False
-                )
-                
+
+            with patch("snapshots.snapshot_serializer.CascadeHDF5Serializer", side_effect=Exception("Serializer error")):
+                result = simple_network._save_object_hdf5(objectify=mock_obj, filepath=filepath, create_backup=False)
+
                 assert result is False
 
 
@@ -466,33 +441,28 @@ class TestWorkerLoopMocked:
     def test_worker_loop_sentinel_stops_worker(self):
         """Test that worker loop stops when receiving sentinel (None)."""
         from queue import Queue
-        
+
         task_queue = Queue()
         result_queue = Queue()
-        
+
         # Put sentinel to stop worker immediately
         task_queue.put(None)
-        
+
         # Run worker loop
-        CascadeCorrelationNetwork._worker_loop(
-            task_queue=task_queue,
-            result_queue=result_queue,
-            parallel=False,
-            task_queue_timeout=0.1
-        )
-        
+        CascadeCorrelationNetwork._worker_loop(task_queue=task_queue, result_queue=result_queue, parallel=False, task_queue_timeout=0.1)
+
         # Worker should have stopped without putting anything in result queue
         assert result_queue.empty()
 
     @pytest.mark.unit
     def test_worker_loop_empty_queue_timeout(self):
         """Test worker loop handles empty queue timeout."""
-        from queue import Queue
         import threading
-        
+        from queue import Queue
+
         task_queue = Queue()
         result_queue = Queue()
-        
+
         # Start worker in thread
         worker_thread = threading.Thread(
             target=CascadeCorrelationNetwork._worker_loop,
@@ -502,15 +472,16 @@ class TestWorkerLoopMocked:
                 "parallel": False,
                 "task_queue_timeout": 0.05,
             },
-            daemon=True
+            daemon=True,
         )
         worker_thread.start()
-        
+
         # Let worker wait a bit (stand-by mode), then send sentinel
         import time
+
         time.sleep(0.1)
         task_queue.put(None)
-        
+
         worker_thread.join(timeout=1.0)
         assert not worker_thread.is_alive()
 
@@ -592,7 +563,7 @@ class TestExtendedSetters:
 
 
 # ===================================================================
-# Extended Getter Tests  
+# Extended Getter Tests
 # ===================================================================
 class TestExtendedGetters:
     """Tests for getter methods."""
@@ -751,9 +722,9 @@ class TestExtendedGetters:
     def test_get_uuid_generates_if_missing(self, simple_network):
         """Test get_uuid generates UUID if not set."""
         # Delete uuid if it exists
-        if hasattr(simple_network, 'uuid'):
-            delattr(simple_network, 'uuid')
-        
+        if hasattr(simple_network, "uuid"):
+            delattr(simple_network, "uuid")
+
         result = simple_network.get_uuid()
         assert result is not None
         assert isinstance(result, str)
@@ -769,12 +740,7 @@ class TestErrorHandlingPaths:
     def test_add_best_candidate_none(self, simple_network, simple_2d_data):
         """Test _add_best_candidate with None candidate."""
         x, y = simple_2d_data
-        result = simple_network._add_best_candidate(
-            best_candidate=None,
-            x_train=x,
-            y_train=y,
-            epoch=0
-        )
+        result = simple_network._add_best_candidate(best_candidate=None, x_train=x, y_train=y, epoch=0)
         assert result == (None, None)
 
     @pytest.mark.unit
@@ -790,15 +756,11 @@ class TestErrorHandlingPaths:
         """Test _get_training_results with valid data."""
         x, y = simple_2d_data
         residual_error = simple_network._calculate_residual_error_safe(x_train=x, y_train=y)
-        
+
         # This may return None or TrainingResults depending on training state
-        result = simple_network._get_training_results(
-            x_train=x, 
-            y_train=y, 
-            residual_error=residual_error
-        )
+        result = simple_network._get_training_results(x_train=x, y_train=y, residual_error=residual_error)
         # Just verify it doesn't crash
-        assert result is None or hasattr(result, 'best_candidate')
+        assert result is None or hasattr(result, "best_candidate")
 
     @pytest.mark.unit
     def test_train_candidate_worker_no_task(self):
@@ -816,9 +778,9 @@ class TestErrorHandlingPaths:
     def test_validate_training_with_inputs(self, simple_network, simple_2d_data):
         """Test validate_training method."""
         from cascade_correlation.cascade_correlation import ValidateTrainingInputs
-        
+
         x, y = simple_2d_data
-        
+
         inputs = ValidateTrainingInputs(
             epoch=0,
             max_epochs=10,
@@ -832,21 +794,16 @@ class TestErrorHandlingPaths:
             x_val=x[:5],
             y_val=y[:5],
         )
-        
+
         result = simple_network.validate_training(inputs)
         assert result is not None
-        assert hasattr(result, 'early_stop')
+        assert hasattr(result, "early_stop")
 
     @pytest.mark.unit
     def test_retrain_output_layer(self, simple_network, simple_2d_data):
         """Test _retrain_output_layer method."""
         x, y = simple_2d_data
-        loss = simple_network._retrain_output_layer(
-            x_train=x,
-            y_train=y,
-            epochs=5,
-            epoch=0
-        )
+        loss = simple_network._retrain_output_layer(x_train=x, y_train=y, epochs=5, epoch=0)
         assert loss is not None
         assert isinstance(loss, float) or isinstance(loss, torch.Tensor)
 
@@ -854,17 +811,13 @@ class TestErrorHandlingPaths:
     def test_calculate_train_accuracy(self, simple_network, simple_2d_data):
         """Test _calculate_train_accuracy method."""
         x, y = simple_2d_data
-        accuracy = simple_network._calculate_train_accuracy(
-            x_train=x,
-            y_train=y,
-            epoch=0
-        )
+        accuracy = simple_network._calculate_train_accuracy(x_train=x, y_train=y, epoch=0)
         assert accuracy is not None
         assert 0.0 <= accuracy <= 1.0
 
 
 # ===================================================================
-# HDF5 Edge Cases  
+# HDF5 Edge Cases
 # ===================================================================
 class TestHDF5EdgeCases:
     """Tests for HDF5 serialization edge cases."""
@@ -921,7 +874,7 @@ class TestNetworkConfiguration:
     def test_set_output_bias_invalid_raises(self, simple_network):
         """Test set_output_bias with invalid type raises error."""
         from cascade_correlation.cascade_correlation_exceptions.cascade_correlation_exceptions import ValidationError
-        
+
         with pytest.raises(ValidationError):
             simple_network.set_output_bias("invalid")
 
@@ -935,9 +888,7 @@ class TestStaticMethods:
     @pytest.mark.unit
     def test_plot_worker_functions_exist(self):
         """Test that plot worker functions are importable."""
-        from cascade_correlation.cascade_correlation import (
-            _plot_decision_boundary_worker,
-            _plot_training_history_worker
-        )
+        from cascade_correlation.cascade_correlation import _plot_decision_boundary_worker, _plot_training_history_worker
+
         assert callable(_plot_decision_boundary_worker)
         assert callable(_plot_training_history_worker)

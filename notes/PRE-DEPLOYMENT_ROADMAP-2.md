@@ -555,7 +555,7 @@ grep "execute_parallel\|execute_sequential" training_log.txt
 
 - **Option A**: Renamed Canopy's `constants.py` → `canopy_constants.py`
   - Updated 16 files (7 source files, 9 test files)
-  
+
 - **Option B**: Renamed Cascor's `constants/` → `cascor_constants/`
   - Updated 9 files (8 source files, 1 internal module)
   - Updated AGENTS.md references
@@ -725,12 +725,12 @@ The following items are explicitly deferred to post-deployment:
   - Added `fit_async()`, `start_training_background()`, `is_training_in_progress()`
   - Updated FastAPI endpoints to use async training
   - Added `/api/train/status` endpoint
-  
+
 - P1-NEW-002: RemoteWorkerClient integrated with Canopy
   - Added `connect_remote_workers()`, `start_remote_workers()`, `stop_remote_workers()`, `disconnect_remote_workers()`
   - Added REST API endpoints: `/api/remote/status`, `/api/remote/connect`, `/api/remote/start_workers`, `/api/remote/stop_workers`, `/api/remote/disconnect`
   - Updated shutdown() for cleanup
-  
+
 - P1-NEW-001: Full IPC architecture **DEFERRED**
   - Per Oracle analysis, async training + RemoteWorkerClient provide sufficient capability
   - Revisit if hard cancellation, fault isolation, or remote clusters needed

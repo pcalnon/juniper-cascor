@@ -31,6 +31,7 @@
 #
 #####################################################################################################################################################################################################
 import pathlib
+
 # import torch
 # import hd5py
 # import numpy as np
@@ -42,8 +43,8 @@ _HDF5_PROJECT_CONSTANTS_DIR = _HDF5_PROJECT_HDF5_CONSTANTS_DIR.parent.resolve()
 _HDF5_PROJECT_SOURCE_DIR = _HDF5_PROJECT_CONSTANTS_DIR.parent.resolve()
 _HDF5_PROJECT_DIR = _HDF5_PROJECT_SOURCE_DIR.parent.resolve()
 
-_HDF5_PROJECT_SNAPSHOTS_DIR_NAME="cascor_snapshots"
-_HDF5_PROJECT_SNAPSHOTS_DIR=pathlib.Path(_HDF5_PROJECT_SOURCE_DIR).joinpath(_HDF5_PROJECT_SNAPSHOTS_DIR_NAME)
+_HDF5_PROJECT_SNAPSHOTS_DIR_NAME = "cascor_snapshots"
+_HDF5_PROJECT_SNAPSHOTS_DIR = pathlib.Path(_HDF5_PROJECT_SOURCE_DIR).joinpath(_HDF5_PROJECT_SNAPSHOTS_DIR_NAME)
 
 
 # Define HDF5 Storage class Constants to provide reasonable defaults
@@ -70,4 +71,3 @@ _HDF5_PROJECT_SNAPSHOTS_DIR=pathlib.Path(_HDF5_PROJECT_SOURCE_DIR).joinpath(_HDF
 # _HDF5_STORAGE_LOG_DIR = _CASCOR_SPIRAL_DATASET_LOG_DIR_DEFAULT
 # _HDF5_STORAGE_LOG_FILE_PATH = _CASCOR_SPIRAL_DATASET_LOG_FILE_PATH_DEFAULT
 # _HDF5_STORAGE_LOG_LEVEL = _CASCOR_SPIRAL_DATASET_LOG_LEVEL_DEFAULT
-

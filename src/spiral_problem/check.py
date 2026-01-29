@@ -24,56 +24,56 @@
 #
 #####################################################################################################################################################################################################
 
-import numpy as np
-import torch
+import logging
+import random
+
 # import torch.nn as nn
 # import torch.optim as optim
 # import matplotlib.pyplot as plt
 # from typing import List Tuple, Optional, Dict, Any
 # from typing import List, Tuple, Dict, Any
 from typing import Tuple
-import logging
-import random
+
+import numpy as np
+import torch
+
 # import math
 from cascade_correlation.cascade_correlation import CascadeCorrelationNetwork
-
 from cascor_constants.constants import (
-    _SPIRAL_PROBLEM_INPUT_SIZE,
-    _SPIRAL_PROBLEM_OUTPUT_SIZE,
-    _SPIRAL_PROBLEM_CANDIDATE_POOL_SIZE,
     _SPIRAL_PROBLEM_ACTIVATION_FUNCTION,
-    _SPIRAL_PROBLEM_LEARNING_RATE,
-    _SPIRAL_PROBLEM_MAX_HIDDEN_UNITS,
-    _SPIRAL_PROBLEM_CORRELATION_THRESHOLD,
-    _SPIRAL_PROBLEM_PATIENCE,
     _SPIRAL_PROBLEM_CANDIDATE_EPOCHS,
-    _SPIRAL_PROBLEM_OUTPUT_EPOCHS,
-    _SPIRAL_PROBLEM_STATUS_DISPLAY_FREQUENCY,
-    _SPIRAL_PROBLEM_RANDOM_VALUE_SCALE,
-    _SPIRAL_PROBLEM_NOISE_FACTOR_DEFAULT,
-    _SPIRAL_PROBLEM_NUMBER_POINTS_PER_SPIRAL,
-    _SPIRAL_PROBLEM_GENERATE_PLOTS_DEFAULT,
-    _SPIRAL_PROBLEM_RANDOM_SEED,
-
-    _SPIRAL_PROBLEM_NUM_SPIRALS,
-    _SPIRAL_PROBLEM_NUM_ROTATIONS,
+    _SPIRAL_PROBLEM_CANDIDATE_POOL_SIZE,
+    _SPIRAL_PROBLEM_CLOCKWISE,
+    _SPIRAL_PROBLEM_CORRELATION_THRESHOLD,
     _SPIRAL_PROBLEM_DEFAULT_ORIGIN,
     _SPIRAL_PROBLEM_DEFAULT_RADIUS,
-    _SPIRAL_PROBLEM_CLOCKWISE,
     _SPIRAL_PROBLEM_DISTRIBUTION_FACTOR,
-    _SPIRAL_PROBLEM_ORIG_POINTS,
-    _SPIRAL_PROBLEM_MIN_NEW,
-    _SPIRAL_PROBLEM_MAX_NEW,
-    _SPIRAL_PROBLEM_MIN_ORIG,
-    _SPIRAL_PROBLEM_MAX_ORIG,
-    _SPIRAL_PROBLEM_TRAIN_RATIO,
-    _SPIRAL_PROBLEM_TEST_RATIO,
-
+    _SPIRAL_PROBLEM_GENERATE_PLOTS_DEFAULT,
+    _SPIRAL_PROBLEM_INPUT_SIZE,
+    _SPIRAL_PROBLEM_LEARNING_RATE,
+    _SPIRAL_PROBLEM_LOG_DATE_FORMAT,
     _SPIRAL_PROBLEM_LOG_FILE_NAME,
     _SPIRAL_PROBLEM_LOG_FILE_PATH,
     _SPIRAL_PROBLEM_LOG_FORMATTER_STRING,
-    _SPIRAL_PROBLEM_LOG_DATE_FORMAT,
     _SPIRAL_PROBLEM_LOGLEVEL_DEFAULT,
+    _SPIRAL_PROBLEM_MAX_HIDDEN_UNITS,
+    _SPIRAL_PROBLEM_MAX_NEW,
+    _SPIRAL_PROBLEM_MAX_ORIG,
+    _SPIRAL_PROBLEM_MIN_NEW,
+    _SPIRAL_PROBLEM_MIN_ORIG,
+    _SPIRAL_PROBLEM_NOISE_FACTOR_DEFAULT,
+    _SPIRAL_PROBLEM_NUM_ROTATIONS,
+    _SPIRAL_PROBLEM_NUM_SPIRALS,
+    _SPIRAL_PROBLEM_NUMBER_POINTS_PER_SPIRAL,
+    _SPIRAL_PROBLEM_ORIG_POINTS,
+    _SPIRAL_PROBLEM_OUTPUT_EPOCHS,
+    _SPIRAL_PROBLEM_OUTPUT_SIZE,
+    _SPIRAL_PROBLEM_PATIENCE,
+    _SPIRAL_PROBLEM_RANDOM_SEED,
+    _SPIRAL_PROBLEM_RANDOM_VALUE_SCALE,
+    _SPIRAL_PROBLEM_STATUS_DISPLAY_FREQUENCY,
+    _SPIRAL_PROBLEM_TEST_RATIO,
+    _SPIRAL_PROBLEM_TRAIN_RATIO,
 )
 
 
@@ -88,7 +88,7 @@ class SpiralProblem(object):
         _SpiralProblem__n_spirals: int = _SPIRAL_PROBLEM_NUM_SPIRALS,
         _SpiralProblem__n_points: int = _SPIRAL_PROBLEM_NUMBER_POINTS_PER_SPIRAL,
         _SpiralProblem__n_rotations: int = _SPIRAL_PROBLEM_NUM_ROTATIONS,
-        _SpiralProblem__clockwise: bool = _SPIRAL_PROBLEM_CLOCKWISE,                          # True for clockwise spirals, False for counter-clockwise
+        _SpiralProblem__clockwise: bool = _SPIRAL_PROBLEM_CLOCKWISE,  # True for clockwise spirals, False for counter-clockwise
         _SpiralProblem__noise: float = _SPIRAL_PROBLEM_NOISE_FACTOR_DEFAULT,
         _SpiralProblem__distribution: float = _SPIRAL_PROBLEM_DISTRIBUTION_FACTOR,
         _SpiralProblem__random_seed: int = _SPIRAL_PROBLEM_RANDOM_SEED,  # Default random seed for reproducibility
@@ -100,7 +100,7 @@ class SpiralProblem(object):
         _SpiralProblem__log_format: str = _SPIRAL_PROBLEM_LOG_FORMATTER_STRING,
         _SpiralProblem__log_date_format: str = _SPIRAL_PROBLEM_LOG_DATE_FORMAT,
     ):
-        self.logger = logging.getLogger(_SpiralProblem__log_file_path)  # Use the log file path as the logger name
+        self.logger = logging.getLogger(str(_SpiralProblem__log_file_path))  # Use the log file path as the logger name
         self.logger.setLevel(_SpiralProblem__logging_level)
         if not self.logger.handlers:
             handler = logging.StreamHandler()
@@ -120,9 +120,9 @@ class SpiralProblem(object):
         self.test_ratio = _SpiralProblem__test_ratio
         self.logger.debug(f"SpiralProblem: __init__: initialized with {self.n_spirals} spirals,  {self.n_rotations} rotations, and {self.n_points} points per spiral.")
 
-        torch.manual_seed(self.random_seed) # Set random seed for reproducibility
-        np.random.seed(self.random_seed)    # Set random seed for reproducibility
-        random.seed(self.random_seed)       # Set random seed for reproducibility
+        torch.manual_seed(self.random_seed)  # Set random seed for reproducibility
+        np.random.seed(self.random_seed)  # Set random seed for reproducibility
+        random.seed(self.random_seed)  # Set random seed for reproducibility
 
         # Create the cascade correlation network
         self.network = CascadeCorrelationNetwork(
@@ -144,23 +144,22 @@ class SpiralProblem(object):
         )
         self.logger.debug("SpiralProblem: solve_n_spiral_problem: Created Cascade Correlation Network")
 
-
     #####################################################################################################################################################################################################
     # Define function to generate the two spiral problem dataset.
     # TODO: Convert this to use spiral problem in Project Data Dir.
     def generate_n_spiral_dataset(
         self,
-        min_new=_SPIRAL_PROBLEM_MIN_NEW,                              # Minimum value for the new points
-        max_new=_SPIRAL_PROBLEM_MAX_NEW,                              # Maximum value for the new points
-        min_orig=_SPIRAL_PROBLEM_MIN_ORIG,                            # Minimum value for the original points
-        max_orig=_SPIRAL_PROBLEM_MAX_ORIG,                            # Maximum value for the original points
-        orig_points=_SPIRAL_PROBLEM_ORIG_POINTS,                      # User provided data points or None
+        min_new=_SPIRAL_PROBLEM_MIN_NEW,  # Minimum value for the new points
+        max_new=_SPIRAL_PROBLEM_MAX_NEW,  # Maximum value for the new points
+        min_orig=_SPIRAL_PROBLEM_MIN_ORIG,  # Minimum value for the original points
+        max_orig=_SPIRAL_PROBLEM_MAX_ORIG,  # Maximum value for the original points
+        orig_points=_SPIRAL_PROBLEM_ORIG_POINTS,  # User provided data points or None
         train_ratio=_SPIRAL_PROBLEM_TRAIN_RATIO,
         test_ratio=_SPIRAL_PROBLEM_TEST_RATIO,
-        clockwise=_SPIRAL_PROBLEM_CLOCKWISE,                          # True for clockwise spirals, False for counter-clockwise
+        clockwise=_SPIRAL_PROBLEM_CLOCKWISE,  # True for clockwise spirals, False for counter-clockwise
         num_spirals=_SPIRAL_PROBLEM_NUM_SPIRALS,
         num_rotations=_SPIRAL_PROBLEM_NUM_ROTATIONS,
-        num_points=_SPIRAL_PROBLEM_NUMBER_POINTS_PER_SPIRAL,          # Number of points per spiral
+        num_points=_SPIRAL_PROBLEM_NUMBER_POINTS_PER_SPIRAL,  # Number of points per spiral
         default_origin=_SPIRAL_PROBLEM_DEFAULT_ORIGIN,
         default_radius=_SPIRAL_PROBLEM_DEFAULT_RADIUS,
         noise_level=_SPIRAL_PROBLEM_NOISE_FACTOR_DEFAULT,
@@ -244,8 +243,8 @@ class SpiralProblem(object):
             points_scaled = (points_unity * (max_new - min_new)) + min_new  # Scale the points from the unity range [0.0, 1.0] to the new range [min_new, max_new]
             self.logger.debug(f"SpiralProblem: generate_n_spiral_data: Spiral {i + 1} points: Type: {type(points_scaled)}, Value:\n{points_scaled}")
             total_degrees = num_rotations * 360
-            angle_offset = (direction * 2 * np.pi * i / num_spirals)  # Calculate the angle offset for this spiral
-            random_degrees = (np.random.rand(num_points) * total_degrees)  # Fix: use num_points instead of points_scaled
+            angle_offset = direction * 2 * np.pi * i / num_spirals  # Calculate the angle offset for this spiral
+            random_degrees = np.random.rand(num_points) * total_degrees  # Fix: use num_points instead of points_scaled
             adjusted_degrees = np.power(random_degrees, distribution)  # Apply the transformation to the degrees
             radians = adjusted_degrees * (np.pi / 180.0)
             theta = radians + angle_offset
@@ -283,15 +282,10 @@ class SpiralProblem(object):
         self.logger.debug(f"SpiralProblem: generate_n_spiral_data: Full dataset x: Shape: {x_shuffled.shape}, Type: {type(x_shuffled)}, y: Shape: {y_shuffled.shape}, Type: {type(y_shuffled)}")
 
         # Return training and test sets, and the full dataset
-        #return partitioned_dataset
+        # return partitioned_dataset
         return (x_train, y_train), (x_test, y_test), (x_shuffled, y_shuffled)  # Return training and test sets, and the full dataset
 
-
-    def make_noise(
-        self,
-        n_points: int = 0,
-        noise: float = 0.0
-    ) -> np.ndarray:
+    def make_noise(self, n_points: int = 0, noise: float = 0.0) -> np.ndarray:
         """
         Description:
             Generate random noise for the spiral points. The noise is generated based on a uniform distribution.
@@ -303,15 +297,14 @@ class SpiralProblem(object):
         """
         return np.random.rand(n_points) * noise
 
-
     def split_dataset(
         self,
         total_points: int = None,
         partitions: tuple = None,
         # x: torch.Tensor[] = None,
-        x = None,
+        x=None,
         # y: torch.Tensor[] = None,
-        y = None,
+        y=None,
     ) -> tuple:
         """
         Description:
@@ -358,7 +351,7 @@ class SpiralProblem(object):
             # partition_end = partition_start + self.dataset_split_index_end( total_points=total_points, split_ratio=partition,)
             # partition_x, partition_y = x[partition_start:partition_end], y[partition_start:partition_end]
             # dataset_partitions.append(tuple(partition_x, partition_y))
-            partition_end = self.find_partition_index_end( partition_start=partition_start, total_points=total_points, partition=partition)
+            partition_end = self.find_partition_index_end(partition_start=partition_start, total_points=total_points, partition=partition)
             # dataset_partitions = dataset_partitions + tuple(x[partition_start:partition_end], y[partition_start:partition_end])
             # dataset_partitions = dataset_partitions + ((x[partition_start:partition_end], y[partition_start:partition_end]))
             current_partition = x[partition_start:partition_end], y[partition_start:partition_end]
@@ -375,13 +368,7 @@ class SpiralProblem(object):
         self.logger.debug(f"SpiralProblem: split_dataset: Dataset partitions Indices created with {len(dataset_partitions)} partitions, Partition Index Values:\n{dataset_partitions}.")
         return dataset_partitions
 
-
-    def find_partition_index_end(
-        self,
-        partition_start: int,
-        total_points: int,
-        partition: float
-    ) -> int:
+    def find_partition_index_end(self, partition_start: int, total_points: int, partition: float) -> int:
         """
         Description:
             Calculate the index end for a given partition based on the start index, total points, and partition ratio.
@@ -402,7 +389,7 @@ class SpiralProblem(object):
 
     def dataset_split_index_end(
         self,
-        total_points: int=0,
+        total_points: int = 0,
         split_ratio: float = 0.0,
     ) -> int:
         """
@@ -422,7 +409,6 @@ class SpiralProblem(object):
             raise ValueError(f"SpiralProblem: dataset_split_index_end: Invalid index end: {index_end}. Must be between 0 and {total_points}.")
         self.logger.debug(f"SpiralProblem: dataset_split_index_end: Valid index end: {index_end}")
         return index_end
-
 
     #####################################################################################################################################################################################################
     # Define function to solve the two spiral problem using Cascade Correlation Network.
@@ -481,11 +467,11 @@ class SpiralProblem(object):
             # max_orig=_SPIRAL_PROBLEM_MAX_ORIG,
             # default_origin=_SPIRAL_PROBLEM_DEFAULT_ORIGIN,
             # default_radius=_SPIRAL_PROBLEM_DEFAULT_RADIUS,
-            n_spirals=self.n_spirals,
-            n_points=self.n_points,
-            n_rotations=self.n_rotations,
+            num_spirals=self.n_spirals,
+            num_points=self.n_points,
+            num_rotations=self.n_rotations,
             clockwise=self.clockwise,
-            noise=self.noise,
+            noise_level=self.noise,
             distribution=self.distribution,
             train_ratio=self.train_ratio,
             test_ratio=self.test_ratio,
@@ -502,7 +488,6 @@ class SpiralProblem(object):
         self.x_train, self.y_train = train_partition
         self.x_test, self.y_test = test_partition
         self.x_full, self.y_full = full_partition
-
 
         self.logger.debug(f"SpiralProblem: solve_n_spiral_problem: Dataset x_full: Shape: {self.x_full.shape}, Type: {type(self.x_full)}, Value:\n{self.x_full}")
         self.logger.debug(f"SpiralProblem: solve_n_spiral_problem: Dataset y_full: Shape: {self.y_full.shape}, Type: {type(self.y_full)}, Value:\n{self.y_full}")
@@ -528,7 +513,11 @@ class SpiralProblem(object):
         # Train the network
         self.logger.debug("SpiralProblem: solve_n_spiral_problem: Created Cascade Correlation Network...")
         self.logger.debug(f"SpiralProblem: solve_n_spiral_problem: Cascade Correlation Network: \n{self.network}")
-        self.history = self.network.fit(self.x, self.y, max_epochs=_SPIRAL_PROBLEM_OUTPUT_EPOCHS,)
+        self.history = self.network.fit(
+            self.x,
+            self.y,
+            max_epochs=_SPIRAL_PROBLEM_OUTPUT_EPOCHS,
+        )
         self.logger.debug(f"SpiralProblem: solve_n_spiral_problem: Training history: {self.history}")
 
         # Print summary
@@ -579,23 +568,21 @@ class SpiralProblem(object):
             train_ratio=self.train_ratio,
             plot=self.plot,
         )
-        self.logger.debug(f"SpiralProblem: main: Training Data: Type: {type(self.train_data)}, Shape: {self.train_data.shape}, Value:\n{self.train_data}")
-        self.logger.debug(f"SpiralProblem: main: Test Data: Type: {type(self.test_data)}, Shape: {self.test_data.shape}, Value:\n{self.test_data}")
+        self.logger.debug(f"SpiralProblem: main: Training Data: Type: {type(self.x_train)}, Shape: {self.x_train.shape}")
+        self.logger.debug(f"SpiralProblem: main: Test Data: Type: {type(self.x_test)}, Shape: {self.x_test.shape}")
 
         # Print training dataset shapes and types
-        # (self.train_x, self.train_y) = self.train_data
-        self.logger.debug(f"SpiralProblem: main: Train Data: X Shape: {self.train_x.shape}, X Type: {type(self.train_x)}, X Value:\n{self.train_x}")
-        self.logger.debug(f"SpiralProblem: main: Train Data: Y Shape: {self.train_y.shape}, Y Type: {type(self.train_y)}, Y Value:\n{self.train_y}")
+        self.logger.debug(f"SpiralProblem: main: Train Data: X Shape: {self.x_train.shape}, X Type: {type(self.x_train)}")
+        self.logger.debug(f"SpiralProblem: main: Train Data: Y Shape: {self.y_train.shape}, Y Type: {type(self.y_train)}")
 
         # Print test dataset shapes and types
-        # (self.test_x, self.test_y) = self.test_data
-        self.logger.debug(f"SpiralProblem: main: Test Data: X Shape: {self.test_x.shape}, X Type: {type(self.test_x)}, X Value:\n{self.test_x}")
-        self.logger.debug(f"SpiralProblem: main: Test Data: Y Shape: {self.test_y.shape}, Y Type: {type(self.test_y)}, Y Value:\n{self.test_y}")
+        self.logger.debug(f"SpiralProblem: main: Test Data: X Shape: {self.x_test.shape}, X Type: {type(self.x_test)}")
+        self.logger.debug(f"SpiralProblem: main: Test Data: Y Shape: {self.y_test.shape}, Y Type: {type(self.y_test)}")
 
         # Calculate and log the accuracy on the training and test sets
-        self.train_accuracy = self.network.calculate_accuracy(x=self.train_x, y=self.train_y)
+        self.train_accuracy = self.network.calculate_accuracy(x=self.x_train, y=self.y_train)
         self.logger.debug(f"SpiralProblem: main: Train accuracy on the two spiral problem: {self.train_accuracy:.4f}")
-        self.test_accuracy = self.network.calculate_accuracy(x=self.test_x, y=self.test_y)
+        self.test_accuracy = self.network.calculate_accuracy(x=self.x_test, y=self.y_test)
         self.logger.debug(f"SpiralProblem: main: Test accuracy on the two spiral problem: {self.test_accuracy:.4f}")
 
         # Evaluate the Final Accuracy Percentages
@@ -607,7 +594,7 @@ class SpiralProblem(object):
         # Print final accuracy
         self.network.summary()
         self.logger.debug(f"SpiralProblem: main: Training History: {self.history}")
-        self.logger.debug(f"SpiralProblem: main: Dataset: Train: x:\n{self.train_x}\ny:\n{self.train_y}\nTest: x:\n{self.test_x}\ny:\n{self.test_y}")
-        self.logger.debug(f"SpiralProblem: main: Dataset shape: Train: x: {self.train_x.shape}, y: {self.train_y.shape}, Test: x: {self.test_x.shape}, y: {self.test_y.shape}")
+        self.logger.debug(f"SpiralProblem: main: Dataset: Train: x shape: {self.x_train.shape}, y shape: {self.y_train.shape}")
+        self.logger.debug(f"SpiralProblem: main: Dataset: Test: x shape: {self.x_test.shape}, y shape: {self.y_test.shape}")
         self.logger.debug(f"SpiralProblem: main: Final accuracy on the two spiral problem: Training: {self.train_accuracy_percent:.2f}%")
         self.logger.debug(f"SpiralProblem: main: Final accuracy on the two spiral problem: Testing: {self.test_accuracy_percent:.2f}%")

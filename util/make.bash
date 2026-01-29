@@ -15,7 +15,7 @@
 # Description: This script compiles a Python source file into bytecode.
 # Usage: ./make.bash <source_file.py> [<parent_directory>]
 ###########################################################################################################################################################################
-# Examples: 
+# Examples:
 #    ./make.bash src/prototypes/cascor/src/cascade_correlation/candidate_unit/candidate_unit.py
 #    ./make.bash candidate_unit.py ./src/cascade_correlation/candidate_unit
 ###########################################################################################################################################################################

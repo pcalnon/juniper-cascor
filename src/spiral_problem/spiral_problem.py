@@ -5,7 +5,7 @@
 # File Name:     spiral_problem.py
 # Author:        Paul Calnon
 # Version:       0.3.1  (0.7.3)
-# 
+#
 # Date Created:  2025-07-29
 # Last Modified: 2026-01-12
 #
@@ -35,22 +35,28 @@
 #####################################################################################################################################################################################################
 import logging
 import logging.config
-import numpy as np
-import os
-import matplotlib.pyplot as plt
-import random
-import torch
-import uuid
 import multiprocessing as mp
+import os
+import random
+import uuid
 
 # from inspect import currentframe, getframeinfo
 from typing import Tuple
 
+import matplotlib.pyplot as plt
+import numpy as np
+import torch
+
 from cascade_correlation.cascade_correlation import CascadeCorrelationNetwork
 from cascade_correlation.cascade_correlation_config.cascade_correlation_config import CascadeCorrelationConfig
-
-from cascor_constants.constants import (
+from cascor_constants.constants import (  # _PROJECT_MODEL_AUTHKEY,; _PROJECT_MODEL_BASE_MANAGER_ADDRESS,
+    _PROJECT_MODEL_CANDIDATE_TRAINING_CONTEXT,
+    _PROJECT_MODEL_SHUTDOWN_TIMEOUT,
+    _PROJECT_MODEL_TASK_QUEUE_TIMEOUT,
     _SPIRAL_PROBLEM_ACTIVATION_FUNCTION,
+    _SPIRAL_PROBLEM_AUTHKEY,
+    _SPIRAL_PROBLEM_BASE_MANAGER_ADDRESS_IP,
+    _SPIRAL_PROBLEM_BASE_MANAGER_ADDRESS_PORT,
     _SPIRAL_PROBLEM_CANDIDATE_DISPLAY_FREQUENCY,
     _SPIRAL_PROBLEM_CANDIDATE_EPOCHS,
     _SPIRAL_PROBLEM_CANDIDATE_LEARNING_RATE,
@@ -95,14 +101,6 @@ from cascor_constants.constants import (
     _SPIRAL_PROBLEM_STATUS_DISPLAY_FREQUENCY,
     _SPIRAL_PROBLEM_TEST_RATIO,
     _SPIRAL_PROBLEM_TRAIN_RATIO,
-    _SPIRAL_PROBLEM_AUTHKEY,
-    _SPIRAL_PROBLEM_BASE_MANAGER_ADDRESS_IP,
-    _SPIRAL_PROBLEM_BASE_MANAGER_ADDRESS_PORT,
-    # _PROJECT_MODEL_AUTHKEY,
-    # _PROJECT_MODEL_BASE_MANAGER_ADDRESS,
-    _PROJECT_MODEL_TASK_QUEUE_TIMEOUT,
-    _PROJECT_MODEL_SHUTDOWN_TIMEOUT,
-    _PROJECT_MODEL_CANDIDATE_TRAINING_CONTEXT,
 )
 from log_config.log_config import LogConfig
 from log_config.logger.logger import Logger
@@ -123,7 +121,7 @@ class SpiralProblem(object):
         _SpiralProblem__candidate_epochs: int = _SPIRAL_PROBLEM_CANDIDATE_EPOCHS,
         _SpiralProblem__candidate_learning_rate: float = _SPIRAL_PROBLEM_CANDIDATE_LEARNING_RATE,
         _SpiralProblem__candidate_pool_size: int = _SPIRAL_PROBLEM_CANDIDATE_POOL_SIZE,
-        _SpiralProblem__clockwise: bool = _SPIRAL_PROBLEM_CLOCKWISE,                # True for clockwise spirals, False for counter-clockwise
+        _SpiralProblem__clockwise: bool = _SPIRAL_PROBLEM_CLOCKWISE,  # True for clockwise spirals, False for counter-clockwise
         _SpiralProblem__correlation_threshold: float = _SPIRAL_PROBLEM_CORRELATION_THRESHOLD,
         _SpiralProblem__epoch_display_frequency: int = _SPIRAL_PROBLEM_EPOCH_DISPLAY_FREQUENCY,
         _SpiralProblem__epochs_max: int = _SPIRAL_PROBLEM_EPOCHS_MAX,
@@ -147,25 +145,25 @@ class SpiralProblem(object):
         _SpiralProblem__log_level_numbers_dict: dict = _SPIRAL_PROBLEM_LOG_LEVEL_NUMBERS_DICT,
         _SpiralProblem__log_level_numbers_list: list = _SPIRAL_PROBLEM_LOG_LEVEL_NUMBERS_LIST,
         _SpiralProblem__max_hidden_units: int = _SPIRAL_PROBLEM_MAX_HIDDEN_UNITS,
-        _SpiralProblem__max_new: float = _SPIRAL_PROBLEM_MAX_NEW,                    # Maximum value for the new points
-        _SpiralProblem__max_orig: float = _SPIRAL_PROBLEM_MAX_ORIG,                  # Maximum value for the original points
-        _SpiralProblem__min_new: float = _SPIRAL_PROBLEM_MIN_NEW,                    # Minimum value for the new points
-        _SpiralProblem__min_orig: float = _SPIRAL_PROBLEM_MIN_ORIG,                  # Minimum value for the original points
+        _SpiralProblem__max_new: float = _SPIRAL_PROBLEM_MAX_NEW,  # Maximum value for the new points
+        _SpiralProblem__max_orig: float = _SPIRAL_PROBLEM_MAX_ORIG,  # Maximum value for the original points
+        _SpiralProblem__min_new: float = _SPIRAL_PROBLEM_MIN_NEW,  # Minimum value for the new points
+        _SpiralProblem__min_orig: float = _SPIRAL_PROBLEM_MIN_ORIG,  # Minimum value for the original points
         _SpiralProblem__n_points: int = _SPIRAL_PROBLEM_NUMBER_POINTS_PER_SPIRAL,
         _SpiralProblem__n_rotations: int = _SPIRAL_PROBLEM_NUM_ROTATIONS,
         _SpiralProblem__n_spirals: int = _SPIRAL_PROBLEM_NUM_SPIRALS,
         _SpiralProblem__noise: float = _SPIRAL_PROBLEM_NOISE_FACTOR_DEFAULT,
-        _SpiralProblem__orig_points: int = _SPIRAL_PROBLEM_ORIG_POINTS,               # User provided data points or None
+        _SpiralProblem__orig_points: int = _SPIRAL_PROBLEM_ORIG_POINTS,  # User provided data points or None
         _SpiralProblem__output_epochs: int = _SPIRAL_PROBLEM_OUTPUT_EPOCHS,
         _SpiralProblem__output_size: int = _SPIRAL_PROBLEM_OUTPUT_SIZE,
         _SpiralProblem__patience: int = _SPIRAL_PROBLEM_PATIENCE,
-        _SpiralProblem__random_seed: int = _SPIRAL_PROBLEM_RANDOM_SEED,             # Default random seed for reproducibility
+        _SpiralProblem__random_seed: int = _SPIRAL_PROBLEM_RANDOM_SEED,  # Default random seed for reproducibility
         _SpiralProblem__authkey: bytes = _SPIRAL_PROBLEM_AUTHKEY,
-        _SpiralProblem__queue_address = _SPIRAL_PROBLEM_BASE_MANAGER_ADDRESS_IP,
-        _SpiralProblem__queue_port = _SPIRAL_PROBLEM_BASE_MANAGER_ADDRESS_PORT,
-        _SpiralProblem__task_queue_timeout = _PROJECT_MODEL_TASK_QUEUE_TIMEOUT,
-        _SpiralProblem__shutdown_timeout = _PROJECT_MODEL_SHUTDOWN_TIMEOUT,
-        _SpiralProblem__task_queue_context = _PROJECT_MODEL_CANDIDATE_TRAINING_CONTEXT,
+        _SpiralProblem__queue_address=_SPIRAL_PROBLEM_BASE_MANAGER_ADDRESS_IP,
+        _SpiralProblem__queue_port=_SPIRAL_PROBLEM_BASE_MANAGER_ADDRESS_PORT,
+        _SpiralProblem__task_queue_timeout=_PROJECT_MODEL_TASK_QUEUE_TIMEOUT,
+        _SpiralProblem__shutdown_timeout=_PROJECT_MODEL_SHUTDOWN_TIMEOUT,
+        _SpiralProblem__task_queue_context=_PROJECT_MODEL_CANDIDATE_TRAINING_CONTEXT,
         _SpiralProblem__random_value_scale: float = _SPIRAL_PROBLEM_RANDOM_VALUE_SCALE,
         _SpiralProblem__status_display_frequency: int = _SPIRAL_PROBLEM_STATUS_DISPLAY_FREQUENCY,
         _SpiralProblem__test_ratio: float = _SPIRAL_PROBLEM_TEST_RATIO,
@@ -246,14 +244,14 @@ class SpiralProblem(object):
             _LogConfig__log_file_name=self.log_file_name,
             _LogConfig__log_file_path=self.log_file_path,
             _LogConfig__log_level_name=self.log_level_name,
-            _LogConfig__log_date_format = _SpiralProblem__log_date_format,
-            _LogConfig__log_format_string = _SpiralProblem__log_format_string,
-            _LogConfig__log_level_custom_names_list = _SpiralProblem__log_level_custom_names_list,
-            _LogConfig__log_level_methods_dict = _SpiralProblem__log_level_methods_dict,
-            _LogConfig__log_level_methods_list = _SpiralProblem__log_level_methods_list,
-            _LogConfig__log_level_names_list = _SpiralProblem__log_level_names_list,
-            _LogConfig__log_level_numbers_dict = _SpiralProblem__log_level_numbers_dict,
-            _LogConfig__log_level_numbers_list = _SpiralProblem__log_level_numbers_list,
+            _LogConfig__log_date_format=_SpiralProblem__log_date_format,
+            _LogConfig__log_format_string=_SpiralProblem__log_format_string,
+            _LogConfig__log_level_custom_names_list=_SpiralProblem__log_level_custom_names_list,
+            _LogConfig__log_level_methods_dict=_SpiralProblem__log_level_methods_dict,
+            _LogConfig__log_level_methods_list=_SpiralProblem__log_level_methods_list,
+            _LogConfig__log_level_names_list=_SpiralProblem__log_level_names_list,
+            _LogConfig__log_level_numbers_dict=_SpiralProblem__log_level_numbers_dict,
+            _LogConfig__log_level_numbers_list=_SpiralProblem__log_level_numbers_list,
         )
         Logger.debug(f"SpiralProblem: __init__: Log config after conditional assignment: {self.log_config}, Type: {type(self.log_config)}")
 
@@ -375,57 +373,63 @@ class SpiralProblem(object):
 
         # Set the random seed for reproducibility
         self.logger.trace("SpiralProblem: __init__: Setting random seed for reproducibility")
-        torch.manual_seed(self.random_seed) # Set random seed for reproducibility with torch.manual_seed
-        np.random.seed(self.random_seed)    # Set random seed for reproducibility with np.random.seed
-        random.seed(self.random_seed)       # Set random seed for reproducibility with random.seed
+        # Original corrupted line:
+        # # torch.manual_seed(self.random_seed)\ \ \#\ Set random seed for reproducibility with torch.manual_seed
+        # Fixed line:
+        # torch.manual_seed(self.random_seed)  # Set random seed for reproducibility with torch.manual_seed
+        torch.manual_seed(self.random_seed)  # Set random seed for reproducibility with torch.manual_seed
+        np.random.seed(self.random_seed)  # Set random seed for reproducibility with np.random.seed
+        random.seed(self.random_seed)  # Set random seed for reproducibility with random.seed
 
         # Create the spiral problem object
         self.logger.trace("SpiralProblem: __init__: Creating the CascadeCorrelationNetwork instance")
-        if ((network := CascadeCorrelationNetwork(
-            config = CascadeCorrelationConfig(
-                input_size=self.input_size,
-                output_size=self.output_size,
-                max_hidden_units=self.max_hidden_units,
-                activation_function_name=self.activation_function,
-                # activation_function_name=self.activation_function_name,
-                # activation_functions_dict=self.activation_functions_dict,
-                learning_rate=self.learning_rate,
-                candidate_learning_rate=self.candidate_learning_rate,
-                candidate_pool_size=self.candidate_pool_size,
-                candidate_epochs=self.candidate_epochs,
-                epochs_max=self.epochs_max,
-                output_epochs=self.output_epochs,
-                patience=self.patience,
-                correlation_threshold=self.correlation_threshold,
-                display_frequency=self.display_frequency,
-                epoch_display_frequency=self.epoch_display_frequency,
-                candidate_display_frequency=self.candidate_display_frequency,
-                status_display_frequency=self.status_display_frequency,
-                generate_plots=self.generate_plots,
-                random_seed=self.random_seed,
-                # random_max_value=self.random_max_value,
-                # sequence_max_value=self.sequence_max_value,
-                random_value_scale=self.random_value_scale,
-                log_config=self.log_config,
-                log_file_name=self.log_file_name,
-                log_file_path=self.log_file_path,
-                log_level_name=self.log_level_name,
-                log_date_format=self.log_date_format,
-                log_format_string=self.log_format_string,
-                log_level_custom_names_list=self.log_level_custom_names_list,
-                log_level_methods_dict=self.log_level_methods_dict,
-                log_level_methods_list=self.log_level_methods_list,
-                log_level_names_list=self.log_level_names_list,
-                log_level_numbers_dict=self.log_level_numbers_dict,
-                log_level_numbers_list=self.log_level_numbers_list,
-                candidate_training_queue_authkey=self.candidate_training_queue_authkey,
-                candidate_training_queue_address=self.candidate_training_queue_address,
-                candidate_training_task_queue_timeout=self.candidate_training_task_queue_timeout,
-                candidate_training_shutdown_timeout=self.candidate_training_shutdown_timeout,
-                candidate_training_context_type=self.candidate_training_context_type,
-                uuid=None,
-            ),
-        )) is None):
+        if (
+            network := CascadeCorrelationNetwork(
+                config=CascadeCorrelationConfig(
+                    input_size=self.input_size,
+                    output_size=self.output_size,
+                    max_hidden_units=self.max_hidden_units,
+                    activation_function_name=self.activation_function,
+                    # activation_function_name=self.activation_function_name,
+                    # activation_functions_dict=self.activation_functions_dict,
+                    learning_rate=self.learning_rate,
+                    candidate_learning_rate=self.candidate_learning_rate,
+                    candidate_pool_size=self.candidate_pool_size,
+                    candidate_epochs=self.candidate_epochs,
+                    epochs_max=self.epochs_max,
+                    output_epochs=self.output_epochs,
+                    patience=self.patience,
+                    correlation_threshold=self.correlation_threshold,
+                    display_frequency=self.display_frequency,
+                    epoch_display_frequency=self.epoch_display_frequency,
+                    candidate_display_frequency=self.candidate_display_frequency,
+                    status_display_frequency=self.status_display_frequency,
+                    generate_plots=self.generate_plots,
+                    random_seed=self.random_seed,
+                    # random_max_value=self.random_max_value,
+                    # sequence_max_value=self.sequence_max_value,
+                    random_value_scale=self.random_value_scale,
+                    log_config=self.log_config,
+                    log_file_name=self.log_file_name,
+                    log_file_path=self.log_file_path,
+                    log_level_name=self.log_level_name,
+                    log_date_format=self.log_date_format,
+                    log_format_string=self.log_format_string,
+                    log_level_custom_names_list=self.log_level_custom_names_list,
+                    log_level_methods_dict=self.log_level_methods_dict,
+                    log_level_methods_list=self.log_level_methods_list,
+                    log_level_names_list=self.log_level_names_list,
+                    log_level_numbers_dict=self.log_level_numbers_dict,
+                    log_level_numbers_list=self.log_level_numbers_list,
+                    candidate_training_queue_authkey=self.candidate_training_queue_authkey,
+                    candidate_training_queue_address=self.candidate_training_queue_address,
+                    candidate_training_task_queue_timeout=self.candidate_training_task_queue_timeout,
+                    candidate_training_shutdown_timeout=self.candidate_training_shutdown_timeout,
+                    candidate_training_context_type=self.candidate_training_context_type,
+                    uuid=None,
+                ),
+            )
+        ) is None:
             self.logger.critical("SpiralProblem: __init__: Failed to create CascadeCorrelationNetwork")
             raise ValueError("SpiralProblem: solve_n_spiral_problem: Failed to create Spiral Problem")
 
@@ -434,23 +438,22 @@ class SpiralProblem(object):
         self.logger.trace("SpiralProblem: __init__: Created CascadeCorrelationNetwork")
         self.logger.trace("SpiralProblem: __init__: Completed SpiralProblem class __init__ method")
 
-
     #####################################################################################################################################################################################################
     # Define function to generate the two spiral problem dataset.
     # TODO: Convert this to use spiral problem in Project Data Dir.
     def generate_n_spiral_dataset(
         self,
-        min_new=_SPIRAL_PROBLEM_MIN_NEW,                              # Minimum value for the new poi,nts
-        max_new=_SPIRAL_PROBLEM_MAX_NEW,                              # Maximum value for the new points
-        min_orig=_SPIRAL_PROBLEM_MIN_ORIG,                            # Minimum value for the original points
-        max_orig=_SPIRAL_PROBLEM_MAX_ORIG,                            # Maximum value for the original points
-        orig_points=_SPIRAL_PROBLEM_ORIG_POINTS,                      # User provided data points or None
+        min_new=_SPIRAL_PROBLEM_MIN_NEW,  # Minimum value for the new poi,nts
+        max_new=_SPIRAL_PROBLEM_MAX_NEW,  # Maximum value for the new points
+        min_orig=_SPIRAL_PROBLEM_MIN_ORIG,  # Minimum value for the original points
+        max_orig=_SPIRAL_PROBLEM_MAX_ORIG,  # Maximum value for the original points
+        orig_points=_SPIRAL_PROBLEM_ORIG_POINTS,  # User provided data points or None
         train_ratio=_SPIRAL_PROBLEM_TRAIN_RATIO,
         test_ratio=_SPIRAL_PROBLEM_TEST_RATIO,
-        clockwise=_SPIRAL_PROBLEM_CLOCKWISE,                          # True for clockwise spirals, False for counter-clockwise
+        clockwise=_SPIRAL_PROBLEM_CLOCKWISE,  # True for clockwise spirals, False for counter-clockwise
         n_spirals=_SPIRAL_PROBLEM_NUM_SPIRALS,
         n_rotations=_SPIRAL_PROBLEM_NUM_ROTATIONS,
-        n_points=_SPIRAL_PROBLEM_NUMBER_POINTS_PER_SPIRAL,            # Number of points per spiral
+        n_points=_SPIRAL_PROBLEM_NUMBER_POINTS_PER_SPIRAL,  # Number of points per spiral
         default_origin=_SPIRAL_PROBLEM_DEFAULT_ORIGIN,
         default_radius=_SPIRAL_PROBLEM_DEFAULT_RADIUS,
         noise_level=_SPIRAL_PROBLEM_NOISE_FACTOR_DEFAULT,
@@ -479,7 +482,7 @@ class SpiralProblem(object):
         Notes:
             - The function generates a dataset of n spirals, each with a specified number of points, noise level, and rotation direction.
             - The spirals are generated in a clockwise or counter-clockwise direction based on the `clockwise` parameter.
-            - The points are scaled from the original range [min_orig, max_orig] to the new range [min_new, max_new].    <============ # TODO: Need to restore this functionality
+            - The points are scaled from the original range [min_orig, max_orig] to the new range [min_new, max_new]. TODO: Need to restore this functionality
             - The function returns the input features and one-hot encoded targets as PyTorch tensors.
             - The function uses the `default_origin` and `default_radius` to calculate the radius of the spirals.
             - The function uses the `distribution` to apply a degree of rotation to the spiral points.
@@ -513,44 +516,74 @@ class SpiralProblem(object):
         self.logger.debug("SpiralProblem: generate_n_spiral_dataset: Initialized Spiral Problem input parameters")
         self.logger.debug(f"SpiralProblem: generate_n_spiral_dataset: Generating {self.n_spirals} spirals with {self.n_points} points each, direction: {'clockwise' if self.clockwise else 'counter-clockwise'}, noise level: {self.noise}, distribution factor: {self.distribution}")
         self.logger.trace("SpiralProblem: generate_n_spiral_dataset: Generating spiral coordinates")
-        (spiral_x_coords, spiral_y_coords) = self._generate_spiral_coordinates() # Generate the spiral coordinates
+        # Original corrupted line:
+        # (spiral_x_coords, spiral_y_coords) = self._generate_spiral_coordinates()\ \ \#\ Generate the spiral coordinates
+        # Fixed line:
+        (spiral_x_coords, spiral_y_coords) = self._generate_spiral_coordinates()  # Generate the spiral coordinates
         self.logger.debug(f"SpiralProblem: generate_n_spiral_dataset: Generated spiral coordinates with {len(spiral_x_coords)} x-coordinates and {len(spiral_y_coords)} y-coordinates")
         self.logger.trace("SpiralProblem: generate_n_spiral_dataset: Creating the spiral dataset")
-        (x, y) = self._create_spiral_dataset( spiral_x_coords=spiral_x_coords, spiral_y_coords=spiral_y_coords,) # convert the spiral coordinates to the spiral dataset
+        # Original corrupted line:
+        # (x, y) = self._create_spiral_dataset( spiral_x_coords=spiral_x_coords, spiral_y_coords=spiral_y_coords,)\ \ \#\ convert the spiral coordinates to the spiral dataset
+        # Fixed line:
+        (x, y) = self._create_spiral_dataset(
+            spiral_x_coords=spiral_x_coords,
+            spiral_y_coords=spiral_y_coords,
+        )  # convert the spiral coordinates to the spiral dataset
         self.logger.debug(f"SpiralProblem: generate_n_spiral_dataset: Generated spiral dataset with {len(x)} points and {len(y)} labels")
         self.logger.trace("SpiralProblem: generate_n_spiral_dataset: Converting spiral dataset to PyTorch tensors")
-        x_tensor, y_tensor = self._convert_to_tensors(x, y) # Convert to PyTorch tensors
+        # Original corrupted line:
+        # x_tensor, y_tensor = self._convert_to_tensors(x, y)\ \ \#\ Convert to PyTorch tensors
+        # Fixed line:
+        x_tensor, y_tensor = self._convert_to_tensors(x, y)  # Convert to PyTorch tensors
         self.logger.debug(f"SpiralProblem: generate_n_spiral_dataset: Converted spiral dataset to tensors with x: Shape: {x_tensor.shape}, Type: {type(x_tensor)}, y: Shape: {y_tensor.shape}, Type: {type(y_tensor)}")
         self.logger.trace("SpiralProblem: generate_n_spiral_dataset: Shuffling the dataset")
-        x_shuffled, y_shuffled = self._shuffle_dataset(x_tensor=x_tensor, y_tensor=y_tensor) # Shuffle the data
+        # Original corrupted line:
+        # x_shuffled, y_shuffled = self._shuffle_dataset(x_tensor=x_tensor, y_tensor=y_tensor)\ \ \#\ Shuffle the data
+        # Fixed line:
+        x_shuffled, y_shuffled = self._shuffle_dataset(x_tensor=x_tensor, y_tensor=y_tensor)  # Shuffle the data
         self.logger.debug(f"SpiralProblem: generate_n_spiral_dataset: Shuffled spiral dataset with x: Shape: {x_shuffled.shape}, Type: {type(x_shuffled)}, y: Shape: {y_shuffled.shape}, Type: {type(y_shuffled)}")
         self.logger.trace("SpiralProblem: generate_n_spiral_dataset: Splitting the dataset into training and test sets")
-        partitioned_dataset = self._partition_dataset(total_points=self.total_points, partitions=(train_ratio, test_ratio), x=x_shuffled, y=y_shuffled) # Split the dataset into training and test sets
+        # Original corrupted line:
+        # partitioned_dataset = self._partition_dataset(total_points=self.total_points, partitions=(train_ratio, test_ratio), x=x_shuffled, y=y_shuffled)\ \ \#\ Split the dataset into training and test sets
+        # Fixed line:
+        partitioned_dataset = self._partition_dataset(total_points=self.total_points, partitions=(train_ratio, test_ratio), x=x_shuffled, y=y_shuffled)  # Split the dataset into training and test sets
         self.logger.debug(f"SpiralProblem: generate_n_spiral_dataset: Partitioned dataset: {partitioned_dataset}")
         self.logger.trace("SpiralProblem: generate_n_spiral_dataset: Unpacking the partitioned dataset")
-        partition_train, partition_test = partitioned_dataset # Unpack the partitioned dataset into training and test sets
+        # Original corrupted line:
+        # partition_train, partition_test = partitioned_dataset\ \ \#\ Unpack the partitioned dataset into training and test sets
+        # Fixed line:
+        partition_train, partition_test = partitioned_dataset  # Unpack the partitioned dataset into training and test sets
         self.logger.debug(f"SpiralProblem: generate_n_spiral_data: Partitioned dataset: {partition_train}, {partition_test}")
         self.logger.trace("SpiralProblem: generate_n_spiral_dataset: Unpacking the training and test sets")
-        (x_train, y_train,) = partition_train # Unpack the training and test sets
+        # Original corrupted line:
+        # (x_train, y_train,) = partition_train\ \ \#\ Unpack the training and test sets
+        # Fixed line:
+        (
+            x_train,
+            y_train,
+        ) = partition_train  # Unpack the training and test sets
         self.logger.debug(f"SpiralProblem: generate_n_spiral_data: Training set x: Shape: {x_train.shape}, Type: {type(x_train)}, y: Shape: {y_train.shape}, Type: {type(y_train)}")
         (x_test, y_test) = partition_test
         self.logger.debug(f"SpiralProblem: generate_n_spiral_data: Test set x: Shape: {x_test.shape}, Type: {type(x_test)}, y: Shape: {y_test.shape}, Type: {type(y_test)}")
         self.logger.trace("SpiralProblem: generate_n_spiral_data: Completed generation of n spiral dataset")
-        return (x_train, y_train), (x_test, y_test), (x_shuffled, y_shuffled) # Return training and test sets, and the full dataset
+        # Original corrupted line:
+        # return (x_train, y_train), (x_test, y_test), (x_shuffled, y_shuffled)\ \ \#\ Return training and test sets, and the full dataset
+        # Fixed line:
+        return (x_train, y_train), (x_test, y_test), (x_shuffled, y_shuffled)  # Return training and test sets, and the full dataset
 
     def _initialize_spiral_problem_params(
         self,
-        min_new=_SPIRAL_PROBLEM_MIN_NEW,                              # Minimum value for the new points
-        max_new=_SPIRAL_PROBLEM_MAX_NEW,                              # Maximum value for the new points
-        min_orig=_SPIRAL_PROBLEM_MIN_ORIG,                            # Minimum value for the original points
-        max_orig=_SPIRAL_PROBLEM_MAX_ORIG,                            # Maximum value for the original points
-        orig_points=_SPIRAL_PROBLEM_ORIG_POINTS,                      # User provided data points or None
+        min_new=_SPIRAL_PROBLEM_MIN_NEW,  # Minimum value for the new points
+        max_new=_SPIRAL_PROBLEM_MAX_NEW,  # Maximum value for the new points
+        min_orig=_SPIRAL_PROBLEM_MIN_ORIG,  # Minimum value for the original points
+        max_orig=_SPIRAL_PROBLEM_MAX_ORIG,  # Maximum value for the original points
+        orig_points=_SPIRAL_PROBLEM_ORIG_POINTS,  # User provided data points or None
         train_ratio=_SPIRAL_PROBLEM_TRAIN_RATIO,
         test_ratio=_SPIRAL_PROBLEM_TEST_RATIO,
-        clockwise=_SPIRAL_PROBLEM_CLOCKWISE,                          # True for clockwise spirals, False for counter-clockwise
+        clockwise=_SPIRAL_PROBLEM_CLOCKWISE,  # True for clockwise spirals, False for counter-clockwise
         n_spirals=_SPIRAL_PROBLEM_NUM_SPIRALS,
         n_rotations=_SPIRAL_PROBLEM_NUM_ROTATIONS,
-        n_points=_SPIRAL_PROBLEM_NUMBER_POINTS_PER_SPIRAL,            # Number of points per spiral
+        n_points=_SPIRAL_PROBLEM_NUMBER_POINTS_PER_SPIRAL,  # Number of points per spiral
         default_origin=_SPIRAL_PROBLEM_DEFAULT_ORIGIN,
         default_radius=_SPIRAL_PROBLEM_DEFAULT_RADIUS,
         noise_level=_SPIRAL_PROBLEM_NOISE_FACTOR_DEFAULT,
@@ -584,25 +617,69 @@ class SpiralProblem(object):
         """
         self.logger.trace("SpiralProblem: _initialize_spiral_problem_params: Initializing Spiral Problem parameters")
         # Set the parameters to the provided values or use the class attributes if the parameters are None
-        self.min_new = min_new or self.min_new or _SPIRAL_PROBLEM_MIN_NEW   # Use class attribute if min_new is None
-        self.max_new = max_new or self.max_new or _SPIRAL_PROBLEM_MAX_NEW # Use class attribute if max_new is None
-        self.min_orig = min_orig or self.min_orig or _SPIRAL_PROBLEM_MIN_ORIG # Use class attribute if min_orig is None
-        self.max_orig = max_orig or self.max_orig or _SPIRAL_PROBLEM_MAX_ORIG # Use class attribute if max_orig is None
-        self.orig_points = orig_points or self.orig_points or _SPIRAL_PROBLEM_ORIG_POINTS # Use class attribute if orig_points is None
-        self.train_ratio = train_ratio or self.train_ratio or _SPIRAL_PROBLEM_TRAIN_RATIO # Use class attribute if train_ratio is None
-        self.test_ratio = test_ratio or self.test_ratio or _SPIRAL_PROBLEM_TEST_RATIO # Use class attribute if test_ratio is None
-        self.clockwise = clockwise or self.clockwise or _SPIRAL_PROBLEM_CLOCKWISE # Use class attribute if clockwise is None
-        self.n_spirals = n_spirals or self.n_spirals or _SPIRAL_PROBLEM_NUM_SPIRALS # Use class attribute if n_spirals is None
-        self.n_rotations = n_rotations or self.n_rotations or _SPIRAL_PROBLEM_NUM_ROTATIONS # Use class attribute if n_rotations is None
-        self.n_points = n_points or self.n_points or _SPIRAL_PROBLEM_NUMBER_POINTS_PER_SPIRAL # Use class attribute if n_points is None
-        self.default_origin = default_origin or self.default_origin or _SPIRAL_PROBLEM_DEFAULT_ORIGIN # Use class attribute if default_origin is None
-        self.default_radius = default_radius or self.default_radius or _SPIRAL_PROBLEM_DEFAULT_RADIUS # Use class attribute if default_radius is None
-        self.noise = noise_level or self.noise or _SPIRAL_PROBLEM_NOISE_FACTOR_DEFAULT # Use class attribute if noise is None
-        self.distribution = distribution or self.distribution or _SPIRAL_PROBLEM_DISTRIBUTION_FACTOR # Use class attribute if distribution is None
+        self.min_new = min_new or self.min_new or _SPIRAL_PROBLEM_MIN_NEW  # Use class attribute if min_new is None
+        # Original corrupted line:
+        # self.max_new = max_new or self.max_new or _SPIRAL_PROBLEM_MAX_NEW\ \ \#\ Use class attribute if max_new is None
+        # Fixed line:
+        self.max_new = max_new or self.max_new or _SPIRAL_PROBLEM_MAX_NEW  # Use class attribute if max_new is None
+        # Original corrupted line:
+        # self.min_orig = min_orig or self.min_orig or _SPIRAL_PROBLEM_MIN_ORIG\ \ \#\ Use class attribute if min_orig is None
+        # Fixed line:
+        self.min_orig = min_orig or self.min_orig or _SPIRAL_PROBLEM_MIN_ORIG  # Use class attribute if min_orig is None
+        # Original corrupted line:
+        # self.max_orig = max_orig or self.max_orig or _SPIRAL_PROBLEM_MAX_ORIG\ \ \#\ Use class attribute if max_orig is None
+        # Fixed line:
+        self.max_orig = max_orig or self.max_orig or _SPIRAL_PROBLEM_MAX_ORIG  # Use class attribute if max_orig is None
+        # Original corrupted line:
+        # self.orig_points = orig_points or self.orig_points or _SPIRAL_PROBLEM_ORIG_POINTS\ \ \#\ Use class attribute if orig_points is None
+        # Fixed line:
+        self.orig_points = orig_points or self.orig_points or _SPIRAL_PROBLEM_ORIG_POINTS  # Use class attribute if orig_points is None
+        # Original corrupted line:
+        # self.train_ratio = train_ratio or self.train_ratio or _SPIRAL_PROBLEM_TRAIN_RATIO\ \ \#\ Use class attribute if train_ratio is None
+        # Fixed line:
+        self.train_ratio = train_ratio or self.train_ratio or _SPIRAL_PROBLEM_TRAIN_RATIO  # Use class attribute if train_ratio is None
+        # Original corrupted line:
+        # self.test_ratio = test_ratio or self.test_ratio or _SPIRAL_PROBLEM_TEST_RATIO\ \ \#\ Use class attribute if test_ratio is None
+        # Fixed line:
+        self.test_ratio = test_ratio or self.test_ratio or _SPIRAL_PROBLEM_TEST_RATIO  # Use class attribute if test_ratio is None
+        # Original corrupted line:
+        # self.clockwise = clockwise or self.clockwise or _SPIRAL_PROBLEM_CLOCKWISE\ \ \#\ Use class attribute if clockwise is None
+        # Fixed line:
+        self.clockwise = clockwise or self.clockwise or _SPIRAL_PROBLEM_CLOCKWISE  # Use class attribute if clockwise is None
+        # Original corrupted line:
+        # self.n_spirals = n_spirals or self.n_spirals or _SPIRAL_PROBLEM_NUM_SPIRALS\ \ \#\ Use class attribute if n_spirals is None
+        # Fixed line:
+        self.n_spirals = n_spirals or self.n_spirals or _SPIRAL_PROBLEM_NUM_SPIRALS  # Use class attribute if n_spirals is None
+        # Original corrupted line:
+        # self.n_rotations = n_rotations or self.n_rotations or _SPIRAL_PROBLEM_NUM_ROTATIONS\ \ \#\ Use class attribute if n_rotations is None
+        # Fixed line:
+        self.n_rotations = n_rotations or self.n_rotations or _SPIRAL_PROBLEM_NUM_ROTATIONS  # Use class attribute if n_rotations is None
+        # Original corrupted line:
+        # self.n_points = n_points or self.n_points or _SPIRAL_PROBLEM_NUMBER_POINTS_PER_SPIRAL\ \ \#\ Use class attribute if n_points is None
+        # Fixed line:
+        self.n_points = n_points or self.n_points or _SPIRAL_PROBLEM_NUMBER_POINTS_PER_SPIRAL  # Use class attribute if n_points is None
+        # Original corrupted line:
+        # self.default_origin = default_origin or self.default_origin or _SPIRAL_PROBLEM_DEFAULT_ORIGIN\ \ \#\ Use class attribute if default_origin is None
+        # Fixed line:
+        self.default_origin = default_origin or self.default_origin or _SPIRAL_PROBLEM_DEFAULT_ORIGIN  # Use class attribute if default_origin is None
+        # Original corrupted line:
+        # self.default_radius = default_radius or self.default_radius or _SPIRAL_PROBLEM_DEFAULT_RADIUS\ \ \#\ Use class attribute if default_radius is None
+        # Fixed line:
+        self.default_radius = default_radius or self.default_radius or _SPIRAL_PROBLEM_DEFAULT_RADIUS  # Use class attribute if default_radius is None
+        # Original corrupted line:
+        # self.noise = noise_level or self.noise or _SPIRAL_PROBLEM_NOISE_FACTOR_DEFAULT\ \ \#\ Use class attribute if noise is None
+        # Fixed line:
+        self.noise = noise_level or self.noise or _SPIRAL_PROBLEM_NOISE_FACTOR_DEFAULT  # Use class attribute if noise is None
+        # Original corrupted line:
+        # self.distribution = distribution or self.distribution or _SPIRAL_PROBLEM_DISTRIBUTION_FACTOR\ \ \#\ Use class attribute if distribution is None
+        # Fixed line:
+        self.distribution = distribution or self.distribution or _SPIRAL_PROBLEM_DISTRIBUTION_FACTOR  # Use class attribute if distribution is None
         self.total_points = self.n_spirals * self.n_points
         self.logger.trace("SpiralProblem: _initialize_spiral_problem_params: Completed initialization")
 
-    def _generate_spiral_coordinates(self,) -> Tuple[np.ndarray, np.ndarray]:
+    def _generate_spiral_coordinates(
+        self,
+    ) -> Tuple[np.ndarray, np.ndarray]:
         """
         Description:
             Generate the coordinates for n spirals.
@@ -619,7 +696,9 @@ class SpiralProblem(object):
         """
         # Generate the base radial distance
         self.logger.trace("SpiralProblem: generate_spiral_dataset: Generating base radial distance")
-        n_distance = self._generate_base_radial_distance(n_points=self.n_points,)
+        n_distance = self._generate_base_radial_distance(
+            n_points=self.n_points,
+        )
         self.logger.debug(f"SpiralProblem: generate_spiral_dataset: Base radial distance generated: {n_distance}")
         direction = (1, -1)[self.clockwise]  # Determine the direction of the spiral based on clockwise parameter
         self.logger.debug(f"SpiralProblem: generate_spiral_dataset: Direction: ({direction}) of spiral: {'clockwise' if self.clockwise else 'counter-clockwise'}")
@@ -657,7 +736,9 @@ class SpiralProblem(object):
         # Return the radial distance
         return radial_distance
 
-    def _generate_angular_offset(self,) -> float:
+    def _generate_angular_offset(
+        self,
+    ) -> float:
         """
         Description:
             Generate an angular offset for the spiral based on its index.
@@ -692,7 +773,12 @@ class SpiralProblem(object):
         for index in range(self.n_spirals):
             # Append the Current Spiral Coordinates to the lists
             self.logger.trace(f"SpiralProblem: generate_raw_spiral_coordinates: Generating spiral {index+1}/{self.n_spirals} coordinates")
-            spiral_x, spiral_y = self._generate_xy_coordinates( n_distance=n_distance, direction=direction, angular_offset=angular_offset, index=index,)
+            spiral_x, spiral_y = self._generate_xy_coordinates(
+                n_distance=n_distance,
+                direction=direction,
+                angular_offset=angular_offset,
+                index=index,
+            )
             self.logger.debug(f"SpiralProblem: generate_raw_spiral_coordinates: Spiral {index+1}/{self.n_spirals} coordinates generated")
             self.logger.verbose(f"SpiralProblem: generate_spiral_dataset: Spiral {index+1} X coordinates: {spiral_x}, Y coordinates: {spiral_y}")
             spiral_x_coords.append(spiral_x)
@@ -767,11 +853,7 @@ class SpiralProblem(object):
         # Return the coordinates
         return coords
 
-    def _make_noise(
-        self,
-        n_points: int = 0,
-        noise: float = 0.0
-    ) -> np.ndarray:
+    def _make_noise(self, n_points: int = 0, noise: float = 0.0) -> np.ndarray:
         """
         Description:
             Generate random noise for the spiral points. The noise is generated based on a uniform distribution.
@@ -800,7 +882,7 @@ class SpiralProblem(object):
         self.logger.trace("SpiralProblem: create_input_features: Creating input features from spiral coordinates")
         # Stack the x and y coordinates vertically and transpose to get the correct shape
         self.logger.trace("SpiralProblem: create_input_features: Stacking the x and y coordinates vertically and transposing to get the correct shape")
-        x = np.vstack([ np.hstack(spiral_x_coords), np.hstack(spiral_y_coords) ]).T
+        x = np.vstack([np.hstack(spiral_x_coords), np.hstack(spiral_y_coords)]).T
         self.logger.verbose(f"SpiralProblem: create_input_features: Created input features with shape: {x.shape}, Values:\n{x}")
         self.logger.trace("SpiralProblem: create_input_features: Completed creating input features")
         return x
@@ -836,8 +918,14 @@ class SpiralProblem(object):
 
     def _create_spiral_dataset(
         self,
-        spiral_x_coords: tuple = None, # Tuple of x coordinates for the spirals
-        spiral_y_coords: tuple = None, # Tuple of y coordinates for the spirals
+        # Original corrupted line:
+        # spiral_x_coords: tuple = None,\ \ \#\ Tuple of x coordinates for the spirals
+        # Fixed line:
+        spiral_x_coords: tuple = None,  # Tuple of x coordinates for the spirals
+        # Original corrupted line:
+        # spiral_y_coords: tuple = None,\ \ \#\ Tuple of y coordinates for the spirals
+        # Fixed line:
+        spiral_y_coords: tuple = None,  # Tuple of y coordinates for the spirals
     ):
         """
         Description:
@@ -856,7 +944,10 @@ class SpiralProblem(object):
         self.logger.trace("SpiralProblem: generate_n_spiral_dataset: Creating spiral dataset from coordinates")
         # Create input features (same structure as original)
         self.logger.trace("SpiralProblem: generate_n_spiral_dataset: Creating input features")
-        x = self._create_input_features( spiral_x_coords=spiral_x_coords, spiral_y_coords=spiral_y_coords,)
+        x = self._create_input_features(
+            spiral_x_coords=spiral_x_coords,
+            spiral_y_coords=spiral_y_coords,
+        )
         # Create targets (one-hot encoded for N classes)
         y = self._create_one_hot_targets(total_points=self.total_points, n_spirals=self.n_spirals, dtype=np.float32)
         self.logger.debug(f"SpiralProblem: generate_n_spiral_dataset: Created input features x: Shape: {x.shape}, Type: {type(x)}")
@@ -985,20 +1076,41 @@ class SpiralProblem(object):
             ValueError: If total_points or partitions are None, if x and y are not provided, or if partitions do not sum to 1.0.
         """
         self.logger.trace("SpiralProblem: split_dataset: Starting to split dataset into partitions")
-        if total_points is None or partitions is None: # Check if total_points and partitions are provided
+        # Original corrupted line:
+        # if total_points is None or partitions is None:\ \ \#\ Check if total_points and partitions are provided
+        # Fixed line:
+        if total_points is None or partitions is None:  # Check if total_points and partitions are provided
             raise ValueError("SpiralProblem: split_dataset: total_points and partitions must be provided.")
-        if x is None or y is None: # Check if x and y are provided
+        # Original corrupted line:
+        # if x is None or y is None:\ \ \#\ Check if x and y are provided
+        # Fixed line:
+        if x is None or y is None:  # Check if x and y are provided
             raise ValueError("SpiralProblem: split_dataset: Torch Tensors, x and y must be provided.")
-        if not isinstance(total_points, int) or total_points <= 0: # Check if total_points is a positive integer
+        # Original corrupted line:
+        # if not isinstance(total_points, int) or total_points <= 0:\ \ \#\ Check if total_points is a positive integer
+        # Fixed line:
+        if not isinstance(total_points, int) or total_points <= 0:  # Check if total_points is a positive integer
             raise ValueError(f"SpiralProblem: split_dataset: total_points must be a positive integer, but got {total_points}.")
-        if not isinstance(partitions, tuple) or not all(isinstance(p, (float, int)) for p in partitions): # Check if partitions is a tuple of floats
+        # Original corrupted line:
+        # if not isinstance(partitions, tuple) or not all(isinstance(p, (float, int)) for p in partitions):\ \ \#\ Check if partitions is a tuple of floats
+        # Fixed line:
+        if not isinstance(partitions, tuple) or not all(isinstance(p, (float, int)) for p in partitions):  # Check if partitions is a tuple of floats
             raise ValueError(f"SpiralProblem: split_dataset: partitions must be a tuple of floats, but got {partitions}.")
-        if not partitions: # Check if the length of partitions is greater than 0
+        # Original corrupted line:
+        # if not partitions:\ \ \#\ Check if the length of partitions is greater than 0
+        # Fixed line:
+        if not partitions:  # Check if the length of partitions is greater than 0
             raise ValueError("SpiralProblem: split_dataset: partitions must contain at least one partition.")
-        if x.size(0) != total_points or y.size(0) != total_points: # Check if x and y have the same length as total_points
+        # Original corrupted line:
+        # if x.size(0) != total_points or y.size(0) != total_points:\ \ \#\ Check if x and y have the same length as total_points
+        # Fixed line:
+        if x.size(0) != total_points or y.size(0) != total_points:  # Check if x and y have the same length as total_points
             raise ValueError(f"SpiralProblem: split_dataset: x and y must have the same length as total_points, but got x: {x.size(0)}, y: {y.size(0)}, total_points: {total_points}.")
         partitions_sum = sum(partitions)
-        if not np.isclose(partitions_sum, 1.0): # Check if partitions are valid
+        # Original corrupted line:
+        # if not np.isclose(partitions_sum, 1.0):\ \ \#\ Check if partitions are valid
+        # Fixed line:
+        if not np.isclose(partitions_sum, 1.0):  # Check if partitions are valid
             raise ValueError(f"SpiralProblem: split_dataset: Partitions must sum to 1.0, but got {partitions_sum}.")
         self.logger.trace("SpiralProblem: split_dataset: Calculating dataset partitions based on provided ratios")
         self.logger.debug(f"SpiralProblem: split_dataset: Splitting dataset with total points: {total_points}, partitions: {partitions}, x shape: {x.shape}, y shape: {y.shape}.")
@@ -1007,7 +1119,7 @@ class SpiralProblem(object):
         for partition in partitions:  # Calculate the dataset partitions based on the provided ratios
             if not (0.0 <= partition <= 1.0):
                 raise ValueError(f"SpiralProblem: split_dataset: Partition {partition} must be between 0.0 and 1.0.")
-            partition_end = self._find_partition_index_end( partition_start=partition_start, total_points=total_points, partition=partition)
+            partition_end = self._find_partition_index_end(partition_start=partition_start, total_points=total_points, partition=partition)
             current_partition = x[partition_start:partition_end], y[partition_start:partition_end]
             self.logger.debug(f"SpiralProblem: split_dataset: Current Partition: Length: {len(current_partition)}, Value:\n{current_partition}")
             self.logger.debug(f"SpiralProblem: split_dataset: Pre-appended length of dataset_partitions: {len(dataset_partitions)}")
@@ -1018,12 +1130,7 @@ class SpiralProblem(object):
         self.logger.trace("SpiralProblem: split_dataset: Completed splitting dataset into partitions.")
         return dataset_partitions
 
-    def _find_partition_index_end(
-        self,
-        partition_start: int,
-        total_points: int,
-        partition: float
-    ) -> int:
+    def _find_partition_index_end(self, partition_start: int, total_points: int, partition: float) -> int:
         """
         Description:
             Calculate the index end for a given partition based on the start index, total points, and partition ratio.
@@ -1036,14 +1143,17 @@ class SpiralProblem(object):
         """
         self.logger.trace("SpiralProblem: find_partition_index_end: Starting to calculate partition end index")
         self.logger.debug(f"SpiralProblem: find_partition_index_end: Calculating partition end index for partition start: {partition_start}, total points: {total_points}, partition ratio: {partition}")
-        partition_end = partition_start + self._dataset_split_index_end( total_points=total_points, split_ratio=partition,)
+        partition_end = partition_start + self._dataset_split_index_end(
+            total_points=total_points,
+            split_ratio=partition,
+        )
         self.logger.debug(f"SpiralProblem: find_partition_index_end: Calculated partition end index: {partition_end}")
         self.logger.trace("SpiralProblem: find_partition_index_end: Completed calculating partition end index")
         return partition_end
 
     def _dataset_split_index_end(
         self,
-        total_points: int=0,
+        total_points: int = 0,
         split_ratio: float = 0.0,
     ) -> int:
         """
@@ -1065,7 +1175,6 @@ class SpiralProblem(object):
         self.logger.debug(f"SpiralProblem: dataset_split_index_end: Valid index end: {index_end}")
         self.logger.trace("SpiralProblem: dataset_split_index_end: Completed calculating dataset split index end")
         return index_end
-
 
     #####################################################################################################################################################################################################
     # Define function to solve the two spiral problem using Spiral Problem.
@@ -1192,7 +1301,11 @@ class SpiralProblem(object):
         self.logger.trace("SpiralProblem: solve_n_spiral_problem: Training the network on the N Spiral Problem dataset")
         self.logger.debug("SpiralProblem: solve_n_spiral_problem: Created Spiral Problem...")
         self.logger.debug(f"SpiralProblem: solve_n_spiral_problem: Spiral Problem: \n{self.network}")
-        self.history = self.network.fit(self.x, self.y, max_epochs=_SPIRAL_PROBLEM_OUTPUT_EPOCHS,)
+        self.history = self.network.fit(
+            self.x,
+            self.y,
+            max_epochs=_SPIRAL_PROBLEM_OUTPUT_EPOCHS,
+        )
         self.logger.debug(f"SpiralProblem: solve_n_spiral_problem: Training history: {self.history}")
 
         # Print summary
@@ -1331,7 +1444,6 @@ class SpiralProblem(object):
         self.logger.debug(f"SpiralProblem: main: Final accuracy on the two spiral problem: Testing: {self.test_accuracy_percent:.2f}%")
         self.logger.trace("SpiralProblem: evaluate: Completed evaluation of the two spiral problem")
 
-
     ####################################################################################################################################
     # Define private methods for the SpiralProblem class
     def _generate_uuid(self):
@@ -1348,7 +1460,6 @@ class SpiralProblem(object):
         self.logger.debug(f"SpiralProblem: _generate_uuid: UUID: {new_uuid}")
         self.logger.trace("SpiralProblem: _generate_uuid: Completed the SpiralProblem class Generate UUID method")
         return new_uuid
-
 
     ####################################################################################################################################
     # Define SpiralProblem class Setters
@@ -1422,7 +1533,7 @@ class SpiralProblem(object):
         """
         self.logger.trace("SpiralProblem: set_uuid: Inside the SpiralProblem class Set UUID method")
         self.logger.debug("SpiralProblem: set_uuid: Starting to set UUID for SpiralProblem class: Provided UUID: {uuid}, uuid is None: {uuid is None}")
-        if (not hasattr(self, 'uuid')) or self.uuid is None:
+        if (not hasattr(self, "uuid")) or self.uuid is None:
             new_uuid = (uuid, self._generate_uuid())[uuid is None]  # Generate a new UUID if none is provided
             self.logger.debug(f"SpiralProblem: set_uuid: New UUID generated: {new_uuid}")
             self.uuid = new_uuid  # Set the UUID for the SpiralProblem class
@@ -1433,7 +1544,6 @@ class SpiralProblem(object):
             os._exit(1)
         self.logger.debug(f"SpiralProblem: set_uuid: Completed setting UUID to: {self.uuid}")
         self.logger.trace("SpiralProblem: set_uuid: Completed the SpiralProblem class Set UUID method")
-
 
     ####################################################################################################################################
     # Define SpiralProblem class Getters

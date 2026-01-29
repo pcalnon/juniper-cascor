@@ -181,7 +181,7 @@ def time_function(func: Callable, iterations: int = 5, warmup: int = 1) -> Tuple
     # Warmup runs
     for _ in range(warmup):
         func()
-    
+
     # Timed runs
     times = []
     for _ in range(iterations):
@@ -189,7 +189,7 @@ def time_function(func: Callable, iterations: int = 5, warmup: int = 1) -> Tuple
         func()
         end = time.perf_counter()
         times.append(end - start)
-    
+
     mean_time = statistics.mean(times)
     std_dev = statistics.stdev(times) if len(times) > 1 else 0.0
     min_time = min(times)
@@ -200,9 +200,9 @@ def benchmark_serialization(iterations: int = 5) -> dict:
     """Benchmark HDF5 serialization performance."""
     from cascade_correlation.cascade_correlation import CascadeCorrelationNetwork
     from cascade_correlation.cascade_correlation_config.cascade_correlation_config import CascadeCorrelationConfig
-    
+
     results = {"save": {}, "load": {}, "verify": {}}
-    
+
     # Create network with various sizes
     for hidden_units in [0, 10, 50]:
         config = CascadeCorrelationConfig(
@@ -211,7 +211,7 @@ def benchmark_serialization(iterations: int = 5) -> dict:
             random_seed=42,
         )
         network = CascadeCorrelationNetwork(config=config)
-        
+
         # Add hidden units
         for i in range(hidden_units):
             network.hidden_units.append({
@@ -219,29 +219,29 @@ def benchmark_serialization(iterations: int = 5) -> dict:
                 "bias": torch.randn(1),
                 "activation": network.activation_fn,
             })
-        
+
         with tempfile.NamedTemporaryFile(suffix=".h5", delete=False) as f:
             filepath = f.name
-        
+
         try:
             # Benchmark save
             def save_network():
                 network.save_to_hdf5(filepath)
-            
+
             mean, std, min_t = time_function(save_network, iterations)
             results["save"][f"{hidden_units}_units"] = {"mean": mean, "std": std, "min": min_t}
-            
+
             # Benchmark load
             def load_network():
                 CascadeCorrelationNetwork.load_from_hdf5(filepath)
-            
+
             mean, std, min_t = time_function(load_network, iterations)
             results["load"][f"{hidden_units}_units"] = {"mean": mean, "std": std, "min": min_t}
-            
+
         finally:
             if os.path.exists(filepath):
                 os.remove(filepath)
-    
+
     return results
 
 
@@ -249,9 +249,9 @@ def benchmark_forward_pass(iterations: int = 5) -> dict:
     """Benchmark forward pass performance."""
     from cascade_correlation.cascade_correlation import CascadeCorrelationNetwork
     from cascade_correlation.cascade_correlation_config.cascade_correlation_config import CascadeCorrelationConfig
-    
+
     results = {}
-    
+
     # Test different batch sizes and hidden unit counts
     for batch_size in [1, 32, 128]:
         for hidden_units in [0, 10, 50]:
@@ -261,7 +261,7 @@ def benchmark_forward_pass(iterations: int = 5) -> dict:
                 random_seed=42,
             )
             network = CascadeCorrelationNetwork(config=config)
-            
+
             # Add hidden units
             for i in range(hidden_units):
                 network.hidden_units.append({
@@ -269,17 +269,17 @@ def benchmark_forward_pass(iterations: int = 5) -> dict:
                     "bias": torch.randn(1),
                     "activation": network.activation_fn,
                 })
-            
+
             # Create input batch
             x = torch.randn(batch_size, network.input_size)
-            
+
             def forward():
                 network.forward(x)
-            
+
             mean, std, min_t = time_function(forward, iterations)
             key = f"batch{batch_size}_units{hidden_units}"
             results[key] = {"mean": mean, "std": std, "min": min_t}
-    
+
     return results
 
 
@@ -287,9 +287,9 @@ def benchmark_training(iterations: int = 3) -> dict:
     """Benchmark short training sessions."""
     from cascade_correlation.cascade_correlation import CascadeCorrelationNetwork
     from cascade_correlation.cascade_correlation_config.cascade_correlation_config import CascadeCorrelationConfig
-    
+
     results = {}
-    
+
     # Generate simple dataset
     np.random.seed(42)
     n_samples = 100
@@ -297,7 +297,7 @@ def benchmark_training(iterations: int = 3) -> dict:
     y = torch.zeros(n_samples, 2)
     y[x[:, 0] > 0, 0] = 1.0
     y[x[:, 0] <= 0, 1] = 1.0
-    
+
     # Benchmark output layer training
     for epochs in [10, 50]:
         config = CascadeCorrelationConfig(
@@ -306,13 +306,13 @@ def benchmark_training(iterations: int = 3) -> dict:
             random_seed=42,
         )
         network = CascadeCorrelationNetwork(config=config)
-        
+
         def train_output():
             network.train_output_layer(x, y, epochs=epochs, display_frequency=1000)
-        
+
         mean, std, min_t = time_function(train_output, iterations)
         results[f"output_epochs{epochs}"] = {"mean": mean, "std": std, "min": min_t}
-    
+
     return results
 
 
@@ -333,13 +333,13 @@ def print_results(results: dict, title: str):
     print(f"{'=' * 60}")
     print(f"{'Benchmark':<30} {'Mean':>10} {'Std':>10} {'Min':>10}")
     print(f"{'-' * 60}")
-    
+
     for name, timing in results.items():
         mean = format_time(timing["mean"])
         std = format_time(timing["std"])
         min_t = format_time(timing["min"])
         print(f"{name:<30} {mean:>10} {std:>10} {min_t:>10}")
-    
+
     print(f"{'=' * 60}")
 
 
@@ -352,32 +352,32 @@ def main():
     parser.add_argument("-a", "--all", action="store_true", help="Run all benchmarks")
     parser.add_argument("-n", "--iterations", type=int, default=5, help="Iterations per benchmark")
     args = parser.parse_args()
-    
+
     # Default to all if nothing specified
     if not (args.serialization or args.training or args.forward):
         args.all = True
-    
+
     print("╔════════════════════════════════════════════════════════════╗")
     print("║       Juniper Cascor Performance Benchmarks                ║")
     print("╚════════════════════════════════════════════════════════════╝")
     print(f"Iterations per benchmark: {args.iterations}")
-    
+
     if args.all or args.serialization:
         print("\nRunning serialization benchmarks...")
         results = benchmark_serialization(args.iterations)
         print_results(results["save"], "Serialization: Save to HDF5")
         print_results(results["load"], "Serialization: Load from HDF5")
-    
+
     if args.all or args.forward:
         print("\nRunning forward pass benchmarks...")
         results = benchmark_forward_pass(args.iterations)
         print_results(results, "Forward Pass Performance")
-    
+
     if args.all or args.training:
         print("\nRunning training benchmarks...")
         results = benchmark_training(min(args.iterations, 3))  # Limit training iterations
         print_results(results, "Output Layer Training Performance")
-    
+
     print("\n✓ Benchmark suite complete")
 
 

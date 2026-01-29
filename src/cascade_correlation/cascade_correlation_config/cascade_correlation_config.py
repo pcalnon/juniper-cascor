@@ -34,24 +34,25 @@
 #
 #
 #####################################################################################################################################################################################################
-import uuid
 import pathlib
+import uuid
 from dataclasses import dataclass
-from log_config.log_config import LogConfig
 
-
-from cascor_constants.constants import (
-    # _CASCADE_CORRELATION_NETWORK_ACTIVATION_FUNCTION_DEFAULT,
+from cascor_constants.constants import (  # _CASCADE_CORRELATION_NETWORK_ACTIVATION_FUNCTION_DEFAULT,
     _CASCADE_CORRELATION_NETWORK_ACTIVATION_FUNCTION_NAME,
     _CASCADE_CORRELATION_NETWORK_ACTIVATION_FUNCTIONS_DICT,
+    _CASCADE_CORRELATION_NETWORK_AUTHKEY,
+    _CASCADE_CORRELATION_NETWORK_BASE_MANAGER_ADDRESS,
     _CASCADE_CORRELATION_NETWORK_CANDIDATE_DISPLAY_FREQUENCY,
     _CASCADE_CORRELATION_NETWORK_CANDIDATE_EPOCHS,
     _CASCADE_CORRELATION_NETWORK_CANDIDATE_LEARNING_RATE,
     _CASCADE_CORRELATION_NETWORK_CANDIDATE_POOL_SIZE,
+    _CASCADE_CORRELATION_NETWORK_CANDIDATE_TRAINING_CONTEXT,
     _CASCADE_CORRELATION_NETWORK_DISPLAY_FREQUENCY,
     _CASCADE_CORRELATION_NETWORK_EPOCH_DISPLAY_FREQUENCY,
     _CASCADE_CORRELATION_NETWORK_EPOCHS_MAX,
     _CASCADE_CORRELATION_NETWORK_GENERATE_PLOTS,
+    _CASCADE_CORRELATION_NETWORK_HDF5_PROJECT_SNAPSHOTS_DIR,
     _CASCADE_CORRELATION_NETWORK_INPUT_SIZE,
     _CASCADE_CORRELATION_NETWORK_LEARNING_RATE,
     _CASCADE_CORRELATION_NETWORK_LOG_DATE_FORMAT,
@@ -71,21 +72,16 @@ from cascor_constants.constants import (
     _CASCADE_CORRELATION_NETWORK_OUTPUT_SIZE,
     _CASCADE_CORRELATION_NETWORK_PATIENCE,
     _CASCADE_CORRELATION_NETWORK_RANDOM_MAX_VALUE,
-    _CASCADE_CORRELATION_NETWORK_SEQUENCE_MAX_VALUE,
     _CASCADE_CORRELATION_NETWORK_RANDOM_SEED,
     _CASCADE_CORRELATION_NETWORK_RANDOM_VALUE_SCALE,
-    _CASCADE_CORRELATION_NETWORK_STATUS_DISPLAY_FREQUENCY,
-    _CASCADE_CORRELATION_NETWORK_HDF5_PROJECT_SNAPSHOTS_DIR,
-
-    _CASCADE_CORRELATION_NETWORK_WORKER_STANDBY_SLEEPYTIME,
+    _CASCADE_CORRELATION_NETWORK_SEQUENCE_MAX_VALUE,
     _CASCADE_CORRELATION_NETWORK_SHUTDOWN_TIMEOUT,
-    _CASCADE_CORRELATION_NETWORK_TASK_QUEUE_TIMEOUT,
+    _CASCADE_CORRELATION_NETWORK_STATUS_DISPLAY_FREQUENCY,
     _CASCADE_CORRELATION_NETWORK_TARGET_ACCURACY,
-
-    _CASCADE_CORRELATION_NETWORK_AUTHKEY,
-    _CASCADE_CORRELATION_NETWORK_BASE_MANAGER_ADDRESS,
-    _CASCADE_CORRELATION_NETWORK_CANDIDATE_TRAINING_CONTEXT,
+    _CASCADE_CORRELATION_NETWORK_TASK_QUEUE_TIMEOUT,
+    _CASCADE_CORRELATION_NETWORK_WORKER_STANDBY_SLEEPYTIME,
 )
+from log_config.log_config import LogConfig
 
 
 #####################################################################################################################################################################################################
@@ -93,7 +89,8 @@ from cascor_constants.constants import (
 @dataclass
 class OptimizerConfig:
     """Configuration for output layer optimizer."""
-    optimizer_type: str = 'Adam'  # Adam, SGD, RMSprop, AdamW, etc.
+
+    optimizer_type: str = "Adam"  # Adam, SGD, RMSprop, AdamW, etc.
     learning_rate: float = 0.01
     momentum: float = 0.9  # For SGD
     beta1: float = 0.9  # For Adam
@@ -113,11 +110,9 @@ class CascadeCorrelationConfig:
         input_size: int = _CASCADE_CORRELATION_NETWORK_INPUT_SIZE,
         output_size: int = _CASCADE_CORRELATION_NETWORK_OUTPUT_SIZE,
         max_hidden_units: int = _CASCADE_CORRELATION_NETWORK_MAX_HIDDEN_UNITS,
-
         # Activation function
         activation_function_name: str = _CASCADE_CORRELATION_NETWORK_ACTIVATION_FUNCTION_NAME,
         activation_functions_dict: dict = _CASCADE_CORRELATION_NETWORK_ACTIVATION_FUNCTIONS_DICT,
-
         # Training parameters
         learning_rate: float = _CASCADE_CORRELATION_NETWORK_LEARNING_RATE,
         candidate_learning_rate: float = _CASCADE_CORRELATION_NETWORK_CANDIDATE_LEARNING_RATE,
@@ -126,23 +121,19 @@ class CascadeCorrelationConfig:
         epochs_max: int = _CASCADE_CORRELATION_NETWORK_EPOCHS_MAX,
         output_epochs: int = _CASCADE_CORRELATION_NETWORK_OUTPUT_EPOCHS,
         patience: int = _CASCADE_CORRELATION_NETWORK_PATIENCE,
-
         # Thresholds
         correlation_threshold: float = _CASCADE_CORRELATION_NETWORK_NODE_CORRELATION_THRESHOLD,
-
         # Display and visualization
         display_frequency: int = _CASCADE_CORRELATION_NETWORK_DISPLAY_FREQUENCY,
         epoch_display_frequency: int = _CASCADE_CORRELATION_NETWORK_EPOCH_DISPLAY_FREQUENCY,
         candidate_display_frequency: int = _CASCADE_CORRELATION_NETWORK_CANDIDATE_DISPLAY_FREQUENCY,
         status_display_frequency: int = _CASCADE_CORRELATION_NETWORK_STATUS_DISPLAY_FREQUENCY,
         generate_plots: bool = _CASCADE_CORRELATION_NETWORK_GENERATE_PLOTS,
-
         # Random number generation
         random_seed: int = _CASCADE_CORRELATION_NETWORK_RANDOM_SEED,
         random_max_value: int = _CASCADE_CORRELATION_NETWORK_RANDOM_MAX_VALUE,
         sequence_max_value: int = _CASCADE_CORRELATION_NETWORK_SEQUENCE_MAX_VALUE,
         random_value_scale: float = _CASCADE_CORRELATION_NETWORK_RANDOM_VALUE_SCALE,
-
         # Logging configuration
         log_config: LogConfig = None,
         log_file_name: str = _CASCADE_CORRELATION_NETWORK_LOG_FILE_NAME,
@@ -156,20 +147,16 @@ class CascadeCorrelationConfig:
         log_level_names_list: list = _CASCADE_CORRELATION_NETWORK_LOG_LEVEL_NAMES_LIST,
         log_level_numbers_dict: dict = _CASCADE_CORRELATION_NETWORK_LOG_LEVEL_NUMBERS_DICT,
         log_level_numbers_list: list = _CASCADE_CORRELATION_NETWORK_LOG_LEVEL_NUMBERS_LIST,
-
         # Multiprocessing configuration
         candidate_training_queue_authkey: str = _CASCADE_CORRELATION_NETWORK_AUTHKEY,
         candidate_training_queue_address: tuple = _CASCADE_CORRELATION_NETWORK_BASE_MANAGER_ADDRESS,
-
         candidate_training_worker_standby_sleepytime: float = _CASCADE_CORRELATION_NETWORK_WORKER_STANDBY_SLEEPYTIME,
         candidate_training_task_queue_timeout: float = _CASCADE_CORRELATION_NETWORK_TASK_QUEUE_TIMEOUT,
         candidate_training_shutdown_timeout: float = _CASCADE_CORRELATION_NETWORK_SHUTDOWN_TIMEOUT,
         candidate_training_target_accuracy: float = _CASCADE_CORRELATION_NETWORK_TARGET_ACCURACY,
         candidate_training_context_type: str = _CASCADE_CORRELATION_NETWORK_CANDIDATE_TRAINING_CONTEXT,
-
         # cascade_correlation_network_snapshots_dir: str = _HDF5_PROJECT_SNAPSHOTS_DIR,
         cascade_correlation_network_snapshots_dir: pathlib.Path = _CASCADE_CORRELATION_NETWORK_HDF5_PROJECT_SNAPSHOTS_DIR,
-
         # UUID
         uuid: uuid.UUID = None,
     ):
@@ -196,7 +183,7 @@ class CascadeCorrelationConfig:
 
         # N-best candidate selection
         self.candidates_per_layer = 1  # Set to N for layer-based addition
-        self.layer_selection_strategy = 'top_n'  # 'top_n', 'threshold', 'adaptive'
+        self.layer_selection_strategy = "top_n"  # 'top_n', 'threshold', 'adaptive'
 
         # Display and visualization
         self.display_frequency = display_frequency
@@ -247,7 +234,7 @@ class CascadeCorrelationConfig:
         """Remove non-picklable items for multiprocessing serialization."""
         state = self.__dict__.copy()
         # Remove non-serializable items (log_config contains loggers)
-        state.pop('log_config', None)
+        state.pop("log_config", None)
         return state
 
     def __setstate__(self, state):
@@ -257,14 +244,7 @@ class CascadeCorrelationConfig:
         self.log_config = None
 
     @classmethod
-    def create_simple_config(
-        cls,
-        input_size: int = 2,
-        output_size: int = 1,
-        learning_rate: float = 0.1,
-        max_hidden_units: int = 10,
-        **kwargs
-    ):
+    def create_simple_config(cls, input_size: int = 2, output_size: int = 1, learning_rate: float = 0.1, max_hidden_units: int = 10, **kwargs):
         """
         Factory method to create a simplified configuration for common use cases.
 
@@ -278,11 +258,4 @@ class CascadeCorrelationConfig:
         Returns:
             CascadeCorrelationConfig: Configured instance with sensible defaults
         """
-        return cls(
-            input_size=input_size,
-            output_size=output_size,
-            learning_rate=learning_rate,
-            max_hidden_units=max_hidden_units,
-            **kwargs
-        )
-
+        return cls(input_size=input_size, output_size=output_size, learning_rate=learning_rate, max_hidden_units=max_hidden_units, **kwargs)

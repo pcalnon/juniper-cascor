@@ -1,10 +1,10 @@
 # AGENTS.md - Juniper Cascor Project Guide
 
 **Project**: Juniper Cascade Correlation Neural Network  
-**Version**: 0.3.19 (0.7.3)  
+**Version**: 0.4.0 (0.7.3)  
 **License**: MIT License  
 **Author**: Paul Calnon  
-**Last Updated**: 2026-01-25
+**Last Updated**: 2026-01-29
 
 ---
 
@@ -57,6 +57,17 @@ cd src && python -m isort --check-only --diff .
 
 # Linting via trunk (if available)
 trunk check
+
+# Pre-commit hooks (CI/CD local validation)
+pip install pre-commit                    # Install pre-commit (one-time)
+pre-commit install                        # Install git hooks (one-time)
+pre-commit run --all-files                # Run all hooks on all files
+pre-commit run black --all-files          # Run specific hook
+
+# Security scanning
+pip install bandit pip-audit              # Install security tools
+bandit -r src/                            # Run Bandit SAST scan
+pip-audit                                 # Check for dependency vulnerabilities
 ```
 
 ### Environment Variables

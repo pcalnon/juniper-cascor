@@ -28,22 +28,14 @@ import torch
 pytestmark = pytest.mark.integration
 # Add parent directories for imports
 # import sys
-sys.path.insert(
-    0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-)
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+from cascade_correlation.cascade_correlation import CascadeCorrelationNetwork  # trunk-ignore(ruff/E402)
+
 # from cascade_correlation_config.cascade_correlation_config import (  # trunk-ignore(ruff/E402)
 #     CascadeCorrelationConfig,
 # )
-from cascade_correlation.cascade_correlation_config.cascade_correlation_config import (  # trunk-ignore(ruff/E402)
-    CascadeCorrelationConfig,
-)
-
-from cascade_correlation.cascade_correlation import (  # trunk-ignore(ruff/E402)
-    CascadeCorrelationNetwork,
-)
-from snapshots.snapshot_serializer import (  # trunk-ignore(ruff/E402)
-    CascadeHDF5Serializer,
-)
+from cascade_correlation.cascade_correlation_config.cascade_correlation_config import CascadeCorrelationConfig  # trunk-ignore(ruff/E402)
+from snapshots.snapshot_serializer import CascadeHDF5Serializer  # trunk-ignore(ruff/E402)
 
 
 @pytest.fixture
@@ -113,19 +105,13 @@ class TestUUIDPersistence:
 
         # Load network
         loaded_network = serializer.load_network(temp_snapshot_file)
-        assert (
-            loaded_network is not None
-        ), "Failed to load network"  # trunk-ignore(bandit/B101)
+        assert loaded_network is not None, "Failed to load network"  # trunk-ignore(bandit/B101)
 
         # Verify UUID matches
         loaded_uuid = loaded_network.get_uuid()
-        assert (
-            loaded_uuid == original_uuid
-        ), f"UUID mismatch: {loaded_uuid} != {original_uuid}"  # trunk-ignore(bandit/B101)
+        assert loaded_uuid == original_uuid, f"UUID mismatch: {loaded_uuid} != {original_uuid}"  # trunk-ignore(bandit/B101)
 
-    def test_multiple_save_load_cycles_preserve_uuid(
-        self, simple_network, temp_snapshot_file
-    ):
+    def test_multiple_save_load_cycles_preserve_uuid(self, simple_network, temp_snapshot_file):
         """Test UUID remains consistent across multiple save/load cycles."""
         original_uuid = simple_network.get_uuid()
         serializer = CascadeHDF5Serializer()
@@ -134,20 +120,14 @@ class TestUUIDPersistence:
         for cycle in range(3):
             # Save
             success = serializer.save_network(current_network, temp_snapshot_file)
-            assert (
-                success
-            ), f"Failed to save network in cycle {cycle}"  # trunk-ignore(bandit/B101)
+            assert success, f"Failed to save network in cycle {cycle}"  # trunk-ignore(bandit/B101)
 
             # Load
             current_network = serializer.load_network(temp_snapshot_file)
-            assert (
-                current_network is not None
-            ), f"Failed to load network in cycle {cycle}"  # trunk-ignore(bandit/B101)
+            assert current_network is not None, f"Failed to load network in cycle {cycle}"  # trunk-ignore(bandit/B101)
 
             # Verify UUID
-            assert (
-                current_network.get_uuid() == original_uuid
-            ), f"UUID mismatch in cycle {cycle}"  # trunk-ignore(bandit/B101)
+            assert current_network.get_uuid() == original_uuid, f"UUID mismatch in cycle {cycle}"  # trunk-ignore(bandit/B101)
 
 
 class TestRandomSeedPreservation:
@@ -167,15 +147,9 @@ class TestRandomSeedPreservation:
 
         # Verify all random parameters match
         assert loaded_network.random_seed == original_seed  # trunk-ignore(bandit/B101)
-        assert (
-            loaded_network.random_max_value == original_max
-        )  # trunk-ignore(bandit/B101)
-        assert (
-            loaded_network.sequence_max_value == original_seq_max
-        )  # trunk-ignore(bandit/B101)
-        assert (
-            loaded_network.random_value_scale == original_scale
-        )  # trunk-ignore(bandit/B101)
+        assert loaded_network.random_max_value == original_max  # trunk-ignore(bandit/B101)
+        assert loaded_network.sequence_max_value == original_seq_max  # trunk-ignore(bandit/B101)
+        assert loaded_network.random_value_scale == original_scale  # trunk-ignore(bandit/B101)
 
     def test_deterministic_forward_pass(self, simple_network, temp_snapshot_file):
         """Test that loaded network produces identical outputs."""
@@ -200,9 +174,7 @@ class TestRandomSeedPreservation:
             loaded_output = loaded_network.forward(test_input)
 
         # Outputs should be identical
-        assert torch.allclose(
-            original_output, loaded_output, atol=1e-6
-        ), "Network outputs don't match after load"  # trunk-ignore(bandit/B101)
+        assert torch.allclose(original_output, loaded_output, atol=1e-6), "Network outputs don't match after load"  # trunk-ignore(bandit/B101)
 
     def test_random_state_data_in_file(self, simple_network, temp_snapshot_file):
         """Test that HDF5 file contains random state datasets."""
@@ -236,9 +208,7 @@ class TestHistoryPreservation:
 
         # Save network with training state
         serializer = CascadeHDF5Serializer()
-        success = serializer.save_network(
-            simple_network, temp_snapshot_file, include_training_state=True
-        )
+        success = serializer.save_network(simple_network, temp_snapshot_file, include_training_state=True)
         assert success  # trunk-ignore(bandit/B101)
 
         # Load network
@@ -273,9 +243,7 @@ class TestHistoryPreservation:
             0.65,
         ]  # trunk-ignore(bandit/B101)
 
-    def test_hidden_units_history_preserved(
-        self, network_with_hidden_units, temp_snapshot_file
-    ):
+    def test_hidden_units_history_preserved(self, network_with_hidden_units, temp_snapshot_file):
         """Test that hidden units added history is preserved."""
         # Add history of added units
         for unit in network_with_hidden_units.hidden_units:
@@ -289,9 +257,7 @@ class TestHistoryPreservation:
 
         # Save with training state
         serializer = CascadeHDF5Serializer()
-        success = serializer.save_network(
-            network_with_hidden_units, temp_snapshot_file, include_training_state=True
-        )
+        success = serializer.save_network(network_with_hidden_units, temp_snapshot_file, include_training_state=True)
         assert success  # trunk-ignore(bandit/B101)
 
         # Load network
@@ -299,9 +265,7 @@ class TestHistoryPreservation:
         assert loaded_network is not None  # trunk-ignore(bandit/B101)
 
         # Verify hidden units history
-        assert (
-            len(loaded_network.history["hidden_units_added"]) == 3
-        )  # trunk-ignore(bandit/B101)
+        assert len(loaded_network.history["hidden_units_added"]) == 3  # trunk-ignore(bandit/B101)
         for unit_data in loaded_network.history["hidden_units_added"]:
             assert "weights" in unit_data  # trunk-ignore(bandit/B101)
             assert "bias" in unit_data  # trunk-ignore(bandit/B101)
@@ -311,9 +275,7 @@ class TestHistoryPreservation:
 class TestConfigRoundtrip:
     """Test that configuration survives save/load without errors."""
 
-    def test_config_serialization_excludes_non_serializable(
-        self, simple_network, temp_snapshot_file
-    ):
+    def test_config_serialization_excludes_non_serializable(self, simple_network, temp_snapshot_file):
         """Test that non-serializable config fields are excluded."""
         serializer = CascadeHDF5Serializer()
         success = serializer.save_network(simple_network, temp_snapshot_file)
@@ -325,13 +287,9 @@ class TestConfigRoundtrip:
 
         # Verify network has reconstructed non-serializable objects
         assert hasattr(loaded_network, "activation_fn")  # trunk-ignore(bandit/B101)
-        assert hasattr(
-            loaded_network, "activation_functions_dict"
-        )  # trunk-ignore(bandit/B101)
+        assert hasattr(loaded_network, "activation_functions_dict")  # trunk-ignore(bandit/B101)
         assert loaded_network.activation_fn is not None  # trunk-ignore(bandit/B101)
-        assert (
-            loaded_network.activation_functions_dict is not None
-        )  # trunk-ignore(bandit/B101)
+        assert loaded_network.activation_functions_dict is not None  # trunk-ignore(bandit/B101)
 
     def test_config_values_preserved(self, simple_network, temp_snapshot_file):
         """Test that primitive config values are preserved."""
@@ -344,29 +302,17 @@ class TestConfigRoundtrip:
         loaded_config = loaded_network.config
 
         # Verify key configuration values
-        assert (
-            loaded_config.input_size == original_config.input_size
-        )  # trunk-ignore(bandit/B101)
-        assert (
-            loaded_config.output_size == original_config.output_size
-        )  # trunk-ignore(bandit/B101)
-        assert (
-            loaded_config.learning_rate == original_config.learning_rate
-        )  # trunk-ignore(bandit/B101)
-        assert (
-            loaded_config.max_hidden_units == original_config.max_hidden_units
-        )  # trunk-ignore(bandit/B101)
-        assert (
-            loaded_config.random_seed == original_config.random_seed
-        )  # trunk-ignore(bandit/B101)
+        assert loaded_config.input_size == original_config.input_size  # trunk-ignore(bandit/B101)
+        assert loaded_config.output_size == original_config.output_size  # trunk-ignore(bandit/B101)
+        assert loaded_config.learning_rate == original_config.learning_rate  # trunk-ignore(bandit/B101)
+        assert loaded_config.max_hidden_units == original_config.max_hidden_units  # trunk-ignore(bandit/B101)
+        assert loaded_config.random_seed == original_config.random_seed  # trunk-ignore(bandit/B101)
 
 
 class TestActivationFunctionRestoration:
     """Test that activation functions are properly restored."""
 
-    def test_activation_function_name_restored(
-        self, simple_network, temp_snapshot_file
-    ):
+    def test_activation_function_name_restored(self, simple_network, temp_snapshot_file):
         """Test activation function name is restored."""
         original_af_name = simple_network.activation_function_name
         serializer = CascadeHDF5Serializer()
@@ -374,13 +320,9 @@ class TestActivationFunctionRestoration:
         assert success  # trunk-ignore(bandit/B101)
         loaded_network = serializer.load_network(temp_snapshot_file)
         assert loaded_network is not None  # trunk-ignore(bandit/B101)
-        assert (
-            loaded_network.activation_function_name == original_af_name
-        )  # trunk-ignore(bandit/B101)
+        assert loaded_network.activation_function_name == original_af_name  # trunk-ignore(bandit/B101)
 
-    def test_activation_function_callable_restored(
-        self, simple_network, temp_snapshot_file
-    ):
+    def test_activation_function_callable_restored(self, simple_network, temp_snapshot_file):
         """Test activation function callable is restored."""
         serializer = CascadeHDF5Serializer()
         success = serializer.save_network(simple_network, temp_snapshot_file)
@@ -392,17 +334,13 @@ class TestActivationFunctionRestoration:
         test_input = torch.tensor([1.0, -1.0, 0.0])
         original_output = simple_network.activation_fn(test_input)
         loaded_output = loaded_network.activation_fn(test_input)
-        assert torch.allclose(
-            original_output, loaded_output
-        ), "Activation function outputs don't match"  # trunk-ignore(bandit/B101)
+        assert torch.allclose(original_output, loaded_output), "Activation function outputs don't match"  # trunk-ignore(bandit/B101)
 
 
 class TestHiddenUnitsPreservation:
     """Test that hidden units are correctly preserved."""
 
-    def test_hidden_units_count_preserved(
-        self, network_with_hidden_units, temp_snapshot_file
-    ):
+    def test_hidden_units_count_preserved(self, network_with_hidden_units, temp_snapshot_file):
         """Test number of hidden units is preserved."""
         original_count = len(network_with_hidden_units.hidden_units)
         assert original_count == 3  # trunk-ignore(bandit/B101)
@@ -411,13 +349,9 @@ class TestHiddenUnitsPreservation:
         assert success  # trunk-ignore(bandit/B101)
         loaded_network = serializer.load_network(temp_snapshot_file)
         assert loaded_network is not None  # trunk-ignore(bandit/B101)
-        assert (
-            len(loaded_network.hidden_units) == original_count
-        )  # trunk-ignore(bandit/B101)
+        assert len(loaded_network.hidden_units) == original_count  # trunk-ignore(bandit/B101)
 
-    def test_hidden_units_weights_preserved(
-        self, network_with_hidden_units, temp_snapshot_file
-    ):
+    def test_hidden_units_weights_preserved(self, network_with_hidden_units, temp_snapshot_file):
         """Test hidden unit weights are preserved."""
         serializer = CascadeHDF5Serializer()
         success = serializer.save_network(network_with_hidden_units, temp_snapshot_file)
@@ -431,19 +365,11 @@ class TestHiddenUnitsPreservation:
                 strict=False,
             )
         ):
-            assert torch.allclose(
-                orig_unit["weights"], loaded_unit["weights"]
-            ), f"Hidden unit {i} weights don't match"  # trunk-ignore(bandit/B101)
-            assert torch.allclose(
-                orig_unit["bias"], loaded_unit["bias"]
-            ), f"Hidden unit {i} bias doesn't match"  # trunk-ignore(bandit/B101)
-            assert (
-                orig_unit["correlation"] == loaded_unit["correlation"]
-            ), f"Hidden unit {i} correlation doesn't match"  # trunk-ignore(bandit/B101)
+            assert torch.allclose(orig_unit["weights"], loaded_unit["weights"]), f"Hidden unit {i} weights don't match"  # trunk-ignore(bandit/B101)
+            assert torch.allclose(orig_unit["bias"], loaded_unit["bias"]), f"Hidden unit {i} bias doesn't match"  # trunk-ignore(bandit/B101)
+            assert orig_unit["correlation"] == loaded_unit["correlation"], f"Hidden unit {i} correlation doesn't match"  # trunk-ignore(bandit/B101)
 
-    def test_hidden_units_checksums_verified(
-        self, network_with_hidden_units, temp_snapshot_file
-    ):
+    def test_hidden_units_checksums_verified(self, network_with_hidden_units, temp_snapshot_file):
         """Test that hidden unit checksums are saved and verified."""
         serializer = CascadeHDF5Serializer()
         success = serializer.save_network(network_with_hidden_units, temp_snapshot_file)
@@ -472,13 +398,9 @@ class TestShapeValidation:
             simple_network.input_size + len(simple_network.hidden_units),
             simple_network.output_size,
         )
-        assert (
-            loaded_network.output_weights.shape == expected_shape
-        )  # trunk-ignore(bandit/B101)
+        assert loaded_network.output_weights.shape == expected_shape  # trunk-ignore(bandit/B101)
 
-    def test_hidden_units_shape_validated(
-        self, network_with_hidden_units, temp_snapshot_file
-    ):
+    def test_hidden_units_shape_validated(self, network_with_hidden_units, temp_snapshot_file):
         """Test hidden units shapes are validated."""
         serializer = CascadeHDF5Serializer()
         success = serializer.save_network(network_with_hidden_units, temp_snapshot_file)
@@ -490,9 +412,7 @@ class TestShapeValidation:
         # Verify shapes of hidden units
         for i, unit in enumerate(loaded_network.hidden_units):
             expected_input_size = loaded_network.input_size + i
-            assert (
-                unit["weights"].shape[0] == expected_input_size
-            ), f"Hidden unit {i} has wrong weight shape"  # trunk-ignore(bandit/B101)
+            assert unit["weights"].shape[0] == expected_input_size, f"Hidden unit {i} has wrong weight shape"  # trunk-ignore(bandit/B101)
 
 
 class TestFormatValidation:
@@ -519,12 +439,8 @@ class TestFormatValidation:
         assert "format" in verification  # trunk-ignore(bandit/B101)
         assert "input_size" in verification  # trunk-ignore(bandit/B101)
         assert "output_size" in verification  # trunk-ignore(bandit/B101)
-        assert (
-            verification["input_size"] == simple_network.input_size
-        )  # trunk-ignore(bandit/B101)
-        assert (
-            verification["output_size"] == simple_network.output_size
-        )  # trunk-ignore(bandit/B101)
+        assert verification["input_size"] == simple_network.input_size  # trunk-ignore(bandit/B101)
+        assert verification["output_size"] == simple_network.output_size  # trunk-ignore(bandit/B101)
 
 
 class TestRandomStateRestoration:
@@ -539,25 +455,15 @@ class TestRandomStateRestoration:
         for _ in range(10):  # sourcery skip: no-loop-in-tests
             random.random()  # trunk-ignore(bandit/B311)
 
-        serializer = self._serialize_and_save_network(
-            simple_network, temp_snapshot_file
-        )
+        serializer = self._serialize_and_save_network(simple_network, temp_snapshot_file)
         # Generate sequence from current state
-        first_sequence = [
-            random.random() for _ in range(5)
-        ]  # trunk-ignore(bandit/B311)
+        first_sequence = [random.random() for _ in range(5)]  # trunk-ignore(bandit/B311)
         assert first_sequence is not None  # trunk-ignore(bandit/B101)
 
-        second_sequence = self._load_and_validate_network_helper(
-            serializer, temp_snapshot_file, random
-        )
-        third_sequence = self._load_and_validate_network_helper(
-            serializer, temp_snapshot_file, random
-        )
+        second_sequence = self._load_and_validate_network_helper(serializer, temp_snapshot_file, random)
+        third_sequence = self._load_and_validate_network_helper(serializer, temp_snapshot_file, random)
         # Second and third sequences should match (proving deterministic restoration)
-        assert (
-            second_sequence == third_sequence
-        ), "Python random state restoration is not deterministic"  # trunk-ignore(bandit/B101)
+        assert second_sequence == third_sequence, "Python random state restoration is not deterministic"  # trunk-ignore(bandit/B101)
 
     # def _load_and_validate_network_helper(self, serializer, temp_snapshot_file, random):
     #     # Load network (should restore RNG to same state as when saved)
@@ -576,23 +482,15 @@ class TestRandomStateRestoration:
         for _ in range(10):
             np.random.rand()
 
-        serializer = self._serialize_and_save_network(
-            simple_network, temp_snapshot_file
-        )
+        serializer = self._serialize_and_save_network(simple_network, temp_snapshot_file)
         # Generate sequence from current state
         first_sequence = [np.random.rand() for _ in range(5)]
         assert first_sequence is not None  # trunk-ignore(bandit/B101)
 
-        second_sequence = self._load_and_validate_network_helper(
-            serializer, temp_snapshot_file, np
-        )
-        third_sequence = self._load_and_validate_network_helper(
-            serializer, temp_snapshot_file, np
-        )
+        second_sequence = self._load_and_validate_network_helper(serializer, temp_snapshot_file, np)
+        third_sequence = self._load_and_validate_network_helper(serializer, temp_snapshot_file, np)
         # Second and third sequences should match (proving deterministic restoration)
-        assert np.allclose(
-            second_sequence, third_sequence
-        ), "NumPy random state restoration is not deterministic"  # trunk-ignore(bandit/B101)
+        assert np.allclose(second_sequence, third_sequence), "NumPy random state restoration is not deterministic"  # trunk-ignore(bandit/B101)
 
     # def _load_and_validate_network_helper(self, serializer, temp_snapshot_file, np):
     #     # Load network (should restore RNG to same state as when saved)
@@ -609,24 +507,16 @@ class TestRandomStateRestoration:
         for _ in range(10):  # sourcery skip: no-loop-in-tests
             torch.rand(1)
 
-        serializer = self._serialize_and_save_network(
-            simple_network, temp_snapshot_file
-        )
+        serializer = self._serialize_and_save_network(simple_network, temp_snapshot_file)
         # Generate sequence from current state
         first_sequence = [torch.rand(1).item() for _ in range(5)]
         assert first_sequence is not None  # trunk-ignore(bandit/B101)
 
-        second_sequence = self._load_and_validate_network_helper(
-            serializer, temp_snapshot_file, torch
-        )
-        third_sequence = self._load_and_validate_network_helper(
-            serializer, temp_snapshot_file, torch
-        )
+        second_sequence = self._load_and_validate_network_helper(serializer, temp_snapshot_file, torch)
+        third_sequence = self._load_and_validate_network_helper(serializer, temp_snapshot_file, torch)
 
         # Second and third sequences should match (proving deterministic restoration)
-        assert torch.allclose(
-            torch.tensor(second_sequence), torch.tensor(third_sequence)
-        ), "PyTorch random state restoration is not deterministic"  # trunk-ignore(bandit/B101)
+        assert torch.allclose(torch.tensor(second_sequence), torch.tensor(third_sequence)), "PyTorch random state restoration is not deterministic"  # trunk-ignore(bandit/B101)
 
     def _serialize_and_save_network(self, simple_network, temp_snapshot_file):
         result = CascadeHDF5Serializer()
@@ -634,9 +524,7 @@ class TestRandomStateRestoration:
         assert success  # trunk-ignore(bandit/B101)
         return result
 
-    def _load_and_validate_network_helper(
-        self, serializer, temp_snapshot_file, rng_module
-    ):
+    def _load_and_validate_network_helper(self, serializer, temp_snapshot_file, rng_module):
         """
         Helper to load network and generate random sequence using specified RNG module.
 
@@ -683,9 +571,7 @@ class TestRandomStateRestoration:
 
         # Save network
         serializer = CascadeHDF5Serializer()
-        success = serializer.save_network(
-            simple_network, temp_snapshot_file, include_training_state=True
-        )
+        success = serializer.save_network(simple_network, temp_snapshot_file, include_training_state=True)
         assert success  # trunk-ignore(bandit/B101)
 
         # Load network
@@ -694,9 +580,7 @@ class TestRandomStateRestoration:
 
         # Verify loaded weights match
         W_N_loaded = loaded_network.output_weights.clone()
-        assert torch.allclose(
-            W_N, W_N_loaded
-        ), "Loaded weights don't match saved weights"  # trunk-ignore(bandit/B101)
+        assert torch.allclose(W_N, W_N_loaded), "Loaded weights don't match saved weights"  # trunk-ignore(bandit/B101)
 
         # Continue training loaded network for M=5 more epochs
         M = 5
@@ -717,9 +601,7 @@ class TestRandomStateRestoration:
         W_N_M_fresh = fresh_network.output_weights.clone()
 
         # Verify that resumed training matches continuous training
-        assert torch.allclose(
-            W_N_M_resumed, W_N_M_fresh, atol=1e-5
-        ), "Resumed training does not match continuous training - training is not deterministic"  # trunk-ignore(bandit/B101)
+        assert torch.allclose(W_N_M_resumed, W_N_M_fresh, atol=1e-5), "Resumed training does not match continuous training - training is not deterministic"  # trunk-ignore(bandit/B101)
 
 
 if __name__ == "__main__":

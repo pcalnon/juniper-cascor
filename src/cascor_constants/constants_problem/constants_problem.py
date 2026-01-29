@@ -35,8 +35,6 @@
 # import numpy as np
 
 
-
-
 #####################################################################################################################################################################################################
 # # Define Default Values for Constants used in the SpiralDataset Example
 
@@ -176,8 +174,6 @@
 # _SPIRAL_DATASET_NORMALIZE_DEFAULT = _SPIRAL_DATASET_NORMALIZE
 
 
-
-
 # #####################################################################################################################################################################################################
 # # Define Default Values for Constants used in the SpiralDataset Example
 
@@ -315,7 +311,6 @@
 # # Define Default Constants for Candidate Unit
 # _CANDIDATE_UNIT_LEARNING_RATE = 0.1
 # _CANDIDATE_UNIT_EPOCHS = 100
-
 
 
 # #####################################################################################################################################################################################################
@@ -576,11 +571,6 @@
 # #####################################################################################################################################################################################################
 
 
-
-
-
-
-
 #####################################################################################################################################################################################################
 # Dataset Parameters for the Two Spiral Problem classified by the Cascade Correlation Network
 #####################################################################################################################################################################################################
@@ -622,7 +612,7 @@ _SPIRAL_PROBLEM_CLOCKWISE = True
 # _SPIRAL_PROBLEM_NUMBER_POINTS_PER_SPIRAL = 700                        # This is the default value used in the original implementation.
 # _SPIRAL_PROBLEM_NUMBER_POINTS_PER_SPIRAL = 800
 # _SPIRAL_PROBLEM_NUMBER_POINTS_PER_SPIRAL = 900
-_SPIRAL_PROBLEM_NUMBER_POINTS_PER_SPIRAL = 1000                         # This value was used with 100% run
+_SPIRAL_PROBLEM_NUMBER_POINTS_PER_SPIRAL = 1000  # This value was used with 100% run
 # _SPIRAL_PROBLEM_NUMBER_POINTS_PER_SPIRAL = 1100
 # _SPIRAL_PROBLEM_NUMBER_POINTS_PER_SPIRAL = 1200
 # _SPIRAL_PROBLEM_NUMBER_POINTS_PER_SPIRAL = 1300
@@ -776,7 +766,7 @@ _SPIRAL_PROBLEM_NOISE_FACTOR_DEFAULT = 0.25
 # _SPIRAL_PROBLEM_RANDOM_VALUE_SCALE = 0.07
 # _SPIRAL_PROBLEM_RANDOM_VALUE_SCALE = 0.08
 # _SPIRAL_PROBLEM_RANDOM_VALUE_SCALE = 0.09
-_SPIRAL_PROBLEM_RANDOM_VALUE_SCALE = 0.1                                # This is the default value used in the original implementation and was used with 100% run
+_SPIRAL_PROBLEM_RANDOM_VALUE_SCALE = 0.1  # This is the default value used in the original implementation and was used with 100% run
 # _SPIRAL_PROBLEM_RANDOM_VALUE_SCALE = 0.15
 # _SPIRAL_PROBLEM_RANDOM_VALUE_SCALE = 0.2
 # _SPIRAL_PROBLEM_RANDOM_VALUE_SCALE = 0.25

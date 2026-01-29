@@ -5,6 +5,109 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.1] - 2026-01-29
+
+**Summary**: Comprehensive documentation overhaul. Created complete documentation suite in docs/ directory covering installation, API reference, testing, CI/CD, and source code guides.
+
+### Added: [0.4.1]
+
+- **Documentation Suite**: Created 20+ documentation files in `docs/` directory
+  - **Overview**: `docs/index.md` (landing page), `docs/overview/constants-guide.md`
+  - **Install/Config**: `quick-start.md`, `environment-setup.md`, `user-manual.md`, `reference.md`
+  - **API**: `api-reference.md` (v0.3.21 updated), `api-schemas.md` (HDF5/data schemas)
+  - **Testing**: `quick-start.md`, `environment-setup.md`, `manual.md`, `reference.md`, `selective-testing-guide.md`
+  - **CI/CD**: `quick-start.md`, `environment-setup.md`, `manual.md`, `reference.md`
+  - **Source Code**: `quick-start.md`, `environment-setup.md`, `manual.md`, `reference.md`
+
+- **Documentation Features**:
+  - Complete API documentation with examples and type hints
+  - HDF5 snapshot schema documentation
+  - Test marker reference and CI mapping
+  - Module-by-module source code guide
+  - Extension points for new problems/activations/serializers
+  - Configuration override guidance
+
+### Changed: [0.4.1]
+
+- **README.md**: Enhanced with Quick Start section, installation instructions, usage examples, and documentation links
+
+### Documentation: [0.4.1]
+
+- API Reference updated to version 0.3.21 (from 0.3.2)
+- All documentation dated 2026-01-29
+
+### Technical Notes: [0.4.1]
+
+- **SemVer impact**: PATCH – Documentation only; no API or code changes
+- Previous `notes/` directory retained as historical reference
+
+---
+
+## [0.4.0] - 2026-01-29
+
+**Summary**: Major CI/CD pipeline overhaul. Implemented comprehensive, production-ready CI/CD with pre-commit hooks, security scanning, proper failure handling, and coverage enforcement.
+
+### Added: [0.4.0]
+
+- **Enhanced CI/CD Pipeline**: Complete overhaul of GitHub Actions workflow
+  - **Pre-commit Job**: Runs across Python 3.12 and 3.13 with matrix strategy
+  - **Unit Tests Job**: Coverage enforcement with `--cov-fail-under` (50% threshold)
+  - **Integration Tests Job**: Now runs on PRs AND main/develop pushes
+  - **Security Job**: Gitleaks (secrets), Bandit (SAST/SARIF), pip-audit (dependencies)
+  - **Quality Gate Job**: Aggregates all checks with proper failure handling
+  - Removed `continue-on-error: true` and `|| true` from critical steps
+  - Added dependency caching for conda and pip packages
+  - Added concurrency control to cancel stale runs
+
+- **Pre-commit Configuration**: Created `.pre-commit-config.yaml`
+  - General hooks: check-yaml, check-toml, trailing-whitespace, merge conflicts
+  - Python formatting: Black (line-length=120)
+  - Import sorting: isort (black profile)
+  - Linting: Flake8 with bugbear, comprehensions, simplify plugins
+  - Type checking: MyPy (optional, runs on core modules)
+  - Security: Bandit SAST scanning
+  - Markdown: markdownlint with auto-fix
+  - Shell: shellcheck for bash scripts
+
+- **CODEOWNERS File**: Created `.github/CODEOWNERS`
+  - Defines code ownership for automatic review requests
+  - Covers core modules, tests, configuration, and documentation
+
+- **Branch Protection Documentation**: Created `docs/branch-protection.md`
+  - Required status checks configuration
+  - Pull request requirements for main and develop branches
+  - Coverage enforcement guidelines
+  - Security scanning documentation
+  - Step-by-step setup instructions
+
+### Changed: [0.4.0]
+
+- **CI Workflow**: Upgraded from v6 to v4 for actions/checkout (stable)
+- **Coverage Enforcement**: Changed from soft fail (warning) to hard fail
+- **Integration Tests**: Now run on main/develop pushes, not just PRs
+
+### Documentation: [0.4.0]
+
+- Updated AGENTS.md with pre-commit and security scanning commands
+- Updated version to 0.4.0
+
+### Technical Notes: [0.4.0]
+
+- **SemVer impact**: MINOR – New CI/CD features, no breaking changes
+- **Pre-commit setup**: `pip install pre-commit && pre-commit install`
+- **Local validation**: `pre-commit run --all-files`
+
+### Pre-commit Compliance: [0.4.0]
+
+- **Fixed**: 33 corrupted line continuations in spiral_problem.py (`\ \ \#\` → `  # `)
+- **Fixed**: Black target-version (py314 not supported, using py311-py313)
+- **Auto-formatted**: 64 Python files with Black
+- **Excluded**: .ipynb_checkpoints/, backups/, legacy util scripts
+- **Deferred**: MyPy type checking (112 errors, requires type annotation fixes)
+- **Deferred**: F401 unused imports, B907 string quoting (documented in CHANGES_FOR_REVIEW.md)
+
+---
+
 ## [0.3.21] - 2026-01-25
 
 **Summary**: Major test coverage expansion. Added 6 new test files with ~150+ tests to improve coverage from ~50% to ~67%.
@@ -879,6 +982,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 | Version | Date       | Description                              |
 | ------- | ---------- | ---------------------------------------- |
+| 0.4.0   | 2026-01-29 | CI/CD Pipeline Overhaul                  |
 | 0.3.16  | 2026-01-24 | CI/CD Pipeline Setup (P1-007)            |
 | 0.3.15  | 2026-01-24 | Fixed P0 issues, serialization coverage  |
 | 0.3.14  | 2026-01-22 | Fixed multiprocessing and test issues    |

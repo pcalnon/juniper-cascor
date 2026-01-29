@@ -16,5 +16,3 @@ cd "${APP_DIR}"
 pwd
 
 source /opt/miniforge3/etc/profile.d/conda.sh && conda activate JuniperCascor && timeout 120 python src/main.py 2>&1 | grep -E "Manager started|Failed to start manager|Address already|correlation=|hidden|grow"
-
-

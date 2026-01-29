@@ -13,19 +13,15 @@ import os
 import sys
 import tempfile
 
+import numpy as np
 import pytest
 import torch
-import numpy as np
 
 # Add parent directories for imports
-sys.path.insert(
-    0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-)
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 from cascade_correlation.cascade_correlation import CascadeCorrelationNetwork
-from cascade_correlation.cascade_correlation_config.cascade_correlation_config import (
-    CascadeCorrelationConfig,
-)
+from cascade_correlation.cascade_correlation_config.cascade_correlation_config import CascadeCorrelationConfig
 from snapshots.snapshot_serializer import CascadeHDF5Serializer
 
 # Mark all tests in this file as unit tests
@@ -88,9 +84,7 @@ class TestSaveObject:
 
     def test_save_object_with_compression(self, serializer, simple_network, temp_file):
         """Test save_object with different compression settings."""
-        result = serializer.save_object(
-            simple_network, temp_file, compression="gzip", compression_opts=9
-        )
+        result = serializer.save_object(simple_network, temp_file, compression="gzip", compression_opts=9)
         assert result is True
         assert os.path.exists(temp_file)
 
@@ -112,23 +106,17 @@ class TestSaveNetwork:
         assert result is True
         assert os.path.exists(temp_file)
 
-    def test_save_network_with_training_state(
-        self, serializer, simple_network, temp_file
-    ):
+    def test_save_network_with_training_state(self, serializer, simple_network, temp_file):
         """Test saving network with training state."""
-        result = serializer.save_network(
-            simple_network, temp_file, include_training_state=True
-        )
+        result = serializer.save_network(simple_network, temp_file, include_training_state=True)
         assert result is True
 
-    def test_save_network_with_training_data(
-        self, serializer, simple_network, temp_file
-    ):
+    def test_save_network_with_training_data(self, serializer, simple_network, temp_file):
         """Test saving network with training data."""
         # Set up some training data on the network
         simple_network._training_data_x = torch.randn(10, 2)
         simple_network._training_data_y = torch.randn(10, 1)
-        
+
         result = serializer.save_network(
             simple_network,
             temp_file,

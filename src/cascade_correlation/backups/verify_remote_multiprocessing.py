@@ -2,37 +2,26 @@
 """
 Complete test for both local multiprocessing and remote connections - FIXED VERSION
 """
+import multiprocessing as mp
+import random
 import sys
+import time
+
 # import os
 import uuid
-import time
-import random
-import multiprocessing as mp
+
 # from multiprocessing.managers import BaseManager
 
 # Add source directory to path
 sys.path.append('/home/pcalnon/Development/python/Juniper/src/prototypes/cascor/src')
 
-# from cascade_correlation.cascade_correlation import CascadeCorrelationNetwork, CandidateTrainingManager
-from cascade_correlation import CascadeCorrelationNetwork, CandidateTrainingManager
-# from remote_client.remote_client import RemoteCandidateTrainingClient
-from constants.constants import (
-    _PROJECT_MODEL_AUTHKEY,
-    _PROJECT_MODEL_BASE_MANAGER_ADDRESS,
-    # _PROJECT_MODEL_TASK_QUEUE_TIMEOUT,
-    # _PROJECT_MODEL_SHUTDOWN_TIMEOUT,
-    _CASCADE_CORRELATION_NETWORK_LEARNING_RATE,
-    _CASCADE_CORRELATION_NETWORK_DISPLAY_FREQUENCY,
-    # _PROJECT_TESTING_SKIPPED_TEST,
-    _PROJECT_TESTING_FAILED_TEST,
-    _PROJECT_TESTING_PASSED_TEST,
-    # _PROJECT_TESTING_UNKNOWN_TEST,
-    # _PROJECT_TESTING_UNSTABLE_TEST,
-    # _PROJECT_TESTING_PARTIAL_TEST,
-    _PROJECT_TESTING_SUCCESSFUL_TEST,
-)
 import torch
 
+# from cascade_correlation.cascade_correlation import CascadeCorrelationNetwork, CandidateTrainingManager
+from cascade_correlation import CandidateTrainingManager, CascadeCorrelationNetwork
+
+# from remote_client.remote_client import RemoteCandidateTrainingClient
+from constants.constants import _CASCADE_CORRELATION_NETWORK_DISPLAY_FREQUENCY, _CASCADE_CORRELATION_NETWORK_LEARNING_RATE, _PROJECT_MODEL_AUTHKEY, _PROJECT_MODEL_BASE_MANAGER_ADDRESS, _PROJECT_TESTING_FAILED_TEST, _PROJECT_TESTING_PASSED_TEST, _PROJECT_TESTING_SUCCESSFUL_TEST  # _PROJECT_MODEL_TASK_QUEUE_TIMEOUT,; _PROJECT_MODEL_SHUTDOWN_TIMEOUT,; _PROJECT_TESTING_SKIPPED_TEST,; _PROJECT_TESTING_UNKNOWN_TEST,; _PROJECT_TESTING_UNSTABLE_TEST,; _PROJECT_TESTING_PARTIAL_TEST,
 
 _DATA_SAMPLE_NUMBER = 20
 # _DATA_SAMPLE_NUMBER = 100
@@ -40,7 +29,7 @@ _DATA_SAMPLE_NUMBER = 20
 
 _DATA_FEATURES_NUMBER = 2
 
-# _CANDIDATE_POOL_SIZE = 2 
+# _CANDIDATE_POOL_SIZE = 2
 _CANDIDATE_POOL_SIZE = 5
 # _CANDIDATE_POOL_SIZE = 50
 
@@ -204,12 +193,12 @@ def test_remote_manager_server():
 def test_context_and_manager_creation():
     """Test creation and startup of local manager and context."""
     print("\n=== Testing Local Context and Manager Creation and Startup ===")
-    
+
     try:
         # # Create network
         # network = CascadeCorrelationNetwork()
         # print("✓ Network created successfully")
-        
+
         # # Create manager without starting
         # # manager = network._create_multiprocessing_manager(start_manager=False)
         # manager = network._create_multiprocessing_manager(start_manager=False)
@@ -386,7 +375,7 @@ def test_remote_connection(local_manager):
         assert done_task == task    # trunk-ignore(bandit/B101)
         print("✓ Done Queue operations working correctly")
         print("✓ All Shared Queues accessed successfully")
-        
+
         # Cleanup
         local_manager.shutdown()
         print("✓ Manager shutdown successfully")
@@ -400,7 +389,7 @@ def test_remote_connection(local_manager):
 def test_full_candidate_training():
     """Test the complete candidate training process."""
     print("\n=== Testing Complete Candidate Training Process ===")
-    
+
     try:
         # Create network with small parameters for testing
         network = CascadeCorrelationNetwork(
@@ -408,19 +397,19 @@ def test_full_candidate_training():
             _CascadeCorrelationNetwork__candidate_epochs=_CANDIDATE_EPOCHS,
         )
         print("✓ Network created with test parameters")
-        
+
         # Create test data
         x, y = create_test_data()
         print("✓ Test data created")
-        
+
         # Calculate residual error
         residual_error = network.calculate_residual_error(x, y)
         print("✓ Residual error calculated")
-        
+
         # Train candidates
         print("Starting candidate training...")
         results = network.train_candidates(x, y, residual_error)
-        
+
         if results and len(results) == 3: # sourcery skip: no-conditionals-in-tests
             candidates_list, best_candidate, max_correlation = results
             print(f"✓ Candidate training completed: {len(candidates_list[0])} candidates trained")
@@ -429,7 +418,7 @@ def test_full_candidate_training():
         else:
             print("✗ Invalid results from candidate training")
             return False
-            
+
     except Exception as e:
         print(f"✗ Candidate training test failed: {e}")
         import traceback
@@ -440,7 +429,7 @@ def main():
     """Run all tests."""
     print("Comprehensive Multiprocessing Manager Test Suite")
     print("=" * 60)
-    
+
     # Test 0: Start Remote Manager Server Process from CascadeCorrelationNetwork
     print("Test 0: Start Remote Manager Server Process from CascadeCorrelationNetwork")
     test0_passed = test_remote_manager_server()

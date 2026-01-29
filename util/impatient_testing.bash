@@ -169,5 +169,4 @@ while kill -0 $pid; do
     NAP_COUNT=$(( NAP_COUNT + 1 ))
     prep_time_info "${NAP_COUNT}"
     echo -ne "Nap Count: ${NAP_COUNT}\tElapsed Time: ~${ELAPSED_INFO}\n"
-done    
-
+done

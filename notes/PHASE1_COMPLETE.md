@@ -200,7 +200,7 @@ def _select_best_candidates(self, results: list, num_candidates: int = 1) -> lis
     # Sorts by absolute correlation
     # Selects top N candidates
     # Filters by correlation threshold
-    
+
 def add_units_as_layer(self, candidates: list, x: torch.Tensor) -> None:
     # Adds multiple candidates as layer
     # Updates output weights for all new units

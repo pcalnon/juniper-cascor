@@ -34,14 +34,14 @@
 def _stop_workers(self, workers: list, task_queue) -> None:
     """Stop worker processes with improved termination handling."""
     import signal
-    
+
     # Send sentinel values
     for _ in workers:
         try:
             task_queue.put(None, timeout=5)
         except Exception as e:
             self.logger.error(f"Failed to send sentinel: {e}")
-    
+
     # Wait with increased timeout
     for worker in workers:
         worker.join(timeout=15)  # Increased from 10
@@ -49,7 +49,7 @@ def _stop_workers(self, workers: list, task_queue) -> None:
             self.logger.warning(f"Worker {worker.name} (PID {worker.pid}) did not stop gracefully")
             worker.terminate()
             worker.join(timeout=2)
-            
+
             # Force kill if still alive
             if worker.is_alive():
                 self.logger.error(f"Worker {worker.name} still alive, sending SIGKILL")
@@ -75,7 +75,7 @@ def _stop_workers(self, workers: list, task_queue) -> None:
 ```python
 class CascorQueueManager:
     """Per-instance queue manager for CascadeCorrelationNetwork."""
-    
+
     def __init__(self, network_uuid, authkey, address):
         self.network_uuid = network_uuid
         self.authkey = authkey
@@ -83,7 +83,7 @@ class CascorQueueManager:
         self._task_queue = None
         self._result_queue = None
         self._manager = None
-    
+
     def create_queues(self):
         """Create instance-specific queues."""
         self._task_queue = Queue()
@@ -108,7 +108,7 @@ import hashlib
 
 def _save_network(self, network, filepath, ...):
     # ... existing save code ...
-    
+
     # Calculate checksum of critical data
     checksum_data = {
         'output_weights': self._calculate_tensor_checksum(network.output_weights),
@@ -118,7 +118,7 @@ def _save_network(self, network, filepath, ...):
             for unit in network.hidden_units
         ]
     }
-    
+
     # Save checksums in metadata
     with h5py.File(filepath, 'a') as f:
         meta_group = f['meta']
@@ -131,7 +131,7 @@ def _calculate_tensor_checksum(self, tensor):
 
 def load_network(self, filepath, verify_checksum=True):
     # ... existing load code ...
-    
+
     if verify_checksum and 'checksums' in meta_group:
         self._verify_checksums(hdf5_file, network)
 ```
@@ -156,13 +156,13 @@ def _create_candidate_unit(
 ) -> CandidateUnit:
     """
     Factory method to create candidate units with consistent parameters.
-    
+
     Args:
         candidate_index: Index of candidate in pool
         candidate_uuid: UUID for candidate (generates if None)
         input_size: Input size (uses network input_size if None)
         **kwargs: Additional CandidateUnit parameters
-    
+
     Returns:
         Configured CandidateUnit instance
     """
@@ -221,7 +221,7 @@ class OptimizerConfig:
 def _create_optimizer(self, parameters, config: OptimizerConfig = None):
     """Create optimizer based on configuration."""
     config = config or self.optimizer_config
-    
+
     optimizer_map = {
         'Adam': lambda: optim.Adam(
             parameters,
@@ -251,11 +251,11 @@ def _create_optimizer(self, parameters, config: OptimizerConfig = None):
             weight_decay=config.weight_decay
         ),
     }
-    
+
     if config.optimizer_type not in optimizer_map:
         self.logger.warning(f"Unknown optimizer {config.optimizer_type}, defaulting to Adam")
         config.optimizer_type = 'Adam'
-    
+
     return optimizer_map[config.optimizer_type]()
 ```
 
@@ -301,13 +301,13 @@ def _select_best_candidates(self, results, num_candidates=1):
         key=lambda r: abs(r.correlation) if r.correlation else 0,
         reverse=True
     )
-    
+
     # Select top N
     selected = sorted_results[:num_candidates]
-    
+
     # Filter by threshold
     selected = [r for r in selected if abs(r.correlation) >= self.correlation_threshold]
-    
+
     return selected
 ```
 
@@ -319,7 +319,7 @@ def add_units_as_layer(self, candidates: List[CandidateUnit], x: torch.Tensor):
     for candidate in candidates:
         # Add each unit with connections to all previous layers
         self.add_unit(candidate, x)
-    
+
     self.logger.info(f"Added layer with {len(candidates)} units")
 ```
 
@@ -348,16 +348,16 @@ if selected_candidates:
 def plot_decision_boundary_async(self, x, y, title="Decision Boundary"):
     """Plot decision boundary in separate process to avoid blocking."""
     import multiprocessing as mp
-    
+
     def _plot_worker(network_state, x_data, y_data, title):
         """Worker function to create plot in separate process."""
         # Recreate network from state
         from cascor_plotter.cascor_plotter import CascadeCorrelationPlotter
         plotter = CascadeCorrelationPlotter()
-        
+
         # Plot using network state
         plotter.plot_decision_boundary(network_state, x_data, y_data, title)
-    
+
     # Launch plotting in separate process
     plot_process = mp.Process(
         target=_plot_worker,
@@ -365,7 +365,7 @@ def plot_decision_boundary_async(self, x, y, title="Decision Boundary"):
         daemon=True
     )
     plot_process.start()
-    
+
     self.logger.info(f"Started plotting process PID: {plot_process.pid}")
     return plot_process
 ```

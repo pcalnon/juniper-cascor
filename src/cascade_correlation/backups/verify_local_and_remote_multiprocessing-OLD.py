@@ -17,12 +17,8 @@ import torch
 
 # from cascade_correlation.cascade_correlation import CascadeCorrelationNetwork
 from cascade_correlation import CascadeCorrelationNetwork
-from constants.constants import (
-    _PROJECT_MODEL_AUTHKEY,  # Define base manager server authkey for remote multiprocessing shared queues: 'Juniper_Cascade_Correlation_Multiprocessing_Authkey'
-)
-from constants.constants import (
-    _PROJECT_MODEL_BASE_MANAGER_ADDRESS,  # Define base manager server address for remote multiprocessing shared queues
-)
+from constants.constants import _PROJECT_MODEL_AUTHKEY  # Define base manager server authkey for remote multiprocessing shared queues: 'Juniper_Cascade_Correlation_Multiprocessing_Authkey'
+from constants.constants import _PROJECT_MODEL_BASE_MANAGER_ADDRESS  # Define base manager server address for remote multiprocessing shared queues
 from constants.constants import (  # _PROJECT_MODEL_BASE_MANAGER_HOSTNAME,      # Define base manager server hostname for remote multiprocessing shared queues = 'localhost',; _PROJECT_MODEL_BASE_MANAGER_ADDRESS_IP,    # Define base manager server IP address for remote multiprocessing shared queues = '127.0.0.1',; _PROJECT_MODEL_BASE_MANAGER_ADDRESS_PORT,  # Define base manager server port for remote multiprocessing shared queues = 50000; _PROJECT_MODEL_SHUTDOWN_TIMEOUT,; _PROJECT_MODEL_TASK_QUEUE_TIMEOUT,
     _PROJECT_TESTING_FAILED_TEST,
     _PROJECT_TESTING_PARTIAL_TEST,

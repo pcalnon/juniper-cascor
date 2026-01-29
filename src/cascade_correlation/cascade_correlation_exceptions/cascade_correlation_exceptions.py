@@ -21,7 +21,7 @@
 #   - The network uses a correlation-based approach to determine the relevance of each candidate unit.
 #   - The network is trained using a combination of supervised and unsupervised learning techniques.
 #   - The network is designed to handle large-scale and high-dimensional datasets efficiently.
-# 
+#
 #####################################################################################################################################################################################################
 # References:
 #
@@ -41,29 +41,33 @@
 #####################################################################################################################################################################################################
 class CascadeCorrelationError(Exception):
     """Base exception for Cascade Correlation Network errors."""
+
     pass
 
 
 class NetworkInitializationError(CascadeCorrelationError):
     """Raised when network initialization fails."""
+
     pass
 
 
 class TrainingError(CascadeCorrelationError):
     """Raised when training encounters a critical error."""
+
     pass
 
 
 class ValidationError(CascadeCorrelationError, ValueError):
     """Raised when input validation fails.
-    
+
     Subclasses both CascadeCorrelationError (for internal hierarchy) and
     ValueError (for compatibility with code expecting standard exceptions).
     """
+
     pass
 
 
 class ConfigurationError(CascadeCorrelationError):
     """Raised when configuration parameters are invalid."""
-    pass
 
+    pass

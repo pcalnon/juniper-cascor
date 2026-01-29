@@ -1029,7 +1029,7 @@ __src/cascade_correlation/ cascade_correlation.py L446-480:__
         # Use 'fork' context for better compatibility with BaseManager on Linux
         context_type = self.config.candidate_training_context_type or "fork"  # NEW LINE           \|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-
         self._mp_ctx = mp.get_context(context_type)                           # NEW LINE           \|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-
-        
+
         # Only set forkserver preload if using forkserver context
         if context_type == "forkserver":                                      # NEW LINE           \|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-
 ####################################################################################################################################################################################################################
@@ -1346,8 +1346,6 @@ Still the same error. This is bizarre - with port 0, the OS should pick an avail
 Let me look more closely at how the CandidateTrainingManager is being initialized in _start_manager. I suspect the issue might be that the manager is somehow being created with the same context that already has a socket bound:
 
 ####################################################################################################################################################################################################################
-# Try changing "fork" to "forkserver". Also, from the documentation "Note that this should be called at most once, and it should be protected inside the if __name__ == '__main__' clause of the main module." – 
+# Try changing "fork" to "forkserver". Also, from the documentation "Note that this should be called at most once, and it should be protected inside the if __name__ == '__main__' clause of the main module." –
 jackal
 ####################################################################################################################################################################################################################
-
-

@@ -46,7 +46,7 @@ Created two module-level functions that are picklable:
 def _plot_decision_boundary_worker(network, x_data, y_data, title_str):
     """
     Worker function to create decision boundary plot in separate process.
-    
+
     This function must be at module level to be picklable for multiprocessing.
     """
     from cascor_plotter.cascor_plotter import CascadeCorrelationPlotter
@@ -57,7 +57,7 @@ def _plot_decision_boundary_worker(network, x_data, y_data, title_str):
 def _plot_training_history_worker(history_data):
     """
     Worker function to create training history plot in separate process.
-    
+
     This function must be at module level to be picklable for multiprocessing.
     """
     from cascor_plotter.cascor_plotter import CascadeCorrelationPlotter

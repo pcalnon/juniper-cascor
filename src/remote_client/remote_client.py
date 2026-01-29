@@ -19,8 +19,8 @@
 #####################################################################################################################################################################################################
 
 import multiprocessing as mp
-import sys
 import os
+import sys
 
 # Add parent directories to path for imports
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -44,11 +44,11 @@ class RemoteWorkerClient:
             ctx: Multiprocessing context (defaults to forkserver)
             logger: Logger instance
         """
-        self.ctx = ctx or mp.get_context('forkserver')
+        self.ctx = ctx or mp.get_context("forkserver")
         self.logger = logger or Logger
 
         if isinstance(authkey, str):
-            authkey = authkey.encode('utf-8')
+            authkey = authkey.encode("utf-8")
 
         self.address = address
         self.authkey = authkey
@@ -92,12 +92,7 @@ class RemoteWorkerClient:
             # Import here to avoid circular import
             from cascade_correlation.cascade_correlation import CascadeCorrelationNetwork
 
-            worker = self.ctx.Process(
-                target=CascadeCorrelationNetwork._worker_loop,
-                args=(self.task_queue, self.result_queue, True),
-                daemon=True,
-                name=f"RemoteWorker-{i}"
-            )
+            worker = self.ctx.Process(target=CascadeCorrelationNetwork._worker_loop, args=(self.task_queue, self.result_queue, True), daemon=True, name=f"RemoteWorker-{i}")
             worker.start()
             self.workers.append(worker)
 

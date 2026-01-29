@@ -24,7 +24,7 @@
 #####################################################################################################################################################################################################
 # References:
 #     References to setting custom log levels in Python's logging module
-#     https://docs.python.org/3/library/logging.html#logging.addLevelName  
+#     https://docs.python.org/3/library/logging.html#logging.addLevelName
 #     https://docs.python.org/3/library/logging.html#logging.Logger.setLevel
 #     https://stackoverflow.com/questions/2183233/how-to-add-a-custom-loglevel-to-pythons-logging-facility/35804945
 #
@@ -37,25 +37,23 @@
 #
 #
 #####################################################################################################################################################################################################
-import os
-# import yaml
-import uuid
 import logging
 import logging.config
+import os
 
-# from inspect import currentframe, getframeinfo
-
+# import yaml
+import uuid
 from logging import setLoggerClass
-from log_config.logger.logger import Logger
+
 from cascor_constants.constants import (
     _LOG_CONFIG_LOG_CONFIG_FILE_NAME,
     _LOG_CONFIG_LOG_CONFIG_FILE_PATH,
-    _LOG_CONFIG_LOG_LEVEL_CUSTOM_NAMES_LIST,
     _LOG_CONFIG_LOG_DATE_FORMAT,
     _LOG_CONFIG_LOG_FILE_NAME,
     _LOG_CONFIG_LOG_FILE_PATH,
     _LOG_CONFIG_LOG_FORMATTER_STRING,
     _LOG_CONFIG_LOG_LEVEL,
+    _LOG_CONFIG_LOG_LEVEL_CUSTOM_NAMES_LIST,
     _LOG_CONFIG_LOG_LEVEL_LOGGING_CONFIG,
     _LOG_CONFIG_LOG_LEVEL_METHODS_DICT,
     _LOG_CONFIG_LOG_LEVEL_METHODS_LIST,
@@ -67,6 +65,9 @@ from cascor_constants.constants import (
     _LOG_CONFIG_LOG_MESSAGE_DEFAULT,
     _LOGGER_NAME,
 )
+from log_config.logger.logger import Logger
+
+# from inspect import currentframe, getframeinfo
 
 
 ########################################################################################################################################
@@ -85,12 +86,12 @@ class LogConfig(object):
         _LogConfig__log_file_path: str = _LOG_CONFIG_LOG_FILE_PATH,
         _LogConfig__log_formatter_string: str = _LOG_CONFIG_LOG_FORMATTER_STRING,
         _LogConfig__log_date_format: str = _LOG_CONFIG_LOG_DATE_FORMAT,
-        _LogConfig__log_level: int =_LOG_CONFIG_LOG_LEVEL,
+        _LogConfig__log_level: int = _LOG_CONFIG_LOG_LEVEL,
         _LogConfig__log_level_custom_names_list: list[str] = _LOG_CONFIG_LOG_LEVEL_CUSTOM_NAMES_LIST,
         _LogConfig__log_level_logging_config: logging = _LOG_CONFIG_LOG_LEVEL_LOGGING_CONFIG,
         _LogConfig__log_level_methods_dict: dict[str, str] = _LOG_CONFIG_LOG_LEVEL_METHODS_DICT,
         _LogConfig__log_level_methods_list: list[str] = _LOG_CONFIG_LOG_LEVEL_METHODS_LIST,
-        _LogConfig__log_level_name: str =_LOG_CONFIG_LOG_LEVEL_NAME,
+        _LogConfig__log_level_name: str = _LOG_CONFIG_LOG_LEVEL_NAME,
         _LogConfig__log_level_names_list: list[str] = _LOG_CONFIG_LOG_LEVEL_NAMES_LIST,
         _LogConfig__log_level_numbers_dict: dict[str, int] = _LOG_CONFIG_LOG_LEVEL_NUMBERS_DICT,
         _LogConfig__log_level_numbers_list: list[int] = _LOG_CONFIG_LOG_LEVEL_NUMBERS_LIST,
@@ -124,27 +125,29 @@ class LogConfig(object):
         Logger.debug(f"Cascor: LogConfig: __init__: Logging Config: Type: {type(_LogConfig__log_config)} Value: {_LogConfig__log_config}")
 
         # Create a Logger object from the Logger class: Configure the logging system first, then get the actual root logger
-        if (custom_logger := Logger(
-            _Logger__log_config=_LogConfig__log_config,
-            _Logger__log_config_file_name=self.log_config_file_name,
-            _Logger__log_config_file_path=self.log_config_file_path,
-            _Logger__log_date_format=self.log_date_format,
-            _Logger__log_file_name=self.log_file_name,
-            _Logger__log_file_path=self.log_file_path,
-            _Logger__log_formatter_string=self.log_formatter_string,
-            _Logger__log_level_custom_names_list=self.log_level_custom_names_list,
-            _Logger__log_level_logging_config=_LogConfig__log_level_logging_config,
-            _Logger__log_level_methods_dict=self.log_level_methods_dict,
-            _Logger__log_level_methods_list=self.log_level_methods_list,
-            _Logger__log_level_name=self.log_level_name,
-            _Logger__log_level_names_list=self.log_level_names_list,
-            _Logger__log_level_numbers_dict=self.log_level_numbers_dict,
-            _Logger__log_level_numbers_list=self.log_level_numbers_list,
-            _Logger__log_level_redefinition=self.log_level_redefinition,
-            _Logger__log_message_default=self.log_message_default,
-            _Logger__uuid=None,
-            **kwargs,
-        )) is None:
+        if (
+            custom_logger := Logger(
+                _Logger__log_config=_LogConfig__log_config,
+                _Logger__log_config_file_name=self.log_config_file_name,
+                _Logger__log_config_file_path=self.log_config_file_path,
+                _Logger__log_date_format=self.log_date_format,
+                _Logger__log_file_name=self.log_file_name,
+                _Logger__log_file_path=self.log_file_path,
+                _Logger__log_formatter_string=self.log_formatter_string,
+                _Logger__log_level_custom_names_list=self.log_level_custom_names_list,
+                _Logger__log_level_logging_config=_LogConfig__log_level_logging_config,
+                _Logger__log_level_methods_dict=self.log_level_methods_dict,
+                _Logger__log_level_methods_list=self.log_level_methods_list,
+                _Logger__log_level_name=self.log_level_name,
+                _Logger__log_level_names_list=self.log_level_names_list,
+                _Logger__log_level_numbers_dict=self.log_level_numbers_dict,
+                _Logger__log_level_numbers_list=self.log_level_numbers_list,
+                _Logger__log_level_redefinition=self.log_level_redefinition,
+                _Logger__log_message_default=self.log_message_default,
+                _Logger__uuid=None,
+                **kwargs,
+            )
+        ) is None:
             Logger.critical(f"LogConfig: __init__:  Failed to create Logger class: {custom_logger}")
             os._exit(1)
 
@@ -154,7 +157,7 @@ class LogConfig(object):
 
         # Get the actual configured root logger instead of the custom logger instance
         self.logger = logging.getLogger(_LOGGER_NAME)  # This gets the properly configured named logger
-        
+
         # Copy the custom logging methods from the custom logger to the named logger
         # TODO: Use method names (lowercase) from methods_dict instead of level names (uppercase) from custom_names_list
         for level_name in self.custom_logger.log_level_custom_names_list:
@@ -179,15 +182,14 @@ class LogConfig(object):
         self.logger.info("LogConfig: __init__: Completed Initialization of LogConfig class")
         self.logger.trace("LogConfig: __init__: Completed the LogConfig class __init__ method")
 
-
     ####################################################################################################################################
     # Serialization support for multiprocessing
     def __getstate__(self):
         """Remove non-picklable items for multiprocessing serialization."""
         state = self.__dict__.copy()
         # Remove non-serializable items (loggers cannot be pickled)
-        state.pop('logger', None)
-        state.pop('custom_logger', None)
+        state.pop("logger", None)
+        state.pop("custom_logger", None)
         return state
 
     def __setstate__(self, state):
@@ -196,8 +198,7 @@ class LogConfig(object):
         # Recreate logger after unpickling
         self.custom_logger = None
         self.logger = Logger
-        self.logger.set_level(state.get('log_level_name', 'INFO'))
-
+        self.logger.set_level(state.get("log_level_name", "INFO"))
 
     # ####################################################################################################################################
     # # Define an abstract method that must be implemented by inheriting subclasses
@@ -212,7 +213,6 @@ class LogConfig(object):
     #         None
     #     """
     #     pass
-
 
     ####################################################################################################################################
     # Define private methods for the LogConfig class
@@ -230,7 +230,6 @@ class LogConfig(object):
         self.logger.verbose(f"LogConfig: _generate_uuid: UUID: {new_uuid}")
         self.logger.trace("LogConfig: _generate_uuid: Completed the LogConfig class Generate UUID method")
         return new_uuid
-
 
     ####################################################################################################################################
     # Define LogConfig class Setters
@@ -461,7 +460,6 @@ class LogConfig(object):
         self.logger.verbose(f"LogConfig: set_uuid: UUID set to: {self.uuid}")
         self.logger.trace("LogConfig: set_uuid: Completed setting UUID for LogConfig class")
 
-
     ####################################################################################################################################
     # Define LogConfig class Getters
     def get_uuid(self):
@@ -479,7 +477,7 @@ class LogConfig(object):
         self.logger.verbose(f"LogConfig: get_uuid: Returning UUID: {self.uuid}")
         self.logger.trace("LogConfig: get_uuid: Completed getting UUID for LogConfig class")
         return self.uuid
-    
+
     def get_custom_logger(self):
         """
         Description:
@@ -492,7 +490,7 @@ class LogConfig(object):
         return self.custom_logger if hasattr(self, "custom_logger") else None
 
     def get_logger(self):
-        """ 
+        """
         Description:
             Returns the logger for the LogConfig class.
         Args:
@@ -503,7 +501,7 @@ class LogConfig(object):
         return self.logger if hasattr(self, "logger") else None
 
     def get_log_file_name(self):
-        """ 
+        """
         Description:
             Returns the log file name for the LogConfig class.
         Args:
@@ -580,7 +578,7 @@ class LogConfig(object):
         return self.log_message_default if hasattr(self, "log_message_default") else None
 
     def get_log_level(self):
-        """ 
+        """
         Description:
             Returns the log level for the LogConfig class.
         Args:

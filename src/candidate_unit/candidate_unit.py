@@ -30,7 +30,7 @@
 #
 #####################################################################################################################################################################################################
 # TODO:
-#    - Consider selecting n-best candidate units from the pool based on correlation scores, for some constrained random value of n. 
+#    - Consider selecting n-best candidate units from the pool based on correlation scores, for some constrained random value of n.
 #      This would allow for the selected cohort of n candidate units to be added as a new layer in the cascor network.
 #
 #####################################################################################################################################################################################################
@@ -38,33 +38,33 @@
 #    - Integration of candidate unit code from cascor_spiral: candidate_unit.py
 #
 #####################################################################################################################################################################################################
-import numpy as np
 import os
-import torch
+
 # import torch.nn as nn
 import random
 import uuid
-
 from dataclasses import dataclass, field
 from typing import Optional
 
-from cascor_constants.constants import (
+import numpy as np
+import torch
+
+from cascor_constants.constants import (  # _CANDIDATE_UNIT_POOL_SIZE,
     _CANDIDATE_UNIT_ACTIVATION_FUNCTION,
     _CANDIDATE_UNIT_DISPLAY_FREQUENCY,
+    _CANDIDATE_UNIT_EARLY_STOPPING,
+    _CANDIDATE_UNIT_EPOCHS,
     _CANDIDATE_UNIT_EPOCHS_MAX,
     _CANDIDATE_UNIT_INPUT_SIZE,
-    _CANDIDATE_UNIT_OUTPUT_SIZE,
     _CANDIDATE_UNIT_LEARNING_RATE,
-    _CANDIDATE_UNIT_PATIENCE,
     _CANDIDATE_UNIT_LOG_LEVEL_NAME,
+    _CANDIDATE_UNIT_OUTPUT_SIZE,
+    _CANDIDATE_UNIT_PATIENCE,
     _CANDIDATE_UNIT_RANDOM_MAX_VALUE,
-    _CANDIDATE_UNIT_SEQUENCE_MAX_VALUE,
     _CANDIDATE_UNIT_RANDOM_SEED,
     _CANDIDATE_UNIT_RANDOM_VALUE_SCALE,
-    _CANDIDATE_UNIT_EARLY_STOPPING,
+    _CANDIDATE_UNIT_SEQUENCE_MAX_VALUE,
     _CANDIDATE_UNIT_STATUS_FREQUENCY,
-    # _CANDIDATE_UNIT_POOL_SIZE,
-    _CANDIDATE_UNIT_EPOCHS,
 )
 from log_config.logger.logger import Logger
 from utils.utils import display_progress
@@ -75,6 +75,7 @@ from utils.utils import display_progress
 @dataclass
 class CandidateTrainingResult:
     """Result from training a single candidate unit."""
+
     candidate_id: int = -1  # Changed from candidate_index for consistency
     candidate_uuid: Optional[str] = None
     correlation: float = 0.0  # Changed from best_correlation for consistency
@@ -89,6 +90,7 @@ class CandidateTrainingResult:
     epochs_completed: int = 0
     error_message: Optional[str] = None
 
+
 @dataclass
 class CandidateParametersUpdate:
     x: torch.Tensor = None
@@ -102,6 +104,7 @@ class CandidateParametersUpdate:
     denominator: float = 1.0
     success: bool = True
 
+
 @dataclass
 class CandidateCorrelationCalculation:
     correlation: float = 0.0
@@ -112,6 +115,7 @@ class CandidateCorrelationCalculation:
     denominator: float = 0.0
     output: torch.Tensor = None
     residual_error: torch.Tensor = None
+
 
 @dataclass
 class EpochTrainedCandidate:
@@ -131,93 +135,93 @@ class EpochTrainedCandidate:
 class ActivationWithDerivative:
     """
     Picklable wrapper for activation functions that also provides derivatives.
-    
+
     This class solves the multiprocessing pickling issue where local functions
     cannot be serialized. It stores the activation function type by name and
     reconstructs the function on unpickling.
-    
+
     Supports: All standard PyTorch activation functions (tanh, sigmoid, relu, etc.)
     """
-    
+
     # Mapping of activation names to functions for reconstruction after unpickling
     ACTIVATION_MAP = {
-        'elu': torch.nn.functional.elu,
-        'hardshrink': torch.nn.functional.hardshrink,
-        'relu': torch.relu,
-        'sigmoid': torch.sigmoid,
-        'tanh': torch.tanh,
-        'ELU': torch.nn.ELU(),
-        'Hardshrink': torch.nn.Hardshrink(),
-        'Hardsigmoid': torch.nn.Hardsigmoid(),
-        'Hardtanh': torch.nn.Hardtanh(),
-        'Hardswish': torch.nn.Hardswish(),
-        'LeakyReLU': torch.nn.LeakyReLU(),
-        'LogSigmoid': torch.nn.LogSigmoid(),
-        'PReLU': torch.nn.PReLU(),
-        'ReLU': torch.nn.ReLU(),
-        'ReLU6': torch.nn.ReLU6(),
-        'RReLU': torch.nn.RReLU(),
-        'SELU': torch.nn.SELU(),
-        'CELU': torch.nn.CELU(),
-        'GELU': torch.nn.GELU(),
-        'Sigmoid': torch.nn.Sigmoid(),
-        'SiLU': torch.nn.SiLU(),
-        'Mish': torch.nn.Mish(),
-        'Softplus': torch.nn.Softplus(),
-        'Softshrink': torch.nn.Softshrink(),
-        'Softsign': torch.nn.Softsign(),
-        'Tanh': torch.nn.Tanh(),
-        'Tanhshrink': torch.nn.Tanhshrink(),
-        'Threshold': torch.nn.Threshold(0.1, 0.0),  # Default threshold=0.1, value=0.0
-        'GLU': torch.nn.GLU(),
+        "elu": torch.nn.functional.elu,
+        "hardshrink": torch.nn.functional.hardshrink,
+        "relu": torch.relu,
+        "sigmoid": torch.sigmoid,
+        "tanh": torch.tanh,
+        "ELU": torch.nn.ELU(),
+        "Hardshrink": torch.nn.Hardshrink(),
+        "Hardsigmoid": torch.nn.Hardsigmoid(),
+        "Hardtanh": torch.nn.Hardtanh(),
+        "Hardswish": torch.nn.Hardswish(),
+        "LeakyReLU": torch.nn.LeakyReLU(),
+        "LogSigmoid": torch.nn.LogSigmoid(),
+        "PReLU": torch.nn.PReLU(),
+        "ReLU": torch.nn.ReLU(),
+        "ReLU6": torch.nn.ReLU6(),
+        "RReLU": torch.nn.RReLU(),
+        "SELU": torch.nn.SELU(),
+        "CELU": torch.nn.CELU(),
+        "GELU": torch.nn.GELU(),
+        "Sigmoid": torch.nn.Sigmoid(),
+        "SiLU": torch.nn.SiLU(),
+        "Mish": torch.nn.Mish(),
+        "Softplus": torch.nn.Softplus(),
+        "Softshrink": torch.nn.Softshrink(),
+        "Softsign": torch.nn.Softsign(),
+        "Tanh": torch.nn.Tanh(),
+        "Tanhshrink": torch.nn.Tanhshrink(),
+        "Threshold": torch.nn.Threshold(0.1, 0.0),  # Default threshold=0.1, value=0.0
+        "GLU": torch.nn.GLU(),
     }
-    
+
     def __init__(self, activation_fn):
         """
         Initialize with an activation function.
-        
+
         Args:
             activation_fn: A PyTorch activation function (e.g., torch.tanh, torch.nn.Tanh())
         """
         self.activation_fn = activation_fn
         self._activation_name = self._get_activation_name(activation_fn)
-    
+
     def _get_activation_name(self, activation_fn) -> str:
         """
         Extract a string name from the activation function for serialization.
-        
+
         Args:
             activation_fn: The activation function to get the name from
-            
+
         Returns:
             String name of the activation function
         """
-        if hasattr(activation_fn, '__name__'):
+        if hasattr(activation_fn, "__name__"):
             return activation_fn.__name__
-        elif hasattr(activation_fn, '__class__'):
+        elif hasattr(activation_fn, "__class__"):
             return activation_fn.__class__.__name__
         else:
             return str(activation_fn)
-    
+
     def __call__(self, x, derivative: bool = False):
         """
         Apply activation function or compute its derivative.
-        
+
         Args:
             x: Input tensor
             derivative: If True, compute the derivative instead of the activation
-            
+
         Returns:
             Activation output or derivative value
         """
         if derivative:
             name = self._activation_name.lower()
-            if name == 'tanh':
+            if name == "tanh":
                 return 1.0 - torch.tanh(x) ** 2
-            elif name == 'sigmoid':
+            elif name == "sigmoid":
                 y = torch.sigmoid(x)
                 return y * (1.0 - y)
-            elif name == 'relu':
+            elif name == "relu":
                 return (x > 0).float()
             else:
                 # Numerical approximation for other activation functions
@@ -225,20 +229,17 @@ class ActivationWithDerivative:
                 return (self.activation_fn(x + eps) - self.activation_fn(x - eps)) / (2 * eps)
         else:
             return self.activation_fn(x)
-    
+
     def __getstate__(self):
         """Serialize by storing activation name instead of function (for pickle/multiprocessing)."""
-        return {'_activation_name': self._activation_name}
-    
+        return {"_activation_name": self._activation_name}
+
     def __setstate__(self, state):
         """Reconstruct activation function from name after unpickling."""
-        self._activation_name = state['_activation_name']
+        self._activation_name = state["_activation_name"]
         # Try to reconstruct from map, fall back to ReLU as default
-        self.activation_fn = self.ACTIVATION_MAP.get(
-            self._activation_name, 
-            self.ACTIVATION_MAP.get(self._activation_name.lower(), torch.nn.ReLU())
-        )
-    
+        self.activation_fn = self.ACTIVATION_MAP.get(self._activation_name, self.ACTIVATION_MAP.get(self._activation_name.lower(), torch.nn.ReLU()))
+
     def __repr__(self):
         """String representation for debugging."""
         return f"ActivationWithDerivative({self._activation_name})"
@@ -269,14 +270,14 @@ class CandidateUnit:
         CandidateUnit__log_level_name: str = _CANDIDATE_UNIT_LOG_LEVEL_NAME,
         CandidateUnit__uuid: str = None,
         CandidateUnit__candidate_index: int = 0,
-        **kwargs
+        **kwargs,
     ):
         # Call the superclass constructor
         super().__init__()
 
         # Initialize CandidateUnit class logger
         self.log_level_name = CandidateUnit__log_level_name or _CANDIDATE_UNIT_LOG_LEVEL_NAME
-        self.logger=Logger
+        self.logger = Logger
         self.logger.set_level(self.log_level_name)
         self.logger.info("CandidateUnit: __init__: Initializing Candidate Unit with Logger class.")
 
@@ -360,16 +361,15 @@ class CandidateUnit:
         self.logger.debug("CandidateUnit: __init__: Completed initialization of Candidate Unit")
         self.logger.trace("CandidateUnit: __init__: Completed the __init__ method for the Candidate Unit")
 
-
     #################################################################################################################################################################################################
     # Serialization support for multiprocessing
     def __getstate__(self):
         """Remove non-picklable items for multiprocessing and HDF5 serialization."""
         state = self.__dict__.copy()
         # Remove non-serializable/transient items
-        state.pop('logger', None)
-        state.pop('_candidate_display_progress', None)
-        state.pop('_candidate_display_status', None)
+        state.pop("logger", None)
+        state.pop("_candidate_display_progress", None)
+        state.pop("_candidate_display_status", None)
         return state
 
     def __setstate__(self, state):
@@ -379,7 +379,6 @@ class CandidateUnit:
         self.logger = Logger
         self.logger.set_level(self.log_level_name)
         # Display functions will be recreated lazily in train() when needed
-
 
     #################################################################################################################################################################################################
     # Helper method to perform initialization tasks for the __init__ method
@@ -396,7 +395,7 @@ class CandidateUnit:
         self.logger.verbose(f"CandidateUnit: _initialize_randomness: Random seed set to: {seed}")
         # max_value = max_value or _CANDIDATE_UNIT_RANDOM_MAX_VALUE
         # max_value = 10000
-        max_value = max_value or 10 # Using a small max value to limit the number of random calls needed to roll to the desired sequence
+        max_value = max_value or 10  # Using a small max value to limit the number of random calls needed to roll to the desired sequence
         self.logger.verbose(f"CandidateUnit: _initialize_randomness: Random max value set to: {max_value}")
         self._seed_random_generator(seed=seed, max_value=max_value, seeder=np.random.seed, generator=np.random.randint)
         self.logger.trace("CandidateUnit: _initialize_randomness: Completed initialization of numpy random generator with seed and sequence for the candidate unit")
@@ -404,15 +403,19 @@ class CandidateUnit:
         self.logger.trace("CandidateUnit: _initialize_randomness: Completed initialization of random random generator with seed and sequence for the candidate unit")
         self._seed_random_generator(seed=seed, max_value=max_value, seeder=torch.manual_seed, generator=lambda min, max: torch.randint(min, max, ()))
         self.logger.trace("CandidateUnit: _initialize_randomness: Completed initialization of torch random generator with seed and sequence for the candidate unit")
-        self._seed_random_generator(seed=seed, max_value=max_value, seeder=self._seed_hash, generator=None,)
+        self._seed_random_generator(
+            seed=seed,
+            max_value=max_value,
+            seeder=self._seed_hash,
+            generator=None,
+        )
         # Initialize CUDA random generator if available
         if torch.cuda.is_available():
             self.logger.trace("CandidateUnit: _initialize_randomness: CUDA is available, seeding CUDA random generator.")
             # self._seed_random_generator(seed=seed, max_value=max_value, seeder=torch.cuda.manual_seed, generator=lambda min, max: torch.cuda.randint(min, max, ()))
-            self._seed_random_generator(seed=seed, max_value=max_value, seeder=torch.cuda.manual_seed, generator=lambda min, max: torch.rand(1, device='cuda'))
+            self._seed_random_generator(seed=seed, max_value=max_value, seeder=torch.cuda.manual_seed, generator=lambda min, max: torch.rand(1, device="cuda"))
             torch.backends.cudnn.deterministic = True
             torch.backends.cudnn.benchmark = False
-
 
     def _seed_random_generator(self, seed: int = None, max_value: int = None, seeder: callable = None, generator: callable = None) -> None:
         """
@@ -445,7 +448,6 @@ class CandidateUnit:
         self._roll_sequence_number(sequence=random_sequence, max_value=max_value, generator=generator)
         self.logger.trace("CandidateUnit: _seed_random_generator: Completed initialization of random generator with seed and sequence for the candidate unit")
 
-
     def _roll_sequence_number(self, sequence: int = None, max_value: int = None, generator: callable = None) -> None:
         """
         Description:
@@ -475,7 +477,6 @@ class CandidateUnit:
             self.logger.verbose(f"CandidateUnit: _roll_sequence_number: Random Generator rolled for sequence number: {sequence}")
         self.logger.trace("CandidateUnit: _roll_sequence_number: Completed rolling of sequence number.")
 
-
     def _seed_hash(self, seed: int = None) -> None:
         """
         Description:
@@ -484,7 +485,6 @@ class CandidateUnit:
             seed: The seed value for the hash function
         """
         os.environ["PYTHONHASHSEED"] = str(seed)
-
 
     def _init_activation_with_derivative(self, activation_fn: callable = None) -> ActivationWithDerivative:
         """
@@ -522,7 +522,7 @@ class CandidateUnit:
         #         return activation_fn(x)
         # self.logger.verbose(f"CandidateUnit: _init_activation_with_derivative: Returning wrapped activation function: {wrapped_activation}.")
         # return wrapped_activation
-        
+
         # NEW: Picklable class instance for multiprocessing compatibility
         self.logger.trace("CandidateUnit: _init_activation_with_derivative: Creating ActivationWithDerivative wrapper.")
         wrapped_activation = ActivationWithDerivative(activation_fn)
@@ -560,7 +560,6 @@ class CandidateUnit:
         self.logger.debug(f"CandidateUnit: forward: Output shape: {output.shape}, Output length: {len(output)},\nOutput:\n{output}")
         self.logger.trace("CandidateUnit: forward: Completed forward pass through the candidate unit")
         return output
-
 
     #################################################################################################################################################################################################
     # Define method to Train the candidate unit to maximize correlation with residual error.
@@ -659,7 +658,7 @@ class CandidateUnit:
             self.logger.trace(f"CandidateUnit: train: Starting Training Step: Starting training step: For Epoch {epoch + 1}.")
             self.logger.trace(f"CandidateUnit: train: Performing forward pass for current epoch: For Epoch {epoch + 1}")
             self.logger.info(f"CandidateUnit: train: Performing Forward Pass: Training Candidate Unit: UUID: {self.uuid}, For Epoch: {epoch + 1}.")
-            output = self.forward(x)       # Forward pass for current input mini-batch (x)
+            output = self.forward(x)  # Forward pass for current input mini-batch (x)
             self.logger.debug(f"CandidateUnit: train: Completed Forward Pass: Output shape: {output.shape}, For Epoch {epoch + 1}")
 
             # Compute correlation with each output and use the maximum absolute correlation
@@ -667,7 +666,9 @@ class CandidateUnit:
             self.logger.trace(f"CandidateUnit: train: Multi-output Network detected: With residual_error shape: {residual_error.shape}, For Epoch {epoch + 1}")
             self.logger.info(f"CandidateUnit: train: Calculating Correlation: UUID: {self.uuid}, Epoch: {epoch + 1}: Residual Error: Shape: {residual_error.shape}, Length: {len(residual_error)}, Type: {type(residual_error)}, Dtype: {residual_error.dtype}, Dimensions: {residual_error.dim()}, For Epoch: {epoch + 1}")
             candidate_training_result = self._get_correlations(output=output, residual_error=residual_error)
-            self.logger.info(f"CandidateUnit: train: Completed Correlation Calculation:  UUID: {self.uuid}, Epoch: {epoch + 1}: Best Correlation: {candidate_training_result.correlation}, Best Corr Idx: {candidate_training_result.best_corr_idx}, Best Norm Output Shape: {candidate_training_result.norm_output.shape if candidate_training_result.norm_output is not None else 'None'}, Best Norm Error Shape: {candidate_training_result.norm_error.shape if candidate_training_result.norm_error is not None else 'None'}")
+            self.logger.info(
+                f"CandidateUnit: train: Completed Correlation Calculation:  UUID: {self.uuid}, Epoch: {epoch + 1}: Best Correlation: {candidate_training_result.correlation}, Best Corr Idx: {candidate_training_result.best_corr_idx}, Best Norm Output Shape: {candidate_training_result.norm_output.shape if candidate_training_result.norm_output is not None else 'None'}, Best Norm Error Shape: {candidate_training_result.norm_error.shape if candidate_training_result.norm_error is not None else 'None'}"
+            )
             self.logger.debug(f"CandidateUnit: train: Correlation calculation: self correlation: {self.correlation}, parameter: correlation: {candidate_training_result.correlation}, for Epoch {epoch + 1}.")
             self.logger.debug(f"CandidateUnit: train: Correlation calculation: Best Correlation: {candidate_training_result.correlation}, For Epoch: {epoch + 1}")
             self.logger.debug(f"CandidateUnit: train: All correlations list: For Epoch {epoch + 1}: Correlations: {candidate_training_result.all_correlations}")
@@ -723,6 +724,7 @@ class CandidateUnit:
             except Exception as e:
                 self.logger.error(f"CandidateUnit: train: Failed to display training progress: {str(e)}")
                 import traceback
+
                 self.logger.error(f"CandidateUnit: train: Traceback: {traceback.format_exc()}")
             self.logger.trace(f"CandidateUnit: train: Completed training step: For Epoch {epoch + 1}.")
 
@@ -754,7 +756,6 @@ class CandidateUnit:
         # Return the final correlation value
         return candidate_training_result
 
-
     #################################################################################################################################################################################################
     # Initialize display progress frequency checker with candidate unit display frequency
     def _display_training_progress(self, epoch, candidate_parameters_update, residual_error):
@@ -766,21 +767,16 @@ class CandidateUnit:
             self.logger.debug(f"CandidateUnit: _display_training_progress: Display function: Type: {type(self._candidate_display_progress)}, Value: {self._candidate_display_progress}")
             self.logger.debug(f"CandidateUnit: _display_training_progress: Display function is None, re-initializing with frequency: Type: {type(self.display_frequency)}, Value: {self.display_frequency}")
             self._candidate_display_progress = self._init_display_progress(display_frequency=self.display_frequency)
-        
+
         # Display progress if epoch matches frequency
         if self._candidate_display_progress(epoch):
             self.logger.info(f"CandidateUnit: train: Epoch {epoch + 1} - Norm Output: {candidate_parameters_update.norm_output}, Norm Error: {candidate_parameters_update.norm_error}")
-        
-        self.logger.verbose(f"CandidateUnit: train: Epoch {epoch + 1} - Residual Error: Shape: {residual_error.shape}, Dtype: {residual_error.dtype}")
 
+        self.logger.verbose(f"CandidateUnit: train: Epoch {epoch + 1} - Residual Error: Shape: {residual_error.shape}, Dtype: {residual_error.dtype}")
 
     #################################################################################################################################################################################################
     # Get the correlations for the candidate unit.
-    def _get_correlations(
-        self,
-        output: torch.Tensor = None,
-        residual_error: torch.Tensor = None
-    ) -> tuple[list, int, torch.Tensor, torch.Tensor]:
+    def _get_correlations(self, output: torch.Tensor = None, residual_error: torch.Tensor = None) -> tuple[list, int, torch.Tensor, torch.Tensor]:
         """
         Description:
             Get the correlations for the candidate unit.
@@ -806,15 +802,15 @@ class CandidateUnit:
         self.logger.trace("CandidateUnit: _get_correlations: Starting correlation calculation")
         candidate_correlations = self._multi_output_correlation(residual_error=residual_error, output=output)
         self.logger.debug(f"CandidateUnit: _get_correlations: Multi-output correlation result: Cascade Correlations: Length {len(candidate_correlations)}, Value: {candidate_correlations}")
-        
+
         # Extract all correlations and find the best one
         correlations = [c.correlation for c in candidate_correlations]
         self.logger.verbose(f"CandidateUnit: _get_correlations: All correlations: {correlations}")
-        
+
         # Find the best correlation by maximum absolute value
         best_idx = int(np.argmax(np.abs(np.array(correlations)))) if correlations else -1
         self.logger.debug(f"CandidateUnit: _get_correlations: Best correlation index: {best_idx}")
-        
+
         # Get the best correlation data
         if best_idx >= 0:
             best = candidate_correlations[best_idx]
@@ -831,34 +827,22 @@ class CandidateUnit:
             norm_error = None
             numerator = 0.0
             denominator = 1.0
-        
+
         self.logger.debug(f"CandidateUnit: _get_correlations: Best correlation: {best_correlation}, Best corr idx: {best_corr_idx}")
         self.logger.trace("CandidateUnit: _get_correlations: Completed correlation calculation")
 
         # Create a CandidateTrainingResult data class to return all relevant training results
         self.logger.debug("CandidateUnit: _get_correlations: Creating CandidateTrainingResult data class to return all relevant training results")
-        candidate_training_result = CandidateTrainingResult(
-            candidate_id=self.candidate_index,
-            candidate_uuid=self.uuid,
-            correlation=best_correlation,
-            best_corr_idx=best_corr_idx,
-            all_correlations=correlations,
-            norm_output=norm_output,
-            norm_error=norm_error,
-            numerator=numerator,
-            denominator=denominator,
-            success=(best_idx >= 0)
-        )
+        candidate_training_result = CandidateTrainingResult(candidate_id=self.candidate_index, candidate_uuid=self.uuid, correlation=best_correlation, best_corr_idx=best_corr_idx, all_correlations=correlations, norm_output=norm_output, norm_error=norm_error, numerator=numerator, denominator=denominator, success=(best_idx >= 0))
         self.logger.debug(f"CandidateUnit: _get_correlations: Returning training result: {candidate_training_result}")
         return candidate_training_result
-
 
     #################################################################################################################################################################################################
     def _multi_output_correlation(
         self,
         residual_error: torch.Tensor = None,
         output: torch.Tensor = None,
-    # ) -> list(tuple[float, int, torch.Tensor, torch.Tensor, float, float]):
+        # ) -> list(tuple[float, int, torch.Tensor, torch.Tensor, float, float]):
     ) -> [CandidateCorrelationCalculation]:
         """
         Description:
@@ -888,7 +872,7 @@ class CandidateUnit:
         self.logger.trace("CandidateUnit: _multi_output_correlation: Calculating Max Index for residual error")
 
         # Get the max index for the 2nd dim (dim 1) of the residual error.  Dim 0 is number of batches, dim 1 is the number of error values--one for each output.
-        max_index = residual_error.shape[1] if hasattr(residual_error, 'shape') and len(residual_error.shape) > 1 else 1
+        max_index = residual_error.shape[1] if hasattr(residual_error, "shape") and len(residual_error.shape) > 1 else 1
         self.logger.verbose(f"CandidateUnit: _multi_output_correlation: Max index: {max_index}")
 
         # Iterate through each output index and calculate correlation
@@ -960,11 +944,11 @@ class CandidateUnit:
 
         # Calculate the absolute value of the correlation
         self.logger.trace("CandidateUnit: _get_correlation_abs_value: Calculating absolute value of correlation")
-        if hasattr(correlation, 'item') and callable(correlation.item) and isinstance(correlation.item(), torch.Tensor):
+        if hasattr(correlation, "item") and callable(correlation.item) and isinstance(correlation.item(), torch.Tensor):
             correlation_abs = self._calculate_abs_value(correlation.item())
         elif isinstance(correlation, (tuple, list)) and len(correlation) > 0 and isinstance(correlation[0], (torch.Tensor, float, int)):
             correlation_abs = self._calculate_abs_value(correlation[0])
-        elif ( isinstance(correlation, np.ndarray) and len(correlation) > 0 ) or ( isinstance(correlation, (torch.Tensor, float, int)) ):
+        elif (isinstance(correlation, np.ndarray) and len(correlation) > 0) or (isinstance(correlation, (torch.Tensor, float, int))):
             correlation_abs = self._calculate_abs_value(correlation)
         else:
             self.logger.warning(f"CandidateUnit: _get_correlation_abs_value: Unexpected correlation type: {type(correlation)}.  Trying to calculate absolute value using numpy.")
@@ -998,7 +982,6 @@ class CandidateUnit:
         else:
             self.logger.warning(f"CandidateUnit: _calculate_abs_value: Unexpected value type: {type(value)}. Using numpy's absolute function as fallback.")
             return np.abs(value)
-
 
     #################################################################################################################################################################################################
     def _calculate_correlation(
@@ -1075,8 +1058,8 @@ class CandidateUnit:
             correlation = 0.0
         else:
             # Convert to Python scalars for numerical stability
-            numerator_val = numerator.item() if hasattr(numerator, 'item') else float(numerator)
-            denominator_val = denominator.item() if hasattr(denominator, 'item') else float(denominator)
+            numerator_val = numerator.item() if hasattr(numerator, "item") else float(numerator)
+            denominator_val = denominator.item() if hasattr(denominator, "item") else float(denominator)
             self.logger.debug(f"CandidateUnit: _calculate_correlation: Numerator value: {numerator_val:.6f}, Denominator value: {denominator_val:.6f}")
 
             # Use absolute value for candidate comparison (we want maximum correlation magnitude)
@@ -1092,7 +1075,6 @@ class CandidateUnit:
 
         # Return correlation and components for gradient computation
         return (correlation, norm_output, norm_error, numerator_val, denominator_val)
-
 
     #################################################################################################################################################################################################
     # Update weights and bias of the candidate unit based on correlation with residual error.
@@ -1138,7 +1120,7 @@ class CandidateUnit:
 
         # Extract the correct error slice based on best correlation index
         self.logger.debug("CandidateUnit: _update_weights_and_bias: Extracting error slice for best correlation index")
-        
+
         # Determine which error slice to use based on residual_error shape
         if candidate_parameters_update.residual_error.dim() > 1 and candidate_parameters_update.residual_error.shape[1] > 1:
             # Multi-output: slice to the best output index
@@ -1165,7 +1147,7 @@ class CandidateUnit:
         self.logger.verbose(f"CandidateUnit: _update_weights_and_bias: Output centered: {output_centered}")
         error_centered = error_slice - error_mean
         self.logger.verbose(f"CandidateUnit: _update_weights_and_bias: Error centered: {error_centered}")
-        
+
         self.logger.verbose(f"CandidateUnit: _update_weights_and_bias: Output centered shape: {output_centered.shape}")
         self.logger.verbose(f"CandidateUnit: _update_weights_and_bias: Error centered shape: {error_centered.shape}")
 
@@ -1214,7 +1196,6 @@ class CandidateUnit:
         # Return dummy gradients for compatibility (not used elsewhere)
         self.logger.debug(f"CandidateUnit: _update_weights_and_bias: Return dummy gradients for compatibility (not used elsewhere), error_centered: {error_centered}, output_centered: {output_centered}")
         return (error_centered, output_centered)
-
 
     #################################################################################################################################################################################################
     def _validate_correlation_params(
@@ -1273,7 +1254,7 @@ class CandidateUnit:
         self.logger.debug(f"CandidateUnit: _validate_correlation_params: Output shape: {output.shape}, Residual error shape: {residual_error.shape}")
         self.logger.trace("CandidateUnit: _validate_correlation_params: Validating output and residual error features for multi-output networks")
         self.logger.verbose(f"CandidateUnit: _validate_correlation_params: Residual Error: Shape: {residual_error.shape}, Shape Length: {len(residual_error.shape)}, Type: {type(residual_error)}, Dimensions: {residual_error.dim()}, Dtype: {residual_error.dtype}\nResidual Error Value:\n{residual_error}")
-        dimensions = residual_error.dim() if hasattr(residual_error, 'dim') else len(residual_error.shape)
+        dimensions = residual_error.dim() if hasattr(residual_error, "dim") else len(residual_error.shape)
         index = dimensions - 1 if dimensions > 1 else 0
         self.logger.debug(f"CandidateUnit: _validate_correlation_params: Checking if output and residual error have the same number of features at Index {index}, Dimensions: {dimensions}")
         if output.shape[index] != residual_error.shape[index] and dimensions > 1:
@@ -1284,7 +1265,6 @@ class CandidateUnit:
 
         # Log completion of validation
         self.logger.trace("CandidateUnit: _validate_correlation_params: Validation complete.")
-
 
     ####################################################################################################################################
     # Define private methods for the CandidateUnit class
@@ -1368,7 +1348,6 @@ class CandidateUnit:
         else:
             self.logger.warning("CandidateUnit: clear_display_progress: _candidate_display_progress attribute not found or is already None")
         self.logger.trace("CandidateUnit: clear_display_progress: Completed the CandidateUnit class Clear Display Progress method")
-
 
     #################################################################################################################################################################################################
     # Define Setters for candidate unit attributes.
@@ -1485,7 +1464,6 @@ class CandidateUnit:
             os._exit(1)
         self.logger.debug(f"CandidateUnit: set_uuid: UUID set to: {self.uuid}")
         self.logger.trace("CandidateUnit: set_uuid: Completed setting UUID for CandidateUnit class")
-
 
     ####################################################################################################################################
     # Define CandidateUnit class Getters for class attributes

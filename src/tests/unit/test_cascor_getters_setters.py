@@ -47,12 +47,14 @@ def basic_network():
 @pytest.fixture
 def mock_candidate_result():
     """Create a mock CandidateTrainingResult for testing."""
+
     @dataclass
     class MockResult:
         candidate_id: int
         correlation: float
         success: bool
         error_message: str = ""
+
     return MockResult
 
 
@@ -176,9 +178,7 @@ class TestCandidateDataHelpers:
             MockResult(candidate_id=0, correlation=0.5, success=True),
             MockResult(candidate_id=1, correlation=0.7, success=True),
         ]
-        correlation = basic_network.get_single_candidate_data(
-            results, candidate_id=1, field="correlation", default=0.0
-        )
+        correlation = basic_network.get_single_candidate_data(results, candidate_id=1, field="correlation", default=0.0)
         assert correlation == 0.7
 
     @pytest.mark.unit
@@ -188,9 +188,7 @@ class TestCandidateDataHelpers:
         results = [
             MockResult(candidate_id=0, correlation=0.5, success=True),
         ]
-        correlation = basic_network.get_single_candidate_data(
-            results, candidate_id=99, field="correlation", default=-1.0
-        )
+        correlation = basic_network.get_single_candidate_data(results, candidate_id=99, field="correlation", default=-1.0)
         assert correlation == -1.0
 
     @pytest.mark.unit
@@ -202,9 +200,7 @@ class TestCandidateDataHelpers:
             MockResult(candidate_id=1, correlation=0.7, success=True),
             MockResult(candidate_id=2, correlation=0.3, success=False),
         ]
-        count = basic_network.get_candidates_data_count(
-            results, field="success", constraint=lambda x: x is True
-        )
+        count = basic_network.get_candidates_data_count(results, field="success", constraint=lambda x: x is True)
         assert count == 2
 
     @pytest.mark.unit
@@ -215,14 +211,13 @@ class TestCandidateDataHelpers:
             MockResult(candidate_id=0, correlation=0.5, success=False),
             MockResult(candidate_id=1, correlation=0.7, success=False),
         ]
-        count = basic_network.get_candidates_data_count(
-            results, field="success", constraint=lambda x: x is True
-        )
+        count = basic_network.get_candidates_data_count(results, field="success", constraint=lambda x: x is True)
         assert count == 0
 
     @pytest.mark.unit
     def test_get_candidates_error_messages(self, basic_network, mock_candidate_result):
         """Test get_candidates_error_messages extracts error messages."""
+
         @dataclass
         class MockResultWithUuid:
             candidate_id: int
@@ -230,7 +225,7 @@ class TestCandidateDataHelpers:
             correlation: float
             success: bool
             error_message: str = ""
-        
+
         results = [
             MockResultWithUuid(candidate_id=0, candidate_uuid="uuid-0", correlation=0.5, success=True),
             MockResultWithUuid(candidate_id=1, candidate_uuid="uuid-1", correlation=0.0, success=False, error_message="Training failed"),

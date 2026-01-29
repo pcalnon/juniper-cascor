@@ -228,7 +228,7 @@ python main.py
 
 ```bash
 juniper_cascor.bash: line 67: __get_project_dir.bash: command not found
-Base Dir: 
+Base Dir:
 Python Script: /src/./main.py
 python3: can't open file '/src/./main.py': [Errno 2] No such file or directory
 ```
@@ -1114,7 +1114,7 @@ flowchart TD
         P0-014[Tensor Edge Cases]
         P0-015[Test Expectations]
     end
-    
+
     subgraph Phase1["Phase 1: Tooling"]
         P1-001[CI/CD Pipeline]
         P1-002[Type Checking]
@@ -1123,7 +1123,7 @@ flowchart TD
         P1-005[Logging Config]
         P1-006[Fix Test Runner]
     end
-    
+
     subgraph Phase2["Phase 2: Enhancements"]
         P2-001[Candidate Factory]
         P2-002[Flexible Optimizer]
@@ -1133,7 +1133,7 @@ flowchart TD
         P2-006[Instance Queues]
         P2-007[Async Plotting]
     end
-    
+
     subgraph Phase3["Phase 3: GPU & Refactor"]
         P3-001[GPU Support]
         P3-002[Refactor Phase 1]
@@ -1141,30 +1141,30 @@ flowchart TD
         P3-004[Naming Docs]
         P3-005[Backward Compat]
     end
-    
+
     subgraph Phase4["Phase 4: Release"]
         P4-001[Documentation]
         P4-002[Deployment Guide]
         P4-003[Final Testing]
         P4-004[Release]
     end
-    
+
     P0-001 --> P2-001
     P0-001 --> P2-003
     P0-002 --> P0-003
     P0-002 --> P2-007
     P0-003 --> P1-004
     P0-003 --> P3-005
-    
+
     P1-001 --> P1-002
     P1-001 --> P1-003
     P1-001 --> P3-002
-    
+
     P2-001 --> P2-005
     P2-003 --> P2-006
-    
+
     P3-002 --> P3-003
-    
+
     P4-001 --> P4-004
     P4-003 --> P4-004
 ```
