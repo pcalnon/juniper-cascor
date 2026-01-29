@@ -27,39 +27,56 @@ from cascade_correlation.cascade_correlation_config.cascade_correlation_config i
 from snapshots.snapshot_serializer import CascadeHDF5Serializer
 
 
+def _is_fast_mode():
+    """Check if fast-slow mode is enabled."""
+    return os.environ.get("JUNIPER_FAST_SLOW", "0") == "1"
+
+
 class TestDeterministicTrainingResume(unittest.TestCase):
     """Test that training can be paused, saved, loaded, and resumed deterministically."""
 
     # CASCOR-TIMEOUT-001: Added slow marker and extended timeout
+    # CASCOR-PERF-004: Skip in fast mode - this is a correctness test for deterministic
+    # serialization that requires full training to validate properly
     @pytest.mark.slow
+    @pytest.mark.skipif(_is_fast_mode(), reason="Deterministic resume requires full training to validate")
     @pytest.mark.timeout(300)
     def test_deterministic_training_resume(self):
         """
         Critical test: Train → Save → Load → Resume should be identical to continuous training.
         This is the most important test for deterministic reproducibility.
         """
-        # Setup
+        # Use reduced parameters in fast mode
+        fast_mode = _is_fast_mode()
+        
+        # Setup - scale parameters based on mode
         config = CascadeCorrelationConfig(
             input_size=2,
             output_size=1,
-            candidate_pool_size=3,
-            candidate_epochs=10,
-            output_epochs=20,
-            max_hidden_units=2,
+            candidate_pool_size=2 if fast_mode else 3,
+            candidate_epochs=3 if fast_mode else 10,
+            output_epochs=3 if fast_mode else 20,
+            max_hidden_units=1 if fast_mode else 2,
             random_seed=42,
         )
 
-        # Create test data
+        # Create test data - smaller dataset in fast mode
         torch.manual_seed(42)
-        x_train = torch.randn(50, 2)
+        n_samples = 20 if fast_mode else 50
+        x_train = torch.randn(n_samples, 2)
         y_train = (x_train[:, 0] > x_train[:, 1]).float().unsqueeze(1)
 
-        # Scenario A: Train for 20 epochs, save, train for 20 more
+        # Scale epochs based on mode
+        epochs_first = 5 if fast_mode else 20
+        epochs_second = 5 if fast_mode else 20
+        epochs_total = epochs_first + epochs_second
+
+        # Scenario A: Train for N epochs, save, train for N more
         network_a = CascadeCorrelationNetwork(config=config)
         network_a.fit(
             x_train=x_train,
             y_train=y_train,
-            max_epochs=20
+            max_epochs=epochs_first
         )
         serializer = CascadeHDF5Serializer()
         with tempfile.NamedTemporaryFile(suffix=".h5", delete=False) as f:
@@ -69,11 +86,11 @@ class TestDeterministicTrainingResume(unittest.TestCase):
             self.assertTrue(success, "Failed to save network")
             network_a_resumed = serializer.load_network(temp_file)
             self.assertIsNotNone(network_a_resumed, "Failed to load network")
-            network_a_resumed.fit(x_train, y_train, epochs=20)
+            network_a_resumed.fit(x_train, y_train, epochs=epochs_second)
 
-            # Scenario B: Train continuously for 40 epochs
+            # Scenario B: Train continuously for 2N epochs
             network_b = CascadeCorrelationNetwork(config=config)
-            network_b.fit(x_train, y_train, epochs=40)
+            network_b.fit(x_train, y_train, epochs=epochs_total)
 
             # Verify outputs are identical
             torch.manual_seed(999)  # Different seed for test data

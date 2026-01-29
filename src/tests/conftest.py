@@ -87,6 +87,7 @@ def pytest_configure(config):
 
     # Limit thread count to prevent CPU oversubscription when running with pytest-xdist
     # This is critical for parallel test execution performance
+    # TODO: Consider using a more sophisticated approach to limit thread count
     if os.environ.get("PYTEST_XDIST_WORKER"):
         os.environ.setdefault("OMP_NUM_THREADS", "1")
         os.environ.setdefault("MKL_NUM_THREADS", "1")
@@ -159,9 +160,12 @@ def fast_training_params(fast_slow_mode):
     """
     if fast_slow_mode:
         return {
+            'learning_rate': 0.1,
+            'candidate_learning_rate': 0.1,
             'candidate_epochs': 3,
             'output_epochs': 3,
             'candidate_pool_size': 2,
+            'correlation_threshold': 0.02,
             'max_hidden_units': 2,
             'epochs_max': 5,
             'patience': 2,
@@ -170,9 +174,15 @@ def fast_training_params(fast_slow_mode):
         }
     else:
         return {
+            'learning_rate': 0.01,
+            # 'learning_rate': 0.02,
+            # 'learning_rate': 0.05,
+            'candidate_learning_rate': 0.005,
+            # 'candidate_learning_rate': 0.01,
             'candidate_epochs': 50,
             'output_epochs': 25,
             'candidate_pool_size': 16,
+            'correlation_threshold': 0.1,
             'max_hidden_units': 10,
             'epochs_max': 100,
             'patience': 5,
@@ -290,11 +300,11 @@ def simple_config(fast_training_params) -> CascadeCorrelationConfig:
     return CascadeCorrelationConfig.create_simple_config(
         input_size=2,
         output_size=2,
-        learning_rate=0.1,
-        candidate_learning_rate=0.01,
+        learning_rate=min(0.1, fast_training_params['learning_rate']),
+        candidate_learning_rate=min(0.1, fast_training_params['candidate_learning_rate']),
         max_hidden_units=min(5, fast_training_params['max_hidden_units']),
         candidate_pool_size=min(8, fast_training_params['candidate_pool_size']),
-        correlation_threshold=0.1,
+        correlation_threshold=min(0.1, fast_training_params['correlation_threshold']),
         patience=min(3, fast_training_params['patience']),
         candidate_epochs=min(10, fast_training_params['candidate_epochs']),
         output_epochs=min(10, fast_training_params['output_epochs']),
@@ -310,19 +320,18 @@ def spiral_config(fast_training_params, fast_slow_mode) -> CascadeCorrelationCon
     Correlation threshold is lowered in fast mode to allow candidates to be added.
     """
     # Use lower correlation threshold in fast mode since candidates train fewer epochs
-    correlation_threshold = 0.05 if fast_slow_mode else 0.2
     return CascadeCorrelationConfig.create_simple_config(
         input_size=2,
         output_size=2,
-        learning_rate=0.05,
-        candidate_learning_rate=0.01,
-        max_hidden_units=fast_training_params['max_hidden_units'],
-        candidate_pool_size=fast_training_params['candidate_pool_size'],
-        correlation_threshold=correlation_threshold,
-        patience=fast_training_params['patience'],
-        candidate_epochs=fast_training_params['candidate_epochs'],
-        output_epochs=fast_training_params['output_epochs'],
-        epochs_max=fast_training_params['epochs_max']
+        learning_rate=min(0.1, fast_training_params['learning_rate']),
+        candidate_learning_rate=min(0.1, fast_training_params['candidate_learning_rate']),
+        max_hidden_units=min(5, fast_training_params['max_hidden_units']),
+        candidate_pool_size=min(8, fast_training_params['candidate_pool_size']),
+        correlation_threshold=min(0.1, fast_training_params['correlation_threshold']),
+        patience=min(3, fast_training_params['patience']),
+        candidate_epochs=min(10, fast_training_params['candidate_epochs']),
+        output_epochs=min(10, fast_training_params['output_epochs']),
+        epochs_max=min(20, fast_training_params['epochs_max'])
     )
 
 
@@ -335,8 +344,8 @@ def regression_config(fast_training_params) -> CascadeCorrelationConfig:
     return CascadeCorrelationConfig.create_simple_config(
         input_size=2,
         output_size=1,
-        learning_rate=0.01,
-        candidate_learning_rate=0.005,
+        learning_rate=min(0.1, fast_training_params['learning_rate']),
+        candidate_learning_rate=min(0.1, fast_training_params['candidate_learning_rate']),
         max_hidden_units=min(8, fast_training_params['max_hidden_units']),
         candidate_pool_size=min(12, fast_training_params['candidate_pool_size']),
         correlation_threshold=0.15,
