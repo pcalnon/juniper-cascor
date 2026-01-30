@@ -95,7 +95,8 @@ class CascadeHDF5Serializer:
 
     def save_object(
         self,
-        objectify: any = None,
+        # objectify: any = None,
+        objectify: Any = None,
         filepath: str = "./snapshots/object.h5",
         compression: str = "gzip",
         compression_opts: int = 4,
@@ -590,7 +591,8 @@ class CascadeHDF5Serializer:
                     save_numpy_array(data_group, key, dataset, compression, compression_opts)
         self.logger.debug("CascadeHDF5Serializer: Saved training data")
 
-    def load_network(self, filepath: Union[str, Path], restore_multiprocessing: bool = True) -> Optional:
+    # def load_network(self, filepath: Union[str, Path], restore_multiprocessing: bool = True) -> Optional:  # Original - invalid Optional usage
+    def load_network(self, filepath: Union[str, Path], restore_multiprocessing: bool = True) -> Optional[Any]:
         """
         Load a CascadeCorrelationNetwork from HDF5 format.
 
@@ -888,7 +890,8 @@ class CascadeHDF5Serializer:
             if save_key in history_group and not network.history[network_key]:
                 data = load_numpy_array(history_group[save_key])
                 network.history[network_key] = data.tolist()
-                self.logger.debug(f"CascadeHDF5Serializer: Loaded history key '{save_key}' as '{network_key}'")
+                # self.logger.debug(f"CascadeHDF5Serializer: Loaded history key '{save_key}' as '{network_key}'")  # B907
+                self.logger.debug(f"CascadeHDF5Serializer: Loaded history key {save_key!r} as {network_key!r}")
 
         # Load hidden units history
         if "hidden_units_added" in history_group:

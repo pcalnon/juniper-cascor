@@ -21,28 +21,29 @@ A comprehensive documentation audit and creation effort was completed for the Ju
 
 ### Existing Documentation Status (notes/)
 
-| Document | Status | Action |
-|----------|--------|--------|
-| `notes/API_REFERENCE.md` | **Outdated** (v0.3.2) | New version created in `docs/api/` |
-| `notes/FEATURES_GUIDE.md` | **Outdated** (v0.3.2) | Content incorporated into user manual |
-| `notes/ARCHITECTURE_GUIDE.md` | **Valid** | Retained as historical reference |
-| `notes/PRE-DEPLOYMENT_ROADMAP-2.md` | **Current** | Active roadmap, retained |
-| Other `notes/*.md` files | **Historical** | Retained as development history |
+| Document                            | Status                | Action                                |
+| ----------------------------------- | --------------------- | ------------------------------------- |
+| `notes/API_REFERENCE.md`            | **Outdated** (v0.3.2) | New version created in `docs/api/`    |
+| `notes/FEATURES_GUIDE.md`           | **Outdated** (v0.3.2) | Content incorporated into user manual |
+| `notes/ARCHITECTURE_GUIDE.md`       | **Valid**             | Retained as historical reference      |
+| `notes/PRE-DEPLOYMENT_ROADMAP-2.md` | **Current**           | Active roadmap, retained              |
+| Other `notes/*.md` files            | **Historical**        | Retained as development history       |
 
 ### README.md Status
 
-| Issue | Resolution |
-|-------|------------|
+| Issue                             | Resolution                   |
+| --------------------------------- | ---------------------------- |
 | Missing installation instructions | ✅ Added Quick Start section |
-| No documentation links | ✅ Added documentation table |
-| No usage examples | ✅ Added Basic Usage section |
-| Missing version info | ✅ Added version badge |
+| No documentation links            | ✅ Added documentation table |
+| No usage examples                 | ✅ Added Basic Usage section |
+| Missing version info              | ✅ Added version badge       |
 
 ### CHANGELOG.md Status
 
-| Issue | Resolution |
-|-------|------------|
+| Issue      | Resolution                          |
+| ---------- | ----------------------------------- |
 | Up to date | ✅ Added v0.4.1 documentation entry |
+|            |                                     |
 
 ---
 
@@ -50,54 +51,54 @@ A comprehensive documentation audit and creation effort was completed for the Ju
 
 ### Overview (docs/)
 
-| File | Purpose |
-|------|---------|
-| `index.md` | Documentation landing page and navigation |
-| `overview/constants-guide.md` | Complete constants reference |
+| File                          | Purpose                                   |
+| ----------------------------- | ----------------------------------------- |
+| `index.md`                    | Documentation landing page and navigation |
+| `overview/constants-guide.md` | Complete constants reference              |
 
 ### Install & Configuration (docs/install/)
 
-| File | Purpose |
-|------|---------|
-| `quick-start.md` | Minimal setup steps |
-| `environment-setup.md` | Detailed environment configuration |
-| `user-manual.md` | Comprehensive usage guide |
-| `reference.md` | CLI arguments and environment variables |
+| File                   | Purpose                                 |
+| ---------------------- | --------------------------------------- |
+| `quick-start.md`       | Minimal setup steps                     |
+| `environment-setup.md` | Detailed environment configuration      |
+| `user-manual.md`       | Comprehensive usage guide               |
+| `reference.md`         | CLI arguments and environment variables |
 
 ### API Documentation (docs/api/)
 
-| File | Purpose |
-|------|---------|
+| File               | Purpose                              |
+| ------------------ | ------------------------------------ |
 | `api-reference.md` | Complete API documentation (v0.3.21) |
-| `api-schemas.md` | HDF5 schemas and data structures |
+| `api-schemas.md`   | HDF5 schemas and data structures     |
 
 ### Testing Documentation (docs/testing/)
 
-| File | Purpose |
-|------|---------|
-| `quick-start.md` | Fast test commands |
-| `environment-setup.md` | Test environment setup |
-| `manual.md` | Writing and organizing tests |
-| `reference.md` | Markers, reports, CI mapping |
+| File                         | Purpose                          |
+| ---------------------------- | -------------------------------- |
+| `quick-start.md`             | Fast test commands               |
+| `environment-setup.md`       | Test environment setup           |
+| `manual.md`                  | Writing and organizing tests     |
+| `reference.md`               | Markers, reports, CI mapping     |
 | `selective-testing-guide.md` | Running specific test categories |
 
 ### CI/CD Documentation (docs/ci/)
 
-| File | Purpose |
-|------|---------|
-| `quick-start.md` | Pipeline overview |
-| `environment-setup.md` | CI environment details |
-| `manual.md` | Job-by-job documentation |
-| `reference.md` | Configuration reference |
+| File                   | Purpose                  |
+| ---------------------- | ------------------------ |
+| `quick-start.md`       | Pipeline overview        |
+| `environment-setup.md` | CI environment details   |
+| `manual.md`            | Job-by-job documentation |
+| `reference.md`         | Configuration reference  |
 
 ### Source Code Documentation (docs/source/)
 
-| File | Purpose |
-|------|---------|
-| `quick-start.md` | Developer onboarding |
-| `environment-setup.md` | Development tools |
-| `manual.md` | Module-by-module guide |
-| `reference.md` | Internal conventions |
+| File                   | Purpose                |
+| ---------------------- | ---------------------- |
+| `quick-start.md`       | Developer onboarding   |
+| `environment-setup.md` | Development tools      |
+| `manual.md`            | Module-by-module guide |
+| `reference.md`         | Internal conventions   |
 
 ---
 
@@ -162,7 +163,7 @@ A comprehensive documentation audit and creation effort was completed for the Ju
 
 ## File Statistics
 
-```
+```bash
 docs/
 ├── api/           2 files    (~1,200 lines)
 ├── ci/            4 files    (~800 lines)

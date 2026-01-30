@@ -5,6 +5,120 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.1] - 2026-01-29
+
+**Summary**: Complete pre-commit compliance including MyPy type checking. Fixed all F401 unused imports, B907 string quoting, F811 duplicate functions, and valid-type errors. All 17 pre-commit hooks now pass.
+
+### Fixed: [0.5.1]
+
+- **F401 Unused Imports**: Commented out unused imports with TODO prefix across 7 files
+  - `cascade_correlation.py`: 6 activation function constants
+  - `main.py`: `sys`, 5 `_CASCOR_*` constants
+  - `profiling/deterministic.py`: `os`, `Optional`
+  - `profiling/logging_utils.py`: `wraps`, `Any`, `Optional`
+  - `profiling/memory.py`: `linecache`, `Path`, `Optional`, `Tuple`
+
+- **F811 Duplicate Function**: Resolved `_create_optimizer` duplication in `cascade_correlation.py`
+  - Kept version at line ~1950 (supports 15 optimizers with full config)
+  - Commented out version at line ~995 (only supported 4 optimizers)
+
+- **B907 String Quoting**: Fixed 19 occurrences across 4 files
+  - Replaced manual quoting `'{var}'` with `!r` conversion flag `{var!r}`
+  - Files: `cascade_correlation.py`, `log_config.py`, `main.py`, `snapshot_serializer.py`
+
+- **MyPy valid-type Errors**: Fixed 13 type annotation issues
+  - `callable` → `Callable[..., Any]` (6 occurrences)
+  - `any` → `Any` (2 occurrences)
+  - `[Type]` → `list[Type]` (1 occurrence)
+  - `tuple([...])` → `tuple[...]` (1 occurrence)
+  - `(T1, T2)` → `tuple[T1, T2]` (2 occurrences)
+  - `uuid` → `uuid.UUID` (1 occurrence)
+  - `Optional` → `Optional[Any]` (1 occurrence)
+
+### Added: [0.5.1]
+
+- **Re-export Manifest**: Added `__all__` to `cascor_constants/constants.py` with 120 constants
+  - Makes re-exports explicit to satisfy F401 checks
+  - Organized by source sub-module
+
+- **MyPy Configuration**: Enabled MyPy in pre-commit with appropriate disabled error codes
+  - Disables complex structural checks that require deeper refactoring
+  - Can be incrementally tightened as codebase improves
+
+### Documentation: [0.5.1]
+
+- Updated `notes/CHANGES_FOR_REVIEW.md` with complete fix documentation
+- Version 2.0.0 of CHANGES_FOR_REVIEW.md marks all issues resolved
+
+### Technical Notes: [0.5.1]
+
+- **SemVer impact**: PATCH – Code style and type annotation fixes; no API changes
+- **Pre-commit status**: All 17 hooks pass
+- **MyPy coverage**: 4 core modules checked (cascade_correlation, candidate_unit, spiral_problem, snapshots)
+
+---
+
+## [0.5.0] - 2026-01-29
+
+**Summary**: Major refactoring milestone - extracted Spiral Dataset Generator into standalone JuniperData application. Completed Phases 0-2 of the spiral data generator extraction, creating a new microservice with REST API for dataset generation.
+
+### Added: [0.5.0]
+
+- **JuniperData Application**: New standalone dataset generation service at `Juniper/JuniperData/`
+  - **Package Structure**: Complete Python package with `pyproject.toml`, `AGENTS.md`, `README.md`
+  - **Core Generator**: Pure NumPy spiral generator (`juniper_data/generators/spiral/`)
+    - `SpiralParams` - Pydantic model with validation
+    - `SpiralGenerator` - Static methods for N-spiral generation
+    - `defaults.py` - Extracted constants from Cascor
+  - **Core Utilities**: Dataset management utilities (`juniper_data/core/`)
+    - `split.py` - shuffle_data, split_data, shuffle_and_split
+    - `dataset_id.py` - Deterministic hash-based dataset IDs
+    - `models.py` - DatasetMeta, CreateDatasetRequest/Response
+    - `artifacts.py` - NPZ save/load, checksum computation
+  - **Storage Layer**: Pluggable storage backends (`juniper_data/storage/`)
+    - `DatasetStore` - Abstract base class
+    - `InMemoryDatasetStore` - For testing
+    - `LocalFSDatasetStore` - Production file-based storage
+  - **REST API**: FastAPI-based service (`juniper_data/api/`)
+    - `GET /v1/health` - Health check
+    - `GET /v1/generators` - List available generators
+    - `GET /v1/generators/{name}/schema` - Parameter schema
+    - `POST /v1/datasets` - Create/generate dataset
+    - `GET /v1/datasets` - List datasets
+    - `GET /v1/datasets/{id}` - Get metadata
+    - `GET /v1/datasets/{id}/artifact` - Download NPZ
+    - `GET /v1/datasets/{id}/preview` - Preview samples
+    - `DELETE /v1/datasets/{id}` - Delete dataset
+
+- **Golden Reference Datasets**: Test fixtures for parity validation
+  - `tests/fixtures/generate_golden_datasets.py` - Generation script
+  - `tests/fixtures/golden_datasets/README.md` - Documentation
+
+- **Comprehensive Test Suite**: 76 tests (all passing)
+  - 60 unit tests (spiral generator, split, dataset_id)
+  - 16 integration tests (API endpoints)
+
+- **Refactoring Plan Document**: `notes/JUNIPER_CASCOR_SPIRAL_DATA_GEN_REFACTOR_PLAN.md`
+  - Synthesized analysis of three proposals
+  - Method extraction specification
+  - 5-phase implementation plan
+  - Migration strategy for Cascor/Canopy
+
+### Documentation: [0.5.0]
+
+- Created comprehensive refactoring plan document
+- Updated plan with implementation status (Phases 0-2 complete)
+
+### Technical Notes: [0.5.0]
+
+- **SemVer impact**: MINOR – New feature (JuniperData extraction), no breaking changes to Cascor API
+- **Dependencies**: JuniperData uses numpy, pydantic, fastapi, uvicorn (no torch in core)
+- **Phases Complete**: 0 (Baseline), 1 (Core Generator), 2 (REST API)
+- **Phases Pending**: 3 (Cascor Integration), 4 (Canopy Integration)
+- **Run JuniperData**: `cd JuniperData && python -m juniper_data` (port 8100)
+
+---
+
 ## [0.4.1] - 2026-01-29
 
 **Summary**: Comprehensive documentation overhaul. Created complete documentation suite in docs/ directory covering installation, API reference, testing, CI/CD, and source code guides.
@@ -982,6 +1096,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 | Version | Date       | Description                              |
 | ------- | ---------- | ---------------------------------------- |
+| 0.5.1   | 2026-01-29 | Pre-commit Compliance (MyPy, F401, B907) |
+| 0.5.0   | 2026-01-29 | JuniperData Extraction (Phases 0-2)      |
+| 0.4.1   | 2026-01-29 | Documentation Overhaul                   |
 | 0.4.0   | 2026-01-29 | CI/CD Pipeline Overhaul                  |
 | 0.3.16  | 2026-01-24 | CI/CD Pipeline Setup (P1-007)            |
 | 0.3.15  | 2026-01-24 | Fixed P0 issues, serialization coverage  |

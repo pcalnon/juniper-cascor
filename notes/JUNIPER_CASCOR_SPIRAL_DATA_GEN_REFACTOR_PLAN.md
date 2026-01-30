@@ -3,8 +3,8 @@
 **Document**: JUNIPER_CASCOR_SPIRAL_DATA_GEN_REFACTOR_PLAN.md  
 **Created**: 2026-01-29  
 **Last Updated**: 2026-01-29  
-**Version**: 1.0.0  
-**Status**: Approved - Ready for Implementation  
+**Version**: 1.1.0  
+**Status**: In Progress - Phases 0-2 Complete  
 **Author**: Juniper Development Team
 
 ---
@@ -29,16 +29,17 @@ This document presents the **comprehensive refactoring plan** to extract the Spi
 
 ### Effort Summary
 
-| Phase   | Description                        | Effort | Duration        |
-| ------- | ---------------------------------- | ------ | --------------- |
-| Phase 0 | Baseline Inventory & Contract Lock | S      | 0.5-1 day       |
-| Phase 1 | Core Generator Extraction          | M      | 1-2 days        |
-| Phase 2 | JuniperData REST API v1            | M      | 1-2 days        |
-| Phase 3 | Cascor Integration                 | M-L    | 1-2 days        |
-| Phase 4 | Canopy Integration                 | M      | 1 day           |
-| Phase 5 | Extended Data Sources              | L-XL   | Staged (future) |
+| Phase   | Description                        | Effort | Duration        | Status      |
+| ------- | ---------------------------------- | ------ | --------------- | ----------- |
+| Phase 0 | Baseline Inventory & Contract Lock | S      | 0.5-1 day       | ✅ Complete |
+| Phase 1 | Core Generator Extraction          | M      | 1-2 days        | ✅ Complete |
+| Phase 2 | JuniperData REST API v1            | M      | 1-2 days        | ✅ Complete |
+| Phase 3 | Cascor Integration                 | M-L    | 1-2 days        | 🔄 Pending  |
+| Phase 4 | Canopy Integration                 | M      | 1 day           | 🔄 Pending  |
+| Phase 5 | Extended Data Sources              | L-XL   | Staged (future) | ⏳ Deferred |
 
-**Total Initial Delivery (Phases 0-4)**: 4-8 days
+**Total Initial Delivery (Phases 0-4)**: 4-8 days  
+**Current Progress**: Phases 0-2 Complete (76 tests passing)
 
 ---
 
@@ -1406,19 +1407,87 @@ y_train = torch.tensor(arrays["y_train"], dtype=torch.float32)
 
 ---
 
-## Document History
+## 12. Implementation Status
 
-| Version | Date       | Author           | Changes                    |
-| ------- | ---------- | ---------------- | -------------------------- |
-| 1.0.0   | 2026-01-29 | Juniper Dev Team | Initial comprehensive plan |
+### Phase 0: Complete ✅
+
+**Completed 2026-01-29**
+
+- ☑ Created `tests/fixtures/generate_golden_datasets.py` - Script to generate reference datasets from Cascor
+- ☑ Created `tests/fixtures/golden_datasets/README.md` - Documentation for golden datasets
+- ☑ Defined contract schema (SpiralParams, DatasetMeta models)
+
+### Phase 1: Complete ✅
+
+**Completed 2026-01-29**
+
+- ☑ Created JuniperData package structure at `Juniper/JuniperData/`
+- ☑ Created `pyproject.toml` with dependencies and build configuration
+- ☑ Implemented `juniper_data/generators/spiral/defaults.py` - All spiral default constants
+- ☑ Implemented `juniper_data/generators/spiral/params.py` - SpiralParams Pydantic model
+- ☑ Implemented `juniper_data/generators/spiral/generator.py` - SpiralGenerator (NumPy-only)
+- ☑ Implemented `juniper_data/core/split.py` - shuffle_data, split_data, shuffle_and_split
+- ☑ Implemented `juniper_data/core/dataset_id.py` - Deterministic ID generation
+- ☑ Implemented `juniper_data/core/models.py` - DatasetMeta, CreateDatasetRequest/Response
+- ☑ Implemented `juniper_data/core/artifacts.py` - NPZ save/load, checksum
+- ☑ Created 60 unit tests (all passing)
+
+### Phase 2: Complete ✅
+
+**Completed 2026-01-29**
+
+- ☑ Implemented `juniper_data/storage/base.py` - DatasetStore abstract base class
+- ☑ Implemented `juniper_data/storage/memory.py` - InMemoryDatasetStore
+- ☑ Implemented `juniper_data/storage/local_fs.py` - LocalFSDatasetStore
+- ☑ Implemented `juniper_data/api/settings.py` - Pydantic-settings configuration
+- ☑ Implemented `juniper_data/api/routes/health.py` - GET /v1/health
+- ☑ Implemented `juniper_data/api/routes/generators.py` - Generator listing and schema
+- ☑ Implemented `juniper_data/api/routes/datasets.py` - Full CRUD + artifact + preview
+- ☑ Implemented `juniper_data/api/app.py` - FastAPI app factory
+- ☑ Implemented `juniper_data/__main__.py` - CLI entry point
+- ☑ Created 16 integration tests (all passing)
+
+**Total: 76 tests passing**
+
+### Phase 3: Pending 🔄
+
+- ☐ Add JuniperDataClient to Cascor
+- ☐ Create SpiralDataProvider compatibility layer
+- ☐ Update SpiralProblem to use data provider
+- ☐ Run parity tests
+
+### Phase 4: Pending 🔄
+
+- ☐ Update Canopy DemoMode
+- ☐ Update CascorIntegration fallback
+
+### Phase 5: Deferred ⏳
+
+- ☐ Additional data sources (when triggered)
 
 ---
 
-**Status**: ✅ **Approved - Ready for Implementation**
+## Document History
+
+| Version | Date       | Author           | Changes                                       |
+| ------- | ---------- | ---------------- | --------------------------------------------- |
+| 1.0.0   | 2026-01-29 | Juniper Dev Team | Initial comprehensive plan                    |
+| 1.1.0   | 2026-01-29 | Juniper Dev Team | Phases 0-2 complete, 76 tests passing         |
+
+---
+
+**Status**: 🔄 **In Progress - Phases 0-2 Complete**
+
+**Completed**:
+
+1. ☑ Review and approve this plan
+2. ☑ Create JuniperData repository structure
+3. ☑ Phase 0: Baseline Inventory & Contract Lock
+4. ☑ Phase 1: Core Generator Extraction
+5. ☑ Phase 2: JuniperData REST API v1
 
 **Next Steps**:
 
-1. ☐ Review and approve this plan
-2. ☐ Create JuniperData repository
-3. ☐ Begin Phase 0: Baseline Inventory & Contract Lock
-4. ☐ Execute Phases 1-4 according to schedule
+1. ☐ Phase 3: Cascor Integration (add JuniperDataClient)
+2. ☐ Phase 4: Canopy Integration
+3. ☐ Run end-to-end validation with Cascor training

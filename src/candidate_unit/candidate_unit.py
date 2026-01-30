@@ -44,7 +44,9 @@ import os
 import random
 import uuid
 from dataclasses import dataclass, field
-from typing import Optional
+
+# from typing import Optional
+from typing import Any, Callable, Optional
 
 import numpy as np
 import torch
@@ -79,7 +81,8 @@ class CandidateTrainingResult:
     candidate_id: int = -1  # Changed from candidate_index for consistency
     candidate_uuid: Optional[str] = None
     correlation: float = 0.0  # Changed from best_correlation for consistency
-    candidate: Optional[any] = None  # ADDED - stores trained CandidateUnit object
+    # candidate: Optional[any] = None  # ADDED - stores trained CandidateUnit object
+    candidate: Optional[Any] = None  # ADDED - stores trained CandidateUnit object
     best_corr_idx: int = -1
     all_correlations: list[float] = field(default_factory=list)
     norm_output: Optional[torch.Tensor] = None
@@ -253,7 +256,8 @@ class CandidateUnit:
     # This method initializes the weights and bias of the candidate unit, sets the activation function, and configures the logger.
     def __init__(
         self,
-        CandidateUnit__activation_function: callable = _CANDIDATE_UNIT_ACTIVATION_FUNCTION,
+        # CandidateUnit__activation_function: callable = _CANDIDATE_UNIT_ACTIVATION_FUNCTION,
+        CandidateUnit__activation_function: Callable[..., Any] = _CANDIDATE_UNIT_ACTIVATION_FUNCTION,
         CandidateUnit__display_frequency: int = _CANDIDATE_UNIT_DISPLAY_FREQUENCY,
         CandidateUnit__epochs: int = _CANDIDATE_UNIT_EPOCHS,
         CandidateUnit__epochs_max: int = _CANDIDATE_UNIT_EPOCHS_MAX,
@@ -417,7 +421,8 @@ class CandidateUnit:
             torch.backends.cudnn.deterministic = True
             torch.backends.cudnn.benchmark = False
 
-    def _seed_random_generator(self, seed: int = None, max_value: int = None, seeder: callable = None, generator: callable = None) -> None:
+    # def _seed_random_generator(self, seed: int = None, max_value: int = None, seeder: callable = None, generator: callable = None) -> None:
+    def _seed_random_generator(self, seed: int = None, max_value: int = None, seeder: Callable[[int], Any] | None = None, generator: Callable[..., Any] | None = None) -> None:
         """
         Description:
             Seed the random generator for the candidate unit.
@@ -448,7 +453,8 @@ class CandidateUnit:
         self._roll_sequence_number(sequence=random_sequence, max_value=max_value, generator=generator)
         self.logger.trace("CandidateUnit: _seed_random_generator: Completed initialization of random generator with seed and sequence for the candidate unit")
 
-    def _roll_sequence_number(self, sequence: int = None, max_value: int = None, generator: callable = None) -> None:
+    # def _roll_sequence_number(self, sequence: int = None, max_value: int = None, generator: callable = None) -> None:
+    def _roll_sequence_number(self, sequence: int = None, max_value: int = None, generator: Callable[..., Any] | None = None) -> None:
         """
         Description:
             Roll the sequence number for the candidate unit.
@@ -486,7 +492,8 @@ class CandidateUnit:
         """
         os.environ["PYTHONHASHSEED"] = str(seed)
 
-    def _init_activation_with_derivative(self, activation_fn: callable = None) -> ActivationWithDerivative:
+    # def _init_activation_with_derivative(self, activation_fn: callable = None) -> ActivationWithDerivative:
+    def _init_activation_with_derivative(self, activation_fn: Callable[..., Any] | None = None) -> ActivationWithDerivative:
         """
         Description:
             Wrap activation function to also provide its derivative.
@@ -843,7 +850,8 @@ class CandidateUnit:
         residual_error: torch.Tensor = None,
         output: torch.Tensor = None,
         # ) -> list(tuple[float, int, torch.Tensor, torch.Tensor, float, float]):
-    ) -> [CandidateCorrelationCalculation]:
+        # ) -> [CandidateCorrelationCalculation]:  # Original - invalid list syntax
+    ) -> list[CandidateCorrelationCalculation]:
         """
         Description:
             Calculate the correlation for multi-output networks.
@@ -988,7 +996,8 @@ class CandidateUnit:
         self,
         output: torch.Tensor = None,
         residual_error: torch.Tensor = None,
-    ) -> tuple([float, torch.Tensor, torch.Tensor, float, float]):
+        # ) -> tuple([float, torch.Tensor, torch.Tensor, float, float]):  # Original - invalid syntax
+    ) -> tuple[float, torch.Tensor, torch.Tensor, float, float]:
         """
         Description:
             Calculate the correlation between the candidate unit output and residual error for the entire minibatch.
@@ -1283,7 +1292,8 @@ class CandidateUnit:
         self.logger.trace("CandidateUnit: _generate_uuid: Completed the CandidateUnit class Generate UUID method")
         return new_uuid
 
-    def _init_display_progress(self, display_frequency=None) -> callable:
+    # def _init_display_progress(self, display_frequency=None) -> callable:  # Original - invalid type
+    def _init_display_progress(self, display_frequency=None) -> Callable[..., Any]:
         """
         Description:
             Initialize the display progress for the CandidateUnit class.
@@ -1299,7 +1309,8 @@ class CandidateUnit:
         self.logger.trace("CandidateUnit: _init_display_progress: Completed the CandidateUnit class Initialize Display Progress method")
         return candidate_display_progress
 
-    def _init_display_status(self, display_status=None) -> callable:
+    # def _init_display_status(self, display_status=None) -> callable:  # Original - invalid type
+    def _init_display_status(self, display_status=None) -> Callable[..., Any]:
         """
         Description:
             Initialize the display status for the CandidateUnit class.

@@ -31,11 +31,14 @@ Usage:
 import cProfile
 import functools
 import io
-import os
+
+# import os  # TODO: F401 - unused import, may be needed for future use
 import pstats
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Callable, Optional
+
+# from typing import Any, Callable, Optional  # TODO: F401 - Optional unused
+from typing import Any, Callable
 
 
 def profile_function(func: Callable = None, *, output_dir: str = None, top_n: int = 30):

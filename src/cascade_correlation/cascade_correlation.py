@@ -49,7 +49,7 @@ import uuid as uuid
 from dataclasses import dataclass
 from multiprocessing.managers import BaseManager
 from queue import Queue  # Use stdlib queue for manager-hosted objects
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 # import matplotlib.pyplot as plt
 import numpy as np
@@ -79,15 +79,9 @@ from candidate_unit.candidate_unit import CandidateTrainingResult, CandidateUnit
 # Server-owned queues (live in Manager server process)
 from cascade_correlation.cascade_correlation_config.cascade_correlation_config import CascadeCorrelationConfig
 from cascade_correlation.cascade_correlation_exceptions.cascade_correlation_exceptions import ConfigurationError, TrainingError, ValidationError  # CascadeCorrelationError,; NetworkInitializationError,
-from cascor_constants.constants import (
+from cascor_constants.constants import (  # TODO: Commented out for F401 compliance - may be needed for future activation function selection; _CASCADE_CORRELATION_NETWORK_ACTIVATION_FUNCTION_NN_RELU,; _CASCADE_CORRELATION_NETWORK_ACTIVATION_FUNCTION_NN_SIGMOID,; _CASCADE_CORRELATION_NETWORK_ACTIVATION_FUNCTION_NN_TANH,; _CASCADE_CORRELATION_NETWORK_ACTIVATION_FUNCTION_RELU,; _CASCADE_CORRELATION_NETWORK_ACTIVATION_FUNCTION_SIGMOID,; _CASCADE_CORRELATION_NETWORK_ACTIVATION_FUNCTION_TANH,
     _CASCADE_CORRELATION_NETWORK_ACTIVATION_FUNCTION_DEFAULT,
     _CASCADE_CORRELATION_NETWORK_ACTIVATION_FUNCTION_NAME,
-    _CASCADE_CORRELATION_NETWORK_ACTIVATION_FUNCTION_NN_RELU,
-    _CASCADE_CORRELATION_NETWORK_ACTIVATION_FUNCTION_NN_SIGMOID,
-    _CASCADE_CORRELATION_NETWORK_ACTIVATION_FUNCTION_NN_TANH,
-    _CASCADE_CORRELATION_NETWORK_ACTIVATION_FUNCTION_RELU,
-    _CASCADE_CORRELATION_NETWORK_ACTIVATION_FUNCTION_SIGMOID,
-    _CASCADE_CORRELATION_NETWORK_ACTIVATION_FUNCTION_TANH,
     _CASCADE_CORRELATION_NETWORK_ACTIVATION_FUNCTIONS_DICT,
     _CASCADE_CORRELATION_NETWORK_CANDIDATE_DISPLAY_FREQUENCY,
     _CASCADE_CORRELATION_NETWORK_CANDIDATE_EPOCHS,
@@ -243,7 +237,8 @@ class CandidateTrainingManager(BaseManager):
             try:
                 mp.get_context(method)
             except Exception as exc:
-                raise NotImplementedError(f"Start method '{method}' not implemented on this platform") from exc
+                # raise NotImplementedError(f"Start method '{method}' not implemented on this platform") from exc
+                raise NotImplementedError(f"Start method {method!r} not implemented on this platform") from exc
 
         # Delegate to BaseManager.start() with supported arguments
         return super().start(initializer=initializer, initargs=initargs)
@@ -721,8 +716,10 @@ class CascadeCorrelationNetwork:
         self,
         seed: int = None,
         max_value: int = None,
-        seeder: callable = None,
-        generator: callable = None,
+        # seeder: callable = None,
+        seeder: Callable[..., Any] = None,
+        # generator: callable = None,
+        generator: Callable[..., Any] = None,
     ) -> None:
         """
         Description:
@@ -758,7 +755,8 @@ class CascadeCorrelationNetwork:
         self._roll_sequence_number(sequence=random_sequence, max_value=max_value, generator=generator)
         self.logger.trace("CascadeCorrelationNetwork: _seed_random_generator: Completed initialization of random generator with seed and sequence for the cascade correlation network")
 
-    def _roll_sequence_number(self, sequence: int = None, max_value: int = None, generator: callable = None) -> None:
+    # def _roll_sequence_number(self, sequence: int = None, max_value: int = None, generator: callable = None) -> None:
+    def _roll_sequence_number(self, sequence: int = None, max_value: int = None, generator: Callable[..., Any] = None) -> None:
         """
         Description:
             Roll the sequence number for the cascade correlation network.
@@ -789,7 +787,8 @@ class CascadeCorrelationNetwork:
         os.environ["PYTHONHASHSEED"] = str(seed)
 
     # Helper method to add hidden units to the network
-    def _init_activation_with_derivative(self, activation_fn: callable = None) -> ActivationWithDerivative:
+    # def _init_activation_with_derivative(self, activation_fn: callable = None) -> ActivationWithDerivative:
+    def _init_activation_with_derivative(self, activation_fn: Callable[..., Any] = None) -> ActivationWithDerivative:
         """
         Description:
             Wrap activation function to also provide its derivative.
@@ -871,17 +870,22 @@ class CascadeCorrelationNetwork:
         if allow_none and x is None:
             return
         if x is None:
-            raise ValidationError(f"Parameter '{param_name}' cannot be None")
+            # raise ValidationError(f"Parameter '{param_name}' cannot be None")
+            raise ValidationError(f"Parameter {param_name!r} cannot be None")
         if not isinstance(x, torch.Tensor):
-            raise ValidationError(f"Parameter '{param_name}' must be a torch.Tensor, got {type(x)}")
+            # raise ValidationError(f"Parameter '{param_name}' must be a torch.Tensor, got {type(x)}")
+            raise ValidationError(f"Parameter {param_name!r} must be a torch.Tensor, got {type(x)}")
         if x.numel() == 0 and not allow_empty:
-            raise ValidationError(f"Parameter '{param_name}' cannot be an empty tensor")
+            # raise ValidationError(f"Parameter '{param_name}' cannot be an empty tensor")
+            raise ValidationError(f"Parameter {param_name!r} cannot be an empty tensor")
         # Skip NaN/Inf checks for empty tensors
         if x.numel() > 0:
             if torch.isnan(x).any():
-                raise ValidationError(f"Parameter '{param_name}' contains NaN values")
+                # raise ValidationError(f"Parameter '{param_name}' contains NaN values")
+                raise ValidationError(f"Parameter {param_name!r} contains NaN values")
             if torch.isinf(x).any():
-                raise ValidationError(f"Parameter '{param_name}' contains infinite values")
+                # raise ValidationError(f"Parameter '{param_name}' contains infinite values")
+                raise ValidationError(f"Parameter {param_name!r} contains infinite values")
 
     def _validate_tensor_shapes(
         self,
@@ -930,13 +934,17 @@ class CascadeCorrelationNetwork:
         if allow_none and value is None:
             return
         if value is None:
-            raise ValidationError(f"Parameter '{param_name}' cannot be None")
+            # raise ValidationError(f"Parameter '{param_name}' cannot be None")
+            raise ValidationError(f"Parameter {param_name!r} cannot be None")
         if not isinstance(value, (int, float)):
-            raise ValidationError(f"Parameter '{param_name}' must be numeric, got {type(value)}")
+            # raise ValidationError(f"Parameter '{param_name}' must be numeric, got {type(value)}")
+            raise ValidationError(f"Parameter {param_name!r} must be numeric, got {type(value)}")
         if min_val is not None and value < min_val:
-            raise ValidationError(f"Parameter '{param_name}' must be >= {min_val}, got {value}")
+            # raise ValidationError(f"Parameter '{param_name}' must be >= {min_val}, got {value}")
+            raise ValidationError(f"Parameter {param_name!r} must be >= {min_val}, got {value}")
         if max_val is not None and value > max_val:
-            raise ValidationError(f"Parameter '{param_name}' must be <= {max_val}, got {value}")
+            # raise ValidationError(f"Parameter '{param_name}' must be <= {max_val}, got {value}")
+            raise ValidationError(f"Parameter {param_name!r} must be <= {max_val}, got {value}")
 
     def _validate_positive_integer(self, value, param_name: str, allow_zero: bool = False) -> None:
         """
@@ -949,10 +957,12 @@ class CascadeCorrelationNetwork:
             ValidationError: If value is invalid
         """
         if not isinstance(value, int):
-            raise ValidationError(f"Parameter '{param_name}' must be an integer, got {type(value)}")
+            # raise ValidationError(f"Parameter '{param_name}' must be an integer, got {type(value)}")
+            raise ValidationError(f"Parameter {param_name!r} must be an integer, got {type(value)}")
         min_val = 0 if allow_zero else 1
         if value < min_val:
-            raise ValidationError(f"Parameter '{param_name}' must be >= {min_val}, got {value}")
+            # raise ValidationError(f"Parameter '{param_name}' must be >= {min_val}, got {value}")
+            raise ValidationError(f"Parameter {param_name!r} must be >= {min_val}, got {value}")
 
     #################################################################################################################################################################################################
     # Define Public Methods for Training and Evaluation
@@ -992,52 +1002,57 @@ class CascadeCorrelationNetwork:
             CandidateUnit__random_max_value=kwargs.get("random_value_max", self.random_max_value),
         )
 
-    def _create_optimizer(self, parameters, config=None):
-        """
-        Create optimizer based on configuration.
-        Args:
-            parameters: Model parameters to optimize
-            config: OptimizerConfig instance (uses self.optimizer_config if None)
-        Returns:
-            Configured optimizer instance
-        """
-        from cascade_correlation_config.cascade_correlation_config import OptimizerConfig
-
-        config = config or getattr(self, "optimizer_config", OptimizerConfig(learning_rate=self.learning_rate))
-        optimizer_map = {
-            "Adam": lambda: optim.Adam(
-                parameters,
-                lr=config.learning_rate,
-                betas=(config.beta1, config.beta2),
-                eps=config.epsilon,
-                weight_decay=config.weight_decay,
-            ),
-            "SGD": lambda: optim.SGD(
-                parameters,
-                lr=config.learning_rate,
-                momentum=config.momentum,
-                weight_decay=config.weight_decay,
-            ),
-            "RMSprop": lambda: optim.RMSprop(
-                parameters,
-                lr=config.learning_rate,
-                momentum=config.momentum,
-                eps=config.epsilon,
-                weight_decay=config.weight_decay,
-            ),
-            "AdamW": lambda: optim.AdamW(
-                parameters,
-                lr=config.learning_rate,
-                betas=(config.beta1, config.beta2),
-                eps=config.epsilon,
-                weight_decay=config.weight_decay,
-            ),
-        }
-        if config.optimizer_type not in optimizer_map:
-            self.logger.warning(f"Unknown optimizer {config.optimizer_type}, defaulting to Adam")
-            config.optimizer_type = "Adam"
-        self.logger.debug(f"CascadeCorrelationNetwork: _create_optimizer: Creating {config.optimizer_type} optimizer with LR={config.learning_rate}")
-        return optimizer_map[config.optimizer_type]()
+    # TODO: DUPLICATE FUNCTION - This version was commented out because a more complete
+    # implementation exists at line ~1945. The kept version supports 15 optimizers
+    # (Adadelta, Adafactor, Adagrad, Adam, AdamW, SparseAdam, Adamax, ASGD, LBFGS,
+    # Muon, NAdam, RAdam, RMSprop, Rprop, SGD) vs only 4 in this version.
+    # This duplicate should be removed after verification. - 2026-01-29
+    # def _create_optimizer(self, parameters, config=None):
+    #     """
+    #     Create optimizer based on configuration.
+    #     Args:
+    #         parameters: Model parameters to optimize
+    #         config: OptimizerConfig instance (uses self.optimizer_config if None)
+    #     Returns:
+    #         Configured optimizer instance
+    #     """
+    #     from cascade_correlation_config.cascade_correlation_config import OptimizerConfig
+    #
+    #     config = config or getattr(self, "optimizer_config", OptimizerConfig(learning_rate=self.learning_rate))
+    #     optimizer_map = {
+    #         "Adam": lambda: optim.Adam(
+    #             parameters,
+    #             lr=config.learning_rate,
+    #             betas=(config.beta1, config.beta2),
+    #             eps=config.epsilon,
+    #             weight_decay=config.weight_decay,
+    #         ),
+    #         "SGD": lambda: optim.SGD(
+    #             parameters,
+    #             lr=config.learning_rate,
+    #             momentum=config.momentum,
+    #             weight_decay=config.weight_decay,
+    #         ),
+    #         "RMSprop": lambda: optim.RMSprop(
+    #             parameters,
+    #             lr=config.learning_rate,
+    #             momentum=config.momentum,
+    #             eps=config.epsilon,
+    #             weight_decay=config.weight_decay,
+    #         ),
+    #         "AdamW": lambda: optim.AdamW(
+    #             parameters,
+    #             lr=config.learning_rate,
+    #             betas=(config.beta1, config.beta2),
+    #             eps=config.epsilon,
+    #             weight_decay=config.weight_decay,
+    #         ),
+    #     }
+    #     if config.optimizer_type not in optimizer_map:
+    #         self.logger.warning(f"Unknown optimizer {config.optimizer_type}, defaulting to Adam")
+    #         config.optimizer_type = "Adam"
+    #     self.logger.debug(f"CascadeCorrelationNetwork: _create_optimizer: Creating {config.optimizer_type} optimizer with LR={config.learning_rate}")
+    #     return optimizer_map[config.optimizer_type]()
 
     #################################################################################################################################################################################################
     # Public Method to train, grow, and evaluate the network
@@ -1839,7 +1854,8 @@ class CascadeCorrelationNetwork:
         Returns:
             Field value from specified result or default
         """
-        self.logger.debug(f"CascadeCorrelationNetwork: get_single_candidate_data: Retrieving field '{field}' for candidate ID {candidate_id}")
+        # self.logger.debug(f"CascadeCorrelationNetwork: get_single_candidate_data: Retrieving field '{field}' for candidate ID {candidate_id}")
+        self.logger.debug(f"CascadeCorrelationNetwork: get_single_candidate_data: Retrieving field {field!r} for candidate ID {candidate_id}")
         self.logger.debug(f"CascadeCorrelationNetwork: get_single_candidate_data: Results type: {type(results)}, length: {len(results)}, Results: {results}")
         self.logger.debug(f"CascadeCorrelationNetwork: get_single_candidate_data: Field: {field}, Default: {default}")
         self.logger.debug(f"CascadeCorrelationNetwork: get_single_candidate_data: ID: type: {type(candidate_id)}, value: {candidate_id}")
@@ -1858,7 +1874,8 @@ class CascadeCorrelationNetwork:
         self.logger.debug(f"CascadeCorrelationNetwork: get_single_candidate_data: ID {candidate_id} is out of bounds, returning default: {default}")
         return default
 
-    def get_candidates_data_count(self, results: list, field: str, constraint: callable) -> int:
+    # def get_candidates_data_count(self, results: list, field: str, constraint: callable) -> int:
+    def get_candidates_data_count(self, results: list, field: str, constraint: Callable[..., Any]) -> int:
         """
         Get count of candidate data from results.
         Args:
@@ -1880,7 +1897,12 @@ class CascadeCorrelationNetwork:
             Dictionary of candidate error messages
         """
         return {
-            key: (f'Candidate ID {r.candidate_id} (UUID: {r.candidate_uuid}): "{r.error_message}"' if r.error_message and valid_candidates[i] else (f"Candidate ID {r.candidate_id} (UUID: {r.candidate_uuid}): No error message provided" if valid_candidates[i] else (f"Candidate ID {r.candidate_id} (UUID: {r.candidate_uuid}): Invalid candidate data"))) for i, r in enumerate(results) if r.candidate_id is not None or r.candidate_uuid is not None for key in [r.candidate_id, r.candidate_uuid] if key is not None
+            # key: (f'Candidate ID {r.candidate_id} (UUID: {r.candidate_uuid}): "{r.error_message}"' if r.error_message and valid_candidates[i] else (f"Candidate ID {r.candidate_id} (UUID: {r.candidate_uuid}): No error message provided" if valid_candidates[i] else (f"Candidate ID {r.candidate_id} (UUID: {r.candidate_uuid}): Invalid candidate data"))) for i, r in enumerate(results) if r.candidate_id is not None or r.candidate_uuid is not None for key in [r.candidate_id, r.candidate_uuid] if key is not None
+            key: (f"Candidate ID {r.candidate_id} (UUID: {r.candidate_uuid}): {r.error_message!r}" if r.error_message and valid_candidates[i] else (f"Candidate ID {r.candidate_id} (UUID: {r.candidate_uuid}): No error message provided" if valid_candidates[i] else (f"Candidate ID {r.candidate_id} (UUID: {r.candidate_uuid}): Invalid candidate data")))
+            for i, r in enumerate(results)
+            if r.candidate_id is not None or r.candidate_uuid is not None
+            for key in [r.candidate_id, r.candidate_uuid]
+            if key is not None
         }
 
     def __getstate__(self):
@@ -2090,7 +2112,8 @@ class CascadeCorrelationNetwork:
         }
 
         if config.optimizer_type not in optimizer_map:
-            self.logger.warning(f"CascadeCorrelationNetwork: _create_optimizer: Unknown optimizer type '{config.optimizer_type}', defaulting to Adam")
+            # self.logger.warning(f"CascadeCorrelationNetwork: _create_optimizer: Unknown optimizer type '{config.optimizer_type}', defaulting to Adam")  # B907
+            self.logger.warning(f"CascadeCorrelationNetwork: _create_optimizer: Unknown optimizer type {config.optimizer_type!r}, defaulting to Adam")
             config.optimizer_type = "Adam"
 
         optimizer = optimizer_map[config.optimizer_type]()
@@ -2262,7 +2285,8 @@ class CascadeCorrelationNetwork:
     @staticmethod
     def _train_candidate_unit(
         candidate: CandidateUnit = None,
-        candidate_uuid: uuid = None,
+        # candidate_uuid: uuid = None,  # Original - invalid type (uuid is module, not type)
+        candidate_uuid: uuid.UUID = None,
         candidate_index: int = 0,
         candidate_input: tuple = None,
         candidate_epochs: int = 0,
@@ -2314,7 +2338,8 @@ class CascadeCorrelationNetwork:
             )
 
     @staticmethod
-    def _get_activation_function(activation_function_name: str = None, activation_functions_dict: dict = None) -> callable:
+    # def _get_activation_function(activation_function_name: str = None, activation_functions_dict: dict = None) -> callable:  # Original - invalid type
+    def _get_activation_function(activation_function_name: str = None, activation_functions_dict: dict = None) -> Callable[..., Any]:
         """
         Description:
             Get the activation function based on its name.
@@ -3465,7 +3490,8 @@ class CascadeCorrelationNetwork:
         value_loss: float = float("inf"),
         best_value_loss: float = float("inf"),
         patience_counter: int = 0,
-    ) -> (bool, int, float):
+        # ) -> (bool, int, float):  # Original - invalid tuple syntax
+    ) -> tuple[bool, int, float]:
         """
         Description:
             Evaluate early stopping conditions to determine if the training should stop.
@@ -3537,7 +3563,8 @@ class CascadeCorrelationNetwork:
         patience_counter: int = 0,
         value_loss: float = float("inf"),
         best_value_loss: float = float("inf"),
-    ) -> (bool, int, float):
+        # ) -> (bool, int, float):  # Original - invalid tuple syntax
+    ) -> tuple[bool, int, float]:
         """
         Description:
             Check if patience limit is reached based on validation loss.

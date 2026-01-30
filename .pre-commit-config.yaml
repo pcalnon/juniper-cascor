@@ -138,7 +138,7 @@ repos:
         name: Lint with Flake8
         args:
           - --max-line-length=512
-          - --extend-ignore=E203,E265,E266,E501,W503,E722,E402,F401,B907,F811,E226,C409,C901
+          - --extend-ignore=E203,E265,E266,E501,W503,E722,E402,E226,C409,C901
           - --max-complexity=15
           - --select=B,C,E,F,W,T4,B9
         additional_dependencies:
@@ -149,23 +149,38 @@ repos:
         exclude: ^src/tests/
 
   # ═══════════════════════════════════════════════════════════════════════════
-  # Python Type Checking - MyPy (DISABLED - requires type annotation fixes)
-  # TODO: Re-enable after fixing type annotations in core modules
+  # Python Type Checking - MyPy
   # ═══════════════════════════════════════════════════════════════════════════
-  # - repo: https://github.com/pre-commit/mirrors-mypy
-  #   rev: v1.13.0
-  #   hooks:
-  #     - id: mypy
-  #       name: Type check with MyPy
-  #       args:
-  #         - --ignore-missing-imports
-  #         - --no-strict-optional
-  #         - --python-version=3.12
-  #       files: ^src/(cascade_correlation|candidate_unit|spiral_problem|snapshots)/
-  #       exclude: ^src/tests/
-  #       additional_dependencies:
-  #         - types-PyYAML
-  #         - types-requests
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.13.0
+    hooks:
+      - id: mypy
+        name: Type check with MyPy
+        args:
+          - --ignore-missing-imports
+          - --no-strict-optional
+          - --python-version=3.12
+          - --disable-error-code=attr-defined
+          - --disable-error-code=return-value
+          - --disable-error-code=arg-type
+          - --disable-error-code=assignment
+          - --disable-error-code=no-redef
+          - --disable-error-code=override
+          - --disable-error-code=var-annotated
+          - --disable-error-code=index
+          - --disable-error-code=misc
+          - --disable-error-code=call-arg
+          - --disable-error-code=func-returns-value
+          - --disable-error-code=has-type
+          - --disable-error-code=str-bytes-safe
+          - --disable-error-code=call-overload
+          - --disable-error-code=return
+        files: ^src/(cascade_correlation|candidate_unit|spiral_problem|snapshots)/
+        exclude: ^src/tests/
+        additional_dependencies:
+          - types-PyYAML
+          - types-requests
+          - torch
 
   # ═══════════════════════════════════════════════════════════════════════════
   # Security Scanning - Bandit

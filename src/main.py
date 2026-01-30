@@ -38,13 +38,13 @@ import argparse
 import logging
 import logging.config
 import os
-import sys
 
-from cascor_constants.constants import _CASCOR_MAX_NEW  # trunk-ignore(ruff/F401)
-from cascor_constants.constants import _CASCOR_MAX_ORIG  # trunk-ignore(ruff/F401)
-from cascor_constants.constants import _CASCOR_MIN_NEW  # trunk-ignore(ruff/F401)
-from cascor_constants.constants import _CASCOR_MIN_ORIG  # trunk-ignore(ruff/F401)
-from cascor_constants.constants import _CASCOR_ORIG_POINTS  # trunk-ignore(ruff/F401)
+# TODO: F401 - unused imports, may be needed for future use
+# from cascor_constants.constants import _CASCOR_MAX_NEW  # trunk-ignore(ruff/F401)
+# from cascor_constants.constants import _CASCOR_MAX_ORIG  # trunk-ignore(ruff/F401)
+# from cascor_constants.constants import _CASCOR_MIN_NEW  # trunk-ignore(ruff/F401)
+# from cascor_constants.constants import _CASCOR_MIN_ORIG  # trunk-ignore(ruff/F401)
+# from cascor_constants.constants import _CASCOR_ORIG_POINTS  # trunk-ignore(ruff/F401)
 from cascor_constants.constants import (
     _CASCOR_ACTIVATION_FUNCTION,
     _CASCOR_CANDIDATE_DISPLAY_FREQUENCY,
@@ -92,6 +92,9 @@ from cascor_constants.constants import (
 from log_config.log_config import LogConfig
 from log_config.logger.logger import Logger
 from spiral_problem.spiral_problem import SpiralProblem
+
+# import sys  # TODO: F401 - unused import, may be needed for future use
+
 
 # import columnar as col
 # import torch
@@ -146,7 +149,8 @@ def main():
     Logger.debug(f"Cascor: main: Successfully created LogConfig class & Logger object: log level: Type: {type(log_config.get_log_level())}, Value: {log_config.get_log_level()}")
     Logger.debug(f"Cascor: main: Successfully created LogConfig class & Logger object: log level name: Type: {type(log_config.get_log_level_name())}, Value: {log_config.get_log_level_name()}")
     Logger.debug(f"Cascor: main: Successfully created Logger object: logger level: Type: {type(logger.level)}, Value: {logger.level}")
-    Logger.debug(f"Cascor: main: Successfully created Logger object: logger name: '{logger.name}', handlers: {len(logger.handlers)}")
+    # Logger.debug(f"Cascor: main: Successfully created Logger object: logger name: '{logger.name}', handlers: {len(logger.handlers)}")  # B907
+    Logger.debug(f"Cascor: main: Successfully created Logger object: logger name: {logger.name!r}, handlers: {len(logger.handlers)}")
 
     logger.verbose(f"Cascor: main: Successfully created LogConfig class: Type: {type(log_config)}, Value: {log_config}, and Logger object: Type: {type(logger)}, Value: {logger}")
     logger.debug(f"Cascor: main: Successfully created LogConfig class: {log_config} and Logger object: {logger}")

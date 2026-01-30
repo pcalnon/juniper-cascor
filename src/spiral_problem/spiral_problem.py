@@ -41,7 +41,7 @@ import random
 import uuid
 
 # from inspect import currentframe, getframeinfo
-from typing import Tuple
+from typing import Any, Callable, Tuple
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -831,7 +831,8 @@ class SpiralProblem(object):
         n_distance: float = 0.0,
         angular_offset: float = 0.0,
         direction: int = 0,
-        trig_function: callable = None,
+        # trig_function: callable = None,
+        trig_function: Callable[..., Any] = None,
     ) -> np.ndarray:
         self.logger.trace("SpiralProblem: make_coords: Generating coordinates for the spiral")
         self.logger.verbose(f"SpiralProblem: make_coords: Generating coordinates for spiral with index {index}, n_distance {n_distance}, angular_offset {angular_offset}, direction {direction}")

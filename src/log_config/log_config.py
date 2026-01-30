@@ -164,7 +164,8 @@ class LogConfig(object):
             method_name = self.custom_logger.log_level_methods_dict[level_name]  # Convert "TRACE" -> "trace"
             if hasattr(self.custom_logger, method_name):
                 setattr(self.logger, method_name, getattr(self.custom_logger, method_name).__get__(self.logger, type(self.logger)))
-        Logger.debug(f"LogConfig: __init__: Using named logger '{_LOGGER_NAME}': Type: {type(self.logger)}, Value: {self.logger}")
+        # Logger.debug(f"LogConfig: __init__: Using named logger '{_LOGGER_NAME}': Type: {type(self.logger)}, Value: {self.logger}")  # B907
+        Logger.debug(f"LogConfig: __init__: Using named logger {_LOGGER_NAME!r}: Type: {type(self.logger)}, Value: {self.logger}")
         Logger.debug(f"LogConfig: __init__: Named logger handlers: {self.logger.handlers}")
         Logger.debug(f"LogConfig: __init__: Named logger has trace method: {hasattr(self.logger, 'trace')}")
         Logger.debug(f"LogConfig: __init__: Named logger has verbose method: {hasattr(self.logger, 'verbose')}")
