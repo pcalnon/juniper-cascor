@@ -5,6 +5,28 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.2] - 2026-01-29
+
+**Summary**: Added comprehensive DOCUMENTATION_OVERVIEW.md with complete navigation guide matching JuniperCanopy documentation style.
+
+### Added: [0.5.2]
+
+- **DOCUMENTATION_OVERVIEW.md**: Complete documentation navigation guide (~800 lines)
+  - Quick navigation "I Want To" table with all 24 docs
+  - Detailed descriptions for essential documents (README, quick-start, environment-setup, AGENTS.md)
+  - Project structure diagram
+  - Technical guides for all API, Testing, CI/CD, and Source documentation
+  - Complete document index with lines, type, audience, and status
+  - Documentation standards (naming, formatting, cross-referencing)
+  - Quick reference card with essential commands
+
+### Technical Notes: [0.5.2]
+
+- **SemVer impact**: PATCH – Documentation only; no API or code changes
+- Follows JuniperCanopy DOCUMENTATION_OVERVIEW.md format and structure
+
+---
+
 ## [0.5.1] - 2026-01-29
 
 **Summary**: Complete pre-commit compliance including MyPy type checking. Fixed all F401 unused imports, B907 string quoting, F811 duplicate functions, and valid-type errors. All 17 pre-commit hooks now pass.
@@ -213,7 +235,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Pre-commit Compliance: [0.4.0]
 
-- **Fixed**: 33 corrupted line continuations in spiral_problem.py (`\ \ \#\` → `  # `)
+- **Fixed**: 33 corrupted line continuations in spiral_problem.py (`\ \ \#\` → ` # `)
 - **Fixed**: Black target-version (py314 not supported, using py311-py313)
 - **Auto-formatted**: 64 Python files with Black
 - **Excluded**: .ipynb_checkpoints/, backups/, legacy util scripts

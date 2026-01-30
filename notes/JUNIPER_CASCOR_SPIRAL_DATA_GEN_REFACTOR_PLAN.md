@@ -1411,7 +1411,7 @@ y_train = torch.tensor(arrays["y_train"], dtype=torch.float32)
 
 ### Phase 0: Complete ✅
 
-**Completed 2026-01-29**
+**Completed 2026-01-29:**
 
 - ☑ Created `tests/fixtures/generate_golden_datasets.py` - Script to generate reference datasets from Cascor
 - ☑ Created `tests/fixtures/golden_datasets/README.md` - Documentation for golden datasets
@@ -1419,7 +1419,7 @@ y_train = torch.tensor(arrays["y_train"], dtype=torch.float32)
 
 ### Phase 1: Complete ✅
 
-**Completed 2026-01-29**
+**Completed 2026-01-29:**
 
 - ☑ Created JuniperData package structure at `Juniper/JuniperData/`
 - ☑ Created `pyproject.toml` with dependencies and build configuration
@@ -1434,7 +1434,7 @@ y_train = torch.tensor(arrays["y_train"], dtype=torch.float32)
 
 ### Phase 2: Complete ✅
 
-**Completed 2026-01-29**
+**Completed 2026-01-29:**
 
 - ☑ Implemented `juniper_data/storage/base.py` - DatasetStore abstract base class
 - ☑ Implemented `juniper_data/storage/memory.py` - InMemoryDatasetStore
@@ -1447,7 +1447,7 @@ y_train = torch.tensor(arrays["y_train"], dtype=torch.float32)
 - ☑ Implemented `juniper_data/__main__.py` - CLI entry point
 - ☑ Created 16 integration tests (all passing)
 
-**Total: 76 tests passing**
+**Total: 76 tests passing:**
 
 ### Phase 3: Pending 🔄
 

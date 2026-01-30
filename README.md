@@ -2,7 +2,7 @@
 
 [![CI/CD Pipeline](https://github.com/pcalnon/juniper_cascor/actions/workflows/ci.yml/badge.svg)](https://github.com/pcalnon/juniper_cascor/actions/workflows/ci.yml)
 
-**Version**: 0.3.21 | [Changelog](CHANGELOG.md) | [Full Documentation](docs/index.md)
+**Version**: 0.5.2 | [Changelog](CHANGELOG.md) | [Full Documentation](docs/DOCUMENTATION_OVERVIEW.md)
 
 Juniper is an AI/ML research platform for investigating dynamic neural network architectures and novel learning paradigms. The project emphasizes ground-up implementations from primary literature, enabling a more transparent exploration of fundamental algorithms.
 
@@ -58,7 +58,8 @@ For detailed installation instructions, see the [Quick Start Guide](docs/install
 
 | Category | Description |
 |----------|-------------|
-| [Documentation Index](docs/index.md) | Complete documentation overview |
+| [Documentation Overview](docs/DOCUMENTATION_OVERVIEW.md) | Complete navigation guide to all docs |
+| [Documentation Index](docs/index.md) | Quick documentation index |
 | [Quick Start](docs/install/quick-start.md) | Get up and running quickly |
 | [User Manual](docs/install/user-manual.md) | Comprehensive usage guide |
 | [API Reference](docs/api/api-reference.md) | Complete API documentation |

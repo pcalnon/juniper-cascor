@@ -1,8 +1,10 @@
 # Juniper Cascor Documentation
 
-**Version**: 0.3.21 | [Changelog](../CHANGELOG.md)
+**Version**: 0.5.2 | [Changelog](../CHANGELOG.md) | [Full Documentation Overview](DOCUMENTATION_OVERVIEW.md)
 
 Juniper Cascor is an AI/ML research platform implementing the **Cascade Correlation Neural Network** algorithm from foundational research (Fahlman & Lebiere, 1990). The project emphasizes ground-up implementations from primary literature, enabling transparent exploration of constructive learning algorithms.
+
+> **📚 New to the docs?** Start with the [Documentation Overview](DOCUMENTATION_OVERVIEW.md) for a complete navigation guide.
 
 ---
 
