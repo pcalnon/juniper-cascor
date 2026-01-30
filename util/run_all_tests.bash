@@ -101,7 +101,6 @@ python -m pytest \
 --slow \
 --fast-slow \
 --integration \
---run-long \
 --junit-xml=src/tests/reports/junit/results.xml \
 --continue-on-collection-errors \
 --cov=cascade_correlation \
@@ -139,6 +138,8 @@ python -m pytest \
 # --ignore=src/tests \
 # -v ./src/tests \
 # "
+# --run-long \
+
     log_verbose "RUN_TESTS_WITH_COV_RPT: ${RUN_TESTS_WITH_COV_RPT}"
     eval "${RUN_TESTS_WITH_COV_RPT}"; SUCCESS="$?"
 else
