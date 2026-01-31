@@ -5,6 +5,99 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.0] - 2026-01-30
+
+**Summary**: Completed Phase 3 of JuniperData integration. Added JuniperDataClient and SpiralDataProvider for fetching spiral datasets from JuniperData REST API. Feature flag JUNIPER_DATA_URL enables JuniperData mode.
+
+### Added: [0.6.0]
+
+- **JuniperData Client** (`src/juniper_data_client/`)
+  - `client.py` - REST client for JuniperData API
+    - `create_dataset()` - POST /v1/datasets to generate datasets
+    - `download_artifact_npz()` - GET artifact and parse as numpy arrays
+    - URL normalization (scheme, trailing slash, /v1 suffix handling)
+    - Configurable timeouts with requests.Session
+  - `__init__.py` - Package initialization with JuniperDataClient export
+
+- **Spiral Data Provider** (`src/spiral_problem/data_provider.py`)
+  - `SpiralDataProvider` class for JuniperData integration
+  - `use_juniper_data` property - True when JUNIPER_DATA_URL is set
+  - `get_spiral_dataset()` - Fetches dataset and converts to torch tensors
+  - Parameter mapping: n_points → n_points_per_spiral, noise_level → noise
+  - Returns same format as legacy: `((x_train, y_train), (x_test, y_test), (x_full, y_full))`
+  - `SpiralDataProviderError` custom exception for clear error handling
+
+- **Feature Flag Integration** (`src/spiral_problem/spiral_problem.py`)
+  - Added JUNIPER_DATA_URL environment variable check in `generate_n_spiral_dataset()`
+  - When set, uses SpiralDataProvider to fetch data from JuniperData service
+  - When unset, legacy local generation code path is used unchanged
+
+- **Unit Tests** (38 new tests)
+  - `tests/unit/test_juniper_data_client.py` - 17 tests for client functionality
+  - `tests/unit/test_spiral_data_provider.py` - 18 tests for provider
+  - `tests/unit/test_spiral_problem_juniper_data_integration.py` - 3 tests for feature flag
+
+### Usage: [0.6.0]
+
+```bash
+# Enable JuniperData service
+export JUNIPER_DATA_URL=http://localhost:8100
+
+# Run with legacy local generation
+unset JUNIPER_DATA_URL
+```
+
+### Technical Notes: [0.6.0]
+
+- **SemVer impact**: MINOR – New feature (JuniperData client integration), no breaking changes
+- **Dependencies**: Uses existing requests library for HTTP client
+- **Phase Status**: Completes Phase 3 of spiral data generator extraction plan
+- **Test Count**: 38 new tests (all passing)
+
+---
+
+## [0.5.3] - 2026-01-29
+
+**Summary**: Achieved 91% test coverage target (up from 75%) through comprehensive unit test additions across all source modules.
+
+### Added: [0.5.3]
+
+- **New Test Files**: Created 8 new test files to improve coverage:
+  - `tests/unit/test_main_coverage.py` - Tests for main.py (parse_args, main function)
+  - `tests/unit/test_utils_extended.py` - Extended tests for utils.py edge cases
+  - `tests/unit/test_logging_utils_extended.py` - Tests for SampledLogger, BatchLogger, LogFrequencyTracker
+  - `tests/unit/test_snapshot_common_extended.py` - Tests for decode fallbacks, CUDA suppression
+  - `tests/unit/test_logger_extended.py` - Tests for Logger initialization, validation, custom levels
+  - `tests/unit/test_remote_client_0_extended.py` - Tests for remote client connection and workers
+  - `tests/unit/test_snapshot_serializer_coverage.py` - Additional serializer edge case tests
+
+### Changed: [0.5.3]
+
+- **Coverage Improvements by Module**:
+
+  | Module                                       | Before  | After   |
+  | -------------------------------------------- | ------- | ------- |
+  | `cascade_correlation/cascade_correlation.py` | 46%     | 86%     |
+  | `candidate_unit/candidate_unit.py`           | 56%     | 86%     |
+  | `cascor_constants/constants.py`              | 50%     | 99%     |
+  | `remote_client/remote_client_0.py`           | 70%     | 94%     |
+  | `snapshot_serializer.py`                     | 88%     | 92%     |
+  | `snapshot_common.py`                         | 85%     | 100%    |
+  | `profiling/deterministic.py`                 | 66%     | 100%    |
+  | `profiling/memory.py`                        | 62%     | 100%    |
+  | `profiling/logging_utils.py`                 | 87%     | 100%    |
+  | `log_config/log_config.py`                   | 39%     | 96%     |
+  | `log_config/logger/logger.py`                | 88%     | 97%     |
+  | **TOTAL**                                    | **75%** | **91%** |
+
+### Technical Notes: [0.5.3]
+
+- **SemVer impact**: PATCH – Test additions only; no API or code changes
+- **Test count**: 1324 tests passing (4 skipped for long-running/multiprocessing tests)
+- **Coverage target**: 90% achieved (91% actual)
+
+---
+
 ## [0.5.2] - 2026-01-29
 
 **Summary**: Added comprehensive DOCUMENTATION_OVERVIEW.md with complete navigation guide matching JuniperCanopy documentation style.
@@ -1118,6 +1211,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 | Version | Date       | Description                              |
 | ------- | ---------- | ---------------------------------------- |
+| 0.6.0   | 2026-01-30 | JuniperData Cascor Integration (Phase 3) |
 | 0.5.1   | 2026-01-29 | Pre-commit Compliance (MyPy, F401, B907) |
 | 0.5.0   | 2026-01-29 | JuniperData Extraction (Phases 0-2)      |
 | 0.4.1   | 2026-01-29 | Documentation Overhaul                   |

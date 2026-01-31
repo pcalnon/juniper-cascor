@@ -1,16 +1,20 @@
 #!/usr/bin/env python
 #####################################################################################################################################################################################################
 # Project:       Juniper
-# Prototype:     Cascade Correlation Neural Network
-# File Name:     spiral_problem.py
+# Sub-Project:   JuniperData
+# Application:   juniper_data
+# Purpose:       Juniper Project Data Generation and Management
+#
 # Author:        Paul Calnon
 # Version:       0.3.1  (0.7.3)
+# File Name:     spiral_problem.py
+# File Path:     <Project>/<Sub-Project>/<Application>/src/
 #
 # Date Created:  2025-07-29
 # Last Modified: 2026-01-12
 #
 # License:       MIT License
-# Copyright:     Copyright (c) 2024-2025 Paul Calnon
+# Copyright:     Copyright (c) 2024, 2025, 2026 Paul Calnon
 #
 # Description:
 #    This file contains the functions and code needed to solve the two spiral problem using a Cascade Correlation Neural Network.
@@ -487,12 +491,31 @@ class SpiralProblem(object):
             - The function uses the `default_origin` and `default_radius` to calculate the radius of the spirals.
             - The function uses the `distribution` to apply a degree of rotation to the spiral points.
             - The function generates the spirals using the `generate_spiral_data` function.
+            - When JUNIPER_DATA_URL environment variable is set, fetches data from JuniperData service instead of local generation.
         Returns:
             tuple: A tuple containing the training and test sets, and the full dataset.
                 - (x_train, y_train): Training set features and targets.
                 - (x_test, y_test): Test set features and targets.
                 - (x_full, y_full): Full dataset features and targets.
         """
+        # JuniperData integration: Use JuniperData service when JUNIPER_DATA_URL is set
+        juniper_data_url = os.environ.get("JUNIPER_DATA_URL")
+        if juniper_data_url:
+            self.logger.info(f"SpiralProblem: generate_n_spiral_dataset: Using JuniperData service at {juniper_data_url}")
+            from spiral_problem.data_provider import SpiralDataProvider
+
+            provider = SpiralDataProvider(juniper_data_url)
+            return provider.get_spiral_dataset(
+                n_spirals=n_spirals,
+                n_points=n_points,
+                n_rotations=n_rotations,
+                noise_level=noise_level,
+                clockwise=clockwise,
+                train_ratio=train_ratio,
+                test_ratio=test_ratio,
+                seed=self.random_seed,
+            )
+
         # Initialize Spiral Problem input parameters
         # TODO: Reconsider how these parameters are set.  How should preferred values be chosen? Should they be class attributes or passed in as parameters?
         self.logger.trace("SpiralProblem: generate_n_spiral_dataset: Initializing Spiral Problem input parameters")

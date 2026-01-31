@@ -2,9 +2,9 @@
 
 **Document**: JUNIPER_CASCOR_SPIRAL_DATA_GEN_REFACTOR_PLAN.md  
 **Created**: 2026-01-29  
-**Last Updated**: 2026-01-29  
-**Version**: 1.1.0  
-**Status**: In Progress - Phases 0-2 Complete  
+**Last Updated**: 2026-01-30  
+**Version**: 1.2.0  
+**Status**: In Progress - Phases 0-3 Complete  
 **Author**: Juniper Development Team
 
 ---
@@ -34,12 +34,12 @@ This document presents the **comprehensive refactoring plan** to extract the Spi
 | Phase 0 | Baseline Inventory & Contract Lock | S      | 0.5-1 day       | ✅ Complete |
 | Phase 1 | Core Generator Extraction          | M      | 1-2 days        | ✅ Complete |
 | Phase 2 | JuniperData REST API v1            | M      | 1-2 days        | ✅ Complete |
-| Phase 3 | Cascor Integration                 | M-L    | 1-2 days        | 🔄 Pending  |
+| Phase 3 | Cascor Integration                 | M-L    | 1-2 days        | ✅ Complete |
 | Phase 4 | Canopy Integration                 | M      | 1 day           | 🔄 Pending  |
 | Phase 5 | Extended Data Sources              | L-XL   | Staged (future) | ⏳ Deferred |
 
 **Total Initial Delivery (Phases 0-4)**: 4-8 days  
-**Current Progress**: Phases 0-2 Complete (76 tests passing)
+**Current Progress**: Phases 0-3 Complete (76 JuniperData + 38 Cascor tests passing)
 
 ---
 
@@ -259,56 +259,249 @@ SPIRAL_INPUT_SIZE = 2
 
 ```bash
 JuniperData/
-├── juniper_data/                     # Python package root
-│   ├── __init__.py
-│   ├── core/                         # Core utilities
-│   │   ├── __init__.py
-│   │   ├── models.py                 # DatasetMeta, schemas (Pydantic)
-│   │   ├── dataset_id.py             # Deterministic ID generation
-│   │   ├── split.py                  # Shuffle/split utilities (NumPy)
-│   │   └── artifacts.py              # NPZ encode/decode helpers
-│   │
-│   ├── generators/                   # Dataset generators
-│   │   ├── __init__.py
-│   │   ├── base.py                   # BaseGenerator, registry
-│   │   └── spiral/                   # Spiral generator module
-│   │       ├── __init__.py
-│   │       ├── params.py             # SpiralParams (Pydantic)
-│   │       ├── generator.py          # SpiralGenerator (NumPy-only)
-│   │       └── defaults.py           # Spiral defaults + validation
-│   │
-│   ├── storage/                      # Dataset storage backends
-│   │   ├── __init__.py
-│   │   ├── base.py                   # DatasetStore interface
-│   │   ├── memory.py                 # InMemoryDatasetStore (tests)
-│   │   └── local_fs.py               # LocalFSDatasetStore (v1)
-│   │
-│   └── api/                          # REST API layer
-│       ├── __init__.py
-│       ├── app.py                    # FastAPI application factory
-│       ├── settings.py               # Environment configuration
-│       └── routes/
-│           ├── __init__.py
-│           ├── health.py             # Health check endpoints
-│           ├── generators.py         # Generator listing/schema
-│           └── datasets.py           # Dataset CRUD operations
-│
-├── tests/                            # Test suite
-│   ├── unit/
-│   │   ├── test_spiral_generator.py
-│   │   ├── test_split.py
-│   │   └── test_dataset_id.py
-│   ├── integration/
-│   │   └── test_api.py
-│   └── fixtures/
-│       └── golden_datasets/          # Reference datasets for parity
-│
-├── pyproject.toml                    # Package configuration
-├── Dockerfile
-├── docker-compose.yml
-├── AGENTS.md
-├── CHANGELOG.md
-└── README.md
+└── juniper_data/                     # Python package root
+    ├── AGENTS.md
+    ├── CHANGELOG.md
+    ├── conf
+    ├── data
+    ├── docs
+    │   ├── api
+    │   │   ├── API_REFERENCE.md
+    │   │   └── API_SCHEMAS.md
+    │   ├── cascor
+    │   │   ├── CASCOR_BACKEND_MANUAL.md
+    │   │   ├── CASCOR_BACKEND_QUICK_START.md
+    │   │   └── CASCOR_BACKEND_REFERENCE.md
+    │   ├── cassandra
+    │   │   ├── CASSANDRA_INTEGRATION_MANUAL.md
+    │   │   ├── CASSANDRA_INTEGRATION_QUICK_START.md
+    │   │   └── CASSANDRA_INTEGRATION_REFERENCE.md
+    │   ├── ci_cd
+    │   │   ├── CICD_ENVIRONMENT_SETUP.md
+    │   │   ├── CICD_MANUAL.md
+    │   │   ├── CICD_QUICK_START.md
+    │   │   └── CICD_REFERENCE.md
+    │   ├── CONSTANTS_GUIDE.md
+    │   ├── demo
+    │   │   ├── DEMO_MODE_ENVIRONMENT_SETUP.md
+    │   │   ├── DEMO_MODE_MANUAL.md
+    │   │   ├── DEMO_MODE_QUICK_START.md
+    │   │   └── DEMO_MODE_REFERENCE.md
+    │   ├── deployment
+    │   │   ├── KUBERNETES_DEPLOYMENT_PLAN.md
+    │   │   └── KUBERNETES_DEPLOYMENT_PLAN.pdf
+    │   ├── DOCUMENTATION_OVERVIEW.md
+    │   ├── ENVIRONMENT_SETUP.md
+    │   ├── history
+    │   │   └── TASK_2025-12-04.txt
+    │   ├── QUICK_START.md
+    │   ├── redis
+    │   │   ├── REDIS_INTEGRATION_MANUAL.md
+    │   │   ├── REDIS_INTEGRATION_QUICK_START.md
+    │   │   └── REDIS_INTEGRATION_REFERENCE.md
+    │   ├── testing
+    │   │   ├── SELECTIVE_TEST_ENABLEMENT_SUMMARY.md
+    │   │   ├── SELECTIVE_TEST_GUIDE.md
+    │   │   ├── TEST_ENABLEMENT_QUICK_REFERENCE.md
+    │   │   ├── TESTING_ANALYSIS_REPORT.md
+    │   │   ├── TESTING_ENVIRONMENT_SETUP.md
+    │   │   ├── TESTING_MANUAL.md
+    │   │   ├── TESTING_QUICK_START.md
+    │   │   ├── TESTING_REFERENCE.md
+    │   │   └── TESTING_REPORTS_COVERAGE.md
+    │   └── USER_MANUAL.md
+    ├── images
+    ├── juniper_data
+    │   ├── api
+    │   │   ├── app.py
+    │   │   ├── __init__.py
+    │   │   ├── __pycache__
+    │   │   │   ├── app.cpython-314.pyc
+    │   │   │   ├── __init__.cpython-314.pyc
+    │   │   │   └── settings.cpython-314.pyc
+    │   │   ├── routes
+    │   │   │   ├── datasets.py
+    │   │   │   ├── generators.py
+    │   │   │   ├── health.py
+    │   │   │   ├── __init__.py
+    │   │   │   └── __pycache__
+    │   │   │       ├── datasets.cpython-314.pyc
+    │   │   │       ├── generators.cpython-314.pyc
+    │   │   │       ├── health.cpython-314.pyc
+    │   │   │       └── __init__.cpython-314.pyc
+    │   │   └── settings.py
+    │   ├── core
+    │   │   ├── artifacts.py
+    │   │   ├── dataset_id.py
+    │   │   ├── __init__.py
+    │   │   ├── models.py
+    │   │   ├── __pycache__
+    │   │   │   ├── artifacts.cpython-314.pyc
+    │   │   │   ├── dataset_id.cpython-314.pyc
+    │   │   │   ├── __init__.cpython-314.pyc
+    │   │   │   ├── models.cpython-314.pyc
+    │   │   │   └── split.cpython-314.pyc
+    │   │   └── split.py
+    │   ├── generators
+    │   │   ├── __init__.py
+    │   │   ├── __pycache__
+    │   │   │   └── __init__.cpython-314.pyc
+    │   │   └── spiral
+    │   │       ├── defaults.py
+    │   │       ├── generator.py
+    │   │       ├── __init__.py
+    │   │       ├── params.py
+    │   │       └── __pycache__
+    │   │           ├── defaults.cpython-314.pyc
+    │   │           ├── generator.cpython-314.pyc
+    │   │           ├── __init__.cpython-314.pyc
+    │   │           └── params.cpython-314.pyc
+    │   ├── __init__.py
+    │   ├── __main__.py
+    │   ├── __pycache__
+    │   │   ├── __init__.cpython-314.pyc
+    │   │   └── __main__.cpython-314.pyc
+    │   ├── storage
+    │   │   ├── base.py
+    │   │   ├── __init__.py
+    │   │   ├── local_fs.py
+    │   │   ├── memory.py
+    │   │   └── __pycache__
+    │   │       ├── base.cpython-314.pyc
+    │   │       ├── __init__.cpython-314.pyc
+    │   │       ├── local_fs.cpython-314.pyc
+    │   │       └── memory.cpython-314.pyc
+    │   └── tests
+    │       ├── conftest.py
+    │       ├── fixtures
+    │       │   ├── generate_golden_datasets.py
+    │       │   └── golden_datasets
+    │       │       ├── 2_spiral_metadata.json
+    │       │       ├── 2_spiral.npz
+    │       │       ├── 3_spiral_metadata.json
+    │       │       ├── 3_spiral.npz
+    │       │       └── README.md
+    │       ├── __init__.py
+    │       ├── integration
+    │       │   ├── __init__.py
+    │       │   ├── __pycache__
+    │       │   │   ├── __init__.cpython-314.pyc
+    │       │   │   └── test_api.cpython-314-pytest-9.0.1.pyc
+    │       │   └── test_api.py
+    │       ├── __pycache__
+    │       │   ├── conftest.cpython-314-pytest-9.0.1.pyc
+    │       │   └── __init__.cpython-314.pyc
+    │       └── unit
+    │           ├── __init__.py
+    │           ├── __pycache__
+    │           │   ├── __init__.cpython-314.pyc
+    │           │   ├── test_dataset_id.cpython-314-pytest-9.0.1.pyc
+    │           │   ├── test_spiral_generator.cpython-314-pytest-9.0.1.pyc
+    │           │   └── test_split.cpython-314-pytest-9.0.1.pyc
+    │           ├── test_dataset_id.py
+    │           ├── test_spiral_generator.py
+    │           └── test_split.py
+    ├── juniper_data.egg-info
+    │   ├── dependency_links.txt
+    │   ├── PKG-INFO
+    │   ├── requires.txt
+    │   ├── SOURCES-ORIG.txt
+    │   ├── SOURCES.txt
+    │   ├── top_level-ORIG.txt
+    │   └── top_level.txt
+    ├── LICENSE
+    ├── logs
+    ├── markdown.css
+    ├── notes
+    │   ├── conda_environment.yaml -> ../conf/conda_environment.yaml
+    │   ├── conda_pytorch_cuda.yml
+    │   ├── INTEGRATION_ROADMAP.md -> /home/pcalnon/Development/python/Juniper/JuniperCascor/juniper_cascor/notes/INTEGRATION_ROADMAP.md
+    │   ├── PRE-DEPLOYMENT_ROADMAP-2.md -> ../../../JuniperCascor/juniper_cascor/notes/PRE-DEPLOYMENT_ROADMAP-2.md
+    │   ├── PRE-DEPLOYMENT_ROADMAP.md -> /home/pcalnon/Development/python/Juniper/JuniperCascor/juniper_cascor/notes/PRE-DEPLOYMENT_ROADMAP.md
+    │   ├── pull_requests
+    │   │   ├── PR_DESCRIPTION_PHASE2_2026-01-08.md
+    │   │   ├── PR_DESCRIPTION_PHASE3-WAVE-1_2026-01-09.md
+    │   │   ├── PR_DESCRIPTION_POST_REFACTOR_v0.24.0_2026-01-11.md
+    │   │   ├── PR_DESCRIPTION_RELEASE_v0.25.0_2026-01-25.md
+    │   │   ├── PR_PHASE0_UX_STABILIZATION_2026-01-07.md
+    │   │   ├── PR_PHASE1_PHASE2_COMPLETE_2026-01-08.md
+    │   │   ├── PR_PHASE1_VALIDATION_2026-01-07.md
+    │   │   ├── PR_PHASE2_PARTIAL_2026-01-07.md
+    │   │   └── PR_RELEASE_PREP_v0.15.0-alpha_2026-01-07.md
+    │   ├── research
+    │   │   └── references_and_links.md
+    │   └── templates
+    │       ├── TEMPLATE_DEVELOPMENT_ROADMAP.md
+    │       ├── TEMPLATE_ISSUE_TRACKING.md
+    │       ├── TEMPLATE_PULL_REQUEST_DESCRIPTION.md
+    │       ├── TEMPLATE_RELEASE_NOTES.md
+    │       └── TEMPLATE_SECURITY_RELEASE_NOTES.md
+    ├── pyproject.toml
+    ├── README.md
+    └── util
+
+# deprecated
+├── juniper_data/
+    │   ├── __init__.py
+    │   ├── __main__.py
+    │   ├── api/                          # REST API layer
+    │   │   ├── __init__.py
+    │   │   ├── app.py                    # FastAPI application factory
+    │   │   ├── settings.py               # Environment configuration
+    │   │   └── routes/
+    │   │       ├── __init__.py
+    │   │       ├── health.py             # Health check endpoints
+    │   │       ├── generators.py         # Generator listing/schema
+    │   │       └── datasets.py           # Dataset CRUD operations
+    │   │  
+    │   ├── core/                         # Core utilities
+    │   │   ├── __init__.py
+    │   │   ├── models.py                 # DatasetMeta, schemas (Pydantic)
+    │   │   ├── dataset_id.py             # Deterministic ID generation
+    │   │   ├── split.py                  # Shuffle/split utilities (NumPy)
+    │   │   └── artifacts.py              # NPZ encode/decode helpers
+    │   │
+    │   ├── generators/                   # Dataset generators
+    │   │   ├── __init__.py
+    │   │   ├── base.py                   # BaseGenerator, registry
+    │   │   └── spiral/                   # Spiral generator module
+    │   │       ├── __init__.py
+    │   │       ├── params.py             # SpiralParams (Pydantic)
+    │   │       ├── generator.py          # SpiralGenerator (NumPy-only)
+    │   │       └── defaults.py           # Spiral defaults + validation
+    │   │
+    │   ├── storage/                      # Dataset storage backends
+    │   │   ├── __init__.py
+    │   │   ├── base.py                   # DatasetStore interface
+    │   │   ├── memory.py                 # InMemoryDatasetStore (tests)
+    │   │   └── local_fs.py               # LocalFSDatasetStore (v1)
+    │   │
+    │   └── tests/                        # Test suite
+    │       ├── unit/
+    │       │   ├── test_spiral_generator.py
+    │       │   ├── test_split.py
+    │       │   └── test_dataset_id.py
+    │       │
+    │       ├── integration/
+    │       │   └── test_api.py
+    │       │
+    │       └── fixtures/
+    │           └── golden_datasets/          # Reference datasets for parity
+    │
+    ├── juniper_data.egg-info/
+    ├── logs/
+    ├── notes/
+    │   └── backups/
+    │
+    ├── util/
+    │   └── backups/
+    │
+    ├── AGENTS.md
+    ├── CHANGELOG.md
+    ├── pyproject.toml                    # Package configuration
+    ├── Dockerfile
+    ├── docker-compose.yml
+    └── README.md
 ```
 
 ### 5.2 Component Architecture Diagram
@@ -1449,12 +1642,25 @@ y_train = torch.tensor(arrays["y_train"], dtype=torch.float32)
 
 **Total: 76 tests passing:**
 
-### Phase 3: Pending 🔄
+### Phase 3: Complete ✅
 
-- ☐ Add JuniperDataClient to Cascor
-- ☐ Create SpiralDataProvider compatibility layer
-- ☐ Update SpiralProblem to use data provider
-- ☐ Run parity tests
+**Completed 2026-01-30:**
+
+- ☑ Created `juniper_cascor/src/juniper_data_client/client.py` - JuniperDataClient with create_dataset() and download_artifact_npz() methods
+- ☑ Created `juniper_cascor/src/juniper_data_client/__init__.py` - Package init
+- ☑ Created `juniper_cascor/src/spiral_problem/data_provider.py` - SpiralDataProvider compatibility layer with torch tensor conversion
+- ☑ Updated `juniper_cascor/src/spiral_problem/spiral_problem.py` - Added JUNIPER_DATA_URL feature flag in generate_n_spiral_dataset()
+- ☑ Created 38 unit tests for JuniperDataClient, SpiralDataProvider, and feature flag integration (all passing)
+
+**Feature Flag Usage:**
+
+```bash
+# Enable JuniperData service integration
+export JUNIPER_DATA_URL=http://localhost:8100
+
+# Disable (use legacy local generation)
+unset JUNIPER_DATA_URL
+```
 
 ### Phase 4: Pending 🔄
 
@@ -1473,10 +1679,11 @@ y_train = torch.tensor(arrays["y_train"], dtype=torch.float32)
 | ------- | ---------- | ---------------- | --------------------------------------------- |
 | 1.0.0   | 2026-01-29 | Juniper Dev Team | Initial comprehensive plan                    |
 | 1.1.0   | 2026-01-29 | Juniper Dev Team | Phases 0-2 complete, 76 tests passing         |
+| 1.2.0   | 2026-01-30 | Juniper Dev Team | Phase 3 complete, Cascor integration done     |
 
 ---
 
-**Status**: 🔄 **In Progress - Phases 0-2 Complete**
+**Status**: 🔄 **In Progress - Phases 0-3 Complete**
 
 **Completed**:
 
@@ -1485,9 +1692,9 @@ y_train = torch.tensor(arrays["y_train"], dtype=torch.float32)
 3. ☑ Phase 0: Baseline Inventory & Contract Lock
 4. ☑ Phase 1: Core Generator Extraction
 5. ☑ Phase 2: JuniperData REST API v1
+6. ☑ Phase 3: Cascor Integration (JuniperDataClient + SpiralDataProvider + feature flag)
 
 **Next Steps**:
 
-1. ☐ Phase 3: Cascor Integration (add JuniperDataClient)
-2. ☐ Phase 4: Canopy Integration
-3. ☐ Run end-to-end validation with Cascor training
+1. ☐ Phase 4: Canopy Integration
+2. ☐ Run end-to-end validation with Cascor training

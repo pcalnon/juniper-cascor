@@ -10,7 +10,7 @@
 # Last Modified: 2026-01-24
 #
 # License:       MIT License
-# Copyright:     Copyright (c) 2024-2026 Paul Calnon
+# Copyright:     Copyright (c) 2024,2025,2026 Paul Calnon
 #
 # Description:
 #    Python project configuration for Juniper Cascor
@@ -20,6 +20,10 @@
 #    - CASCOR-P1-007: CI/CD Pipeline Setup
 #    - CASCOR-P2-002: Type Checker Configuration
 #####################################################################################################################################################################################################
+
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
 
 [project]
 name = "juniper-cascor"
@@ -48,7 +52,7 @@ extend-exclude = '''
     | images
 )/
 '''
-
+#
 [tool.isort]
 profile = "black"
 line_length = 120
