@@ -3,8 +3,8 @@
 **Document**: JUNIPER_CASCOR_SPIRAL_DATA_GEN_REFACTOR_PLAN.md  
 **Created**: 2026-01-29  
 **Last Updated**: 2026-01-31  
-**Version**: 1.3.0  
-**Status**: Complete - Phases 0-4 Complete  
+**Version**: 1.4.0  
+**Status**: Complete - Phases 0-4 Complete + Verified  
 **Author**: Juniper Development Team
 
 ---
@@ -1718,10 +1718,79 @@ python -m pytest juniper_data/tests/ -v
 | 1.1.0   | 2026-01-29 | Juniper Dev Team | Phases 0-2 complete, 76 tests passing         |
 | 1.2.0   | 2026-01-30 | Juniper Dev Team | Phase 3 complete, Cascor integration done     |
 | 1.3.0   | 2026-01-31 | Juniper Dev Team | Phase 4 complete, Canopy integration done     |
+| 1.4.0   | 2026-01-31 | Juniper Dev Team | Oracle verification, API contract fixes       |
 
 ---
 
-**Status**: ✅ **Complete - Phases 0-4 Complete**
+## 14. Extraction Verification Report
+
+### Oracle Analysis Summary (2026-01-31)
+
+A comprehensive Oracle analysis was performed to verify the extraction completeness across all three applications.
+
+#### JuniperData Implementation: ✅ Complete (Core Functionality)
+
+| Component             | Status      | Notes                                        |
+| --------------------- | ----------- | -------------------------------------------- |
+| Coordinate generation | ✅ Present  | `_generate_spiral_coordinates()`             |
+| Noise generation      | ✅ Present  | `_make_noise()` uses `rng.standard_normal()` |
+| One-hot encoding      | ✅ Present  | `_create_one_hot_labels()`                   |
+| Train/test split      | ✅ Present  | Uses `shuffle_and_split()` from core         |
+| REST API endpoints    | ✅ Complete | All v1 endpoints functional                  |
+| Training dependencies | ✅ None     | No torch/CasCor in runtime code              |
+
+**Verified API Endpoints:**
+
+- `GET /v1/health`, `GET /v1/generators`, `GET /v1/generators/{name}/schema`
+- `POST /v1/datasets`, `GET /v1/datasets`, `GET /v1/datasets/{id}`
+- `GET /v1/datasets/{id}/artifact`, `GET /v1/datasets/{id}/preview`
+- `DELETE /v1/datasets/{id}`
+
+#### JuniperCascor Legacy Code: ⚠️ Legacy Retained (Intentional)
+
+| Component                            | Status     | Classification                             |
+| ------------------------------------ | ---------- | ------------------------------------------ |
+| `spiral_problem.py` legacy generator | Present    | (a) Legacy fallback - can be removed later |
+| `data_provider.py`                   | Present    | (c) Compatibility layer - should stay      |
+| `juniper_data_client/`               | Present    | (c) Client module - should stay            |
+| JUNIPER_DATA_URL feature flag        | ✅ Working | Properly switches between modes            |
+
+**Decision**: Legacy generator code remains as fallback until JuniperData service availability is guaranteed. This is intentional per the migration strategy.
+
+#### JuniperCanopy Integration: ✅ Fixed (2026-01-31)
+
+| Issue                                                     | Status        | Resolution                                                 |
+| --------------------------------------------------------- | ------------- | ---------------------------------------------------------- |
+| Wrong param key (`n_points` vs `n_points_per_spiral`)     | ✅ Fixed      | Updated to `n_points_per_spiral`                           |
+| Wrong response key (`id` vs `dataset_id`)                 | ✅ Fixed      | Updated to `dataset_id`                                    |
+| Wrong artifact keys (`inputs/targets` vs `X_full/y_full`) | ✅ Fixed      | Updated to `X_full`/`y_full` with `np.argmax()` conversion |
+| Fallback local generation                                 | ✅ Maintained | Works when JuniperData unavailable                         |
+
+All 83 Canopy tests passing after fixes.
+
+### Semantic Differences (Documented)
+
+JuniperData implements a **simplified spiral generator** that differs from legacy in:
+
+| Feature                 | JuniperData              | Legacy (Cascor)                            |
+| ----------------------- | ------------------------ | ------------------------------------------ |
+| Angular sampling        | Evenly spaced (linspace) | Random with distribution shaping           |
+| Distribution factor     | Not used                 | `pow(degrees, distribution)` transform     |
+| Origin/radius semantics | Not used                 | `radius = default_radius - default_origin` |
+| Point scaling pipeline  | Not implemented          | `min_orig/max_orig/min_new/max_new`        |
+| `random_value_scale`    | Defined but unused       | Used in legacy                             |
+
+**Conclusion**: This is **acceptable per design** - JuniperData provides a "reasonable spiral classification dataset" for new work. Legacy semantics preserved in Cascor for backward compatibility with existing trained models.
+
+### Remaining Work Items
+
+1. **☐ Legacy Code Removal (Future)**: Once JuniperData is stable and service availability guaranteed, legacy generator in `spiral_problem.py` can be removed
+2. **☐ Client Package Consolidation**: Consider promoting `juniper_data_client` to a shared package used by both Cascor and Canopy
+3. **☐ Integration Tests**: Add E2E tests that verify JuniperData API contract with live service
+
+---
+
+**Status**: ✅ **Complete - Phases 0-4 Complete + Verified**
 
 **Completed**:
 
@@ -1733,8 +1802,11 @@ python -m pytest juniper_data/tests/ -v
 6. ☑ Phase 3: Cascor Integration (JuniperDataClient + SpiralDataProvider + feature flag)
 7. ☑ Phase 4: Canopy Integration (JuniperDataClient + DemoMode + CascorIntegration)
 8. ☑ JuniperData Conda environment created and validated
+9. ☑ Oracle verification of extraction completeness
+10. ☑ Canopy API contract fixes (n_points_per_spiral, dataset_id, X_full/y_full)
 
 **Next Steps**:
 
 1. ☐ Run end-to-end validation with JuniperData service
-2. ☐ Phase 5: Extended Data Sources (when triggered)
+2. ☐ Legacy code cleanup (when ready)
+3. ☐ Phase 5: Extended Data Sources (when triggered)
