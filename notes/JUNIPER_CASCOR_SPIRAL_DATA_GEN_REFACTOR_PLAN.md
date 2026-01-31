@@ -3,8 +3,8 @@
 **Document**: JUNIPER_CASCOR_SPIRAL_DATA_GEN_REFACTOR_PLAN.md  
 **Created**: 2026-01-29  
 **Last Updated**: 2026-01-31  
-**Version**: 1.4.0  
-**Status**: Complete - Phases 0-4 Complete + Verified  
+**Version**: 1.5.0  
+**Status**: Complete - Phases 0-4 Complete + Legacy Parity Implemented  
 **Author**: Juniper Development Team
 
 ---
@@ -1756,19 +1756,37 @@ A comprehensive Oracle analysis was performed to verify the extraction completen
 
 All 83 Canopy tests passing after fixes.
 
-### Semantic Differences (Documented)
+### Legacy Parity Mode (Implemented 2026-01-31)
 
-JuniperData implements a **simplified spiral generator** that differs from legacy in:
+JuniperData v0.2.0 now includes a `algorithm="legacy_cascor"` mode that achieves statistical parity with the original JuniperCascor SpiralProblem:
 
-| Feature                 | JuniperData              | Legacy (Cascor)                            |
-| ----------------------- | ------------------------ | ------------------------------------------ |
-| Angular sampling        | Evenly spaced (linspace) | Random with distribution shaping           |
-| Distribution factor     | Not used                 | `pow(degrees, distribution)` transform     |
-| Origin/radius semantics | Not used                 | `radius = default_radius - default_origin` |
-| Point scaling pipeline  | Not implemented          | `min_orig/max_orig/min_new/max_new`        |
-| `random_value_scale`    | Defined but unused       | Used in legacy                             |
+| Feature                 | `algorithm="modern"` (default) | `algorithm="legacy_cascor"`                |
+| ----------------------- | ------------------------------ | ------------------------------------------ |
+| Radial sampling         | Evenly spaced (linspace)       | Sqrt-uniform: `sqrt(random) * radius`      |
+| Angle calculation       | Independent of radius          | Distance-as-angle: `angle = dist + offset` |
+| Noise distribution      | Normal (zero-centered)         | Uniform in `[0, noise)` (not centered)     |
+| Origin offset           | Supported via `origin` param   | Supported via `origin` param               |
+| Radius control          | Supported via `radius` param   | Supported via `radius` param               |
 
-**Conclusion**: This is **acceptable per design** - JuniperData provides a "reasonable spiral classification dataset" for new work. Legacy semantics preserved in Cascor for backward compatibility with existing trained models.
+**New SpiralParams fields:**
+
+- `algorithm`: `"modern"` | `"legacy_cascor"` (default: `"modern"`)
+- `radius`: Maximum radius/distance (default: 10.0)
+- `origin`: Center point `(x, y)` (default: `(0.0, 0.0)`)
+
+**Usage:**
+
+```python
+# For legacy parity with JuniperCascor
+params = SpiralParams(
+    n_spirals=2,
+    n_points_per_spiral=100,
+    algorithm="legacy_cascor",
+    radius=10.0,
+)
+```
+
+**Conclusion**: Both modern (simplified) and legacy (Cascor-compatible) generation are now available. Legacy mode provides statistical parity for backward compatibility; modern mode is recommended for new work.
 
 ### Remaining Work Items
 
@@ -1792,12 +1810,15 @@ JuniperData implements a **simplified spiral generator** that differs from legac
 8. ☑ JuniperData Conda environment created and validated
 9. ☑ Oracle verification of extraction completeness
 10. ☑ Canopy API contract fixes (n_points_per_spiral, dataset_id, X_full/y_full)
+11. ☑ Legacy parity mode (`algorithm="legacy_cascor"`) implemented in JuniperData v0.2.0
+12. ☑ 84 JuniperData tests passing (8 new legacy mode tests)
 
 **Next Steps**:
 
 1. ☐ Run end-to-end validation with JuniperData service
-2. ☐ Legacy code cleanup (when ready)
-3. ☐ Phase 5: Extended Data Sources (when triggered)
+2. ☐ Update Canopy/Cascor to use `algorithm="legacy_cascor"` when needed
+3. ☐ Legacy code cleanup (when ready)
+4. ☐ Phase 5: Extended Data Sources (when triggered)
 
 ---
 
@@ -1810,5 +1831,6 @@ JuniperData implements a **simplified spiral generator** that differs from legac
 | 1.2.0   | 2026-01-30 | Juniper Dev Team | Phase 3 complete, Cascor integration done     |
 | 1.3.0   | 2026-01-31 | Juniper Dev Team | Phase 4 complete, Canopy integration done     |
 | 1.4.0   | 2026-01-31 | Juniper Dev Team | Oracle verification, API contract fixes       |
+| 1.5.0   | 2026-01-31 | Juniper Dev Team | Legacy parity mode implementation             |
 
 ---

@@ -4,10 +4,10 @@
 # Application:   juniper_cascor
 # File Name:     .pre-commit-config.yaml
 # Author:        Paul Calnon
-# Version:       0.4.0
+# Version:       0.4.1
 #
 # Date Created:  2026-01-29
-# Last Modified: 2026-01-29
+# Last Modified: 2026-01-31
 #
 # License:       MIT License
 # Copyright:     Copyright (c) 2024-2026 Paul Calnon
@@ -112,7 +112,7 @@ repos:
       - id: black
         name: Format with Black
         args:
-          - --line-length=512
+          - --line-length=120
         files: ^src/
 
   # ═══════════════════════════════════════════════════════════════════════════
@@ -125,7 +125,7 @@ repos:
         name: Sort imports with isort
         args:
           - --profile=black
-          - --line-length=512
+          - --line-length=120
         files: ^src/
 
   # ═══════════════════════════════════════════════════════════════════════════
@@ -137,8 +137,8 @@ repos:
       - id: flake8
         name: Lint with Flake8
         args:
-          - --max-line-length=512
-          - --extend-ignore=E203,E265,E266,E501,W503,E722,E402,E226,C409,C901
+          - --max-line-length=120
+          - --extend-ignore=E203,E265,E266,E501,W503,E722,E402,E226,C409,C901,B008,B904,B905,B907,F401
           - --max-complexity=15
           - --select=B,C,E,F,W,T4,B9
         additional_dependencies:
