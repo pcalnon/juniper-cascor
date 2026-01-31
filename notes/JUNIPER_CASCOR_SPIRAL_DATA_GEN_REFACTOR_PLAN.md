@@ -1710,18 +1710,6 @@ python -m pytest juniper_data/tests/ -v
 
 ---
 
-## Document History
-
-| Version | Date       | Author           | Changes                                       |
-| ------- | ---------- | ---------------- | --------------------------------------------- |
-| 1.0.0   | 2026-01-29 | Juniper Dev Team | Initial comprehensive plan                    |
-| 1.1.0   | 2026-01-29 | Juniper Dev Team | Phases 0-2 complete, 76 tests passing         |
-| 1.2.0   | 2026-01-30 | Juniper Dev Team | Phase 3 complete, Cascor integration done     |
-| 1.3.0   | 2026-01-31 | Juniper Dev Team | Phase 4 complete, Canopy integration done     |
-| 1.4.0   | 2026-01-31 | Juniper Dev Team | Oracle verification, API contract fixes       |
-
----
-
 ## 14. Extraction Verification Report
 
 ### Oracle Analysis Summary (2026-01-31)
@@ -1810,3 +1798,17 @@ JuniperData implements a **simplified spiral generator** that differs from legac
 1. ☐ Run end-to-end validation with JuniperData service
 2. ☐ Legacy code cleanup (when ready)
 3. ☐ Phase 5: Extended Data Sources (when triggered)
+
+---
+
+## Document History
+
+| Version | Date       | Author           | Changes                                       |
+| ------- | ---------- | ---------------- | --------------------------------------------- |
+| 1.0.0   | 2026-01-29 | Juniper Dev Team | Initial comprehensive plan                    |
+| 1.1.0   | 2026-01-29 | Juniper Dev Team | Phases 0-2 complete, 76 tests passing         |
+| 1.2.0   | 2026-01-30 | Juniper Dev Team | Phase 3 complete, Cascor integration done     |
+| 1.3.0   | 2026-01-31 | Juniper Dev Team | Phase 4 complete, Canopy integration done     |
+| 1.4.0   | 2026-01-31 | Juniper Dev Team | Oracle verification, API contract fixes       |
+
+---
