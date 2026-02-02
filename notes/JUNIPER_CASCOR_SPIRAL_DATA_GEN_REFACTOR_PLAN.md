@@ -2,9 +2,9 @@
 
 **Document**: JUNIPER_CASCOR_SPIRAL_DATA_GEN_REFACTOR_PLAN.md  
 **Created**: 2026-01-29  
-**Last Updated**: 2026-01-31  
-**Version**: 1.5.0  
-**Status**: Complete - Phases 0-4 Complete + Legacy Parity Implemented  
+**Last Updated**: 2026-02-01  
+**Version**: 1.7.0  
+**Status**: Complete - Phases 0-4 Complete + E2E Validated + CI/CD Parity Achieved  
 **Author**: Juniper Development Team
 
 ---
@@ -1813,24 +1813,85 @@ params = SpiralParams(
 11. ☑ Legacy parity mode (`algorithm="legacy_cascor"`) implemented in JuniperData v0.2.0
 12. ☑ 84 JuniperData tests passing (8 new legacy mode tests)
 
+**Completed (2026-01-31)**:
+
+13. ☑ End-to-end validation with JuniperData service (port 8100)
+14. ☑ Added `algorithm` parameter to Cascor SpiralDataProvider
+15. ☑ Added `algorithm` parameter to Canopy demo_mode and cascor_integration
+16. ☑ 39 Cascor JuniperData-related tests passing (1 new algorithm test)
+
 **Next Steps**:
 
-1. ☐ Run end-to-end validation with JuniperData service
-2. ☐ Update Canopy/Cascor to use `algorithm="legacy_cascor"` when needed
-3. ☐ Legacy code cleanup (when ready)
-4. ☐ Phase 5: Extended Data Sources (when triggered)
+1. ☐ Legacy code cleanup in JuniperCascor (when ready)
+2. ☐ Client package consolidation (shared juniper_data_client)
+3. ☐ Phase 5: Extended Data Sources (when triggered)
 
 ---
 
 ## Document History
 
-| Version | Date       | Author           | Changes                                       |
-| ------- | ---------- | ---------------- | --------------------------------------------- |
-| 1.0.0   | 2026-01-29 | Juniper Dev Team | Initial comprehensive plan                    |
-| 1.1.0   | 2026-01-29 | Juniper Dev Team | Phases 0-2 complete, 76 tests passing         |
-| 1.2.0   | 2026-01-30 | Juniper Dev Team | Phase 3 complete, Cascor integration done     |
-| 1.3.0   | 2026-01-31 | Juniper Dev Team | Phase 4 complete, Canopy integration done     |
-| 1.4.0   | 2026-01-31 | Juniper Dev Team | Oracle verification, API contract fixes       |
-| 1.5.0   | 2026-01-31 | Juniper Dev Team | Legacy parity mode implementation             |
+| Version | Date       | Author           | Changes                                         |
+| ------- | ---------- | ---------------- | ----------------------------------------------- |
+| 1.0.0   | 2026-01-29 | Juniper Dev Team | Initial comprehensive plan                      |
+| 1.1.0   | 2026-01-29 | Juniper Dev Team | Phases 0-2 complete, 76 tests passing           |
+| 1.2.0   | 2026-01-30 | Juniper Dev Team | Phase 3 complete, Cascor integration done       |
+| 1.3.0   | 2026-01-31 | Juniper Dev Team | Phase 4 complete, Canopy integration done       |
+| 1.4.0   | 2026-01-31 | Juniper Dev Team | Oracle verification, API contract fixes         |
+| 1.5.0   | 2026-01-31 | Juniper Dev Team | Legacy parity mode implementation               |
+| 1.6.0   | 2026-01-31 | Juniper Dev Team | E2E validation complete, algorithm param added  |
+| 1.7.0   | 2026-02-01 | Juniper Dev Team | CI/CD parity achieved across all 3 applications |
+
+---
+
+## 15. CI/CD Parity Status
+
+### CI/CD Configuration Parity (2026-02-01)
+
+A comprehensive CI/CD parity review and update was completed across JuniperCascor, JuniperData, and JuniperCanopy.
+
+#### Standardized Settings
+
+| Setting             | Value                                                  | Applied To                          |
+| ------------------- | ------------------------------------------------------ | ----------------------------------- |
+| Line Length         | 512                                                    | All 3 apps (black, isort, flake8)   |
+| Coverage Fail-Under | 80%                                                    | All 3 apps (pyproject.toml, ci.yml) |
+| Coverage Target     | 90%                                                    | All 3 apps                          |
+| Build Stage         | ✅ Added                                               | All 3 apps (PR CI)                  |
+| Artifact Paths      | reports/junit/, reports/htmlcov/, reports/coverage.xml | All 3 apps                          |
+| yamllint            | ✅ Added                                               | All 3 apps (pre-commit)             |
+| mypy                | ✅ Enabled                                             | All 3 apps (pre-commit + CI)        |
+| Flake8              | Single hook                                            | All 3 apps                          |
+| Python Matrix       | 3.11, 3.12, 3.13, 3.14                                 | All 3 apps                          |
+| Security Scans      | Gitleaks, Bandit SARIF, pip-audit                      | All 3 apps                          |
+
+#### Files Updated
+
+| Application   | File                       | Version |
+| ------------- | -------------------------- | ------- |
+| JuniperCascor | `.pre-commit-config.yaml`  | 0.4.2   |
+| JuniperCascor | `.github/workflows/ci.yml` | 0.4.1   |
+| JuniperCascor | `pyproject.toml`           | 0.3.17  |
+| JuniperData   | `.pre-commit-config.yaml`  | 0.1.1   |
+| JuniperData   | `.github/workflows/ci.yml` | 0.1.1   |
+| JuniperData   | `pyproject.toml`           | 0.1.1   |
+| JuniperCanopy | `.pre-commit-config.yaml`  | 1.2.0   |
+| JuniperCanopy | `.github/workflows/ci.yml` | 0.12.0  |
+| JuniperCanopy | `pyproject.toml`           | 0.2.3   |
+
+#### CI Pipeline Structure (All 3 Apps)
+
+```bash
+pre-commit (Matrix: 3.11-3.14)
+    ↓
+unit-tests (Matrix: 3.11-3.14, coverage ≥ 80%)
+    ↓
+├── build (PR builds)
+├── integration-tests (PR/main/develop)
+└── security (Gitleaks + Bandit + pip-audit)
+    ↓
+required-checks (Quality Gate)
+    ↓
+notify (Build Summary)
+```
 
 ---

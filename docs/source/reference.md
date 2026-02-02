@@ -579,6 +579,45 @@ if self.logger.isEnabledFor(logging.DEBUG):
 
 ---
 
+## Service Integration Conventions
+
+### External Service Dependencies
+
+**JuniperData** is an external service dependency that provides dataset generation and management capabilities.
+
+- **URL Configuration**: Set via `JuniperDataClient` constructor
+- **Default Timeout**: 30 seconds
+- **Error Handling**: Wrap `requests.HTTPError` and surface error messages
+
+### Service Boundary Guidelines
+
+The separation of concerns between JuniperCascor and JuniperData is clearly defined:
+
+| Responsibility | Service |
+|----------------|---------|
+| Dataset generation (e.g., spiral data) | JuniperData |
+| Dataset consumption and training | JuniperCascor |
+| Data storage and retrieval | JuniperData |
+| Neural network implementation | JuniperCascor |
+
+**Key principles:**
+
+- Dataset generation logic belongs in JuniperData, not JuniperCascor
+- JuniperCascor should only consume datasets via the client
+- No direct spiral generation code should be added to JuniperCascor
+
+### Error Handling Pattern
+
+```python
+try:
+    data = client.download_artifact_npz(dataset_id)
+except requests.HTTPError as e:
+    logger.error(f"Failed to download dataset: {e}")
+    raise
+```
+
+---
+
 ## See Also
 
 - [API Reference](../api/index.md) - Public API documentation

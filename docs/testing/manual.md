@@ -14,7 +14,8 @@
 4. [Mock Objects](#mock-objects)
 5. [Testing Specific Components](#testing-specific-components)
 6. [Test Data](#test-data)
-7. [Common Testing Patterns](#common-testing-patterns)
+7. [Testing with JuniperData](#testing-with-juniperdata)
+8. [Common Testing Patterns](#common-testing-patterns)
 
 ---
 
@@ -583,6 +584,70 @@ y_xor = torch.tensor([[1, 0], [0, 1], [0, 1], [1, 0]])  # One-hot
 x_random = torch.randn(50, 4)
 y_random = torch.randint(0, 3, (50,))
 y_onehot = torch.nn.functional.one_hot(y_random, num_classes=3).float()
+```
+
+---
+
+## Testing with JuniperData
+
+### Overview
+
+Tests that use `SpiralProblem` require the **JuniperData service** to be running, as `SpiralProblem` relies on `JuniperDataClient` to manage datasets and artifacts.
+
+### Options for Testing
+
+1. **Run JuniperData service locally** - Required for integration tests that need real data storage
+2. **Mock JuniperDataClient** - Recommended for unit tests to avoid external dependencies
+
+### Mocking JuniperDataClient
+
+For unit tests, mock the `JuniperDataClient` to avoid requiring the service:
+
+```python
+from unittest.mock import Mock, patch
+import numpy as np
+import pytest
+
+
+@pytest.mark.unit
+def test_with_mocked_juniper_data():
+    """Test spiral problem functionality without JuniperData service."""
+    mock_client = Mock()
+    mock_client.create_dataset.return_value = {"id": "test-123"}
+    mock_client.download_artifact_npz.return_value = {
+        "x": np.random.randn(100, 2).astype(np.float32),
+        "y": np.eye(2)[np.random.randint(0, 2, 100)].astype(np.float32)
+    }
+
+    with patch('spiral_problem.spiral_problem.JuniperDataClient', return_value=mock_client):
+        # Test code here
+        pass
+```
+
+### Marking Spiral Tests
+
+Tests that require the actual JuniperData service should be marked as **integration tests**:
+
+```python
+@pytest.mark.integration
+@pytest.mark.spiral
+def test_spiral_with_real_juniper_data():
+    """Integration test requiring JuniperData service."""
+    from spiral_problem.spiral_problem import SpiralProblem
+
+    sp = SpiralProblem()
+    x, y = sp.generate_spiral_dataset(n_points=100, n_spirals=2)
+    # ... test with real service
+```
+
+This allows you to skip these tests when the service is unavailable:
+
+```bash
+# Run only unit tests (no service required)
+cd src/tests && bash scripts/run_tests.bash -u
+
+# Run integration tests (requires JuniperData service)
+cd src/tests && bash scripts/run_tests.bash -i
 ```
 
 ---

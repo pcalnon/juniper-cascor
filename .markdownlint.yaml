@@ -92,7 +92,7 @@
 # Set custom configuration settings
 config:
   ol-prefix: false  # MD029/ol-prefix: Ordered list item prefix [Expected: 1; Actual: 7; Style: 1/2/3]
-  line-length: 200  # MD013/line-length: Line length [Expected: 80; Actual: 89]
+  line-length: 512  # MD013/line-length: Line length [Expected: 80; Actual: 89]
   code-block-style: consistent  # MD046/code-block-style: Code block style [Expected: fenced; Actual: indented]
   emphasis-style: false  # MD036: Emphasis used instead of a header
 

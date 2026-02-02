@@ -2,7 +2,7 @@
 
 [![CI/CD Pipeline](https://github.com/pcalnon/juniper_cascor/actions/workflows/ci.yml/badge.svg)](https://github.com/pcalnon/juniper_cascor/actions/workflows/ci.yml)
 
-**Version**: 0.5.2 | [Changelog](CHANGELOG.md) | [Full Documentation](docs/DOCUMENTATION_OVERVIEW.md)
+**Version**: 0.6.3 | [Changelog](CHANGELOG.md) | [Full Documentation](docs/DOCUMENTATION_OVERVIEW.md)
 
 Juniper is an AI/ML research platform for investigating dynamic neural network architectures and novel learning paradigms. The project emphasizes ground-up implementations from primary literature, enabling a more transparent exploration of fundamental algorithms.
 

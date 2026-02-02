@@ -83,6 +83,7 @@ class SpiralDataProvider:
         train_ratio: float,
         test_ratio: float,
         seed: Optional[int] = None,
+        algorithm: Optional[str] = None,
     ) -> SpiralDatasetTuple:
         """
         Fetch spiral dataset from JuniperData service.
@@ -96,6 +97,7 @@ class SpiralDataProvider:
             train_ratio: Fraction of data for training set.
             test_ratio: Fraction of data for test set.
             seed: Random seed for reproducibility.
+            algorithm: Generation algorithm - 'modern' (default) or 'legacy_cascor' for backward compatibility.
 
         Returns:
             Tuple containing:
@@ -120,22 +122,26 @@ class SpiralDataProvider:
         }
         if seed is not None:
             params["seed"] = seed
+        if algorithm is not None:
+            params["algorithm"] = algorithm
 
         try:
-            client = self._get_client()
-            logger.debug(f"Creating spiral dataset with params: {params}")
-
-            response = client.create_dataset(generator="spiral", params=params)
-            dataset_id = response["dataset_id"]
-            logger.debug(f"Created dataset with ID: {dataset_id}")
-
-            arrays = client.download_artifact_npz(dataset_id)
-            logger.debug(f"Downloaded artifact with arrays: {list(arrays.keys())}")
-
-            return self._convert_arrays_to_tensors(arrays)
-
+            return self._build_spiral_dataset(params)
         except Exception as e:
             raise SpiralDataProviderError(f"Failed to fetch spiral dataset from JuniperData service: {e}") from e
+
+    def _build_spiral_dataset(self, params):
+        client = self._get_client()
+        logger.debug(f"Creating spiral dataset with params: {params}")
+
+        response = client.create_dataset(generator="spiral", params=params)
+        dataset_id = response["dataset_id"]
+        logger.debug(f"Created dataset with ID: {dataset_id}")
+
+        arrays = client.download_artifact_npz(dataset_id)
+        logger.debug(f"Downloaded artifact with arrays: {list(arrays.keys())}")
+
+        return self._convert_arrays_to_tensors(arrays)
 
     def _convert_arrays_to_tensors(self, arrays: Dict[str, np.ndarray]) -> SpiralDatasetTuple:
         """

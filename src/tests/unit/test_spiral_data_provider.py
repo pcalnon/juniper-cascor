@@ -162,6 +162,41 @@ class TestSpiralDataProviderGetSpiralDataset:
 
             mock_client.download_artifact_npz.assert_called_once_with("specific-dataset-123")
 
+    def test_get_spiral_dataset_passes_algorithm_parameter(self):
+        """get_spiral_dataset should pass algorithm parameter to client."""
+        provider = SpiralDataProvider(juniper_data_url="http://localhost:8100")
+
+        mock_arrays = {
+            "X_train": np.array([[1.0, 2.0]]),
+            "y_train": np.array([[1.0, 0.0]]),
+            "X_test": np.array([[3.0, 4.0]]),
+            "y_test": np.array([[0.0, 1.0]]),
+            "X_full": np.array([[1.0, 2.0], [3.0, 4.0]]),
+            "y_full": np.array([[1.0, 0.0], [0.0, 1.0]]),
+        }
+
+        with patch("spiral_problem.data_provider.JuniperDataClient") as MockClient:
+            mock_client = MagicMock()
+            mock_client.create_dataset.return_value = {"dataset_id": "test-id"}
+            mock_client.download_artifact_npz.return_value = mock_arrays
+            MockClient.return_value = mock_client
+
+            provider.get_spiral_dataset(
+                n_spirals=2,
+                n_points=50,
+                n_rotations=1.0,
+                noise_level=0.05,
+                clockwise=False,
+                train_ratio=0.8,
+                test_ratio=0.1,
+                algorithm="legacy_cascor",
+            )
+
+            mock_client.create_dataset.assert_called_once()
+            call_kwargs = mock_client.create_dataset.call_args[1]
+            params = call_kwargs["params"]
+            assert params["algorithm"] == "legacy_cascor"
+
 
 @pytest.mark.unit
 class TestSpiralDataProviderTensorConversion:

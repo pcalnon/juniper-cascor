@@ -16,7 +16,8 @@
 6. [Serialization Constants](#serialization-constants)
 7. [Problem Constants](#problem-constants)
 8. [Activation Function Constants](#activation-function-constants)
-9. [Overriding Constants](#overriding-constants)
+9. [JuniperData Client Constants](#juniperdata-client-constants)
+10. [Overriding Constants](#overriding-constants)
 
 ---
 
@@ -269,6 +270,8 @@ network.save_to_hdf5(
 | `_DEFAULT_NOISE` | `0.1` | Noise level |
 | `_DEFAULT_SPIRAL_TURNS` | `1.5` | Number of turns |
 
+> **Note**: Some spiral generation constants (e.g., dataset parameters, coordinate ranges) may now be managed by JuniperData. See [JuniperData Client Constants](#juniperdata-client-constants) for remote data service configuration.
+
 ### Random State
 
 | Constant | Default | Description |
@@ -332,6 +335,39 @@ config = CascadeCorrelationConfig(
 # Use by name
 config = CascadeCorrelationConfig(
     activation_function=ACTIVATION_FUNCTIONS['sigmoid']
+)
+```
+
+---
+
+## JuniperData Client Constants
+
+The JuniperData client provides remote data service connectivity for spiral dataset generation and other data operations.
+
+### Connection Defaults
+
+| Constant | Default | Description |
+|----------|---------|-------------|
+| Default base URL | `http://localhost:8100` | JuniperData API endpoint |
+| Default timeout | `30` | Request timeout in seconds |
+
+### Configuring JuniperData URL
+
+Override the default URL via the `JuniperDataClient` constructor:
+
+```python
+from juniper_data_client.juniper_data_client import JuniperDataClient
+
+# Use default localhost endpoint
+client = JuniperDataClient()
+
+# Override with custom URL
+client = JuniperDataClient(base_url="http://production-server:8100")
+
+# Override with custom timeout
+client = JuniperDataClient(
+    base_url="http://production-server:8100",
+    timeout=60
 )
 ```
 

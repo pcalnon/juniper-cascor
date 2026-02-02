@@ -4,7 +4,7 @@
 # Application:   juniper_cascor
 # File Name:     .pre-commit-config.yaml
 # Author:        Paul Calnon
-# Version:       0.4.1
+# Version:       0.4.2
 #
 # Date Created:  2026-01-29
 # Last Modified: 2026-01-31
@@ -112,7 +112,7 @@ repos:
       - id: black
         name: Format with Black
         args:
-          - --line-length=120
+          - --line-length=512
         files: ^src/
 
   # ═══════════════════════════════════════════════════════════════════════════
@@ -125,7 +125,7 @@ repos:
         name: Sort imports with isort
         args:
           - --profile=black
-          - --line-length=120
+          - --line-length=512
         files: ^src/
 
   # ═══════════════════════════════════════════════════════════════════════════
@@ -137,7 +137,7 @@ repos:
       - id: flake8
         name: Lint with Flake8
         args:
-          - --max-line-length=120
+          - --max-line-length=512
           - --extend-ignore=E203,E265,E266,E501,W503,E722,E402,E226,C409,C901,B008,B904,B905,B907,F401
           - --max-complexity=15
           - --select=B,C,E,F,W,T4,B9
@@ -208,7 +208,7 @@ repos:
       - id: markdownlint
         name: Lint Markdown files
         args:
-          - --config=.markdownlint.yaml
+          - --config=./.markdownlint.yaml
           - --fix
         files: \.(md|markdown)$
         exclude: ^(CHANGELOG\.md|notes/|docs/)
@@ -226,12 +226,22 @@ repos:
         files: \.(sh|bash)$
         exclude: (.*-ORIG\.bash$|.*-local\.bash$|no_canopy\.bash$|last_mod_update\.bash$)
 
+  # ═══════════════════════════════════════════════════════════════════════════
+  # YAML Linting - yamllint
+  # ═══════════════════════════════════════════════════════════════════════════
+  - repo: https://github.com/adrienverge/yamllint
+    rev: v1.35.1
+    hooks:
+      - id: yamllint
+        name: Lint YAML files
+        args: [--format, parsable, -d, relaxed]
+        types: [yaml]
+
 # CI configuration (for pre-commit.ci service, if used)
 ci:
   autofix_prs: false
   autoupdate_schedule: monthly
-  skip:
-    - mypy  # Skip mypy in CI (runs separately with full env)
+  # NOTE: mypy runs separately in CI workflow with full environment
 
 # NOTE: MyPy is temporarily disabled until type annotations are fixed
 # To re-enable, remove the 'skip' entry above and set 'pass_filenames: true' below

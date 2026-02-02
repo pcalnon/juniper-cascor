@@ -12,7 +12,8 @@
 2. [Training History Schema](#training-history-schema)
 3. [Configuration Schema](#configuration-schema)
 4. [Data Class Schemas](#data-class-schemas)
-5. [Backward Compatibility](#backward-compatibility)
+5. [JuniperData Artifact Schemas](#juniperdata-artifact-schemas)
+6. [Backward Compatibility](#backward-compatibility)
 
 ---
 
@@ -358,6 +359,40 @@ Result of validation.
 | `value_output` | `float` | Validation output |
 | `value_loss` | `float` | Validation loss |
 | `value_accuracy` | `float` | Validation accuracy |
+
+---
+
+## JuniperData Artifact Schemas
+
+JuniperData provides dataset generation and artifact storage. This section documents the schemas for dataset metadata and NPZ artifacts.
+
+> **Note**: The project uses a clear separation between serialization formats:
+>
+> - **HDF5** (`.h5`): Network snapshots, model weights, and training state
+> - **NPZ** (`.npz`): Dataset artifacts (input features and labels)
+
+### Dataset Metadata Schema
+
+Response from `POST /v1/datasets`:
+
+```python
+{
+    "id": str,              # Unique dataset identifier
+    "generator": str,       # Generator name (e.g., "SpiralGenerator")
+    "params": dict,         # Parameters used for generation
+    "created_at": str,      # ISO timestamp
+    "artifact_path": str,   # Path to stored artifact (if persisted)
+}
+```
+
+### NPZ Artifact Schema
+
+Downloaded via `download_artifact_npz()`:
+
+| Array Name | Type | Shape | Description |
+|------------|------|-------|-------------|
+| `x` | float32 | (n_samples, 2) | Input features (x, y coordinates) |
+| `y` | float32 | (n_samples, n_classes) | One-hot encoded labels |
 
 ---
 

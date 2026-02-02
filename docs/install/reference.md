@@ -265,6 +265,55 @@ echo "Project: ${JUNIPER_PROJECT_NAME}"
 echo "Data directory: ${ROOT_PROJECT_DIR}/${DATA_DIR_NAME}"
 ```
 
+## JuniperData Configuration
+
+JuniperData is the dataset management service that provides training data to Juniper Cascor.
+
+### JuniperDataClient Configuration
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `base_url` | `http://localhost:8100` | JuniperData API base URL |
+| `timeout` | `30` | Request timeout in seconds |
+
+### API Endpoints
+
+The JuniperDataClient uses the following API endpoints:
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/v1/datasets` | GET | List available datasets |
+| `/v1/datasets/{id}/artifact` | GET | Download dataset artifact |
+
+### Configuration Examples
+
+**Default Configuration:**
+
+```python
+from juniper_data_client import JuniperDataClient
+
+# Uses default base_url (http://localhost:8100) and timeout (30s)
+client = JuniperDataClient()
+```
+
+**Custom Configuration:**
+
+```python
+from juniper_data_client import JuniperDataClient
+
+# Custom base URL and timeout
+client = JuniperDataClient(
+    base_url="http://juniper-data.example.com:8100",
+    timeout=60
+)
+```
+
+### Notes
+
+- The JuniperData URL is configured via the `JuniperDataClient` constructor
+- Default timeout is 30 seconds for all API requests
+- No environment variable override is currently available; configuration is done programmatically
+
 ## Directory Conventions
 
 ### Project Directory Structure
@@ -483,3 +532,4 @@ export CASCOR_LOG_LEVEL=WARNING
 | Snapshots | `./snapshots/` |
 | Profiles | `./profiles/` |
 | Coverage HTML | `./src/tests/reports/htmlcov/` |
+| JuniperData API | `http://localhost:8100` |

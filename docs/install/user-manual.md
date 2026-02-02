@@ -12,10 +12,12 @@
 2. [Basic Workflow](#basic-workflow)
 3. [Configuration Options](#configuration-options)
 4. [Working with Data](#working-with-data)
+   - [Using JuniperDataClient](#using-juniperdataclient)
 5. [Saving and Loading Networks](#saving-and-loading-networks)
 6. [Visualization](#visualization)
 7. [Deterministic Training](#deterministic-training)
 8. [Example Workflows](#example-workflows)
+9. [Troubleshooting](#troubleshooting)
 
 ---
 
@@ -316,6 +318,43 @@ x_test = torch.tensor(X_test, dtype=torch.float32)
 num_classes = len(set(y))
 y_train = F.one_hot(torch.tensor(y_train), num_classes=num_classes).float()
 y_test = F.one_hot(torch.tensor(y_test), num_classes=num_classes).float()
+```
+
+### Using JuniperDataClient
+
+The JuniperData service provides centralized dataset generation for the Juniper ecosystem. When using features like SpiralProblem, the JuniperData service must be running.
+
+#### Starting the JuniperData Service
+
+Ensure the JuniperData service is running before generating datasets:
+
+```bash
+# Start the JuniperData service (from the JuniperData project directory)
+python -m juniper_data.main  # Runs on http://localhost:8100 by default
+```
+
+#### Using JuniperDataClient Directly
+
+You can use the JuniperDataClient to generate and download datasets programmatically:
+
+```python
+from juniper_data_client.client import JuniperDataClient
+
+client = JuniperDataClient(base_url="http://localhost:8100")
+metadata = client.create_dataset(
+    generator="SpiralGenerator",
+    params={"n_points": 100, "n_spirals": 2, "noise": 0.1}
+)
+data = client.download_artifact_npz(metadata["id"])
+```
+
+The returned `data` dictionary contains NumPy arrays that can be converted to PyTorch tensors:
+
+```python
+import torch
+
+x_train = torch.tensor(data["x"], dtype=torch.float32)
+y_train = torch.tensor(data["y"], dtype=torch.float32)
 ```
 
 ---
@@ -773,10 +812,13 @@ print(f"Hidden units: {best['hidden_units']}")
 
 Use the built-in SpiralProblem class for the classic benchmark:
 
+> **⚠️ JuniperData Service Required**: The SpiralProblem class now uses the JuniperData service for dataset generation. Ensure the JuniperData service is running on `http://localhost:8100` before using SpiralProblem. See [Using JuniperDataClient](#using-juniperdataclient) for details.
+
 ```python
 from spiral_problem.spiral_problem import SpiralProblem
 
 # Create and evaluate spiral problem
+# Note: Requires JuniperData service running at http://localhost:8100
 sp = SpiralProblem(
     _SpiralProblem__n_points=100,
     _SpiralProblem__n_spirals=2,
@@ -818,6 +860,24 @@ If results differ between runs with same seed:
 - Ensure `random_seed` is set in configuration
 - Check that CUDA determinism is enabled (for GPU)
 - Verify same training data is used
+
+### JuniperData connection errors
+
+If you see `ConnectionError: Failed to connect to JuniperData service` or similar:
+
+- Verify the JuniperData service is running: `curl http://localhost:8100/health`
+- Check the service is running on the expected port (default: 8100)
+- If using a custom URL, ensure `base_url` is correct in your JuniperDataClient
+- Check firewall settings if running the service on a different host
+- Review JuniperData service logs for startup errors
+
+```bash
+# Test connectivity
+curl -X GET http://localhost:8100/health
+
+# If service is not running, start it
+cd /path/to/juniper_data && python -m juniper_data.main
+```
 
 ---
 

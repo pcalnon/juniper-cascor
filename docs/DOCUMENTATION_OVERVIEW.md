@@ -2,8 +2,8 @@
 
 ## Complete Navigation Guide to Juniper Cascor Documentation
 
-**Version:** 0.4.1  
-**Last Updated:** January 29, 2026  
+**Version:** 0.6.3  
+**Last Updated:** February 1, 2026  
 **Project:** Juniper Cascor - Cascade Correlation Neural Network Implementation
 
 ---
@@ -52,6 +52,8 @@
 | **Understand modules** | [manual.md](source/manual.md) | docs/source/ |
 | **See version history** | [CHANGELOG.md](../CHANGELOG.md) | Root |
 | **Contribute code** | [AGENTS.md](../AGENTS.md) | Root |
+| **Generate spiral datasets** | JuniperData service | External |
+| **Configure JuniperData URL** | [reference.md](install/reference.md) | docs/install/ |
 
 ---
 
@@ -86,7 +88,7 @@
 
 - Prerequisites checklist (Python, Conda)
 - Step-by-step installation
-- Running the spiral problem evaluation
+- Running the spiral problem evaluation (requires JuniperData service)
 - Running tests
 - Next steps and links
 
@@ -214,6 +216,7 @@ juniper_cascor/
 │   ├── cascade_correlation/       ← Core network implementation
 │   ├── candidate_unit/            ← Candidate unit for growth
 │   ├── spiral_problem/            ← Two-spiral benchmark
+│   ├── juniper_data_client/       ← JuniperData service client
 │   ├── cascor_constants/          ← Project constants
 │   ├── log_config/                ← Logging infrastructure
 │   ├── profiling/                 ← Profiling tools
@@ -226,6 +229,23 @@ juniper_cascor/
 │   └── profile_training.bash
 └── try                            ← Application launcher
 ```
+
+**Note:** JuniperData is an external dependency providing dataset generation services.
+
+---
+
+## External Services
+
+### JuniperData
+
+**Type:** External sub-project dependency  
+**Purpose:** Dataset generation service for spiral problem evaluation  
+**Default URL:** `http://localhost:8100`  
+**Required For:** Spiral problem evaluation, dataset generation
+
+The JuniperData service must be running before executing spiral problem evaluations. See the [JuniperData project](https://github.com/pcalnon/juniper_data) for installation and setup instructions.
+
+**Configuration:** Set the JuniperData URL via environment variable or configuration. See [install/reference.md](install/reference.md) for details.
 
 ---
 

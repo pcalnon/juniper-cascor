@@ -7,6 +7,7 @@ Get Juniper Cascor running in minutes.
 - **Python**: 3.11 or higher (CI uses 3.14)
 - **Conda**: Anaconda or Miniconda installed
 - **Git**: For cloning the repository
+- **JuniperData**: Service must be running for spiral problem evaluation
 
 ## Installation
 
@@ -29,6 +30,20 @@ This installs all dependencies including PyTorch, NumPy, pytest, and other requi
 
 ```bash
 conda activate juniper_cascor
+```
+
+### 4. Start JuniperData Service
+
+```bash
+# Start JuniperData service (required for spiral datasets)
+cd ../JuniperData/juniper_data
+uvicorn juniper_data.api.main:app --port 8100 &
+```
+
+Verify JuniperData is running:
+
+```bash
+curl http://localhost:8100/health
 ```
 
 ## Running the Application
@@ -70,6 +85,10 @@ cd src/tests && bash scripts/run_tests.bash -v -c
 ```
 
 Coverage reports are generated at `src/tests/reports/htmlcov/index.html`.
+
+## Troubleshooting
+
+If you see connection errors, ensure JuniperData is running on port 8100.
 
 ## Next Steps
 

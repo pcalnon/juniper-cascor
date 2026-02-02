@@ -27,6 +27,12 @@ This guide covers setting up the development environment for the Juniper Cascor 
 | GPU | Not required | NVIDIA GPU with CUDA 12.x for acceleration |
 | Storage | 500 MB | 2+ GB with conda environment |
 
+### External Services
+
+| Service | Purpose | Required |
+|---------|---------|----------|
+| JuniperData Service | Dataset generation API | Optional (for dynamic dataset generation) |
+
 ---
 
 ## Conda Environment Setup (Recommended)
@@ -134,6 +140,51 @@ pip install columnar
 | `pytest` | Test framework | 9.0+ |
 | `pytest-cov` | Coverage reporting | Latest |
 | `psutil` | Process/system utilities | Latest |
+| `requests` | HTTP client (for JuniperData client) | Latest |
+
+---
+
+## JuniperData Service Setup
+
+JuniperData is a companion dataset generation service that provides dynamic dataset generation via a REST API. It enables programmatic creation of spiral datasets and other problem types without hardcoding data in the main application.
+
+### Installing JuniperData
+
+```bash
+# Navigate to the JuniperData project (sibling directory)
+cd ../JuniperData/juniper_data
+
+# Install with API dependencies
+pip install -e ".[api]"
+```
+
+### Running the Service
+
+```bash
+# Start the JuniperData API server
+uvicorn juniper_data.api.main:app --port 8100
+
+# Or with auto-reload for development
+uvicorn juniper_data.api.main:app --port 8100 --reload
+```
+
+### Default Configuration
+
+| Setting | Value |
+|---------|-------|
+| Default URL | http://localhost:8100 |
+| API Docs | http://localhost:8100/docs |
+| Health Check | http://localhost:8100/health |
+
+### Verifying JuniperData Connection
+
+```bash
+# Check if service is running
+curl http://localhost:8100/health
+
+# Or via Python
+python -c "import requests; print(requests.get('http://localhost:8100/health').json())"
+```
 
 ---
 
@@ -242,6 +293,8 @@ trunk check --fix
 | `BrokenPipeError` in multiprocessing | macOS fork safety | Set `export OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES` |
 | `pytest: command not found` | pytest not in PATH | `pip install pytest` or activate venv |
 | `_pickle.PicklingError` with logger | Logger in pickled object | Already handled in codebase; check custom classes |
+| `ConnectionError` to JuniperData | JuniperData service not running | Start service: `uvicorn juniper_data.api.main:app --port 8100` |
+| `requests.exceptions.ConnectionError` | JuniperData unreachable | Verify service is running at http://localhost:8100/health |
 
 ### PyTorch Installation Issues
 

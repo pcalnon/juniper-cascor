@@ -5,6 +5,87 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.3] - 2026-02-01
+
+**Summary**: Documentation updated to reflect JuniperData refactor. Spiral data generation now uses external JuniperData service via REST API.
+
+### Documentation: [0.6.3]
+
+- **JuniperData Integration Documentation**
+  - Updated `docs/index.md`: Added `juniper_data_client/` to Key Modules, added External Dependencies section
+  - Updated `docs/DOCUMENTATION_OVERVIEW.md`: Added External Services section, updated project structure
+  - Updated `docs/api/api-reference.md`: Added JuniperDataClient API documentation
+  - Updated `docs/api/api-schemas.md`: Added JuniperData artifact schemas (NPZ format)
+  - Updated `docs/install/quick-start.md`: Added JuniperData prerequisite and startup instructions
+  - Updated `docs/install/environment-setup.md`: Added JuniperData Service Setup section
+  - Updated `docs/install/user-manual.md`: Added JuniperDataClient usage examples
+  - Updated `docs/install/reference.md`: Added JuniperData Configuration section
+  - Updated `docs/source/manual.md`: Added juniper_data_client module, updated diagrams
+  - Updated `docs/source/reference.md`: Added Service Integration Conventions section
+  - Updated `docs/overview/constants-guide.md`: Added JuniperData Client Constants
+  - Updated `docs/testing/manual.md`: Added Testing with JuniperData section
+
+### Technical Notes: [0.6.3]
+
+- **SemVer impact**: PATCH – Documentation only; no API or code changes
+- **Architecture change**: Spiral data generation now provided by external JuniperData service
+- **New module**: `juniper_data_client/` for REST API integration
+
+---
+
+## [0.6.2] - 2026-02-01
+
+**Summary**: CI/CD parity achieved across JuniperCascor, JuniperData, and JuniperCanopy with standardized settings.
+
+### Changed: [0.6.2]
+
+- **CI/CD Configuration Parity**
+  - `.pre-commit-config.yaml` (v0.4.2)
+    - Line length: 512 for black, isort, flake8
+    - Added yamllint hook (v1.35.1, relaxed config)
+    - Enabled mypy in CI (removed from skip list)
+  - `.github/workflows/ci.yml` (v0.4.1)
+    - Coverage threshold: 80% (up from 50%)
+    - Added build job with package verification
+    - Standardized artifact paths: reports/junit/, reports/htmlcov/, reports/coverage.xml
+  - `pyproject.toml` (v0.3.17)
+    - Line length: 512 for black/isort
+    - Coverage fail_under: 80%
+
+### Technical Notes: [0.6.2]
+
+- **SemVer impact**: PATCH – Configuration changes only; no API changes
+- **CI Parity**: All 3 Juniper applications now use identical CI/CD settings
+
+---
+
+## [0.6.1] - 2026-01-31
+
+**Summary**: Added algorithm parameter support for backward compatibility with legacy Cascor spiral generation. End-to-end validation completed with JuniperData service.
+
+### Added: [0.6.1]
+
+- **Algorithm Parameter** (`src/spiral_problem/data_provider.py`)
+  - Added `algorithm` parameter to `get_spiral_dataset()` method
+  - Supports `"modern"` (default) or `"legacy_cascor"` for backward compatibility
+  - Parameter passed through to JuniperData API when specified
+
+- **Unit Tests** (1 new test)
+  - `test_get_spiral_dataset_passes_algorithm_parameter` - Verifies algorithm parameter is correctly passed to JuniperDataClient
+
+### Validated: [0.6.1]
+
+- End-to-end integration tested with live JuniperData service on port 8100
+- Both modern and legacy_cascor algorithms validated
+
+### Technical Notes: [0.6.1]
+
+- **SemVer impact**: PATCH – Backward-compatible feature addition
+- **Test Count**: 39 JuniperData-related tests (all passing)
+- **Phase Status**: End-to-end validation complete
+
+---
+
 ## [0.6.0] - 2026-01-30
 
 **Summary**: Completed Phase 3 of JuniperData integration. Added JuniperDataClient and SpiralDataProvider for fetching spiral datasets from JuniperData REST API. Feature flag JUNIPER_DATA_URL enables JuniperData mode.

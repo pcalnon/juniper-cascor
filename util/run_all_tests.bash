@@ -67,7 +67,7 @@ if [[ "${COVERAGE_REPORT}" == "${FALSE}" ]]; then
 ${ACTIVATE_CONDA} ${CONDA_ENV_NAME} && \
 CASCOR_LOG_LEVEL=${CASCOR_LOG_LEVEL} \
 timeout=${TESTING_TIMEOUT} \
-python -m pytest -v ./src/tests \
+python -m pytest -vv ./src/tests \
 --slow \
 --integration \
 --junit-xml=src/tests/reports/junit/results.xml \
@@ -95,7 +95,7 @@ JUNIPER_FAST_SLOW=${JUNIPER_FAST_SLOW} && \
 CASCOR_BACKEND_AVAILABLE=${CASCOR_BACKEND_AVAILABLE} && \
 RUN_SERVER_TESTS=${RUN_SERVER_TESTS} && \
 ENABLE_DISPLAY_TESTS=${ENABLE_DISPLAY_TESTS} && \
-python -m pytest -v ./src/tests \
+python -m pytest -vv ./src/tests \
 --timeout=${TESTING_TIMEOUT} \
 --slow \
 --fast-slow \

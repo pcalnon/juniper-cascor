@@ -105,8 +105,9 @@ spiral_problem/
 
 | Component | Description |
 |-----------|-------------|
-| `SpiralProblem` | Problem generator and evaluator |
-| `SpiralDataGenerator` | Data generation utilities |
+| `SpiralProblem` | Problem evaluator (uses JuniperDataClient for data) |
+
+**Note**: Data generation has been moved to the JuniperData service. `SpiralProblem` now uses `JuniperDataClient` to fetch datasets from the external service rather than generating data locally.
 
 **Usage Pattern**:
 
@@ -120,6 +121,28 @@ results = sp.evaluate(
     plot=True        # Enable visualization
 )
 ```
+
+### juniper_data_client/
+
+**Location**: `src/juniper_data_client/`  
+**Purpose**: REST API client for JuniperData service
+
+```
+juniper_data_client/
+├── __init__.py
+└── client.py   # JuniperDataClient class
+```
+
+**Key Components**:
+
+| Component | Description |
+|-----------|-------------|
+| `JuniperDataClient` | HTTP client for JuniperData API |
+
+**API Methods**:
+
+- `create_dataset()` - Request dataset generation
+- `download_artifact_npz()` - Download generated dataset as NPZ
 
 ### snapshots/
 
@@ -296,6 +319,13 @@ utils/
 ### Module Interaction Diagram
 
 ```
+                        ┌─────────────────────────────────────┐
+                        │         JuniperData Service         │
+                        │        (External REST API)          │
+                        └─────────────────────────────────────┘
+                                          ▲
+                                          │ HTTP
+                                          │
 ┌─────────────────────────────────────────────────────────────────┐
 │                           main.py                                │
 │                    (Entry point, CLI args)                       │
@@ -305,6 +335,10 @@ utils/
 ┌─────────────────────────────────────────────────────────────────┐
 │                      spiral_problem/                             │
 │              (Problem definition & evaluation)                   │
+│  ┌──────────────────────────────────────────────────────────┐  │
+│  │            juniper_data_client/                           │  │
+│  │         (JuniperDataClient - API client)                  │  │
+│  └──────────────────────────────────────────────────────────┘  │
 └─────────────────────────────────────────────────────────────────┘
                                 │
                                 ▼
@@ -333,6 +367,19 @@ utils/
 ### Data Flow During Training
 
 ```
+┌─────────────────────────────────────┐
+│     JuniperData Service             │
+│   (External dataset generation)     │
+└─────────────────────────────────────┘
+       │
+       │ HTTP (create_dataset, download_artifact_npz)
+       ▼
+┌─────────────────────────────────────┐
+│     JuniperDataClient               │
+│   (REST API client)                 │
+└─────────────────────────────────────┘
+       │
+       ▼
 Input Data (x, y)
        │
        ▼

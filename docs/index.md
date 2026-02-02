@@ -1,6 +1,6 @@
 # Juniper Cascor Documentation
 
-**Version**: 0.5.2 | [Changelog](../CHANGELOG.md) | [Full Documentation Overview](DOCUMENTATION_OVERVIEW.md)
+**Version**: 0.6.3 | [Changelog](../CHANGELOG.md) | [Full Documentation Overview](DOCUMENTATION_OVERVIEW.md)
 
 Juniper Cascor is an AI/ML research platform implementing the **Cascade Correlation Neural Network** algorithm from foundational research (Fahlman & Lebiere, 1990). The project emphasizes ground-up implementations from primary literature, enabling transparent exploration of constructive learning algorithms.
 
@@ -77,7 +77,8 @@ This documentation serves two audiences:
 |--------|---------|
 | `cascade_correlation/` | Core neural network implementation |
 | `candidate_unit/` | Candidate unit for network growth |
-| `spiral_problem/` | Two-spiral classification benchmark |
+| `spiral_problem/` | Two-spiral benchmark (requires JuniperData service) |
+| `juniper_data_client/` | REST API client for JuniperData service |
 | `cascor_constants/` | Project-wide constants |
 | `log_config/` | Logging configuration and custom logger |
 | `profiling/` | Performance profiling infrastructure |
@@ -87,11 +88,21 @@ This documentation serves two audiences:
 
 ---
 
+## External Dependencies
+
+The **JuniperData** service is required for spiral dataset generation. The spiral problem module connects to this REST API service to fetch training and test datasets.
+
+- **Default URL**: `http://localhost:8100`
+- **Project**: [JuniperData](https://github.com/pcalnon/juniper_data)
+
+---
+
 ## Quick Links
 
 - **Run the application**: `cd src && python main.py`
 - **Run tests**: `cd src/tests && bash scripts/run_tests.bash`
 - **View coverage**: `open src/tests/reports/htmlcov/index.html`
+- **Start JuniperData service for spiral datasets**: See [JuniperData](https://github.com/pcalnon/juniper_data)
 
 ---
 

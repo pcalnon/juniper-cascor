@@ -4,7 +4,7 @@
 # Application:   juniper_cascor
 # File Name:     pyproject.toml
 # Author:        Paul Calnon
-# Version:       0.3.16
+# Version:       0.3.17
 #
 # Date Created:  2026-01-24
 # Last Modified: 2026-01-24
@@ -27,17 +27,23 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "juniper-cascor"
-version = "0.3.16"
+version = "0.3.17"
 description = "Cascade Correlation Neural Network implementation for the Juniper project"
 readme = "README.md"
 license = { text = "MIT" }
 authors = [{ name = "Paul Calnon" }]
 requires-python = ">=3.11"
 
+dependencies = [
+    "numpy>=1.24.0",
+    "pydantic>=2.0.0",
+]
+
 [tool.black]
-line-length = 120
+line-length = 512
 # target-version = ["py311", "py312", "py313", "py314"]
 target-version = ["py311", "py312", "py313"]
+
 include = '\.pyi?$'
 extend-exclude = '''
 /(
@@ -55,7 +61,7 @@ extend-exclude = '''
 #
 [tool.isort]
 profile = "black"
-line_length = 120
+line_length = 512
 skip = [".git", "__pycache__", ".pytest_cache", ".trunk", "data", "logs", "reports", "htmlcov"]
 skip_glob = ["*/data/*", "*/logs/*", "*/reports/*"]
 known_first_party = ["cascade_correlation", "candidate_unit", "spiral_problem", "snapshots", "log_config", "constants", "utils"]
@@ -106,6 +112,7 @@ omit = [
 branch = true
 
 [tool.coverage.report]
+fail_under = 80
 exclude_lines = [
     "pragma: no cover",
     "def __repr__",

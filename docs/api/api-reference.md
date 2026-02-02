@@ -12,12 +12,13 @@
 2. [CascadeCorrelationConfig](#cascadecorrelationconfig)
 3. [CandidateUnit](#candidateunit)
 4. [SpiralProblem](#spiralproblem)
-5. [Serialization API](#serialization-api)
-6. [Profiling API](#profiling-api)
-7. [Logger API](#logger-api)
-8. [Utility Functions](#utility-functions)
-9. [Data Classes](#data-classes)
-10. [Exceptions](#exceptions)
+5. [JuniperDataClient](#juniperdataclient)
+6. [Serialization API](#serialization-api)
+7. [Profiling API](#profiling-api)
+8. [Logger API](#logger-api)
+9. [Utility Functions](#utility-functions)
+10. [Data Classes](#data-classes)
+11. [Exceptions](#exceptions)
 
 ---
 
@@ -29,6 +30,7 @@
 | `CascadeCorrelationConfig` | **Stable** | Configuration interface |
 | `CandidateUnit` | Semi-stable | Internal, but documented |
 | `SpiralProblem` | **Stable** | Example problem interface |
+| `JuniperDataClient` | Semi-stable | REST client for JuniperData service |
 | Serialization API | **Stable** | HDF5 save/load |
 | Profiling API | Experimental | New in 0.3.20 |
 | Logger API | Semi-stable | Subject to enhancement |
@@ -426,6 +428,8 @@ Train with detailed result information.
 
 Classic two-spiral classification problem for testing.
 
+> **Note**: Dataset generation now uses the JuniperData service via `JuniperDataClient`. See [JuniperDataClient](#juniperdataclient) for details.
+
 ### Constructor
 
 ```python
@@ -479,6 +483,100 @@ def generate_spiral_dataset(
 Generate spiral classification data.
 
 **Returns**: Tuple of (x, y) tensors
+
+---
+
+## JuniperDataClient
+
+**Location**: `src/juniper_data_client/client.py`  
+**Stability**: Semi-stable
+
+REST API client for the JuniperData service, used for dataset generation and retrieval.
+
+### Constructor
+
+```python
+JuniperDataClient(
+    base_url: str = "http://localhost:8100",
+    timeout: int = 30
+)
+```
+
+**Parameters**:
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `base_url` | `str` | `"http://localhost:8100"` | Base URL for JuniperData service |
+| `timeout` | `int` | `30` | Request timeout in seconds |
+
+### Methods
+
+#### create_dataset
+
+```python
+def create_dataset(
+    self,
+    generator: str,
+    params: dict,
+    persist: bool = True
+) -> dict
+```
+
+Create a new dataset using the specified generator.
+
+**Parameters**:
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `generator` | `str` | - | Generator type (e.g., `"spiral"`, `"xor"`) |
+| `params` | `dict` | - | Generator-specific parameters |
+| `persist` | `bool` | `True` | Whether to persist the dataset on the server |
+
+**Returns**: Dictionary with dataset metadata including `dataset_id`
+
+#### download_artifact_npz
+
+```python
+def download_artifact_npz(
+    self,
+    dataset_id: str
+) -> Dict[str, np.ndarray]
+```
+
+Download dataset artifact as NumPy arrays.
+
+**Parameters**:
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `dataset_id` | `str` | ID of the dataset to download |
+
+**Returns**: Dictionary of NumPy arrays (typically `{"x": ..., "y": ...}`)
+
+### Example Usage
+
+```python
+from juniper_data_client.client import JuniperDataClient
+import numpy as np
+
+# Create client
+client = JuniperDataClient(base_url="http://localhost:8100")
+
+# Create a spiral dataset
+result = client.create_dataset(
+    generator="spiral",
+    params={"n_points": 100, "n_spirals": 2, "noise": 0.1},
+    persist=True
+)
+dataset_id = result["dataset_id"]
+
+# Download the dataset as NumPy arrays
+data = client.download_artifact_npz(dataset_id)
+x_train = data["x"]
+y_train = data["y"]
+
+print(f"Dataset shape: x={x_train.shape}, y={y_train.shape}")
+```
 
 ---
 
