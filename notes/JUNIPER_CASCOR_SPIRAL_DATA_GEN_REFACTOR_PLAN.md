@@ -1786,6 +1786,59 @@ params = SpiralParams(
 )
 ```
 
+## 15. CI/CD Parity Status
+
+### CI/CD Configuration Parity (2026-02-01)
+
+A comprehensive CI/CD parity review and update was completed across JuniperCascor, JuniperData, and JuniperCanopy.
+
+#### Standardized Settings
+
+| Setting             | Value                                                  | Applied To                          |
+| ------------------- | ------------------------------------------------------ | ----------------------------------- |
+| Line Length         | 512                                                    | All 3 apps (black, isort, flake8)   |
+| Coverage Fail-Under | 80%                                                    | All 3 apps (pyproject.toml, ci.yml) |
+| Coverage Target     | 90%                                                    | All 3 apps                          |
+| Build Stage         | ✅ Added                                               | All 3 apps (PR CI)                  |
+| Artifact Paths      | reports/junit/, reports/htmlcov/, reports/coverage.xml | All 3 apps                          |
+| yamllint            | ✅ Added                                               | All 3 apps (pre-commit)             |
+| mypy                | ✅ Enabled                                             | All 3 apps (pre-commit + CI)        |
+| Flake8              | Single hook                                            | All 3 apps                          |
+| Python Matrix       | 3.11, 3.12, 3.13, 3.14                                 | All 3 apps                          |
+| Security Scans      | Gitleaks, Bandit SARIF, pip-audit                      | All 3 apps                          |
+
+#### Files Updated
+
+| Application   | File                       | Version |
+| ------------- | -------------------------- | ------- |
+| JuniperCascor | `.pre-commit-config.yaml`  | 0.4.2   |
+| JuniperCascor | `.github/workflows/ci.yml` | 0.4.1   |
+| JuniperCascor | `pyproject.toml`           | 0.3.17  |
+| JuniperData   | `.pre-commit-config.yaml`  | 0.1.1   |
+| JuniperData   | `.github/workflows/ci.yml` | 0.1.1   |
+| JuniperData   | `pyproject.toml`           | 0.1.1   |
+| JuniperCanopy | `.pre-commit-config.yaml`  | 1.2.0   |
+| JuniperCanopy | `.github/workflows/ci.yml` | 0.12.0  |
+| JuniperCanopy | `pyproject.toml`           | 0.2.3   |
+
+#### CI Pipeline Structure (All 3 Apps)
+
+```bash
+pre-commit (Matrix: 3.11-3.14)
+    ↓
+unit-tests (Matrix: 3.11-3.14, coverage ≥ 80%)
+    ↓
+├── build (PR builds)
+├── integration-tests (PR/main/develop)
+└── security (Gitleaks + Bandit + pip-audit)
+    ↓
+required-checks (Quality Gate)
+    ↓
+notify (Build Summary)
+```
+
+---
+
 **Conclusion**: Both modern (simplified) and legacy (Cascor-compatible) generation are now available. Legacy mode provides statistical parity for backward compatibility; modern mode is recommended for new work.
 
 ### Remaining Work Items
@@ -1840,58 +1893,5 @@ params = SpiralParams(
 | 1.5.0   | 2026-01-31 | Juniper Dev Team | Legacy parity mode implementation               |
 | 1.6.0   | 2026-01-31 | Juniper Dev Team | E2E validation complete, algorithm param added  |
 | 1.7.0   | 2026-02-01 | Juniper Dev Team | CI/CD parity achieved across all 3 applications |
-
----
-
-## 15. CI/CD Parity Status
-
-### CI/CD Configuration Parity (2026-02-01)
-
-A comprehensive CI/CD parity review and update was completed across JuniperCascor, JuniperData, and JuniperCanopy.
-
-#### Standardized Settings
-
-| Setting             | Value                                                  | Applied To                          |
-| ------------------- | ------------------------------------------------------ | ----------------------------------- |
-| Line Length         | 512                                                    | All 3 apps (black, isort, flake8)   |
-| Coverage Fail-Under | 80%                                                    | All 3 apps (pyproject.toml, ci.yml) |
-| Coverage Target     | 90%                                                    | All 3 apps                          |
-| Build Stage         | ✅ Added                                               | All 3 apps (PR CI)                  |
-| Artifact Paths      | reports/junit/, reports/htmlcov/, reports/coverage.xml | All 3 apps                          |
-| yamllint            | ✅ Added                                               | All 3 apps (pre-commit)             |
-| mypy                | ✅ Enabled                                             | All 3 apps (pre-commit + CI)        |
-| Flake8              | Single hook                                            | All 3 apps                          |
-| Python Matrix       | 3.11, 3.12, 3.13, 3.14                                 | All 3 apps                          |
-| Security Scans      | Gitleaks, Bandit SARIF, pip-audit                      | All 3 apps                          |
-
-#### Files Updated
-
-| Application   | File                       | Version |
-| ------------- | -------------------------- | ------- |
-| JuniperCascor | `.pre-commit-config.yaml`  | 0.4.2   |
-| JuniperCascor | `.github/workflows/ci.yml` | 0.4.1   |
-| JuniperCascor | `pyproject.toml`           | 0.3.17  |
-| JuniperData   | `.pre-commit-config.yaml`  | 0.1.1   |
-| JuniperData   | `.github/workflows/ci.yml` | 0.1.1   |
-| JuniperData   | `pyproject.toml`           | 0.1.1   |
-| JuniperCanopy | `.pre-commit-config.yaml`  | 1.2.0   |
-| JuniperCanopy | `.github/workflows/ci.yml` | 0.12.0  |
-| JuniperCanopy | `pyproject.toml`           | 0.2.3   |
-
-#### CI Pipeline Structure (All 3 Apps)
-
-```bash
-pre-commit (Matrix: 3.11-3.14)
-    ↓
-unit-tests (Matrix: 3.11-3.14, coverage ≥ 80%)
-    ↓
-├── build (PR builds)
-├── integration-tests (PR/main/develop)
-└── security (Gitleaks + Bandit + pip-audit)
-    ↓
-required-checks (Quality Gate)
-    ↓
-notify (Build Summary)
-```
 
 ---
