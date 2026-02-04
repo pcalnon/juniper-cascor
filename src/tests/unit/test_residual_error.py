@@ -39,19 +39,19 @@ class TestResidualErrorBasics:
         x = torch.randn(10, simple_network.input_size)
         y_true = torch.randn(10, simple_network.output_size)
 
-        # Mock perfect prediction by setting network output to match targets
-        with torch.no_grad():
-            # Adjust weights to produce y_true as output
-            # For simplicity, we'll just test with y_pred = y_true directly
-            pass
-
-        # Calculate residual using perfect predictions
+        # Test that residual is zero when prediction equals target (HIGH-010 fix)
         y_pred = y_true.clone()  # Perfect prediction
-        residual_expected = y_true - y_pred
+        residual = y_true - y_pred
 
-        # The residual should be zero
-        assert_approximately_equal(residual_expected, torch.zeros_like(y_true), atol=1e-10)
-        print(f"Perfect prediction residual: {residual_expected}, x={len(x)}, y={y_true.sum(dim=0)}")
+        # Verify the residual calculation is correct
+        assert residual.shape == y_true.shape, "Residual shape should match target shape"
+        assert_approximately_equal(residual, torch.zeros_like(y_true), atol=1e-10)
+
+        # Also test that network's forward pass produces a valid tensor
+        with torch.no_grad():
+            network_output = simple_network.forward(x)
+        assert network_output.shape == y_true.shape, "Network output shape should match target shape"
+        assert_tensor_finite(network_output)
 
     @pytest.mark.unit
     def test_residual_error_computation(self, simple_network, simple_2d_data):
@@ -294,7 +294,12 @@ class TestResidualErrorWithHiddenUnits:
         x, y = simple_2d_data
 
         # Add a hidden unit
-        hidden_unit = {"weights": torch.randn(simple_network.input_size, requires_grad=True) * 0.1, "bias": torch.randn(1, requires_grad=True) * 0.1, "activation_fn": torch.tanh, "correlation": 0.5}
+        hidden_unit = {
+            "weights": torch.randn(simple_network.input_size, requires_grad=True) * 0.1,
+            "bias": torch.randn(1, requires_grad=True) * 0.1,
+            "activation_fn": torch.tanh,
+            "correlation": 0.5,
+        }
         simple_network.hidden_units = [hidden_unit]
 
         # Update output weights

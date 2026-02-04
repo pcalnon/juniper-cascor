@@ -2751,7 +2751,7 @@ class CascadeCorrelationNetwork:
 
         # validate_training_results = ValidateTrainingResults()
         # 'early_stop', 'patience_counter', 'best_value_loss', 'value_output', 'value_loss', and 'value_accuracy'
-        validate_training_results = None
+        validate_training_results: Optional[ValidateTrainingResults] = None
         for epoch in range(max_epochs):
 
             # Calculate residual error
@@ -2812,7 +2812,7 @@ class CascadeCorrelationNetwork:
 
             # Validation of training results
             try:
-                validate_training_results: ValidateTrainingResults = self.validate_training(validate_training_inputs)
+                validate_training_results = self.validate_training(validate_training_inputs)
                 self.logger.debug(f"CascadeCorrelationNetwork: grow_network: Validation Results: {validate_training_results}")
             except Exception as e:
                 self.logger.error(f"CascadeCorrelationNetwork: grow_network: Caught Exception while validating training at epoch {epoch + 1}/{max_epochs}:\nException:\n{e}")
@@ -3108,7 +3108,6 @@ class CascadeCorrelationNetwork:
             # Save the snapshot
             if self._save_to_hdf5(
                 snapshot_path,
-                objectify=objectify,
                 create_backup=False,
             ):
                 self.logger.info(f"CascadeCorrelationNetwork: create_snapshot: Created snapshot at {snapshot_path}")
@@ -3959,7 +3958,7 @@ class CascadeCorrelationNetwork:
 
     #################################################################################################################################################################################################
     # Define private method to generate a new uuid for the CascadeCorrelationNetwork class
-    def _generate_uuid(self) -> None:
+    def _generate_uuid(self) -> str:
         """
         Description:
             This method is used to generate a new UUID for the CascadeCorrelationNetwork class.

@@ -55,8 +55,8 @@ class TestSpiralProblemBasic:
 
         # Verify accuracy is valid and at least random
         assert 0.0 <= final_accuracy <= 1.0  # trunk-ignore(bandit/B101)
-        # Should be at or above random chance (0.5 for 2-class)
-        assert final_accuracy >= 0.45  # trunk-ignore(bandit/B101)
+        # HIGH-003: Should be at or above random chance (0.5 for 2-class)
+        assert final_accuracy >= 0.5, f"Accuracy {final_accuracy:.3f} should be at or above random chance (0.5)"  # trunk-ignore(bandit/B101)
 
         # Verify network structure
         assert_network_structure_valid(spiral_network)
@@ -89,15 +89,17 @@ class TestSpiralProblemBasic:
         history = spiral_network.fit(x, y, max_epochs=max_epochs)
         final_accuracy = spiral_network.calculate_accuracy(x, y)
 
-        # In fast mode, relax assertions - just verify valid output
+        # Verify learning occurred
         if not fast_mode:
             # Verify learning - 3-class is harder, allow same or better
             assert final_accuracy >= initial_accuracy  # trunk-ignore(bandit/B101)
-            # 3-class problem is harder - random is 0.33, just beat random
-            assert final_accuracy > 0.33  # trunk-ignore(bandit/B101)
+            # 3-class problem is harder - random is 0.33, must beat random
+            assert final_accuracy >= 0.33, f"Accuracy {final_accuracy:.3f} should be at or above random (0.33)"  # trunk-ignore(bandit/B101)
         else:
-            # Fast mode: just verify accuracy is valid
+            # HIGH-004: Fast mode should still verify some learning signal
             assert 0.0 <= final_accuracy <= 1.0  # trunk-ignore(bandit/B101)
+            # Even in fast mode, accuracy shouldn't regress significantly
+            assert final_accuracy >= initial_accuracy - 0.1, "Accuracy should not regress significantly"  # trunk-ignore(bandit/B101)
 
         assert_network_structure_valid(spiral_network)
         assert_training_history_valid(history)
@@ -136,10 +138,9 @@ class TestSpiralProblemProgressive:
         # Verify accuracy is valid
         assert 0.0 <= final_accuracy <= 1.0  # trunk-ignore(bandit/B101)
 
-        # Expected accuracy should be near random at minimum
+        # HIGH-003: Expected accuracy should be at or above random at minimum
         random_accuracy = 1.0 / n_spirals
-        # Allow results slightly below random due to short training
-        assert final_accuracy >= random_accuracy - 0.15  # trunk-ignore(bandit/B101)
+        assert final_accuracy >= random_accuracy, f"Accuracy {final_accuracy:.3f} should be at or above random ({random_accuracy:.3f})"  # trunk-ignore(bandit/B101)
 
         assert_network_structure_valid(network)
 
@@ -172,8 +173,8 @@ class TestSpiralProblemRobustness:
 
         # Verify accuracy is valid
         assert 0.0 <= final_accuracy <= 1.0  # trunk-ignore(bandit/B101)
-        # Should be near random at minimum (0.5 for 2-class)
-        assert final_accuracy >= 0.35  # trunk-ignore(bandit/B101)
+        # HIGH-003: Should be at or above random chance (0.5 for 2-class)
+        assert final_accuracy >= 0.5, f"Accuracy {final_accuracy:.3f} should be at or above random chance (0.5)"  # trunk-ignore(bandit/B101)
 
         print(f"Noise {noise_level}: {initial_accuracy:.3f} -> {final_accuracy:.3f}, history length: {len(history['train_loss'])}")
 

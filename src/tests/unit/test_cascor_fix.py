@@ -6,7 +6,8 @@ Test script to verify CascadeCorrelationNetwork and CandidateUnit fixes.
 import os
 import sys
 
-sys.path.append("/home/pcalnon/Development/python/Juniper/src/prototypes/cascor/src")
+# Use relative path instead of hardcoded absolute path (MED-003)
+sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 import pytest
 import torch
@@ -41,7 +42,15 @@ def test_sequential_candidate_training(fast_training_params):
     print(f"Training epochs: {test_epochs}, Pool size: {test_pool_size}")
 
     # Create network with sequential processing (process_count=1 forces sequential)
-    network = CascadeCorrelationNetwork(input_size=input_size, output_size=output_size, candidate_pool_size=test_pool_size, candidate_epochs=test_epochs, candidate_learning_rate=0.01, learning_rate=0.01, log_level_name="WARNING")
+    network = CascadeCorrelationNetwork(
+        input_size=input_size,
+        output_size=output_size,
+        candidate_pool_size=test_pool_size,
+        candidate_epochs=test_epochs,
+        candidate_learning_rate=0.01,
+        learning_rate=0.01,
+        log_level_name="WARNING",
+    )
 
     # Force sequential processing by setting process count to 1
     original_cpu_count = os.cpu_count
@@ -124,7 +133,13 @@ def test_individual_candidates(fast_training_params):
     correlations = []
 
     for i in range(3):  # sourcery skip: no-loop-in-tests
-        candidate = CandidateUnit(CandidateUnit__input_size=input_size, CandidateUnit__candidate_index=i, CandidateUnit__epochs=test_epochs, CandidateUnit__learning_rate=0.01, CandidateUnit__log_level_name="ERROR")  # Reduce logging
+        candidate = CandidateUnit(
+            CandidateUnit__input_size=input_size,
+            CandidateUnit__candidate_index=i,
+            CandidateUnit__epochs=test_epochs,
+            CandidateUnit__learning_rate=0.01,
+            CandidateUnit__log_level_name="ERROR",
+        )  # Reduce logging
 
         print(f"Candidate {i} initial weights: {candidate.weights.detach().numpy()}")
 

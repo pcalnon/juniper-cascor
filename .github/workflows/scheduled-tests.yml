@@ -1,0 +1,423 @@
+---
+#####################################################################################################################################################################################################
+# Project:       Juniper
+# Sub-Project:   JuniperCascor
+# Application:   juniper_cascor
+# File Name:     scheduled-tests.yml
+# Author:        Paul Calnon
+# Version:       0.1.0
+#
+# Date Created:  2026-02-04
+# Last Modified: 2026-02-04
+#
+# License:       MIT License
+# Copyright:     Copyright (c) 2024-2026 Paul Calnon
+#
+# Description:
+#    Scheduled GitHub Actions workflow for slow and long-running tests
+#    - Runs nightly at 3 AM UTC
+#    - Executes slow tests excluded from regular CI
+#    - Runs long-running correctness tests (--run-long)
+#    - Can be manually triggered via workflow_dispatch
+#
+# References:
+#    - CASCOR-P1-007: CI/CD Pipeline Setup
+#    - MED-002: Add scheduled nightly/weekly workflow for slow tests
+#####################################################################################################################################################################################################
+
+name: Scheduled Long Tests
+
+on:
+  schedule:
+    # Run nightly at 3 AM UTC
+    - cron: '0 3 * * *'
+  workflow_dispatch:
+    inputs:
+      run_long_tests:
+        description: 'Run long-running correctness tests (may take 10+ minutes)'
+        required: false
+        default: 'true'
+        type: boolean
+
+permissions:
+  contents: read
+
+env:
+  ENV_NAME: JuniperCascor
+  PYTHON_TEST_VERSION: "3.13"
+
+jobs:
+  # ═══════════════════════════════════════════════════════════════════════════════════════════════
+  # Slow Unit Tests: Run unit tests marked as slow
+  # ═══════════════════════════════════════════════════════════════════════════════════════════════
+  slow-unit-tests:
+    name: Slow Unit Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Set up Miniforge (mamba)
+        uses: conda-incubator/setup-miniconda@v3
+        with:
+          miniforge-version: latest
+          use-mamba: true
+          auto-activate-base: false
+
+      - name: Cache conda packages
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/miniforge3/pkgs
+            ~/miniconda3/pkgs
+            ~/.conda/pkgs
+          key: conda-pkgs-${{ runner.os }}-${{ hashFiles('conf/conda_environment.yaml') }}
+          restore-keys: |
+            conda-pkgs-${{ runner.os }}-
+
+      - name: Cache pip packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: pip-${{ runner.os }}-${{ hashFiles('pyproject.toml') }}
+          restore-keys: |
+            pip-${{ runner.os }}-
+
+      - name: Create conda environment (from explicit spec)
+        shell: bash -l {0}
+        run: |
+          set -euxo pipefail
+          echo "╔════════════════════════════════════════════════════════════╗"
+          echo "║       Juniper Cascor - Create Conda Environment            ║"
+          echo "╚════════════════════════════════════════════════════════════╝"
+          mamba create -y -n "${ENV_NAME}" --file conf/conda_environment.yaml
+          conda activate "${ENV_NAME}"
+          python --version
+          pip --version
+
+      - name: Install test dependencies
+        shell: bash -l {0}
+        run: |
+          set -euxo pipefail
+          conda activate "${ENV_NAME}"
+          pip install pytest pytest-cov pytest-timeout pytest-xdist coverage[toml] dill>=0.3.6
+
+      - name: Create required directories
+        run: |
+          mkdir -p logs src/logs reports/junit reports/htmlcov
+
+      - name: Run Slow Unit Tests
+        shell: bash -l {0}
+        run: |
+          set -euxo pipefail
+          conda activate "${ENV_NAME}"
+
+          echo "╔════════════════════════════════════════════════════════════╗"
+          echo "║       Juniper Cascor - Slow Unit Tests                     ║"
+          echo "╚════════════════════════════════════════════════════════════╝"
+
+          # Run unit tests marked as slow
+          python -m pytest \
+            -m "unit and slow" \
+            src/tests/unit \
+            --verbose \
+            --timeout=300 \
+            --maxfail=5 \
+            --junitxml=reports/junit/junit-slow-unit.xml \
+            --cov=src \
+            --cov-report=term-missing \
+            --cov-report=xml:reports/coverage-slow.xml
+
+      - name: Upload Test Results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: slow-unit-test-results
+          path: |
+            reports/junit/
+            reports/coverage-slow.xml
+          retention-days: 30
+
+  # ═══════════════════════════════════════════════════════════════════════════════════════════════
+  # Slow Integration Tests: Run integration tests marked as slow
+  # ═══════════════════════════════════════════════════════════════════════════════════════════════
+  slow-integration-tests:
+    name: Slow Integration Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Set up Miniforge (mamba)
+        uses: conda-incubator/setup-miniconda@v3
+        with:
+          miniforge-version: latest
+          use-mamba: true
+          auto-activate-base: false
+
+      - name: Cache conda packages
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/miniforge3/pkgs
+            ~/miniconda3/pkgs
+            ~/.conda/pkgs
+          key: conda-pkgs-${{ runner.os }}-${{ hashFiles('conf/conda_environment.yaml') }}
+          restore-keys: |
+            conda-pkgs-${{ runner.os }}-
+
+      - name: Cache pip packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: pip-${{ runner.os }}-${{ hashFiles('pyproject.toml') }}
+          restore-keys: |
+            pip-${{ runner.os }}-
+
+      - name: Create conda environment (from explicit spec)
+        shell: bash -l {0}
+        run: |
+          set -euxo pipefail
+          mamba create -y -n "${ENV_NAME}" --file conf/conda_environment.yaml
+          conda activate "${ENV_NAME}"
+          pip install pytest pytest-timeout pytest-xdist dill>=0.3.6
+
+      - name: Create required directories
+        run: |
+          mkdir -p logs src/logs reports/junit
+
+      - name: Run Slow Integration Tests
+        shell: bash -l {0}
+        run: |
+          set -euxo pipefail
+          conda activate "${ENV_NAME}"
+
+          echo "╔════════════════════════════════════════════════════════════╗"
+          echo "║       Juniper Cascor - Slow Integration Tests              ║"
+          echo "╚════════════════════════════════════════════════════════════╝"
+
+          # Run integration tests marked as slow
+          python -m pytest \
+            -m "integration and slow" \
+            src/tests/integration \
+            --verbose \
+            --timeout=300 \
+            --maxfail=3 \
+            --junitxml=reports/junit/junit-slow-integration.xml
+
+      - name: Upload Integration Test Results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: slow-integration-test-results
+          path: reports/junit/
+          retention-days: 30
+
+  # ═══════════════════════════════════════════════════════════════════════════════════════════════
+  # Long-Running Tests: Run tests marked as 'long' (correctness tests)
+  # ═══════════════════════════════════════════════════════════════════════════════════════════════
+  long-running-tests:
+    name: Long-Running Correctness Tests
+    runs-on: ubuntu-latest
+    # Only run if explicitly requested via workflow_dispatch or on schedule
+    if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && github.event.inputs.run_long_tests == 'true')
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Set up Miniforge (mamba)
+        uses: conda-incubator/setup-miniconda@v3
+        with:
+          miniforge-version: latest
+          use-mamba: true
+          auto-activate-base: false
+
+      - name: Cache conda packages
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/miniforge3/pkgs
+            ~/miniconda3/pkgs
+            ~/.conda/pkgs
+          key: conda-pkgs-${{ runner.os }}-${{ hashFiles('conf/conda_environment.yaml') }}
+          restore-keys: |
+            conda-pkgs-${{ runner.os }}-
+
+      - name: Cache pip packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: pip-${{ runner.os }}-${{ hashFiles('pyproject.toml') }}
+          restore-keys: |
+            pip-${{ runner.os }}-
+
+      - name: Create conda environment (from explicit spec)
+        shell: bash -l {0}
+        run: |
+          set -euxo pipefail
+          mamba create -y -n "${ENV_NAME}" --file conf/conda_environment.yaml
+          conda activate "${ENV_NAME}"
+          pip install pytest pytest-cov pytest-timeout pytest-xdist coverage[toml] dill>=0.3.6
+
+      - name: Create required directories
+        run: |
+          mkdir -p logs src/logs reports/junit
+
+      - name: Run Long-Running Correctness Tests
+        shell: bash -l {0}
+        run: |
+          set -euxo pipefail
+          conda activate "${ENV_NAME}"
+
+          echo "╔════════════════════════════════════════════════════════════╗"
+          echo "║       Juniper Cascor - Long-Running Correctness Tests      ║"
+          echo "╚════════════════════════════════════════════════════════════╝"
+
+          # Run tests marked as 'long' with extended timeout (10 minutes per test)
+          # Uses --run-long flag to enable long-running test execution
+          python -m pytest \
+            -m "long" \
+            src/tests \
+            --run-long \
+            --verbose \
+            --timeout=600 \
+            --maxfail=2 \
+            --junitxml=reports/junit/junit-long.xml
+
+      - name: Upload Long Test Results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: long-test-results
+          path: reports/junit/
+          retention-days: 30
+
+  # ═══════════════════════════════════════════════════════════════════════════════════════════════
+  # Performance Benchmarks: Run performance regression testing (LOW-004)
+  # ═══════════════════════════════════════════════════════════════════════════════════════════════
+  performance-benchmarks:
+    name: Performance Benchmarks
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Set up Miniforge (mamba)
+        uses: conda-incubator/setup-miniconda@v3
+        with:
+          miniforge-version: latest
+          use-mamba: true
+          auto-activate-base: false
+
+      - name: Cache conda packages
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/miniforge3/pkgs
+            ~/miniconda3/pkgs
+            ~/.conda/pkgs
+          key: conda-pkgs-${{ runner.os }}-${{ hashFiles('conf/conda_environment.yaml') }}
+          restore-keys: |
+            conda-pkgs-${{ runner.os }}-
+
+      - name: Cache pip packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: pip-${{ runner.os }}-${{ hashFiles('pyproject.toml') }}
+          restore-keys: |
+            pip-${{ runner.os }}-
+
+      - name: Create conda environment (from explicit spec)
+        shell: bash -l {0}
+        run: |
+          set -euxo pipefail
+          mamba create -y -n "${ENV_NAME}" --file conf/conda_environment.yaml
+          conda activate "${ENV_NAME}"
+          pip install pytest pytest-timeout dill>=0.3.6
+
+      - name: Create required directories
+        run: |
+          mkdir -p logs src/logs reports/benchmarks
+
+      - name: Run Performance Benchmarks
+        shell: bash -l {0}
+        run: |
+          set -euxo pipefail
+          conda activate "${ENV_NAME}"
+
+          echo "╔════════════════════════════════════════════════════════════╗"
+          echo "║       Juniper Cascor - Performance Benchmarks              ║"
+          echo "╚════════════════════════════════════════════════════════════╝"
+
+          # Run benchmarks with quiet mode and output to file
+          cd src/tests/scripts && bash run_benchmarks.bash \
+            --all \
+            --quiet \
+            --iterations 5 \
+            --output ../../../reports/benchmarks/benchmark_results.txt
+
+          # Display results summary
+          echo ""
+          echo "Benchmark Results:"
+          cat ../../../reports/benchmarks/benchmark_results.txt || echo "No benchmark results file generated"
+
+      - name: Upload Benchmark Results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: benchmark-results
+          path: reports/benchmarks/
+          retention-days: 90
+
+  # ═══════════════════════════════════════════════════════════════════════════════════════════════
+  # Summary: Aggregate results and notify
+  # ═══════════════════════════════════════════════════════════════════════════════════════════════
+  summary:
+    name: Test Summary
+    runs-on: ubuntu-latest
+    if: always()
+    needs: [slow-unit-tests, slow-integration-tests, long-running-tests, performance-benchmarks]
+
+    steps:
+      - name: Scheduled Tests Summary
+        run: |
+          echo "╔════════════════════════════════════════════════════════════╗"
+          echo "║       Juniper Cascor - Scheduled Tests Summary             ║"
+          echo "╚════════════════════════════════════════════════════════════╝"
+          echo ""
+          echo "Slow Unit Tests:       ${{ needs.slow-unit-tests.result }}"
+          echo "Slow Integration:      ${{ needs.slow-integration-tests.result }}"
+          echo "Long-Running Tests:    ${{ needs.long-running-tests.result }}"
+          echo "Performance Benchmarks: ${{ needs.performance-benchmarks.result }}"
+          echo ""
+          echo "Workflow: ${{ github.workflow }}"
+          echo "Trigger:  ${{ github.event_name }}"
+          echo "Run ID:   ${{ github.run_id }}"
+          echo ""
+
+          # Report overall status (benchmarks are informational, don't fail on them)
+          if [[ "${{ needs.slow-unit-tests.result }}" == "failure" ]] || \
+             [[ "${{ needs.slow-integration-tests.result }}" == "failure" ]] || \
+             [[ "${{ needs.long-running-tests.result }}" == "failure" ]]; then
+            echo "::error::One or more scheduled test jobs failed"
+            exit 1
+          fi
+
+          if [[ "${{ needs.performance-benchmarks.result }}" == "failure" ]]; then
+            echo "::warning::Performance benchmarks failed - check benchmark logs"
+          fi
+
+          echo "::notice::Scheduled tests completed successfully ✓"

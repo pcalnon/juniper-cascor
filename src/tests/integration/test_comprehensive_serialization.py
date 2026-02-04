@@ -36,10 +36,10 @@ class TestDeterministicTrainingResume(unittest.TestCase):
     """Test that training can be paused, saved, loaded, and resumed deterministically."""
 
     # CASCOR-TIMEOUT-001: Added slow marker and extended timeout
-    # CASCOR-PERF-004: Skip by default - this is a long-running correctness test for
-    # deterministic serialization. Run manually with: pytest -k test_deterministic_training_resume --run-long
+    # CRIT-003: Converted from skip to use --run-long option
+    # Run with: pytest --run-long -k test_deterministic_training_resume
     @pytest.mark.slow
-    @pytest.mark.skip(reason="Long-running deterministic correctness test - run manually with --run-long")
+    @pytest.mark.long
     @pytest.mark.timeout(600)
     def test_deterministic_training_resume(self):
         """

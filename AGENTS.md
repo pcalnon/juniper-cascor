@@ -362,6 +362,7 @@ self.logger.verbose("Verbose output")
 | `integration`        | Integration tests for full workflows |
 | `performance`        | Performance and benchmarking tests   |
 | `slow`               | Tests that take a long time to run   |
+| `long`               | Long-running correctness tests (use --run-long) |
 | `gpu`                | Tests that require GPU/CUDA          |
 | `multiprocessing`    | Tests using multiprocessing          |
 | `spiral`             | Spiral problem tests                 |
@@ -592,6 +593,15 @@ Tests disable GPU by default. Use `--gpu` flag for GPU tests:
 
 ```bash
 pytest --gpu
+```
+
+### Long-Running Tests
+
+Critical long-running tests (like deterministic training resume) are skipped by default. Use `--run-long` to run them:
+
+```bash
+pytest --run-long                    # Run long-running correctness tests
+pytest --slow --run-long             # Run both slow and long tests
 ```
 
 ### Random Reproducibility

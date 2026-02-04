@@ -5,6 +5,145 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.6] - 2026-02-04
+
+**Summary**: Test Suite and CI/CD Enhancement - Phase 4 complete. Added complexity warnings, performance benchmarks, multi-Python testing, and quick integration tests.
+
+### Fixed: [0.6.6]
+
+- **LOW-001**: Enabled flake8 complexity warnings (C901)
+  - Removed C901 from flake8 ignore list for source code
+  - Added targeted `# noqa: C901` to `_validate_format` in `snapshot_serializer.py` (complexity 19, validation logic)
+
+### Added: [0.6.6]
+
+- **LOW-004**: Added performance benchmarks to scheduled workflow
+  - New job in `scheduled-tests.yml` runs `run_benchmarks.bash` nightly
+  - Results uploaded as artifacts with 90-day retention
+- **MED-009**: Added Python version matrix to unit tests (3.11, 3.12, 3.13)
+  - Unit tests now run on all supported Python versions
+  - Artifact names include Python version to avoid conflicts
+  - Cache keys include Python version for proper isolation
+- **MED-010**: Added quick integration tests that run on all branches
+  - New `quick-integration-tests` job runs on every push
+  - Stricter timeout (60s) and maxfail (2) for fast feedback
+  - Added to quality gate requirements
+
+### Changed: [0.6.6]
+
+- Renamed "Integration Tests" job to "Full Integration Tests" for clarity
+- Updated quality gate to check quick-integration-tests result
+
+### Deferred: [0.6.6]
+
+- **MED-014**: Line length reduction deferred - requires full codebase reformatting in separate commit
+
+### Technical Notes: [0.6.6]
+
+- **SemVer impact**: PATCH – Test infrastructure and CI/CD configuration; no API changes
+- **Phase Complete**: Phase 4 (Low Priority & Enhancements) - MED-014 deferred
+- **Reference**: See `notes/TEST_SUITE_CICD_ENHANCEMENT_DEVELOPMENT_PLAN.md` for full issue details
+
+---
+
+## [0.6.5] - 2026-02-04
+
+**Summary**: Test Suite and CI/CD Enhancement - Phase 3 complete. Improved tooling quality gates with better linting coverage, mypy error code re-enablement, scheduled slow test workflow, and shellcheck configuration.
+
+### Fixed: [0.6.5]
+
+- **HIGH-005**: Re-enabled mypy error codes: `misc`, `call-arg`, `func-returns-value`, `no-redef`
+  - Fixed 3 code issues in `cascade_correlation.py`:
+    - `no-redef`: Variable re-declaration in `grow_network` (line 2754/2815)
+    - `call-arg`: Removed invalid `objectify` kwarg in `create_snapshot` (line 3109)
+    - `func-returns-value`: Fixed `_generate_uuid` return type from `None` to `str`
+  - Added phased plan comments for remaining disabled codes
+- **MED-013**: Changed shellcheck severity from `error` to `warning`
+  - Added `backups/` and `temp/` to exclude patterns
+
+### Added: [0.6.5]
+
+- **MED-002**: Created scheduled workflow for slow/long-running tests
+  - New file: `.github/workflows/scheduled-tests.yml`
+  - Runs nightly at 3 AM UTC
+  - Includes slow unit tests, slow integration tests, and long-running correctness tests
+  - Supports manual triggering via workflow_dispatch
+- **HIGH-006**: Added separate linting hooks for test files with relaxed rules
+  - Flake8 hook for tests: relaxed complexity (25), additional ignores (E722, F401, F811)
+  - Bandit hook for tests: additional skips (B105, B106, B107 for test fixtures)
+
+### Changed: [0.6.5]
+
+- **MED-007**: Removed `-p no:warnings` from pytest addopts
+  - Added targeted filterwarnings for known library deprecations (torch, numpy, h5py, pkg_resources)
+- **MED-004**: Re-enabled E722 (bare except) and F401 (unused imports) for source code linting
+  - Tests retain relaxed rules for these codes
+- Updated mypy python-version from 3.12 to 3.13 in pre-commit config
+
+### Technical Notes: [0.6.5]
+
+- **SemVer impact**: PATCH – Test infrastructure and CI/CD configuration; no API changes
+- **Phase Complete**: Phase 3 (Tooling Quality Gates)
+- **Reference**: See `notes/TEST_SUITE_CICD_ENHANCEMENT_DEVELOPMENT_PLAN.md` for full issue details
+
+---
+
+## [0.6.4] - 2026-02-04
+
+**Summary**: Test Suite and CI/CD Enhancement - Phases 0-2 complete. Implemented fixes for false-positive tests, weak assertions, configuration issues, and CI pipeline hardening.
+
+### Fixed: [0.6.4]
+
+- **CRIT-001**: Fixed always-passing tests in `test_training_workflow.py` (assert True in both branches)
+  - Converted to proper `pytest.raises()` for exception testing
+- **CRIT-002**: Converted `test_quick.py` to proper pytest format with assertions
+  - Was discovered by pytest but had no test functions
+- **CRIT-004**: Fixed `test_final.py` returning boolean instead of asserting
+  - Now uses proper assertions for correlation validation
+- **CRIT-005**: Configured pip-audit to fail on high/critical vulnerabilities
+  - Changed from warning-only to fail build on vulnerabilities
+- **HIGH-002**: Fixed OR logic in gradient test that always passed
+  - Changed to properly assert gradient existence
+- **HIGH-003**: Fixed weak accuracy thresholds below random chance
+  - Updated thresholds to be at or above random chance (0.5 for 2-class, 1/n for n-class)
+- **HIGH-004**: Fixed fast mode to verify learning occurred
+  - Added regression check even in fast mode
+- **HIGH-007**: Fixed loss tolerance allowing regression (+0.5)
+  - Changed to assert loss actually decreases
+- **HIGH-008**: Fixed conditional skip that always skipped in multiprocessing test
+  - Now actually tests valid start methods
+- **HIGH-010**: Fixed empty test block in `test_residual_error.py`
+  - Added meaningful assertions to the test
+- **MED-003**: Replaced hardcoded absolute paths with relative paths
+  - Fixed in `test_quick.py`, `test_final.py`, `test_cascor_fix.py`, `test_p1_fixes.py`
+- **MED-005**: Updated Python version from 3.14 (unreleased) to 3.13
+  - Fixed in CI workflow, pre-commit config, and pyproject.toml
+
+### Added: [0.6.4]
+
+- **CRIT-003**: Added `--run-long` pytest option for long-running correctness tests
+  - Added to `conftest.py` with collection modifying logic
+  - Added `long` marker to `pyproject.toml`
+  - Converted deterministic resume test to use this marker
+- **HIGH-009**: Added `dill>=0.3.6` to test dependencies
+  - Added to CI workflow and pyproject.toml optional dependencies
+- **MED-001**: Expanded coverage sources to include all `src/` directories
+  - Updated `pyproject.toml` and CI workflow
+
+### Changed: [0.6.4]
+
+- **MED-012**: Added `.pytest_cache/` to `.gitignore`
+- CI workflow now installs `dill` for both unit and integration test jobs
+- Coverage now measures all source modules instead of just 3
+
+### Technical Notes: [0.6.4]
+
+- **SemVer impact**: PATCH – Test infrastructure and CI/CD configuration; no API changes
+- **Phases Complete**: Phase 0 (Baseline), Phase 1 (Test Integrity), Phase 2 (Coverage & Realism)
+- **Reference**: See `notes/TEST_SUITE_CICD_ENHANCEMENT_DEVELOPMENT_PLAN.md` for full issue details
+
+---
+
 ## [0.6.3] - 2026-02-01
 
 **Summary**: Documentation updated to reflect JuniperData refactor. Spiral data generation now uses external JuniperData service via REST API.

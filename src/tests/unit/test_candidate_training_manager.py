@@ -94,14 +94,14 @@ def test_candidate_training_manager_start_method(start_method, expected_exceptio
         with pytest.raises(expected_exception):
             manager.start(method=start_method)
     else:
-        # For valid methods, we verify the method is valid by checking mp.get_context doesn't error
-        # We skip actually starting the manager to avoid multiprocessing complexity in tests
+        # HIGH-008: For valid methods, verify the method is valid by checking mp.get_context
+        # This actually tests something rather than skipping in both branches
         import multiprocessing as mp
 
         try:
-            mp.get_context(start_method)
-            # If we get here, the method is valid for this platform
-            pytest.skip(f"Skipping actual start() call for '{start_method}' to avoid multiprocessing complexity")
+            context = mp.get_context(start_method)
+            # Verify the context has the expected start method
+            assert context.get_start_method() == start_method, f"Context should have start method '{start_method}'"
         except ValueError:
             pytest.skip(f"Start method '{start_method}' not available on this platform.")
 

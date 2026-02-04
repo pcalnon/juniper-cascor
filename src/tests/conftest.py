@@ -112,6 +112,7 @@ def pytest_addoption(parser):
     parser.addoption("--slow", action="store_true", default=False, help="Run slow tests")
     parser.addoption("--integration", action="store_true", default=False, help="Run integration tests")
     parser.addoption("--fast-slow", action="store_true", default=False, help="Run slow tests with reduced training parameters for faster execution")
+    parser.addoption("--run-long", action="store_true", default=False, help="Run long-running correctness tests (e.g., deterministic training resume)")
 
 
 def pytest_collection_modifyitems(config, items):
@@ -133,6 +134,13 @@ def pytest_collection_modifyitems(config, items):
         for item in items:
             if "integration" in item.keywords:
                 item.add_marker(skip_integration)
+
+    # CRIT-003: Add --run-long option for long-running correctness tests
+    if not config.getoption("--run-long"):
+        skip_long = pytest.mark.skip(reason="need --run-long option to run long-running correctness tests")
+        for item in items:
+            if "long" in item.keywords:
+                item.add_marker(skip_long)
 
 
 # ===================================================================

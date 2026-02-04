@@ -1039,7 +1039,7 @@ class CascadeHDF5Serializer:
         except Exception as e:
             return self._log_exception_stacktrace("Shape validation failed: ", e, False)
 
-    def _validate_format(self, hdf5_file: h5py.File) -> bool:
+    def _validate_format(self, hdf5_file: h5py.File) -> bool:  # noqa: C901 - validation requires multiple checks
         """
         Validate HDF5 file format with comprehensive checks.
 

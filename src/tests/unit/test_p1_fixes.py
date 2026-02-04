@@ -40,7 +40,13 @@ def _validate_candidate_early_stopping_helper(candidate):
     from candidate_unit.candidate_unit import CandidateUnit
 
     # Create candidate with early stopping enabled
-    candidate = CandidateUnit(CandidateUnit__input_size=2, CandidateUnit__candidate_index=0, CandidateUnit__early_stopping=True, CandidateUnit__patience=3, CandidateUnit__log_level_name="WARNING")
+    candidate = CandidateUnit(
+        CandidateUnit__input_size=2,
+        CandidateUnit__candidate_index=0,
+        CandidateUnit__early_stopping=True,
+        CandidateUnit__patience=3,
+        CandidateUnit__log_level_name="WARNING",
+    )
 
     # Create data that won't improve (constant)
     x = torch.ones(10, 2)
@@ -168,7 +174,9 @@ def test_4_queue_timeout():
     print("\n[Test 4] Queue timeout implementation...")
     try:
         # Check that the code includes timeout parameter
-        with open("/home/pcalnon/Development/python/Juniper/src/prototypes/cascor/src/cascade_correlation/cascade_correlation.py", "r") as f:
+        # Use relative path instead of hardcoded absolute path (MED-003)
+        source_file = Path(__file__).parent.parent.parent / "cascade_correlation" / "cascade_correlation.py"
+        with open(source_file, "r") as f:
             content = f.read()
 
         # Check for timeout in result_queue.put

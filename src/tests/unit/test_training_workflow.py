@@ -159,7 +159,12 @@ class TestNetworkState:
         initial_hidden = len(simple_network.hidden_units)
 
         # Directly add hidden unit instead of calling grow_network to avoid timeout
-        hidden_unit = {"weights": torch.randn(simple_network.input_size), "bias": torch.randn(1), "activation_fn": torch.tanh, "correlation": 0.5}
+        hidden_unit = {
+            "weights": torch.randn(simple_network.input_size),
+            "bias": torch.randn(1),
+            "activation_fn": torch.tanh,
+            "correlation": 0.5,
+        }
         simple_network.hidden_units.append(hidden_unit)
 
         assert len(simple_network.hidden_units) > initial_hidden
@@ -178,30 +183,24 @@ class TestInputValidation:
 
     @pytest.mark.unit
     def test_forward_with_wrong_input_size(self, simple_network):
-        """Test forward pass with wrong input size fails gracefully."""
+        """Test forward pass with wrong input size raises exception."""
         set_deterministic_behavior()
 
         wrong_input = torch.randn(10, simple_network.input_size + 1)
 
-        try:
-            output = simple_network.forward(wrong_input)
-            assert True
-        except (RuntimeError, ValueError):
-            assert True
+        with pytest.raises((RuntimeError, ValueError)):
+            simple_network.forward(wrong_input)
 
     @pytest.mark.unit
     def test_train_with_mismatched_sizes(self, simple_network):
-        """Test training with mismatched x and y sizes."""
+        """Test training with mismatched x and y sizes raises exception."""
         set_deterministic_behavior()
 
         x = torch.randn(50, simple_network.input_size)
-        y = torch.randn(40, simple_network.output_size)
+        y = torch.randn(40, simple_network.output_size)  # Different batch size
 
-        try:
+        with pytest.raises((RuntimeError, ValueError)):
             simple_network.train_output_layer(x, y, epochs=1)
-            assert True
-        except (RuntimeError, ValueError):
-            assert True
 
 
 class TestGradientFlow:
@@ -221,7 +220,7 @@ class TestGradientFlow:
         loss.backward()
 
         # Output weights should have gradients after backward
-        assert simple_network.output_weights.grad is not None or loss is not None
+        assert simple_network.output_weights.grad is not None, "Gradients should exist after backward pass"
 
     @pytest.mark.unit
     def test_loss_decreases(self, simple_network, simple_2d_data):
@@ -237,7 +236,7 @@ class TestGradientFlow:
         output_after = simple_network.forward(x)
         loss_after = torch.nn.functional.mse_loss(output_after, y).item()
 
-        assert loss_after <= loss_before + 0.5
+        assert loss_after <= loss_before, f"Loss should decrease: {loss_before:.4f} -> {loss_after:.4f}"
 
 
 class TestReproducibility:
