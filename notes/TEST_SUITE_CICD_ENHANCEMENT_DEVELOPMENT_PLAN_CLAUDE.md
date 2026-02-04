@@ -14,21 +14,21 @@ This development plan consolidates and validates findings from two independent t
 
 ### Consolidated Issue Summary
 
-| Severity | Issue Count | Categories |
-|----------|-------------|------------|
-| **Critical** | 5 | Tests always passing, skipped critical tests, security scan gaps |
-| **High** | 8 | Mock-only tests, weak assertions, mypy disabled, fast-mode testing gaps |
-| **Medium** | 12 | Coverage gaps, hardcoded paths, excessive linting ignores |
-| **Low** | 6 | Style conventions, minor configuration optimizations |
+| Severity     | Issue Count | Categories                                                              |
+| ------------ | ----------- | ----------------------------------------------------------------------- |
+| **Critical** | 5           | Tests always passing, skipped critical tests, security scan gaps        |
+| **High**     | 8           | Mock-only tests, weak assertions, mypy disabled, fast-mode testing gaps |
+| **Medium**   | 12          | Coverage gaps, hardcoded paths, excessive linting ignores               |
+| **Low**      | 6           | Style conventions, minor configuration optimizations                    |
 
 ### Estimated Total Effort
 
-| Priority | Effort | Duration |
-|----------|--------|----------|
-| Critical | 16-24 hours | 1-2 weeks |
-| High | 24-40 hours | 2-3 weeks |
-| Medium | 16-24 hours | 2 weeks |
-| Low | 8-16 hours | 1 week |
+| Priority  | Effort           | Duration      |
+| --------- | ---------------- | ------------- |
+| Critical  | 16-24 hours      | 1-2 weeks     |
+| High      | 24-40 hours      | 2-3 weeks     |
+| Medium    | 16-24 hours      | 2 weeks       |
+| Low       | 8-16 hours       | 1 week        |
 | **Total** | **64-104 hours** | **6-8 weeks** |
 
 ---
@@ -61,15 +61,15 @@ Both audit reports were evaluated through:
 
 ### 1.2 Validation Results Summary
 
-| Finding Category | Claude Report | Amp Report | Verified |
-|------------------|---------------|------------|----------|
-| Tests always passing | 3 critical | 4 medium | **CONFIRMED** |
-| Mock-only testing | HIGH (67+ tests) | Not identified | **CONFIRMED** |
-| Skipped critical tests | CRITICAL | Low | **CONFIRMED (CRITICAL)** |
-| Hardcoded paths | Not identified | 4 medium | **CONFIRMED** |
-| CI/CD configuration | 5 issues | 6 issues | **CONFIRMED** |
-| Pre-commit hooks | 4 issues | 4 issues | **CONFIRMED** |
-| Weak assertions | 12+ issues | 2 issues | **CONFIRMED** |
+| Finding Category       | Claude Report    | Amp Report     | Verified                 |
+| ---------------------- | ---------------- | -------------- | ------------------------ |
+| Tests always passing   | 3 critical       | 4 medium       | **CONFIRMED**            |
+| Mock-only testing      | HIGH (67+ tests) | Not identified | **CONFIRMED**            |
+| Skipped critical tests | CRITICAL         | Low            | **CONFIRMED (CRITICAL)** |
+| Hardcoded paths        | Not identified   | 4 medium       | **CONFIRMED**            |
+| CI/CD configuration    | 5 issues         | 6 issues       | **CONFIRMED**            |
+| Pre-commit hooks       | 4 issues         | 4 issues       | **CONFIRMED**            |
+| Weak assertions        | 12+ issues       | 2 issues       | **CONFIRMED**            |
 
 ### 1.3 Discrepancy Analysis
 
@@ -141,18 +141,18 @@ def test_train_with_mismatched_sizes(self, simple_network):
 **Effort**: 2-3 hours
 **Files**: `src/tests/unit/test_quick.py`
 
-#### Description
+#### Description: CRIT-002
 
 This file named following pytest convention (`test_*.py`) contains only a `main()` function with no `@pytest.mark` decorated test functions. Pytest discovers the file but finds zero tests.
 
-#### Verification Evidence
+#### Verification Evidence: CRIT-002
 
 - **File examined**: `src/tests/unit/test_quick.py` (82 lines)
 - **Test functions found**: 0
 - **Only function**: `main()` (lines 16-81)
 - **Hardcoded path at line 9**: `/home/pcalnon/Development/python/Juniper/src/prototypes/cascor/src`
 
-#### Required Fix
+#### Required Fix: CRIT-002
 
 **Option A (Recommended)**: Convert to proper pytest:
 
@@ -176,17 +176,17 @@ def test_cascor_candidate_training():
 **Effort**: 3-4 hours
 **Files**: `src/tests/integration/test_comprehensive_serialization.py`, `src/tests/conftest.py`
 
-#### Description
+#### Description: CRIT-003
 
 The test `test_deterministic_training_resume` is explicitly marked as "the most important test for deterministic reproducibility" but is permanently skipped. The `--run-long` flag mentioned in the skip reason does not exist in `conftest.py`.
 
-#### Verification Evidence
+#### Verification Evidence: CRIT-003
 
 - **Skip decorator at line 42**: `@pytest.mark.skip(reason="Long-running deterministic correctness test - run manually with --run-long")`
 - **conftest.py options verified**: Only `--slow`, `--gpu`, `--integration`, `--fast-slow` exist
 - **Missing implementation**: `--run-long` option not defined
 
-#### Required Fix
+#### Required Fix: CRIT-003
 
 1. **Add `--run-long` option to `conftest.py`**:
 
@@ -221,22 +221,24 @@ def test_deterministic_training_resume(self):
 **Effort**: 1-2 hours
 **Files**: `src/tests/unit/test_final.py`
 
-#### Description
+#### Description: CRIT-004
 
 The test calculates a `success` variable but only prints and returns it. Pytest doesn't check return values.
 
-#### Verification Evidence
+#### Verification Evidence: CRIT-004
 
 - **File examined**: `src/tests/unit/test_final.py`
 - **Lines 79-86 verified**:
+
   ```python
   success = different_correlations and non_zero_correlations and consistent_correlations
   print(f"\n SUCCESS: {success}")
   return success  # Returns but doesn't assert
   ```
+
 - **Additional issue**: Hardcoded path at line 9
 
-#### Required Fix
+#### Required Fix: CRIT-004
 
 ```python
 # Replace return with assertions
@@ -254,7 +256,7 @@ assert consistent_correlations, "Returned correlations should match instance cor
 **Effort**: 2-3 hours
 **Files**: `.github/workflows/ci.yml`
 
-#### Description
+#### Description: CRIT-005
 
 Line 385 uses `|| echo` pattern allowing pipeline to continue when vulnerabilities are found:
 
@@ -262,13 +264,13 @@ Line 385 uses `|| echo` pattern allowing pipeline to continue when vulnerabiliti
 pip-audit -r reports/security/pip-freeze.txt || echo "::warning::Vulnerabilities found in dependencies"
 ```
 
-#### Verification Evidence
+#### Verification Evidence: CRIT-005
 
 - **File examined**: `.github/workflows/ci.yml`
 - **Line 385 verified**: Warning-only behavior confirmed
 - **Impact**: High/critical CVEs won't block deployment
 
-#### Required Fix
+#### Required Fix: CRIT-005
 
 ```yaml
 # Option A: Fail on any vulnerability
@@ -292,23 +294,24 @@ pip-audit -r reports/security/pip-freeze.txt --ignore-vuln PIP-AUDIT-LOW-* --ign
 **Effort**: 8-12 hours
 **Files**: `src/tests/unit/test_log_config_coverage.py`
 
-#### Description
+#### Description: HIGH-001
 
 All tests in this file use `MagicMock` fixtures instead of real `LogConfig` instances. The tests verify that mocks return what was configured, not that the actual class works.
 
-#### Verification Evidence
+#### Verification Evidence: HIGH-001
 
 - **File examined**: `src/tests/unit/test_log_config_coverage.py` (715 lines)
 - **Test classes found**: 6 (`TestLogConfigGetters`, `TestLogConfigGettersMissingAttributes`, `TestLogConfigSetters`, `TestLogConfigSerialization`, `TestLogConfigUUID`, `TestLogConfigEdgeCases`)
 - **MagicMock usage**: Lines 25-46 create mock with 20+ attributes pre-set
 - **Example test (lines 49-54)**:
+
   ```python
   def test_get_uuid_returns_uuid(self, mock_log_config):
       result = LogConfig.get_uuid(mock_log_config)
       assert result == "test-uuid-12345"  # Just returns what was mocked
   ```
 
-#### Required Fix
+#### Required Fix: HIGH-001
 
 Create real `LogConfig` instances for testing:
 
@@ -343,7 +346,7 @@ def test_get_uuid_returns_valid_uuid(self, real_log_config):
 **Effort**: 1 hour
 **Files**: `src/tests/unit/test_training_workflow.py`
 
-#### Description
+#### Description: HIGH-002
 
 Line 224 uses OR logic that passes if either condition is true. Since `loss` is always calculated, the assertion always passes:
 
@@ -351,13 +354,13 @@ Line 224 uses OR logic that passes if either condition is true. Since `loss` is 
 assert simple_network.output_weights.grad is not None or loss is not None
 ```
 
-#### Verification Evidence
+#### Verification Evidence: HIGH-002
 
 - **File examined**: `src/tests/unit/test_training_workflow.py`
 - **Line 224 verified**: OR logic confirmed
 - **Context**: `loss` is calculated at line 220, so `loss is not None` is always True
 
-#### Required Fix
+#### Required Fix: HIGH-002
 
 ```python
 # Test gradient existence specifically
@@ -373,22 +376,22 @@ assert simple_network.output_weights.grad is not None, "Gradients should exist a
 **Effort**: 2-3 hours
 **Files**: `src/tests/integration/test_spiral_problem.py`
 
-#### Description
+#### Description: HIGH-003
 
 Multiple tests allow accuracy below random chance:
 
-| Test | Line | Threshold | Random Chance | Gap |
-|------|------|-----------|---------------|-----|
-| `test_2_spiral_learning` | 59 | `>= 0.45` | 0.50 | -5% |
-| `test_n_spiral_difficulty_progression` | 142 | `>= random - 0.15` | varies | -15% |
+| Test                                   | Line | Threshold          | Random Chance | Gap  |
+| -------------------------------------- | ---- | ------------------ | ------------- | ---- |
+| `test_2_spiral_learning`               | 59   | `>= 0.45`          | 0.50          | -5%  |
+| `test_n_spiral_difficulty_progression` | 142  | `>= random - 0.15` | varies        | -15% |
 
-#### Verification Evidence
+#### Verification Evidence: HIGH-003
 
 - **File examined**: `src/tests/integration/test_spiral_problem.py`
 - **Lines 59, 142 verified**
 - **Impact**: A model performing worse than random guessing can pass tests
 
-#### Required Fix
+#### Required Fix: HIGH-003
 
 ```python
 # For 2-spiral (2-class)
@@ -408,7 +411,7 @@ assert final_accuracy >= random_accuracy, f"Accuracy {final_accuracy:.3f} should
 **Effort**: 2 hours
 **Files**: `src/tests/integration/test_spiral_problem.py`
 
-#### Description
+#### Description: HIGH-004
 
 Lines 93-100 show that fast mode (used in CI) only checks accuracy is between 0 and 1, not that learning occurred:
 
@@ -421,13 +424,13 @@ else:
     assert 0.0 <= final_accuracy <= 1.0  # No learning verification!
 ```
 
-#### Verification Evidence
+#### Verification Evidence: HIGH-004
 
 - **File examined**: `src/tests/integration/test_spiral_problem.py`
 - **Lines 93-100 verified**
 - **CI runs fast mode**: `JUNIPER_FAST_SLOW=1` or `--fast-slow` flag
 
-#### Required Fix
+#### Required Fix: HIGH-004
 
 ```python
 # Fast mode should still verify some learning occurred
@@ -450,7 +453,7 @@ else:
 **Effort**: 8-16 hours (phased)
 **Files**: `.pre-commit-config.yaml`
 
-#### Description
+#### Description: HIGH-005
 
 15 mypy error codes are disabled (lines 163-177), including critical checks:
 
@@ -459,31 +462,35 @@ else:
 - `arg-type`: Wrong argument types
 - `assignment`: Type mismatches
 
-#### Verification Evidence
+#### Verification Evidence: HIGH-005
 
 - **File examined**: `.pre-commit-config.yaml`
 - **Lines 163-177 verified**: All 15 disabled codes confirmed
 - **Impact**: Type errors in production code go undetected
 
-#### Required Fix (Phased Approach)
+#### Required Fix (Phased Approach): HIGH-005
 
 **Phase 1** (Week 1-2): Re-enable least disruptive codes:
+
 - `func-returns-value`
 - `has-type`
 - `str-bytes-safe`
 
 **Phase 2** (Week 3-4): Re-enable type safety codes:
+
 - `return-value`
 - `return`
 - `call-overload`
 
 **Phase 3** (Week 5-6): Re-enable remaining codes:
+
 - `attr-defined`
 - `arg-type`
 - `assignment`
 - `call-arg`
 
 **Phase 4** (Week 7-8): Final codes:
+
 - `no-redef`
 - `override`
 - `var-annotated`
@@ -499,7 +506,7 @@ else:
 **Effort**: 4-6 hours
 **Files**: `.pre-commit-config.yaml`
 
-#### Description
+#### Description: HIGH-006
 
 Test files are excluded from flake8, mypy, and bandit:
 
@@ -507,13 +514,13 @@ Test files are excluded from flake8, mypy, and bandit:
 - Line 179: `exclude: ^src/tests/` (mypy)
 - Line 200: `exclude: ^src/tests/` (bandit)
 
-#### Verification Evidence
+#### Verification Evidence: HIGH-006e
 
 - **File examined**: `.pre-commit-config.yaml`
 - **Lines 149, 179, 200 verified**: All exclusions confirmed
 - **Impact**: Test code can have bugs, type errors, and security issues
 
-#### Required Fix
+#### Required Fi: HIGH-006x
 
 Enable linting for tests with relaxed rules:
 
@@ -540,7 +547,7 @@ Enable linting for tests with relaxed rules:
 **Effort**: 1 hour
 **Files**: `src/tests/unit/test_training_workflow.py`
 
-#### Description
+#### Description: HIGH-007
 
 Line 240 allows loss to increase by 0.5:
 
@@ -548,13 +555,13 @@ Line 240 allows loss to increase by 0.5:
 assert loss_after <= loss_before + 0.5  # Allows 0.5 increase!
 ```
 
-#### Verification Evidence
+#### Verification Evidence: HIGH-007
 
 - **File examined**: `src/tests/unit/test_training_workflow.py`
 - **Line 240 verified**
 - **Impact**: Test named "loss decreases" passes when loss increases
 
-#### Required Fix
+#### Required Fix: HIGH-007
 
 ```python
 # Verify loss actually decreases (or at most stays same)
@@ -570,7 +577,7 @@ assert loss_after <= loss_before, f"Loss should decrease: {loss_before:.4f} -> {
 **Effort**: 2-3 hours
 **Files**: `src/tests/unit/test_candidate_training_manager.py`
 
-#### Description
+#### Description: HIGH-008
 
 Lines 101-106 skip in both valid and invalid cases:
 
@@ -584,7 +591,7 @@ except ValueError:
     pytest.skip(f"Start method '{start_method}' not available...")
 ```
 
-#### Required Fix
+#### Required Fix: HIGH-008
 
 Actually test valid start methods:
 
@@ -609,14 +616,16 @@ def test_candidate_training_manager_start_method(start_method, expected_exceptio
 **Effort**: 2-3 hours
 **Files**: `.github/workflows/ci.yml`, `pyproject.toml`
 
-#### Description
+#### Description: MED-001
 
 Coverage configuration only includes:
+
 - `src/cascade_correlation`
 - `src/candidate_unit`
 - `src/snapshots`
 
 Missing modules:
+
 - `src/spiral_problem/`
 - `src/log_config/`
 - `src/cascor_plotter/`
@@ -625,9 +634,10 @@ Missing modules:
 - `src/remote_client/`
 - `src/cascor_constants/`
 
-#### Required Fix
+#### Required Fix: MED-001
 
 **pyproject.toml**:
+
 ```toml
 [tool.coverage.run]
 source = [
@@ -644,6 +654,7 @@ source = [
 ```
 
 **ci.yml**:
+
 ```yaml
 --cov=src/cascade_correlation \
 --cov=src/candidate_unit \
@@ -662,7 +673,7 @@ source = [
 **Effort**: 2-3 hours
 **Files**: `.github/workflows/ci.yml`
 
-#### Required Fix
+#### Required Fix: MED-002
 
 Add scheduled workflow:
 
@@ -700,14 +711,15 @@ jobs:
 **Effort**: 2-3 hours
 **Files**: `test_quick.py`, `test_final.py`, `test_cascor_fix.py`, `test_p1_fixes.py`
 
-#### Description
+#### Description: MED-003
 
 Multiple files contain:
+
 ```python
 sys.path.append("/home/pcalnon/Development/python/Juniper/src/prototypes/cascor/src")
 ```
 
-#### Required Fix
+#### Required Fix: MED-003
 
 Use relative paths:
 
@@ -728,14 +740,15 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(
 **Effort**: 4-8 hours (phased)
 **Files**: `.pre-commit-config.yaml`
 
-#### Description
+#### Description: MED-004
 
 Line 141 ignores important errors:
+
 - `E722`: Bare except clause (security concern)
 - `C901`: Function too complex
 - `F401`: Module imported but unused
 
-#### Required Fix (Phased)
+#### Required Fix (Phased): MED-004
 
 **Phase 1**: Remove `F401` (unused imports) - fix issues in code
 **Phase 2**: Remove `E722` (bare except) - fix security issues
@@ -750,11 +763,11 @@ Line 141 ignores important errors:
 **Effort**: 1 hour
 **Files**: `.github/workflows/ci.yml`
 
-#### Description
+#### Description: MED-005
 
 Line 55 sets `PYTHON_TEST_VERSION: "3.14"` but Python 3.14 is not yet released (as of Feb 2026).
 
-#### Required Fix
+#### Required Fix: MED-005
 
 ```yaml
 PYTHON_TEST_VERSION: "3.12"  # Or "3.13" if available on runners
@@ -769,11 +782,11 @@ PYTHON_TEST_VERSION: "3.12"  # Or "3.13" if available on runners
 **Effort**: 1 hour
 **Files**: `.github/workflows/ci.yml`
 
-#### Description
+#### Description: MED-006
 
 Line 375: `continue-on-error: true` for SARIF upload
 
-#### Required Fix
+#### Required Fix: MED-006
 
 Log failures instead of silent continue:
 
@@ -800,11 +813,11 @@ Log failures instead of silent continue:
 **Effort**: 2-3 hours
 **Files**: `pyproject.toml`
 
-#### Description
+#### Description: MED-007
 
 Line 80: `"-p", "no:warnings"` suppresses all warnings
 
-#### Required Fix
+#### Required Fix: MED-007
 
 ```toml
 addopts = [
@@ -832,15 +845,16 @@ filterwarnings = [
 **Effort**: 1-2 hours
 **Files**: `src/tests/integration/test_serialization.py`
 
-#### Description
+#### Description: MED-008
 
 Lines 460, 488, 513 have:
+
 ```python
 first_sequence = [random.random() for _ in range(5)]
 assert first_sequence is not None  # List comprehension ALWAYS produces a list
 ```
 
-#### Required Fix
+#### Required Fix: MED-008
 
 ```python
 first_sequence = [random.random() for _ in range(5)]
@@ -857,11 +871,11 @@ assert all(0 <= x <= 1 for x in first_sequence), "All values should be in [0, 1]
 **Effort**: 2-3 hours
 **Files**: `.github/workflows/ci.yml`
 
-#### Description
+#### Description: MED-009
 
 Pre-commit runs on Python 3.11, 3.12, 3.13, 3.14 matrix, but unit tests use single conda environment.
 
-#### Required Fix
+#### Required Fix: MED-009
 
 Add matrix strategy to unit tests job:
 
@@ -883,14 +897,15 @@ unit-tests:
 **Effort**: 1-2 hours
 **Files**: `src/tests/unit/test_utils_coverage.py`, `src/tests/unit/test_utils_extended.py`
 
-#### Description
+#### Description: MED-010
 
 Multiple tests use:
+
 ```python
 @pytest.mark.skipif(not HAS_DILL, reason="Requires dill package")
 ```
 
-#### Required Fix
+#### Required Fix: MED-010
 
 Add `dill` to test dependencies in CI:
 
@@ -909,14 +924,15 @@ Add `dill` to test dependencies in CI:
 **Effort**: 2-3 hours
 **Files**: `.github/workflows/ci.yml`
 
-#### Description
+#### Description: MED-011
 
 Line 214 skips integration tests on feature branches:
+
 ```yaml
 if: github.event_name == 'pull_request' || github.ref_name == 'main' || github.ref_name == 'develop'
 ```
 
-#### Required Fix
+#### Required Fix: MED-011
 
 Run subset of fast integration tests on all branches:
 
@@ -945,15 +961,16 @@ integration-tests-quick:
 **Effort**: 1-2 hours
 **Files**: `src/tests/unit/test_residual_error.py`
 
-#### Description
+#### Description: MED-012
 
 Lines 32-54 have `pass` in the test body:
+
 ```python
 with torch.no_grad():
     pass  # Does nothing - manually creates y_pred = y_true.clone() after
 ```
 
-#### Required Fix
+#### Required Fix: MED-012
 
 Actually test network's ability to produce predictions:
 
@@ -982,9 +999,10 @@ def test_residual_error_perfect_prediction(self, simple_network):
 **Effort**: 4-8 hours (phased)
 **Files**: `.pre-commit-config.yaml`, `pyproject.toml`
 
-#### Required Fix
+#### Required Fix: LOW-001
 
 Gradually reduce line length:
+
 1. Phase 1: Reduce to 200
 2. Phase 2: Reduce to 160
 3. Phase 3: Reduce to 120
@@ -998,7 +1016,7 @@ Gradually reduce line length:
 **Effort**: 1-2 hours
 **Files**: `.pre-commit-config.yaml`
 
-#### Required Fix
+#### Required Fix: LOW-002
 
 ```yaml
 args:
@@ -1014,11 +1032,11 @@ args:
 **Effort**: 2-4 hours
 **Files**: `.pre-commit-config.yaml`
 
-#### Description
+#### Description: LOW-003
 
 Line 142 sets `--max-complexity=15` but `C901` is in ignore list (line 141).
 
-#### Required Fix
+#### Required Fix: LOW-003
 
 Remove `C901` from ignore list and fix complex functions.
 
@@ -1031,7 +1049,7 @@ Remove `C901` from ignore list and fix complex functions.
 **Effort**: 2-3 hours
 **Files**: `.github/workflows/ci.yml`
 
-#### Required Fix (If documentation exists)
+#### Required Fix (If documentation exists): LOW-004
 
 ```yaml
 documentation:
@@ -1053,7 +1071,7 @@ documentation:
 **Effort**: 1-2 hours
 **Files**: `.github/workflows/ci.yml`
 
-#### Required Fix
+#### Required Fix: LOW-005
 
 ```yaml
 - name: Verify lock file
@@ -1072,7 +1090,7 @@ documentation:
 **Effort**: 3-4 hours
 **Files**: `.github/workflows/ci.yml`
 
-#### Required Fix
+#### Required Fix: LOW-006
 
 Add performance benchmarks to scheduled workflow:
 
@@ -1089,36 +1107,36 @@ Add performance benchmarks to scheduled workflow:
 
 ### Phase 1: Critical Fixes (Week 1-2)
 
-| Day | Task | Issue | Effort |
-|-----|------|-------|--------|
-| 1 | Fix `assert True` patterns | CRIT-001 | 2-3h |
-| 2 | Convert `test_quick.py` to pytest | CRIT-002 | 2-3h |
-| 3 | Implement `--run-long` flag | CRIT-003 | 3-4h |
-| 4 | Fix `test_final.py` assertions | CRIT-004 | 1-2h |
-| 5 | Make pip-audit fail build | CRIT-005 | 2-3h |
+| Day | Task                              | Issue    | Effort |
+| --- | --------------------------------- | -------- | ------ |
+| 1   | Fix `assert True` patterns        | CRIT-001 | 2-3h   |
+| 2   | Convert `test_quick.py` to pytest | CRIT-002 | 2-3h   |
+| 3   | Implement `--run-long` flag       | CRIT-003 | 3-4h   |
+| 4   | Fix `test_final.py` assertions    | CRIT-004 | 1-2h   |
+| 5   | Make pip-audit fail build         | CRIT-005 | 2-3h   |
 
 ### Phase 2: High Priority Fixes (Week 3-5)
 
-| Week | Tasks | Issues |
-|------|-------|--------|
-| 3 | Fix mock-only tests (partial), OR logic | HIGH-001, HIGH-002 |
-| 4 | Fix accuracy thresholds, fast mode | HIGH-003, HIGH-004 |
-| 5 | Begin mypy re-enablement (Phase 1) | HIGH-005 |
+| Week | Tasks                                   | Issues             |
+| ---- | --------------------------------------- | ------------------ |
+| 3    | Fix mock-only tests (partial), OR logic | HIGH-001, HIGH-002 |
+| 4    | Fix accuracy thresholds, fast mode      | HIGH-003, HIGH-004 |
+| 5    | Begin mypy re-enablement (Phase 1)      | HIGH-005           |
 
 ### Phase 3: Medium Priority Fixes (Week 6-7)
 
-| Week | Tasks | Issues |
-|------|-------|--------|
-| 6 | Expand coverage, scheduled tests | MED-001, MED-002 |
-| 7 | Fix hardcoded paths, warnings | MED-003, MED-007 |
+| Week | Tasks                            | Issues           |
+| ---- | -------------------------------- | ---------------- |
+| 6    | Expand coverage, scheduled tests | MED-001, MED-002 |
+| 7    | Fix hardcoded paths, warnings    | MED-003, MED-007 |
 
 ### Phase 4: Low Priority Fixes (Week 8)
 
-| Tasks | Issues |
-|-------|--------|
+| Tasks                        | Issues  |
+| ---------------------------- | ------- |
 | Reduce line length (Phase 1) | LOW-001 |
-| Fix shellcheck severity | LOW-002 |
-| Enable complexity warnings | LOW-003 |
+| Fix shellcheck severity      | LOW-002 |
+| Enable complexity warnings   | LOW-003 |
 
 ---
 
@@ -1126,23 +1144,23 @@ Add performance benchmarks to scheduled workflow:
 
 ### High Risk Items
 
-| Risk | Impact | Mitigation |
-|------|--------|------------|
-| Mock-only test fixes may reveal real bugs | Test failures | Review each failure carefully; may uncover production issues |
-| MyPy re-enablement may require significant refactoring | Development slowdown | Phased approach; prioritize critical error codes |
-| Line length reduction causes massive reformatting | Large diffs, merge conflicts | Use separate branch; coordinate with team |
+| Risk                                                   | Impact                       | Mitigation                                                   |
+| ------------------------------------------------------ | ---------------------------- | ------------------------------------------------------------ |
+| Mock-only test fixes may reveal real bugs              | Test failures                | Review each failure carefully; may uncover production issues |
+| MyPy re-enablement may require significant refactoring | Development slowdown         | Phased approach; prioritize critical error codes             |
+| Line length reduction causes massive reformatting      | Large diffs, merge conflicts | Use separate branch; coordinate with team                    |
 
 ### Medium Risk Items
 
-| Risk | Impact | Mitigation |
-|------|--------|------------|
-| Stricter accuracy thresholds may cause flaky tests | CI failures | Ensure deterministic seeding; use appropriate tolerances |
-| Adding `dill` dependency | Dependency conflicts | Test thoroughly in CI environment first |
+| Risk                                               | Impact               | Mitigation                                               |
+| -------------------------------------------------- | -------------------- | -------------------------------------------------------- |
+| Stricter accuracy thresholds may cause flaky tests | CI failures          | Ensure deterministic seeding; use appropriate tolerances |
+| Adding `dill` dependency                           | Dependency conflicts | Test thoroughly in CI environment first                  |
 
 ### Low Risk Items
 
-| Risk | Impact | Mitigation |
-|------|--------|------------|
+| Risk                             | Impact             | Mitigation                  |
+| -------------------------------- | ------------------ | --------------------------- |
 | Scheduled test workflow may fail | Unnoticed failures | Add notification on failure |
 
 ---
@@ -1151,14 +1169,14 @@ Add performance benchmarks to scheduled workflow:
 
 ### Quantitative Metrics
 
-| Metric | Current | Target | Timeline |
-|--------|---------|--------|----------|
-| Tests that always pass | 5 | 0 | Phase 1 |
-| Mock-only test files | 1 (67+ tests) | 0 | Phase 2 |
-| Skipped critical tests | 2 | 0 | Phase 1 |
-| MyPy disabled error codes | 15 | 5 | Phase 4 |
-| Modules with coverage tracking | 3 | 9 | Phase 3 |
-| Accuracy thresholds below random | 5+ | 0 | Phase 2 |
+| Metric                           | Current       | Target | Timeline |
+| -------------------------------- | ------------- | ------ | -------- |
+| Tests that always pass           | 5             | 0      | Phase 1  |
+| Mock-only test files             | 1 (67+ tests) | 0      | Phase 2  |
+| Skipped critical tests           | 2             | 0      | Phase 1  |
+| MyPy disabled error codes        | 15            | 5      | Phase 4  |
+| Modules with coverage tracking   | 3             | 9      | Phase 3  |
+| Accuracy thresholds below random | 5+            | 0      | Phase 2  |
 
 ### Qualitative Metrics
 
@@ -1174,19 +1192,19 @@ Add performance benchmarks to scheduled workflow:
 
 ### A. Files Examined
 
-| File | Lines Verified | Issues Found |
-|------|----------------|--------------|
-| `test_training_workflow.py` | 186-204, 224, 240 | CRIT-001, HIGH-002, HIGH-007 |
-| `test_quick.py` | 1-82 | CRIT-002, MED-003 |
-| `test_final.py` | 1-92 | CRIT-004, MED-003 |
-| `test_log_config_coverage.py` | 1-715 | HIGH-001 |
-| `test_comprehensive_serialization.py` | 1-100 | CRIT-003 |
-| `test_spiral_problem.py` | 1-150 | HIGH-003, HIGH-004 |
-| `test_serialization.py` | 450-530 | MED-008 |
-| `conftest.py` | 1-499 | CRIT-003 (--run-long missing) |
-| `.github/workflows/ci.yml` | Full file | CRIT-005, MED-001-006, MED-009, MED-011 |
-| `.pre-commit-config.yaml` | Full file | HIGH-005, HIGH-006, MED-004, LOW-001-003 |
-| `pyproject.toml` | Full file | MED-001, MED-007 |
+| File                                  | Lines Verified    | Issues Found                             |
+| ------------------------------------- | ----------------- | ---------------------------------------- |
+| `test_training_workflow.py`           | 186-204, 224, 240 | CRIT-001, HIGH-002, HIGH-007             |
+| `test_quick.py`                       | 1-82              | CRIT-002, MED-003                        |
+| `test_final.py`                       | 1-92              | CRIT-004, MED-003                        |
+| `test_log_config_coverage.py`         | 1-715             | HIGH-001                                 |
+| `test_comprehensive_serialization.py` | 1-100             | CRIT-003                                 |
+| `test_spiral_problem.py`              | 1-150             | HIGH-003, HIGH-004                       |
+| `test_serialization.py`               | 450-530           | MED-008                                  |
+| `conftest.py`                         | 1-499             | CRIT-003 (--run-long missing)            |
+| `.github/workflows/ci.yml`            | Full file         | CRIT-005, MED-001-006, MED-009, MED-011  |
+| `.pre-commit-config.yaml`             | Full file         | HIGH-005, HIGH-006, MED-004, LOW-001-003 |
+| `pyproject.toml`                      | Full file         | MED-001, MED-007                         |
 
 ### B. Command Verification
 
@@ -1203,29 +1221,29 @@ grep "source" pyproject.toml  # Only 3 modules listed
 
 ### C. Cross-Reference Matrix
 
-| Finding | Claude Report | Amp Report | This Plan |
-|---------|---------------|------------|-----------|
-| assert True pattern | CRITICAL | Medium | **CRIT-001** |
-| test_quick.py not pytest | CRITICAL | Medium | **CRIT-002** |
-| Skipped deterministic test | CRITICAL | Low | **CRIT-003** |
-| test_final.py returns not asserts | CRITICAL | Not found | **CRIT-004** |
-| pip-audit warnings only | HIGH | Medium | **CRIT-005** |
-| Mock-only testing | HIGH | Not found | **HIGH-001** |
-| OR logic always passes | HIGH | Not found | **HIGH-002** |
-| Accuracy below random | HIGH | Not found | **HIGH-003** |
-| Fast mode no learning check | Not found | Not found | **HIGH-004** |
-| MyPy 15 codes disabled | HIGH | Medium | **HIGH-005** |
-| Tests excluded from linting | HIGH | Medium | **HIGH-006** |
-| Loss tolerance 0.5 | HIGH | Not found | **HIGH-007** |
-| Both paths skip | HIGH | Low | **HIGH-008** |
+| Finding                           | Claude Report | Amp Report | This Plan    |
+| --------------------------------- | ------------- | ---------- | ------------ |
+| assert True pattern               | CRITICAL      | Medium     | **CRIT-001** |
+| test_quick.py not pytest          | CRITICAL      | Medium     | **CRIT-002** |
+| Skipped deterministic test        | CRITICAL      | Low        | **CRIT-003** |
+| test_final.py returns not asserts | CRITICAL      | Not found  | **CRIT-004** |
+| pip-audit warnings only           | HIGH          | Medium     | **CRIT-005** |
+| Mock-only testing                 | HIGH          | Not found  | **HIGH-001** |
+| OR logic always passes            | HIGH          | Not found  | **HIGH-002** |
+| Accuracy below random             | HIGH          | Not found  | **HIGH-003** |
+| Fast mode no learning check       | Not found     | Not found  | **HIGH-004** |
+| MyPy 15 codes disabled            | HIGH          | Medium     | **HIGH-005** |
+| Tests excluded from linting       | HIGH          | Medium     | **HIGH-006** |
+| Loss tolerance 0.5                | HIGH          | Not found  | **HIGH-007** |
+| Both paths skip                   | HIGH          | Low        | **HIGH-008** |
 
 ---
 
 ## Document History
 
-| Version | Date | Author | Changes |
-|---------|------|--------|---------|
-| 1.0 | 2026-02-03 | Claude Opus 4.5 | Initial consolidated development plan |
+| Version | Date       | Author          | Changes                               |
+| ------- | ---------- | --------------- | ------------------------------------- |
+| 1.0     | 2026-02-03 | Claude Opus 4.5 | Initial consolidated development plan |
 
 ---
 

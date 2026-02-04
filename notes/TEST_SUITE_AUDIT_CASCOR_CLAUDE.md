@@ -13,14 +13,14 @@ This audit examined the JuniperCascor test suite, CI/CD pipeline, and code quali
 
 ### Critical Findings Summary
 
-| Category | Critical | High | Medium | Low |
-|----------|----------|------|--------|-----|
-| Tests Always Passing | 3 | 2 | - | - |
-| Mock-Only Testing | - | 1 (67+ tests) | - | - |
-| Skipped/Excluded Tests | 2 | 3 | 5+ | - |
-| Weak Assertions | - | 12 | 8 | 4 |
-| CI/CD Configuration | 1 | 3 | 4 | 2 |
-| Pre-commit Hooks | - | 2 | 3 | 1 |
+| Category               | Critical | High          | Medium | Low |
+| ---------------------- | -------- | ------------- | ------ | --- |
+| Tests Always Passing   | 3        | 2             | -      | -   |
+| Mock-Only Testing      | -        | 1 (67+ tests) | -      | -   |
+| Skipped/Excluded Tests | 2        | 3             | 5+     | -   |
+| Weak Assertions        | -        | 12            | 8      | 4   |
+| CI/CD Configuration    | 1        | 3             | 4      | 2   |
+| Pre-commit Hooks       | -        | 2             | 3      | 1   |
 
 ---
 
@@ -47,7 +47,7 @@ This audit examined the JuniperCascor test suite, CI/CD pipeline, and code quali
 
 ### 1.1 Tests That Always Pass
 
-**Severity: CRITICAL**
+**Severity: CRITICAL:**
 
 These tests pass regardless of actual code behavior, providing false confidence in code quality.
 
@@ -119,7 +119,7 @@ return success  # Returns boolean but doesn't assert
 
 ### 1.2 Tests Not Testing Source Code
 
-**Severity: HIGH**
+**Severity: HIGH:**
 
 These tests exercise mock objects rather than actual source code, providing no real coverage.
 
@@ -176,7 +176,7 @@ def test_uses_juniper_data_when_env_set(self):
 
 ### 1.3 Duplicate or Redundant Tests
 
-**Severity: LOW**
+**Severity: LOW:**
 
 No exact duplicate tests were identified. However, there are near-duplicates in fixture configurations:
 
@@ -187,7 +187,7 @@ No exact duplicate tests were identified. However, there are near-duplicates in 
 
 ### 1.4 Excluded/Skipped Tests
 
-**Severity: HIGH to MEDIUM**
+**Severity: HIGH to MEDIUM:**
 
 #### Finding 1.4.1: Critical Test Explicitly Skipped
 
@@ -235,6 +235,7 @@ def test_candidate_training_manager_start_method(start_method, expected_exceptio
 #### Finding 1.4.3: Skipif Decorators for Optional Dependencies
 
 **Files**:
+
 - `src/tests/unit/test_utils_coverage.py` (15+ tests)
 - `src/tests/unit/test_utils_extended.py` (11+ tests)
 
@@ -244,6 +245,7 @@ def test_check_object_pickleability_none(self):
 ```
 
 **Affected Tests** (partial list):
+
 - `test_check_object_pickleability_none`
 - `test_check_object_pickleability_no_dict`
 - `test_check_object_pickleability_with_simple_object`
@@ -280,7 +282,7 @@ python -m pytest \
 
 ### 1.5 Logically Invalid Tests
 
-**Severity: HIGH**
+**Severity: HIGH:**
 
 #### Finding 1.5.1: OR Logic That Always Passes
 
@@ -310,6 +312,7 @@ except Exception as e:
 ```
 
 **Issue**: The assertion `"empty" not in e or "size" in e` is logically flawed:
+
 - If "empty" is not in the message, assertion passes (regardless of other content)
 - If "size" is in the message, assertion passes (regardless of other content)
 - Almost any exception message passes this test
@@ -320,7 +323,7 @@ except Exception as e:
 
 ### 1.6 Tests with Weak Assertions
 
-**Severity: HIGH to MEDIUM**
+**Severity: HIGH to MEDIUM:**
 
 #### Finding 1.6.1: Overly Loose Tolerance
 
@@ -355,13 +358,13 @@ assert first_sequence is not None  # List comprehension ALWAYS produces a list
 
 Multiple tests allow accuracy well below random chance:
 
-| Test | Line | Assertion | Random Chance | Issue |
-|------|------|-----------|---------------|-------|
-| test_2_spiral_learning | 59 | `>= 0.45` | 0.50 | Below random |
-| test_spiral_noise_robustness | 176 | `>= 0.35` | 0.50 | 15% below random |
-| test_spiral_data_size_scaling | 206 | `>= 0.35` | 0.50 | 15% below random |
-| test_spiral_training_progression | 260 | `>= 0.0` | 0.50 | Trivial |
-| test_perfect_spiral_separation | 319 | `>= 0.4` | 0.50 | Below random for clean data |
+| Test                             | Line | Assertion | Random Chance | Issue                       |
+| -------------------------------- | ---- | --------- | ------------- | --------------------------- |
+| test_2_spiral_learning           | 59   | `>= 0.45` | 0.50          | Below random                |
+| test_spiral_noise_robustness     | 176  | `>= 0.35` | 0.50          | 15% below random            |
+| test_spiral_data_size_scaling    | 206  | `>= 0.35` | 0.50          | 15% below random            |
+| test_spiral_training_progression | 260  | `>= 0.0`  | 0.50          | Trivial                     |
+| test_perfect_spiral_separation   | 319  | `>= 0.4`  | 0.50          | Below random for clean data |
 
 ---
 
@@ -401,11 +404,12 @@ assert result["improvement"] >= -0.1  # Allows negative improvement
 
 ### 1.7 Security Vulnerability Detection
 
-**Severity: MEDIUM**
+**Severity: MEDIUM:**
 
 #### Finding 1.7.1: No Security Testing in Test Suite
 
 The test suite does not include security-focused tests for:
+
 - Input sanitization
 - File path traversal in snapshot loading
 - Pickle deserialization security
@@ -477,6 +481,7 @@ pip-audit -r reports/security/pip-freeze.txt || echo "::warning::Vulnerabilities
 ```
 
 **Missing from coverage**:
+
 - `src/spiral_problem/`
 - `src/log_config/`
 - `src/cascor_constants/`
@@ -550,6 +555,7 @@ unit-tests:
 ```
 
 **Issue**: 15 mypy error codes are disabled, significantly reducing type checking effectiveness. Key disabled checks include:
+
 - `attr-defined`: Accessing undefined attributes
 - `return-value`: Wrong return types
 - `arg-type`: Wrong argument types
@@ -568,6 +574,7 @@ unit-tests:
 ```
 
 **Notable ignores**:
+
 - `E722`: Bare except clause (security concern)
 - `C901`: Function too complex
 - `F401`: Module imported but unused
@@ -713,28 +720,28 @@ But `C901` (complexity warning) is in the ignore list.
 
 ### A. Complete List of Tests That Always Pass
 
-| File | Test | Line | Issue |
-|------|------|------|-------|
-| test_training_workflow.py | test_forward_with_wrong_input_size | 180-190 | `assert True` both paths |
-| test_training_workflow.py | test_train_with_mismatched_sizes | 192-204 | `assert True` both paths |
-| test_training_workflow.py | test_gradients_exist_after_backward | 224 | OR logic always passes |
-| test_quick.py | main() | 16-81 | Not a pytest test |
-| test_final.py | test_candidate_units_simple | 79-86 | Returns without asserting |
+| File                      | Test                                | Line    | Issue                     |
+| ------------------------- | ----------------------------------- | ------- | ------------------------- |
+| test_training_workflow.py | test_forward_with_wrong_input_size  | 180-190 | `assert True` both paths  |
+| test_training_workflow.py | test_train_with_mismatched_sizes    | 192-204 | `assert True` both paths  |
+| test_training_workflow.py | test_gradients_exist_after_backward | 224     | OR logic always passes    |
+| test_quick.py             | main()                              | 16-81   | Not a pytest test         |
+| test_final.py             | test_candidate_units_simple         | 79-86   | Returns without asserting |
 
 ### B. Complete List of Skipped Tests
 
-| File | Test | Skip Reason | Valid? |
-|------|------|-------------|--------|
-| test_comprehensive_serialization.py | test_deterministic_training_resume | Long-running | **No** - Critical test |
-| test_candidate_training_manager.py | test_candidate_training_manager_start_method | Avoid complexity | **No** - Never tests |
-| test_utils_coverage.py | 15+ pickling tests | Requires dill | Conditional |
-| test_utils_extended.py | 11+ pickling tests | Requires dill | Conditional |
+| File                                | Test                                         | Skip Reason      | Valid?                 |
+| ----------------------------------- | -------------------------------------------- | ---------------- | ---------------------- |
+| test_comprehensive_serialization.py | test_deterministic_training_resume           | Long-running     | **No** - Critical test |
+| test_candidate_training_manager.py  | test_candidate_training_manager_start_method | Avoid complexity | **No** - Never tests   |
+| test_utils_coverage.py              | 15+ pickling tests                           | Requires dill    | Conditional            |
+| test_utils_extended.py              | 11+ pickling tests                           | Requires dill    | Conditional            |
 
 ### C. Tests in lastfailed Cache
 
 The following 34 tests have been recorded as failed:
 
-```
+```bash
 unit/test_cascade_correlation_coverage.py::TestAccuracyCalculation::test_get_accuracy_returns_float
 unit/test_cascade_correlation_coverage.py::TestCandidateCreation::test_create_candidate_returns_candidate
 unit/test_cascade_correlation_coverage.py::TestCandidateCreation::test_candidates_have_different_seeds
@@ -755,7 +762,7 @@ These should be investigated and fixed.
 
 ### D. CI/CD Workflow Dependencies
 
-```
+```bash
 pre-commit
     |
     v
@@ -781,9 +788,9 @@ notify <-- needs required-checks
 
 ## Document History
 
-| Version | Date | Author | Changes |
-|---------|------|--------|---------|
-| 1.0 | 2026-02-03 | Claude Opus 4.5 | Initial audit |
+| Version | Date       | Author          | Changes       |
+| ------- | ---------- | --------------- | ------------- |
+| 1.0     | 2026-02-03 | Claude Opus 4.5 | Initial audit |
 
 ---
 

@@ -24,12 +24,12 @@ The plan prioritizes 23 identified issues by **severity**, **impact**, and **ris
 
 ### Priority Distribution
 
-| Priority | Count | Description |
-|----------|-------|-------------|
-| P0 (Critical) | 5 | CI correctness & test-signal integrity |
-| P1 (High) | 5 | Tests not testing real code / portability |
-| P2 (Medium) | 5 | Tooling hygiene improvements |
-| P3 (Low) | 3 | Housekeeping & enhancements |
+| Priority      | Count | Description                               |
+| ------------- | ----- | ----------------------------------------- |
+| P0 (Critical) | 5     | CI correctness & test-signal integrity    |
+| P1 (High)     | 5     | Tests not testing real code / portability |
+| P2 (Medium)   | 5     | Tooling hygiene improvements              |
+| P3 (Low)      | 3     | Housekeeping & enhancements               |
 
 ---
 
@@ -53,45 +53,45 @@ All findings from both audit reports were independently verified against the cur
 
 ### 1.1 Test Suite Issues
 
-| ID | Issue | Validation Status | Source File(s) |
-|----|-------|------------------|----------------|
-| TST-001 | Always-passing tests (assert True) | ✅ Confirmed | `test_training_workflow.py:186-204` |
-| TST-002 | Mock-only tests not exercising source | ✅ Confirmed | `test_log_config_coverage.py` (67+ tests) |
-| TST-003 | Hardcoded absolute paths | ✅ Confirmed | `test_quick.py:9`, `test_final.py:9`, `test_cascor_fix.py:9`, `test_p1_fixes.py:171` |
-| TST-004 | Skipped critical deterministic test | ✅ Confirmed | `test_comprehensive_serialization.py:41-42` |
-| TST-005 | Test file without pytest functions | ✅ Confirmed | `test_quick.py` (only `main()`) |
-| TST-006 | Tests in lastfailed cache | ✅ Confirmed | 34 tests in `.pytest_cache/v/cache/lastfailed` |
-| TST-007 | Tests skipped due to missing dill | ✅ Confirmed | 26+ tests in `test_utils_extended.py`, `test_utils_coverage.py` |
-| TST-008 | Test with empty code block | ✅ Confirmed | `test_residual_error.py:43-46` (`pass` instead of test logic) |
-| TST-009 | Test returns boolean without asserting | ✅ Confirmed | `test_final.py:79-86` |
-| TST-010 | Weak OR logic assertions | ✅ Confirmed | `test_training_workflow.py:224` |
+| ID      | Issue                                  | Validation Status | Source File(s)                                                                       |
+| ------- | -------------------------------------- | ----------------- | ------------------------------------------------------------------------------------ |
+| TST-001 | Always-passing tests (assert True)     | ✅ Confirmed      | `test_training_workflow.py:186-204`                                                  |
+| TST-002 | Mock-only tests not exercising source  | ✅ Confirmed      | `test_log_config_coverage.py` (67+ tests)                                            |
+| TST-003 | Hardcoded absolute paths               | ✅ Confirmed      | `test_quick.py:9`, `test_final.py:9`, `test_cascor_fix.py:9`, `test_p1_fixes.py:171` |
+| TST-004 | Skipped critical deterministic test    | ✅ Confirmed      | `test_comprehensive_serialization.py:41-42`                                          |
+| TST-005 | Test file without pytest functions     | ✅ Confirmed      | `test_quick.py` (only `main()`)                                                      |
+| TST-006 | Tests in lastfailed cache              | ✅ Confirmed      | 34 tests in `.pytest_cache/v/cache/lastfailed`                                       |
+| TST-007 | Tests skipped due to missing dill      | ✅ Confirmed      | 26+ tests in `test_utils_extended.py`, `test_utils_coverage.py`                      |
+| TST-008 | Test with empty code block             | ✅ Confirmed      | `test_residual_error.py:43-46` (`pass` instead of test logic)                        |
+| TST-009 | Test returns boolean without asserting | ✅ Confirmed      | `test_final.py:79-86`                                                                |
+| TST-010 | Weak OR logic assertions               | ✅ Confirmed      | `test_training_workflow.py:224`                                                      |
 
 ### 1.2 CI/CD Configuration Issues
 
-| ID | Issue | Validation Status | Source File(s) |
-|----|-------|------------------|----------------|
-| CI-001 | Python 3.14 specified (unreleased) | ✅ Confirmed | `ci.yml:55`, `.pre-commit-config.yaml:34`, `pyproject.toml:134` |
-| CI-002 | Slow tests never run in CI | ✅ Confirmed | `ci.yml:175,271` (`-m "not slow"`) |
-| CI-003 | pip-audit doesn't fail on vulnerabilities | ✅ Confirmed | `ci.yml:385` (uses `|| echo "::warning::"`) |
-| CI-004 | Bandit SARIF upload continue-on-error | ✅ Confirmed | `ci.yml:375` |
-| CI-005 | Integration tests only on PR/main/develop | ✅ Confirmed | `ci.yml:214` |
+| ID     | Issue                                     | Validation Status | Source File(s)                                                  |
+| ------ | ----------------------------------------- | ----------------- | --------------------------------------------------------------- |
+| CI-001 | Python 3.14 specified (unreleased)        | ✅ Confirmed      | `ci.yml:55`, `.pre-commit-config.yaml:34`, `pyproject.toml:134` |
+| CI-002 | Slow tests never run in CI                | ✅ Confirmed      | `ci.yml:175,271` (`-m "not slow"`)                              |
+| CI-003 | pip-audit doesn't fail on vulnerabilities | ✅ Confirmed      | `ci.yml:385` (uses `\|\| echo "::warning::"`)                   |
+| CI-004 | Bandit SARIF upload continue-on-error     | ✅ Confirmed      | `ci.yml:375`                                                    |
+| CI-005 | Integration tests only on PR/main/develop | ✅ Confirmed      | `ci.yml:214`                                                    |
 
 ### 1.3 Pre-commit and Linting Issues
 
-| ID | Issue | Validation Status | Source File(s) |
-|----|-------|------------------|----------------|
-| LINT-001 | MyPy has 15 error codes disabled | ✅ Confirmed | `.pre-commit-config.yaml:163-177` |
-| LINT-002 | Flake8 ignores important codes | ✅ Confirmed | `.pre-commit-config.yaml:141` |
-| LINT-003 | Line length set to 512 | ✅ Confirmed | `.pre-commit-config.yaml:115,128,140`, `pyproject.toml:43,64` |
-| LINT-004 | Tests excluded from all linting | ✅ Confirmed | `.pre-commit-config.yaml:149,179,200` |
-| LINT-005 | Shellcheck severity = error only | ✅ Confirmed | `.pre-commit-config.yaml:225` |
+| ID       | Issue                            | Validation Status | Source File(s)                                                |
+| -------- | -------------------------------- | ----------------- | ------------------------------------------------------------- |
+| LINT-001 | MyPy has 15 error codes disabled | ✅ Confirmed      | `.pre-commit-config.yaml:163-177`                             |
+| LINT-002 | Flake8 ignores important codes   | ✅ Confirmed      | `.pre-commit-config.yaml:141`                                 |
+| LINT-003 | Line length set to 512           | ✅ Confirmed      | `.pre-commit-config.yaml:115,128,140`, `pyproject.toml:43,64` |
+| LINT-004 | Tests excluded from all linting  | ✅ Confirmed      | `.pre-commit-config.yaml:149,179,200`                         |
+| LINT-005 | Shellcheck severity = error only | ✅ Confirmed      | `.pre-commit-config.yaml:225`                                 |
 
 ### 1.4 Coverage Configuration Issues
 
-| ID | Issue | Validation Status | Source File(s) |
-|----|-------|------------------|----------------|
-| COV-001 | Coverage sources missing directories | ✅ Confirmed | `pyproject.toml:105` (missing: spiral_problem, log_config, utils, profiling, remote_client, cascor_plotter) |
-| COV-002 | pytest warnings suppressed | ✅ Confirmed | `pyproject.toml:80` (`-p no:warnings`) |
+| ID      | Issue                                | Validation Status | Source File(s)                                                                                              |
+| ------- | ------------------------------------ | ----------------- | ----------------------------------------------------------------------------------------------------------- |
+| COV-001 | Coverage sources missing directories | ✅ Confirmed      | `pyproject.toml:105` (missing: spiral_problem, log_config, utils, profiling, remote_client, cascor_plotter) |
+| COV-002 | pytest warnings suppressed           | ✅ Confirmed      | `pyproject.toml:80` (`-p no:warnings`)                                                                      |
 
 ---
 
@@ -99,41 +99,41 @@ All findings from both audit reports were independently verified against the cur
 
 ### P0 — Critical (CI Correctness & Test-Signal Integrity)
 
-| ID | Issue | Impact | Risk | Effort |
-|----|-------|--------|------|--------|
-| CI-001 | Python 3.14 specified | CI failures/inconsistency | High | S |
-| TST-001 | Always-passing tests | False confidence in tests | Critical | S |
-| TST-007 | 26+ tests skipped (missing dill) | Coverage overstated | High | S |
-| COV-001 | Coverage sources missing | Unmeasured code | High | M |
-| CI-003 | pip-audit doesn't fail | Security not enforced | High | S |
+| ID      | Issue                            | Impact                    | Risk     | Effort |
+| ------- | -------------------------------- | ------------------------- | -------- | ------ |
+| CI-001  | Python 3.14 specified            | CI failures/inconsistency | High     | S      |
+| TST-001 | Always-passing tests             | False confidence in tests | Critical | S      |
+| TST-007 | 26+ tests skipped (missing dill) | Coverage overstated       | High     | S      |
+| COV-001 | Coverage sources missing         | Unmeasured code           | High     | M      |
+| CI-003  | pip-audit doesn't fail           | Security not enforced     | High     | S      |
 
 ### P1 — High (Tests Not Testing Real Code / Portability)
 
-| ID | Issue | Impact | Risk | Effort |
-|----|-------|--------|------|--------|
-| TST-002 | Mock-only LogConfig tests | Zero real coverage | High | M |
-| TST-003 | Hardcoded absolute paths | CI/portability broken | Medium | M |
-| TST-004 | Skipped deterministic test | Critical behavior untested | High | M-L |
-| TST-005 | test_quick.py no pytest functions | Tests not collected | Medium | S |
-| TST-009 | Test returns without asserting | Test never fails | Medium | S |
+| ID      | Issue                             | Impact                     | Risk   | Effort |
+| ------- | --------------------------------- | -------------------------- | ------ | ------ |
+| TST-002 | Mock-only LogConfig tests         | Zero real coverage         | High   | M      |
+| TST-003 | Hardcoded absolute paths          | CI/portability broken      | Medium | M      |
+| TST-004 | Skipped deterministic test        | Critical behavior untested | High   | M-L    |
+| TST-005 | test_quick.py no pytest functions | Tests not collected        | Medium | S      |
+| TST-009 | Test returns without asserting    | Test never fails           | Medium | S      |
 
 ### P2 — Medium (Tooling Hygiene)
 
-| ID | Issue | Impact | Risk | Effort |
-|----|-------|--------|------|--------|
-| COV-002 | pytest warnings suppressed | Hidden deprecations | Medium | S-M |
-| LINT-004 | Tests excluded from linting | Test code quality not enforced | Medium | M |
-| LINT-002 | Flake8 ignores dangerous codes | Bugs allowed | Medium | L |
-| LINT-001 | MyPy 15 codes disabled | Type checking ineffective | Medium | L-XL |
-| LINT-003 | Line length 512 | Readability harmed | Low | M-L |
+| ID       | Issue                          | Impact                         | Risk   | Effort |
+| -------- | ------------------------------ | ------------------------------ | ------ | ------ |
+| COV-002  | pytest warnings suppressed     | Hidden deprecations            | Medium | S-M    |
+| LINT-004 | Tests excluded from linting    | Test code quality not enforced | Medium | M      |
+| LINT-002 | Flake8 ignores dangerous codes | Bugs allowed                   | Medium | L      |
+| LINT-001 | MyPy 15 codes disabled         | Type checking ineffective      | Medium | L-XL   |
+| LINT-003 | Line length 512                | Readability harmed             | Low    | M-L    |
 
 ### P3 — Low (Housekeeping & Enhancements)
 
-| ID | Issue | Impact | Risk | Effort |
-|----|-------|--------|------|--------|
-| TST-006 | 34 tests in lastfailed cache | Local state (not critical) | Low | S |
-| CI-002 | Slow tests never run | Regressions may slip | Medium | M |
-| TST-008/TST-010 | Weak/empty test logic | Minor false positives | Low | S |
+| ID              | Issue                        | Impact                     | Risk   | Effort |
+| --------------- | ---------------------------- | -------------------------- | ------ | ------ |
+| TST-006         | 34 tests in lastfailed cache | Local state (not critical) | Low    | S      |
+| CI-002          | Slow tests never run         | Regressions may slip       | Medium | M      |
+| TST-008/TST-010 | Weak/empty test logic        | Minor false positives      | Low    | S      |
 
 ---
 
@@ -145,11 +145,11 @@ All findings from both audit reports were independently verified against the cur
 **Duration**: 1 day  
 **Total Effort**: Small (2-4 hours)
 
-| Task | Issue ID | Description | Effort | Owner |
-|------|----------|-------------|--------|-------|
-| 0.1 | CI-001 | Update Python version from 3.14 to 3.13 in all configs | S | TBD |
-| 0.2 | TST-007 | Add `dill` to test dependencies in conda spec / CI | S | TBD |
-| 0.3 | TST-006 | Add `.pytest_cache/` to `.gitignore`, remove if committed | S | TBD |
+| Task | Issue ID | Description                                               | Effort | Owner |
+| ---- | -------- | --------------------------------------------------------- | ------ | ----- |
+| 0.1  | CI-001   | Update Python version from 3.14 to 3.13 in all configs    | S      | TBD   |
+| 0.2  | TST-007  | Add `dill` to test dependencies in conda spec / CI        | S      | TBD   |
+| 0.3  | TST-006  | Add `.pytest_cache/` to `.gitignore`, remove if committed | S      | TBD   |
 
 **Exit Criteria**:
 
@@ -165,14 +165,14 @@ All findings from both audit reports were independently verified against the cur
 **Duration**: 1-2 days  
 **Total Effort**: Medium (6-10 hours)
 
-| Task | Issue ID | Description | Effort | Owner |
-|------|----------|-------------|--------|-------|
-| 1.1 | TST-001 | Fix always-passing tests in `test_training_workflow.py` | S | TBD |
-| 1.2 | TST-005 | Convert `test_quick.py` to proper pytest format or delete | S | TBD |
-| 1.3 | TST-009 | Add proper assertions to `test_final.py` | S | TBD |
-| 1.4 | TST-010 | Fix weak OR logic in gradient tests | S | TBD |
-| 1.5 | TST-003 | Replace hardcoded paths with `tmp_path` fixtures | M | TBD |
-| 1.6 | TST-008 | Fix empty test block in `test_residual_error.py` | S | TBD |
+| Task | Issue ID | Description                                               | Effort | Owner |
+| ---- | -------- | --------------------------------------------------------- | ------ | ----- |
+| 1.1  | TST-001  | Fix always-passing tests in `test_training_workflow.py`   | S      | TBD   |
+| 1.2  | TST-005  | Convert `test_quick.py` to proper pytest format or delete | S      | TBD   |
+| 1.3  | TST-009  | Add proper assertions to `test_final.py`                  | S      | TBD   |
+| 1.4  | TST-010  | Fix weak OR logic in gradient tests                       | S      | TBD   |
+| 1.5  | TST-003  | Replace hardcoded paths with `tmp_path` fixtures          | M      | TBD   |
+| 1.6  | TST-008  | Fix empty test block in `test_residual_error.py`          | S      | TBD   |
 
 **Exit Criteria**:
 
@@ -189,12 +189,12 @@ All findings from both audit reports were independently verified against the cur
 **Duration**: 2-4 days  
 **Total Effort**: Medium-Large (12-24 hours)
 
-| Task | Issue ID | Description | Effort | Owner |
-|------|----------|-------------|--------|-------|
-| 2.1 | TST-002 | Refactor `test_log_config_coverage.py` to use real LogConfig | M | TBD |
-| 2.2 | COV-001 | Expand coverage sources to include all src directories | M | TBD |
-| 2.3 | TST-004 | Stabilize and enable deterministic resume test | M-L | TBD |
-| 2.4 | CI-003 | Configure pip-audit to fail on high/critical vulnerabilities | S | TBD |
+| Task | Issue ID | Description                                                  | Effort | Owner |
+| ---- | -------- | ------------------------------------------------------------ | ------ | ----- |
+| 2.1  | TST-002  | Refactor `test_log_config_coverage.py` to use real LogConfig | M      | TBD   |
+| 2.2  | COV-001  | Expand coverage sources to include all src directories       | M      | TBD   |
+| 2.3  | TST-004  | Stabilize and enable deterministic resume test               | M-L    | TBD   |
+| 2.4  | CI-003   | Configure pip-audit to fail on high/critical vulnerabilities | S      | TBD   |
 
 **Exit Criteria**:
 
@@ -211,14 +211,14 @@ All findings from both audit reports were independently verified against the cur
 **Duration**: 3-5 days (can be incremental)  
 **Total Effort**: Large (24-40 hours)
 
-| Task | Issue ID | Description | Effort | Owner |
-|------|----------|-------------|--------|-------|
-| 3.1 | COV-002 | Remove `-p no:warnings`, add targeted filterwarnings | S-M | TBD |
-| 3.2 | LINT-004 | Include test files in flake8/mypy with relaxed initial rules | M | TBD |
-| 3.3 | LINT-002 | Re-enable dangerous flake8 codes (E722, F401) | M | TBD |
-| 3.4 | CI-002 | Add scheduled nightly/weekly workflow for slow tests | M | TBD |
-| 3.5 | LINT-001 | Gradually re-enable mypy error codes (staged per module) | L-XL | TBD |
-| 3.6 | LINT-003 | Reduce line length to 100-120 (enforce on new/touched files) | M-L | TBD |
+| Task | Issue ID | Description                                                  | Effort | Owner |
+| ---- | -------- | ------------------------------------------------------------ | ------ | ----- |
+| 3.1  | COV-002  | Remove `-p no:warnings`, add targeted filterwarnings         | S-M    | TBD   |
+| 3.2  | LINT-004 | Include test files in flake8/mypy with relaxed initial rules | M      | TBD   |
+| 3.3  | LINT-002 | Re-enable dangerous flake8 codes (E722, F401)                | M      | TBD   |
+| 3.4  | CI-002   | Add scheduled nightly/weekly workflow for slow tests         | M      | TBD   |
+| 3.5  | LINT-001 | Gradually re-enable mypy error codes (staged per module)     | L-XL   | TBD   |
+| 3.6  | LINT-003 | Reduce line length to 100-120 (enforce on new/touched files) | M-L    | TBD   |
 
 **Exit Criteria**:
 
@@ -490,12 +490,12 @@ def test_get_uuid_returns_valid_uuid(self, real_log_config):
 
 **Files Affected**:
 
-| File | Line | Hardcoded Path |
-|------|------|----------------|
-| `test_quick.py` | 9 | `/home/pcalnon/Development/python/Juniper/src/prototypes/cascor/src` |
-| `test_final.py` | 9 | `/home/pcalnon/Development/python/Juniper/src/prototypes/cascor/src` |
-| `test_cascor_fix.py` | 9 | `/home/pcalnon/Development/python/Juniper/src/prototypes/cascor/src` |
-| `test_p1_fixes.py` | 171 | `/home/pcalnon/.../cascade_correlation.py` (file open) |
+| File                 | Line | Hardcoded Path                                                       |
+| -------------------- | ---- | -------------------------------------------------------------------- |
+| `test_quick.py`      | 9    | `/home/pcalnon/Development/python/Juniper/src/prototypes/cascor/src` |
+| `test_final.py`      | 9    | `/home/pcalnon/Development/python/Juniper/src/prototypes/cascor/src` |
+| `test_cascor_fix.py` | 9    | `/home/pcalnon/Development/python/Juniper/src/prototypes/cascor/src` |
+| `test_p1_fixes.py`   | 171  | `/home/pcalnon/.../cascade_correlation.py` (file open)               |
 
 **Remediation**:
 
@@ -776,11 +776,11 @@ exclude: ^src/tests/
 
 **Most Dangerous Ignores**:
 
-| Code | Description | Risk |
-|------|-------------|------|
-| E722 | Bare `except:` clause | Security/reliability risk |
-| F401 | Module imported but unused | Dead code accumulation |
-| C901 | Function too complex | Maintainability |
+| Code | Description                | Risk                      |
+| ---- | -------------------------- | ------------------------- |
+| E722 | Bare `except:` clause      | Security/reliability risk |
+| F401 | Module imported but unused | Dead code accumulation    |
+| C901 | Function too complex       | Maintainability           |
 
 **Remediation** (staged approach):
 
@@ -983,39 +983,39 @@ jobs:
 
 ## 5. Dependencies Matrix
 
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│                    DEPENDENCY FLOW                                  │
-│                                                                     │
-│  Phase 0 (Baseline)                                                 │
+```bash
+┌────────────────────────────────────────────────────────────────────┐
+│                    DEPENDENCY FLOW                                 │
+│                                                                    │
+│  Phase 0 (Baseline)                                                │
 │  ┌─────────┐     ┌───────────┐     ┌─────────────┐                 │
 │  │ CI-001  │────▶│ TST-007   │────▶│ All other   │                 │
 │  │ Fix Py  │     │ Add dill  │     │ tasks       │                 │
 │  │ version │     │           │     │             │                 │
 │  └─────────┘     └───────────┘     └─────────────┘                 │
-│                                                                     │
+│                                                                    │
 │  Phase 1 (Test Integrity)                                          │
 │  ┌─────────┐     ┌───────────┐                                     │
 │  │ TST-001 │────▶│ LINT-004  │  (Fix tests before linting them)    │
 │  │ Fix     │     │ Include   │                                     │
 │  │ asserts │     │ tests     │                                     │
 │  └─────────┘     └───────────┘                                     │
-│                                                                     │
+│                                                                    │
 │  Phase 2 (Coverage)                                                │
 │  ┌─────────┐     ┌───────────┐                                     │
 │  │ TST-002 │────▶│ COV-001   │  (Real tests before measuring)      │
 │  │ Real    │     │ Expand    │                                     │
 │  │ objects │     │ sources   │                                     │
 │  └─────────┘     └───────────┘                                     │
-│                                                                     │
+│                                                                    │
 │  Phase 3 (Tooling)                                                 │
 │  ┌─────────┐     ┌───────────┐     ┌─────────────┐                 │
 │  │ LINT-002│────▶│ LINT-001  │────▶│ LINT-003    │                 │
 │  │ Flake8  │     │ MyPy      │     │ Line length │                 │
 │  │ codes   │     │ codes     │     │             │                 │
 │  └─────────┘     └───────────┘     └─────────────┘                 │
-│                                                                     │
-└─────────────────────────────────────────────────────────────────────┘
+│                                                                    │
+└────────────────────────────────────────────────────────────────────┘
 ```
 
 **Key Dependencies**:
@@ -1032,13 +1032,13 @@ jobs:
 
 ### 6.1 High-Risk Items
 
-| Risk | Likelihood | Impact | Mitigation |
-|------|------------|--------|------------|
-| Coverage drops when expanding sources | High | Medium | Temporarily lower `fail_under`; track improvement plan |
-| Enabling dill increases test runtime | Low | Low | dill is lightweight; monitor runtime metrics |
-| Deterministic test remains flaky | Medium | High | Use `xfail(strict=True)` with tracking issue |
-| Linting tests surfaces many issues | High | Medium | Phase approach: relaxed rules first |
-| Line length change creates large diff | High | Low | Single atomic commit; no logic changes |
+| Risk                                  | Likelihood | Impact | Mitigation                                             |
+| ------------------------------------- | ---------- | ------ | ------------------------------------------------------ |
+| Coverage drops when expanding sources | High       | Medium | Temporarily lower `fail_under`; track improvement plan |
+| Enabling dill increases test runtime  | Low        | Low    | dill is lightweight; monitor runtime metrics           |
+| Deterministic test remains flaky      | Medium     | High   | Use `xfail(strict=True)` with tracking issue           |
+| Linting tests surfaces many issues    | High       | Medium | Phase approach: relaxed rules first                    |
+| Line length change creates large diff | High       | Low    | Single atomic commit; no logic changes                 |
 
 ### 6.2 Rollback Strategy
 
@@ -1055,16 +1055,16 @@ Each phase should be implemented in separate PRs:
 
 ### 7.1 Quantitative Metrics
 
-| Metric | Current | Target (Phase 2) | Target (Phase 3) |
-|--------|---------|------------------|------------------|
-| Tests always passing incorrectly | 4+ | 0 | 0 |
-| Tests using hardcoded paths | 4 | 0 | 0 |
-| Tests skipped (dill) | 26+ | 0 | 0 |
-| Mock-only test files | 1 | 0 | 0 |
-| Coverage sources | 3 dirs | All dirs | All dirs |
-| MyPy disabled codes | 15 | 15 | ≤ 10 |
-| Flake8 ignored codes | 15 | 13 | ≤ 10 |
-| Failed tests in cache | 34 | 0 | 0 |
+| Metric                           | Current | Target (Phase 2) | Target (Phase 3) |
+| -------------------------------- | ------- | ---------------- | ---------------- |
+| Tests always passing incorrectly | 4+      | 0                | 0                |
+| Tests using hardcoded paths      | 4       | 0                | 0                |
+| Tests skipped (dill)             | 26+     | 0                | 0                |
+| Mock-only test files             | 1       | 0                | 0                |
+| Coverage sources                 | 3 dirs  | All dirs         | All dirs         |
+| MyPy disabled codes              | 15      | 15               | ≤ 10             |
+| Flake8 ignored codes             | 15      | 13               | ≤ 10             |
+| Failed tests in cache            | 34      | 0                | 0                |
 
 ### 7.2 Qualitative Metrics
 
@@ -1081,56 +1081,56 @@ Each phase should be implemented in separate PRs:
 
 ### Test Files
 
-| File | Changes Required |
-|------|------------------|
-| `src/tests/unit/test_training_workflow.py` | Fix assert True patterns (lines 186-204, 224) |
-| `src/tests/unit/test_log_config_coverage.py` | Replace MagicMock with real LogConfig (entire file) |
-| `src/tests/unit/test_quick.py` | Convert to pytest format or delete |
-| `src/tests/unit/test_final.py` | Add assertions, fix path (lines 9, 79-86) |
-| `src/tests/unit/test_cascor_fix.py` | Fix hardcoded path (line 9) |
-| `src/tests/unit/test_p1_fixes.py` | Fix hardcoded paths (lines 9, 171) |
-| `src/tests/unit/test_residual_error.py` | Fix empty code block (lines 43-46) |
-| `src/tests/integration/test_comprehensive_serialization.py` | Enable or properly xfail deterministic test |
-| `src/tests/conftest.py` | Add `--run-long` option if needed |
+| File                                                        | Changes Required                                    |
+| ----------------------------------------------------------- | --------------------------------------------------- |
+| `src/tests/unit/test_training_workflow.py`                  | Fix assert True patterns (lines 186-204, 224)       |
+| `src/tests/unit/test_log_config_coverage.py`                | Replace MagicMock with real LogConfig (entire file) |
+| `src/tests/unit/test_quick.py`                              | Convert to pytest format or delete                  |
+| `src/tests/unit/test_final.py`                              | Add assertions, fix path (lines 9, 79-86)           |
+| `src/tests/unit/test_cascor_fix.py`                         | Fix hardcoded path (line 9)                         |
+| `src/tests/unit/test_p1_fixes.py`                           | Fix hardcoded paths (lines 9, 171)                  |
+| `src/tests/unit/test_residual_error.py`                     | Fix empty code block (lines 43-46)                  |
+| `src/tests/integration/test_comprehensive_serialization.py` | Enable or properly xfail deterministic test         |
+| `src/tests/conftest.py`                                     | Add `--run-long` option if needed                   |
 
 ### Configuration Files
 
-| File | Changes Required |
-|------|------------------|
-| `.github/workflows/ci.yml` | Fix Python version, add pip-audit enforcement, add slow test schedule |
-| `.pre-commit-config.yaml` | Fix Python version, reduce ignores, include tests in linting |
-| `pyproject.toml` | Fix mypy version, expand coverage, remove warning suppression |
-| `conf/conda_environment.yaml` | Add dill dependency |
-| `.gitignore` | Add/verify `.pytest_cache/` |
+| File                          | Changes Required                                                      |
+| ----------------------------- | --------------------------------------------------------------------- |
+| `.github/workflows/ci.yml`    | Fix Python version, add pip-audit enforcement, add slow test schedule |
+| `.pre-commit-config.yaml`     | Fix Python version, reduce ignores, include tests in linting          |
+| `pyproject.toml`              | Fix mypy version, expand coverage, remove warning suppression         |
+| `conf/conda_environment.yaml` | Add dill dependency                                                   |
+| `.gitignore`                  | Add/verify `.pytest_cache/`                                           |
 
 ---
 
 ## Appendix B: Effort Estimation Guide
 
-| Size | Hours | Description |
-|------|-------|-------------|
-| S | < 2 | Simple config change, single-file fix |
-| M | 2-8 | Multiple files, moderate refactoring |
-| L | 8-24 | Significant refactoring, multiple systems |
-| XL | 24+ | Major architectural changes |
+| Size | Hours | Description                               |
+| ---- | ----- | ----------------------------------------- |
+| S    | < 2   | Simple config change, single-file fix     |
+| M    | 2-8   | Multiple files, moderate refactoring      |
+| L    | 8-24  | Significant refactoring, multiple systems |
+| XL   | 24+   | Major architectural changes               |
 
 ### Total Effort by Phase
 
-| Phase | Effort Range | Calendar Time |
-|-------|--------------|---------------|
-| Phase 0 | 2-4 hours | 1 day |
-| Phase 1 | 6-10 hours | 1-2 days |
-| Phase 2 | 12-24 hours | 2-4 days |
-| Phase 3 | 24-40 hours | 3-5 days |
+| Phase     | Effort Range    | Calendar Time |
+| --------- | --------------- | ------------- |
+| Phase 0   | 2-4 hours       | 1 day         |
+| Phase 1   | 6-10 hours      | 1-2 days      |
+| Phase 2   | 12-24 hours     | 2-4 days      |
+| Phase 3   | 24-40 hours     | 3-5 days      |
 | **Total** | **44-78 hours** | **7-12 days** |
 
 ---
 
 ## Document History
 
-| Version | Date | Author | Changes |
-|---------|------|--------|---------|
-| 1.0 | 2026-02-03 | Amp | Initial development plan based on audit consolidation |
+| Version | Date       | Author | Changes                                               |
+| ------- | ---------- | ------ | ----------------------------------------------------- |
+| 1.0     | 2026-02-03 | Amp    | Initial development plan based on audit consolidation |
 
 ---
 
