@@ -44,7 +44,8 @@ class TestLoggerClassMethods:
         try:
             Logger.SingletonLoggingConfigured = False
             Logger.set_configured()
-            assert Logger.SingletonLoggingConfigured is True
+            # assert Logger.SingletonLoggingConfigured is True
+            assert Logger.SingletonLoggingConfigured
         finally:
             Logger.SingletonLoggingConfigured = original
 
@@ -543,8 +544,9 @@ class TestLoggerMissingAttributes:
     @pytest.fixture
     def empty_mock(self):
         """Create a mock with no attributes."""
-        mock = MagicMock(spec=[])
-        return mock
+        # mock = MagicMock(spec=[])
+        # return mock
+        return MagicMock(spec=[])
 
     @pytest.mark.unit
     def test_get_log_file_name_missing(self, empty_mock):

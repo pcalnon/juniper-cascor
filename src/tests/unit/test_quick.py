@@ -49,20 +49,19 @@ def test_cascor_candidate_training():
         results = network.train_candidates(x, y, residual_error)
 
         assert results is not None, "train_candidates should return results"
-        assert isinstance(results, tuple), f"Results should be tuple, got {type(results)}"
-        assert len(results) >= 1, "Results tuple should have at least one element"
 
-        candidates_list = results[0]
-        assert isinstance(candidates_list, tuple), f"Candidates list should be tuple, got {type(candidates_list)}"
-        assert len(candidates_list) == 4, f"Candidates list should have 4 elements, got {len(candidates_list)}"
+        # train_candidates returns a TrainingResults dataclass
+        from cascade_correlation.cascade_correlation import TrainingResults
 
-        candidate_ids, candidate_uuids, correlations, candidates = candidates_list
+        assert isinstance(results, TrainingResults), f"Results should be TrainingResults, got {type(results)}"
 
-        assert len(candidates) > 0, "Should have at least one candidate"
-        assert len(correlations) == len(candidates), "Correlations should match candidates"
+        assert len(results.candidate_objects) > 0, "Should have at least one candidate"
+        assert len(results.correlations) == len(results.candidate_objects), "Correlations should match candidates"
+        assert len(results.candidate_ids) == len(results.candidate_objects), "Candidate IDs should match candidates"
+        assert len(results.candidate_uuids) == len(results.candidate_objects), "Candidate UUIDs should match candidates"
 
         # Verify candidates have different correlations
-        assert len(set(correlations)) > 1, "Candidates should have different correlations"
+        assert len(set(results.correlations)) > 1, "Candidates should have different correlations"
 
     finally:
         os.cpu_count = original_cpu_count

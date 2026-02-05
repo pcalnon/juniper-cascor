@@ -428,8 +428,8 @@ class CascadeCorrelationNetwork:
         Logger.debug("CascadeCorrelationNetwork: __init__: Initializing Cascade Correlation Network")
         super().__init__()
 
-        # Initialize configuration
-        self._init_config(config)
+        # Initialize configuration (forward kwargs so direct parameter passing works)
+        self._init_config(config, **kwargs)
 
         # Initialize logging system
         self._init_logging_system()
@@ -448,7 +448,7 @@ class CascadeCorrelationNetwork:
     # Define init methods called by the __init__ constructor method.
     #################################################################################################################################################################################################
 
-    def _init_config(self, config: CascadeCorrelationConfig = None) -> None:
+    def _init_config(self, config: CascadeCorrelationConfig = None, **kwargs) -> None:
         """Initialize configuration and set UUID."""
         if hasattr(self, "logger") and self.logger is not None:
             logger = self.logger
@@ -456,7 +456,7 @@ class CascadeCorrelationNetwork:
             logger = Logger
         logger.debug("CascadeCorrelationNetwork: _init_config: Initializing configuration")
         if config is None:
-            config = CascadeCorrelationConfig()
+            config = CascadeCorrelationConfig(**kwargs)
         self.config = config
         logger.debug(f"CascadeCorrelationNetwork: _init_config: Configuration set to: {self.config}")
         self.set_uuid(self.config.uuid)
