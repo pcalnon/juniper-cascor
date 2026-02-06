@@ -1,10 +1,10 @@
 # AGENTS.md - Juniper Cascor Project Guide
 
 **Project**: Juniper Cascade Correlation Neural Network  
-**Version**: 0.6.2 (0.7.3)  
-**License**: MIT License  
-**Author**: Paul Calnon  
-**Last Updated**: 2026-02-01
+**Version**: 0.6.6 (0.7.3)
+**License**: MIT License
+**Author**: Paul Calnon
+**Last Updated**: 2026-02-05
 
 ---
 
@@ -72,9 +72,11 @@ pip-audit                                 # Check for dependency vulnerabilities
 
 ### Environment Variables
 
-| Variable           | Description                            | Example Values                      |
-| ------------------ | -------------------------------------- | ----------------------------------- |
-| `CASCOR_LOG_LEVEL` | Override log level at runtime (P2-003) | `WARNING`, `INFO`, `DEBUG`, `ERROR` |
+| Variable              | Description                                   | Example Values                      |
+| --------------------- | --------------------------------------------- | ----------------------------------- |
+| `CASCOR_LOG_LEVEL`    | Override log level at runtime (P2-003)        | `WARNING`, `INFO`, `DEBUG`, `ERROR` |
+| `JUNIPER_DATA_URL`    | JuniperData service URL (enables remote data) | `http://localhost:8100`             |
+| `CASCOR_BACKEND_PATH` | Path to Cascor src (used by Canopy)           | `/path/to/juniper_cascor`           |
 
 **Log Level Override Examples:**
 
@@ -148,6 +150,8 @@ juniper_cascor/
 │   │   ├── snapshot_utils.py         # Utility functions
 │   │   ├── snapshot_cli.py           # CLI tools
 │   │   └── snapshot_common.py        # Common serialization helpers
+│   ├── juniper_data_client/           # REST client for JuniperData API
+│   │   └── client.py                 # JuniperDataClient class
 │   ├── remote_client/                # Remote multiprocessing client
 │   ├── utils/                        # Utility functions
 │   │   └── utils.py                  # Helper functions
@@ -356,22 +360,22 @@ self.logger.verbose("Verbose output")
 
 ### Test Categories (Markers)
 
-| Marker               | Description                          |
-| -------------------- | ------------------------------------ |
-| `unit`               | Unit tests for individual components |
-| `integration`        | Integration tests for full workflows |
-| `performance`        | Performance and benchmarking tests   |
-| `slow`               | Tests that take a long time to run   |
+| Marker               | Description                                     |
+| -------------------- | ----------------------------------------------- |
+| `unit`               | Unit tests for individual components            |
+| `integration`        | Integration tests for full workflows            |
+| `performance`        | Performance and benchmarking tests              |
+| `slow`               | Tests that take a long time to run              |
 | `long`               | Long-running correctness tests (use --run-long) |
-| `gpu`                | Tests that require GPU/CUDA          |
-| `multiprocessing`    | Tests using multiprocessing          |
-| `spiral`             | Spiral problem tests                 |
-| `correlation`        | Correlation calculation tests        |
-| `network_growth`     | Network growth algorithm tests       |
-| `candidate_training` | Candidate unit training tests        |
-| `validation`         | Input validation tests               |
-| `accuracy`           | Accuracy calculation tests           |
-| `early_stopping`     | Early stopping logic tests           |
+| `gpu`                | Tests that require GPU/CUDA                     |
+| `multiprocessing`    | Tests using multiprocessing                     |
+| `spiral`             | Spiral problem tests                            |
+| `correlation`        | Correlation calculation tests                   |
+| `network_growth`     | Network growth algorithm tests                  |
+| `candidate_training` | Candidate unit training tests                   |
+| `validation`         | Input validation tests                          |
+| `accuracy`           | Accuracy calculation tests                      |
+| `early_stopping`     | Early stopping logic tests                      |
 
 ### Running Tests
 
@@ -410,6 +414,7 @@ bash scripts/run_tests.bash -f        # Re-run failed only
 | `matplotlib` | Plotting and visualization            |
 | `h5py`       | HDF5 file serialization               |
 | `PyYAML`     | YAML configuration parsing            |
+| `requests`   | HTTP client for JuniperData REST API  |
 
 ### Testing Libraries
 
@@ -635,13 +640,18 @@ config = CascadeCorrelationConfig(random_seed=42)
 
 ## Documentation Files
 
-| File                                   | Description                     |
-| -------------------------------------- | ------------------------------- |
-| `notes/FEATURES_GUIDE.md`              | Feature documentation and usage |
-| `notes/CASCOR_ENHANCEMENTS_ROADMAP.md` | Enhancement roadmap             |
-| `notes/IMPLEMENTATION_SUMMARY.md`      | Implementation status           |
-| `notes/Current_Issues.md`              | Known issues                    |
-| `src/tests/README.md`                  | Test suite documentation        |
+| File                                                    | Description                           |
+| ------------------------------------------------------- | ------------------------------------- |
+| `notes/INTEGRATION_DEVELOPMENT_PLAN.md`                 | Integration plan (all 3 Juniper apps) |
+| `notes/FEATURES_GUIDE.md`                               | Feature documentation and usage       |
+| `notes/CASCOR_ENHANCEMENTS_ROADMAP.md`                  | Enhancement roadmap                   |
+| `notes/IMPLEMENTATION_SUMMARY.md`                       | Implementation status                 |
+| `notes/Current_Issues.md`                               | Known issues                          |
+| `notes/PRE-DEPLOYMENT_ROADMAP-2.md`                     | Pre-deployment roadmap (consolidated) |
+| `notes/INTEGRATION_ROADMAP.md`                          | Cascor-Canopy integration tracker     |
+| `notes/JUNIPER_CASCOR_SPIRAL_DATA_GEN_REFACTOR_PLAN.md` | JuniperData extraction plan           |
+| `notes/TEST_SUITE_CICD_ENHANCEMENT_DEVELOPMENT_PLAN.md` | Test/CI improvement plan              |
+| `src/tests/README.md`                                   | Test suite documentation              |
 
 ---
 

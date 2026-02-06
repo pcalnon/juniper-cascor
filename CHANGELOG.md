@@ -5,6 +5,48 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.7] - 2026-02-05
+
+**Summary**: Created comprehensive Integration Development Plan consolidating all outstanding work across JuniperCascor, JuniperData, and JuniperCanopy. Updated CLAUDE.md with integration references.
+
+### Added: [0.6.7]
+
+- **Integration Development Plan**: Created `notes/INTEGRATION_DEVELOPMENT_PLAN.md`
+  - Consolidated outstanding tasks from 4 existing roadmap documents:
+    - `JUNIPER_CASCOR_SPIRAL_DATA_GEN_REFACTOR_PLAN.md` (JuniperData notes)
+    - `INTEGRATION_ROADMAP.md` (JuniperData notes)
+    - `PRE-DEPLOYMENT_ROADMAP-2.md` (JuniperData notes)
+    - `PRE-DEPLOYMENT_ROADMAP.md` (JuniperData notes)
+  - Performed rigorous source code review identifying 47 new issues:
+    - 5 Critical (walrus operator bug, duplicated class, invalid constructor params, hardcoded paths)
+    - 12 High (misleading imports, undeclared globals, missing import guards, stale duplicates)
+    - 16 Medium (falsy value bugs, inverted logic, OOM risk, refactoring needs)
+    - 14 Low (TODOs, commented code, version inconsistencies, style issues)
+  - Organized 61 total issues into 5 prioritized phases:
+    - Phase 0: Critical Bugs & Blockers (5 issues, 8-16 hours)
+    - Phase 1: Integration Architecture (8 issues, 24-40 hours)
+    - Phase 2: Code Quality & Test Integrity (14 issues, 32-48 hours)
+    - Phase 3: Infrastructure & CI/CD (10 issues, 20-32 hours)
+    - Phase 4: Enhancements & Future Work (24 issues, 40-80 hours)
+  - Includes dependency matrix, risk assessment, and source code review appendix
+
+### Changed: [0.6.7]
+
+- **CLAUDE.md**: Updated to version 0.6.6 (0.7.3), date 2026-02-05
+  - Added `notes/INTEGRATION_DEVELOPMENT_PLAN.md` to Documentation Files table
+  - Added 5 additional roadmap documents to Documentation Files table
+  - Added `requests` to Core Libraries (JuniperData REST client dependency)
+  - Added `juniper_data_client/` to directory structure
+  - Added `JUNIPER_DATA_URL` and `CASCOR_BACKEND_PATH` to Environment Variables table
+
+### Technical Notes: [0.6.7]
+
+- **SemVer impact**: PATCH - Documentation and planning only; no API or code changes
+- **Planning only**: No source code modifications were made
+- **Reference**: See `notes/INTEGRATION_DEVELOPMENT_PLAN.md` for full plan details
+
+---
+
 ## [0.6.6] - 2026-02-04
 
 **Summary**: Test Suite and CI/CD Enhancement - Phase 4 complete. Added complexity warnings, performance benchmarks, multi-Python testing, and quick integration tests.
@@ -1431,6 +1473,13 @@ unset JUNIPER_DATA_URL
 
 | Version | Date       | Description                              |
 | ------- | ---------- | ---------------------------------------- |
+| 0.6.7   | 2026-02-05 | Integration Development Plan             |
+| 0.6.6   | 2026-02-04 | Test/CI Phase 4 (benchmarks, matrix)     |
+| 0.6.5   | 2026-02-04 | Test/CI Phase 3 (tooling quality gates)  |
+| 0.6.4   | 2026-02-04 | Test/CI Phases 0-2 (test integrity)      |
+| 0.6.3   | 2026-02-01 | JuniperData integration documentation    |
+| 0.6.2   | 2026-02-01 | CI/CD parity across all 3 apps           |
+| 0.6.1   | 2026-01-31 | Algorithm parameter + E2E validation     |
 | 0.6.0   | 2026-01-30 | JuniperData Cascor Integration (Phase 3) |
 | 0.5.1   | 2026-01-29 | Pre-commit Compliance (MyPy, F401, B907) |
 | 0.5.0   | 2026-01-29 | JuniperData Extraction (Phases 0-2)      |

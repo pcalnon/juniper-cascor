@@ -56,17 +56,17 @@ For detailed installation instructions, see the [Quick Start Guide](docs/install
 
 ## Documentation
 
-| Category | Description |
-|----------|-------------|
+| Category                                                 | Description                           |
+| -------------------------------------------------------- | ------------------------------------- |
 | [Documentation Overview](docs/DOCUMENTATION_OVERVIEW.md) | Complete navigation guide to all docs |
-| [Documentation Index](docs/index.md) | Quick documentation index |
-| [Quick Start](docs/install/quick-start.md) | Get up and running quickly |
-| [User Manual](docs/install/user-manual.md) | Comprehensive usage guide |
-| [API Reference](docs/api/api-reference.md) | Complete API documentation |
-| [Testing Guide](docs/testing/quick-start.md) | Testing instructions |
-| [CI/CD Guide](docs/ci/quick-start.md) | Continuous integration |
-| [Source Code Guide](docs/source/quick-start.md) | Contributor documentation |
-| [Constants Reference](docs/overview/constants-guide.md) | Configuration constants |
+| [Documentation Index](docs/index.md)                     | Quick documentation index             |
+| [Quick Start](docs/install/quick-start.md)               | Get up and running quickly            |
+| [User Manual](docs/install/user-manual.md)               | Comprehensive usage guide             |
+| [API Reference](docs/api/api-reference.md)               | Complete API documentation            |
+| [Testing Guide](docs/testing/quick-start.md)             | Testing instructions                  |
+| [CI/CD Guide](docs/ci/quick-start.md)                    | Continuous integration                |
+| [Source Code Guide](docs/source/quick-start.md)          | Contributor documentation             |
+| [Constants Reference](docs/overview/constants-guide.md)  | Configuration constants               |
 
 ## Basic Usage
 
