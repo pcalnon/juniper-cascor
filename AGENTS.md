@@ -75,8 +75,9 @@ pip-audit                                 # Check for dependency vulnerabilities
 | Variable              | Description                                   | Example Values                      |
 | --------------------- | --------------------------------------------- | ----------------------------------- |
 | `CASCOR_LOG_LEVEL`    | Override log level at runtime (P2-003)        | `WARNING`, `INFO`, `DEBUG`, `ERROR` |
-| `JUNIPER_DATA_URL`    | JuniperData service URL (enables remote data) | `http://localhost:8100`             |
+| `JUNIPER_DATA_URL`    | JuniperData service URL (REQUIRED for datasets) | `http://localhost:8100`             |
 | `CASCOR_BACKEND_PATH` | Path to Cascor src (used by Canopy)           | `/path/to/juniper_cascor`           |
+| `JUNIPER_DATA_API_KEY` | API key for JuniperData authentication       | `your-api-key-here`                 |
 
 **Log Level Override Examples:**
 
@@ -642,7 +643,8 @@ config = CascadeCorrelationConfig(random_seed=42)
 
 | File                                                    | Description                           |
 | ------------------------------------------------------- | ------------------------------------- |
-| `notes/INTEGRATION_DEVELOPMENT_PLAN.md`                 | Integration plan (all 3 Juniper apps) |
+| `notes/INTEGRATION_DEVELOPMENT_PLAN.md`                 | Integration plan (JuniperData items)  |
+| `notes/CASCOR_JUNIPER_DATA_INTEGRATION_PLAN.md`         | JuniperCascor ↔ JuniperData integration plan |
 | `notes/FEATURES_GUIDE.md`                               | Feature documentation and usage       |
 | `notes/CASCOR_ENHANCEMENTS_ROADMAP.md`                  | Enhancement roadmap                   |
 | `notes/IMPLEMENTATION_SUMMARY.md`                       | Implementation status                 |

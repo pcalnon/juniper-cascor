@@ -50,14 +50,16 @@ class SpiralDataProvider:
     to PyTorch tensors matching the format expected by SpiralProblem.
     """
 
-    def __init__(self, juniper_data_url: Optional[str] = None):
+    def __init__(self, juniper_data_url: Optional[str] = None, api_key: Optional[str] = None):
         """
         Initialize the spiral data provider.
 
         Args:
             juniper_data_url: Optional URL override for JuniperData service.  If not provided, reads from JUNIPER_DATA_URL environment variable.
+            api_key: Optional API key for JuniperData authentication. If not provided, JuniperDataClient reads from JUNIPER_DATA_API_KEY env var.
         """
         self._juniper_data_url = juniper_data_url or os.environ.get("JUNIPER_DATA_URL")
+        self._api_key = api_key
         self._client: Optional[JuniperDataClient] = None
 
     @property
@@ -65,12 +67,32 @@ class SpiralDataProvider:
         """Check if JuniperData service is configured."""
         return bool(self._juniper_data_url)
 
+    def validate_configuration(self) -> None:
+        """
+        Validate that the data provider is properly configured.
+
+        Checks that the JuniperData URL is set and structurally valid.
+        Optionally performs a health check, logging a warning if the service
+        is unreachable (but does not raise).
+
+        Raises:
+            SpiralDataProviderError: If the JuniperData URL is not configured.
+            ValueError: If the URL is structurally invalid (via JuniperDataClient).
+        """
+        if not self._juniper_data_url:
+            raise SpiralDataProviderError("JuniperData URL not configured. Set JUNIPER_DATA_URL environment variable.")
+
+        client = self._get_client()
+
+        if not client.health_check():
+            logger.warning("JuniperData service at %s is not reachable; requests may fail.", self._juniper_data_url)
+
     def _get_client(self) -> JuniperDataClient:
         """Get or create JuniperData client instance."""
         if self._client is None:
             if not self._juniper_data_url:
                 raise SpiralDataProviderError("JuniperData URL not configured. Set JUNIPER_DATA_URL environment variable.")
-            self._client = JuniperDataClient(base_url=self._juniper_data_url)
+            self._client = JuniperDataClient(base_url=self._juniper_data_url, api_key=self._api_key)
         return self._client
 
     def get_spiral_dataset(
@@ -146,13 +168,31 @@ class SpiralDataProvider:
     def _convert_arrays_to_tensors(self, arrays: Dict[str, np.ndarray]) -> SpiralDatasetTuple:
         """
         Convert numpy arrays from NPZ to PyTorch tensors.
+        Validates the NPZ artifact meets the expected data contract.
 
         Args:
             arrays: Dictionary of numpy arrays from NPZ file.
 
         Returns:
             Tuple of tensor pairs for train, test, and full datasets.
+
+        Raises:
+            SpiralDataProviderError: If NPZ artifact does not meet the expected contract.
         """
+        required_keys = {"X_train", "y_train", "X_test", "y_test", "X_full", "y_full"}
+        missing_keys = required_keys - set(arrays.keys())
+        if missing_keys:
+            raise SpiralDataProviderError(f"NPZ artifact missing required keys: {sorted(missing_keys)}. " f"Expected: {sorted(required_keys)}, got: {sorted(arrays.keys())}")
+
+        for key in required_keys:
+            arr = arrays[key]
+            if arr.ndim != 2:
+                raise SpiralDataProviderError(f"NPZ array '{key}' has {arr.ndim} dimensions, expected 2. Shape: {arr.shape}")
+
+        for key in ["X_train", "X_test", "X_full"]:
+            if arrays[key].shape[1] != 2:
+                raise SpiralDataProviderError(f"Feature array '{key}' has {arrays[key].shape[1]} columns, expected 2 (x, y coordinates). " f"Shape: {arrays[key].shape}")
+
         x_train = torch.tensor(arrays["X_train"], dtype=torch.float32)
         y_train = torch.tensor(arrays["y_train"], dtype=torch.float32)
         x_test = torch.tensor(arrays["X_test"], dtype=torch.float32)

@@ -424,4 +424,184 @@ class TestSpiralDataProviderEnvironmentVariable:
                 provider = SpiralDataProvider()
                 provider._get_client()
 
-                MockClient.assert_called_once_with(base_url="http://test-server:8100")
+                MockClient.assert_called_once_with(base_url="http://test-server:8100", api_key=None)
+
+
+@pytest.mark.unit
+class TestSpiralDataProviderContractValidation:
+    """Tests for NPZ data contract validation (CAS-INT-004)."""
+
+    def _make_provider_with_mock(self, mock_arrays):
+        """Helper to create provider with mocked client returning given arrays."""
+        provider = SpiralDataProvider(juniper_data_url="http://localhost:8100")
+        return provider, mock_arrays
+
+    def test_raises_error_on_missing_required_keys(self):
+        """Should raise SpiralDataProviderError when NPZ is missing required keys."""
+        incomplete_arrays = {
+            "X_train": np.array([[1.0, 2.0]]),
+            "y_train": np.array([[1.0, 0.0]]),
+        }
+
+        with patch("spiral_problem.data_provider.JuniperDataClient") as MockClient:
+            mock_client = MagicMock()
+            mock_client.create_dataset.return_value = {"dataset_id": "test-id"}
+            mock_client.download_artifact_npz.return_value = incomplete_arrays
+            MockClient.return_value = mock_client
+
+            provider = SpiralDataProvider(juniper_data_url="http://localhost:8100")
+            with pytest.raises(SpiralDataProviderError) as exc_info:
+                provider.get_spiral_dataset(
+                    n_spirals=2,
+                    n_points=50,
+                    n_rotations=1.0,
+                    noise_level=0.05,
+                    clockwise=False,
+                    train_ratio=0.8,
+                    test_ratio=0.2,
+                )
+            assert "missing required keys" in str(exc_info.value).lower()
+
+    def test_raises_error_on_wrong_dimensions(self):
+        """Should raise SpiralDataProviderError when arrays are not 2D."""
+        bad_arrays = {
+            "X_train": np.array([1.0, 2.0]),  # 1D instead of 2D
+            "y_train": np.array([[1.0, 0.0]]),
+            "X_test": np.array([[3.0, 4.0]]),
+            "y_test": np.array([[0.0, 1.0]]),
+            "X_full": np.array([[1.0, 2.0], [3.0, 4.0]]),
+            "y_full": np.array([[1.0, 0.0], [0.0, 1.0]]),
+        }
+
+        with patch("spiral_problem.data_provider.JuniperDataClient") as MockClient:
+            mock_client = MagicMock()
+            mock_client.create_dataset.return_value = {"dataset_id": "test-id"}
+            mock_client.download_artifact_npz.return_value = bad_arrays
+            MockClient.return_value = mock_client
+
+            provider = SpiralDataProvider(juniper_data_url="http://localhost:8100")
+            with pytest.raises(SpiralDataProviderError) as exc_info:
+                provider.get_spiral_dataset(
+                    n_spirals=2,
+                    n_points=50,
+                    n_rotations=1.0,
+                    noise_level=0.05,
+                    clockwise=False,
+                    train_ratio=0.8,
+                    test_ratio=0.2,
+                )
+            assert "dimensions" in str(exc_info.value).lower()
+
+    def test_raises_error_on_wrong_feature_columns(self):
+        """Should raise SpiralDataProviderError when feature arrays don't have 2 columns."""
+        bad_arrays = {
+            "X_train": np.array([[1.0, 2.0, 3.0]]),  # 3 columns instead of 2
+            "y_train": np.array([[1.0, 0.0]]),
+            "X_test": np.array([[3.0, 4.0, 5.0]]),
+            "y_test": np.array([[0.0, 1.0]]),
+            "X_full": np.array([[1.0, 2.0, 3.0], [3.0, 4.0, 5.0]]),
+            "y_full": np.array([[1.0, 0.0], [0.0, 1.0]]),
+        }
+
+        with patch("spiral_problem.data_provider.JuniperDataClient") as MockClient:
+            mock_client = MagicMock()
+            mock_client.create_dataset.return_value = {"dataset_id": "test-id"}
+            mock_client.download_artifact_npz.return_value = bad_arrays
+            MockClient.return_value = mock_client
+
+            provider = SpiralDataProvider(juniper_data_url="http://localhost:8100")
+            with pytest.raises(SpiralDataProviderError) as exc_info:
+                provider.get_spiral_dataset(
+                    n_spirals=2,
+                    n_points=50,
+                    n_rotations=1.0,
+                    noise_level=0.05,
+                    clockwise=False,
+                    train_ratio=0.8,
+                    test_ratio=0.2,
+                )
+            assert "columns" in str(exc_info.value).lower()
+
+    def test_valid_contract_passes(self):
+        """Should succeed when NPZ artifact meets the expected contract."""
+        valid_arrays = {
+            "X_train": np.array([[1.0, 2.0], [3.0, 4.0]], dtype=np.float32),
+            "y_train": np.array([[1.0, 0.0], [0.0, 1.0]], dtype=np.float32),
+            "X_test": np.array([[5.0, 6.0]], dtype=np.float32),
+            "y_test": np.array([[1.0, 0.0]], dtype=np.float32),
+            "X_full": np.array([[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]], dtype=np.float32),
+            "y_full": np.array([[1.0, 0.0], [0.0, 1.0], [1.0, 0.0]], dtype=np.float32),
+        }
+
+        with patch("spiral_problem.data_provider.JuniperDataClient") as MockClient:
+            mock_client = MagicMock()
+            mock_client.create_dataset.return_value = {"dataset_id": "test-id"}
+            mock_client.download_artifact_npz.return_value = valid_arrays
+            MockClient.return_value = mock_client
+
+            provider = SpiralDataProvider(juniper_data_url="http://localhost:8100")
+            result = provider.get_spiral_dataset(
+                n_spirals=2,
+                n_points=50,
+                n_rotations=1.0,
+                noise_level=0.05,
+                clockwise=False,
+                train_ratio=0.8,
+                test_ratio=0.2,
+            )
+            assert len(result) == 3
+
+    def test_error_message_lists_missing_keys(self):
+        """Error message should list which specific keys are missing."""
+        partial_arrays = {
+            "X_train": np.array([[1.0, 2.0]]),
+            "y_train": np.array([[1.0, 0.0]]),
+            "X_full": np.array([[1.0, 2.0]]),
+            "y_full": np.array([[1.0, 0.0]]),
+        }
+
+        with patch("spiral_problem.data_provider.JuniperDataClient") as MockClient:
+            mock_client = MagicMock()
+            mock_client.create_dataset.return_value = {"dataset_id": "test-id"}
+            mock_client.download_artifact_npz.return_value = partial_arrays
+            MockClient.return_value = mock_client
+
+            provider = SpiralDataProvider(juniper_data_url="http://localhost:8100")
+            with pytest.raises(SpiralDataProviderError) as exc_info:
+                provider.get_spiral_dataset(
+                    n_spirals=2,
+                    n_points=50,
+                    n_rotations=1.0,
+                    noise_level=0.05,
+                    clockwise=False,
+                    train_ratio=0.8,
+                    test_ratio=0.2,
+                )
+            error_msg = str(exc_info.value)
+            assert "X_test" in error_msg
+            assert "y_test" in error_msg
+
+
+@pytest.mark.unit
+class TestSpiralDataProviderConfigValidation:
+    """Tests for validate_configuration method."""
+
+    def test_validate_configuration_raises_when_url_missing(self):
+        """validate_configuration should raise SpiralDataProviderError when URL is not set."""
+        env_without_url = {k: v for k, v in os.environ.items() if k != "JUNIPER_DATA_URL"}
+        with patch.dict(os.environ, env_without_url, clear=True):
+            provider = SpiralDataProvider()
+
+            with pytest.raises(SpiralDataProviderError, match="not configured"):
+                provider.validate_configuration()
+
+    def test_validate_configuration_succeeds_with_valid_url(self):
+        """validate_configuration should succeed with a valid URL (health check may fail)."""
+        provider = SpiralDataProvider(juniper_data_url="http://localhost:8100")
+
+        with patch("spiral_problem.data_provider.JuniperDataClient") as MockClient:
+            mock_client = MagicMock()
+            mock_client.health_check.return_value = False
+            MockClient.return_value = mock_client
+
+            provider.validate_configuration()

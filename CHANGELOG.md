@@ -5,6 +5,27 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.0] - 2026-02-06
+
+### Changed
+- **BREAKING**: `JUNIPER_DATA_URL` environment variable is now REQUIRED for dataset operations (CAS-INT-001)
+- `generate_n_spiral_dataset()` now exclusively uses `SpiralDataProvider` — local spiral generation code path removed
+- `JuniperDataClient` now supports API key authentication via `api_key` parameter or `JUNIPER_DATA_API_KEY` env var (CAS-INT-003)
+
+### Added
+- NPZ data contract validation in `SpiralDataProvider._convert_arrays_to_tensors()` (CAS-INT-004)
+- `JuniperCascor ↔ JuniperData Integration Plan` at `notes/CASCOR_JUNIPER_DATA_INTEGRATION_PLAN.md`
+- 25 new integration-related tests (total: 64 integration tests, 1269 unit tests passing)
+
+### Removed
+- Local spiral generation fallback code path in `generate_n_spiral_dataset()` (78 lines)
+- Optional `JUNIPER_DATA_URL` toggle behavior (now mandatory)
+
+### Fixed
+- `test_spiral_problem_coverage.py` updated to use mock API path instead of removed local generation
+
+---
+
 ## [0.6.7] - 2026-02-05
 
 **Summary**: Created comprehensive Integration Development Plan consolidating all outstanding work across JuniperCascor, JuniperData, and JuniperCanopy. Updated CLAUDE.md with integration references.

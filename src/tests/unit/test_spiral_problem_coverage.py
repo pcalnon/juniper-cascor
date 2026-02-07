@@ -4,6 +4,7 @@ Tests for spiral_problem/spiral_problem.py to increase code coverage.
 """
 import os
 import sys
+from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pytest
@@ -37,25 +38,33 @@ class TestSpiralProblemDataGeneration:
     """Tests for SpiralProblem data generation methods."""
 
     def test_generate_n_spiral_dataset(self):
-        """Test generating n-spiral dataset."""
-        sp = SpiralProblem(
-            _SpiralProblem__n_points=20,
-            _SpiralProblem__n_spirals=2,
+        """Test generating n-spiral dataset via JuniperData API (CAS-INT-001)."""
+        n_train, n_test, n_spirals = 14, 6, 2
+        mock_result = (
+            (torch.randn(n_train, 2), torch.zeros(n_train, n_spirals)),
+            (torch.randn(n_test, 2), torch.zeros(n_test, n_spirals)),
+            (torch.randn(n_train + n_test, 2), torch.zeros(n_train + n_test, n_spirals)),
         )
 
-        # Use the actual method name - returns nested tuples ((train_x, train_y), (test_x, test_y), info)
-        if hasattr(sp, "generate_n_spiral_dataset"):
-            result = sp.generate_n_spiral_dataset()
-            # Result is a tuple of tuples
-            assert isinstance(result, tuple)
-            assert len(result) >= 2
-            # First element is (train_x, train_y)
-            train_data = result[0]
-            assert isinstance(train_data, tuple)
-            train_x, train_y = train_data
-            assert isinstance(train_x, torch.Tensor)
-            assert isinstance(train_y, torch.Tensor)
-            assert train_x.shape[1] == 2  # 2D input
+        with patch.dict(os.environ, {"JUNIPER_DATA_URL": "http://localhost:8100"}):
+            with patch("spiral_problem.data_provider.SpiralDataProvider") as MockProvider:
+                mock_instance = MagicMock()
+                mock_instance.get_spiral_dataset.return_value = mock_result
+                MockProvider.return_value = mock_instance
+
+                sp = SpiralProblem(
+                    _SpiralProblem__n_points=20,
+                    _SpiralProblem__n_spirals=2,
+                )
+                result = sp.generate_n_spiral_dataset()
+                assert isinstance(result, tuple)
+                assert len(result) == 3
+                train_data = result[0]
+                assert isinstance(train_data, tuple)
+                train_x, train_y = train_data
+                assert isinstance(train_x, torch.Tensor)
+                assert isinstance(train_y, torch.Tensor)
+                assert train_x.shape[1] == 2
 
 
 class TestSpiralProblemProperties:

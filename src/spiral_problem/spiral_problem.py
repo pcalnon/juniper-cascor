@@ -43,6 +43,7 @@ import multiprocessing as mp
 import os
 import random
 import uuid
+import warnings
 
 # from inspect import currentframe, getframeinfo
 from typing import Any, Callable, Tuple
@@ -498,101 +499,26 @@ class SpiralProblem(object):
                 - (x_test, y_test): Test set features and targets.
                 - (x_full, y_full): Full dataset features and targets.
         """
-        # JuniperData integration: Use JuniperData service when JUNIPER_DATA_URL is set
         juniper_data_url = os.environ.get("JUNIPER_DATA_URL")
-        if juniper_data_url:
-            self.logger.info(f"SpiralProblem: generate_n_spiral_dataset: Using JuniperData service at {juniper_data_url}")
-            from spiral_problem.data_provider import SpiralDataProvider
+        if not juniper_data_url:
+            from cascade_correlation.cascade_correlation_exceptions.cascade_correlation_exceptions import ConfigurationError
 
-            provider = SpiralDataProvider(juniper_data_url)
-            return provider.get_spiral_dataset(
-                n_spirals=n_spirals,
-                n_points=n_points,
-                n_rotations=n_rotations,
-                noise_level=noise_level,
-                clockwise=clockwise,
-                train_ratio=train_ratio,
-                test_ratio=test_ratio,
-                seed=self.random_seed,
-            )
+            raise ConfigurationError("JUNIPER_DATA_URL environment variable is required. " "Set it to the JuniperData service URL (e.g., 'http://localhost:8100'). " "See AGENTS.md for configuration details.")
 
-        # Initialize Spiral Problem input parameters
-        # TODO: Reconsider how these parameters are set.  How should preferred values be chosen? Should they be class attributes or passed in as parameters?
-        self.logger.trace("SpiralProblem: generate_n_spiral_dataset: Initializing Spiral Problem input parameters")
-        self._initialize_spiral_problem_params(
-            min_new=min_new,
-            max_new=max_new,
-            min_orig=min_orig,
-            max_orig=max_orig,
-            orig_points=orig_points,
+        self.logger.info(f"SpiralProblem: generate_n_spiral_dataset: Using JuniperData service at {juniper_data_url}")
+        from spiral_problem.data_provider import SpiralDataProvider
+
+        provider = SpiralDataProvider(juniper_data_url)
+        return provider.get_spiral_dataset(
+            n_spirals=n_spirals,
+            n_points=n_points,
+            n_rotations=n_rotations,
+            noise_level=noise_level,
+            clockwise=clockwise,
             train_ratio=train_ratio,
             test_ratio=test_ratio,
-            clockwise=clockwise,
-            n_spirals=n_spirals,
-            n_rotations=n_rotations,
-            n_points=n_points,
-            default_origin=default_origin,
-            default_radius=default_radius,
-            noise_level=noise_level,
-            distribution=distribution,
+            seed=self.random_seed,
         )
-        self.logger.debug("SpiralProblem: generate_n_spiral_dataset: Initialized Spiral Problem input parameters")
-        self.logger.debug(f"SpiralProblem: generate_n_spiral_dataset: Generating {self.n_spirals} spirals with {self.n_points} points each, direction: {'clockwise' if self.clockwise else 'counter-clockwise'}, noise level: {self.noise}, distribution factor: {self.distribution}")
-        self.logger.trace("SpiralProblem: generate_n_spiral_dataset: Generating spiral coordinates")
-        # Original corrupted line:
-        # (spiral_x_coords, spiral_y_coords) = self._generate_spiral_coordinates()\ \ \#\ Generate the spiral coordinates
-        # Fixed line:
-        (spiral_x_coords, spiral_y_coords) = self._generate_spiral_coordinates()  # Generate the spiral coordinates
-        self.logger.debug(f"SpiralProblem: generate_n_spiral_dataset: Generated spiral coordinates with {len(spiral_x_coords)} x-coordinates and {len(spiral_y_coords)} y-coordinates")
-        self.logger.trace("SpiralProblem: generate_n_spiral_dataset: Creating the spiral dataset")
-        # Original corrupted line:
-        # (x, y) = self._create_spiral_dataset( spiral_x_coords=spiral_x_coords, spiral_y_coords=spiral_y_coords,)\ \ \#\ convert the spiral coordinates to the spiral dataset
-        # Fixed line:
-        (x, y) = self._create_spiral_dataset(
-            spiral_x_coords=spiral_x_coords,
-            spiral_y_coords=spiral_y_coords,
-        )  # convert the spiral coordinates to the spiral dataset
-        self.logger.debug(f"SpiralProblem: generate_n_spiral_dataset: Generated spiral dataset with {len(x)} points and {len(y)} labels")
-        self.logger.trace("SpiralProblem: generate_n_spiral_dataset: Converting spiral dataset to PyTorch tensors")
-        # Original corrupted line:
-        # x_tensor, y_tensor = self._convert_to_tensors(x, y)\ \ \#\ Convert to PyTorch tensors
-        # Fixed line:
-        x_tensor, y_tensor = self._convert_to_tensors(x, y)  # Convert to PyTorch tensors
-        self.logger.debug(f"SpiralProblem: generate_n_spiral_dataset: Converted spiral dataset to tensors with x: Shape: {x_tensor.shape}, Type: {type(x_tensor)}, y: Shape: {y_tensor.shape}, Type: {type(y_tensor)}")
-        self.logger.trace("SpiralProblem: generate_n_spiral_dataset: Shuffling the dataset")
-        # Original corrupted line:
-        # x_shuffled, y_shuffled = self._shuffle_dataset(x_tensor=x_tensor, y_tensor=y_tensor)\ \ \#\ Shuffle the data
-        # Fixed line:
-        x_shuffled, y_shuffled = self._shuffle_dataset(x_tensor=x_tensor, y_tensor=y_tensor)  # Shuffle the data
-        self.logger.debug(f"SpiralProblem: generate_n_spiral_dataset: Shuffled spiral dataset with x: Shape: {x_shuffled.shape}, Type: {type(x_shuffled)}, y: Shape: {y_shuffled.shape}, Type: {type(y_shuffled)}")
-        self.logger.trace("SpiralProblem: generate_n_spiral_dataset: Splitting the dataset into training and test sets")
-        # Original corrupted line:
-        # partitioned_dataset = self._partition_dataset(total_points=self.total_points, partitions=(train_ratio, test_ratio), x=x_shuffled, y=y_shuffled)\ \ \#\ Split the dataset into training and test sets
-        # Fixed line:
-        partitioned_dataset = self._partition_dataset(total_points=self.total_points, partitions=(train_ratio, test_ratio), x=x_shuffled, y=y_shuffled)  # Split the dataset into training and test sets
-        self.logger.debug(f"SpiralProblem: generate_n_spiral_dataset: Partitioned dataset: {partitioned_dataset}")
-        self.logger.trace("SpiralProblem: generate_n_spiral_dataset: Unpacking the partitioned dataset")
-        # Original corrupted line:
-        # partition_train, partition_test = partitioned_dataset\ \ \#\ Unpack the partitioned dataset into training and test sets
-        # Fixed line:
-        partition_train, partition_test = partitioned_dataset  # Unpack the partitioned dataset into training and test sets
-        self.logger.debug(f"SpiralProblem: generate_n_spiral_data: Partitioned dataset: {partition_train}, {partition_test}")
-        self.logger.trace("SpiralProblem: generate_n_spiral_dataset: Unpacking the training and test sets")
-        # Original corrupted line:
-        # (x_train, y_train,) = partition_train\ \ \#\ Unpack the training and test sets
-        # Fixed line:
-        (
-            x_train,
-            y_train,
-        ) = partition_train  # Unpack the training and test sets
-        self.logger.debug(f"SpiralProblem: generate_n_spiral_data: Training set x: Shape: {x_train.shape}, Type: {type(x_train)}, y: Shape: {y_train.shape}, Type: {type(y_train)}")
-        (x_test, y_test) = partition_test
-        self.logger.debug(f"SpiralProblem: generate_n_spiral_data: Test set x: Shape: {x_test.shape}, Type: {type(x_test)}, y: Shape: {y_test.shape}, Type: {type(y_test)}")
-        self.logger.trace("SpiralProblem: generate_n_spiral_data: Completed generation of n spiral dataset")
-        # Original corrupted line:
-        # return (x_train, y_train), (x_test, y_test), (x_shuffled, y_shuffled)\ \ \#\ Return training and test sets, and the full dataset
-        # Fixed line:
-        return (x_train, y_train), (x_test, y_test), (x_shuffled, y_shuffled)  # Return training and test sets, and the full dataset
 
     def _initialize_spiral_problem_params(
         self,
@@ -717,6 +643,11 @@ class SpiralProblem(object):
         Returns:
             Tuple[np.ndarray, np.ndarray]: x and y coordinates for the spirals.
         """
+        warnings.warn(
+            f"{type(self).__name__}._generate_spiral_coordinates() is deprecated and will be removed in a future release. " "Dataset generation is now handled by JuniperData service.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         # Generate the base radial distance
         self.logger.trace("SpiralProblem: generate_spiral_dataset: Generating base radial distance")
         n_distance = self._generate_base_radial_distance(
@@ -748,6 +679,11 @@ class SpiralProblem(object):
         Returns:
             float: Base radial distance for the spiral.
         """
+        warnings.warn(
+            f"{type(self).__name__}._generate_base_radial_distance() is deprecated and will be removed in a future release. " "Dataset generation is now handled by JuniperData service.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         self.logger.trace(f"SpiralProblem: generate_base_radial_distance: Generating base radial distance for {n_points} points")
         if not isinstance(n_points, int) or n_points <= 0:
             raise ValueError(f"SpiralProblem: generate_base_radial_distance: n_points must be a positive integer, but got {n_points}.")
@@ -773,6 +709,11 @@ class SpiralProblem(object):
         Returns:
             float: Angular offset for the spiral.
         """
+        warnings.warn(
+            f"{type(self).__name__}._generate_angular_offset() is deprecated and will be removed in a future release. " "Dataset generation is now handled by JuniperData service.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         self.logger.trace("SpiralProblem: generate_angular_offset: Generating angular offset for spiral")
         # Calculate angular offset for this spiral (evenly distributed around circle)
         angular_offset = 2 * np.pi / self.n_spirals
@@ -787,6 +728,11 @@ class SpiralProblem(object):
         direction: int = 0,
         angular_offset: float = 0.0,
     ) -> Tuple[list, list]:
+        warnings.warn(
+            f"{type(self).__name__}._generate_raw_spiral_coordinates() is deprecated and will be removed in a future release. " "Dataset generation is now handled by JuniperData service.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         self.logger.trace("SpiralProblem: generate_raw_spiral_coordinates: Generating raw spiral coordinates")
         # Initialize lists to hold the coordinates for each spiral
         spiral_x_coords = []
@@ -836,6 +782,11 @@ class SpiralProblem(object):
         Returns:
             Tuple[np.ndarray, np.ndarray]: x and y coordinates of the spiral.
         """
+        warnings.warn(
+            f"{type(self).__name__}._generate_xy_coordinates() is deprecated and will be removed in a future release. " "Dataset generation is now handled by JuniperData service.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         self.logger.trace(f"SpiralProblem: generate_xy_coordinates: Generating spiral coordinates with angular_offset: {angular_offset}, direction: {direction}")
         if direction not in [1, -1]:
             raise ValueError(f"SpiralProblem: generate_xy_coordinates: Direction must be 1 or -1, but got {direction}.")
@@ -857,6 +808,11 @@ class SpiralProblem(object):
         # trig_function: callable = None,
         trig_function: Callable[..., Any] = None,
     ) -> np.ndarray:
+        warnings.warn(
+            f"{type(self).__name__}._make_coords() is deprecated and will be removed in a future release. " "Dataset generation is now handled by JuniperData service.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         self.logger.trace("SpiralProblem: make_coords: Generating coordinates for the spiral")
         self.logger.verbose(f"SpiralProblem: make_coords: Generating coordinates for spiral with index {index}, n_distance {n_distance}, angular_offset {angular_offset}, direction {direction}")
         self.logger.verbose(f"SpiralProblem: make_coords: Using trig_function: {trig_function.__name__ if trig_function else None}")
@@ -887,6 +843,11 @@ class SpiralProblem(object):
         Returns:
             np.ndarray: Array of random noise values.
         """
+        warnings.warn(
+            f"{type(self).__name__}._make_noise() is deprecated and will be removed in a future release. " "Dataset generation is now handled by JuniperData service.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         return np.random.rand(n_points) * noise
 
     def _create_input_features(
@@ -903,6 +864,11 @@ class SpiralProblem(object):
         Returns:
             np.ndarray: Input features as a 2D numpy array.
         """
+        warnings.warn(
+            f"{type(self).__name__}._create_input_features() is deprecated and will be removed in a future release. " "Dataset generation is now handled by JuniperData service.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         self.logger.trace("SpiralProblem: create_input_features: Creating input features from spiral coordinates")
         # Stack the x and y coordinates vertically and transpose to get the correct shape
         self.logger.trace("SpiralProblem: create_input_features: Stacking the x and y coordinates vertically and transposing to get the correct shape")
@@ -927,6 +893,11 @@ class SpiralProblem(object):
             This function creates a one-hot encoded target array for the spirals, where each spiral corresponds to a column in the array.
             The one-hot encoding is done by setting the corresponding column to 1 for the points belonging to that spiral.
         """
+        warnings.warn(
+            f"{type(self).__name__}._create_one_hot_targets() is deprecated and will be removed in a future release. " "Dataset generation is now handled by JuniperData service.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         self.logger.trace("SpiralProblem: create_one_hot_targets: Creating one-hot encoded targets")
         y = np.zeros((total_points, n_spirals), dtype=dtype)  # Changed to float32 to match PyTorch tensor
         self.logger.debug(f"SpiralProblem: create_one_hot_targets: Created empty, one-hot encoded targets with shape: {y.shape}, dtype: {dtype}")
@@ -965,6 +936,11 @@ class SpiralProblem(object):
         Returns:
             tuple: A tuple containing the input features and one-hot encoded targets.
         """
+        warnings.warn(
+            f"{type(self).__name__}._create_spiral_dataset() is deprecated and will be removed in a future release. " "Dataset generation is now handled by JuniperData service.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         self.logger.trace("SpiralProblem: generate_n_spiral_dataset: Creating spiral dataset from coordinates")
         # Create input features (same structure as original)
         self.logger.trace("SpiralProblem: generate_n_spiral_dataset: Creating input features")
@@ -993,6 +969,11 @@ class SpiralProblem(object):
         Returns:
             Tuple[torch.Tensor, torch.Tensor]: A tuple containing the input features and target labels as PyTorch tensors.
         """
+        warnings.warn(
+            f"{type(self).__name__}._convert_to_tensors() is deprecated and will be removed in a future release. " "Dataset generation is now handled by JuniperData service.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         self.logger.trace("SpiralProblem: convert_to_tensors: Converting data to PyTorch tensors")
         x_tensor = torch.tensor(x, dtype=torch.float32)
         y_tensor = torch.tensor(y, dtype=torch.float32)  # Direct conversion, no scatter_ needed
@@ -1015,6 +996,11 @@ class SpiralProblem(object):
         Returns:
             Tuple[torch.Tensor, torch.Tensor]: Shuffled input features and targets tensors.
         """
+        warnings.warn(
+            f"{type(self).__name__}._shuffle_dataset() is deprecated and will be removed in a future release. " "Dataset generation is now handled by JuniperData service.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         self.logger.trace("SpiralProblem: generate_n_spiral_dataset: Shuffling the dataset")
         if x_tensor.size(0) != y_tensor.size(0):
             raise ValueError(f"SpiralProblem: generate_n_spiral_dataset: x_tensor and y_tensor must be of the same size, but got {x_tensor.size(0)} and {y_tensor.size(0)} respectively.")
@@ -1059,6 +1045,11 @@ class SpiralProblem(object):
             - The function splits the dataset into training and test sets based on the provided ratios.
             - The function returns the training and test sets as tuples of PyTorch tensors.
         """
+        warnings.warn(
+            f"{type(self).__name__}._partition_dataset() is deprecated and will be removed in a future release. " "Dataset generation is now handled by JuniperData service.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         self.logger.trace("SpiralProblem: generate_n_spiral_dataset: Starting to partition dataset into training and test sets")
         # Initialize train and test ratios for splitting the dataset
         self.train_ratio = partitions[0] if partitions[0] is not None else _SPIRAL_PROBLEM_TRAIN_RATIO if self.train_ratio is None else self.train_ratio  # Use class attribute if train_ratio is None
@@ -1099,6 +1090,11 @@ class SpiralProblem(object):
         Raises:
             ValueError: If total_points or partitions are None, if x and y are not provided, or if partitions do not sum to 1.0.
         """
+        warnings.warn(
+            f"{type(self).__name__}._split_dataset() is deprecated and will be removed in a future release. " "Dataset generation is now handled by JuniperData service.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         self.logger.trace("SpiralProblem: split_dataset: Starting to split dataset into partitions")
         # Original corrupted line:
         # if total_points is None or partitions is None:\ \ \#\ Check if total_points and partitions are provided
@@ -1165,6 +1161,11 @@ class SpiralProblem(object):
         Returns:
             int: Index end for the partition.
         """
+        warnings.warn(
+            f"{type(self).__name__}._find_partition_index_end() is deprecated and will be removed in a future release. " "Dataset generation is now handled by JuniperData service.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         self.logger.trace("SpiralProblem: find_partition_index_end: Starting to calculate partition end index")
         self.logger.debug(f"SpiralProblem: find_partition_index_end: Calculating partition end index for partition start: {partition_start}, total points: {total_points}, partition ratio: {partition}")
         partition_end = partition_start + self._dataset_split_index_end(
@@ -1191,6 +1192,11 @@ class SpiralProblem(object):
         Raises:
             ValueError: If the calculated index end is not within the valid range.
         """
+        warnings.warn(
+            f"{type(self).__name__}._dataset_split_index_end() is deprecated and will be removed in a future release. " "Dataset generation is now handled by JuniperData service.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         self.logger.trace("SpiralProblem: dataset_split_index_end: Starting to calculate dataset split index end")
         index_end = int(split_ratio * total_points)  # Calculate the center index for splitting
         self.logger.debug(f"SpiralProblem: dataset_split_index_end: Calculated index end for split ratio {split_ratio} and total points {total_points}: {index_end}")

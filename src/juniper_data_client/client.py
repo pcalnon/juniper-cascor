@@ -19,11 +19,16 @@
 #####################################################################################################################################################################################################
 
 import io
-from typing import Any, Dict
+import logging
+import os
+import time
+from typing import Any, Dict, Optional
 from urllib.parse import urlparse
 
 import numpy as np
 import requests
+
+logger = logging.getLogger(__name__)
 
 
 class JuniperDataClient:
@@ -33,18 +38,27 @@ class JuniperDataClient:
     """
 
     DEFAULT_TIMEOUT = 30
+    MAX_RETRIES = 3
+    RETRY_BACKOFF_BASE = 1.0
+    _RETRYABLE_STATUS_CODES = (502, 503, 504)
 
-    def __init__(self, base_url: str = "http://localhost:8100", timeout: int = DEFAULT_TIMEOUT):
+    def __init__(self, base_url: str = "http://localhost:8100", timeout: int = DEFAULT_TIMEOUT, api_key: Optional[str] = None):
         """
         Initialize the JuniperData client.
 
         Args:
             base_url: Base URL for the JuniperData API (default: http://localhost:8100)
             timeout: Request timeout in seconds (default: 30)
+            api_key: API key for authentication. If not provided, reads from JUNIPER_DATA_API_KEY env var.
         """
         self.base_url = self._normalize_url(base_url)
+        self.validate_url(self.base_url)
         self.timeout = timeout
         self.session = requests.Session()
+
+        resolved_api_key = api_key or os.environ.get("JUNIPER_DATA_API_KEY")
+        if resolved_api_key:
+            self.session.headers["X-API-Key"] = resolved_api_key
 
     def _normalize_url(self, url: str) -> str:
         """
@@ -71,9 +85,48 @@ class JuniperDataClient:
 
         return normalized
 
+    @staticmethod
+    def validate_url(url: str) -> None:
+        """
+        Validate that a URL has a valid scheme and hostname.
+
+        Args:
+            url: URL string to validate.
+
+        Raises:
+            ValueError: If the URL scheme is not http/https or the hostname is missing.
+        """
+        parsed = urlparse(url)
+        if parsed.scheme not in ("http", "https"):
+            raise ValueError(f"Invalid URL scheme '{parsed.scheme}': only 'http' and 'https' are supported. URL: {url}")
+        if not parsed.hostname:
+            raise ValueError(f"URL is missing a hostname. URL: {url}")
+
+    def health_check(self) -> bool:
+        """
+        Check if the JuniperData service is reachable.
+
+        Makes a GET request to /v1/health with a short timeout.
+
+        Returns:
+            True if the service responds with a 2xx status, False otherwise.
+        """
+        url = f"{self.base_url}/v1/health"
+        try:
+            response = self.session.get(url, timeout=5)
+            healthy = response.ok
+            logger.debug("Health check %s: %s %s", url, response.status_code, "OK" if healthy else "FAIL")
+            return healthy
+        except Exception as e:
+            logger.debug("Health check %s failed: %s", url, e)
+            return False
+
     def _request(self, method: str, endpoint: str, **kwargs) -> requests.Response:
         """
-        Make an HTTP request with error handling.
+        Make an HTTP request with error handling and retry logic.
+
+        Retries on transient errors (HTTP 502/503/504, ConnectionError, Timeout)
+        with exponential backoff. Non-retryable errors (4xx) fail immediately.
 
         Args:
             method: HTTP method (GET, POST, etc.)
@@ -84,20 +137,48 @@ class JuniperDataClient:
             Response object
 
         Raises:
-            requests.HTTPError: On non-2xx response status
+            requests.HTTPError: On non-2xx response status after retries exhausted
+            requests.ConnectionError: On connection failure after retries exhausted
+            requests.Timeout: On timeout after retries exhausted
         """
         url = f"{self.base_url}{endpoint}"
         kwargs.setdefault("timeout", self.timeout)
 
-        response = self.session.request(method, url, **kwargs)
+        last_exception = None
+        for attempt in range(self.MAX_RETRIES + 1):
+            try:
+                response = self.session.request(method, url, **kwargs)
 
-        if not response.ok:
-            raise requests.HTTPError(
-                f"Request failed: {response.status_code} {response.reason} - {response.text}",
-                response=response,
-            )
+                if response.ok:
+                    return response
 
-        return response
+                if response.status_code in self._RETRYABLE_STATUS_CODES:
+                    last_exception = requests.HTTPError(
+                        f"Request failed: {response.status_code} {response.reason} - {response.text}",
+                        response=response,
+                    )
+                    if attempt < self.MAX_RETRIES:
+                        delay = self.RETRY_BACKOFF_BASE * (2**attempt)
+                        reason = f"{response.status_code} {response.reason}"
+                        logger.warning(f"Request to {url} failed ({reason}), retrying in {delay:.1f}s (attempt {attempt + 1}/{self.MAX_RETRIES})")
+                        time.sleep(delay)
+                        continue
+                    raise last_exception
+
+                raise requests.HTTPError(
+                    f"Request failed: {response.status_code} {response.reason} - {response.text}",
+                    response=response,
+                )
+
+            except (requests.ConnectionError, requests.Timeout) as exc:
+                last_exception = exc
+                if attempt < self.MAX_RETRIES:
+                    delay = self.RETRY_BACKOFF_BASE * (2**attempt)
+                    reason = type(exc).__name__
+                    logger.warning(f"Request to {url} failed ({reason}), retrying in {delay:.1f}s (attempt {attempt + 1}/{self.MAX_RETRIES})")
+                    time.sleep(delay)
+                    continue
+                raise
 
     def create_dataset(self, generator: str, params: Dict[str, Any], persist: bool = True) -> Dict[str, Any]:
         """
