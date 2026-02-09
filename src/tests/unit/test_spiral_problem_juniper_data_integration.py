@@ -77,7 +77,7 @@ class TestMandatoryJuniperDataIntegration:
                 )
                 result = sp.generate_n_spiral_dataset()
                 assert result
-                assert isinstance(tuple, result)
+                assert isinstance(result, tuple)
 
                 MockProvider.assert_called_once_with("http://localhost:8100")
                 mock_instance.get_spiral_dataset.assert_called_once()

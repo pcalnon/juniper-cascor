@@ -75,7 +75,7 @@ class TestJuniperDataClientCreateDataset:
                 params={"n_spirals": 2, "n_points": 100},
             )
             assert result
-            assert isinstance(JuniperDataClient, result)
+            assert isinstance(result, dict)
 
             mock_request.assert_called_once()
             call_args = mock_request.call_args
