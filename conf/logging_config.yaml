@@ -45,18 +45,26 @@ formatters:
 handlers:
   handler_console:
     class: logging.StreamHandler
-    level: TRACE
+    # level: TRACE
     # level: VERBOSE
     # level: DEBUG
     # level: INFO
+    # level: WARNING
+    level: ERROR
+    # level: CRITICAL
+    # level: FATAL
     formatter: formatter_console
     stream: ext://sys.stdout
   handler_file:
     class: logging.FileHandler
-    level: TRACE
+    # level: TRACE
     # level: VERBOSE
-    # level: DEBUG
+    level: DEBUG
     # level: INFO
+    # level: WARNING
+    # level: ERROR
+    # level: CRITICAL
+    # level: FATAL
     formatter: formatter_file
     # filename: logs/dynamic_nn.log
     # filename: ~/Development/python/juniper/src/prototypes/cascor/logs/juniper_cascor.log
@@ -68,14 +76,23 @@ handlers:
     mode: a
 loggers:
   juniper:
-    level: TRACE
+    # level: TRACE
     # level: VERBOSE
     # level: DEBUG
-    # level: INFO
+    level: INFO
+    # level: WARNING
+    # level: ERROR
+    # level: CRITICAL
+    # level: FATAL
     handlers: [handler_console, handler_file]
     propagate: False
 root:
   handlers: [handler_console, handler_file]
-  level: TRACE
+  # level: TRACE
+  # level: VERBOSE
   # level: DEBUG
   # level: INFO
+  # level: WARNING
+  level: ERROR
+  # level: CRITICAL
+  # level: FATAL

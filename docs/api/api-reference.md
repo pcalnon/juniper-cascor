@@ -24,17 +24,17 @@
 
 ## API Stability
 
-| Component | Stability | Notes |
-|-----------|-----------|-------|
-| `CascadeCorrelationNetwork` | **Stable** | Public API for training/inference |
-| `CascadeCorrelationConfig` | **Stable** | Configuration interface |
-| `CandidateUnit` | Semi-stable | Internal, but documented |
-| `SpiralProblem` | **Stable** | Example problem interface |
-| `JuniperDataClient` | Semi-stable | REST client for JuniperData service |
-| Serialization API | **Stable** | HDF5 save/load |
-| Profiling API | Experimental | New in 0.3.20 |
-| Logger API | Semi-stable | Subject to enhancement |
-| Data Classes | Semi-stable | Fields may be added |
+| Component                   | Stability    | Notes                               |
+| --------------------------- | ------------ | ----------------------------------- |
+| `CascadeCorrelationNetwork` | **Stable**   | Public API for training/inference   |
+| `CascadeCorrelationConfig`  | **Stable**   | Configuration interface             |
+| `CandidateUnit`             | Semi-stable  | Internal, but documented            |
+| `SpiralProblem`             | **Stable**   | Example problem interface           |
+| `JuniperDataClient`         | Semi-stable  | REST client for JuniperData service |
+| Serialization API           | **Stable**   | HDF5 save/load                      |
+| Profiling API               | Experimental | New in 0.3.20                       |
+| Logger API                  | Semi-stable  | Subject to enhancement              |
+| Data Classes                | Semi-stable  | Fields may be added                 |
 
 ---
 
@@ -75,21 +75,21 @@ CascadeCorrelationNetwork(
 
 **Parameters**:
 
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `config` | `CascadeCorrelationConfig` | `None` | Configuration object (preferred) |
-| `input_size` | `int` | `2` | Number of input features |
-| `output_size` | `int` | `2` | Number of output classes |
-| `learning_rate` | `float` | `0.01` | Learning rate for output layer |
-| `candidate_learning_rate` | `float` | `0.01` | Learning rate for candidates |
-| `candidate_pool_size` | `int` | `16` | Number of candidates per round |
-| `candidate_epochs` | `int` | `100` | Epochs to train each candidate |
-| `max_hidden_units` | `int` | `50` | Maximum network growth |
-| `correlation_threshold` | `float` | `0.001` | Minimum correlation for selection |
-| `patience` | `int` | `10` | Early stopping patience |
-| `target_accuracy` | `float` | `0.95` | Stop training at this accuracy |
-| `random_seed` | `int` | `42` | For reproducibility |
-| `generate_plots` | `bool` | `True` | Enable visualization |
+| Parameter                 | Type                       | Default | Description                       |
+| ------------------------- | -------------------------- | ------- | --------------------------------- |
+| `config`                  | `CascadeCorrelationConfig` | `None`  | Configuration object (preferred)  |
+| `input_size`              | `int`                      | `2`     | Number of input features          |
+| `output_size`             | `int`                      | `2`     | Number of output classes          |
+| `learning_rate`           | `float`                    | `0.01`  | Learning rate for output layer    |
+| `candidate_learning_rate` | `float`                    | `0.01`  | Learning rate for candidates      |
+| `candidate_pool_size`     | `int`                      | `16`    | Number of candidates per round    |
+| `candidate_epochs`        | `int`                      | `100`   | Epochs to train each candidate    |
+| `max_hidden_units`        | `int`                      | `50`    | Maximum network growth            |
+| `correlation_threshold`   | `float`                    | `0.001` | Minimum correlation for selection |
+| `patience`                | `int`                      | `10`    | Early stopping patience           |
+| `target_accuracy`         | `float`                    | `0.95`  | Stop training at this accuracy    |
+| `random_seed`             | `int`                      | `42`    | For reproducibility               |
+| `generate_plots`          | `bool`                     | `True`  | Enable visualization              |
 
 ### Methods
 
@@ -234,13 +234,13 @@ Save network to HDF5 file.
 
 **Parameters**:
 
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `filepath` | `str` | - | Path to save file |
-| `include_training_state` | `bool` | `True` | Include training history |
-| `include_training_data` | `bool` | `False` | Include training data (large) |
-| `compression` | `str` | `"gzip"` | Compression algorithm |
-| `compression_opts` | `int` | `4` | Compression level (1-9) |
+| Parameter                | Type   | Default  | Description                   |
+| ------------------------ | ------ | -------- | ----------------------------- |
+| `filepath`               | `str`  | -        | Path to save file             |
+| `include_training_state` | `bool` | `True`   | Include training history      |
+| `include_training_data`  | `bool` | `False`  | Include training data (large) |
+| `compression`            | `str`  | `"gzip"` | Compression algorithm         |
+| `compression_opts`       | `int`  | `4`      | Compression level (1-9)       |
 
 **Example**:
 
@@ -286,7 +286,7 @@ Create a timestamped snapshot of the network.
 
 Configuration object for network parameters.
 
-### Constructor
+### Constructor: Cascade Correlation Config
 
 ```python
 CascadeCorrelationConfig(
@@ -376,7 +376,7 @@ config = CascadeCorrelationConfig(optimizer_config=sgd_config)
 
 Represents a candidate hidden unit during network growth.
 
-### Constructor
+### Constructor: Candidate Unit
 
 ```python
 CandidateUnit(
@@ -387,7 +387,7 @@ CandidateUnit(
 )
 ```
 
-### Methods
+### Methods: Candidate Unit
 
 #### train
 
@@ -430,7 +430,7 @@ Classic two-spiral classification problem for testing.
 
 > **Note**: Dataset generation now uses the JuniperData service via `JuniperDataClient`. See [JuniperDataClient](#juniperdataclient) for details.
 
-### Constructor
+### Constructor: Spiral Problem
 
 ```python
 SpiralProblem(
@@ -440,7 +440,7 @@ SpiralProblem(
 )
 ```
 
-### Methods
+### Methods: Spiral Problem
 
 #### evaluate
 
@@ -493,7 +493,7 @@ Generate spiral classification data.
 
 REST API client for the JuniperData service, used for dataset generation and retrieval.
 
-### Constructor
+### Constructor: Juniper Data Client
 
 ```python
 JuniperDataClient(
@@ -504,12 +504,12 @@ JuniperDataClient(
 
 **Parameters**:
 
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
+| Parameter  | Type  | Default                   | Description                      |
+| ---------- | ----- | ------------------------- | -------------------------------- |
 | `base_url` | `str` | `"http://localhost:8100"` | Base URL for JuniperData service |
-| `timeout` | `int` | `30` | Request timeout in seconds |
+| `timeout`  | `int` | `30`                      | Request timeout in seconds       |
 
-### Methods
+### Methods: Juniper Data Client
 
 #### create_dataset
 
@@ -526,11 +526,11 @@ Create a new dataset using the specified generator.
 
 **Parameters**:
 
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `generator` | `str` | - | Generator type (e.g., `"spiral"`, `"xor"`) |
-| `params` | `dict` | - | Generator-specific parameters |
-| `persist` | `bool` | `True` | Whether to persist the dataset on the server |
+| Parameter   | Type   | Default | Description                                  |
+| ----------- | ------ | ------- | -------------------------------------------- |
+| `generator` | `str`  | -       | Generator type (e.g., `"spiral"`, `"xor"`)   |
+| `params`    | `dict` | -       | Generator-specific parameters                |
+| `persist`   | `bool` | `True`  | Whether to persist the dataset on the server |
 
 **Returns**: Dictionary with dataset metadata including `dataset_id`
 
@@ -547,8 +547,8 @@ Download dataset artifact as NumPy arrays.
 
 **Parameters**:
 
-| Parameter | Type | Description |
-|-----------|------|-------------|
+| Parameter    | Type  | Description                   |
+| ------------ | ----- | ----------------------------- |
 | `dataset_id` | `str` | ID of the dataset to download |
 
 **Returns**: Dictionary of NumPy arrays (typically `{"x": ..., "y": ...}`)
@@ -714,16 +714,16 @@ Logger.fatal("Fatal error")
 
 ### Log Levels
 
-| Level | Value | Description |
-|-------|-------|-------------|
-| TRACE | 5 | Most detailed |
-| VERBOSE | 7 | Detailed output |
-| DEBUG | 10 | Debugging info |
-| INFO | 20 | General info |
-| WARNING | 30 | Warnings |
-| ERROR | 40 | Errors |
-| CRITICAL | 50 | Critical errors |
-| FATAL | 60 | Fatal errors |
+| Level    | Value | Description     |
+| -------- | ----- | --------------- |
+| TRACE    | 5     | Most detailed   |
+| VERBOSE  | 7     | Detailed output |
+| DEBUG    | 10    | Debugging info  |
+| INFO     | 20    | General info    |
+| WARNING  | 30    | Warnings        |
+| ERROR    | 40    | Errors          |
+| CRITICAL | 50    | Critical errors |
+| FATAL    | 60    | Fatal errors    |
 
 ---
 
