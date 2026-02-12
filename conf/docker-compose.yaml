@@ -1,0 +1,49 @@
+# Docker Compose configuration for Juniper Cascor with JuniperData
+#
+# Project:       Juniper
+# Sub-Project:   JuniperCascor
+# File Name:     docker-compose.yaml
+# Author:        Paul Calnon
+# Version:       0.3.18
+#
+# Date Created:  2026-02-12
+# Last Modified: 2026-02-12
+#
+# License:       MIT License
+# Copyright:     Copyright (c) 2024-2026 Paul Calnon
+#
+# Description:
+#    Docker Compose configuration for running JuniperCascor with JuniperData
+#    dataset generation service integration.
+#
+# Usage:
+#    docker-compose up -d              # Start all services
+#    docker-compose logs -f            # Follow logs
+#    docker-compose down               # Stop all services
+
+version: '3.8'
+
+services:
+  # JuniperData dataset generation service
+  juniper-data:
+    build:
+      context: ../../../JuniperData/juniper_data
+      dockerfile: Dockerfile
+    ports:
+      - 8100:8100
+    environment:
+      - JUNIPER_DATA_STORAGE_TYPE=memory
+      - JUNIPER_DATA_LOG_LEVEL=INFO
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8100/v1/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 5s
+    restart: unless-stopped
+    networks:
+      - cascor-network
+
+networks:
+  cascor-network:
+    driver: bridge

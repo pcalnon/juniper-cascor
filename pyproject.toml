@@ -40,6 +40,10 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+juniper-data = [
+    "juniper-data-client>=0.2.0",
+    "requests>=2.28.0",
+]
 test = [
     "pytest>=6.0",
     "pytest-cov",
@@ -47,6 +51,7 @@ test = [
     "pytest-xdist",
     "coverage[toml]",
     "dill>=0.3.6",
+    "responses>=0.23.0",
 ]
 
 [tool.black]
