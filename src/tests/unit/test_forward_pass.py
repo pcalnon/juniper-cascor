@@ -162,7 +162,9 @@ class TestForwardPassValidation:
         wrong_input = torch.randn(10, simple_network.input_size + 1)
 
         # Should raise validation error
-        with pytest.raises(Exception):  # trunk-ignore(ruff/B017)
+        from cascade_correlation.cascade_correlation_exceptions.cascade_correlation_exceptions import ValidationError
+
+        with pytest.raises(ValidationError):
             simple_network.forward(wrong_input)
 
     @pytest.mark.unit
@@ -171,7 +173,9 @@ class TestForwardPassValidation:
         # 1D input (should be 2D)
         wrong_input = torch.randn(simple_network.input_size)
 
-        with pytest.raises(Exception):  # trunk-ignore(ruff/B017)
+        from cascade_correlation.cascade_correlation_exceptions.cascade_correlation_exceptions import ValidationError
+
+        with pytest.raises(ValidationError):
             simple_network.forward(wrong_input)
 
     @pytest.mark.unit

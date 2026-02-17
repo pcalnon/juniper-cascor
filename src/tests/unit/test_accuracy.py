@@ -151,7 +151,7 @@ class TestAccuracyShapes:
         except Exception:
             with pytest.raises((ValueError, TypeError)):
                 accuracy = network.calculate_accuracy(x, y)
-                assert_accuracy_valid(accuracy)
+            assert_accuracy_valid(accuracy)
 
 
 class TestAccuracyValidation:

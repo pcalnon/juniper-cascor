@@ -162,7 +162,7 @@ repos:
         args:
           - --max-line-length=512
           # More relaxed for tests: allow long lines, complexity, some style issues
-          - --extend-ignore=E203,E265,E266,E501,W503,E722,E402,E226,C409,C901,B008,B904,B905,B907,F401,F811
+          - --extend-ignore=E203,E265,E266,E501,W503,E722,E402,E226,C409,C901,B008,B904,B905,B907,F401,F811,F841
           - --max-complexity=25
           - --select=B,C,E,F,W,T4,B9
         additional_dependencies:

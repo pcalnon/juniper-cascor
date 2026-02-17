@@ -11,6 +11,7 @@ from cascade_correlation.cascade_correlation import CascadeCorrelationNetwork
 
 # from cascade_correlation_config.cascade_correlation_config import CascadeCorrelationConfig
 from cascade_correlation.cascade_correlation_config.cascade_correlation_config import CascadeCorrelationConfig
+from cascade_correlation.snapshots.snapshot_utils import HDF5Utils
 
 # from pathlib import Path
 
@@ -45,7 +46,7 @@ def test_hdf5_serialization():
             test_file = tmp_file.name
 
         try:
-            return _check_hdf5_snapshot(test_file, network, CascadeCorrelationNetwork, HDF5Utils)
+            return _check_hdf5_snapshot(test_file, network)
         finally:
             # Cleanup
             if os.path.exists(test_file):  # sourcery skip: no-conditionals-in-tests
@@ -59,8 +60,7 @@ def test_hdf5_serialization():
         return False
 
 
-# TODO Rename this here and in `test_hdf5_serialization`
-def _check_hdf5_snapshot(test_file: str, network: CascadeCorrelationNetwork, HDF5Utils: HDF5Utils) -> bool:
+def _check_hdf5_snapshot(test_file: str, network: CascadeCorrelationNetwork) -> bool:
     # Test saving
     print(f"Saving network to {test_file}...")
     success = network.save_to_hdf5(test_file, include_training_state=False)
