@@ -112,9 +112,9 @@ import logging
 
 #####################################################################################################################################################################################################
 # Define logging level for class logging
-_LOGGER_CLASS_LOGGER_LOG_LEVEL_DEFAULT = logging.DEBUG
+# _LOGGER_CLASS_LOGGER_LOG_LEVEL_DEFAULT = logging.DEBUG
 # _LOGGER_CLASS_LOGGER_LOG_LEVEL_DEFAULT = logging.INFO
-# _LOGGER_CLASS_LOGGER_LOG_LEVEL_DEFAULT = logging.WARNING
+_LOGGER_CLASS_LOGGER_LOG_LEVEL_DEFAULT = logging.WARNING
 # _LOGGER_CLASS_LOGGER_LOG_LEVEL_DEFAULT = logging.ERROR
 # _LOGGER_CLASS_LOGGER_LOG_LEVEL_DEFAULT = logging.CRITICAL
 
