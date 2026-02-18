@@ -1,0 +1,1348 @@
+# JuniperCascor Post-Release Development Roadmap
+
+**Project**: JuniperCascor - Cascade Correlation Neural Network Backend
+**Created**: 2026-02-17
+**Last Updated**: 2026-02-18 (codebase validation pass added)
+**Author**: Paul Calnon
+**Status**: Active - Comprehensive Post-Release Assessment
+**Source**: Exhaustive audit of all JuniperCascor `notes/` files (2026-02-18)
+
+---
+
+## Overview
+
+This document is the **authoritative, consolidated roadmap** for all JuniperCascor updates, changes, fixes, and enhancements. It was compiled by exhaustive audit of every markdown file in the `notes/` directory on 2026-02-18. Items have been de-duplicated across 25+ source documents and organized by phase.
+
+### Source Documents Evaluated
+
+| Document                                        | Date       | Items Extracted                                           | Status                                  |
+| ----------------------------------------------- | ---------- | --------------------------------------------------------- | --------------------------------------- |
+| PRE-DEPLOYMENT_ROADMAP.md                       | 2026-01-25 | Integration analysis, profiling roadmap, coverage roadmap | Superseded by Roadmap-2                 |
+| PRE-DEPLOYMENT_ROADMAP-2.md                     | 2026-02-03 | 5 remaining tasks, CAS-001–CAS-010, deferred items        | Active (14/19 complete)                 |
+| INTEGRATION_ROADMAP.md                          | 2026-02-05 | Cascor-Canopy integration fixes                           | All critical blockers resolved          |
+| INTEGRATION_ROADMAP-01.md                       | 2026-02-05 | 61 issues (INT-P0 through INT-P4)                         | Active - most comprehensive             |
+| CASCOR_JUNIPER_DATA_INTEGRATION_PLAN.md         | 2026-02-07 | CAS-INT-001 through CAS-INT-009                           | ALL 9 COMPLETE                          |
+| JUNIPER_CASCOR_SPIRAL_DATA_GEN_REFACTOR_PLAN.md | 2026-02-07 | Phase 5 deferred, legacy code removal                     | Phases 0-4 Complete                     |
+| TEST_SUITE_CICD_ENHANCEMENT_DEVELOPMENT_PLAN.md | 2026-02-05 | MED-014 deferred, qualitative metrics                     | Phases 0-4 Complete                     |
+| CRITICAL_FIXES_REQUIRED.md                      | 2025-10-15 | P0/P1/P2 items                                            | P0 all fixed (per COMPLETE_FIX_SUMMARY) |
+| CODE_REVIEW_SUMMARY.md                          | 2025-10-15 | P1 #11-14, P2 #15-18                                      | P0 fixed, P1/P2 pending                 |
+| COMPLETE_FIX_SUMMARY.md                         | 2025-10-16 | 4 optional P2 enhancements                                | System production-ready                 |
+| DEVELOPMENT_ROADMAP.md                          | 2025-10-28 | P0-P4 phases, in-code TODOs                               | Many items superseded                   |
+| IMPLEMENTATION_PROGRESS.md                      | 2025-10-28 | ENH-006/007/008 pending                                   | Phase 1 in progress                     |
+| NEXT_STEPS.md                                   | 2025-10-16 | Serialization enhancements                                | Many already implemented                |
+| ORACLE_ANALYSIS_PYTHON.md                       | 2026-01-26 | 5 recommended Python fixes                                | Status unknown                          |
+| ORACLE_ANALYSIS_SCRIPTS.md                      | 2026-01-26 | Shell script path fixes                                   | Status unknown                          |
+| Oracle_analysis_2026-01-26.md                   | 2026-01-26 | C.1/C.2/C.3 integration architecture                      | Not started                             |
+| DOCUMENTATION_AUDIT.md                          | 2026-01-29 | 5 future doc enhancements                                 | Future work                             |
+| FINAL_STATUS.md                                 | 2025-10-16 | Remaining work items                                      | Many superseded                         |
+| FEATURES_GUIDE.md                               | 2025-01-12 | Feature reference                                         | No action items                         |
+| API_REFERENCE.md                                | 2025-01-12 | API reference                                             | No action items                         |
+| ARCHITECTURE_GUIDE.md                           | 2025-01-12 | Architecture reference                                    | No action items                         |
+| IMPLEMENTATION_CHECKLIST.md                     | 2025-10-28 | Testing/verification checklists                           | Many superseded                         |
+| IMPLEMENTATION_SUMMARY.md                       | 2025-10-28 | ENH status tracking                                       | Many already resolved                   |
+| CHANGES_FOR_REVIEW.md                           | Various    | Change reviews                                            | All complete                            |
+
+### Consolidated Statistics
+
+| Category                         | Count |
+| -------------------------------- | ----- |
+| Total unique non-completed items | 89    |
+| Critical (P0)                    | 5     |
+| High (P1)                        | 16    |
+| Medium (P2)                      | 25    |
+| Low / Deferred (P3-P4)           | 43    |
+
+### Codebase Validation Summary (2026-02-18)
+
+| Result                   | Count     | Items                                                                                                        |
+| ------------------------ | --------- | ------------------------------------------------------------------------------------------------------------ |
+| CONFIRMED (bug exists)   | 17        | INT-P0-001 through P0-005, P2-001 through P2-010 (excl. P2-004), P2-014, CAS-REF-004, INT-P1-005, INT-P1-008 |
+| RESOLVED (already fixed) | 3         | INT-P1-002 (requests dep), INT-P1-007 (retry logic), INT-P2-013 (dill dep)                                   |
+| SEVERITY ADJUSTED        | 3         | INT-P2-004 (High→Low), INT-P1-006 (High→Medium), INT-P1-005 (High→Low impact)                                |
+| NOT YET VALIDATED        | Remaining | Architecture items (C.1, C.2), deferred items, Oracle analysis items                                         |
+
+---
+
+## Section 1: Critical Bugs & Blockers (P0)
+
+**Priority**: IMMEDIATE
+**Estimated Effort**: 8-16 hours
+**Source**: INTEGRATION_ROADMAP-01.md (2026-02-05), Source Code Review
+
+These items were identified during the 2026-02-05 source code review. They represent actual bugs in the current codebase that could cause incorrect behavior or crashes.
+
+### INT-P0-001: Walrus Operator Precedence Bug
+
+**Status**: NOT STARTED
+**Severity**: Critical
+**Source**: INTEGRATION_ROADMAP-01.md
+**File**: `src/cascade_correlation/cascade_correlation.py` (line 1322)
+
+**Description**: The `train_output_layer` method contains a walrus operator (`:=`) with incorrect precedence that could cause silent data corruption in snapshots.
+
+**Codebase Validation (2026-02-18)**: **CONFIRMED**. Line 1322: `if snapshot_path := self.create_snapshot() is not None:` — The `:=` operator has lower precedence than `is not`, so `snapshot_path` is assigned the boolean result of `self.create_snapshot() is not None` (i.e., `True`/`False`) instead of the actual snapshot path. The subsequent log message at line 1323 would print `True` instead of the file path. Fix: add parentheses `if (snapshot_path := self.create_snapshot()) is not None:`. Note: 8 additional walrus expressions in the file (lines 1740, 2765, 2780, 3154, 3540, 3544, 3595, 3648) appear syntactically correct.
+
+---
+
+### INT-P0-002: ActivationWithDerivative Class Duplicated
+
+**Status**: NOT STARTED
+**Severity**: Critical
+**Source**: INTEGRATION_ROADMAP-01.md
+**File**: `src/cascade_correlation/cascade_correlation.py` (line 291), `src/candidate_unit/candidate_unit.py` (line 138)
+
+**Description**: The `ActivationWithDerivative` class is duplicated in two files. If the ACTIVATION_MAP diverges between the two copies, incorrect activation functions could be used. Should be extracted to a shared module.
+
+**Codebase Validation (2026-02-18)**: **CONFIRMED**. Exact duplicate at `cascade_correlation.py:291` and `candidate_unit.py:138`. Both define `class ActivationWithDerivative`. Fix: extract to a shared module (e.g., `src/activation/activation_with_derivative.py`) and import in both files.
+
+---
+
+### INT-P0-003: Invalid CandidateUnit Constructor Parameters in `fit`
+
+**Status**: NOT STARTED
+**Severity**: Critical
+**Source**: INTEGRATION_ROADMAP-01.md
+**File**: `src/cascade_correlation/cascade_correlation.py` (lines 1154-1166)
+
+**Description**: The `fit` method passes invalid parameters to the `CandidateUnit` constructor.
+
+**Codebase Validation (2026-02-18)**: **CONFIRMED — WORSE THAN DOCUMENTED**. Lines 1154-1166: All 11 parameters use the `_CandidateUnit__` prefix (with leading underscore, Python name-mangling style) instead of the correct `CandidateUnit__` prefix used by the constructor. Since CandidateUnit's `__init__` accepts `**kwargs`, ALL parameters are silently absorbed and the CandidateUnit is created with ALL default values. This means training in the `fit()` path silently ignores the user's activation function, input size, output size, learning rate, etc. Additionally, `_CandidateUnit__candidate_pool_size`, `_CandidateUnit__log_file_name`, and `_CandidateUnit__log_file_path` don't exist as CandidateUnit constructor parameters even with the correct prefix. Note: The other two CandidateUnit creation sites (line 989 `_create_candidate_unit` and line 2158 `train_candidate_worker`) use the correct `CandidateUnit__` prefix and appear correct.
+
+---
+
+### INT-P0-004: Hardcoded Path in remote_client_0.py
+
+**Status**: NOT STARTED
+**Severity**: Critical
+**Source**: INTEGRATION_ROADMAP-01.md
+**File**: `src/remote_client/remote_client_0.py` (line 16)
+
+**Description**: Contains a hardcoded absolute path that will break on any machine other than the development environment.
+
+**Codebase Validation (2026-02-18)**: **CONFIRMED**. Line 16: `sys.path.append("/home/pcalnon/Development/python/Juniper/src/prototypes/cascor/src")`. Points to the old prototypes directory, not even the current project structure.
+
+**Related**: INT-P2-009 (inconsistent queue names between remote clients)
+
+---
+
+### INT-P0-005: Hardcoded Paths in Test File
+
+**Status**: NOT STARTED
+**Severity**: Critical
+**Source**: INTEGRATION_ROADMAP-01.md
+**File**: `src/tests/unit/test_candidate_training_manager.py` (lines 10-12)
+
+**Description**: Test file contains hardcoded absolute paths.
+
+**Codebase Validation (2026-02-18)**: **CONFIRMED**. Line 10: `sys.path.append("/home/pcalnon/Development/python/Juniper/src/prototypes/cascor/src")` (Linux), Line 12: `sys.path.append("/Users/pcalnon/Development/python/Juniper/src/prototypes/cascor/src")` (macOS). Both point to obsolete prototype paths.
+
+---
+
+## Section 2: Integration Architecture (P1)
+
+**Priority**: HIGH
+**Estimated Effort**: 24-40 hours
+**Source**: INTEGRATION_ROADMAP-01.md, Oracle_analysis_2026-01-26.md, PRE-DEPLOYMENT_ROADMAP-2.md
+
+### INT-P1-001: Duplicated JuniperDataClient
+
+**Status**: NOT STARTED
+**Severity**: High
+**Source**: INTEGRATION_ROADMAP-01.md
+
+**Description**: `JuniperDataClient` is duplicated in both JuniperCascor (`src/juniper_data_client/client.py`) and JuniperCanopy. Changes to the client API must be synchronized manually.
+
+**Fix**: Extract to a shared Python package (e.g., `juniper-common`).
+
+**Related**: INT-P1-002 (requests dependency), INT-P1-003 (no shared protocol package)
+
+---
+
+### INT-P1-002: `requests` as Undeclared Dependency
+
+**Status**: ~~NOT STARTED~~ **RESOLVED**
+**Severity**: ~~High~~ N/A
+**Source**: INTEGRATION_ROADMAP-01.md
+
+**Description**: The `requests` library is used by `JuniperDataClient` but is not declared in the project's dependency files.
+
+**Codebase Validation (2026-02-18)**: **RESOLVED**. `requests>=2.28.0` is declared in `pyproject.toml` (line 45) AND `conf/requirements-pip.txt` (line 95: `requests==2.32.5`). This issue has been fixed since the original audit.
+
+---
+
+### INT-P1-003: No Shared Protocol Package
+
+**Status**: NOT STARTED
+**Severity**: High
+**Source**: INTEGRATION_ROADMAP-01.md
+
+**Description**: Three Juniper applications share API contracts, data formats, and client code but have no shared protocol/interface package. Each duplicates validation logic.
+
+---
+
+### INT-P1-004: Full IPC Architecture
+
+**Status**: DEFERRED
+**Severity**: High
+**Source**: INTEGRATION_ROADMAP-01.md, Oracle_analysis_2026-01-26.md (C.3), PRE-DEPLOYMENT_ROADMAP-2.md (P1-NEW-001)
+
+**Description**: JuniperCascor is currently embedded in JuniperCanopy's process via `sys.path.insert()`. A proper IPC architecture (separate backend process with protocol-based communication) would enable independent deployment and scaling.
+
+**Sub-tasks** (all NOT STARTED):
+
+- Design IPC protocol specification
+- Implement Cascor server mode
+- Update Canopy to connect to external Cascor
+- Add connection management and health checks
+
+**Alternative (IPC-lite)**: Optional "training subprocess mode" using `multiprocessing.Process + Queue`.
+
+---
+
+### INT-P1-005: main.py Passes Invalid Parameters to SpiralProblem
+
+**Status**: NOT STARTED
+**Severity**: High
+**Source**: INTEGRATION_ROADMAP-01.md
+
+**Description**: `main.py` passes parameters that `SpiralProblem` does not accept or uses incorrect parameter names.
+
+**Codebase Validation (2026-02-18)**: **CONFIRMED — LOW IMPACT**. `main.py` line 208 passes `_SpiralProblem__spiral_config=logging.config` but SpiralProblem's constructor has no `spiral_config` parameter. Since `SpiralProblem.__init__` accepts `**kwargs` (line 177), this is silently absorbed. The config object is never used. Other parameters (lines 209-238) use the correct `_SpiralProblem__` prefix matching the constructor and appear valid.
+
+---
+
+### INT-P1-006: Missing Import Guard for SpiralDataProvider
+
+**Status**: NOT STARTED
+**Severity**: High
+**Source**: INTEGRATION_ROADMAP-01.md
+
+**Description**: Missing try/except import guard for `SpiralDataProvider` — if `requests` is not installed, the import fails silently or with a confusing error.
+
+**Codebase Validation (2026-02-18)**: **PARTIALLY RESOLVED**. The import at `spiral_problem.py:509` is a lazy import inside `generate_n_spiral_dataset()`, so it only fails when actually calling the data provider. However, `requests` is now a declared dependency (see INT-P1-002 RESOLVED), so the "not installed" scenario is unlikely. The import still lacks a try/except guard for more descriptive error messages if the `data_provider` module itself has issues. **Severity reduced to MEDIUM**.
+
+---
+
+### INT-P1-007: No Connection Retry Logic for JuniperData Client
+
+**Status**: COMPLETE (via CAS-INT-008)
+**Resolution**: Implemented in `JuniperDataClient._request()` with `MAX_RETRIES = 3` and exponential backoff.
+
+---
+
+### INT-P1-008: check.py is a Stale Duplicate
+
+**Status**: NOT STARTED
+**Severity**: High
+**Source**: INTEGRATION_ROADMAP-01.md
+**File**: `src/spiral_problem/check.py`
+
+**Description**: `check.py` is a stale duplicate of `spiral_problem.py` that should be removed.
+
+**Codebase Validation (2026-02-18)**: **CONFIRMED**. File `src/spiral_problem/check.py` still exists.
+
+---
+
+### C.1: Async Wrapper for Synchronous fit()
+
+**Status**: NOT STARTED
+**Severity**: High
+**Effort**: Medium (2-4 days)
+**Source**: Oracle_analysis_2026-01-26.md
+
+**Description**: Add async wrapper around synchronous `fit()` using `loop.run_in_executor()` for FastAPI endpoints. Includes:
+
+- Add `ThreadPoolExecutor` and training task state to `CascorIntegration`
+- Add `monitored_fit_async()` method
+- Update FastAPI endpoints to call async wrapper
+- Implement cancellation strategy ("stop requested" flag)
+- Make broadcasting thread-safe (`websocket_manager.broadcast_sync`)
+
+---
+
+### C.2: Expose RemoteWorkerClient Through CascorIntegration
+
+**Status**: NOT STARTED
+**Severity**: High
+**Effort**: Large (1-2 weeks)
+**Source**: Oracle_analysis_2026-01-26.md
+
+**Description**: Expose `RemoteWorkerClient` through `CascorIntegration` with config, API endpoints, and packaging. Includes:
+
+- Import/packaging sanity for `RemoteWorkerClient`
+- Expose configuration in Canopy (`app_config.yaml`)
+- Add minimal API surface (connect/start/stop/disconnect)
+- Connect remote workers to training (inject task/result queues)
+- FastAPI endpoints for remote worker admin (POST /api/remote/*)
+- Package as `juniper_branch` (shared Python package)
+
+---
+
+## Section 3: Code Quality & Testing (P2)
+
+**Priority**: MEDIUM
+**Estimated Effort**: 32-48 hours
+**Source**: INTEGRATION_ROADMAP-01.md, PRE-DEPLOYMENT_ROADMAP-2.md, TEST_SUITE_CICD_ENHANCEMENT_DEVELOPMENT_PLAN.md
+
+### 3.1 Source Code Bugs
+
+#### INT-P2-001: Undeclared Global Variable `shared_object_dict`
+
+**Status**: NOT STARTED
+**Severity**: High
+**File**: `src/cascade_correlation/cascade_correlation.py` (line 2300)
+
+**Codebase Validation (2026-02-18)**: **CONFIRMED**. Line 2300: `global shared_object_dict` — used in `_train_candidate_unit` static method but never declared at module scope. It's expected to be injected by the multiprocessing module's shared memory setup. While functional in practice (the global is set before worker processes fork), it fails static analysis and is fragile.
+
+---
+
+#### INT-P2-002: Misleading `import datetime as pd`
+
+**Status**: NOT STARTED
+**Severity**: High
+**File**: `src/cascade_correlation/cascade_correlation.py` (line 38)
+
+**Codebase Validation (2026-02-18)**: **CONFIRMED**. Line 38: `import datetime as pd`. The alias `pd` is conventionally used for `pandas`. Using it for `datetime` will mislead any developer reading the code.
+
+---
+
+#### INT-P2-003: `validate_training_results` Bug
+
+**Status**: NOT STARTED
+**Severity**: High
+**File**: `src/cascade_correlation/cascade_correlation.py` (lines 2750-2843)
+
+**Description**: Uninitialized variable when `max_epochs=0`.
+
+**Codebase Validation (2026-02-18)**: **CONFIRMED**. TODO comment at line 2750 acknowledges the bug. Variable initialized as `None` at line 2754. If the training loop at line ~2810 doesn't execute (e.g., `max_epochs=0`), `validate_training_results` remains `None`. The guard at line 2830 (`if not validate_training_results:`) creates a default `ValidateTrainingResults`, but the debug log at line 2825 (inside the loop) would crash with `AttributeError` on `.early_stop` if executed with a None result from a prior iteration.
+
+---
+
+#### INT-P2-004: `snapshot_counter` Initialized Twice
+
+**Status**: NOT STARTED
+**Severity**: ~~High~~ Low (cosmetic)
+
+**Codebase Validation (2026-02-18)**: **CONFIRMED — LOW IMPACT**. `self.snapshot_counter = 0` at both line 530 and line 548. Both set to 0, so the duplication is harmless. Just dead code to clean up.
+
+---
+
+#### INT-P2-005: `or` Fallback Chain Bug for Falsy Values
+
+**Status**: NOT STARTED
+**Severity**: Medium
+
+**Description**: `learning_rate = param or default` treats `0` as falsy, using default instead of the intended value.
+
+**Codebase Validation (2026-02-18)**: **CONFIRMED**. Two instances in `cascade_correlation.py` at lines 3015 and 3096: `pl.Path(self.cascade_correlation_network_snapshots_dir) or pl.Path(_CASCADE_CORRELATION_NETWORK_HDF5_PROJECT_SNAPSHOTS_DIR)` — A `Path` object is always truthy (even for empty string paths), so the fallback will never trigger. Also, numerous `or` fallback patterns across the file for numeric parameters (e.g., line 471 `self.config.log_file_path or ...`). Fix: use `if x is None` checks instead of `or`.
+
+---
+
+#### INT-P2-006: Boolean Parameter `clockwise` Uses `or` Pattern
+
+**Status**: NOT STARTED
+**Severity**: Medium
+**File**: `src/spiral_problem/spiral_problem.py` (lines 597, 1249, 1408)
+
+**Codebase Validation (2026-02-18)**: **CONFIRMED**. Three instances: `self.clockwise = clockwise or self.clockwise or _SPIRAL_PROBLEM_CLOCKWISE`. If `clockwise=False` is explicitly passed (meaning counter-clockwise), the `or` operator treats it as falsy and falls through to `self.clockwise` or the constant default. Fix: use `clockwise if clockwise is not None else ...`.
+
+---
+
+#### INT-P2-007: conftest.py Fast-Slow Mode Logic Inverted
+
+**Status**: NOT STARTED
+**Severity**: Medium
+**File**: `src/tests/conftest.py` (lines 82-87)
+
+**Codebase Validation (2026-02-18)**: **CONFIRMED — TWO BUGS**. (1) Line 82 (commented out) checks `== "1"` but the active line 83 checks `== "0"` — the env var check is inverted. (2) Both branches (fast-slow enabled and disabled) set `CASCOR_LOG_LEVEL` to `"WARNING"`, making the entire conditional dead code. The `_is_fast_mode` fixture at line 154 correctly checks `== "1"`, contradicting line 83.
+
+---
+
+#### INT-P2-008: `_roll_sequence_number` Memory Issue
+
+**Status**: NOT STARTED
+**Severity**: High
+**File**: `src/cascade_correlation/cascade_correlation.py` (line 759)
+
+**Codebase Validation (2026-02-18)**: **CONFIRMED**. Method at line 759 generates a discard list of random numbers at line 776 to "roll" the sequence number. For large sequence values, this creates a large in-memory list of discarded random numbers. The discard list size is bounded by `max_value` parameter (from `sequence_max_value`).
+
+---
+
+#### INT-P2-009: Inconsistent Queue Method Names Between Remote Clients
+
+**Status**: NOT STARTED
+**Severity**: High
+
+**Codebase Validation (2026-02-18)**: **CONFIRMED**. `remote_client_0.py` registers and uses `get_tasks_queue()`/`get_done_queue()` (lines 35-36, 56-57). `remote_client.py` uses `get_task_queue()`/`get_result_queue()` (lines 72-73). Incompatible naming means they cannot connect to the same manager.
+
+---
+
+#### INT-P2-010: `os._exit()` Used Instead of `sys.exit()` in main.py
+
+**Status**: NOT STARTED
+**Severity**: Medium
+**File**: `src/main.py` (lines 142, 145)
+
+**Codebase Validation (2026-02-18)**: **CONFIRMED**. Line 142: `os._exit(1)`, Line 145: `os._exit(2)`. `os._exit()` bypasses all cleanup: finally blocks, atexit handlers, open file flushing. Should use `sys.exit()` unless intentionally bypassing cleanup.
+
+---
+
+#### INT-P2-013: `check_object_pickleability` Depends on Undeclared `dill`
+
+**Status**: ~~NOT STARTED~~ **RESOLVED**
+**Severity**: ~~Medium~~ N/A
+
+**Codebase Validation (2026-02-18)**: **RESOLVED**. `dill>=0.3.6` is declared in `pyproject.toml` (line 53). Used in `src/utils/utils.py:248` and test files. This issue has been fixed since the original audit.
+
+---
+
+#### INT-P2-014: Multiple `import traceback` Inside Exception Handlers
+
+**Status**: NOT STARTED
+**Severity**: Medium
+**Description**: Should be top-level imports.
+
+**Codebase Validation (2026-02-18)**: **CONFIRMED**. 22 instances of `import traceback` inside exception handlers in `cascade_correlation.py` (lines 1369, 1505, 1690, 2175, 2198, 2327, 2442, 2466, 2472, 2494, 2499, 2819, 2879, 2917, 2947, 3078, 3172, 3264, 3310, 3336, 3356). The top-level import at line 60 is commented out: `# import traceback`. Fix: uncomment the top-level import and remove the 22 local imports.
+
+---
+
+### 3.2 Code Coverage
+
+#### CAS-REF-001: Code Coverage Below 90%
+
+**Status**: IN PROGRESS
+**Current**: ~67% overall (improved from ~50%)
+**Target**: 90%
+**Source**: PRE-DEPLOYMENT_ROADMAP-2.md (P2-NEW-001)
+
+---
+
+#### CAS-REF-002 / INT-P2-011: CI/CD Coverage Gates Not Enforced
+
+**Status**: NOT STARTED
+**Source**: PRE-DEPLOYMENT_ROADMAP-2.md (P2-NEW-002), INTEGRATION_ROADMAP-01.md
+
+**Description**: Add `coverage report --fail-under=80` to CI. Configure per-module thresholds.
+
+---
+
+### 3.3 Type Safety
+
+#### CAS-REF-003 / INT-P2-012: Type Errors Gradual Fix
+
+**Status**: IN PROGRESS
+**Source**: PRE-DEPLOYMENT_ROADMAP-2.md (P2-NEW-006), INTEGRATION_ROADMAP-01.md
+
+**Description**: Run mypy, categorize errors, fix critical type errors in core modules. Gradually increase type strictness. Remove `continue-on-error` once stable.
+
+**Sub-tasks** (all unchecked):
+
+- Run mypy and categorize errors
+- Fix critical type errors
+- Gradually increase strictness
+- Remove `continue-on-error` from CI
+
+---
+
+### 3.4 Test Optimization
+
+#### CAS-007: Optimize Slow Tests
+
+**Status**: NOT STARTED
+**Source**: PRE-DEPLOYMENT_ROADMAP-2.md (Section 7.2)
+
+**Description**: Numerous JuniperCascor tests are extremely slow (~45 minutes for complete run). Optimize for <= 5 minute test suite runtime.
+
+---
+
+### 3.5 Legacy Code
+
+#### CAS-REF-004 / INT-P3-001: Legacy Spiral Code Removal
+
+**Status**: NOT STARTED
+**Source**: PRE-DEPLOYMENT_ROADMAP-2.md, INTEGRATION_ROADMAP-01.md
+
+**Description**: Remove legacy spiral data generation code from JuniperCascor now that JuniperData provides this functionality via REST API. 16 methods currently carry `DeprecationWarning` (applied in CAS-INT-002).
+
+**Dependencies**: JuniperData deployment and integration testing complete.
+
+**Codebase Validation (2026-02-18)**: **CONFIRMED**. 16 `DeprecationWarning` instances found in `spiral_problem.py` at lines: 648, 684, 714, 733, 787, 813, 848, 869, 898, 941, 974, 1001, 1050, 1095, 1166, 1197. These mark the legacy methods scheduled for removal.
+
+---
+
+## Section 4: Feature Enhancements
+
+**Priority**: MEDIUM to LOW
+**Source**: PRE-DEPLOYMENT_ROADMAP-2.md (Section 7.2), IMPLEMENTATION_PROGRESS.md, CODE_REVIEW_SUMMARY.md
+
+### 4.1 Training Control
+
+#### CAS-002: Separate Epoch Limits
+
+**Status**: NOT STARTED
+**Module**: Cascor: Epoch Definition
+
+**Description**: Separate epoch limits and epoch counts for full network and candidate nodes. Allows independent tuning of network training duration vs candidate pool training duration.
+
+---
+
+#### CAS-003: Max Train Session Iterations
+
+**Status**: NOT STARTED
+**Module**: Cascor: Training Iterations
+
+**Description**: Add max iterations (per train session) meta parameter that limits the total number of iterations for a given training session. Provides an upper bound on training duration, preventing runaway sessions.
+
+---
+
+#### CAS-006: Auto-Snap Best Network (Accuracy Ratchet)
+
+**Status**: NOT STARTED
+**Module**: Cascor: Auto-Snap Best Network
+
+**Description**: Automatically snapshot a network when a new best accuracy is achieved, after an initial count of full network epochs or training session iterations completed.
+
+---
+
+### 4.2 Algorithm Enhancements
+
+#### ENH-006: Flexible Optimizer Management System
+
+**Status**: NOT STARTED
+**Source**: IMPLEMENTATION_PROGRESS.md, DEVELOPMENT_ROADMAP.md (P2-002)
+
+**Description**: Implement flexible optimizer system with `OptimizerConfig` dataclass. Support Adam, SGD, RMSprop, AdamW. Includes serialization support.
+
+---
+
+#### ENH-007: N-Best Candidate Layer Selection
+
+**Status**: NOT STARTED
+**Source**: IMPLEMENTATION_PROGRESS.md, DEVELOPMENT_ROADMAP.md (P2-005)
+
+**Description**: Config already has placeholders (`candidates_per_layer`, `layer_selection_strategy`). Implementation design completed in roadmap. High-value feature for architecture exploration.
+
+---
+
+### 4.3 Network Architecture
+
+#### CAS-008: Network Hierarchy Management
+
+**Status**: NOT STARTED
+**Module**: Cascor: Network Hierarchy
+
+**Description**: Add "Increment Network Hierarchy level" functionality and training/inference of multi-hierarchical CasCor networks.
+
+---
+
+#### CAS-009: Network Population Management
+
+**Status**: NOT STARTED
+**Module**: Cascor: Network Population
+
+**Description**: Add "Network Population Initialization and Update" functionality to create a new population of CasCor neural networks at a given hierarchical level. Enables ensemble-style approaches with population-based training.
+
+---
+
+### 4.4 Storage & Serialization
+
+#### CAS-010: Snapshot Vector DB Storage
+
+**Status**: NOT STARTED
+**Module**: Cascor: Snapshot Vector DB
+
+**Description**: Store CasCor snapshots in a vector database, indexed by network UUID. Enables semantic search and comparison of network states across training runs.
+
+---
+
+### 4.5 Multiprocessing & Workers
+
+#### CAS-004: Extract Remote Worker to JuniperBranch
+
+**Status**: NOT STARTED
+**Module**: Cascor: Candidate Remote Workers
+
+**Description**: Refactor to extract the Remote Worker node and all its dependencies into a new application: JuniperBranch. Enables lightweight distributed training workers on heterogeneous hardware.
+
+---
+
+#### CAS-005: Extract Common Dependencies to Modules
+
+**Status**: NOT STARTED
+**Module**: Cascor: Common Class Modules
+**Dependencies**: CAS-004 (JuniperBranch extraction must be planned first)
+
+**Description**: Refactor to extract all classes that are dependencies of both JuniperCascor and JuniperBranch into importable modules.
+
+---
+
+#### ENH-008: Worker Cleanup Improvements
+
+**Status**: NOT STARTED
+**Source**: IMPLEMENTATION_PROGRESS.md, CODE_REVIEW_SUMMARY.md (P2 #17)
+
+**Description**: Better termination handling, SIGKILL fallback, improved logging, zombie process prevention.
+
+---
+
+## Section 5: Cross-Project Dependencies
+
+### 5.1 JuniperCanopy Dependencies
+
+#### CAS-CANOPY-001: Prediction Grid API for Decision Boundary
+
+**Status**: NOT STARTED
+**Priority**: HIGH
+**Source**: JuniperCanopy CAN-CRIT-001
+
+**Description**: JuniperCanopy's decision boundary visualization requires the real CasCor backend to accept a grid of input points and return predictions. Currently only has a demo mode implementation. The CasCor backend must expose a prediction method that accepts arbitrary input grids.
+
+**Impact**: Blocks CAN-CRIT-001 in JuniperCanopy.
+
+---
+
+#### CAS-CANOPY-002: Serialization API for Training Snapshots
+
+**Status**: NOT STARTED
+**Priority**: HIGH
+**Source**: JuniperCanopy CAN-CRIT-002
+
+**Description**: JuniperCanopy needs `save_snapshot()` and `load_snapshot()` methods in `CascorIntegration`. These require CasCor to expose a serialization API (e.g., PyTorch `state_dict()` export/import). The API must capture full training state including network weights, optimizer state, and training metadata.
+
+**Impact**: Blocks CAN-CRIT-002 and downstream CAN-014/CAN-015 (snapshot replay features).
+
+---
+
+#### CAS-CANOPY-003: Profiling Roadmap Tasks
+
+**Status**: NOT STARTED
+**Priority**: MEDIUM
+**Source**: PRE-DEPLOYMENT_ROADMAP.md (Profiling Roadmap section)
+
+**Description**: 16 profiling tasks from the pre-deployment roadmap remain unchecked:
+
+- Profile full training loop (CPU, memory, I/O)
+- Profile candidate pool generation
+- Profile network forward/backward passes
+- Profile serialization/deserialization
+- Identify and optimize hot paths
+- Memory leak detection in long-running training sessions
+- Threading overhead analysis
+- Benchmark comparison with reference implementations
+
+---
+
+### 5.2 JuniperData Dependencies
+
+#### Phase 5: Extended Data Sources
+
+**Status**: DEFERRED
+**Source**: JUNIPER_CASCOR_SPIRAL_DATA_GEN_REFACTOR_PLAN.md
+
+**Description**: Extended data source support (S3, database, HuggingFace). Deferred until JuniperData core is stable.
+
+---
+
+#### E2E Live Service Integration Tests
+
+**Status**: NOT STARTED (INT-P3-002)
+**Source**: INTEGRATION_ROADMAP-01.md
+
+**Description**: No automated tests currently spin up a live JuniperData service. All current E2E tests use in-process `TestClient`.
+
+---
+
+## Section 6: Infrastructure & DevOps (P3)
+
+**Priority**: STANDARD
+**Estimated Effort**: 20-32 hours
+**Source**: INTEGRATION_ROADMAP-01.md, PRE-DEPLOYMENT_ROADMAP-2.md, ORACLE_ANALYSIS_SCRIPTS.md
+
+### 6.1 Shell Scripts
+
+#### Shell Script Path Resolution Fixes
+
+**Status**: NOT STARTED
+**Source**: ORACLE_ANALYSIS_SCRIPTS.md, DEVELOPMENT_ROADMAP.md (P0-005)
+
+**Description**: Multiple shell script issues:
+
+- `juniper_cascor.bash` (lines 61-63) overrides absolute paths with bare filenames
+- `script_util.cfg` naming inconsistencies (`DATE_FUNCTIONS_NAME` vs actual filenames)
+- Helper script resolution broken
+- `GET_PROJECT_SCRIPT` pattern needs fixing across all scripts
+
+---
+
+### 6.2 Docker & Deployment
+
+#### INT-P3-003: Docker Compose Validation
+
+**Status**: NOT STARTED
+**Source**: INTEGRATION_ROADMAP-01.md
+
+**Description**: The docker-compose configuration shows a 3-service deployment but has not been tested end-to-end.
+
+---
+
+### 6.3 Git Hygiene
+
+#### INT-P3-008: .pytest.ini.swp and Coverage Files in Git
+
+**Status**: NOT STARTED
+**Source**: INTEGRATION_ROADMAP-01.md
+
+**Description**: Vim swap file and coverage artifacts appear in git status. Add to `.gitignore`.
+
+---
+
+#### INT-P3-009: Version Strings Inconsistent Across Files
+
+**Status**: NOT STARTED
+**Source**: INTEGRATION_ROADMAP-01.md
+
+**Description**: File headers show various versions: `0.3.1 (0.7.3)`, `0.3.2 (0.7.3)`, `1.0.1`, `0.1.0`. CLAUDE.md states `0.6.6 (0.7.3)`.
+
+---
+
+#### INT-P3-010: `cascor_snapshots` vs `snapshots` Directory Confusion
+
+**Status**: NOT STARTED
+**Source**: INTEGRATION_ROADMAP-01.md
+
+**Description**: Both `src/cascor_snapshots/` and `src/snapshots/` directories exist under `src/`. Purpose distinction is unclear.
+
+---
+
+### 6.4 Profiling Infrastructure
+
+#### Continuous Profiling (Grafana Pyroscope)
+
+**Status**: NOT STARTED
+**Effort**: Large (1-2 weeks)
+**Source**: PRE-DEPLOYMENT_ROADMAP-2.md (P3-NEW-004)
+
+**Description**: Deploy Grafana Pyroscope, integrate SDK, create dashboards.
+
+---
+
+#### Baseline Performance Profiles
+
+**Status**: DEFERRED (INT-P3-006)
+**Source**: INTEGRATION_ROADMAP-01.md
+
+**Description**: Create baseline py-spy profiles for key operations to enable performance regression detection.
+
+---
+
+#### Profiling in CI/CD
+
+**Status**: DEFERRED (INT-P3-007)
+**Source**: INTEGRATION_ROADMAP-01.md
+
+**Description**: Add profiling to CI/CD pipeline for regression detection.
+
+---
+
+### 6.5 WebSocket Testing
+
+#### INT-P3-005: Test WebSocket Responsiveness During Training
+
+**Status**: NEEDS MANUAL VERIFICATION
+**Source**: INTEGRATION_ROADMAP-01.md
+
+**Description**: When Cascor training runs via `asyncio.run_in_executor()` in FastAPI, WebSocket responsiveness should be verified under load.
+
+---
+
+## Section 7: Deferred & Future Work (P4)
+
+### 7.1 Major Architectural Changes
+
+#### GPU/CUDA Support
+
+**Status**: NOT STARTED
+**Effort**: XL (2-4 weeks)
+**Source**: PRE-DEPLOYMENT_ROADMAP-2.md (P3-NEW-003)
+
+**Description**: Add CUDA/GPU acceleration for training. Requires significant refactoring.
+
+---
+
+#### Large File Refactoring
+
+**Status**: NOT STARTED
+**Source**: DEVELOPMENT_ROADMAP.md (P3-002, P3-003)
+
+**Description**: Phase 1: Extract multiprocessing, training, validation helpers (no file > 2000 lines). Phase 2: Deeper restructuring (no file > 1500 lines).
+
+---
+
+### 7.2 Code Cleanup
+
+#### Remove "Roll" Concept in CandidateUnit
+
+**Status**: DEFERRED
+**Source**: PRE-DEPLOYMENT_ROADMAP-2.md (CASCOR-P1-008)
+
+**Description**: Consider removing the roll concept entirely from CandidateUnit. Currently capped at `MAX_ROLL_COUNT = 10000`.
+
+---
+
+#### Candidate Factory Refactor
+
+**Status**: DEFERRED
+**Source**: PRE-DEPLOYMENT_ROADMAP-2.md (P3-001)
+
+**Description**: Ensure all candidate creation routes through `_create_candidate_unit()` factory.
+
+---
+
+#### MED-014: Line Length Reduction
+
+**Status**: DEFERRED
+**Source**: TEST_SUITE_CICD_ENHANCEMENT_DEVELOPMENT_PLAN.md
+
+**Description**: Full codebase reformat to 120-character line length.
+
+---
+
+#### Code Cleanup Items (Low Priority)
+
+**Source**: INTEGRATION_ROADMAP-01.md (INT-P4-012 through INT-P4-017)
+
+| ID         | Description                                                      | Status |
+| ---------- | ---------------------------------------------------------------- | ------ |
+| INT-P4-012 | `LogConfig.__init__` parameter naming cleanup                    | LOW    |
+| INT-P4-013 | Logger TODO cleanup                                              | LOW    |
+| INT-P4-014 | Remove commented-out code blocks                                 | LOW    |
+| INT-P4-015 | Clean up "Original corrupted line" comments in spiral_problem.py | LOW    |
+| INT-P4-016 | Remove `uuid as uuid` redundant import alias                     | LOW    |
+
+---
+
+### 7.3 In-Code TODOs
+
+**Source**: DEVELOPMENT_ROADMAP.md
+
+| File                   | Line  | Description                     | Priority            |
+| ---------------------- | ----- | ------------------------------- | ------------------- |
+| cascade_correlation.py | ~577  | CUDA random seeding             | P3                  |
+| cascade_correlation.py | ~925  | Refactor repeated code          | P3                  |
+| cascade_correlation.py | ~1381 | Convert to proper constants     | P3                  |
+| cascade_correlation.py | ~2314 | validate_training_results bug   | P0 (see INT-P2-003) |
+| snapshot_serializer.py | ~756  | Extend optimizer support        | P2                  |
+| spiral_problem.py      | ~482  | Restore scaling functionality   | P3                  |
+| log_config.py          | ~78   | Clean up logging initialization | P3                  |
+| utils.py               | ~232  | Fix broken function             | P2                  |
+
+---
+
+### 7.4 Documentation Enhancements
+
+**Source**: DOCUMENTATION_AUDIT.md
+
+| Item            | Description                                | Status |
+| --------------- | ------------------------------------------ | ------ |
+| Auto-generation | Consider MkDocs/Sphinx for API docs        | Future |
+| Link checking   | Add CI step to verify documentation links  | Future |
+| Versioning      | Add version selector for multiple versions | Future |
+| Search          | Add search functionality to docs           | Future |
+| Examples        | Add more code examples and tutorials       | Future |
+
+---
+
+### 7.5 Multiprocessing Deferred Items
+
+**Source**: PRE-DEPLOYMENT_ROADMAP-2.md, INTEGRATION_ROADMAP-01.md
+
+| ID         | Description                                              | Status      |
+| ---------- | -------------------------------------------------------- | ----------- |
+| INT-P4-010 | Add metrics for multiprocessing fallback frequency       | DEFERRED    |
+| INT-P4-011 | Test fallback under various failure modes                | DEFERRED    |
+| ENH-009    | Per-instance queue management (complex refactor)         | NOT STARTED |
+| ENH-010    | Process-based plotting (depends on BUG-002 verification) | NOT STARTED |
+
+---
+
+## Section 8: Verification Items
+
+These items require manual testing to confirm proper operation.
+
+### P4-NEW-001: Execute main.py End-to-End with Plotting
+
+**Status**: NOT VERIFIED
+**Source**: PRE-DEPLOYMENT_ROADMAP-2.md
+
+**Description**: Run `python main.py` with default settings, verify plotting subprocess.
+
+---
+
+### P4-NEW-002: Test ./try Script Launch
+
+**Status**: NOT VERIFIED
+**Source**: PRE-DEPLOYMENT_ROADMAP-2.md
+
+**Description**: Test `./try` script successfully launches `main.py`.
+
+---
+
+### P4-NEW-005: Verify Parallel Processing Working
+
+**Status**: NEEDS TESTING
+**Source**: PRE-DEPLOYMENT_ROADMAP-2.md
+
+**Description**: Run with DEBUG logging, check for parallel vs sequential execution.
+
+---
+
+## Section 9: Oracle Analysis Recommendations
+
+Items from the 2026-01-26 Oracle analyses that may or may not have been addressed.
+
+### Oracle Python Analysis (5 Items)
+
+**Source**: ORACLE_ANALYSIS_PYTHON.md
+
+| #   | Description                                                                     | Status           |
+| --- | ------------------------------------------------------------------------------- | ---------------- |
+| 1   | `CandidateUnit.train()` return type mismatch; needs `train_detailed()` refactor | NEEDS VALIDATION |
+| 2   | `CandidateTrainingManager.start()` does not accept `method` parameter           | NEEDS VALIDATION |
+| 3   | `ValidationError` not a subclass of `ValueError`                                | NEEDS VALIDATION |
+| 4   | Residual error validation rejects empty tensors                                 | NEEDS VALIDATION |
+| 5   | `fit()` method uses `max_epochs` but tests call with `epochs`                   | NEEDS VALIDATION |
+
+### Oracle Scripts Analysis (6 Items)
+
+**Source**: ORACLE_ANALYSIS_SCRIPTS.md
+
+| #   | Description                                                    | Status      |
+| --- | -------------------------------------------------------------- | ----------- |
+| 1   | Fix helper script resolution in `juniper_cascor.bash`          | NOT STARTED |
+| 2   | Verify helper filenames match actual files in `util/`          | NOT STARTED |
+| 3   | Confirm BASE_DIR and SOURCE_DIR resolve correctly              | NOT STARTED |
+| 4   | Fix CURRENT_OS and date helper sourcing; verify permissions    | NOT STARTED |
+| 5   | Fix naming inconsistencies in `script_util.cfg`                | NOT STARTED |
+| 6   | Grep for `GET_PROJECT_SCRIPT` pattern and fix in other scripts | NOT STARTED |
+
+---
+
+## Section 10: Completed Items (Reference)
+
+These items are documented as COMPLETE and included for reference only.
+
+### CAS-001: Extract Spiral Generator to JuniperData
+
+**Status**: COMPLETE
+**Resolution**: JuniperData v0.4.2 provides 8 generators including spiral via REST API.
+
+### CAS-INT-001 through CAS-INT-009: JuniperData Integration
+
+**Status**: ALL 9 COMPLETE
+**Resolution**: Mandatory API path, deprecation warnings, API key auth, NPZ validation, test updates, contract tests, E2E integration tests, retry/backoff, config validation.
+
+### CAS-REF-005: RemoteWorkerClient Integration
+
+**Status**: COMPLETE
+**Resolution**: Added to `CascorIntegration` class with REST API endpoints.
+
+### INT-P1-007: Connection Retry Logic
+
+**Status**: COMPLETE (via CAS-INT-008)
+
+### All INTEGRATION_ROADMAP.md Critical Blockers
+
+**Status**: ALL RESOLVED
+
+### TEST_SUITE_CICD_ENHANCEMENT_DEVELOPMENT_PLAN Phases 0-4
+
+**Status**: COMPLETE (MED-014 deferred)
+
+### PRE-DEPLOYMENT_ROADMAP P0 Critical Issues (6 items)
+
+**Status**: ALL FIXED
+
+### COMPLETE_FIX_SUMMARY P0/P1/P2 (19 items)
+
+**Status**: ALL RESOLVED
+
+---
+
+## Development Phases (Proposed)
+
+Based on codebase validation results, dependency analysis, and effort estimates.
+
+### Phase 0: Critical Bug Fixes (1-2 days)
+
+**Goal**: Fix all confirmed P0 bugs that cause silent incorrect behavior.
+**No external dependencies.**
+
+| #   | Item                                                            | Effort  | Notes                                                                |
+| --- | --------------------------------------------------------------- | ------- | -------------------------------------------------------------------- |
+| 1   | INT-P0-001: Fix walrus operator precedence (line 1322)          | 15 min  | Add parentheses                                                      |
+| 2   | INT-P0-003: Fix CandidateUnit params in `fit` (lines 1154-1166) | 1 hr    | Change `_CandidateUnit__` → `CandidateUnit__`, remove invalid params |
+| 3   | INT-P0-002: Extract `ActivationWithDerivative` to shared module | 2-3 hrs | Create `src/activation/`, update imports in both files               |
+| 4   | INT-P0-004: Fix hardcoded path in `remote_client_0.py`          | 30 min  | Use relative path or env var                                         |
+| 5   | INT-P0-005: Fix hardcoded paths in test file                    | 30 min  | Use relative path resolution                                         |
+| 6   | INT-P2-002: Fix `import datetime as pd` alias                   | 15 min  | Rename to `dt` or `datetime`                                         |
+| 7   | INT-P2-004: Remove duplicate `snapshot_counter` init            | 5 min   | Delete line 548                                                      |
+| 8   | INT-P2-014: Move `import traceback` to top-level                | 30 min  | Uncomment line 60, remove 22 local imports                           |
+| 9   | INT-P2-010: Replace `os._exit()` with `sys.exit()` in main.py   | 15 min  | Lines 142, 145                                                       |
+
+**Estimated Total**: 4-6 hours
+
+### Phase 1: Logic Bug Fixes (2-3 days)
+
+**Goal**: Fix all confirmed logic bugs that cause incorrect behavior in specific conditions.
+**Depends on**: Phase 0 complete.
+
+| #   | Item                                                               | Effort  | Notes                                                |
+| --- | ------------------------------------------------------------------ | ------- | ---------------------------------------------------- |
+| 1   | INT-P2-005: Fix `or` fallback patterns for falsy values            | 2-3 hrs | Audit all `or` patterns, replace with `if x is None` |
+| 2   | INT-P2-006: Fix boolean `clockwise` or-pattern                     | 1 hr    | 3 instances in spiral_problem.py                     |
+| 3   | INT-P2-003: Fix `validate_training_results` uninitialized variable | 1-2 hrs | Handle `max_epochs=0` edge case                      |
+| 4   | INT-P2-007: Fix conftest fast-slow mode logic                      | 30 min  | Fix inverted check, differentiate branches           |
+| 5   | INT-P2-008: Fix `_roll_sequence_number` memory issue               | 1-2 hrs | Use generator instead of list for discards           |
+| 6   | INT-P2-009: Fix inconsistent queue names between remote clients    | 1 hr    | Standardize on `get_task_queue`/`get_result_queue`   |
+| 7   | INT-P1-005: Fix `main.py` unused `spiral_config` parameter         | 15 min  | Remove the dead parameter                            |
+| 8   | INT-P1-008: Remove stale `check.py` duplicate                      | 15 min  | Delete file, verify no references                    |
+| 9   | INT-P2-001: Properly declare `shared_object_dict` at module scope  | 30 min  | Add module-level declaration                         |
+
+**Estimated Total**: 8-12 hours
+
+### Phase 2: Code Quality & Testing (1-2 weeks)
+
+**Goal**: Improve code quality, test coverage, and type safety.
+**Depends on**: Phase 1 complete.
+
+| #   | Item                                          | Effort   | Notes                                    |
+| --- | --------------------------------------------- | -------- | ---------------------------------------- |
+| 1   | CAS-REF-001: Increase code coverage to 90%    | 3-5 days | Currently ~67%                           |
+| 2   | CAS-REF-003: Fix critical type errors (mypy)  | 2-3 days | Gradual strictness increase              |
+| 3   | CAS-REF-002: Add CI coverage gates            | 1 day    | `--fail-under=80`                        |
+| 4   | CAS-007: Optimize slow tests (target ≤ 5 min) | 2-3 days | Profile and optimize                     |
+| 5   | CAS-REF-004: Remove 16 legacy spiral methods  | 1 day    | Requires JuniperData stability confirmed |
+
+**Estimated Total**: 10-15 days
+
+### Phase 3: Integration Architecture (2-4 weeks)
+
+**Goal**: Address cross-project dependencies and integration concerns.
+**Depends on**: Phase 2 complete. Coordination with JuniperData and JuniperCanopy teams.
+
+| #   | Item                                                 | Effort   | Notes                                    |
+| --- | ---------------------------------------------------- | -------- | ---------------------------------------- |
+| 1   | INT-P1-001: Extract shared JuniperDataClient package | 3-5 days | Coordinate with JuniperCanopy            |
+| 2   | INT-P1-003: Create shared protocol package           | 3-5 days | API schemas, data contracts              |
+| 3   | CAS-CANOPY-001: Prediction Grid API                  | 2-3 days | Unblocks JuniperCanopy decision boundary |
+| 4   | CAS-CANOPY-002: Serialization API for snapshots      | 2-3 days | Unblocks save/load features              |
+| 5   | C.1: Async wrapper for synchronous `fit()`           | 2-4 days | ThreadPoolExecutor, cancellation         |
+| 6   | INT-P1-006: Add import guard for SpiralDataProvider  | 1 hr     | Low effort, include with other work      |
+
+**Estimated Total**: 15-25 days
+
+### Phase 4: Feature Enhancements (4-8 weeks)
+
+**Goal**: Implement new features and algorithm improvements.
+**Depends on**: Phase 3 complete. Can be parallelized.
+
+| #   | Item                                                     | Effort    | Notes |
+| --- | -------------------------------------------------------- | --------- | ----- |
+| 1   | CAS-002: Separate epoch limits                           | 2-3 days  |       |
+| 2   | CAS-003: Max train session iterations                    | 1-2 days  |       |
+| 3   | CAS-006: Auto-snap best network                          | 2-3 days  |       |
+| 4   | ENH-006: Flexible optimizer management                   | 3-5 days  |       |
+| 5   | ENH-007: N-best candidate layer selection                | 3-5 days  |       |
+| 6   | ENH-008: Worker cleanup improvements                     | 2-3 days  |       |
+| 7   | C.2: Expose RemoteWorkerClient through CascorIntegration | 1-2 weeks |       |
+
+**Estimated Total**: 20-35 days
+
+### Phase 5: Infrastructure & Future (Ongoing)
+
+**Goal**: Infrastructure improvements, shell script fixes, deferred items.
+**No hard dependencies. Can proceed in parallel with Phase 4.**
+
+| #   | Item                                        | Effort    | Notes |
+| --- | ------------------------------------------- | --------- | ----- |
+| 1   | Shell script path fixes (6 Oracle items)    | 2-3 days  |       |
+| 2   | INT-P3-003: Docker Compose validation       | 1-2 days  |       |
+| 3   | INT-P3-008: Git hygiene (.gitignore)        | 1 hr      |       |
+| 4   | INT-P3-009: Version string consistency      | 1-2 hrs   |       |
+| 5   | INT-P3-010: Snapshot directory confusion    | 1 hr      |       |
+| 6   | Large file refactoring                      | 1-2 weeks |       |
+| 7   | CAS-004: Extract JuniperBranch              | 2-4 weeks |       |
+| 8   | CAS-008/009: Network hierarchy & population | 4-8 weeks |       |
+| 9   | CAS-010: Snapshot Vector DB                 | 2-4 weeks |       |
+| 10  | GPU/CUDA support                            | 2-4 weeks |       |
+| 11  | Full IPC architecture (INT-P1-004)          | 2-4 weeks |       |
+
+---
+
+## High-Level Design Analysis
+
+### Design Decision 1: ActivationWithDerivative Extraction (INT-P0-002)
+
+**Context**: The `ActivationWithDerivative` class is duplicated in `cascade_correlation.py` (line 291) and `candidate_unit.py` (line 138). Both files define the same class with the same `ACTIVATION_MAP`. The class wraps activation functions to also compute derivatives, and it must be picklable for multiprocessing.
+
+**Option A: New shared module** (Recommended)
+
+- Create `src/activation/activation_with_derivative.py`
+- Import in both `cascade_correlation.py` and `candidate_unit.py`
+- Pros: Clean separation, single source of truth, easy to test independently
+- Cons: New directory/module to maintain
+
+**Option B: Keep in `candidate_unit.py`, import in `cascade_correlation.py`**
+
+- Since CandidateUnit is the primary consumer
+- Pros: No new directory
+- Cons: Creates circular dependency risk (cascade_correlation imports candidate_unit which is used by cascade_correlation)
+
+**Option C: Move to `cascor_constants/` with activation constants**
+
+- Co-locate with existing `constants_activation/`
+- Pros: Groups activation-related code
+- Cons: Constants module isn't meant for classes with behavior
+
+**Recommendation**: Option A. Clean module boundary, no circular dependency risk.
+
+---
+
+### Design Decision 2: Constructor Parameter Pattern Fix (INT-P0-003)
+
+**Context**: The `fit()` method at line 1154 uses `_CandidateUnit__` prefix (Python name-mangling convention for private access from outside the class) instead of `CandidateUnit__` (the actual parameter names). The `_create_candidate_unit` factory at line 989 uses the correct `CandidateUnit__` prefix.
+
+**Option A: Fix prefix in `fit()` + use factory** (Recommended)
+
+- Route the `fit()` CandidateUnit creation through `_create_candidate_unit()` factory
+- Ensures consistent parameter passing across all call sites
+- Also fixes the 3 invalid params (`candidate_pool_size`, `log_file_name`, `log_file_path`)
+- Pros: DRY, consistent, factory already exists
+- Cons: May need to extend factory to support `fit()`-specific params
+
+**Option B: Just fix the prefix:**
+
+- Change `_CandidateUnit__` → `CandidateUnit__` at lines 1154-1166
+- Remove the 3 invalid parameters
+- Pros: Minimal change
+- Cons: Doesn't address the duplication of constructor call patterns
+
+**Option C: Refactor CandidateUnit to not use `**kwargs`**
+
+- Remove `**kwargs` from `CandidateUnit.__init__` so invalid params raise `TypeError`
+- Pros: Prevents silent parameter absorption in the future
+- Cons: Potentially breaks existing call sites that rely on kwargs absorption
+
+**Recommendation**: Option A + Option C together. Fix the factory pattern AND remove `**kwargs` to prevent future silent failures.
+
+---
+
+### Design Decision 3: `or` Fallback Pattern Systematic Fix (INT-P2-005, INT-P2-006)
+
+**Context**: The codebase uses `value = param or default` extensively. This fails for falsy values: `0`, `False`, `""`, `0.0`. The `clockwise` boolean and numeric parameters like `learning_rate` are affected.
+
+**Option A: `if x is None` pattern** (Recommended)
+
+- Replace each `x or default` with `x if x is not None else default`
+- Pros: Explicit, handles all falsy values correctly
+- Cons: More verbose; need to audit every `or` pattern
+
+**Option B: Sentinel value pattern:**
+
+- Use `_SENTINEL = object()` as default, check `if param is not _SENTINEL`
+- Pros: Distinguishes "not provided" from "explicitly None"
+- Cons: More complex, overkill for this codebase
+
+**Option C: Optional type with `get_or_default()` helper**
+
+- Create a utility function `def get_or_default(value, default): return value if value is not None else default`
+- Pros: Consistent, reusable
+- Cons: Adds abstraction for a simple pattern
+
+**Recommendation**: Option A for simplicity. Do a global audit of `or` patterns in parameter initialization. Estimated 30-40 instances to review.
+
+---
+
+### Design Decision 4: Shared Client Package Architecture (INT-P1-001, INT-P1-003)
+
+**Context**: `JuniperDataClient` is duplicated in JuniperCascor and JuniperCanopy. Three applications share API contracts with no shared package.
+
+**Option A: `juniper-common` PyPI package** (Recommended for long-term)
+
+- Create a new repository `JuniperCommon` with `juniper-common` package
+- Contains: `JuniperDataClient`, API schemas, data contracts, shared constants
+- Install via pip in both CasCor and Canopy
+- Pros: Clean dependency management, version pinning, CI/CD
+- Cons: New repo to maintain, release coordination overhead
+
+**Option B: Git submodule approach:**
+
+- Add shared code as a git submodule in both projects
+- Pros: No package publishing needed, easy to update
+- Cons: Git submodules are notoriously difficult to manage
+
+**Option C: Monorepo approach:**
+
+- Move all three projects into a single monorepo
+- Pros: Eliminates all cross-project coordination issues
+- Cons: Major restructuring, changes all workflows
+
+**Option D: Keep duplicated, synchronize manually** (Short-term pragmatic)
+
+- Document the duplication, add CI check to detect drift
+- Pros: No structural changes needed
+- Cons: Ongoing synchronization burden
+
+**Recommendation**: Option D immediately (document + CI check), Option A for long-term. The shared package can be extracted incrementally.
+
+---
+
+### Design Decision 5: Async Training Wrapper (C.1)
+
+**Context**: `CascadeCorrelationNetwork.fit()` is synchronous and blocks the FastAPI event loop when called from JuniperCanopy's web endpoints.
+
+**Option A: `loop.run_in_executor()` with ThreadPoolExecutor** (Recommended)
+
+- Wrap `fit()` in `monitored_fit_async()` that runs in a thread pool
+- Add a `stop_requested` flag for cancellation
+- Pros: Minimal changes to CasCor core, standard Python async pattern
+- Cons: GIL still limits true parallelism for CPU-bound work
+
+**Option B: `multiprocessing.Process` subprocess**
+
+- Spawn fit() in a separate process, communicate via Queue
+- Pros: True parallelism, no GIL limitation
+- Cons: More complex, requires serializable state, memory overhead
+
+**Option C: Refactor `fit()` to be async-native**
+
+- Add `yield` points in training loop for cooperative scheduling
+- Pros: Most Pythonic async approach
+- Cons: Major refactor of core algorithm, breaks existing synchronous API
+
+**Recommendation**: Option A. Standard pattern, minimal invasion of core CasCor code. The ThreadPoolExecutor approach is well-understood and used by FastAPI internally. The GIL concern is mitigated because most computation happens in PyTorch C++ extensions which release the GIL.
+
+---
+
+### Design Decision 6: Large File Refactoring Strategy
+
+**Context**: `cascade_correlation.py` has 100+ methods in a single class (`CascadeCorrelationNetwork`) spanning ~4100 lines. This makes navigation, testing, and maintenance difficult.
+
+**Option A: Mixin-based decomposition** (Recommended)
+
+- Split into logical mixins: `TrainingMixin`, `SerializationMixin`, `MultiprocessingMixin`, `ValidationMixin`, `VisualizationMixin`
+- `CascadeCorrelationNetwork` inherits from all mixins
+- Pros: Preserves API compatibility, logical grouping, independent testing
+- Cons: Python mixins can be confusing, method resolution order complexity
+
+**Option B: Composition with delegate objects:**
+
+- Extract `TrainingManager`, `SnapshotManager`, `CandidateManager` as separate classes
+- `CascadeCorrelationNetwork` delegates to these via composition
+- Pros: Cleaner OOP, no inheritance complexity
+- Cons: Requires passing state/context to delegates, more refactoring
+
+**Option C: Module-level functions:**
+
+- Extract stateless operations as module-level functions
+- Keep stateful operations in the class
+- Pros: Simple, testable functions
+- Cons: Many methods need `self` state, limited extraction possible
+
+**Recommendation**: Option A for Phase 1 (achieves file size targets with minimal API changes), evolve toward Option B in Phase 2 as the architecture matures.
+
+---
+
+### Design Decision 7: Legacy Spiral Code Removal Strategy (CAS-REF-004)
+
+**Context**: 16 deprecated methods in `spiral_problem.py` carry `DeprecationWarning`. JuniperData now provides the functionality via REST API.
+
+**Option A: Hard removal** (Recommended, with gate)
+
+- Delete all 16 deprecated methods
+- Gate: Only proceed after JuniperData E2E integration tests pass (INT-P3-002)
+- Pros: Clean codebase, no maintenance burden
+- Cons: No fallback if JuniperData is unavailable
+
+**Option B: Soft removal with feature flag:**
+
+- Add `CASCOR_USE_LOCAL_SPIRAL_GEN=1` env var fallback
+- Remove methods only after 2 release cycles
+- Pros: Graceful degradation
+- Cons: Maintains two code paths
+
+**Option C: Move to separate `legacy/` module**
+
+- Don't delete, just move to `src/spiral_problem/legacy.py`
+- Import only if needed
+- Pros: Code still available if needed
+- Cons: Still exists in codebase, still maintained
+
+**Recommendation**: Option A with the gate. The deprecation warnings have been in place since CAS-INT-002. Once E2E tests confirm JuniperData stability, remove cleanly.
+
+---
+
+## Dependencies Matrix
+
+```bash
+INT-P0-001 (Walrus bug)
+    └── No dependencies, fix immediately
+
+INT-P0-002 (ActivationWithDerivative duplication)
+    └── No dependencies, fix immediately
+
+INT-P0-003 (Invalid CandidateUnit params)
+    └── No dependencies, fix immediately
+
+INT-P0-004 (Hardcoded path in remote_client_0)
+    └── INT-P2-009 (Inconsistent queue names) - fix together
+
+INT-P1-001 (Duplicated JuniperDataClient)
+    ├── INT-P1-002 (requests dependency) - fix together
+    └── INT-P1-003 (No shared protocol package)
+
+INT-P1-004 (Full IPC)
+    ├── INT-P3-004 (sys.path mutation)
+    └── INT-P1-001 (shared client package)
+
+CAS-REF-002 (CI coverage gates)
+    └── CAS-REF-003 (Type errors) - gates should wait for type fixes
+
+CAS-REF-004 (Legacy code removal)
+    └── INT-P3-002 (E2E integration tests) - validate before removing
+
+CAS-004 (JuniperBranch extraction)
+    └── CAS-005 (Common dependencies) - must be planned first
+
+CAS-CANOPY-001 (Prediction Grid API)
+    └── No CasCor dependencies
+
+CAS-CANOPY-002 (Serialization API)
+    └── No CasCor dependencies
+```
+
+---
+
+## Risk Assessment
+
+| Risk                                                           | Probability | Impact | Mitigation                                 |
+| -------------------------------------------------------------- | ----------- | ------ | ------------------------------------------ |
+| Walrus operator bug (INT-P0-001) causes silent data corruption | High        | High   | Fix immediately in Phase 0                 |
+| `ActivationWithDerivative` ACTIVATION_MAP divergence           | Medium      | High   | Extract to shared module                   |
+| JuniperData service downtime crashes training                  | Medium      | High   | Retry logic implemented (CAS-INT-008)      |
+| `sys.path` mutation causes import conflicts in production      | Medium      | Medium | Document workaround; long-term fix via IPC |
+| Coverage regression without enforced gates                     | High        | Medium | Implement CI coverage gates (CAS-REF-002)  |
+| Hardcoded paths break on other machines                        | High        | Medium | Fix all hardcoded paths in Phase 0         |
+| Slow test suite blocks CI pipeline                             | Medium      | Medium | Optimize tests (CAS-007)                   |
+
+---
+
+## Document History
+
+| Date       | Author   | Changes                                                                                                                      |
+| ---------- | -------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| 2026-02-17 | AI Agent | Initial creation from JuniperData codebase audit                                                                             |
+| 2026-02-17 | AI Agent | Added Section 5: Cross-references from JuniperCanopy comprehensive audit                                                     |
+| 2026-02-18 | AI Agent | Complete rewrite: Exhaustive audit of all 25+ notes files, de-duplicated 89 unique items                                     |
+| 2026-02-18 | AI Agent | Codebase validation pass: Validated 23 items against source code, confirmed 17 bugs, resolved 3 items, adjusted 3 severities |
+| 2026-02-18 | AI Agent | Added development phases (0-5), high-level design analysis (7 architectural decisions with options/recommendations)          |
