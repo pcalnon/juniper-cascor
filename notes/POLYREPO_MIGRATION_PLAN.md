@@ -1342,6 +1342,7 @@ Error responses include additional fields:
 ```
 
 #### `GET /v1/health/ready`
+
 Returns 200 if the service is ready to accept training requests:
 
 ```json
@@ -1351,6 +1352,7 @@ Returns 200 if the service is ready to accept training requests:
 ### Network Endpoints
 
 #### `POST /v1/network`
+
 Create a new network.
 
 **Request:**
@@ -1382,9 +1384,11 @@ Create a new network.
 ```
 
 #### `GET /v1/network`
+
 Get current network state.
 
 #### `DELETE /v1/network`
+
 Destroy current network. Returns 204.
 
 ### Training Endpoints
@@ -1425,15 +1429,19 @@ Destroy current network. Returns 204.
 Training runs asynchronously. Progress is streamed via `/ws/training`.
 
 #### `POST /v1/training/stop`
+
 Request graceful stop. Response returns current state.
 
 #### `POST /v1/training/pause`
+
 Pause after current epoch completes.
 
 #### `POST /v1/training/resume`
+
 Resume paused training.
 
 #### `POST /v1/training/reset`
+
 Reset network and training state.
 
 #### `GET /v1/training/status`
@@ -1456,42 +1464,53 @@ Reset network and training state.
 ### Metrics Endpoints
 
 #### `GET /v1/metrics`
+
 Current metrics snapshot.
 
 #### `GET /v1/metrics/history`
+
 Full training history (list of per-epoch metrics).
 
 ### Network Info Endpoints
 
 #### `GET /v1/network/topology`
+
 Network structure for visualization (nodes, connections, layers).
 
 #### `GET /v1/network/statistics`
+
 Network statistics (parameter counts, weight distributions).
 
 #### `GET /v1/dataset`
+
 Current dataset info (source, dimensions, split sizes).
 
 #### `GET /v1/decision-boundary`
+
 Decision boundary grid data for 2D visualization.
 
 ### Snapshot Endpoints
 
 #### `POST /v1/snapshots`
+
 Create HDF5 snapshot. Returns snapshot metadata.
 
 #### `GET /v1/snapshots`
+
 List available snapshots.
 
 #### `GET /v1/snapshots/{snapshot_id}`
+
 Get snapshot detail.
 
 #### `POST /v1/snapshots/{snapshot_id}/restore`
+
 Restore network from snapshot.
 
 ### Worker Endpoints
 
 #### `GET /v1/workers`
+
 Remote worker status.
 
 #### `POST /v1/workers/connect`
@@ -1501,12 +1520,15 @@ Remote worker status.
 ```
 
 #### `POST /v1/workers/start`
+
 Start connected workers.
 
 #### `POST /v1/workers/stop`
+
 Stop workers gracefully.
 
 #### `POST /v1/workers/disconnect`
+
 Disconnect and cleanup.
 
 ### WebSocket: `/ws/training`
