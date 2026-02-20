@@ -427,7 +427,7 @@ find . -path "*/juniper_data_client/client.py" -not -path "*/site-packages/*"
 # Should return nothing (or only the canonical source in juniper-data-client repo)
 ```
 
-### Deliverables, Phase
+### Deliverables, Phase 1
 
 - [ ] `juniper-data-client` repository created on GitHub
 - [ ] Package published to PyPI as `juniper-data-client` v0.3.0
@@ -464,6 +464,7 @@ See [Appendix A](#appendix-a--cascor-service-api-contract-draft) for the full co
 | `POST`   | `/v1/training/stop`          | Request training stop                       |
 | `POST`   | `/v1/training/pause`         | Pause training                              |
 | `POST`   | `/v1/training/resume`        | Resume training                             |
+
 | `POST`   | `/v1/training/reset`         | Reset training state                        |
 | `GET`    | `/v1/training/status`        | Get current training status                 |
 | `GET`    | `/v1/training/params`        | Get training parameters                     |

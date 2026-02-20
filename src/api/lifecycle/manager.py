@@ -14,6 +14,7 @@ from concurrent.futures import Future, ThreadPoolExecutor
 from datetime import datetime
 from typing import Any, Callable, Dict, Optional
 
+import numpy as np
 import torch
 
 from api.lifecycle.monitor import TrainingMonitor, TrainingState
@@ -59,7 +60,46 @@ class TrainingLifecycleManager:
         # Network creation params (for reset)
         self._network_params: Optional[Dict[str, Any]] = None
 
+        # WebSocket manager (set via set_ws_manager)
+        self._ws_manager = None
+
         self.logger.info("TrainingLifecycleManager initialized")
+
+    def set_ws_manager(self, ws_manager) -> None:
+        """Set the WebSocket manager for real-time broadcasting.
+
+        Registers monitor callbacks that broadcast metrics/events via WebSocket.
+        """
+        self._ws_manager = ws_manager
+        self._register_ws_callbacks()
+
+    def _register_ws_callbacks(self) -> None:
+        """Register WebSocket broadcast callbacks on the training monitor."""
+        if self._ws_manager is None:
+            return
+
+        from api.websocket.messages import create_cascade_add_message, create_event_message, create_metrics_message, create_state_message
+
+        ws = self._ws_manager
+
+        self.training_monitor.register_callback(
+            "epoch_end",
+            lambda metrics, **kw: ws.broadcast_from_thread(create_metrics_message(metrics)),
+        )
+        self.training_monitor.register_callback(
+            "cascade_add",
+            lambda event, **kw: ws.broadcast_from_thread(create_cascade_add_message(event)),
+        )
+        self.training_monitor.register_callback(
+            "training_start",
+            lambda **kw: ws.broadcast_from_thread(create_state_message({"status": "Started", "phase": "Output"})),
+        )
+        self.training_monitor.register_callback(
+            "training_end",
+            lambda **kw: ws.broadcast_from_thread(create_event_message({"event": "training_complete"})),
+        )
+
+        self.logger.info("WebSocket broadcast callbacks registered")
 
     # ------------------------------------------------------------------
     # Network management
@@ -132,7 +172,13 @@ class TrainingLifecycleManager:
     # ------------------------------------------------------------------
 
     def _install_monitoring_hooks(self) -> None:
-        """Install monitoring hooks on the network via monkey-patching."""
+        """Install monitoring hooks on the network via monkey-patching.
+
+        Hooks:
+        - fit(): Wraps the top-level training call with start/end tracking
+        - train_output_layer(): Wraps per-cycle output training for per-epoch metrics
+        - grow_network(): Wraps cascade addition for cascade_add events
+        """
         if self.network is None or self._monitoring_active:
             return
 
@@ -153,7 +199,7 @@ class TrainingLifecycleManager:
             try:
                 result = original_fit(x, y, x_val=x_val, y_val=y_val, **kwargs)
 
-                # Extract metrics after fit completes
+                # Extract any remaining metrics after fit completes
                 manager_ref._extract_and_record_metrics()
 
                 if stop_event.is_set():
@@ -172,6 +218,40 @@ class TrainingLifecycleManager:
                 monitor.on_training_end()
 
         self.network.fit = monitored_fit
+
+        # Hook train_output_layer for per-cycle metrics extraction
+        if hasattr(self.network, "train_output_layer"):
+            original_train_output = self.network.train_output_layer
+            self._original_methods["train_output_layer"] = original_train_output
+
+            def monitored_train_output(*args, **kwargs):
+                state.update_state(phase="Output")
+                result = original_train_output(*args, **kwargs)
+                manager_ref._extract_and_record_metrics()
+                return result
+
+            self.network.train_output_layer = monitored_train_output
+
+        # Hook grow_network for cascade_add events
+        if hasattr(self.network, "grow_network"):
+            original_grow = self.network.grow_network
+            self._original_methods["grow_network"] = original_grow
+
+            def monitored_grow(*args, **kwargs):
+                prev_hidden = len(manager_ref.network.hidden_units)
+                state.update_state(phase="Candidate")
+                result = original_grow(*args, **kwargs)
+                new_hidden = len(manager_ref.network.hidden_units)
+                if new_hidden > prev_hidden:
+                    monitor.on_cascade_add(
+                        hidden_unit_index=new_hidden - 1,
+                        correlation=0.0,  # Actual correlation not easily accessible here
+                    )
+                    manager_ref._extract_and_record_metrics()
+                return result
+
+            self.network.grow_network = monitored_grow
+
         self._monitoring_active = True
         self.logger.info("Monitoring hooks installed")
 
@@ -361,6 +441,22 @@ class TrainingLifecycleManager:
             return self.training_monitor.get_recent_metrics(count)
         return self.training_monitor.get_all_metrics()
 
+    def has_training_data(self) -> bool:
+        """Check if training data is loaded."""
+        return self._train_x is not None and self._train_y is not None
+
+    def get_dataset(self) -> Dict[str, Any]:
+        """Return dataset metadata."""
+        if self._train_x is None:
+            return {"loaded": False}
+        return {
+            "loaded": True,
+            "train_samples": self._train_x.shape[0],
+            "test_samples": self._val_x.shape[0] if self._val_x is not None else 0,
+            "input_features": self._train_x.shape[1],
+            "output_features": self._train_y.shape[1],
+        }
+
     def get_training_params(self) -> Dict[str, Any]:
         """Get current training parameters."""
         if self.network is None:
@@ -383,24 +479,23 @@ class TrainingLifecycleManager:
         if self.network is None:
             return None
         try:
-            with self._topology_lock:
-                with torch.no_grad():
-                    topology = {
-                        "input_size": self.network.input_size,
-                        "output_size": self.network.output_size,
-                        "hidden_units": [],
-                        "output_weights": self.network.output_weights.detach().cpu().tolist(),
-                        "output_bias": self.network.output_bias.detach().cpu().tolist(),
-                    }
-                    for i, unit in enumerate(self.network.hidden_units):
-                        topology["hidden_units"].append(
-                            {
-                                "id": i,
-                                "weights": unit["weights"].detach().cpu().tolist(),
-                                "bias": float(unit["bias"]),
-                                "activation": unit.get("activation_fn", torch.sigmoid).__name__,
-                            }
-                        )
+            with self._topology_lock, torch.no_grad():
+                topology = {
+                    "input_size": self.network.input_size,
+                    "output_size": self.network.output_size,
+                    "hidden_units": [],
+                    "output_weights": self.network.output_weights.detach().cpu().tolist(),
+                    "output_bias": self.network.output_bias.detach().cpu().tolist(),
+                }
+                for i, unit in enumerate(self.network.hidden_units):
+                    topology["hidden_units"].append(
+                        {
+                            "id": i,
+                            "weights": unit["weights"].detach().cpu().tolist(),
+                            "bias": float(unit["bias"]),
+                            "activation": unit.get("activation_fn", torch.sigmoid).__name__,
+                        }
+                    )
             return topology
         except Exception as e:
             self.logger.error(f"Failed to extract topology: {e}", exc_info=True)
@@ -411,20 +506,64 @@ class TrainingLifecycleManager:
         if self.network is None:
             return {}
         try:
-            with self._topology_lock:
-                with torch.no_grad():
-                    output_weights = self.network.output_weights.detach().cpu()
-                    stats = {
-                        "total_hidden_units": len(self.network.hidden_units),
-                        "output_weight_mean": float(output_weights.mean()),
-                        "output_weight_std": float(output_weights.std()),
-                        "output_weight_min": float(output_weights.min()),
-                        "output_weight_max": float(output_weights.max()),
-                    }
+            with self._topology_lock, torch.no_grad():
+                output_weights = self.network.output_weights.detach().cpu()
+                stats = {
+                    "total_hidden_units": len(self.network.hidden_units),
+                    "output_weight_mean": float(output_weights.mean()),
+                    "output_weight_std": float(output_weights.std()),
+                    "output_weight_min": float(output_weights.min()),
+                    "output_weight_max": float(output_weights.max()),
+                }
             return stats
         except Exception as e:
             self.logger.error(f"Failed to get statistics: {e}", exc_info=True)
             return {}
+
+    # ------------------------------------------------------------------
+    # Decision boundary
+    # ------------------------------------------------------------------
+
+    def get_decision_boundary(self, resolution: int = 50) -> Optional[Dict[str, Any]]:
+        """Compute decision boundary grid for 2D visualization.
+
+        Args:
+            resolution: Number of grid points per axis.
+
+        Returns:
+            Dictionary with x_range, y_range, grid predictions, or None on failure.
+        """
+        if self.network is None or self._train_x is None:
+            return None
+        if self._train_x.shape[1] != 2:
+            return None
+
+        try:
+            with self._topology_lock, torch.no_grad():
+                x_data = self._train_x.cpu().numpy()
+                x_min, x_max = float(x_data[:, 0].min()) - 0.5, float(x_data[:, 0].max()) + 0.5
+                y_min, y_max = float(x_data[:, 1].min()) - 0.5, float(x_data[:, 1].max()) + 0.5
+
+                xx = np.linspace(x_min, x_max, resolution)
+                yy = np.linspace(y_min, y_max, resolution)
+                grid_x, grid_y = np.meshgrid(xx, yy)
+                grid_points = np.column_stack([grid_x.ravel(), grid_y.ravel()])
+
+                grid_tensor = torch.tensor(grid_points, dtype=torch.float32)
+                predictions = self.network.forward(grid_tensor)
+                pred_classes = predictions.argmax(dim=1).cpu().numpy()
+
+            return {
+                "x_range": [x_min, x_max],
+                "y_range": [y_min, y_max],
+                "resolution": resolution,
+                "grid_x": grid_x.tolist(),
+                "grid_y": grid_y.tolist(),
+                "predictions": pred_classes.reshape(resolution, resolution).tolist(),
+            }
+        except Exception as e:
+            self.logger.error(f"Failed to compute decision boundary: {e}", exc_info=True)
+            return None
 
     # ------------------------------------------------------------------
     # Shutdown

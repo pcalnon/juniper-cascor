@@ -1,5 +1,6 @@
 """FastAPI application factory and configuration."""
 
+import asyncio
 import logging
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
@@ -10,8 +11,11 @@ from fastapi.responses import JSONResponse
 
 from api.lifecycle.manager import TrainingLifecycleManager
 from api.models.common import error_response
-from api.routes import health, network, training
+from api.routes import dataset, decision_boundary, health, metrics, network, training
 from api.settings import Settings, get_settings
+from api.websocket.control_stream import control_stream_handler
+from api.websocket.manager import WebSocketManager
+from api.websocket.training_stream import training_stream_handler
 
 _API_VERSION: str = "0.4.0"
 
@@ -30,11 +34,25 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     logger.info(f"JuniperCascor API v{_API_VERSION} starting")
     logger.info(f"Listening on {settings.host}:{settings.port}")
 
+    # Create WebSocket manager
+    ws_manager = WebSocketManager(max_connections=settings.ws_max_connections)
+    ws_manager.set_event_loop(asyncio.get_running_loop())
+    app.state.ws_manager = ws_manager
+    logger.info("WebSocket manager initialized")
+
     # Create lifecycle manager for training coordination
-    app.state.lifecycle = TrainingLifecycleManager()
+    lifecycle = TrainingLifecycleManager()
+    lifecycle.set_ws_manager(ws_manager)
+    app.state.lifecycle = lifecycle
     logger.info("Lifecycle manager initialized")
 
     yield
+
+    # Shutdown: close all WebSocket connections
+    ws_manager = getattr(app.state, "ws_manager", None)
+    if ws_manager is not None:
+        await ws_manager.close_all()
+        logger.info("WebSocket connections closed")
 
     # Shutdown: clean up lifecycle manager if present
     lifecycle = getattr(app.state, "lifecycle", None)
@@ -77,10 +95,17 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         allow_headers=["*"],
     )
 
-    # Routes
+    # REST Routes
     app.include_router(health.router, prefix="/v1")
     app.include_router(network.router, prefix="/v1")
     app.include_router(training.router, prefix="/v1")
+    app.include_router(metrics.router, prefix="/v1")
+    app.include_router(dataset.router, prefix="/v1")
+    app.include_router(decision_boundary.router, prefix="/v1")
+
+    # WebSocket Routes
+    app.websocket("/ws/training")(training_stream_handler)
+    app.websocket("/ws/control")(control_stream_handler)
 
     # Exception handlers
     @app.exception_handler(ValueError)
