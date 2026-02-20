@@ -178,6 +178,38 @@ coverage.xml
 results.xml
 **/results.xml
 
+# Test reports and coverage reports
+**/reports/junit/
+**/reports/coverage.xml
+**/reports/htmlcov/
+
+# SERENA Memory Dirs
+.serena
+.serena/
+.serena/*
+.serena/**
+**/.serena
+**/.serena/
+**/.serena/*
+**/.serena/**
+
+# Claude Code session files
+__RESUME_CLAUDE_SESSION__
+
+# Build artifacts
+*.egg-info/
+**/*.egg-info/
+
+# Coverage artifacts
+.coverage
+**/.coverage
+coverage.xml
+**/coverage.xml
+
+# Test result artifacts
+results.xml
+**/results.xml
+
 # SERENA Memory Dirs
 .serena
 .serena/
