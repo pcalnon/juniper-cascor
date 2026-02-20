@@ -23,8 +23,8 @@ import numpy as np
 import pytest
 import requests
 import torch
-
 from juniper_data_client.client import JuniperDataClient
+
 from spiral_problem.data_provider import SpiralDataProvider
 
 _SPIRAL_PARAMS = {
@@ -123,8 +123,10 @@ class TestJuniperDataE2EHealth:
         assert data["status"] == "ok"
 
     def test_health_check_method(self, patched_jd_client):
-        """JuniperDataClient.health_check() returns True against the test server."""
-        assert patched_jd_client.health_check() is True
+        """JuniperDataClient.health_check() returns dict with status against the test server."""
+        result = patched_jd_client.health_check()
+        assert isinstance(result, dict)
+        assert result.get("status") == "ok"
 
 
 @pytest.mark.integration

@@ -25,7 +25,7 @@ from typing import Dict, Optional, Tuple
 import numpy as np
 import torch
 
-from juniper_data_client.client import JuniperDataClient
+from juniper_data_client import JuniperDataClient, JuniperDataConnectionError
 
 logger = logging.getLogger(__name__)
 
@@ -84,7 +84,9 @@ class SpiralDataProvider:
 
         client = self._get_client()
 
-        if not client.health_check():
+        try:
+            client.health_check()
+        except JuniperDataConnectionError:
             logger.warning("JuniperData service at %s is not reachable; requests may fail.", self._juniper_data_url)
 
     def _get_client(self) -> JuniperDataClient:
