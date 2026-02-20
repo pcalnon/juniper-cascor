@@ -40,17 +40,44 @@ def simple_network():
         learning_rate=0.1,
         max_hidden_units=3,
         random_seed=42,
+        candidate_pool_size=2,
+        candidate_epochs=2,
+        output_epochs=2,
     )
     return CascadeCorrelationNetwork(config=config)
 
 
-@pytest.fixture
-def network_with_hidden_units(simple_network, tmp_path):
-    """Create a network with hidden units for testing."""
-    x = torch.randn(20, 2)
-    y = torch.randint(0, 2, (20, 1)).float()
-    simple_network.fit(x, y, epochs=5)
-    return simple_network
+@pytest.fixture(scope="module")
+def network_with_hidden_units():
+    """Create a network with hidden units for testing.
+
+    Module-scoped because tests only serialize/validate the network without
+    mutating it. Uses manual hidden unit construction to avoid expensive fit().
+    """
+    config = CascadeCorrelationConfig.create_simple_config(
+        input_size=2,
+        output_size=1,
+        learning_rate=0.1,
+        max_hidden_units=3,
+        random_seed=42,
+        candidate_pool_size=2,
+        candidate_epochs=2,
+        output_epochs=2,
+        epochs_max=3,
+        patience=1,
+    )
+    network = CascadeCorrelationNetwork(config=config)
+    # Manually add hidden units instead of calling fit() to avoid training overhead
+    for i in range(2):
+        torch.manual_seed(42 + i)
+        hidden_unit = {
+            "weights": torch.randn(2),
+            "bias": torch.randn(1),
+            "activation_fn": torch.tanh,
+            "correlation": 0.5 + i * 0.1,
+        }
+        network.hidden_units.append(hidden_unit)
+    return network
 
 
 class TestSaveTrainingHistoryEmpty:

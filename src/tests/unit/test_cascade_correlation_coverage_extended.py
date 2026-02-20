@@ -294,6 +294,7 @@ class TestEarlyStopping:
     @pytest.mark.unit
     def test_check_patience_not_improved(self, simple_network):
         """Test check_patience when loss did not improve."""
+        simple_network.patience = 3
         patience_exhausted, counter, best = simple_network.check_patience(patience_counter=0, value_loss=0.3, best_value_loss=0.2)
 
         assert not patience_exhausted

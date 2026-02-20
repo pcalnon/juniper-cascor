@@ -1,0 +1,56 @@
+"""API configuration settings using pydantic-settings."""
+
+from functools import lru_cache
+
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# Define Safe and Reasonable Defaults for API Settings
+_JUNIPER_CASCOR_ENV_PREFIX: str = "JUNIPER_CASCOR_"
+
+_JUNIPER_CASCOR_API_HOST_LOCAL: str = "127.0.0.1"
+_JUNIPER_CASCOR_API_HOST_DEFAULT: str = _JUNIPER_CASCOR_API_HOST_LOCAL
+
+_JUNIPER_CASCOR_API_PORT: int = 8200
+_JUNIPER_CASCOR_API_PORT_DEFAULT: int = _JUNIPER_CASCOR_API_PORT
+
+_JUNIPER_CASCOR_API_LOGLEVEL_INFO: str = "INFO"
+_JUNIPER_CASCOR_API_LOGLEVEL_DEFAULT: str = _JUNIPER_CASCOR_API_LOGLEVEL_INFO
+
+_JUNIPER_CASCOR_API_CORS_ORIGINS_ALL: list[str] = ["*"]
+_JUNIPER_CASCOR_API_CORS_ORIGINS_DEFAULT: list[str] = _JUNIPER_CASCOR_API_CORS_ORIGINS_ALL
+
+_JUNIPER_CASCOR_API_WS_MAX_CONNECTIONS: int = 50
+_JUNIPER_CASCOR_API_WS_MAX_CONNECTIONS_DEFAULT: int = _JUNIPER_CASCOR_API_WS_MAX_CONNECTIONS
+
+_JUNIPER_CASCOR_API_WS_HEARTBEAT_INTERVAL_SEC: int = 30
+_JUNIPER_CASCOR_API_WS_HEARTBEAT_INTERVAL_SEC_DEFAULT: int = _JUNIPER_CASCOR_API_WS_HEARTBEAT_INTERVAL_SEC
+
+
+class Settings(BaseSettings):
+    """Application settings loaded from environment variables.
+
+    All settings can be overridden via environment variables with the
+    JUNIPER_CASCOR_ prefix (e.g., JUNIPER_CASCOR_PORT).
+    """
+
+    model_config = SettingsConfigDict(
+        env_prefix=_JUNIPER_CASCOR_ENV_PREFIX,
+        env_file=".env",
+        env_file_encoding="utf-8",
+        case_sensitive=False,
+        extra="ignore",
+    )
+
+    host: str = _JUNIPER_CASCOR_API_HOST_DEFAULT
+    port: int = _JUNIPER_CASCOR_API_PORT_DEFAULT
+    log_level: str = _JUNIPER_CASCOR_API_LOGLEVEL_DEFAULT
+    cors_origins: list[str] = _JUNIPER_CASCOR_API_CORS_ORIGINS_DEFAULT
+
+    ws_max_connections: int = _JUNIPER_CASCOR_API_WS_MAX_CONNECTIONS_DEFAULT
+    ws_heartbeat_interval_sec: int = _JUNIPER_CASCOR_API_WS_HEARTBEAT_INTERVAL_SEC_DEFAULT
+
+
+@lru_cache
+def get_settings() -> Settings:
+    """Get cached application settings."""
+    return Settings()

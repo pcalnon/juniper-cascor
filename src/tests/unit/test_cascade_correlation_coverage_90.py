@@ -754,11 +754,36 @@ class TestErrorHandlingPaths:
     @pytest.mark.unit
     def test_get_training_results_empty(self, simple_network, simple_2d_data):
         """Test _get_training_results with valid data."""
+        import datetime
+
+        from cascade_correlation.cascade_correlation import TrainingResults
+
         x, y = simple_2d_data
         residual_error = simple_network._calculate_residual_error_safe(x_train=x, y_train=y)
 
-        # This may return None or TrainingResults depending on training state
-        result = simple_network._get_training_results(x_train=x, y_train=y, residual_error=residual_error)
+        # Mock train_candidates to avoid expensive actual candidate training
+        # The test only verifies _get_training_results doesn't crash
+        now = datetime.datetime.now()
+        mock_results = TrainingResults(
+            epochs_completed=1,
+            candidate_ids=[0],
+            candidate_uuids=["mock-uuid"],
+            correlations=[0.5],
+            candidate_objects=[None],
+            best_candidate_id=0,
+            best_candidate_uuid="mock-uuid",
+            best_correlation=0.5,
+            best_candidate=None,
+            success_count=1,
+            successful_candidates=1,
+            failed_count=0,
+            error_messages=[],
+            max_correlation=0.5,
+            start_time=now,
+            end_time=now,
+        )
+        with patch.object(simple_network, "train_candidates", return_value=mock_results):
+            result = simple_network._get_training_results(x_train=x, y_train=y, residual_error=residual_error)
         # Just verify it doesn't crash
         assert result is None or hasattr(result, "best_candidate")
 

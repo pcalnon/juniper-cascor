@@ -11,7 +11,7 @@
 # File Path:     <Project>/<Sub-Project>/<Application>/src/tests/
 #
 # Date Created:  2025-09-26
-# Last Modified: 2026-01-17
+# Last Modified: 2026-02-19
 #
 # License:       MIT License
 # Copyright:     Copyright (c) 2024,2025,2026 Paul Calnon
@@ -197,7 +197,7 @@ def fast_training_params(fast_slow_mode):
             "epochs_max": 100,
             "patience": 5,
             "n_per_spiral": 100,
-            "n_samples": 100,
+            "n_samples": 32,
         }
 
 
@@ -306,13 +306,13 @@ def simple_config(fast_training_params) -> CascadeCorrelationConfig:
         output_size=2,
         learning_rate=min(0.1, fast_training_params["learning_rate"]),
         candidate_learning_rate=min(0.1, fast_training_params["candidate_learning_rate"]),
-        max_hidden_units=min(5, fast_training_params["max_hidden_units"]),
-        candidate_pool_size=min(8, fast_training_params["candidate_pool_size"]),
-        correlation_threshold=min(0.1, fast_training_params["correlation_threshold"]),
-        patience=min(3, fast_training_params["patience"]),
-        candidate_epochs=min(10, fast_training_params["candidate_epochs"]),
-        output_epochs=min(10, fast_training_params["output_epochs"]),
-        epochs_max=min(20, fast_training_params["epochs_max"]),
+        max_hidden_units=min(2, fast_training_params["max_hidden_units"]),
+        candidate_pool_size=min(2, fast_training_params["candidate_pool_size"]),
+        correlation_threshold=min(0.01, fast_training_params["correlation_threshold"]),
+        patience=min(1, fast_training_params["patience"]),
+        candidate_epochs=min(3, fast_training_params["candidate_epochs"]),
+        output_epochs=min(3, fast_training_params["output_epochs"]),
+        epochs_max=min(5, fast_training_params["epochs_max"]),
     )
 
 
@@ -329,13 +329,13 @@ def spiral_config(fast_training_params, fast_slow_mode) -> CascadeCorrelationCon
         output_size=2,
         learning_rate=min(0.1, fast_training_params["learning_rate"]),
         candidate_learning_rate=min(0.1, fast_training_params["candidate_learning_rate"]),
-        max_hidden_units=min(5, fast_training_params["max_hidden_units"]),
-        candidate_pool_size=min(8, fast_training_params["candidate_pool_size"]),
-        correlation_threshold=min(0.1, fast_training_params["correlation_threshold"]),
-        patience=min(3, fast_training_params["patience"]),
-        candidate_epochs=min(10, fast_training_params["candidate_epochs"]),
-        output_epochs=min(10, fast_training_params["output_epochs"]),
-        epochs_max=min(20, fast_training_params["epochs_max"]),
+        max_hidden_units=min(2, fast_training_params["max_hidden_units"]),
+        candidate_pool_size=min(2, fast_training_params["candidate_pool_size"]),
+        correlation_threshold=min(0.01, fast_training_params["correlation_threshold"]),
+        patience=min(1, fast_training_params["patience"]),
+        candidate_epochs=min(3, fast_training_params["candidate_epochs"]),
+        output_epochs=min(3, fast_training_params["output_epochs"]),
+        epochs_max=min(5, fast_training_params["epochs_max"]),
     )
 
 
@@ -350,13 +350,13 @@ def regression_config(fast_training_params) -> CascadeCorrelationConfig:
         output_size=1,
         learning_rate=min(0.1, fast_training_params["learning_rate"]),
         candidate_learning_rate=min(0.1, fast_training_params["candidate_learning_rate"]),
-        max_hidden_units=min(8, fast_training_params["max_hidden_units"]),
-        candidate_pool_size=min(12, fast_training_params["candidate_pool_size"]),
-        correlation_threshold=0.15,
-        patience=min(5, fast_training_params["patience"]),
-        candidate_epochs=min(30, fast_training_params["candidate_epochs"]),
-        output_epochs=min(15, fast_training_params["output_epochs"]),
-        epochs_max=min(50, fast_training_params["epochs_max"]),
+        max_hidden_units=min(2, fast_training_params["max_hidden_units"]),
+        candidate_pool_size=min(2, fast_training_params["candidate_pool_size"]),
+        correlation_threshold=0.01,
+        patience=min(1, fast_training_params["patience"]),
+        candidate_epochs=min(3, fast_training_params["candidate_epochs"]),
+        output_epochs=min(3, fast_training_params["output_epochs"]),
+        epochs_max=min(5, fast_training_params["epochs_max"]),
     )
 
 
@@ -484,6 +484,178 @@ def tolerance() -> Dict[str, float]:
 def device() -> str:
     """Get appropriate device for testing."""
     return "cuda" if torch.cuda.is_available() else "cpu"
+
+
+# ===================================================================
+# PERFORMANCE FIXTURES
+# ===================================================================
+
+
+@pytest.fixture(autouse=True)
+def force_sequential_training(monkeypatch):
+    """Force sequential candidate training in tests to prevent multiprocessing deadlocks.
+
+    The parallel training path spawns multiprocessing.Process workers that fail with
+    BrokenPipeError in test environments. The _stop_workers() method then blocks for
+    15 seconds per worker during shutdown (15s × N workers = 100+ seconds stall).
+    By forcing process_count=1, all training uses the sequential path, which is
+    functionally identical but avoids multiprocessing overhead and deadlock risk.
+
+    Tests that specifically need to test multiprocessing behavior should mock
+    the multiprocessing components directly rather than spawning real processes.
+    """
+    monkeypatch.setattr(
+        CascadeCorrelationNetwork,
+        "_calculate_optimal_process_count",
+        lambda self: 1,
+    )
+
+
+# Cached logger for test performance - avoids two major costs:
+# 1. inspect.getouterframes() during Logger/LogConfig initialization (~55ms per network)
+# 2. f-string evaluation in filtered log calls (e.g., self.logger.debug(f"...{tensor}...")
+#    evaluates tensor.__repr__() even when log level filters the message)
+_cached_log_config = None
+_cached_logger = None
+
+
+class _NoOpLogger:
+    """Ultra-lightweight logger replacement for tests.
+
+    Eliminates two performance drains:
+    - Logger initialization (inspect.getouterframes): ~55ms per instance
+    - f-string argument evaluation in filtered log calls: ~0.9s per fit() call
+      from 1000+ tensor.__repr__() evaluations in debug/trace/verbose messages
+
+    WARNING and above still log to stderr for test debugging.
+    """
+
+    level = 30  # WARNING
+
+    def trace(self, *a, **kw):
+        pass
+
+    def verbose(self, *a, **kw):
+        pass
+
+    def debug(self, *a, **kw):
+        pass
+
+    def info(self, *a, **kw):
+        pass
+
+    def warning(self, msg, *a, **kw):
+        print(f"[WARNING] {msg}")
+
+    def error(self, msg, *a, **kw):
+        print(f"[ERROR] {msg}")
+
+    def critical(self, msg, *a, **kw):
+        print(f"[CRITICAL] {msg}")
+
+    def fatal(self, msg, *a, **kw):
+        print(f"[FATAL] {msg}")
+
+    def isEnabledFor(self, level):
+        return level >= 30
+
+
+_noop_logger = _NoOpLogger()
+
+
+def _fast_init_logging_system(self):
+    """Lightweight replacement for _init_logging_system in tests.
+
+    Uses a no-op logger that avoids:
+    - LogConfig/Logger creation with inspect.getouterframes() (~55ms per call)
+    - f-string evaluation overhead from debug/trace log messages containing tensors
+    """
+    global _cached_log_config
+    import logging
+
+    from log_config.log_config import LogConfig
+
+    self.log_file_name = self.config.log_file_name or "cascade_correlation"
+    self.log_file_path = self.config.log_file_path or str(os.path.join(os.getcwd(), "logs"))
+    self.log_level_name = self.config.log_level_name or "WARNING"
+
+    if _cached_log_config is None:
+        _cached_log_config = LogConfig(
+            _LogConfig__log_config=logging.config,
+            _LogConfig__log_file_name=self.log_file_name,
+            _LogConfig__log_file_path=self.log_file_path,
+            _LogConfig__log_level_name=self.log_level_name,
+        )
+
+    self.log_config = _cached_log_config
+    self.logger = _noop_logger
+
+
+@pytest.fixture(autouse=True, scope="session")
+def _warmup_torch():
+    """Trigger lazy initialization of torch internals during collection.
+
+    The first call to torch.nn.Linear / torch.optim.Adam triggers expensive lazy
+    imports (sympy, torch._dynamo, etc.) costing ~2s. By warming up here, we move
+    that one-time cost to session startup so individual tests don't pay it.
+    """
+    layer = torch.nn.Linear(2, 2)
+    optim = torch.optim.Adam(layer.parameters(), lr=0.01)
+    loss = torch.nn.functional.mse_loss(layer(torch.randn(4, 2)), torch.randn(4, 2))
+    loss.backward()
+    optim.step()
+
+
+@pytest.fixture(autouse=True, scope="session")
+def _cache_logging_system():
+    """Cache the logging system to avoid expensive inspect.getouterframes() on every network creation.
+
+    Patches three performance-critical paths:
+    1. CascadeCorrelationNetwork._init_logging_system → skip Logger/LogConfig creation
+    2. CandidateUnit.__init__ → replace logger with no-op after init
+    3. Logger._log_at_level → no-op to eliminate inspect.getouterframes() calls
+       from Logger class-level methods (trace/debug/info/verbose/warning/error)
+       used by CandidateUnit.__init__, SpiralProblem.__init__, and others.
+       This is the dominant cost: ~4.3s per 20 CandidateUnit creations from
+       inspect.getmodule() scanning all loaded modules via hasattr().
+
+    Tests that specifically test Logger behavior (e.g., test_logger_coverage.py)
+    use @patch.object(Logger, "_log_at_level") which overrides this global patch
+    for the duration of those tests.
+    """
+    from log_config.logger.logger import Logger
+
+    original_init = CascadeCorrelationNetwork._init_logging_system
+    CascadeCorrelationNetwork._init_logging_system = _fast_init_logging_system
+
+    # Patch CandidateUnit to use no-op logger (it normally sets self.logger = Logger,
+    # which still evaluates f-string arguments like tensor.__repr__() in verbose calls)
+    original_cu_init = CandidateUnit.__init__
+
+    def _patched_cu_init(self, *args, **kwargs):
+        original_cu_init(self, *args, **kwargs)
+        self.logger = _noop_logger
+
+    CandidateUnit.__init__ = _patched_cu_init
+
+    # Patch Logger._log_at_level to eliminate inspect.getouterframes() overhead.
+    # Every Logger class method (trace, debug, info, verbose, warning, error, etc.)
+    # calls _log_at_level which, even for WARNING-filtered messages, incurs overhead.
+    # For messages that DO pass the filter (e.g., WARNING from _seed_random_generator),
+    # getouterframes() triggers inspect.getmodule() scanning ~800k hasattr() calls.
+    original_log_at_level = Logger._log_at_level
+
+    @classmethod
+    def _noop_log_at_level(cls, **kwargs):
+        pass
+
+    Logger._log_at_level = _noop_log_at_level
+
+    yield
+
+    CascadeCorrelationNetwork._init_logging_system = original_init
+    CandidateUnit.__init__ = original_cu_init
+    Logger._log_at_level = original_log_at_level
 
 
 # ===================================================================

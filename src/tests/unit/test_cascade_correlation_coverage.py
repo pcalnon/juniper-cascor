@@ -31,7 +31,7 @@ class TestOutputLayerTraining:
         set_deterministic_behavior()
         x, y = simple_2d_data
 
-        initial_loss = simple_network.train_output_layer(x, y, epochs=10)
+        initial_loss = simple_network.train_output_layer(x, y, epochs=3)
 
         assert isinstance(initial_loss, (float, torch.Tensor))
         if isinstance(initial_loss, torch.Tensor):
@@ -99,7 +99,7 @@ class TestCandidateTraining:
             input_size=2,
             output_size=2,
             candidate_pool_size=2,
-            candidate_epochs=5,
+            candidate_epochs=3,
         )
         network = CascadeCorrelationNetwork(config=config)
 
@@ -118,6 +118,8 @@ class TestCandidateTraining:
         tasks = []
         for i in range(2):
             candidate = simple_network._create_candidate_unit(i)
+            # Use minimal epochs (1) for candidate training to reduce overhead
+            candidate.epochs = 1
             tasks.append((i, x, y - simple_network.forward(x), candidate))
 
         results = simple_network._execute_sequential_training(tasks)
@@ -245,7 +247,7 @@ class TestAccuracyCalculation:
         set_deterministic_behavior()
         x, y = simple_2d_data
 
-        simple_network.train_output_layer(x, y, epochs=50)
+        simple_network.train_output_layer(x, y, epochs=10)
         accuracy = simple_network.calculate_accuracy(x, y)
 
         assert accuracy >= 0.0

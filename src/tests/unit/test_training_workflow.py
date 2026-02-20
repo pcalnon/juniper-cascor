@@ -23,7 +23,7 @@ class TestCompleteTrainingCycle:
         set_deterministic_behavior()
         x, y = simple_2d_data
 
-        simple_network.train_output_layer(x, y, epochs=20)
+        simple_network.train_output_layer(x, y, epochs=5)
         accuracy = simple_network.calculate_accuracy(x, y)
 
         assert 0 <= accuracy <= 1
@@ -34,8 +34,8 @@ class TestCompleteTrainingCycle:
         set_deterministic_behavior()
         x, y = simple_2d_data
 
-        for _ in range(3):
-            simple_network.train_output_layer(x, y, epochs=5)
+        for _ in range(2):
+            simple_network.train_output_layer(x, y, epochs=3)
 
         accuracy = simple_network.calculate_accuracy(x, y)
         assert accuracy >= 0
@@ -47,11 +47,11 @@ class TestCompleteTrainingCycle:
         set_deterministic_behavior()
         x, y = simple_2d_data
 
-        simple_network.train_output_layer(x, y, epochs=10)
+        simple_network.train_output_layer(x, y, epochs=3)
         initial_accuracy = simple_network.calculate_accuracy(x, y)
 
         # Continue training without adding hidden units to avoid shape mismatches
-        simple_network.train_output_layer(x, y, epochs=10)
+        simple_network.train_output_layer(x, y, epochs=3)
         final_accuracy = simple_network.calculate_accuracy(x, y)
 
         assert initial_accuracy is not None
@@ -110,7 +110,7 @@ class TestEarlyStopping:
         x_val, y_val = x[split:], y[split:]
 
         # Use train_output_layer instead of fit to avoid timeout
-        loss = simple_network.train_output_layer(x_train, y_train, epochs=10)
+        loss = simple_network.train_output_layer(x_train, y_train, epochs=3)
 
         # Manually validate
         with torch.no_grad():
@@ -231,7 +231,7 @@ class TestGradientFlow:
         output_before = simple_network.forward(x)
         loss_before = torch.nn.functional.mse_loss(output_before, y).item()
 
-        simple_network.train_output_layer(x, y, epochs=50)
+        simple_network.train_output_layer(x, y, epochs=10)
 
         output_after = simple_network.forward(x)
         loss_after = torch.nn.functional.mse_loss(output_after, y).item()

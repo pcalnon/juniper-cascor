@@ -1451,6 +1451,13 @@ class CascadeCorrelationNetwork:
         Returns:
             Optimal process count
         """
+        # Allow environment override (useful for testing and CI)
+        env_override = os.environ.get("CASCOR_NUM_PROCESSES")
+        if env_override is not None:
+            count = max(1, int(env_override))
+            self.logger.debug(f"CascadeCorrelationNetwork: _calculate_optimal_process_count: Using env override CASCOR_NUM_PROCESSES={count}")
+            return count
+
         self.logger.debug(f"CascadeCorrelationNetwork: _calculate_optimal_process_count: CPU count: {os.cpu_count()}")
         self.logger.debug(f"CascadeCorrelationNetwork: _calculate_optimal_process_count: Candidate pool size: {self.candidate_pool_size}")
 
@@ -1695,45 +1702,58 @@ class CascadeCorrelationNetwork:
         return results
 
     def _stop_workers(self, workers: list, task_queue) -> None:
-        """Stop worker processes with improved termination handling."""
+        """Stop worker processes with bounded total shutdown time.
+
+        Uses a total deadline instead of per-worker timeouts to prevent
+        N workers × timeout = long stalls when workers are unresponsive.
+        """
         import signal
+        import time
 
         if not workers:
             self.logger.debug("CascadeCorrelationNetwork: _stop_workers: No workers to stop")
             return
         self.logger.info(f"CascadeCorrelationNetwork: _stop_workers: Stopping {len(workers)} worker processes")
 
-        # Phase 1: Send sentinel values
+        # Phase 1: Send sentinel values (bounded to 2s total)
+        sentinel_deadline = time.time() + 2.0
         for i in range(len(workers)):
             try:
-                task_queue.put(None, timeout=5)
+                remaining = max(0.1, sentinel_deadline - time.time())
+                task_queue.put(None, timeout=remaining)
                 self.logger.debug(f"CascadeCorrelationNetwork: _stop_workers: Sent sentinel to worker {i}")
             except Exception as e:
                 self.logger.error(f"CascadeCorrelationNetwork: _stop_workers: Failed to send sentinel to worker {i}: {e}")
+                break
 
-        # Phase 2: Wait gracefully with increased timeout
+        # Phase 2: Wait gracefully with bounded TOTAL timeout (not per-worker)
         terminated_count = 0
+        graceful_deadline = time.time() + 5.0
         for worker in workers:
-            worker.join(timeout=15)  # Increased from 10
+            remaining = max(0.1, graceful_deadline - time.time())
+            worker.join(timeout=remaining)
             if not worker.is_alive():
                 terminated_count += 1
                 self.logger.debug(f"CascadeCorrelationNetwork: _stop_workers: Worker {worker.name} stopped gracefully")
             else:
                 self.logger.warning(f"CascadeCorrelationNetwork: _stop_workers: Worker {worker.name} (PID {worker.pid}) did not stop gracefully")
+            if time.time() >= graceful_deadline:
+                self.logger.warning("CascadeCorrelationNetwork: _stop_workers: Graceful shutdown deadline reached, moving to terminate")
+                break
 
         # Phase 3: Terminate remaining workers
         for worker in workers:
             if worker.is_alive():
                 self.logger.warning(f"CascadeCorrelationNetwork: _stop_workers: Terminating worker {worker.name}")
                 worker.terminate()
-                worker.join(timeout=2)
+                worker.join(timeout=1)
 
                 # Phase 4: Force kill if still alive
                 if worker.is_alive():
                     self.logger.error(f"CascadeCorrelationNetwork: _stop_workers: Worker {worker.name} still alive, sending SIGKILL")
                     try:
                         os.kill(worker.pid, signal.SIGKILL)
-                        worker.join(timeout=1)
+                        worker.join(timeout=0.5)
                     except Exception as e:
                         self.logger.error(f"CascadeCorrelationNetwork: _stop_workers: Failed to SIGKILL worker: {e}")
 

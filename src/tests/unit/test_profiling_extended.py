@@ -556,7 +556,7 @@ class TestCompareMemorySnapshots:
 
         tracemalloc.start()
         snapshot1 = get_memory_snapshot()
-        data = list(range(100000))
+        data = list(range(10000))
         snapshot2 = get_memory_snapshot()
         tracemalloc.stop()
 
@@ -574,7 +574,7 @@ class TestCompareMemorySnapshots:
 
         tracemalloc.start()
         snapshot1 = get_memory_snapshot()
-        data = list(range(100000))
+        data = list(range(10000))
         snapshot2 = get_memory_snapshot()
         tracemalloc.stop()
 
@@ -592,7 +592,7 @@ class TestDisplayTopAllocations:
         from profiling.memory import display_top_allocations
 
         tracemalloc.start()
-        data = list(range(100000))
+        data = list(range(10000))
         snapshot = tracemalloc.take_snapshot()
         tracemalloc.stop()
 
@@ -606,8 +606,8 @@ class TestDisplayTopAllocations:
         """Test display_top_allocations with traceback key_type."""
         from profiling.memory import display_top_allocations
 
-        tracemalloc.start(10)
-        data = list(range(100000))
+        tracemalloc.start(1)
+        data = list(range(10000))
         snapshot = tracemalloc.take_snapshot()
         tracemalloc.stop()
 
@@ -622,7 +622,7 @@ class TestDisplayTopAllocations:
         from profiling.memory import display_top_allocations
 
         tracemalloc.start()
-        data = list(range(100000))
+        data = list(range(10000))
         snapshot = tracemalloc.take_snapshot()
         tracemalloc.stop()
 
