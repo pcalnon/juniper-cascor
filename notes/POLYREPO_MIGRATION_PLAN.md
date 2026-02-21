@@ -101,8 +101,8 @@ Each phase produces a working, testable system. No phase requires the next phase
          juniper-data-client  juniper-cascor-client  juniper-cascor-worker
                 │       │          │          │             │
                 │       │          │          │             │
-         ┌──────┘       │    ┌─────┘          │        ┌────┘
-         ▼              ▼    ▼                ▼        ▼
+         ┌──────┘       │    ┌─────┘          │         ┌───┘
+         ▼              ▼    ▼                ▼         ▼
     juniper-data   juniper-cascor      juniper-canopy  Remote
     (service)      (service)           (dashboard)     Hardware
 ```
@@ -752,10 +752,10 @@ Both packages have been created as standalone repositories with full test suites
 
 **Package status summary:**
 
-| Package                 | Repo                                  | Version | Tests | CI/CD Files | Editable Install | PyPI |
-| ----------------------- | ------------------------------------- | ------- | ----- | ----------- | ---------------- | ---- |
-| `juniper-cascor-client` | `pcalnon/juniper-cascor-client` (public) | 0.1.0   | 55 pass | ci.yml + publish.yml | Yes (local) | No   |
-| `juniper-cascor-worker` | `pcalnon/juniper-cascor-worker` (public) | 0.1.0   | 24 pass | ci.yml + publish.yml | Yes (local) | No   |
+| Package                 | Repo                                     | Version | Tests   | CI/CD Files          | Editable Install | PyPI |
+| ----------------------- | ---------------------------------------- | ------- | ------- | -------------------- | ---------------- | ---- |
+| `juniper-cascor-client` | `pcalnon/juniper-cascor-client` (public) | 0.1.0   | 55 pass | ci.yml + publish.yml | Yes (local)      | No   |
+| `juniper-cascor-worker` | `pcalnon/juniper-cascor-worker` (public) | 0.1.0   | 24 pass | ci.yml + publish.yml | Yes (local)      | No   |
 
 ### Step 3.1 — Create `juniper-cascor-client`
 
@@ -978,6 +978,7 @@ Note: The worker needs PyTorch because it runs `CascadeCorrelationNetwork._worke
 - **Repository**: `pcalnon/juniper-cascor-worker` — public, 2 commits on `main`, clean working tree
 - **Location**: `/home/pcalnon/Development/python/Juniper/juniper-cascor-worker/`
 - **Actual package structure** (slightly differs from plan — `client.py` became `cli.py`):
+
   ```bash
   juniper_cascor_worker/
   ├── __init__.py          # Exports: CandidateTrainingWorker, WorkerConfig, exceptions
@@ -987,6 +988,7 @@ Note: The worker needs PyTorch because it runs `CascadeCorrelationNetwork._worke
   ├── exceptions.py        # WorkerError, WorkerConnectionError, WorkerConfigError
   └── py.typed             # PEP 561 marker
   ```
+
 - **Improvements over in-tree `remote_client/`**:
   - stdlib `logging` instead of CasCor's custom `Logger` (no coupling)
   - `WorkerConfig` dataclass with validation and environment variable support (`from_env()`)
@@ -1068,7 +1070,7 @@ Replace Canopy's `CascorIntegration` class (~1,600 lines of `sys.path` injection
 | **Remote workers**     | `connect_remote_workers`, `start_remote_workers`, `stop_remote_workers`, `disconnect_remote_workers`, `get_remote_worker_status` | **Stub no-ops** — workers managed server-side by CasCor + `juniper-cascor-worker`    |
 | **Dataset generation** | `_generate_dataset_from_juniper_data`, `_create_juniper_dataset`                                                                 | Handled by CasCor service; Canopy passes dataset config in `start_training()`        |
 | **Snapshots**          | (referenced in `main.py`, not fully implemented in `CascorIntegration`)                                                          | `cascor_client.create_snapshot()`, `.restore_snapshot()` (deferred)                  |
-| **Broadcasting**       | `_broadcast_message` (sends to Canopy's WebSocketManager)                                                                        | WebSocket relay: CasCor WS → adapter → Canopy frontend WS                           |
+| **Broadcasting**       | `_broadcast_message` (sends to Canopy's WebSocketManager)                                                                        | WebSocket relay: CasCor WS → adapter → Canopy frontend WS                            |
 
 ### Step 4.2 — Create `CascorServiceAdapter`
 
@@ -1112,11 +1114,11 @@ class CascorServiceAdapter:
 
 The activation logic supports three modes during the transition period:
 
-| Mode | Trigger | Backend |
-|------|---------|---------|
-| **Demo** | `CASCOR_DEMO_MODE=1` | `DemoMode` (unchanged) |
-| **Service** | `CASCOR_SERVICE_URL` is set | `CascorServiceAdapter` (new) |
-| **Legacy** | `CASCOR_BACKEND_PATH` is set | `CascorIntegration` (existing, transitional) |
+| Mode        | Trigger                      | Backend                                      |
+| ----------- | ---------------------------- | -------------------------------------------- |
+| **Demo**    | `CASCOR_DEMO_MODE=1`         | `DemoMode` (unchanged)                       |
+| **Service** | `CASCOR_SERVICE_URL` is set  | `CascorServiceAdapter` (new)                 |
+| **Legacy**  | `CASCOR_BACKEND_PATH` is set | `CascorIntegration` (existing, transitional) |
 
 Priority: Demo > Service > Legacy > fallback to Demo.
 
@@ -1137,12 +1139,12 @@ dependencies = [
 
 **Environment variables:**
 
-| Old                        | New                      | Purpose                                                  |
-| -------------------------- | ------------------------ | -------------------------------------------------------- |
-| `CASCOR_BACKEND_PATH`      | **Retained** (transitional) | Legacy direct-import path (removed in Step 4.8)       |
-| `CASCOR_BACKEND_AVAILABLE` | **Removed**              | No longer needed                                         |
-| (new)                      | `CASCOR_SERVICE_URL`     | URL of CasCor service (default: `http://localhost:8200`) |
-| (new)                      | `CASCOR_SERVICE_API_KEY` | API key for CasCor service (optional)                    |
+| Old                        | New                         | Purpose                                                  |
+| -------------------------- | --------------------------- | -------------------------------------------------------- |
+| `CASCOR_BACKEND_PATH`      | **Retained** (transitional) | Legacy direct-import path (removed in Step 4.8)          |
+| `CASCOR_BACKEND_AVAILABLE` | **Removed**                 | No longer needed                                         |
+| (new)                      | `CASCOR_SERVICE_URL`        | URL of CasCor service (default: `http://localhost:8200`) |
+| (new)                      | `CASCOR_SERVICE_API_KEY`    | API key for CasCor service (optional)                    |
 
 **Default port:** `8200` — matches `juniper-cascor-client` defaults.
 
