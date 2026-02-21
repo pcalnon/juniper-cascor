@@ -20,6 +20,13 @@ def client():
     app = create_app(settings)
     with TestClient(app) as c:
         yield c
+    # Signal training threads to stop. Don't wait (shutdown with wait=True
+    # blocks if training uses production-default epoch counts).
+    lifecycle = getattr(app.state, "lifecycle", None)
+    if lifecycle:
+        lifecycle._stop_requested.set()
+        if getattr(lifecycle, "_executor", None):
+            lifecycle._executor.shutdown(wait=False, cancel_futures=True)
 
 
 # Simple linearly separable data for fast training
@@ -54,7 +61,7 @@ class TestFullLifecycle:
         # 1. Create network
         resp = client.post(
             "/v1/network",
-            json={"input_size": 2, "output_size": 2, "epochs_max": 5},
+            json={"input_size": 2, "output_size": 2, "epochs_max": 5, "candidate_epochs": 2, "output_epochs": 2, "patience": 1},
         )
         assert resp.status_code == 200
         assert resp.json()["data"]["input_size"] == 2
@@ -124,7 +131,7 @@ class TestFullLifecycle:
 
     def test_metrics_endpoint_after_training(self, client):
         """Metrics endpoint returns data after training starts."""
-        client.post("/v1/network", json={"input_size": 2, "output_size": 2, "epochs_max": 3})
+        client.post("/v1/network", json={"input_size": 2, "output_size": 2, "epochs_max": 3, "candidate_epochs": 2, "output_epochs": 2, "patience": 1})
         client.post(
             "/v1/training/start",
             json={"inline_data": {"train_x": _TRAIN_X, "train_y": _TRAIN_Y}},
@@ -138,7 +145,7 @@ class TestFullLifecycle:
 
     def test_decision_boundary_after_data_loaded(self, client):
         """Decision boundary works after data is loaded."""
-        client.post("/v1/network", json={"input_size": 2, "output_size": 2, "epochs_max": 3})
+        client.post("/v1/network", json={"input_size": 2, "output_size": 2, "epochs_max": 3, "candidate_epochs": 2, "output_epochs": 2, "patience": 1})
         client.post(
             "/v1/training/start",
             json={"inline_data": {"train_x": _TRAIN_X, "train_y": _TRAIN_Y}},
@@ -155,7 +162,7 @@ class TestFullLifecycle:
 
     def test_reset_clears_state(self, client):
         """Reset clears training state."""
-        client.post("/v1/network", json={"input_size": 2, "output_size": 2})
+        client.post("/v1/network", json={"input_size": 2, "output_size": 2, "candidate_epochs": 2, "output_epochs": 2, "patience": 1})
         client.post(
             "/v1/training/start",
             json={"inline_data": {"train_x": _TRAIN_X, "train_y": _TRAIN_Y}},
@@ -174,7 +181,7 @@ class TestFullLifecycle:
 
     def test_delete_network_cleanup(self, client):
         """Deleting network cleans up everything."""
-        client.post("/v1/network", json={"input_size": 2, "output_size": 2})
+        client.post("/v1/network", json={"input_size": 2, "output_size": 2, "candidate_epochs": 2, "output_epochs": 2, "patience": 1})
 
         resp = client.delete("/v1/network")
         assert resp.status_code == 200
@@ -184,7 +191,7 @@ class TestFullLifecycle:
 
     def test_spiral_data_generator(self, client):
         """Training with spiral data generator."""
-        client.post("/v1/network", json={"input_size": 2, "output_size": 2, "epochs_max": 3})
+        client.post("/v1/network", json={"input_size": 2, "output_size": 2, "epochs_max": 3, "candidate_epochs": 2, "output_epochs": 2, "patience": 1})
         resp = client.post(
             "/v1/training/start",
             json={

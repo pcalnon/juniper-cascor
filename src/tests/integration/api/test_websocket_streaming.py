@@ -20,6 +20,12 @@ def client():
     app = create_app(settings)
     with TestClient(app) as c:
         yield c
+    # Signal training threads to stop (see test_api_full_lifecycle.py)
+    lifecycle = getattr(app.state, "lifecycle", None)
+    if lifecycle:
+        lifecycle._stop_requested.set()
+        if getattr(lifecycle, "_executor", None):
+            lifecycle._executor.shutdown(wait=False, cancel_futures=True)
 
 
 _TRAIN_X = [
@@ -105,7 +111,7 @@ class TestWebSocketStreaming:
 
     def test_training_stream_after_network_create(self, client):
         """Training stream shows network_loaded=True after creation."""
-        client.post("/v1/network", json={"input_size": 2, "output_size": 2})
+        client.post("/v1/network", json={"input_size": 2, "output_size": 2, "candidate_epochs": 2, "output_epochs": 2, "patience": 1})
 
         with client.websocket_connect("/ws/training") as ws:
             ws.receive_json()  # connection_established

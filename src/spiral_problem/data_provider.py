@@ -24,7 +24,6 @@ from typing import Dict, Optional, Tuple
 
 import numpy as np
 import torch
-
 from juniper_data_client import JuniperDataClient, JuniperDataConnectionError
 
 logger = logging.getLogger(__name__)

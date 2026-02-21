@@ -1,8 +1,8 @@
 # Juniper Polyrepo Migration Plan
 
-**Last Updated:** 2026-02-20
-**Version:** 1.1.0
-**Status:** Active — Phase 0 Complete, Phase 1 Near-Complete, Phase 2 Substantially Complete
+**Last Updated:** 2026-02-21
+**Version:** 1.2.0
+**Status:** Active — Phase 0 Complete, Phase 1 Complete, Phase 2 Complete
 **Author:** Paul Calnon / Claude Code
 **Companion Document:** [MONOREPO_ANALYSIS.md](MONOREPO_ANALYSIS.md)
 
@@ -276,7 +276,7 @@ git push origin main --tags
 **Duration:** 3–5 days
 **Risk:** Low (additive, no existing code removed)
 **Prerequisite:** Phase 0 complete
-**Status:** 85% COMPLETE (2026-02-20)
+**Status:** COMPLETE (2026-02-21)
 
 ### Objective, Phase 1
 
@@ -284,31 +284,24 @@ Publish `juniper-data-client` to PyPI as the single source of truth. Eliminate a
 
 ### Completion Summary, Phase 1
 
-The `juniper-data-client` package has been extracted, published to PyPI (v0.3.0), and installed in the development environment. Vendored copies have been removed from JuniperCascor and JuniperCanopy. One remaining item blocks full completion:
+The `juniper-data-client` package has been extracted, published to PyPI (v0.3.0), and installed in the development environment. All vendored copies have been removed from all projects.
 
-| Step                             | Status           | Notes                                                            |
-| -------------------------------- | ---------------- | ---------------------------------------------------------------- |
-| 1.1 Prepare for PyPI             | COMPLETE         | pyproject.toml, README, LICENSE, py.typed all present            |
-| 1.2 Create GitHub repo           | COMPLETE         | `pcalnon/juniper-data-client` exists with full history           |
-| 1.3 PyPI publishing              | COMPLETE         | v0.3.0 published 2026-02-20, CI/CD workflows active              |
-| 1.4a Remove Cascor vendored copy | COMPLETE         | Empty dir remains (only `__pycache__/`), imports use external    |
-| 1.4b Remove Canopy vendored copy | COMPLETE         | No vendored copy; imports use external package                   |
-| 1.4c Remove Data vendored copy   | **INCOMPLETE**   | **v0.2.0 vendored copy still in JuniperData**                    |
-| 1.5 Verify all tests pass        | NEEDS VALIDATION | Tests pass for Canopy/Cascor; JuniperData untested with external |
-
-### Remaining Work
-
-**1.4c — JuniperData vendored copy (CRITICAL):**
-
-- `/home/pcalnon/Development/python/Juniper/JuniperData/juniper_data/juniper_data_client/` still contains a v0.2.0 vendored copy (2 minor versions behind PyPI v0.3.0)
-- JuniperData's `pyproject.toml` does NOT declare `juniper-data-client` as a dependency
-- Resolution: Remove vendored dir, add `juniper-data-client>=0.3.0` to pyproject.toml, verify tests pass
+| Step                             | Status   | Notes                                                                  |
+| -------------------------------- | -------- | ---------------------------------------------------------------------- |
+| 1.1 Prepare for PyPI             | COMPLETE | pyproject.toml, README, LICENSE, py.typed all present                  |
+| 1.2 Create GitHub repo           | COMPLETE | `pcalnon/juniper-data-client` exists with full history                 |
+| 1.3 PyPI publishing              | COMPLETE | v0.3.0 published 2026-02-20, CI/CD workflows active                    |
+| 1.4a Remove Cascor vendored copy | COMPLETE | Empty dir remains (only `__pycache__/`), imports use external          |
+| 1.4b Remove Canopy vendored copy | COMPLETE | No vendored copy; imports use external package                         |
+| 1.4c Remove Data vendored copy   | COMPLETE | Removed 2026-02-21; added to .gitignore; pyproject.toml updated        |
+| 1.5 Verify all tests pass        | COMPLETE | JuniperData 659 pass, CasCor 226 pass, all using external PyPI package |
 
 **Package installation status:**
 
-- Installed in JuniperPython conda env as editable: `juniper-data-client 0.3.0` at `/opt/miniforge3/envs/JuniperPython/lib/python3.14/site-packages/`
+- Installed as editable from standalone repo: `juniper-data-client 0.3.0`
 - JuniperCascor pyproject.toml: `juniper-data-client>=0.3.0` under `[project.optional-dependencies].juniper-data`
 - JuniperCanopy pyproject.toml: `juniper-data-client>=0.3.0` under `[project.optional-dependencies].juniper-data`
+- JuniperData pyproject.toml: `juniper-data-client>=0.3.0` under `[project.optional-dependencies].test`
 
 ### Step 1.1 — Prepare `juniper-data-client` for PyPI
 
@@ -485,8 +478,8 @@ find . -path "*/juniper_data_client/client.py" -not -path "*/site-packages/*"
 - [x] CI/CD workflow for automated PyPI publishing on release tags (2026-02-20, uses Trusted Publishing/OIDC)
 - [x] Vendored copy removed from Canopy (no vendored copy remains)
 - [x] Vendored copy removed from Cascor (empty dir, imports use external package)
-- [ ] **Vendored copy removed from JuniperData** (v0.2.0 copy still present — must remove and add pyproject.toml dep)
-- [ ] **All tests pass with the PyPI-installed package** (NEEDS VALIDATION — Canopy/Cascor verified, JuniperData not yet tested with external package)
+- [x] Vendored copy removed from JuniperData (2026-02-21, commit `4bada2a`)
+- [x] All tests pass with the PyPI-installed package (JuniperData 659, CasCor 226 — all verified 2026-02-21)
 
 ---
 
@@ -495,7 +488,7 @@ find . -path "*/juniper_data_client/client.py" -not -path "*/site-packages/*"
 **Duration:** 2–3 weeks
 **Risk:** Medium (new code, but additive — existing CLI usage preserved)
 **Prerequisite:** Phase 1 complete
-**Status:** SUBSTANTIALLY COMPLETE (2026-02-20) — All core features implemented; test validation pending
+**Status:** COMPLETE (2026-02-21)
 
 ### Objective, Phase 2
 
@@ -512,7 +505,7 @@ All Phase 2 core features have been implemented across 14 new source files and 1
 | 2.3 TrainingLifecycleManager | COMPLETE         | Thread-safe state machine, ThreadPoolExecutor, monitoring hooks          |
 | 2.4 Add dependencies         | COMPLETE         | FastAPI, uvicorn, websockets in pyproject.toml                           |
 | 2.5 Service entry point      | COMPLETE         | `server.py` alongside existing `main.py`                                 |
-| 2.6 Test the service API     | NEEDS VALIDATION | 15 unit test files + 2 integration test files written; test runs pending |
+| 2.6 Test the service API     | COMPLETE         | 213 unit tests + 13 integration tests pass (2026-02-21)                  |
 
 ### Implementation Details
 
@@ -561,17 +554,18 @@ All Phase 2 core features have been implemented across 14 new source files and 1
 - `WebSocketManager` — connection management with `broadcast_from_thread()` async/sync bridge
 - Monitoring hooks: monkey-patches `fit()`, `train_output_layer()`, `grow_network()` for per-epoch metrics
 
-**Test Files Written (NEEDS VALIDATION — test runs pending):**
+**Test Suite (VALIDATED 2026-02-21 — all passing):**
 
-Unit tests (15 files):
+Unit tests (18 files, 213 tests):
 
 - `test_api_app.py`, `test_api_health.py`, `test_api_routes.py`, `test_api_settings.py`
 - `test_dataset_route.py`, `test_decision_boundary_route.py`, `test_metrics_routes.py`
-- `test_lifecycle_manager.py`, `test_lifecycle_monitor.py`, `test_lifecycle_state_machine.py`
+- `test_lifecycle_manager.py`, `test_lifecycle_manager_coverage.py`, `test_lifecycle_monitor.py`, `test_lifecycle_state_machine.py`
 - `test_monitoring_hooks.py`
+- `test_network_route_coverage.py`, `test_training_route_coverage.py`
 - `test_websocket_control.py`, `test_websocket_manager.py`, `test_websocket_messages.py`, `test_websocket_training_stream.py`
 
-Integration tests (2 files + conftest):
+Integration tests (2 files + conftest, 13 tests):
 
 - `test_api_full_lifecycle.py` — create → train → stop → metrics → reset → cleanup
 - `test_websocket_streaming.py` — connect sequence, control commands, multiple clients
@@ -728,7 +722,7 @@ if __name__ == "__main__":
 - [x] WebSocket endpoints for real-time streaming (`/ws/training`, `/ws/control`)
 - [x] `TrainingLifecycleManager` with thread-safe state machine (579 lines, ThreadPoolExecutor)
 - [x] Service entry point (`server.py`) alongside existing CLI (`main.py`)
-- [ ] **Comprehensive test suite for the API layer** (NEEDS VALIDATION — 15 unit + 2 integration test files written; test runs are being validated in a separate work thread)
+- [x] Comprehensive test suite for the API layer (213 unit + 13 integration tests, validated 2026-02-21)
 - [x] API contract documented (Appendix A)
 - [x] Existing CLI (`main.py`) confirmed unchanged by Phase 2 work
 
@@ -1381,17 +1375,17 @@ Update all documentation across all repositories:
 - [x] Clean baseline tagged (4 repos, 5 tags)
 - [x] `.gitignore` updated
 
-### Phase 1 — Publish `juniper-data-client` (85% COMPLETE)
+### Phase 1 — Publish `juniper-data-client` (COMPLETE 2026-02-21)
 
 - [x] `juniper-data-client` repo created
 - [x] Published to TestPyPI
 - [x] Published to PyPI (v0.3.0)
 - [x] Vendored copies removed from Canopy
 - [x] Vendored copies removed from Cascor
-- [ ] **Vendored copy removed from JuniperData** (v0.2.0 still present)
-- [ ] **All tests pass with PyPI package** (NEEDS VALIDATION for JuniperData)
+- [x] Vendored copy removed from JuniperData (commit `4bada2a`)
+- [x] All tests pass with PyPI package (JuniperData 659, CasCor 226)
 
-### Phase 2 — CasCor Service API (SUBSTANTIALLY COMPLETE)
+### Phase 2 — CasCor Service API (COMPLETE 2026-02-21)
 
 - [x] API contract defined and documented
 - [x] FastAPI routes implemented (19 endpoints)
@@ -1399,14 +1393,17 @@ Update all documentation across all repositories:
 - [x] `TrainingLifecycleManager` implemented (with state machine + monitor)
 - [x] Service entry point (`server.py`) created
 - [x] Existing CLI (`main.py`) still works (confirmed unchanged)
-- [ ] **API test suite passing** (NEEDS VALIDATION — 17 test files written, runs pending)
+- [x] API test suite passing (213 unit + 13 integration tests)
 
-### Phase 3 — Client and Worker Packages
+### Phase 3 — Client and Worker Packages (IN PROGRESS — packages created, PyPI pending)
 
-- [ ] `juniper-cascor-client` repo created and published to PyPI
-- [ ] `juniper-cascor-worker` repo created and published to PyPI
-- [ ] Both have CI/CD and test suites
-- [ ] Worker CLI entry point functional
+- [x] `juniper-cascor-client` package created (55 tests pass), GitHub repo created and pushed
+- [x] `juniper-cascor-worker` package created (24 tests pass), GitHub repo created and pushed
+- [x] Both have CI/CD workflow files (ci.yml, publish.yml) — pending push (PAT needs `workflow` scope)
+- [x] Worker CLI entry point functional (`juniper-cascor-worker` console_scripts entry point)
+- [ ] Push CI/CD workflow commits (requires PAT `workflow` scope)
+- [ ] Publish both to TestPyPI then PyPI (requires `.pypirc` with API tokens)
+- [ ] Set up Trusted Publishing on PyPI for both packages
 
 ### Phase 4 — Decouple Canopy
 
