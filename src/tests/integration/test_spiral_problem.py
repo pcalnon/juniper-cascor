@@ -68,7 +68,7 @@ class TestSpiralProblemBasic:
     @pytest.mark.spiral
     # CASCOR-TIMEOUT-001: Added slow marker and extended timeout
     @pytest.mark.slow
-    @pytest.mark.timeout(120)  # Reduced timeout
+    @pytest.mark.timeout(30)
     def test_3_spiral_learning(self, spiral_network):
         """Test that network can learn 3-spiral problem."""
         set_deterministic_behavior(42)
@@ -113,7 +113,7 @@ class TestSpiralProblemProgressive:
     @pytest.mark.integration
     @pytest.mark.spiral
     @pytest.mark.slow
-    @pytest.mark.timeout(120)
+    @pytest.mark.timeout(30)
     @pytest.mark.parametrize("n_spirals", [2, 3, 4])
     def test_n_spiral_difficulty_progression(self, n_spirals):
         """Test that network can handle increasing spiral complexity."""
@@ -127,7 +127,7 @@ class TestSpiralProblemProgressive:
         # Create network configured for n-spiral problem - reduced for speed
         from cascade_correlation.cascade_correlation import CascadeCorrelationNetwork
 
-        network = CascadeCorrelationNetwork.create_simple_network(input_size=2, output_size=n_spirals, learning_rate=0.1 if fast_mode else 0.08, max_hidden_units=hidden_units, candidate_pool_size=pool_size, correlation_threshold=0.02 if fast_mode else 0.1)
+        network = CascadeCorrelationNetwork.create_simple_network(input_size=2, output_size=n_spirals, learning_rate=0.1 if fast_mode else 0.08, max_hidden_units=hidden_units, candidate_pool_size=pool_size, correlation_threshold=0.02 if fast_mode else 0.1, candidate_epochs=3 if fast_mode else 10, output_epochs=3 if fast_mode else 10, patience=2 if fast_mode else 3)
 
         # Generate n-spiral data - smaller for faster execution
         n_per_spiral = 10 if fast_mode else 15  # Reduced from 30
@@ -158,7 +158,7 @@ class TestSpiralProblemRobustness:
     @pytest.mark.spiral
     # CASCOR-TIMEOUT-001: Added slow marker and extended timeout
     @pytest.mark.slow
-    @pytest.mark.timeout(120)
+    @pytest.mark.timeout(30)
     @pytest.mark.parametrize("noise_level", [0.01, 0.05, 0.1])
     def test_spiral_noise_robustness(self, spiral_network, noise_level):
         """Test network performance with different noise levels."""
@@ -186,7 +186,7 @@ class TestSpiralProblemRobustness:
     @pytest.mark.spiral
     # CASCOR-TIMEOUT-001: Added slow marker and extended timeout
     @pytest.mark.slow
-    @pytest.mark.timeout(120)
+    @pytest.mark.timeout(30)
     @pytest.mark.parametrize("n_per_spiral", [20, 40, 60])  # Reduced from [20, 50, 100]
     def test_spiral_data_size_scaling(self, spiral_network, n_per_spiral):
         """Test network performance with different dataset sizes."""
@@ -223,7 +223,7 @@ class TestSpiralProblemVisualization:
     @pytest.mark.spiral
     # CASCOR-TIMEOUT-001: Added slow marker and extended timeout
     @pytest.mark.slow
-    @pytest.mark.timeout(120)
+    @pytest.mark.timeout(30)
     def test_spiral_training_progression(self, spiral_network):
         """Test and analyze training progression on spiral problem."""
         set_deterministic_behavior(42)
@@ -337,7 +337,7 @@ class TestSpiralProblemComparison:
     @pytest.mark.integration
     @pytest.mark.spiral
     @pytest.mark.slow
-    @pytest.mark.timeout(300)  # Extended timeout for multi-config test
+    @pytest.mark.timeout(60)
     def test_spiral_configuration_comparison(self):
         """Compare network performance across different spiral configurations."""
         set_deterministic_behavior(42)
@@ -364,7 +364,7 @@ class TestSpiralProblemComparison:
             # Create fresh network for each test - reduced parameters for speed
             from cascade_correlation.cascade_correlation import CascadeCorrelationNetwork
 
-            network = CascadeCorrelationNetwork.create_simple_network(input_size=2, output_size=config["n_spirals"], learning_rate=0.1 if fast_mode else 0.05, max_hidden_units=2 if fast_mode else 4, candidate_pool_size=2 if fast_mode else 6, correlation_threshold=0.02 if fast_mode else 0.1)  # Reduced from 6  # Reduced from 8
+            network = CascadeCorrelationNetwork.create_simple_network(input_size=2, output_size=config["n_spirals"], learning_rate=0.1 if fast_mode else 0.05, max_hidden_units=2 if fast_mode else 4, candidate_pool_size=2 if fast_mode else 6, correlation_threshold=0.02 if fast_mode else 0.1, candidate_epochs=3 if fast_mode else 10, output_epochs=3 if fast_mode else 10, patience=2 if fast_mode else 3)
 
             # Generate data
             if config["n_spirals"] == 2:  # sourcery skip: no-conditionals-in-tests

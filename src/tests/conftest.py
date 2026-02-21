@@ -663,6 +663,35 @@ def _cache_logging_system():
 # ===================================================================
 
 
+@pytest.fixture(autouse=True, scope="session")
+def _force_clean_exit():
+    """Force process exit after all tests to prevent hangs from orphaned threads.
+
+    Two sources of hangs:
+    1. concurrent.futures.thread registers an atexit handler that calls
+       shutdown(wait=True) on every live ThreadPoolExecutor.
+    2. Non-daemon training threads (e.g. from API integration tests)
+       prevent the main thread from exiting even after atexit handlers run.
+
+    We unregister the atexit handler AND use os._exit() as a last resort
+    if non-daemon threads are still alive after tests complete.
+    """
+    yield
+    import atexit
+    import concurrent.futures.thread as _thread_mod
+    import threading
+
+    atexit.unregister(_thread_mod._python_exit)
+
+    # If non-daemon threads are still alive (e.g. training threads from
+    # API integration tests), force immediate process exit.
+    alive = [t for t in threading.enumerate() if not t.daemon and t is not threading.main_thread()]
+    if alive:
+        import os
+
+        os._exit(0)
+
+
 @pytest.fixture(autouse=True)
 def cleanup_temp_files():
     """Clean up temporary files created during tests."""

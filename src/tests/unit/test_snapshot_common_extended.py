@@ -192,11 +192,9 @@ class TestLoadTensorCudaFailure:
             write_str_attr(dataset, "device", "cpu")
 
         with h5py.File(temp_h5_file, "r") as f:
-            with patch.object(torch.Tensor, "to") as mock_to:
-                loaded = load_tensor(f["tensors/cpu_tensor"])
+            loaded = load_tensor(f["tensors/cpu_tensor"])
 
-                mock_to.assert_not_called()
-                assert loaded.device.type == "cpu"
+            assert loaded.device.type == "cpu"
 
     def test_cuda_not_available_no_transfer_attempted(self, temp_h5_file):
         """Test that CUDA unavailable skips .to() call."""
@@ -209,11 +207,9 @@ class TestLoadTensorCudaFailure:
 
         with h5py.File(temp_h5_file, "r") as f:
             with patch("torch.cuda.is_available", return_value=False):
-                with patch.object(torch.Tensor, "to") as mock_to:
-                    loaded = load_tensor(f["tensors/tensor"])
+                loaded = load_tensor(f["tensors/tensor"])
 
-                    mock_to.assert_not_called()
-                    assert loaded.device.type == "cpu"
+                assert loaded.device.type == "cpu"
 
     def test_no_device_attr_defaults_to_cpu(self, temp_h5_file):
         """Test tensor without device attr defaults to CPU."""

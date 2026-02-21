@@ -1,9 +1,12 @@
 """Tests for decision boundary API route."""
 
+from unittest.mock import patch
+
 import pytest
 from fastapi.testclient import TestClient
 
 from api.app import create_app
+from api.lifecycle.manager import TrainingLifecycleManager
 from api.settings import Settings
 
 
@@ -34,18 +37,16 @@ class TestDecisionBoundaryRoute:
     def test_decision_boundary_with_data(self, client):
         """GET /v1/decision-boundary returns grid data after training data loaded."""
         client.post("/v1/network", json={"input_size": 2, "output_size": 2})
-        # Load data via training start then stop
+        # Load data via training start, mock _run_training to prevent
+        # a background thread that outlives the test and blocks process exit.
         train_x = [[0.0, 0.0], [1.0, 1.0], [0.0, 1.0], [1.0, 0.0]]
         train_y = [[1.0, 0.0], [0.0, 1.0], [1.0, 0.0], [0.0, 1.0]]
-        client.post(
-            "/v1/training/start",
-            json={"inline_data": {"train_x": train_x, "train_y": train_y}},
-        )
-        import time
-
-        time.sleep(0.2)
+        with patch.object(TrainingLifecycleManager, "_run_training"):
+            client.post(
+                "/v1/training/start",
+                json={"inline_data": {"train_x": train_x, "train_y": train_y}},
+            )
         client.post("/v1/training/stop")
-        time.sleep(0.1)
         client.post("/v1/training/reset")
 
         response = client.get("/v1/decision-boundary?resolution=10")
