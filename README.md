@@ -1,6 +1,6 @@
 # Juniper: Dynamic Neural Network Research Platform
 
-[![CI/CD Pipeline](https://github.com/pcalnon/juniper_cascor/actions/workflows/ci.yml/badge.svg)](https://github.com/pcalnon/juniper_cascor/actions/workflows/ci.yml)
+[![CI/CD Pipeline](https://github.com/pcalnon/juniper-cascor/actions/workflows/ci.yml/badge.svg)](https://github.com/pcalnon/juniper-cascor/actions/workflows/ci.yml)
 
 **Version**: 0.6.3 | [Changelog](CHANGELOG.md) | [Full Documentation](docs/DOCUMENTATION_OVERVIEW.md)
 
@@ -17,8 +17,8 @@ Juniper is an AI/ML research platform for investigating dynamic neural network a
 
 ```bash
 # Clone the repository
-git clone https://github.com/pcalnon/juniper_cascor.git
-cd juniper_cascor
+git clone https://github.com/pcalnon/juniper-cascor.git
+cd juniper-cascor
 
 # Create and activate conda environment
 conda env create -f conf/conda_environment.yaml
@@ -104,6 +104,17 @@ Juniper prioritizes **transparency over convenience** and **understanding over a
 ### Thread Safety Warning
 
 **The `CascadeCorrelationNetwork` class is NOT thread-safe.** Do not share network instances between threads without proper synchronization. For concurrent training scenarios, create separate network instances per thread. The internal multiprocessing for candidate training is handled within the class and does not require external synchronization.
+
+## Juniper Ecosystem
+
+| Repository | Description |
+|-----------|-------------|
+| [juniper-cascor](https://github.com/pcalnon/juniper-cascor) | CasCor neural network training service (this repo) |
+| [juniper-canopy](https://github.com/pcalnon/juniper-canopy) | Real-time monitoring dashboard |
+| [juniper-data](https://github.com/pcalnon/juniper-data) | Dataset generation service |
+| [juniper-data-client](https://github.com/pcalnon/juniper-data-client) | PyPI: `juniper-data-client` |
+| [juniper-cascor-client](https://github.com/pcalnon/juniper-cascor-client) | PyPI: `juniper-cascor-client` |
+| [juniper-cascor-worker](https://github.com/pcalnon/juniper-cascor-worker) | PyPI: `juniper-cascor-worker` |
 
 ## License
 
