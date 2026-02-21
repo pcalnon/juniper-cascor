@@ -1,8 +1,8 @@
 # Juniper Polyrepo Migration Plan
 
 **Last Updated:** 2026-02-21
-**Version:** 1.2.0
-**Status:** Active — Phase 0 Complete, Phase 1 Complete, Phase 2 Complete
+**Version:** 1.3.0
+**Status:** Active — Phase 0 Complete, Phase 1 Complete, Phase 2 Complete, Phase 3 In Progress
 **Author:** Paul Calnon / Claude Code
 **Companion Document:** [MONOREPO_ANALYSIS.md](MONOREPO_ANALYSIS.md)
 
@@ -74,7 +74,7 @@ Each phase produces a working, testable system. No phase requires the next phase
 ┌─────────────────────┐     REST/WS      ┌──────────────────────┐
 │   JuniperCanopy     │ ◄──────────────► │    JuniperCascor     │
 │   (Dashboard)       │                  │    (Training Svc)    │
-│   Port 8050         │                  │    Port 8060         │
+│   Port 8050         │                  │    Port 8200         │
 │                     │                  │                      │
 │   Uses:             │     REST         │    Uses:             │
 │   - cascor-client   │ ◄──────────────► │    - data-client     │
@@ -732,8 +732,34 @@ if __name__ == "__main__":
 **Duration:** 1–2 weeks
 **Risk:** Low (new packages, additive)
 **Prerequisite:** Phase 2 complete (API contract defined)
+**Status:** IN PROGRESS — packages created, GitHub repos pushed, PyPI publishing pending
+
+### Objective, Phase 3
+
+Create two independently installable PyPI packages: `juniper-cascor-client` (HTTP/WebSocket client for the CasCor service API) and `juniper-cascor-worker` (remote candidate training worker). Both follow the patterns established by `juniper-data-client` in Phase 1.
+
+### Completion Summary, Phase 3
+
+Both packages have been created as standalone repositories with full test suites, CI/CD workflow files, and comprehensive documentation. Both are editable-installed in the local development environment but have not yet been published to PyPI.
+
+| Step                                      | Status           | Notes                                                                             |
+| ----------------------------------------- | ---------------- | --------------------------------------------------------------------------------- |
+| 3.1 Create `juniper-cascor-client`        | COMPLETE         | Standalone repo, 55 tests pass, CI/CD workflows pushed                            |
+| 3.2 Create `juniper-cascor-worker`        | COMPLETE         | Standalone repo, 24 tests pass, CLI entry point functional                        |
+| 3.3a Verify CI/CD workflows run on GitHub | NOT STARTED      | Workflows pushed but 0 Actions runs recorded; may need Actions enabled on repos   |
+| 3.3b Publish to TestPyPI                  | NOT STARTED      | No `.pypirc` configured; Trusted Publishing not set up                            |
+| 3.3c Publish to PyPI                      | NOT STARTED      | Blocked on 3.3b                                                                   |
+
+**Package status summary:**
+
+| Package                 | Repo                                  | Version | Tests | CI/CD Files | Editable Install | PyPI |
+| ----------------------- | ------------------------------------- | ------- | ----- | ----------- | ---------------- | ---- |
+| `juniper-cascor-client` | `pcalnon/juniper-cascor-client` (public) | 0.1.0   | 55 pass | ci.yml + publish.yml | Yes (local) | No   |
+| `juniper-cascor-worker` | `pcalnon/juniper-cascor-worker` (public) | 0.1.0   | 24 pass | ci.yml + publish.yml | Yes (local) | No   |
 
 ### Step 3.1 — Create `juniper-cascor-client`
+
+**Status:** COMPLETE (2026-02-21)
 
 A Python HTTP/WebSocket client for the CasCor service API, following the same patterns as `juniper-data-client`.
 
@@ -767,7 +793,7 @@ juniper-cascor-client/
 
 ```python
 class JuniperCascorClient:
-    def __init__(self, base_url="http://localhost:8060", timeout=30, retries=3, api_key=None): ...
+    def __init__(self, base_url="http://localhost:8200", timeout=30, retries=3, api_key=None): ...
 
     # Health
     def health_check(self) -> dict: ...
@@ -824,13 +850,13 @@ class JuniperCascorClient:
 class CascorTrainingStream:
     """Async WebSocket client for real-time training updates."""
 
-    def __init__(self, base_url="ws://localhost:8060", api_key=None): ...
+    def __init__(self, base_url="ws://localhost:8200", api_key=None): ...
 
     async def connect(self) -> None: ...
     async def disconnect(self) -> None: ...
 
-    async def stream_metrics(self) -> AsyncIterator[dict]:
-        """Yields metrics updates as they arrive."""
+    async def stream(self) -> AsyncIterator[dict]:
+        """Yields messages as they arrive."""
         ...
 
     async def send_command(self, command: str, params: dict = None) -> dict:
@@ -854,7 +880,25 @@ dependencies = [
 ]
 ```
 
+**Implementation details (completed 2026-02-21):**
+
+- **Repository**: `pcalnon/juniper-cascor-client` — public, 3 commits on `main`, clean working tree
+- **Location**: `/home/pcalnon/Development/python/Juniper/juniper-cascor-client/`
+- **Public API** (matches planned design with one bonus addition):
+  - `JuniperCascorClient` — REST client with 24 public methods (health, network CRUD, training control, metrics, visualization, snapshots, workers)
+  - `CascorTrainingStream` — async WebSocket client for `/ws/training` (iteration + callback patterns)
+  - `CascorControlStream` — async WebSocket client for `/ws/control` (command/response pattern; bonus, not in original plan)
+  - 7 exception classes: `ClientError`, `ConnectionError`, `TimeoutError`, `NotFoundError`, `ConflictError`, `ValidationError`, `ServiceUnavailableError`
+- **Quality infrastructure**: black (120 line length), isort, mypy (strict mode), flake8, coverage gate (80%), PEP 561 typed
+- **CI/CD**: `ci.yml` (matrix: Python 3.11/3.12/3.13), `publish.yml` (two-stage: TestPyPI → PyPI, Trusted Publishing)
+- **Tests**: 55 tests (34 REST client + 21 WebSocket client), all passing
+- **Build artifacts**: pre-built wheel + sdist in `dist/`
+- **Editable install**: installed in `JuniperCascor` conda env
+- **Consumer adoption**: none yet — no downstream project imports `juniper_cascor_client`
+
 ### Step 3.2 — Create `juniper-cascor-worker`
+
+**Status:** COMPLETE (2026-02-21)
 
 Extract and enhance the existing `RemoteWorkerClient` from CasCor's `src/remote_client/` into a standalone, independently installable package for remote candidate training.
 
@@ -929,17 +973,66 @@ dependencies = [
 
 Note: The worker needs PyTorch because it runs `CascadeCorrelationNetwork._worker_loop` locally. This is an inherent requirement — the worker is doing actual computation, not just proxying.
 
+**Implementation details (completed 2026-02-21):**
+
+- **Repository**: `pcalnon/juniper-cascor-worker` — public, 2 commits on `main`, clean working tree
+- **Location**: `/home/pcalnon/Development/python/Juniper/juniper-cascor-worker/`
+- **Actual package structure** (slightly differs from plan — `client.py` became `cli.py`):
+  ```bash
+  juniper_cascor_worker/
+  ├── __init__.py          # Exports: CandidateTrainingWorker, WorkerConfig, exceptions
+  ├── worker.py            # CandidateTrainingWorker (connect/start/stop/disconnect)
+  ├── cli.py               # argparse CLI with signal handling (replaces planned client.py)
+  ├── config.py            # WorkerConfig dataclass with from_env() + validate()
+  ├── exceptions.py        # WorkerError, WorkerConnectionError, WorkerConfigError
+  └── py.typed             # PEP 561 marker
+  ```
+- **Improvements over in-tree `remote_client/`**:
+  - stdlib `logging` instead of CasCor's custom `Logger` (no coupling)
+  - `WorkerConfig` dataclass with validation and environment variable support (`from_env()`)
+  - Custom exception hierarchy (3 classes) instead of generic `RuntimeError`
+  - CLI entry point with signal handling (`juniper-cascor-worker` console_scripts)
+  - Full test suite (24 tests) vs. zero tests for in-tree version
+  - No `sys.path.append` hacks
+- **Quality infrastructure**: black, isort, mypy, flake8, coverage gate (80%), PEP 561 typed
+- **CI/CD**: `ci.yml` (matrix: Python 3.11/3.12/3.13), `publish.yml` (two-stage: TestPyPI → PyPI, Trusted Publishing)
+- **Tests**: 24 tests (10 config + 14 worker), all passing
+- **Build artifacts**: pre-built wheel (8.7 KB) + sdist (8.8 KB) in `dist/`
+- **Editable install**: installed in `JuniperCascor` conda env
+- **In-tree predecessor**: `src/remote_client/remote_client.py` still exists in JuniperCascor (not yet removed; removal is not a Phase 3 task)
+
 ### Step 3.3 — Publish Both to PyPI
+
+**Status:** NOT STARTED
 
 Follow the same process as Phase 1 (TestPyPI first, then PyPI, with GitHub Actions automated publishing).
 
+**Remaining tasks for Step 3.3:**
+
+1. **Verify GitHub Actions**: Both repos have 0 Actions runs despite workflows being pushed. Confirm Actions is enabled on both repos and trigger a test run.
+2. **Set up Trusted Publishing on PyPI**: Register both packages at <https://pypi.org/manage/account/publishing/> with GitHub as trusted publisher (owner: `pcalnon`, workflows: `publish.yml`, environment: `pypi`).
+3. **Publish to TestPyPI**: Create test releases to verify the full publishing pipeline.
+4. **Publish to PyPI**: Create v0.1.0 GitHub releases to trigger the `publish.yml` workflow.
+5. **Verify installation**: `pip install juniper-cascor-client juniper-cascor-worker` from PyPI.
+
+**Blockers:**
+
+- No `~/.pypirc` configured (not needed if using Trusted Publishing via GitHub Actions, but needed for manual `twine upload`)
+- GitHub Actions has not run on either repo — must verify Actions is enabled before relying on automated publishing
+
 ### Deliverables, Phase 3
 
-- [ ] `juniper-cascor-client` repository created and published to PyPI
-- [ ] `juniper-cascor-worker` repository created and published to PyPI
-- [ ] Both packages have CI/CD workflows for automated testing and publishing
-- [ ] Comprehensive test suites for both packages
-- [ ] README documentation with installation and usage examples
+- [x] `juniper-cascor-client` repository created on GitHub (2026-02-21, `pcalnon/juniper-cascor-client`, 3 commits)
+- [x] `juniper-cascor-worker` repository created on GitHub (2026-02-21, `pcalnon/juniper-cascor-worker`, 2 commits)
+- [x] Both packages have CI/CD workflow files (ci.yml + publish.yml with Trusted Publishing)
+- [ ] CI/CD workflows verified running on GitHub (0 Actions runs on both repos — needs investigation)
+- [x] Comprehensive test suites for both packages (55 + 24 tests, all passing)
+- [x] README documentation with installation and usage examples (both repos)
+- [x] Both packages editable-installed in local development environment
+- [x] Worker CLI entry point functional (`juniper-cascor-worker` console_scripts)
+- [ ] Publish `juniper-cascor-client` to PyPI
+- [ ] Publish `juniper-cascor-worker` to PyPI
+- [ ] Set up Trusted Publishing on PyPI for both packages
 
 ---
 
@@ -948,10 +1041,17 @@ Follow the same process as Phase 1 (TestPyPI first, then PyPI, with GitHub Actio
 **Duration:** 2–3 weeks
 **Risk:** High (core architectural change to Canopy)
 **Prerequisite:** Phases 2 and 3 complete
+**Detailed Plan:** [`DECOUPLE_CANOPY_FROM_CASCOR_PLAN.md`](DECOUPLE_CANOPY_FROM_CASCOR_PLAN.md)
+
+> **Note:** A comprehensive, standalone implementation plan exists in
+> `notes/DECOUPLE_CANOPY_FROM_CASCOR_PLAN.md`. It contains full adapter code,
+> method mapping tables, three-mode activation logic, WebSocket relay
+> architecture, and a corrections table vs. the original version of this
+> section. The summary below reflects the corrected design.
 
 ### Objective, Phase 4
 
-Replace Canopy's `CascorIntegration` class (1,600 lines of `sys.path` injection, monkey-patching, and direct CasCor imports) with the `juniper-cascor-client` package communicating over REST/WebSocket.
+Replace Canopy's `CascorIntegration` class (~1,600 lines of `sys.path` injection, monkey-patching, and direct CasCor imports) with a `CascorServiceAdapter` that wraps the `juniper-cascor-client` package (v0.1.0), communicating over REST/WebSocket instead of in-process Python imports.
 
 ### Step 4.1 — Understand What `CascorIntegration` Currently Does
 
@@ -960,73 +1060,67 @@ Replace Canopy's `CascorIntegration` class (1,600 lines of `sys.path` injection,
 | Function Category      | Methods                                                                                                                          | Replacement                                                                          |
 | ---------------------- | -------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
 | **Backend discovery**  | `_resolve_backend_path`, `_add_backend_to_path`, `_import_backend_modules`                                                       | **Eliminated** — no path injection needed                                            |
-| **Network lifecycle**  | `create_network`, `connect_to_network`                                                                                           | `cascor_client.create_network()`, `.get_network()`                                   |
-| **Training control**   | `fit_async`, `start_training_background`, `request_training_stop`, `is_training_in_progress`                                     | `cascor_client.start_training()`, `.stop_training()`, `.get_training_status()`       |
+| **Network lifecycle**  | `create_network`, `connect_to_network`                                                                                           | `client.create_network()`, `client.get_network()`                                    |
+| **Training control**   | `fit_async`, `start_training_background`, `request_training_stop`, `is_training_in_progress`                                     | `client.start_training()`, `client.stop_training()`, `client.get_training_status()`  |
 | **Monitoring hooks**   | `install_monitoring_hooks`, monkey-patching `fit`/`train_output`/`train_candidates`, `_on_*` callbacks                           | **Eliminated** — CasCor service handles its own monitoring and streams via WebSocket |
-| **Monitoring thread**  | `start_monitoring_thread`, `stop_monitoring`, `_monitoring_loop`, `_extract_current_metrics`                                     | **Replaced** by WebSocket subscription via `CascorTrainingStream`                    |
-| **Network data**       | `get_network_topology`, `get_network_data`, `extract_cascor_topology`, `get_dataset_info`, `get_prediction_function`             | `cascor_client.get_topology()`, `.get_dataset()`, `.get_decision_boundary()`         |
-| **Remote workers**     | `connect_remote_workers`, `start_remote_workers`, `stop_remote_workers`, `disconnect_remote_workers`, `get_remote_worker_status` | `cascor_client.connect_workers()`, `.start_workers()`, etc.                          |
-| **Dataset generation** | `_generate_dataset_from_juniper_data`, `_create_juniper_dataset`, `_generate_dataset_local`                                      | `data_client.create_dataset()` — already using the client                            |
-| **Snapshots**          | (referenced in `main.py`, not fully implemented in `CascorIntegration`)                                                          | `cascor_client.create_snapshot()`, `.restore_snapshot()`                             |
-| **Broadcasting**       | `_broadcast_message` (sends to Canopy's WebSocketManager)                                                                        | WebSocket stream from CasCor, relayed to Canopy's frontend                           |
+| **Monitoring thread**  | `start_monitoring_thread`, `stop_monitoring`, `_monitoring_loop`, `_extract_current_metrics`                                     | **Replaced** by WebSocket subscription via `CascorTrainingStream.stream()`           |
+| **Network data**       | `get_network_topology`, `get_network_data`, `extract_cascor_topology`, `get_dataset_info`, `get_prediction_function`             | `client.get_topology()`, `client.get_dataset()`, `client.get_decision_boundary()`    |
+| **Remote workers**     | `connect_remote_workers`, `start_remote_workers`, `stop_remote_workers`, `disconnect_remote_workers`, `get_remote_worker_status` | **Stub no-ops** — workers managed server-side by CasCor + `juniper-cascor-worker`    |
+| **Dataset generation** | `_generate_dataset_from_juniper_data`, `_create_juniper_dataset`                                                                 | Handled by CasCor service; Canopy passes dataset config in `start_training()`        |
+| **Snapshots**          | (referenced in `main.py`, not fully implemented in `CascorIntegration`)                                                          | `cascor_client.create_snapshot()`, `.restore_snapshot()` (deferred)                  |
+| **Broadcasting**       | `_broadcast_message` (sends to Canopy's WebSocketManager)                                                                        | WebSocket relay: CasCor WS → adapter → Canopy frontend WS                           |
 
 ### Step 4.2 — Create `CascorServiceAdapter`
 
-Replace `CascorIntegration` with a new `CascorServiceAdapter` that wraps the cascor client:
+Replace `CascorIntegration` with a new `CascorServiceAdapter` that wraps the cascor client. Key design decisions (see detailed plan for full code):
+
+- **Constructor**: `CascorServiceAdapter(service_url, api_key)` — NOT `(cascor_url, websocket_manager, data_client)`. The WebSocket manager is imported internally in `start_metrics_relay()`.
+- **Backward-compatible method names**: Adapter exposes the same method names as `CascorIntegration` (e.g., `create_network`, `get_network_topology`, `start_training_background`, `request_training_stop`), minimizing route handler changes.
+- **WS relay**: Uses `CascorTrainingStream.stream()` (async iterator), NOT `stream_metrics()` which does not exist.
+- **Remote workers**: Stub no-ops — workers are managed server-side.
+- **Monitoring hooks**: No-ops — monitoring is handled server-side and streamed via WebSocket.
 
 ```python
-# src/backend/cascor_service_adapter.py
+# src/backend/cascor_service_adapter.py (abbreviated — see detailed plan for full code)
 
 from juniper_cascor_client import JuniperCascorClient, CascorTrainingStream
 
 class CascorServiceAdapter:
-    """Adapter between Canopy's internal interfaces and the CasCor service.
+    def __init__(self, service_url: str = "http://localhost:8200", api_key: str = None):
+        self.client = JuniperCascorClient(base_url=service_url, api_key=api_key)
+        ws_url = service_url.replace("http://", "ws://").replace("https://", "wss://")
+        self.training_stream = CascorTrainingStream(base_url=ws_url, api_key=api_key)
 
-    Replaces CascorIntegration. Communicates with CasCor via REST API
-    and WebSocket rather than direct Python imports.
-    """
-
-    def __init__(self, cascor_url: str, websocket_manager, data_client=None):
-        self.client = JuniperCascorClient(base_url=cascor_url)
-        self.stream = CascorTrainingStream(base_url=cascor_url.replace("http", "ws"))
-        self.ws_manager = websocket_manager
-        self.data_client = data_client
-        self._stream_task = None
-
-    async def start_metrics_relay(self):
-        """Connect to CasCor WebSocket and relay metrics to Canopy frontend."""
-        await self.stream.connect()
-        self._stream_task = asyncio.create_task(self._relay_loop())
-
-    async def _relay_loop(self):
-        """Relay messages from CasCor WS to Canopy's frontend WebSocket."""
-        async for message in self.stream.stream_metrics():
-            await self.ws_manager.broadcast(message)
-
-    # Delegate to client
-    def create_network(self, config): return self.client.create_network(config)
-    def start_training(self, **kwargs): return self.client.start_training(**kwargs)
-    def stop_training(self): return self.client.stop_training()
-    def pause_training(self): return self.client.pause_training()
-    def resume_training(self): return self.client.resume_training()
-    def reset_training(self): return self.client.reset_training()
+    # Backward-compatible delegations
+    def create_network(self, config=None): return self.client.create_network(**(config or {}))
+    def get_network_topology(self): return self.client.get_topology()
+    def start_training_background(self, **kw): self.client.start_training(**kw); return True
+    def request_training_stop(self): self.client.stop_training(); return True
+    def is_training_in_progress(self): return self.client.get_training_status().get("is_training", False)
     def get_training_status(self): return self.client.get_training_status()
-    def get_topology(self): return self.client.get_topology()
-    def get_metrics(self): return self.client.get_metrics()
-    def get_metrics_history(self): return self.client.get_metrics_history()
-    # ... etc.
+
+    # No-ops (server-side concerns)
+    def install_monitoring_hooks(self): return True
+    def start_monitoring_thread(self, interval=1.0): pass
+    def stop_monitoring(self): pass
+    def restore_original_methods(self): pass
+    def connect_remote_workers(self, *a, **kw): return True
+    # ... see detailed plan for complete listing
 ```
 
-### Step 4.3 — Update `main.py` Routes
+### Step 4.3 — Three-Mode Activation in `main.py`
 
-Replace all references to `cascor_integration` in `main.py` with `cascor_service_adapter`:
+The activation logic supports three modes during the transition period:
 
-- `get_topology()` → `adapter.get_topology()`
-- `get_metrics()` → `adapter.get_metrics()`
-- `api_train_start()` → `adapter.start_training()`
-- etc.
+| Mode | Trigger | Backend |
+|------|---------|---------|
+| **Demo** | `CASCOR_DEMO_MODE=1` | `DemoMode` (unchanged) |
+| **Service** | `CASCOR_SERVICE_URL` is set | `CascorServiceAdapter` (new) |
+| **Legacy** | `CASCOR_BACKEND_PATH` is set | `CascorIntegration` (existing, transitional) |
 
-The demo mode path remains unchanged — `DemoMode` continues to work as-is for local development.
+Priority: Demo > Service > Legacy > fallback to Demo.
+
+Route handlers require only a variable rename (`cascor_integration` → `backend`) since the adapter uses backward-compatible method names.
 
 ### Step 4.4 — Update Dependencies
 
@@ -1039,83 +1133,60 @@ dependencies = [
 ]
 ```
 
-### Step 4.5 — Remove `CascorIntegration` and `sys.path` Code
-
-Once `CascorServiceAdapter` is validated:
-
-```bash
-# Remove the old integration
-rm src/backend/cascor_integration.py
-
-# Remove sys.path manipulation code from main.py
-# Remove CASCOR_BACKEND_PATH resolution
-# Remove _import_backend_modules calls
-# Remove all direct CasCor imports
-```
-
-### Step 4.6 — Update Configuration
+### Step 4.5 — Update Configuration
 
 **Environment variables:**
 
 | Old                        | New                      | Purpose                                                  |
 | -------------------------- | ------------------------ | -------------------------------------------------------- |
-| `CASCOR_BACKEND_PATH`      | **Removed**              | No longer needed                                         |
+| `CASCOR_BACKEND_PATH`      | **Retained** (transitional) | Legacy direct-import path (removed in Step 4.8)       |
 | `CASCOR_BACKEND_AVAILABLE` | **Removed**              | No longer needed                                         |
-| (new)                      | `CASCOR_SERVICE_URL`     | URL of CasCor service (default: `http://localhost:8060`) |
+| (new)                      | `CASCOR_SERVICE_URL`     | URL of CasCor service (default: `http://localhost:8200`) |
 | (new)                      | `CASCOR_SERVICE_API_KEY` | API key for CasCor service (optional)                    |
 
-**`conf/app_config.yaml` updates:**
+**Default port:** `8200` — matches `juniper-cascor-client` defaults.
 
-```yaml
-backend:
-  cascor_service:
-    url: "http://localhost:8060"
-    timeout: 30
-    retries: 3
-    api_key: null  # Or set via CASCOR_SERVICE_API_KEY env var
-```
+### Step 4.6 — Update Tests
 
-### Step 4.7 — Update Tests
-
-- Update integration tests to mock `JuniperCascorClient` instead of `CascadeCorrelationNetwork`
-- Remove tests that depend on CasCor source being on `sys.path`
-- Add integration tests that exercise the full Canopy → CasCor service flow (using a test CasCor server or mock)
+- Unit tests: Mock `JuniperCascorClient` and verify adapter delegates correctly
+- Interface compatibility tests: Verify adapter exposes all methods that `main.py` calls
+- Three-mode activation tests: Verify correct backend for each env var combination
+- WS relay tests: Mock `CascorTrainingStream.stream()` and verify broadcast
 - Demo mode tests remain unchanged
 
-### Step 4.8 — Update Demo Mode
+### Step 4.7 — Integration Testing
 
-`DemoMode` already simulates the CasCor backend. No changes needed to DemoMode itself. The switching logic in `main.py` changes from:
+- Start CasCor service, set `CASCOR_SERVICE_URL=http://localhost:8200`
+- Verify: network creation, training start/stop, metrics streaming, topology retrieval
+- Verify: demo mode still works with `CASCOR_DEMO_MODE=1`
+- Verify: legacy mode still works with `CASCOR_BACKEND_PATH=...`
 
-```python
-# Old
-if demo_mode_active:
-    demo_mode_instance = get_demo_mode()
-else:
-    cascor_integration = CascorIntegration(backend_path=cascor_backend_path)
-```
+### Step 4.8 — Remove Legacy Mode (Post-Validation)
 
-To:
+Once service mode is validated:
 
-```python
-# New
-if demo_mode_active:
-    demo_mode_instance = get_demo_mode()
-else:
-    cascor_adapter = CascorServiceAdapter(
-        cascor_url=os.getenv("CASCOR_SERVICE_URL", "http://localhost:8060"),
-        websocket_manager=websocket_manager,
-    )
-```
+- Delete `src/backend/cascor_integration.py` (~1,600 lines)
+- Remove `CASCOR_BACKEND_PATH` support from `main.py`
+- Remove legacy mode branch from three-mode activation
+- Remove all `sys.path` manipulation code and direct CasCor imports
+- Remove tests that depend on CasCor source being on `sys.path`
 
 ### Deliverables, Phase 4
 
 - [ ] `CascorServiceAdapter` implemented and tested
-- [ ] `CascorIntegration` removed (all 1,600 lines)
-- [ ] All `sys.path` manipulation code removed
-- [ ] No direct imports of CasCor modules anywhere in Canopy
+- [ ] Three-mode activation working (demo / service / legacy)
+- [ ] All route handlers work with both backends (variable rename only)
+- [ ] WebSocket relay tested (CasCor WS → Canopy frontend)
 - [ ] All Canopy tests pass
 - [ ] Demo mode continues to work identically
-- [ ] Configuration updated to use service URLs instead of backend paths
+- [ ] Configuration updated to use `CASCOR_SERVICE_URL` (port 8200)
+
+**Post-validation (Step 4.8):**
+
+- [ ] `CascorIntegration` removed (all ~1,600 lines)
+- [ ] All `sys.path` manipulation code removed
+- [ ] No direct imports of CasCor modules anywhere in Canopy
+- [ ] `CASCOR_BACKEND_PATH` support removed
 
 ---
 
@@ -1290,7 +1361,7 @@ Document minimum compatible versions in each service's README.
 Create a lightweight integration test repository or script that:
 
 1. Starts JuniperData on port 8100
-2. Starts JuniperCascor on port 8060
+2. Starts JuniperCascor on port 8200
 3. Starts JuniperCanopy on port 8050
 4. Runs end-to-end tests through the full stack
 5. Can be run in CI via docker-compose
@@ -1308,7 +1379,7 @@ services:
 
   juniper-cascor:
     build: ../juniper-cascor
-    ports: ["8060:8060"]
+    ports: ["8200:8200"]
     environment:
       JUNIPER_DATA_URL: http://juniper-data:8100
     depends_on:
@@ -1319,7 +1390,7 @@ services:
     build: ../juniper-canopy
     ports: ["8050:8050"]
     environment:
-      CASCOR_SERVICE_URL: http://juniper-cascor:8060
+      CASCOR_SERVICE_URL: http://juniper-cascor:8200
       JUNIPER_DATA_URL: http://juniper-data:8100
     depends_on:
       juniper-cascor:
@@ -1394,15 +1465,18 @@ Update all documentation across all repositories:
 - [x] Existing CLI (`main.py`) still works (confirmed unchanged)
 - [x] API test suite passing (213 unit + 13 integration tests)
 
-### Phase 3 — Client and Worker Packages (IN PROGRESS — packages created, PyPI pending)
+### Phase 3 — Client and Worker Packages (IN PROGRESS — packages created, CI/CD pushed, PyPI pending)
 
-- [x] `juniper-cascor-client` package created (55 tests pass), GitHub repo created and pushed
-- [x] `juniper-cascor-worker` package created (24 tests pass), GitHub repo created and pushed
-- [x] Both have CI/CD workflow files (ci.yml, publish.yml) — pending push (PAT needs `workflow` scope)
+- [x] `juniper-cascor-client` package created (55 tests pass), GitHub repo created and pushed (3 commits)
+- [x] `juniper-cascor-worker` package created (24 tests pass), GitHub repo created and pushed (2 commits)
+- [x] CI/CD workflow files committed and pushed to both repos (ci.yml + publish.yml)
 - [x] Worker CLI entry point functional (`juniper-cascor-worker` console_scripts entry point)
-- [ ] Push CI/CD workflow commits (requires PAT `workflow` scope)
-- [ ] Publish both to TestPyPI then PyPI (requires `.pypirc` with API tokens)
+- [x] Both packages editable-installed in local conda env
+- [x] README + LICENSE + py.typed in both packages
+- [ ] Verify GitHub Actions runs on both repos (0 runs recorded — may need Actions enabled)
 - [ ] Set up Trusted Publishing on PyPI for both packages
+- [ ] Publish both to TestPyPI (verify install)
+- [ ] Publish both to PyPI (create v0.1.0 GitHub releases)
 
 ### Phase 4 — Decouple Canopy
 
