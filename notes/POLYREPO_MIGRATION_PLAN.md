@@ -587,7 +587,6 @@ See [Appendix A](#appendix-a--cascor-service-api-contract-draft) for the full co
 | `POST`   | `/v1/training/stop`          | Request training stop                       |
 | `POST`   | `/v1/training/pause`         | Pause training                              |
 | `POST`   | `/v1/training/resume`        | Resume training                             |
-
 | `POST`   | `/v1/training/reset`         | Reset training state                        |
 | `GET`    | `/v1/training/status`        | Get current training status                 |
 | `GET`    | `/v1/training/params`        | Get training parameters                     |
