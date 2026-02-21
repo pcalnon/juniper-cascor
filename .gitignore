@@ -179,9 +179,8 @@ results.xml
 **/results.xml
 
 # Test reports and coverage reports
-**/reports/junit/
-**/reports/coverage.xml
-**/reports/htmlcov/
+**/reports/
+**/reports/**
 
 # SERENA Memory Dirs
 .serena
