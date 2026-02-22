@@ -91,6 +91,8 @@ jobs:
 
       - name: Run pre-commit hooks
         env:
+          # Skip local test hooks in CI: they require local conda env.
+          # Coverage is enforced by the dedicated unit-tests job with proper conda setup.
           SKIP: pytest-unit,coverage-gate
         run: |
           echo "╔════════════════════════════════════════════════════════════╗"
