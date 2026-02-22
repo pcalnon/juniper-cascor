@@ -594,6 +594,7 @@ class Logger(logging.getLoggerClass()):
         Logger.debug("Logger: __init__: IMPORTANT: Custom log levels must be defined before configuring Logging using the log config yaml file.")
         if not Logger.is_configured():
             Logger.debug(f"Logger: __init__: Configuring logging using the config dict read from logging config file: {self.log_config_file}")
+            self.logger_configs = None
             try:
                 with open(self.log_config_file, "r") as self.log_conf:
                     self.logger_configs = yaml.safe_load(self.log_conf.read())  # Read logging config yaml and create Config Dict
