@@ -56,6 +56,7 @@ api = [
 ]
 test = [
     "pytest>=6.0",
+    "pytest-asyncio>=0.21.0",
     "pytest-cov",
     "pytest-timeout",
     "pytest-xdist",
