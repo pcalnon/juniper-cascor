@@ -221,9 +221,10 @@ repos:
         name: Security scan source with Bandit
         args:
           - -q
-          - --skip=B101,B311
+          - --skip=B101,B311,B301
           # B101: assert_used (common in tests)
           # B311: random (not used for security)
+          # B301: pickle (intentional use for random state serialization)
         files: ^src/.*\.py$
         exclude: ^src/tests/
 
@@ -237,9 +238,10 @@ repos:
         name: Security scan tests with Bandit (relaxed)
         args:
           - -q
-          - --skip=B101,B311
+          - --skip=B101,B311,B301
           # B101: assert_used (tests use assertions extensively)
           # B311: random (not used for security in tests)
+          # B301: pickle (intentional use for multiprocessing pickling tests)
         files: ^src/tests/.*\.py$
 
   # ═══════════════════════════════════════════════════════════════════════════
@@ -282,16 +284,33 @@ repos:
         types: [yaml]
 
   # ═══════════════════════════════════════════════════════════════════════════
-  # Code Coverage Gate - Unit Tests with Coverage Enforcement
-  # Runs unit tests (excluding slow) and enforces 80% coverage threshold.
+  # Unit Tests with Coverage Data Collection
+  # Runs unit tests (excluding slow) and collects coverage data.
   # Uses system Python (conda JuniperPython env) for torch/numpy dependencies.
   # Coverage config sourced from pyproject.toml [tool.coverage.*] sections.
+  # Skipped in CI via SKIP env var (CI has its own unit-tests job).
   # ═══════════════════════════════════════════════════════════════════════════
   - repo: local
     hooks:
-      - id: pytest-coverage
-        name: Unit tests with coverage gate (80%)
-        entry: bash -c 'cd src && /opt/miniforge3/envs/JuniperPython/bin/python -m pytest -m "unit and not slow" tests/unit -q --tb=short --no-header -p no:warnings --cov=. --cov-config=../pyproject.toml --cov-report=term-missing:skip-covered --cov-fail-under=80'
+      - id: pytest-unit
+        name: Run unit tests with coverage collection
+        entry: bash -c 'cd src && python -m pytest -m "unit and not slow" tests/unit -q --tb=short --no-header -p no:warnings --cov=. --cov-config=../pyproject.toml --cov-report=term-missing:skip-covered'
+        language: system
+        pass_filenames: false
+        always_run: true
+        types: [python]
+        stages: [pre-commit]
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # Code Coverage Gate - Enforces 80% coverage threshold
+  # Runs after pytest-unit to check collected coverage data.
+  # Skipped in CI via SKIP env var (CI has its own coverage gate step).
+  # ═══════════════════════════════════════════════════════════════════════════
+  - repo: local
+    hooks:
+      - id: coverage-gate
+        name: Enforce coverage gate (80%)
+        entry: bash -c 'cd src && python -m coverage report --fail-under=80'
         language: system
         pass_filenames: false
         always_run: true
