@@ -63,6 +63,7 @@ test = [
     "dill>=0.3.6",
     "responses>=0.23.0",
     "httpx>=0.24.0",
+    "psutil>=5.9.0",
 ]
 all = [
     "juniper-cascor[ml,api,test,juniper-data]",
