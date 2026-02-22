@@ -137,14 +137,14 @@ jobs:
           python -m pip install --upgrade pip
           # Install CPU-only PyTorch first (CI doesn't need CUDA)
           pip install torch --index-url https://download.pytorch.org/whl/cpu
-          # Install project with ML and test dependencies
-          pip install ".[ml,test]"
+          # Install project with ML, API, and test dependencies
+          pip install ".[ml,api,test]"
 
       - name: Create required directories
         run: |
           mkdir -p logs src/logs reports/junit reports/htmlcov
 
-      - name: Run Unit Tests with Coverage Gate
+      - name: Run Unit Tests
         run: |
           echo "╔════════════════════════════════════════════════════════════╗"
           echo "║       Juniper Cascor - Unit Tests (Fast Only)              ║"
@@ -160,8 +160,15 @@ jobs:
             --cov=src \
             --cov-report=term-missing \
             --cov-report=xml:reports/coverage.xml \
-            --cov-report=html:reports/htmlcov \
-            --cov-fail-under=${COVERAGE_FAIL_UNDER}
+            --cov-report=html:reports/htmlcov
+
+      - name: Enforce Coverage Gate (80%)
+        run: |
+          echo "╔════════════════════════════════════════════════════════════╗"
+          echo "║       Juniper Cascor - Coverage Gate Enforcement           ║"
+          echo "╚════════════════════════════════════════════════════════════╝"
+
+          python -m coverage report --fail-under=${COVERAGE_FAIL_UNDER}
 
       - name: Upload Coverage Artifacts
         uses: actions/upload-artifact@v4
@@ -206,7 +213,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install torch --index-url https://download.pytorch.org/whl/cpu
-          pip install ".[ml,test]"
+          pip install ".[ml,api,test]"
 
       - name: Create required directories
         run: |
@@ -260,7 +267,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install torch --index-url https://download.pytorch.org/whl/cpu
-          pip install ".[ml,test]"
+          pip install ".[ml,api,test]"
 
       - name: Create required directories
         run: |
