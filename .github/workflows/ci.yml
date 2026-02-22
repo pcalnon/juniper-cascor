@@ -158,7 +158,8 @@ jobs:
           echo "║       Python ${{ matrix.python-version }}                                        ║"
           echo "╚════════════════════════════════════════════════════════════╝"
           # MED-009: Create environment with specific Python version from matrix
-          mamba create -y -n "${ENV_NAME}" python=${{ matrix.python-version }} --file conf/conda_environment.yaml
+          # Use conda (not mamba) for explicit spec files — mamba misinterprets .yaml extension
+          conda create -y -n "${ENV_NAME}" python=${{ matrix.python-version }} --file conf/conda_environment.yaml
           conda activate "${ENV_NAME}"
           python --version
           pip --version
@@ -274,7 +275,8 @@ jobs:
         shell: bash -l {0}
         run: |
           set -euxo pipefail
-          mamba create -y -n "${ENV_NAME}" --file conf/conda_environment.yaml
+          # Use conda (not mamba) for explicit spec files — mamba misinterprets .yaml extension
+          conda create -y -n "${ENV_NAME}" --file conf/conda_environment.yaml
           conda activate "${ENV_NAME}"
           pip install pytest pytest-timeout dill>=0.3.6
 
@@ -355,7 +357,8 @@ jobs:
         shell: bash -l {0}
         run: |
           set -euxo pipefail
-          mamba create -y -n "${ENV_NAME}" --file conf/conda_environment.yaml
+          # Use conda (not mamba) for explicit spec files — mamba misinterprets .yaml extension
+          conda create -y -n "${ENV_NAME}" --file conf/conda_environment.yaml
           conda activate "${ENV_NAME}"
           pip install pytest pytest-timeout pytest-xdist dill>=0.3.6
 
