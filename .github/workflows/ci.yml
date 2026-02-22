@@ -105,6 +105,7 @@ jobs:
   # ═══════════════════════════════════════════════════════════════════════════════════════════════
   # Unit Tests: Run unit tests with coverage enforcement
   # MED-009: Added Python version matrix for multi-version testing
+  # Migrated from conda to pip for CI portability (polyrepo Phase 5)
   # ═══════════════════════════════════════════════════════════════════════════════════════════════
   unit-tests:
     name: Unit Tests + Coverage (Python ${{ matrix.python-version }})
@@ -121,72 +122,34 @@ jobs:
         with:
           fetch-depth: 1
 
-      - name: Set up Miniforge (mamba)
-        uses: conda-incubator/setup-miniconda@v3
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
         with:
-          miniforge-version: latest
-          use-mamba: true
-          auto-activate-base: false
+          python-version: ${{ matrix.python-version }}
+          cache: pip
 
-      - name: Cache conda packages
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/miniforge3/pkgs
-            ~/miniconda3/pkgs
-            ~/.conda/pkgs
-          key: conda-pkgs-${{ runner.os }}-py${{ matrix.python-version }}-${{ hashFiles('conf/conda_environment.yaml') }}
-          restore-keys: |
-            conda-pkgs-${{ runner.os }}-py${{ matrix.python-version }}-
-            conda-pkgs-${{ runner.os }}-
-
-      - name: Cache pip packages
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/pip
-          key: pip-${{ runner.os }}-py${{ matrix.python-version }}-${{ hashFiles('pyproject.toml') }}
-          restore-keys: |
-            pip-${{ runner.os }}-py${{ matrix.python-version }}-
-            pip-${{ runner.os }}-
-
-      - name: Create conda environment (from explicit spec)
-        shell: bash -l {0}
+      - name: Install dependencies
         run: |
-          set -euxo pipefail
           echo "╔════════════════════════════════════════════════════════════╗"
-          echo "║       Juniper Cascor - Create Conda Environment            ║"
+          echo "║       Juniper Cascor - Install Dependencies                ║"
           echo "║       Python ${{ matrix.python-version }}                                        ║"
           echo "╚════════════════════════════════════════════════════════════╝"
-          # MED-009: Create environment with specific Python version from matrix
-          # Use conda (not mamba) for explicit spec files — mamba misinterprets .yaml extension
-          conda create -y -n "${ENV_NAME}" python=${{ matrix.python-version }} --file conf/conda_environment.yaml
-          conda activate "${ENV_NAME}"
-          python --version
-          pip --version
-
-      - name: Install test dependencies
-        shell: bash -l {0}
-        run: |
-          set -euxo pipefail
-          conda activate "${ENV_NAME}"
-          pip install pytest pytest-cov pytest-timeout pytest-xdist coverage[toml] dill>=0.3.6
+          python -m pip install --upgrade pip
+          # Install CPU-only PyTorch first (CI doesn't need CUDA)
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
+          # Install project with ML and test dependencies
+          pip install ".[ml,test]"
 
       - name: Create required directories
         run: |
           mkdir -p logs src/logs reports/junit reports/htmlcov
 
-      - name: Run Unit Tests
-        shell: bash -l {0}
+      - name: Run Unit Tests with Coverage Gate
         run: |
-          set -euxo pipefail
-          conda activate "${ENV_NAME}"
-
           echo "╔════════════════════════════════════════════════════════════╗"
           echo "║       Juniper Cascor - Unit Tests (Fast Only)              ║"
           echo "╚════════════════════════════════════════════════════════════╝"
 
-          # CASCOR-TIMEOUT-001: Exclude slow tests from default CI run
-          # MED-001: Expanded coverage to all src directories
           python -m pytest \
             -m "unit and not slow" \
             src/tests/unit \
@@ -197,20 +160,8 @@ jobs:
             --cov=src \
             --cov-report=term-missing \
             --cov-report=xml:reports/coverage.xml \
-            --cov-report=html:reports/htmlcov
-
-      - name: Enforce Coverage Gate (80%)
-        shell: bash -l {0}
-        run: |
-          set -euxo pipefail
-          conda activate "${ENV_NAME}"
-
-          echo "╔════════════════════════════════════════════════════════════╗"
-          echo "║       Juniper Cascor - Coverage Gate                       ║"
-          echo "╚════════════════════════════════════════════════════════════╝"
-
-          cd src
-          python -m coverage report --fail-under=${COVERAGE_FAIL_UNDER}
+            --cov-report=html:reports/htmlcov \
+            --cov-fail-under=${COVERAGE_FAIL_UNDER}
 
       - name: Upload Coverage Artifacts
         uses: actions/upload-artifact@v4
@@ -232,12 +183,12 @@ jobs:
 
   # ═══════════════════════════════════════════════════════════════════════════════════════════════
   # Quick Integration Tests: Run on all branches (MED-010)
+  # Migrated from conda to pip for CI portability (polyrepo Phase 5)
   # ═══════════════════════════════════════════════════════════════════════════════════════════════
   quick-integration-tests:
     name: Quick Integration Tests
     runs-on: ubuntu-latest
     needs: [unit-tests]
-    # Always run quick integration tests on all branches
 
     steps:
       - name: Checkout Code
@@ -245,57 +196,28 @@ jobs:
         with:
           fetch-depth: 1
 
-      - name: Set up Miniforge (mamba)
-        uses: conda-incubator/setup-miniconda@v3
+      - name: Set up Python ${{ env.PYTHON_TEST_VERSION }}
+        uses: actions/setup-python@v5
         with:
-          miniforge-version: latest
-          use-mamba: true
-          auto-activate-base: false
+          python-version: ${{ env.PYTHON_TEST_VERSION }}
+          cache: pip
 
-      - name: Cache conda packages
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/miniforge3/pkgs
-            ~/miniconda3/pkgs
-            ~/.conda/pkgs
-          key: conda-pkgs-${{ runner.os }}-${{ hashFiles('conf/conda_environment.yaml') }}
-          restore-keys: |
-            conda-pkgs-${{ runner.os }}-
-
-      - name: Cache pip packages
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/pip
-          key: pip-${{ runner.os }}-${{ hashFiles('pyproject.toml') }}
-          restore-keys: |
-            pip-${{ runner.os }}-
-
-      - name: Create conda environment (from explicit spec)
-        shell: bash -l {0}
+      - name: Install dependencies
         run: |
-          set -euxo pipefail
-          # Use conda (not mamba) for explicit spec files — mamba misinterprets .yaml extension
-          conda create -y -n "${ENV_NAME}" --file conf/conda_environment.yaml
-          conda activate "${ENV_NAME}"
-          pip install pytest pytest-timeout dill>=0.3.6
+          python -m pip install --upgrade pip
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
+          pip install ".[ml,test]"
 
       - name: Create required directories
         run: |
           mkdir -p logs src/logs reports/junit
 
       - name: Run Quick Integration Tests
-        shell: bash -l {0}
         run: |
-          set -euxo pipefail
-          conda activate "${ENV_NAME}"
-
           echo "╔════════════════════════════════════════════════════════════╗"
           echo "║       Juniper Cascor - Quick Integration Tests             ║"
           echo "╚════════════════════════════════════════════════════════════╝"
 
-          # MED-010: Run quick integration smoke tests on all branches
-          # Stricter limits: 60s timeout, fail after 2 failures
           python -m pytest \
             -m "integration and not slow" \
             src/tests/integration \
@@ -314,6 +236,7 @@ jobs:
 
   # ═══════════════════════════════════════════════════════════════════════════════════════════════
   # Full Integration Tests: Run integration tests (PRs and main/develop pushes only)
+  # Migrated from conda to pip for CI portability (polyrepo Phase 5)
   # ═══════════════════════════════════════════════════════════════════════════════════════════════
   integration-tests:
     name: Full Integration Tests
@@ -327,56 +250,28 @@ jobs:
         with:
           fetch-depth: 1
 
-      - name: Set up Miniforge (mamba)
-        uses: conda-incubator/setup-miniconda@v3
+      - name: Set up Python ${{ env.PYTHON_TEST_VERSION }}
+        uses: actions/setup-python@v5
         with:
-          miniforge-version: latest
-          use-mamba: true
-          auto-activate-base: false
+          python-version: ${{ env.PYTHON_TEST_VERSION }}
+          cache: pip
 
-      - name: Cache conda packages
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/miniforge3/pkgs
-            ~/miniconda3/pkgs
-            ~/.conda/pkgs
-          key: conda-pkgs-${{ runner.os }}-${{ hashFiles('conf/conda_environment.yaml') }}
-          restore-keys: |
-            conda-pkgs-${{ runner.os }}-
-
-      - name: Cache pip packages
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/pip
-          key: pip-${{ runner.os }}-${{ hashFiles('pyproject.toml') }}
-          restore-keys: |
-            pip-${{ runner.os }}-
-
-      - name: Create conda environment (from explicit spec)
-        shell: bash -l {0}
+      - name: Install dependencies
         run: |
-          set -euxo pipefail
-          # Use conda (not mamba) for explicit spec files — mamba misinterprets .yaml extension
-          conda create -y -n "${ENV_NAME}" --file conf/conda_environment.yaml
-          conda activate "${ENV_NAME}"
-          pip install pytest pytest-timeout pytest-xdist dill>=0.3.6
+          python -m pip install --upgrade pip
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
+          pip install ".[ml,test]"
 
       - name: Create required directories
         run: |
           mkdir -p logs src/logs reports/junit
 
       - name: Run Integration Tests (Fast Only)
-        shell: bash -l {0}
         run: |
-          set -euxo pipefail
-          conda activate "${ENV_NAME}"
-
           echo "╔════════════════════════════════════════════════════════════╗"
           echo "║       Juniper Cascor - Integration Tests (Fast Only)       ║"
           echo "╚════════════════════════════════════════════════════════════╝"
 
-          # CASCOR-TIMEOUT-001: Exclude slow tests from integration CI run
           python -m pytest \
             -m "integration and not slow" \
             src/tests/integration \

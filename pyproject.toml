@@ -40,6 +40,12 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+ml = [
+    "torch>=2.0.0",
+    "h5py>=3.0.0",
+    "matplotlib>=3.5.0",
+    "PyYAML>=6.0",
+]
 juniper-data = [
     "juniper-data-client>=0.3.0",
 ]
@@ -57,6 +63,9 @@ test = [
     "dill>=0.3.6",
     "responses>=0.23.0",
     "httpx>=0.24.0",
+]
+all = [
+    "juniper-cascor[ml,api,test,juniper-data]",
 ]
 
 [tool.black]
