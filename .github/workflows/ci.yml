@@ -137,8 +137,9 @@ jobs:
           python -m pip install --upgrade pip
           # Install CPU-only PyTorch first (CI doesn't need CUDA)
           pip install torch --index-url https://download.pytorch.org/whl/cpu
-          # Install project with ML, API, and test dependencies
-          pip install ".[ml,api,test]"
+          # Install project deps via editable install to keep source-tree
+          # path resolution intact (constants resolve config paths via __file__)
+          pip install -e ".[ml,api,test]"
 
       - name: Create required directories
         run: |
@@ -213,7 +214,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install torch --index-url https://download.pytorch.org/whl/cpu
-          pip install ".[ml,api,test]"
+          pip install -e ".[ml,api,test]"
 
       - name: Create required directories
         run: |
@@ -267,7 +268,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install torch --index-url https://download.pytorch.org/whl/cpu
-          pip install ".[ml,api,test]"
+          pip install -e ".[ml,api,test]"
 
       - name: Create required directories
         run: |
