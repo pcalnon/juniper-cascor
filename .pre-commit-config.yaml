@@ -179,6 +179,16 @@ repos:
   # Phase 3 TODO: Enable return, assignment (2-6 violations, need code fixes)
   # Phase 4 TODO: Enable arg-type, var-annotated, has-type (8-11 violations, need code fixes)
   # Phase 5 TODO: Enable attr-defined, return-value (major refactoring needed)
+  #
+  # Directory coverage (CI_PIPELINE_DEVELOPMENT_PLAN.md Phase 3):
+  #   Covered: cascade_correlation, candidate_unit, spiral_problem, snapshots,
+  #            api (0 errors), cascor_constants (0 errors), remote_client (0 errors)
+  #   Pending (1 error each, need type annotation fixes):
+  #     - utils: valid-type in utils.py:197 ([str] -> list[str])
+  #     - cascor_plotter: valid-type in cascor_plotter.py:252 (plt module as type)
+  #     - profiling: operator in memory.py:170 (None subtraction)
+  #   Deferred (26 errors, major refactoring):
+  #     - log_config: valid-type, misc, operator, call-arg across logger.py
   # ═══════════════════════════════════════════════════════════════════════════
   - repo: https://github.com/pre-commit/mirrors-mypy
     rev: v1.13.0
@@ -203,7 +213,7 @@ repos:
           - --disable-error-code=str-bytes-safe
           - --disable-error-code=call-overload
           - --disable-error-code=return
-        files: ^src/(cascade_correlation|candidate_unit|spiral_problem|snapshots)/
+        files: ^src/(cascade_correlation|candidate_unit|spiral_problem|snapshots|api|cascor_constants|remote_client)/
         exclude: ^src/tests/
         additional_dependencies:
           - types-PyYAML

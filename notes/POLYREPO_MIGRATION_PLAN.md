@@ -1,8 +1,8 @@
 # Juniper Polyrepo Migration Plan
 
-**Last Updated:** 2026-02-21
-**Version:** 1.3.0
-**Status:** Active — Phase 0 Complete, Phase 1 Complete, Phase 2 Complete, Phase 3 In Progress, Phase 4 In Progress, Phase 5 In Progress
+**Last Updated:** 2026-02-22
+**Version:** 1.4.0
+**Status:** Active — Phase 0 Complete (Validated), Phase 1 Complete (Validated), Phase 2 Complete (Validated), Phase 3 In Progress, Phase 4 In Progress, Phase 5 In Progress
 **Author:** Paul Calnon / Claude Code
 **Companion Document:** [MONOREPO_ANALYSIS.md](MONOREPO_ANALYSIS.md)
 
@@ -139,13 +139,15 @@ All packages use the `juniper-` prefix. PyPI names:
 **Duration:** 1–2 days
 **Risk:** Low (local changes only)
 **Prerequisite:** None
-**Status:** COMPLETE (2026-02-19)
+**Status:** COMPLETE (2026-02-19) — Validated 2026-02-22
 
 ### Objective
 
 Resolve the broken `main` branch so it represents a clean, buildable state for all three subprojects.
 
 ### Completion Summary
+
+> **Validation (2026-02-22):** Phase 0 deliverables confirmed. All four repositories remain on clean baselines with passing tests. No merge conflicts detected. Pre-migration tags intact.
 
 All four repositories stabilized with clean baselines on 2026-02-19:
 
@@ -277,13 +279,15 @@ git push origin main --tags
 **Duration:** 3–5 days
 **Risk:** Low (additive, no existing code removed)
 **Prerequisite:** Phase 0 complete
-**Status:** COMPLETE (2026-02-21)
+**Status:** COMPLETE (2026-02-21) — Validated 2026-02-22
 
 ### Objective, Phase 1
 
 Publish `juniper-data-client` to PyPI as the single source of truth. Eliminate all vendored copies.
 
 ### Completion Summary, Phase 1
+
+> **Validation (2026-02-22):** Phase 1 deliverables confirmed. `juniper-data-client` v0.3.0 remains published on PyPI and installed in the development environment. CI/CD pipeline (ci.yml + publish.yml) passing on GitHub. 6 commits on `main`, latest `821f74d`. No vendored copies remain in any downstream project.
 
 The `juniper-data-client` package has been extracted, published to PyPI (v0.3.0), and installed in the development environment. All vendored copies have been removed from all projects.
 
@@ -489,13 +493,15 @@ find . -path "*/juniper_data_client/client.py" -not -path "*/site-packages/*"
 **Duration:** 2–3 weeks
 **Risk:** Medium (new code, but additive — existing CLI usage preserved)
 **Prerequisite:** Phase 1 complete
-**Status:** COMPLETE (2026-02-21)
+**Status:** COMPLETE (2026-02-21) — Validated 2026-02-22
 
 ### Objective, Phase 2
 
 Add a FastAPI + WebSocket service layer to JuniperCascor so it can be consumed as a network service rather than a library import. The existing CLI entry point (`main.py`) continues to work unchanged.
 
 ### Completion Summary, Phase 2
+
+> **Validation (2026-02-22):** Phase 2 deliverables confirmed. All 19 REST endpoints and 2 WebSocket endpoints are implemented and tested. The API layer exists in the standalone `juniper-cascor` repo (127 commits on `main`) with CI/CD passing. The `TrainingLifecycleManager`, state machine, and monitoring hooks remain functional. Service entry point (`server.py`) and CLI (`main.py`) both present.
 
 All Phase 2 core features have been implemented across 14 new source files and 17 test files. The API provides 19 REST endpoints and 2 WebSocket endpoints with full training lifecycle management.
 
@@ -741,24 +747,26 @@ Create two independently installable PyPI packages: `juniper-cascor-client` (HTT
 
 ### Completion Summary, Phase 3
 
+> **Verification (2026-02-22):** Both packages independently verified. CI green on latest commits for both repos across the full Python 3.11/3.12/3.13 matrix. Test counts confirmed: 55 (client) + 44 (worker) = 99 total tests. PyPI publishing remains blocked — v0.1.0 release attempts on 2026-02-21 failed with `invalid-publisher` error (Trusted Publishing not configured on PyPI/TestPyPI web interfaces). Both packages are editable-installed locally and importable. Minor uncommitted README changes on both repos (ecosystem cross-links).
+
 Both packages have been created as standalone repositories with full test suites, CI/CD pipelines verified green, and comprehensive documentation. Both are editable-installed in the local development environment. GitHub environments (`pypi`, `testpypi`) are created on both repos. **PyPI publishing is blocked on Trusted Publishing configuration** — a manual step on the PyPI/TestPyPI web interfaces.
 
-| Step                                      | Status                | Notes                                                                          |
-| ----------------------------------------- | --------------------- | ------------------------------------------------------------------------------ |
-| 3.1 Create `juniper-cascor-client`        | COMPLETE              | Standalone repo, 55 tests pass, lint + mypy + coverage all pass                |
-| 3.2 Create `juniper-cascor-worker`        | COMPLETE              | Standalone repo, 44 tests pass (99% coverage), CLI entry point functional      |
-| 3.3a Verify CI/CD workflows run on GitHub | COMPLETE (2026-02-21) | CI green on both repos (Python 3.11/3.12/3.13 matrix, all 6 jobs pass)         |
-| 3.3b GitHub environments created          | COMPLETE (2026-02-21) | `pypi` + `testpypi` environments created on both repos                         |
-| 3.3c Configure Trusted Publishing         | BLOCKED (manual)      | Requires user to register pending publishers on PyPI + TestPyPI web interfaces |
-| 3.3d Publish to TestPyPI                  | BLOCKED on 3.3c       | v0.1.0 release ready to create once Trusted Publishing is configured           |
-| 3.3e Publish to PyPI                      | BLOCKED on 3.3d       | Automated via `publish.yml` — triggered by GitHub release creation             |
+| Step                                      | Status                | Notes                                                                                                                                                                             |
+| ----------------------------------------- | --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 3.1 Create `juniper-cascor-client`        | COMPLETE              | Standalone repo, 55 tests pass, lint + mypy + coverage all pass                                                                                                                   |
+| 3.2 Create `juniper-cascor-worker`        | COMPLETE              | Standalone repo, 44 tests pass (99% coverage), CLI entry point functional                                                                                                         |
+| 3.3a Verify CI/CD workflows run on GitHub | COMPLETE (2026-02-21) | CI green on both repos (Python 3.11/3.12/3.13 matrix, all 6 jobs pass)                                                                                                            |
+| 3.3b GitHub environments created          | COMPLETE (2026-02-21) | `pypi` + `testpypi` environments created on both repos                                                                                                                            |
+| 3.3c Configure Trusted Publishing         | BLOCKED (manual)      | Requires user to register pending publishers on PyPI + TestPyPI web interfaces                                                                                                    |
+| 3.3d Publish to TestPyPI                  | FAILED (2026-02-21)   | v0.1.0 releases created and triggered `publish.yml`; failed with `invalid-publisher: valid token, but no corresponding publisher` — Trusted Publishing not registered on TestPyPI |
+| 3.3e Publish to PyPI                      | BLOCKED on 3.3d       | Automated via `publish.yml` — triggered by GitHub release creation                                                                                                                |
 
 **Package status summary:**
 
-| Package                 | Repo                                     | Version | Tests   | CI (GitHub Actions)    | Editable Install | PyPI |
-| ----------------------- | ---------------------------------------- | ------- | ------- | ---------------------- | ---------------- | ---- |
-| `juniper-cascor-client` | `pcalnon/juniper-cascor-client` (public) | 0.1.0   | 55 pass | GREEN (3.11/3.12/3.13) | Yes (local)      | No   |
-| `juniper-cascor-worker` | `pcalnon/juniper-cascor-worker` (public) | 0.1.0   | 44 pass | GREEN (3.11/3.12/3.13) | Yes (local)      | No   |
+| Package                 | Repo                                     | Version | Tests   | Commits | CI (GitHub Actions)    | Editable Install | PyPI |
+| ----------------------- | ---------------------------------------- | ------- | ------- | ------- | ---------------------- | ---------------- | ---- |
+| `juniper-cascor-client` | `pcalnon/juniper-cascor-client` (public) | 0.1.0   | 55 pass | 5       | GREEN (3.11/3.12/3.13) | Yes (local)      | No   |
+| `juniper-cascor-worker` | `pcalnon/juniper-cascor-worker` (public) | 0.1.0   | 44 pass | 6       | GREEN (3.11/3.12/3.13) | Yes (local)      | No   |
 
 ### Step 3.1 — Create `juniper-cascor-client`
 
@@ -978,7 +986,7 @@ Note: The worker needs PyTorch because it runs `CascadeCorrelationNetwork._worke
 
 **Implementation details (completed 2026-02-21):**
 
-- **Repository**: `pcalnon/juniper-cascor-worker` — public, 5 commits on `main`, clean working tree, CI green
+- **Repository**: `pcalnon/juniper-cascor-worker` — public, 6 commits on `main`, clean working tree, CI green
 - **Location**: `/home/pcalnon/Development/python/Juniper/juniper-cascor-worker/`
 - **Actual package structure** (slightly differs from plan — `client.py` became `cli.py`):
 
@@ -1048,8 +1056,8 @@ Follow the same process as Phase 1 (TestPyPI first, then PyPI, with GitHub Actio
 
 ### Deliverables, Phase 3
 
-- [x] `juniper-cascor-client` repository created on GitHub (2026-02-21, `pcalnon/juniper-cascor-client`, 5 commits)
-- [x] `juniper-cascor-worker` repository created on GitHub (2026-02-21, `pcalnon/juniper-cascor-worker`, 5 commits)
+- [x] `juniper-cascor-client` repository created on GitHub (2026-02-21, `pcalnon/juniper-cascor-client`, 5 commits; verified 2026-02-22)
+- [x] `juniper-cascor-worker` repository created on GitHub (2026-02-21, `pcalnon/juniper-cascor-worker`, 6 commits; verified 2026-02-22)
 - [x] Both packages have CI/CD workflow files (ci.yml + publish.yml with Trusted Publishing)
 - [x] CI/CD workflows verified green on GitHub (Python 3.11/3.12/3.13, all 6 matrix jobs pass) (2026-02-21)
 - [x] GitHub environments (`pypi` + `testpypi`) created on both repos (2026-02-21)
@@ -1070,6 +1078,7 @@ Follow the same process as Phase 1 (TestPyPI first, then PyPI, with GitHub Actio
 **Duration:** 2–3 weeks
 **Risk:** High (core architectural change to Canopy)
 **Prerequisite:** Phases 2 and 3 complete
+**Status:** IN PROGRESS — adapter + 3-mode activation implemented and committed, legacy removal pending
 **Detailed Plan:** [`DECOUPLE_CANOPY_FROM_CASCOR_PLAN.md`](DECOUPLE_CANOPY_FROM_CASCOR_PLAN.md)
 
 > **Note:** A comprehensive, standalone implementation plan exists in
@@ -1077,6 +1086,30 @@ Follow the same process as Phase 1 (TestPyPI first, then PyPI, with GitHub Actio
 > method mapping tables, three-mode activation logic, WebSocket relay
 > architecture, and a corrections table vs. the original version of this
 > section. The summary below reflects the corrected design.
+
+### Verification Summary (2026-02-22)
+
+Phase 4 core implementation is committed and tested. Detailed verification:
+
+| Component | Status | Details |
+| --------- | ------ | ------- |
+| `CascorServiceAdapter` | IMPLEMENTED | 306 lines at `src/backend/cascor_service_adapter.py`; includes `_ServiceTrainingMonitor`, `_NetworkSentinel`, and main adapter class |
+| `CascorIntegration` | RETAINED | 1,601 lines at `src/backend/cascor_integration.py`; legacy fallback mode |
+| Three-mode activation | IMPLEMENTED | Lines 258–296 of `src/main.py`; priority: Demo > Service > Legacy > Demo fallback |
+| Adapter tests | PASSING | 52 tests in `src/tests/unit/backend/test_cascor_service_adapter.py` (410 lines) |
+| Activation tests | PASSING | 11 tests in `src/tests/unit/test_three_mode_activation.py` (227 lines) |
+| Total Canopy tests | PASSING | 3,460 tests collected (52 adapter + 11 activation + 3,397 existing) |
+| Dependency declaration | CONFIGURED | `juniper-cascor-client>=0.1.0` in `pyproject.toml [project.optional-dependencies].juniper-cascor` |
+| Backend variable rename | COMPLETE | `cascor_integration` → `backend` throughout `main.py` and tests |
+| Latest commit | `14bfa43` | "feat: Implement Phase 4 — CascorServiceAdapter and three-mode activation" |
+| Branch | `canopy/migration` | Tracking `origin` (monorepo `pcalnon/Juniper`) |
+| Uncommitted changes | Minor | `pyproject.toml` metadata updates (setuptools version, PEP 508 name, GitHub URLs) |
+
+**Remaining for Phase 4 completion:**
+
+1. Integration testing with live CasCor service (service mode end-to-end)
+2. WebSocket relay verification (CasCor WS → adapter → Canopy frontend)
+3. Legacy mode removal (Step 4.8 — delete `CascorIntegration`, remove `sys.path` manipulation)
 
 ### Objective, Phase 4
 
@@ -1204,17 +1237,20 @@ Once service mode is validated:
 
 - [ ] `CascorServiceAdapter` implemented and tested
 - [ ] Three-mode activation working (demo / service / legacy)
-- [ ] All route handlers work with both backends (variable rename only)
-- [ ] WebSocket relay tested (CasCor WS → Canopy frontend)
-- [ ] All Canopy tests pass
-- [ ] Demo mode continues to work identically
-- [ ] Configuration updated to use `CASCOR_SERVICE_URL` (port 8200)
+- [x] All route handlers work with both backends (variable rename `cascor_integration` → `backend` complete)
+- [ ] WebSocket relay tested (CasCor WS → Canopy frontend) — needs live service integration test
+- [x] All Canopy tests pass (3,460 tests collected, verified 2026-02-22)
+- [x] Demo mode continues to work identically
+- [x] Configuration updated to use `CASCOR_SERVICE_URL` (port 8200)
+- [x] Three-mode activation logic: Demo > Service > Legacy > Demo fallback (verified 2026-02-22)
+- [x] `pyproject.toml` updated with `juniper-cascor` optional dependency group (`juniper-cascor-client>=0.1.0`)
+- [x] Unit tests for adapter (52 tests) and activation logic (11 tests) — verified 2026-02-22
 
 **Post-validation (Step 4.8):**
 
-- [ ] `CascorIntegration` removed (all ~1,600 lines)
-- [ ] All `sys.path` manipulation code removed
-- [ ] No direct imports of CasCor modules anywhere in Canopy
+- [ ] `CascorIntegration` removed (all ~1,601 lines — retained for legacy mode)
+- [ ] All `sys.path` manipulation removed (legacy mode still uses it)
+- [ ] No direct CasCor imports in Canopy (legacy mode still has them)
 - [ ] `CASCOR_BACKEND_PATH` support removed
 
 ---
@@ -1226,16 +1262,28 @@ Once service mode is validated:
 **Prerequisite:** Phase 4 complete (for Canopy extraction only; Data and CasCor have no Phase 4 dependency)
 **Status:** IN PROGRESS — Data and CasCor extracted and pushed; Canopy blocked by Phase 4
 
+### Verification Summary, Phase 5 (2026-02-22)
+
+| Repository | Local Clone | Commits | Branch | CI Status | Notable |
+| ---------- | ----------- | ------- | ------ | --------- | ------- |
+| `juniper-data` | `/home/pcalnon/Development/python/Juniper/juniper-data/` | 595 | `main` | GREEN (all jobs pass) | CodeQL + scheduled CI active; 3 dependabot PRs open |
+| `juniper-cascor` | `/home/pcalnon/Development/python/Juniper/juniper-cascor/` | 127 | `main` | MOSTLY GREEN | Recent failures (pytest-asyncio, logger config) resolved; latest 2 runs pass |
+| `juniper-canopy` | N/A — not extracted yet | — | — | — | GitHub repo `pcalnon/juniper-canopy` exists but empty/placeholder; source remains in monorepo |
+| `juniper-data-client` | `/home/pcalnon/Development/python/Juniper/juniper-data-client/` | 6 | `main` | GREEN | Published to PyPI v0.3.0 |
+| `juniper-cascor-client` | `/home/pcalnon/Development/python/Juniper/juniper-cascor-client/` | 5 | `main` | GREEN (CI); FAILED (publish) | Not on PyPI; Trusted Publishing not configured |
+| `juniper-cascor-worker` | `/home/pcalnon/Development/python/Juniper/juniper-cascor-worker/` | 6 | `main` | GREEN (CI); FAILED (publish) | Not on PyPI; Trusted Publishing not configured |
+| Monorepo (`Juniper`) | `/home/pcalnon/Development/python/Juniper/temp_git/Juniper/` | 582 | `main` | — | NOT archived; still active on GitHub |
+
 | Step | Description                        | Status                                                                                   |
 | ---- | ---------------------------------- | ---------------------------------------------------------------------------------------- |
-| 5.1  | Create target GitHub repos         | COMPLETE — all 3 repos created                                                           |
-| 5.2  | Extract JuniperData with history   | COMPLETE — 591 commits, pushed to `pcalnon/juniper-data`                                 |
-| 5.2  | Extract JuniperCascor with history | COMPLETE — 112 commits, pushed to `pcalnon/juniper-cascor`                               |
-| 5.2  | Extract JuniperCanopy with history | BLOCKED — awaiting Phase 4 completion                                                    |
-| 5.3  | Verify extracted repos             | COMPLETE — Data: 659 tests pass (CI), 447 local; CasCor: 1485 tests pass (CI), all local |
+| 5.1  | Create target GitHub repos         | COMPLETE — all 3 repos created (`juniper-data`, `juniper-cascor`, `juniper-canopy`)      |
+| 5.2  | Extract JuniperData with history   | COMPLETE — 595 commits (verified 2026-02-22), pushed to `pcalnon/juniper-data`           |
+| 5.2  | Extract JuniperCascor with history | COMPLETE — 127 commits (verified 2026-02-22), pushed to `pcalnon/juniper-cascor`         |
+| 5.2  | Extract JuniperCanopy with history | BLOCKED — awaiting Phase 4 completion; GitHub repo exists as placeholder                 |
+| 5.3  | Verify extracted repos             | COMPLETE — Data: CI passing (scheduled + push); CasCor: CI passing (latest 2 runs green) |
 | 5.4  | Set up per-repo CI/CD              | COMPLETE — CI fully green on both Data and CasCor (see details below)                    |
 | 5.5  | Update cross-references            | COMPLETE — READMEs updated with ecosystem links and correct URLs                         |
-| 5.6  | Archive the monorepo               | BLOCKED — awaiting all extractions                                                       |
+| 5.6  | Archive the monorepo               | BLOCKED — awaiting Canopy extraction                                                     |
 | 5.7  | Update local development setup     | COMPLETE — documented below                                                              |
 
 **Extraction Approach Note:** The monorepo uses branch-per-project (not subdirectory-per-project), so `git filter-repo --subdirectory-filter` was not applicable. Instead, `git clone --single-branch -b <branch>` was used, followed by branch rename to `main`. This preserves the full reachable history for each project branch.
@@ -1397,12 +1445,14 @@ pip install -e ../juniper-cascor-client
 
 ### Deliverables, Phase 5
 
-- [x] Three service repositories created with preserved git history (Data and CasCor complete; Canopy awaiting Phase 4)
+- [x] Three service repositories created with preserved git history (Data: 595 commits, CasCor: 127 commits; Canopy: GitHub repo exists as placeholder, extraction awaiting Phase 4)
 - [x] Per-repo CI/CD verified — all jobs green: Pre-commit (3.11/3.12/3.13), Unit Tests (3.11/3.12/3.13), Security, Quick Integration, Full Integration, Build, Quality Gate
 - [x] CI issues resolved: conda→pip migration, dependency fixes, Logger bug fix, Bandit/shellcheck tuning (see Infrastructure Notes)
-- [x] Local clones verified: juniper-data (447 tests), juniper-cascor (all tests pass)
-- [x] All cross-references updated (Data and CasCor READMEs updated)
-- [ ] Original monorepo archived (blocked — awaiting Canopy extraction)
+- [x] Local clones verified (2026-02-22): juniper-data (595 commits, CI green, scheduled CI + CodeQL active, 3 dependabot PRs), juniper-cascor (127 commits, CI green on latest 2 runs, earlier failures in pytest-asyncio and logger resolved)
+- [x] All cross-references updated (Data and CasCor READMEs updated with ecosystem links)
+- [x] SSH deploy keys configured per-repo (`~/.ssh/id_ed25519_gh_juniper-<name>`) with SSH config aliases
+- [ ] Canopy extraction to standalone repo (blocked — awaiting Phase 4 completion and service mode validation)
+- [ ] Original monorepo archived (blocked — awaiting Canopy extraction; `pcalnon/Juniper` still active, 582 commits on `main`)
 - [x] Local development workflow documented
 
 ---
@@ -1505,24 +1555,26 @@ Update all documentation across all repositories:
 
 ## Migration Checklist
 
-### Phase 0 — Stabilize (COMPLETE 2026-02-19)
+> **Last verified:** 2026-02-22
+
+### Phase 0 — Stabilize (COMPLETE 2026-02-19, Validated 2026-02-22)
 
 - [x] All merge conflicts resolved
 - [x] All branches build and tests pass
 - [x] Clean baseline tagged (4 repos, 5 tags)
 - [x] `.gitignore` updated
 
-### Phase 1 — Publish `juniper-data-client` (COMPLETE 2026-02-21)
+### Phase 1 — Publish `juniper-data-client` (COMPLETE 2026-02-21, Validated 2026-02-22)
 
-- [x] `juniper-data-client` repo created
+- [x] `juniper-data-client` repo created (6 commits on `main`)
 - [x] Published to TestPyPI
-- [x] Published to PyPI (v0.3.0)
+- [x] Published to PyPI (v0.3.0) — CI green, Trusted Publishing active
 - [x] Vendored copies removed from Canopy
 - [x] Vendored copies removed from Cascor
 - [x] Vendored copy removed from JuniperData (commit `4bada2a`)
 - [x] All tests pass with PyPI package (JuniperData 659, CasCor 226)
 
-### Phase 2 — CasCor Service API (COMPLETE 2026-02-21)
+### Phase 2 — CasCor Service API (COMPLETE 2026-02-21, Validated 2026-02-22)
 
 - [x] API contract defined and documented
 - [x] FastAPI routes implemented (19 endpoints)
@@ -1531,47 +1583,52 @@ Update all documentation across all repositories:
 - [x] Service entry point (`server.py`) created
 - [x] Existing CLI (`main.py`) still works (confirmed unchanged)
 - [x] API test suite passing (213 unit + 13 integration tests)
+- [x] Standalone repo `juniper-cascor` has 127 commits, CI passing
 
-### Phase 3 — Client and Worker Packages (IN PROGRESS — CI green, PyPI publishing blocked on Trusted Publishing config)
+### Phase 3 — Client and Worker Packages (IN PROGRESS — CI green, PyPI publishing blocked on Trusted Publishing config; verified 2026-02-22)
 
 - [x] `juniper-cascor-client` package created (55 tests pass), GitHub repo pushed (5 commits)
-- [x] `juniper-cascor-worker` package created (44 tests pass, 99% coverage), GitHub repo pushed (5 commits)
+- [x] `juniper-cascor-worker` package created (44 tests pass, 99% coverage), GitHub repo pushed (6 commits)
 - [x] CI/CD workflow files committed and pushed (ci.yml + publish.yml with workflow_dispatch)
-- [x] CI pipelines green on both repos (Python 3.11/3.12/3.13 matrix, all 6 jobs pass)
+- [x] CI pipelines green on both repos (Python 3.11/3.12/3.13 matrix, all 6 jobs pass; verified 2026-02-22)
 - [x] GitHub environments (`pypi` + `testpypi`) created on both repos
 - [x] Worker CLI entry point functional (`juniper-cascor-worker` console_scripts)
 - [x] Both packages editable-installed in local conda env
 - [x] README + LICENSE + py.typed in both packages
 - [x] Lint (flake8), type check (mypy), and coverage (80%+) all pass on both repos
 - [x] Package builds pass `twine check` (wheel + sdist)
-- [ ] Configure Trusted Publishing on TestPyPI (manual web UI step)
+- [ ] Configure Trusted Publishing on TestPyPI (manual web UI step — v0.1.0 publish attempted 2026-02-21, failed with `invalid-publisher`)
 - [ ] Configure Trusted Publishing on PyPI (manual web UI step)
-- [ ] Create v0.1.0 releases to trigger publish (after Trusted Publishing)
+- [ ] Create v0.1.0 releases to trigger publish (after Trusted Publishing configured; previous failed releases deleted)
 - [ ] Verify `pip install juniper-cascor-client juniper-cascor-worker` from PyPI
 
-### Phase 4 — Decouple Canopy (IN PROGRESS — adapter + 3-mode activation implemented, legacy removal pending)
+### Phase 4 — Decouple Canopy (IN PROGRESS — adapter + 3-mode activation implemented, legacy removal pending; verified 2026-02-22)
 
-- [x] `CascorServiceAdapter` implemented (wraps `juniper-cascor-client` over REST/WS)
-- [ ] `CascorIntegration` removed (retained for legacy mode; removal is a future step)
+- [x] `CascorServiceAdapter` implemented (306 lines, wraps `juniper-cascor-client` over REST/WS)
+- [ ] `CascorIntegration` removed (retained at 1,601 lines for legacy mode; removal is Step 4.8)
 - [ ] All `sys.path` manipulation removed (legacy mode still uses it)
 - [ ] No direct CasCor imports in Canopy (legacy mode still has them)
-- [x] Demo mode still works (3424 tests pass, 0 failures)
-- [x] All Canopy tests pass (3424 passed, 36 skipped)
+- [x] Demo mode still works (3,460 tests collected, verified 2026-02-22)
+- [x] All Canopy tests pass (3,460 collected, verified 2026-02-22)
 - [x] Configuration updated to service URLs (`CASCOR_SERVICE_URL` env var activates service mode)
-- [x] Three-mode activation logic: Demo > Service > Legacy > Demo fallback
+- [x] Three-mode activation logic: Demo > Service > Legacy > Demo fallback (lines 258–296 of `main.py`)
 - [x] `cascor_integration` global renamed to `backend` throughout main.py and tests
-- [x] `pyproject.toml` updated with `juniper-cascor` optional dependency group
-- [x] Unit tests for adapter (72 tests) and activation logic (11 tests)
+- [x] `pyproject.toml` updated with `juniper-cascor` optional dependency group (`juniper-cascor-client>=0.1.0`)
+- [x] Unit tests for adapter (52 tests) and activation logic (11 tests) — verified 2026-02-22
+- [ ] WebSocket relay integration test (CasCor WS → adapter → Canopy frontend)
+- [ ] End-to-end integration test with live CasCor service in service mode
 
-### Phase 5 — Split Repos (IN PROGRESS — Data and CasCor extracted, Canopy blocked by Phase 4)
+### Phase 5 — Split Repos (IN PROGRESS — Data and CasCor extracted, Canopy blocked by Phase 4; verified 2026-02-22)
 
-- [x] Three service repos created (`juniper-data`, `juniper-cascor`, `juniper-canopy`)
-- [x] Data and CasCor extracted with history and pushed
-- [ ] Canopy extraction (blocked by Phase 4)
+- [x] Three service repos created on GitHub (`juniper-data`, `juniper-cascor`, `juniper-canopy` placeholder)
+- [x] Data extracted with history (595 commits on `main`, CI green including scheduled + CodeQL)
+- [x] CasCor extracted with history (127 commits on `main`, CI green on latest runs)
+- [ ] Canopy extraction (blocked by Phase 4; GitHub repo `pcalnon/juniper-canopy` exists as placeholder)
 - [x] Three client/worker repos created (from Phases 1, 3)
-- [x] Per-repo CI/CD verified (Data and CasCor)
-- [ ] Monorepo archived (blocked — awaiting Canopy extraction)
-- [x] Cross-references updated (Data and CasCor READMEs)
+- [x] Per-repo CI/CD verified (Data: all green + CodeQL + scheduled; CasCor: green on latest 2 runs)
+- [x] SSH deploy keys + SSH config aliases configured per-repo
+- [ ] Monorepo archived (blocked — `pcalnon/Juniper` still active, 582 commits)
+- [x] Cross-references updated (Data and CasCor READMEs with ecosystem links)
 
 ### Phase 6 — Hardening
 

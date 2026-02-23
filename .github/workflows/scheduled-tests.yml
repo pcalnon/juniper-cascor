@@ -5,10 +5,10 @@
 # Application:   juniper_cascor
 # File Name:     scheduled-tests.yml
 # Author:        Paul Calnon
-# Version:       0.1.0
+# Version:       0.2.0
 #
 # Date Created:  2026-02-04
-# Last Modified: 2026-02-04
+# Last Modified: 2026-02-22
 #
 # License:       MIT License
 # Copyright:     Copyright (c) 2024-2026 Paul Calnon
@@ -19,10 +19,12 @@
 #    - Executes slow tests excluded from regular CI
 #    - Runs long-running correctness tests (--run-long)
 #    - Can be manually triggered via workflow_dispatch
+#    - Migrated from conda to pip for CI portability (polyrepo Phase 5)
 #
 # References:
 #    - CASCOR-P1-007: CI/CD Pipeline Setup
 #    - MED-002: Add scheduled nightly/weekly workflow for slow tests
+#    - CI_PIPELINE_DEVELOPMENT_PLAN.md Phase 1: conda-to-pip migration
 #####################################################################################################################################################################################################
 
 name: Scheduled Long Tests
@@ -43,12 +45,12 @@ permissions:
   contents: read
 
 env:
-  ENV_NAME: JuniperCascor
   PYTHON_TEST_VERSION: "3.13"
 
 jobs:
   # ═══════════════════════════════════════════════════════════════════════════════════════════════
   # Slow Unit Tests: Run unit tests marked as slow
+  # Migrated from conda to pip for CI portability (polyrepo Phase 5)
   # ═══════════════════════════════════════════════════════════════════════════════════════════════
   slow-unit-tests:
     name: Slow Unit Tests
@@ -60,61 +62,30 @@ jobs:
         with:
           fetch-depth: 1
 
-      - name: Set up Miniforge (mamba)
-        uses: conda-incubator/setup-miniconda@v3
+      - name: Set up Python ${{ env.PYTHON_TEST_VERSION }}
+        uses: actions/setup-python@v5
         with:
-          miniforge-version: latest
-          use-mamba: true
-          auto-activate-base: false
+          python-version: ${{ env.PYTHON_TEST_VERSION }}
+          cache: pip
 
-      - name: Cache conda packages
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/miniforge3/pkgs
-            ~/miniconda3/pkgs
-            ~/.conda/pkgs
-          key: conda-pkgs-${{ runner.os }}-${{ hashFiles('conf/conda_environment.yaml') }}
-          restore-keys: |
-            conda-pkgs-${{ runner.os }}-
-
-      - name: Cache pip packages
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/pip
-          key: pip-${{ runner.os }}-${{ hashFiles('pyproject.toml') }}
-          restore-keys: |
-            pip-${{ runner.os }}-
-
-      - name: Create conda environment (from explicit spec)
-        shell: bash -l {0}
+      - name: Install dependencies
         run: |
-          set -euxo pipefail
           echo "╔════════════════════════════════════════════════════════════╗"
-          echo "║       Juniper Cascor - Create Conda Environment            ║"
+          echo "║       Juniper Cascor - Install Dependencies                ║"
           echo "╚════════════════════════════════════════════════════════════╝"
-          mamba create -y -n "${ENV_NAME}" --file conf/conda_environment.yaml
-          conda activate "${ENV_NAME}"
-          python --version
-          pip --version
-
-      - name: Install test dependencies
-        shell: bash -l {0}
-        run: |
-          set -euxo pipefail
-          conda activate "${ENV_NAME}"
-          pip install pytest pytest-cov pytest-timeout pytest-xdist coverage[toml] dill>=0.3.6
+          python -m pip install --upgrade pip
+          # Install CPU-only PyTorch first (CI doesn't need CUDA)
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
+          # Install project deps via editable install to keep source-tree
+          # path resolution intact (constants resolve config paths via __file__)
+          pip install -e ".[all]"
 
       - name: Create required directories
         run: |
           mkdir -p logs src/logs reports/junit reports/htmlcov
 
       - name: Run Slow Unit Tests
-        shell: bash -l {0}
         run: |
-          set -euxo pipefail
-          conda activate "${ENV_NAME}"
-
           echo "╔════════════════════════════════════════════════════════════╗"
           echo "║       Juniper Cascor - Slow Unit Tests                     ║"
           echo "╚════════════════════════════════════════════════════════════╝"
@@ -123,6 +94,7 @@ jobs:
           python -m pytest \
             -m "unit and slow" \
             src/tests/unit \
+            --slow \
             --verbose \
             --timeout=300 \
             --maxfail=5 \
@@ -143,6 +115,7 @@ jobs:
 
   # ═══════════════════════════════════════════════════════════════════════════════════════════════
   # Slow Integration Tests: Run integration tests marked as slow
+  # Migrated from conda to pip for CI portability (polyrepo Phase 5)
   # ═══════════════════════════════════════════════════════════════════════════════════════════════
   slow-integration-tests:
     name: Slow Integration Tests
@@ -154,50 +127,24 @@ jobs:
         with:
           fetch-depth: 1
 
-      - name: Set up Miniforge (mamba)
-        uses: conda-incubator/setup-miniconda@v3
+      - name: Set up Python ${{ env.PYTHON_TEST_VERSION }}
+        uses: actions/setup-python@v5
         with:
-          miniforge-version: latest
-          use-mamba: true
-          auto-activate-base: false
+          python-version: ${{ env.PYTHON_TEST_VERSION }}
+          cache: pip
 
-      - name: Cache conda packages
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/miniforge3/pkgs
-            ~/miniconda3/pkgs
-            ~/.conda/pkgs
-          key: conda-pkgs-${{ runner.os }}-${{ hashFiles('conf/conda_environment.yaml') }}
-          restore-keys: |
-            conda-pkgs-${{ runner.os }}-
-
-      - name: Cache pip packages
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/pip
-          key: pip-${{ runner.os }}-${{ hashFiles('pyproject.toml') }}
-          restore-keys: |
-            pip-${{ runner.os }}-
-
-      - name: Create conda environment (from explicit spec)
-        shell: bash -l {0}
+      - name: Install dependencies
         run: |
-          set -euxo pipefail
-          mamba create -y -n "${ENV_NAME}" --file conf/conda_environment.yaml
-          conda activate "${ENV_NAME}"
-          pip install pytest pytest-timeout pytest-xdist dill>=0.3.6
+          python -m pip install --upgrade pip
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
+          pip install -e ".[all]"
 
       - name: Create required directories
         run: |
           mkdir -p logs src/logs reports/junit
 
       - name: Run Slow Integration Tests
-        shell: bash -l {0}
         run: |
-          set -euxo pipefail
-          conda activate "${ENV_NAME}"
-
           echo "╔════════════════════════════════════════════════════════════╗"
           echo "║       Juniper Cascor - Slow Integration Tests              ║"
           echo "╚════════════════════════════════════════════════════════════╝"
@@ -206,6 +153,7 @@ jobs:
           python -m pytest \
             -m "integration and slow" \
             src/tests/integration \
+            --slow \
             --verbose \
             --timeout=300 \
             --maxfail=3 \
@@ -221,6 +169,7 @@ jobs:
 
   # ═══════════════════════════════════════════════════════════════════════════════════════════════
   # Long-Running Tests: Run tests marked as 'long' (correctness tests)
+  # Migrated from conda to pip for CI portability (polyrepo Phase 5)
   # ═══════════════════════════════════════════════════════════════════════════════════════════════
   long-running-tests:
     name: Long-Running Correctness Tests
@@ -234,50 +183,24 @@ jobs:
         with:
           fetch-depth: 1
 
-      - name: Set up Miniforge (mamba)
-        uses: conda-incubator/setup-miniconda@v3
+      - name: Set up Python ${{ env.PYTHON_TEST_VERSION }}
+        uses: actions/setup-python@v5
         with:
-          miniforge-version: latest
-          use-mamba: true
-          auto-activate-base: false
+          python-version: ${{ env.PYTHON_TEST_VERSION }}
+          cache: pip
 
-      - name: Cache conda packages
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/miniforge3/pkgs
-            ~/miniconda3/pkgs
-            ~/.conda/pkgs
-          key: conda-pkgs-${{ runner.os }}-${{ hashFiles('conf/conda_environment.yaml') }}
-          restore-keys: |
-            conda-pkgs-${{ runner.os }}-
-
-      - name: Cache pip packages
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/pip
-          key: pip-${{ runner.os }}-${{ hashFiles('pyproject.toml') }}
-          restore-keys: |
-            pip-${{ runner.os }}-
-
-      - name: Create conda environment (from explicit spec)
-        shell: bash -l {0}
+      - name: Install dependencies
         run: |
-          set -euxo pipefail
-          mamba create -y -n "${ENV_NAME}" --file conf/conda_environment.yaml
-          conda activate "${ENV_NAME}"
-          pip install pytest pytest-cov pytest-timeout pytest-xdist coverage[toml] dill>=0.3.6
+          python -m pip install --upgrade pip
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
+          pip install -e ".[all]"
 
       - name: Create required directories
         run: |
           mkdir -p logs src/logs reports/junit
 
       - name: Run Long-Running Correctness Tests
-        shell: bash -l {0}
         run: |
-          set -euxo pipefail
-          conda activate "${ENV_NAME}"
-
           echo "╔════════════════════════════════════════════════════════════╗"
           echo "║       Juniper Cascor - Long-Running Correctness Tests      ║"
           echo "╚════════════════════════════════════════════════════════════╝"
@@ -303,6 +226,7 @@ jobs:
 
   # ═══════════════════════════════════════════════════════════════════════════════════════════════
   # Performance Benchmarks: Run performance regression testing (LOW-004)
+  # Migrated from conda to pip for CI portability (polyrepo Phase 5)
   # ═══════════════════════════════════════════════════════════════════════════════════════════════
   performance-benchmarks:
     name: Performance Benchmarks
@@ -314,50 +238,24 @@ jobs:
         with:
           fetch-depth: 1
 
-      - name: Set up Miniforge (mamba)
-        uses: conda-incubator/setup-miniconda@v3
+      - name: Set up Python ${{ env.PYTHON_TEST_VERSION }}
+        uses: actions/setup-python@v5
         with:
-          miniforge-version: latest
-          use-mamba: true
-          auto-activate-base: false
+          python-version: ${{ env.PYTHON_TEST_VERSION }}
+          cache: pip
 
-      - name: Cache conda packages
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/miniforge3/pkgs
-            ~/miniconda3/pkgs
-            ~/.conda/pkgs
-          key: conda-pkgs-${{ runner.os }}-${{ hashFiles('conf/conda_environment.yaml') }}
-          restore-keys: |
-            conda-pkgs-${{ runner.os }}-
-
-      - name: Cache pip packages
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/pip
-          key: pip-${{ runner.os }}-${{ hashFiles('pyproject.toml') }}
-          restore-keys: |
-            pip-${{ runner.os }}-
-
-      - name: Create conda environment (from explicit spec)
-        shell: bash -l {0}
+      - name: Install dependencies
         run: |
-          set -euxo pipefail
-          mamba create -y -n "${ENV_NAME}" --file conf/conda_environment.yaml
-          conda activate "${ENV_NAME}"
-          pip install pytest pytest-timeout dill>=0.3.6
+          python -m pip install --upgrade pip
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
+          pip install -e ".[all]"
 
       - name: Create required directories
         run: |
           mkdir -p logs src/logs reports/benchmarks
 
       - name: Run Performance Benchmarks
-        shell: bash -l {0}
         run: |
-          set -euxo pipefail
-          conda activate "${ENV_NAME}"
-
           echo "╔════════════════════════════════════════════════════════════╗"
           echo "║       Juniper Cascor - Performance Benchmarks              ║"
           echo "╚════════════════════════════════════════════════════════════╝"
