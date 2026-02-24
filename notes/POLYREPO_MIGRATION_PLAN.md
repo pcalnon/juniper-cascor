@@ -1,8 +1,8 @@
 # Juniper Polyrepo Migration Plan
 
-**Last Updated:** 2026-02-22
-**Version:** 1.4.0
-**Status:** Active — Phase 0 Complete (Validated), Phase 1 Complete (Validated), Phase 2 Complete (Validated), Phase 3 In Progress, Phase 4 In Progress, Phase 5 In Progress
+**Last Updated:** 2026-02-24
+**Version:** 1.5.0
+**Status:** Active — Phase 0 Complete (Validated), Phase 1 Complete (Validated), Phase 2 Complete (Validated), Phase 3 Complete (Validated), Phase 4 In Progress, Phase 5 In Progress
 **Author:** Paul Calnon / Claude Code
 **Companion Document:** [MONOREPO_ANALYSIS.md](MONOREPO_ANALYSIS.md)
 
@@ -739,7 +739,7 @@ if __name__ == "__main__":
 **Duration:** 1–2 weeks
 **Risk:** Low (new packages, additive)
 **Prerequisite:** Phase 2 complete (API contract defined)
-**Status:** IN PROGRESS — packages created, CI green, PyPI publishing blocked on Trusted Publishing config
+**Status:** COMPLETE (2026-02-24) — Validated 2026-02-24
 
 ### Objective, Phase 3
 
@@ -747,9 +747,9 @@ Create two independently installable PyPI packages: `juniper-cascor-client` (HTT
 
 ### Completion Summary, Phase 3
 
-> **Verification (2026-02-22):** Both packages independently verified. CI green on latest commits for both repos across the full Python 3.11/3.12/3.13 matrix. Test counts confirmed: 55 (client) + 44 (worker) = 99 total tests. PyPI publishing remains blocked — v0.1.0 release attempts on 2026-02-21 failed with `invalid-publisher` error (Trusted Publishing not configured on PyPI/TestPyPI web interfaces). Both packages are editable-installed locally and importable. Minor uncommitted README changes on both repos (ecosystem cross-links).
+> **Validation (2026-02-24):** Both packages published to PyPI as v0.1.0. Trusted Publishing configured on both PyPI and TestPyPI. v0.1.0 releases created on both repos — `publish.yml` workflows completed successfully (TestPyPI → PyPI two-stage pipeline). `pip index versions` confirms both packages available on PyPI. `juniper-cascor-client` installed as editable in JuniperCanopy conda env (required for Phase 4 adapter tests — all 83 now passing).
 
-Both packages have been created as standalone repositories with full test suites, CI/CD pipelines verified green, and comprehensive documentation. Both are editable-installed in the local development environment. GitHub environments (`pypi`, `testpypi`) are created on both repos. **PyPI publishing is blocked on Trusted Publishing configuration** — a manual step on the PyPI/TestPyPI web interfaces.
+Both packages are published to PyPI as v0.1.0, with full test suites, CI/CD pipelines verified green, and comprehensive documentation. Both are editable-installed in their respective development environments.
 
 | Step                                      | Status                | Notes                                                                                                                                                                             |
 | ----------------------------------------- | --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -757,16 +757,16 @@ Both packages have been created as standalone repositories with full test suites
 | 3.2 Create `juniper-cascor-worker`        | COMPLETE              | Standalone repo, 44 tests pass (99% coverage), CLI entry point functional                                                                                                         |
 | 3.3a Verify CI/CD workflows run on GitHub | COMPLETE (2026-02-21) | CI green on both repos (Python 3.11/3.12/3.13 matrix, all 6 jobs pass)                                                                                                            |
 | 3.3b GitHub environments created          | COMPLETE (2026-02-21) | `pypi` + `testpypi` environments created on both repos                                                                                                                            |
-| 3.3c Configure Trusted Publishing         | BLOCKED (manual)      | Requires user to register pending publishers on PyPI + TestPyPI web interfaces                                                                                                    |
-| 3.3d Publish to TestPyPI                  | FAILED (2026-02-21)   | v0.1.0 releases created and triggered `publish.yml`; failed with `invalid-publisher: valid token, but no corresponding publisher` — Trusted Publishing not registered on TestPyPI |
-| 3.3e Publish to PyPI                      | BLOCKED on 3.3d       | Automated via `publish.yml` — triggered by GitHub release creation                                                                                                                |
+| 3.3c Configure Trusted Publishing         | COMPLETE (2026-02-24) | Pending publishers registered on both PyPI and TestPyPI web interfaces for both packages                                                                                          |
+| 3.3d Publish to TestPyPI                  | COMPLETE (2026-02-24) | v0.1.0 two-stage pipeline passed; TestPyPI install verified by workflow                                                                                                           |
+| 3.3e Publish to PyPI                      | COMPLETE (2026-02-24) | `juniper-cascor-client 0.1.0` and `juniper-cascor-worker 0.1.0` live on PyPI                                                                                                     |
 
 **Package status summary:**
 
 | Package                 | Repo                                     | Version | Tests   | Commits | CI (GitHub Actions)    | Editable Install | PyPI |
 | ----------------------- | ---------------------------------------- | ------- | ------- | ------- | ---------------------- | ---------------- | ---- |
-| `juniper-cascor-client` | `pcalnon/juniper-cascor-client` (public) | 0.1.0   | 55 pass | 5       | GREEN (3.11/3.12/3.13) | Yes (local)      | No   |
-| `juniper-cascor-worker` | `pcalnon/juniper-cascor-worker` (public) | 0.1.0   | 44 pass | 6       | GREEN (3.11/3.12/3.13) | Yes (local)      | No   |
+| `juniper-cascor-client` | `pcalnon/juniper-cascor-client` (public) | 0.1.0   | 55 pass | 6       | GREEN (3.11/3.12/3.13) | Yes (JuniperCascor + JuniperCanopy) | **Yes** |
+| `juniper-cascor-worker` | `pcalnon/juniper-cascor-worker` (public) | 0.1.0   | 44 pass | 7       | GREEN (3.11/3.12/3.13) | Yes (JuniperCascor)                 | **Yes** |
 
 ### Step 3.1 — Create `juniper-cascor-client`
 
@@ -1016,43 +1016,16 @@ Note: The worker needs PyTorch because it runs `CascadeCorrelationNetwork._worke
 
 ### Step 3.3 — Publish Both to PyPI
 
-**Status:** PARTIALLY COMPLETE — CI green, environments ready, blocked on Trusted Publishing configuration
-
-Follow the same process as Phase 1 (TestPyPI first, then PyPI, with GitHub Actions automated publishing).
+**Status:** COMPLETE (2026-02-24)
 
 **Completed tasks for Step 3.3:**
 
 1. ~~**Verify GitHub Actions**~~: DONE (2026-02-21). CI workflows triggered and pass on both repos (Python 3.11/3.12/3.13 matrix, all 6 jobs green). Fixed lint errors (cascor-client: 4 flake8 issues), coverage gaps (cascor-worker: 57% → 99%), and mypy errors (cascor-worker: 2 type annotation fixes).
 2. ~~**Create GitHub environments**~~: DONE (2026-02-21). `pypi` and `testpypi` environments created on both repos via GitHub API.
 3. ~~**Build and verify packages**~~: DONE (2026-02-21). Both packages pass `twine check` and `python -m build`.
-4. **Attempted publish**: v0.1.0 releases were created on both repos, triggering `publish.yml`. Publish failed at TestPyPI step with `invalid-publisher: valid token, but no corresponding publisher`. Failed releases deleted to allow clean retry.
-
-**Remaining tasks for Step 3.3 (requires manual user action):**
-
-1. **Configure Trusted Publishing on TestPyPI** (<https://test.pypi.org/manage/account/publishing/>):
-   - Add pending publisher for `juniper-cascor-client`: Owner `pcalnon`, Repo `juniper-cascor-client`, Workflow `publish.yml`, Environment `testpypi`
-   - Add pending publisher for `juniper-cascor-worker`: Owner `pcalnon`, Repo `juniper-cascor-worker`, Workflow `publish.yml`, Environment `testpypi`
-
-2. **Configure Trusted Publishing on PyPI** (<https://pypi.org/manage/account/publishing/>):
-   - Add pending publisher for `juniper-cascor-client`: Owner `pcalnon`, Repo `juniper-cascor-client`, Workflow `publish.yml`, Environment `pypi`
-   - Add pending publisher for `juniper-cascor-worker`: Owner `pcalnon`, Repo `juniper-cascor-worker`, Workflow `publish.yml`, Environment `pypi`
-
-3. **Create v0.1.0 releases** (after Trusted Publishing is configured):
-
-   ```bash
-   gh release create v0.1.0 --repo pcalnon/juniper-cascor-client --title "v0.1.0" --notes "Initial release"
-   gh release create v0.1.0 --repo pcalnon/juniper-cascor-worker --title "v0.1.0" --notes "Initial release"
-   ```
-
-4. **Verify installation**:
-
-   ```bash
-   pip install juniper-cascor-client juniper-cascor-worker
-   python -c "import juniper_cascor_client; print(juniper_cascor_client.__version__)"
-   python -c "import juniper_cascor_worker; print(juniper_cascor_worker.__version__)"
-   ```
-
-**Why this requires manual action:** PyPI Trusted Publishing (OIDC) registration must be done via the PyPI web interface — there is no API. This is the same process used successfully for `juniper-data-client` (published 2026-02-20). The workflow files, GitHub environments, and package builds are all ready; only the PyPI-side publisher registration is missing.
+4. ~~**Configure Trusted Publishing**~~: DONE (2026-02-24). Pending publishers registered on PyPI and TestPyPI web interfaces for both packages.
+5. ~~**Create v0.1.0 releases**~~: DONE (2026-02-24). Releases triggered `publish.yml`; both workflows completed successfully (TestPyPI → PyPI two-stage pipeline, `in_progress` → `completed success`).
+6. ~~**Verify installation**~~: DONE (2026-02-24). `pip index versions` confirms `juniper-cascor-client (0.1.0)` and `juniper-cascor-worker (0.1.0)` available on PyPI.
 
 ### Deliverables, Phase 3
 
@@ -1066,10 +1039,10 @@ Follow the same process as Phase 1 (TestPyPI first, then PyPI, with GitHub Actio
 - [x] Both packages editable-installed in local development environment
 - [x] Worker CLI entry point functional (`juniper-cascor-worker` console_scripts)
 - [x] Package builds pass `twine check` (both wheel + sdist)
-- [ ] Configure Trusted Publishing on TestPyPI (manual — <https://test.pypi.org/manage/account/publishing/>)
-- [ ] Configure Trusted Publishing on PyPI (manual — <https://pypi.org/manage/account/publishing/>)
-- [ ] Publish `juniper-cascor-client` to PyPI (create v0.1.0 release after Trusted Publishing configured)
-- [ ] Publish `juniper-cascor-worker` to PyPI (create v0.1.0 release after Trusted Publishing configured)
+- [x] Configure Trusted Publishing on TestPyPI (2026-02-24)
+- [x] Configure Trusted Publishing on PyPI (2026-02-24)
+- [x] Publish `juniper-cascor-client` to PyPI — v0.1.0 live (2026-02-24)
+- [x] Publish `juniper-cascor-worker` to PyPI — v0.1.0 live (2026-02-24)
 
 ---
 
@@ -1270,8 +1243,8 @@ Once service mode is validated:
 | `juniper-cascor` | `/home/pcalnon/Development/python/Juniper/juniper-cascor/` | 127 | `main` | MOSTLY GREEN | Recent failures (pytest-asyncio, logger config) resolved; latest 2 runs pass |
 | `juniper-canopy` | N/A — not extracted yet | — | — | — | GitHub repo `pcalnon/juniper-canopy` exists but empty/placeholder; source remains in monorepo |
 | `juniper-data-client` | `/home/pcalnon/Development/python/Juniper/juniper-data-client/` | 6 | `main` | GREEN | Published to PyPI v0.3.0 |
-| `juniper-cascor-client` | `/home/pcalnon/Development/python/Juniper/juniper-cascor-client/` | 5 | `main` | GREEN (CI); FAILED (publish) | Not on PyPI; Trusted Publishing not configured |
-| `juniper-cascor-worker` | `/home/pcalnon/Development/python/Juniper/juniper-cascor-worker/` | 6 | `main` | GREEN (CI); FAILED (publish) | Not on PyPI; Trusted Publishing not configured |
+| `juniper-cascor-client` | `/home/pcalnon/Development/python/Juniper/juniper-cascor-client/` | 6 | `main` | GREEN | Published to PyPI v0.1.0 (2026-02-24) |
+| `juniper-cascor-worker` | `/home/pcalnon/Development/python/Juniper/juniper-cascor-worker/` | 7 | `main` | GREEN | Published to PyPI v0.1.0 (2026-02-24) |
 | Monorepo (`Juniper`) | `/home/pcalnon/Development/python/Juniper/temp_git/Juniper/` | 582 | `main` | — | NOT archived; still active on GitHub |
 
 | Step | Description                        | Status                                                                                   |
@@ -1585,22 +1558,21 @@ Update all documentation across all repositories:
 - [x] API test suite passing (213 unit + 13 integration tests)
 - [x] Standalone repo `juniper-cascor` has 127 commits, CI passing
 
-### Phase 3 — Client and Worker Packages (IN PROGRESS — CI green, PyPI publishing blocked on Trusted Publishing config; verified 2026-02-22)
+### Phase 3 — Client and Worker Packages (COMPLETE 2026-02-24, Validated 2026-02-24)
 
-- [x] `juniper-cascor-client` package created (55 tests pass), GitHub repo pushed (5 commits)
-- [x] `juniper-cascor-worker` package created (44 tests pass, 99% coverage), GitHub repo pushed (6 commits)
+- [x] `juniper-cascor-client` package created (55 tests pass), GitHub repo pushed (6 commits)
+- [x] `juniper-cascor-worker` package created (44 tests pass, 99% coverage), GitHub repo pushed (7 commits)
 - [x] CI/CD workflow files committed and pushed (ci.yml + publish.yml with workflow_dispatch)
-- [x] CI pipelines green on both repos (Python 3.11/3.12/3.13 matrix, all 6 jobs pass; verified 2026-02-22)
+- [x] CI pipelines green on both repos (Python 3.11/3.12/3.13 matrix, all 6 jobs pass)
 - [x] GitHub environments (`pypi` + `testpypi`) created on both repos
 - [x] Worker CLI entry point functional (`juniper-cascor-worker` console_scripts)
-- [x] Both packages editable-installed in local conda env
+- [x] Both packages editable-installed in local conda env (JuniperCascor; cascor-client also in JuniperCanopy)
 - [x] README + LICENSE + py.typed in both packages
 - [x] Lint (flake8), type check (mypy), and coverage (80%+) all pass on both repos
 - [x] Package builds pass `twine check` (wheel + sdist)
-- [ ] Configure Trusted Publishing on TestPyPI (manual web UI step — v0.1.0 publish attempted 2026-02-21, failed with `invalid-publisher`)
-- [ ] Configure Trusted Publishing on PyPI (manual web UI step)
-- [ ] Create v0.1.0 releases to trigger publish (after Trusted Publishing configured; previous failed releases deleted)
-- [ ] Verify `pip install juniper-cascor-client juniper-cascor-worker` from PyPI
+- [x] Trusted Publishing configured on TestPyPI and PyPI for both packages (2026-02-24)
+- [x] v0.1.0 releases created; `publish.yml` workflows completed successfully (TestPyPI → PyPI pipeline)
+- [x] `pip install juniper-cascor-client juniper-cascor-worker` from PyPI verified (both v0.1.0)
 
 ### Phase 4 — Decouple Canopy (IN PROGRESS — adapter + 3-mode activation implemented, legacy removal pending; verified 2026-02-22)
 
