@@ -38,7 +38,7 @@ on:
       run_long_tests:
         description: 'Run long-running correctness tests (may take 10+ minutes)'
         required: false
-        default: 'true'
+        default: true
         type: boolean
 
 permissions:
