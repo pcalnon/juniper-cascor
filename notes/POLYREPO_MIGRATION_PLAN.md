@@ -1,8 +1,8 @@
 # Juniper Polyrepo Migration Plan
 
-**Last Updated:** 2026-02-24
-**Version:** 1.5.0
-**Status:** Active — Phase 0 Complete (Validated), Phase 1 Complete (Validated), Phase 2 Complete (Validated), Phase 3 Complete (Validated), Phase 4 Complete (Validated 2026-02-25), Phase 5 In Progress
+**Last Updated:** 2026-02-25
+**Version:** 1.6.0
+**Status:** Active — Phase 0 Complete, Phase 1 Complete, Phase 2 Complete, Phase 3 Complete, Phase 4 Complete, Phase 5 Complete (2026-02-25), Phase 6 In Progress
 **Author:** Paul Calnon / Claude Code
 **Companion Document:** [MONOREPO_ANALYSIS.md](MONOREPO_ANALYSIS.md)
 
@@ -1428,15 +1428,15 @@ pip install -e ../juniper-cascor-client
 **Risk:** Low
 **Prerequisite:** Phase 5 complete
 
-### Step 6.1 — Version Coordination
+### Step 6.1 — Version Coordination ✅ COMPLETE (2026-02-25)
 
-Establish a version compatibility matrix:
+Ecosystem compatibility matrix — current verified-compatible baseline:
 
 | juniper-canopy | juniper-cascor | juniper-data | data-client | cascor-client | cascor-worker |
 | -------------- | -------------- | ------------ | ----------- | ------------- | ------------- |
-| 0.3.0          | 0.4.0          | 0.5.0        | >=0.3.0     | >=0.1.0       | >=0.1.0       |
+| 0.2.x          | 0.3.x          | 0.4.x        | >=0.3.1     | >=0.1.0       | >=0.1.0       |
 
-Document minimum compatible versions in each service's README.
+Compatibility matrix added to READMEs in all repos (commit: `a7a2db8` cascor, `f4c4543` data, `cb5e4d6` canopy, `6900dcd` data-client, `410161a` cascor-client, `047c3f6` cascor-worker, `97f030f` juniper-ml).
 
 ### Step 6.2 — Integration Test Suite
 
@@ -1596,7 +1596,8 @@ Update all documentation across all repositories:
 
 ### Phase 6 — Hardening
 
-- [ ] Version compatibility matrix documented
+- [x] Version compatibility matrix documented
+- [ ] Health check endpoints standardized (/v1/health + /v1/health/ready)
 - [ ] Integration tests operational
 - [ ] Docker Compose full-stack working
 - [ ] Documentation complete
