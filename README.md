@@ -17,6 +17,55 @@ Verified compatible versions:
 
 For full-stack Docker deployment and integration tests, see [juniper-deploy](https://github.com/pcalnon/juniper-deploy).
 
+## Architecture
+
+JuniperCascor is the **training service** of the Juniper ecosystem. It depends on JuniperData for datasets and is monitored by JuniperCanopy in real-time.
+
+```
+┌─────────────────────┐     REST+WS      ┌──────────────────────┐
+│   JuniperCanopy     │ ◄──────────────► │  JuniperCascor       │
+│   Dashboard         │                  │  Training Svc        │
+│   Port 8050         │                  │  Port 8200  ◄── here │
+└──────────┬──────────┘                  └──────────┬───────────┘
+           │ REST                                    │ REST
+           ▼                                         ▼
+┌──────────────────────────────────────────────────────────────┐
+│                      JuniperData                              │
+│                   Dataset Service  ·  Port 8100               │
+└──────────────────────────────────────────────────────────────┘
+```
+
+**API**: REST + WebSocket (`/ws/training`, `/ws/control`). All responses use a `{status, data, meta}` envelope.
+
+## Related Services
+
+| Service | Relationship | Notes |
+|---------|-------------|-------|
+| [juniper-data](https://github.com/pcalnon/juniper-data) | JuniperCascor fetches datasets from here | Set `JUNIPER_DATA_URL` |
+| [juniper-canopy](https://github.com/pcalnon/juniper-canopy) | Monitors CasCor training in real-time | Connects to `/ws/training` |
+| [juniper-cascor-client](https://github.com/pcalnon/juniper-cascor-client) | PyPI REST+WS client library | `pip install juniper-cascor-client` |
+
+### Service Configuration
+
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `JUNIPER_DATA_URL` | Yes | `http://localhost:8100` | JuniperData service URL |
+| `CASCOR_HOST` | No | `0.0.0.0` | Listen address |
+| `CASCOR_PORT` | No | `8200` | Service port |
+| `CASCOR_LOG_LEVEL` | No | `INFO` | Log verbosity (`DEBUG`, `INFO`, `WARNING`) |
+
+### Docker Deployment
+
+```bash
+# Standalone:
+docker build -t juniper-cascor:latest .
+docker run -p 8200:8200 -e JUNIPER_DATA_URL=http://host.docker.internal:8100 juniper-cascor:latest
+
+# Full stack:
+git clone https://github.com/pcalnon/juniper-deploy.git
+cd juniper-deploy && docker compose up --build
+```
+
 ## Quick Start
 
 ### Prerequisites
