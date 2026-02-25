@@ -21,7 +21,7 @@ This document is the **authoritative, consolidated roadmap** for all JuniperCasc
 | --- | --- | --- |
 | Phase 0 — Stabilize baseline | **COMPLETE** | Clean baseline established for all subprojects |
 | Phase 1 — Publish `juniper-data-client` to PyPI | **COMPLETE** | Resolves INT-P1-001 (duplicated client), INT-P1-002 (requests dep) |
-| Phase 2 — Build CasCor Service API | **COMPLETE** | Resolves C.1 (async wrapper), INT-P1-004 (IPC architecture) |
+| Phase 2 — Build CasCor Service API | **COMPLETE** | Resolves C.1 (async wrapper); substantially resolves INT-P1-004 (IPC architecture, with Phase 3) |
 | Phase 3 — Create `juniper-cascor-client` + `juniper-cascor-worker` | **COMPLETE** | Resolves CAS-004 (extract remote worker), supersedes C.2 |
 | Phase 4 — Decouple Canopy from CasCor | **IN PROGRESS** | Removes `CascorIntegration`; changes scope of CAS-CANOPY-* items |
 | Phase 5 — Split into separate repos | **IN PROGRESS** | CasCor extracted to `pcalnon/juniper-cascor`; Canopy pending |
@@ -80,8 +80,8 @@ This document is the **authoritative, consolidated roadmap** for all JuniperCasc
 | ------------------------ | --------- | ------------------------------------------------------------------------------------------------------------ |
 | CONFIRMED (bug exists)   | 18        | INT-P0-001 through P0-005, P2-001 through P2-010 (excl. P2-004), P2-014, CAS-REF-004, INT-P1-005, INT-P1-008 (INT-P1-005 also severity-adjusted) |
 | RESOLVED (already fixed) | 3         | INT-P1-002 (requests dep), INT-P1-007 (retry logic), INT-P2-013 (dill dep)                                   |
-| SEVERITY ADJUSTED        | 3         | INT-P2-004 (High→Low), INT-P1-006 (High→Medium), INT-P1-005 (High→Low impact)                                |
-| NOT YET VALIDATED        | Remaining | Architecture items (C.1, C.2), deferred items, Oracle analysis items                                         |
+| SEVERITY ADJUSTED        | 3         | INT-P2-004 (High→Low), INT-P1-006 (High→Medium), INT-P1-005 (High→Low)                                       |
+| NOT YET VALIDATED        | Remaining | Architecture items (C.1, C.2 — now resolved/superseded by migration), deferred items, Oracle analysis items   |
 
 ---
 
@@ -135,7 +135,7 @@ These items were identified during the 2026-02-05 source code review. They repre
 ### INT-P0-004: Hardcoded Path in remote_client_0.py
 
 **Status**: NOT STARTED → **SCOPE CHANGED (consider deletion)**
-**Severity**: Critical → **Low** (legacy file, replaced by `juniper-cascor-worker`; 15-min deletion)
+**Severity**: ~~Critical~~ **Low** (legacy file, replaced by `juniper-cascor-worker`; 15-min deletion)
 **Source**: INTEGRATION_ROADMAP-01.md
 **File**: `src/remote_client/remote_client_0.py` (line 16)
 
@@ -152,7 +152,7 @@ These items were identified during the 2026-02-05 source code review. They repre
 ### INT-P0-005: Hardcoded Paths in Test File
 
 **Status**: NOT STARTED → **SCOPE CHANGED**
-**Severity**: Critical → **Low** (paths are stale monorepo references; 15-min removal)
+**Severity**: ~~Critical~~ **Low** (paths are stale monorepo references; 15-min removal)
 **Source**: INTEGRATION_ROADMAP-01.md
 **File**: `src/tests/unit/test_candidate_training_manager.py` (lines 10-12)
 
@@ -197,7 +197,7 @@ These items were identified during the 2026-02-05 source code review. They repre
 ### INT-P1-003: No Shared Protocol Package
 
 **Status**: ~~NOT STARTED~~ **PARTIALLY RESOLVED (by migration Phases 1-3)**
-**Severity**: ~~High~~ Low
+**Severity**: ~~High~~ **Low**
 **Source**: INTEGRATION_ROADMAP-01.md
 
 **Description**: Three Juniper applications share API contracts, data formats, and client code but have no shared protocol/interface package. Each duplicates validation logic.
@@ -249,7 +249,7 @@ All four sub-tasks are addressed:
 ### INT-P1-006: Missing Import Guard for SpiralDataProvider
 
 **Status**: NOT STARTED
-**Severity**: High → Medium (partially resolved, see validation)
+**Severity**: ~~High~~ **Medium** (partially resolved, see validation)
 **Source**: INTEGRATION_ROADMAP-01.md
 
 **Description**: Missing try/except import guard for `SpiralDataProvider` — if `requests` is not installed, the import fails silently or with a confusing error.
@@ -376,7 +376,7 @@ The implementation lives in `src/api/lifecycle/manager.py`, `src/api/lifecycle/s
 #### INT-P2-004: `snapshot_counter` Initialized Twice
 
 **Status**: NOT STARTED
-**Severity**: ~~High~~ Low (cosmetic)
+**Severity**: ~~High~~ **Low** (cosmetic)
 
 **Codebase Validation (2026-02-18)**: **CONFIRMED — LOW IMPACT**. `self.snapshot_counter = 0` at both line 530 and line 548. Both set to 0, so the duplication is harmless. Just dead code to clean up.
 
@@ -426,7 +426,7 @@ The implementation lives in `src/api/lifecycle/manager.py`, `src/api/lifecycle/s
 #### INT-P2-009: Inconsistent Queue Method Names Between Remote Clients
 
 **Status**: NOT STARTED → **SCOPE CHANGED**
-**Severity**: High → Medium
+**Severity**: ~~High~~ **Medium**
 
 **Codebase Validation (2026-02-18)**: **CONFIRMED**. `remote_client_0.py` registers and uses `get_tasks_queue()`/`get_done_queue()` (lines 35-36, 56-57). `remote_client.py` uses `get_task_queue()`/`get_result_queue()` (lines 72-73). Incompatible naming means they cannot connect to the same manager.
 
@@ -438,9 +438,9 @@ The implementation lives in `src/api/lifecycle/manager.py`, `src/api/lifecycle/s
 
 **Status**: NOT STARTED
 **Severity**: Medium
-**File**: `src/main.py` (lines 142, 145)
+**File**: `src/main.py` (lines 174, 177 — shifted from 142, 145 at time of 2026-02-18 audit)
 
-**Codebase Validation (2026-02-18)**: **CONFIRMED**. Line 142: `os._exit(1)`, Line 145: `os._exit(2)`. `os._exit()` bypasses all cleanup: finally blocks, atexit handlers, open file flushing. Should use `sys.exit()` unless intentionally bypassing cleanup.
+**Codebase Validation (2026-02-18)**: **CONFIRMED**. `os._exit(1)` and `os._exit(2)` (originally lines 142/145; now lines 174/177). `os._exit()` bypasses all cleanup: finally blocks, atexit handlers, open file flushing. Should use `sys.exit()` unless intentionally bypassing cleanup.
 
 **Migration Impact (2026-02-24)**: Note that `src/main.py` is the standalone CLI entry point (spiral problem evaluation), not the service entry point. The service uses `src/server.py` which starts uvicorn normally. This bug only affects CLI usage.
 
@@ -1159,7 +1159,7 @@ Based on codebase validation results, dependency analysis, effort estimates, and
 | 6   | INT-P2-002: Fix `import datetime as pd` alias                   | 15 min  | Rename to `dt` or `datetime`                                         |
 | 7   | INT-P2-004: Remove duplicate `snapshot_counter` init            | 5 min   | Delete line 548                                                      |
 | 8   | INT-P2-014: Move `import traceback` to top-level                | 30 min  | Uncomment line 60, remove 21 local imports                           |
-| 9   | INT-P2-010: Replace `os._exit()` with `sys.exit()` in main.py   | 15 min  | Lines 142, 145                                                       |
+| 9   | INT-P2-010: Replace `os._exit()` with `sys.exit()` in main.py   | 15 min  | Lines 174, 177                                                       |
 
 **Estimated Total**: 4-6 hours
 
@@ -1207,7 +1207,7 @@ Based on codebase validation results, dependency analysis, effort estimates, and
 
 | #   | Item                                                    | Effort   | Notes                                             |
 | --- | ------------------------------------------------------- | -------- | ------------------------------------------------- |
-| 1   | CAS-CANOPY-002: Snapshot REST API endpoints             | 3-5 days | Create `/v1/snapshots/*` routes wrapping serializer |
+| 1   | CAS-CANOPY-002: Snapshot REST API endpoints             | 3-5 days | Create `/v1/snapshots/*` routes wrapping serializer (core 4 endpoints; broader API set in Phase 5 #10) |
 | 2   | INT-P1-006: Add import guard for SpiralDataProvider     | 1 hr     | Low effort, include with other work               |
 | 3   | INT-P3-002: E2E live-service integration tests          | 2-3 days | Coordinate with Phase 6 Docker Compose            |
 | 4   | CAS-005: Evaluate shared types with `juniper-cascor-worker` | 1-2 days | Determine if shared package needed |
@@ -1246,7 +1246,7 @@ Based on codebase validation results, dependency analysis, effort estimates, and
 | 7   | CAS-008/009: Network hierarchy & population | 4-8 weeks |                                                               |
 | 8   | CAS-010: Snapshot Vector DB                 | 2-4 weeks |                                                               |
 | 9   | GPU/CUDA support                            | 2-4 weeks | CI needs GPU runner or separate workflow                      |
-| 10  | Implement deferred API endpoints (CAS-CANOPY-002, C.2 follow-up) | 1-2 weeks | **NEW**: `/v1/snapshots/*` (4), `/v1/workers/*` (5), `PUT /v1/training/params` |
+| 10  | Implement deferred API endpoints (CAS-CANOPY-002, C.2 follow-up) | 1-2 weeks | **NEW**: `/v1/workers/*` (5), `PUT /v1/training/params`, plus any snapshot endpoints beyond Phase 3 core |
 
 ---
 
@@ -1519,3 +1519,4 @@ INT-P3-003 (Docker Compose)
 | 2026-02-25 | AI Agent | **Second validation pass**: Fixed 4 remaining moderate issues — corrected INT-P0-004/INT-P0-005 severity from "Medium" to "Low" (aligning section entries with P3-P4 statistical bucket), corrected INT-P1-004 status in Dependencies Matrix from "RESOLVED" to "SUBSTANTIALLY RESOLVED", corrected INT-P1-002 validation text (removed false claim that `requests` is in `pyproject.toml`; clarified resolution via vendored client removal), added C.3 status to Oracle analysis source table row. |
 | 2026-02-25 | AI Agent | **Minor issue cleanup**: 7 fixes — clarified INT-P2-004 priority origin in statistics footnote, added overhead notes to Phase 2/3/4 effort estimates, fixed Codebase Validation CONFIRMED count (17→18 with overlap note for INT-P1-005), added Phase 0 note explaining retained Low-severity items, standardized INT-P1-005 severity notation, added P4-NEW-003/004 gap explanation, added design decision clarification to resolved table. |
 | 2026-02-25 | AI Agent | **Third validation pass**: Fixed 3 moderate issues — updated INT-P0-004/INT-P0-005 migration impact prose from "Medium" to "Low" (labels were corrected earlier but prose paragraphs were missed), corrected INT-P2-014 `import traceback` count from 22 to 21 (verified against codebase: 21 local imports + 1 commented-out top-level). |
+| 2026-02-25 | AI Agent | **Final minor cleanup**: 5 fixes — standardized severity notation to `~~Old~~ **New**` pattern across 6 items (INT-P0-004, INT-P0-005, INT-P1-003, INT-P1-006, INT-P2-004, INT-P2-009) plus SEVERITY ADJUSTED summary row, clarified INT-P1-004 attribution in Migration Summary to span Phases 2-3, added C.1/C.2 resolution note to NOT YET VALIDATED row, clarified CAS-CANOPY-002 Phase 3/5 scope overlap, updated INT-P2-010 stale line references from 142/145 to 174/177 (verified against codebase). |
