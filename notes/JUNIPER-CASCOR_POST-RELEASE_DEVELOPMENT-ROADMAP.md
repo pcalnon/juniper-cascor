@@ -46,7 +46,7 @@ This document is the **authoritative, consolidated roadmap** for all JuniperCasc
 | NEXT_STEPS.md                                   | 2025-10-16 | Serialization enhancements                                | Many already implemented                |
 | ORACLE_ANALYSIS_PYTHON.md                       | 2026-01-26 | 5 recommended Python fixes                                | Status unknown                          |
 | ORACLE_ANALYSIS_SCRIPTS.md                      | 2026-01-26 | Shell script path fixes                                   | Status unknown                          |
-| Oracle_analysis_2026-01-26.md                   | 2026-01-26 | C.1/C.2/C.3 integration architecture                      | C.1 resolved, C.2 superseded           |
+| Oracle_analysis_2026-01-26.md                   | 2026-01-26 | C.1/C.2/C.3 integration architecture                      | C.1 resolved, C.2 superseded, C.3 substantially resolved (via INT-P1-004) |
 | DOCUMENTATION_AUDIT.md                          | 2026-01-29 | 5 future doc enhancements                                 | Future work                             |
 | FINAL_STATUS.md                                 | 2025-10-16 | Remaining work items                                      | Many superseded                         |
 | FEATURES_GUIDE.md                               | 2025-01-12 | Feature reference                                         | No action items                         |
@@ -135,7 +135,7 @@ These items were identified during the 2026-02-05 source code review. They repre
 ### INT-P0-004: Hardcoded Path in remote_client_0.py
 
 **Status**: NOT STARTED → **SCOPE CHANGED (consider deletion)**
-**Severity**: Critical → **Medium** (legacy file, replaced by `juniper-cascor-worker`)
+**Severity**: Critical → **Low** (legacy file, replaced by `juniper-cascor-worker`; 15-min deletion)
 **Source**: INTEGRATION_ROADMAP-01.md
 **File**: `src/remote_client/remote_client_0.py` (line 16)
 
@@ -152,7 +152,7 @@ These items were identified during the 2026-02-05 source code review. They repre
 ### INT-P0-005: Hardcoded Paths in Test File
 
 **Status**: NOT STARTED → **SCOPE CHANGED**
-**Severity**: Critical → **Medium** (paths are stale monorepo references)
+**Severity**: Critical → **Low** (paths are stale monorepo references; 15-min removal)
 **Source**: INTEGRATION_ROADMAP-01.md
 **File**: `src/tests/unit/test_candidate_training_manager.py` (lines 10-12)
 
@@ -190,7 +190,7 @@ These items were identified during the 2026-02-05 source code review. They repre
 
 **Description**: The `requests` library is used by `JuniperDataClient` but is not declared in the project's dependency files.
 
-**Codebase Validation (2026-02-18)**: **RESOLVED**. `requests>=2.28.0` is declared in `pyproject.toml` (line 45) AND `conf/requirements-pip.txt` (line 95: `requests==2.32.5`). This issue has been fixed since the original audit.
+**Codebase Validation (2026-02-18)**: **RESOLVED**. Originally noted as resolved because `requests` was present in `conf/requirements-pip.txt` (line 95: `requests==2.32.5`). Post-migration update: `requests` is no longer a direct dependency of `juniper-cascor` — it is not declared in `pyproject.toml`. The vendored `JuniperDataClient` that required `requests` was removed (see INT-P1-001); `requests` is now a transitive dependency of the external `juniper-data-client` package.
 
 ---
 
@@ -1108,8 +1108,8 @@ These items are documented as COMPLETE and included for reference only.
 
 ### INT-P1-002: `requests` as Undeclared Dependency
 
-**Status**: RESOLVED (pre-migration, confirmed 2026-02-18)
-**Resolution**: `requests>=2.28.0` declared in `pyproject.toml` and `conf/requirements-pip.txt`. Fixed prior to polyrepo migration.
+**Status**: RESOLVED (pre-migration, confirmed 2026-02-18; further resolved by INT-P1-001)
+**Resolution**: Originally resolved by declaring `requests` in `conf/requirements-pip.txt`. Fully resolved by migration: the vendored `JuniperDataClient` that required `requests` was removed (INT-P1-001); `requests` is now a transitive dependency of the external `juniper-data-client` package and no longer needed directly by `juniper-cascor`.
 
 ### INT-P2-013: `check_object_pickleability` Depends on Undeclared `dill`
 
@@ -1446,7 +1446,7 @@ INT-P1-001 (Duplicated JuniperDataClient)
     └── RESOLVED (juniper-data-client on PyPI)
 
 INT-P1-004 (Full IPC)
-    └── RESOLVED (CasCor Service API + juniper-cascor-client)
+    └── SUBSTANTIALLY RESOLVED (CasCor Service API + juniper-cascor-client; Canopy integration testing pending)
 
 C.1 (Async wrapper)
     └── RESOLVED (TrainingLifecycleManager)
@@ -1511,3 +1511,4 @@ INT-P3-003 (Docker Compose)
 | 2026-02-18 | AI Agent | Added development phases (0-5), high-level design analysis (7 architectural decisions with options/recommendations)          |
 | 2026-02-24 | AI Agent | **Polyrepo migration reconciliation**: Analyzed impact of `POLYREPO_MIGRATION_PLAN.md` (v1.5.0) and `DECOUPLE_CANOPY_FROM_CASCOR_PLAN.md` against all 89 roadmap items. 6 items resolved/superseded by migration, 6 scope-changed, 2 new items added. Added Migration Impact annotations to 27 items across all sections. Updated Development Phases 0-5 with post-migration actions. Added 2 new verification items (CasCor Service API E2E, Three-Mode Activation). Updated Dependencies Matrix with resolved/superseded items. Revised Risk Assessment with 5 new migration-specific risks and 2 mitigated risks. Updated Design Decisions 4 and 5 as IMPLEMENTED. Pre-update version archived to `history/JUNIPER-CASCOR_POST-RELEASE_DEVELOPMENT-ROADMAP_2026-02-24.md`. |
 | 2026-02-24 | AI Agent | **Post-reconciliation validation**: Fixed 10 errors introduced during migration reconciliation — corrected consolidated statistics (resolved: 10→6, superseded: 5→removed, scope-changed: 12→6, total: 72→83, High: 9→8, Low: 38→50), fixed INT-P1-001 factual error (`src/juniper_data_client/` directory entirely removed, not partially), corrected INT-P1-004 status in resolved table to SUBSTANTIALLY RESOLVED, fixed In-Code TODO priority for validate_training_results (P0→P2), fixed INT-P4-012–017 header to INT-P4-012–016, annotated INT-P3-008 as LIKELY RESOLVED in Phase 5 table, added INT-P1-002 and INT-P2-013 to Section 10 completed items, expanded INT-P3-009 version list, added traceable references to new Phase items. |
+| 2026-02-25 | AI Agent | **Second validation pass**: Fixed 4 remaining moderate issues — corrected INT-P0-004/INT-P0-005 severity from "Medium" to "Low" (aligning section entries with P3-P4 statistical bucket), corrected INT-P1-004 status in Dependencies Matrix from "RESOLVED" to "SUBSTANTIALLY RESOLVED", corrected INT-P1-002 validation text (removed false claim that `requests` is in `pyproject.toml`; clarified resolution via vendored client removal), added C.3 status to Oracle analysis source table row. |
