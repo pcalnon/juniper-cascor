@@ -7,7 +7,7 @@
 # Version:       0.3.1 (0.7.3)
 #
 # Date Created:  2025-06-11
-# Last Modified: 2026-01-12
+# Last Modified: 2026-02-24
 #
 # License:       MIT License
 # Copyright:     Copyright (c) 2024-2025 Paul Calnon
@@ -105,11 +105,43 @@ from spiral_problem.spiral_problem import SpiralProblem
 # from inspect import currentframe, getframeinfo
 
 
+#####################################################################################################################################################################################################
+# from fastapi import FastAPI
+import sentry_sdk
+
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
+sentry_sdk.init(
+    dsn=os.getenv("SENTRY_SDK_DSN"),
+    # Add data like request headers and IP for users,
+    # see https://docs.sentry.io/platforms/python/data-management/data-collected/ for more info
+    send_default_pii=True,
+    # Enable sending logs to Sentry
+    enable_logs=True,
+    # Set traces_sample_rate to 1.0 to capture 100%
+    # of transactions for tracing.
+    traces_sample_rate=1.0,
+    # Set profile_session_sample_rate to 1.0 to profile 100%
+    # of profile sessions.
+    profile_session_sample_rate=1.0,
+    # Set profile_lifecycle to "trace" to automatically
+    # run the profiler on when there is an active transaction
+    profile_lifecycle="trace",
+)
+# app = FastAPI()
+
+
+
+#####################################################################################################################################################################################################
 # TODO: don't think this is needed with Logger class implementing singleton pattern, and Class methods for initial logging
 global logger
 global log_config
 
 
+#####################################################################################################################################################################################################
+# Define the main function for Juniper Cascor 
 def main():
     Logger.info("Cascor: main: Starting the Cascade Correlation Neural Network project")
     Logger.info(f"Cascor: main: Project constants: Log Level: {_CASCOR_LOG_LEVEL}, Log Level Name: {_CASCOR_LOG_LEVEL_NAME}")

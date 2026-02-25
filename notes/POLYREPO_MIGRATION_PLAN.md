@@ -751,20 +751,20 @@ Create two independently installable PyPI packages: `juniper-cascor-client` (HTT
 
 Both packages are published to PyPI as v0.1.0, with full test suites, CI/CD pipelines verified green, and comprehensive documentation. Both are editable-installed in their respective development environments.
 
-| Step                                      | Status                | Notes                                                                                                                                                                             |
-| ----------------------------------------- | --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 3.1 Create `juniper-cascor-client`        | COMPLETE              | Standalone repo, 55 tests pass, lint + mypy + coverage all pass                                                                                                                   |
-| 3.2 Create `juniper-cascor-worker`        | COMPLETE              | Standalone repo, 44 tests pass (99% coverage), CLI entry point functional                                                                                                         |
-| 3.3a Verify CI/CD workflows run on GitHub | COMPLETE (2026-02-21) | CI green on both repos (Python 3.11/3.12/3.13 matrix, all 6 jobs pass)                                                                                                            |
-| 3.3b GitHub environments created          | COMPLETE (2026-02-21) | `pypi` + `testpypi` environments created on both repos                                                                                                                            |
-| 3.3c Configure Trusted Publishing         | COMPLETE (2026-02-24) | Pending publishers registered on both PyPI and TestPyPI web interfaces for both packages                                                                                          |
-| 3.3d Publish to TestPyPI                  | COMPLETE (2026-02-24) | v0.1.0 two-stage pipeline passed; TestPyPI install verified by workflow                                                                                                           |
-| 3.3e Publish to PyPI                      | COMPLETE (2026-02-24) | `juniper-cascor-client 0.1.0` and `juniper-cascor-worker 0.1.0` live on PyPI                                                                                                     |
+| Step                                      | Status                | Notes                                                                                    |
+| ----------------------------------------- | --------------------- | ---------------------------------------------------------------------------------------- |
+| 3.1 Create `juniper-cascor-client`        | COMPLETE              | Standalone repo, 55 tests pass, lint + mypy + coverage all pass                          |
+| 3.2 Create `juniper-cascor-worker`        | COMPLETE              | Standalone repo, 44 tests pass (99% coverage), CLI entry point functional                |
+| 3.3a Verify CI/CD workflows run on GitHub | COMPLETE (2026-02-21) | CI green on both repos (Python 3.11/3.12/3.13 matrix, all 6 jobs pass)                   |
+| 3.3b GitHub environments created          | COMPLETE (2026-02-21) | `pypi` + `testpypi` environments created on both repos                                   |
+| 3.3c Configure Trusted Publishing         | COMPLETE (2026-02-24) | Pending publishers registered on both PyPI and TestPyPI web interfaces for both packages |
+| 3.3d Publish to TestPyPI                  | COMPLETE (2026-02-24) | v0.1.0 two-stage pipeline passed; TestPyPI install verified by workflow                  |
+| 3.3e Publish to PyPI                      | COMPLETE (2026-02-24) | `juniper-cascor-client 0.1.0` and `juniper-cascor-worker 0.1.0` live on PyPI             |
 
 **Package status summary:**
 
-| Package                 | Repo                                     | Version | Tests   | Commits | CI (GitHub Actions)    | Editable Install | PyPI |
-| ----------------------- | ---------------------------------------- | ------- | ------- | ------- | ---------------------- | ---------------- | ---- |
+| Package                 | Repo                                     | Version | Tests   | Commits | CI (GitHub Actions)    | Editable Install                    | PyPI    |
+| ----------------------- | ---------------------------------------- | ------- | ------- | ------- | ---------------------- | ----------------------------------- | ------- |
 | `juniper-cascor-client` | `pcalnon/juniper-cascor-client` (public) | 0.1.0   | 55 pass | 6       | GREEN (3.11/3.12/3.13) | Yes (JuniperCascor + JuniperCanopy) | **Yes** |
 | `juniper-cascor-worker` | `pcalnon/juniper-cascor-worker` (public) | 0.1.0   | 44 pass | 7       | GREEN (3.11/3.12/3.13) | Yes (JuniperCascor)                 | **Yes** |
 

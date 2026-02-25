@@ -20,17 +20,17 @@ Replace Canopy's `CascorIntegration` class (~1,600 lines of `sys.path` injection
 
 `CascorIntegration` lives at `JuniperCanopy/juniper_canopy/src/backend/cascor_integration.py` and performs:
 
-| Category | Methods | Replacement Strategy |
-|----------|---------|---------------------|
-| **Backend discovery** | `_resolve_backend_path`, `_add_backend_to_path`, `_import_backend_modules` | **Eliminated** — no path injection needed |
-| **Network lifecycle** | `create_network`, `connect_to_network` | `client.create_network()`, `client.get_network()` |
-| **Training control** | `fit_async`, `start_training_background`, `request_training_stop`, `is_training_in_progress` | `client.start_training()`, `client.stop_training()`, `client.get_training_status()` |
-| **Monitoring hooks** | `install_monitoring_hooks`, method wrapping of `fit`/`train_output`/`train_candidates`, `_on_*` callbacks | **Eliminated** — CasCor service handles monitoring and streams via WebSocket |
-| **Monitoring thread** | `start_monitoring_thread`, `stop_monitoring`, `_monitoring_loop`, `_extract_current_metrics` | **Replaced** by WebSocket subscription via `CascorTrainingStream` |
-| **Network data** | `get_network_topology`, `get_network_data`, `extract_cascor_topology`, `get_dataset_info`, `get_prediction_function` | `client.get_topology()`, `client.get_dataset()`, `client.get_decision_boundary()` |
-| **Remote workers** | `connect_remote_workers`, `start_remote_workers`, `stop_remote_workers`, `disconnect_remote_workers`, `get_remote_worker_status` | **Stub no-ops** — workers managed server-side by CasCor service + juniper-cascor-worker |
-| **Dataset generation** | `_generate_dataset_from_juniper_data`, `_create_juniper_dataset` | Handled by CasCor service; Canopy passes dataset config in `start_training()` |
-| **Broadcasting** | `_broadcast_message` (to Canopy's WebSocketManager) | WebSocket relay: CasCor WS → adapter → Canopy frontend WS |
+| Category               | Methods                                                                                                                          | Replacement Strategy                                                                    |
+|------------------------|----------------------------------------------------------------------------------------------------------------------------------|-----------------------------------------------------------------------------------------|
+| **Backend discovery**  | `_resolve_backend_path`, `_add_backend_to_path`, `_import_backend_modules`                                                       | **Eliminated** — no path injection needed                                               |
+| **Network lifecycle**  | `create_network`, `connect_to_network`                                                                                           | `client.create_network()`, `client.get_network()`                                       |
+| **Training control**   | `fit_async`, `start_training_background`, `request_training_stop`, `is_training_in_progress`                                     | `client.start_training()`, `client.stop_training()`, `client.get_training_status()`     |
+| **Monitoring hooks**   | `install_monitoring_hooks`, method wrapping of `fit`/`train_output`/`train_candidates`, `_on_*` callbacks                        | **Eliminated** — CasCor service handles monitoring and streams via WebSocket            |
+| **Monitoring thread**  | `start_monitoring_thread`, `stop_monitoring`, `_monitoring_loop`, `_extract_current_metrics`                                     | **Replaced** by WebSocket subscription via `CascorTrainingStream`                       |
+| **Network data**       | `get_network_topology`, `get_network_data`, `extract_cascor_topology`, `get_dataset_info`, `get_prediction_function`             | `client.get_topology()`, `client.get_dataset()`, `client.get_decision_boundary()`       |
+| **Remote workers**     | `connect_remote_workers`, `start_remote_workers`, `stop_remote_workers`, `disconnect_remote_workers`, `get_remote_worker_status` | **Stub no-ops** — workers managed server-side by CasCor service + juniper-cascor-worker |
+| **Dataset generation** | `_generate_dataset_from_juniper_data`, `_create_juniper_dataset`                                                                 | Handled by CasCor service; Canopy passes dataset config in `start_training()`           |
+| **Broadcasting**       | `_broadcast_message` (to Canopy's WebSocketManager)                                                                              | WebSocket relay: CasCor WS → adapter → Canopy frontend WS                               |
 
 ### Current Activation Logic in main.py
 
@@ -75,49 +75,49 @@ The adapter wraps these three client classes:
 
 **JuniperCascorClient** (synchronous REST, `http://localhost:8200`):
 
-| Method | Signature | Maps From |
-|--------|-----------|-----------|
-| `create_network` | `(**kwargs) -> Dict` | `CascorIntegration.create_network(config)` |
-| `get_network` | `() -> Dict` | `CascorIntegration.connect_to_network()` |
-| `delete_network` | `() -> Dict` | (new) |
-| `get_topology` | `() -> Dict` | `CascorIntegration.get_network_topology()` |
-| `get_statistics` | `() -> Dict` | (new) |
-| `start_training` | `(epochs?, dataset?, inline_data?, params?) -> Dict` | `CascorIntegration.start_training_background()` |
-| `stop_training` | `() -> Dict` | `CascorIntegration.request_training_stop()` |
-| `pause_training` | `() -> Dict` | (new) |
-| `resume_training` | `() -> Dict` | (new) |
-| `reset_training` | `() -> Dict` | (new) |
-| `get_training_status` | `() -> Dict` | `CascorIntegration.get_training_status()` |
-| `get_training_params` | `() -> Dict` | (new) |
-| `get_metrics` | `() -> Dict` | `CascorIntegration._extract_current_metrics()` |
-| `get_metrics_history` | `(count?) -> Dict` | (new) |
-| `get_dataset` | `() -> Dict` | `CascorIntegration.get_dataset_info()` |
-| `get_decision_boundary` | `(resolution?) -> Dict` | `CascorIntegration.get_prediction_function()` |
-| `health_check` | `() -> Dict` | (new) |
-| `is_alive` / `is_ready` | `() -> bool` | (new) |
-| `wait_for_ready` | `(timeout?, poll_interval?) -> bool` | (new) |
+| Method                  | Signature                                            | Maps From                                       |
+|-------------------------|------------------------------------------------------|-------------------------------------------------|
+| `create_network`        | `(**kwargs) -> Dict`                                 | `CascorIntegration.create_network(config)`      |
+| `get_network`           | `() -> Dict`                                         | `CascorIntegration.connect_to_network()`        |
+| `delete_network`        | `() -> Dict`                                         | (new)                                           |
+| `get_topology`          | `() -> Dict`                                         | `CascorIntegration.get_network_topology()`      |
+| `get_statistics`        | `() -> Dict`                                         | (new)                                           |
+| `start_training`        | `(epochs?, dataset?, inline_data?, params?) -> Dict` | `CascorIntegration.start_training_background()` |
+| `stop_training`         | `() -> Dict`                                         | `CascorIntegration.request_training_stop()`     |
+| `pause_training`        | `() -> Dict`                                         | (new)                                           |
+| `resume_training`       | `() -> Dict`                                         | (new)                                           |
+| `reset_training`        | `() -> Dict`                                         | (new)                                           |
+| `get_training_status`   | `() -> Dict`                                         | `CascorIntegration.get_training_status()`       |
+| `get_training_params`   | `() -> Dict`                                         | (new)                                           |
+| `get_metrics`           | `() -> Dict`                                         | `CascorIntegration._extract_current_metrics()`  |
+| `get_metrics_history`   | `(count?) -> Dict`                                   | (new)                                           |
+| `get_dataset`           | `() -> Dict`                                         | `CascorIntegration.get_dataset_info()`          |
+| `get_decision_boundary` | `(resolution?) -> Dict`                              | `CascorIntegration.get_prediction_function()`   |
+| `health_check`          | `() -> Dict`                                         | (new)                                           |
+| `is_alive` / `is_ready` | `() -> bool`                                         | (new)                                           |
+| `wait_for_ready`        | `(timeout?, poll_interval?) -> bool`                 | (new)                                           |
 
 **CascorTrainingStream** (async WebSocket, `ws://localhost:8200/ws/training`):
 
-| Method | Purpose | Maps From |
-|--------|---------|-----------|
-| `connect(path?)` | Connect to WS endpoint | `CascorIntegration.start_monitoring_thread()` |
-| `disconnect()` | Close WS connection | `CascorIntegration.stop_monitoring()` |
-| `stream()` | `AsyncIterator[Dict]` — yields messages | `CascorIntegration._monitoring_loop()` |
-| `listen()` | Block and dispatch to callbacks | (new pattern) |
-| `on_metrics(cb)` | Register metrics callback | `CascorIntegration.create_monitoring_callback()` |
-| `on_state(cb)` | Register state change callback | (new) |
-| `on_topology(cb)` | Register topology update callback | (new) |
-| `on_cascade_add(cb)` | Register cascade unit callback | (new) |
-| `on_event(cb)` | Register general event callback | (new) |
-| `send_command(cmd, params?)` | Send control command via WS | (new) |
+| Method                       | Purpose                                 | Maps From                                        |
+|------------------------------|-----------------------------------------|--------------------------------------------------|
+| `connect(path?)`             | Connect to WS endpoint                  | `CascorIntegration.start_monitoring_thread()`    |
+| `disconnect()`               | Close WS connection                     | `CascorIntegration.stop_monitoring()`            |
+| `stream()`                   | `AsyncIterator[Dict]` — yields messages | `CascorIntegration._monitoring_loop()`           |
+| `listen()`                   | Block and dispatch to callbacks         | (new pattern)                                    |
+| `on_metrics(cb)`             | Register metrics callback               | `CascorIntegration.create_monitoring_callback()` |
+| `on_state(cb)`               | Register state change callback          | (new)                                            |
+| `on_topology(cb)`            | Register topology update callback       | (new)                                            |
+| `on_cascade_add(cb)`         | Register cascade unit callback          | (new)                                            |
+| `on_event(cb)`               | Register general event callback         | (new)                                            |
+| `send_command(cmd, params?)` | Send control command via WS             | (new)                                            |
 
 **CascorControlStream** (async WebSocket, `ws://localhost:8200/ws/control`):
 
-| Method | Purpose |
-|--------|---------|
-| `connect()` | Connect to `/ws/control` |
-| `disconnect()` | Close connection |
+| Method                  | Purpose                         |
+|-------------------------|---------------------------------|
+| `connect()`             | Connect to `/ws/control`        |
+| `disconnect()`          | Close connection                |
 | `command(cmd, params?)` | Send command and await response |
 
 ### 3.2 CascorServiceAdapter Design
@@ -346,15 +346,15 @@ The migration plan originally specified a binary switch: demo mode vs. service m
 
 ### 4.1 Mode Definitions
 
-| Mode | Trigger | Backend | When to Use |
-|------|---------|---------|-------------|
-| **Demo** | `CASCOR_DEMO_MODE=1` | `DemoMode` (unchanged) | Development without any backend |
-| **Service** | `CASCOR_SERVICE_URL` is set | `CascorServiceAdapter` (new) | Production with CasCor as a service |
-| **Legacy** | `CASCOR_BACKEND_PATH` is set | `CascorIntegration` (existing) | Transition period — direct imports |
+| Mode        | Trigger                      | Backend                        | When to Use                         |
+|-------------|------------------------------|--------------------------------|-------------------------------------|
+| **Demo**    | `CASCOR_DEMO_MODE=1`         | `DemoMode` (unchanged)         | Development without any backend     |
+| **Legacy**  | `CASCOR_BACKEND_PATH` is set | `CascorIntegration` (existing) | Transition period — direct imports  |
+| **Service** | `CASCOR_SERVICE_URL` is set  | `CascorServiceAdapter` (new)   | Production with CasCor as a service |
 
 ### 4.2 Activation Priority
 
-```
+```bash
 1. CASCOR_DEMO_MODE=1           → Demo mode (highest priority)
 2. CASCOR_SERVICE_URL is set    → Service mode via CascorServiceAdapter
 3. CASCOR_BACKEND_PATH is set   → Legacy mode via CascorIntegration
@@ -407,12 +407,12 @@ else:
 
 ### 4.4 Transition Timeline
 
-| Step | Legacy Mode | Service Mode | Notes |
-|------|-------------|--------------|-------|
-| Phase 4a: Implement adapter | Available | Available | Both modes work |
-| Phase 4b: Validate service mode | Available | Tested in CI | Integration tests pass |
-| Phase 4c: Remove legacy | **Removed** | Default | Delete `CascorIntegration`, remove `CASCOR_BACKEND_PATH` support |
-| Phase 5: Split repos | N/A | Only mode | No CasCor source in Canopy's repo |
+| Step                            | Legacy Mode | Service Mode | Notes                                                            |
+|---------------------------------|-------------|--------------|------------------------------------------------------------------|
+| Phase 4a: Implement adapter     | Available   | Available    | Both modes work                                                  |
+| Phase 4b: Validate service mode | Available   | Tested in CI | Integration tests pass                                           |
+| Phase 4c: Remove legacy         | **Removed** | Default      | Delete `CascorIntegration`, remove `CASCOR_BACKEND_PATH` support |
+| Phase 5: Split repos            | N/A         | Only mode    | No CasCor source in Canopy's repo                                |
 
 ---
 
@@ -477,14 +477,14 @@ Because the adapter uses backward-compatible method names, most route handlers r
 
 **Route mapping:**
 
-| Route | Current Call | Adapter Call | Notes |
-|-------|-------------|--------------|-------|
-| `/api/train/start` | `cascor_integration.start_training_background()` | `backend.start_training_background()` | Same name |
-| `/api/train/stop` | `cascor_integration.request_training_stop()` | `backend.request_training_stop()` | Same name |
-| `/api/train/status` | `cascor_integration.get_training_status()` | `backend.get_training_status()` | Same name |
-| `/api/network/topology` | `cascor_integration.get_network_topology()` | `backend.get_network_topology()` | Same name |
-| `/api/network/create` | `cascor_integration.create_network(config)` | `backend.create_network(config)` | Same name |
-| `/ws/control` reset | `cascor_integration.restore_original_methods()` then `create_network` then `install_monitoring_hooks` | Same calls — adapter stubs the no-ops | Transparent |
+| Route                   | Current Call                                                                                          | Adapter Call                          | Notes       |
+|-------------------------|-------------------------------------------------------------------------------------------------------|---------------------------------------|-------------|
+| `/api/train/start`      | `cascor_integration.start_training_background()`                                                      | `backend.start_training_background()` | Same name   |
+| `/api/train/stop`       | `cascor_integration.request_training_stop()`                                                          | `backend.request_training_stop()`     | Same name   |
+| `/api/train/status`     | `cascor_integration.get_training_status()`                                                            | `backend.get_training_status()`       | Same name   |
+| `/api/network/topology` | `cascor_integration.get_network_topology()`                                                           | `backend.get_network_topology()`      | Same name   |
+| `/api/network/create`   | `cascor_integration.create_network(config)`                                                           | `backend.create_network(config)`      | Same name   |
+| `/ws/control` reset     | `cascor_integration.restore_original_methods()` then `create_network` then `install_monitoring_hooks` | Same calls — adapter stubs the no-ops | Transparent |
 
 ### Step 5.4 — Update Dependencies
 
@@ -502,16 +502,16 @@ dependencies = [
 
 **New environment variables:**
 
-| Variable | Purpose | Default |
-|----------|---------|---------|
-| `CASCOR_SERVICE_URL` | CasCor service URL | (none — triggers service mode when set) |
-| `CASCOR_SERVICE_API_KEY` | API key for CasCor service | (none — optional) |
+| Variable                 | Purpose                    | Default                                 |
+|--------------------------|----------------------------|-----------------------------------------|
+| `CASCOR_SERVICE_URL`     | CasCor service URL         | (none — triggers service mode when set) |
+| `CASCOR_SERVICE_API_KEY` | API key for CasCor service | (none — optional)                       |
 
 **Variables retained during transition:**
 
-| Variable | Purpose | Notes |
-|----------|---------|-------|
-| `CASCOR_DEMO_MODE` | Force demo mode | Unchanged |
+| Variable              | Purpose                   | Notes               |
+|-----------------------|---------------------------|---------------------|
+| `CASCOR_DEMO_MODE`    | Force demo mode           | Unchanged           |
 | `CASCOR_BACKEND_PATH` | Legacy direct-import path | Removed in Step 5.8 |
 
 **Default port:** `8200` (matches `juniper-cascor-client` defaults), NOT `8060` as originally stated in the migration plan.
@@ -578,33 +578,33 @@ The resulting `main.py` has only two modes: demo and service.
 
 This table maps every `CascorIntegration` method to its `CascorServiceAdapter` equivalent:
 
-| CascorIntegration Method | Adapter Method | Client Call | Notes |
-|--------------------------|---------------|-------------|-------|
-| `__init__(backend_path)` | `__init__(service_url, api_key)` | `JuniperCascorClient(base_url, api_key)` | Different constructor |
-| `create_network(config)` | `create_network(config)` | `client.create_network(**config)` | Dict unpacked to kwargs |
-| `connect_to_network(network)` | `connect_to_network(network)` | `client.get_network()` | Arg ignored |
-| `get_network_topology()` | `get_network_topology()` | `client.get_topology()` | Same name |
-| `extract_cascor_topology()` | `extract_cascor_topology()` | `client.get_topology()` | Alias |
-| `get_network_data()` | `get_network_data()` | `client.get_network()` | Same name |
-| `fit_async(*args, **kw)` | N/A | `client.start_training()` | Service is already async |
-| `start_training_background(*args, **kw)` | `start_training_background(**kw)` | `client.start_training()` | No positional args |
-| `request_training_stop()` | `request_training_stop()` | `client.stop_training()` | Same name |
-| `is_training_in_progress()` | `is_training_in_progress()` | `client.get_training_status()` | Checks `is_training` key |
-| `get_training_status()` | `get_training_status()` | `client.get_training_status()` | Same name |
-| `install_monitoring_hooks()` | `install_monitoring_hooks()` | No-op (returns True) | Server-side |
-| `start_monitoring_thread(interval)` | `start_monitoring_thread(interval)` | No-op | WS relay instead |
-| `stop_monitoring()` | `stop_monitoring()` | No-op | WS relay instead |
-| `restore_original_methods()` | `restore_original_methods()` | No-op | No wrapping |
-| `get_dataset_info(x, y)` | `get_dataset_info(x, y)` | `client.get_dataset()` | Args ignored |
-| `get_prediction_function()` | `get_prediction_function()` | Returns None | Use `get_decision_boundary()` |
-| `_broadcast_message(msg)` | (internal relay) | `training_stream.stream()` → `ws_manager.broadcast()` | Automatic |
-| `connect_remote_workers(...)` | `connect_remote_workers(...)` | No-op (returns True) | Server-side |
-| `start_remote_workers(n)` | `start_remote_workers(n)` | No-op (returns True) | Server-side |
-| `stop_remote_workers(timeout)` | `stop_remote_workers(timeout)` | No-op (returns True) | Server-side |
-| `disconnect_remote_workers()` | `disconnect_remote_workers()` | No-op (returns True) | Server-side |
-| `get_remote_worker_status()` | `get_remote_worker_status()` | No-op stub dict | Server-side |
-| `shutdown()` | `shutdown()` | `client.close()` | Same name |
-| `create_monitoring_callback(type, cb)` | N/A | Use `training_stream.on_metrics()` etc. | Different pattern |
+| CascorIntegration Method                 | Adapter Method                      | Client Call                                           | Notes                         |
+|------------------------------------------|-------------------------------------|-------------------------------------------------------|-------------------------------|
+| `__init__(backend_path)`                 | `__init__(service_url, api_key)`    | `JuniperCascorClient(base_url, api_key)`              | Different constructor         |
+| `create_network(config)`                 | `create_network(config)`            | `client.create_network(**config)`                     | Dict unpacked to kwargs       |
+| `connect_to_network(network)`            | `connect_to_network(network)`       | `client.get_network()`                                | Arg ignored                   |
+| `get_network_topology()`                 | `get_network_topology()`            | `client.get_topology()`                               | Same name                     |
+| `extract_cascor_topology()`              | `extract_cascor_topology()`         | `client.get_topology()`                               | Alias                         |
+| `get_network_data()`                     | `get_network_data()`                | `client.get_network()`                                | Same name                     |
+| `fit_async(*args, **kw)`                 | N/A                                 | `client.start_training()`                             | Service is already async      |
+| `start_training_background(*args, **kw)` | `start_training_background(**kw)`   | `client.start_training()`                             | No positional args            |
+| `request_training_stop()`                | `request_training_stop()`           | `client.stop_training()`                              | Same name                     |
+| `is_training_in_progress()`              | `is_training_in_progress()`         | `client.get_training_status()`                        | Checks `is_training` key      |
+| `get_training_status()`                  | `get_training_status()`             | `client.get_training_status()`                        | Same name                     |
+| `install_monitoring_hooks()`             | `install_monitoring_hooks()`        | No-op (returns True)                                  | Server-side                   |
+| `start_monitoring_thread(interval)`      | `start_monitoring_thread(interval)` | No-op                                                 | WS relay instead              |
+| `stop_monitoring()`                      | `stop_monitoring()`                 | No-op                                                 | WS relay instead              |
+| `restore_original_methods()`             | `restore_original_methods()`        | No-op                                                 | No wrapping                   |
+| `get_dataset_info(x, y)`                 | `get_dataset_info(x, y)`            | `client.get_dataset()`                                | Args ignored                  |
+| `get_prediction_function()`              | `get_prediction_function()`         | Returns None                                          | Use `get_decision_boundary()` |
+| `_broadcast_message(msg)`                | (internal relay)                    | `training_stream.stream()` → `ws_manager.broadcast()` | Automatic                     |
+| `connect_remote_workers(...)`            | `connect_remote_workers(...)`       | No-op (returns True)                                  | Server-side                   |
+| `start_remote_workers(n)`                | `start_remote_workers(n)`           | No-op (returns True)                                  | Server-side                   |
+| `stop_remote_workers(timeout)`           | `stop_remote_workers(timeout)`      | No-op (returns True)                                  | Server-side                   |
+| `disconnect_remote_workers()`            | `disconnect_remote_workers()`       | No-op (returns True)                                  | Server-side                   |
+| `get_remote_worker_status()`             | `get_remote_worker_status()`        | No-op stub dict                                       | Server-side                   |
+| `shutdown()`                             | `shutdown()`                        | `client.close()`                                      | Same name                     |
+| `create_monitoring_callback(type, cb)`   | N/A                                 | Use `training_stream.on_metrics()` etc.               | Different pattern             |
 
 ---
 
@@ -612,7 +612,7 @@ This table maps every `CascorIntegration` method to its `CascorServiceAdapter` e
 
 ### Current Architecture (CascorIntegration)
 
-```
+```bash
 [CasCor Network] --method wrapping--> [CascorIntegration callbacks]
                                            |
                                            v
@@ -624,7 +624,7 @@ This table maps every `CascorIntegration` method to its `CascorServiceAdapter` e
 
 ### New Architecture (CascorServiceAdapter)
 
-```
+```bash
 [CasCor Service] --per-epoch hooks--> [CasCor WS Manager]
                                            |
                                       /ws/training
@@ -643,16 +643,19 @@ This table maps every `CascorIntegration` method to its `CascorServiceAdapter` e
 CasCor service WebSocket messages use the format: `{type, timestamp, data}`.
 
 CascorIntegration currently broadcasts messages like:
+
 ```json
 {"type": "metrics_update", "epoch": 5, "train_loss": 0.1, ...}
 ```
 
 The CasCor service format wraps data in a `data` key:
+
 ```json
 {"type": "metrics", "timestamp": "...", "data": {"epoch": 5, "train_loss": 0.1, ...}}
 ```
 
 **Decision:** The relay loop should either:
+
 - (a) Pass messages through as-is and update Canopy's frontend JS to handle the new format, OR
 - (b) Transform messages in the relay to match the old format
 
@@ -662,16 +665,16 @@ The CasCor service format wraps data in a `data` key:
 
 ## 8. Corrections from Original Migration Plan
 
-| Topic | Migration Plan (Phase 4) | Corrected |
-|-------|--------------------------|-----------|
-| Default port | `8060` | **`8200`** (matches `juniper-cascor-client` defaults) |
-| Constructor | `(cascor_url, websocket_manager, data_client)` | **`(service_url, api_key)`** — adapter imports WS manager internally |
-| Method names | New names: `start_training`, `get_topology` | **Backward-compatible names** matching CascorIntegration API |
-| Activation | Binary: demo vs. service | **Three-mode**: demo / service / legacy (transitional) |
-| Legacy removal | Remove CascorIntegration immediately | **Keep during transition**, feature-flag with env vars |
-| WS relay | `stream_metrics()` | **`stream()`** — correct client API method |
-| Remote workers | `client.connect_workers()`, etc. | **Stub no-ops** — workers managed server-side |
-| Config URL | `conf/app_config.yaml` backend section | **Environment variables** (`CASCOR_SERVICE_URL`) — consistent with existing patterns |
+| Topic          | Migration Plan (Phase 4)                       | Corrected                                                                            |
+|----------------|------------------------------------------------|--------------------------------------------------------------------------------------|
+| Default port   | `8060`                                         | **`8200`** (matches `juniper-cascor-client` defaults)                                |
+| Constructor    | `(cascor_url, websocket_manager, data_client)` | **`(service_url, api_key)`** — adapter imports WS manager internally                 |
+| Method names   | New names: `start_training`, `get_topology`    | **Backward-compatible names** matching CascorIntegration API                         |
+| Activation     | Binary: demo vs. service                       | **Three-mode**: demo / service / legacy (transitional)                               |
+| Legacy removal | Remove CascorIntegration immediately           | **Keep during transition**, feature-flag with env vars                               |
+| WS relay       | `stream_metrics()`                             | **`stream()`** — correct client API method                                           |
+| Remote workers | `client.connect_workers()`, etc.               | **Stub no-ops** — workers managed server-side                                        |
+| Config URL     | `conf/app_config.yaml` backend section         | **Environment variables** (`CASCOR_SERVICE_URL`) — consistent with existing patterns |
 
 ---
 
@@ -702,22 +705,22 @@ The CasCor service format wraps data in a `data` key:
 
 ## 10. Risk Mitigation
 
-| Risk | Impact | Mitigation |
-|------|--------|-----------|
-| CasCor service API not complete (Phase 2 in progress) | Adapter methods fail | Three-mode activation allows fallback to legacy |
-| WS message format mismatch | Frontend breaks | Document format contract; option to transform in relay |
-| Training data handling changes | Training fails | Service mode passes dataset config to CasCor, not raw tensors |
-| Performance regression (network hop) | Slower metrics updates | WS streaming is near-real-time; REST polling as fallback |
-| juniper-cascor-worker not compatible | Remote training breaks | Worker is independent service; adapter stubs don't interfere |
+| Risk                                                  | Impact                 | Mitigation                                                    |
+|-------------------------------------------------------|------------------------|---------------------------------------------------------------|
+| CasCor service API not complete (Phase 2 in progress) | Adapter methods fail   | Three-mode activation allows fallback to legacy               |
+| WS message format mismatch                            | Frontend breaks        | Document format contract; option to transform in relay        |
+| Training data handling changes                        | Training fails         | Service mode passes dataset config to CasCor, not raw tensors |
+| Performance regression (network hop)                  | Slower metrics updates | WS streaming is near-real-time; REST polling as fallback      |
+| juniper-cascor-worker not compatible                  | Remote training breaks | Worker is independent service; adapter stubs don't interfere  |
 
 ---
 
 ## 11. Dependencies and Prerequisites
 
-| Prerequisite | Status | Notes |
-|--------------|--------|-------|
-| Phase 2: CasCor Service API | In Progress | REST routes ~65% done; WS endpoints needed |
-| Phase 3: juniper-cascor-client v0.1.0 | Complete | All client classes implemented |
-| juniper-cascor-worker | Complete | Standalone package, no Canopy dependency |
-| JuniperData service | Running | Required for dataset generation |
-| juniper-data-client | Complete | Already used by Canopy |
+| Prerequisite                          | Status      | Notes                                      |
+|---------------------------------------|-------------|--------------------------------------------|
+| Phase 2: CasCor Service API           | In Progress | REST routes ~65% done; WS endpoints needed |
+| Phase 3: juniper-cascor-client v0.1.0 | Complete    | All client classes implemented             |
+| juniper-cascor-worker                 | Complete    | Standalone package, no Canopy dependency   |
+| JuniperData service                   | Running     | Required for dataset generation            |
+| juniper-data-client                   | Complete    | Already used by Canopy                     |
