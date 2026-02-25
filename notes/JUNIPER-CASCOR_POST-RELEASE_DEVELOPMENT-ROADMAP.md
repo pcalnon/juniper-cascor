@@ -62,14 +62,17 @@ This document is the **authoritative, consolidated roadmap** for all JuniperCasc
 
 | Category                         | Count | Change from 2026-02-18 |
 | -------------------------------- | ----- | ---------------------- |
-| Total unique non-completed items | 72    | -17 (was 89)           |
-| Resolved by migration            | 10    | +10                    |
-| Superseded by migration          | 5     | +5                     |
-| Scope changed by migration       | 12    | (reclassified)         |
+| Total unique non-completed items | 83    | -6 (was 89)            |
+| Resolved/superseded by migration | 6     | +6 (see Section 10)    |
+| Pre-migration resolved           | 2     | INT-P1-002, INT-P2-013 |
+| Scope changed by migration       | 6     | (reclassified)         |
+| New items from migration         | 2     | +2                     |
 | Critical (P0)                    | 3     | -2 (was 5)            |
-| High (P1)                        | 9     | -7 (was 16)           |
+| High (P1)                        | 8     | -8 (was 16)           |
 | Medium (P2)                      | 22    | -3 (was 25)           |
-| Low / Deferred (P3-P4)           | 38    | -5 (was 43)           |
+| Low / Deferred (P3-P4)           | 50    | +7 (was 43)           |
+
+*Total = 89 - 6 (migration resolved/superseded) - 2 (pre-migration resolved) + 2 (new items) = 83. Priority sum: 3 + 8 + 22 + 50 = 83. P3-P4 increase reflects items downgraded from P0 (INT-P0-004, INT-P0-005) and P1 (INT-P1-003, INT-P1-005, INT-P2-004) plus 2 new items.*
 
 ### Codebase Validation Summary (2026-02-18)
 
@@ -175,7 +178,7 @@ These items were identified during the 2026-02-05 source code review. They repre
 
 **Description**: `JuniperDataClient` is duplicated in both JuniperCascor (`src/juniper_data_client/client.py`) and JuniperCanopy. Changes to the client API must be synchronized manually.
 
-**Migration Impact (2026-02-24)**: **RESOLVED**. `juniper-data-client` v0.3.0 has been published to PyPI as the single source of truth. All vendored copies have been removed from CasCor, Canopy, and JuniperData. CasCor's `pyproject.toml` declares `juniper-data-client>=0.3.0` under `[project.optional-dependencies].juniper-data`. The `src/juniper_data_client/` directory in CasCor has been cleaned (only `__pycache__/` remains).
+**Migration Impact (2026-02-24)**: **RESOLVED**. `juniper-data-client` v0.3.0 has been published to PyPI as the single source of truth. All vendored copies have been removed from CasCor, Canopy, and JuniperData. CasCor's `pyproject.toml` declares `juniper-data-client>=0.3.0` under `[project.optional-dependencies].juniper-data`. The `src/juniper_data_client/` directory in CasCor has been entirely removed.
 
 ---
 
@@ -807,7 +810,7 @@ The implementation lives in `src/api/lifecycle/manager.py`, `src/api/lifecycle/s
 **Status**: NOT STARTED → **SCOPE CHANGED**
 **Source**: INTEGRATION_ROADMAP-01.md
 
-**Description**: File headers show various versions: `0.3.1 (0.7.3)`, `0.3.2 (0.7.3)`, `1.0.1`, `0.1.0`. CLAUDE.md states `0.6.6 (0.7.3)`.
+**Description**: File headers show various versions: `0.3.1 (0.7.3)`, `0.3.2 (0.7.3)`, `0.3.12`, `0.3.16`, `0.4.1`, `0.7.3` (bare), `1.0.1`, `0.1.0`. CLAUDE.md states `0.6.6 (0.7.3)`. API module files (`src/api/`) have no version headers.
 
 **Migration Impact (2026-02-24)**: The canonical version is now in `pyproject.toml` (currently `0.3.17`). The CasCor Service API uses `0.4.0` in its response envelope metadata. File header versions should be reconciled to match `pyproject.toml`. Consider using a single-source-of-truth version (e.g., `importlib.metadata.version("juniper-cascor")`) instead of file header strings.
 
@@ -921,7 +924,7 @@ The implementation lives in `src/api/lifecycle/manager.py`, `src/api/lifecycle/s
 
 #### Code Cleanup Items (Low Priority)
 
-**Source**: INTEGRATION_ROADMAP-01.md (INT-P4-012 through INT-P4-017)
+**Source**: INTEGRATION_ROADMAP-01.md (INT-P4-012 through INT-P4-016)
 
 | ID         | Description                                                      | Status |
 | ---------- | ---------------------------------------------------------------- | ------ |
@@ -942,7 +945,7 @@ The implementation lives in `src/api/lifecycle/manager.py`, `src/api/lifecycle/s
 | cascade_correlation.py | ~577  | CUDA random seeding             | P3                  |
 | cascade_correlation.py | ~925  | Refactor repeated code          | P3                  |
 | cascade_correlation.py | ~1381 | Convert to proper constants     | P3                  |
-| cascade_correlation.py | ~2314 | validate_training_results bug   | P0 (see INT-P2-003) |
+| cascade_correlation.py | ~2314 | validate_training_results bug   | P2 (see INT-P2-003) |
 | snapshot_serializer.py | ~756  | Extend optimizer support        | P2                  |
 | spiral_problem.py      | ~482  | Restore scaling functionality   | P3                  |
 | log_config.py          | ~78   | Clean up logging initialization | P3                  |
@@ -1103,6 +1106,16 @@ These items are documented as COMPLETE and included for reference only.
 
 **Status**: ALL FIXED
 
+### INT-P1-002: `requests` as Undeclared Dependency
+
+**Status**: RESOLVED (pre-migration, confirmed 2026-02-18)
+**Resolution**: `requests>=2.28.0` declared in `pyproject.toml` and `conf/requirements-pip.txt`. Fixed prior to polyrepo migration.
+
+### INT-P2-013: `check_object_pickleability` Depends on Undeclared `dill`
+
+**Status**: RESOLVED (pre-migration, confirmed 2026-02-18)
+**Resolution**: `dill>=0.3.6` declared in `pyproject.toml`. Used in `src/utils/utils.py` and test files.
+
 ### COMPLETE_FIX_SUMMARY P0/P1/P2 (19 items)
 
 **Status**: ALL RESOLVED
@@ -1112,7 +1125,7 @@ These items are documented as COMPLETE and included for reference only.
 | Item | Resolution | Migration Phase |
 | --- | --- | --- |
 | INT-P1-001: Duplicated JuniperDataClient | `juniper-data-client` v0.3.0 on PyPI | Phase 1 |
-| INT-P1-004: Full IPC Architecture | CasCor Service API + `juniper-cascor-client` | Phases 2-3 |
+| INT-P1-004: Full IPC Architecture | CasCor Service API + `juniper-cascor-client` (substantially resolved; Canopy integration testing pending) | Phases 2-3 |
 | C.1: Async Wrapper for fit() | `TrainingLifecycleManager` with ThreadPoolExecutor | Phase 2 |
 | C.2: Expose RemoteWorkerClient | `juniper-cascor-worker` on PyPI; server-side management | Phase 3 |
 | CAS-004: Extract Remote Worker | Published as `juniper-cascor-worker` v0.1.0 | Phase 3 |
@@ -1161,7 +1174,7 @@ Based on codebase validation results, dependency analysis, effort estimates, and
 | 7   | INT-P1-005: Fix `main.py` unused `spiral_config` parameter         | 15 min  | Remove the dead parameter                            |
 | 8   | INT-P1-008: Remove stale `check.py` duplicate                      | 15 min  | Delete file, verify no references                    |
 | 9   | INT-P2-001: Properly declare `shared_object_dict` at module scope  | 30 min  | Add module-level declaration                         |
-| 10  | Clean up `src/remote_client/` directory                            | 30 min  | **NEW**: Archive or remove in-tree remote client code superseded by `juniper-cascor-worker` |
+| 10  | Clean up `src/remote_client/` directory (CAS-004 follow-up)       | 30 min  | **NEW**: Archive or remove in-tree remote client code superseded by `juniper-cascor-worker` |
 
 **Estimated Total**: 8-12 hours
 
@@ -1221,14 +1234,14 @@ Based on codebase validation results, dependency analysis, effort estimates, and
 | --- | ------------------------------------------- | --------- | ------------------------------------------------------------- |
 | 1   | Shell script path fixes (6 Oracle items)    | 2-3 days  | Validate paths in polyrepo layout                             |
 | 2   | INT-P3-003: Docker Compose validation       | 1-2 days  | Coordinate with migration Phase 6 `juniper-deploy` repo       |
-| 3   | INT-P3-008: Git hygiene (.gitignore)        | 1 hr      | Verify polyrepo .gitignore covers artifacts                   |
+| 3   | INT-P3-008: Git hygiene (.gitignore)        | 1 hr      | **LIKELY RESOLVED** — verify polyrepo .gitignore covers artifacts |
 | 4   | INT-P3-009: Version string consistency      | 1-2 hrs   | Reconcile to pyproject.toml `0.3.17` / API `0.4.0`           |
 | 5   | INT-P3-010: Snapshot directory confusion    | 1 hr      |                                                               |
 | 6   | Large file refactoring                      | 1-2 weeks |                                                               |
 | 7   | CAS-008/009: Network hierarchy & population | 4-8 weeks |                                                               |
 | 8   | CAS-010: Snapshot Vector DB                 | 2-4 weeks |                                                               |
 | 9   | GPU/CUDA support                            | 2-4 weeks | CI needs GPU runner or separate workflow                      |
-| 10  | Implement deferred API endpoints            | 1-2 weeks | **NEW**: `/v1/snapshots/*` (4), `/v1/workers/*` (5), `PUT /v1/training/params` |
+| 10  | Implement deferred API endpoints (CAS-CANOPY-002, C.2 follow-up) | 1-2 weeks | **NEW**: `/v1/snapshots/*` (4), `/v1/workers/*` (5), `PUT /v1/training/params` |
 
 ---
 
@@ -1496,4 +1509,5 @@ INT-P3-003 (Docker Compose)
 | 2026-02-18 | AI Agent | Complete rewrite: Exhaustive audit of all 25+ notes files, de-duplicated 89 unique items                                     |
 | 2026-02-18 | AI Agent | Codebase validation pass: Validated 23 items against source code, confirmed 17 bugs, resolved 3 items, adjusted 3 severities |
 | 2026-02-18 | AI Agent | Added development phases (0-5), high-level design analysis (7 architectural decisions with options/recommendations)          |
-| 2026-02-24 | AI Agent | **Polyrepo migration reconciliation**: Analyzed impact of `POLYREPO_MIGRATION_PLAN.md` (v1.5.0) and `DECOUPLE_CANOPY_FROM_CASCOR_PLAN.md` against all 89 roadmap items. 10 items resolved by migration, 5 superseded, 12 scope-changed. Updated consolidated statistics (89→72 open items). Added Migration Impact annotations to 27 items across all sections. Updated Development Phases 0-5 with post-migration actions. Added 2 new verification items (CasCor Service API E2E, Three-Mode Activation). Updated Dependencies Matrix with resolved/superseded items. Revised Risk Assessment with 5 new migration-specific risks and 2 mitigated risks. Updated Design Decisions 4 and 5 as IMPLEMENTED. Pre-update version archived to `history/JUNIPER-CASCOR_POST-RELEASE_DEVELOPMENT-ROADMAP_2026-02-24.md`. |
+| 2026-02-24 | AI Agent | **Polyrepo migration reconciliation**: Analyzed impact of `POLYREPO_MIGRATION_PLAN.md` (v1.5.0) and `DECOUPLE_CANOPY_FROM_CASCOR_PLAN.md` against all 89 roadmap items. 6 items resolved/superseded by migration, 6 scope-changed, 2 new items added. Added Migration Impact annotations to 27 items across all sections. Updated Development Phases 0-5 with post-migration actions. Added 2 new verification items (CasCor Service API E2E, Three-Mode Activation). Updated Dependencies Matrix with resolved/superseded items. Revised Risk Assessment with 5 new migration-specific risks and 2 mitigated risks. Updated Design Decisions 4 and 5 as IMPLEMENTED. Pre-update version archived to `history/JUNIPER-CASCOR_POST-RELEASE_DEVELOPMENT-ROADMAP_2026-02-24.md`. |
+| 2026-02-24 | AI Agent | **Post-reconciliation validation**: Fixed 10 errors introduced during migration reconciliation — corrected consolidated statistics (resolved: 10→6, superseded: 5→removed, scope-changed: 12→6, total: 72→83, High: 9→8, Low: 38→50), fixed INT-P1-001 factual error (`src/juniper_data_client/` directory entirely removed, not partially), corrected INT-P1-004 status in resolved table to SUBSTANTIALLY RESOLVED, fixed In-Code TODO priority for validate_training_results (P0→P2), fixed INT-P4-012–017 header to INT-P4-012–016, annotated INT-P3-008 as LIKELY RESOLVED in Phase 5 table, added INT-P1-002 and INT-P2-013 to Section 10 completed items, expanded INT-P3-009 version list, added traceable references to new Phase items. |
