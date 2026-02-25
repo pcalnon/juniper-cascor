@@ -1479,11 +1479,17 @@ services:
         condition: service_healthy
 ```
 
-### Step 6.4 — Monitoring and Health Checks
+### Step 6.4 — Monitoring and Health Checks ✅ COMPLETE (2026-02-25)
 
-- Each service exposes `/v1/health` and `/v1/health/ready`
-- Canopy dashboard shows connection status to CasCor and Data services
-- Alerts when downstream services are unreachable
+All three services now expose standardized health endpoints:
+
+| Endpoint | juniper-data | juniper-cascor | juniper-canopy |
+|---|---|---|---|
+| `/v1/health` | ✅ | ✅ | ✅ (new, commit `622994b`) |
+| `/v1/health/live` | ✅ | ✅ | ✅ (new) |
+| `/v1/health/ready` | ✅ | ✅ | ✅ (new) |
+
+JuniperCanopy retains `/health` and `/api/health` as backward-compatible aliases.
 
 ### Step 6.5 — Documentation Updates
 
@@ -1597,7 +1603,7 @@ Update all documentation across all repositories:
 ### Phase 6 — Hardening
 
 - [x] Version compatibility matrix documented
-- [ ] Health check endpoints standardized (/v1/health + /v1/health/ready)
+- [x] Health check endpoints standardized (/v1/health + /v1/health/ready)
 - [ ] Integration tests operational
 - [ ] Docker Compose full-stack working
 - [ ] Documentation complete
