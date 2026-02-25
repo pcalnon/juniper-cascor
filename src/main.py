@@ -39,6 +39,9 @@ import logging
 import logging.config
 import os
 
+import sentry_sdk
+from dotenv import load_dotenv
+
 # TODO: F401 - unused imports, may be needed for future use
 # from cascor_constants.constants import _CASCOR_MAX_NEW  # trunk-ignore(ruff/F401)
 # from cascor_constants.constants import _CASCOR_MAX_ORIG  # trunk-ignore(ruff/F401)
@@ -105,13 +108,6 @@ from spiral_problem.spiral_problem import SpiralProblem
 # from inspect import currentframe, getframeinfo
 
 
-#####################################################################################################################################################################################################
-# from fastapi import FastAPI
-import sentry_sdk
-
-import os
-from dotenv import load_dotenv
-
 load_dotenv()
 sentry_sdk.init(
     dsn=os.getenv("SENTRY_SDK_DSN"),
@@ -133,7 +129,6 @@ sentry_sdk.init(
 # app = FastAPI()
 
 
-
 #####################################################################################################################################################################################################
 # TODO: don't think this is needed with Logger class implementing singleton pattern, and Class methods for initial logging
 global logger
@@ -141,7 +136,7 @@ global log_config
 
 
 #####################################################################################################################################################################################################
-# Define the main function for Juniper Cascor 
+# Define the main function for Juniper Cascor
 def main():
     Logger.info("Cascor: main: Starting the Cascade Correlation Neural Network project")
     Logger.info(f"Cascor: main: Project constants: Log Level: {_CASCOR_LOG_LEVEL}, Log Level Name: {_CASCOR_LOG_LEVEL_NAME}")
