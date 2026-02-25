@@ -620,6 +620,6 @@ except requests.HTTPError as e:
 
 ## See Also
 
-- [API Reference](../api/index.md) - Public API documentation
-- [Testing Guide](../testing/index.md) - Test suite documentation
-- [Installation Guide](../install/index.md) - Setup instructions
+- [API Reference](../api/api-reference.md) - Public API documentation
+- [Testing Guide](../testing/quick-start.md) - Test suite documentation
+- [Installation Guide](../install/quick-start.md) - Setup instructions

@@ -884,7 +884,7 @@ cd /path/to/juniper_data && python -m juniper_data.main
 ## Related Documentation
 
 - [FEATURES_GUIDE.md](../../notes/FEATURES_GUIDE.md) - Detailed feature documentation
-- [CASCOR_ENHANCEMENTS_ROADMAP.md](../../notes/CASCOR_ENHANCEMENTS_ROADMAP.md) - Enhancement roadmap
+- CASCOR_ENHANCEMENTS_ROADMAP.md (archived) - Enhancement roadmap
 - [Test Suite README](../../src/tests/README.md) - Testing documentation
 
 ---

@@ -330,7 +330,7 @@ act -j test
 
 ## Related Documentation
 
-- [Testing Guide](../testing/README.md)
-- [Installation Guide](../install/README.md)
-- [API Reference](../api/README.md)
-- [Test Runner Scripts](../../src/tests/scripts/README.md)
+- [Testing Guide](../testing/quick-start.md)
+- [Installation Guide](../install/quick-start.md)
+- [API Reference](../api/api-reference.md)
+- Test Runner Scripts (`src/tests/scripts/`)

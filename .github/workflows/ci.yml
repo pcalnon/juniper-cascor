@@ -103,6 +103,29 @@ jobs:
           pre-commit run --all-files --show-diff-on-failure
 
   # ═══════════════════════════════════════════════════════════════════════════════════════════════
+  # Docs: Validate documentation link integrity
+  # ═══════════════════════════════════════════════════════════════════════════════════════════════
+  docs:
+    name: Documentation Links
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Validate Documentation Links
+        run: |
+          echo "╔════════════════════════════════════════════════════════════╗"
+          echo "║       Juniper Cascor - Documentation Link Validation      ║"
+          echo "╚════════════════════════════════════════════════════════════╝"
+          python scripts/check_doc_links.py --exclude templates --exclude history
+
+  # ═══════════════════════════════════════════════════════════════════════════════════════════════
   # Unit Tests: Run unit tests with coverage enforcement
   # MED-009: Added Python version matrix for multi-version testing
   # Migrated from conda to pip for CI portability (polyrepo Phase 5)
@@ -414,7 +437,7 @@ jobs:
     name: Quality Gate
     runs-on: ubuntu-latest
     if: always()
-    needs: [pre-commit, unit-tests, quick-integration-tests, integration-tests, build, security]
+    needs: [pre-commit, unit-tests, quick-integration-tests, integration-tests, build, security, docs]
 
     steps:
       - name: Check Quality Gate Status
@@ -429,6 +452,7 @@ jobs:
           echo "Full Integration Tests: ${{ needs.integration-tests.result }}"
           echo "Build:                  ${{ needs.build.result }}"
           echo "Security:               ${{ needs.security.result }}"
+          echo "Documentation:          ${{ needs.docs.result }}"
           echo ""
 
           # Pre-commit and unit-tests MUST pass
@@ -463,6 +487,12 @@ jobs:
           # Full integration tests: failure = error, skipped = OK (for feature branches)
           if [[ "${{ needs.integration-tests.result }}" == "failure" ]]; then
             echo "::error::Full integration tests failed"
+            exit 1
+          fi
+
+          # Documentation link validation must pass
+          if [[ "${{ needs.docs.result }}" != "success" ]]; then
+            echo "::error::Documentation link validation failed"
             exit 1
           fi
 

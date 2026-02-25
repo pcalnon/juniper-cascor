@@ -481,5 +481,5 @@ Solutions:
 ## Related Documentation
 
 - [Environment Setup Guide](../install/environment-setup.md) - Local development setup
-- [Testing Guide](../testing/testing-guide.md) - Running tests locally
+- [Testing Guide](../testing/manual.md) - Running tests locally
 - [AGENTS.md](../../AGENTS.md) - Project conventions and commands

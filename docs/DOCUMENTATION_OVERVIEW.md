@@ -805,7 +805,7 @@ Content...
 **Internal Links:**
 
 - Use relative paths: `[README.md](../README.md)`, `[api-reference.md](api/api-reference.md)`
-- Include section anchors: `[Testing](#testing)`, `[Quick Start](install/quick-start.md#prerequisites)`
+- Include section anchors: `[Testing](#testing-documentation)`, `[Quick Start](install/quick-start.md#prerequisites)`
 
 **External Links:**
 
