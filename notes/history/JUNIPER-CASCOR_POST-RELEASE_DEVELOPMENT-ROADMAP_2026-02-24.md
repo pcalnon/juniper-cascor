@@ -2,10 +2,10 @@
 
 **Project**: JuniperCascor - Cascade Correlation Neural Network Backend
 **Created**: 2026-02-17
-**Last Updated**: 2026-02-24 (polyrepo migration impact analysis)
+**Last Updated**: 2026-02-18 (codebase validation pass added)
 **Author**: Paul Calnon
-**Status**: Active - Updated with Polyrepo Migration Impact Analysis
-**Source**: Exhaustive audit of all JuniperCascor `notes/` files (2026-02-18), cross-referenced against polyrepo migration outcomes (2026-02-24)
+**Status**: Active - Comprehensive Post-Release Assessment
+**Source**: Exhaustive audit of all JuniperCascor `notes/` files (2026-02-18)
 
 ---
 
@@ -44,13 +44,13 @@ This document is the **authoritative, consolidated roadmap** for all JuniperCasc
 
 ### Consolidated Statistics
 
-| Category                         | Count (2026-02-18) | Count (2026-02-24, post-migration) |
-| -------------------------------- | ------------------ | ---------------------------------- |
-| Total unique non-completed items | 89                 | 82 (7 resolved by migration)       |
-| Critical (P0)                    | 5                  | 5 (unchanged)                      |
-| High (P1)                        | 16                 | 12 (-4 resolved: INT-P1-001, INT-P1-004, C.1, CAS-CANOPY-001) |
-| Medium (P2)                      | 25                 | 23 (-2 partially resolved: CAS-004, INT-P1-003) |
-| Low / Deferred (P3-P4)           | 43                 | 42 (-1 resolved: Full IPC in Phase 5) |
+| Category                         | Count |
+| -------------------------------- | ----- |
+| Total unique non-completed items | 89    |
+| Critical (P0)                    | 5     |
+| High (P1)                        | 16    |
+| Medium (P2)                      | 25    |
+| Low / Deferred (P3-P4)           | 43    |
 
 ### Codebase Validation Summary (2026-02-18)
 
@@ -60,48 +60,6 @@ This document is the **authoritative, consolidated roadmap** for all JuniperCasc
 | RESOLVED (already fixed) | 3         | INT-P1-002 (requests dep), INT-P1-007 (retry logic), INT-P2-013 (dill dep)                                   |
 | SEVERITY ADJUSTED        | 3         | INT-P2-004 (High→Low), INT-P1-006 (High→Medium), INT-P1-005 (High→Low impact)                                |
 | NOT YET VALIDATED        | Remaining | Architecture items (C.1, C.2), deferred items, Oracle analysis items                                         |
-
----
-
-## Polyrepo Migration Impact Analysis (2026-02-24)
-
-This section documents the impact of the monorepo-to-polyrepo migration (phases documented in `POLYREPO_MIGRATION_PLAN.md` and `DECOUPLE_CANOPY_FROM_CASCOR_PLAN.md`) on the roadmap items below. The migration has progressed through Phases 0-3 (complete) and Phases 4-5 (in progress). JuniperCascor now exists as a standalone repository at `pcalnon/juniper-cascor` with 127 commits on `main`, independent CI/CD, and a FastAPI service layer.
-
-### Items Resolved by the Migration
-
-The following roadmap items have been **fully or substantially resolved** by the polyrepo migration and no longer require dedicated development effort:
-
-| Item | Resolution | Migration Phase |
-| ---- | ---------- | --------------- |
-| **INT-P1-001** (Duplicated JuniperDataClient) | Vendored copy removed from juniper-cascor; `juniper-data-client` v0.3.0 published to PyPI and declared as optional dependency in `pyproject.toml` | Phase 1 |
-| **INT-P1-004** (Full IPC Architecture) | CasCor now runs as a standalone FastAPI service (`server.py`) with 19 REST endpoints and 2 WebSocket endpoints; Canopy communicates via `juniper-cascor-client` over HTTP/WS instead of `sys.path.insert()` embedding | Phase 2 |
-| **C.1** (Async Wrapper for `fit()`) | `TrainingLifecycleManager` (`src/api/lifecycle/manager.py`, 579 lines) implements `ThreadPoolExecutor(max_workers=1)`, `_stop_requested` Event for cancellation, monitoring hooks wrapping `fit()`/`train_output_layer()`/`grow_network()`, and `broadcast_from_thread()` for async WS broadcasting | Phase 2 |
-| **CAS-CANOPY-001** (Prediction Grid API) | `GET /v1/decision-boundary?resolution=N` endpoint implemented in `src/api/routes/decision_boundary.py`; computes meshgrid over input space, runs `network.forward()` on all grid points, returns full boundary data | Phase 2 |
-
-### Items Superseded or Requiring Terminology Updates
-
-| Item | Change Required | Notes |
-| ---- | --------------- | ----- |
-| **CAS-004** (Extract Remote Worker to "JuniperBranch") | Rename "JuniperBranch" to `juniper-cascor-worker` | Package published to PyPI as `juniper-cascor-worker` v0.1.0 (Phase 3). The in-tree `src/remote_client/` still exists and should be deprecated/removed. |
-| **CAS-005** (Extract Common Dependencies to Modules) | Update to reference `juniper-cascor-worker` package | Dependency on CAS-004 now references the published PyPI package, not an unbuilt "JuniperBranch" application. |
-| **C.2** (Expose RemoteWorkerClient through CascorIntegration) | Rewrite: `CascorIntegration` is a **Canopy** class (replaced by `CascorServiceAdapter`); in juniper-cascor, the coordination layer is `TrainingLifecycleManager`. The core requirement (remote worker management API endpoints) remains valid but should target the Service API (`/v1/workers/*` routes). | No `/v1/workers/*` endpoints implemented yet (correctly deferred in Phase 2). |
-| **Design Decision 4** (Shared Client Package: `juniper-common`) | Superseded by individual client packages | Migration adopted `juniper-data-client` and `juniper-cascor-client` as standalone PyPI packages rather than a monolithic `juniper-common`. INT-P1-003 is partially addressed by `juniper-cascor-client` acting as the client-side protocol definition. |
-| **Design Decision 5** (Async Training Wrapper) | Already implemented as Option A | `TrainingLifecycleManager` uses `ThreadPoolExecutor` + cooperative cancellation, exactly as recommended. |
-
-### Items Still Relevant Post-Migration
-
-All P0 bugs (INT-P0-001 through INT-P0-005) remain confirmed in the juniper-cascor polyrepo codebase. The migration was a structural/architectural change and did not modify the core CasCor source code (`cascade_correlation.py`, `candidate_unit.py`, `spiral_problem.py`, etc.). All P2 code quality items, test optimization items, and feature enhancements also remain applicable.
-
-### New Concerns from the Migration
-
-| Concern | Severity | Details |
-| ------- | -------- | ------- |
-| **Hardcoded monorepo paths now completely broken** | Critical | INT-P0-004 (`remote_client_0.py:16`) and INT-P0-005 (`test_candidate_training_manager.py:10-12`) reference `/home/pcalnon/Development/python/Juniper/src/prototypes/cascor/src` -- a path inside the **monorepo** that no longer applies in the polyrepo context. These were already broken; they are now unreachable. |
-| **In-tree `remote_client/` coexists with published `juniper-cascor-worker`** | Medium | `src/remote_client/remote_client.py` contains the `RemoteWorkerClient` class that was extracted to `juniper-cascor-worker` v0.1.0. The in-tree copy should be deprecated and eventually removed to prevent drift. `remote_client_0.py` is a legacy prototype with wrong queue names and hardcoded paths -- should be deleted entirely. |
-| **`CascorIntegration` references in this roadmap** | Low | Several items (C.1, C.2, CAS-REF-005) reference `CascorIntegration`, which is a **Canopy-side** integration class (`JuniperCanopy/juniper_canopy/src/backend/cascor_integration.py`), not a juniper-cascor class. In the polyrepo, juniper-cascor's coordination layer is `TrainingLifecycleManager`. References are annotated in the affected items below. |
-| **Phase numbering ambiguity** | Low | This roadmap's "Development Phases (Proposed)" (Phases 0-5) use the same numbering as the migration plan's ecosystem-wide Phases (0-6) but refer to different scopes. The roadmap phases are internal CasCor development; the migration phases are cross-project. Sections below clarify which phase system is referenced where context is ambiguous. |
-| **Deferred API endpoints map to open roadmap items** | Medium | The Service API correctly deferred snapshot endpoints (`/v1/snapshots/*`) and worker endpoints (`/v1/workers/*`). These map directly to CAS-CANOPY-002 (Serialization API) and C.2 (Remote Worker API). They remain blockers for full Canopy feature parity in service mode. |
-| **WebSocket message format divergence** | Medium | The Service API (`src/api/websocket/messages.py`) uses `{type, timestamp, data}` format, while the legacy `CascorIntegration` in Canopy broadcast `{type, epoch, train_loss, ...}` (flat). The `DECOUPLE_CANOPY_FROM_CASCOR_PLAN.md` recommends pass-through (Option a), requiring Canopy's frontend JS to adapt to the new format. This is documented but not yet implemented in the Canopy frontend. |
 
 ---
 
@@ -163,8 +121,6 @@ These items were identified during the 2026-02-05 source code review. They repre
 
 **Codebase Validation (2026-02-18)**: **CONFIRMED**. Line 16: `sys.path.append("/home/pcalnon/Development/python/Juniper/src/prototypes/cascor/src")`. Points to the old prototypes directory, not even the current project structure.
 
-**Polyrepo Migration Note (2026-02-24)**: This issue is **more severe** post-migration. The hardcoded path points into the monorepo (`Juniper/src/prototypes/cascor/src`) which no longer exists in the polyrepo layout. Additionally, `remote_client_0.py` is a legacy prototype that has been superseded by `juniper-cascor-worker` v0.1.0 (Phase 3). **Recommended action**: Delete `remote_client_0.py` entirely rather than fixing the path.
-
 **Related**: INT-P2-009 (inconsistent queue names between remote clients)
 
 ---
@@ -180,8 +136,6 @@ These items were identified during the 2026-02-05 source code review. They repre
 
 **Codebase Validation (2026-02-18)**: **CONFIRMED**. Line 10: `sys.path.append("/home/pcalnon/Development/python/Juniper/src/prototypes/cascor/src")` (Linux), Line 12: `sys.path.append("/Users/pcalnon/Development/python/Juniper/src/prototypes/cascor/src")` (macOS). Both point to obsolete prototype paths.
 
-**Polyrepo Migration Note (2026-02-24)**: These paths are **completely unreachable** in the polyrepo context -- they reference the monorepo's `prototypes/` directory which does not exist in the standalone `juniper-cascor` repo. Line 14 also raises `EnvironmentError` for non-Linux/macOS platforms. Fix: replace with relative path resolution using `__file__` or remove `sys.path` manipulation entirely (the editable install in the polyrepo should make imports work without path hacking).
-
 ---
 
 ## Section 2: Integration Architecture (P1)
@@ -192,17 +146,15 @@ These items were identified during the 2026-02-05 source code review. They repre
 
 ### INT-P1-001: Duplicated JuniperDataClient
 
-**Status**: ~~NOT STARTED~~ **RESOLVED (Polyrepo Migration Phase 1)**
-**Severity**: ~~High~~ N/A
+**Status**: NOT STARTED
+**Severity**: High
 **Source**: INTEGRATION_ROADMAP-01.md
 
 **Description**: `JuniperDataClient` is duplicated in both JuniperCascor (`src/juniper_data_client/client.py`) and JuniperCanopy. Changes to the client API must be synchronized manually.
 
 **Fix**: Extract to a shared Python package (e.g., `juniper-common`).
 
-**Polyrepo Migration Resolution (2026-02-24)**: **RESOLVED**. The vendored `src/juniper_data_client/` directory has been removed from juniper-cascor. `juniper-data-client` v0.3.0 is published to PyPI and declared as `juniper-data-client>=0.3.0` under `[project.optional-dependencies].juniper-data` in `pyproject.toml`. The solution used a standalone package per-client rather than a monolithic `juniper-common` package. All tests pass using the external package.
-
-**Related**: INT-P1-002 (requests dependency — RESOLVED), INT-P1-003 (no shared protocol package)
+**Related**: INT-P1-002 (requests dependency), INT-P1-003 (no shared protocol package)
 
 ---
 
@@ -220,40 +172,30 @@ These items were identified during the 2026-02-05 source code review. They repre
 
 ### INT-P1-003: No Shared Protocol Package
 
-**Status**: PARTIALLY ADDRESSED
-**Severity**: ~~High~~ Medium
+**Status**: NOT STARTED
+**Severity**: High
 **Source**: INTEGRATION_ROADMAP-01.md
 
 **Description**: Three Juniper applications share API contracts, data formats, and client code but have no shared protocol/interface package. Each duplicates validation logic.
-
-**Polyrepo Migration Note (2026-02-24)**: Partially addressed by the client package strategy. `juniper-cascor-client` v0.1.0 defines the client-side API contract (REST methods, WebSocket streaming, exception hierarchy), and the CasCor Service API defines the server-side protocol in `src/api/websocket/messages.py` and `src/api/models/`. However, there is no formal shared schema package that both CasCor and Canopy can import. The `juniper-cascor-client` effectively serves as the de facto protocol definition for consumers. Severity reduced since the migration has eliminated duplicated client code.
 
 ---
 
 ### INT-P1-004: Full IPC Architecture
 
-**Status**: ~~DEFERRED~~ **RESOLVED (Polyrepo Migration Phase 2)**
-**Severity**: ~~High~~ N/A
+**Status**: DEFERRED
+**Severity**: High
 **Source**: INTEGRATION_ROADMAP-01.md, Oracle_analysis_2026-01-26.md (C.3), PRE-DEPLOYMENT_ROADMAP-2.md (P1-NEW-001)
 
 **Description**: JuniperCascor is currently embedded in JuniperCanopy's process via `sys.path.insert()`. A proper IPC architecture (separate backend process with protocol-based communication) would enable independent deployment and scaling.
 
-**Polyrepo Migration Resolution (2026-02-24)**: **RESOLVED**. The Phase 2 Service API fully implements this requirement:
+**Sub-tasks** (all NOT STARTED):
 
-- **IPC protocol**: REST API (19 endpoints) + WebSocket (2 endpoints) with documented contract (Appendix A of `POLYREPO_MIGRATION_PLAN.md`)
-- **Cascor server mode**: `src/server.py` entry point launches CasCor as a standalone FastAPI service on port 8200
-- **Canopy connection**: `CascorServiceAdapter` in Canopy wraps `juniper-cascor-client` for REST/WS communication
-- **Health checks**: `GET /v1/health`, `GET /v1/health/live`, `GET /v1/health/ready` endpoints; client provides `is_ready()`, `wait_for_ready(timeout)` methods
-- **State machine**: `TrainingLifecycleManager` with formal FSM (STOPPED ↔ STARTED ↔ PAUSED → COMPLETED/FAILED)
+- Design IPC protocol specification
+- Implement Cascor server mode
+- Update Canopy to connect to external Cascor
+- Add connection management and health checks
 
-The "IPC-lite" multiprocessing alternative is no longer needed. The REST/WS approach provides full network-level IPC.
-
-**Sub-tasks** (all RESOLVED):
-
-- ~~Design IPC protocol specification~~ → API contract in Appendix A
-- ~~Implement Cascor server mode~~ → `src/server.py` + `src/api/`
-- ~~Update Canopy to connect to external Cascor~~ → `CascorServiceAdapter` (Phase 4)
-- ~~Add connection management and health checks~~ → Health routes + `wait_for_ready()`
+**Alternative (IPC-lite)**: Optional "training subprocess mode" using `multiprocessing.Process + Queue`.
 
 ---
 
@@ -303,9 +245,9 @@ The "IPC-lite" multiprocessing alternative is no longer needed. The REST/WS appr
 
 ### C.1: Async Wrapper for Synchronous fit()
 
-**Status**: ~~NOT STARTED~~ **RESOLVED (Polyrepo Migration Phase 2)**
-**Severity**: ~~High~~ N/A
-**Effort**: ~~Medium (2-4 days)~~ Already implemented
+**Status**: NOT STARTED
+**Severity**: High
+**Effort**: Medium (2-4 days)
 **Source**: Oracle_analysis_2026-01-26.md
 
 **Description**: Add async wrapper around synchronous `fit()` using `loop.run_in_executor()` for FastAPI endpoints. Includes:
@@ -316,40 +258,23 @@ The "IPC-lite" multiprocessing alternative is no longer needed. The REST/WS appr
 - Implement cancellation strategy ("stop requested" flag)
 - Make broadcasting thread-safe (`websocket_manager.broadcast_sync`)
 
-**Polyrepo Migration Resolution (2026-02-24)**: **RESOLVED**. All sub-tasks are implemented in `TrainingLifecycleManager` (`src/api/lifecycle/manager.py`, 579 lines):
-
-- `ThreadPoolExecutor(max_workers=1, thread_name_prefix="cascor-train")` for background training
-- `monitored_fit()` wraps the original `fit()` with epoch-level callbacks and metrics extraction
-- `POST /v1/training/start` returns 202 Accepted immediately; training runs in background thread
-- `_stop_requested = threading.Event()` for cooperative cancellation via `POST /v1/training/stop`
-- `_pause_event = threading.Event()` for cooperative pause/resume
-- `ws_manager.broadcast_from_thread()` bridges sync training thread to async WebSocket broadcasting
-- Thread safety via `_training_lock`, `_metrics_lock`, `_topology_lock`
-
-**Note**: The roadmap originally targeted `CascorIntegration` (a Canopy class). The implementation correctly lives in juniper-cascor's `TrainingLifecycleManager` instead, as the Service API owns training coordination.
-
 ---
 
-### C.2: Expose Remote Worker Management via Service API
+### C.2: Expose RemoteWorkerClient Through CascorIntegration
 
-**Status**: NOT STARTED (revised scope)
+**Status**: NOT STARTED
 **Severity**: High
-**Effort**: Medium (1-2 weeks)
-**Source**: Oracle_analysis_2026-01-26.md (revised 2026-02-24)
+**Effort**: Large (1-2 weeks)
+**Source**: Oracle_analysis_2026-01-26.md
 
-**Description**: ~~Expose `RemoteWorkerClient` through `CascorIntegration` with config, API endpoints, and packaging.~~ **Revised**: Add remote worker management endpoints to the CasCor Service API. The `juniper-cascor-worker` package (v0.1.0, published to PyPI) provides the standalone worker; the CasCor service needs API endpoints to manage worker connections.
+**Description**: Expose `RemoteWorkerClient` through `CascorIntegration` with config, API endpoints, and packaging. Includes:
 
-**Polyrepo Migration Note (2026-02-24)**: The original description references `CascorIntegration` and `juniper_branch`, both of which are obsolete. `CascorIntegration` is a Canopy-side class now replaced by `CascorServiceAdapter`. The worker was packaged as `juniper-cascor-worker` (not `juniper_branch`). The coordination layer in juniper-cascor is `TrainingLifecycleManager`.
-
-**Revised sub-tasks**:
-
-- ~~Import/packaging sanity for `RemoteWorkerClient`~~ → **RESOLVED** by `juniper-cascor-worker` v0.1.0
-- ~~Expose configuration in Canopy (`app_config.yaml`)~~ → Workers managed server-side by CasCor, not Canopy
-- Add REST endpoints to CasCor Service API: `GET /v1/workers`, `POST /v1/workers/connect`, `POST /v1/workers/start`, `POST /v1/workers/stop`, `POST /v1/workers/disconnect` (endpoints defined in API contract but deferred in Phase 2)
-- Integrate `CandidateTrainingManager` queue system with `TrainingLifecycleManager`
-- ~~Package as `juniper_branch`~~ → **RESOLVED** as `juniper-cascor-worker` on PyPI
-
-**Note**: The in-tree `src/remote_client/remote_client.py` contains the `RemoteWorkerClient` class which may still be needed server-side for managing worker connections. `remote_client_0.py` should be deleted (legacy prototype with hardcoded paths and wrong queue names).
+- Import/packaging sanity for `RemoteWorkerClient`
+- Expose configuration in Canopy (`app_config.yaml`)
+- Add minimal API surface (connect/start/stop/disconnect)
+- Connect remote workers to training (inject task/result queues)
+- FastAPI endpoints for remote worker admin (POST /api/remote/*)
+- Package as `juniper_branch` (shared Python package)
 
 ---
 
@@ -632,26 +557,22 @@ The "IPC-lite" multiprocessing alternative is no longer needed. The REST/WS appr
 
 ### 4.5 Multiprocessing & Workers
 
-#### CAS-004: Extract Remote Worker to ~~JuniperBranch~~ `juniper-cascor-worker`
+#### CAS-004: Extract Remote Worker to JuniperBranch
 
-**Status**: ~~NOT STARTED~~ **PARTIALLY RESOLVED (Polyrepo Migration Phase 3)**
+**Status**: NOT STARTED
 **Module**: Cascor: Candidate Remote Workers
 
-**Description**: ~~Refactor to extract the Remote Worker node and all its dependencies into a new application: JuniperBranch.~~ Enables lightweight distributed training workers on heterogeneous hardware.
-
-**Polyrepo Migration Resolution (2026-02-24)**: The worker was extracted and published as `juniper-cascor-worker` v0.1.0 on PyPI (not "JuniperBranch" as originally planned). The package includes `CandidateTrainingWorker`, `WorkerConfig` with env var support, CLI entry point (`juniper-cascor-worker` console_scripts), custom exception hierarchy, and a full test suite (44 tests, 99% coverage). The in-tree `src/remote_client/` still exists in juniper-cascor and should be deprecated/removed.
-
-**Remaining work**: Remove `src/remote_client/remote_client_0.py` (legacy prototype, broken). Evaluate whether `src/remote_client/remote_client.py` should be removed or retained for server-side worker management (see C.2).
+**Description**: Refactor to extract the Remote Worker node and all its dependencies into a new application: JuniperBranch. Enables lightweight distributed training workers on heterogeneous hardware.
 
 ---
 
 #### CAS-005: Extract Common Dependencies to Modules
 
-**Status**: PARTIALLY ADDRESSED
+**Status**: NOT STARTED
 **Module**: Cascor: Common Class Modules
-**Dependencies**: CAS-004 (~~JuniperBranch~~ `juniper-cascor-worker` extraction — COMPLETE)
+**Dependencies**: CAS-004 (JuniperBranch extraction must be planned first)
 
-**Description**: ~~Refactor to extract all classes that are dependencies of both JuniperCascor and JuniperBranch into importable modules.~~ **Revised**: Ensure that `juniper-cascor-worker` does not duplicate any CasCor classes. The worker package was designed to use stdlib `logging` (not CasCor's custom `Logger`), `WorkerConfig` dataclass (not CasCor's config system), and custom exceptions (not CasCor's exception hierarchy), so coupling was avoided by design. The remaining concern is whether the `CandidateTrainingWorker` needs to import CasCor's `CandidateUnit` class at runtime — if so, a shared types package may still be needed.
+**Description**: Refactor to extract all classes that are dependencies of both JuniperCascor and JuniperBranch into importable modules.
 
 ---
 
@@ -670,15 +591,13 @@ The "IPC-lite" multiprocessing alternative is no longer needed. The REST/WS appr
 
 #### CAS-CANOPY-001: Prediction Grid API for Decision Boundary
 
-**Status**: ~~NOT STARTED~~ **RESOLVED (Polyrepo Migration Phase 2)**
-**Priority**: ~~HIGH~~ N/A
+**Status**: NOT STARTED
+**Priority**: HIGH
 **Source**: JuniperCanopy CAN-CRIT-001
 
 **Description**: JuniperCanopy's decision boundary visualization requires the real CasCor backend to accept a grid of input points and return predictions. Currently only has a demo mode implementation. The CasCor backend must expose a prediction method that accepts arbitrary input grids.
 
-**Polyrepo Migration Resolution (2026-02-24)**: **RESOLVED**. `GET /v1/decision-boundary?resolution=N` endpoint implemented in `src/api/routes/decision_boundary.py`. The `TrainingLifecycleManager.get_decision_boundary(resolution)` method computes a meshgrid over the training data's input range, runs `network.forward()` on all grid points, and returns `x_range`, `y_range`, `grid_x`, `grid_y`, and `predictions`. Canopy's `CascorServiceAdapter` calls this via `client.get_decision_boundary(resolution=50)`.
-
-**Impact**: CAN-CRIT-001 in JuniperCanopy is **unblocked** by this endpoint.
+**Impact**: Blocks CAN-CRIT-001 in JuniperCanopy.
 
 ---
 
@@ -688,11 +607,9 @@ The "IPC-lite" multiprocessing alternative is no longer needed. The REST/WS appr
 **Priority**: HIGH
 **Source**: JuniperCanopy CAN-CRIT-002
 
-**Description**: ~~JuniperCanopy needs `save_snapshot()` and `load_snapshot()` methods in `CascorIntegration`.~~ **Revised**: CasCor Service API needs snapshot management REST endpoints. The HDF5 serialization system exists internally (`src/snapshots/snapshot_serializer.py`, `snapshot_utils.py`, `snapshot_cli.py`, `snapshot_common.py`) but is not wired into the Service API.
+**Description**: JuniperCanopy needs `save_snapshot()` and `load_snapshot()` methods in `CascorIntegration`. These require CasCor to expose a serialization API (e.g., PyTorch `state_dict()` export/import). The API must capture full training state including network weights, optimizer state, and training metadata.
 
-**Polyrepo Migration Note (2026-02-24)**: The API contract (Appendix A of `POLYREPO_MIGRATION_PLAN.md`) defines 4 deferred snapshot endpoints: `POST /v1/snapshots` (create), `GET /v1/snapshots` (list), `GET /v1/snapshots/{id}` (detail), `POST /v1/snapshots/{id}/restore` (restore). These are defined in the contract but **not yet implemented** in the route files. The `juniper-cascor-client` already has client methods for these endpoints (`create_snapshot()`, `list_snapshots()`, `get_snapshot()`, `restore_snapshot()`), so the client-side support is ready. The remaining work is server-side: wiring `SnapshotSerializer` into the `TrainingLifecycleManager` and creating the route handler file.
-
-**Impact**: Still blocks CAN-CRIT-002 and downstream CAN-014/CAN-015 (snapshot replay features) in JuniperCanopy service mode.
+**Impact**: Blocks CAN-CRIT-002 and downstream CAN-014/CAN-015 (snapshot replay features).
 
 ---
 
@@ -1053,9 +970,7 @@ These items are documented as COMPLETE and included for reference only.
 
 ## Development Phases (Proposed)
 
-> **Note**: These phases refer to the **internal CasCor development roadmap**, not the ecosystem-wide polyrepo migration phases (0-6) documented in `POLYREPO_MIGRATION_PLAN.md`. Where migration phases have resolved roadmap items, those items are annotated in the phase tables below.
-
-Based on codebase validation results, dependency analysis, effort estimates, and polyrepo migration impact (2026-02-24).
+Based on codebase validation results, dependency analysis, and effort estimates.
 
 ### Phase 0: Critical Bug Fixes (1-2 days)
 
@@ -1115,18 +1030,16 @@ Based on codebase validation results, dependency analysis, effort estimates, and
 **Goal**: Address cross-project dependencies and integration concerns.
 **Depends on**: Phase 2 complete. Coordination with JuniperData and JuniperCanopy teams.
 
-> **Polyrepo Migration Impact (2026-02-24)**: 3 of 6 items in this phase were resolved by the migration (INT-P1-001, CAS-CANOPY-001, C.1). Remaining effort is substantially reduced.
+| #   | Item                                                 | Effort   | Notes                                    |
+| --- | ---------------------------------------------------- | -------- | ---------------------------------------- |
+| 1   | INT-P1-001: Extract shared JuniperDataClient package | 3-5 days | Coordinate with JuniperCanopy            |
+| 2   | INT-P1-003: Create shared protocol package           | 3-5 days | API schemas, data contracts              |
+| 3   | CAS-CANOPY-001: Prediction Grid API                  | 2-3 days | Unblocks JuniperCanopy decision boundary |
+| 4   | CAS-CANOPY-002: Serialization API for snapshots      | 2-3 days | Unblocks save/load features              |
+| 5   | C.1: Async wrapper for synchronous `fit()`           | 2-4 days | ThreadPoolExecutor, cancellation         |
+| 6   | INT-P1-006: Add import guard for SpiralDataProvider  | 1 hr     | Low effort, include with other work      |
 
-| #   | Item                                                 | Effort       | Notes                                                         |
-| --- | ---------------------------------------------------- | ------------ | ------------------------------------------------------------- |
-| 1   | ~~INT-P1-001: Extract shared JuniperDataClient~~     | ~~3-5 days~~ | **RESOLVED** — `juniper-data-client` v0.3.0 on PyPI           |
-| 2   | INT-P1-003: Create shared protocol package           | 3-5 days     | Partially addressed by `juniper-cascor-client`; reduced scope |
-| 3   | ~~CAS-CANOPY-001: Prediction Grid API~~              | ~~2-3 days~~ | **RESOLVED** — `GET /v1/decision-boundary` endpoint           |
-| 4   | CAS-CANOPY-002: Serialization API for snapshots      | 2-3 days     | Unblocks save/load features; client methods already exist     |
-| 5   | ~~C.1: Async wrapper for synchronous `fit()`~~       | ~~2-4 days~~ | **RESOLVED** — `TrainingLifecycleManager`                     |
-| 6   | INT-P1-006: Add import guard for SpiralDataProvider  | 1 hr         | Low effort, include with other work                           |
-
-**Estimated Total**: ~~15-25 days~~ 5-10 days (revised post-migration)
+**Estimated Total**: 15-25 days
 
 ### Phase 4: Feature Enhancements (4-8 weeks)
 
@@ -1141,7 +1054,7 @@ Based on codebase validation results, dependency analysis, effort estimates, and
 | 4   | ENH-006: Flexible optimizer management                   | 3-5 days  |       |
 | 5   | ENH-007: N-best candidate layer selection                | 3-5 days  |       |
 | 6   | ENH-008: Worker cleanup improvements                     | 2-3 days  |       |
-| 7   | C.2: Remote Worker Management API (`/v1/workers/*` endpoints) | 1-2 weeks | Revised: target Service API, not CascorIntegration |
+| 7   | C.2: Expose RemoteWorkerClient through CascorIntegration | 1-2 weeks |       |
 
 **Estimated Total**: 20-35 days
 
@@ -1158,11 +1071,11 @@ Based on codebase validation results, dependency analysis, effort estimates, and
 | 4   | INT-P3-009: Version string consistency      | 1-2 hrs   |       |
 | 5   | INT-P3-010: Snapshot directory confusion    | 1 hr      |       |
 | 6   | Large file refactoring                      | 1-2 weeks |       |
-| 7   | ~~CAS-004: Extract JuniperBranch~~ `juniper-cascor-worker` cleanup | 1-2 days  | Extraction done (PyPI v0.1.0); remaining: remove in-tree `remote_client/` |
+| 7   | CAS-004: Extract JuniperBranch              | 2-4 weeks |       |
 | 8   | CAS-008/009: Network hierarchy & population | 4-8 weeks |       |
 | 9   | CAS-010: Snapshot Vector DB                 | 2-4 weeks |       |
 | 10  | GPU/CUDA support                            | 2-4 weeks |       |
-| 11  | ~~Full IPC architecture (INT-P1-004)~~      | ~~2-4 weeks~~ | **RESOLVED** — Service API (Phase 2 of migration) |
+| 11  | Full IPC architecture (INT-P1-004)          | 2-4 weeks |       |
 
 ---
 
@@ -1254,9 +1167,7 @@ Based on codebase validation results, dependency analysis, effort estimates, and
 
 **Context**: `JuniperDataClient` is duplicated in JuniperCascor and JuniperCanopy. Three applications share API contracts with no shared package.
 
-> **Polyrepo Migration Outcome (2026-02-24)**: This decision was resolved by adopting **Option E** (not originally listed): individual client packages per service. `juniper-data-client` v0.3.0 and `juniper-cascor-client` v0.1.0 are published to PyPI as standalone packages, each providing a typed client for its respective service API. This avoids the overhead of a monolithic `juniper-common` package while eliminating code duplication. The shared protocol concern (INT-P1-003) is partially addressed since `juniper-cascor-client` defines the client-side API contract implicitly.
-
-**Option A: `juniper-common` PyPI package** ~~(Recommended for long-term)~~
+**Option A: `juniper-common` PyPI package** (Recommended for long-term)
 
 - Create a new repository `JuniperCommon` with `juniper-common` package
 - Contains: `JuniperDataClient`, API schemas, data contracts, shared constants
@@ -1276,30 +1187,21 @@ Based on codebase validation results, dependency analysis, effort estimates, and
 - Pros: Eliminates all cross-project coordination issues
 - Cons: Major restructuring, changes all workflows
 
-**Option D: Keep duplicated, synchronize manually** ~~(Short-term pragmatic)~~
+**Option D: Keep duplicated, synchronize manually** (Short-term pragmatic)
 
 - Document the duplication, add CI check to detect drift
 - Pros: No structural changes needed
 - Cons: Ongoing synchronization burden
 
-**Option E: Individual client packages per service** (ADOPTED)
-
-- `juniper-data-client` for JuniperData API, `juniper-cascor-client` for CasCor API
-- Each published independently to PyPI with own CI/CD
-- Pros: Fine-grained versioning, no coordination overhead, each client evolves with its service
-- Cons: No shared schema/types between clients; protocol compatibility is implicit
-
-**Recommendation**: ~~Option D immediately, Option A for long-term.~~ **Option E adopted.** The per-service client pattern was implemented during the migration and is working well. If a shared protocol/types package becomes necessary (e.g., for cross-service validation), it can be extracted from the existing client packages incrementally.
+**Recommendation**: Option D immediately (document + CI check), Option A for long-term. The shared package can be extracted incrementally.
 
 ---
 
 ### Design Decision 5: Async Training Wrapper (C.1)
 
-> **Polyrepo Migration Outcome (2026-02-24)**: **Option A was implemented** in `TrainingLifecycleManager` (`src/api/lifecycle/manager.py`). See C.1 item above for details.
-
 **Context**: `CascadeCorrelationNetwork.fit()` is synchronous and blocks the FastAPI event loop when called from JuniperCanopy's web endpoints.
 
-**Option A: `loop.run_in_executor()` with ThreadPoolExecutor** (Recommended — **IMPLEMENTED**)
+**Option A: `loop.run_in_executor()` with ThreadPoolExecutor** (Recommended)
 
 - Wrap `fit()` in `monitored_fit_async()` that runs in a thread pool
 - Add a `stop_requested` flag for cancellation
@@ -1395,13 +1297,13 @@ INT-P0-003 (Invalid CandidateUnit params)
 INT-P0-004 (Hardcoded path in remote_client_0)
     └── INT-P2-009 (Inconsistent queue names) - fix together
 
-INT-P1-001 (Duplicated JuniperDataClient) — RESOLVED (migration Phase 1)
-    ├── INT-P1-002 (requests dependency) — RESOLVED
-    └── INT-P1-003 (No shared protocol package) — partially addressed
+INT-P1-001 (Duplicated JuniperDataClient)
+    ├── INT-P1-002 (requests dependency) - fix together
+    └── INT-P1-003 (No shared protocol package)
 
-INT-P1-004 (Full IPC) — RESOLVED (migration Phase 2)
-    ├── INT-P3-004 (sys.path mutation) — resolved in polyrepo (editable install)
-    └── INT-P1-001 (shared client package) — RESOLVED
+INT-P1-004 (Full IPC)
+    ├── INT-P3-004 (sys.path mutation)
+    └── INT-P1-001 (shared client package)
 
 CAS-REF-002 (CI coverage gates)
     └── CAS-REF-003 (Type errors) - gates should wait for type fixes
@@ -1409,14 +1311,14 @@ CAS-REF-002 (CI coverage gates)
 CAS-REF-004 (Legacy code removal)
     └── INT-P3-002 (E2E integration tests) - validate before removing
 
-CAS-004 (juniper-cascor-worker extraction) — PARTIALLY RESOLVED (migration Phase 3)
-    └── CAS-005 (Common dependencies) — partially addressed; worker decoupled by design
+CAS-004 (JuniperBranch extraction)
+    └── CAS-005 (Common dependencies) - must be planned first
 
-CAS-CANOPY-001 (Prediction Grid API) — RESOLVED (migration Phase 2)
+CAS-CANOPY-001 (Prediction Grid API)
     └── No CasCor dependencies
 
 CAS-CANOPY-002 (Serialization API)
-    └── No CasCor dependencies (HDF5 system exists internally; needs API route wiring)
+    └── No CasCor dependencies
 ```
 
 ---
@@ -1428,12 +1330,10 @@ CAS-CANOPY-002 (Serialization API)
 | Walrus operator bug (INT-P0-001) causes silent data corruption | High        | High   | Fix immediately in Phase 0                 |
 | `ActivationWithDerivative` ACTIVATION_MAP divergence           | Medium      | High   | Extract to shared module                   |
 | JuniperData service downtime crashes training                  | Medium      | High   | Retry logic implemented (CAS-INT-008)      |
-| ~~`sys.path` mutation causes import conflicts in production~~  | ~~Medium~~  | ~~Medium~~ | ~~Document workaround; long-term fix via IPC~~ **MITIGATED** — polyrepo uses editable pip install; Service API eliminates cross-process sys.path |
+| `sys.path` mutation causes import conflicts in production      | Medium      | Medium | Document workaround; long-term fix via IPC |
 | Coverage regression without enforced gates                     | High        | Medium | Implement CI coverage gates (CAS-REF-002)  |
-| Hardcoded paths break on other machines                        | High        | Medium | Fix all hardcoded paths in Phase 0; **worse post-migration** — paths reference nonexistent monorepo dirs |
+| Hardcoded paths break on other machines                        | High        | Medium | Fix all hardcoded paths in Phase 0         |
 | Slow test suite blocks CI pipeline                             | Medium      | Medium | Optimize tests (CAS-007)                   |
-| In-tree `remote_client/` drifts from `juniper-cascor-worker`  | Medium      | Medium | Remove in-tree copy; use published package |
-| WS message format mismatch between CasCor service and Canopy frontend | Medium | Medium | Document format contract; adapter relay should normalize or frontend should adapt |
 
 ---
 
@@ -1446,4 +1346,3 @@ CAS-CANOPY-002 (Serialization API)
 | 2026-02-18 | AI Agent | Complete rewrite: Exhaustive audit of all 25+ notes files, de-duplicated 89 unique items                                     |
 | 2026-02-18 | AI Agent | Codebase validation pass: Validated 23 items against source code, confirmed 17 bugs, resolved 3 items, adjusted 3 severities |
 | 2026-02-18 | AI Agent | Added development phases (0-5), high-level design analysis (7 architectural decisions with options/recommendations)          |
-| 2026-02-24 | AI Agent | **Polyrepo migration impact analysis**: Cross-referenced all roadmap items against `POLYREPO_MIGRATION_PLAN.md` (Phases 0-5 status), `DECOUPLE_CANOPY_FROM_CASCOR_PLAN.md`, and actual polyrepo codebases (`juniper-cascor/`, `JuniperCanopy/juniper_canopy/`). Resolved 4 items (INT-P1-001, INT-P1-004, C.1, CAS-CANOPY-001); updated 5 items with revised terminology (CAS-004, CAS-005, C.2, INT-P1-003, CAS-CANOPY-002); added migration concern annotations to 2 P0 items (INT-P0-004, INT-P0-005); updated Design Decisions 4 and 5 with outcomes; revised Development Phases 3 and 5 effort estimates; added new migration-specific risks; added comprehensive "Polyrepo Migration Impact Analysis" section. Pre-update version saved to `history/JUNIPER-CASCOR_POST-RELEASE_DEVELOPMENT-ROADMAP_2026-02-24.md`. |
