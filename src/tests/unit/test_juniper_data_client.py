@@ -8,11 +8,17 @@ the juniper-data-client repository. These tests only validate that the
 package is importable and the interfaces CasCor uses are present.
 """
 import os
+import sys
 from unittest.mock import MagicMock, patch
 
 import pytest
 
+# juniper-data-client requires Python >=3.12
+_skip_reason = "juniper-data-client requires Python >=3.12"
+_requires_312 = pytest.mark.skipif(sys.version_info < (3, 12), reason=_skip_reason)
 
+
+@_requires_312
 @pytest.mark.unit
 class TestSharedPackageInstalled:
     """Verify the shared juniper-data-client package is installed and importable."""
@@ -46,6 +52,7 @@ class TestSharedPackageInstalled:
         assert not juniper_data_client.__version__.endswith("-local"), f"Using local fallback: {juniper_data_client.__version__}"
 
 
+@_requires_312
 @pytest.mark.unit
 class TestClientApiSurface:
     """Verify the shared package exposes the API surface CasCor depends on."""
