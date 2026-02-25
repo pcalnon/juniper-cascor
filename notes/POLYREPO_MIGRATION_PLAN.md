@@ -1064,20 +1064,20 @@ Note: The worker needs PyTorch because it runs `CascadeCorrelationNetwork._worke
 
 Phase 4 fully complete. Integration testing and legacy removal both verified:
 
-| Component | Status | Details |
-| --------- | ------ | ------- |
-| `CascorServiceAdapter` | COMPLETE | 306 lines at `src/backend/cascor_service_adapter.py`; REST/WS adapter wrapping `juniper-cascor-client` |
-| `CascorIntegration` | DELETED | Removed 2026-02-25 (Step 4.8); 1,601-line legacy backend gone |
-| Two-mode activation | COMPLETE | `main.py`: Demo > Service > Demo fallback; `_is_service_adapter is True` guard for shutdown |
-| Adapter tests | PASSING | 52 tests in `src/tests/unit/backend/test_cascor_service_adapter.py` |
-| Activation tests | PASSING | 11 tests in `src/tests/unit/test_three_mode_activation.py` |
-| Total Canopy tests | PASSING | 3,130 passed, 23 skipped (after 160 legacy tests removed) |
-| Dependency declaration | CONFIGURED | `juniper-cascor-client>=0.1.0` in `pyproject.toml [project.optional-dependencies].juniper-cascor` |
-| REST integration tests | PASSING | All 10 service endpoints verified against live CasCor service (port 8201) |
-| WS relay integration | PASSING | CasCor WS → `CascorTrainingStream.stream()` → `ws_manager.broadcast()` verified |
-| Legacy files removed | COMPLETE | `cascor_integration.py` + 13 legacy test files deleted |
-| Latest commit | `5f9987d` | "Step 4.8: Remove legacy CascorIntegration mode" |
-| Branch | `canopy/migration` | Tracking `origin` (monorepo `pcalnon/Juniper`) |
+| Component              | Status             | Details                                                                                                |
+|------------------------|--------------------|--------------------------------------------------------------------------------------------------------|
+| `CascorServiceAdapter` | COMPLETE           | 306 lines at `src/backend/cascor_service_adapter.py`; REST/WS adapter wrapping `juniper-cascor-client` |
+| `CascorIntegration`    | DELETED            | Removed 2026-02-25 (Step 4.8); 1,601-line legacy backend gone                                          |
+| Two-mode activation    | COMPLETE           | `main.py`: Demo > Service > Demo fallback; `_is_service_adapter is True` guard for shutdown            |
+| Adapter tests          | PASSING            | 52 tests in `src/tests/unit/backend/test_cascor_service_adapter.py`                                    |
+| Activation tests       | PASSING            | 11 tests in `src/tests/unit/test_three_mode_activation.py`                                             |
+| Total Canopy tests     | PASSING            | 3,130 passed, 23 skipped (after 160 legacy tests removed)                                              |
+| Dependency declaration | CONFIGURED         | `juniper-cascor-client>=0.1.0` in `pyproject.toml [project.optional-dependencies].juniper-cascor`      |
+| REST integration tests | PASSING            | All 10 service endpoints verified against live CasCor service (port 8201)                              |
+| WS relay integration   | PASSING            | CasCor WS → `CascorTrainingStream.stream()` → `ws_manager.broadcast()` verified                        |
+| Legacy files removed   | COMPLETE           | `cascor_integration.py` + 13 legacy test files deleted                                                 |
+| Latest commit          | `5f9987d`          | "Step 4.8: Remove legacy CascorIntegration mode"                                                       |
+| Branch                 | `canopy/migration` | Tracking `origin` (monorepo `pcalnon/Juniper`)                                                         |
 
 ### Objective, Phase 4
 
@@ -1229,27 +1229,27 @@ Once service mode is validated:
 
 ### Verification Summary, Phase 5 (2026-02-22)
 
-| Repository | Local Clone | Commits | Branch | CI Status | Notable |
-| ---------- | ----------- | ------- | ------ | --------- | ------- |
-| `juniper-data` | `/home/pcalnon/Development/python/Juniper/juniper-data/` | 595 | `main` | GREEN (all jobs pass) | CodeQL + scheduled CI active; 3 dependabot PRs open |
-| `juniper-cascor` | `/home/pcalnon/Development/python/Juniper/juniper-cascor/` | 127 | `main` | MOSTLY GREEN | Recent failures (pytest-asyncio, logger config) resolved; latest 2 runs pass |
-| `juniper-canopy` | `/home/pcalnon/Development/python/Juniper/JuniperCanopy/juniper_canopy/` | 582 | `main` | GREEN (all jobs pass) | CI fully green 2026-02-25 (py3.11/3.12/3.13); cross-refs updated; Phase 5 complete |
-| `juniper-data-client` | `/home/pcalnon/Development/python/Juniper/juniper-data-client/` | 6 | `main` | GREEN | Published to PyPI v0.3.0 |
-| `juniper-cascor-client` | `/home/pcalnon/Development/python/Juniper/juniper-cascor-client/` | 6 | `main` | GREEN | Published to PyPI v0.1.0 (2026-02-24) |
-| `juniper-cascor-worker` | `/home/pcalnon/Development/python/Juniper/juniper-cascor-worker/` | 7 | `main` | GREEN | Published to PyPI v0.1.0 (2026-02-24) |
-| `juniper-ml` (meta) | `/home/pcalnon/Development/python/Juniper/temp_git/Juniper/` | — | `main` | — | Repurposed from monorepo as `juniper-ml` meta-package (2026-02-25) |
+| Repository              | Local Clone                                                              | Commits | Branch | CI Status             | Notable                                                                            |
+|-------------------------|--------------------------------------------------------------------------|---------|--------|-----------------------|------------------------------------------------------------------------------------|
+| `juniper-data`          | `/home/pcalnon/Development/python/Juniper/juniper-data/`                 | 595     | `main` | GREEN (all jobs pass) | CodeQL + scheduled CI active; 3 dependabot PRs open                                |
+| `juniper-cascor`        | `/home/pcalnon/Development/python/Juniper/juniper-cascor/`               | 127     | `main` | MOSTLY GREEN          | Recent failures (pytest-asyncio, logger config) resolved; latest 2 runs pass       |
+| `juniper-canopy`        | `/home/pcalnon/Development/python/Juniper/JuniperCanopy/juniper_canopy/` | 582     | `main` | GREEN (all jobs pass) | CI fully green 2026-02-25 (py3.11/3.12/3.13); cross-refs updated; Phase 5 complete |
+| `juniper-data-client`   | `/home/pcalnon/Development/python/Juniper/juniper-data-client/`          | 6       | `main` | GREEN                 | Published to PyPI v0.3.0                                                           |
+| `juniper-cascor-client` | `/home/pcalnon/Development/python/Juniper/juniper-cascor-client/`        | 6       | `main` | GREEN                 | Published to PyPI v0.1.0 (2026-02-24)                                              |
+| `juniper-cascor-worker` | `/home/pcalnon/Development/python/Juniper/juniper-cascor-worker/`        | 7       | `main` | GREEN                 | Published to PyPI v0.1.0 (2026-02-24)                                              |
+| `juniper-ml` (meta)     | `/home/pcalnon/Development/python/Juniper/juniper-ml/`                   | —       | `main` | GREEN                 | Standalone meta-package; `pcalnon/juniper-ml` (renamed from `pcalnon/juniper`); CI green 2026-02-25 |
 
-| Step | Description                        | Status                                                                                   |
-| ---- | ---------------------------------- | ---------------------------------------------------------------------------------------- |
-| 5.1  | Create target GitHub repos         | COMPLETE — all 3 repos created (`juniper-data`, `juniper-cascor`, `juniper-canopy`)      |
-| 5.2  | Extract JuniperData with history   | COMPLETE — 595 commits (verified 2026-02-22), pushed to `pcalnon/juniper-data`           |
-| 5.2  | Extract JuniperCascor with history | COMPLETE — 127 commits (verified 2026-02-22), pushed to `pcalnon/juniper-cascor`         |
-| 5.2  | Extract JuniperCanopy with history | COMPLETE — 582 commits extracted to `pcalnon/juniper-canopy`; CI green 2026-02-25 |
-| 5.3  | Verify extracted repos             | COMPLETE — Data: CI passing (scheduled + push); CasCor: CI passing (latest 2 runs green) |
-| 5.4  | Set up per-repo CI/CD              | COMPLETE — CI fully green on both Data and CasCor (see details below)                    |
-| 5.5  | Update cross-references            | COMPLETE — READMEs updated with ecosystem links and correct URLs                         |
-| 5.6  | Archive the monorepo               | N/A — `pcalnon/Juniper` repurposed as `juniper-ml` meta-package (force-pushed 2026-02-25); monorepo superseded |
-| 5.7  | Update local development setup     | COMPLETE — documented below                                                              |
+| Step | Description                        | Status                                                                                                         |
+|------|------------------------------------|----------------------------------------------------------------------------------------------------------------|
+| 5.1  | Create target GitHub repos         | COMPLETE — all 3 repos created (`juniper-data`, `juniper-cascor`, `juniper-canopy`)                            |
+| 5.2  | Extract JuniperData with history   | COMPLETE — 595 commits (verified 2026-02-22), pushed to `pcalnon/juniper-data`                                 |
+| 5.2  | Extract JuniperCascor with history | COMPLETE — 127 commits (verified 2026-02-22), pushed to `pcalnon/juniper-cascor`                               |
+| 5.2  | Extract JuniperCanopy with history | COMPLETE — 582 commits extracted to `pcalnon/juniper-canopy`; CI green 2026-02-25                              |
+| 5.3  | Verify extracted repos             | COMPLETE — Data: CI passing (scheduled + push); CasCor: CI passing (latest 2 runs green)                       |
+| 5.4  | Set up per-repo CI/CD              | COMPLETE — CI fully green on both Data and CasCor (see details below)                                          |
+| 5.5  | Update cross-references            | COMPLETE — READMEs updated with ecosystem links and correct URLs                                               |
+| 5.6  | Archive the monorepo               | N/A — `pcalnon/Juniper` monorepo backup in `temp_git/Juniper/`; `juniper-ml` meta-package has its own repo (`pcalnon/juniper-ml`, renamed 2026-02-25) |
+| 5.7  | Update local development setup     | COMPLETE — documented below                                                                                    |
 
 **Extraction Approach Note:** The monorepo uses branch-per-project (not subdirectory-per-project), so `git filter-repo --subdirectory-filter` was not applicable. Instead, `git clone --single-branch -b <branch>` was used, followed by branch rename to `main`. This preserves the full reachable history for each project branch.
 
@@ -1417,7 +1417,7 @@ pip install -e ../juniper-cascor-client
 - [x] All cross-references updated (Data and CasCor READMEs updated with ecosystem links)
 - [x] SSH deploy keys configured per-repo (`~/.ssh/id_ed25519_gh_juniper-<name>`) with SSH config aliases
 - [x] Canopy extraction to standalone repo — COMPLETE 2026-02-25 (`pcalnon/juniper-canopy`, CI green)
-- [x] Monorepo superseded — `pcalnon/Juniper` repurposed as `juniper-ml` meta-package 2026-02-25
+- [x] `juniper-ml` meta-package has standalone repo `pcalnon/juniper-ml` (renamed from `pcalnon/juniper`); CI green 2026-02-25
 - [x] Local development workflow documented
 
 ---
@@ -1591,7 +1591,7 @@ Update all documentation across all repositories:
 - [x] Three client/worker repos created (from Phases 1, 3)
 - [x] Per-repo CI/CD verified (Data: all green + CodeQL + scheduled; CasCor: green on latest 2 runs)
 - [x] SSH deploy keys + SSH config aliases configured per-repo
-- [x] Monorepo superseded — `pcalnon/Juniper` repurposed as `juniper-ml` meta-package 2026-02-25
+- [x] `juniper-ml` meta-package has standalone repo `pcalnon/juniper-ml` (renamed from `pcalnon/juniper`); CI green 2026-02-25
 - [x] Cross-references updated (Data, CasCor, and Canopy READMEs/AGENTS.md updated)
 
 ### Phase 6 — Hardening
