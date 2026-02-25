@@ -20,7 +20,7 @@ This document is the **authoritative, consolidated roadmap** for all JuniperCasc
 | Migration Phase | Status | Key Impact on This Roadmap |
 | --- | --- | --- |
 | Phase 0 — Stabilize baseline | **COMPLETE** | Clean baseline established for all subprojects |
-| Phase 1 — Publish `juniper-data-client` to PyPI | **COMPLETE** | Resolves INT-P1-001 (duplicated client), INT-P1-002 (requests dep) |
+| Phase 1 — Publish `juniper-data-client` to PyPI | **COMPLETE** | Resolves INT-P1-001 (duplicated client), INT-P1-002 (requests dep — pre-migration resolved, further addressed by Phase 1) |
 | Phase 2 — Build CasCor Service API | **COMPLETE** | Resolves C.1 (async wrapper); substantially resolves INT-P1-004 (IPC architecture, with Phase 3) |
 | Phase 3 — Create `juniper-cascor-client` + `juniper-cascor-worker` | **COMPLETE** | Resolves CAS-004 (extract remote worker), supersedes C.2 |
 | Phase 4 — Decouple Canopy from CasCor | **IN PROGRESS** | Removes `CascorIntegration`; changes scope of CAS-CANOPY-* items |
@@ -72,13 +72,13 @@ This document is the **authoritative, consolidated roadmap** for all JuniperCasc
 | Medium (P2)                      | 22    | -3 (was 25)           |
 | Low / Deferred (P3-P4)           | 50    | +7 (was 43)           |
 
-*Total = 89 - 6 (migration resolved/superseded) - 2 (pre-migration resolved) + 2 (new items) = 83. Priority sum: 3 + 8 + 22 + 50 = 83. P3-P4 increase reflects items downgraded from P0 (INT-P0-004, INT-P0-005) and from High/P1 severity (INT-P1-003, INT-P1-005, INT-P2-004 — note: INT-P2-004's "P2" is its integration phase, not priority; its original severity was High) plus 2 new items.*
+*Total = 89 - 6 (migration resolved/superseded) - 2 (pre-migration resolved) + 2 (new items) = 83. Priority sum: 3 + 8 + 22 + 50 = 83. P2 decrease reflects INT-P2-013 resolved pre-migration, INT-P2-004 downgraded to Low, partially offset by INT-P1-006 and INT-P2-009 entering P2 from High (downgraded to Medium); net -3 includes recount of items by effective severity vs. original section placement. P3-P4 increase reflects items downgraded from P0 (INT-P0-004, INT-P0-005) and from High/P1 severity (INT-P1-003, INT-P1-005, INT-P2-004 — note: INT-P2-004's "P2" is its integration phase, not priority; its original severity was High) plus 2 new items (Phase 1 #10: clean up `src/remote_client/` directory; Phase 5 #10: implement deferred API endpoints).*
 
 ### Codebase Validation Summary (2026-02-18)
 
 | Result                   | Count     | Items                                                                                                        |
 | ------------------------ | --------- | ------------------------------------------------------------------------------------------------------------ |
-| CONFIRMED (bug exists)   | 18        | INT-P0-001 through P0-005, P2-001 through P2-010 (excl. P2-004), P2-014, CAS-REF-004, INT-P1-005, INT-P1-008 (INT-P1-005 also severity-adjusted) |
+| CONFIRMED (bug exists)   | 19        | INT-P0-001 through P0-005, P2-001 through P2-010, P2-014, CAS-REF-004, INT-P1-005, INT-P1-008 (INT-P1-005 and INT-P2-004 also severity-adjusted) |
 | RESOLVED (already fixed) | 3         | INT-P1-002 (requests dep), INT-P1-007 (retry logic), INT-P2-013 (dill dep)                                   |
 | SEVERITY ADJUSTED        | 3         | INT-P2-004 (High→Low), INT-P1-006 (High→Medium), INT-P1-005 (High→Low)                                       |
 | NOT YET VALIDATED        | Remaining | Architecture items (C.1, C.2 — now resolved/superseded by migration), deferred items, Oracle analysis items   |
@@ -88,7 +88,7 @@ This document is the **authoritative, consolidated roadmap** for all JuniperCasc
 ## Section 1: Critical Bugs & Blockers (P0)
 
 **Priority**: IMMEDIATE
-**Estimated Effort**: 4-8 hours (reduced from 8-16: two P0 items downgraded by migration)
+**Estimated Effort**: 4-8 hours for P0 items only (reduced from 8-16: two P0 items downgraded by migration; see Phase 0 table for execution plan which adds P2 quick wins)
 **Source**: INTEGRATION_ROADMAP-01.md (2026-02-05), Source Code Review
 
 These items were identified during the 2026-02-05 source code review. They represent actual bugs in the current codebase that could cause incorrect behavior or crashes.
@@ -216,7 +216,7 @@ These items were identified during the 2026-02-05 source code review. They repre
 
 **Description**: JuniperCascor is currently embedded in JuniperCanopy's process via `sys.path.insert()`. A proper IPC architecture (separate backend process with protocol-based communication) would enable independent deployment and scaling.
 
-**Migration Impact (2026-02-24)**: **RESOLVED**. The polyrepo migration implemented this as a first-class architecture:
+**Migration Impact (2026-02-24)**: **SUBSTANTIALLY RESOLVED**. The polyrepo migration implemented this as a first-class architecture:
 
 - **CasCor Service API** (Phase 2): FastAPI server on port 8200 with 19 REST endpoints + 2 WebSocket endpoints
 - **juniper-cascor-client** (Phase 3): Published HTTP/WebSocket client library for consuming the service
@@ -1124,7 +1124,7 @@ These items are documented as COMPLETE and included for reference only.
 
 ### Items Resolved by Polyrepo Migration
 
-*6 work items + 2 design decisions. Design decisions are not counted in the 83 non-completed work items statistic.*
+*5 resolved work items + 1 substantially resolved work item (INT-P1-004) + 2 design decisions. Design decisions are not counted in the 83 non-completed work items statistic.*
 
 | Item | Resolution | Migration Phase |
 | --- | --- | --- |
@@ -1194,7 +1194,7 @@ Based on codebase validation results, dependency analysis, effort estimates, and
 | 2   | CAS-REF-003: Fix critical type errors (mypy)  | 2-3 days | API module is well-typed; focus on core modules  |
 | 3   | CAS-REF-002: Add per-module CI coverage gates  | 1 day    | Global 80% is enforced; add per-module thresholds |
 | 4   | CAS-007: Optimize slow tests (target ≤ 5 min) | 2-3 days | Profile and optimize; scheduled tests handle long runs |
-| 5   | CAS-REF-004: Remove 16 legacy spiral methods  | 1 day    | JuniperData stable on PyPI; E2E tests still needed |
+| 5   | CAS-REF-004: Remove 16 legacy spiral methods  | 1 day    | JuniperData stable on PyPI; full completion gated on Phase 3 #3 (INT-P3-002 E2E tests) |
 
 **Estimated Total**: 10-15 days (item sum: 9-13 days + coordination/integration overhead)
 
@@ -1247,6 +1247,8 @@ Based on codebase validation results, dependency analysis, effort estimates, and
 | 8   | CAS-010: Snapshot Vector DB                 | 2-4 weeks |                                                               |
 | 9   | GPU/CUDA support                            | 2-4 weeks | CI needs GPU runner or separate workflow                      |
 | 10  | Implement deferred API endpoints (CAS-CANOPY-002, C.2 follow-up) | 1-2 weeks | **NEW**: `/v1/workers/*` (5), `PUT /v1/training/params`, plus any snapshot endpoints beyond Phase 3 core |
+
+**Estimated Total**: Not aggregated — Phase 5 is ongoing with items spanning days to weeks; items are independent and can be prioritized individually.
 
 ---
 
@@ -1520,3 +1522,5 @@ INT-P3-003 (Docker Compose)
 | 2026-02-25 | AI Agent | **Minor issue cleanup**: 7 fixes — clarified INT-P2-004 priority origin in statistics footnote, added overhead notes to Phase 2/3/4 effort estimates, fixed Codebase Validation CONFIRMED count (17→18 with overlap note for INT-P1-005), added Phase 0 note explaining retained Low-severity items, standardized INT-P1-005 severity notation, added P4-NEW-003/004 gap explanation, added design decision clarification to resolved table. |
 | 2026-02-25 | AI Agent | **Third validation pass**: Fixed 3 moderate issues — updated INT-P0-004/INT-P0-005 migration impact prose from "Medium" to "Low" (labels were corrected earlier but prose paragraphs were missed), corrected INT-P2-014 `import traceback` count from 22 to 21 (verified against codebase: 21 local imports + 1 commented-out top-level). |
 | 2026-02-25 | AI Agent | **Final minor cleanup**: 5 fixes — standardized severity notation to `~~Old~~ **New**` pattern across 6 items (INT-P0-004, INT-P0-005, INT-P1-003, INT-P1-006, INT-P2-004, INT-P2-009) plus SEVERITY ADJUSTED summary row, clarified INT-P1-004 attribution in Migration Summary to span Phases 2-3, added C.1/C.2 resolution note to NOT YET VALIDATED row, clarified CAS-CANOPY-002 Phase 3/5 scope overlap, updated INT-P2-010 stale line references from 142/145 to 174/177 (verified against codebase). |
+| 2026-02-25 | AI Agent | **Fifth validation pass**: Fixed 4 moderate issues — corrected INT-P1-004 Migration Impact paragraph from "RESOLVED" to "SUBSTANTIALLY RESOLVED" (aligning with status field, Dependencies Matrix, and Section 10), added Phase 3 dependency gate note to CAS-REF-004 in Phase 2 table, corrected Codebase Validation CONFIRMED count from 18 to 19 (INT-P2-004 now included with overlap note, matching INT-P1-005 treatment), added P2 bucket change explanation to consolidated statistics footnote. |
+| 2026-02-25 | AI Agent | **Fifth validation minor cleanup**: 5 fixes — named the 2 new P3-P4 items in statistics footnote (Phase 1 #10, Phase 5 #10), added Phase 5 aggregate effort note explaining why total is not aggregated, clarified INT-P1-002 attribution in Migration Summary as pre-migration resolved + further addressed by Phase 1, added Section 1 cross-reference to Phase 0 execution plan, clarified Section 10 resolved table header to distinguish 5 resolved + 1 substantially resolved work items. |
