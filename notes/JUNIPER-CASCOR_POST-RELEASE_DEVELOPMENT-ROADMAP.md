@@ -72,13 +72,13 @@ This document is the **authoritative, consolidated roadmap** for all JuniperCasc
 | Medium (P2)                      | 22    | -3 (was 25)           |
 | Low / Deferred (P3-P4)           | 50    | +7 (was 43)           |
 
-*Total = 89 - 6 (migration resolved/superseded) - 2 (pre-migration resolved) + 2 (new items) = 83. Priority sum: 3 + 8 + 22 + 50 = 83. P3-P4 increase reflects items downgraded from P0 (INT-P0-004, INT-P0-005) and P1 (INT-P1-003, INT-P1-005, INT-P2-004) plus 2 new items.*
+*Total = 89 - 6 (migration resolved/superseded) - 2 (pre-migration resolved) + 2 (new items) = 83. Priority sum: 3 + 8 + 22 + 50 = 83. P3-P4 increase reflects items downgraded from P0 (INT-P0-004, INT-P0-005) and from High/P1 severity (INT-P1-003, INT-P1-005, INT-P2-004 — note: INT-P2-004's "P2" is its integration phase, not priority; its original severity was High) plus 2 new items.*
 
 ### Codebase Validation Summary (2026-02-18)
 
 | Result                   | Count     | Items                                                                                                        |
 | ------------------------ | --------- | ------------------------------------------------------------------------------------------------------------ |
-| CONFIRMED (bug exists)   | 17        | INT-P0-001 through P0-005, P2-001 through P2-010 (excl. P2-004), P2-014, CAS-REF-004, INT-P1-005, INT-P1-008 |
+| CONFIRMED (bug exists)   | 18        | INT-P0-001 through P0-005, P2-001 through P2-010 (excl. P2-004), P2-014, CAS-REF-004, INT-P1-005, INT-P1-008 (INT-P1-005 also severity-adjusted) |
 | RESOLVED (already fixed) | 3         | INT-P1-002 (requests dep), INT-P1-007 (retry logic), INT-P2-013 (dill dep)                                   |
 | SEVERITY ADJUSTED        | 3         | INT-P2-004 (High→Low), INT-P1-006 (High→Medium), INT-P1-005 (High→Low impact)                                |
 | NOT YET VALIDATED        | Remaining | Architecture items (C.1, C.2), deferred items, Oracle analysis items                                         |
@@ -237,7 +237,7 @@ All four sub-tasks are addressed:
 ### INT-P1-005: main.py Passes Invalid Parameters to SpiralProblem
 
 **Status**: NOT STARTED
-**Severity**: High → Low impact (confirmed 2026-02-18)
+**Severity**: ~~High~~ **Low** (confirmed low impact 2026-02-18; silently absorbed by `**kwargs`)
 **Source**: INTEGRATION_ROADMAP-01.md
 
 **Description**: `main.py` passes parameters that `SpiralProblem` does not accept or uses incorrect parameter names.
@@ -1006,6 +1006,8 @@ These items require manual testing to confirm proper operation.
 
 ### P4-NEW-005: Verify Parallel Processing Working
 
+*Note: P4-NEW-003 and P4-NEW-004 from PRE-DEPLOYMENT_ROADMAP-2.md were completed prior to the 2026-02-18 audit and are not included in this roadmap.*
+
 **Status**: NEEDS TESTING
 **Source**: PRE-DEPLOYMENT_ROADMAP-2.md
 
@@ -1122,6 +1124,8 @@ These items are documented as COMPLETE and included for reference only.
 
 ### Items Resolved by Polyrepo Migration
 
+*6 work items + 2 design decisions. Design decisions are not counted in the 83 non-completed work items statistic.*
+
 | Item | Resolution | Migration Phase |
 | --- | --- | --- |
 | INT-P1-001: Duplicated JuniperDataClient | `juniper-data-client` v0.3.0 on PyPI | Phase 1 |
@@ -1143,6 +1147,7 @@ Based on codebase validation results, dependency analysis, effort estimates, and
 
 **Goal**: Fix all confirmed P0 bugs that cause silent incorrect behavior.
 **No external dependencies.**
+**Note**: Items 4-5 (INT-P0-004, INT-P0-005) were downgraded from Critical to Low after the migration made them trivial deletions, but remain in Phase 0 as quick wins (15 min each) best done alongside the actual critical fixes.
 
 | #   | Item                                                            | Effort  | Notes                                                                |
 | --- | --------------------------------------------------------------- | ------- | -------------------------------------------------------------------- |
@@ -1191,7 +1196,7 @@ Based on codebase validation results, dependency analysis, effort estimates, and
 | 4   | CAS-007: Optimize slow tests (target ≤ 5 min) | 2-3 days | Profile and optimize; scheduled tests handle long runs |
 | 5   | CAS-REF-004: Remove 16 legacy spiral methods  | 1 day    | JuniperData stable on PyPI; E2E tests still needed |
 
-**Estimated Total**: 10-15 days
+**Estimated Total**: 10-15 days (item sum: 9-13 days + coordination/integration overhead)
 
 ### Phase 3: Integration Architecture (1-2 weeks) — REDUCED SCOPE
 
@@ -1207,7 +1212,7 @@ Based on codebase validation results, dependency analysis, effort estimates, and
 | 3   | INT-P3-002: E2E live-service integration tests          | 2-3 days | Coordinate with Phase 6 Docker Compose            |
 | 4   | CAS-005: Evaluate shared types with `juniper-cascor-worker` | 1-2 days | Determine if shared package needed |
 
-**Estimated Total**: 7-12 days
+**Estimated Total**: 7-12 days (item sum: ~6-11 days + coordination/integration overhead)
 
 ### Phase 4: Feature Enhancements (4-8 weeks)
 
@@ -1223,7 +1228,7 @@ Based on codebase validation results, dependency analysis, effort estimates, and
 | 5   | ENH-007: N-best candidate layer selection     | 3-5 days  |                                                          |
 | 6   | ENH-008: Worker cleanup improvements          | 2-3 days  | Apply to `juniper-cascor-worker` package                 |
 
-**Estimated Total**: 15-25 days (reduced from 20-35: C.2 resolved)
+**Estimated Total**: 15-25 days (item sum: 13-21 days + integration overhead; reduced from 20-35: C.2 resolved)
 
 ### Phase 5: Infrastructure & Future (Ongoing)
 
@@ -1512,3 +1517,4 @@ INT-P3-003 (Docker Compose)
 | 2026-02-24 | AI Agent | **Polyrepo migration reconciliation**: Analyzed impact of `POLYREPO_MIGRATION_PLAN.md` (v1.5.0) and `DECOUPLE_CANOPY_FROM_CASCOR_PLAN.md` against all 89 roadmap items. 6 items resolved/superseded by migration, 6 scope-changed, 2 new items added. Added Migration Impact annotations to 27 items across all sections. Updated Development Phases 0-5 with post-migration actions. Added 2 new verification items (CasCor Service API E2E, Three-Mode Activation). Updated Dependencies Matrix with resolved/superseded items. Revised Risk Assessment with 5 new migration-specific risks and 2 mitigated risks. Updated Design Decisions 4 and 5 as IMPLEMENTED. Pre-update version archived to `history/JUNIPER-CASCOR_POST-RELEASE_DEVELOPMENT-ROADMAP_2026-02-24.md`. |
 | 2026-02-24 | AI Agent | **Post-reconciliation validation**: Fixed 10 errors introduced during migration reconciliation — corrected consolidated statistics (resolved: 10→6, superseded: 5→removed, scope-changed: 12→6, total: 72→83, High: 9→8, Low: 38→50), fixed INT-P1-001 factual error (`src/juniper_data_client/` directory entirely removed, not partially), corrected INT-P1-004 status in resolved table to SUBSTANTIALLY RESOLVED, fixed In-Code TODO priority for validate_training_results (P0→P2), fixed INT-P4-012–017 header to INT-P4-012–016, annotated INT-P3-008 as LIKELY RESOLVED in Phase 5 table, added INT-P1-002 and INT-P2-013 to Section 10 completed items, expanded INT-P3-009 version list, added traceable references to new Phase items. |
 | 2026-02-25 | AI Agent | **Second validation pass**: Fixed 4 remaining moderate issues — corrected INT-P0-004/INT-P0-005 severity from "Medium" to "Low" (aligning section entries with P3-P4 statistical bucket), corrected INT-P1-004 status in Dependencies Matrix from "RESOLVED" to "SUBSTANTIALLY RESOLVED", corrected INT-P1-002 validation text (removed false claim that `requests` is in `pyproject.toml`; clarified resolution via vendored client removal), added C.3 status to Oracle analysis source table row. |
+| 2026-02-25 | AI Agent | **Minor issue cleanup**: 7 fixes — clarified INT-P2-004 priority origin in statistics footnote, added overhead notes to Phase 2/3/4 effort estimates, fixed Codebase Validation CONFIRMED count (17→18 with overlap note for INT-P1-005), added Phase 0 note explaining retained Low-severity items, standardized INT-P1-005 severity notation, added P4-NEW-003/004 gap explanation, added design decision clarification to resolved table. |
