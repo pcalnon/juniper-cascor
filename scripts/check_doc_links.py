@@ -134,6 +134,9 @@ def _find_markdown_files(search_paths: list[Path], repo_root: Path, exclude_dirs
 
     for path in search_paths:
         if path.is_file() and path.suffix in _DOC_EXTENSIONS:
+            # Skip broken symlinks
+            if path.is_symlink() and not path.exists():
+                continue
             # Check if file is under an excluded directory
             try:
                 rel = path.relative_to(repo_root)
@@ -144,6 +147,9 @@ def _find_markdown_files(search_paths: list[Path], repo_root: Path, exclude_dirs
         elif path.is_dir():
             for ext in _DOC_EXTENSIONS:
                 for f in path.rglob(f"*{ext}"):
+                    # Skip broken symlinks
+                    if f.is_symlink() and not f.exists():
+                        continue
                     try:
                         rel = f.relative_to(repo_root)
                         if not any(part in skip for part in rel.parts):
