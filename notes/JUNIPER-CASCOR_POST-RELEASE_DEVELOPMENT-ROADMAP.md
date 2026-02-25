@@ -143,7 +143,7 @@ These items were identified during the 2026-02-05 source code review. They repre
 
 **Codebase Validation (2026-02-18)**: **CONFIRMED**. Line 16: `sys.path.append("/home/pcalnon/Development/python/Juniper/src/prototypes/cascor/src")`. Points to the old prototypes directory, not even the current project structure.
 
-**Migration Impact (2026-02-24)**: `remote_client_0.py` is a legacy predecessor to `remote_client.py`, which itself is now superseded by the standalone `juniper-cascor-worker` package (published to PyPI as v0.1.0). The hardcoded path references the old monorepo prototype directory that no longer exists in the polyrepo layout. **Recommended action**: Delete `remote_client_0.py` entirely rather than fixing the path. If backward compatibility is needed during transition, fix the path as originally planned. Severity reduced from Critical to Medium because this file is no longer in the active execution path.
+**Migration Impact (2026-02-24)**: `remote_client_0.py` is a legacy predecessor to `remote_client.py`, which itself is now superseded by the standalone `juniper-cascor-worker` package (published to PyPI as v0.1.0). The hardcoded path references the old monorepo prototype directory that no longer exists in the polyrepo layout. **Recommended action**: Delete `remote_client_0.py` entirely rather than fixing the path. If backward compatibility is needed during transition, fix the path as originally planned. Severity reduced from Critical to Low because this file is no longer in the active execution path.
 
 **Related**: INT-P2-009 (inconsistent queue names between remote clients)
 
@@ -160,7 +160,7 @@ These items were identified during the 2026-02-05 source code review. They repre
 
 **Codebase Validation (2026-02-18)**: **CONFIRMED**. Line 10: `sys.path.append("/home/pcalnon/Development/python/Juniper/src/prototypes/cascor/src")` (Linux), Line 12: `sys.path.append("/Users/pcalnon/Development/python/Juniper/src/prototypes/cascor/src")` (macOS). Both point to obsolete prototype paths.
 
-**Migration Impact (2026-02-24)**: These paths reference the old monorepo prototype directory. In the polyrepo layout, `juniper-cascor` is installed via `pip install -e ".[all]"` and imports resolve through standard Python packaging — no `sys.path` manipulation is needed. **Recommended action**: Remove both `sys.path.append()` lines entirely. The CI workflow already uses editable install, so these paths are dead code. Severity reduced from Critical to Medium because the paths don't break CI (they just fail silently on machines where the path doesn't exist).
+**Migration Impact (2026-02-24)**: These paths reference the old monorepo prototype directory. In the polyrepo layout, `juniper-cascor` is installed via `pip install -e ".[all]"` and imports resolve through standard Python packaging — no `sys.path` manipulation is needed. **Recommended action**: Remove both `sys.path.append()` lines entirely. The CI workflow already uses editable install, so these paths are dead code. Severity reduced from Critical to Low because the paths don't break CI (they just fail silently on machines where the path doesn't exist).
 
 ---
 
@@ -461,7 +461,7 @@ The implementation lives in `src/api/lifecycle/manager.py`, `src/api/lifecycle/s
 **Severity**: Medium
 **Description**: Should be top-level imports.
 
-**Codebase Validation (2026-02-18)**: **CONFIRMED**. 22 instances of `import traceback` inside exception handlers in `cascade_correlation.py` (lines 1369, 1505, 1690, 2175, 2198, 2327, 2442, 2466, 2472, 2494, 2499, 2819, 2879, 2917, 2947, 3078, 3172, 3264, 3310, 3336, 3356). The top-level import at line 60 is commented out: `# import traceback`. Fix: uncomment the top-level import and remove the 22 local imports.
+**Codebase Validation (2026-02-18)**: **CONFIRMED**. 21 instances of `import traceback` inside exception handlers in `cascade_correlation.py` (line numbers from 2026-02-18 audit: 1369, 1505, 1690, 2175, 2198, 2327, 2442, 2466, 2472, 2494, 2499, 2819, 2879, 2917, 2947, 3078, 3172, 3264, 3310, 3336, 3356). The top-level import at line 60 is commented out: `# import traceback`. Fix: uncomment the top-level import and remove the 21 local imports.
 
 ---
 
@@ -1158,7 +1158,7 @@ Based on codebase validation results, dependency analysis, effort estimates, and
 | 5   | INT-P0-005: Remove `sys.path` lines in test file               | 15 min  | Dead code in polyrepo layout (**updated**: remove, don't fix)        |
 | 6   | INT-P2-002: Fix `import datetime as pd` alias                   | 15 min  | Rename to `dt` or `datetime`                                         |
 | 7   | INT-P2-004: Remove duplicate `snapshot_counter` init            | 5 min   | Delete line 548                                                      |
-| 8   | INT-P2-014: Move `import traceback` to top-level                | 30 min  | Uncomment line 60, remove 22 local imports                           |
+| 8   | INT-P2-014: Move `import traceback` to top-level                | 30 min  | Uncomment line 60, remove 21 local imports                           |
 | 9   | INT-P2-010: Replace `os._exit()` with `sys.exit()` in main.py   | 15 min  | Lines 142, 145                                                       |
 
 **Estimated Total**: 4-6 hours
@@ -1518,3 +1518,4 @@ INT-P3-003 (Docker Compose)
 | 2026-02-24 | AI Agent | **Post-reconciliation validation**: Fixed 10 errors introduced during migration reconciliation — corrected consolidated statistics (resolved: 10→6, superseded: 5→removed, scope-changed: 12→6, total: 72→83, High: 9→8, Low: 38→50), fixed INT-P1-001 factual error (`src/juniper_data_client/` directory entirely removed, not partially), corrected INT-P1-004 status in resolved table to SUBSTANTIALLY RESOLVED, fixed In-Code TODO priority for validate_training_results (P0→P2), fixed INT-P4-012–017 header to INT-P4-012–016, annotated INT-P3-008 as LIKELY RESOLVED in Phase 5 table, added INT-P1-002 and INT-P2-013 to Section 10 completed items, expanded INT-P3-009 version list, added traceable references to new Phase items. |
 | 2026-02-25 | AI Agent | **Second validation pass**: Fixed 4 remaining moderate issues — corrected INT-P0-004/INT-P0-005 severity from "Medium" to "Low" (aligning section entries with P3-P4 statistical bucket), corrected INT-P1-004 status in Dependencies Matrix from "RESOLVED" to "SUBSTANTIALLY RESOLVED", corrected INT-P1-002 validation text (removed false claim that `requests` is in `pyproject.toml`; clarified resolution via vendored client removal), added C.3 status to Oracle analysis source table row. |
 | 2026-02-25 | AI Agent | **Minor issue cleanup**: 7 fixes — clarified INT-P2-004 priority origin in statistics footnote, added overhead notes to Phase 2/3/4 effort estimates, fixed Codebase Validation CONFIRMED count (17→18 with overlap note for INT-P1-005), added Phase 0 note explaining retained Low-severity items, standardized INT-P1-005 severity notation, added P4-NEW-003/004 gap explanation, added design decision clarification to resolved table. |
+| 2026-02-25 | AI Agent | **Third validation pass**: Fixed 3 moderate issues — updated INT-P0-004/INT-P0-005 migration impact prose from "Medium" to "Low" (labels were corrected earlier but prose paragraphs were missed), corrected INT-P2-014 `import traceback` count from 22 to 21 (verified against codebase: 21 local imports + 1 commented-out top-level). |
