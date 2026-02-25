@@ -17,71 +17,71 @@ This document is the **authoritative, consolidated roadmap** for all JuniperCasc
 
 ### Polyrepo Migration Summary (as of 2026-02-24)
 
-| Migration Phase | Status | Key Impact on This Roadmap |
-| --- | --- | --- |
-| Phase 0 — Stabilize baseline | **COMPLETE** | Clean baseline established for all subprojects |
-| Phase 1 — Publish `juniper-data-client` to PyPI | **COMPLETE** | Resolves INT-P1-001 (duplicated client), INT-P1-002 (requests dep — pre-migration resolved, further addressed by Phase 1) |
-| Phase 2 — Build CasCor Service API | **COMPLETE** | Resolves C.1 (async wrapper); substantially resolves INT-P1-004 (IPC architecture, with Phase 3) |
-| Phase 3 — Create `juniper-cascor-client` + `juniper-cascor-worker` | **COMPLETE** | Resolves CAS-004 (extract remote worker), supersedes C.2 |
-| Phase 4 — Decouple Canopy from CasCor | **IN PROGRESS** | Removes `CascorIntegration`; changes scope of CAS-CANOPY-* items |
-| Phase 5 — Split into separate repos | **IN PROGRESS** | CasCor extracted to `pcalnon/juniper-cascor`; Canopy pending |
-| Phase 6 — Post-migration hardening | **NOT STARTED** | Adds new items: version matrix, integration test suite, Docker Compose |
+| Migration Phase                                                    | Status          | Key Impact on This Roadmap                                                                                                |
+|--------------------------------------------------------------------|-----------------|---------------------------------------------------------------------------------------------------------------------------|
+| Phase 0 — Stabilize baseline                                       | **COMPLETE**    | Clean baseline established for all subprojects                                                                            |
+| Phase 1 — Publish `juniper-data-client` to PyPI                    | **COMPLETE**    | Resolves INT-P1-001 (duplicated client), INT-P1-002 (requests dep — pre-migration resolved, further addressed by Phase 1) |
+| Phase 2 — Build CasCor Service API                                 | **COMPLETE**    | Resolves C.1 (async wrapper); substantially resolves INT-P1-004 (IPC architecture, with Phase 3)                          |
+| Phase 3 — Create `juniper-cascor-client` + `juniper-cascor-worker` | **COMPLETE**    | Resolves CAS-004 (extract remote worker), supersedes C.2                                                                  |
+| Phase 4 — Decouple Canopy from CasCor                              | **IN PROGRESS** | Removes `CascorIntegration`; changes scope of CAS-CANOPY-* items                                                          |
+| Phase 5 — Split into separate repos                                | **IN PROGRESS** | CasCor extracted to `pcalnon/juniper-cascor`; Canopy pending                                                              |
+| Phase 6 — Post-migration hardening                                 | **NOT STARTED** | Adds new items: version matrix, integration test suite, Docker Compose                                                    |
 
 ### Source Documents Evaluated
 
-| Document                                        | Date       | Items Extracted                                           | Status                                  |
-| ----------------------------------------------- | ---------- | --------------------------------------------------------- | --------------------------------------- |
-| PRE-DEPLOYMENT_ROADMAP.md                       | 2026-01-25 | Integration analysis, profiling roadmap, coverage roadmap | Superseded by Roadmap-2                 |
-| PRE-DEPLOYMENT_ROADMAP-2.md                     | 2026-02-03 | 5 remaining tasks, CAS-001–CAS-010, deferred items        | Active (14/19 complete)                 |
-| INTEGRATION_ROADMAP.md                          | 2026-02-05 | Cascor-Canopy integration fixes                           | All critical blockers resolved          |
-| INTEGRATION_ROADMAP-01.md                       | 2026-02-05 | 61 issues (INT-P0 through INT-P4)                         | Active - most comprehensive             |
-| CASCOR_JUNIPER_DATA_INTEGRATION_PLAN.md         | 2026-02-07 | CAS-INT-001 through CAS-INT-009                           | ALL 9 COMPLETE                          |
-| JUNIPER_CASCOR_SPIRAL_DATA_GEN_REFACTOR_PLAN.md | 2026-02-07 | Phase 5 deferred, legacy code removal                     | Phases 0-4 Complete                     |
-| TEST_SUITE_CICD_ENHANCEMENT_DEVELOPMENT_PLAN.md | 2026-02-05 | MED-014 deferred, qualitative metrics                     | Phases 0-4 Complete                     |
-| CRITICAL_FIXES_REQUIRED.md                      | 2025-10-15 | P0/P1/P2 items                                            | P0 all fixed (per COMPLETE_FIX_SUMMARY) |
-| CODE_REVIEW_SUMMARY.md                          | 2025-10-15 | P1 #11-14, P2 #15-18                                      | P0 fixed, P1/P2 pending                 |
-| COMPLETE_FIX_SUMMARY.md                         | 2025-10-16 | 4 optional P2 enhancements                                | System production-ready                 |
-| DEVELOPMENT_ROADMAP.md                          | 2025-10-28 | P0-P4 phases, in-code TODOs                               | Many items superseded                   |
-| IMPLEMENTATION_PROGRESS.md                      | 2025-10-28 | ENH-006/007/008 pending                                   | Phase 1 in progress                     |
-| NEXT_STEPS.md                                   | 2025-10-16 | Serialization enhancements                                | Many already implemented                |
-| ORACLE_ANALYSIS_PYTHON.md                       | 2026-01-26 | 5 recommended Python fixes                                | Status unknown                          |
-| ORACLE_ANALYSIS_SCRIPTS.md                      | 2026-01-26 | Shell script path fixes                                   | Status unknown                          |
+| Document                                        | Date       | Items Extracted                                           | Status                                                                    |
+|-------------------------------------------------|------------|-----------------------------------------------------------|---------------------------------------------------------------------------|
+| PRE-DEPLOYMENT_ROADMAP.md                       | 2026-01-25 | Integration analysis, profiling roadmap, coverage roadmap | Superseded by Roadmap-2                                                   |
+| PRE-DEPLOYMENT_ROADMAP-2.md                     | 2026-02-03 | 5 remaining tasks, CAS-001–CAS-010, deferred items        | Active (14/19 complete)                                                   |
+| INTEGRATION_ROADMAP.md                          | 2026-02-05 | Cascor-Canopy integration fixes                           | All critical blockers resolved                                            |
+| INTEGRATION_ROADMAP-01.md                       | 2026-02-05 | 61 issues (INT-P0 through INT-P4)                         | Active - most comprehensive                                               |
+| CASCOR_JUNIPER_DATA_INTEGRATION_PLAN.md         | 2026-02-07 | CAS-INT-001 through CAS-INT-009                           | ALL 9 COMPLETE                                                            |
+| JUNIPER_CASCOR_SPIRAL_DATA_GEN_REFACTOR_PLAN.md | 2026-02-07 | Phase 5 deferred, legacy code removal                     | Phases 0-4 Complete                                                       |
+| TEST_SUITE_CICD_ENHANCEMENT_DEVELOPMENT_PLAN.md | 2026-02-05 | MED-014 deferred, qualitative metrics                     | Phases 0-4 Complete                                                       |
+| CRITICAL_FIXES_REQUIRED.md                      | 2025-10-15 | P0/P1/P2 items                                            | P0 all fixed (per COMPLETE_FIX_SUMMARY)                                   |
+| CODE_REVIEW_SUMMARY.md                          | 2025-10-15 | P1 #11-14, P2 #15-18                                      | P0 fixed, P1/P2 pending                                                   |
+| COMPLETE_FIX_SUMMARY.md                         | 2025-10-16 | 4 optional P2 enhancements                                | System production-ready                                                   |
+| DEVELOPMENT_ROADMAP.md                          | 2025-10-28 | P0-P4 phases, in-code TODOs                               | Many items superseded                                                     |
+| IMPLEMENTATION_PROGRESS.md                      | 2025-10-28 | ENH-006/007/008 pending                                   | Phase 1 in progress                                                       |
+| NEXT_STEPS.md                                   | 2025-10-16 | Serialization enhancements                                | Many already implemented                                                  |
+| ORACLE_ANALYSIS_PYTHON.md                       | 2026-01-26 | 5 recommended Python fixes                                | Status unknown                                                            |
+| ORACLE_ANALYSIS_SCRIPTS.md                      | 2026-01-26 | Shell script path fixes                                   | Status unknown                                                            |
 | Oracle_analysis_2026-01-26.md                   | 2026-01-26 | C.1/C.2/C.3 integration architecture                      | C.1 resolved, C.2 superseded, C.3 substantially resolved (via INT-P1-004) |
-| DOCUMENTATION_AUDIT.md                          | 2026-01-29 | 5 future doc enhancements                                 | Future work                             |
-| FINAL_STATUS.md                                 | 2025-10-16 | Remaining work items                                      | Many superseded                         |
-| FEATURES_GUIDE.md                               | 2025-01-12 | Feature reference                                         | No action items                         |
-| API_REFERENCE.md                                | 2025-01-12 | API reference                                             | No action items                         |
-| ARCHITECTURE_GUIDE.md                           | 2025-01-12 | Architecture reference                                    | No action items                         |
-| IMPLEMENTATION_CHECKLIST.md                     | 2025-10-28 | Testing/verification checklists                           | Many superseded                         |
-| IMPLEMENTATION_SUMMARY.md                       | 2025-10-28 | ENH status tracking                                       | Many already resolved                   |
-| CHANGES_FOR_REVIEW.md                           | Various    | Change reviews                                            | All complete                            |
-| POLYREPO_MIGRATION_PLAN.md                      | 2026-02-24 | Migration phases, architecture changes                    | **NEW** — Phases 0-3 complete           |
-| DECOUPLE_CANOPY_FROM_CASCOR_PLAN.md             | 2026-02-21 | Canopy decoupling, CascorServiceAdapter design            | **NEW** — Phase 4 in progress           |
+| DOCUMENTATION_AUDIT.md                          | 2026-01-29 | 5 future doc enhancements                                 | Future work                                                               |
+| FINAL_STATUS.md                                 | 2025-10-16 | Remaining work items                                      | Many superseded                                                           |
+| FEATURES_GUIDE.md                               | 2025-01-12 | Feature reference                                         | No action items                                                           |
+| API_REFERENCE.md                                | 2025-01-12 | API reference                                             | No action items                                                           |
+| ARCHITECTURE_GUIDE.md                           | 2025-01-12 | Architecture reference                                    | No action items                                                           |
+| IMPLEMENTATION_CHECKLIST.md                     | 2025-10-28 | Testing/verification checklists                           | Many superseded                                                           |
+| IMPLEMENTATION_SUMMARY.md                       | 2025-10-28 | ENH status tracking                                       | Many already resolved                                                     |
+| CHANGES_FOR_REVIEW.md                           | Various    | Change reviews                                            | All complete                                                              |
+| POLYREPO_MIGRATION_PLAN.md                      | 2026-02-24 | Migration phases, architecture changes                    | **NEW** — Phases 0-3 complete                                             |
+| DECOUPLE_CANOPY_FROM_CASCOR_PLAN.md             | 2026-02-21 | Canopy decoupling, CascorServiceAdapter design            | **NEW** — Phase 4 in progress                                             |
 
 ### Consolidated Statistics
 
 | Category                         | Count | Change from 2026-02-18 |
-| -------------------------------- | ----- | ---------------------- |
+|----------------------------------|-------|------------------------|
 | Total unique non-completed items | 83    | -6 (was 89)            |
 | Resolved/superseded by migration | 6     | +6 (see Section 10)    |
 | Pre-migration resolved           | 2     | INT-P1-002, INT-P2-013 |
 | Scope changed by migration       | 6     | (reclassified)         |
 | New items from migration         | 2     | +2                     |
-| Critical (P0)                    | 3     | -2 (was 5)            |
-| High (P1)                        | 8     | -8 (was 16)           |
-| Medium (P2)                      | 22    | -3 (was 25)           |
-| Low / Deferred (P3-P4)           | 50    | +7 (was 43)           |
+| Critical (P0)                    | 3     | -2 (was 5)             |
+| High (P1)                        | 8     | -8 (was 16)            |
+| Medium (P2)                      | 22    | -3 (was 25)            |
+| Low / Deferred (P3-P4)           | 50    | +7 (was 43)            |
 
 *Total = 89 - 6 (migration resolved/superseded) - 2 (pre-migration resolved) + 2 (new items) = 83. Priority sum: 3 + 8 + 22 + 50 = 83. P2 decrease reflects INT-P2-013 resolved pre-migration, INT-P2-004 downgraded to Low, partially offset by INT-P1-006 and INT-P2-009 entering P2 from High (downgraded to Medium); net -3 includes recount of items by effective severity vs. original section placement. P3-P4 increase reflects items downgraded from P0 (INT-P0-004, INT-P0-005) and from High/P1 severity (INT-P1-003, INT-P1-005, INT-P2-004 — note: INT-P2-004's "P2" is its integration phase, not priority; its original severity was High) plus 2 new items (Phase 1 #10: clean up `src/remote_client/` directory; Phase 5 #10: implement deferred API endpoints).*
 
 ### Codebase Validation Summary (2026-02-18)
 
-| Result                   | Count     | Items                                                                                                        |
-| ------------------------ | --------- | ------------------------------------------------------------------------------------------------------------ |
+| Result                   | Count     | Items                                                                                                                                            |
+|--------------------------|-----------|--------------------------------------------------------------------------------------------------------------------------------------------------|
 | CONFIRMED (bug exists)   | 19        | INT-P0-001 through P0-005, P2-001 through P2-010, P2-014, CAS-REF-004, INT-P1-005, INT-P1-008 (INT-P1-005 and INT-P2-004 also severity-adjusted) |
-| RESOLVED (already fixed) | 3         | INT-P1-002 (requests dep), INT-P1-007 (retry logic), INT-P2-013 (dill dep)                                   |
-| SEVERITY ADJUSTED        | 3         | INT-P2-004 (~~High~~ **Low**), INT-P1-006 (~~High~~ **Medium**), INT-P1-005 (~~High~~ **Low**)                |
-| NOT YET VALIDATED        | Remaining | Architecture items (C.1, C.2 — now resolved/superseded by migration), deferred items, Oracle analysis items   |
+| RESOLVED (already fixed) | 3         | INT-P1-002 (requests dep), INT-P1-007 (retry logic), INT-P2-013 (dill dep)                                                                       |
+| SEVERITY ADJUSTED        | 3         | INT-P2-004 (~~High~~ **Low**), INT-P1-006 (~~High~~ **Medium**), INT-P1-005 (~~High~~ **Low**)                                                   |
+| NOT YET VALIDATED        | Remaining | Architecture items (C.1, C.2 — now resolved/superseded by migration), deferred items, Oracle analysis items                                      |
 
 ---
 
@@ -225,12 +225,12 @@ These items were identified during the 2026-02-05 source code review. They repre
 
 All four sub-tasks are addressed:
 
-| Sub-task | Status |
-| --- | --- |
-| Design IPC protocol specification | **COMPLETE** — REST + WebSocket, documented in Appendix A of migration plan |
-| Implement Cascor server mode | **COMPLETE** — `src/server.py` + `src/api/` module |
-| Update Canopy to connect to external Cascor | **IN PROGRESS** — `CascorServiceAdapter` committed, integration testing pending |
-| Connection management and health checks | **COMPLETE** — `/v1/health`, `/v1/health/live`, `/v1/health/ready` endpoints; `wait_for_ready()` in client |
+| Sub-task                                    | Status                                                                                                     |
+|---------------------------------------------|------------------------------------------------------------------------------------------------------------|
+| Design IPC protocol specification           | **COMPLETE** — REST + WebSocket, documented in Appendix A of migration plan                                |
+| Implement Cascor server mode                | **COMPLETE** — `src/server.py` + `src/api/` module                                                         |
+| Update Canopy to connect to external Cascor | **IN PROGRESS** — `CascorServiceAdapter` committed, integration testing pending                            |
+| Connection management and health checks     | **COMPLETE** — `/v1/health`, `/v1/health/live`, `/v1/health/ready` endpoints; `wait_for_ready()` in client |
 
 ---
 
@@ -295,12 +295,12 @@ All four sub-tasks are addressed:
 
 **Migration Impact (2026-02-24)**: **RESOLVED**. All sub-items have been implemented in the CasCor Service API (Phase 2):
 
-| Sub-item | Implementation |
-| --- | --- |
-| ThreadPoolExecutor | `TrainingLifecycleManager` (579 lines) uses `ThreadPoolExecutor` for async training |
-| Async training method | `POST /v1/training/start` triggers async training via lifecycle manager |
-| Cancellation strategy | `TrainingStateMachine` formal FSM: STOPPED ↔ STARTED ↔ PAUSED → COMPLETED/FAILED |
-| Thread-safe broadcasting | `WebSocketManager.broadcast_from_thread()` provides async/sync bridge |
+| Sub-item                 | Implementation                                                                      |
+|--------------------------|-------------------------------------------------------------------------------------|
+| ThreadPoolExecutor       | `TrainingLifecycleManager` (579 lines) uses `ThreadPoolExecutor` for async training |
+| Async training method    | `POST /v1/training/start` triggers async training via lifecycle manager             |
+| Cancellation strategy    | `TrainingStateMachine` formal FSM: STOPPED ↔ STARTED ↔ PAUSED → COMPLETED/FAILED    |
+| Thread-safe broadcasting | `WebSocketManager.broadcast_from_thread()` provides async/sync bridge               |
 
 The implementation lives in `src/api/lifecycle/manager.py`, `src/api/lifecycle/state_machine.py`, and `src/api/websocket/manager.py`. This is now part of the CasCor service, not `CascorIntegration`.
 
@@ -724,6 +724,7 @@ The implementation lives in `src/api/lifecycle/manager.py`, `src/api/lifecycle/s
 - Benchmark comparison with reference implementations
 
 **Migration Impact (2026-02-24)**: Profiling is now more important given the service architecture. Network latency between Canopy and CasCor adds overhead that didn't exist with in-process calls. Profiling should include:
+
 - HTTP request/response overhead for training control operations
 - WebSocket streaming latency for metrics relay
 - `TrainingLifecycleManager` thread pool overhead
@@ -1032,6 +1033,7 @@ These items require manual testing to confirm proper operation.
 **Priority**: HIGH
 
 **Description**: Verify Canopy's three-mode activation:
+
 1. `CASCOR_DEMO_MODE=1` → Demo mode works identically to pre-migration
 2. `CASCOR_SERVICE_URL=http://localhost:8200` → Service mode connects via `CascorServiceAdapter`
 3. `CASCOR_BACKEND_PATH=...` → Legacy mode works during transition
@@ -1108,12 +1110,12 @@ These items are documented as COMPLETE and included for reference only.
 
 **Status**: ALL FIXED
 
-### INT-P1-002: `requests` as Undeclared Dependency
+### INT-P1-002: `requests` as Undeclared Dependency, Section 10
 
 **Status**: RESOLVED (pre-migration, confirmed 2026-02-18; further resolved by INT-P1-001)
 **Resolution**: Originally resolved by declaring `requests` in `conf/requirements-pip.txt`. Fully resolved by migration: the vendored `JuniperDataClient` that required `requests` was removed (INT-P1-001); `requests` is now a transitive dependency of the external `juniper-data-client` package and no longer needed directly by `juniper-cascor`.
 
-### INT-P2-013: `check_object_pickleability` Depends on Undeclared `dill`
+### INT-P2-013: `check_object_pickleability` Depends on Undeclared `dill`, Section 10
 
 **Status**: RESOLVED (pre-migration, confirmed 2026-02-18)
 **Resolution**: `dill>=0.3.6` declared in `pyproject.toml`. Used in `src/utils/utils.py` and test files.
@@ -1126,16 +1128,16 @@ These items are documented as COMPLETE and included for reference only.
 
 *5 resolved work items + 1 substantially resolved work item (INT-P1-004) + 2 design decisions. Design decisions are not counted in the 83 non-completed work items statistic.*
 
-| Item | Resolution | Migration Phase |
-| --- | --- | --- |
-| INT-P1-001: Duplicated JuniperDataClient | `juniper-data-client` v0.3.0 on PyPI | Phase 1 |
-| INT-P1-004: Full IPC Architecture | CasCor Service API + `juniper-cascor-client` (substantially resolved; Canopy integration testing pending) | Phases 2-3 |
-| C.1: Async Wrapper for fit() | `TrainingLifecycleManager` with ThreadPoolExecutor | Phase 2 |
-| C.2: Expose RemoteWorkerClient | `juniper-cascor-worker` on PyPI; server-side management | Phase 3 |
-| CAS-004: Extract Remote Worker | Published as `juniper-cascor-worker` v0.1.0 | Phase 3 |
-| CAS-CANOPY-001: Prediction Grid API | `GET /v1/decision-boundary` endpoint | Phase 2 |
-| Design Decision 4: Shared Client Arch | PyPI packages (Option A implemented directly) | Phase 1 |
-| Design Decision 5: Async Training | `TrainingLifecycleManager` (Option A implemented) | Phase 2 |
+| Item                                     | Resolution                                                                                                | Migration Phase |
+|------------------------------------------|-----------------------------------------------------------------------------------------------------------|-----------------|
+| INT-P1-001: Duplicated JuniperDataClient | `juniper-data-client` v0.3.0 on PyPI                                                                      | Phase 1         |
+| INT-P1-004: Full IPC Architecture        | CasCor Service API + `juniper-cascor-client` (substantially resolved; Canopy integration testing pending) | Phases 2-3      |
+| C.1: Async Wrapper for fit()             | `TrainingLifecycleManager` with ThreadPoolExecutor                                                        | Phase 2         |
+| C.2: Expose RemoteWorkerClient           | `juniper-cascor-worker` on PyPI; server-side management                                                   | Phase 3         |
+| CAS-004: Extract Remote Worker           | Published as `juniper-cascor-worker` v0.1.0                                                               | Phase 3         |
+| CAS-CANOPY-001: Prediction Grid API      | `GET /v1/decision-boundary` endpoint                                                                      | Phase 2         |
+| Design Decision 4: Shared Client Arch    | PyPI packages (Option A implemented directly)                                                             | Phase 1         |
+| Design Decision 5: Async Training        | `TrainingLifecycleManager` (Option A implemented)                                                         | Phase 2         |
 
 ---
 
@@ -1149,17 +1151,17 @@ Based on codebase validation results, dependency analysis, effort estimates, and
 **No external dependencies.**
 **Note**: Items 4-5 (INT-P0-004, INT-P0-005) were downgraded from Critical to Low after the migration made them trivial deletions, but remain in Phase 0 as quick wins (15 min each) best done alongside the actual critical fixes.
 
-| #   | Item                                                            | Effort  | Notes                                                                |
-| --- | --------------------------------------------------------------- | ------- | -------------------------------------------------------------------- |
-| 1   | INT-P0-001: Fix walrus operator precedence (line 1322)          | 15 min  | Add parentheses                                                      |
-| 2   | INT-P0-003: Fix CandidateUnit params in `fit` (lines 1154-1166) | 1 hr    | Change `_CandidateUnit__` → `CandidateUnit__`, remove invalid params |
-| 3   | INT-P0-002: Extract `ActivationWithDerivative` to shared module | 2-3 hrs | Create `src/activation/`, update imports in both files               |
-| 4   | INT-P0-004: Delete `remote_client_0.py` (legacy)               | 15 min  | Superseded by `juniper-cascor-worker` (**updated**: delete, don't fix) |
-| 5   | INT-P0-005: Remove `sys.path` lines in test file               | 15 min  | Dead code in polyrepo layout (**updated**: remove, don't fix)        |
-| 6   | INT-P2-002: Fix `import datetime as pd` alias                   | 15 min  | Rename to `dt` or `datetime`                                         |
-| 7   | INT-P2-004: Remove duplicate `snapshot_counter` init            | 5 min   | Delete line 548                                                      |
-| 8   | INT-P2-014: Move `import traceback` to top-level                | 30 min  | Uncomment line 60, remove 21 local imports                           |
-| 9   | INT-P2-010: Replace `os._exit()` with `sys.exit()` in main.py   | 15 min  | Lines 174, 177                                                       |
+| # | Item                                                            | Effort  | Notes                                                                  |
+|---|-----------------------------------------------------------------|---------|------------------------------------------------------------------------|
+| 1 | INT-P0-001: Fix walrus operator precedence (line 1322)          | 15 min  | Add parentheses                                                        |
+| 2 | INT-P0-003: Fix CandidateUnit params in `fit` (lines 1154-1166) | 1 hr    | Change `_CandidateUnit__` → `CandidateUnit__`, remove invalid params   |
+| 3 | INT-P0-002: Extract `ActivationWithDerivative` to shared module | 2-3 hrs | Create `src/activation/`, update imports in both files                 |
+| 4 | INT-P0-004: Delete `remote_client_0.py` (legacy)                | 15 min  | Superseded by `juniper-cascor-worker` (**updated**: delete, don't fix) |
+| 5 | INT-P0-005: Remove `sys.path` lines in test file                | 15 min  | Dead code in polyrepo layout (**updated**: remove, don't fix)          |
+| 6 | INT-P2-002: Fix `import datetime as pd` alias                   | 15 min  | Rename to `dt` or `datetime`                                           |
+| 7 | INT-P2-004: Remove duplicate `snapshot_counter` init            | 5 min   | Delete line 548                                                        |
+| 8 | INT-P2-014: Move `import traceback` to top-level                | 30 min  | Uncomment line 60, remove 21 local imports                             |
+| 9 | INT-P2-010: Replace `os._exit()` with `sys.exit()` in main.py   | 15 min  | Lines 174, 177                                                         |
 
 **Estimated Total**: 4-6 hours
 
@@ -1168,18 +1170,18 @@ Based on codebase validation results, dependency analysis, effort estimates, and
 **Goal**: Fix all confirmed logic bugs that cause incorrect behavior in specific conditions.
 **Depends on**: Phase 0 complete.
 
-| #   | Item                                                               | Effort  | Notes                                                |
-| --- | ------------------------------------------------------------------ | ------- | ---------------------------------------------------- |
-| 1   | INT-P2-005: Fix `or` fallback patterns for falsy values            | 2-3 hrs | Audit all `or` patterns, replace with `if x is None` |
-| 2   | INT-P2-006: Fix boolean `clockwise` or-pattern                     | 1 hr    | 3 instances in spiral_problem.py                     |
-| 3   | INT-P2-003: Fix `validate_training_results` uninitialized variable | 1-2 hrs | Handle `max_epochs=0` edge case                      |
-| 4   | INT-P2-007: Fix conftest fast-slow mode logic                      | 30 min  | Fix inverted check, differentiate branches           |
-| 5   | INT-P2-008: Fix `_roll_sequence_number` memory issue               | 1-2 hrs | Use generator instead of list for discards           |
-| 6   | INT-P2-009: Standardize queue names (if remote_client.py retained) | 1 hr    | Align with `juniper-cascor-worker` conventions       |
-| 7   | INT-P1-005: Fix `main.py` unused `spiral_config` parameter         | 15 min  | Remove the dead parameter                            |
-| 8   | INT-P1-008: Remove stale `check.py` duplicate                      | 15 min  | Delete file, verify no references                    |
-| 9   | INT-P2-001: Properly declare `shared_object_dict` at module scope  | 30 min  | Add module-level declaration                         |
-| 10  | Clean up `src/remote_client/` directory (CAS-004 follow-up)       | 30 min  | **NEW**: Archive or remove in-tree remote client code superseded by `juniper-cascor-worker` |
+| #  | Item                                                               | Effort  | Notes                                                                                       |
+|----|--------------------------------------------------------------------|---------|---------------------------------------------------------------------------------------------|
+| 1  | INT-P2-005: Fix `or` fallback patterns for falsy values            | 2-3 hrs | Audit all `or` patterns, replace with `if x is None`                                        |
+| 2  | INT-P2-006: Fix boolean `clockwise` or-pattern                     | 1 hr    | 3 instances in spiral_problem.py                                                            |
+| 3  | INT-P2-003: Fix `validate_training_results` uninitialized variable | 1-2 hrs | Handle `max_epochs=0` edge case                                                             |
+| 4  | INT-P2-007: Fix conftest fast-slow mode logic                      | 30 min  | Fix inverted check, differentiate branches                                                  |
+| 5  | INT-P2-008: Fix `_roll_sequence_number` memory issue               | 1-2 hrs | Use generator instead of list for discards                                                  |
+| 6  | INT-P2-009: Standardize queue names (if remote_client.py retained) | 1 hr    | Align with `juniper-cascor-worker` conventions                                              |
+| 7  | INT-P1-005: Fix `main.py` unused `spiral_config` parameter         | 15 min  | Remove the dead parameter                                                                   |
+| 8  | INT-P1-008: Remove stale `check.py` duplicate                      | 15 min  | Delete file, verify no references                                                           |
+| 9  | INT-P2-001: Properly declare `shared_object_dict` at module scope  | 30 min  | Add module-level declaration                                                                |
+| 10 | Clean up `src/remote_client/` directory (CAS-004 follow-up)        | 30 min  | **NEW**: Archive or remove in-tree remote client code superseded by `juniper-cascor-worker` |
 
 **Estimated Total**: 8-12 hours
 
@@ -1188,13 +1190,13 @@ Based on codebase validation results, dependency analysis, effort estimates, and
 **Goal**: Improve code quality, test coverage, and type safety.
 **Depends on**: Phase 1 complete.
 
-| #   | Item                                          | Effort   | Notes                                           |
-| --- | --------------------------------------------- | -------- | ----------------------------------------------- |
-| 1   | CAS-REF-001: Increase code coverage to 90%    | 3-5 days | Currently ~67%; new API tests may help           |
-| 2   | CAS-REF-003: Fix critical type errors (mypy)  | 2-3 days | API module is well-typed; focus on core modules  |
-| 3   | CAS-REF-002: Add per-module CI coverage gates  | 1 day    | Global 80% is enforced; add per-module thresholds |
-| 4   | CAS-007: Optimize slow tests (target ≤ 5 min) | 2-3 days | Profile and optimize; scheduled tests handle long runs |
-| 5   | CAS-REF-004: Remove 16 legacy spiral methods  | 1 day    | JuniperData stable on PyPI; full completion gated on Phase 3 #3 (INT-P3-002 E2E tests) |
+| # | Item                                          | Effort   | Notes                                                                                  |
+|---|-----------------------------------------------|----------|----------------------------------------------------------------------------------------|
+| 1 | CAS-REF-001: Increase code coverage to 90%    | 3-5 days | Currently ~67%; new API tests may help                                                 |
+| 2 | CAS-REF-003: Fix critical type errors (mypy)  | 2-3 days | API module is well-typed; focus on core modules                                        |
+| 3 | CAS-REF-002: Add per-module CI coverage gates | 1 day    | Global 80% is enforced; add per-module thresholds                                      |
+| 4 | CAS-007: Optimize slow tests (target ≤ 5 min) | 2-3 days | Profile and optimize; scheduled tests handle long runs                                 |
+| 5 | CAS-REF-004: Remove 16 legacy spiral methods  | 1 day    | JuniperData stable on PyPI; full completion gated on Phase 3 #3 (INT-P3-002 E2E tests) |
 
 **Estimated Total**: 10-15 days (item sum: 9-13 days + coordination/integration overhead)
 
@@ -1205,12 +1207,12 @@ Based on codebase validation results, dependency analysis, effort estimates, and
 
 **Note**: This phase was originally estimated at 2-4 weeks. The polyrepo migration resolved the two largest items (INT-P1-001 shared client, C.1 async wrapper). The remaining items focus on API completeness for Canopy consumption.
 
-| #   | Item                                                    | Effort   | Notes                                             |
-| --- | ------------------------------------------------------- | -------- | ------------------------------------------------- |
-| 1   | CAS-CANOPY-002: Snapshot REST API endpoints             | 3-5 days | Create `/v1/snapshots/*` routes wrapping serializer (core 4 endpoints; broader API set in Phase 5 #10) |
-| 2   | INT-P1-006: Add import guard for SpiralDataProvider     | 1 hr     | Low effort, include with other work               |
-| 3   | INT-P3-002: E2E live-service integration tests          | 2-3 days | Coordinate with Phase 6 Docker Compose            |
-| 4   | CAS-005: Evaluate shared types with `juniper-cascor-worker` | 1-2 days | Determine if shared package needed |
+| # | Item                                                        | Effort   | Notes                                                                                                  |
+|---|-------------------------------------------------------------|----------|--------------------------------------------------------------------------------------------------------|
+| 1 | CAS-CANOPY-002: Snapshot REST API endpoints                 | 3-5 days | Create `/v1/snapshots/*` routes wrapping serializer (core 4 endpoints; broader API set in Phase 5 #10) |
+| 2 | INT-P1-006: Add import guard for SpiralDataProvider         | 1 hr     | Low effort, include with other work                                                                    |
+| 3 | INT-P3-002: E2E live-service integration tests              | 2-3 days | Coordinate with Phase 6 Docker Compose                                                                 |
+| 4 | CAS-005: Evaluate shared types with `juniper-cascor-worker` | 1-2 days | Determine if shared package needed                                                                     |
 
 **Estimated Total**: 7-12 days (item sum: ~6-10 days + coordination/integration overhead)
 
@@ -1219,14 +1221,14 @@ Based on codebase validation results, dependency analysis, effort estimates, and
 **Goal**: Implement new features and algorithm improvements.
 **Depends on**: Phase 3 complete. Can be parallelized.
 
-| #   | Item                                          | Effort    | Notes                                                    |
-| --- | --------------------------------------------- | --------- | -------------------------------------------------------- |
-| 1   | CAS-002: Separate epoch limits                | 2-3 days  | Extend API contract for `network_epochs`/`candidate_epochs` |
-| 2   | CAS-003: Max train session iterations         | 1-2 days  | Implement in `TrainingLifecycleManager`                  |
-| 3   | CAS-006: Auto-snap best network               | 2-3 days  | Implement as `TrainingMonitor` callback                  |
-| 4   | ENH-006: Flexible optimizer management        | 3-5 days  |                                                          |
-| 5   | ENH-007: N-best candidate layer selection     | 3-5 days  |                                                          |
-| 6   | ENH-008: Worker cleanup improvements          | 2-3 days  | Apply to `juniper-cascor-worker` package                 |
+| # | Item                                      | Effort   | Notes                                                       |
+|---|-------------------------------------------|----------|-------------------------------------------------------------|
+| 1 | CAS-002: Separate epoch limits            | 2-3 days | Extend API contract for `network_epochs`/`candidate_epochs` |
+| 2 | CAS-003: Max train session iterations     | 1-2 days | Implement in `TrainingLifecycleManager`                     |
+| 3 | CAS-006: Auto-snap best network           | 2-3 days | Implement as `TrainingMonitor` callback                     |
+| 4 | ENH-006: Flexible optimizer management    | 3-5 days |                                                             |
+| 5 | ENH-007: N-best candidate layer selection | 3-5 days |                                                             |
+| 6 | ENH-008: Worker cleanup improvements      | 2-3 days | Apply to `juniper-cascor-worker` package                    |
 
 **Estimated Total**: 15-25 days (item sum: 13-21 days + integration overhead; reduced from 20-35: C.2 resolved)
 
@@ -1235,18 +1237,18 @@ Based on codebase validation results, dependency analysis, effort estimates, and
 **Goal**: Infrastructure improvements, shell script fixes, deferred items.
 **No hard dependencies. Can proceed in parallel with Phase 4.**
 
-| #   | Item                                        | Effort    | Notes                                                         |
-| --- | ------------------------------------------- | --------- | ------------------------------------------------------------- |
-| 1   | Shell script path fixes (6 Oracle items)    | 2-3 days  | Validate paths in polyrepo layout                             |
-| 2   | INT-P3-003: Docker Compose validation       | 1-2 days  | Coordinate with migration Phase 6 `juniper-deploy` repo       |
-| 3   | INT-P3-008: Git hygiene (.gitignore)        | 1 hr      | **LIKELY RESOLVED** — verify polyrepo .gitignore covers artifacts |
-| 4   | INT-P3-009: Version string consistency      | 1-2 hrs   | Reconcile to pyproject.toml `0.3.17` / API `0.4.0`           |
-| 5   | INT-P3-010: Snapshot directory confusion    | 1 hr      |                                                               |
-| 6   | Large file refactoring                      | 1-2 weeks |                                                               |
-| 7   | CAS-008/009: Network hierarchy & population | 4-8 weeks |                                                               |
-| 8   | CAS-010: Snapshot Vector DB                 | 2-4 weeks |                                                               |
-| 9   | GPU/CUDA support                            | 2-4 weeks | CI needs GPU runner or separate workflow                      |
-| 10  | Implement deferred API endpoints (CAS-CANOPY-002, C.2 follow-up) | 1-2 weeks | **NEW**: `/v1/workers/*` (5), `PUT /v1/training/params`, plus any snapshot endpoints beyond Phase 3 core |
+| #  | Item                                                             | Effort    | Notes                                                                                                    |
+|----|------------------------------------------------------------------|-----------|----------------------------------------------------------------------------------------------------------|
+| 1  | Shell script path fixes (6 Oracle items)                         | 2-3 days  | Validate paths in polyrepo layout                                                                        |
+| 2  | INT-P3-003: Docker Compose validation                            | 1-2 days  | Coordinate with migration Phase 6 `juniper-deploy` repo                                                  |
+| 3  | INT-P3-008: Git hygiene (.gitignore)                             | 1 hr      | **LIKELY RESOLVED** — verify polyrepo .gitignore covers artifacts                                        |
+| 4  | INT-P3-009: Version string consistency                           | 1-2 hrs   | Reconcile to pyproject.toml `0.3.17` / API `0.4.0`                                                       |
+| 5  | INT-P3-010: Snapshot directory confusion                         | 1 hr      |                                                                                                          |
+| 6  | Large file refactoring                                           | 1-2 weeks |                                                                                                          |
+| 7  | CAS-008/009: Network hierarchy & population                      | 4-8 weeks |                                                                                                          |
+| 8  | CAS-010: Snapshot Vector DB                                      | 2-4 weeks |                                                                                                          |
+| 9  | GPU/CUDA support                                                 | 2-4 weeks | CI needs GPU runner or separate workflow                                                                 |
+| 10 | Implement deferred API endpoints (CAS-CANOPY-002, C.2 follow-up) | 1-2 weeks | **NEW**: `/v1/workers/*` (5), `PUT /v1/training/params`, plus any snapshot endpoints beyond Phase 3 core |
 
 **Estimated Total**: Not aggregated — Phase 5 is ongoing with items spanning days to weeks; items are independent and can be prioritized individually.
 
@@ -1435,7 +1437,7 @@ This design decision is resolved.
 
 ## Dependencies Matrix (Updated for Post-Migration)
 
-```
+```bash
 INT-P0-001 (Walrus bug)
     └── No dependencies, fix immediately
 
@@ -1490,38 +1492,38 @@ INT-P3-003 (Docker Compose)
 
 ## Post-Migration Risk Assessment (Updated)
 
-| Risk                                                                  | Probability | Impact | Mitigation                                                      |
-| --------------------------------------------------------------------- | ----------- | ------ | --------------------------------------------------------------- |
-| Walrus operator bug (INT-P0-001) causes silent data corruption        | High        | High   | Fix immediately in Phase 0                                      |
-| `ActivationWithDerivative` ACTIVATION_MAP divergence                  | Medium      | High   | Extract to shared module                                        |
-| JuniperData service downtime crashes training                         | Medium      | High   | Retry logic implemented (CAS-INT-008); service now independently deployed |
-| Coverage regression without enforced gates                            | Medium      | Medium | 80% global gate enforced; per-module thresholds needed          |
-| Hardcoded paths break on other machines                               | ~~High~~ **Low** | ~~Medium~~ **Low** | Delete legacy files; polyrepo uses pip install |
-| Slow test suite blocks CI pipeline                                    | Medium      | Medium | Scheduled tests separate from main CI                           |
-| **NEW**: CasCor API missing endpoints block Canopy features           | Medium      | High   | Deferred endpoints (`/v1/snapshots/*`, `/v1/workers/*`) need prioritization |
-| **NEW**: Version drift between 6 independent repos                    | Medium      | Medium | Phase 6 version compatibility matrix; consider dependabot/renovate |
-| **NEW**: HTTP latency vs in-process call performance regression       | Medium      | Medium | WebSocket streaming for metrics; profile critical paths         |
-| **NEW**: `CascorIntegration` removal breaks unidentified Canopy code  | Low         | High   | Three-mode activation provides fallback; thorough interface compatibility tests |
-| **NEW**: WebSocket message format mismatch (service vs legacy format) | Medium      | Medium | Document format contract; adapter relay can transform if needed |
-| ~~`sys.path` mutation causes import conflicts in production~~         | ~~Medium~~  | ~~Medium~~ | **RESOLVED** by polyrepo migration; `sys.path` injection being eliminated |
+| Risk                                                                  | Probability      | Impact             | Mitigation                                                                      |
+|-----------------------------------------------------------------------|------------------|--------------------|---------------------------------------------------------------------------------|
+| Walrus operator bug (INT-P0-001) causes silent data corruption        | High             | High               | Fix immediately in Phase 0                                                      |
+| `ActivationWithDerivative` ACTIVATION_MAP divergence                  | Medium           | High               | Extract to shared module                                                        |
+| JuniperData service downtime crashes training                         | Medium           | High               | Retry logic implemented (CAS-INT-008); service now independently deployed       |
+| Coverage regression without enforced gates                            | Medium           | Medium             | 80% global gate enforced; per-module thresholds needed                          |
+| Hardcoded paths break on other machines                               | ~~High~~ **Low** | ~~Medium~~ **Low** | Delete legacy files; polyrepo uses pip install                                  |
+| Slow test suite blocks CI pipeline                                    | Medium           | Medium             | Scheduled tests separate from main CI                                           |
+| **NEW**: CasCor API missing endpoints block Canopy features           | Medium           | High               | Deferred endpoints (`/v1/snapshots/*`, `/v1/workers/*`) need prioritization     |
+| **NEW**: Version drift between 6 independent repos                    | Medium           | Medium             | Phase 6 version compatibility matrix; consider dependabot/renovate              |
+| **NEW**: HTTP latency vs in-process call performance regression       | Medium           | Medium             | WebSocket streaming for metrics; profile critical paths                         |
+| **NEW**: `CascorIntegration` removal breaks unidentified Canopy code  | Low              | High               | Three-mode activation provides fallback; thorough interface compatibility tests |
+| **NEW**: WebSocket message format mismatch (service vs legacy format) | Medium           | Medium             | Document format contract; adapter relay can transform if needed                 |
+| ~~`sys.path` mutation causes import conflicts in production~~         | ~~Medium~~       | ~~Medium~~         | **RESOLVED** by polyrepo migration; `sys.path` injection being eliminated       |
 
 ---
 
 ## Document History
 
-| Date       | Author   | Changes                                                                                                                      |
-| ---------- | -------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| 2026-02-17 | AI Agent | Initial creation from JuniperData codebase audit                                                                             |
-| 2026-02-17 | AI Agent | Added Section 5: Cross-references from JuniperCanopy comprehensive audit                                                     |
-| 2026-02-18 | AI Agent | Complete rewrite: Exhaustive audit of all 25+ notes files, de-duplicated 89 unique items                                     |
-| 2026-02-18 | AI Agent | Codebase validation pass: Validated 23 items against source code, confirmed 17 bugs, resolved 3 items, adjusted 3 severities |
-| 2026-02-18 | AI Agent | Added development phases (0-5), high-level design analysis (7 architectural decisions with options/recommendations)          |
+| Date       | Author   | Changes                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+|------------|----------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| 2026-02-17 | AI Agent | Initial creation from JuniperData codebase audit                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| 2026-02-17 | AI Agent | Added Section 5: Cross-references from JuniperCanopy comprehensive audit                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| 2026-02-18 | AI Agent | Complete rewrite: Exhaustive audit of all 25+ notes files, de-duplicated 89 unique items                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| 2026-02-18 | AI Agent | Codebase validation pass: Validated 23 items against source code, confirmed 17 bugs, resolved 3 items, adjusted 3 severities                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| 2026-02-18 | AI Agent | Added development phases (0-5), high-level design analysis (7 architectural decisions with options/recommendations)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 | 2026-02-24 | AI Agent | **Polyrepo migration reconciliation**: Analyzed impact of `POLYREPO_MIGRATION_PLAN.md` (v1.5.0) and `DECOUPLE_CANOPY_FROM_CASCOR_PLAN.md` against all 89 roadmap items. 6 items resolved/superseded by migration, 6 scope-changed, 2 new items added. Added Migration Impact annotations to 27 items across all sections. Updated Development Phases 0-5 with post-migration actions. Added 2 new verification items (CasCor Service API E2E, Three-Mode Activation). Updated Dependencies Matrix with resolved/superseded items. Revised Risk Assessment with 5 new migration-specific risks and 2 mitigated risks. Updated Design Decisions 4 and 5 as IMPLEMENTED. Pre-update version archived to `history/JUNIPER-CASCOR_POST-RELEASE_DEVELOPMENT-ROADMAP_2026-02-24.md`. |
-| 2026-02-24 | AI Agent | **Post-reconciliation validation**: Fixed 10 errors introduced during migration reconciliation — corrected consolidated statistics (resolved: 10→6, superseded: 5→removed, scope-changed: 12→6, total: 72→83, High: 9→8, Low: 38→50), fixed INT-P1-001 factual error (`src/juniper_data_client/` directory entirely removed, not partially), corrected INT-P1-004 status in resolved table to SUBSTANTIALLY RESOLVED, fixed In-Code TODO priority for validate_training_results (P0→P2), fixed INT-P4-012–017 header to INT-P4-012–016, annotated INT-P3-008 as LIKELY RESOLVED in Phase 5 table, added INT-P1-002 and INT-P2-013 to Section 10 completed items, expanded INT-P3-009 version list, added traceable references to new Phase items. |
-| 2026-02-25 | AI Agent | **Second validation pass**: Fixed 4 remaining moderate issues — corrected INT-P0-004/INT-P0-005 severity from "Medium" to "Low" (aligning section entries with P3-P4 statistical bucket), corrected INT-P1-004 status in Dependencies Matrix from "RESOLVED" to "SUBSTANTIALLY RESOLVED", corrected INT-P1-002 validation text (removed false claim that `requests` is in `pyproject.toml`; clarified resolution via vendored client removal), added C.3 status to Oracle analysis source table row. |
-| 2026-02-25 | AI Agent | **Minor issue cleanup**: 7 fixes — clarified INT-P2-004 priority origin in statistics footnote, added overhead notes to Phase 2/3/4 effort estimates, fixed Codebase Validation CONFIRMED count (17→18 with overlap note for INT-P1-005), added Phase 0 note explaining retained Low-severity items, standardized INT-P1-005 severity notation, added P4-NEW-003/004 gap explanation, added design decision clarification to resolved table. |
-| 2026-02-25 | AI Agent | **Third validation pass**: Fixed 3 moderate issues — updated INT-P0-004/INT-P0-005 migration impact prose from "Medium" to "Low" (labels were corrected earlier but prose paragraphs were missed), corrected INT-P2-014 `import traceback` count from 22 to 21 (verified against codebase: 21 local imports + 1 commented-out top-level). |
-| 2026-02-25 | AI Agent | **Final minor cleanup**: 5 fixes — standardized severity notation to `~~Old~~ **New**` pattern across 6 items (INT-P0-004, INT-P0-005, INT-P1-003, INT-P1-006, INT-P2-004, INT-P2-009) plus SEVERITY ADJUSTED summary row, clarified INT-P1-004 attribution in Migration Summary to span Phases 2-3, added C.1/C.2 resolution note to NOT YET VALIDATED row, clarified CAS-CANOPY-002 Phase 3/5 scope overlap, updated INT-P2-010 stale line references from 142/145 to 174/177 (verified against codebase). |
-| 2026-02-25 | AI Agent | **Fifth validation pass**: Fixed 4 moderate issues — corrected INT-P1-004 Migration Impact paragraph from "RESOLVED" to "SUBSTANTIALLY RESOLVED" (aligning with status field, Dependencies Matrix, and Section 10), added Phase 3 dependency gate note to CAS-REF-004 in Phase 2 table, corrected Codebase Validation CONFIRMED count from 18 to 19 (INT-P2-004 now included with overlap note, matching INT-P1-005 treatment), added P2 bucket change explanation to consolidated statistics footnote. |
-| 2026-02-25 | AI Agent | **Post-fifth-validation minor cleanup**: 5 fixes — named the 2 new P3-P4 items in statistics footnote (Phase 1 #10, Phase 5 #10), added Phase 5 aggregate effort note explaining why total is not aggregated, clarified INT-P1-002 attribution in Migration Summary as pre-migration resolved + further addressed by Phase 1, added Section 1 cross-reference to Phase 0 execution plan, clarified Section 10 resolved table header to distinguish 5 resolved + 1 substantially resolved work items. |
-| 2026-02-25 | AI Agent | **Sixth validation pass**: 4 minor fixes — standardized SEVERITY ADJUSTED summary row to `~~Old~~ **New**` notation (was arrow notation), bolded new values in Risk Assessment table severity cells, corrected Phase 3 item sum upper bound from ~6-11 to ~6-10 days, renamed duplicate "Fifth validation" document history label to "Post-fifth-validation." |
+| 2026-02-24 | AI Agent | **Post-reconciliation validation**: Fixed 10 errors introduced during migration reconciliation — corrected consolidated statistics (resolved: 10→6, superseded: 5→removed, scope-changed: 12→6, total: 72→83, High: 9→8, Low: 38→50), fixed INT-P1-001 factual error (`src/juniper_data_client/` directory entirely removed, not partially), corrected INT-P1-004 status in resolved table to SUBSTANTIALLY RESOLVED, fixed In-Code TODO priority for validate_training_results (P0→P2), fixed INT-P4-012–017 header to INT-P4-012–016, annotated INT-P3-008 as LIKELY RESOLVED in Phase 5 table, added INT-P1-002 and INT-P2-013 to Section 10 completed items, expanded INT-P3-009 version list, added traceable references to new Phase items.                             |
+| 2026-02-25 | AI Agent | **Second validation pass**: Fixed 4 remaining moderate issues — corrected INT-P0-004/INT-P0-005 severity from "Medium" to "Low" (aligning section entries with P3-P4 statistical bucket), corrected INT-P1-004 status in Dependencies Matrix from "RESOLVED" to "SUBSTANTIALLY RESOLVED", corrected INT-P1-002 validation text (removed false claim that `requests` is in `pyproject.toml`; clarified resolution via vendored client removal), added C.3 status to Oracle analysis source table row.                                                                                                                                                                                                                                                                          |
+| 2026-02-25 | AI Agent | **Minor issue cleanup**: 7 fixes — clarified INT-P2-004 priority origin in statistics footnote, added overhead notes to Phase 2/3/4 effort estimates, fixed Codebase Validation CONFIRMED count (17→18 with overlap note for INT-P1-005), added Phase 0 note explaining retained Low-severity items, standardized INT-P1-005 severity notation, added P4-NEW-003/004 gap explanation, added design decision clarification to resolved table.                                                                                                                                                                                                                                                                                                                                  |
+| 2026-02-25 | AI Agent | **Third validation pass**: Fixed 3 moderate issues — updated INT-P0-004/INT-P0-005 migration impact prose from "Medium" to "Low" (labels were corrected earlier but prose paragraphs were missed), corrected INT-P2-014 `import traceback` count from 22 to 21 (verified against codebase: 21 local imports + 1 commented-out top-level).                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| 2026-02-25 | AI Agent | **Final minor cleanup**: 5 fixes — standardized severity notation to `~~Old~~ **New**` pattern across 6 items (INT-P0-004, INT-P0-005, INT-P1-003, INT-P1-006, INT-P2-004, INT-P2-009) plus SEVERITY ADJUSTED summary row, clarified INT-P1-004 attribution in Migration Summary to span Phases 2-3, added C.1/C.2 resolution note to NOT YET VALIDATED row, clarified CAS-CANOPY-002 Phase 3/5 scope overlap, updated INT-P2-010 stale line references from 142/145 to 174/177 (verified against codebase).                                                                                                                                                                                                                                                                  |
+| 2026-02-25 | AI Agent | **Fifth validation pass**: Fixed 4 moderate issues — corrected INT-P1-004 Migration Impact paragraph from "RESOLVED" to "SUBSTANTIALLY RESOLVED" (aligning with status field, Dependencies Matrix, and Section 10), added Phase 3 dependency gate note to CAS-REF-004 in Phase 2 table, corrected Codebase Validation CONFIRMED count from 18 to 19 (INT-P2-004 now included with overlap note, matching INT-P1-005 treatment), added P2 bucket change explanation to consolidated statistics footnote.                                                                                                                                                                                                                                                                       |
+| 2026-02-25 | AI Agent | **Post-fifth-validation minor cleanup**: 5 fixes — named the 2 new P3-P4 items in statistics footnote (Phase 1 #10, Phase 5 #10), added Phase 5 aggregate effort note explaining why total is not aggregated, clarified INT-P1-002 attribution in Migration Summary as pre-migration resolved + further addressed by Phase 1, added Section 1 cross-reference to Phase 0 execution plan, clarified Section 10 resolved table header to distinguish 5 resolved + 1 substantially resolved work items.                                                                                                                                                                                                                                                                          |
+| 2026-02-25 | AI Agent | **Sixth validation pass**: 4 minor fixes — standardized SEVERITY ADJUSTED summary row to `~~Old~~ **New**` notation (was arrow notation), bolded new values in Risk Assessment table severity cells, corrected Phase 3 item sum upper bound from ~6-11 to ~6-10 days, renamed duplicate "Fifth validation" document history label to "Post-fifth-validation."                                                                                                                                                                                                                                                                                                                                                                                                                 |

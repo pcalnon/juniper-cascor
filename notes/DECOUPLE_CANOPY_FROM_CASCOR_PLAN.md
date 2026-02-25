@@ -1,7 +1,7 @@
 # Decouple JuniperCanopy from JuniperCascor — Comprehensive Plan
 
 **Created:** 2026-02-21
-**Status:** Planning
+**Status:** COMPLETE (2026-02-25)
 **Phase:** Polyrepo Migration Phase 4
 **Prerequisite:** Phase 2 (CasCor Service API) and Phase 3 (juniper-cascor-client) complete
 **Duration:** 2-3 weeks
@@ -680,26 +680,26 @@ The CasCor service format wraps data in a `data` key:
 
 ## 9. Deliverables Checklist
 
-- [ ] `CascorServiceAdapter` implemented in `src/backend/cascor_service_adapter.py`
-- [ ] Three-mode activation logic in `main.py`
-- [ ] All route handlers work with both `CascorIntegration` and `CascorServiceAdapter`
-- [ ] `juniper-cascor-client>=0.1.0` added to `pyproject.toml` dependencies
-- [ ] Unit tests for `CascorServiceAdapter` (mocked client)
-- [ ] Interface compatibility tests (adapter has all required methods)
-- [ ] Integration test: service mode end-to-end
-- [ ] Demo mode continues to work identically
-- [ ] Legacy mode continues to work during transition
-- [ ] WebSocket relay tested (CasCor WS → Canopy frontend)
-- [ ] Environment variable documentation updated
-- [ ] `POLYREPO_MIGRATION_PLAN.md` Phase 4 updated with corrections
+- [x] `CascorServiceAdapter` implemented in `src/backend/cascor_service_adapter.py` (306 lines, 52 unit tests)
+- [x] Two-mode activation logic in `main.py` (legacy mode removed in Step 4.8)
+- [x] All route handlers work with `CascorServiceAdapter` (variable rename `cascor_integration` → `backend`)
+- [x] `juniper-cascor-client>=0.1.0` added to `pyproject.toml` dependencies
+- [x] Unit tests for `CascorServiceAdapter` (52 tests, mocked client)
+- [x] Interface compatibility tests (adapter has all required methods)
+- [x] Integration test: service mode end-to-end
+- [x] Demo mode continues to work identically
+- [x] ~~Legacy mode continues to work during transition~~ Legacy mode removed (Step 4.8)
+- [x] WebSocket relay tested (CasCor WS → Canopy frontend)
+- [x] Environment variable documentation updated
+- [x] `POLYREPO_MIGRATION_PLAN.md` Phase 4 updated with corrections
 
-### Post-Validation (Step 5.8)
+### Post-Validation (Step 4.8) — Completed 2026-02-25
 
-- [ ] `CascorIntegration` removed (~1,600 lines)
-- [ ] All `sys.path` manipulation code removed
-- [ ] No direct imports of CasCor modules anywhere in Canopy
-- [ ] `CASCOR_BACKEND_PATH` support removed
-- [ ] Legacy-only tests removed
+- [x] `CascorIntegration` removed (~1,601 lines, commit `5f9987d`)
+- [x] All `sys.path` manipulation code removed
+- [x] No direct imports of CasCor modules anywhere in Canopy
+- [x] `CASCOR_BACKEND_PATH` support removed
+- [x] Legacy-only tests removed (13 test files)
 
 ---
 
