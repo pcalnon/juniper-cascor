@@ -80,7 +80,7 @@ This document is the **authoritative, consolidated roadmap** for all JuniperCasc
 | ------------------------ | --------- | ------------------------------------------------------------------------------------------------------------ |
 | CONFIRMED (bug exists)   | 19        | INT-P0-001 through P0-005, P2-001 through P2-010, P2-014, CAS-REF-004, INT-P1-005, INT-P1-008 (INT-P1-005 and INT-P2-004 also severity-adjusted) |
 | RESOLVED (already fixed) | 3         | INT-P1-002 (requests dep), INT-P1-007 (retry logic), INT-P2-013 (dill dep)                                   |
-| SEVERITY ADJUSTED        | 3         | INT-P2-004 (High→Low), INT-P1-006 (High→Medium), INT-P1-005 (High→Low)                                       |
+| SEVERITY ADJUSTED        | 3         | INT-P2-004 (~~High~~ **Low**), INT-P1-006 (~~High~~ **Medium**), INT-P1-005 (~~High~~ **Low**)                |
 | NOT YET VALIDATED        | Remaining | Architecture items (C.1, C.2 — now resolved/superseded by migration), deferred items, Oracle analysis items   |
 
 ---
@@ -1212,7 +1212,7 @@ Based on codebase validation results, dependency analysis, effort estimates, and
 | 3   | INT-P3-002: E2E live-service integration tests          | 2-3 days | Coordinate with Phase 6 Docker Compose            |
 | 4   | CAS-005: Evaluate shared types with `juniper-cascor-worker` | 1-2 days | Determine if shared package needed |
 
-**Estimated Total**: 7-12 days (item sum: ~6-11 days + coordination/integration overhead)
+**Estimated Total**: 7-12 days (item sum: ~6-10 days + coordination/integration overhead)
 
 ### Phase 4: Feature Enhancements (4-8 weeks)
 
@@ -1496,7 +1496,7 @@ INT-P3-003 (Docker Compose)
 | `ActivationWithDerivative` ACTIVATION_MAP divergence                  | Medium      | High   | Extract to shared module                                        |
 | JuniperData service downtime crashes training                         | Medium      | High   | Retry logic implemented (CAS-INT-008); service now independently deployed |
 | Coverage regression without enforced gates                            | Medium      | Medium | 80% global gate enforced; per-module thresholds needed          |
-| Hardcoded paths break on other machines                               | ~~High~~ Low | ~~Medium~~ Low | Delete legacy files; polyrepo uses pip install |
+| Hardcoded paths break on other machines                               | ~~High~~ **Low** | ~~Medium~~ **Low** | Delete legacy files; polyrepo uses pip install |
 | Slow test suite blocks CI pipeline                                    | Medium      | Medium | Scheduled tests separate from main CI                           |
 | **NEW**: CasCor API missing endpoints block Canopy features           | Medium      | High   | Deferred endpoints (`/v1/snapshots/*`, `/v1/workers/*`) need prioritization |
 | **NEW**: Version drift between 6 independent repos                    | Medium      | Medium | Phase 6 version compatibility matrix; consider dependabot/renovate |
@@ -1523,4 +1523,5 @@ INT-P3-003 (Docker Compose)
 | 2026-02-25 | AI Agent | **Third validation pass**: Fixed 3 moderate issues — updated INT-P0-004/INT-P0-005 migration impact prose from "Medium" to "Low" (labels were corrected earlier but prose paragraphs were missed), corrected INT-P2-014 `import traceback` count from 22 to 21 (verified against codebase: 21 local imports + 1 commented-out top-level). |
 | 2026-02-25 | AI Agent | **Final minor cleanup**: 5 fixes — standardized severity notation to `~~Old~~ **New**` pattern across 6 items (INT-P0-004, INT-P0-005, INT-P1-003, INT-P1-006, INT-P2-004, INT-P2-009) plus SEVERITY ADJUSTED summary row, clarified INT-P1-004 attribution in Migration Summary to span Phases 2-3, added C.1/C.2 resolution note to NOT YET VALIDATED row, clarified CAS-CANOPY-002 Phase 3/5 scope overlap, updated INT-P2-010 stale line references from 142/145 to 174/177 (verified against codebase). |
 | 2026-02-25 | AI Agent | **Fifth validation pass**: Fixed 4 moderate issues — corrected INT-P1-004 Migration Impact paragraph from "RESOLVED" to "SUBSTANTIALLY RESOLVED" (aligning with status field, Dependencies Matrix, and Section 10), added Phase 3 dependency gate note to CAS-REF-004 in Phase 2 table, corrected Codebase Validation CONFIRMED count from 18 to 19 (INT-P2-004 now included with overlap note, matching INT-P1-005 treatment), added P2 bucket change explanation to consolidated statistics footnote. |
-| 2026-02-25 | AI Agent | **Fifth validation minor cleanup**: 5 fixes — named the 2 new P3-P4 items in statistics footnote (Phase 1 #10, Phase 5 #10), added Phase 5 aggregate effort note explaining why total is not aggregated, clarified INT-P1-002 attribution in Migration Summary as pre-migration resolved + further addressed by Phase 1, added Section 1 cross-reference to Phase 0 execution plan, clarified Section 10 resolved table header to distinguish 5 resolved + 1 substantially resolved work items. |
+| 2026-02-25 | AI Agent | **Post-fifth-validation minor cleanup**: 5 fixes — named the 2 new P3-P4 items in statistics footnote (Phase 1 #10, Phase 5 #10), added Phase 5 aggregate effort note explaining why total is not aggregated, clarified INT-P1-002 attribution in Migration Summary as pre-migration resolved + further addressed by Phase 1, added Section 1 cross-reference to Phase 0 execution plan, clarified Section 10 resolved table header to distinguish 5 resolved + 1 substantially resolved work items. |
+| 2026-02-25 | AI Agent | **Sixth validation pass**: 4 minor fixes — standardized SEVERITY ADJUSTED summary row to `~~Old~~ **New**` notation (was arrow notation), bolded new values in Risk Assessment table severity cells, corrected Phase 3 item sum upper bound from ~6-11 to ~6-10 days, renamed duplicate "Fifth validation" document history label to "Post-fifth-validation." |
