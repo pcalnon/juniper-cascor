@@ -2,7 +2,7 @@
 
 **Last Updated:** 2026-02-24
 **Version:** 1.5.0
-**Status:** Active — Phase 0 Complete (Validated), Phase 1 Complete (Validated), Phase 2 Complete (Validated), Phase 3 Complete (Validated), Phase 4 In Progress, Phase 5 In Progress
+**Status:** Active — Phase 0 Complete (Validated), Phase 1 Complete (Validated), Phase 2 Complete (Validated), Phase 3 Complete (Validated), Phase 4 Complete (Validated 2026-02-25), Phase 5 In Progress
 **Author:** Paul Calnon / Claude Code
 **Companion Document:** [MONOREPO_ANALYSIS.md](MONOREPO_ANALYSIS.md)
 
@@ -1051,38 +1051,33 @@ Note: The worker needs PyTorch because it runs `CascadeCorrelationNetwork._worke
 **Duration:** 2–3 weeks
 **Risk:** High (core architectural change to Canopy)
 **Prerequisite:** Phases 2 and 3 complete
-**Status:** IN PROGRESS — adapter + 3-mode activation implemented and committed, legacy removal pending
+**Status:** COMPLETE (2026-02-25) — Validated 2026-02-25
 **Detailed Plan:** [`DECOUPLE_CANOPY_FROM_CASCOR_PLAN.md`](DECOUPLE_CANOPY_FROM_CASCOR_PLAN.md)
 
 > **Note:** A comprehensive, standalone implementation plan exists in
 > `notes/DECOUPLE_CANOPY_FROM_CASCOR_PLAN.md`. It contains full adapter code,
-> method mapping tables, three-mode activation logic, WebSocket relay
+> method mapping tables, two-mode activation logic, WebSocket relay
 > architecture, and a corrections table vs. the original version of this
 > section. The summary below reflects the corrected design.
 
-### Verification Summary (2026-02-22)
+### Verification Summary (2026-02-25)
 
-Phase 4 core implementation is committed and tested. Detailed verification:
+Phase 4 fully complete. Integration testing and legacy removal both verified:
 
 | Component | Status | Details |
 | --------- | ------ | ------- |
-| `CascorServiceAdapter` | IMPLEMENTED | 306 lines at `src/backend/cascor_service_adapter.py`; includes `_ServiceTrainingMonitor`, `_NetworkSentinel`, and main adapter class |
-| `CascorIntegration` | RETAINED | 1,601 lines at `src/backend/cascor_integration.py`; legacy fallback mode |
-| Three-mode activation | IMPLEMENTED | Lines 258–296 of `src/main.py`; priority: Demo > Service > Legacy > Demo fallback |
-| Adapter tests | PASSING | 52 tests in `src/tests/unit/backend/test_cascor_service_adapter.py` (410 lines) |
-| Activation tests | PASSING | 11 tests in `src/tests/unit/test_three_mode_activation.py` (227 lines) |
-| Total Canopy tests | PASSING | 3,460 tests collected (52 adapter + 11 activation + 3,397 existing) |
+| `CascorServiceAdapter` | COMPLETE | 306 lines at `src/backend/cascor_service_adapter.py`; REST/WS adapter wrapping `juniper-cascor-client` |
+| `CascorIntegration` | DELETED | Removed 2026-02-25 (Step 4.8); 1,601-line legacy backend gone |
+| Two-mode activation | COMPLETE | `main.py`: Demo > Service > Demo fallback; `_is_service_adapter is True` guard for shutdown |
+| Adapter tests | PASSING | 52 tests in `src/tests/unit/backend/test_cascor_service_adapter.py` |
+| Activation tests | PASSING | 11 tests in `src/tests/unit/test_three_mode_activation.py` |
+| Total Canopy tests | PASSING | 3,130 passed, 23 skipped (after 160 legacy tests removed) |
 | Dependency declaration | CONFIGURED | `juniper-cascor-client>=0.1.0` in `pyproject.toml [project.optional-dependencies].juniper-cascor` |
-| Backend variable rename | COMPLETE | `cascor_integration` → `backend` throughout `main.py` and tests |
-| Latest commit | `14bfa43` | "feat: Implement Phase 4 — CascorServiceAdapter and three-mode activation" |
+| REST integration tests | PASSING | All 10 service endpoints verified against live CasCor service (port 8201) |
+| WS relay integration | PASSING | CasCor WS → `CascorTrainingStream.stream()` → `ws_manager.broadcast()` verified |
+| Legacy files removed | COMPLETE | `cascor_integration.py` + 13 legacy test files deleted |
+| Latest commit | `5f9987d` | "Step 4.8: Remove legacy CascorIntegration mode" |
 | Branch | `canopy/migration` | Tracking `origin` (monorepo `pcalnon/Juniper`) |
-| Uncommitted changes | Minor | `pyproject.toml` metadata updates (setuptools version, PEP 508 name, GitHub URLs) |
-
-**Remaining for Phase 4 completion:**
-
-1. Integration testing with live CasCor service (service mode end-to-end)
-2. WebSocket relay verification (CasCor WS → adapter → Canopy frontend)
-3. Legacy mode removal (Step 4.8 — delete `CascorIntegration`, remove `sys.path` manipulation)
 
 ### Objective, Phase 4
 
@@ -1574,28 +1569,28 @@ Update all documentation across all repositories:
 - [x] v0.1.0 releases created; `publish.yml` workflows completed successfully (TestPyPI → PyPI pipeline)
 - [x] `pip install juniper-cascor-client juniper-cascor-worker` from PyPI verified (both v0.1.0)
 
-### Phase 4 — Decouple Canopy (IN PROGRESS — adapter + 3-mode activation implemented, legacy removal pending; verified 2026-02-22)
+### Phase 4 — Decouple Canopy (COMPLETE — validated 2026-02-25)
 
 - [x] `CascorServiceAdapter` implemented (306 lines, wraps `juniper-cascor-client` over REST/WS)
-- [ ] `CascorIntegration` removed (retained at 1,601 lines for legacy mode; removal is Step 4.8)
-- [ ] All `sys.path` manipulation removed (legacy mode still uses it)
-- [ ] No direct CasCor imports in Canopy (legacy mode still has them)
-- [x] Demo mode still works (3,460 tests collected, verified 2026-02-22)
-- [x] All Canopy tests pass (3,460 collected, verified 2026-02-22)
+- [x] `CascorIntegration` removed (deleted 2026-02-25; Step 4.8)
+- [x] All `sys.path` manipulation removed
+- [x] No direct CasCor imports in Canopy
+- [x] Demo mode still works
+- [x] All Canopy tests pass (3130 passed, 23 skipped — verified 2026-02-25)
 - [x] Configuration updated to service URLs (`CASCOR_SERVICE_URL` env var activates service mode)
-- [x] Three-mode activation logic: Demo > Service > Legacy > Demo fallback (lines 258–296 of `main.py`)
+- [x] Two-mode activation logic: Demo > Service > Demo fallback (main.py)
 - [x] `cascor_integration` global renamed to `backend` throughout main.py and tests
 - [x] `pyproject.toml` updated with `juniper-cascor` optional dependency group (`juniper-cascor-client>=0.1.0`)
 - [x] Unit tests for adapter (52 tests) and activation logic (11 tests) — verified 2026-02-22
-- [ ] WebSocket relay integration test (CasCor WS → adapter → Canopy frontend)
-- [ ] End-to-end integration test with live CasCor service in service mode
+- [x] WebSocket relay integration test (CasCor WS → adapter → Canopy frontend) — verified 2026-02-25
+- [x] End-to-end integration test with live CasCor service in service mode — verified 2026-02-25
 
-### Phase 5 — Split Repos (IN PROGRESS — Data and CasCor extracted, Canopy blocked by Phase 4; verified 2026-02-22)
+### Phase 5 — Split Repos (IN PROGRESS — Data and CasCor extracted; Canopy extraction unblocked as of 2026-02-25)
 
 - [x] Three service repos created on GitHub (`juniper-data`, `juniper-cascor`, `juniper-canopy` placeholder)
 - [x] Data extracted with history (595 commits on `main`, CI green including scheduled + CodeQL)
 - [x] CasCor extracted with history (127 commits on `main`, CI green on latest runs)
-- [ ] Canopy extraction (blocked by Phase 4; GitHub repo `pcalnon/juniper-canopy` exists as placeholder)
+- [ ] Canopy extraction (Phase 4 complete; GitHub repo `pcalnon/juniper-canopy` exists as placeholder — ready to extract)
 - [x] Three client/worker repos created (from Phases 1, 3)
 - [x] Per-repo CI/CD verified (Data: all green + CodeQL + scheduled; CasCor: green on latest 2 runs)
 - [x] SSH deploy keys + SSH config aliases configured per-repo
