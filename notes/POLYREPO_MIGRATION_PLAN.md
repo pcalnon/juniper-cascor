@@ -1438,15 +1438,23 @@ Ecosystem compatibility matrix — current verified-compatible baseline:
 
 Compatibility matrix added to READMEs in all repos (commit: `a7a2db8` cascor, `f4c4543` data, `cb5e4d6` canopy, `6900dcd` data-client, `410161a` cascor-client, `047c3f6` cascor-worker, `97f030f` juniper-ml).
 
-### Step 6.2 — Integration Test Suite
+### Step 6.2 — Integration Test Suite ✅ COMPLETE (2026-02-25)
 
-Create a lightweight integration test repository or script that:
+Pytest-based suite in `juniper-deploy/tests/` (commit `5070046`):
 
-1. Starts JuniperData on port 8100
-2. Starts JuniperCascor on port 8200
-3. Starts JuniperCanopy on port 8050
-4. Runs end-to-end tests through the full stack
-5. Can be run in CI via docker-compose
+| File | Coverage |
+|------|----------|
+| `conftest.py` | Shared fixtures: service URLs, HTTP session, cascor reset helper |
+| `test_health.py` | `/v1/health`, `/v1/health/live`, `/v1/health/ready` for all 3 services; response schema validation |
+| `test_data_service.py` | Generator list, dataset lifecycle (create → read → NPZ download → delete), stats |
+| `test_full_stack.py` | CasCor network CRUD, CasCor start/stop training via JuniperData source, Canopy liveness; 3-service smoke test |
+
+```bash
+pip install -r requirements-test.txt
+docker compose up -d
+bash scripts/wait_for_services.sh
+pytest tests/ -v
+```
 
 ### Step 6.3 — Docker Compose for Full Stack ✅ COMPLETE (2026-02-25)
 
@@ -1588,7 +1596,7 @@ Update all documentation across all repositories:
 
 - [x] Version compatibility matrix documented
 - [x] Health check endpoints standardized (/v1/health + /v1/health/ready)
-- [ ] Integration tests operational
+- [x] Integration tests operational (`juniper-deploy/tests/`, commit `5070046`)
 - [x] Docker Compose full-stack working (`juniper-deploy` repo, commit `7d98258`; cascor Dockerfile `7ae3dcc`; canopy Dockerfile `e0fcf21`)
 - [ ] Documentation complete
 
