@@ -161,7 +161,9 @@ jobs:
           # Install CPU-only PyTorch first (CI doesn't need CUDA)
           pip install torch --index-url https://download.pytorch.org/whl/cpu
           # Install juniper-data-client from git (not yet published to PyPI)
-          pip install "juniper-data-client @ git+https://github.com/pcalnon/juniper-data-client.git@main"
+          # juniper-data-client requires Python >=3.12 and is not yet on PyPI
+          python -c "import sys; sys.exit(0 if sys.version_info >= (3,12) else 1)" && \
+            pip install "juniper-data-client @ git+https://github.com/pcalnon/juniper-data-client.git@main" || true
           # Install project deps via editable install to keep source-tree
           # path resolution intact (constants resolve config paths via __file__)
           pip install -e ".[all]"
@@ -239,7 +241,9 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install torch --index-url https://download.pytorch.org/whl/cpu
-          pip install "juniper-data-client @ git+https://github.com/pcalnon/juniper-data-client.git@main"
+          # juniper-data-client requires Python >=3.12 and is not yet on PyPI
+          python -c "import sys; sys.exit(0 if sys.version_info >= (3,12) else 1)" && \
+            pip install "juniper-data-client @ git+https://github.com/pcalnon/juniper-data-client.git@main" || true
           pip install -e ".[all]"
 
       - name: Create required directories
@@ -294,7 +298,9 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install torch --index-url https://download.pytorch.org/whl/cpu
-          pip install "juniper-data-client @ git+https://github.com/pcalnon/juniper-data-client.git@main"
+          # juniper-data-client requires Python >=3.12 and is not yet on PyPI
+          python -c "import sys; sys.exit(0 if sys.version_info >= (3,12) else 1)" && \
+            pip install "juniper-data-client @ git+https://github.com/pcalnon/juniper-data-client.git@main" || true
           pip install -e ".[all]"
 
       - name: Create required directories
@@ -393,7 +399,9 @@ jobs:
           echo "╚════════════════════════════════════════════════════════════╝"
           python -m pip install --upgrade pip
           pip install torch --index-url https://download.pytorch.org/whl/cpu
-          pip install "juniper-data-client @ git+https://github.com/pcalnon/juniper-data-client.git@main"
+          # juniper-data-client requires Python >=3.12 and is not yet on PyPI
+          python -c "import sys; sys.exit(0 if sys.version_info >= (3,12) else 1)" && \
+            pip install "juniper-data-client @ git+https://github.com/pcalnon/juniper-data-client.git@main" || true
           pip install -e ".[all]"
 
       - name: Generate Dependency Documentation
