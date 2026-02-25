@@ -357,6 +357,60 @@ jobs:
           retention-days: 30
 
   # ═══════════════════════════════════════════════════════════════════════════════════════════════
+  # Dependency Docs: Generate dependency documentation artifacts
+  # ═══════════════════════════════════════════════════════════════════════════════════════════════
+  dependency-docs:
+    name: Dependency Documentation
+    runs-on: ubuntu-latest
+    needs: [build]
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ env.PYTHON_TEST_VERSION }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_TEST_VERSION }}
+          cache: pip
+
+      - name: Setup Conda (Miniforge)
+        uses: conda-incubator/setup-miniconda@v3
+        with:
+          miniforge-version: latest
+          auto-activate-base: true
+          python-version: ${{ env.PYTHON_TEST_VERSION }}
+
+      - name: Install dependencies
+        shell: bash -l {0}
+        run: |
+          echo "╔════════════════════════════════════════════════════════════╗"
+          echo "║       Juniper Cascor - Install Dependencies (Dep Docs)    ║"
+          echo "╚════════════════════════════════════════════════════════════╝"
+          python -m pip install --upgrade pip
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
+          pip install -e ".[all]"
+
+      - name: Generate Dependency Documentation
+        shell: bash -l {0}
+        run: |
+          echo "╔════════════════════════════════════════════════════════════╗"
+          echo "║       Juniper Cascor - Generate Dependency Docs           ║"
+          echo "╚════════════════════════════════════════════════════════════╝"
+          bash scripts/generate_dep_docs.sh
+
+      - name: Upload Dependency Documentation
+        uses: actions/upload-artifact@v4
+        with:
+          name: dependency-docs
+          path: |
+            conf/requirements_ci.txt
+            conf/requirements_ci_*.txt
+            conf/conda_environment_ci.yaml
+            conf/conda_environment_ci_*.yaml
+          retention-days: 90
+
+  # ═══════════════════════════════════════════════════════════════════════════════════════════════
   # Security: Run security scans (Gitleaks, Bandit, pip-audit)
   # ═══════════════════════════════════════════════════════════════════════════════════════════════
   security:
@@ -437,7 +491,7 @@ jobs:
     name: Quality Gate
     runs-on: ubuntu-latest
     if: always()
-    needs: [pre-commit, unit-tests, quick-integration-tests, integration-tests, build, security, docs]
+    needs: [pre-commit, unit-tests, quick-integration-tests, integration-tests, build, dependency-docs, security, docs]
 
     steps:
       - name: Check Quality Gate Status
@@ -451,6 +505,7 @@ jobs:
           echo "Quick Integration:      ${{ needs.quick-integration-tests.result }}"
           echo "Full Integration Tests: ${{ needs.integration-tests.result }}"
           echo "Build:                  ${{ needs.build.result }}"
+          echo "Dependency Docs:        ${{ needs.dependency-docs.result }}"
           echo "Security:               ${{ needs.security.result }}"
           echo "Documentation:          ${{ needs.docs.result }}"
           echo ""
@@ -487,6 +542,12 @@ jobs:
           # Full integration tests: failure = error, skipped = OK (for feature branches)
           if [[ "${{ needs.integration-tests.result }}" == "failure" ]]; then
             echo "::error::Full integration tests failed"
+            exit 1
+          fi
+
+          # Dependency docs: failure = error, skipped = OK (non-blocking)
+          if [[ "${{ needs.dependency-docs.result }}" == "failure" ]]; then
+            echo "::error::Dependency documentation generation failed"
             exit 1
           fi
 
