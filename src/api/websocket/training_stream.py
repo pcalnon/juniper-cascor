@@ -19,6 +19,14 @@ logger = logging.getLogger("juniper_cascor.api.websocket.training")
 
 async def training_stream_handler(websocket: WebSocket) -> None:
     """Handle /ws/training WebSocket connections."""
+    # Authenticate WebSocket connection (BaseHTTPMiddleware does not intercept WS)
+    auth = getattr(websocket.app.state, "api_key_auth", None)
+    if auth is not None and auth.enabled:
+        api_key = websocket.headers.get("X-API-Key")
+        if not auth.validate(api_key):
+            await websocket.close(code=4001, reason="Authentication required")
+            return
+
     ws_manager = getattr(websocket.app.state, "ws_manager", None)
     lifecycle = getattr(websocket.app.state, "lifecycle", None)
 

@@ -58,8 +58,10 @@ import pytest
 import torch
 
 # Add parent directories to Python path for imports
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+# Use insert(0, ...) to ensure local src/ takes precedence over any editable
+# installs of legacy JuniperCascor that may shadow the api package.
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(1, os.path.dirname(os.path.abspath(__file__)))
 
 from candidate_unit.candidate_unit import CandidateUnit
 from cascade_correlation.cascade_correlation import CascadeCorrelationNetwork
