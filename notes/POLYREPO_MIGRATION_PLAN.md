@@ -1527,13 +1527,13 @@ Phase 7 addresses operational gaps discovered during Phase 6 validation. The pol
 
 Currently present only in `juniper-data`. Add `.github/dependabot.yml` to:
 
-- [ ] `juniper-cascor`
-- [ ] `juniper-canopy`
-- [ ] `juniper-data-client`
-- [ ] `juniper-cascor-client`
-- [ ] `juniper-cascor-worker`
-- [ ] `juniper-ml`
-- [ ] `juniper-deploy`
+- [x] `juniper-cascor` (commit `5d0c717`)
+- [x] `juniper-canopy` (commit `01d6494`)
+- [x] `juniper-data-client` (commit `43f0e95`)
+- [x] `juniper-cascor-client` (commit `4dc854e`)
+- [x] `juniper-cascor-worker` (commit `b8217a1`)
+- [x] `juniper-ml` (commit `7516ca2`)
+- [x] `juniper-deploy` (commit `836f6f4`)
 
 Use `juniper-data`'s config as template: weekly pip + GitHub Actions updates, grouped minor/patch PRs, labels `dependencies`/`security`/`ci`.
 
@@ -1552,13 +1552,13 @@ Use `juniper-data`'s config as template: weekly pip + GitHub Actions updates, gr
 
 Currently present only in `juniper-cascor`. Add `.github/CODEOWNERS` assigning `@pcalnon` to:
 
-- [ ] `juniper-data`
-- [ ] `juniper-canopy`
-- [ ] `juniper-data-client`
-- [ ] `juniper-cascor-client`
-- [ ] `juniper-cascor-worker`
-- [ ] `juniper-ml`
-- [ ] `juniper-deploy`
+- [x] `juniper-data` (commit `a9cff71`)
+- [x] `juniper-canopy` (commit `01d6494`)
+- [x] `juniper-data-client` (commit `43f0e95`)
+- [x] `juniper-cascor-client` (commit `4dc854e`)
+- [x] `juniper-cascor-worker` (commit `b8217a1`)
+- [x] `juniper-ml` (commit `7516ca2`)
+- [x] `juniper-deploy` (commit `836f6f4`)
 
 **7.1.4 — Harden juniper-data-client CI**
 
@@ -1716,7 +1716,7 @@ The parent `CLAUDE.md` at `/home/pcalnon/Development/python/Juniper/CLAUDE.md` l
 
 ## Migration Checklist
 
-> **Last verified:** 2026-02-25
+> **Last verified:** 2026-02-26
 
 ### Phase 0 — Stabilize (COMPLETE 2026-02-19, Validated 2026-02-22)
 
@@ -1800,9 +1800,9 @@ The parent `CLAUDE.md` at `/home/pcalnon/Development/python/Juniper/CLAUDE.md` l
 
 ### Phase 7 — Production Readiness
 
-- [ ] Dependabot configured across all repos
+- [x] Dependabot configured across all repos (7 repos added 2026-02-26)
 - [ ] GitHub Actions SHA-pinned in all CI workflows
-- [ ] CODEOWNERS in all repos
+- [x] CODEOWNERS in all repos (7 repos added 2026-02-26)
 - [ ] Cross-repo CI dispatch functional
 - [ ] API authentication on JuniperCascor and JuniperCanopy
 - [ ] Prometheus `/metrics` endpoint on all 3 services
