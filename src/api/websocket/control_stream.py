@@ -23,6 +23,14 @@ _VALID_COMMANDS = {"start", "stop", "pause", "resume", "reset"}
 
 async def control_stream_handler(websocket: WebSocket) -> None:
     """Handle /ws/control WebSocket connections."""
+    # Authenticate WebSocket connection (BaseHTTPMiddleware does not intercept WS)
+    auth = getattr(websocket.app.state, "api_key_auth", None)
+    if auth is not None and auth.enabled:
+        api_key = websocket.headers.get("X-API-Key")
+        if not auth.validate(api_key):
+            await websocket.close(code=4001, reason="Authentication required")
+            return
+
     lifecycle = getattr(websocket.app.state, "lifecycle", None)
 
     await websocket.accept()

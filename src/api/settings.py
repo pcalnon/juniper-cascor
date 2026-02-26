@@ -25,6 +25,10 @@ _JUNIPER_CASCOR_API_WS_MAX_CONNECTIONS_DEFAULT: int = _JUNIPER_CASCOR_API_WS_MAX
 _JUNIPER_CASCOR_API_WS_HEARTBEAT_INTERVAL_SEC: int = 30
 _JUNIPER_CASCOR_API_WS_HEARTBEAT_INTERVAL_SEC_DEFAULT: int = _JUNIPER_CASCOR_API_WS_HEARTBEAT_INTERVAL_SEC
 
+_JUNIPER_CASCOR_API_KEYS_LIST_EMPTY: list[str] | None = None
+_JUNIPER_CASCOR_API_RATELIMIT_DISABLED: bool = False
+_JUNIPER_CASCOR_API_RATELIMIT_DEFAULT: int = 60
+
 
 class Settings(BaseSettings):
     """Application settings loaded from environment variables.
@@ -48,6 +52,10 @@ class Settings(BaseSettings):
 
     ws_max_connections: int = _JUNIPER_CASCOR_API_WS_MAX_CONNECTIONS_DEFAULT
     ws_heartbeat_interval_sec: int = _JUNIPER_CASCOR_API_WS_HEARTBEAT_INTERVAL_SEC_DEFAULT
+
+    api_keys: list[str] | None = _JUNIPER_CASCOR_API_KEYS_LIST_EMPTY
+    rate_limit_enabled: bool = _JUNIPER_CASCOR_API_RATELIMIT_DISABLED
+    rate_limit_requests_per_minute: int = _JUNIPER_CASCOR_API_RATELIMIT_DEFAULT
 
 
 @lru_cache

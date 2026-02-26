@@ -10,8 +10,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from api.lifecycle.manager import TrainingLifecycleManager
+from api.middleware import SecurityMiddleware
 from api.models.common import error_response
 from api.routes import dataset, decision_boundary, health, metrics, network, training
+from api.security import APIKeyAuth, RateLimiter
 from api.settings import Settings, get_settings
 from api.websocket.control_stream import control_stream_handler
 from api.websocket.manager import WebSocketManager
@@ -94,6 +96,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+    # Security (API key auth + rate limiting)
+    api_key_auth = APIKeyAuth(settings.api_keys)
+    rate_limiter = RateLimiter(
+        requests_per_minute=settings.rate_limit_requests_per_minute,
+        enabled=settings.rate_limit_enabled,
+    )
+    app.add_middleware(SecurityMiddleware, api_key_auth=api_key_auth, rate_limiter=rate_limiter)
+    app.state.api_key_auth = api_key_auth
 
     # REST Routes
     app.include_router(health.router, prefix="/v1")
