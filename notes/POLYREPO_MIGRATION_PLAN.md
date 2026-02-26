@@ -1494,7 +1494,7 @@ Added `## Architecture` (ASCII service topology diagram) and `## Related Service
 |------|--------|
 | juniper-data | `973ae39` |
 | juniper-cascor | `8ffbe41` |
-| juniper-canopy | `4c0918d` |
+| juniper-canopy | `73d9919` |
 
 ### Deliverables, Phase 6
 
