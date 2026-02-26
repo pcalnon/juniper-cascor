@@ -1440,12 +1440,12 @@ Compatibility matrix added to READMEs in all repos (commit: `a7a2db8` cascor, `f
 
 ### Step 6.2 — Integration Test Suite ✅ COMPLETE (2026-02-25)
 
-Pytest-based suite in `juniper-deploy/tests/` (commit `5070046`):
+Pytest-based suite in `juniper-deploy/tests/` (initial commit `5070046`, hardened `2fb0631`):
 
 | File | Coverage |
 |------|----------|
-| `conftest.py` | Shared fixtures: service URLs, HTTP session, cascor reset helper |
-| `test_health.py` | `/v1/health`, `/v1/health/live`, `/v1/health/ready` for all 3 services; response schema validation |
+| `conftest.py` | Shared fixtures: service URLs (configurable via `JUNIPER_TEST_*` env vars), HTTP session, cascor reset helper |
+| `test_health.py` | `/v1/health`, `/v1/health/live`, `/v1/health/ready` for all 3 services; response schema validation with `_assert_keys` and `_assert_cascor_envelope` helpers |
 | `test_data_service.py` | Generator list, dataset lifecycle (create → read → NPZ download → delete), stats |
 | `test_full_stack.py` | CasCor network CRUD, CasCor start/stop training via JuniperData source, Canopy liveness; 3-service smoke test |
 
@@ -1458,14 +1458,14 @@ pytest tests/ -v
 
 ### Step 6.3 — Docker Compose for Full Stack ✅ COMPLETE (2026-02-25)
 
-New `juniper-deploy` repo created at `pcalnon/juniper-deploy` (commit `7d98258`):
+New `juniper-deploy` repo created at `pcalnon/juniper-deploy` (initial commit `7d98258`, hardened `2fb0631`):
 
 | File | Description |
 |------|-------------|
-| `docker-compose.yml` | Full stack with health checks and `depends_on` ordering |
-| `.env.example` | Configurable port overrides |
+| `docker-compose.yml` | Full stack with health checks, `depends_on` ordering, and `${VAR:-default}` substitution for all env vars |
+| `.env.example` | All 10 configurable variables including inter-service URLs (`JUNIPER_DATA_URL`, `CASCOR_SERVICE_URL`) |
 | `scripts/wait_for_services.sh` | Polls all 3 health endpoints before tests |
-| `README.md` | Quickstart, service URLs, integration test instructions |
+| `README.md` | Quickstart, service URLs, Service Discovery (Docker DNS) docs, full env var table, integration test instructions |
 
 Dockerfiles added:
 
@@ -1601,8 +1601,8 @@ Added `## Architecture` (ASCII service topology diagram) and `## Related Service
 
 - [x] Version compatibility matrix documented
 - [x] Health check endpoints standardized (/v1/health + /v1/health/ready)
-- [x] Integration tests operational (`juniper-deploy/tests/`, commit `5070046`)
-- [x] Docker Compose full-stack working (`juniper-deploy` repo, commit `7d98258`; cascor Dockerfile `7ae3dcc`; canopy Dockerfile `e0fcf21`)
+- [x] Integration tests operational (`juniper-deploy/tests/`, commits `5070046`, `2fb0631`; schema validation + configurable URLs)
+- [x] Docker Compose full-stack working (`juniper-deploy` repo, commits `7d98258`, `2fb0631`; `${VAR:-default}` substitution; cascor Dockerfile `7ae3dcc`; canopy Dockerfile `e0fcf21`)
 - [x] Documentation complete (Architecture + Related Services sections added to all 3 service READMEs — validated 2026-02-25)
 
 ---
