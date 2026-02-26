@@ -1422,7 +1422,7 @@ pip install -e ../juniper-cascor-client
 
 ---
 
-## Phase 6 — Post-Migration Hardening
+## Phase 6 — Post-Migration Hardening ✅ COMPLETE (2026-02-25)
 
 **Duration:** 1–2 weeks (ongoing)
 **Risk:** Low
@@ -1485,20 +1485,24 @@ JuniperCanopy retains `/health` and `/api/health` as backward-compatible aliases
 
 ### Step 6.5 — Documentation Updates
 
-Update all documentation across all repositories:
+**COMPLETE** (2026-02-25)
 
-- Architecture diagrams showing service topology
-- Developer setup guides for the polyrepo workflow
-- Contribution guides for each repo
-- API documentation for each service
+Added `## Architecture` (ASCII service topology diagram) and `## Related Services`
+(env vars, Docker Deployment) sections to all three service READMEs:
+
+| Repo | Commit |
+|------|--------|
+| juniper-data | `973ae39` |
+| juniper-cascor | `8ffbe41` |
+| juniper-canopy | `4c0918d` |
 
 ### Deliverables, Phase 6
 
-- [ ] Version compatibility matrix documented
-- [ ] Integration test suite operational
-- [ ] Docker Compose full-stack deployment working
-- [ ] Health checks and monitoring in place
-- [ ] All documentation updated for polyrepo workflow
+- [x] Version compatibility matrix documented
+- [x] Integration test suite operational
+- [x] Docker Compose full-stack deployment working
+- [x] Health checks and monitoring in place
+- [x] All documentation updated for polyrepo workflow
 
 ---
 
