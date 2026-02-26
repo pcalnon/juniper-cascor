@@ -1604,26 +1604,26 @@ JuniperData already has full `APIKeyAuth` + `RateLimiter` + `SecurityMiddleware`
 
 **7.3.1 — JuniperCascor API auth**
 
-- [ ] Add `X-API-Key` header authentication middleware
-- [ ] Add rate limiting (configurable `requests_per_minute`)
-- [ ] Exempt health endpoints (`/v1/health`, `/v1/health/live`, `/v1/health/ready`)
-- [ ] Add `CASCOR_API_KEY` environment variable
-- [ ] Add WebSocket authentication (token in query param or first message)
-- [ ] Update `juniper-cascor-client` to pass API key
-- [ ] Add tests for auth middleware
+- [x] Add `X-API-Key` header authentication middleware
+- [x] Add rate limiting (configurable `requests_per_minute`)
+- [x] Exempt health endpoints (`/v1/health`, `/v1/health/live`, `/v1/health/ready`)
+- [x] Add `CASCOR_API_KEY` environment variable
+- [x] Add WebSocket authentication (token in query param or first message)
+- [x] Update `juniper-cascor-client` to pass API key
+- [x] Add tests for auth middleware
 
 **7.3.2 — JuniperCanopy API auth**
 
-- [ ] Add `X-API-Key` header authentication for management API endpoints
-- [ ] Exempt health endpoints and static Dash assets
-- [ ] Add `CANOPY_API_KEY` environment variable
-- [ ] Add tests for auth middleware
+- [x] Add `X-API-Key` header authentication for management API endpoints
+- [x] Exempt health endpoints and static Dash assets
+- [x] Add `CANOPY_API_KEY` environment variable
+- [x] Add tests for auth middleware
 
 **7.3.3 — Update juniper-deploy**
 
-- [ ] Add `*_API_KEY` variables to `.env.example` and `docker-compose.yml`
-- [ ] Update integration tests to pass API keys
-- [ ] Document auth configuration in README
+- [x] Add `*_API_KEY` variables to `.env.example` and `docker-compose.yml`
+- [x] Update integration tests to pass API keys
+- [x] Document auth configuration in README
 
 ### Step 7.4 — Observability Foundation
 
