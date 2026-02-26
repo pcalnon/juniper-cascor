@@ -1585,8 +1585,14 @@ juniper-cascor-worker → triggers: juniper-cascor
 
 Implementation:
 
-- [ ] Add `repository_dispatch` trigger to service repo CI workflows
-- [ ] Add dispatch step to client repo CI workflows (on `main` push only)
+- [x] Add `repository_dispatch` trigger to service repo CI workflows
+  - juniper-data: `40751fd` (data-client-updated)
+  - juniper-cascor: `4773e90` (data-client-updated, cascor-worker-updated)
+  - juniper-canopy: `e20343e` (data-client-updated, cascor-client-updated)
+- [x] Add dispatch step to client repo CI workflows (on `main` push only)
+  - juniper-data-client → juniper-data, juniper-cascor, juniper-canopy: `8a2e164`
+  - juniper-cascor-client → juniper-canopy: `ba393d8`
+  - juniper-cascor-worker → juniper-cascor: `fbd2f18`
 - [ ] Create GitHub PAT or fine-grained token with `repo` scope for dispatch
 - [ ] Test end-to-end: push to `juniper-data-client` triggers downstream CI
 
