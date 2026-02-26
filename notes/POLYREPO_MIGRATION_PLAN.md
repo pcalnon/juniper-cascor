@@ -1,8 +1,8 @@
 # Juniper Polyrepo Migration Plan
 
-**Last Updated:** 2026-02-25
-**Version:** 1.6.0
-**Status:** COMPLETE — Phase 0 Complete, Phase 1 Complete, Phase 2 Complete, Phase 3 Complete, Phase 4 Complete, Phase 5 Complete, Phase 6 Complete (all validated 2026-02-25)
+**Last Updated:** 2026-02-26
+**Version:** 1.7.0
+**Status:** Phase 7 In Progress — Phases 0–6 Complete (validated 2026-02-25)
 **Author:** Paul Calnon / Claude Code
 **Companion Document:** [MONOREPO_ANALYSIS.md](MONOREPO_ANALYSIS.md)
 
@@ -19,7 +19,8 @@
 - [Phase 3 — Create CasCor Client and Remote Worker Packages](#phase-3--create-cascor-client-and-remote-worker-packages)
 - [Phase 4 — Decouple Canopy from CasCor](#phase-4--decouple-canopy-from-cascor)
 - [Phase 5 — Split into Separate Repositories](#phase-5--split-into-separate-repositories)
-- [Phase 6 — Post-Migration Hardening](#phase-6--post-migration-hardening)
+- [Phase 6 — Post-Migration Hardening](#phase-6--post-migration-hardening--complete-2026-02-25)
+- [Phase 7 — Production Readiness](#phase-7--production-readiness)
 - [Risk Register](#risk-register)
 - [Migration Checklist](#migration-checklist)
 - [Appendix A — CasCor Service API Contract (Draft)](#appendix-a--cascor-service-api-contract-draft)
@@ -60,6 +61,7 @@ Phase 3: Create cascor-client + worker packages (new packages, additive)
 Phase 4: Rewire Canopy to use clients instead of sys.path (breaking change, swap)
 Phase 5: Split repos (mechanical, preserving git history)
 Phase 6: Harden (CI/CD, monitoring, documentation)
+Phase 7: Production readiness (security, observability, dependency management)
 ```
 
 Each phase produces a working, testable system. No phase requires the next phase to be functional.
@@ -1433,7 +1435,7 @@ pip install -e ../juniper-cascor-client
 Ecosystem compatibility matrix — current verified-compatible baseline:
 
 | juniper-canopy | juniper-cascor | juniper-data | data-client | cascor-client | cascor-worker |
-| -------------- | -------------- | ------------ | ----------- | ------------- | ------------- |
+|----------------|----------------|--------------|-------------|---------------|---------------|
 | 0.2.x          | 0.3.x          | 0.4.x        | >=0.3.1     | >=0.1.0       | >=0.1.0       |
 
 Compatibility matrix added to READMEs in all repos (commit: `a7a2db8` cascor, `f4c4543` data, `cb5e4d6` canopy, `6900dcd` data-client, `410161a` cascor-client, `047c3f6` cascor-worker, `97f030f` juniper-ml).
@@ -1442,12 +1444,12 @@ Compatibility matrix added to READMEs in all repos (commit: `a7a2db8` cascor, `f
 
 Pytest-based suite in `juniper-deploy/tests/` (initial commit `5070046`, hardened `2fb0631`):
 
-| File | Coverage |
-|------|----------|
-| `conftest.py` | Shared fixtures: service URLs (configurable via `JUNIPER_TEST_*` env vars), HTTP session, cascor reset helper |
-| `test_health.py` | `/v1/health`, `/v1/health/live`, `/v1/health/ready` for all 3 services; response schema validation with `_assert_keys` and `_assert_cascor_envelope` helpers |
-| `test_data_service.py` | Generator list, dataset lifecycle (create → read → NPZ download → delete), stats |
-| `test_full_stack.py` | CasCor network CRUD, CasCor start/stop training via JuniperData source, Canopy liveness; 3-service smoke test |
+| File                   | Coverage                                                                                                                                                     |
+|------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `conftest.py`          | Shared fixtures: service URLs (configurable via `JUNIPER_TEST_*` env vars), HTTP session, cascor reset helper                                                |
+| `test_health.py`       | `/v1/health`, `/v1/health/live`, `/v1/health/ready` for all 3 services; response schema validation with `_assert_keys` and `_assert_cascor_envelope` helpers |
+| `test_data_service.py` | Generator list, dataset lifecycle (create → read → NPZ download → delete), stats                                                                             |
+| `test_full_stack.py`   | CasCor network CRUD, CasCor start/stop training via JuniperData source, Canopy liveness; 3-service smoke test                                                |
 
 ```bash
 pip install -r requirements-test.txt
@@ -1460,12 +1462,12 @@ pytest tests/ -v
 
 New `juniper-deploy` repo created at `pcalnon/juniper-deploy` (initial commit `7d98258`, hardened `2fb0631`):
 
-| File | Description |
-|------|-------------|
-| `docker-compose.yml` | Full stack with health checks, `depends_on` ordering, and `${VAR:-default}` substitution for all env vars |
-| `.env.example` | All 10 configurable variables including inter-service URLs (`JUNIPER_DATA_URL`, `CASCOR_SERVICE_URL`) |
-| `scripts/wait_for_services.sh` | Polls all 3 health endpoints before tests |
-| `README.md` | Quickstart, service URLs, Service Discovery (Docker DNS) docs, full env var table, integration test instructions |
+| File                           | Description                                                                                                      |
+|--------------------------------|------------------------------------------------------------------------------------------------------------------|
+| `docker-compose.yml`           | Full stack with health checks, `depends_on` ordering, and `${VAR:-default}` substitution for all env vars        |
+| `.env.example`                 | All 10 configurable variables including inter-service URLs (`JUNIPER_DATA_URL`, `CASCOR_SERVICE_URL`)            |
+| `scripts/wait_for_services.sh` | Polls all 3 health endpoints before tests                                                                        |
+| `README.md`                    | Quickstart, service URLs, Service Discovery (Docker DNS) docs, full env var table, integration test instructions |
 
 Dockerfiles added (all multi-stage, non-root user, with HEALTHCHECK):
 
@@ -1492,9 +1494,9 @@ JuniperCanopy retains `/health` and `/api/health` as backward-compatible aliases
 Added `## Architecture` (ASCII service topology diagram) and `## Related Services`
 (env vars, Docker Deployment) sections to all three service READMEs:
 
-| Repo | Commit |
-|------|--------|
-| juniper-data | `973ae39` |
+| Repo           | Commit    |
+|----------------|-----------|
+| juniper-data   | `973ae39` |
 | juniper-cascor | `8ffbe41` |
 | juniper-canopy | `73d9919` |
 
@@ -1508,10 +1510,200 @@ Added `## Architecture` (ASCII service topology diagram) and `## Related Service
 
 ---
 
+## Phase 7 — Production Readiness
+
+**Duration:** 2–4 weeks
+**Risk:** Medium
+**Prerequisite:** Phase 6 complete
+**Status:** In Progress
+
+Phase 7 addresses operational gaps discovered during Phase 6 validation. The polyrepo split is structurally complete; this phase hardens the ecosystem for production operation: supply chain security, cross-repo CI coordination, API authentication, observability, and dependency management.
+
+### Step 7.1 — Supply Chain Security & CI Hardening
+
+**Goal:** Standardize Dependabot, CODEOWNERS, and GitHub Actions version pinning across all repos.
+
+**7.1.1 — Add Dependabot to all repos**
+
+Currently present only in `juniper-data`. Add `.github/dependabot.yml` to:
+
+- [ ] `juniper-cascor`
+- [ ] `juniper-canopy`
+- [ ] `juniper-data-client`
+- [ ] `juniper-cascor-client`
+- [ ] `juniper-cascor-worker`
+- [ ] `juniper-ml`
+- [ ] `juniper-deploy`
+
+Use `juniper-data`'s config as template: weekly pip + GitHub Actions updates, grouped minor/patch PRs, labels `dependencies`/`security`/`ci`.
+
+**7.1.2 — SHA-pin GitHub Actions**
+
+`juniper-data` uses SHA-pinned actions (e.g., `actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683`). The following repos use mutable tags (`@v4`, `@v5`) vulnerable to tag mutation attacks:
+
+- [ ] `juniper-cascor` — pin all actions in `ci.yml` and `publish.yml`
+- [ ] `juniper-canopy` — pin all actions in `ci.yml`
+- [ ] `juniper-data-client` — pin all actions in `ci.yml` and `publish.yml`
+- [ ] `juniper-cascor-client` — verify and pin
+- [ ] `juniper-cascor-worker` — verify and pin
+- [ ] `juniper-ml` — verify and pin
+
+**7.1.3 — Add CODEOWNERS to remaining repos**
+
+Currently present only in `juniper-cascor`. Add `.github/CODEOWNERS` assigning `@pcalnon` to:
+
+- [ ] `juniper-data`
+- [ ] `juniper-canopy`
+- [ ] `juniper-data-client`
+- [ ] `juniper-cascor-client`
+- [ ] `juniper-cascor-worker`
+- [ ] `juniper-ml`
+- [ ] `juniper-deploy`
+
+**7.1.4 — Harden juniper-data-client CI**
+
+`juniper-data-client` CI is notably thinner than other repos. Add:
+
+- [ ] Security scans (Bandit, pip-audit)
+- [ ] Build/package verification job (`python -m build` + `twine check`)
+- [ ] Quality gate aggregator job
+- [ ] `workflow_dispatch` trigger
+- [ ] `CHANGELOG.md` (currently missing)
+
+### Step 7.2 — Cross-Repo CI Integration
+
+**Goal:** When a client package changes on `main`, automatically trigger CI in dependent service repos.
+
+Add `repository_dispatch` events from upstream client repos to downstream consumers:
+
+```
+juniper-data-client → triggers: juniper-data, juniper-cascor, juniper-canopy
+juniper-cascor-client → triggers: juniper-canopy
+juniper-cascor-worker → triggers: juniper-cascor
+```
+
+Implementation:
+
+- [ ] Add `repository_dispatch` trigger to service repo CI workflows
+- [ ] Add dispatch step to client repo CI workflows (on `main` push only)
+- [ ] Create GitHub PAT or fine-grained token with `repo` scope for dispatch
+- [ ] Test end-to-end: push to `juniper-data-client` triggers downstream CI
+
+### Step 7.3 — API Security
+
+**Goal:** Add authentication and rate limiting to JuniperCascor and JuniperCanopy APIs.
+
+JuniperData already has full `APIKeyAuth` + `RateLimiter` + `SecurityMiddleware` in `juniper_data/api/security.py`. Use this as the reference implementation.
+
+**7.3.1 — JuniperCascor API auth**
+
+- [ ] Add `X-API-Key` header authentication middleware
+- [ ] Add rate limiting (configurable `requests_per_minute`)
+- [ ] Exempt health endpoints (`/v1/health`, `/v1/health/live`, `/v1/health/ready`)
+- [ ] Add `CASCOR_API_KEY` environment variable
+- [ ] Add WebSocket authentication (token in query param or first message)
+- [ ] Update `juniper-cascor-client` to pass API key
+- [ ] Add tests for auth middleware
+
+**7.3.2 — JuniperCanopy API auth**
+
+- [ ] Add `X-API-Key` header authentication for management API endpoints
+- [ ] Exempt health endpoints and static Dash assets
+- [ ] Add `CANOPY_API_KEY` environment variable
+- [ ] Add tests for auth middleware
+
+**7.3.3 — Update juniper-deploy**
+
+- [ ] Add `*_API_KEY` variables to `.env.example` and `docker-compose.yml`
+- [ ] Update integration tests to pass API keys
+- [ ] Document auth configuration in README
+
+### Step 7.4 — Observability Foundation
+
+**Goal:** Add structured logging, Prometheus metrics, and error tracking across all services.
+
+**7.4.1 — Structured JSON logging**
+
+All three services currently log in plain text format. Add optional JSON structured logging for production use:
+
+- [ ] Add JSON log formatter configurable via `LOG_FORMAT=json` env var
+- [ ] Standardize log fields: `timestamp`, `level`, `service`, `request_id`, `message`
+- [ ] Apply to juniper-data, juniper-cascor, juniper-canopy
+
+**7.4.2 — Prometheus metrics endpoint**
+
+Add `/metrics` endpoint to all three services exposing standard metrics:
+
+- [ ] Request count, latency histogram, error rate (all services)
+- [ ] Active WebSocket connections (juniper-cascor, juniper-canopy)
+- [ ] Training status and epoch counter (juniper-cascor)
+- [ ] Dataset count and storage usage (juniper-data)
+- [ ] Use `prometheus-client` library
+
+**7.4.3 — Error tracking**
+
+JuniperCascor has `sentry-sdk` in `main.py` but not in the FastAPI server (`server.py`).
+
+- [ ] Add Sentry integration to `juniper-cascor/src/api/app.py`
+- [ ] Add Sentry integration to juniper-data FastAPI app
+- [ ] Add Sentry integration to juniper-canopy FastAPI app
+- [ ] Make Sentry optional (no-op when `SENTRY_DSN` is unset)
+
+**7.4.4 — juniper-deploy observability stack (optional)**
+
+- [ ] Add optional Prometheus + Grafana services to `docker-compose.yml` (behind a profile)
+- [ ] Add Prometheus scrape config for all 3 service `/metrics` endpoints
+- [ ] Add default Grafana dashboard for Juniper service metrics
+
+### Step 7.5 — Dependency Management
+
+**Goal:** Improve build reproducibility for service deployments.
+
+**7.5.1 — Lockfiles for Docker builds**
+
+Service repos (juniper-data, juniper-cascor, juniper-canopy) deploy via Docker. Add pinned lockfiles for reproducible builds:
+
+- [ ] Generate `requirements.lock` using `pip-compile` or `uv pip compile`
+- [ ] Update Dockerfiles to install from lockfile
+- [ ] Document lockfile regeneration workflow in each repo's README
+- [ ] Keep `pyproject.toml` with `>=` ranges for library compatibility
+
+**7.5.2 — Dependency update workflow**
+
+- [ ] Document process: Dependabot PR → CI green → update lockfile → merge
+- [ ] Add lockfile regeneration to Dependabot workflow (or document as manual step)
+
+### Step 7.6 — Ecosystem Documentation Update
+
+**Goal:** Update the parent ecosystem documentation to reflect the current 9-repo architecture.
+
+The parent `CLAUDE.md` at `/home/pcalnon/Development/python/Juniper/CLAUDE.md` lists only 5 projects. The ecosystem now has 9:
+
+- [ ] Add `juniper-cascor-client` to project table
+- [ ] Add `juniper-cascor-worker` to project table
+- [ ] Add `juniper-deploy` to project table
+- [ ] Add `juniper-ml` to project table
+- [ ] Update dependency graph to include all 9 repos
+- [ ] Update directory structure section
+
+### Deliverables, Phase 7
+
+- [ ] Dependabot configured across all repos
+- [ ] GitHub Actions SHA-pinned in all CI workflows
+- [ ] CODEOWNERS in all repos
+- [ ] Cross-repo CI dispatch functional
+- [ ] API authentication on JuniperCascor and JuniperCanopy
+- [ ] Prometheus `/metrics` endpoint on all 3 services
+- [ ] Structured JSON logging available on all 3 services
+- [ ] Lockfiles for Docker service builds
+- [ ] Parent ecosystem documentation current
+
+---
+
 ## Risk Register
 
 | Risk                                                                | Impact | Likelihood | Mitigation                                                                                                         |
-| ------------------------------------------------------------------- | ------ | ---------- | ------------------------------------------------------------------------------------------------------------------ |
+|---------------------------------------------------------------------|--------|------------|--------------------------------------------------------------------------------------------------------------------|
 | CasCor API design misses capabilities needed by Canopy              | High   | Medium     | Design API by examining every `CascorIntegration` method; validate with integration tests before removing old code |
 | PyPI name collision                                                 | Medium | Low        | Check name availability before publishing; use `juniper-` prefix                                                   |
 | Performance regression from HTTP vs in-process calls                | Medium | Medium     | Profile critical paths; use WebSocket streaming for metrics (not polling); connection pooling in clients           |
@@ -1605,6 +1797,18 @@ Added `## Architecture` (ASCII service topology diagram) and `## Related Service
 - [x] Integration tests operational (`juniper-deploy/tests/`, commits `5070046`, `2fb0631`; schema validation + configurable URLs)
 - [x] Docker Compose full-stack working (`juniper-deploy` repo, commits `7d98258`, `2fb0631`; `${VAR:-default}` substitution; cascor Dockerfile `7ae3dcc`; canopy Dockerfile `e0fcf21`)
 - [x] Documentation complete (Architecture + Related Services sections added to all 3 service READMEs — validated 2026-02-25)
+
+### Phase 7 — Production Readiness
+
+- [ ] Dependabot configured across all repos
+- [ ] GitHub Actions SHA-pinned in all CI workflows
+- [ ] CODEOWNERS in all repos
+- [ ] Cross-repo CI dispatch functional
+- [ ] API authentication on JuniperCascor and JuniperCanopy
+- [ ] Prometheus `/metrics` endpoint on all 3 services
+- [ ] Structured JSON logging available on all 3 services
+- [ ] Lockfiles for Docker service builds
+- [ ] Parent ecosystem documentation current
 
 ---
 
@@ -1943,7 +2147,7 @@ gh release create v0.3.1 --title "v0.3.1" --notes "Bug fixes and improvements"
 ### Packages to Publish to PyPI
 
 | Package                 | Version | Dependencies                  | Install Size (est.) |
-| ----------------------- | ------- | ----------------------------- | ------------------- |
+|-------------------------|---------|-------------------------------|---------------------|
 | `juniper-data-client`   | 0.3.0   | numpy, requests, urllib3      | ~50 KB              |
 | `juniper-cascor-client` | 0.1.0   | requests, urllib3, websockets | ~60 KB              |
 | `juniper-cascor-worker` | 0.1.0   | numpy, torch                  | ~5 KB + torch       |
@@ -1951,7 +2155,7 @@ gh release create v0.3.1 --title "v0.3.1" --notes "Bug fixes and improvements"
 ### Packages NOT on PyPI (Server Applications)
 
 | Package          | Version | Deploy Method                    |
-| ---------------- | ------- | -------------------------------- |
+|------------------|---------|----------------------------------|
 | `juniper-data`   | 0.5.0   | Docker / pip install from source |
 | `juniper-cascor` | 0.4.0   | Docker / pip install from source |
 | `juniper-canopy` | 0.3.0   | Docker / pip install from source |
@@ -1959,7 +2163,7 @@ gh release create v0.3.1 --title "v0.3.1" --notes "Bug fixes and improvements"
 ### Import Names (Underscore Convention)
 
 | PyPI Name (hyphen)      | Import Name (underscore) |
-| ----------------------- | ------------------------ |
+|-------------------------|--------------------------|
 | `juniper-data-client`   | `juniper_data_client`    |
 | `juniper-cascor-client` | `juniper_cascor_client`  |
 | `juniper-cascor-worker` | `juniper_cascor_worker`  |
