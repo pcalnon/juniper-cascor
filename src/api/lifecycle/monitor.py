@@ -1,6 +1,6 @@
 """Training monitor for real-time metrics collection.
 
-Ported from JuniperCanopy backend/training_monitor.py.
+Ported from juniper-canopy backend/training_monitor.py.
 Monitors CasCor training and collects metrics. Simplified version without
 DataAdapter dependency — metrics are stored as plain dicts.
 """

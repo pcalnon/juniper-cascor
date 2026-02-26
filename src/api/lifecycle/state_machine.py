@@ -1,6 +1,6 @@
 """Formal finite state machine for training control state management.
 
-Ported from JuniperCanopy backend/training_state_machine.py.
+Ported from juniper-canopy backend/training_state_machine.py.
 Ensures deterministic state transitions and prevents invalid operations.
 """
 

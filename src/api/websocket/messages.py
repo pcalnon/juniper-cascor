@@ -7,7 +7,7 @@ All WebSocket messages follow the format:
     "data": { ... }
 }
 
-Compatible with JuniperCanopy's WebSocket message protocol.
+Compatible with juniper-canopy's WebSocket message protocol.
 """
 
 import time

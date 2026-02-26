@@ -19,11 +19,11 @@ For full-stack Docker deployment and integration tests, see [juniper-deploy](htt
 
 ## Architecture
 
-JuniperCascor is the **training service** of the Juniper ecosystem. It depends on JuniperData for datasets and is monitored by JuniperCanopy in real-time.
+JuniperCascor is the **training service** of the Juniper ecosystem. It depends on JuniperData for datasets and is monitored by juniper-canopy in real-time.
 
 ```
 ┌─────────────────────┐     REST+WS      ┌──────────────────────┐
-│   JuniperCanopy     │ ◄──────────────► │  JuniperCascor       │
+│   juniper-canopy     │ ◄──────────────► │  JuniperCascor       │
 │   Dashboard         │                  │  Training Svc        │
 │   Port 8050         │                  │  Port 8200  ◄── here │
 └──────────┬──────────┘                  └──────────┬───────────┘
