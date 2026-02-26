@@ -2,7 +2,7 @@
 
 **Last Updated:** 2026-02-25
 **Version:** 1.6.0
-**Status:** Active — Phase 0 Complete, Phase 1 Complete, Phase 2 Complete, Phase 3 Complete, Phase 4 Complete, Phase 5 Complete (2026-02-25), Phase 6 In Progress
+**Status:** COMPLETE — Phase 0 Complete, Phase 1 Complete, Phase 2 Complete, Phase 3 Complete, Phase 4 Complete, Phase 5 Complete, Phase 6 Complete (all validated 2026-02-25)
 **Author:** Paul Calnon / Claude Code
 **Companion Document:** [MONOREPO_ANALYSIS.md](MONOREPO_ANALYSIS.md)
 
@@ -1468,6 +1468,7 @@ New `juniper-deploy` repo created at `pcalnon/juniper-deploy` (commit `7d98258`)
 | `README.md` | Quickstart, service URLs, integration test instructions |
 
 Dockerfiles added:
+
 - `juniper-cascor/Dockerfile` — multi-stage, CPU PyTorch, non-root user, `CMD ["python", "src/server.py"]` (commit `7ae3dcc`)
 - `JuniperCanopy/juniper_canopy/Dockerfile` — multi-stage, CPU PyTorch, copies `conf/`, `CMD ["python", "src/main.py"]` (commit `e0fcf21`)
 
@@ -1602,7 +1603,7 @@ Added `## Architecture` (ASCII service topology diagram) and `## Related Service
 - [x] Health check endpoints standardized (/v1/health + /v1/health/ready)
 - [x] Integration tests operational (`juniper-deploy/tests/`, commit `5070046`)
 - [x] Docker Compose full-stack working (`juniper-deploy` repo, commit `7d98258`; cascor Dockerfile `7ae3dcc`; canopy Dockerfile `e0fcf21`)
-- [ ] Documentation complete
+- [x] Documentation complete (Architecture + Related Services sections added to all 3 service READMEs — validated 2026-02-25)
 
 ---
 
