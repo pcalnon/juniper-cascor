@@ -681,6 +681,77 @@ config = CascadeCorrelationConfig(random_seed=42)
 
 ---
 
+## Worktree Procedures (Mandatory — Task Isolation)
+
+> **OPERATING INSTRUCTION**: All feature, bugfix, and task work SHOULD use git worktrees for isolation. Worktrees keep the main working directory on the default branch while task work proceeds in a separate checkout.
+
+### What This Is
+
+Git worktrees allow multiple branches of a repository to be checked out simultaneously in separate directories. For the Juniper ecosystem, all worktrees are centralized in **`/home/pcalnon/Development/python/Juniper/worktrees/`** using a standardized naming convention.
+
+The full setup and cleanup procedures are defined in:
+- **`notes/WORKTREE_SETUP_PROCEDURE.md`** — Creating a worktree for a new task
+- **`notes/WORKTREE_CLEANUP_PROCEDURE.md`** — Merging, removing, and pushing after task completion
+
+Read the appropriate file when starting or completing a task.
+
+### Worktree Directory Naming
+
+Format: `<repo-name>--<branch-name>--<YYYYMMDD-HHMM>--<short-hash>`
+
+Example: `juniper-cascor--feature--add-validation--20260225-1430--fb530aa1`
+
+- Slashes in branch names are replaced with `--`
+- All worktrees reside in `/home/pcalnon/Development/python/Juniper/worktrees/`
+
+### When to Use Worktrees
+
+| Scenario | Use Worktree? |
+| -------- | ------------- |
+| Feature development (new feature branch) | **Yes** |
+| Bug fix requiring a dedicated branch | **Yes** |
+| Quick single-file documentation fix on main | No |
+| Exploratory work that may be discarded | **Yes** |
+| Hotfix requiring immediate merge | **Yes** |
+
+### Quick Reference
+
+**Setup** (full procedure in `notes/WORKTREE_SETUP_PROCEDURE.md`):
+```bash
+cd /home/pcalnon/Development/python/Juniper/juniper-cascor
+git fetch origin && git checkout main && git pull origin main
+BRANCH_NAME="feature/my-task"
+git branch "$BRANCH_NAME" main
+REPO_NAME=$(basename "$(pwd)")
+SAFE_BRANCH=$(echo "$BRANCH_NAME" | sed 's|/|--|g')
+WORKTREE_DIR="/home/pcalnon/Development/python/Juniper/worktrees/${REPO_NAME}--${SAFE_BRANCH}--$(date +%Y%m%d-%H%M)--$(git rev-parse --short=8 HEAD)"
+git worktree add "$WORKTREE_DIR" "$BRANCH_NAME"
+cd "$WORKTREE_DIR"
+```
+
+**Cleanup** (full procedure in `notes/WORKTREE_CLEANUP_PROCEDURE.md`):
+```bash
+cd "$WORKTREE_DIR" && git push origin "$BRANCH_NAME"
+cd /home/pcalnon/Development/python/Juniper/juniper-cascor
+git checkout main && git pull origin main
+git merge "$BRANCH_NAME"
+git push origin main
+git worktree remove "$WORKTREE_DIR"
+git branch -d "$BRANCH_NAME"
+git push origin --delete "$BRANCH_NAME"
+git worktree prune
+```
+
+### Rules
+
+- **Centralized location**: All worktrees go in `/home/pcalnon/Development/python/Juniper/worktrees/`. Never create worktrees inside the repo directory.
+- **Clean before you start**: Ensure the main working directory is clean before creating a worktree.
+- **Push before you merge**: Always push the working branch to remote before merging (backup).
+- **Prune after cleanup**: Run `git worktree prune` after removing a worktree to clean metadata.
+- **Do not leave stale worktrees**: Clean up worktrees promptly after merging.
+
+---
+
 ## Thread Handoff (Mandatory — Replaces Thread Compaction)
 
 > **CRITICAL OPERATING INSTRUCTION**: Thread handoff MUST be performed instead of thread compaction. This section defines mandatory behavior that overrides Claude Code's default compaction process.
