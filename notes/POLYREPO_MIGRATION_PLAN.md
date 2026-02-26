@@ -1541,12 +1541,13 @@ Use `juniper-data`'s config as template: weekly pip + GitHub Actions updates, gr
 
 `juniper-data` uses SHA-pinned actions (e.g., `actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683`). The following repos use mutable tags (`@v4`, `@v5`) vulnerable to tag mutation attacks:
 
-- [ ] `juniper-cascor` — pin all actions in `ci.yml` and `publish.yml`
-- [ ] `juniper-canopy` — pin all actions in `ci.yml`
-- [ ] `juniper-data-client` — pin all actions in `ci.yml` and `publish.yml`
-- [ ] `juniper-cascor-client` — verify and pin
-- [ ] `juniper-cascor-worker` — verify and pin
-- [ ] `juniper-ml` — verify and pin
+- [x] `juniper-cascor` — ci.yml, publish.yml, scheduled-tests.yml (commit `a312aa5`)
+- [x] `juniper-canopy` — ci.yml (commit `c95d75a`)
+- [x] `juniper-data-client` — ci.yml, publish.yml (commit `8eee563`)
+- [x] `juniper-cascor-client` — ci.yml, publish.yml (commit `e5f8558`)
+- [x] `juniper-cascor-worker` — ci.yml, publish.yml (commit `3023862`)
+- [x] `juniper-ml` — ci.yml, publish.yml, claude.yml (commit `011e5a5`)
+- [x] `juniper-data` — pinned remaining 2 actions: gitleaks, conda-incubator (commit `f3c9ea2`)
 
 **7.1.3 — Add CODEOWNERS to remaining repos**
 
@@ -1689,7 +1690,7 @@ The parent `CLAUDE.md` at `/home/pcalnon/Development/python/Juniper/CLAUDE.md` l
 ### Deliverables, Phase 7
 
 - [ ] Dependabot configured across all repos
-- [ ] GitHub Actions SHA-pinned in all CI workflows
+- [x] GitHub Actions SHA-pinned in all CI workflows
 - [ ] CODEOWNERS in all repos
 - [ ] Cross-repo CI dispatch functional
 - [ ] API authentication on JuniperCascor and JuniperCanopy
@@ -1801,7 +1802,7 @@ The parent `CLAUDE.md` at `/home/pcalnon/Development/python/Juniper/CLAUDE.md` l
 ### Phase 7 — Production Readiness
 
 - [x] Dependabot configured across all repos (7 repos added 2026-02-26)
-- [ ] GitHub Actions SHA-pinned in all CI workflows
+- [x] GitHub Actions SHA-pinned in all CI workflows
 - [x] CODEOWNERS in all repos (7 repos added 2026-02-26)
 - [ ] Cross-repo CI dispatch functional
 - [ ] API authentication on JuniperCascor and JuniperCanopy
