@@ -1565,11 +1565,11 @@ Currently present only in `juniper-cascor`. Add `.github/CODEOWNERS` assigning `
 
 `juniper-data-client` CI is notably thinner than other repos. Add:
 
-- [ ] Security scans (Bandit, pip-audit)
-- [ ] Build/package verification job (`python -m build` + `twine check`)
-- [ ] Quality gate aggregator job
-- [ ] `workflow_dispatch` trigger
-- [ ] `CHANGELOG.md` (currently missing)
+- [x] Security scans (Bandit, pip-audit) (commit `bb39032`)
+- [x] Build/package verification job (`python -m build` + `twine check`) (commit `bb39032`)
+- [x] Quality gate aggregator job (commit `bb39032`)
+- [x] `workflow_dispatch` trigger (commit `bb39032`)
+- [x] `CHANGELOG.md` (commit `bb39032`)
 
 ### Step 7.2 — Cross-Repo CI Integration
 
