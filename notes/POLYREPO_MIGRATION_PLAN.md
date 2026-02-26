@@ -1467,10 +1467,11 @@ New `juniper-deploy` repo created at `pcalnon/juniper-deploy` (initial commit `7
 | `scripts/wait_for_services.sh` | Polls all 3 health endpoints before tests |
 | `README.md` | Quickstart, service URLs, Service Discovery (Docker DNS) docs, full env var table, integration test instructions |
 
-Dockerfiles added:
+Dockerfiles added (all multi-stage, non-root user, with HEALTHCHECK):
 
-- `juniper-cascor/Dockerfile` — multi-stage, CPU PyTorch, non-root user, `CMD ["python", "src/server.py"]` (commit `7ae3dcc`)
-- `JuniperCanopy/juniper_canopy/Dockerfile` — multi-stage, CPU PyTorch, copies `conf/`, `CMD ["python", "src/main.py"]` (commit `e0fcf21`)
+- `juniper-data/Dockerfile` — `CMD ["python", "-m", "juniper_data"]`, storage dir setup
+- `juniper-cascor/Dockerfile` — CPU PyTorch, `CMD ["python", "src/server.py"]` (commit `7ae3dcc`)
+- `JuniperCanopy/juniper_canopy/Dockerfile` — CPU PyTorch, copies `conf/`, `CMD ["python", "src/main.py"]` (commit `e0fcf21`)
 
 ### Step 6.4 — Monitoring and Health Checks ✅ COMPLETE (2026-02-25)
 
