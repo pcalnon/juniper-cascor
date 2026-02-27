@@ -60,6 +60,9 @@ api = [
     "uvicorn[standard]>=0.20.0",
     "pydantic-settings>=2.0.0",
 ]
+observability = [
+    "prometheus-client>=0.20.0",
+]
 test = [
     "pytest>=6.0",
     "pytest-asyncio>=0.21.0",
@@ -73,7 +76,7 @@ test = [
     "psutil>=5.9.0",
 ]
 all = [
-    "juniper-cascor[ml,api,test,juniper-data]",
+    "juniper-cascor[ml,api,observability,test,juniper-data]",
 ]
 
 [tool.black]
