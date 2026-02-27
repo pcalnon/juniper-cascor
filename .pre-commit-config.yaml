@@ -332,6 +332,18 @@ repos:
         types: [python]
         stages: [pre-commit]
 
+  # ═══════════════════════════════════════════════════════════════════════════
+  # SOPS: Block unencrypted .env files from being committed
+  # ═══════════════════════════════════════════════════════════════════════════
+  - repo: local
+    hooks:
+      - id: no-unencrypted-env
+        name: Block unencrypted .env files
+        entry: bash -c 'echo "ERROR: Unencrypted .env file detected. Use sops to encrypt." && exit 1'
+        language: system
+        files: ^\.env(\.secrets)?$
+        types: [file]
+
 # CI configuration (for pre-commit.ci service, if used)
 ci:
   autofix_prs: false
