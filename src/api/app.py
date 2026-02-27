@@ -12,6 +12,13 @@ from fastapi.responses import JSONResponse
 from api.lifecycle.manager import TrainingLifecycleManager
 from api.middleware import SecurityMiddleware
 from api.models.common import error_response
+from api.observability import (
+    PrometheusMiddleware,
+    RequestIdMiddleware,
+    configure_logging,
+    configure_sentry,
+    get_prometheus_app,
+)
 from api.routes import dataset, decision_boundary, health, metrics, network, training
 from api.security import APIKeyAuth, RateLimiter
 from api.settings import Settings, get_settings
@@ -29,10 +36,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Application lifespan handler for startup/shutdown."""
     settings: Settings = app.state.settings
 
-    logging.basicConfig(
-        level=getattr(logging, settings.log_level.upper(), logging.INFO),
-        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    )
+    configure_logging(settings.log_level, settings.log_format, "juniper-cascor")
+    configure_sentry(settings.sentry_dsn, "juniper-cascor", _API_VERSION)
+
     logger.info(f"JuniperCascor API v{_API_VERSION} starting")
     logger.info(f"Listening on {settings.host}:{settings.port}")
 
@@ -106,6 +112,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.add_middleware(SecurityMiddleware, api_key_auth=api_key_auth, rate_limiter=rate_limiter)
     app.state.api_key_auth = api_key_auth
 
+    # Observability middleware (added after SecurityMiddleware, before CORS)
+    # Middleware execution is LIFO: last added runs first.
+    # Order: RequestIdMiddleware → PrometheusMiddleware → SecurityMiddleware → CORS
+    if settings.metrics_enabled:
+        app.add_middleware(PrometheusMiddleware, service_name="juniper-cascor")
+    app.add_middleware(RequestIdMiddleware)
+
     # REST Routes
     app.include_router(health.router, prefix="/v1")
     app.include_router(network.router, prefix="/v1")
@@ -117,6 +130,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # WebSocket Routes
     app.websocket("/ws/training")(training_stream_handler)
     app.websocket("/ws/control")(control_stream_handler)
+
+    # Mount Prometheus metrics endpoint
+    if settings.metrics_enabled:
+        app.mount("/metrics", get_prometheus_app())
 
     # Exception handlers
     @app.exception_handler(ValueError)
