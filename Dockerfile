@@ -19,16 +19,18 @@ RUN pip install --no-cache-dir --upgrade pip wheel setuptools
 # Install CPU-only PyTorch first (avoids pulling CUDA which is ~4 GB)
 RUN pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu
 
-# Copy project files
-COPY pyproject.toml README.md LICENSE ./
-COPY src/ ./src/
+# Install pinned dependencies from lockfile (best layer caching)
+COPY requirements.lock ./
+RUN pip install --no-cache-dir -r requirements.lock
 
-# Install juniper-data-client (not yet on PyPI)
-RUN pip install --no-cache-dir \
+# Install juniper-data-client from git (not yet on PyPI)
+RUN pip install --no-cache-dir --no-deps \
     "juniper-data-client @ git+https://github.com/pcalnon/juniper-data-client.git@main"
 
-# Install project with all extras
-RUN pip install --no-cache-dir -e ".[all]"
+# Copy project files and install without deps (already installed above)
+COPY pyproject.toml README.md LICENSE ./
+COPY src/ ./src/
+RUN pip install --no-cache-dir --no-deps .
 
 # -----------------------------------------------------------------------------
 # Stage 2: Runtime — Minimal production image

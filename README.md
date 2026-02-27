@@ -66,6 +66,20 @@ git clone https://github.com/pcalnon/juniper-deploy.git
 cd juniper-deploy && docker compose up --build
 ```
 
+## Dependency Lockfile
+
+The `requirements.lock` file pins exact dependency versions for reproducible Docker builds. The `pyproject.toml` retains flexible `>=` ranges for local development.
+
+**Regenerate after changing dependencies in `pyproject.toml`:**
+
+```bash
+uv pip compile pyproject.toml --extra ml --extra api --extra observability \
+  --extra-index-url https://download.pytorch.org/whl/cpu \
+  --no-emit-package torch -o requirements.lock
+```
+
+PyTorch and `juniper-data-client` are excluded from the lockfile and installed separately in the Dockerfile (PyTorch from CPU index, `juniper-data-client` from git).
+
 ## Quick Start
 
 ### Prerequisites
