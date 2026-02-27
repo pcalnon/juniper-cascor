@@ -2,7 +2,7 @@
 
 **Last Updated:** 2026-02-27
 **Version:** 1.7.1
-**Status:** Phase 7 In Progress — Steps 7.1–7.4 Complete, 7.5–7.6 Remaining
+**Status:** Phase 7 In Progress — Steps 7.1–7.6 Complete, 7.5.2 deferred
 **Author:** Paul Calnon / Claude Code
 **Companion Document:** [MONOREPO_ANALYSIS.md](MONOREPO_ANALYSIS.md)
 
@@ -1670,15 +1670,15 @@ JuniperCascor has `sentry-sdk` in `main.py` but not in the FastAPI server (`serv
 
 Service repos (juniper-data, juniper-cascor, juniper-canopy) deploy via Docker. Add pinned lockfiles for reproducible builds:
 
-- [ ] Generate `requirements.lock` using `pip-compile` or `uv pip compile`
-- [ ] Update Dockerfiles to install from lockfile
-- [ ] Document lockfile regeneration workflow in each repo's README
-- [ ] Keep `pyproject.toml` with `>=` ranges for library compatibility
+- [x] Generate `requirements.lock` using `uv pip compile` (all 3 service repos)
+- [x] Update Dockerfiles to install from lockfile
+- [x] Document lockfile regeneration workflow in each repo's README
+- [x] Keep `pyproject.toml` with `>=` ranges for library compatibility
 
 **7.5.2 — Dependency update workflow**
 
-- [ ] Document process: Dependabot PR → CI green → update lockfile → merge
-- [ ] Add lockfile regeneration to Dependabot workflow (or document as manual step)
+- [ ] Document process: Dependabot PR → CI green → update lockfile → merge — deferred
+- [ ] Add lockfile regeneration to Dependabot workflow (or document as manual step) — deferred
 
 ### Step 7.6 — Ecosystem Documentation Update
 
@@ -1686,12 +1686,12 @@ Service repos (juniper-data, juniper-cascor, juniper-canopy) deploy via Docker. 
 
 The parent `CLAUDE.md` at `/home/pcalnon/Development/python/Juniper/CLAUDE.md` lists only 5 projects. The ecosystem now has 9:
 
-- [ ] Add `juniper-cascor-client` to project table
-- [ ] Add `juniper-cascor-worker` to project table
-- [ ] Add `juniper-deploy` to project table
-- [ ] Add `juniper-ml` to project table
-- [ ] Update dependency graph to include all 9 repos
-- [ ] Update directory structure section
+- [x] Add `juniper-cascor-client` to project table (already present)
+- [x] Add `juniper-cascor-worker` to project table (already present)
+- [x] Add `juniper-deploy` to project table (already present)
+- [x] Add `juniper-ml` to project table (already present)
+- [x] Update dependency graph to include juniper-canopy dependencies
+- [x] Update directory structure section (8 repos, ruff note)
 
 ### Deliverables, Phase 7
 
@@ -1700,10 +1700,10 @@ The parent `CLAUDE.md` at `/home/pcalnon/Development/python/Juniper/CLAUDE.md` l
 - [ ] CODEOWNERS in all repos
 - [ ] Cross-repo CI dispatch functional
 - [ ] API authentication on JuniperCascor and JuniperCanopy
-- [ ] Prometheus `/metrics` endpoint on all 3 services
-- [ ] Structured JSON logging available on all 3 services
-- [ ] Lockfiles for Docker service builds
-- [ ] Parent ecosystem documentation current
+- [x] Prometheus `/metrics` endpoint on all 3 services
+- [x] Structured JSON logging available on all 3 services
+- [x] Lockfiles for Docker service builds
+- [x] Parent ecosystem documentation current
 
 ---
 
