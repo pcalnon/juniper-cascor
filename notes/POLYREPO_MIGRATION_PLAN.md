@@ -1,8 +1,8 @@
 # Juniper Polyrepo Migration Plan
 
-**Last Updated:** 2026-02-26
-**Version:** 1.7.0
-**Status:** Phase 7 In Progress — Phases 0–6 Complete (validated 2026-02-25)
+**Last Updated:** 2026-02-27
+**Version:** 1.7.1
+**Status:** Phase 7 In Progress — Steps 7.1–7.4 Complete, 7.5–7.6 Remaining
 **Author:** Paul Calnon / Claude Code
 **Companion Document:** [MONOREPO_ANALYSIS.md](MONOREPO_ANALYSIS.md)
 
@@ -1633,34 +1633,34 @@ JuniperData already has full `APIKeyAuth` + `RateLimiter` + `SecurityMiddleware`
 
 All three services currently log in plain text format. Add optional JSON structured logging for production use:
 
-- [ ] Add JSON log formatter configurable via `LOG_FORMAT=json` env var
-- [ ] Standardize log fields: `timestamp`, `level`, `service`, `request_id`, `message`
-- [ ] Apply to juniper-data, juniper-cascor, juniper-canopy
+- [x] Add JSON log formatter configurable via `LOG_FORMAT=json` env var
+- [x] Standardize log fields: `timestamp`, `level`, `service`, `request_id`, `message`
+- [x] Apply to juniper-data, juniper-cascor, juniper-canopy
 
 **7.4.2 — Prometheus metrics endpoint**
 
 Add `/metrics` endpoint to all three services exposing standard metrics:
 
-- [ ] Request count, latency histogram, error rate (all services)
-- [ ] Active WebSocket connections (juniper-cascor, juniper-canopy)
-- [ ] Training status and epoch counter (juniper-cascor)
-- [ ] Dataset count and storage usage (juniper-data)
-- [ ] Use `prometheus-client` library
+- [x] Request count, latency histogram, error rate (all services)
+- [ ] Active WebSocket connections (juniper-cascor, juniper-canopy) — deferred to service-specific enhancement
+- [ ] Training status and epoch counter (juniper-cascor) — deferred to service-specific enhancement
+- [ ] Dataset count and storage usage (juniper-data) — deferred to service-specific enhancement
+- [x] Use `prometheus-client` library
 
 **7.4.3 — Error tracking**
 
 JuniperCascor has `sentry-sdk` in `main.py` but not in the FastAPI server (`server.py`).
 
-- [ ] Add Sentry integration to `juniper-cascor/src/api/app.py`
-- [ ] Add Sentry integration to juniper-data FastAPI app
-- [ ] Add Sentry integration to juniper-canopy FastAPI app
-- [ ] Make Sentry optional (no-op when `SENTRY_DSN` is unset)
+- [x] Add Sentry integration to `juniper-cascor/src/api/app.py`
+- [x] Add Sentry integration to juniper-data FastAPI app
+- [x] Add Sentry integration to juniper-canopy FastAPI app
+- [x] Make Sentry optional (no-op when `SENTRY_DSN` is unset)
 
 **7.4.4 — juniper-deploy observability stack (optional)**
 
-- [ ] Add optional Prometheus + Grafana services to `docker-compose.yml` (behind a profile)
-- [ ] Add Prometheus scrape config for all 3 service `/metrics` endpoints
-- [ ] Add default Grafana dashboard for Juniper service metrics
+- [x] Add optional Prometheus + Grafana services to `docker-compose.yml` (behind `observability` profile)
+- [x] Add Prometheus scrape config for all 3 service `/metrics` endpoints
+- [ ] Add default Grafana dashboard for Juniper service metrics — deferred (datasource provisioned, dashboard TBD)
 
 ### Step 7.5 — Dependency Management
 
