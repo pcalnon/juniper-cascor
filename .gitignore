@@ -6,6 +6,10 @@
 #     https://www.atlassian.com/git/tutorials/saving-changes/gitignore
 ##########################################################################################
 
+# Environment files (secrets)
+.env
+.env.secrets
+
 # Local Development directories
 data/*
 bin/*
