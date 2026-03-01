@@ -73,12 +73,13 @@ The `requirements.lock` file pins exact dependency versions for reproducible Doc
 **Regenerate after changing dependencies in `pyproject.toml`:**
 
 ```bash
-uv pip compile pyproject.toml --extra ml --extra api --extra observability \
+uv pip compile pyproject.toml --extra ml --extra api --extra observability --extra juniper-data \
   --extra-index-url https://download.pytorch.org/whl/cpu \
+  --index-strategy unsafe-best-match \
   --no-emit-package torch -o requirements.lock
 ```
 
-PyTorch and `juniper-data-client` are excluded from the lockfile and installed separately in the Dockerfile (PyTorch from CPU index, `juniper-data-client` from git).
+PyTorch is excluded from the lockfile and installed separately in the Dockerfile from the CPU-only index.
 
 ## Quick Start
 

@@ -1,8 +1,8 @@
 # Juniper Polyrepo Migration Plan
 
-**Last Updated:** 2026-02-27
-**Version:** 1.7.1
-**Status:** Phase 7 In Progress — Steps 7.1–7.6 Complete, 7.5.2 deferred
+**Last Updated:** 2026-03-01
+**Version:** 1.7.2
+**Status:** Phase 7 Complete — Steps 7.1–7.6 Complete, 7.2 partial (dispatch emission needs PAT), 7.5.2 deferred
 **Author:** Paul Calnon / Claude Code
 **Companion Document:** [MONOREPO_ANALYSIS.md](MONOREPO_ANALYSIS.md)
 
@@ -130,9 +130,9 @@ Key property: **No arrows between services.** All inter-service communication is
 
 All packages use the `juniper-` prefix. PyPI names:
 
-- `juniper-data-client` (exists in repo, not yet published)
-- `juniper-cascor-client` (new)
-- `juniper-cascor-worker` (new, extracted from `remote_client`)
+- `juniper-data-client` — published v0.3.1 on PyPI
+- `juniper-cascor-client` — published v0.1.0 on PyPI
+- `juniper-cascor-worker` — published v0.1.0 on PyPI
 
 ---
 
@@ -1515,7 +1515,7 @@ Added `## Architecture` (ASCII service topology diagram) and `## Related Service
 **Duration:** 2–4 weeks
 **Risk:** Medium
 **Prerequisite:** Phase 6 complete
-**Status:** In Progress
+**Status:** COMPLETE (2026-03-01) — except Step 7.2 cross-repo dispatch emission (needs PAT) and Step 7.5.2 (deferred)
 
 Phase 7 addresses operational gaps discovered during Phase 6 validation. The polyrepo split is structurally complete; this phase hardens the ecosystem for production operation: supply chain security, cross-repo CI coordination, API authentication, observability, and dependency management.
 
@@ -1577,7 +1577,7 @@ Currently present only in `juniper-cascor`. Add `.github/CODEOWNERS` assigning `
 
 Add `repository_dispatch` events from upstream client repos to downstream consumers:
 
-```
+```bash
 juniper-data-client → triggers: juniper-data, juniper-cascor, juniper-canopy
 juniper-cascor-client → triggers: juniper-canopy
 juniper-cascor-worker → triggers: juniper-cascor
@@ -1589,10 +1589,10 @@ Implementation:
   - juniper-data: `40751fd` (data-client-updated)
   - juniper-cascor: `4773e90` (data-client-updated, cascor-worker-updated)
   - juniper-canopy: `e20343e` (data-client-updated, cascor-client-updated)
-- [x] Add dispatch step to client repo CI workflows (on `main` push only)
-  - juniper-data-client → juniper-data, juniper-cascor, juniper-canopy: `8a2e164`
-  - juniper-cascor-client → juniper-canopy: `ba393d8`
-  - juniper-cascor-worker → juniper-cascor: `fbd2f18`
+- [ ] Add dispatch step to client repo CI workflows (on `main` push only) — **NOT IMPLEMENTED**: commits 8a2e164, ba393d8, fbd2f18 referenced below do not contain dispatch emission code; client CI workflows lack `repository_dispatch` emission
+  - juniper-data-client → juniper-data, juniper-cascor, juniper-canopy: pending
+  - juniper-cascor-client → juniper-canopy: pending
+  - juniper-cascor-worker → juniper-cascor: pending
 - [ ] Create GitHub PAT or fine-grained token with `repo` scope for dispatch
 - [ ] Test end-to-end: push to `juniper-data-client` triggers downstream CI
 
@@ -1682,9 +1682,9 @@ Service repos (juniper-data, juniper-cascor, juniper-canopy) deploy via Docker. 
 
 ### Step 7.6 — Ecosystem Documentation Update
 
-**Goal:** Update the parent ecosystem documentation to reflect the current 9-repo architecture.
+**Goal:** Update the parent ecosystem documentation to reflect the current 8-repo architecture.
 
-The parent `CLAUDE.md` at `/home/pcalnon/Development/python/Juniper/CLAUDE.md` lists only 5 projects. The ecosystem now has 9:
+The parent `CLAUDE.md` at `/home/pcalnon/Development/python/Juniper/CLAUDE.md` lists only 5 projects. The ecosystem now has 8:
 
 - [x] Add `juniper-cascor-client` to project table (already present)
 - [x] Add `juniper-cascor-worker` to project table (already present)
@@ -1695,11 +1695,11 @@ The parent `CLAUDE.md` at `/home/pcalnon/Development/python/Juniper/CLAUDE.md` l
 
 ### Deliverables, Phase 7
 
-- [ ] Dependabot configured across all repos
+- [x] Dependabot configured across all repos (all 8 repos)
 - [x] GitHub Actions SHA-pinned in all CI workflows
-- [ ] CODEOWNERS in all repos
-- [ ] Cross-repo CI dispatch functional
-- [ ] API authentication on JuniperCascor and JuniperCanopy
+- [x] CODEOWNERS in all repos (all 8 repos)
+- [ ] Cross-repo CI dispatch functional (listeners in place; dispatch emission and PAT pending — see Step 7.2)
+- [x] API authentication on JuniperCascor and JuniperCanopy
 - [x] Prometheus `/metrics` endpoint on all 3 services
 - [x] Structured JSON logging available on all 3 services
 - [x] Lockfiles for Docker service builds
@@ -1723,7 +1723,7 @@ The parent `CLAUDE.md` at `/home/pcalnon/Development/python/Juniper/CLAUDE.md` l
 
 ## Migration Checklist
 
-> **Last verified:** 2026-02-26
+> **Last verified:** 2026-03-01
 
 ### Phase 0 — Stabilize (COMPLETE 2026-02-19, Validated 2026-02-22)
 
@@ -1807,15 +1807,15 @@ The parent `CLAUDE.md` at `/home/pcalnon/Development/python/Juniper/CLAUDE.md` l
 
 ### Phase 7 — Production Readiness
 
-- [x] Dependabot configured across all repos (7 repos added 2026-02-26)
+- [x] Dependabot configured across all repos (all 8 repos, 2026-02-26)
 - [x] GitHub Actions SHA-pinned in all CI workflows
-- [x] CODEOWNERS in all repos (7 repos added 2026-02-26)
-- [ ] Cross-repo CI dispatch functional
-- [ ] API authentication on JuniperCascor and JuniperCanopy
-- [ ] Prometheus `/metrics` endpoint on all 3 services
-- [ ] Structured JSON logging available on all 3 services
-- [ ] Lockfiles for Docker service builds
-- [ ] Parent ecosystem documentation current
+- [x] CODEOWNERS in all repos (all 8 repos, 2026-02-26)
+- [ ] Cross-repo CI dispatch functional (listeners in place; dispatch emission and PAT pending)
+- [x] API authentication on JuniperCascor and JuniperCanopy (security.py + middleware.py in all 3 services)
+- [x] Prometheus `/metrics` endpoint on all 3 services (PrometheusMiddleware in all 3 observability.py)
+- [x] Structured JSON logging available on all 3 services (JuniperJsonFormatter / JsonFormatter)
+- [x] Lockfiles for Docker service builds (all 3 services, Dockerfiles updated 2026-03-01)
+- [x] Parent ecosystem documentation current (8 repos, dependency graph, 2026-02-27)
 
 ---
 
