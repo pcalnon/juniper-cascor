@@ -6,18 +6,18 @@ This guide provides a rapid introduction to navigating and working with the Juni
 
 ### Source Structure Overview
 
-```text
+```bash
 src/
-├── main.py                    # Application entry point
-├── cascade_correlation/       # Core neural network implementation
+├── main.py                              # Application entry point
+├── cascade_correlation/                 # Core neural network implementation
 │   ├── cascade_correlation.py           # CascadeCorrelationNetwork class
 │   ├── cascade_correlation_config/      # Network configuration
 │   └── cascade_correlation_exceptions/  # Custom exceptions
-├── candidate_unit/            # Candidate hidden unit implementation
+├── candidate_unit/                      # Candidate hidden unit implementation
 │   └── candidate_unit.py                # CandidateUnit class
-├── spiral_problem/            # Two-spiral problem benchmark
+├── spiral_problem/                      # Two-spiral problem benchmark
 │   └── spiral_problem.py                # SpiralProblem class
-├── cascor_constants/          # Project-wide constants
+├── cascor_constants/                    # Project-wide constants
 │   ├── constants.py                     # Main constants aggregator
 │   ├── constants_activation/            # Activation function constants
 │   ├── constants_candidates/            # Candidate training constants
@@ -25,18 +25,18 @@ src/
 │   ├── constants_logging/               # Logging constants
 │   ├── constants_model/                 # Model architecture constants
 │   └── constants_problem/               # Problem-specific constants
-├── log_config/                # Logging infrastructure
+├── log_config/                          # Logging infrastructure
 │   ├── log_config.py                    # LogConfig class
 │   └── logger/                          # Custom Logger class
-├── profiling/                 # Performance profiling tools
-├── snapshots/                 # HDF5 serialization system
+├── profiling/                           # Performance profiling tools
+├── snapshots/                           # HDF5 serialization system
 │   ├── snapshot_serializer.py           # Main serialization logic
 │   ├── snapshot_utils.py                # Utility functions
 │   └── snapshot_cli.py                  # CLI tools
-├── cascor_plotter/            # Visualization utilities
-├── remote_client/             # Remote multiprocessing client
-├── utils/                     # Helper utilities
-└── tests/                     # Test suite
+├── cascor_plotter/                      # Visualization utilities
+├── remote_client/                       # Remote multiprocessing client
+├── utils/                               # Helper utilities
+└── tests/                               # Test suite
 ```
 
 ### Where to Start Reading Code
@@ -48,12 +48,12 @@ src/
 
 ### Key Entry Points
 
-| File | Purpose |
-|------|---------|
-| `src/main.py` | Main application entry point |
+| File                                             | Purpose                                |
+|--------------------------------------------------|----------------------------------------|
+| `src/main.py`                                    | Main application entry point           |
 | `src/cascade_correlation/cascade_correlation.py` | Core `CascadeCorrelationNetwork` class |
-| `src/candidate_unit/candidate_unit.py` | `CandidateUnit` for network growth |
-| `src/spiral_problem/spiral_problem.py` | Two-spiral benchmark problem |
+| `src/candidate_unit/candidate_unit.py`           | `CandidateUnit` for network growth     |
+| `src/spiral_problem/spiral_problem.py`           | Two-spiral benchmark problem           |
 
 ## Common Dev Commands
 

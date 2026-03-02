@@ -1523,7 +1523,7 @@ Phase 7 addresses operational gaps discovered during Phase 6 validation. The pol
 
 **Goal:** Standardize Dependabot, CODEOWNERS, and GitHub Actions version pinning across all repos.
 
-**7.1.1 — Add Dependabot to all repos**
+**7.1.1 — Add Dependabot to all repos:**
 
 Currently present only in `juniper-data`. Add `.github/dependabot.yml` to:
 
@@ -1537,7 +1537,7 @@ Currently present only in `juniper-data`. Add `.github/dependabot.yml` to:
 
 Use `juniper-data`'s config as template: weekly pip + GitHub Actions updates, grouped minor/patch PRs, labels `dependencies`/`security`/`ci`.
 
-**7.1.2 — SHA-pin GitHub Actions**
+**7.1.2 — SHA-pin GitHub Actions:**
 
 `juniper-data` uses SHA-pinned actions (e.g., `actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683`). The following repos use mutable tags (`@v4`, `@v5`) vulnerable to tag mutation attacks:
 
@@ -1549,7 +1549,7 @@ Use `juniper-data`'s config as template: weekly pip + GitHub Actions updates, gr
 - [x] `juniper-ml` — ci.yml, publish.yml, claude.yml (commit `011e5a5`)
 - [x] `juniper-data` — pinned remaining 2 actions: gitleaks, conda-incubator (commit `f3c9ea2`)
 
-**7.1.3 — Add CODEOWNERS to remaining repos**
+**7.1.3 — Add CODEOWNERS to remaining repos:**
 
 Currently present only in `juniper-cascor`. Add `.github/CODEOWNERS` assigning `@pcalnon` to:
 
@@ -1561,7 +1561,7 @@ Currently present only in `juniper-cascor`. Add `.github/CODEOWNERS` assigning `
 - [x] `juniper-ml` (commit `7516ca2`)
 - [x] `juniper-deploy` (commit `836f6f4`)
 
-**7.1.4 — Harden juniper-data-client CI**
+**7.1.4 — Harden juniper-data-client CI:**
 
 `juniper-data-client` CI is notably thinner than other repos. Add:
 
@@ -1602,7 +1602,7 @@ Implementation:
 
 JuniperData already has full `APIKeyAuth` + `RateLimiter` + `SecurityMiddleware` in `juniper_data/api/security.py`. Use this as the reference implementation.
 
-**7.3.1 — JuniperCascor API auth**
+**7.3.1 — JuniperCascor API auth:**
 
 - [x] Add `X-API-Key` header authentication middleware
 - [x] Add rate limiting (configurable `requests_per_minute`)
@@ -1612,14 +1612,14 @@ JuniperData already has full `APIKeyAuth` + `RateLimiter` + `SecurityMiddleware`
 - [x] Update `juniper-cascor-client` to pass API key
 - [x] Add tests for auth middleware
 
-**7.3.2 — JuniperCanopy API auth**
+**7.3.2 — JuniperCanopy API auth:**
 
 - [x] Add `X-API-Key` header authentication for management API endpoints
 - [x] Exempt health endpoints and static Dash assets
 - [x] Add `CANOPY_API_KEY` environment variable
 - [x] Add tests for auth middleware
 
-**7.3.3 — Update juniper-deploy**
+**7.3.3 — Update juniper-deploy:**
 
 - [x] Add `*_API_KEY` variables to `.env.example` and `docker-compose.yml`
 - [x] Update integration tests to pass API keys
@@ -1629,7 +1629,7 @@ JuniperData already has full `APIKeyAuth` + `RateLimiter` + `SecurityMiddleware`
 
 **Goal:** Add structured logging, Prometheus metrics, and error tracking across all services.
 
-**7.4.1 — Structured JSON logging**
+**7.4.1 — Structured JSON logging:**
 
 All three services currently log in plain text format. Add optional JSON structured logging for production use:
 
@@ -1637,7 +1637,7 @@ All three services currently log in plain text format. Add optional JSON structu
 - [x] Standardize log fields: `timestamp`, `level`, `service`, `request_id`, `message`
 - [x] Apply to juniper-data, juniper-cascor, juniper-canopy
 
-**7.4.2 — Prometheus metrics endpoint**
+**7.4.2 — Prometheus metrics endpoint:**
 
 Add `/metrics` endpoint to all three services exposing standard metrics:
 
@@ -1647,7 +1647,7 @@ Add `/metrics` endpoint to all three services exposing standard metrics:
 - [ ] Dataset count and storage usage (juniper-data) — deferred to service-specific enhancement
 - [x] Use `prometheus-client` library
 
-**7.4.3 — Error tracking**
+**7.4.3 — Error tracking:**
 
 JuniperCascor has `sentry-sdk` in `main.py` but not in the FastAPI server (`server.py`).
 
@@ -1656,7 +1656,7 @@ JuniperCascor has `sentry-sdk` in `main.py` but not in the FastAPI server (`serv
 - [x] Add Sentry integration to juniper-canopy FastAPI app
 - [x] Make Sentry optional (no-op when `SENTRY_DSN` is unset)
 
-**7.4.4 — juniper-deploy observability stack (optional)**
+**7.4.4 — juniper-deploy observability stack (optional):**
 
 - [x] Add optional Prometheus + Grafana services to `docker-compose.yml` (behind `observability` profile)
 - [x] Add Prometheus scrape config for all 3 service `/metrics` endpoints
@@ -1666,7 +1666,7 @@ JuniperCascor has `sentry-sdk` in `main.py` but not in the FastAPI server (`serv
 
 **Goal:** Improve build reproducibility for service deployments.
 
-**7.5.1 — Lockfiles for Docker builds**
+**7.5.1 — Lockfiles for Docker builds:**
 
 Service repos (juniper-data, juniper-cascor, juniper-canopy) deploy via Docker. Add pinned lockfiles for reproducible builds:
 
@@ -1675,7 +1675,7 @@ Service repos (juniper-data, juniper-cascor, juniper-canopy) deploy via Docker. 
 - [x] Document lockfile regeneration workflow in each repo's README
 - [x] Keep `pyproject.toml` with `>=` ranges for library compatibility
 
-**7.5.2 — Dependency update workflow**
+**7.5.2 — Dependency update workflow:**
 
 - [ ] Document process: Dependabot PR → CI green → update lockfile → merge — deferred
 - [ ] Add lockfile regeneration to Dependabot workflow (or document as manual step) — deferred
@@ -1805,7 +1805,7 @@ The parent `CLAUDE.md` at `/home/pcalnon/Development/python/Juniper/CLAUDE.md` l
 - [x] Docker Compose full-stack working (`juniper-deploy` repo, commits `7d98258`, `2fb0631`; `${VAR:-default}` substitution; cascor Dockerfile `7ae3dcc`; canopy Dockerfile `e0fcf21`)
 - [x] Documentation complete (Architecture + Related Services sections added to all 3 service READMEs — validated 2026-02-25)
 
-### Phase 7 — Production Readiness
+### Phase 7 — Production Readiness, Migration Checklist
 
 - [x] Dependabot configured across all repos (all 8 repos, 2026-02-26)
 - [x] GitHub Actions SHA-pinned in all CI workflows
