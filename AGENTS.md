@@ -1,7 +1,7 @@
 # AGENTS.md - Juniper Cascor Project Guide
 
 **Project**: Juniper Cascade Correlation Neural Network  
-**Version**: 0.6.6 (0.7.3)
+**Version**: 0.3.17
 **License**: MIT License
 **Author**: Paul Calnon
 **Last Updated**: 2026-02-05
@@ -151,8 +151,6 @@ juniper_cascor/
 │   │   ├── snapshot_utils.py         # Utility functions
 │   │   ├── snapshot_cli.py           # CLI tools
 │   │   └── snapshot_common.py        # Common serialization helpers
-│   ├── juniper_data_client/           # REST client for JuniperData API
-│   │   └── client.py                 # JuniperDataClient class
 │   ├── remote_client/                # Remote multiprocessing client
 │   ├── utils/                        # Utility functions
 │   │   └── utils.py                  # Helper functions
@@ -641,19 +639,17 @@ config = CascadeCorrelationConfig(random_seed=42)
 
 ## Documentation Files
 
-| File                                                    | Description                           |
-| ------------------------------------------------------- | ------------------------------------- |
-| `notes/INTEGRATION_DEVELOPMENT_PLAN.md`                 | Integration plan (JuniperData items)  |
-| `notes/CASCOR_JUNIPER_DATA_INTEGRATION_PLAN.md`         | JuniperCascor ↔ JuniperData integration plan |
-| `notes/FEATURES_GUIDE.md`                               | Feature documentation and usage       |
-| `notes/CASCOR_ENHANCEMENTS_ROADMAP.md`                  | Enhancement roadmap                   |
-| `notes/IMPLEMENTATION_SUMMARY.md`                       | Implementation status                 |
-| `notes/Current_Issues.md`                               | Known issues                          |
-| `notes/PRE-DEPLOYMENT_ROADMAP-2.md`                     | Pre-deployment roadmap (consolidated) |
-| `notes/INTEGRATION_ROADMAP.md`                          | Cascor-Canopy integration tracker     |
-| `notes/JUNIPER_CASCOR_SPIRAL_DATA_GEN_REFACTOR_PLAN.md` | JuniperData extraction plan           |
-| `notes/TEST_SUITE_CICD_ENHANCEMENT_DEVELOPMENT_PLAN.md` | Test/CI improvement plan              |
-| `src/tests/README.md`                                   | Test suite documentation              |
+| File                                                           | Description                           |
+| -------------------------------------------------------------- | ------------------------------------- |
+| `notes/FEATURES_GUIDE.md`                                      | Feature documentation and usage       |
+| `notes/PRE-DEPLOYMENT_ROADMAP-2.md`                            | Pre-deployment roadmap (consolidated) |
+| `notes/JUNIPER-CASCOR_POST-RELEASE_DEVELOPMENT-ROADMAP.md`     | Post-release development roadmap      |
+| `notes/ARCHITECTURE_GUIDE.md`                                  | Architecture overview                 |
+| `notes/API_REFERENCE.md`                                       | API reference documentation           |
+| `notes/INTEGRATION_ROADMAP-01.md`                              | Cascor-Canopy integration tracker     |
+| `src/tests/README.md`                                          | Test suite documentation              |
+
+Archived documentation (plans, roadmaps, implementation summaries from earlier development phases) is preserved in `notes/history/`.
 
 ---
 
