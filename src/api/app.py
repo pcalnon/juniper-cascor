@@ -1,10 +1,13 @@
 """FastAPI application factory and configuration."""
 
 import asyncio
+import json
 import logging
+import os
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
+import torch
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -54,6 +57,11 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     app.state.lifecycle = lifecycle
     logger.info("Lifecycle manager initialized")
 
+    # Auto-start training if configured (runs as background task)
+    if settings.auto_start:
+        logger.warning("Auto-start training is ENABLED — this should only be used in demo/dev environments")
+        asyncio.create_task(_auto_start_training(app, settings))
+
     yield
 
     # Shutdown: close all WebSocket connections
@@ -69,6 +77,62 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         logger.info("Lifecycle manager shut down")
 
     logger.info("JuniperCascor API shutting down")
+
+
+async def _auto_start_training(app: FastAPI, settings: Settings) -> None:
+    """Auto-start training sequence: create dataset, network, and begin training.
+
+    Runs as a background asyncio task so the server becomes healthy before
+    the auto-start sequence completes. Uses JuniperDataClient to create and
+    fetch training data, then uses the lifecycle manager to create a network
+    and start training.
+    """
+    try:
+        from juniper_data_client import JuniperDataClient
+
+        data_url = os.environ.get("JUNIPER_DATA_URL", "http://localhost:8100")
+        api_key = os.environ.get("JUNIPER_DATA_API_KEY")
+
+        client = JuniperDataClient(base_url=data_url, api_key=api_key)
+
+        # Wait for JuniperData service
+        logger.info(f"Auto-start: waiting for JuniperData at {data_url}")
+        ready = await asyncio.to_thread(client.wait_for_ready, timeout=60)
+        if not ready:
+            logger.error("Auto-start failed: JuniperData not ready after 60s")
+            return
+
+        # Create dataset via JuniperData
+        dataset_params = json.loads(settings.auto_dataset_params)
+        logger.info(f"Auto-start: creating '{settings.auto_dataset}' dataset with params={dataset_params}")
+        result = await asyncio.to_thread(
+            client.create_dataset,
+            generator=settings.auto_dataset,
+            params=dataset_params,
+            persist=True,
+        )
+        dataset_id = result["dataset_id"]
+        logger.info(f"Auto-start: dataset created — id={dataset_id}")
+
+        # Download training data as numpy arrays
+        arrays = await asyncio.to_thread(client.download_artifact_npz, dataset_id)
+        x_train = torch.tensor(arrays["X_train"], dtype=torch.float32)
+        y_train = torch.tensor(arrays["y_train"], dtype=torch.float32)
+        logger.info(f"Auto-start: training data loaded — {x_train.shape[0]} samples, {x_train.shape[1]} features")
+
+        # Create network
+        network_config = json.loads(settings.auto_network)
+        network_config.setdefault("epochs_max", settings.auto_train_epochs)
+        lifecycle: TrainingLifecycleManager = app.state.lifecycle
+        network_info = lifecycle.create_network(**network_config)
+        logger.info(f"Auto-start: network created — {network_info['input_size']}x{network_info['output_size']}")
+
+        # Start training
+        train_result = lifecycle.start_training(x=x_train, y=y_train)
+        logger.info(f"Auto-start: training initiated — {train_result}")
+
+    except Exception:
+        logger.exception("Auto-start training failed")
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
