@@ -1,6 +1,6 @@
 # Thread Handoff Procedure
 
-**Purpose**: Preserve context fidelity during long-running Amp sessions by proactively handing off to a new thread before context compaction degrades output quality.
+**Purpose**: Preserve context fidelity during long-running Claude Code sessions by proactively handing off to a new thread before context compaction degrades output quality.
 
 **Last Updated**: 2026-02-20
 
@@ -82,7 +82,7 @@ Key context:
 
 ### Step 3: Execute the Handoff
 
-Use the `handoff` tool:
+Present the composed handoff goal to the user and recommend starting a new thread with it as the initial prompt. If the `handoff()` tool is available:
 
 ```bash
 handoff(
