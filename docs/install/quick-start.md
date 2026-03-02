@@ -29,7 +29,7 @@ This installs all dependencies including PyTorch, NumPy, pytest, and other requi
 ### 3. Activate the Environment
 
 ```bash
-conda activate juniper_cascor
+conda activate JuniperCascor
 ```
 
 ### 4. Start JuniperData Service

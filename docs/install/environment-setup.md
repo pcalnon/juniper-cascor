@@ -45,10 +45,10 @@ Install [Miniconda](https://docs.conda.io/en/latest/miniconda.html) or [Anaconda
 
 ```bash
 # Navigate to project root
-cd juniper_cascor
+cd juniper-cascor
 
 # Create environment from yaml file
-conda env create -f conf/conda_environment.yaml --name juniper_cascor
+conda env create -f conf/conda_environment.yaml --name JuniperCascor
 
 # Alternatively, create with explicit name
 conda env create -f conf/conda_environment.yaml -n cascor
@@ -58,11 +58,11 @@ conda env create -f conf/conda_environment.yaml -n cascor
 
 ```bash
 # Activate the environment
-conda activate juniper_cascor
+conda activate JuniperCascor
 
 # Verify activation
 which python
-# Should show: /path/to/conda/envs/juniper_cascor/bin/python
+# Should show: /path/to/conda/envs/JuniperCascor/bin/python
 ```
 
 ### Verifying Installation
@@ -89,8 +89,8 @@ conda env update -f conf/conda_environment.yaml --prune
 
 # Or recreate from scratch
 conda deactivate
-conda env remove -n juniper_cascor
-conda env create -f conf/conda_environment.yaml --name juniper_cascor
+conda env remove -n JuniperCascor
+conda env create -f conf/conda_environment.yaml --name JuniperCascor
 ```
 
 ---

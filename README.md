@@ -97,7 +97,7 @@ cd juniper-cascor
 
 # Create and activate conda environment
 conda env create -f conf/conda_environment.yaml
-conda activate juniper_cascor
+conda activate JuniperCascor
 
 # Run the spiral problem evaluation
 cd src && python main.py

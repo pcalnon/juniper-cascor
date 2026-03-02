@@ -258,7 +258,7 @@ trunk fmt
 
 1. **Python Interpreter**: Set to the conda environment
    - `Settings > Project > Python Interpreter`
-   - Select `juniper_cascor` conda environment
+   - Select `JuniperCascor` conda environment
 
 2. **Code Style**:
    - `Settings > Editor > Code Style > Python`

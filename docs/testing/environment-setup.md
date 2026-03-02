@@ -33,7 +33,7 @@ conda install pytest pytest-cov pytest-timeout pytest-xdist -c conda-forge
 
 ```bash
 conda env create -f conf/conda_environment.yaml
-conda activate juniper_cascor
+conda activate JuniperCascor
 ```
 
 ### Additional Dependencies

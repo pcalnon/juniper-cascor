@@ -178,7 +178,7 @@ Conda environment specification for the project.
 
 ```bash
 # Create environment from file
-conda create --name juniper_cascor --file conf/conda_environment.yaml
+conda create --name JuniperCascor --file conf/conda_environment.yaml
 
 # Export current environment
 conda list --export > conf/conda_environment.yaml
