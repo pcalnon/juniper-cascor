@@ -14,8 +14,8 @@ Get Juniper Cascor running in minutes.
 ### 1. Clone the Repository
 
 ```bash
-git clone https://github.com/pcalnon/juniper_cascor.git
-cd juniper_cascor
+git clone https://github.com/pcalnon/juniper-cascor.git
+cd juniper-cascor
 ```
 
 ### 2. Create the Conda Environment

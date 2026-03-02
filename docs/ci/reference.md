@@ -240,14 +240,14 @@ Uses POSIX signals for timeout enforcement (Linux/macOS compatible).
 For Juniper Cascor:
 
 ```markdown
-![CI/CD Pipeline](https://github.com/pcalnon/juniper_cascor/actions/workflows/ci.yml/badge.svg)
+![CI/CD Pipeline](https://github.com/pcalnon/juniper-cascor/actions/workflows/ci.yml/badge.svg)
 ```
 
 ### Branch-Specific Badges
 
 ```markdown
-![CI/CD (main)](https://github.com/pcalnon/juniper_cascor/actions/workflows/ci.yml/badge.svg?branch=main)
-![CI/CD (develop)](https://github.com/pcalnon/juniper_cascor/actions/workflows/ci.yml/badge.svg?branch=develop)
+![CI/CD (main)](https://github.com/pcalnon/juniper-cascor/actions/workflows/ci.yml/badge.svg?branch=main)
+![CI/CD (develop)](https://github.com/pcalnon/juniper-cascor/actions/workflows/ci.yml/badge.svg?branch=develop)
 ```
 
 ### How to Add to README
@@ -257,7 +257,7 @@ Add to the top of `README.md`:
 ```markdown
 # Juniper Cascor
 
-![CI/CD Pipeline](https://github.com/pcalnon/juniper_cascor/actions/workflows/ci.yml/badge.svg)
+![CI/CD Pipeline](https://github.com/pcalnon/juniper-cascor/actions/workflows/ci.yml/badge.svg)
 ![Python](https://img.shields.io/badge/python-3.14-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 

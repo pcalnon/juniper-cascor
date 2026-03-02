@@ -93,7 +93,7 @@ This documentation serves two audiences:
 The **JuniperData** service is required for spiral dataset generation. The spiral problem module connects to this REST API service to fetch training and test datasets.
 
 - **Default URL**: `http://localhost:8100`
-- **Project**: [JuniperData](https://github.com/pcalnon/juniper_data)
+- **Project**: [JuniperData](https://github.com/pcalnon/juniper-data)
 
 ---
 
@@ -102,7 +102,7 @@ The **JuniperData** service is required for spiral dataset generation. The spira
 - **Run the application**: `cd src && python main.py`
 - **Run tests**: `cd src/tests && bash scripts/run_tests.bash`
 - **View coverage**: `open src/tests/reports/htmlcov/index.html`
-- **Start JuniperData service for spiral datasets**: See [JuniperData](https://github.com/pcalnon/juniper_data)
+- **Start JuniperData service for spiral datasets**: See [JuniperData](https://github.com/pcalnon/juniper-data)
 
 ---
 

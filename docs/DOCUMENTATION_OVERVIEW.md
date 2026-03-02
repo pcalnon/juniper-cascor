@@ -243,7 +243,7 @@ juniper_cascor/
 **Default URL:** `http://localhost:8100`  
 **Required For:** Spiral problem evaluation, dataset generation
 
-The JuniperData service must be running before executing spiral problem evaluations. See the [JuniperData project](https://github.com/pcalnon/juniper_data) for installation and setup instructions.
+The JuniperData service must be running before executing spiral problem evaluations. See the [JuniperData project](https://github.com/pcalnon/juniper-data) for installation and setup instructions.
 
 **Configuration:** Set the JuniperData URL via environment variable or configuration. See [install/reference.md](install/reference.md) for details.
 
