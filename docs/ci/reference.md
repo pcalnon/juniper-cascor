@@ -234,7 +234,7 @@ Uses POSIX signals for timeout enforcement (Linux/macOS compatible).
 ### Badge URL Format
 
 ```markdown
-![CI/CD Pipeline](https://github.com/{owner}/{repo}/actions/workflows/ci.yml/badge.svg)
+![CI/CD Pipeline](https://github.com/pcalnon/juniper-cascor/actions/workflows/ci.yml/badge.svg)
 ```
 
 For Juniper Cascor:

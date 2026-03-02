@@ -2678,7 +2678,7 @@ curl http://localhost:8000/v1/generators
 
 ## Appendix B: Related Documents
 
-- [AGENTS.md](../AGENTS.md) - Project guide and conventions
+- [AGENTS.md](../../AGENTS.md) - Project guide and conventions
 - [PRE-DEPLOYMENT_ROADMAP-2.md](./PRE-DEPLOYMENT_ROADMAP-2.md) - Integration roadmap
 - [INTEGRATION_ROADMAP.md](./INTEGRATION_ROADMAP.md) - Cascor-Canopy integration
 - [CHANGELOG.md](../CHANGELOG.md) - Version history
