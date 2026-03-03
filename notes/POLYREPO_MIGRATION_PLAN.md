@@ -463,7 +463,7 @@ rm -rf juniper_data_client/
 # dependencies = [..., "juniper-data-client>=0.3.0"]
 
 # Remove the try/except import fallback in any __init__.py that tries local copy
-# All imports become: from juniper_data_client import juniper-dataClient
+# All imports become: from juniper_data_client import JuniperDataClient
 ```
 
 ### Step 1.5 — Verify
@@ -784,7 +784,7 @@ A Python HTTP/WebSocket client for the CasCor service API, following the same pa
 juniper-cascor-client/
 ├── juniper_cascor_client/
 │   ├── __init__.py
-│   ├── client.py                # juniper-cascorClient
+│   ├── client.py                # JuniperCascorClient
 │   ├── ws_client.py             # WebSocket streaming client
 │   ├── exceptions.py            # Exception hierarchy
 │   ├── models.py                # Pydantic response models (optional)
@@ -802,10 +802,10 @@ juniper-cascor-client/
         └── publish.yml
 ```
 
-**`juniper-cascorClient` class — public API:**
+**`JuniperCascorClient` class — public API:**
 
 ```python
-class juniper-cascorClient:
+class JuniperCascorClient:
     def __init__(self, base_url="http://localhost:8200", timeout=30, retries=3, api_key=None): ...
 
     # Health
@@ -898,7 +898,7 @@ dependencies = [
 - **Repository**: `pcalnon/juniper-cascor-client` — public, 5 commits on `main`, clean working tree, CI green
 - **Location**: `/home/pcalnon/Development/python/Juniper/juniper-cascor-client/`
 - **Public API** (matches planned design with one bonus addition):
-  - `juniper-cascorClient` — REST client with 24 public methods (health, network CRUD, training control, metrics, visualization, snapshots, workers)
+  - `JuniperCascorClient` — REST client with 24 public methods (health, network CRUD, training control, metrics, visualization, snapshots, workers)
   - `CascorTrainingStream` — async WebSocket client for `/ws/training` (iteration + callback patterns)
   - `CascorControlStream` — async WebSocket client for `/ws/control` (command/response pattern; bonus, not in original plan)
   - 7 exception classes: `ClientError`, `ConnectionError`, `TimeoutError`, `NotFoundError`, `ConflictError`, `ValidationError`, `ServiceUnavailableError`
@@ -1115,11 +1115,11 @@ Replace `CascorIntegration` with a new `CascorServiceAdapter` that wraps the cas
 ```python
 # src/backend/cascor_service_adapter.py (abbreviated — see detailed plan for full code)
 
-from juniper_cascor_client import juniper-cascorClient, CascorTrainingStream
+from juniper_cascor_client import JuniperCascorClient, CascorTrainingStream
 
 class CascorServiceAdapter:
     def __init__(self, service_url: str = "http://localhost:8200", api_key: str = None):
-        self.client = juniper-cascorClient(base_url=service_url, api_key=api_key)
+        self.client = JuniperCascorClient(base_url=service_url, api_key=api_key)
         ws_url = service_url.replace("http://", "ws://").replace("https://", "wss://")
         self.training_stream = CascorTrainingStream(base_url=ws_url, api_key=api_key)
 
@@ -1180,7 +1180,7 @@ dependencies = [
 
 ### Step 4.6 — Update Tests
 
-- Unit tests: Mock `juniper-cascorClient` and verify adapter delegates correctly
+- Unit tests: Mock `JuniperCascorClient` and verify adapter delegates correctly
 - Interface compatibility tests: Verify adapter exposes all methods that `main.py` calls
 - Three-mode activation tests: Verify correct backend for each env var combination
 - WS relay tests: Mock `CascorTrainingStream.stream()` and verify broadcast
