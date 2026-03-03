@@ -1,8 +1,8 @@
 # Juniper Polyrepo Migration Plan
 
 **Last Updated:** 2026-03-02
-**Version:** 1.7.3
-**Status:** Phase 7 Complete — Steps 7.1–7.6 Complete, 7.5.2 deferred
+**Version:** 1.7.4
+**Status:** Phase 7 Complete — All steps including 7.5.2
 **Author:** Paul Calnon / Claude Code
 **Companion Document:** [MONOREPO_ANALYSIS.md](MONOREPO_ANALYSIS.md)
 
@@ -1515,7 +1515,7 @@ Added `## Architecture` (ASCII service topology diagram) and `## Related Service
 **Duration:** 2–4 weeks
 **Risk:** Medium
 **Prerequisite:** Phase 6 complete
-**Status:** COMPLETE (2026-03-02) — except Step 7.5.2 (deferred)
+**Status:** COMPLETE (2026-03-02)
 
 Phase 7 addresses operational gaps discovered during Phase 6 validation. The polyrepo split is structurally complete; this phase hardens the ecosystem for production operation: supply chain security, cross-repo CI coordination, API authentication, observability, and dependency management.
 
@@ -1680,8 +1680,10 @@ Service repos (juniper-data, juniper-cascor, juniper-canopy) deploy via Docker. 
 
 **7.5.2 — Dependency update workflow:**
 
-- [ ] Document process: Dependabot PR → CI green → update lockfile → merge — deferred
-- [ ] Add lockfile regeneration to Dependabot workflow (or document as manual step) — deferred
+- [x] `lockfile-update.yml` workflow: auto-regenerates `requirements.lock` on Dependabot pushes (all 3 service repos)
+- [x] `lockfile-check` CI job: hard-fail quality gate verifying lockfile freshness (all 3 service repos)
+- [x] `CROSS_REPO_DISPATCH_TOKEN` secret set in all 3 service repos
+- [x] `DEPENDENCY_UPDATE_WORKFLOW.md` process documentation (all 3 service repos)
 
 ### Step 7.6 — Ecosystem Documentation Update
 
