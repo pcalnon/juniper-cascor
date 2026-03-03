@@ -1,8 +1,8 @@
 # Juniper Polyrepo Migration Plan
 
-**Last Updated:** 2026-03-01
-**Version:** 1.7.2
-**Status:** Phase 7 Complete — Steps 7.1–7.6 Complete, 7.2 partial (dispatch emission needs PAT), 7.5.2 deferred
+**Last Updated:** 2026-03-02
+**Version:** 1.7.3
+**Status:** Phase 7 Complete — Steps 7.1–7.6 Complete, 7.5.2 deferred
 **Author:** Paul Calnon / Claude Code
 **Companion Document:** [MONOREPO_ANALYSIS.md](MONOREPO_ANALYSIS.md)
 
@@ -74,7 +74,7 @@ Each phase produces a working, testable system. No phase requires the next phase
 
 ```bash
 ┌─────────────────────┐     REST/WS      ┌──────────────────────┐
-│   JuniperCanopy     │ ◄──────────────► │    JuniperCascor     │
+│   juniper-canopy     │ ◄──────────────► │    juniper-cascor     │
 │   (Dashboard)       │                  │    (Training Svc)    │
 │   Port 8050         │                  │    Port 8200         │
 │                     │                  │                      │
@@ -86,7 +86,7 @@ Each phase produces a working, testable system. No phase requires the next phase
          │ REST                              Task/Result Queues
          ▼                                          │
 ┌─────────────────────┐                  ┌──────────▼───────────┐
-│   JuniperData       │                  │   Remote Workers     │
+│   juniper-data       │                  │   Remote Workers     │
 │   (Dataset Svc)     │                  │   (N instances)      │
 │   Port 8100         │                  │                      │
 │                     │                  │   Uses:              │
@@ -120,7 +120,7 @@ Key property: **No arrows between services.** All inter-service communication is
 | Repository                      | Package(s)              | PyPI        | Description                      |
 | ------------------------------- | ----------------------- | ----------- | -------------------------------- |
 | `pcalnon/juniper-data`          | `juniper-data`          | No (server) | Dataset generation service       |
-| `pcalnon/juniper-data-client`   | `juniper-data-client`   | **Yes**     | HTTP client for JuniperData API  |
+| `pcalnon/juniper-data-client`   | `juniper-data-client`   | **Yes**     | HTTP client for juniper-data API  |
 | `pcalnon/juniper-cascor`        | `juniper-cascor`        | No (server) | CasCor neural network service    |
 | `pcalnon/juniper-cascor-client` | `juniper-cascor-client` | **Yes**     | HTTP/WS client for CasCor API    |
 | `pcalnon/juniper-cascor-worker` | `juniper-cascor-worker` | **Yes**     | Remote candidate training worker |
@@ -155,9 +155,9 @@ All four repositories stabilized with clean baselines on 2026-02-19:
 
 | Repository          | Phase 0 Commit | Tests      | Pre-Migration Tag                         | Branch                      |
 | ------------------- | -------------- | ---------- | ----------------------------------------- | --------------------------- |
-| JuniperCanopy       | `32bdfc8`      | 3,338 pass | `canopy-pre-migration-v0.2.3`, `v0.2.4`   | `canopy/migration`          |
-| JuniperCascor       | `4139e2a`      | Unit pass  | `cascor-pre-migration-v0.3.17`, `v0.3.18` | `cascor/service-api`        |
-| JuniperData         | `892ef33`      | 659 pass   | `data-pre-migration-v0.4.2`               | `subproject...enhancements` |
+| juniper-canopy       | `32bdfc8`      | 3,338 pass | `canopy-pre-migration-v0.2.3`, `v0.2.4`   | `canopy/migration`          |
+| juniper-cascor       | `4139e2a`      | Unit pass  | `cascor-pre-migration-v0.3.17`, `v0.3.18` | `cascor/service-api`        |
+| juniper-data         | `892ef33`      | 659 pass   | `data-pre-migration-v0.4.2`               | `subproject...enhancements` |
 | juniper-data-client | `54a22b8`      | 41 pass    | `data-client-pre-migration-v0.3.0`        | `main`                      |
 
 **Actions completed across all repos:**
@@ -226,7 +226,7 @@ For each conflicted file, determine which subproject "owns" it:
 
 ```bash
 # In the juniper_canopy clone, on main branch
-cd /home/pcalnon/Development/python/Juniper/JuniperCanopy/juniper_canopy
+cd /home/pcalnon/Development/python/Juniper/juniper-canopy/juniper_canopy
 
 # Re-attempt the merge
 git merge subproject.juniper_canopy.integration_and_enhancements.release
@@ -301,18 +301,18 @@ The `juniper-data-client` package has been extracted, published to PyPI (v0.3.0)
 | 1.4a Remove Cascor vendored copy | COMPLETE | Empty dir remains (only `__pycache__/`), imports use external          |
 | 1.4b Remove Canopy vendored copy | COMPLETE | No vendored copy; imports use external package                         |
 | 1.4c Remove Data vendored copy   | COMPLETE | Removed 2026-02-21; added to .gitignore; pyproject.toml updated        |
-| 1.5 Verify all tests pass        | COMPLETE | JuniperData 659 pass, CasCor 226 pass, all using external PyPI package |
+| 1.5 Verify all tests pass        | COMPLETE | juniper-data 659 pass, CasCor 226 pass, all using external PyPI package |
 
 **Package installation status:**
 
 - Installed as editable from standalone repo: `juniper-data-client 0.3.0`
-- JuniperCascor pyproject.toml: `juniper-data-client>=0.3.0` under `[project.optional-dependencies].juniper-data`
-- JuniperCanopy pyproject.toml: `juniper-data-client>=0.3.0` under `[project.optional-dependencies].juniper-data`
-- JuniperData pyproject.toml: `juniper-data-client>=0.3.0` under `[project.optional-dependencies].test`
+- juniper-cascor pyproject.toml: `juniper-data-client>=0.3.0` under `[project.optional-dependencies].juniper-data`
+- juniper-canopy pyproject.toml: `juniper-data-client>=0.3.0` under `[project.optional-dependencies].juniper-data`
+- juniper-data pyproject.toml: `juniper-data-client>=0.3.0` under `[project.optional-dependencies].test`
 
 ### Step 1.1 — Prepare `juniper-data-client` for PyPI
 
-The package already exists at `JuniperData/juniper_data/juniper_data_client/` with its own `pyproject.toml`. Updates needed:
+The package already exists at `juniper-data/juniper_data/juniper_data_client/` with its own `pyproject.toml`. Updates needed:
 
 **1.1.1 — Update `pyproject.toml`:**
 
@@ -320,7 +320,7 @@ The package already exists at `JuniperData/juniper_data/juniper_data_client/` wi
 [project]
 name = "juniper-data-client"
 version = "0.3.0"  # Bump to reflect PyPI-readiness and API key support
-description = "HTTP client for the JuniperData dataset generation service"
+description = "HTTP client for the juniper-data dataset generation service"
 readme = "README.md"
 license = {text = "MIT"}
 authors = [{name = "Paul Calnon"}]
@@ -356,9 +356,9 @@ build-backend = "setuptools.build_meta"
 
 **1.1.2 — Reconcile vendored copies:**
 
-The canonical version (in JuniperData) has `api_key` support. The Canopy vendored copy does not. The Cascor vendored copy uses completely different retry logic.
+The canonical version (in juniper-data) has `api_key` support. The Canopy vendored copy does not. The Cascor vendored copy uses completely different retry logic.
 
-**Resolution:** The canonical JuniperData version is the source of truth. Ensure it includes:
+**Resolution:** The canonical juniper-data version is the source of truth. Ensure it includes:
 
 - `api_key` parameter (already present)
 - `HTTPAdapter` with `urllib3.Retry` (already present)
@@ -377,22 +377,22 @@ Include MIT license file in the package root.
 
 ```bash
 # Create new repo on GitHub
-gh repo create pcalnon/juniper-data-client --public --description "HTTP client for JuniperData dataset generation service"
+gh repo create pcalnon/juniper-data-client --public --description "HTTP client for juniper-data dataset generation service"
 
 # Extract package with history (optional, or start fresh)
 cd /tmp
 mkdir juniper-data-client
-cp -r /path/to/JuniperData/juniper_data/juniper_data_client/* juniper-data-client/
+cp -r /path/to/juniper-data/juniper_data/juniper_data_client/* juniper-data-client/
 cd juniper-data-client
 git init
 git add .
 git commit -m "Initial release: juniper-data-client v0.3.0
 
 Extracted from Juniper monorepo. Published to PyPI as the single
-source of truth for the JuniperData HTTP client.
+source of truth for the juniper-data HTTP client.
 
 Features:
-- Full JuniperData API coverage (generators, datasets, health)
+- Full juniper-data API coverage (generators, datasets, health)
 - Automatic retry with exponential backoff
 - Connection pooling
 - API key authentication
@@ -436,7 +436,7 @@ git push origin v0.3.0
 
 ### Step 1.4 — Replace Vendored Copies with PyPI Package
 
-**In JuniperCascor:**
+**In juniper-cascor:**
 
 ```bash
 # Remove vendored copy
@@ -450,7 +450,7 @@ rm -rf src/juniper_data_client/
 # The package name on import is juniper_data_client (underscore)
 ```
 
-**In JuniperCanopy:**
+**In juniper-canopy:**
 
 ```bash
 # Remove vendored copy from src/
@@ -463,7 +463,7 @@ rm -rf juniper_data_client/
 # dependencies = [..., "juniper-data-client>=0.3.0"]
 
 # Remove the try/except import fallback in any __init__.py that tries local copy
-# All imports become: from juniper_data_client import JuniperDataClient
+# All imports become: from juniper_data_client import juniper-dataClient
 ```
 
 ### Step 1.5 — Verify
@@ -485,8 +485,8 @@ find . -path "*/juniper_data_client/client.py" -not -path "*/site-packages/*"
 - [x] CI/CD workflow for automated PyPI publishing on release tags (2026-02-20, uses Trusted Publishing/OIDC)
 - [x] Vendored copy removed from Canopy (no vendored copy remains)
 - [x] Vendored copy removed from Cascor (empty dir, imports use external package)
-- [x] Vendored copy removed from JuniperData (2026-02-21, commit `4bada2a`)
-- [x] All tests pass with the PyPI-installed package (JuniperData 659, CasCor 226 — all verified 2026-02-21)
+- [x] Vendored copy removed from juniper-data (2026-02-21, commit `4bada2a`)
+- [x] All tests pass with the PyPI-installed package (juniper-data 659, CasCor 226 — all verified 2026-02-21)
 
 ---
 
@@ -499,7 +499,7 @@ find . -path "*/juniper_data_client/client.py" -not -path "*/site-packages/*"
 
 ### Objective, Phase 2
 
-Add a FastAPI + WebSocket service layer to JuniperCascor so it can be consumed as a network service rather than a library import. The existing CLI entry point (`main.py`) continues to work unchanged.
+Add a FastAPI + WebSocket service layer to juniper-cascor so it can be consumed as a network service rather than a library import. The existing CLI entry point (`main.py`) continues to work unchanged.
 
 ### Completion Summary, Phase 2
 
@@ -749,7 +749,7 @@ Create two independently installable PyPI packages: `juniper-cascor-client` (HTT
 
 ### Completion Summary, Phase 3
 
-> **Validation (2026-02-24):** Both packages published to PyPI as v0.1.0. Trusted Publishing configured on both PyPI and TestPyPI. v0.1.0 releases created on both repos — `publish.yml` workflows completed successfully (TestPyPI → PyPI two-stage pipeline). `pip index versions` confirms both packages available on PyPI. `juniper-cascor-client` installed as editable in JuniperCanopy conda env (required for Phase 4 adapter tests — all 83 now passing).
+> **Validation (2026-02-24):** Both packages published to PyPI as v0.1.0. Trusted Publishing configured on both PyPI and TestPyPI. v0.1.0 releases created on both repos — `publish.yml` workflows completed successfully (TestPyPI → PyPI two-stage pipeline). `pip index versions` confirms both packages available on PyPI. `juniper-cascor-client` installed as editable in juniper-canopy conda env (required for Phase 4 adapter tests — all 83 now passing).
 
 Both packages are published to PyPI as v0.1.0, with full test suites, CI/CD pipelines verified green, and comprehensive documentation. Both are editable-installed in their respective development environments.
 
@@ -767,8 +767,8 @@ Both packages are published to PyPI as v0.1.0, with full test suites, CI/CD pipe
 
 | Package                 | Repo                                     | Version | Tests   | Commits | CI (GitHub Actions)    | Editable Install                    | PyPI    |
 | ----------------------- | ---------------------------------------- | ------- | ------- | ------- | ---------------------- | ----------------------------------- | ------- |
-| `juniper-cascor-client` | `pcalnon/juniper-cascor-client` (public) | 0.1.0   | 55 pass | 6       | GREEN (3.11/3.12/3.13) | Yes (JuniperCascor + JuniperCanopy) | **Yes** |
-| `juniper-cascor-worker` | `pcalnon/juniper-cascor-worker` (public) | 0.1.0   | 44 pass | 7       | GREEN (3.11/3.12/3.13) | Yes (JuniperCascor)                 | **Yes** |
+| `juniper-cascor-client` | `pcalnon/juniper-cascor-client` (public) | 0.1.0   | 55 pass | 6       | GREEN (3.11/3.12/3.13) | Yes (juniper-cascor + juniper-canopy) | **Yes** |
+| `juniper-cascor-worker` | `pcalnon/juniper-cascor-worker` (public) | 0.1.0   | 44 pass | 7       | GREEN (3.11/3.12/3.13) | Yes (juniper-cascor)                 | **Yes** |
 
 ### Step 3.1 — Create `juniper-cascor-client`
 
@@ -784,7 +784,7 @@ A Python HTTP/WebSocket client for the CasCor service API, following the same pa
 juniper-cascor-client/
 ├── juniper_cascor_client/
 │   ├── __init__.py
-│   ├── client.py                # JuniperCascorClient
+│   ├── client.py                # juniper-cascorClient
 │   ├── ws_client.py             # WebSocket streaming client
 │   ├── exceptions.py            # Exception hierarchy
 │   ├── models.py                # Pydantic response models (optional)
@@ -802,10 +802,10 @@ juniper-cascor-client/
         └── publish.yml
 ```
 
-**`JuniperCascorClient` class — public API:**
+**`juniper-cascorClient` class — public API:**
 
 ```python
-class JuniperCascorClient:
+class juniper-cascorClient:
     def __init__(self, base_url="http://localhost:8200", timeout=30, retries=3, api_key=None): ...
 
     # Health
@@ -898,7 +898,7 @@ dependencies = [
 - **Repository**: `pcalnon/juniper-cascor-client` — public, 5 commits on `main`, clean working tree, CI green
 - **Location**: `/home/pcalnon/Development/python/Juniper/juniper-cascor-client/`
 - **Public API** (matches planned design with one bonus addition):
-  - `JuniperCascorClient` — REST client with 24 public methods (health, network CRUD, training control, metrics, visualization, snapshots, workers)
+  - `juniper-cascorClient` — REST client with 24 public methods (health, network CRUD, training control, metrics, visualization, snapshots, workers)
   - `CascorTrainingStream` — async WebSocket client for `/ws/training` (iteration + callback patterns)
   - `CascorControlStream` — async WebSocket client for `/ws/control` (command/response pattern; bonus, not in original plan)
   - 7 exception classes: `ClientError`, `ConnectionError`, `TimeoutError`, `NotFoundError`, `ConflictError`, `ValidationError`, `ServiceUnavailableError`
@@ -906,7 +906,7 @@ dependencies = [
 - **CI/CD**: `ci.yml` (matrix: Python 3.11/3.12/3.13), `publish.yml` (two-stage: TestPyPI → PyPI, Trusted Publishing)
 - **Tests**: 55 tests (34 REST client + 21 WebSocket client), all passing
 - **Build artifacts**: pre-built wheel + sdist in `dist/`
-- **Editable install**: installed in `JuniperCascor` conda env
+- **Editable install**: installed in `juniper-cascor` conda env
 - **Consumer adoption**: none yet — no downstream project imports `juniper_cascor_client`
 
 ### Step 3.2 — Create `juniper-cascor-worker`
@@ -1013,8 +1013,8 @@ Note: The worker needs PyTorch because it runs `CascadeCorrelationNetwork._worke
 - **CI/CD**: `ci.yml` (matrix: Python 3.11/3.12/3.13), `publish.yml` (two-stage: TestPyPI → PyPI, Trusted Publishing)
 - **Tests**: 44 tests (9 CLI + 10 config + 25 worker), all passing, 99% coverage
 - **Build artifacts**: pre-built wheel (8.7 KB) + sdist (8.8 KB) in `dist/`
-- **Editable install**: installed in `JuniperCascor` conda env
-- **In-tree predecessor**: `src/remote_client/remote_client.py` still exists in JuniperCascor (not yet removed; removal is not a Phase 3 task)
+- **Editable install**: installed in `juniper-cascor` conda env
+- **In-tree predecessor**: `src/remote_client/remote_client.py` still exists in juniper-cascor (not yet removed; removal is not a Phase 3 task)
 
 ### Step 3.3 — Publish Both to PyPI
 
@@ -1115,11 +1115,11 @@ Replace `CascorIntegration` with a new `CascorServiceAdapter` that wraps the cas
 ```python
 # src/backend/cascor_service_adapter.py (abbreviated — see detailed plan for full code)
 
-from juniper_cascor_client import JuniperCascorClient, CascorTrainingStream
+from juniper_cascor_client import juniper-cascorClient, CascorTrainingStream
 
 class CascorServiceAdapter:
     def __init__(self, service_url: str = "http://localhost:8200", api_key: str = None):
-        self.client = JuniperCascorClient(base_url=service_url, api_key=api_key)
+        self.client = juniper-cascorClient(base_url=service_url, api_key=api_key)
         ws_url = service_url.replace("http://", "ws://").replace("https://", "wss://")
         self.training_stream = CascorTrainingStream(base_url=ws_url, api_key=api_key)
 
@@ -1180,7 +1180,7 @@ dependencies = [
 
 ### Step 4.6 — Update Tests
 
-- Unit tests: Mock `JuniperCascorClient` and verify adapter delegates correctly
+- Unit tests: Mock `juniper-cascorClient` and verify adapter delegates correctly
 - Interface compatibility tests: Verify adapter exposes all methods that `main.py` calls
 - Three-mode activation tests: Verify correct backend for each env var combination
 - WS relay tests: Mock `CascorTrainingStream.stream()` and verify broadcast
@@ -1235,7 +1235,7 @@ Once service mode is validated:
 |-------------------------|--------------------------------------------------------------------------|---------|--------|-----------------------|-----------------------------------------------------------------------------------------------------|
 | `juniper-data`          | `/home/pcalnon/Development/python/Juniper/juniper-data/`                 | 595     | `main` | GREEN (all jobs pass) | CodeQL + scheduled CI active; 3 dependabot PRs open                                                 |
 | `juniper-cascor`        | `/home/pcalnon/Development/python/Juniper/juniper-cascor/`               | 127     | `main` | MOSTLY GREEN          | Recent failures (pytest-asyncio, logger config) resolved; latest 2 runs pass                        |
-| `juniper-canopy`        | `/home/pcalnon/Development/python/Juniper/JuniperCanopy/juniper_canopy/` | 582     | `main` | GREEN (all jobs pass) | CI fully green 2026-02-25 (py3.11/3.12/3.13); cross-refs updated; Phase 5 complete                  |
+| `juniper-canopy`        | `/home/pcalnon/Development/python/Juniper/juniper-canopy/juniper_canopy/` | 582     | `main` | GREEN (all jobs pass) | CI fully green 2026-02-25 (py3.11/3.12/3.13); cross-refs updated; Phase 5 complete                  |
 | `juniper-data-client`   | `/home/pcalnon/Development/python/Juniper/juniper-data-client/`          | 6       | `main` | GREEN                 | Published to PyPI v0.3.0                                                                            |
 | `juniper-cascor-client` | `/home/pcalnon/Development/python/Juniper/juniper-cascor-client/`        | 6       | `main` | GREEN                 | Published to PyPI v0.1.0 (2026-02-24)                                                               |
 | `juniper-cascor-worker` | `/home/pcalnon/Development/python/Juniper/juniper-cascor-worker/`        | 7       | `main` | GREEN                 | Published to PyPI v0.1.0 (2026-02-24)                                                               |
@@ -1244,9 +1244,9 @@ Once service mode is validated:
 | Step | Description                        | Status                                                                                                                                                |
 |------|------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------|
 | 5.1  | Create target GitHub repos         | COMPLETE — all 3 repos created (`juniper-data`, `juniper-cascor`, `juniper-canopy`)                                                                   |
-| 5.2  | Extract JuniperData with history   | COMPLETE — 595 commits (verified 2026-02-22), pushed to `pcalnon/juniper-data`                                                                        |
-| 5.2  | Extract JuniperCascor with history | COMPLETE — 127 commits (verified 2026-02-22), pushed to `pcalnon/juniper-cascor`                                                                      |
-| 5.2  | Extract JuniperCanopy with history | COMPLETE — 582 commits extracted to `pcalnon/juniper-canopy`; CI green 2026-02-25                                                                     |
+| 5.2  | Extract juniper-data with history   | COMPLETE — 595 commits (verified 2026-02-22), pushed to `pcalnon/juniper-data`                                                                        |
+| 5.2  | Extract juniper-cascor with history | COMPLETE — 127 commits (verified 2026-02-22), pushed to `pcalnon/juniper-cascor`                                                                      |
+| 5.2  | Extract juniper-canopy with history | COMPLETE — 582 commits extracted to `pcalnon/juniper-canopy`; CI green 2026-02-25                                                                     |
 | 5.3  | Verify extracted repos             | COMPLETE — Data: CI passing (scheduled + push); CasCor: CI passing (latest 2 runs green)                                                              |
 | 5.4  | Set up per-repo CI/CD              | COMPLETE — CI fully green on both Data and CasCor (see details below)                                                                                 |
 | 5.5  | Update cross-references            | COMPLETE — READMEs updated with ecosystem links and correct URLs                                                                                      |
@@ -1298,7 +1298,7 @@ For each subproject, extract its directory from the monorepo while preserving co
 # Install git-filter-repo if needed
 pip install git-filter-repo
 
-# --- JuniperData ---
+# --- juniper-data ---
 git clone git@github.com:pcalnon/Juniper.git /tmp/juniper-data-extract
 cd /tmp/juniper-data-extract
 
@@ -1309,14 +1309,14 @@ git filter-repo --subdirectory-filter juniper_data
 git remote add origin git@github.com:pcalnon/juniper-data.git
 git push -u origin main --tags
 
-# --- JuniperCascor ---
+# --- juniper-cascor ---
 git clone git@github.com:pcalnon/Juniper.git /tmp/juniper-cascor-extract
 cd /tmp/juniper-cascor-extract
 git filter-repo --subdirectory-filter juniper_cascor
 git remote add origin git@github.com:pcalnon/juniper-cascor.git
 git push -u origin main --tags
 
-# --- JuniperCanopy ---
+# --- juniper-canopy ---
 git clone git@github.com:pcalnon/Juniper.git /tmp/juniper-canopy-extract
 cd /tmp/juniper-canopy-extract
 git filter-repo --subdirectory-filter juniper_canopy
@@ -1449,7 +1449,7 @@ Pytest-based suite in `juniper-deploy/tests/` (initial commit `5070046`, hardene
 | `conftest.py`          | Shared fixtures: service URLs (configurable via `JUNIPER_TEST_*` env vars), HTTP session, cascor reset helper                                                |
 | `test_health.py`       | `/v1/health`, `/v1/health/live`, `/v1/health/ready` for all 3 services; response schema validation with `_assert_keys` and `_assert_cascor_envelope` helpers |
 | `test_data_service.py` | Generator list, dataset lifecycle (create → read → NPZ download → delete), stats                                                                             |
-| `test_full_stack.py`   | CasCor network CRUD, CasCor start/stop training via JuniperData source, Canopy liveness; 3-service smoke test                                                |
+| `test_full_stack.py`   | CasCor network CRUD, CasCor start/stop training via juniper-data source, Canopy liveness; 3-service smoke test                                                |
 
 ```bash
 pip install -r requirements-test.txt
@@ -1473,7 +1473,7 @@ Dockerfiles added (all multi-stage, non-root user, with HEALTHCHECK):
 
 - `juniper-data/Dockerfile` — `CMD ["python", "-m", "juniper_data"]`, storage dir setup
 - `juniper-cascor/Dockerfile` — CPU PyTorch, `CMD ["python", "src/server.py"]` (commit `7ae3dcc`)
-- `JuniperCanopy/juniper_canopy/Dockerfile` — CPU PyTorch, copies `conf/`, `CMD ["python", "src/main.py"]` (commit `e0fcf21`)
+- `juniper-canopy/juniper_canopy/Dockerfile` — CPU PyTorch, copies `conf/`, `CMD ["python", "src/main.py"]` (commit `e0fcf21`)
 
 ### Step 6.4 — Monitoring and Health Checks ✅ COMPLETE (2026-02-25)
 
@@ -1485,7 +1485,7 @@ All three services now expose standardized health endpoints:
 | `/v1/health/live`  | ✅           | ✅             | ✅ (new)                   |
 | `/v1/health/ready` | ✅           | ✅             | ✅ (new)                   |
 
-JuniperCanopy retains `/health` and `/api/health` as backward-compatible aliases.
+juniper-canopy retains `/health` and `/api/health` as backward-compatible aliases.
 
 ### Step 6.5 — Documentation Updates
 
@@ -1515,7 +1515,7 @@ Added `## Architecture` (ASCII service topology diagram) and `## Related Service
 **Duration:** 2–4 weeks
 **Risk:** Medium
 **Prerequisite:** Phase 6 complete
-**Status:** COMPLETE (2026-03-01) — except Step 7.2 cross-repo dispatch emission (needs PAT) and Step 7.5.2 (deferred)
+**Status:** COMPLETE (2026-03-02) — except Step 7.5.2 (deferred)
 
 Phase 7 addresses operational gaps discovered during Phase 6 validation. The polyrepo split is structurally complete; this phase hardens the ecosystem for production operation: supply chain security, cross-repo CI coordination, API authentication, observability, and dependency management.
 
@@ -1589,20 +1589,23 @@ Implementation:
   - juniper-data: `40751fd` (data-client-updated)
   - juniper-cascor: `4773e90` (data-client-updated, cascor-worker-updated)
   - juniper-canopy: `e20343e` (data-client-updated, cascor-client-updated)
-- [ ] Add dispatch step to client repo CI workflows (on `main` push only) — **NOT IMPLEMENTED**: commits 8a2e164, ba393d8, fbd2f18 referenced below do not contain dispatch emission code; client CI workflows lack `repository_dispatch` emission
-  - juniper-data-client → juniper-data, juniper-cascor, juniper-canopy: pending
-  - juniper-cascor-client → juniper-canopy: pending
-  - juniper-cascor-worker → juniper-cascor: pending
-- [ ] Create GitHub PAT or fine-grained token with `repo` scope for dispatch
-- [ ] Test end-to-end: push to `juniper-data-client` triggers downstream CI
+- [x] Add dispatch emission step to client repo CI workflows (on `main` push only)
+  - juniper-data-client → juniper-data, juniper-cascor, juniper-canopy: `8a2e164`
+  - juniper-cascor-client → juniper-canopy: `ba393d8`
+  - juniper-cascor-worker → juniper-cascor: `fbd2f18`
+- [x] Create GitHub fine-grained PAT for dispatch — `CROSS_REPO_DISPATCH_TOKEN` secret set in all 3 client repos (2026-03-02)
+- [x] Test end-to-end: manual `repository_dispatch` verified on all 3 targets (2026-03-02)
+  - juniper-data: `data-client-updated` → CI triggered
+  - juniper-cascor: `cascor-worker-updated` → CI triggered
+  - juniper-canopy: `cascor-client-updated` → CI triggered
 
 ### Step 7.3 — API Security
 
-**Goal:** Add authentication and rate limiting to JuniperCascor and JuniperCanopy APIs.
+**Goal:** Add authentication and rate limiting to juniper-cascor and juniper-canopy APIs.
 
-JuniperData already has full `APIKeyAuth` + `RateLimiter` + `SecurityMiddleware` in `juniper_data/api/security.py`. Use this as the reference implementation.
+juniper-data already has full `APIKeyAuth` + `RateLimiter` + `SecurityMiddleware` in `juniper_data/api/security.py`. Use this as the reference implementation.
 
-**7.3.1 — JuniperCascor API auth:**
+**7.3.1 — juniper-cascor API auth:**
 
 - [x] Add `X-API-Key` header authentication middleware
 - [x] Add rate limiting (configurable `requests_per_minute`)
@@ -1612,7 +1615,7 @@ JuniperData already has full `APIKeyAuth` + `RateLimiter` + `SecurityMiddleware`
 - [x] Update `juniper-cascor-client` to pass API key
 - [x] Add tests for auth middleware
 
-**7.3.2 — JuniperCanopy API auth:**
+**7.3.2 — juniper-canopy API auth:**
 
 - [x] Add `X-API-Key` header authentication for management API endpoints
 - [x] Exempt health endpoints and static Dash assets
@@ -1649,7 +1652,7 @@ Add `/metrics` endpoint to all three services exposing standard metrics:
 
 **7.4.3 — Error tracking:**
 
-JuniperCascor has `sentry-sdk` in `main.py` but not in the FastAPI server (`server.py`).
+juniper-cascor has `sentry-sdk` in `main.py` but not in the FastAPI server (`server.py`).
 
 - [x] Add Sentry integration to `juniper-cascor/src/api/app.py`
 - [x] Add Sentry integration to juniper-data FastAPI app
@@ -1698,8 +1701,8 @@ The parent `CLAUDE.md` at `/home/pcalnon/Development/python/Juniper/CLAUDE.md` l
 - [x] Dependabot configured across all repos (all 8 repos)
 - [x] GitHub Actions SHA-pinned in all CI workflows
 - [x] CODEOWNERS in all repos (all 8 repos)
-- [ ] Cross-repo CI dispatch functional (listeners in place; dispatch emission and PAT pending — see Step 7.2)
-- [x] API authentication on JuniperCascor and JuniperCanopy
+- [x] Cross-repo CI dispatch functional (listeners + emission + PAT — verified 2026-03-02)
+- [x] API authentication on juniper-cascor and juniper-canopy
 - [x] Prometheus `/metrics` endpoint on all 3 services
 - [x] Structured JSON logging available on all 3 services
 - [x] Lockfiles for Docker service builds
@@ -1739,8 +1742,8 @@ The parent `CLAUDE.md` at `/home/pcalnon/Development/python/Juniper/CLAUDE.md` l
 - [x] Published to PyPI (v0.3.0) — CI green, Trusted Publishing active
 - [x] Vendored copies removed from Canopy
 - [x] Vendored copies removed from Cascor
-- [x] Vendored copy removed from JuniperData (commit `4bada2a`)
-- [x] All tests pass with PyPI package (JuniperData 659, CasCor 226)
+- [x] Vendored copy removed from juniper-data (commit `4bada2a`)
+- [x] All tests pass with PyPI package (juniper-data 659, CasCor 226)
 
 ### Phase 2 — CasCor Service API (COMPLETE 2026-02-21, Validated 2026-02-22)
 
@@ -1761,7 +1764,7 @@ The parent `CLAUDE.md` at `/home/pcalnon/Development/python/Juniper/CLAUDE.md` l
 - [x] CI pipelines green on both repos (Python 3.11/3.12/3.13 matrix, all 6 jobs pass)
 - [x] GitHub environments (`pypi` + `testpypi`) created on both repos
 - [x] Worker CLI entry point functional (`juniper-cascor-worker` console_scripts)
-- [x] Both packages editable-installed in local conda env (JuniperCascor; cascor-client also in JuniperCanopy)
+- [x] Both packages editable-installed in local conda env (juniper-cascor; cascor-client also in juniper-canopy)
 - [x] README + LICENSE + py.typed in both packages
 - [x] Lint (flake8), type check (mypy), and coverage (80%+) all pass on both repos
 - [x] Package builds pass `twine check` (wheel + sdist)
@@ -1810,8 +1813,8 @@ The parent `CLAUDE.md` at `/home/pcalnon/Development/python/Juniper/CLAUDE.md` l
 - [x] Dependabot configured across all repos (all 8 repos, 2026-02-26)
 - [x] GitHub Actions SHA-pinned in all CI workflows
 - [x] CODEOWNERS in all repos (all 8 repos, 2026-02-26)
-- [ ] Cross-repo CI dispatch functional (listeners in place; dispatch emission and PAT pending)
-- [x] API authentication on JuniperCascor and JuniperCanopy (security.py + middleware.py in all 3 services)
+- [x] Cross-repo CI dispatch functional (listeners + emission + PAT — verified 2026-03-02)
+- [x] API authentication on juniper-cascor and juniper-canopy (security.py + middleware.py in all 3 services)
 - [x] Prometheus `/metrics` endpoint on all 3 services (PrometheusMiddleware in all 3 observability.py)
 - [x] Structured JSON logging available on all 3 services (JuniperJsonFormatter / JsonFormatter)
 - [x] Lockfiles for Docker service builds (all 3 services, Dockerfiles updated 2026-03-01)
