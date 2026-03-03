@@ -60,7 +60,7 @@ class TestCreateNetworkErrors:
         with patch.object(client.app.state.lifecycle, "create_network", side_effect=RuntimeError("Network already exists")):
             response = client.post("/v1/network", json={"input_size": 2, "output_size": 2})
             assert response.status_code == 409
-            assert "Network already exists" in response.json()["detail"]
+            assert "cannot be created" in response.json()["detail"]
 
 
 class TestDeleteNetworkErrors:
@@ -71,7 +71,7 @@ class TestDeleteNetworkErrors:
         with patch.object(client.app.state.lifecycle, "delete_network", side_effect=RuntimeError("Cannot delete during training")):
             response = client.delete("/v1/network")
             assert response.status_code == 409
-            assert "Cannot delete during training" in response.json()["detail"]
+            assert "cannot be deleted" in response.json()["detail"]
 
 
 class TestGetTopologyErrors:

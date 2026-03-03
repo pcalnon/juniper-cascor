@@ -30,9 +30,16 @@ class TestAppFactory:
         assert app.title == "JuniperCascor API"
         assert app.version == "0.4.0"
 
-    def test_cors_middleware_applied(self):
-        """Test that CORS middleware is applied."""
+    def test_cors_middleware_skipped_with_empty_origins(self):
+        """Test that CORS middleware is not applied when origins is empty."""
         app = create_app(Settings())
+        middleware_classes = [m.cls.__name__ for m in app.user_middleware]
+        assert "CORSMiddleware" not in middleware_classes
+
+    def test_cors_middleware_applied_with_explicit_origins(self):
+        """Test that CORS middleware is applied when origins are configured."""
+        settings = Settings(cors_origins=["http://localhost:3000"])
+        app = create_app(settings)
         middleware_classes = [m.cls.__name__ for m in app.user_middleware]
         assert "CORSMiddleware" in middleware_classes
 

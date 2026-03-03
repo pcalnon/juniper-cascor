@@ -179,10 +179,10 @@ class TestStartTraining:
         assert response.status_code == 409
 
     def test_start_training_no_body(self, client_with_network):
-        """start_training without body should fail with no data error."""
+        """start_training without body should fail with state error."""
         response = client_with_network.post("/v1/training/start")
         assert response.status_code == 409
-        assert "not provided" in response.json()["detail"].lower() or "data" in response.json()["detail"].lower()
+        assert "cannot be started" in response.json()["detail"].lower()
 
 
 class TestPauseTraining:
@@ -192,7 +192,7 @@ class TestPauseTraining:
         """Pause should return 409 when training is not active."""
         response = client.post("/v1/training/pause")
         assert response.status_code == 409
-        assert "not active" in response.json()["detail"].lower()
+        assert "cannot be paused" in response.json()["detail"].lower()
 
 
 class TestResumeTraining:
@@ -202,7 +202,7 @@ class TestResumeTraining:
         """Resume should return 409 when training is not paused."""
         response = client.post("/v1/training/resume")
         assert response.status_code == 409
-        assert "not paused" in response.json()["detail"].lower()
+        assert "cannot be resumed" in response.json()["detail"].lower()
 
 
 class TestGetParams:
