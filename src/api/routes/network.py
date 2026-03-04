@@ -1,6 +1,10 @@
 """Network management routes."""
 
+import logging
+
 from fastapi import APIRouter, HTTPException, Request
+
+logger = logging.getLogger("juniper_cascor.api.routes.network")
 
 from api.models.common import success_response
 from api.models.network import NetworkCreateRequest
@@ -23,7 +27,8 @@ async def create_network(request: Request, body: NetworkCreateRequest) -> dict:
         info = lifecycle.create_network(**body.model_dump())
         return success_response(info)
     except RuntimeError as e:
-        raise HTTPException(status_code=409, detail=str(e))
+        logger.debug("Create network failed: %s", e)
+        raise HTTPException(status_code=409, detail="Network cannot be created in the current state")
 
 
 @router.get("")
@@ -43,7 +48,8 @@ async def delete_network(request: Request) -> dict:
         lifecycle.delete_network()
         return success_response({"deleted": True})
     except RuntimeError as e:
-        raise HTTPException(status_code=409, detail=str(e))
+        logger.debug("Delete network failed: %s", e)
+        raise HTTPException(status_code=409, detail="Network cannot be deleted in the current state")
 
 
 @router.get("/topology")

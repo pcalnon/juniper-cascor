@@ -813,6 +813,9 @@ class CascadeHDF5Serializer:
             if "python_state" in random_group:
                 python_state_array = load_numpy_array(random_group["python_state"])
                 python_state_bytes = python_state_array.tobytes()
+                # SECURITY: pickle.loads is used here to restore Python random state from
+                # HDF5 snapshots. These snapshots are trusted-origin-only artifacts created
+                # by this application. Do NOT load untrusted/third-party snapshot files.
                 python_state = pickle.loads(python_state_bytes)  # trunk-ignore(bandit/B301)
                 random.setstate(python_state)
                 self.logger.debug("CascadeHDF5Serializer: Restored Python random state")

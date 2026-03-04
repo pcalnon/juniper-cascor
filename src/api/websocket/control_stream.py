@@ -19,6 +19,7 @@ from api.websocket.messages import create_control_ack_message
 logger = logging.getLogger("juniper_cascor.api.websocket.control")
 
 _VALID_COMMANDS = {"start", "stop", "pause", "resume", "reset"}
+_MAX_MESSAGE_SIZE = 65536  # 64KB
 
 
 async def control_stream_handler(websocket: WebSocket) -> None:
@@ -45,6 +46,10 @@ async def control_stream_handler(websocket: WebSocket) -> None:
         while True:
             raw = await websocket.receive_text()
 
+            if len(raw) > _MAX_MESSAGE_SIZE:
+                await websocket.send_json(create_control_ack_message("unknown", "error", error="Message too large"))
+                continue
+
             try:
                 msg = json.loads(raw)
             except json.JSONDecodeError:
@@ -65,8 +70,8 @@ async def control_stream_handler(websocket: WebSocket) -> None:
                 result = _execute_command(lifecycle, command, msg.get("params"))
                 await websocket.send_json(create_control_ack_message(command, "success", data=result))
             except Exception as e:
-                logger.error(f"Command '{command}' failed: {e}")
-                await websocket.send_json(create_control_ack_message(command, "error", error=str(e)))
+                logger.error("Command '%s' failed: %s", command, e)
+                await websocket.send_json(create_control_ack_message(command, "error", error="Command execution failed"))
 
     except WebSocketDisconnect:
         pass
