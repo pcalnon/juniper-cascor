@@ -81,7 +81,7 @@ all = [
 
 [tool.black]
 line-length = 512
-target-version = ["py311", "py312", "py313"]
+target-version = ["py312", "py313", "py314"]
 
 include = '\.pyi?$'
 extend-exclude = '''
@@ -181,7 +181,7 @@ directory = "src/tests/reports/htmlcov"
 output = "src/tests/reports/coverage.xml"
 
 [tool.mypy]
-python_version = "3.13"
+python_version = "3.14"
 warn_return_any = false
 warn_unused_configs = true
 ignore_missing_imports = true
