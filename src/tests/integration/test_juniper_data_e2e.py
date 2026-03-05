@@ -78,7 +78,7 @@ def juniper_data_test_client():
         from juniper_data.api.app import create_app
         from juniper_data.api.settings import Settings
     except ImportError:
-        pytest.skip("JuniperData package not installed")
+        pytest.skip("juniper-data package not installed")
 
     from fastapi.testclient import TestClient
 
