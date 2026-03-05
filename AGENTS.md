@@ -47,7 +47,7 @@ cd src && python main.py --profile --profile-output ./my_profiles  # Custom outp
 cd src && python -m mypy cascade_correlation/ candidate_unit/ --ignore-missing-imports
 
 # Linting with flake8
-cd src && python -m flake8 . --max-line-length=120 --extend-ignore=E203,E266,E501,W503
+cd src && python -m flake8 . --max-line-length=512 --extend-ignore=E203,E266,E501,W503
 
 # Format checking with black
 cd src && python -m black --check --diff .

@@ -82,7 +82,7 @@ all = [
 
 [tool.black]
 line-length = 512
-target-version = ["py312", "py313", "py314"]
+target-version = ["py312", "py313"]
 
 include = '\.pyi?$'
 extend-exclude = '''
