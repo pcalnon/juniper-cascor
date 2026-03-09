@@ -101,8 +101,11 @@ dist/
 # Package files
 *.jar
 
-# VSCode IDE
-.vscode/
+# VSCode / Cursor IDE
+.vscode/*
+!.vscode/settings.json
+!.vscode/launch.json
+!.vscode/extensions.json
 .trunk/
 .trunk_new/
 

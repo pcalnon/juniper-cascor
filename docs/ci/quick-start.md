@@ -90,7 +90,7 @@ python -m isort --check-only --diff .
 
 # Linting (flake8)
 python -m flake8 . \
-    --max-line-length=120 \
+    --max-line-length=512 \
     --extend-ignore=E203,E266,E501,W503 \
     --max-complexity=15
 
@@ -130,7 +130,7 @@ pip install pytest pytest-cov pytest-timeout pytest-xdist
 cd src
 black --check --diff .
 isort --check-only --diff .
-flake8 . --max-line-length=120 --extend-ignore=E203,E266,E501,W503
+flake8 . --max-line-length=512 --extend-ignore=E203,E266,E501,W503
 mypy cascade_correlation/ candidate_unit/ --ignore-missing-imports
 
 cd tests
@@ -159,7 +159,7 @@ python -m isort .  # Auto-fix import order
 
 - Review the specific error codes in the output
 - Common ignores already configured: `E203`, `E266`, `E501`, `W503`
-- Max line length is 120 characters
+- Max line length is 512 characters
 
 **MyPy type errors:**
 

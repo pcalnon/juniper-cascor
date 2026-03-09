@@ -1,0 +1,24 @@
+{
+    "python.defaultInterpreterPath": "${workspaceFolder}/.conda/bin/python",
+    "python.formatting.provider": "none",
+    "[python]": {
+        "editor.defaultFormatter": "ms-python.black-formatter",
+        "editor.formatOnSave": true,
+        "editor.codeActionsOnSave": {
+            "source.organizeImports": "explicit"
+        }
+    },
+    "black-formatter.args": ["--line-length", "512"],
+    "isort.args": ["--profile", "black", "--line-length", "512"],
+    "python.linting.enabled": true,
+    "python.linting.flake8Enabled": true,
+    "python.linting.flake8Args": [
+        "--max-line-length=512",
+        "--extend-ignore=E203,E266,E501,W503"
+    ],
+    "python.analysis.typeCheckingMode": "basic",
+    "python.analysis.diagnosticMode": "workspace",
+    "editor.rulers": [512],
+    "files.trimTrailingWhitespace": true,
+    "files.insertFinalNewline": true
+}
