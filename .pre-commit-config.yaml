@@ -4,10 +4,10 @@
 # Application:   juniper_cascor
 # File Name:     .pre-commit-config.yaml
 # Author:        Paul Calnon
-# Version:       0.4.2
+# Version:       0.4.3
 #
 # Date Created:  2026-01-29
-# Last Modified: 2026-01-31
+# Last Modified: 2026-03-09
 #
 # License:       MIT License
 # Copyright:     Copyright (c) 2024-2026 Paul Calnon
@@ -218,7 +218,6 @@ repos:
         additional_dependencies:
           - types-PyYAML
           - types-requests
-          - torch
 
   # ═══════════════════════════════════════════════════════════════════════════
   # Security Scanning - Bandit (Source Code)
