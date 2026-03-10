@@ -93,6 +93,29 @@ log_debug "Python: ${PYTHON} (ver: $("${PYTHON}" "--version"))"
 
 
 #####################################################################################################################################################################################################
+# Pre-flight: Verify JuniperData service is reachable
+#####################################################################################################################################################################################################
+log_info "Pre-flight: Checking JuniperData service at ${JUNIPER_DATA_URL}"
+if command -v curl &>/dev/null; then
+    if ! curl -sf --max-time 3 "${JUNIPER_DATA_URL}/v1/health" &>/dev/null; then
+        log_error "================================================================================"
+        log_error "  JuniperData service is NOT reachable at: ${JUNIPER_DATA_URL}"
+        log_error "  JuniperCascor requires JuniperData for dataset generation."
+        log_error ""
+        log_error "  To start JuniperData:"
+        log_error "    cd /home/pcalnon/Development/python/Juniper/juniper-data"
+        log_error "    conda activate JuniperData && ./try"
+        log_error "================================================================================"
+        exit $(( FALSE ))
+    else
+        log_info "Pre-flight: JuniperData service is healthy"
+    fi
+else
+    log_info "Pre-flight: curl not available, skipping JuniperData health check"
+fi
+
+
+#####################################################################################################################################################################################################
 # Launch the Main function of the Juniper CasCor Application
 #####################################################################################################################################################################################################
 log_debug "time \"${PYTHON}\" \"${PYTHON_SCRIPT}\""

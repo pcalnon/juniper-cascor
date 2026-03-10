@@ -231,6 +231,24 @@ def main():
 
     # #####################################################################################################################################################################################################
 
+    # Pre-flight check: Validate JuniperData service connectivity before expensive initialization
+    juniper_data_url = os.environ.get("JUNIPER_DATA_URL")
+    if not juniper_data_url:
+        logger.error("Cascor: main: JUNIPER_DATA_URL environment variable is not set. " "Set it to the JuniperData service URL (e.g., 'http://localhost:8100'). " "See AGENTS.md for configuration details.")
+        os._exit(3)
+
+    logger.info(f"Cascor: main: Pre-flight check: Verifying JuniperData service at {juniper_data_url}")
+    try:
+        import urllib.request
+
+        health_url = f"{juniper_data_url.rstrip('/')}/v1/health"
+        req = urllib.request.Request(health_url, method="GET")
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            logger.info(f"Cascor: main: Pre-flight check: JuniperData service is healthy (HTTP {resp.status})")
+    except Exception as e:
+        logger.error(f"Cascor: main: Pre-flight check FAILED: JuniperData service at {juniper_data_url} is not reachable. " f"Error: {e}\n" f"    Please start the JuniperData service before running JuniperCascor:\n" f"        cd juniper-data && conda activate JuniperData && ./try\n" f"    Or:  conda activate JuniperData && python -m juniper_data")
+        os._exit(4)
+
     # Instantiate the SpiralProblem class
     logger.info("Cascor: main: Creating SpiralProblem instance")
     sp = SpiralProblem(
