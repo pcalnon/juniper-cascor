@@ -6,18 +6,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from api.observability import (
-    JuniperJsonFormatter,
-    PrometheusMiddleware,
-    RequestIdMiddleware,
-    configure_logging,
-    configure_sentry,
-    get_prometheus_app,
-    record_training_epoch,
-    request_id_var,
-    set_build_info,
-    set_training_loss,
-)
+from api.observability import JuniperJsonFormatter, PrometheusMiddleware, RequestIdMiddleware, configure_logging, configure_sentry, get_prometheus_app, record_training_epoch, request_id_var, set_build_info, set_training_loss
 
 
 @pytest.mark.unit

@@ -15,14 +15,7 @@ from fastapi.responses import JSONResponse
 from api.lifecycle.manager import TrainingLifecycleManager
 from api.middleware import SecurityMiddleware
 from api.models.common import error_response
-from api.observability import (
-    PrometheusMiddleware,
-    RequestIdMiddleware,
-    configure_logging,
-    configure_sentry,
-    get_prometheus_app,
-    set_build_info,
-)
+from api.observability import PrometheusMiddleware, RequestIdMiddleware, configure_logging, configure_sentry, get_prometheus_app, set_build_info
 from api.routes import dataset, decision_boundary, health, metrics, network, training
 from api.security import APIKeyAuth, RateLimiter
 from api.settings import Settings, get_settings
