@@ -15,13 +15,7 @@ from fastapi.responses import JSONResponse
 from api.lifecycle.manager import TrainingLifecycleManager
 from api.middleware import SecurityMiddleware
 from api.models.common import error_response
-from api.observability import (
-    PrometheusMiddleware,
-    RequestIdMiddleware,
-    configure_logging,
-    configure_sentry,
-    get_prometheus_app,
-)
+from api.observability import PrometheusMiddleware, RequestIdMiddleware, configure_logging, configure_sentry, get_prometheus_app, set_build_info
 from api.routes import dataset, decision_boundary, health, metrics, network, training
 from api.security import APIKeyAuth, RateLimiter
 from api.settings import Settings, get_settings
@@ -41,6 +35,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
     configure_logging(settings.log_level, settings.log_format, "juniper-cascor")
     configure_sentry(settings.sentry_dsn, "juniper-cascor", _API_VERSION)
+    if settings.metrics_enabled:
+        set_build_info("juniper_cascor", _API_VERSION)
 
     logger.info(f"JuniperCascor API v{_API_VERSION} starting")
     logger.info(f"Listening on {settings.host}:{settings.port}")
@@ -180,7 +176,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # Middleware execution is LIFO: last added runs first.
     # Order: RequestIdMiddleware → PrometheusMiddleware → SecurityMiddleware → CORS
     if settings.metrics_enabled:
-        app.add_middleware(PrometheusMiddleware, service_name="juniper-cascor")
+        app.add_middleware(PrometheusMiddleware, service_name="juniper-cascor", namespace="juniper_cascor")
     app.add_middleware(RequestIdMiddleware)
 
     # REST Routes

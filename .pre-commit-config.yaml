@@ -4,10 +4,10 @@
 # Application:   juniper_cascor
 # File Name:     .pre-commit-config.yaml
 # Author:        Paul Calnon
-# Version:       0.4.2
+# Version:       0.4.3
 #
 # Date Created:  2026-01-29
-# Last Modified: 2026-01-31
+# Last Modified: 2026-03-09
 #
 # License:       MIT License
 # Copyright:     Copyright (c) 2024-2026 Paul Calnon
@@ -218,14 +218,13 @@ repos:
         additional_dependencies:
           - types-PyYAML
           - types-requests
-          - torch
 
   # ═══════════════════════════════════════════════════════════════════════════
   # Security Scanning - Bandit (Source Code)
   # NOTE: Bandit runs on files passed by pre-commit, not on directories
   # ═══════════════════════════════════════════════════════════════════════════
   - repo: https://github.com/PyCQA/bandit
-    rev: 1.7.9
+    rev: 1.9.4
     hooks:
       - id: bandit
         name: Security scan source with Bandit
@@ -243,13 +242,13 @@ repos:
   # Security Scanning - Bandit (Tests - Relaxed Rules) - HIGH-006
   # ═══════════════════════════════════════════════════════════════════════════
   - repo: https://github.com/PyCQA/bandit
-    rev: 1.7.9
+    rev: 1.9.4
     hooks:
       - id: bandit
         name: Security scan tests with Bandit (relaxed)
         args:
           - -q
-          - --skip=B101,B104,B108,B110,B301,B311,B403
+          - --skip=B101,B104,B108,B110,B301,B311,B403,B614
           # B101: assert_used (tests use assertions extensively)
           # B104: hardcoded_bind_all_interfaces (test fixtures use 0.0.0.0)
           # B108: hardcoded_tmp_directory (tests use /tmp paths in mocks)
@@ -257,6 +256,7 @@ repos:
           # B301: pickle.loads (testing serialization)
           # B311: random (not used for security in tests)
           # B403: import pickle (testing serialization)
+          # B614: pytorch_load (torch.load used in test assertions)
         files: ^src/tests/.*\.py$
 
   # ═══════════════════════════════════════════════════════════════════════════
@@ -268,7 +268,7 @@ repos:
       - id: markdownlint
         name: Lint Markdown files
         args:
-          - --config=./.markdownlint.yaml
+          - --config=./.markdownlint.json
           - --fix
         files: \.(md|markdown)$
         exclude: ^(CHANGELOG\.md|notes/|docs/)
@@ -339,9 +339,9 @@ repos:
     hooks:
       - id: no-unencrypted-env
         name: Block unencrypted .env files
-        entry: bash -c 'echo "ERROR Unencrypted .env file detected. Use sops to encrypt." && exit 1'
+        entry: "bash -c 'echo \"ERROR Unencrypted .env file detected. Use sops to encrypt.\" && exit 1'"
         language: system
-        files: ^\.env(\.secrets)?$
+        files: '^\.env(\.secrets)?$'
         types: [file]
 
 # CI configuration (for pre-commit.ci service, if used)

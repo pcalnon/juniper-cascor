@@ -36,7 +36,7 @@ description = "Cascade Correlation Neural Network implementation for the Juniper
 readme = "README.md"
 license = { text = "MIT" }
 authors = [{ name = "Paul Calnon" }]
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 
 dependencies = [
     "numpy>=1.24.0",
@@ -82,7 +82,7 @@ all = [
 
 [tool.black]
 line-length = 512
-target-version = ["py312", "py313", "py314"]
+target-version = ["py312", "py313"]
 
 include = '\.pyi?$'
 extend-exclude = '''

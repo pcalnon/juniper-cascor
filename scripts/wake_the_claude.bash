@@ -1,0 +1,1 @@
+../../juniper-ml/scripts/wake_the_claude.bash

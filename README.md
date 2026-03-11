@@ -21,7 +21,7 @@ For full-stack Docker deployment and integration tests, see `juniper-deploy`.
 
 JuniperCascor is the **training service** of the Juniper ecosystem. It depends on JuniperData for datasets and is monitored by juniper-canopy in real-time.
 
-```
+```text
 ┌─────────────────────┐     REST+WS      ┌──────────────────────┐
 │   juniper-canopy     │ ◄──────────────► │  JuniperCascor       │
 │   Dashboard         │                  │  Training Svc        │

@@ -882,7 +882,7 @@ bash scripts/run_tests.bash -c
 cd src && python -m mypy cascade_correlation/ candidate_unit/
 
 # Lint
-cd src && python -m flake8 . --max-line-length=120
+cd src && python -m flake8 . --max-line-length=512
 
 # Format
 cd src && python -m black . && python -m isort .

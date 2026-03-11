@@ -233,7 +233,7 @@ pip install black isort mypy flake8 flake8-bugbear flake8-comprehensions flake8-
 # Run checks matching CI
 black --check --diff src/
 isort --check-only --diff src/
-flake8 src/ --count --select=B,C,E,F,W,T4,B9 --extend-ignore=E203,E266,E501,W503 --max-line-length=120 --max-complexity=15
+flake8 src/ --count --select=B,C,E,F,W,T4,B9 --extend-ignore=E203,E266,E501,W503 --max-line-length=512 --max-complexity=15
 mypy src/ --ignore-missing-imports --no-strict-optional
 ```
 

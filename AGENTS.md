@@ -47,7 +47,7 @@ cd src && python main.py --profile --profile-output ./my_profiles  # Custom outp
 cd src && python -m mypy cascade_correlation/ candidate_unit/ --ignore-missing-imports
 
 # Linting with flake8
-cd src && python -m flake8 . --max-line-length=120 --extend-ignore=E203,E266,E501,W503
+cd src && python -m flake8 . --max-line-length=512 --extend-ignore=E203,E266,E501,W503
 
 # Format checking with black
 cd src && python -m black --check --diff .
@@ -686,6 +686,7 @@ Archived documentation (plans, roadmaps, implementation summaries from earlier d
 Git worktrees allow multiple branches of a repository to be checked out simultaneously in separate directories. For the Juniper ecosystem, all worktrees are centralized in **`/home/pcalnon/Development/python/Juniper/worktrees/`** using a standardized naming convention.
 
 The full setup and cleanup procedures are defined in:
+
 - **`notes/WORKTREE_SETUP_PROCEDURE.md`** — Creating a worktree for a new task
 - **`notes/WORKTREE_CLEANUP_PROCEDURE.md`** — Merging, removing, and pushing after task completion
 
@@ -713,6 +714,7 @@ Example: `juniper-cascor--feature--add-validation--20260225-1430--fb530aa1`
 ### Quick Reference
 
 **Setup** (full procedure in `notes/WORKTREE_SETUP_PROCEDURE.md`):
+
 ```bash
 cd /home/pcalnon/Development/python/Juniper/juniper-cascor
 git fetch origin && git checkout main && git pull origin main
@@ -726,6 +728,7 @@ cd "$WORKTREE_DIR"
 ```
 
 **Cleanup** (full procedure in `notes/WORKTREE_CLEANUP_PROCEDURE.md`):
+
 ```bash
 cd "$WORKTREE_DIR" && git push origin "$BRANCH_NAME"
 cd /home/pcalnon/Development/python/Juniper/juniper-cascor

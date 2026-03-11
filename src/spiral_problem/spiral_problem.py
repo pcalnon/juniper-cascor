@@ -509,6 +509,7 @@ class SpiralProblem(object):
         from spiral_problem.data_provider import SpiralDataProvider
 
         provider = SpiralDataProvider(juniper_data_url)
+        provider.validate_configuration()
         return provider.get_spiral_dataset(
             n_spirals=n_spirals,
             n_points=n_points,

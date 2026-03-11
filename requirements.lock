@@ -151,9 +151,11 @@ triton==3.6.0
     # via torch
 typing-extensions==4.15.0
     # via
+    #   anyio
     #   fastapi
     #   pydantic
     #   pydantic-core
+    #   starlette
     #   torch
     #   typing-inspection
 typing-inspection==0.4.2

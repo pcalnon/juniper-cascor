@@ -5,6 +5,28 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- Namespaced Prometheus metrics (`juniper_cascor_` prefix) with training and inference metrics
+- `juniper_cascor_training_sessions_active` Gauge
+- `juniper_cascor_training_epochs_total` Counter (by phase)
+- `juniper_cascor_training_loss` Gauge (by phase, loss_type)
+- `juniper_cascor_training_accuracy_ratio` Gauge (by phase)
+- `juniper_cascor_hidden_units_total` Gauge
+- `juniper_cascor_candidate_correlation` Gauge
+- `juniper_cascor_inference_requests_total` Counter
+- `juniper_cascor_inference_duration_seconds` Histogram
+- `juniper_cascor_build_info` Info metric
+
+### Changed
+
+- Renamed HTTP metrics: `http_requests_total` → `juniper_cascor_http_requests_total`, `http_request_duration_seconds` → `juniper_cascor_http_request_duration_seconds`
+- Renamed environment variables: `CASCOR_HOST` → `JUNIPER_CASCOR_HOST`, `CASCOR_PORT` → `JUNIPER_CASCOR_PORT`, `CASCOR_LOG_LEVEL` → `JUNIPER_CASCOR_LOG_LEVEL`
+
+---
+
 ## [0.7.0] - 2026-02-06
 
 ### Changed

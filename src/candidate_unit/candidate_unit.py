@@ -444,7 +444,7 @@ class CandidateUnit:
         seeder(seed)
         self.logger.trace("CandidateUnit: _seed_random_generator: Random seed set for random module.")
         if generator is None:
-            self.logger.warning("CandidateUnit: _seed_random_generator: No generator function provided, skipping random number generation and sequence rolling.")
+            self.logger.trace("CandidateUnit: _seed_random_generator: No generator function provided, skipping random number generation and sequence rolling.")
             return
         # random_sequence = generator(0, max_value)
         # trunk-ignore(bandit/B311)
