@@ -49,7 +49,7 @@ async def readiness_probe(request: Request) -> ReadinessResponse:
         try:
             status = lifecycle.get_status()
             training_state = status.get("training_state", "unknown")
-        except Exception:
+        except Exception:  # nosec B110 - intentional pass for health check resilience
             pass
 
     # Probe JuniperData

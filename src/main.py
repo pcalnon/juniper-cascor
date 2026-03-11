@@ -243,7 +243,7 @@ def main():
 
         health_url = f"{juniper_data_url.rstrip('/')}/v1/health"
         req = urllib.request.Request(health_url, method="GET")
-        with urllib.request.urlopen(req, timeout=5) as resp:
+        with urllib.request.urlopen(req, timeout=5) as resp:  # nosec B310 - internal health check URL from env var
             logger.info(f"Cascor: main: Pre-flight check: JuniperData service is healthy (HTTP {resp.status})")
     except Exception as e:
         logger.error(f"Cascor: main: Pre-flight check FAILED: JuniperData service at {juniper_data_url} is not reachable. " f"Error: {e}\n" f"    Please start the JuniperData service before running JuniperCascor:\n" f"        cd juniper-data && conda activate JuniperData && ./try\n" f"    Or:  conda activate JuniperData && python -m juniper_data")

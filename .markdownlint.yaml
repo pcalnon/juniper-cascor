@@ -95,6 +95,8 @@ config:
   line-length: 512  # MD013/line-length: Line length
   code-block-style: consistent  # MD046/code-block-style: Code block style [Expected: fenced; Actual: indented]
   emphasis-style: false  # MD036: Emphasis used instead of a header
+  no-duplicate-heading:
+    siblings_only: true  # MD024: Allow same heading text under different parent sections
 
 # Fix any fixable errors
 fix: true
