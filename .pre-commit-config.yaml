@@ -339,7 +339,7 @@ repos:
     hooks:
       - id: no-unencrypted-env
         name: Block unencrypted .env files
-        entry: bash -c 'echo "ERROR: Unencrypted .env file detected. Use sops to encrypt." && exit 1'
+        entry: bash -c 'echo "ERROR Unencrypted .env file detected. Use sops to encrypt." && exit 1'
         language: system
         files: ^\.env(\.secrets)?$
         types: [file]
