@@ -78,9 +78,9 @@ nvidia-nvshmem-cu12==3.3.20
 nvidia-nvtx-cu12==12.8.90
 objprint==0.3.0
 optree==0.18.0
-packaging==25.0
+packaging==26.0
 pillow==12.1.0
-pip==25.3
+pip==26.0.1
 pluggy==1.6.0
 psutil==7.2.1
 pybind11==3.0.1
@@ -92,7 +92,7 @@ pytest==9.0.1
 pytest-cov==7.0.0
 python-dateutil==2.9.0.post0
 PyYAML==6.0.3
-setuptools==80.9.0
+setuptools==82.0.0
 shiboken6==6.10.1
 six==1.17.0
 sympy==1.14.0

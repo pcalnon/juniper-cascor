@@ -1,7 +1,9 @@
 """API configuration settings using pydantic-settings."""
 
 from functools import lru_cache
+from typing import Any
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # Define Safe and Reasonable Defaults for API Settings
@@ -80,7 +82,15 @@ class Settings(BaseSettings):
     ws_heartbeat_interval_sec: int = _JUNIPER_CASCOR_API_WS_HEARTBEAT_INTERVAL_SEC_DEFAULT
 
     api_keys: list[str] | None = _JUNIPER_CASCOR_API_KEYS_LIST_EMPTY
-    rate_limit_enabled: bool = _JUNIPER_CASCOR_API_RATELIMIT_ENABLED
+
+    @field_validator("api_keys", mode="before")
+    @classmethod
+    def _empty_string_to_none(cls, v: Any) -> list[str] | None:
+        if isinstance(v, str) and v.strip() == "":
+            return None
+        return v
+
+    rate_limit_enabled: bool = _JUNIPER_CASCOR_API_RATELIMIT_DISABLED
     rate_limit_requests_per_minute: int = _JUNIPER_CASCOR_API_RATELIMIT_DEFAULT
 
     log_format: str = _JUNIPER_CASCOR_API_LOG_FORMAT_DEFAULT

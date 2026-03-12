@@ -8,41 +8,47 @@ anyio==4.12.1
     # via
     #   starlette
     #   watchfiles
-certifi==2022.12.7
+certifi==2026.2.25
     # via
     #   requests
     #   sentry-sdk
-charset-normalizer==3.4.4
+charset-normalizer==3.4.5
     # via requests
 click==8.3.1
     # via uvicorn
 contourpy==1.3.3
     # via matplotlib
+cuda-bindings==12.9.4
+    # via torch
+cuda-pathfinder==1.4.2
+    # via cuda-bindings
 cycler==0.12.1
     # via matplotlib
-fastapi==0.133.1
+fastapi==0.135.1
     # via juniper-cascor (pyproject.toml)
-filelock==3.20.0
+filelock==3.25.2
     # via torch
-fonttools==4.61.1
+fonttools==4.62.0
     # via matplotlib
-fsspec==2025.12.0
+fsspec==2026.2.0
     # via torch
 h11==0.16.0
     # via uvicorn
-h5py==3.15.1
+h5py==3.16.0
     # via juniper-cascor (pyproject.toml)
 httptools==0.7.1
     # via uvicorn
-idna==3.4
+idna==3.11
     # via
     #   anyio
     #   requests
 jinja2==3.1.6
     # via torch
+juniper-data==0.4.2
+    # via juniper-cascor (pyproject.toml)
 juniper-data-client==0.3.1
     # via juniper-cascor (pyproject.toml)
-kiwisolver==1.4.9
+kiwisolver==1.5.0
     # via matplotlib
 markupsafe==3.0.3
     # via jinja2
@@ -52,16 +58,56 @@ mpmath==1.3.0
     # via sympy
 networkx==3.6.1
     # via torch
-numpy==2.3.5
+numpy==2.4.3
     # via
     #   juniper-cascor (pyproject.toml)
     #   contourpy
     #   h5py
+    #   juniper-data
     #   juniper-data-client
     #   matplotlib
-packaging==24.1
+nvidia-cublas-cu12==12.8.4.1
+    # via
+    #   nvidia-cudnn-cu12
+    #   nvidia-cusolver-cu12
+    #   torch
+nvidia-cuda-cupti-cu12==12.8.90
+    # via torch
+nvidia-cuda-nvrtc-cu12==12.8.93
+    # via torch
+nvidia-cuda-runtime-cu12==12.8.90
+    # via torch
+nvidia-cudnn-cu12==9.10.2.21
+    # via torch
+nvidia-cufft-cu12==11.3.3.83
+    # via torch
+nvidia-cufile-cu12==1.13.1.3
+    # via torch
+nvidia-curand-cu12==10.3.9.90
+    # via torch
+nvidia-cusolver-cu12==11.7.3.90
+    # via torch
+nvidia-cusparse-cu12==12.5.8.93
+    # via
+    #   nvidia-cusolver-cu12
+    #   torch
+nvidia-cusparselt-cu12==0.7.1
+    # via torch
+nvidia-nccl-cu12==2.27.5
+    # via torch
+nvidia-nvjitlink-cu12==12.8.93
+    # via
+    #   nvidia-cufft-cu12
+    #   nvidia-cusolver-cu12
+    #   nvidia-cusparse-cu12
+    #   torch
+nvidia-nvshmem-cu12==3.4.5
+    # via torch
+nvidia-nvtx-cu12==12.8.90
+    # via torch
+packaging==26.0
     # via matplotlib
-pillow==12.0.0
+pillow==12.1.1
     # via matplotlib
 prometheus-client==0.24.1
     # via juniper-cascor (pyproject.toml)
@@ -69,6 +115,7 @@ pydantic==2.12.5
     # via
     #   juniper-cascor (pyproject.toml)
     #   fastapi
+    #   juniper-data
     #   pydantic-settings
 pydantic-core==2.41.5
     # via pydantic
@@ -78,9 +125,10 @@ pyparsing==3.3.2
     # via matplotlib
 python-dateutil==2.9.0.post0
     # via matplotlib
-python-dotenv==1.2.1
+python-dotenv==1.2.2
     # via
     #   juniper-cascor (pyproject.toml)
+    #   juniper-data
     #   pydantic-settings
     #   uvicorn
 pyyaml==6.0.3
@@ -89,15 +137,17 @@ pyyaml==6.0.3
     #   uvicorn
 requests==2.32.5
     # via juniper-data-client
-sentry-sdk==2.53.0
+sentry-sdk==2.54.0
     # via juniper-cascor (pyproject.toml)
-setuptools==70.2.0
+setuptools==82.0.1
     # via torch
 six==1.17.0
     # via python-dateutil
 starlette==0.52.1
     # via fastapi
 sympy==1.14.0
+    # via torch
+triton==3.6.0
     # via torch
 typing-extensions==4.15.0
     # via

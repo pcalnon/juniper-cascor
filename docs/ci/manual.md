@@ -69,7 +69,7 @@
 
 **Flake8 Configuration**:
 
-- Max line length: 120
+- Max line length: 512
 - Max complexity: 15
 - Ignored: E203, E266, E501, W503
 - Exit zero (warnings only)

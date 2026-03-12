@@ -124,7 +124,7 @@ class TestMainFunction:
     @pytest.fixture
     def mock_dependencies(self):
         """Set up common mocks for main function."""
-        with patch("main.Logger") as mock_logger_class, patch("main.LogConfig") as mock_log_config_class, patch("main.SpiralProblem") as mock_spiral_problem_class:
+        with patch("main.Logger") as mock_logger_class, patch("main.LogConfig") as mock_log_config_class, patch("main.SpiralProblem") as mock_spiral_problem_class, patch("main.os._exit", side_effect=SystemExit) as mock_exit, patch.dict(os.environ, {"JUNIPER_DATA_URL": "http://localhost:8100"}), patch("urllib.request.urlopen") as mock_urlopen:
             mock_logger = MagicMock()
             mock_logger_class.info = MagicMock()
             mock_logger_class.debug = MagicMock()
@@ -145,6 +145,13 @@ class TestMainFunction:
             mock_spiral_problem_class.return_value = mock_spiral_problem
             mock_spiral_problem.evaluate = MagicMock()
 
+            # Configure mock urlopen to return a successful health check response
+            mock_response = MagicMock()
+            mock_response.status = 200
+            mock_response.__enter__ = MagicMock(return_value=mock_response)
+            mock_response.__exit__ = MagicMock(return_value=False)
+            mock_urlopen.return_value = mock_response
+
             yield {
                 "logger_class": mock_logger_class,
                 "log_config_class": mock_log_config_class,
@@ -152,6 +159,8 @@ class TestMainFunction:
                 "logger_instance": mock_logger_instance,
                 "spiral_problem_class": mock_spiral_problem_class,
                 "spiral_problem": mock_spiral_problem,
+                "exit": mock_exit,
+                "urlopen": mock_urlopen,
             }
 
     def test_main_happy_path(self, mock_dependencies):
@@ -246,7 +255,7 @@ class TestMainFunctionLogging:
 
     def test_main_logs_log_config_creation_success(self):
         """Test that main() logs successful LogConfig creation."""
-        with patch("main.Logger") as mock_logger_class, patch("main.LogConfig") as mock_log_config_class, patch("main.SpiralProblem") as mock_spiral_problem_class:
+        with patch("main.Logger") as mock_logger_class, patch("main.LogConfig") as mock_log_config_class, patch("main.SpiralProblem") as mock_spiral_problem_class, patch("main.os._exit", side_effect=SystemExit), patch.dict(os.environ, {"JUNIPER_DATA_URL": "http://localhost:8100"}), patch("urllib.request.urlopen") as mock_urlopen:
             mock_logger_class.info = MagicMock()
             mock_logger_class.debug = MagicMock()
             mock_logger_class.error = MagicMock()
@@ -261,6 +270,13 @@ class TestMainFunctionLogging:
 
             mock_spiral_problem = MagicMock()
             mock_spiral_problem_class.return_value = mock_spiral_problem
+
+            # Configure mock urlopen to return a successful health check response
+            mock_response = MagicMock()
+            mock_response.status = 200
+            mock_response.__enter__ = MagicMock(return_value=mock_response)
+            mock_response.__exit__ = MagicMock(return_value=False)
+            mock_urlopen.return_value = mock_response
 
             from main import main
 

@@ -1805,7 +1805,7 @@ class CascadeCorrelationNetwork:
         successful_candidates = self.get_candidates_data_count(results, "correlation", lambda c: c >= self.correlation_threshold)
         success_count = self.get_candidates_data_count(results, "success", lambda s: s)
         if success_count != successful_candidates:
-            self.logger.warning(f"CascadeCorrelationNetwork: _process_training_results: Mismatch in success counts: success_count: {success_count}, successful_candidates: {successful_candidates}")
+            self.logger.info(f"CascadeCorrelationNetwork: _process_training_results: Of {success_count} successfully trained candidates, {successful_candidates} met the correlation threshold ({self.correlation_threshold})")
 
         # Building TrainingResults object
         # Note: results are sorted by correlation descending, so index 0 has the best candidate
@@ -2772,6 +2772,7 @@ class CascadeCorrelationNetwork:
         # validate_training_results = ValidateTrainingResults()
         # 'early_stop', 'patience_counter', 'best_value_loss', 'value_output', 'value_loss', and 'value_accuracy'
         validate_training_results: Optional[ValidateTrainingResults] = None
+        epochs_completed = 0
         for epoch in range(max_epochs):
 
             # Calculate residual error
@@ -2847,8 +2848,9 @@ class CascadeCorrelationNetwork:
                 self.logger.info(f"CascadeCorrelationNetwork: grow_network: Early stopping triggered at epoch {epoch}.")
                 break
             self.logger.info(f"CascadeCorrelationNetwork: grow_network: Epoch {epoch} - Train Loss: {train_loss:.6f}, Train Accuracy: {train_accuracy:.4f}, Early stop: {validate_training_results.early_stop}")
+            epochs_completed = epoch + 1
         if not validate_training_results:
-            self.logger.warning(f"CascadeCorrelationNetwork: grow_network: Validation failed at epoch {epoch + 1}/{max_epochs}.")
+            self.logger.warning(f"CascadeCorrelationNetwork: grow_network: No validation was performed (training loop exited early or did not execute). Epochs completed: {epochs_completed}/{max_epochs}.")
             validate_training_results = ValidateTrainingResults(
                 early_stop=False,
                 patience_counter=patience_counter,
@@ -2857,7 +2859,7 @@ class CascadeCorrelationNetwork:
                 value_loss=float("inf"),
                 value_accuracy=0.0,
             )
-        self.logger.info(f"CascadeCorrelationNetwork: grow_network: Finished training after {epoch + 1} epochs. Total hidden units: {len(self.hidden_units)}")
+        self.logger.info(f"CascadeCorrelationNetwork: grow_network: Finished training after {epochs_completed} epochs. Total hidden units: {len(self.hidden_units)}")
         self.logger.debug(f"CascadeCorrelationNetwork: grow_network: Final history:\n{self.history}")
         self.logger.trace("CascadeCorrelationNetwork: grow_network: Completed training of the network.")
         return validate_training_results

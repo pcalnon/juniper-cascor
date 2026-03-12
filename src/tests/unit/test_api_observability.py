@@ -6,15 +6,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from api.observability import (
-    JuniperJsonFormatter,
-    PrometheusMiddleware,
-    RequestIdMiddleware,
-    configure_logging,
-    configure_sentry,
-    get_prometheus_app,
-    request_id_var,
-)
+from api.observability import JuniperJsonFormatter, PrometheusMiddleware, RequestIdMiddleware, configure_logging, configure_sentry, get_prometheus_app, record_training_epoch, request_id_var, set_build_info, set_training_loss
 
 
 @pytest.mark.unit
@@ -45,9 +37,7 @@ class TestJuniperJsonFormatter:
         formatter = JuniperJsonFormatter(service="test-service")
         token = request_id_var.set("abc-123")
         try:
-            record = logging.LogRecord(
-                name="test", level=logging.INFO, pathname="", lineno=0, msg="hi", args=None, exc_info=None
-            )
+            record = logging.LogRecord(name="test", level=logging.INFO, pathname="", lineno=0, msg="hi", args=None, exc_info=None)
             output = formatter.format(record)
             parsed = json.loads(output)
             assert parsed["request_id"] == "abc-123"
@@ -62,9 +52,7 @@ class TestJuniperJsonFormatter:
             import sys
 
             exc_info = sys.exc_info()
-            record = logging.LogRecord(
-                name="test", level=logging.ERROR, pathname="", lineno=0, msg="error", args=None, exc_info=exc_info
-            )
+            record = logging.LogRecord(name="test", level=logging.ERROR, pathname="", lineno=0, msg="error", args=None, exc_info=exc_info)
             output = formatter.format(record)
             parsed = json.loads(output)
             assert "exception" in parsed
@@ -72,9 +60,7 @@ class TestJuniperJsonFormatter:
 
     def test_format_default_service_name(self):
         formatter = JuniperJsonFormatter()
-        record = logging.LogRecord(
-            name="test", level=logging.INFO, pathname="", lineno=0, msg="hi", args=None, exc_info=None
-        )
+        record = logging.LogRecord(name="test", level=logging.INFO, pathname="", lineno=0, msg="hi", args=None, exc_info=None)
         output = formatter.format(record)
         parsed = json.loads(output)
         assert parsed["service"] == "juniper-cascor"
@@ -191,7 +177,7 @@ class TestPrometheusMiddleware:
             MockCounter.return_value = mock_counter
             MockHistogram.return_value = mock_histogram
 
-            middleware = PrometheusMiddleware(app=MagicMock(), service_name="test")
+            middleware = PrometheusMiddleware(app=MagicMock(), service_name="test", namespace="juniper_cascor")
 
             response = MagicMock()
             response.status_code = 200
@@ -211,6 +197,26 @@ class TestPrometheusMiddleware:
             mock_histogram.labels().observe.assert_called_once()
             assert result == response
 
+    @pytest.mark.asyncio
+    async def test_namespace_prefix_applied_to_metric_names(self):
+        """Verify that the namespace parameter prefixes metric names."""
+        with patch("prometheus_client.Counter") as MockCounter, patch("prometheus_client.Histogram") as MockHistogram:
+            MockCounter.return_value = MagicMock()
+            MockHistogram.return_value = MagicMock()
+
+            PrometheusMiddleware(app=MagicMock(), service_name="test", namespace="juniper_cascor")
+
+            MockCounter.assert_called_once_with(
+                "juniper_cascor_http_requests_total",
+                "Total HTTP requests",
+                ["method", "endpoint", "status"],
+            )
+            MockHistogram.assert_called_once_with(
+                "juniper_cascor_http_request_duration_seconds",
+                "HTTP request duration in seconds",
+                ["method", "endpoint"],
+            )
+
 
 @pytest.mark.unit
 class TestGetPrometheusApp:
@@ -219,3 +225,52 @@ class TestGetPrometheusApp:
     def test_returns_asgi_app(self):
         app = get_prometheus_app()
         assert callable(app)
+
+
+@pytest.mark.unit
+class TestSetBuildInfo:
+    """Tests for set_build_info function."""
+
+    def test_creates_info_metric(self):
+        with patch("prometheus_client.Info") as MockInfo:
+            mock_info = MagicMock()
+            MockInfo.return_value = mock_info
+            set_build_info("juniper_cascor", "0.4.0")
+            MockInfo.assert_called_once_with("juniper_cascor_build", "Build information for juniper-cascor service")
+            mock_info.info.assert_called_once()
+            call_args = mock_info.info.call_args[0][0]
+            assert call_args["version"] == "0.4.0"
+            assert "python_version" in call_args
+
+
+@pytest.mark.unit
+class TestTrainingMetrics:
+    """Tests for custom training metrics helpers."""
+
+    def test_record_training_epoch(self):
+        import api.observability as obs
+
+        obs._training_metrics = None
+        with patch("prometheus_client.Counter") as MockCounter, patch("prometheus_client.Gauge"), patch("prometheus_client.Histogram"):
+            mock_counter = MagicMock()
+            MockCounter.return_value = mock_counter
+
+            record_training_epoch("output")
+            mock_counter.labels.assert_called_with(phase="output")
+            mock_counter.labels().inc.assert_called_once()
+
+        obs._training_metrics = None
+
+    def test_set_training_loss(self):
+        import api.observability as obs
+
+        obs._training_metrics = None
+        with patch("prometheus_client.Counter"), patch("prometheus_client.Gauge") as MockGauge, patch("prometheus_client.Histogram"):
+            mock_gauge = MagicMock()
+            MockGauge.return_value = mock_gauge
+
+            set_training_loss("output", "train", 0.25)
+            mock_gauge.labels.assert_called_with(phase="output", loss_type="train")
+            mock_gauge.labels().set.assert_called_with(0.25)
+
+        obs._training_metrics = None

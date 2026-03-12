@@ -251,7 +251,7 @@ cd src && python -m black .
 cd src && python -m isort .
 
 # Lint with flake8
-cd src && python -m flake8 . --max-line-length=120 --extend-ignore=E203,E266,E501,W503
+cd src && python -m flake8 . --max-line-length=512 --extend-ignore=E203,E266,E501,W503
 
 # Type check with mypy
 cd src && python -m mypy cascade_correlation/ candidate_unit/ --ignore-missing-imports

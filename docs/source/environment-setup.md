@@ -14,7 +14,7 @@ Black is the project's code formatter with the following configuration in `pypro
 
 ```toml
 [tool.black]
-line-length = 120
+line-length = 512
 target-version = ["py311", "py312", "py313", "py314"]
 include = '\.pyi?$'
 ```
@@ -45,7 +45,7 @@ isort organizes imports using the Black-compatible profile:
 ```toml
 [tool.isort]
 profile = "black"
-line_length = 120
+line_length = 512
 known_first_party = ["cascade_correlation", "candidate_unit", "spiral_problem", "snapshots", "log_config", "constants", "utils"]
 sections = ["FUTURE", "STDLIB", "THIRDPARTY", "FIRSTPARTY", "LOCALFOLDER"]
 ```
@@ -82,7 +82,7 @@ pip install flake8
 **Usage:**
 
 ```bash
-cd src && python -m flake8 . --max-line-length=120 --extend-ignore=E203,E266,E501,W503
+cd src && python -m flake8 . --max-line-length=512 --extend-ignore=E203,E266,E501,W503
 ```
 
 **Ignored Rules:**
@@ -178,17 +178,17 @@ trunk fmt
             "source.organizeImports": "explicit"
         }
     },
-    "black-formatter.args": ["--line-length", "120"],
-    "isort.args": ["--profile", "black", "--line-length", "120"],
+    "black-formatter.args": ["--line-length", "512"],
+    "isort.args": ["--profile", "black", "--line-length", "512"],
     "python.linting.enabled": true,
     "python.linting.flake8Enabled": true,
     "python.linting.flake8Args": [
-        "--max-line-length=120",
+        "--max-line-length=512",
         "--extend-ignore=E203,E266,E501,W503"
     ],
     "python.analysis.typeCheckingMode": "basic",
     "python.analysis.diagnosticMode": "workspace",
-    "editor.rulers": [120],
+    "editor.rulers": [512],
     "files.trimTrailingWhitespace": true,
     "files.insertFinalNewline": true
 }
@@ -262,13 +262,13 @@ trunk fmt
 
 2. **Code Style**:
    - `Settings > Editor > Code Style > Python`
-   - Set line length to `120`
+   - Set line length to `512`
    - Enable "Optimize imports on the fly"
 
 3. **Black Integration**:
    - `Settings > Tools > Black`
    - Enable "On save"
-   - Args: `--line-length 120`
+   - Args: `--line-length 512`
 
 4. **isort Integration**:
    - `Settings > Tools > External Tools`
@@ -309,19 +309,19 @@ repos:
     rev: 24.10.0
     hooks:
       - id: black
-        args: [--line-length=120]
+        args: [--line-length=512]
 
   - repo: https://github.com/pycqa/isort
     rev: 5.13.2
     hooks:
       - id: isort
-        args: [--profile=black, --line-length=120]
+        args: [--profile=black, --line-length=512]
 
   - repo: https://github.com/pycqa/flake8
     rev: 7.1.1
     hooks:
       - id: flake8
-        args: [--max-line-length=120, --extend-ignore=E203,E266,E501,W503]
+        args: [--max-line-length=512, --extend-ignore=E203,E266,E501,W503]
 
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v5.0.0
@@ -596,7 +596,7 @@ handlers:
 cd src
 python -m black .
 python -m isort .
-python -m flake8 . --max-line-length=120 --extend-ignore=E203,E266,E501,W503
+python -m flake8 . --max-line-length=512 --extend-ignore=E203,E266,E501,W503
 python -m mypy cascade_correlation/ candidate_unit/ --ignore-missing-imports
 ```
 

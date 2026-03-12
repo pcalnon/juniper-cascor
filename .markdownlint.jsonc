@@ -1,9 +1,9 @@
 {
     "config": {
-        "MD013": 200,
+        "MD013": 512,
         "code-block-style": "consistent",
         "default": {
-            "line-length": 200,
+            "line-length": 512,
             "code-block-style": "consistent"
         }
     },
