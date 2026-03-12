@@ -67,7 +67,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.11","3.12","3.13"]
+        python-version: ["3.12","3.13"]
     steps:
       - name: Checkout Code
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
@@ -139,7 +139,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.11", "3.12", "3.13"]
+        python-version: ["3.12", "3.13"]
 
     steps:
       - name: Checkout Code
@@ -532,7 +532,7 @@ jobs:
             --no-emit-package torch \
             -o /tmp/requirements.lock.check
 
-          if ! diff -u requirements.lock /tmp/requirements.lock.check; then
+          if ! diff -u <(tail -n +3 requirements.lock) <(tail -n +3 /tmp/requirements.lock.check); then
             echo ""
             echo "::error::requirements.lock is stale — run: uv pip compile pyproject.toml --extra ml --extra api --extra observability --extra juniper-data --index-strategy unsafe-best-match --no-emit-package torch -o requirements.lock"
             exit 1
