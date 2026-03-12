@@ -62,7 +62,7 @@ docker build -t juniper-cascor:latest .
 docker run -p 8200:8200 -e JUNIPER_DATA_URL=http://host.docker.internal:8100 juniper-cascor:latest
 
 # Full stack:
-git clone https://github.com/pcalnon/juniper-deploy.git
+git clone https://github.com/pcalnon/juniper-deploy.git  # (private repository)
 cd juniper-deploy && docker compose up --build
 ```
 

@@ -247,6 +247,15 @@ The JuniperData service must be running before executing spiral problem evaluati
 
 **Configuration:** Set the JuniperData URL via environment variable or configuration. See [install/reference.md](install/reference.md) for details.
 
+### juniper-cascor-client
+
+**Type:** Companion client library
+**Purpose:** HTTP/WebSocket client for consuming the juniper-cascor REST API
+**PyPI:** `pip install juniper-cascor-client`
+**Repository:** [pcalnon/juniper-cascor-client](https://github.com/pcalnon/juniper-cascor-client)
+
+The juniper-cascor-client library provides a Python API for interacting with the juniper-cascor service. Used by juniper-canopy and other consumers that need programmatic access to CasCor training and inference.
+
 ---
 
 ## Technical Guides
