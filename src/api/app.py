@@ -13,7 +13,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from api.lifecycle.manager import TrainingLifecycleManager
-from api.middleware import SecurityMiddleware
+from api.middleware import RequestBodyLimitMiddleware, SecurityHeadersMiddleware, SecurityMiddleware
 from api.models.common import error_response
 from api.observability import PrometheusMiddleware, RequestIdMiddleware, configure_logging, configure_sentry, get_prometheus_app, set_build_info
 from api.routes import dataset, decision_boundary, health, metrics, network, training
@@ -144,24 +144,37 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     if settings is None:
         settings = get_settings()
 
+    # Disable interactive API docs when authentication is enabled (production).
+    docs_enabled = not settings.api_keys
     app = FastAPI(
         title="JuniperCascor API",
         description="Cascade Correlation Neural Network training service",
         version=_API_VERSION,
         lifespan=lifespan,
+        docs_url="/docs" if docs_enabled else None,
+        redoc_url="/redoc" if docs_enabled else None,
+        openapi_url="/openapi.json" if docs_enabled else None,
     )
 
     app.state.settings = settings
 
-    # CORS
+    # CORS: only enable when origins are explicitly configured.
     allow_credentials = bool(settings.cors_origins) and "*" not in settings.cors_origins
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=settings.cors_origins,
-        allow_credentials=allow_credentials,
-        allow_methods=["*"],
-        allow_headers=["*"],
-    )
+
+    if settings.cors_origins:
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=settings.cors_origins,
+            allow_credentials=allow_credentials,
+            allow_methods=["*"],
+            allow_headers=["*"],
+        )
+
+    # Request body size limit
+    app.add_middleware(RequestBodyLimitMiddleware)
+
+    # Security headers (outermost — runs on every response)
+    app.add_middleware(SecurityHeadersMiddleware)
 
     # Security (API key auth + rate limiting)
     api_key_auth = APIKeyAuth(settings.api_keys)
@@ -174,7 +187,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     # Observability middleware (added after SecurityMiddleware, before CORS)
     # Middleware execution is LIFO: last added runs first.
-    # Order: RequestIdMiddleware → PrometheusMiddleware → SecurityMiddleware → CORS
+    # Order: RequestIdMiddleware → PrometheusMiddleware → SecurityMiddleware → SecurityHeaders → CORS
     if settings.metrics_enabled:
         app.add_middleware(PrometheusMiddleware, service_name="juniper-cascor", namespace="juniper_cascor")
     app.add_middleware(RequestIdMiddleware)
@@ -198,9 +211,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # Exception handlers
     @app.exception_handler(ValueError)
     async def value_error_handler(request: Request, exc: ValueError) -> JSONResponse:
+        logger.debug("Validation error: %s", exc)
         return JSONResponse(
             status_code=400,
-            content=error_response("VALIDATION_ERROR", str(exc)),
+            content=error_response("VALIDATION_ERROR", "Invalid request parameters"),
         )
 
     @app.exception_handler(Exception)

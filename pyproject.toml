@@ -31,7 +31,7 @@ exclude = ["tests*", "backups*"]
 
 [project]
 name = "juniper-cascor"
-version = "0.3.17"
+version = "0.4.0"
 description = "Cascade Correlation Neural Network implementation for the Juniper project"
 readme = "README.md"
 license = { text = "MIT" }

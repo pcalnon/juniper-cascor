@@ -15,7 +15,7 @@ class TestSettings:
         assert settings.host == "127.0.0.1"
         assert settings.port == 8200
         assert settings.log_level == "INFO"
-        assert settings.cors_origins == ["*"]
+        assert settings.cors_origins == []
         assert settings.ws_max_connections == 50
         assert settings.ws_heartbeat_interval_sec == 30
 

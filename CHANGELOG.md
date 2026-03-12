@@ -5,25 +5,38 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.4.0] - 2026-03-03
 
-### Added
+**Summary**: Comprehensive security hardening — security headers, request body limits, error sanitization, restrictive CORS/rate limiting defaults, WebSocket authentication and message validation, HMAC pickle verification, /metrics auth, conditional docs, CI hardening, and scheduled security scanning.
 
-- Namespaced Prometheus metrics (`juniper_cascor_` prefix) with training and inference metrics
-- `juniper_cascor_training_sessions_active` Gauge
-- `juniper_cascor_training_epochs_total` Counter (by phase)
-- `juniper_cascor_training_loss` Gauge (by phase, loss_type)
-- `juniper_cascor_training_accuracy_ratio` Gauge (by phase)
-- `juniper_cascor_hidden_units_total` Gauge
-- `juniper_cascor_candidate_correlation` Gauge
-- `juniper_cascor_inference_requests_total` Counter
-- `juniper_cascor_inference_duration_seconds` Histogram
-- `juniper_cascor_build_info` Info metric
+### Security: [0.4.0]
 
-### Changed
+- Added `SecurityHeadersMiddleware` — X-Content-Type-Options, X-Frame-Options, Referrer-Policy, Permissions-Policy, conditional HSTS
+- Added `RequestBodyLimitMiddleware` with configurable max body size (default 10MB)
+- Sanitized error responses in ValueError handler, training routes, and network routes — generic messages returned to clients; internal details logged at DEBUG
+- Changed CORS origins default from `["*"]` to `[]` (restrictive by default)
+- Changed rate limiting default from disabled to enabled
+- Added WebSocket authentication — API key validation at connection accept, close code 4001 on failure
+- Added WebSocket message size limits and Pydantic schema validation for control commands
+- Added HMAC signature verification before `pickle.loads()` in snapshot serializer
+- Removed `/metrics` from authentication-exempt paths
+- Added conditional API docs — disabled when API keys are configured
+- Removed `|| true` from Bandit CI step (security scan failures now fail the build)
 
-- Renamed HTTP metrics: `http_requests_total` → `juniper_cascor_http_requests_total`, `http_request_duration_seconds` → `juniper_cascor_http_request_duration_seconds`
-- Renamed environment variables: `CASCOR_HOST` → `JUNIPER_CASCOR_HOST`, `CASCOR_PORT` → `JUNIPER_CASCOR_PORT`, `CASCOR_LOG_LEVEL` → `JUNIPER_CASCOR_LOG_LEVEL`
+### Added: [0.4.0]
+
+- `.github/workflows/security-scan.yml` — Weekly scheduled security scanning (Bandit, pip-audit)
+
+### Changed: [0.4.0]
+
+- Updated test fixtures for new security defaults
+
+### Technical Notes: [0.4.0]
+
+- **SemVer impact**: MINOR — New middleware, changed security defaults (non-breaking: configurable via env vars)
+- **Test count**: 264 API tests passed, 0 failed
+- **Part of**: Cross-ecosystem security audit (7 repos, 24 findings)
+- **Note**: Version 0.4.0 in pyproject.toml; CHANGELOG versions 0.0.1–0.7.0 are pre-PyPI development history
 
 ---
 
