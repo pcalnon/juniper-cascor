@@ -40,6 +40,7 @@
 import logging
 import logging.config
 import os
+import sys
 
 # import yaml
 import uuid
@@ -106,7 +107,7 @@ class LogConfig(object):
         self.log_config_file_path = (_LogConfig__log_config_file_path, _LOG_CONFIG_LOG_CONFIG_FILE_PATH)[_LogConfig__log_config_file_path is None]
         self.log_date_format = (_LogConfig__log_date_format, _LOG_CONFIG_LOG_DATE_FORMAT)[_LogConfig__log_date_format is None]
         self.log_file_name = _LogConfig__log_file_name or __name__
-        self.log_file_path = _LogConfig__log_file_path or str(os.path.join(os.getcwd(), "logs"))
+        self.log_file_path = _LogConfig__log_file_path or str(_LOG_CONFIG_LOG_FILE_PATH)
         self.log_file = str(os.path.join(self.log_file_path, self.log_file_name))
         self.log_formatter_string = _LogConfig__log_formatter_string or _LOG_CONFIG_LOG_FORMATTER_STRING
         self.log_level_custom_names_list = _LogConfig__log_level_custom_names_list or _LOG_CONFIG_LOG_LEVEL_CUSTOM_NAMES_LIST
@@ -149,7 +150,7 @@ class LogConfig(object):
             )
         ) is None:
             Logger.critical(f"LogConfig: __init__:  Failed to create Logger class: {custom_logger}")
-            os._exit(1)
+            sys.exit(1)
 
         # Initialize Log Config class with custom logger: Use the actual root logger which has the correct handlers
         self.custom_logger = custom_logger
@@ -457,7 +458,7 @@ class LogConfig(object):
             self.uuid = (uuid, self._generate_uuid())[uuid is None]  # Generate a new UUID if none is provided
         else:
             self.logger.fatal(f"LogConfig: set_uuid: Fatal Error: UUID already set: {self.uuid}. Changing UUID is bad Juju.  Exiting...")
-            os._exit(1)
+            sys.exit(1)
         self.logger.verbose(f"LogConfig: set_uuid: UUID set to: {self.uuid}")
         self.logger.trace("LogConfig: set_uuid: Completed setting UUID for LogConfig class")
 

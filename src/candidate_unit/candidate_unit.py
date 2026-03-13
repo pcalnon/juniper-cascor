@@ -39,6 +39,7 @@
 #
 #####################################################################################################################################################################################################
 import os
+import sys
 
 # import torch.nn as nn
 import random
@@ -1472,7 +1473,7 @@ class CandidateUnit:
             self.uuid = (uuid, self._generate_uuid())[uuid is None]  # Generate a new UUID if none is provided
         else:
             self.logger.fatal(f"CandidateUnit: set_uuid: Fatal Error: UUID already set: {self.uuid}. Changing UUID is bad Juju.  Exiting...")
-            os._exit(1)
+            sys.exit(1)
         self.logger.debug(f"CandidateUnit: set_uuid: UUID set to: {self.uuid}")
         self.logger.trace("CandidateUnit: set_uuid: Completed setting UUID for CandidateUnit class")
 

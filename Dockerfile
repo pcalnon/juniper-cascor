@@ -71,6 +71,6 @@ EXPOSE 8200
 # Health check for container orchestration (liveness + readiness)
 # start-period=15s: PyTorch + numpy initialization adds ~10s startup overhead
 HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
-    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8200/v1/health', timeout=5)" || exit 1
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8200/v1/health/ready', timeout=5)" || exit 1
 
 CMD ["python", "src/server.py"]

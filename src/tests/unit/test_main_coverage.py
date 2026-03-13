@@ -5,7 +5,7 @@ Unit tests for main.py to improve code coverage.
 Tests cover:
 - parse_args() function with various flag combinations
 - main() function with mocked dependencies
-- Error handling paths (os._exit calls)
+- Error handling paths (sys.exit calls)
 """
 
 import argparse
@@ -124,7 +124,7 @@ class TestMainFunction:
     @pytest.fixture
     def mock_dependencies(self):
         """Set up common mocks for main function."""
-        with patch("main.Logger") as mock_logger_class, patch("main.LogConfig") as mock_log_config_class, patch("main.SpiralProblem") as mock_spiral_problem_class, patch("main.os._exit", side_effect=SystemExit) as mock_exit, patch.dict(os.environ, {"JUNIPER_DATA_URL": "http://localhost:8100"}), patch("urllib.request.urlopen") as mock_urlopen:
+        with patch("main.Logger") as mock_logger_class, patch("main.LogConfig") as mock_log_config_class, patch("main.SpiralProblem") as mock_spiral_problem_class, patch("main.sys.exit", side_effect=SystemExit) as mock_exit, patch.dict(os.environ, {"JUNIPER_DATA_URL": "http://localhost:8100"}), patch("urllib.request.urlopen") as mock_urlopen:
             mock_logger = MagicMock()
             mock_logger_class.info = MagicMock()
             mock_logger_class.debug = MagicMock()
@@ -175,8 +175,8 @@ class TestMainFunction:
         mock_dependencies["spiral_problem"].evaluate.assert_called_once()
 
     def test_main_log_config_returns_none(self):
-        """Test main() when LogConfig returns None - should call os._exit(1)."""
-        with patch("main.Logger") as mock_logger_class, patch("main.LogConfig") as mock_log_config_class, patch("main.os._exit") as mock_exit:
+        """Test main() when LogConfig returns None - should call sys.exit(1)."""
+        with patch("main.Logger") as mock_logger_class, patch("main.LogConfig") as mock_log_config_class, patch("main.sys.exit") as mock_exit:
             mock_logger_class.info = MagicMock()
             mock_logger_class.debug = MagicMock()
             mock_logger_class.error = MagicMock()
@@ -193,8 +193,8 @@ class TestMainFunction:
             assert exc_info.value.code == 1
 
     def test_main_get_logger_returns_none(self):
-        """Test main() when log_config.get_logger() returns None - should call os._exit(2)."""
-        with patch("main.Logger") as mock_logger_class, patch("main.LogConfig") as mock_log_config_class, patch("main.os._exit") as mock_exit:
+        """Test main() when log_config.get_logger() returns None - should call sys.exit(2)."""
+        with patch("main.Logger") as mock_logger_class, patch("main.LogConfig") as mock_log_config_class, patch("main.sys.exit") as mock_exit:
             mock_logger_class.info = MagicMock()
             mock_logger_class.debug = MagicMock()
             mock_logger_class.error = MagicMock()
@@ -255,7 +255,7 @@ class TestMainFunctionLogging:
 
     def test_main_logs_log_config_creation_success(self):
         """Test that main() logs successful LogConfig creation."""
-        with patch("main.Logger") as mock_logger_class, patch("main.LogConfig") as mock_log_config_class, patch("main.SpiralProblem") as mock_spiral_problem_class, patch("main.os._exit", side_effect=SystemExit), patch.dict(os.environ, {"JUNIPER_DATA_URL": "http://localhost:8100"}), patch("urllib.request.urlopen") as mock_urlopen:
+        with patch("main.Logger") as mock_logger_class, patch("main.LogConfig") as mock_log_config_class, patch("main.SpiralProblem") as mock_spiral_problem_class, patch("main.sys.exit", side_effect=SystemExit), patch.dict(os.environ, {"JUNIPER_DATA_URL": "http://localhost:8100"}), patch("urllib.request.urlopen") as mock_urlopen:
             mock_logger_class.info = MagicMock()
             mock_logger_class.debug = MagicMock()
             mock_logger_class.error = MagicMock()
@@ -286,7 +286,7 @@ class TestMainFunctionLogging:
 
     def test_main_logs_error_on_log_config_failure(self):
         """Test that main() logs error when LogConfig creation fails."""
-        with patch("main.Logger") as mock_logger_class, patch("main.LogConfig") as mock_log_config_class, patch("main.os._exit") as mock_exit:
+        with patch("main.Logger") as mock_logger_class, patch("main.LogConfig") as mock_log_config_class, patch("main.sys.exit") as mock_exit:
             mock_logger_class.info = MagicMock()
             mock_logger_class.debug = MagicMock()
             mock_logger_class.error = MagicMock()
@@ -305,7 +305,7 @@ class TestMainFunctionLogging:
 
     def test_main_logs_error_on_get_logger_failure(self):
         """Test that main() logs error when get_logger returns None."""
-        with patch("main.Logger") as mock_logger_class, patch("main.LogConfig") as mock_log_config_class, patch("main.os._exit") as mock_exit:
+        with patch("main.Logger") as mock_logger_class, patch("main.LogConfig") as mock_log_config_class, patch("main.sys.exit") as mock_exit:
             mock_logger_class.info = MagicMock()
             mock_logger_class.debug = MagicMock()
             mock_logger_class.error = MagicMock()

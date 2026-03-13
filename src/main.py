@@ -38,6 +38,7 @@ import argparse
 import logging
 import logging.config
 import os
+import sys
 
 import sentry_sdk
 from dotenv import load_dotenv
@@ -168,10 +169,10 @@ def main():
         )
     ) is None:
         Logger.error("Cascor: main: Error: Failed to create LogConfig class")
-        os._exit(1)
+        sys.exit(1)
     elif (logger := log_config.get_logger()) is None:
         Logger.error("Cascor: main: Error: Failed to get Logger object from LogConfig class")
-        os._exit(2)
+        sys.exit(2)
 
     Logger.debug(f"Cascor: main: Successfully created LogConfig class and Logger object: Type: {type(log_config)}, Value:\n{log_config}")
     Logger.debug(f"Cascor: main: Successfully created LogConfig class and Logger object: Type: {type(logger)}, Value:\n{logger}")
@@ -235,7 +236,7 @@ def main():
     juniper_data_url = os.environ.get("JUNIPER_DATA_URL")
     if not juniper_data_url:
         logger.error("Cascor: main: JUNIPER_DATA_URL environment variable is not set. " "Set it to the JuniperData service URL (e.g., 'http://localhost:8100'). " "See AGENTS.md for configuration details.")
-        os._exit(3)
+        sys.exit(3)
 
     logger.info(f"Cascor: main: Pre-flight check: Verifying JuniperData service at {juniper_data_url}")
     try:
@@ -247,7 +248,7 @@ def main():
             logger.info(f"Cascor: main: Pre-flight check: JuniperData service is healthy (HTTP {resp.status})")
     except Exception as e:
         logger.error(f"Cascor: main: Pre-flight check FAILED: JuniperData service at {juniper_data_url} is not reachable. " f"Error: {e}\n" f"    Please start the JuniperData service before running JuniperCascor:\n" f"        cd juniper-data && conda activate JuniperData && ./try\n" f"    Or:  conda activate JuniperData && python -m juniper_data")
-        os._exit(4)
+        sys.exit(4)
 
     # Instantiate the SpiralProblem class
     logger.info("Cascor: main: Creating SpiralProblem instance")
