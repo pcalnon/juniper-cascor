@@ -26,14 +26,7 @@ print("=" * 70)
 def test_1_early_stopping():
     """Test that early stopping works in candidate training."""
     print("\n[Test 1] Early stopping implementation...")
-    try:
-        return _validate_candidate_early_stopping_helper(candidate=None)
-    except Exception as e:
-        print(f"❌ FAIL: {e}")
-        import traceback
-
-        traceback.print_exc()
-        return False
+    _validate_candidate_early_stopping_helper(candidate=None)
 
 
 def _validate_candidate_early_stopping_helper(candidate):
@@ -58,20 +51,12 @@ def _validate_candidate_early_stopping_helper(candidate):
     assert result.epochs_completed < 100, f"Should stop early, but ran {result.epochs_completed} epochs"  # trunk-ignore(bandit/B101)
     assert result.epochs_completed <= 10, f"Should stop within ~patience epochs, ran {result.epochs_completed}"  # trunk-ignore(bandit/B101)
     print(f"✅ PASS: Early stopping triggered at epoch {result.epochs_completed} (patience=3)")
-    return True
 
 
 def test_2_optimizer_serialization():
     """Test that optimizer state is saved and loaded."""
     print("\n[Test 2] Optimizer state serialization...")
-    try:
-        return _verify_optimizer_saved_to_hdf5_helper()
-    except Exception as e:
-        print(f"❌ FAIL: {e}")
-        import traceback
-
-        traceback.print_exc()
-        return False
+    _verify_optimizer_saved_to_hdf5_helper()
 
 
 def _verify_optimizer_saved_to_hdf5_helper():
@@ -98,7 +83,6 @@ def _verify_optimizer_saved_to_hdf5_helper():
     # Save to HDF5
     with tempfile.TemporaryDirectory() as tmpdir:
         _save_and_reload_network_hdf5_helper(tmpdir, network, CascadeCorrelationNetwork)
-    return True
 
 
 def _save_and_reload_network_hdf5_helper(tmpdir, network, CascadeCorrelationNetwork):
@@ -117,14 +101,7 @@ def _save_and_reload_network_hdf5_helper(tmpdir, network, CascadeCorrelationNetw
 def test_3_training_counters_persistence():
     """Test that training counters are persisted in HDF5."""
     print("\n[Test 3] Training counter persistence...")
-    try:
-        return _save_cascor_network_to_hdf5_helper()
-    except Exception as e:
-        print(f"❌ FAIL: {e}")
-        import traceback
-
-        traceback.print_exc()
-        return False
+    _save_cascor_network_to_hdf5_helper()
 
 
 def _save_cascor_network_to_hdf5_helper():
@@ -149,7 +126,6 @@ def _save_cascor_network_to_hdf5_helper():
     # Save to HDF5
     with tempfile.TemporaryDirectory() as tmpdir:
         _verify_saved_and_restored_cascor_network_helper(tmpdir, network, CascadeCorrelationNetwork)
-    return True
 
 
 # TODO Rename this here and in `test_3_training_counters_persistence`
@@ -172,35 +148,23 @@ def _verify_saved_and_restored_cascor_network_helper(tmpdir, network, CascadeCor
 def test_4_queue_timeout():
     """Test that queue operations have timeouts (structural test)."""
     print("\n[Test 4] Queue timeout implementation...")
-    try:
-        # Check that the code includes timeout parameter
-        # Use relative path instead of hardcoded absolute path (MED-003)
-        source_file = Path(__file__).parent.parent.parent / "cascade_correlation" / "cascade_correlation.py"
-        with open(source_file, "r") as f:
-            content = f.read()
+    # Check that the code includes timeout parameter
+    # Use relative path instead of hardcoded absolute path (MED-003)
+    source_file = Path(__file__).parent.parent.parent / "cascade_correlation" / "cascade_correlation.py"
+    with open(source_file, "r") as f:
+        content = f.read()
 
-        # Check for timeout in result_queue.put
-        assert "result_queue.put(result, timeout=" in content, "result_queue.put should have timeout parameter"  # trunk-ignore(bandit/B101)
-        assert "from queue import Full" in content, "Should import Full exception from queue"  # trunk-ignore(bandit/B101)
+    # Check for timeout in result_queue.put
+    assert "result_queue.put(result, timeout=" in content, "result_queue.put should have timeout parameter"  # trunk-ignore(bandit/B101)
+    assert "from queue import Full" in content, "Should import Full exception from queue"  # trunk-ignore(bandit/B101)
 
-        print("✅ PASS: Queue timeouts implemented correctly")
-        return True
-    except Exception as e:
-        print(f"❌ FAIL: {e}")
-        return False
+    print("✅ PASS: Queue timeouts implemented correctly")
 
 
 def test_5_optimizer_initialization():
     """Test optimizer is created as instance variable."""
     print("\n[Test 5] Optimizer initialization...")
-    try:
-        return _validate_cascor_network_optimizer_helper()
-    except Exception as e:
-        print(f"❌ FAIL: {e}")
-        import traceback
-
-        traceback.print_exc()
-        return False
+    _validate_cascor_network_optimizer_helper()
 
 
 def _validate_cascor_network_optimizer_helper():
@@ -225,7 +189,6 @@ def _validate_cascor_network_optimizer_helper():
     assert hasattr(network.output_optimizer, "state_dict"), "Optimizer should have state_dict method"  # trunk-ignore(bandit/B101)
 
     print("✅ PASS: Optimizer created and accessible as instance variable")
-    return True
 
 
 def _display_test_results_helper():
@@ -239,11 +202,22 @@ def _display_test_results_helper():
 
 def main():
     """Run all P1 validation tests."""
-    results = [("Early Stopping", test_1_early_stopping())]
-    results.append(("Optimizer Serialization", test_2_optimizer_serialization()))
-    results.append(("Training Counter Persistence", test_3_training_counters_persistence()))
-    results.append(("Queue Timeouts", test_4_queue_timeout()))
-    results.append(("Optimizer Initialization", test_5_optimizer_initialization()))
+    test_funcs = [
+        ("Early Stopping", test_1_early_stopping, {}),
+        ("Optimizer Serialization", test_2_optimizer_serialization, {}),
+        ("Training Counter Persistence", test_3_training_counters_persistence, {}),
+        ("Queue Timeouts", test_4_queue_timeout, {}),
+        ("Optimizer Initialization", test_5_optimizer_initialization, {}),
+    ]
+
+    results = []
+    for test_name, func, kwargs in test_funcs:
+        try:
+            func(**kwargs)
+            results.append((test_name, True))
+        except Exception as e:
+            print(f"❌ FAIL: {e}")
+            results.append((test_name, False))
 
     print("\n" + "=" * 70)
     print("P1 Test Results Summary")

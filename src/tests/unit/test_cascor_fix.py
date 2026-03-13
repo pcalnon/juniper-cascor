@@ -57,13 +57,7 @@ def test_sequential_candidate_training(fast_training_params):
     os.cpu_count = lambda: 1  # Mock to force sequential processing
 
     try:
-        return _get_candidate_training_stats(network, x, y)
-    except Exception as e:
-        print(f"Error during testing: {e}")
-        import traceback
-
-        traceback.print_exc()
-        return False
+        _get_candidate_training_stats(network, x, y)
     finally:
         # Restore original cpu_count
         os.cpu_count = original_cpu_count
@@ -82,14 +76,10 @@ def _get_candidate_training_stats(network, x, y):
     print(f"Training stats type: {type(training_stats)}")
 
     # Extract results from training_stats tuple
-    if isinstance(training_stats, tuple) and len(training_stats) >= 1:
-        candidates_data = training_stats[0]
-        if isinstance(candidates_data, tuple) and len(candidates_data) == 4:
-            return _validate_candidates_correlations(candidates_data)
-        print(f"Invalid candidates_data format: {candidates_data}")
-    else:
-        print(f"Invalid training_stats format: {training_stats}")
-    return False
+    assert isinstance(training_stats, tuple) and len(training_stats) >= 1, f"Invalid training_stats format: {training_stats}"
+    candidates_data = training_stats[0]
+    assert isinstance(candidates_data, tuple) and len(candidates_data) == 4, f"Invalid candidates_data format: {candidates_data}"
+    _validate_candidates_correlations(candidates_data)
 
 
 def _validate_candidates_correlations(candidates_data):
@@ -105,7 +95,6 @@ def _validate_candidates_correlations(candidates_data):
             candidate_corr = candidate.get_correlation()
             print(f"Candidate {i} correlation via get_correlation(): {candidate_corr:.6f}")
 
-    return True
 
 
 # CASCOR-TIMEOUT-001: Added slow marker and extended timeout
@@ -154,21 +143,27 @@ def test_individual_candidates(fast_training_params):
     print(f"Correlations are different: {len(set(correlations)) > 1}")
     print(f"All correlations non-zero: {all(c != 0.0 for c in correlations)}")
 
-    return len(set(correlations)) > 1 and all(c != 0.0 for c in correlations)
+    assert len(set(correlations)) > 1, "Correlations should not all be identical"
+    assert all(c != 0.0 for c in correlations), "All correlations should be non-zero"
 
 
 if __name__ == "__main__":
     print("Running CascadeCorrelationNetwork fix tests...")
 
-    # Test 1: Individual candidate functionality
-    individual_test_passed = test_individual_candidates()
-    print(f"Individual candidate test passed: {individual_test_passed}")
+    results = []
+    for name, func in [
+        ("Individual candidate", test_individual_candidates),
+        ("Network candidate training", test_sequential_candidate_training),
+    ]:
+        try:
+            func(fast_training_params={"candidate_epochs": 5, "candidate_pool_size": 3})
+            print(f"✅ {name} test passed")
+            results.append(True)
+        except Exception as e:
+            print(f"❌ {name} test failed: {e}")
+            results.append(False)
 
-    # Test 2: Network-level candidate training
-    network_test_passed = test_sequential_candidate_training()
-    print(f"Network candidate training test passed: {network_test_passed}")
-
-    if individual_test_passed and network_test_passed:
+    if all(results):
         print("\n✅ All tests passed! The fixes are working correctly.")
     else:
         print("\n❌ Some tests failed. Further debugging needed.")

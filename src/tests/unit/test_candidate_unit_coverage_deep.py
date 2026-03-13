@@ -33,13 +33,7 @@ import torch
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from candidate_unit.candidate_unit import (
-    ActivationWithDerivative,
-    CandidateParametersUpdate,
-    CandidateTrainingResult,
-    CandidateUnit,
-)
-
+from candidate_unit.candidate_unit import ActivationWithDerivative, CandidateParametersUpdate, CandidateTrainingResult, CandidateUnit
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -109,9 +103,10 @@ class TestActivationWithDerivativeEdgeCases:
     @pytest.mark.unit
     def test_numerical_derivative_for_unknown_activation(self):
         """Lines 231-232: Numerical derivative for unknown activation functions."""
+
         # Use a custom function that has __name__ but is not tanh/sigmoid/relu
         def custom_square(x):
-            return x ** 2
+            return x**2
 
         awd = ActivationWithDerivative(custom_square)
         assert awd._activation_name == "custom_square"
@@ -360,9 +355,7 @@ class TestCalculateCorrelationDenomZero:
         # Constant output: all same value -> std=0 -> denominator effectively 0
         output = torch.ones(10)
         residual_error = torch.ones(10)
-        correlation, norm_output, norm_error, num, den = candidate._calculate_correlation(
-            output=output, residual_error=residual_error
-        )
+        correlation, norm_output, norm_error, num, den = candidate._calculate_correlation(output=output, residual_error=residual_error)
         # With the epsilon, denominator won't be exactly zero but correlation
         # should be near zero since numerator is zero (all centered values are 0)
         assert abs(correlation) < 1e-3
@@ -372,9 +365,7 @@ class TestCalculateCorrelationDenomZero:
         """Zero residual error produces near-zero correlation."""
         output = torch.randn(10)
         residual_error = torch.zeros(10)
-        correlation, norm_output, norm_error, num, den = candidate._calculate_correlation(
-            output=output, residual_error=residual_error
-        )
+        correlation, norm_output, norm_error, num, den = candidate._calculate_correlation(output=output, residual_error=residual_error)
         assert abs(correlation) < 1e-3
 
 

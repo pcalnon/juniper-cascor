@@ -34,39 +34,25 @@ import pytest
 import torch
 
 from candidate_unit.candidate_unit import CandidateTrainingResult, CandidateUnit
-from cascade_correlation.cascade_correlation import (
-    CandidateTrainingManager,
-    CascadeCorrelationNetwork,
-    TrainingResults,
-    ValidateTrainingInputs,
-    ValidateTrainingResults,
-    _plot_decision_boundary_worker,
-    _plot_training_history_worker,
-)
-from cascade_correlation.cascade_correlation_config.cascade_correlation_config import (
-    CascadeCorrelationConfig,
-)
-from cascade_correlation.cascade_correlation_exceptions.cascade_correlation_exceptions import (
-    ConfigurationError,
-    TrainingError,
-    ValidationError,
-)
+from cascade_correlation.cascade_correlation import CandidateTrainingManager, CascadeCorrelationNetwork, TrainingResults, ValidateTrainingInputs, ValidateTrainingResults, _plot_decision_boundary_worker, _plot_training_history_worker
+from cascade_correlation.cascade_correlation_config.cascade_correlation_config import CascadeCorrelationConfig
+from cascade_correlation.cascade_correlation_exceptions.cascade_correlation_exceptions import ConfigurationError, TrainingError, ValidationError
 
 
 # ---------------------------------------------------------------------------
 # Helper: create a small network config for fast tests
 # ---------------------------------------------------------------------------
 def _make_config(**overrides):
-    defaults = dict(
-        input_size=2,
-        output_size=2,
-        random_seed=42,
-        candidate_pool_size=2,
-        candidate_epochs=3,
-        output_epochs=3,
-        max_hidden_units=2,
-        patience=1,
-    )
+    defaults = {
+        "input_size": 2,
+        "output_size": 2,
+        "random_seed": 42,
+        "candidate_pool_size": 2,
+        "candidate_epochs": 3,
+        "output_epochs": 3,
+        "max_hidden_units": 2,
+        "patience": 1,
+    }
     defaults.update(overrides)
     return CascadeCorrelationConfig(**defaults)
 
@@ -96,9 +82,7 @@ class TestPlotWorkerFunctions:
 
             _plot_decision_boundary_worker(network, x_data, y_data, title)
 
-            mock_plotter_instance.plot_decision_boundary.assert_called_once_with(
-                network, x_data, y_data, title
-            )
+            mock_plotter_instance.plot_decision_boundary.assert_called_once_with(network, x_data, y_data, title)
 
     @pytest.mark.unit
     def test_plot_training_history_worker_calls_plotter(self):
@@ -111,9 +95,7 @@ class TestPlotWorkerFunctions:
             history_data = {"loss": [1.0, 0.5]}
             _plot_training_history_worker(history_data)
 
-            mock_plotter_instance.plot_training_history.assert_called_once_with(
-                history_data
-            )
+            mock_plotter_instance.plot_training_history.assert_called_once_with(history_data)
 
 
 # ---------------------------------------------------------------------------
@@ -129,9 +111,7 @@ class TestCalculateOptimalProcessCount:
         real_method = CascadeCorrelationNetwork._calculate_optimal_process_count.__wrapped__ if hasattr(CascadeCorrelationNetwork._calculate_optimal_process_count, "__wrapped__") else None
 
         # Access the real method from the class (bypasses monkeypatch on instance)
-        original_method = CascadeCorrelationNetwork.__dict__.get(
-            "_calculate_optimal_process_count"
-        )
+        original_method = CascadeCorrelationNetwork.__dict__.get("_calculate_optimal_process_count")
         # The conftest monkeypatches the class attribute; we call the real code
         # by reaching into the source module directly.
         import cascade_correlation.cascade_correlation as cc_mod
@@ -212,12 +192,8 @@ class TestExecuteCandidateTraining:
         mock_result = CandidateTrainingResult(candidate_id=0, correlation=0.3, success=True)
 
         with patch.object(network, "_execute_parallel_training", return_value=[]):
-            with patch.object(
-                network, "_execute_sequential_training", return_value=[mock_result]
-            ) as mock_seq:
-                results = network._execute_candidate_training(
-                    tasks=[("task1",)], process_count=2
-                )
+            with patch.object(network, "_execute_sequential_training", return_value=[mock_result]) as mock_seq:
+                results = network._execute_candidate_training(tasks=[("task1",)], process_count=2)
                 mock_seq.assert_called_once()
                 assert len(results) == 1
 
@@ -226,12 +202,8 @@ class TestExecuteCandidateTraining:
         """When both parallel and sequential fail, returns dummy results."""
         network = _make_network()
 
-        with patch.object(
-            network, "_execute_parallel_training", side_effect=RuntimeError("parallel fail")
-        ):
-            with patch.object(
-                network, "_execute_sequential_training", side_effect=RuntimeError("seq fail")
-            ):
+        with patch.object(network, "_execute_parallel_training", side_effect=RuntimeError("parallel fail")):
+            with patch.object(network, "_execute_sequential_training", side_effect=RuntimeError("seq fail")):
                 tasks = [("task0",), ("task1",)]
                 results = network._execute_candidate_training(tasks=tasks, process_count=2)
                 # Should get dummy results
@@ -245,15 +217,9 @@ class TestExecuteCandidateTraining:
         network = _make_network()
         mock_result = CandidateTrainingResult(candidate_id=0, correlation=0.7, success=True)
 
-        with patch.object(
-            network, "_execute_parallel_training", side_effect=Exception("mp crash")
-        ):
-            with patch.object(
-                network, "_execute_sequential_training", return_value=[mock_result]
-            ) as mock_seq:
-                results = network._execute_candidate_training(
-                    tasks=[("task1",)], process_count=2
-                )
+        with patch.object(network, "_execute_parallel_training", side_effect=Exception("mp crash")):
+            with patch.object(network, "_execute_sequential_training", return_value=[mock_result]) as mock_seq:
+                results = network._execute_candidate_training(tasks=[("task1",)], process_count=2)
                 mock_seq.assert_called_once()
                 assert results[0].correlation == 0.7
 
@@ -288,9 +254,7 @@ class TestCollectTrainingResults:
         q.put(r1)
 
         # Short timeout so test doesn't wait long
-        results = network._collect_training_results(
-            q, num_tasks=3, queue_timeout=0.5, request_timeout=0.2
-        )
+        results = network._collect_training_results(q, num_tasks=3, queue_timeout=0.5, request_timeout=0.2)
         assert len(results) == 1
 
     @pytest.mark.unit
@@ -299,9 +263,7 @@ class TestCollectTrainingResults:
         network = _make_network()
         q = queue.Queue()
 
-        results = network._collect_training_results(
-            q, num_tasks=2, queue_timeout=0.3, request_timeout=0.1
-        )
+        results = network._collect_training_results(q, num_tasks=2, queue_timeout=0.3, request_timeout=0.1)
         assert len(results) == 0
 
     @pytest.mark.unit
@@ -312,9 +274,7 @@ class TestCollectTrainingResults:
         mock_q.qsize.return_value = 1
         mock_q.get.side_effect = RuntimeError("broken queue")
 
-        results = network._collect_training_results(
-            mock_q, num_tasks=2, queue_timeout=2.0, request_timeout=0.5
-        )
+        results = network._collect_training_results(mock_q, num_tasks=2, queue_timeout=2.0, request_timeout=0.5)
         assert len(results) == 0
 
 
@@ -368,9 +328,7 @@ class TestStopWorkers:
         # Phase 2 graceful: is_alive True (didn't stop), time check passes,
         # Phase 3 terminate: is_alive True -> terminate, join, is_alive False
         # Final walrus: is_alive False
-        w = self._make_mock_worker(
-            alive_sequence=[True, True, True, False, False]
-        )
+        w = self._make_mock_worker(alive_sequence=[True, True, True, False, False])
         task_q = MagicMock()
 
         network._stop_workers([w], task_q)
@@ -418,12 +376,20 @@ class TestProcessTrainingResults:
 
         results = [
             CandidateTrainingResult(
-                candidate_id=0, candidate_uuid="uuid-0", correlation=0.3,
-                candidate=MagicMock(), success=True, epochs_completed=3,
+                candidate_id=0,
+                candidate_uuid="uuid-0",
+                correlation=0.3,
+                candidate=MagicMock(),
+                success=True,
+                epochs_completed=3,
             ),
             CandidateTrainingResult(
-                candidate_id=1, candidate_uuid="uuid-1", correlation=0.8,
-                candidate=MagicMock(), success=True, epochs_completed=3,
+                candidate_id=1,
+                candidate_uuid="uuid-1",
+                correlation=0.8,
+                candidate=MagicMock(),
+                success=True,
+                epochs_completed=3,
             ),
         ]
         tasks = [("task0",), ("task1",)]
@@ -455,8 +421,12 @@ class TestProcessTrainingResults:
 
         results = [
             CandidateTrainingResult(
-                candidate_id=0, candidate_uuid="uuid-0", correlation=0.5,
-                candidate=MagicMock(), success=True, epochs_completed=3,
+                candidate_id=0,
+                candidate_uuid="uuid-0",
+                correlation=0.5,
+                candidate=MagicMock(),
+                success=True,
+                epochs_completed=3,
             ),
         ]
         tasks = [("t0",), ("t1",), ("t2",)]
@@ -475,9 +445,7 @@ class TestTrainCandidateWorker:
     @pytest.mark.unit
     def test_none_input_returns_tuple(self):
         """task_data_input=None should return (None, None, 0.0, None)."""
-        result = CascadeCorrelationNetwork.train_candidate_worker(
-            task_data_input=None, parallel=False
-        )
+        result = CascadeCorrelationNetwork.train_candidate_worker(task_data_input=None, parallel=False)
         assert result == (None, None, 0.0, None)
 
     @pytest.mark.unit
@@ -488,28 +456,26 @@ class TestTrainCandidateWorker:
         residual = torch.randn(10, 2)
 
         candidate_data = (
-            0,           # candidate_index within tuple
-            2,           # input_size
-            "Tanh",      # activation_name
-            0.1,         # random_value_scale
-            "test-uuid", # candidate_uuid
-            42,          # candidate_seed
-            1.0,         # random_max_value
-            100,         # sequence_max_value
+            0,  # candidate_index within tuple
+            2,  # input_size
+            "Tanh",  # activation_name
+            0.1,  # random_value_scale
+            "test-uuid",  # candidate_uuid
+            42,  # candidate_seed
+            1.0,  # random_max_value
+            100,  # sequence_max_value
         )
         training_inputs = (
-            x_input,     # candidate_input
-            3,           # candidate_epochs
-            y_target,    # y
-            residual,    # residual_error
-            0.01,        # candidate_learning_rate
-            10,          # candidate_display_frequency
+            x_input,  # candidate_input
+            3,  # candidate_epochs
+            y_target,  # y
+            residual,  # residual_error
+            0.01,  # candidate_learning_rate
+            10,  # candidate_display_frequency
         )
         task = (0, candidate_data, training_inputs)
 
-        result = CascadeCorrelationNetwork.train_candidate_worker(
-            task_data_input=task, parallel=False
-        )
+        result = CascadeCorrelationNetwork.train_candidate_worker(task_data_input=task, parallel=False)
         assert isinstance(result, CandidateTrainingResult)
         # Should have a non-None correlation
         assert result.correlation is not None
@@ -517,13 +483,9 @@ class TestTrainCandidateWorker:
     @pytest.mark.unit
     def test_invalid_build_returns_none_tuple(self):
         """If _build_candidate_inputs returns None, returns (None, None, 0.0, None)."""
-        with patch.object(
-            CascadeCorrelationNetwork, "_build_candidate_inputs", return_value=None
-        ):
+        with patch.object(CascadeCorrelationNetwork, "_build_candidate_inputs", return_value=None):
             task = (0, (0, 2, "Tanh", 0.1, "uuid", 42, 1.0, 100), (None,) * 6)
-            result = CascadeCorrelationNetwork.train_candidate_worker(
-                task_data_input=task, parallel=False
-            )
+            result = CascadeCorrelationNetwork.train_candidate_worker(task_data_input=task, parallel=False)
             assert result == (None, None, 0.0, None)
 
 
@@ -541,28 +503,26 @@ class TestBuildCandidateInputs:
         residual = torch.randn(10, 2)
 
         candidate_data = (
-            0,           # candidate_index (element [0] of candidate_data, skipped by [1:])
-            2,           # input_size
-            "Tanh",      # activation_name
-            0.1,         # random_value_scale
-            "test-uuid", # candidate_uuid
-            42,          # candidate_seed
-            1.0,         # random_max_value
-            100,         # sequence_max_value
+            0,  # candidate_index (element [0] of candidate_data, skipped by [1:])
+            2,  # input_size
+            "Tanh",  # activation_name
+            0.1,  # random_value_scale
+            "test-uuid",  # candidate_uuid
+            42,  # candidate_seed
+            1.0,  # random_max_value
+            100,  # sequence_max_value
         )
         training_inputs = (
-            x_input,     # candidate_input
-            3,           # candidate_epochs
-            y_target,    # y
-            residual,    # residual_error
-            0.01,        # candidate_learning_rate
-            10,          # candidate_display_frequency
+            x_input,  # candidate_input
+            3,  # candidate_epochs
+            y_target,  # y
+            residual,  # residual_error
+            0.01,  # candidate_learning_rate
+            10,  # candidate_display_frequency
         )
         task = (0, candidate_data, training_inputs)
 
-        result = CascadeCorrelationNetwork._build_candidate_inputs(
-            task_data_input=task, worker_uuid="worker-uuid-1", worker_id=99
-        )
+        result = CascadeCorrelationNetwork._build_candidate_inputs(task_data_input=task, worker_uuid="worker-uuid-1", worker_id=99)
 
         assert isinstance(result, dict)
         assert result["candidate_index"] == 0
@@ -590,9 +550,7 @@ class TestBuildCandidateInputs:
         training_inputs = (x_input, 5, y_target, residual, 0.05, 20)
         task = (1, candidate_data, training_inputs)
 
-        result = CascadeCorrelationNetwork._build_candidate_inputs(
-            task_data_input=task, worker_uuid="w-uuid", worker_id=1
-        )
+        result = CascadeCorrelationNetwork._build_candidate_inputs(task_data_input=task, worker_uuid="w-uuid", worker_id=1)
 
         assert torch.equal(result["candidate_input"], x_input)
         assert torch.equal(result["y"], y_target)
@@ -623,9 +581,7 @@ class TestWorkerLoop:
         task_q.put(task)
         task_q.put(None)  # Sentinel
 
-        CascadeCorrelationNetwork._worker_loop(
-            task_q, result_q, parallel=False, task_queue_timeout=2.0
-        )
+        CascadeCorrelationNetwork._worker_loop(task_q, result_q, parallel=False, task_queue_timeout=2.0)
 
         # Should have one result
         assert not result_q.empty()
@@ -640,9 +596,7 @@ class TestWorkerLoop:
 
         task_q.put(None)
 
-        CascadeCorrelationNetwork._worker_loop(
-            task_q, result_q, parallel=False, task_queue_timeout=2.0
-        )
+        CascadeCorrelationNetwork._worker_loop(task_q, result_q, parallel=False, task_queue_timeout=2.0)
 
         assert result_q.empty()
 
@@ -656,9 +610,7 @@ class TestWorkerLoop:
         task_q.put(("bad_task",))
         task_q.put(None)  # Sentinel to stop
 
-        CascadeCorrelationNetwork._worker_loop(
-            task_q, result_q, parallel=False, task_queue_timeout=2.0
-        )
+        CascadeCorrelationNetwork._worker_loop(task_q, result_q, parallel=False, task_queue_timeout=2.0)
 
         # Should have a failure result
         assert not result_q.empty()
@@ -918,18 +870,14 @@ class TestGrowNetworkHelpers:
     def test_calculate_train_accuracy_empty_tensors(self):
         """Empty tensors should return 0.0."""
         network = _make_network()
-        result = network._calculate_train_accuracy(
-            x_train=torch.empty(0, 2), y_train=torch.empty(0, 2)
-        )
+        result = network._calculate_train_accuracy(x_train=torch.empty(0, 2), y_train=torch.empty(0, 2))
         assert result == 0.0
 
     @pytest.mark.unit
     def test_calculate_train_accuracy_mismatched_shapes(self):
         """Mismatched batch sizes should return 0.0."""
         network = _make_network()
-        result = network._calculate_train_accuracy(
-            x_train=torch.randn(10, 2), y_train=torch.randn(5, 2)
-        )
+        result = network._calculate_train_accuracy(x_train=torch.randn(10, 2), y_train=torch.randn(5, 2))
         assert result == 0.0
 
     @pytest.mark.unit
@@ -956,36 +904,28 @@ class TestGrowNetworkHelpers:
     def test_retrain_output_layer_empty_tensors(self):
         """Empty tensors should return inf."""
         network = _make_network()
-        result = network._retrain_output_layer(
-            x_train=torch.empty(0, 2), y_train=torch.empty(0, 2)
-        )
+        result = network._retrain_output_layer(x_train=torch.empty(0, 2), y_train=torch.empty(0, 2))
         assert result == float("inf")
 
     @pytest.mark.unit
     def test_retrain_output_layer_mismatched_shapes(self):
         """Mismatched batch sizes should return inf."""
         network = _make_network()
-        result = network._retrain_output_layer(
-            x_train=torch.randn(10, 2), y_train=torch.randn(5, 2)
-        )
+        result = network._retrain_output_layer(x_train=torch.randn(10, 2), y_train=torch.randn(5, 2))
         assert result == float("inf")
 
     @pytest.mark.unit
     def test_retrain_output_layer_zero_epochs(self):
         """epochs <= 0 should return inf."""
         network = _make_network()
-        result = network._retrain_output_layer(
-            x_train=torch.randn(10, 2), y_train=torch.randn(10, 2), epochs=0
-        )
+        result = network._retrain_output_layer(x_train=torch.randn(10, 2), y_train=torch.randn(10, 2), epochs=0)
         assert result == float("inf")
 
     @pytest.mark.unit
     def test_retrain_output_layer_negative_epochs(self):
         """Negative epochs should return inf."""
         network = _make_network()
-        result = network._retrain_output_layer(
-            x_train=torch.randn(10, 2), y_train=torch.randn(10, 2), epochs=-5
-        )
+        result = network._retrain_output_layer(x_train=torch.randn(10, 2), y_train=torch.randn(10, 2), epochs=-5)
         assert result == float("inf")
 
     @pytest.mark.unit
@@ -1227,7 +1167,8 @@ class TestSnapshotMethods:
         fake_file.write_text("fake content")
 
         with patch.object(
-            CascadeCorrelationNetwork, "_load_from_hdf5",
+            CascadeCorrelationNetwork,
+            "_load_from_hdf5",
             side_effect=RuntimeError("corrupt file"),
         ):
             result = CascadeCorrelationNetwork.restore_snapshot(snapshot_path=fake_file)
@@ -1251,6 +1192,7 @@ class TestCandidateTrainingManager:
     def test_valid_start_method_fork(self):
         """'fork' should be accepted on Linux."""
         import sys
+
         if sys.platform == "linux":
             manager = CandidateTrainingManager()
             # We can't actually start the manager in tests, but we can verify
@@ -1258,6 +1200,7 @@ class TestCandidateTrainingManager:
             # address/authkey which we skip here.
             # Just verify no ValueError is raised for the method name
             import multiprocessing as mp
+
             ctx = mp.get_context("fork")
             assert ctx is not None
 
@@ -1379,6 +1322,7 @@ class TestRealCalculateOptimalProcessCount:
                     break
                 # Check if it's a real function (not the lambda from conftest)
                 import inspect
+
                 try:
                     src = inspect.getsource(candidate)
                     if "CASCOR_NUM_PROCESSES" in src:
@@ -1609,9 +1553,7 @@ class TestGetCandidatesHelpers:
             CandidateTrainingResult(candidate_id=1, correlation=0.8, success=True),
             CandidateTrainingResult(candidate_id=2, correlation=0.1, success=False),
         ]
-        count = network.get_candidates_data_count(
-            results, "correlation", lambda c: c >= 0.5
-        )
+        count = network.get_candidates_data_count(results, "correlation", lambda c: c >= 0.5)
         assert count == 2
 
     @pytest.mark.unit
@@ -1620,8 +1562,12 @@ class TestGetCandidatesHelpers:
         network = _make_network()
         results = [
             CandidateTrainingResult(
-                candidate_id=0, candidate_uuid="u0", correlation=0.5,
-                candidate=MagicMock(), success=True, error_message="some error",
+                candidate_id=0,
+                candidate_uuid="u0",
+                correlation=0.5,
+                candidate=MagicMock(),
+                success=True,
+                error_message="some error",
             ),
         ]
         valid_candidates = [True]
@@ -1684,9 +1630,7 @@ class TestWorkerLoopEdgeCases:
         # First call: raises RuntimeError (not Empty)
         task_q.get.side_effect = RuntimeError("broken pipe")
 
-        CascadeCorrelationNetwork._worker_loop(
-            task_q, result_q, parallel=False, task_queue_timeout=1.0
-        )
+        CascadeCorrelationNetwork._worker_loop(task_q, result_q, parallel=False, task_queue_timeout=1.0)
         # Worker should have exited without producing results
         assert result_q.empty()
 

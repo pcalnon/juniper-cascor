@@ -125,6 +125,9 @@ class TestWebSocketManager:
         with patch("api.websocket.manager.asyncio.run_coroutine_threadsafe") as mock_submit:
             mgr.broadcast_from_thread({"type": "test"})
             mock_submit.assert_called_once()
+            # Close the coroutine to prevent "coroutine was never awaited" RuntimeWarning
+            coro = mock_submit.call_args[0][0]
+            coro.close()
 
     @pytest.mark.asyncio
     async def test_send_personal_message(self):
