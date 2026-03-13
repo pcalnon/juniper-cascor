@@ -53,10 +53,35 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     app.state.lifecycle = lifecycle
     logger.info("Lifecycle manager initialized")
 
+    # Auto-start companion services (non-containerized mode)
+    managed_services: list = []
+    app.state.managed_services = managed_services
+
+    if settings.auto_start_data_service:
+        from api.service_launcher import start_service
+
+        data_url = os.environ.get("JUNIPER_DATA_URL", "http://localhost:8100")
+        logger.info("Auto-start juniper-data service is ENABLED")
+        svc = await start_service(
+            name="juniper-data",
+            command=settings.auto_start_data_service_command,
+            health_url=f"{data_url.rstrip('/')}/v1/health",
+            env_overrides={"JUNIPER_DATA_HOST": "0.0.0.0"},
+        )
+        if svc:
+            managed_services.append(svc)
+        else:
+            logger.error("Failed to auto-start juniper-data service")
+
     # Auto-start training if configured (runs as background task)
     if settings.auto_start:
         logger.warning("Auto-start training is ENABLED — this should only be used in demo/dev environments")
         asyncio.create_task(_auto_start_training(app, settings))
+
+    # Auto-start canopy as background task (waits for cascor to be accepting connections)
+    if settings.auto_start_canopy:
+        logger.info("Auto-start juniper-canopy is ENABLED (normal mode)")
+        asyncio.create_task(_auto_start_canopy(app, settings, managed_services))
 
     yield
 
@@ -71,6 +96,13 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     if lifecycle is not None:
         lifecycle.shutdown()
         logger.info("Lifecycle manager shut down")
+
+    # Shutdown: terminate managed companion services (reverse start order)
+    managed_services = getattr(app.state, "managed_services", [])
+    for svc in reversed(managed_services):
+        svc.terminate()
+    if managed_services:
+        logger.info("Managed companion services terminated")
 
     logger.info("JuniperCascor API shutting down")
 
@@ -129,6 +161,49 @@ async def _auto_start_training(app: FastAPI, settings: Settings) -> None:
 
     except Exception:
         logger.exception("Auto-start training failed")
+
+
+async def _auto_start_canopy(
+    app: FastAPI,
+    settings: Settings,
+    managed_services: list,
+) -> None:
+    """Start juniper-canopy after juniper-cascor is accepting connections.
+
+    Runs as a background asyncio task. Waits for the cascor API to become
+    healthy before launching canopy, so canopy can connect on startup.
+    Canopy is always started in normal mode (JUNIPER_CANOPY_DEMO_MODE=false).
+    """
+    try:
+        from api.service_launcher import start_service, wait_for_health
+
+        own_url = f"http://localhost:{settings.port}/v1/health"
+        logger.info(f"Auto-start canopy: waiting for cascor at {own_url}")
+        ready = await wait_for_health(own_url, timeout=30.0, interval=1.0)
+        if not ready:
+            logger.error("Auto-start canopy: cascor did not become healthy in 30s, aborting")
+            return
+
+        data_url = os.environ.get("JUNIPER_DATA_URL", "http://localhost:8100")
+        canopy_env = {
+            "JUNIPER_CANOPY_DEMO_MODE": "false",
+            "JUNIPER_CANOPY_CASCOR_SERVICE_URL": f"http://localhost:{settings.port}",
+            "JUNIPER_CANOPY_JUNIPER_DATA_URL": data_url,
+        }
+
+        svc = await start_service(
+            name="juniper-canopy",
+            command=settings.auto_start_canopy_command,
+            health_url="http://localhost:8050/v1/health",
+            env_overrides=canopy_env,
+        )
+        if svc:
+            managed_services.append(svc)
+        else:
+            logger.error("Failed to auto-start juniper-canopy service")
+
+    except Exception:
+        logger.exception("Auto-start canopy failed")
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:

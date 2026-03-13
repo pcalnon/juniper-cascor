@@ -359,7 +359,7 @@ class TestSetUuidAlreadySet:
         mock_instance.uuid = "existing-uuid-12345"
         mock_instance.fatal = MagicMock()
 
-        with patch("os._exit") as mock_exit:
+        with patch("sys.exit") as mock_exit:
             Logger.set_uuid(mock_instance, "new-uuid")
             mock_instance.fatal.assert_called_once()
             call_args = str(mock_instance.fatal.call_args)

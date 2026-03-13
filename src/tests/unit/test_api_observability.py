@@ -78,14 +78,18 @@ class TestConfigureLogging:
     def test_text_mode_uses_standard_formatter(self):
         configure_logging("INFO", "text", "test-service")
         root = logging.getLogger()
-        assert len(root.handlers) == 1
-        assert not isinstance(root.handlers[0].formatter, JuniperJsonFormatter)
+        assert len(root.handlers) == 2  # StreamHandler + RotatingFileHandler
+        stream_handlers = [h for h in root.handlers if isinstance(h, logging.StreamHandler) and type(h) is logging.StreamHandler]
+        assert len(stream_handlers) == 1
+        assert not isinstance(stream_handlers[0].formatter, JuniperJsonFormatter)
 
     def test_json_mode_uses_json_formatter(self):
         configure_logging("INFO", "json", "test-service")
         root = logging.getLogger()
-        assert len(root.handlers) == 1
-        assert isinstance(root.handlers[0].formatter, JuniperJsonFormatter)
+        assert len(root.handlers) == 2  # StreamHandler + RotatingFileHandler
+        stream_handlers = [h for h in root.handlers if isinstance(h, logging.StreamHandler) and type(h) is logging.StreamHandler]
+        assert len(stream_handlers) == 1
+        assert isinstance(stream_handlers[0].formatter, JuniperJsonFormatter)
 
     def test_sets_log_level(self):
         configure_logging("DEBUG", "text", "test-service")
@@ -99,8 +103,8 @@ class TestConfigureLogging:
         stream_handlers_before = [h for h in root.handlers if isinstance(h, logging.StreamHandler) and type(h) is logging.StreamHandler]
         assert len(stream_handlers_before) == 2
         configure_logging("INFO", "text", "test-service")
-        # configure_logging removes all handlers and adds exactly one
-        assert len(root.handlers) == 1
+        # configure_logging removes all handlers and adds StreamHandler + RotatingFileHandler
+        assert len(root.handlers) == 2
 
 
 @pytest.mark.unit

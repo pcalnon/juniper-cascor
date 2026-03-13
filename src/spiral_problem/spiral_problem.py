@@ -42,6 +42,7 @@ import logging.config
 import multiprocessing as mp
 import os
 import random
+import sys
 import uuid
 import warnings
 
@@ -1572,7 +1573,7 @@ class SpiralProblem(object):
             self.logger.debug(f"SpiralProblem: set_uuid: UUID was not set, generated a new one: {self.uuid}")
         else:
             self.logger.fatal(f"SpiralProblem: set_uuid: Fatal Error: UUID already set: {self.uuid}. Changing UUID is bad Juju.  Exiting...")
-            os._exit(1)
+            sys.exit(1)
         self.logger.debug(f"SpiralProblem: set_uuid: Completed setting UUID to: {self.uuid}")
         self.logger.trace("SpiralProblem: set_uuid: Completed the SpiralProblem class Set UUID method")
 

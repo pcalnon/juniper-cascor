@@ -2,10 +2,13 @@
 
 import json
 import logging
+import os
 import sys
 import time
 import uuid
 from contextvars import ContextVar
+from logging.handlers import RotatingFileHandler
+from pathlib import Path
 
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from starlette.requests import Request
@@ -94,6 +97,22 @@ class PrometheusMiddleware(BaseHTTPMiddleware):
         return response
 
 
+def _resolve_log_dir() -> Path:
+    """Resolve the absolute log directory path.
+
+    Uses the project constants if available, otherwise falls back to
+    a ``logs/`` directory relative to the project root (two levels up
+    from ``src/api/``).
+    """
+    try:
+        from cascor_constants.constants import _PROJECT_LOG_DIR_DEFAULT
+
+        return Path(_PROJECT_LOG_DIR_DEFAULT)
+    except ImportError:
+        # Fallback: derive from this file's location (src/api/observability.py -> project root)
+        return Path(__file__).resolve().parent.parent.parent / "logs"
+
+
 def configure_logging(log_level: str, log_format: str, service_name: str = _SERVICE_NAME_DEFAULT) -> None:
     """Configure logging — JSON when log_format='json', plain text otherwise.
 
@@ -110,15 +129,32 @@ def configure_logging(log_level: str, log_format: str, service_name: str = _SERV
     for handler in root.handlers[:]:
         root.removeHandler(handler)
 
-    handler = logging.StreamHandler()
-    handler.setLevel(level)
+    # Console handler (StreamHandler)
+    console_handler = logging.StreamHandler()
+    console_handler.setLevel(level)
 
     if log_format == "json":
-        handler.setFormatter(JuniperJsonFormatter(service=service_name))
+        console_handler.setFormatter(JuniperJsonFormatter(service=service_name))
     else:
-        handler.setFormatter(logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s"))
+        console_handler.setFormatter(logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s"))
 
-    root.addHandler(handler)
+    root.addHandler(console_handler)
+
+    # File handler — persist API logs to the canonical logs/ directory (fix H2)
+    log_dir = _resolve_log_dir()
+    os.makedirs(log_dir, exist_ok=True)
+    log_file = log_dir / "juniper_cascor.log"
+    file_handler = RotatingFileHandler(
+        str(log_file),
+        maxBytes=10 * 1024 * 1024,  # 10 MB
+        backupCount=5,
+        encoding="utf-8",
+    )
+    file_handler.setLevel(logging.DEBUG)
+    file_handler.setFormatter(
+        logging.Formatter("[%(filename)s: %(funcName)s:%(lineno)d] (%(asctime)s) [%(levelname)s] %(message)s")
+    )
+    root.addHandler(file_handler)
 
 
 def configure_sentry(dsn: str | None, service_name: str, version: str) -> None:

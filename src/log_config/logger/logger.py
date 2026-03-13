@@ -53,6 +53,7 @@ import datetime
 # import logging
 import logging.config
 import os
+import sys
 import traceback
 import uuid
 
@@ -518,12 +519,12 @@ class Logger(logging.getLoggerClass()):
         # Initialize Logger class file name and path attributes
         Logger.debug("Logger: __init__: Initializing Logger class file name and path attributes")
         self.log_file_name = _Logger__log_file_name or __name__
-        self.log_file_path = _Logger__log_file_path or str(os.path.join(os.getcwd(), "logs"))
+        self.log_file_path = _Logger__log_file_path or str(_LOGGER_LOG_FILE_PATH)
 
         # Initialize Logger class config file name and path attributes
         Logger.debug("Logger: __init__: Initializing Logger class config file name and path attributes")
         self.log_config_file_name = str(_Logger__log_config_file_name or _LOGGER_LOG_CONFIG_FILE_NAME)
-        self.log_config_file_path = _Logger__log_config_file_path or str(os.path.join(os.getcwd(), "conf"))
+        self.log_config_file_path = _Logger__log_config_file_path or str(_LOGGER_LOG_CONFIG_FILE_PATH)
         self.log_config_file = str(os.path.join(self.log_config_file_path, self.log_config_file_name))
 
         # Initialize Logger class attributes for log formatting and config
@@ -616,6 +617,16 @@ class Logger(logging.getLoggerClass()):
 
             # Only configure if we have a valid config dictionary and a valid config object
             if self.logger_configs and isinstance(self.logger_configs, dict) and hasattr(self.config, "dictConfig"):
+                # Fix C1: Inject absolute log file path into YAML config to prevent CWD-dependent log file locations.
+                # The YAML configs use relative filenames (e.g., "juniper_cascor.log") which resolve against os.getcwd().
+                # Replace with absolute path derived from project constants to ensure logs always go to <project>/logs/.
+                handlers = self.logger_configs.get("handlers", {})
+                for handler_cfg in handlers.values():
+                    if isinstance(handler_cfg, dict) and handler_cfg.get("class") in ("logging.FileHandler", "logging.handlers.RotatingFileHandler"):
+                        abs_log_file = os.path.join(self.log_file_path, self.log_file_name)
+                        os.makedirs(self.log_file_path, exist_ok=True)
+                        Logger.debug(f"Logger: __init__: Overriding handler filename to absolute path: {abs_log_file}")
+                        handler_cfg["filename"] = abs_log_file
                 Logger.debug(f"Logger: __init__: Applying dictConfig with loaded configuration: {self.logger_configs}")
                 self.config.dictConfig(self.logger_configs)  # Load the config Dict into Logging Object
                 # Logger.info(f"Logger: __init__: Successfully applied dictConfig: {self.config}")
@@ -1099,7 +1110,7 @@ class Logger(logging.getLoggerClass()):
             self.uuid = (uuid, self._generate_uuid())[uuid is None]  # Generate a new UUID if none is provided
         else:
             self.fatal(f"Logger: set_uuid: Fatal Error: UUID already set: {self.uuid}. Changing UUID is bad Juju.  Exiting...")
-            os._exit(1)
+            sys.exit(1)
 
     ####################################################################################################################################
     # Define the Logger Class Public getter methods
