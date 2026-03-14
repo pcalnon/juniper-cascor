@@ -1305,13 +1305,13 @@ class TestUUIDMethods:
         assert len(sp.uuid) == 36
 
     def test_set_uuid_double_set_calls_exit(self, sp):
-        """Setting UUID when already set should call os._exit(1)."""
+        """Setting UUID when already set should call sys.exit(1)."""
         # Ensure uuid is already set from __init__
         assert hasattr(sp, "uuid")
         assert sp.uuid is not None
-        with patch("os._exit") as mock_exit:
+        with pytest.raises(SystemExit) as exc_info:
             sp.set_uuid("another-uuid")
-            mock_exit.assert_called_once_with(1)
+        assert exc_info.value.code == 1
 
     def test_get_uuid_returns_existing(self, sp):
         """get_uuid should return the existing UUID."""
