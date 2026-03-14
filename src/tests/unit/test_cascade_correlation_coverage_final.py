@@ -15,6 +15,7 @@ Covers:
 - train_candidate_worker: CandidateUnit instantiation error path
 """
 
+import builtins
 import os
 import queue
 import tempfile
@@ -22,40 +23,31 @@ import time
 from queue import Full
 from unittest.mock import MagicMock, PropertyMock, patch
 
-import builtins
 import numpy as np
 import pytest
 import torch
 
 builtins_hasattr = builtins.hasattr
 
-from candidate_unit.candidate_unit import CandidateTrainingResult, CandidateUnit
-from cascade_correlation.cascade_correlation import (
-    CascadeCorrelationNetwork,
-    TrainingResults,
-    ValidateTrainingInputs,
-    ValidateTrainingResults,
-)
-from cascade_correlation.cascade_correlation_config.cascade_correlation_config import (
-    CascadeCorrelationConfig,
-)
-from cascade_correlation.cascade_correlation_exceptions.cascade_correlation_exceptions import (
-    TrainingError,
-)
 from helpers.utilities import set_deterministic_behavior
+
+from candidate_unit.candidate_unit import CandidateTrainingResult, CandidateUnit
+from cascade_correlation.cascade_correlation import CascadeCorrelationNetwork, TrainingResults, ValidateTrainingInputs, ValidateTrainingResults
+from cascade_correlation.cascade_correlation_config.cascade_correlation_config import CascadeCorrelationConfig
+from cascade_correlation.cascade_correlation_exceptions.cascade_correlation_exceptions import TrainingError
 
 
 def _make_config(**overrides):
-    defaults = dict(
-        input_size=2,
-        output_size=2,
-        random_seed=42,
-        candidate_pool_size=2,
-        candidate_epochs=3,
-        output_epochs=3,
-        max_hidden_units=2,
-        patience=1,
-    )
+    defaults = {
+        "input_size": 2,
+        "output_size": 2,
+        "random_seed": 42,
+        "candidate_pool_size": 2,
+        "candidate_epochs": 3,
+        "output_epochs": 3,
+        "max_hidden_units": 2,
+        "patience": 1,
+    }
     defaults.update(overrides)
     return CascadeCorrelationConfig(**defaults)
 
@@ -217,9 +209,7 @@ class TestHDF5RoundTrip:
 
         with tempfile.TemporaryDirectory() as tmpdir:
             filepath = os.path.join(tmpdir, "test_network_state.h5")
-            success = simple_network.save_to_hdf5(
-                filepath, include_training_state=True, include_training_data=False
-            )
+            success = simple_network.save_to_hdf5(filepath, include_training_state=True, include_training_data=False)
             assert success is True
 
     @pytest.mark.unit
@@ -471,9 +461,7 @@ class TestWorkerLoopExceptions:
         task_queue.put(None)  # Sentinel
 
         # Mock train_candidate_worker to return a result
-        mock_result = CandidateTrainingResult(
-            candidate_id=0, candidate_uuid="test", correlation=0.5, candidate=None, success=True
-        )
+        mock_result = CandidateTrainingResult(candidate_id=0, candidate_uuid="test", correlation=0.5, candidate=None, success=True)
 
         with patch.object(CascadeCorrelationNetwork, "train_candidate_worker", return_value=mock_result):
             result_queue.put.side_effect = Full("queue full")
@@ -509,9 +497,7 @@ class TestTrainCandidateWorkerErrors:
     @pytest.mark.unit
     def test_train_candidate_worker_none_input(self):
         """Test train_candidate_worker with None input."""
-        result = CascadeCorrelationNetwork.train_candidate_worker(
-            task_data_input=None, parallel=False
-        )
+        result = CascadeCorrelationNetwork.train_candidate_worker(task_data_input=None, parallel=False)
         assert result == (None, None, 0.0, None)
 
     @pytest.mark.unit
@@ -531,9 +517,7 @@ class TestTrainCandidateWorkerErrors:
         bad_task = (0, candidate_data, training_inputs)
 
         with patch.object(CandidateUnit, "__init__", side_effect=RuntimeError("bad init")):
-            result = CascadeCorrelationNetwork.train_candidate_worker(
-                task_data_input=bad_task, parallel=False
-            )
+            result = CascadeCorrelationNetwork.train_candidate_worker(task_data_input=bad_task, parallel=False)
             # Should return a failure CandidateTrainingResult
             assert isinstance(result, CandidateTrainingResult)
             assert result.success is False

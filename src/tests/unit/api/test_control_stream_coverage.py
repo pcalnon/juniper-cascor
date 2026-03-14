@@ -83,10 +83,12 @@ class TestControlStreamMessageSize:
         await control_stream_handler(ws)
 
         # Verify error was sent
-        ws.send_json.assert_any_call({
-            "type": "connection_established",
-            "data": {"channel": "control"},
-        })
+        ws.send_json.assert_any_call(
+            {
+                "type": "connection_established",
+                "data": {"channel": "control"},
+            }
+        )
         # Check that an error about size was sent
         calls = ws.send_json.call_args_list
         assert any("too large" in str(c).lower() or "Message too large" in str(c) for c in calls)

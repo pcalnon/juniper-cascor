@@ -37,10 +37,10 @@ from cascade_correlation.cascade_correlation import CascadeCorrelationNetwork
 from cascade_correlation.cascade_correlation_config.cascade_correlation_config import CascadeCorrelationConfig
 from spiral_problem.spiral_problem import SpiralProblem
 
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture
 def sp():
@@ -117,6 +117,7 @@ def sp_three_spirals():
 # 1. __init__ error path (lines 437-439)
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.unit
 class TestInitErrorPath:
     """Test the __init__ error path when CascadeCorrelationNetwork returns None."""
@@ -138,6 +139,7 @@ class TestInitErrorPath:
 # 2. Deprecated data generation methods (lines 568-1208)
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.unit
 class TestInitializeSpiralProblemParams:
     """Tests for _initialize_spiral_problem_params."""
@@ -147,7 +149,8 @@ class TestInitializeSpiralProblemParams:
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", DeprecationWarning)
             sp._initialize_spiral_problem_params(
-                n_spirals=2, n_points=50,
+                n_spirals=2,
+                n_points=50,
             )
         assert sp.total_points == 100
 
@@ -159,11 +162,21 @@ class TestInitializeSpiralProblemParams:
             warnings.simplefilter("ignore", DeprecationWarning)
             # Pass None values so the fallback branch is exercised
             sp._initialize_spiral_problem_params(
-                min_new=None, max_new=None, min_orig=None, max_orig=None,
-                orig_points=None, train_ratio=None, test_ratio=None,
-                clockwise=None, n_spirals=None, n_rotations=None,
-                n_points=None, default_origin=None, default_radius=None,
-                noise_level=None, distribution=None,
+                min_new=None,
+                max_new=None,
+                min_orig=None,
+                max_orig=None,
+                orig_points=None,
+                train_ratio=None,
+                test_ratio=None,
+                clockwise=None,
+                n_spirals=None,
+                n_rotations=None,
+                n_points=None,
+                default_origin=None,
+                default_radius=None,
+                noise_level=None,
+                distribution=None,
             )
         # Should still have valid total_points
         assert sp.total_points == sp.n_spirals * sp.n_points
@@ -173,11 +186,21 @@ class TestInitializeSpiralProblemParams:
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", DeprecationWarning)
             sp._initialize_spiral_problem_params(
-                min_new=-2.0, max_new=2.0, min_orig=-1.0, max_orig=1.0,
-                orig_points=100, train_ratio=0.8, test_ratio=0.2,
-                clockwise=True, n_spirals=4, n_rotations=2,
-                n_points=25, default_origin=0.5, default_radius=2.0,
-                noise_level=0.2, distribution=0.5,
+                min_new=-2.0,
+                max_new=2.0,
+                min_orig=-1.0,
+                max_orig=1.0,
+                orig_points=100,
+                train_ratio=0.8,
+                test_ratio=0.2,
+                clockwise=True,
+                n_spirals=4,
+                n_rotations=2,
+                n_points=25,
+                default_origin=0.5,
+                default_radius=2.0,
+                noise_level=0.2,
+                distribution=0.5,
             )
         assert sp.n_spirals == 4
         assert sp.n_points == 25
@@ -279,7 +302,9 @@ class TestGenerateRawSpiralCoordinates:
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", DeprecationWarning)
             x_coords, y_coords = sp._generate_raw_spiral_coordinates(
-                n_distance=n_distance, direction=1, angular_offset=np.pi,
+                n_distance=n_distance,
+                direction=1,
+                angular_offset=np.pi,
             )
         assert isinstance(x_coords, np.ndarray)
         assert isinstance(y_coords, np.ndarray)
@@ -291,7 +316,9 @@ class TestGenerateRawSpiralCoordinates:
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", DeprecationWarning)
             x_coords, y_coords = sp._generate_raw_spiral_coordinates(
-                n_distance=n_distance, direction=1, angular_offset=np.pi,
+                n_distance=n_distance,
+                direction=1,
+                angular_offset=np.pi,
             )
         assert x_coords.shape[0] == sp.n_spirals
         assert y_coords.shape[0] == sp.n_spirals
@@ -303,7 +330,9 @@ class TestGenerateRawSpiralCoordinates:
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", DeprecationWarning)
             x_coords, y_coords = sp._generate_raw_spiral_coordinates(
-                n_distance=n_distance, direction=-1, angular_offset=np.pi,
+                n_distance=n_distance,
+                direction=-1,
+                angular_offset=np.pi,
             )
         assert x_coords.shape[0] == sp.n_spirals
 
@@ -314,7 +343,9 @@ class TestGenerateRawSpiralCoordinates:
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", DeprecationWarning)
             x_coords, y_coords = sp_three_spirals._generate_raw_spiral_coordinates(
-                n_distance=n_distance, direction=1, angular_offset=2 * np.pi / 3,
+                n_distance=n_distance,
+                direction=1,
+                angular_offset=2 * np.pi / 3,
             )
         assert x_coords.shape[0] == 3
         assert y_coords.shape[0] == 3
@@ -331,7 +362,10 @@ class TestGenerateXYCoordinates:
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", DeprecationWarning)
             x, y = sp._generate_xy_coordinates(
-                index=0, n_distance=n_distance, angular_offset=np.pi, direction=1,
+                index=0,
+                n_distance=n_distance,
+                angular_offset=np.pi,
+                direction=1,
             )
         assert isinstance(x, np.ndarray)
         assert isinstance(y, np.ndarray)
@@ -345,7 +379,10 @@ class TestGenerateXYCoordinates:
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", DeprecationWarning)
             x, y = sp._generate_xy_coordinates(
-                index=0, n_distance=n_distance, angular_offset=np.pi, direction=-1,
+                index=0,
+                n_distance=n_distance,
+                angular_offset=np.pi,
+                direction=-1,
             )
         assert x.shape == (sp.n_points,)
 
@@ -357,7 +394,10 @@ class TestGenerateXYCoordinates:
             warnings.simplefilter("ignore", DeprecationWarning)
             with pytest.raises(ValueError, match="Direction must be 1 or -1"):
                 sp._generate_xy_coordinates(
-                    index=0, n_distance=n_distance, angular_offset=np.pi, direction=0,
+                    index=0,
+                    n_distance=n_distance,
+                    angular_offset=np.pi,
+                    direction=0,
                 )
 
     def test_second_spiral_index(self, sp):
@@ -367,7 +407,10 @@ class TestGenerateXYCoordinates:
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", DeprecationWarning)
             x, y = sp._generate_xy_coordinates(
-                index=1, n_distance=n_distance, angular_offset=np.pi, direction=1,
+                index=1,
+                n_distance=n_distance,
+                angular_offset=np.pi,
+                direction=1,
             )
         assert x.shape == (sp.n_points,)
 
@@ -383,8 +426,11 @@ class TestMakeCoords:
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", DeprecationWarning)
             result = sp._make_coords(
-                index=0, n_distance=n_distance, angular_offset=np.pi,
-                direction=1, trig_function=np.cos,
+                index=0,
+                n_distance=n_distance,
+                angular_offset=np.pi,
+                direction=1,
+                trig_function=np.cos,
             )
         assert isinstance(result, np.ndarray)
         assert result.shape == (sp.n_points,)
@@ -396,8 +442,11 @@ class TestMakeCoords:
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", DeprecationWarning)
             result = sp._make_coords(
-                index=0, n_distance=n_distance, angular_offset=np.pi,
-                direction=1, trig_function=np.sin,
+                index=0,
+                n_distance=n_distance,
+                angular_offset=np.pi,
+                direction=1,
+                trig_function=np.sin,
             )
         assert isinstance(result, np.ndarray)
         assert result.shape == (sp.n_points,)
@@ -409,8 +458,11 @@ class TestMakeCoords:
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", DeprecationWarning)
             result = sp._make_coords(
-                index=0, n_distance=n_distance, angular_offset=np.pi,
-                direction=-1, trig_function=np.cos,
+                index=0,
+                n_distance=n_distance,
+                angular_offset=np.pi,
+                direction=-1,
+                trig_function=np.cos,
             )
         assert result.shape == (sp.n_points,)
 
@@ -422,8 +474,11 @@ class TestMakeCoords:
             warnings.simplefilter("ignore", DeprecationWarning)
             with pytest.raises(ValueError, match="trig_function must be provided"):
                 sp._make_coords(
-                    index=0, n_distance=n_distance, angular_offset=np.pi,
-                    direction=1, trig_function=None,
+                    index=0,
+                    n_distance=n_distance,
+                    angular_offset=np.pi,
+                    direction=1,
+                    trig_function=None,
                 )
 
     def test_raises_for_invalid_direction(self, sp):
@@ -434,8 +489,11 @@ class TestMakeCoords:
             warnings.simplefilter("ignore", DeprecationWarning)
             with pytest.raises(ValueError, match="Direction must be 1 or -1"):
                 sp._make_coords(
-                    index=0, n_distance=n_distance, angular_offset=np.pi,
-                    direction=2, trig_function=np.cos,
+                    index=0,
+                    n_distance=n_distance,
+                    angular_offset=np.pi,
+                    direction=2,
+                    trig_function=np.cos,
                 )
 
     def test_raises_for_negative_index(self, sp):
@@ -446,8 +504,11 @@ class TestMakeCoords:
             warnings.simplefilter("ignore", DeprecationWarning)
             with pytest.raises(ValueError, match="Index must be a non-negative integer"):
                 sp._make_coords(
-                    index=-1, n_distance=n_distance, angular_offset=np.pi,
-                    direction=1, trig_function=np.cos,
+                    index=-1,
+                    n_distance=n_distance,
+                    angular_offset=np.pi,
+                    direction=1,
+                    trig_function=np.cos,
                 )
 
     def test_raises_for_non_integer_index(self, sp):
@@ -458,8 +519,11 @@ class TestMakeCoords:
             warnings.simplefilter("ignore", DeprecationWarning)
             with pytest.raises(ValueError, match="Index must be a non-negative integer"):
                 sp._make_coords(
-                    index=1.5, n_distance=n_distance, angular_offset=np.pi,
-                    direction=1, trig_function=np.cos,
+                    index=1.5,
+                    n_distance=n_distance,
+                    angular_offset=np.pi,
+                    direction=1,
+                    trig_function=np.cos,
                 )
 
 
@@ -544,7 +608,9 @@ class TestCreateOneHotTargets:
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", DeprecationWarning)
             result = sp._create_one_hot_targets(
-                total_points=100, n_spirals=2, dtype=np.float32,
+                total_points=100,
+                n_spirals=2,
+                dtype=np.float32,
             )
         assert result.shape == (100, 2)
 
@@ -553,7 +619,9 @@ class TestCreateOneHotTargets:
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", DeprecationWarning)
             result = sp._create_one_hot_targets(
-                total_points=100, n_spirals=2, dtype=np.float32,
+                total_points=100,
+                n_spirals=2,
+                dtype=np.float32,
             )
         # First spiral: column 0 is 1
         assert np.all(result[:50, 0] == 1)
@@ -567,7 +635,9 @@ class TestCreateOneHotTargets:
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", DeprecationWarning)
             result = sp_three_spirals._create_one_hot_targets(
-                total_points=90, n_spirals=3, dtype=np.float32,
+                total_points=90,
+                n_spirals=3,
+                dtype=np.float32,
             )
         assert result.shape == (90, 3)
         # Each spiral block has its own column set to 1
@@ -584,7 +654,9 @@ class TestCreateOneHotTargets:
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", DeprecationWarning)
             result = sp._create_one_hot_targets(
-                total_points=100, n_spirals=2, dtype=np.float64,
+                total_points=100,
+                n_spirals=2,
+                dtype=np.float64,
             )
         assert result.dtype == np.float64
 
@@ -710,7 +782,10 @@ class TestPartitionDataset:
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", DeprecationWarning)
             train, test = sp._partition_dataset(
-                total_points=total, partitions=(0.7, 0.3), x=x, y=y,
+                total_points=total,
+                partitions=(0.7, 0.3),
+                x=x,
+                y=y,
             )
         x_train, y_train = train
         x_test, y_test = test
@@ -727,7 +802,10 @@ class TestPartitionDataset:
             warnings.simplefilter("ignore", DeprecationWarning)
             with pytest.raises(ValueError, match="Train and test ratios must sum to 1.0"):
                 sp._partition_dataset(
-                    total_points=total, partitions=(0.5, 0.3), x=x, y=y,
+                    total_points=total,
+                    partitions=(0.5, 0.3),
+                    x=x,
+                    y=y,
                 )
 
     def test_80_20_split(self, sp):
@@ -739,7 +817,10 @@ class TestPartitionDataset:
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", DeprecationWarning)
             train, test = sp._partition_dataset(
-                total_points=total, partitions=(0.8, 0.2), x=x, y=y,
+                total_points=total,
+                partitions=(0.8, 0.2),
+                x=x,
+                y=y,
             )
         x_train, _ = train
         x_test, _ = test
@@ -759,7 +840,10 @@ class TestSplitDataset:
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", DeprecationWarning)
             partitions = sp._split_dataset(
-                total_points=total, partitions=(0.7, 0.3), x=x, y=y,
+                total_points=total,
+                partitions=(0.7, 0.3),
+                x=x,
+                y=y,
             )
         assert len(partitions) == 2
         x_train, y_train = partitions[0]
@@ -865,7 +949,9 @@ class TestFindPartitionIndexEnd:
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", DeprecationWarning)
             result = sp._find_partition_index_end(
-                partition_start=0, total_points=100, partition=0.7,
+                partition_start=0,
+                total_points=100,
+                partition=0.7,
             )
         assert result == 70
 
@@ -874,7 +960,9 @@ class TestFindPartitionIndexEnd:
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", DeprecationWarning)
             result = sp._find_partition_index_end(
-                partition_start=70, total_points=100, partition=0.3,
+                partition_start=70,
+                total_points=100,
+                partition=0.3,
             )
         assert result == 100
 
@@ -883,7 +971,9 @@ class TestFindPartitionIndexEnd:
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", DeprecationWarning)
             result = sp._find_partition_index_end(
-                partition_start=0, total_points=100, partition=0.5,
+                partition_start=0,
+                total_points=100,
+                partition=0.5,
             )
         assert result == 50
 
@@ -965,6 +1055,7 @@ class TestGenerateSpiralCoordinates:
 # 3. solve_n_spiral_problem (lines 1240-1354)
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.unit
 class TestSolveNSpiralProblem:
     """Tests for solve_n_spiral_problem with mocked dependencies.
@@ -999,8 +1090,7 @@ class TestSolveNSpiralProblem:
         sp.network.fit.return_value = {"loss": [0.5, 0.3]}
         sp.network.summary.return_value = None
 
-        with patch.object(sp, "generate_n_spiral_dataset", return_value=mock_data), \
-             patch("spiral_problem.spiral_problem._SPIRAL_PROBLEM_GENERATE_PLOTS_DEFAULT", False):
+        with patch.object(sp, "generate_n_spiral_dataset", return_value=mock_data), patch("spiral_problem.spiral_problem._SPIRAL_PROBLEM_GENERATE_PLOTS_DEFAULT", False):
             sp.solve_n_spiral_problem(plot=False)
 
         sp.network.fit.assert_called_once()
@@ -1020,12 +1110,17 @@ class TestSolveNSpiralProblem:
         sp.network.fit.return_value = {"loss": [0.5]}
         sp.network.summary.return_value = None
 
-        with patch.object(sp, "generate_n_spiral_dataset", return_value=mock_data), \
-             patch("spiral_problem.spiral_problem._SPIRAL_PROBLEM_GENERATE_PLOTS_DEFAULT", False):
+        with patch.object(sp, "generate_n_spiral_dataset", return_value=mock_data), patch("spiral_problem.spiral_problem._SPIRAL_PROBLEM_GENERATE_PLOTS_DEFAULT", False):
             sp.solve_n_spiral_problem(
-                n_points=25, n_spirals=2, n_rotations=3,
-                clockwise=True, noise=0.2, distribution=0.5,
-                test_ratio=0.3, train_ratio=0.7, plot=False,
+                n_points=25,
+                n_spirals=2,
+                n_rotations=3,
+                clockwise=True,
+                noise=0.2,
+                distribution=0.5,
+                test_ratio=0.3,
+                train_ratio=0.7,
+                plot=False,
             )
 
         assert sp.n_points == 25
@@ -1039,8 +1134,7 @@ class TestSolveNSpiralProblem:
         sp.network.fit.return_value = {"loss": [0.1]}
         sp.network.summary.return_value = None
 
-        with patch.object(sp, "generate_n_spiral_dataset", return_value=mock_data), \
-             patch("spiral_problem.spiral_problem._SPIRAL_PROBLEM_GENERATE_PLOTS_DEFAULT", False):
+        with patch.object(sp, "generate_n_spiral_dataset", return_value=mock_data), patch("spiral_problem.spiral_problem._SPIRAL_PROBLEM_GENERATE_PLOTS_DEFAULT", False):
             sp.solve_n_spiral_problem(plot=False)
 
         call_args = sp.network.fit.call_args
@@ -1057,8 +1151,7 @@ class TestSolveNSpiralProblem:
         sp.network.summary.return_value = None
 
         original_n_points = sp.n_points
-        with patch.object(sp, "generate_n_spiral_dataset", return_value=mock_data), \
-             patch("spiral_problem.spiral_problem._SPIRAL_PROBLEM_GENERATE_PLOTS_DEFAULT", False):
+        with patch.object(sp, "generate_n_spiral_dataset", return_value=mock_data), patch("spiral_problem.spiral_problem._SPIRAL_PROBLEM_GENERATE_PLOTS_DEFAULT", False):
             sp.solve_n_spiral_problem()
 
         # n_points should remain unchanged (fallback to class attr)
@@ -1068,6 +1161,7 @@ class TestSolveNSpiralProblem:
 # ---------------------------------------------------------------------------
 # 4. evaluate (lines 1399-1476)
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.unit
 class TestEvaluate:
@@ -1097,8 +1191,7 @@ class TestEvaluate:
         sp.network.summary.return_value = None
         sp.network.calculate_accuracy.return_value = 0.85
 
-        with patch.object(sp, "generate_n_spiral_dataset", return_value=mock_data), \
-             patch("spiral_problem.spiral_problem._SPIRAL_PROBLEM_GENERATE_PLOTS_DEFAULT", False):
+        with patch.object(sp, "generate_n_spiral_dataset", return_value=mock_data), patch("spiral_problem.spiral_problem._SPIRAL_PROBLEM_GENERATE_PLOTS_DEFAULT", False):
             sp.evaluate(plot=False)
 
         assert hasattr(sp, "train_accuracy")
@@ -1118,13 +1211,19 @@ class TestEvaluate:
         sp.network.summary.return_value = None
         sp.network.calculate_accuracy.return_value = 0.9
 
-        with patch.object(sp, "generate_n_spiral_dataset", return_value=mock_data), \
-             patch("spiral_problem.spiral_problem._SPIRAL_PROBLEM_GENERATE_PLOTS_DEFAULT", False):
+        with patch.object(sp, "generate_n_spiral_dataset", return_value=mock_data), patch("spiral_problem.spiral_problem._SPIRAL_PROBLEM_GENERATE_PLOTS_DEFAULT", False):
             sp.evaluate(
-                n_points=25, n_spirals=2, n_rotations=3,
-                clockwise=True, noise=0.2, distribution=0.5,
-                plot=False, train_ratio=0.8, test_ratio=0.2,
-                random_value_scale=0.5, default_origin=1.0,
+                n_points=25,
+                n_spirals=2,
+                n_rotations=3,
+                clockwise=True,
+                noise=0.2,
+                distribution=0.5,
+                plot=False,
+                train_ratio=0.8,
+                test_ratio=0.2,
+                random_value_scale=0.5,
+                default_origin=1.0,
                 default_radius=2.0,
             )
 
@@ -1143,8 +1242,7 @@ class TestEvaluate:
         sp.network.summary.return_value = None
         sp.network.calculate_accuracy.side_effect = [0.85, 0.75]
 
-        with patch.object(sp, "generate_n_spiral_dataset", return_value=mock_data), \
-             patch("spiral_problem.spiral_problem._SPIRAL_PROBLEM_GENERATE_PLOTS_DEFAULT", False):
+        with patch.object(sp, "generate_n_spiral_dataset", return_value=mock_data), patch("spiral_problem.spiral_problem._SPIRAL_PROBLEM_GENERATE_PLOTS_DEFAULT", False):
             sp.evaluate(plot=False)
 
         assert sp.network.calculate_accuracy.call_count == 2
@@ -1161,8 +1259,7 @@ class TestEvaluate:
         sp.network.summary.return_value = None
         sp.network.calculate_accuracy.return_value = 0.9
 
-        with patch.object(sp, "generate_n_spiral_dataset", return_value=mock_data), \
-             patch("spiral_problem.spiral_problem._SPIRAL_PROBLEM_GENERATE_PLOTS_DEFAULT", False):
+        with patch.object(sp, "generate_n_spiral_dataset", return_value=mock_data), patch("spiral_problem.spiral_problem._SPIRAL_PROBLEM_GENERATE_PLOTS_DEFAULT", False):
             sp.evaluate(plot=False)
 
         # summary is called once in solve_n_spiral_problem and once in evaluate
@@ -1172,6 +1269,7 @@ class TestEvaluate:
 # ---------------------------------------------------------------------------
 # 5. UUID methods
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.unit
 class TestUUIDMethods:
@@ -1241,6 +1339,7 @@ class TestUUIDMethods:
 # 6. Setter/getter methods with edge cases
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.unit
 class TestSetDefaultRadius:
     """Tests for set_default_radius which has no None guard."""
@@ -1285,6 +1384,7 @@ class TestSetPlot:
 # 7. Full deprecated data-generation pipeline integration
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.unit
 class TestDeprecatedPipelineIntegration:
     """Test the full deprecated data generation pipeline end-to-end."""
@@ -1298,8 +1398,12 @@ class TestDeprecatedPipelineIntegration:
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", DeprecationWarning)
             sp._initialize_spiral_problem_params(
-                n_spirals=2, n_points=50, noise_level=0.1,
-                clockwise=True, train_ratio=0.7, test_ratio=0.3,
+                n_spirals=2,
+                n_points=50,
+                noise_level=0.1,
+                clockwise=True,
+                train_ratio=0.7,
+                test_ratio=0.3,
             )
 
         # Step 2: Generate spiral coordinates
@@ -1337,7 +1441,10 @@ class TestDeprecatedPipelineIntegration:
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", DeprecationWarning)
             train, test = sp._partition_dataset(
-                total_points=100, partitions=(0.7, 0.3), x=x_s, y=y_s,
+                total_points=100,
+                partitions=(0.7, 0.3),
+                x=x_s,
+                y=y_s,
             )
 
         x_train, y_train = train
@@ -1356,8 +1463,12 @@ class TestDeprecatedPipelineIntegration:
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", DeprecationWarning)
             sp._initialize_spiral_problem_params(
-                n_spirals=3, n_points=30, noise_level=0.05,
-                clockwise=False, train_ratio=0.8, test_ratio=0.2,
+                n_spirals=3,
+                n_points=30,
+                noise_level=0.05,
+                clockwise=False,
+                train_ratio=0.8,
+                test_ratio=0.2,
             )
             x_coords, y_coords = sp._generate_spiral_coordinates()
 
@@ -1369,7 +1480,10 @@ class TestDeprecatedPipelineIntegration:
             x_t, y_t = sp._convert_to_tensors(x, y)
             x_s, y_s = sp._shuffle_dataset(x_t, y_t)
             train, test = sp._partition_dataset(
-                total_points=90, partitions=(0.8, 0.2), x=x_s, y=y_s,
+                total_points=90,
+                partitions=(0.8, 0.2),
+                x=x_s,
+                y=y_s,
             )
 
         x_train, y_train = train
@@ -1382,6 +1496,7 @@ class TestDeprecatedPipelineIntegration:
 # ---------------------------------------------------------------------------
 # 8. Additional edge cases for maximum coverage
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.unit
 class TestDeprecationWarnings:
@@ -1538,6 +1653,7 @@ class TestSettersCoverage:
 
     def test_set_logger(self, sp):
         import logging
+
         new_logger = logging.getLogger("test")
         sp.set_logger(new_logger)
         assert sp.logger is new_logger

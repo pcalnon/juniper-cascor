@@ -20,6 +20,7 @@ import pytest
 import torch
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from starlette.websockets import WebSocketDisconnect
 
 from api.app import create_app
 from api.lifecycle.manager import TrainingLifecycleManager
@@ -146,7 +147,7 @@ class TestTrainingStreamWSManagerUnavailable:
         with TestClient(app) as client:
             # Remove ws_manager to simulate it being unavailable
             app.state.ws_manager = None
-            with pytest.raises(Exception):
+            with pytest.raises(WebSocketDisconnect):
                 # WebSocket connect should fail because ws_manager is None
                 with client.websocket_connect("/ws/training") as ws:
                     pass

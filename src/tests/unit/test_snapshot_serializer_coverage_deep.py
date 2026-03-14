@@ -36,7 +36,6 @@ from cascade_correlation.cascade_correlation import CascadeCorrelationNetwork
 from cascade_correlation.cascade_correlation_config.cascade_correlation_config import CascadeCorrelationConfig
 from snapshots.snapshot_serializer import CascadeHDF5Serializer
 
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
@@ -205,7 +204,7 @@ class TestSaveLoadRoundTrips:
         assert len(loaded.hidden_units) == num_hidden_before
 
         # Verify hidden unit weights match
-        for i, (orig, loaded_unit) in enumerate(zip(trained_network.hidden_units, loaded.hidden_units)):
+        for _, (orig, loaded_unit) in enumerate(zip(trained_network.hidden_units, loaded.hidden_units)):
             if "weights" in orig and "weights" in loaded_unit:
                 torch.testing.assert_close(orig["weights"], loaded_unit["weights"])
             if "bias" in orig and "bias" in loaded_unit:
@@ -507,12 +506,14 @@ class TestSaveLoadBranches:
         """Lines 347-394: _save_hidden_units with populated units."""
         if len(trained_network.hidden_units) == 0:
             # Force at least one hidden unit for branch coverage
-            trained_network.hidden_units.append({
-                "weights": torch.randn(2),
-                "bias": torch.randn(1),
-                "correlation": 0.5,
-                "activation_fn": torch.tanh,
-            })
+            trained_network.hidden_units.append(
+                {
+                    "weights": torch.randn(2),
+                    "bias": torch.randn(1),
+                    "correlation": 0.5,
+                    "activation_fn": torch.tanh,
+                }
+            )
         serializer.save_network(trained_network, temp_hdf5_path)
 
         with h5py.File(temp_hdf5_path, "r") as f:
