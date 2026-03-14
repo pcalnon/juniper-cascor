@@ -663,12 +663,12 @@ class TestUUIDMethods:
 
     @pytest.mark.unit
     def test_set_uuid_double_set_error(self, candidate):
-        """Lines 1473-1475: Double-set UUID triggers fatal and os._exit."""
+        """Lines 1473-1476: Double-set UUID triggers fatal and sys.exit(1)."""
         # candidate already has a UUID set during __init__
         assert candidate.uuid is not None
-        with patch("os._exit") as mock_exit:
+        with pytest.raises(SystemExit) as exc_info:
             candidate.set_uuid("new-uuid")
-            mock_exit.assert_called_once_with(1)
+        assert exc_info.value.code == 1
 
     @pytest.mark.unit
     def test_get_uuid_lazy_initialization(self):

@@ -66,7 +66,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             name="juniper-data",
             command=settings.auto_start_data_service_command,
             health_url=f"{data_url.rstrip('/')}/v1/health",
-            env_overrides={"JUNIPER_DATA_HOST": "0.0.0.0"},
+            env_overrides={"JUNIPER_DATA_HOST": "0.0.0.0"},  # nosec B104 — env override for local dev, not a socket bind
         )
         if svc:
             managed_services.append(svc)

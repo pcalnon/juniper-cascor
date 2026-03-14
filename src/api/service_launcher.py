@@ -14,7 +14,7 @@ import atexit
 import logging
 import os
 import shlex
-import subprocess
+import subprocess  # nosec B404 — subprocess is the core purpose of this module
 import urllib.request
 from pathlib import Path
 
@@ -60,7 +60,7 @@ class ManagedService:
         if self._log_handle is not None:
             try:
                 self._log_handle.close()
-            except Exception:
+            except Exception:  # nosec B110 — cleanup must not propagate exceptions
                 pass
             self._log_handle = None
 
@@ -70,7 +70,7 @@ def _cleanup_at_exit() -> None:
     for svc in _active_services:
         try:
             svc.terminate(timeout=5)
-        except Exception:
+        except Exception:  # nosec B110 — cleanup must not propagate exceptions
             pass
 
 
@@ -99,10 +99,10 @@ async def wait_for_health(
     while time.monotonic() < deadline:
         try:
             req = urllib.request.Request(url, method="GET")
-            with urllib.request.urlopen(req, timeout=5) as resp:
+            with urllib.request.urlopen(req, timeout=5) as resp:  # nosec B310 — internal health check URL from configuration
                 if resp.status == 200:
                     return True
-        except Exception:
+        except Exception:  # nosec B110 — health poll retries on any exception
             pass
         await asyncio.sleep(interval)
     return False
@@ -152,7 +152,7 @@ async def start_service(
         logger.warning(f"Could not open log file {log_file}, using /dev/null")
 
     try:
-        process = subprocess.Popen(
+        process = subprocess.Popen(  # nosec B603 — command is from settings, not user input
             cmd_parts,
             env=env,
             stdout=stdout_target,
