@@ -131,6 +131,12 @@ filterwarnings = [
     "ignore::DeprecationWarning:google.*",
     # Ignore pytest internal warnings
     "ignore::pytest.PytestUnraisableExceptionWarning",
+    # Third-party: Starlette TestClient timeout deprecation
+    "ignore::DeprecationWarning:starlette.*",
+    # Third-party: sentry-sdk uses deprecated asyncio.iscoroutinefunction (Python 3.14+)
+    "ignore::DeprecationWarning:sentry_sdk.*",
+    # matplotlib non-interactive backend warning in headless test environments
+    "ignore:FigureCanvasAgg is non-interactive:UserWarning",
 ]
 markers = [
     "unit: Unit tests for individual components",

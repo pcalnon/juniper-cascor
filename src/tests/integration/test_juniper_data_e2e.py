@@ -62,12 +62,15 @@ class _RequestsSessionAdapter:
         return r
 
     def request(self, method, url, **kwargs):
+        kwargs.pop("timeout", None)  # TestClient is in-process; timeout not supported
         return self._convert(self._tc.request(method, url, **kwargs))
 
     def get(self, url, **kwargs):
+        kwargs.pop("timeout", None)  # TestClient is in-process; timeout not supported
         return self._convert(self._tc.get(url, **kwargs))
 
     def post(self, url, **kwargs):
+        kwargs.pop("timeout", None)  # TestClient is in-process; timeout not supported
         return self._convert(self._tc.post(url, **kwargs))
 
 
