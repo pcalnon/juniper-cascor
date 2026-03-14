@@ -45,7 +45,7 @@ def _validate_candidate_early_stopping_helper(candidate):
     x = torch.ones(10, 2)
     residual_error = torch.zeros(10)  # No error = no correlation
 
-    result = candidate.train(x=x, epochs=100, residual_error=residual_error, learning_rate=0.01)  # Request many epochs
+    result = candidate.train_detailed(x=x, epochs=100, residual_error=residual_error, learning_rate=0.01)  # Request many epochs
 
     # Should stop early, not run all 100 epochs
     assert result.epochs_completed < 100, f"Should stop early, but ran {result.epochs_completed} epochs"  # trunk-ignore(bandit/B101)
