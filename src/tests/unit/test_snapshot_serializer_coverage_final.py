@@ -21,12 +21,10 @@ import h5py
 import numpy as np
 import pytest
 import torch
+from helpers.utilities import set_deterministic_behavior
 
 from cascade_correlation.cascade_correlation import CascadeCorrelationNetwork
-from cascade_correlation.cascade_correlation_config.cascade_correlation_config import (
-    CascadeCorrelationConfig,
-)
-from helpers.utilities import set_deterministic_behavior
+from cascade_correlation.cascade_correlation_config.cascade_correlation_config import CascadeCorrelationConfig
 from snapshots.snapshot_serializer import CascadeHDF5Serializer
 
 
@@ -287,9 +285,7 @@ class TestValidateShapesMismatch:
         network = _make_network()
 
         # Add a hidden unit with wrong weight shape
-        network.hidden_units = [
-            {"weights": torch.randn(10), "bias": torch.randn(1)}  # Wrong: should be input_size=2
-        ]
+        network.hidden_units = [{"weights": torch.randn(10), "bias": torch.randn(1)}]  # Wrong: should be input_size=2
         # Expand output weights to match
         network.output_weights = torch.randn(3, 2)  # input_size + 1 hidden
 
@@ -303,9 +299,7 @@ class TestValidateShapesMismatch:
         network = _make_network()
 
         # Add a hidden unit with wrong bias shape
-        network.hidden_units = [
-            {"weights": torch.randn(2), "bias": torch.randn(5)}  # Wrong: should be (1,) or scalar
-        ]
+        network.hidden_units = [{"weights": torch.randn(2), "bias": torch.randn(5)}]  # Wrong: should be (1,) or scalar
         network.output_weights = torch.randn(3, 2)
 
         result = serializer._validate_shapes(network)
