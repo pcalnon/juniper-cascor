@@ -204,7 +204,7 @@ class TestSaveLoadRoundTrips:
         assert len(loaded.hidden_units) == num_hidden_before
 
         # Verify hidden unit weights match
-        for i, (orig, loaded_unit) in enumerate(zip(trained_network.hidden_units, loaded.hidden_units)):
+        for _, (orig, loaded_unit) in enumerate(zip(trained_network.hidden_units, loaded.hidden_units)):
             if "weights" in orig and "weights" in loaded_unit:
                 torch.testing.assert_close(orig["weights"], loaded_unit["weights"])
             if "bias" in orig and "bias" in loaded_unit:

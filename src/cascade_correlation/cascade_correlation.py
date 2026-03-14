@@ -1253,6 +1253,8 @@ class CascadeCorrelationNetwork:
         epochs = (epochs, _CASCADE_CORRELATION_NETWORK_OUTPUT_EPOCHS)[epochs is None]
         if x is None or y is None:
             raise ValueError("CascadeCorrelationNetwork: train_output_layer: Input (x) and target (y) tensors must be provided for training the output layer.")
+        if x.shape[0] != y.shape[0]:
+            raise ValueError(f"CascadeCorrelationNetwork: train_output_layer: Batch size mismatch. Input x has {x.shape[0]} samples but target y has {y.shape[0]} samples.")
 
         # Define loss function and optimizer
         criterion = nn.MSELoss()

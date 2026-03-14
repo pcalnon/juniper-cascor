@@ -29,7 +29,7 @@ from snapshots.snapshot_serializer import CascadeHDF5Serializer
 
 
 def _make_config(**overrides):
-    defaults = dict(input_size=2, output_size=2, random_seed=42, candidate_pool_size=2, candidate_epochs=3, output_epochs=3, max_hidden_units=2, patience=1)
+    defaults = {"input_size": 2, "output_size": 2, "random_seed": 42, "candidate_pool_size": 2, "candidate_epochs": 3, "output_epochs": 3, "max_hidden_units": 2, "patience": 1}
     defaults.update(overrides)
     return CascadeCorrelationConfig(**defaults)
 
