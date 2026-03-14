@@ -796,22 +796,19 @@ class TestStaticMethods:
     @pytest.mark.unit
     def test_plot_dataset_static(self):
         """Test static plot_dataset method (just verify it doesn't crash)."""
-        import matplotlib
+        from unittest.mock import patch
 
         from cascade_correlation.cascade_correlation import CascadeCorrelationNetwork
-
-        matplotlib.use("Agg")
 
         x = torch.randn(10, 2)
         y = torch.zeros(10, 2)
         y[:5, 0] = 1
         y[5:, 1] = 1
 
-        # This should not raise an error
-        try:
+        # Mock plt.show() to prevent non-interactive backend warning
+        # (Agg backend is set globally in conftest.py pytest_configure)
+        with patch("cascor_plotter.cascor_plotter.plt.show"):
             CascadeCorrelationNetwork.plot_dataset(x, y, "Test")
-        except Exception:
-            pass  # Plotting may fail in headless environments
 
 
 # ===================================================================

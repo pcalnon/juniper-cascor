@@ -74,6 +74,11 @@ from cascade_correlation.cascade_correlation_config.cascade_correlation_config i
 
 def pytest_configure(config):
     """Configure pytest with custom settings."""
+    # Set matplotlib backend to non-interactive Agg before any pyplot imports
+    import matplotlib
+
+    matplotlib.use("Agg")
+
     # Disable GPU by default in tests
     if not config.getoption("--gpu", default=False):
         os.environ["CUDA_VISIBLE_DEVICES"] = ""
