@@ -13,9 +13,7 @@ import pytest
 import torch
 
 from candidate_unit.candidate_unit import CandidateUnit
-
-# import numpy as np
-from cascade_correlation.cascade_correlation import CascadeCorrelationNetwork
+from cascade_correlation.cascade_correlation import CascadeCorrelationNetwork, TrainingResults
 
 
 # CASCOR-TIMEOUT-001: Added slow marker and extended timeout
@@ -75,15 +73,16 @@ def _get_candidate_training_stats(network, x, y):
     print("Training completed!")
     print(f"Training stats type: {type(training_stats)}")
 
-    # Extract results from training_stats tuple
-    assert isinstance(training_stats, tuple) and len(training_stats) >= 1, f"Invalid training_stats format: {training_stats}"
-    candidates_data = training_stats[0]
-    assert isinstance(candidates_data, tuple) and len(candidates_data) == 4, f"Invalid candidates_data format: {candidates_data}"
-    _validate_candidates_correlations(candidates_data)
+    # Validate TrainingResults dataclass (API updated from tuple to dataclass)
+    assert isinstance(training_stats, TrainingResults), f"Expected TrainingResults, got {type(training_stats)}"
+    _validate_candidates_correlations(training_stats)
 
 
-def _validate_candidates_correlations(candidates_data):
-    candidate_ids, candidate_uuids, correlations, candidates = candidates_data
+def _validate_candidates_correlations(training_stats):
+    candidate_ids = training_stats.candidate_ids
+    candidate_uuids = training_stats.candidate_uuids
+    correlations = training_stats.correlations
+    candidates = training_stats.candidate_objects
     print(f"Number of trained candidates: {len(candidates)}")
     print(f"Correlations obtained: {correlations}")
     print(f"All correlations identical: {len(set(correlations)) <= 1 if correlations else True}")

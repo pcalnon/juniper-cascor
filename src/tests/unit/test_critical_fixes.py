@@ -70,9 +70,9 @@ def test_3_candidate_training(fast_training_params):  # sourcery skip: extract-m
 
     print(f"Training epochs: {test_epochs}")
 
-    result = candidate.train(x=x, epochs=test_epochs, residual_error=residual_error, learning_rate=0.01)
+    result = candidate.train_detailed(x=x, epochs=test_epochs, residual_error=residual_error, learning_rate=0.01)
 
-    assert isinstance(result, CandidateTrainingResult), "train() should return CandidateTrainingResult"
+    assert isinstance(result, CandidateTrainingResult), "train_detailed() should return CandidateTrainingResult"
     assert hasattr(result, "correlation"), "Result missing correlation field"
     assert hasattr(result, "epochs_completed"), "Result missing epochs_completed"
     assert result.epochs_completed == test_epochs, f"Expected {test_epochs} epochs, got {result.epochs_completed}"
