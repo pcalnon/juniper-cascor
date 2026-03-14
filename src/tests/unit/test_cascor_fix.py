@@ -96,7 +96,6 @@ def _validate_candidates_correlations(candidates_data):
             print(f"Candidate {i} correlation via get_correlation(): {candidate_corr:.6f}")
 
 
-
 # CASCOR-TIMEOUT-001: Added slow marker and extended timeout
 @pytest.mark.slow
 @pytest.mark.timeout(300)
