@@ -51,6 +51,7 @@
 | **Navigate the source** | [quick-start.md](source/quick-start.md) | docs/source/ |
 | **Understand modules** | [manual.md](source/manual.md) | docs/source/ |
 | **See version history** | [CHANGELOG.md](../CHANGELOG.md) | Root |
+| **Quick-reference dev tasks** | [DEVELOPER_CHEATSHEET.md](DEVELOPER_CHEATSHEET.md) | docs/ |
 | **Contribute code** | [AGENTS.md](../AGENTS.md) | Root |
 | **Generate spiral datasets** | JuniperData service | External |
 | **Configure JuniperData URL** | [reference.md](install/reference.md) | docs/install/ |
@@ -665,6 +666,7 @@ Contains historical development documentation, implementation notes, and researc
 
 | Document | Purpose | Status |
 |----------|---------|--------|
+| `DEVELOPER_CHEATSHEET.md` | Quick-reference card for common development tasks | Active |
 | `API_REFERENCE.md` | Original API reference (v0.3.2) | Superseded by docs/api/ |
 | `FEATURES_GUIDE.md` | Feature documentation | Partially incorporated |
 | `ARCHITECTURE_GUIDE.md` | Architecture overview | Historical reference |
