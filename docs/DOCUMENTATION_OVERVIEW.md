@@ -46,8 +46,8 @@
 | **Set up test environment** | [environment-setup.md](testing/environment-setup.md) | docs/testing/ |
 | **Write tests** | [manual.md](testing/manual.md) | docs/testing/ |
 | **Run specific tests** | [selective-testing-guide.md](testing/selective-testing-guide.md) | docs/testing/ |
-| **Understand CI/CD** | [quick-start.md](ci/quick-start.md) | docs/ci/ |
-| **Configure CI/CD** | [manual.md](ci/manual.md) | docs/ci/ |
+| **Understand CI/CD** | [quick-start.md](ci_cd/quick-start.md) | docs/ci_cd/ |
+| **Configure CI/CD** | [manual.md](ci_cd/manual.md) | docs/ci_cd/ |
 | **Navigate the source** | [quick-start.md](source/quick-start.md) | docs/source/ |
 | **Understand modules** | [manual.md](source/manual.md) | docs/source/ |
 | **See version history** | [CHANGELOG.md](../CHANGELOG.md) | Root |
@@ -183,7 +183,7 @@ juniper_cascor/
 │   ├── api/                       ← API documentation (2 files)
 │   │   ├── api-reference.md
 │   │   └── api-schemas.md
-│   ├── ci/                        ← CI/CD documentation (4 files)
+│   ├── ci_cd/                     ← CI/CD documentation (4 files)
 │   │   ├── quick-start.md
 │   │   ├── environment-setup.md
 │   │   ├── manual.md
@@ -464,7 +464,7 @@ The juniper-cascor-client library provides a Python API for interacting with the
 
 ### CI/CD Documentation
 
-#### [ci/quick-start.md](ci/quick-start.md)
+#### [ci_cd/quick-start.md](ci_cd/quick-start.md)
 
 **Lines:** ~200  
 **Purpose:** Understand the CI pipeline  
@@ -481,7 +481,7 @@ The juniper-cascor-client library provides a Python API for interacting with the
 
 ---
 
-#### [ci/environment-setup.md](ci/environment-setup.md)
+#### [ci_cd/environment-setup.md](ci_cd/environment-setup.md)
 
 **Lines:** ~300  
 **Purpose:** CI environment configuration  
@@ -498,7 +498,7 @@ The juniper-cascor-client library provides a Python API for interacting with the
 
 ---
 
-#### [ci/manual.md](ci/manual.md)
+#### [ci_cd/manual.md](ci_cd/manual.md)
 
 **Lines:** ~400  
 **Purpose:** Pipeline architecture and jobs  
@@ -515,7 +515,7 @@ The juniper-cascor-client library provides a Python API for interacting with the
 
 ---
 
-#### [ci/reference.md](ci/reference.md)
+#### [ci_cd/reference.md](ci_cd/reference.md)
 
 **Lines:** ~300  
 **Purpose:** CI configuration reference  
@@ -733,7 +733,7 @@ Contains historical development documentation, implementation notes, and researc
 | **reference.md** | ~300 | Reference | Developers | ✅ **Active** |
 | **selective-testing-guide.md** | ~300 | Guide | Developers | ✅ **Active** |
 
-### docs/ci/ Directory
+### docs/ci_cd/ Directory
 
 | File | Lines | Type | Audience | Status |
 |------|-------|------|----------|--------|

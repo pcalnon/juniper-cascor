@@ -82,7 +82,7 @@ A comprehensive documentation audit and creation effort was completed for the Ju
 | `reference.md`               | Markers, reports, CI mapping     |
 | `selective-testing-guide.md` | Running specific test categories |
 
-### CI/CD Documentation (docs/ci/)
+### CI/CD Documentation (docs/ci_cd/)
 
 | File                   | Purpose                  |
 | ---------------------- | ------------------------ |
@@ -166,7 +166,7 @@ A comprehensive documentation audit and creation effort was completed for the Ju
 ```bash
 docs/
 ├── api/           2 files    (~1,200 lines)
-├── ci/            4 files    (~800 lines)
+├── ci_cd/         4 files    (~800 lines)
 ├── install/       4 files    (~900 lines)
 ├── overview/      1 file     (~400 lines)
 ├── source/        4 files    (~1,000 lines)

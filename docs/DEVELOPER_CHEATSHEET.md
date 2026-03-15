@@ -174,7 +174,7 @@ Core: `torch`, `numpy`, `h5py`, `matplotlib`, `PyYAML`, `requests`
 
 **CI pipeline:** pre-commit -> unit-tests -> integration-tests -> build -> security -> required-checks
 
-> See: [CI Quick Start](ci/quick-start.md) | [CI Reference](ci/reference.md) | [Environment Setup](install/environment-setup.md)
+> See: [CI Quick Start](ci_cd/quick-start.md) | [CI Reference](ci_cd/reference.md) | [Environment Setup](install/environment-setup.md)
 
 ---
 

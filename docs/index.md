@@ -55,10 +55,10 @@ This documentation serves two audiences:
 
 | Document | Description |
 |----------|-------------|
-| [CI/CD Quick Start](ci/quick-start.md) | Understand the CI pipeline |
-| [CI Environment](ci/environment-setup.md) | GitHub Actions environment |
-| [CI/CD Manual](ci/manual.md) | Pipeline architecture and jobs |
-| [CI/CD Reference](ci/reference.md) | Configuration reference |
+| [CI/CD Quick Start](ci_cd/quick-start.md) | Understand the CI pipeline |
+| [CI Environment](ci_cd/environment-setup.md) | GitHub Actions environment |
+| [CI/CD Manual](ci_cd/manual.md) | Pipeline architecture and jobs |
+| [CI/CD Reference](ci_cd/reference.md) | Configuration reference |
 
 ### Source Code
 
