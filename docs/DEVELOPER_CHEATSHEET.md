@@ -20,7 +20,7 @@
 | Lint / format / isort | `python -m flake8 . --max-line-length=512` / `python -m black --check .` / `python -m isort --check-only .` |
 | Security scan | `bandit -r src/` |
 
-> See: [AGENTS.md](../AGENTS.md) | [Configuration Reference](install/reference.md)
+> See: [AGENTS.md](../AGENTS.md) | [Configuration Reference](install/REFERENCE.md)
 
 ---
 
@@ -45,7 +45,7 @@ docker compose --profile full up -d                            # Docker start
 
 **Middleware** (outermost first): CORS -> Security -> Prometheus -> RequestId. **Models:** Pydantic (API), dataclasses (config).
 
-> See: [API Reference](api/api-reference.md) | [API Schemas](api/api-schemas.md)
+> See: [API Reference](api/API_REFERENCE.md) | [API Schemas](api/API_SCHEMAS.md)
 
 ---
 
@@ -53,7 +53,7 @@ docker compose --profile full up -d                            # Docker start
 
 **Add a constant:** Add to the appropriate module in `src/cascor_constants/`, follow `_UPPER_SNAKE` naming, import via `cascor_constants.constants`. Modules: `constants_model/` (architecture), `constants_candidates/` (pool/training), `constants_activation/` (functions), `constants_logging/` (levels), `constants_problem/` (defaults), `constants_hdf5/` (serialization).
 
-> See: [Constants Guide](overview/constants-guide.md)
+> See: [Constants Guide](overview/CONSTANTS_GUIDE.md)
 
 ### Environment Variables
 
@@ -99,7 +99,7 @@ network = CascadeCorrelationNetwork(config=config)
 | `max_hidden_units` | `50` | Network growth limit |
 | `target_accuracy` | `0.999` | Termination goal |
 
-> See: [API Reference](api/api-reference.md) | [AGENTS.md](../AGENTS.md#core-components)
+> See: [API Reference](api/API_REFERENCE.md) | [AGENTS.md](../AGENTS.md#core-components)
 
 ---
 
@@ -127,7 +127,7 @@ python -m snapshots.snapshot_cli cleanup ./snapshots/ --keep 5 # prune old
 
 Compression: gzip level 4 (default). Performance: Save <2s, Load <3s, Verify <200ms (100 units).
 
-> See: [Constants Guide -- Serialization](overview/constants-guide.md#serialization-constants)
+> See: [Constants Guide -- Serialization](overview/CONSTANTS_GUIDE.md#serialization-constants)
 
 ---
 
@@ -145,7 +145,7 @@ Compression: gzip level 4 (default). Performance: Save <2s, Load <3s, Verify <20
 | `gpu` | Needs GPU/CUDA | `accuracy` / `early_stopping` | Accuracy / stopping |
 | `multiprocessing` | Multi-process tests | `requires_juniper_data` | Needs juniper-data service |
 
-> See: [Testing Quick Start](testing/quick-start.md) | [Testing Reference](testing/reference.md)
+> See: [Testing Quick Start](testing/QUICK_START.md) | [Testing Reference](testing/REFERENCE.md)
 
 ---
 
@@ -155,7 +155,7 @@ Levels: TRACE(5) -> VERBOSE(7) -> DEBUG(10) -> INFO(20) -> WARNING(30) -> ERROR(
 
 **Prometheus metrics:** Namespace `juniper_cascor_*`. Pattern: `juniper_cascor_<subsystem>_<name>_<unit>`. Grafana: **JuniperCascor** (UID `juniper-cascor`).
 
-> See: [Observability Guide](../../juniper-deploy/docs/OBSERVABILITY_GUIDE.md) | [Configuration Reference](install/reference.md#logging-configuration)
+> See: [Observability Guide](../../juniper-deploy/docs/OBSERVABILITY_GUIDE.md) | [Configuration Reference](install/REFERENCE.md#logging-configuration)
 
 ---
 
@@ -174,7 +174,7 @@ Core: `torch`, `numpy`, `h5py`, `matplotlib`, `PyYAML`, `requests`
 
 **CI pipeline:** pre-commit -> unit-tests -> integration-tests -> build -> security -> required-checks
 
-> See: [CI Quick Start](ci_cd/quick-start.md) | [CI Reference](ci_cd/reference.md) | [Environment Setup](install/environment-setup.md)
+> See: [CI Quick Start](ci_cd/QUICK_START.md) | [CI Reference](ci_cd/REFERENCE.md) | [Environment Setup](install/ENVIRONMENT_SETUP.md)
 
 ---
 

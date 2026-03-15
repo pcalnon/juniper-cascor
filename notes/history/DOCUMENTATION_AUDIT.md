@@ -53,52 +53,52 @@ A comprehensive documentation audit and creation effort was completed for the Ju
 
 | File                          | Purpose                                   |
 | ----------------------------- | ----------------------------------------- |
-| `index.md`                    | Documentation landing page and navigation |
-| `overview/constants-guide.md` | Complete constants reference              |
+| `INDEX.md`                    | Documentation landing page and navigation |
+| `overview/CONSTANTS_GUIDE.md` | Complete constants reference              |
 
 ### Install & Configuration (docs/install/)
 
 | File                   | Purpose                                 |
 | ---------------------- | --------------------------------------- |
-| `quick-start.md`       | Minimal setup steps                     |
-| `environment-setup.md` | Detailed environment configuration      |
-| `user-manual.md`       | Comprehensive usage guide               |
-| `reference.md`         | CLI arguments and environment variables |
+| `QUICK_START.md`       | Minimal setup steps                     |
+| `ENVIRONMENT_SETUP.md` | Detailed environment configuration      |
+| `USER_MANUAL.md`       | Comprehensive usage guide               |
+| `REFERENCE.md`         | CLI arguments and environment variables |
 
 ### API Documentation (docs/api/)
 
 | File               | Purpose                              |
 | ------------------ | ------------------------------------ |
-| `api-reference.md` | Complete API documentation (v0.3.21) |
-| `api-schemas.md`   | HDF5 schemas and data structures     |
+| `API_REFERENCE.md` | Complete API documentation (v0.3.21) |
+| `API_SCHEMAS.md`   | HDF5 schemas and data structures     |
 
 ### Testing Documentation (docs/testing/)
 
 | File                         | Purpose                          |
 | ---------------------------- | -------------------------------- |
-| `quick-start.md`             | Fast test commands               |
-| `environment-setup.md`       | Test environment setup           |
-| `manual.md`                  | Writing and organizing tests     |
-| `reference.md`               | Markers, reports, CI mapping     |
-| `selective-testing-guide.md` | Running specific test categories |
+| `QUICK_START.md`             | Fast test commands               |
+| `ENVIRONMENT_SETUP.md`       | Test environment setup           |
+| `MANUAL.md`                  | Writing and organizing tests     |
+| `REFERENCE.md`               | Markers, reports, CI mapping     |
+| `SELECTIVE_TESTING_GUIDE.md` | Running specific test categories |
 
 ### CI/CD Documentation (docs/ci_cd/)
 
 | File                   | Purpose                  |
 | ---------------------- | ------------------------ |
-| `quick-start.md`       | Pipeline overview        |
-| `environment-setup.md` | CI environment details   |
-| `manual.md`            | Job-by-job documentation |
-| `reference.md`         | Configuration reference  |
+| `QUICK_START.md`       | Pipeline overview        |
+| `ENVIRONMENT_SETUP.md` | CI environment details   |
+| `MANUAL.md`            | Job-by-job documentation |
+| `REFERENCE.md`         | Configuration reference  |
 
 ### Source Code Documentation (docs/source/)
 
 | File                   | Purpose                |
 | ---------------------- | ---------------------- |
-| `quick-start.md`       | Developer onboarding   |
-| `environment-setup.md` | Development tools      |
-| `manual.md`            | Module-by-module guide |
-| `reference.md`         | Internal conventions   |
+| `QUICK_START.md`       | Developer onboarding   |
+| `ENVIRONMENT_SETUP.md` | Development tools      |
+| `MANUAL.md`            | Module-by-module guide |
+| `REFERENCE.md`         | Internal conventions   |
 
 ---
 
@@ -171,7 +171,7 @@ docs/
 ├── overview/      1 file     (~400 lines)
 ├── source/        4 files    (~1,000 lines)
 ├── testing/       5 files    (~1,100 lines)
-└── index.md       1 file     (~110 lines)
+└── INDEX.md       1 file     (~110 lines)
 
 Total: 22 files, ~5,500 lines of documentation
 ```
@@ -183,7 +183,7 @@ Total: 22 files, ~5,500 lines of documentation
 All documentation links verified:
 
 - README.md → docs/ links: ✅ Valid
-- docs/index.md → subdirectory links: ✅ Valid
+- docs/INDEX.md → subdirectory links: ✅ Valid
 - Cross-references between docs: ✅ Valid
 
 ---

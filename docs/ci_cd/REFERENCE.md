@@ -330,7 +330,7 @@ act -j test
 
 ## Related Documentation
 
-- [Testing Guide](../testing/quick-start.md)
-- [Installation Guide](../install/quick-start.md)
-- [API Reference](../api/api-reference.md)
+- [Testing Guide](../testing/QUICK_START.md)
+- [Installation Guide](../install/QUICK_START.md)
+- [API Reference](../api/API_REFERENCE.md)
 - Test Runner Scripts (`src/tests/scripts/`)

@@ -110,7 +110,7 @@ Related documents:
 - **Coverage enforcement** - `--cov-fail-under=80` (upgraded from 50%)
 - **Concurrency control** - Cancel stale CI runs on same branch
 - **`pyproject.toml`** - Unified Black, isort, pytest, coverage, and mypy configuration
-- **Branch protection documentation** (`docs/branch-protection.md`)
+- **Branch protection documentation** (`docs/ci_cd/BRANCH_PROTECTION.md`)
 
 **Profiling Infrastructure (v0.3.20)**
 

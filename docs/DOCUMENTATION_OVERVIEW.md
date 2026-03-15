@@ -27,8 +27,8 @@
 
 ```bash
 1. README.md                     → Project overview, what is this?
-2. docs/install/quick-start.md   → Get running in 5 minutes
-3. docs/install/environment-setup.md → Set up your environment
+2. docs/install/QUICK_START.md   → Get running in 5 minutes
+3. docs/install/ENVIRONMENT_SETUP.md → Set up your environment
 4. AGENTS.md                     → Development conventions and guides
 ```
 
@@ -36,25 +36,25 @@
 
 | Goal | Document | Location |
 |------|----------|----------|
-| **Get the app running** | [quick-start.md](install/quick-start.md) | docs/install/ |
+| **Get the app running** | [QUICK_START.md](install/QUICK_START.md) | docs/install/ |
 | **Understand the project** | [README.md](../README.md) | Root |
-| **Set up my environment** | [environment-setup.md](install/environment-setup.md) | docs/install/ |
-| **Learn the API** | [api-reference.md](api/api-reference.md) | docs/api/ |
-| **Understand HDF5 schemas** | [api-schemas.md](api/api-schemas.md) | docs/api/ |
-| **Configure constants** | [constants-guide.md](overview/constants-guide.md) | docs/overview/ |
-| **Run tests** | [quick-start.md](testing/quick-start.md) | docs/testing/ |
-| **Set up test environment** | [environment-setup.md](testing/environment-setup.md) | docs/testing/ |
-| **Write tests** | [manual.md](testing/manual.md) | docs/testing/ |
-| **Run specific tests** | [selective-testing-guide.md](testing/selective-testing-guide.md) | docs/testing/ |
-| **Understand CI/CD** | [quick-start.md](ci_cd/quick-start.md) | docs/ci_cd/ |
-| **Configure CI/CD** | [manual.md](ci_cd/manual.md) | docs/ci_cd/ |
-| **Navigate the source** | [quick-start.md](source/quick-start.md) | docs/source/ |
-| **Understand modules** | [manual.md](source/manual.md) | docs/source/ |
+| **Set up my environment** | [ENVIRONMENT_SETUP.md](install/ENVIRONMENT_SETUP.md) | docs/install/ |
+| **Learn the API** | [API_REFERENCE.md](api/API_REFERENCE.md) | docs/api/ |
+| **Understand HDF5 schemas** | [API_SCHEMAS.md](api/API_SCHEMAS.md) | docs/api/ |
+| **Configure constants** | [CONSTANTS_GUIDE.md](overview/CONSTANTS_GUIDE.md) | docs/overview/ |
+| **Run tests** | [QUICK_START.md](testing/QUICK_START.md) | docs/testing/ |
+| **Set up test environment** | [ENVIRONMENT_SETUP.md](testing/ENVIRONMENT_SETUP.md) | docs/testing/ |
+| **Write tests** | [MANUAL.md](testing/MANUAL.md) | docs/testing/ |
+| **Run specific tests** | [SELECTIVE_TESTING_GUIDE.md](testing/SELECTIVE_TESTING_GUIDE.md) | docs/testing/ |
+| **Understand CI/CD** | [QUICK_START.md](ci_cd/QUICK_START.md) | docs/ci_cd/ |
+| **Configure CI/CD** | [MANUAL.md](ci_cd/MANUAL.md) | docs/ci_cd/ |
+| **Navigate the source** | [QUICK_START.md](source/QUICK_START.md) | docs/source/ |
+| **Understand modules** | [MANUAL.md](source/MANUAL.md) | docs/source/ |
 | **See version history** | [CHANGELOG.md](../CHANGELOG.md) | Root |
 | **Quick-reference dev tasks** | [DEVELOPER_CHEATSHEET.md](DEVELOPER_CHEATSHEET.md) | docs/ |
 | **Contribute code** | [AGENTS.md](../AGENTS.md) | Root |
 | **Generate spiral datasets** | JuniperData service | External |
-| **Configure JuniperData URL** | [reference.md](install/reference.md) | docs/install/ |
+| **Configure JuniperData URL** | [REFERENCE.md](install/REFERENCE.md) | docs/install/ |
 
 ---
 
@@ -80,7 +80,7 @@
 
 ---
 
-#### 2. [install/quick-start.md](install/quick-start.md)
+#### 2. [install/QUICK_START.md](install/QUICK_START.md)
 
 **Location:** docs/install/ directory  
 **Purpose:** Get running in 5 minutes  
@@ -97,7 +97,7 @@
 
 ---
 
-#### 3. [install/environment-setup.md](install/environment-setup.md)
+#### 3. [install/ENVIRONMENT_SETUP.md](install/ENVIRONMENT_SETUP.md)
 
 **Location:** docs/install/ directory  
 **Purpose:** Complete environment configuration guide  
@@ -178,34 +178,34 @@ juniper_cascor/
 │   └── script_util.cfg
 ├── docs/                          ← Technical documentation
 │   ├── DOCUMENTATION_OVERVIEW.md  ← You are here
-│   ├── index.md                   ← Quick navigation
+│   ├── INDEX.md                   ← Quick navigation
 │   ├── DOCUMENTATION_AUDIT.md     ← Audit report
 │   ├── api/                       ← API documentation (2 files)
-│   │   ├── api-reference.md
-│   │   └── api-schemas.md
+│   │   ├── API_REFERENCE.md
+│   │   └── API_SCHEMAS.md
 │   ├── ci_cd/                     ← CI/CD documentation (4 files)
-│   │   ├── quick-start.md
-│   │   ├── environment-setup.md
-│   │   ├── manual.md
-│   │   └── reference.md
+│   │   ├── QUICK_START.md
+│   │   ├── ENVIRONMENT_SETUP.md
+│   │   ├── MANUAL.md
+│   │   └── REFERENCE.md
 │   ├── install/                   ← Installation guides (4 files)
-│   │   ├── quick-start.md
-│   │   ├── environment-setup.md
-│   │   ├── user-manual.md
-│   │   └── reference.md
+│   │   ├── QUICK_START.md
+│   │   ├── ENVIRONMENT_SETUP.md
+│   │   ├── USER_MANUAL.md
+│   │   └── REFERENCE.md
 │   ├── overview/                  ← Configuration guides (1 file)
-│   │   └── constants-guide.md
+│   │   └── CONSTANTS_GUIDE.md
 │   ├── source/                    ← Source code guides (4 files)
-│   │   ├── quick-start.md
-│   │   ├── environment-setup.md
-│   │   ├── manual.md
-│   │   └── reference.md
+│   │   ├── QUICK_START.md
+│   │   ├── ENVIRONMENT_SETUP.md
+│   │   ├── MANUAL.md
+│   │   └── REFERENCE.md
 │   └── testing/                   ← Testing documentation (5 files)
-│       ├── quick-start.md
-│       ├── environment-setup.md
-│       ├── manual.md
-│       ├── reference.md
-│       └── selective-testing-guide.md
+│       ├── QUICK_START.md
+│       ├── ENVIRONMENT_SETUP.md
+│       ├── MANUAL.md
+│       ├── REFERENCE.md
+│       └── SELECTIVE_TESTING_GUIDE.md
 ├── notes/                         ← Historical documentation
 │   ├── API_REFERENCE.md           ← Original API (v0.3.2)
 │   ├── FEATURES_GUIDE.md          ← Feature documentation
@@ -246,7 +246,7 @@ juniper_cascor/
 
 The JuniperData service must be running before executing spiral problem evaluations. See the [JuniperData project](https://github.com/pcalnon/juniper-data) for installation and setup instructions.
 
-**Configuration:** Set the JuniperData URL via environment variable or configuration. See [install/reference.md](install/reference.md) for details.
+**Configuration:** Set the JuniperData URL via environment variable or configuration. See [install/REFERENCE.md](install/REFERENCE.md) for details.
 
 ### juniper-cascor-client
 
@@ -263,7 +263,7 @@ The juniper-cascor-client library provides a Python API for interacting with the
 
 ### API Documentation
 
-#### [api/api-reference.md](api/api-reference.md)
+#### [api/API_REFERENCE.md](api/API_REFERENCE.md)
 
 **Lines:** ~600  
 **Purpose:** Complete API documentation with examples  
@@ -295,7 +295,7 @@ The juniper-cascor-client library provides a Python API for interacting with the
 
 ---
 
-#### [api/api-schemas.md](api/api-schemas.md)
+#### [api/API_SCHEMAS.md](api/API_SCHEMAS.md)
 
 **Lines:** ~400  
 **Purpose:** Data schema documentation for serialization  
@@ -333,7 +333,7 @@ The juniper-cascor-client library provides a Python API for interacting with the
 
 ### Configuration
 
-#### [overview/constants-guide.md](overview/constants-guide.md)
+#### [overview/CONSTANTS_GUIDE.md](overview/CONSTANTS_GUIDE.md)
 
 **Lines:** ~400  
 **Purpose:** Complete reference for project constants  
@@ -371,7 +371,7 @@ The juniper-cascor-client library provides a Python API for interacting with the
 
 ### Testing Documentation
 
-#### [testing/quick-start.md](testing/quick-start.md)
+#### [testing/QUICK_START.md](testing/QUICK_START.md)
 
 **Lines:** ~200  
 **Purpose:** Run tests quickly  
@@ -387,7 +387,7 @@ The juniper-cascor-client library provides a Python API for interacting with the
 
 ---
 
-#### [testing/environment-setup.md](testing/environment-setup.md)
+#### [testing/ENVIRONMENT_SETUP.md](testing/ENVIRONMENT_SETUP.md)
 
 **Lines:** ~300  
 **Purpose:** Test environment configuration  
@@ -405,7 +405,7 @@ The juniper-cascor-client library provides a Python API for interacting with the
 
 ---
 
-#### [testing/manual.md](testing/manual.md)
+#### [testing/MANUAL.md](testing/MANUAL.md)
 
 **Lines:** ~500  
 **Purpose:** Writing and organizing tests  
@@ -424,7 +424,7 @@ The juniper-cascor-client library provides a Python API for interacting with the
 
 ---
 
-#### [testing/reference.md](testing/reference.md)
+#### [testing/REFERENCE.md](testing/REFERENCE.md)
 
 **Lines:** ~300  
 **Purpose:** Complete testing reference  
@@ -442,7 +442,7 @@ The juniper-cascor-client library provides a Python API for interacting with the
 
 ---
 
-#### [testing/selective-testing-guide.md](testing/selective-testing-guide.md)
+#### [testing/SELECTIVE_TESTING_GUIDE.md](testing/SELECTIVE_TESTING_GUIDE.md)
 
 **Lines:** ~300  
 **Purpose:** Run specific test categories  
@@ -464,7 +464,7 @@ The juniper-cascor-client library provides a Python API for interacting with the
 
 ### CI/CD Documentation
 
-#### [ci_cd/quick-start.md](ci_cd/quick-start.md)
+#### [ci_cd/QUICK_START.md](ci_cd/QUICK_START.md)
 
 **Lines:** ~200  
 **Purpose:** Understand the CI pipeline  
@@ -481,7 +481,7 @@ The juniper-cascor-client library provides a Python API for interacting with the
 
 ---
 
-#### [ci_cd/environment-setup.md](ci_cd/environment-setup.md)
+#### [ci_cd/ENVIRONMENT_SETUP.md](ci_cd/ENVIRONMENT_SETUP.md)
 
 **Lines:** ~300  
 **Purpose:** CI environment configuration  
@@ -498,7 +498,7 @@ The juniper-cascor-client library provides a Python API for interacting with the
 
 ---
 
-#### [ci_cd/manual.md](ci_cd/manual.md)
+#### [ci_cd/MANUAL.md](ci_cd/MANUAL.md)
 
 **Lines:** ~400  
 **Purpose:** Pipeline architecture and jobs  
@@ -515,7 +515,7 @@ The juniper-cascor-client library provides a Python API for interacting with the
 
 ---
 
-#### [ci_cd/reference.md](ci_cd/reference.md)
+#### [ci_cd/REFERENCE.md](ci_cd/REFERENCE.md)
 
 **Lines:** ~300  
 **Purpose:** CI configuration reference  
@@ -535,7 +535,7 @@ The juniper-cascor-client library provides a Python API for interacting with the
 
 ### Source Code Documentation
 
-#### [source/quick-start.md](source/quick-start.md)
+#### [source/QUICK_START.md](source/QUICK_START.md)
 
 **Lines:** ~200  
 **Purpose:** Developer onboarding  
@@ -551,7 +551,7 @@ The juniper-cascor-client library provides a Python API for interacting with the
 
 ---
 
-#### [source/environment-setup.md](source/environment-setup.md)
+#### [source/ENVIRONMENT_SETUP.md](source/ENVIRONMENT_SETUP.md)
 
 **Lines:** ~300  
 **Purpose:** Development tools setup  
@@ -568,7 +568,7 @@ The juniper-cascor-client library provides a Python API for interacting with the
 
 ---
 
-#### [source/manual.md](source/manual.md)
+#### [source/MANUAL.md](source/MANUAL.md)
 
 **Lines:** ~500  
 **Purpose:** Module-by-module guide  
@@ -593,7 +593,7 @@ The juniper-cascor-client library provides a Python API for interacting with the
 
 ---
 
-#### [source/reference.md](source/reference.md)
+#### [source/REFERENCE.md](source/REFERENCE.md)
 
 **Lines:** ~400  
 **Purpose:** Internal conventions  
@@ -615,7 +615,7 @@ The juniper-cascor-client library provides a Python API for interacting with the
 
 ### User Manual
 
-#### [install/user-manual.md](install/user-manual.md)
+#### [install/USER_MANUAL.md](install/USER_MANUAL.md)
 
 **Lines:** ~500  
 **Purpose:** Comprehensive usage guide  
@@ -637,7 +637,7 @@ The juniper-cascor-client library provides a Python API for interacting with the
 
 ### Configuration Reference
 
-#### [install/reference.md](install/reference.md)
+#### [install/REFERENCE.md](install/REFERENCE.md)
 
 **Lines:** ~300  
 **Purpose:** CLI arguments and environment variables  
@@ -697,62 +697,62 @@ Contains historical development documentation, implementation notes, and researc
 | File | Lines | Type | Audience | Status |
 |------|-------|------|----------|--------|
 | **DOCUMENTATION_OVERVIEW.md** | ~800 | Overview | All | ✅ **Active** |
-| **index.md** | ~110 | Navigation | All | ✅ **Active** |
+| **INDEX.md** | ~110 | Navigation | All | ✅ **Active** |
 | **DOCUMENTATION_AUDIT.md** | ~200 | Report | Maintainers | ✅ **Active** |
 | **DEVELOPER_CHEATSHEET.md** | ~100 | Cheatsheet | Developers | ✅ **Active** |
-| **ENVIRONMENT_SETUP.md** | ~10 | Redirect | All | ✅ **Active** — Redirect stub to install/environment-setup.md |
-| **USER_MANUAL.md** | ~10 | Redirect | All | ✅ **Active** — Redirect stub to install/user-manual.md |
+| **ENVIRONMENT_SETUP.md** | ~10 | Redirect | All | ✅ **Active** — Redirect stub to install/ENVIRONMENT_SETUP.md |
+| **USER_MANUAL.md** | ~10 | Redirect | All | ✅ **Active** — Redirect stub to install/USER_MANUAL.md |
 
 ### docs/api/ Directory
 
 | File | Lines | Type | Audience | Status |
 |------|-------|------|----------|--------|
-| **api-reference.md** | ~600 | Reference | Developers | ✅ **Active** |
-| **api-schemas.md** | ~400 | Reference | Developers | ✅ **Active** |
+| **API_REFERENCE.md** | ~600 | Reference | Developers | ✅ **Active** |
+| **API_SCHEMAS.md** | ~400 | Reference | Developers | ✅ **Active** |
 
 ### docs/install/ Directory
 
 | File | Lines | Type | Audience | Status |
 |------|-------|------|----------|--------|
-| **quick-start.md** | ~150 | Tutorial | New users | ✅ **Active** |
-| **environment-setup.md** | ~350 | Guide | Developers | ✅ **Active** |
-| **user-manual.md** | ~500 | Guide | Users | ✅ **Active** |
-| **reference.md** | ~300 | Reference | All | ✅ **Active** |
+| **QUICK_START.md** | ~150 | Tutorial | New users | ✅ **Active** |
+| **ENVIRONMENT_SETUP.md** | ~350 | Guide | Developers | ✅ **Active** |
+| **USER_MANUAL.md** | ~500 | Guide | Users | ✅ **Active** |
+| **REFERENCE.md** | ~300 | Reference | All | ✅ **Active** |
 
 ### docs/overview/ Directory
 
 | File | Lines | Type | Audience | Status |
 |------|-------|------|----------|--------|
-| **constants-guide.md** | ~400 | Reference | Developers | ✅ **Active** |
+| **CONSTANTS_GUIDE.md** | ~400 | Reference | Developers | ✅ **Active** |
 
 ### docs/testing/ Directory
 
 | File | Lines | Type | Audience | Status |
 |------|-------|------|----------|--------|
-| **quick-start.md** | ~200 | Tutorial | Developers | ✅ **Active** |
-| **environment-setup.md** | ~300 | Guide | Developers | ✅ **Active** |
-| **manual.md** | ~500 | Guide | Developers | ✅ **Active** |
-| **reference.md** | ~300 | Reference | Developers | ✅ **Active** |
-| **selective-testing-guide.md** | ~300 | Guide | Developers | ✅ **Active** |
+| **QUICK_START.md** | ~200 | Tutorial | Developers | ✅ **Active** |
+| **ENVIRONMENT_SETUP.md** | ~300 | Guide | Developers | ✅ **Active** |
+| **MANUAL.md** | ~500 | Guide | Developers | ✅ **Active** |
+| **REFERENCE.md** | ~300 | Reference | Developers | ✅ **Active** |
+| **SELECTIVE_TESTING_GUIDE.md** | ~300 | Guide | Developers | ✅ **Active** |
 
 ### docs/ci_cd/ Directory
 
 | File | Lines | Type | Audience | Status |
 |------|-------|------|----------|--------|
-| **quick-start.md** | ~200 | Tutorial | Developers | ✅ **Active** |
-| **environment-setup.md** | ~300 | Guide | DevOps | ✅ **Active** |
-| **manual.md** | ~400 | Guide | Developers | ✅ **Active** |
-| **reference.md** | ~300 | Reference | All | ✅ **Active** |
-| **branch-protection.md** | ~100 | Reference | DevOps | ✅ **Active** — GitHub branch protection rules |
+| **QUICK_START.md** | ~200 | Tutorial | Developers | ✅ **Active** |
+| **ENVIRONMENT_SETUP.md** | ~300 | Guide | DevOps | ✅ **Active** |
+| **MANUAL.md** | ~400 | Guide | Developers | ✅ **Active** |
+| **REFERENCE.md** | ~300 | Reference | All | ✅ **Active** |
+| **BRANCH_PROTECTION.md** | ~100 | Reference | DevOps | ✅ **Active** — GitHub branch protection rules |
 
 ### docs/source/ Directory
 
 | File | Lines | Type | Audience | Status |
 |------|-------|------|----------|--------|
-| **quick-start.md** | ~200 | Tutorial | Contributors | ✅ **Active** |
-| **environment-setup.md** | ~300 | Guide | Developers | ✅ **Active** |
-| **manual.md** | ~500 | Guide | Contributors | ✅ **Active** |
-| **reference.md** | ~400 | Reference | Contributors | ✅ **Active** |
+| **QUICK_START.md** | ~200 | Tutorial | Contributors | ✅ **Active** |
+| **ENVIRONMENT_SETUP.md** | ~300 | Guide | Developers | ✅ **Active** |
+| **MANUAL.md** | ~500 | Guide | Contributors | ✅ **Active** |
+| **REFERENCE.md** | ~400 | Reference | Contributors | ✅ **Active** |
 
 ---
 
@@ -762,9 +762,9 @@ Contains historical development documentation, implementation notes, and researc
 
 **Active Documentation:**
 
-- Use lowercase with hyphens: `quick-start.md`, `environment-setup.md`
-- Descriptive names indicating content: `api-reference.md`, `constants-guide.md`
-- Use `UPPER_CASE` for root-level major files: `README.md`, `CHANGELOG.md`, `AGENTS.md`
+- Use UPPER_SNAKE_CASE for all documentation files: `QUICK_START.md`, `ENVIRONMENT_SETUP.md`
+- Descriptive names indicating content: `API_REFERENCE.md`, `CONSTANTS_GUIDE.md`
+- Root-level major files follow the same convention: `README.md`, `CHANGELOG.md`, `AGENTS.md`
 
 **Historical Documentation:**
 
@@ -818,8 +818,8 @@ Content...
 
 **Internal Links:**
 
-- Use relative paths: `[README.md](../README.md)`, `[api-reference.md](api/api-reference.md)`
-- Include section anchors: `[Testing](#testing-documentation)`, `[Quick Start](install/quick-start.md#prerequisites)`
+- Use relative paths: `[README.md](../README.md)`, `[API_REFERENCE.md](api/API_REFERENCE.md)`
+- Include section anchors: `[Testing](#testing-documentation)`, `[Quick Start](install/QUICK_START.md#prerequisites)`
 
 **External Links:**
 
@@ -910,17 +910,17 @@ cd src && python main.py --profile
 ```bash
 # Start here
 README.md                        # What is this?
-docs/install/quick-start.md      # Get running now
-docs/install/environment-setup.md # Set up environment
+docs/install/QUICK_START.md      # Get running now
+docs/install/ENVIRONMENT_SETUP.md # Set up environment
 
 # Development
 AGENTS.md                        # Development guide
-docs/api/api-reference.md        # API documentation
-docs/source/manual.md            # Source code guide
+docs/api/API_REFERENCE.md        # API documentation
+docs/source/MANUAL.md            # Source code guide
 
 # Reference
 CHANGELOG.md                     # Version history
-docs/overview/constants-guide.md # Constants reference
+docs/overview/CONSTANTS_GUIDE.md # Constants reference
 ```
 
 ---

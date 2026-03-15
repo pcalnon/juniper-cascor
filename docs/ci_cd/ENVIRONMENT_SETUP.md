@@ -480,6 +480,6 @@ Solutions:
 
 ## Related Documentation
 
-- [Environment Setup Guide](../install/environment-setup.md) - Local development setup
-- [Testing Guide](../testing/manual.md) - Running tests locally
+- [Environment Setup Guide](../install/ENVIRONMENT_SETUP.md) - Local development setup
+- [Testing Guide](../testing/MANUAL.md) - Running tests locally
 - [AGENTS.md](../../AGENTS.md) - Project conventions and commands

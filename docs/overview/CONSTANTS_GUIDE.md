@@ -454,10 +454,10 @@ config = CascadeCorrelationConfig(learning_rate=0.05)
 
 ## Related Documentation
 
-- [API Reference](../api/api-reference.md) - API documentation
-- [API Schemas](../api/api-schemas.md) - Data structure schemas
-- [User Manual](../install/user-manual.md) - Usage guide
-- [Source Manual](../source/manual.md) - Source code guide
+- [API Reference](../api/API_REFERENCE.md) - API documentation
+- [API Schemas](../api/API_SCHEMAS.md) - Data structure schemas
+- [User Manual](../install/USER_MANUAL.md) - Usage guide
+- [Source Manual](../source/MANUAL.md) - Source code guide
 
 ---
 

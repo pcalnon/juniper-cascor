@@ -249,18 +249,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Documentation: [0.6.3]
 
 - **JuniperData Integration Documentation**
-  - Updated `docs/index.md`: Added `juniper_data_client/` to Key Modules, added External Dependencies section
+  - Updated `docs/INDEX.md`: Added `juniper_data_client/` to Key Modules, added External Dependencies section
   - Updated `docs/DOCUMENTATION_OVERVIEW.md`: Added External Services section, updated project structure
-  - Updated `docs/api/api-reference.md`: Added JuniperDataClient API documentation
-  - Updated `docs/api/api-schemas.md`: Added JuniperData artifact schemas (NPZ format)
-  - Updated `docs/install/quick-start.md`: Added JuniperData prerequisite and startup instructions
-  - Updated `docs/install/environment-setup.md`: Added JuniperData Service Setup section
-  - Updated `docs/install/user-manual.md`: Added JuniperDataClient usage examples
-  - Updated `docs/install/reference.md`: Added JuniperData Configuration section
-  - Updated `docs/source/manual.md`: Added juniper_data_client module, updated diagrams
-  - Updated `docs/source/reference.md`: Added Service Integration Conventions section
-  - Updated `docs/overview/constants-guide.md`: Added JuniperData Client Constants
-  - Updated `docs/testing/manual.md`: Added Testing with JuniperData section
+  - Updated `docs/api/API_REFERENCE.md`: Added JuniperDataClient API documentation
+  - Updated `docs/api/API_SCHEMAS.md`: Added JuniperData artifact schemas (NPZ format)
+  - Updated `docs/install/QUICK_START.md`: Added JuniperData prerequisite and startup instructions
+  - Updated `docs/install/ENVIRONMENT_SETUP.md`: Added JuniperData Service Setup section
+  - Updated `docs/install/USER_MANUAL.md`: Added JuniperDataClient usage examples
+  - Updated `docs/install/REFERENCE.md`: Added JuniperData Configuration section
+  - Updated `docs/source/MANUAL.md`: Added juniper_data_client module, updated diagrams
+  - Updated `docs/source/REFERENCE.md`: Added Service Integration Conventions section
+  - Updated `docs/overview/CONSTANTS_GUIDE.md`: Added JuniperData Client Constants
+  - Updated `docs/testing/MANUAL.md`: Added Testing with JuniperData section
 
 ### Technical Notes: [0.6.3]
 
@@ -559,12 +559,12 @@ unset JUNIPER_DATA_URL
 ### Added: [0.4.1]
 
 - **Documentation Suite**: Created 20+ documentation files in `docs/` directory
-  - **Overview**: `docs/index.md` (landing page), `docs/overview/constants-guide.md`
-  - **Install/Config**: `quick-start.md`, `environment-setup.md`, `user-manual.md`, `reference.md`
-  - **API**: `api-reference.md` (v0.3.21 updated), `api-schemas.md` (HDF5/data schemas)
-  - **Testing**: `quick-start.md`, `environment-setup.md`, `manual.md`, `reference.md`, `selective-testing-guide.md`
-  - **CI/CD**: `quick-start.md`, `environment-setup.md`, `manual.md`, `reference.md`
-  - **Source Code**: `quick-start.md`, `environment-setup.md`, `manual.md`, `reference.md`
+  - **Overview**: `docs/INDEX.md` (landing page), `docs/overview/CONSTANTS_GUIDE.md`
+  - **Install/Config**: `QUICK_START.md`, `ENVIRONMENT_SETUP.md`, `USER_MANUAL.md`, `REFERENCE.md`
+  - **API**: `API_REFERENCE.md` (v0.3.21 updated), `API_SCHEMAS.md` (HDF5/data schemas)
+  - **Testing**: `QUICK_START.md`, `ENVIRONMENT_SETUP.md`, `MANUAL.md`, `REFERENCE.md`, `SELECTIVE_TESTING_GUIDE.md`
+  - **CI/CD**: `QUICK_START.md`, `ENVIRONMENT_SETUP.md`, `MANUAL.md`, `REFERENCE.md`
+  - **Source Code**: `QUICK_START.md`, `ENVIRONMENT_SETUP.md`, `MANUAL.md`, `REFERENCE.md`
 
 - **Documentation Features**:
   - Complete API documentation with examples and type hints
@@ -620,7 +620,7 @@ unset JUNIPER_DATA_URL
   - Defines code ownership for automatic review requests
   - Covers core modules, tests, configuration, and documentation
 
-- **Branch Protection Documentation**: Created `docs/branch-protection.md`
+- **Branch Protection Documentation**: Created `docs/ci_cd/BRANCH_PROTECTION.md`
   - Required status checks configuration
   - Pull request requirements for main and develop branches
   - Coverage enforcement guidelines

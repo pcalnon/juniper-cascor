@@ -360,7 +360,7 @@ python -m coverage report --fail-under=50    # Check threshold
 
 ## Related Documentation
 
-- [Testing Quick Start](quick-start.md) - Getting started with testing
+- [Testing Quick Start](QUICK_START.md) - Getting started with testing
 - [AGENTS.md](../../AGENTS.md) - Project conventions and commands
 - [pytest.ini](../../src/tests/pytest.ini) - pytest configuration
 - [CI Workflow](../../.github/workflows/ci.yml) - GitHub Actions configuration

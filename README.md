@@ -113,7 +113,7 @@ cd src/tests && bash scripts/run_tests.bash
 pytest -m "not slow" -v
 ```
 
-For detailed installation instructions, see the [Quick Start Guide](docs/install/quick-start.md).
+For detailed installation instructions, see the [Quick Start Guide](docs/install/QUICK_START.md).
 
 ## Active Research Components
 
@@ -134,14 +134,14 @@ For detailed installation instructions, see the [Quick Start Guide](docs/install
 | Category                                                 | Description                           |
 | -------------------------------------------------------- | ------------------------------------- |
 | [Documentation Overview](docs/DOCUMENTATION_OVERVIEW.md) | Complete navigation guide to all docs |
-| [Documentation Index](docs/index.md)                     | Quick documentation index             |
-| [Quick Start](docs/install/quick-start.md)               | Get up and running quickly            |
-| [User Manual](docs/install/user-manual.md)               | Comprehensive usage guide             |
-| [API Reference](docs/api/api-reference.md)               | Complete API documentation            |
-| [Testing Guide](docs/testing/quick-start.md)             | Testing instructions                  |
-| [CI/CD Guide](docs/ci_cd/quick-start.md)                    | Continuous integration                |
-| [Source Code Guide](docs/source/quick-start.md)          | Contributor documentation             |
-| [Constants Reference](docs/overview/constants-guide.md)  | Configuration constants               |
+| [Documentation Index](docs/INDEX.md)                     | Quick documentation index             |
+| [Quick Start](docs/install/QUICK_START.md)               | Get up and running quickly            |
+| [User Manual](docs/install/USER_MANUAL.md)               | Comprehensive usage guide             |
+| [API Reference](docs/api/API_REFERENCE.md)               | Complete API documentation            |
+| [Testing Guide](docs/testing/QUICK_START.md)             | Testing instructions                  |
+| [CI/CD Guide](docs/ci_cd/QUICK_START.md)                    | Continuous integration                |
+| [Source Code Guide](docs/source/QUICK_START.md)          | Contributor documentation             |
+| [Constants Reference](docs/overview/CONSTANTS_GUIDE.md)  | Configuration constants               |
 
 ## Basic Usage
 
@@ -197,4 +197,4 @@ MIT License - see [LICENSE](LICENSE) for details.
 
 ## Contributing
 
-Contributions are welcome. Please see the [Source Code Guide](docs/source/quick-start.md) for development setup and coding conventions.
+Contributions are welcome. Please see the [Source Code Guide](docs/source/QUICK_START.md) for development setup and coding conventions.
