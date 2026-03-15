@@ -36,14 +36,14 @@ conda activate JuniperCascor
 
 ```bash
 # Start JuniperData service (required for spiral datasets)
-cd ../JuniperData/juniper_data
+cd ../juniper-data
 uvicorn juniper_data.api.main:app --port 8100 &
 ```
 
 Verify JuniperData is running:
 
 ```bash
-curl http://localhost:8100/health
+curl http://localhost:8100/v1/health
 ```
 
 ## Running the Application
