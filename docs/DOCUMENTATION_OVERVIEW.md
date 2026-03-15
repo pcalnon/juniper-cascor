@@ -666,7 +666,6 @@ Contains historical development documentation, implementation notes, and researc
 
 | Document | Purpose | Status |
 |----------|---------|--------|
-| `DEVELOPER_CHEATSHEET.md` | Quick-reference card for common development tasks | Active |
 | `API_REFERENCE.md` | Original API reference (v0.3.2) | Superseded by docs/api/ |
 | `FEATURES_GUIDE.md` | Feature documentation | Partially incorporated |
 | `ARCHITECTURE_GUIDE.md` | Architecture overview | Historical reference |
@@ -700,6 +699,9 @@ Contains historical development documentation, implementation notes, and researc
 | **DOCUMENTATION_OVERVIEW.md** | ~800 | Overview | All | ✅ **Active** |
 | **index.md** | ~110 | Navigation | All | ✅ **Active** |
 | **DOCUMENTATION_AUDIT.md** | ~200 | Report | Maintainers | ✅ **Active** |
+| **DEVELOPER_CHEATSHEET.md** | ~100 | Cheatsheet | Developers | ✅ **Active** |
+| **ENVIRONMENT_SETUP.md** | ~10 | Redirect | All | ✅ **Active** — Redirect stub to install/environment-setup.md |
+| **USER_MANUAL.md** | ~10 | Redirect | All | ✅ **Active** — Redirect stub to install/user-manual.md |
 
 ### docs/api/ Directory
 
@@ -741,6 +743,7 @@ Contains historical development documentation, implementation notes, and researc
 | **environment-setup.md** | ~300 | Guide | DevOps | ✅ **Active** |
 | **manual.md** | ~400 | Guide | Developers | ✅ **Active** |
 | **reference.md** | ~300 | Reference | All | ✅ **Active** |
+| **branch-protection.md** | ~100 | Reference | DevOps | ✅ **Active** — GitHub branch protection rules |
 
 ### docs/source/ Directory
 
@@ -937,9 +940,11 @@ docs/overview/constants-guide.md # Constants reference
 
 ---
 
-**Last Updated:** January 29, 2026  
-**Version:** 0.4.1  
+**Last Updated:** January 29, 2026
+**Version:** 0.4.1
 **Maintainer:** Paul Calnon
+
+> See the [Juniper Ecosystem Guide](../../CLAUDE.md) for the full project map and dependency graph.
 
 ---
 
