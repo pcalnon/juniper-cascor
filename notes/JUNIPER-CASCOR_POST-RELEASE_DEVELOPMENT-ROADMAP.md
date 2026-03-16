@@ -276,6 +276,8 @@ All four sub-tasks are addressed:
 
 **Codebase Validation (2026-02-18)**: **CONFIRMED**. File `src/spiral_problem/check.py` still exists.
 
+**Audit recommendation (2026-03-15)**: Downgrade to P3/Low — this is a trivial file deletion with no behavioral impact.
+
 ---
 
 ### C.1: Async Wrapper for Synchronous fit()
@@ -436,13 +438,15 @@ The implementation lives in `src/api/lifecycle/manager.py`, `src/api/lifecycle/s
 
 #### INT-P2-010: `os._exit()` Used Instead of `sys.exit()` in main.py
 
-**Status**: NOT STARTED
+**Status**: ~~NOT STARTED~~ **COMPLETE**
 **Severity**: Medium
 **File**: `src/main.py` (lines 174, 177 — shifted from 142, 145 at time of 2026-02-18 audit)
 
 **Codebase Validation (2026-02-18)**: **CONFIRMED**. `os._exit(1)` and `os._exit(2)` (originally lines 142/145; now lines 174/177). `os._exit()` bypasses all cleanup: finally blocks, atexit handlers, open file flushing. Should use `sys.exit()` unless intentionally bypassing cleanup.
 
 **Migration Impact (2026-02-24)**: Note that `src/main.py` is the standalone CLI entry point (spiral problem evaluation), not the service entry point. The service uses `src/server.py` which starts uvicorn normally. This bug only affects CLI usage.
+
+**Fixed**: `os._exit()` replaced with `sys.exit()` at lines 172, 175, 239, 251. Verified 2026-03-15.
 
 ---
 
@@ -1527,3 +1531,4 @@ INT-P3-003 (Docker Compose)
 | 2026-02-25 | AI Agent | **Fifth validation pass**: Fixed 4 moderate issues — corrected INT-P1-004 Migration Impact paragraph from "RESOLVED" to "SUBSTANTIALLY RESOLVED" (aligning with status field, Dependencies Matrix, and Section 10), added Phase 3 dependency gate note to CAS-REF-004 in Phase 2 table, corrected Codebase Validation CONFIRMED count from 18 to 19 (INT-P2-004 now included with overlap note, matching INT-P1-005 treatment), added P2 bucket change explanation to consolidated statistics footnote.                                                                                                                                                                                                                                                                       |
 | 2026-02-25 | AI Agent | **Post-fifth-validation minor cleanup**: 5 fixes — named the 2 new P3-P4 items in statistics footnote (Phase 1 #10, Phase 5 #10), added Phase 5 aggregate effort note explaining why total is not aggregated, clarified INT-P1-002 attribution in Migration Summary as pre-migration resolved + further addressed by Phase 1, added Section 1 cross-reference to Phase 0 execution plan, clarified Section 10 resolved table header to distinguish 5 resolved + 1 substantially resolved work items.                                                                                                                                                                                                                                                                          |
 | 2026-02-25 | AI Agent | **Sixth validation pass**: 4 minor fixes — standardized SEVERITY ADJUSTED summary row to `~~Old~~ **New**` notation (was arrow notation), bolded new values in Risk Assessment table severity cells, corrected Phase 3 item sum upper bound from ~6-11 to ~6-10 days, renamed duplicate "Fifth validation" document history label to "Post-fifth-validation."                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| 2026-03-15 | Documentation Audit | INT-P2-010 marked COMPLETE (os._exit fixed). INT-P1-008 recommended for downgrade to Low. All 3 P0 bugs (INT-P0-001, INT-P0-002, INT-P0-003) verified still present. Migration annotations confirmed accurate. |
