@@ -6,19 +6,19 @@
 
 ## Common Commands
 
-| Task | Command |
-|------|---------|
-| Run application | `cd src && python main.py` |
-| Run all tests | `cd src/tests && bash scripts/run_tests.bash` |
-| Unit / integration tests | `bash scripts/run_tests.bash -u` / `bash scripts/run_tests.bash -i` |
-| Tests with coverage | `bash scripts/run_tests.bash -v -c` |
-| Run by marker | `python -m pytest -m "spiral" -v` |
-| Long-running tests | `python -m pytest --run-long` |
-| Benchmarks (quiet) | `cd src/tests/scripts && bash run_benchmarks.bash -q -n 10` |
-| Pre-commit | `pre-commit run --all-files` |
-| Type check | `cd src && python -m mypy cascade_correlation/ candidate_unit/ --ignore-missing-imports` |
-| Lint / format / isort | `python -m flake8 . --max-line-length=512` / `python -m black --check .` / `python -m isort --check-only .` |
-| Security scan | `bandit -r src/` |
+| Task                     | Command                                                                                                     |
+|--------------------------|-------------------------------------------------------------------------------------------------------------|
+| Run application          | `cd src && python main.py`                                                                                  |
+| Run all tests            | `cd src/tests && bash scripts/run_tests.bash`                                                               |
+| Unit / integration tests | `bash scripts/run_tests.bash -u` / `bash scripts/run_tests.bash -i`                                         |
+| Tests with coverage      | `bash scripts/run_tests.bash -v -c`                                                                         |
+| Run by marker            | `python -m pytest -m "spiral" -v`                                                                           |
+| Long-running tests       | `python -m pytest --run-long`                                                                               |
+| Benchmarks (quiet)       | `cd src/tests/scripts && bash run_benchmarks.bash -q -n 10`                                                 |
+| Pre-commit               | `pre-commit run --all-files`                                                                                |
+| Type check               | `cd src && python -m mypy cascade_correlation/ candidate_unit/ --ignore-missing-imports`                    |
+| Lint / format / isort    | `python -m flake8 . --max-line-length=512` / `python -m black --check .` / `python -m isort --check-only .` |
+| Security scan            | `bandit -r src/`                                                                                            |
 
 > See: [AGENTS.md](../AGENTS.md) | [Configuration Reference](install/REFERENCE.md)
 
@@ -57,18 +57,18 @@ docker compose --profile full up -d                            # Docker start
 
 ### Environment Variables
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `CASCOR_LOG_LEVEL` | `INFO` | Log level override (set before import) |
-| `JUNIPER_DATA_URL` | `http://localhost:8100` | JuniperData service URL |
-| `JUNIPER_DATA_API_KEY` | -- | API key for JuniperData |
-| `JUNIPER_CASCOR_HOST` | `0.0.0.0` | Bind host for the service |
-| `JUNIPER_CASCOR_PORT` | `8200` | Bind port for the service |
-| `JUNIPER_CASCOR_CORS_ORIGINS` | `[]` | Allowed CORS origins |
-| `JUNIPER_CASCOR_API_KEYS` | -- | API keys for authentication |
-| `JUNIPER_CASCOR_LOG_FORMAT` | -- | Set to `json` for JSON logging |
-| `JUNIPER_CASCOR_SENTRY_DSN` | -- | Sentry DSN |
-| `JUNIPER_CASCOR_METRICS_ENABLED` | `false` | Enable Prometheus metrics |
+| Variable                         | Default                 | Description                            |
+|----------------------------------|-------------------------|----------------------------------------|
+| `CASCOR_LOG_LEVEL`               | `INFO`                  | Log level override (set before import) |
+| `JUNIPER_DATA_URL`               | `http://localhost:8100` | JuniperData service URL                |
+| `JUNIPER_DATA_API_KEY`           | --                      | API key for JuniperData                |
+| `JUNIPER_CASCOR_HOST`            | `0.0.0.0`               | Bind host for the service              |
+| `JUNIPER_CASCOR_PORT`            | `8200`                  | Bind port for the service              |
+| `JUNIPER_CASCOR_CORS_ORIGINS`    | `[]`                    | Allowed CORS origins                   |
+| `JUNIPER_CASCOR_API_KEYS`        | --                      | API keys for authentication            |
+| `JUNIPER_CASCOR_LOG_FORMAT`      | --                      | Set to `json` for JSON logging         |
+| `JUNIPER_CASCOR_SENTRY_DSN`      | --                      | Sentry DSN                             |
+| `JUNIPER_CASCOR_METRICS_ENABLED` | `false`                 | Enable Prometheus metrics              |
 
 ---
 
@@ -89,15 +89,15 @@ config = CascadeCorrelationConfig(
 network = CascadeCorrelationNetwork(config=config)
 ```
 
-| Parameter | Default | Notes |
-|-----------|---------|-------|
-| `learning_rate` | `0.01` | Output layer LR |
-| `candidate_pool_size` | `50` | Tune to CPU core count |
-| `candidate_epochs` | `600` | More = better candidates |
-| `correlation_threshold` | `0.0005` | Minimum for selection |
-| `patience` | `50` | Early stopping epochs |
-| `max_hidden_units` | `50` | Network growth limit |
-| `target_accuracy` | `0.999` | Termination goal |
+| Parameter               | Default  | Notes                    |
+|-------------------------|----------|--------------------------|
+| `learning_rate`         | `0.01`   | Output layer LR          |
+| `candidate_pool_size`   | `50`     | Tune to CPU core count   |
+| `candidate_epochs`      | `600`    | More = better candidates |
+| `correlation_threshold` | `0.0005` | Minimum for selection    |
+| `patience`              | `50`     | Early stopping epochs    |
+| `max_hidden_units`      | `50`     | Network growth limit     |
+| `target_accuracy`       | `0.999`  | Termination goal         |
 
 > See: [API Reference](api/API_REFERENCE.md) | [AGENTS.md](../AGENTS.md#core-components)
 
@@ -117,12 +117,12 @@ python -m snapshots.snapshot_cli list ./snapshots/             # list all
 python -m snapshots.snapshot_cli cleanup ./snapshots/ --keep 5 # prune old
 ```
 
-| HDF5 Group | Contents |
-|------------|----------|
-| `meta` | UUID, version, timestamps, checksums |
-| `arch` | Input/output sizes, hidden units, activation functions |
-| `params` | Trained weights and biases for all layers |
-| `history` | Training history, loss, accuracy per epoch |
+| HDF5 Group     | Contents                                                 |
+|----------------|----------------------------------------------------------|
+| `meta`         | UUID, version, timestamps, checksums                     |
+| `arch`         | Input/output sizes, hidden units, activation functions   |
+| `params`       | Trained weights and biases for all layers                |
+| `history`      | Training history, loss, accuracy per epoch               |
 | `random_state` | Python, NumPy, PyTorch RNG states (deterministic resume) |
 
 Compression: gzip level 4 (default). Performance: Save <2s, Load <3s, Verify <200ms (100 units).
@@ -135,15 +135,15 @@ Compression: gzip level 4 (default). Performance: Save <2s, Load <3s, Verify <20
 
 **Coverage gate:** 80%. Reports: `src/tests/reports/htmlcov/`, `coverage.xml`, `junit.xml`.
 
-| Marker | Description | Marker | Description |
-|--------|-------------|--------|-------------|
-| `unit` | Individual components | `spiral` | Spiral problem |
-| `integration` | Full workflows | `correlation` | Correlation calculation |
-| `performance` | Benchmarking | `network_growth` | Growth algorithm |
-| `slow` | Long-running | `candidate_training` | Candidate training |
-| `long` | Needs `--run-long` | `validation` | Input validation |
-| `gpu` | Needs GPU/CUDA | `accuracy` / `early_stopping` | Accuracy / stopping |
-| `multiprocessing` | Multi-process tests | `requires_juniper_data` | Needs juniper-data service |
+| Marker            | Description           | Marker                        | Description                |
+|-------------------|-----------------------|-------------------------------|----------------------------|
+| `unit`            | Individual components | `spiral`                      | Spiral problem             |
+| `integration`     | Full workflows        | `correlation`                 | Correlation calculation    |
+| `performance`     | Benchmarking          | `network_growth`              | Growth algorithm           |
+| `slow`            | Long-running          | `candidate_training`          | Candidate training         |
+| `long`            | Needs `--run-long`    | `validation`                  | Input validation           |
+| `gpu`             | Needs GPU/CUDA        | `accuracy` / `early_stopping` | Accuracy / stopping        |
+| `multiprocessing` | Multi-process tests   | `requires_juniper_data`       | Needs juniper-data service |
 
 > See: [Testing Quick Start](testing/QUICK_START.md) | [Testing Reference](testing/REFERENCE.md)
 
@@ -180,17 +180,20 @@ Core: `torch`, `numpy`, `h5py`, `matplotlib`, `PyYAML`, `requests`
 
 ## Troubleshooting
 
-| Symptom | Cause | Fix |
-|---------|-------|-----|
-| `CASCOR_LOG_LEVEL` no effect | Set after import | Set env var before any `import` |
-| Logger pickle error | Logger in `__getstate__` | Exclude logger from pickle state |
-| GPU tests skipped | No CUDA or flag missing | `pytest --gpu` on GPU machine |
-| Long tests skipped | Flag not passed | `pytest --run-long` |
-| HDF5 load fails | Corrupted or version mismatch | `python -m snapshots.snapshot_cli verify snapshot.h5` |
-| NaN in training | LR too high or bad data | Reduce `learning_rate`, check tensors |
+| Symptom                      | Cause                         | Fix                                                   |
+|------------------------------|-------------------------------|-------------------------------------------------------|
+| `CASCOR_LOG_LEVEL` no effect | Set after import              | Set env var before any `import`                       |
+| Logger pickle error          | Logger in `__getstate__`      | Exclude logger from pickle state                      |
+| GPU tests skipped            | No CUDA or flag missing       | `pytest --gpu` on GPU machine                         |
+| Long tests skipped           | Flag not passed               | `pytest --run-long`                                   |
+| HDF5 load fails              | Corrupted or version mismatch | `python -m snapshots.snapshot_cli verify snapshot.h5` |
+| NaN in training              | LR too high or bad data       | Reduce `learning_rate`, check tensors                 |
 
 ---
 
 ## Cross-References
 
 [Ecosystem Cheatsheet](../../juniper-ml/notes/DEVELOPER_CHEATSHEET.md) | [juniper-cascor-client](../../juniper-cascor-client/docs/DEVELOPER_CHEATSHEET.md) | [juniper-deploy](../../juniper-deploy/docs/DEVELOPER_CHEATSHEET.md) | [Parent Ecosystem Guide](../../CLAUDE.md)
+
+---
+
