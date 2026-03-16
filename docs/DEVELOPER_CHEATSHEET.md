@@ -28,7 +28,7 @@
 
 ```bash
 conda activate JuniperCascor && cd juniper-cascor && pip install -e ".[all]"
-cd src && python main.py                                       # native start
+cd src && python main.py                                       # native [start](start)
 curl -s http://localhost:8200/v1/health | python -m json.tool  # health
 docker compose --profile full up -d                            # Docker start
 ```
