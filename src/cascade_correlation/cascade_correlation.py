@@ -2478,13 +2478,7 @@ class CascadeCorrelationNetwork:
         """
         # Check if existing pool is valid (right size, all workers alive)
         alive_count = sum(1 for w in self._persistent_workers if w.is_alive()) if self._persistent_workers else 0
-        pool_valid = (
-            self._persistent_workers
-            and self._persistent_task_queue is not None
-            and self._persistent_result_queue is not None
-            and alive_count == self._persistent_pool_size
-            and self._persistent_pool_size == num_workers
-        )
+        pool_valid = self._persistent_workers and self._persistent_task_queue is not None and self._persistent_result_queue is not None and alive_count == self._persistent_pool_size and self._persistent_pool_size == num_workers
 
         if pool_valid:
             self.logger.debug(f"CascadeCorrelationNetwork: _ensure_worker_pool: Reusing existing pool of {alive_count} workers")
