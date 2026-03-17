@@ -80,6 +80,7 @@ from cascor_constants.constants import (  # _CASCADE_CORRELATION_NETWORK_ACTIVAT
     _CASCADE_CORRELATION_NETWORK_TARGET_ACCURACY,
     _CASCADE_CORRELATION_NETWORK_TASK_QUEUE_TIMEOUT,
     _CASCADE_CORRELATION_NETWORK_WORKER_STANDBY_SLEEPYTIME,
+    _CASCADE_CORRELATION_NETWORK_WORKER_THREAD_COUNT,
 )
 from log_config.log_config import LogConfig
 
@@ -155,6 +156,8 @@ class CascadeCorrelationConfig:
         candidate_training_shutdown_timeout: float = _CASCADE_CORRELATION_NETWORK_SHUTDOWN_TIMEOUT,
         candidate_training_target_accuracy: float = _CASCADE_CORRELATION_NETWORK_TARGET_ACCURACY,
         candidate_training_context_type: str = _CASCADE_CORRELATION_NETWORK_CANDIDATE_TRAINING_CONTEXT,
+        # PARALLEL-FIX (RC-1): Configurable PyTorch thread count per worker process
+        worker_thread_count: int = _CASCADE_CORRELATION_NETWORK_WORKER_THREAD_COUNT,
         # cascade_correlation_network_snapshots_dir: str = _HDF5_PROJECT_SNAPSHOTS_DIR,
         cascade_correlation_network_snapshots_dir: pathlib.Path = _CASCADE_CORRELATION_NETWORK_HDF5_PROJECT_SNAPSHOTS_DIR,
         # UUID
@@ -220,6 +223,8 @@ class CascadeCorrelationConfig:
         self.candidate_training_shutdown_timeout = candidate_training_shutdown_timeout
         self.candidate_training_target_accuracy = candidate_training_target_accuracy
         self.candidate_training_context_type = candidate_training_context_type
+        # PARALLEL-FIX (RC-1): Worker thread count for PyTorch thread pinning in worker processes
+        self.worker_thread_count = worker_thread_count
 
         # Snapshot directory
         self.cascade_correlation_network_snapshots_dir = cascade_correlation_network_snapshots_dir

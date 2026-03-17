@@ -68,6 +68,13 @@ _PROJECT_MODEL_WORKER_STANDBY_SLEEPYTIME = 2.0
 _PROJECT_MODEL_TASK_QUEUE_TIMEOUT = 5.0
 _PROJECT_MODEL_SHUTDOWN_TIMEOUT = _PROJECT_MODEL_TASK_QUEUE_TIMEOUT * 2.0
 
+# PARALLEL-FIX (RC-1): Maximum number of PyTorch internal threads per worker process.
+# Set to 1 to prevent N_workers * M_threads CPU oversubscription during parallel
+# candidate training. Each worker process should use exactly 1 thread for its own
+# PyTorch operations, allowing the OS to schedule workers across physical cores.
+# Higher values may be beneficial for very large tensor operations in single-worker mode.
+_PROJECT_MODEL_WORKER_THREAD_COUNT = 1
+
 _PROJECT_MODEL_BASE_MANAGER_ADDRESS = (_PROJECT_MODEL_BASE_MANAGER_ADDRESS_IP, _PROJECT_MODEL_BASE_MANAGER_ADDRESS_PORT)
 
 # _PROJECT_MODEL_TARGET_ACCURACY = 0.9

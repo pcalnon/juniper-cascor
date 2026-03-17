@@ -49,10 +49,10 @@ from dataclasses import dataclass, field
 # from typing import Optional
 from typing import Any, Callable, Optional
 
-import numpy as np
-import torch
+import numpy as np  # pyright: ignore[reportMissingImports]
+import torch  # pyright: ignore[reportMissingImports]
 
-from cascor_constants.constants import (  # _CANDIDATE_UNIT_POOL_SIZE,
+from cascor_constants.constants import (  # _CANDIDATE_UNIT_POOL_SIZE,  # pyright: ignore[reportMissingImports]
     _CANDIDATE_UNIT_ACTIVATION_FUNCTION,
     _CANDIDATE_UNIT_DISPLAY_FREQUENCY,
     _CANDIDATE_UNIT_EARLY_STOPPING,
@@ -69,8 +69,8 @@ from cascor_constants.constants import (  # _CANDIDATE_UNIT_POOL_SIZE,
     _CANDIDATE_UNIT_SEQUENCE_MAX_VALUE,
     _CANDIDATE_UNIT_STATUS_FREQUENCY,
 )
-from log_config.logger.logger import Logger
-from utils.utils import display_progress
+from log_config.logger.logger import Logger  # pyright: ignore[reportMissingImports]
+from utils.utils import display_progress  # pyright: ignore[reportMissingImports]
 
 
 #####################################################################################################################################################################################################

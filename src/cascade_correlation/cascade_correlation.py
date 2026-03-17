@@ -120,6 +120,7 @@ from cascor_constants.constants import (  # TODO: Commented out for F401 complia
     _CASCADE_CORRELATION_NETWORK_TARGET_ACCURACY,
     _CASCADE_CORRELATION_NETWORK_TASK_QUEUE_TIMEOUT,
     _CASCADE_CORRELATION_NETWORK_WORKER_STANDBY_SLEEPYTIME,
+    _CASCADE_CORRELATION_NETWORK_WORKER_THREAD_COUNT,
 )
 from cascor_plotter.cascor_plotter import CascadeCorrelationPlotter
 from log_config.log_config import LogConfig
@@ -591,10 +592,18 @@ class CascadeCorrelationNetwork:
             except Exception as e:
                 self.logger.warning(f"CascadeCorrelationNetwork: _init_multiprocessing: Failed to set forkserver preload: {e}")
 
-        # Initialize manager attributes
+        # Initialize manager attributes (retained for backward compatibility; no longer used in RC-2 path)
         self._manager = None
         self._task_queue = None
         self._result_queue = None
+
+        # PARALLEL-FIX (RC-4): Persistent worker pool state. Workers are created once and reused
+        # across training rounds, eliminating per-round process creation, PyTorch initialization,
+        # and 4-phase shutdown overhead.
+        self._persistent_workers = []
+        self._persistent_task_queue = None
+        self._persistent_result_queue = None
+        self._persistent_pool_size = 0
 
         # Initialize multiprocessing config values
         self.candidate_training_queue_authkey = self.config.candidate_training_queue_authkey
@@ -602,6 +611,15 @@ class CascadeCorrelationNetwork:
         self.candidate_training_tasks_queue_timeout = self.config.candidate_training_task_queue_timeout or _CASCADE_CORRELATION_NETWORK_TASK_QUEUE_TIMEOUT
         self.candidate_training_shutdown_timeout = self.config.candidate_training_shutdown_timeout or _CASCADE_CORRELATION_NETWORK_SHUTDOWN_TIMEOUT
         self.candidate_training_context = mp.get_context(self.config.candidate_training_context_type) or _CASCADE_CORRELATION_NETWORK_CANDIDATE_TRAINING_CONTEXT
+
+        # PARALLEL-FIX (RC-1): Configure PyTorch thread count for the parent process.
+        # When the parent process also runs with default thread count, it competes with workers
+        # for CPU cores. Limit the parent to 2 threads (enough for its own forward passes and
+        # result processing, without starving worker processes).
+        parent_thread_count = max(2, getattr(self.config, "worker_thread_count", 1) * 2)
+        torch.set_num_threads(parent_thread_count)
+        self.logger.debug(f"CascadeCorrelationNetwork: _init_multiprocessing: Parent process PyTorch thread count set to {parent_thread_count}")
+
         self.logger.debug("CascadeCorrelationNetwork: _init_multiprocessing: Multiprocessing components initialized")
 
     def _init_display_components(self) -> None:
@@ -1539,64 +1557,73 @@ class CascadeCorrelationNetwork:
         process_count: int = -1,
         sleepytime: float = _CASCADE_CORRELATION_NETWORK_WORKER_STANDBY_SLEEPYTIME,
     ) -> list:
-        """Execute training using multiprocessing."""
+        """Execute training using multiprocessing.
+
+        PARALLEL-FIX (RC-2): Replaced BaseManager-proxied queues with direct multiprocessing.Queue.
+        Manager-proxied queues route every put/get through a single-threaded server process via
+        IPC sockets, creating a serial bottleneck. Direct queues use OS pipes for true concurrent
+        access without a proxy intermediary.
+
+        PARALLEL-FIX (RC-3): Shared training data (tensors) is now passed as separate args to
+        _worker_loop() instead of being duplicated in every task tuple. This eliminates N-fold
+        redundant serialization of identical training data through the queue.
+
+        PARALLEL-FIX (RC-4): Uses a persistent worker pool that survives across training rounds.
+        Workers are created once and reused, eliminating per-round process creation, PyTorch
+        initialization, module imports, and 4-phase shutdown overhead.
+        """
         self.logger.debug("CascadeCorrelationNetwork: _execute_parallel_training: Using multiprocessing")
 
         # Adjust process count if invalid
         process_count = (process_count, self._calculate_optimal_process_count())[process_count < 1]
 
-        # Start the manager server
-        # self.logger.trace("CascadeCorrelationNetwork: _execute_parallel_training: Starting the manager server")
-        self.logger.debug("CascadeCorrelationNetwork: _execute_parallel_training: Starting the manager server")
-        self._start_manager()
-        # self.logger.trace("CascadeCorrelationNetwork: _execute_parallel_training: Manager server started")
-        self.logger.debug("CascadeCorrelationNetwork: _execute_parallel_training: Manager server started")
-        task_queue = self._task_queue
-        result_queue = self._result_queue
+        # PARALLEL-FIX (RC-2): Use direct multiprocessing.Queue instead of BaseManager-proxied queues.
+        # Direct queues use OS pipes for IPC, allowing concurrent put/get without routing through
+        # a single-threaded manager server process.
+        # Original manager-based queue creation (RC-2 replaced):
+        # self.logger.debug("CascadeCorrelationNetwork: _execute_parallel_training: Starting the manager server")
+        # self._start_manager()
+        # self.logger.debug("CascadeCorrelationNetwork: _execute_parallel_training: Manager server started")
+        # task_queue = self._task_queue
+        # result_queue = self._result_queue
+
+        # PARALLEL-FIX (RC-4): Use persistent worker pool instead of creating/destroying workers each round.
+        # Workers stay alive between rounds; shared_training_inputs=None because training data changes
+        # each round (residual_error evolves). Full tasks are sent through the queue each round.
+        # The RC-2 direct queue improvement still applies (no manager proxy bottleneck).
+        num_workers = max(1, min(process_count, len(tasks)))
+        task_queue, result_queue = self._ensure_worker_pool(num_workers, shared_training_inputs=None)
+        self.logger.debug(f"CascadeCorrelationNetwork: _execute_parallel_training: Using persistent pool of {num_workers} workers with direct queues")
+
         results = []
         # self.logger.trace("CascadeCorrelationNetwork: _execute_parallel_training: Created task and result queues")
         self.logger.debug("CascadeCorrelationNetwork: _execute_parallel_training: Created task and result queues")
         try:
-            # Add tasks to the queue
-            # self.logger.trace("CascadeCorrelationNetwork: _execute_parallel_training: Adding tasks to the queue")
-            self.logger.debug("CascadeCorrelationNetwork: _execute_parallel_training: Adding tasks to the queue")
+            # Add full tasks to the queue. With persistent workers (RC-4), shared_training_inputs
+            # cannot be passed at worker startup since it changes each round (residual_error evolves).
+            # The RC-2 direct queue improvement still provides significant speedup over the original
+            # BaseManager-proxied queues.
+            # Original RC-3 approach (lightweight tasks) commented out for persistent pool compatibility:
+            # shared_training_inputs = tasks[0][2] if tasks else None
+            # for task in tasks:
+            #     lightweight_task = (task[0], task[1])
+            #     task_queue.put(lightweight_task)
+            self.logger.debug("CascadeCorrelationNetwork: _execute_parallel_training: Adding tasks to persistent pool queue")
             for task in tasks:
                 task_queue.put(task)
             self.logger.debug(f"CascadeCorrelationNetwork: _execute_parallel_training: Added {len(tasks)} tasks to queue")
 
-            # Start worker processes
-            num_workers = max(1, min(process_count, len(tasks)))
-            workers = []
-            self.logger.debug(f"CascadeCorrelationNetwork: _execute_parallel_training: Starting {num_workers} workers")
+            # PARALLEL-FIX (RC-4): Workers are already running in the persistent pool.
+            # Original per-round worker spawning (RC-4 replaced):
+            # workers = []
+            # for i in range(num_workers):
+            #     worker = self._mp_ctx.Process(...)
+            #     worker.start()
+            #     workers.append(worker)
+            workers = self._persistent_workers
+            self.logger.debug(f"CascadeCorrelationNetwork: _execute_parallel_training: Using {len(workers)} persistent workers")
 
-            for i in range(num_workers):
-                # self.logger.trace(f"CascadeCorrelationNetwork: _execute_parallel_training: Starting worker {i}")
-                self.logger.debug(f"CascadeCorrelationNetwork: _execute_parallel_training: Starting worker {i}")
-                worker = self._mp_ctx.Process(
-                    target=CascadeCorrelationNetwork._worker_loop,
-                    args=(task_queue, result_queue, True),
-                    daemon=True,
-                    name=f"CandidateWorker-{i}",
-                )
-                # self.logger.trace(f"CascadeCorrelationNetwork: _execute_parallel_training: Worker {i} instantiated.")
-                self.logger.debug(f"CascadeCorrelationNetwork: _execute_parallel_training: Worker {i} instantiated.")
-                # self.logger.trace("CascadeCorrelationNetwork: _execute_parallel_training: Starting worker process.")
-                self.logger.debug("CascadeCorrelationNetwork: _execute_parallel_training: Starting worker process.")
-                worker.start()
-                # self.logger.trace(f"CascadeCorrelationNetwork: _execute_parallel_training: Worker {i} started with PID {worker.pid}.")
-                self.logger.debug(f"CascadeCorrelationNetwork: _execute_parallel_training: Worker {i} started with PID {worker.pid}.")
-                # self.logger.trace("CascadeCorrelationNetwork: _execute_parallel_training: Adding worker to the Workers list.")
-                self.logger.debug("CascadeCorrelationNetwork: _execute_parallel_training: Adding worker to the Workers list.")
-                workers.append(worker)
-                # self.logger.trace(f"CascadeCorrelationNetwork: _execute_parallel_training: Completed adding worker to the Workers list: workers: length: {len(workers)}, value: {workers}.")
-                self.logger.debug(f"CascadeCorrelationNetwork: _execute_parallel_training: Completed adding worker to the Workers list: workers: length: {len(workers)}, value: {workers}.")
-            self.logger.debug(f"CascadeCorrelationNetwork: _execute_parallel_training: Successfully Started Workers: {len(workers)}.")
-            self.logger.debug(f"CascadeCorrelationNetwork: _execute_parallel_training: Initial Queue Sizes: Task Queue: {task_queue.qsize()}, Result Queue: {result_queue.qsize()}")
-
-            # Joining worker processes when training is complete
-            # self.logger.debug(
-            #     "CascadeCorrelationNetwork: _execute_parallel_training: Waiting for workers to complete all tasks: {len(tasks)}."
-            # )
+            # Wait for workers to process all tasks
             # CASCOR-P0-001 FIX: Replaced unreliable busy-wait using empty()/qsize() with bounded timeout and worker liveness checks
             # OLD (unreliable - can hang indefinitely if worker crashes):
             # while not task_queue.empty() or result_queue.qsize() < len(tasks):
@@ -1612,17 +1639,16 @@ class CascadeCorrelationNetwork:
                 if not alive_workers:
                     self.logger.debug("CascadeCorrelationNetwork: _execute_parallel_training: All workers have exited.")
                     break
+                # PARALLEL-FIX (RC-4): Check result queue size for early exit when all results are in,
+                # so we don't wait the full timeout when workers finish quickly
+                try:
+                    if result_queue.qsize() >= len(tasks):
+                        self.logger.debug("CascadeCorrelationNetwork: _execute_parallel_training: All results received, exiting wait loop early.")
+                        break
+                except NotImplementedError:
+                    pass  # qsize() not available on all platforms
                 time.sleep(sleepytime)
             elapsed = time.time() - wait_start
-            # self.logger.debug(
-            #     f"CascadeCorrelationNetwork: _execute_parallel_training: Completed Wait for workers to complete all tasks: Task Queue: {task_queue.qsize()}, Result Queue: {result_queue.qsize()}."
-            # )
-            # self.logger.debug(
-            #     f"CascadeCorrelationNetwork: _execute_parallel_training: Successfully Completed Joining {len(workers)} workers"
-            # )
-            # self.logger.debug(
-            #     f"CascadeCorrelationNetwork: _execute_parallel_training: Final Queue Sizes: Task Queue: {task_queue.qsize()}, Result Queue: {result_queue.qsize()}"
-            # )
             self.logger.debug(f"CascadeCorrelationNetwork: _execute_parallel_training: Wait completed after {elapsed:.2f}s. Workers alive: {len([w for w in workers if w.is_alive()])}")
 
             # Collect results, NOTE: results is of type list of data class: [candidate_training_result, ...]
@@ -1630,12 +1656,17 @@ class CascadeCorrelationNetwork:
             results = self._collect_training_results(result_queue, len(tasks))
             self.logger.debug(f"CascadeCorrelationNetwork: _execute_parallel_training: Collected {len(results)} results")
 
-            # Stop workers
-            self._stop_workers(workers, task_queue)
-            self.logger.debug("CascadeCorrelationNetwork: _execute_parallel_training: Stopped all workers")
+            # PARALLEL-FIX (RC-4): Do NOT stop workers — they persist for the next training round.
+            # Original per-round worker shutdown:
+            # self._stop_workers(workers, task_queue)
+            # self.logger.debug("CascadeCorrelationNetwork: _execute_parallel_training: Stopped all workers")
+            self.logger.debug("CascadeCorrelationNetwork: _execute_parallel_training: Workers kept alive for next round (persistent pool)")
         finally:
-            self.logger.trace("CascadeCorrelationNetwork: _execute_parallel_training: Stopping manager server")
-            self._stop_manager()
+            # PARALLEL-FIX (RC-2): Manager server no longer needed — direct queues don't require one.
+            # Original manager shutdown:
+            # self.logger.trace("CascadeCorrelationNetwork: _execute_parallel_training: Stopping manager server")
+            # self._stop_manager()
+            self.logger.trace("CascadeCorrelationNetwork: _execute_parallel_training: Parallel training round complete (persistent pool, no cleanup needed)")
         return results
 
     def _execute_sequential_training(self, tasks: list) -> list:
@@ -1952,6 +1983,11 @@ class CascadeCorrelationNetwork:
         state.pop("_result_queue", None)
         state.pop("_mp_ctx", None)
         state.pop("candidate_training_context", None)
+        # PARALLEL-FIX (RC-4): Remove persistent worker pool state (not picklable)
+        state.pop("_persistent_workers", None)
+        state.pop("_persistent_task_queue", None)
+        state.pop("_persistent_result_queue", None)
+        state.pop("_persistent_pool_size", None)
         return state
 
     def __setstate__(self, state):
@@ -2421,6 +2457,116 @@ class CascadeCorrelationNetwork:
                 self._task_queue = None
                 self._result_queue = None
 
+    #################################################################################################################################################################################################
+    # PARALLEL-FIX (RC-4): Persistent worker pool management methods
+    #################################################################################################################################################################################################
+    def _ensure_worker_pool(self, num_workers: int, shared_training_inputs: tuple = None) -> tuple:
+        """
+        Description:
+            Ensure a persistent worker pool of the requested size is running.
+            If workers already exist and are alive, reuse them. If the pool size changed
+            or workers died, shut down and recreate.
+        Args:
+            num_workers: Desired number of worker processes
+            shared_training_inputs: Shared training data to pass to new workers
+        Returns:
+            Tuple of (task_queue, result_queue) for submitting work to the pool
+        Notes:
+            PARALLEL-FIX (RC-4): Workers are created once and reused across training rounds,
+            eliminating per-round overhead of process creation, PyTorch initialization,
+            module imports, and 4-phase shutdown.
+        """
+        # Check if existing pool is valid (right size, all workers alive)
+        alive_count = sum(1 for w in self._persistent_workers if w.is_alive()) if self._persistent_workers else 0
+        pool_valid = (
+            self._persistent_workers
+            and self._persistent_task_queue is not None
+            and self._persistent_result_queue is not None
+            and alive_count == self._persistent_pool_size
+            and self._persistent_pool_size == num_workers
+        )
+
+        if pool_valid:
+            self.logger.debug(f"CascadeCorrelationNetwork: _ensure_worker_pool: Reusing existing pool of {alive_count} workers")
+            return self._persistent_task_queue, self._persistent_result_queue
+
+        # Pool is invalid or needs resizing — shut down existing and create new
+        if self._persistent_workers:
+            self.logger.debug(f"CascadeCorrelationNetwork: _ensure_worker_pool: Existing pool invalid (alive={alive_count}, expected={self._persistent_pool_size}), recreating")
+            self._shutdown_worker_pool()
+
+        # Create fresh queues and workers
+        self._persistent_task_queue = self._mp_ctx.Queue()
+        self._persistent_result_queue = self._mp_ctx.Queue()
+        self._persistent_pool_size = num_workers
+        _worker_thread_count = getattr(self.config, "worker_thread_count", 1)
+
+        self.logger.debug(f"CascadeCorrelationNetwork: _ensure_worker_pool: Creating persistent pool of {num_workers} workers")
+        for i in range(num_workers):
+            worker = self._mp_ctx.Process(
+                target=CascadeCorrelationNetwork._worker_loop,
+                args=(
+                    self._persistent_task_queue,
+                    self._persistent_result_queue,
+                    True,
+                    _CASCADE_CORRELATION_NETWORK_TASK_QUEUE_TIMEOUT,
+                    _worker_thread_count,
+                    shared_training_inputs,
+                ),
+                daemon=True,
+                name=f"CandidateWorker-{i}",
+            )
+            worker.start()
+            self.logger.debug(f"CascadeCorrelationNetwork: _ensure_worker_pool: Started persistent worker {i} with PID {worker.pid}")
+            self._persistent_workers.append(worker)
+
+        self.logger.info(f"CascadeCorrelationNetwork: _ensure_worker_pool: Persistent pool created with {num_workers} workers")
+        return self._persistent_task_queue, self._persistent_result_queue
+
+    def _shutdown_worker_pool(self) -> None:
+        """
+        Description:
+            Shut down the persistent worker pool by sending sentinels and joining workers.
+        Notes:
+            PARALLEL-FIX (RC-4): Only called when the pool needs to be recreated (size change,
+            dead workers) or when the network is being serialized/destroyed. Normal training
+            rounds do NOT call this — workers persist across rounds.
+        """
+        if not self._persistent_workers:
+            return
+
+        self.logger.debug(f"CascadeCorrelationNetwork: _shutdown_worker_pool: Shutting down {len(self._persistent_workers)} persistent workers")
+
+        # Send sentinels to tell workers to exit
+        if self._persistent_task_queue is not None:
+            for i in range(len(self._persistent_workers)):
+                try:
+                    self._persistent_task_queue.put(None, timeout=2.0)
+                except Exception as e:
+                    self.logger.warning(f"CascadeCorrelationNetwork: _shutdown_worker_pool: Failed to send sentinel {i}: {e}")
+
+        # Join workers with timeout
+        import signal
+
+        for worker in self._persistent_workers:
+            worker.join(timeout=5.0)
+            if worker.is_alive():
+                self.logger.warning(f"CascadeCorrelationNetwork: _shutdown_worker_pool: Worker {worker.name} did not stop gracefully, terminating")
+                worker.terminate()
+                worker.join(timeout=1.0)
+                if worker.is_alive():
+                    try:
+                        os.kill(worker.pid, signal.SIGKILL)
+                        worker.join(timeout=0.5)
+                    except Exception:
+                        pass
+
+        self._persistent_workers = []
+        self._persistent_task_queue = None
+        self._persistent_result_queue = None
+        self._persistent_pool_size = 0
+        self.logger.debug("CascadeCorrelationNetwork: _shutdown_worker_pool: Persistent pool shut down")
+
     # TODO: maybe break this up
     @staticmethod
     def _worker_loop(
@@ -2428,6 +2574,12 @@ class CascadeCorrelationNetwork:
         result_queue: Queue,
         parallel: bool = True,
         task_queue_timeout: float = _CASCADE_CORRELATION_NETWORK_TASK_QUEUE_TIMEOUT,
+        # PARALLEL-FIX (RC-1): Configurable thread count per worker, default 1 to prevent oversubscription
+        worker_thread_count: int = 1,
+        # PARALLEL-FIX (RC-3): Shared training data passed once at worker startup instead of
+        # being duplicated in every task through the queue. None for backward compatibility
+        # with sequential training path or legacy callers.
+        shared_training_inputs: tuple = None,
     ):
         """
         Description:
@@ -2437,18 +2589,42 @@ class CascadeCorrelationNetwork:
             result_queue: Queue to put results into
             parallel: Whether running in parallel mode
             task_queue_timeout: Timeout for getting tasks from queue
+            worker_thread_count: Number of PyTorch internal threads per worker (default 1)
+            shared_training_inputs: Shared training data tuple (candidate_input, epochs, y,
+                residual_error, learning_rate, display_frequency) passed once to avoid
+                N-fold redundant serialization through the task queue
         Raises:
             TrainingError: If an error occurs during task processing
         Notes:
             - This function runs in a separate process and continuously checks for new tasks.
             - If no tasks are available, it enters a stand-by mode to save resources.
+            - PARALLEL-FIX (RC-1): Each worker pins its PyTorch thread count to prevent
+              N_workers * M_threads CPU oversubscription that serializes parallel execution.
+            - PARALLEL-FIX (RC-3): Shared training data is received once at startup rather than
+              being serialized/deserialized with every task through the queue.
         Returns:
             None
         """
         logger = Logger
         from queue import Empty
 
+        # PARALLEL-FIX (RC-1): Pin PyTorch internal thread pool to configured thread count per worker.
+        # Without this, each worker defaults to using ALL CPU cores for BLAS/autograd threads,
+        # causing N_workers * M_threads oversubscription that effectively serializes execution.
+        # Environment variables must be set before any BLAS operation; torch.set_num_threads()
+        # controls the PyTorch ATen thread pool directly.
+        import torch as _torch
+
+        _thread_count_str = str(max(1, worker_thread_count))
+        _torch.set_num_threads(max(1, worker_thread_count))
+        os.environ["OMP_NUM_THREADS"] = _thread_count_str
+        os.environ["MKL_NUM_THREADS"] = _thread_count_str
+        os.environ["OPENBLAS_NUM_THREADS"] = _thread_count_str
+        logger.debug(f"CascadeCorrelationNetwork: _worker_loop: PyTorch thread count pinned to {_thread_count_str} for worker process isolation")
+
         logger.debug("CascadeCorrelationNetwork: _worker_loop: Worker process started")
+        if shared_training_inputs is not None:
+            logger.debug("CascadeCorrelationNetwork: _worker_loop: Received shared training inputs (RC-3 optimization active)")
         while True:
             try:
                 # Get task from queue with timeout
@@ -2471,10 +2647,21 @@ class CascadeCorrelationNetwork:
                 logger.debug("CascadeCorrelationNetwork: _worker_loop: Received sentinel, stopping worker")
                 break
             try:
+                # PARALLEL-FIX (RC-3): Reconstruct full task tuple from lightweight task + shared data.
+                # If shared_training_inputs was provided (RC-3 path), tasks only contain
+                # (candidate_index, candidate_data) and we reassemble the full tuple here.
+                # If shared_training_inputs is None (legacy path), task already has all 3 elements.
+                if shared_training_inputs is not None and len(task) == 2:
+                    # Reconstruct full task: (candidate_index, candidate_data, training_inputs)
+                    full_task = (task[0], task[1], shared_training_inputs)
+                else:
+                    # Legacy format: task already contains training_inputs
+                    full_task = task
 
                 # Process the task
-                logger.debug(f"CascadeCorrelationNetwork: _worker_loop: Processing task: {task[0] if task else 'None'}")
-                result = CascadeCorrelationNetwork.train_candidate_worker(task_data_input=task, parallel=parallel)
+                logger.debug(f"CascadeCorrelationNetwork: _worker_loop: Processing task: {full_task[0] if full_task else 'None'}")
+                # Original call: result = CascadeCorrelationNetwork.train_candidate_worker(task_data_input=task, parallel=parallel)
+                result = CascadeCorrelationNetwork.train_candidate_worker(task_data_input=full_task, parallel=parallel)
                 logger.debug("CascadeCorrelationNetwork: _worker_loop: Task processed, putting result in queue")
 
                 # Add timeout to prevent deadlock if queue is full

@@ -40,6 +40,16 @@ import logging.config
 import os
 import sys
 
+# PARALLEL-FIX (RC-1): Set BLAS thread environment variables BEFORE any library that uses
+# BLAS (numpy, torch, scipy) is imported. These environment variables are read once when the
+# BLAS library is first loaded; setting them after import has no effect. This prevents the
+# parent process from spawning excessive internal threads that would compete with worker
+# processes during parallel candidate training.
+# Values here are defaults; they can be overridden by the user's environment.
+os.environ.setdefault("OMP_NUM_THREADS", "2")
+os.environ.setdefault("MKL_NUM_THREADS", "2")
+os.environ.setdefault("OPENBLAS_NUM_THREADS", "2")
+
 import sentry_sdk
 from dotenv import load_dotenv
 
