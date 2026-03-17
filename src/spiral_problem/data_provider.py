@@ -57,7 +57,10 @@ class SpiralDataProvider:
             juniper_data_url: Optional URL override for JuniperData service.  If not provided, reads from JUNIPER_DATA_URL environment variable.
             api_key: Optional API key for JuniperData authentication. If not provided, JuniperDataClient reads from JUNIPER_DATA_API_KEY env var.
         """
-        self._juniper_data_url = juniper_data_url or os.environ.get("JUNIPER_DATA_URL")
+        if juniper_data_url is not None:
+            self._juniper_data_url = juniper_data_url.strip()
+        else:
+            self._juniper_data_url = os.environ.get("JUNIPER_DATA_URL")
         self._api_key = api_key
         self._client: Optional[JuniperDataClient] = None
 

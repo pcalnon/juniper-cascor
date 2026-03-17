@@ -50,6 +50,51 @@ class TestSpiralDataProviderUseJuniperData:
         provider = SpiralDataProvider(juniper_data_url="")
         assert provider.use_juniper_data is False
 
+    def test_empty_string_not_overridden_by_env_var(self):
+        """Explicit empty string should NOT fall back to JUNIPER_DATA_URL env var."""
+        with patch.dict(os.environ, {"JUNIPER_DATA_URL": "http://env-url:8100"}):
+            provider = SpiralDataProvider(juniper_data_url="")
+            assert provider.use_juniper_data is False
+            assert provider._juniper_data_url == ""
+
+    def test_none_falls_back_to_env_var(self):
+        """None (default) should fall back to JUNIPER_DATA_URL env var."""
+        with patch.dict(os.environ, {"JUNIPER_DATA_URL": "http://env-url:8100"}):
+            provider = SpiralDataProvider(juniper_data_url=None)
+            assert provider.use_juniper_data is True
+            assert provider._juniper_data_url == "http://env-url:8100"
+
+    def test_whitespace_only_url_treated_as_unconfigured(self):
+        """Whitespace-only URL should be treated as unconfigured."""
+        provider = SpiralDataProvider(juniper_data_url="   ")
+        assert provider.use_juniper_data is False
+
+    def test_empty_string_url_raises_on_get_spiral_dataset(self):
+        """Empty string URL should raise SpiralDataProviderError when fetching data."""
+        provider = SpiralDataProvider(juniper_data_url="")
+        with pytest.raises(SpiralDataProviderError, match="not configured"):
+            provider.get_spiral_dataset(
+                n_spirals=2,
+                n_points=50,
+                n_rotations=1.0,
+                noise_level=0.05,
+                clockwise=False,
+                train_ratio=0.8,
+                test_ratio=0.1,
+            )
+
+    def test_empty_string_url_raises_on_validate_configuration(self):
+        """Empty string URL should raise SpiralDataProviderError on validation."""
+        provider = SpiralDataProvider(juniper_data_url="")
+        with pytest.raises(SpiralDataProviderError, match="not configured"):
+            provider.validate_configuration()
+
+    def test_empty_string_url_raises_on_get_client(self):
+        """Empty string URL should raise SpiralDataProviderError on _get_client."""
+        provider = SpiralDataProvider(juniper_data_url="")
+        with pytest.raises(SpiralDataProviderError, match="not configured"):
+            provider._get_client()
+
 
 @pytest.mark.unit
 class TestSpiralDataProviderGetSpiralDataset:
