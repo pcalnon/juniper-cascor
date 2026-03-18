@@ -36,12 +36,14 @@
 #####################################################################################################################################################################################################
 import datetime
 import datetime as pd
+import io
 
 # import logging
 import logging.config
 import multiprocessing as mp
 import os
 import pathlib as pl
+import pickle
 import random
 import sys
 import time
@@ -193,7 +195,7 @@ def _create_task_queue():
     """
     global _task_queue
     if _task_queue is None:
-        _task_queue = Queue()
+        _task_queue = Queue(maxsize=1000)
     return _task_queue
 
 
@@ -204,8 +206,70 @@ def _create_result_queue():
     """
     global _result_queue
     if _result_queue is None:
-        _result_queue = Queue()
+        _result_queue = Queue(maxsize=1000)
     return _result_queue
+
+
+#####################################################################################################################################################################################################
+# Security: Restricted unpickler for deserialization defense-in-depth
+#####################################################################################################################################################################################################
+class RestrictedUnpickler(pickle.Unpickler):
+    """Restricts unpickling to known-safe types for CandidateTrainingResult deserialization.
+
+    This class provides defense-in-depth against pickle-based deserialization attacks.
+    It is used for any manual deserialization paths (e.g., network I/O). Note that
+    multiprocessing.Queue uses its own internal unpickler that cannot be overridden;
+    for that path, post-deserialization validation via _validate_training_result() is
+    the primary defense.
+    """
+
+    ALLOWED_CLASSES = {
+        # Application types
+        ("candidate_unit.candidate_unit", "CandidateTrainingResult"),
+        ("candidate_unit.candidate_unit", "CandidateUnit"),
+        ("candidate_unit.candidate_unit", "ActivationWithDerivative"),
+        # Python builtins
+        ("builtins", "list"),
+        ("builtins", "dict"),
+        ("builtins", "set"),
+        ("builtins", "tuple"),
+        ("builtins", "float"),
+        ("builtins", "int"),
+        ("builtins", "bool"),
+        ("builtins", "str"),
+        ("builtins", "bytes"),
+        # PyTorch tensor reconstruction
+        ("torch._utils", "_rebuild_tensor_v2"),
+        ("torch", "Tensor"),
+        ("torch", "Size"),
+        ("torch.storage", "TypedStorage"),
+        ("torch.storage", "UntypedStorage"),
+        ("torch.storage", "_load_from_bytes"),
+        ("torch", "float32"),
+        ("torch", "float64"),
+        ("torch", "int64"),
+        # PyTorch activation modules (used by CandidateUnit.activation_fn_base)
+        ("torch.nn.modules.activation", "Tanh"),
+        ("torch.nn.modules.activation", "Sigmoid"),
+        ("torch.nn.modules.activation", "ReLU"),
+        # Collections and codecs
+        ("collections", "OrderedDict"),
+        ("_codecs", "encode"),
+        # Numpy
+        ("numpy", "ndarray"),
+        ("numpy", "dtype"),
+        ("numpy.core.multiarray", "_reconstruct"),
+    }
+
+    def find_class(self, module, name):
+        if (module, name) in self.ALLOWED_CLASSES:
+            return super().find_class(module, name)
+        raise pickle.UnpicklingError(f"Blocked unpickling of {module}.{name}")
+
+    @classmethod
+    def loads(cls, data: bytes):
+        """Deserialize bytes using the restricted unpickler."""
+        return cls(io.BytesIO(data)).load()
 
 
 # Define CandidateTrainingManager Class and global functions
@@ -1683,6 +1747,34 @@ class CascadeCorrelationNetwork:
                 results.append((task[0], task[1][4] if len(task[1]) > 4 else None, 0.0, None))
         return results
 
+    def _validate_training_result(self, result) -> bool:
+        """Validate a CandidateTrainingResult from the result queue.
+
+        Checks type, field types, and bounds to detect corrupted or malicious results.
+        Returns True if the result is valid, False otherwise.
+        """
+        if not isinstance(result, CandidateTrainingResult):
+            self.logger.error(f"SECURITY: Result queue returned unexpected type: {type(result).__name__}")
+            return False
+        if not isinstance(result.correlation, (int, float)):
+            self.logger.error(f"SECURITY: Invalid correlation type: {type(result.correlation)}")
+            return False
+        if not (0.0 <= result.correlation <= 1.0):
+            self.logger.warning(f"CascadeCorrelationNetwork: _validate_training_result: correlation {result.correlation} out of bounds [0, 1]")
+            return False
+        if result.candidate is not None and not isinstance(result.candidate, CandidateUnit):
+            self.logger.error(f"SECURITY: Invalid candidate type: {type(result.candidate).__name__}")
+            return False
+        if result.norm_output is not None and isinstance(result.norm_output, torch.Tensor):
+            if torch.isnan(result.norm_output).any() or torch.isinf(result.norm_output).any():
+                self.logger.warning("CascadeCorrelationNetwork: _validate_training_result: norm_output contains NaN or Inf")
+                return False
+        if result.norm_error is not None and isinstance(result.norm_error, torch.Tensor):
+            if torch.isnan(result.norm_error).any() or torch.isinf(result.norm_error).any():
+                self.logger.warning("CascadeCorrelationNetwork: _validate_training_result: norm_error contains NaN or Inf")
+                return False
+        return True
+
     def _collect_training_results(
         self,
         result_queue: Queue,
@@ -1719,6 +1811,9 @@ class CascadeCorrelationNetwork:
             try:
                 result = result_queue.get(timeout=request_timeout)
                 self.logger.debug(f"CascadeCorrelationNetwork: _collect_training_results: Retrieved result: {result}")
+                if not self._validate_training_result(result):
+                    self.logger.error("CascadeCorrelationNetwork: _collect_training_results: Discarding invalid training result")
+                    continue
                 results.append(result)
                 collected_results += 1
                 self.logger.verbose(f"CascadeCorrelationNetwork: _collect_training_results: Collected {collected_results}/{num_tasks}")
@@ -2490,8 +2585,8 @@ class CascadeCorrelationNetwork:
             self._shutdown_worker_pool()
 
         # Create fresh queues and workers
-        self._persistent_task_queue = self._mp_ctx.Queue()
-        self._persistent_result_queue = self._mp_ctx.Queue()
+        self._persistent_task_queue = self._mp_ctx.Queue(maxsize=1000)
+        self._persistent_result_queue = self._mp_ctx.Queue(maxsize=1000)
         self._persistent_pool_size = num_workers
         _worker_thread_count = getattr(self.config, "worker_thread_count", 1)
 

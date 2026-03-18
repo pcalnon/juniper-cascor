@@ -1,5 +1,6 @@
 """API security: authentication and rate limiting middleware."""
 
+import hmac
 import time
 from collections import defaultdict
 from threading import Lock
@@ -46,7 +47,7 @@ class APIKeyAuth:
             return True
         if api_key is None:
             return False
-        return api_key in self._api_keys
+        return any(hmac.compare_digest(api_key, k) for k in self._api_keys)
 
     async def __call__(self, request: Request) -> str | None:
         """FastAPI dependency for API key validation.

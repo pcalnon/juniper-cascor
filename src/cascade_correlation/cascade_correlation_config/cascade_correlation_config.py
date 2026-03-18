@@ -149,7 +149,7 @@ class CascadeCorrelationConfig:
         log_level_numbers_dict: dict = _CASCADE_CORRELATION_NETWORK_LOG_LEVEL_NUMBERS_DICT,
         log_level_numbers_list: list = _CASCADE_CORRELATION_NETWORK_LOG_LEVEL_NUMBERS_LIST,
         # Multiprocessing configuration
-        candidate_training_queue_authkey: str = _CASCADE_CORRELATION_NETWORK_AUTHKEY,
+        candidate_training_queue_authkey: str | None = _CASCADE_CORRELATION_NETWORK_AUTHKEY,
         candidate_training_queue_address: tuple = _CASCADE_CORRELATION_NETWORK_BASE_MANAGER_ADDRESS,
         candidate_training_worker_standby_sleepytime: float = _CASCADE_CORRELATION_NETWORK_WORKER_STANDBY_SLEEPYTIME,
         candidate_training_task_queue_timeout: float = _CASCADE_CORRELATION_NETWORK_TASK_QUEUE_TIMEOUT,
@@ -216,6 +216,9 @@ class CascadeCorrelationConfig:
         self.log_level_numbers_list = log_level_numbers_list
 
         # Multiprocessing configuration
+        if candidate_training_queue_authkey is None:
+            import secrets
+            candidate_training_queue_authkey = secrets.token_hex(32)
         self.candidate_training_queue_authkey = candidate_training_queue_authkey
         self.candidate_training_queue_address = candidate_training_queue_address
         self.candidate_training_worker_standby_sleepytime = candidate_training_worker_standby_sleepytime

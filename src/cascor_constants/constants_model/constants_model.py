@@ -41,10 +41,9 @@
 # Define constants to support multiprocessing of candidate unit training
 
 # Define authkey for multiprocessing shared queues
-# _PROJECT_MODEL_AUTHKEY = b"Juniper_Cascade_Correlation_Multiprocessing_Authkey"
-# _PROJECT_MODEL_AUTHKEY = b'Juniper_Cascade_Correlation_Multiprocessing_Authkey'
-# _PROJECT_MODEL_AUTHKEY = 'Juniper_Cascade_Correlation_Multiprocessing_Authkey'
-_PROJECT_MODEL_AUTHKEY = "Juniper_Cascade_Correlation_Multiprocessing_Authkey"
+# SECURITY: No default authkey — must be explicitly configured at runtime.
+# A random authkey will be generated if not provided (see cascade_correlation_config.py).
+_PROJECT_MODEL_AUTHKEY = None
 
 # Multiprocessing context for candidate training
 # NOTE: 'forkserver' is the preferred context for parallel candidate training:
