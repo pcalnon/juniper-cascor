@@ -43,6 +43,24 @@ class TestAPIKeyAuth:
         assert not auth.validate("invalid-key")
         assert not auth.validate(None)
 
+    def test_validate_uses_timing_safe_comparison(self) -> None:
+        """Validate should use hmac.compare_digest for timing-safe comparison."""
+        import hmac
+        from unittest.mock import patch
+
+        auth = APIKeyAuth(["valid-key"])
+        with patch.object(hmac, "compare_digest", wraps=hmac.compare_digest) as mock_compare:
+            auth.validate("valid-key")
+            mock_compare.assert_called()
+
+    def test_validate_with_multiple_keys(self) -> None:
+        """Validate should work correctly with multiple configured keys."""
+        auth = APIKeyAuth(["key1", "key2", "key3"])
+        assert auth.validate("key1")
+        assert auth.validate("key2")
+        assert auth.validate("key3")
+        assert not auth.validate("key4")
+
     @pytest.mark.asyncio
     async def test_call_returns_none_when_disabled(self) -> None:
         """Dependency should return None when auth is disabled."""
