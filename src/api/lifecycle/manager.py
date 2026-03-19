@@ -63,6 +63,9 @@ class TrainingLifecycleManager:
         # WebSocket manager (set via set_ws_manager)
         self._ws_manager = None
 
+        # Worker coordinator (set via set_worker_coordinator)
+        self._worker_coordinator = None
+
         self.logger.info("TrainingLifecycleManager initialized")
 
     def set_ws_manager(self, ws_manager) -> None:
@@ -72,6 +75,18 @@ class TrainingLifecycleManager:
         """
         self._ws_manager = ws_manager
         self._register_ws_callbacks()
+
+    def set_worker_coordinator(self, coordinator) -> None:
+        """Set the worker coordinator for remote WebSocket worker dispatch.
+
+        When a coordinator is set, newly created networks will have it injected
+        so they can dispatch candidate training tasks to remote workers.
+        If a network already exists, the coordinator is injected immediately.
+        """
+        self._worker_coordinator = coordinator
+        if self.network is not None and hasattr(self.network, "set_worker_coordinator"):
+            self.network.set_worker_coordinator(coordinator)
+            self.logger.info("Worker coordinator injected into existing network")
 
     def _register_ws_callbacks(self) -> None:
         """Register WebSocket broadcast callbacks on the training monitor."""
@@ -125,6 +140,10 @@ class TrainingLifecycleManager:
             config = CascadeCorrelationConfig.create_simple_config(**kwargs)
             self.network = CascadeCorrelationNetwork(config=config)
             self._install_monitoring_hooks()
+
+            # Inject worker coordinator for remote dispatch if available
+            if self._worker_coordinator is not None and hasattr(self.network, "set_worker_coordinator"):
+                self.network.set_worker_coordinator(self._worker_coordinator)
 
             self.training_state.update_state(
                 status="Stopped",

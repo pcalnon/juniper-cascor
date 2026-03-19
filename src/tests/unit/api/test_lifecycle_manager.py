@@ -247,3 +247,40 @@ class TestLifecycleManagerMonitoringHooks:
         mgr.delete_network()
         assert mgr._monitoring_active is False
         assert len(mgr._original_methods) == 0
+
+
+@pytest.mark.unit
+class TestLifecycleWorkerCoordinator:
+    """Test worker coordinator injection into lifecycle manager and network."""
+
+    def test_set_coordinator_before_network(self):
+        """Coordinator set before network creation is injected into new network."""
+        from unittest.mock import MagicMock
+
+        mgr = TrainingLifecycleManager()
+        mock_coord = MagicMock()
+        mgr.set_worker_coordinator(mock_coord)
+        assert mgr._worker_coordinator is mock_coord
+
+        mgr.create_network(input_size=2, output_size=2)
+        assert mgr.network._worker_coordinator is mock_coord
+        assert mgr.network._remote_workers_enabled is True
+
+    def test_set_coordinator_after_network(self):
+        """Coordinator set after network creation is injected into existing network."""
+        from unittest.mock import MagicMock
+
+        mgr = TrainingLifecycleManager()
+        mgr.create_network(input_size=2, output_size=2)
+        assert mgr.network._worker_coordinator is None
+
+        mock_coord = MagicMock()
+        mgr.set_worker_coordinator(mock_coord)
+        assert mgr.network._worker_coordinator is mock_coord
+
+    def test_no_coordinator_leaves_network_default(self):
+        """Without coordinator, network uses local-only dispatch."""
+        mgr = TrainingLifecycleManager()
+        mgr.create_network(input_size=2, output_size=2)
+        assert mgr.network._worker_coordinator is None
+        assert mgr.network._remote_workers_enabled is False

@@ -32,6 +32,25 @@ class TestSettings:
         assert settings.port == 9999
         assert settings.log_level == "DEBUG"
 
+    def test_worker_settings_defaults(self):
+        """Test default worker settings for remote WebSocket workers."""
+        from api.settings import Settings
+
+        settings = Settings()
+        assert settings.worker_heartbeat_timeout == 30.0
+        assert settings.worker_task_reassignment_timeout == 120.0
+
+    def test_worker_settings_env_override(self, monkeypatch):
+        """Test worker settings override via environment variables."""
+        monkeypatch.setenv("JUNIPER_CASCOR_WORKER_HEARTBEAT_TIMEOUT", "15.0")
+        monkeypatch.setenv("JUNIPER_CASCOR_WORKER_TASK_REASSIGNMENT_TIMEOUT", "60.0")
+
+        from api.settings import Settings
+
+        settings = Settings()
+        assert settings.worker_heartbeat_timeout == 15.0
+        assert settings.worker_task_reassignment_timeout == 60.0
+
     def test_get_settings_cached(self):
         """Test that get_settings returns cached instance."""
         from api.settings import get_settings

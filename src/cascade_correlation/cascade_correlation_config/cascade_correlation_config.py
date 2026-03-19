@@ -158,6 +158,11 @@ class CascadeCorrelationConfig:
         candidate_training_context_type: str = _CASCADE_CORRELATION_NETWORK_CANDIDATE_TRAINING_CONTEXT,
         # PARALLEL-FIX (RC-1): Configurable PyTorch thread count per worker process
         worker_thread_count: int = _CASCADE_CORRELATION_NETWORK_WORKER_THREAD_COUNT,
+        # Remote worker configuration (Phase 1b — WebSocket-based distributed workers)
+        enable_remote_workers: bool = False,
+        ws_worker_token_secret: str = "",
+        heartbeat_timeout: float = 30.0,
+        task_reassignment_timeout: float = 120.0,
         # cascade_correlation_network_snapshots_dir: str = _HDF5_PROJECT_SNAPSHOTS_DIR,
         cascade_correlation_network_snapshots_dir: pathlib.Path = _CASCADE_CORRELATION_NETWORK_HDF5_PROJECT_SNAPSHOTS_DIR,
         # UUID
@@ -228,6 +233,12 @@ class CascadeCorrelationConfig:
         self.candidate_training_context_type = candidate_training_context_type
         # PARALLEL-FIX (RC-1): Worker thread count for PyTorch thread pinning in worker processes
         self.worker_thread_count = worker_thread_count
+
+        # Remote worker configuration (Phase 1b)
+        self.enable_remote_workers = enable_remote_workers
+        self.ws_worker_token_secret = ws_worker_token_secret
+        self.heartbeat_timeout = heartbeat_timeout
+        self.task_reassignment_timeout = task_reassignment_timeout
 
         # Snapshot directory
         self.cascade_correlation_network_snapshots_dir = cascade_correlation_network_snapshots_dir
