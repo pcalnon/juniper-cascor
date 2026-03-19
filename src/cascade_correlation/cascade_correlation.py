@@ -605,6 +605,10 @@ class CascadeCorrelationNetwork:
         self._persistent_result_queue = None
         self._persistent_pool_size = 0
 
+        # Phase 1b: Remote worker coordinator reference (set via set_worker_coordinator)
+        self._worker_coordinator = None
+        self._remote_workers_enabled = getattr(self.config, "enable_remote_workers", False)
+
         # Initialize multiprocessing config values
         self.candidate_training_queue_authkey = self.config.candidate_training_queue_authkey
         self.candidate_training_queue_address = self.config.candidate_training_queue_address
@@ -621,6 +625,130 @@ class CascadeCorrelationNetwork:
         self.logger.debug(f"CascadeCorrelationNetwork: _init_multiprocessing: Parent process PyTorch thread count set to {parent_thread_count}")
 
         self.logger.debug("CascadeCorrelationNetwork: _init_multiprocessing: Multiprocessing components initialized")
+
+    def set_worker_coordinator(self, coordinator) -> None:
+        """Set the remote worker coordinator for dual-path dispatch.
+
+        Called by the API layer to inject the coordinator reference when
+        remote workers are enabled. This allows the training thread to
+        dispatch tasks to remote WebSocket workers.
+
+        Args:
+            coordinator: WorkerCoordinator instance from the API layer.
+        """
+        self._worker_coordinator = coordinator
+        self._remote_workers_enabled = True
+        self.logger.info("CascadeCorrelationNetwork: Remote worker coordinator set — dual-path dispatch enabled")
+
+    def _dispatch_to_remote_workers(
+        self,
+        tasks: list,
+        candidate_input: torch.Tensor,
+        y: torch.Tensor,
+        residual_error: torch.Tensor,
+    ) -> list:
+        """Dispatch tasks to remote WebSocket workers and collect results.
+
+        Converts internal task tuples into the wire protocol format and
+        submits them to the WorkerCoordinator. Blocks until all results
+        are received or timeout expires. Converts TaskResults back into
+        CandidateTrainingResult objects for compatibility with the
+        existing result processing pipeline.
+
+        Args:
+            tasks: Internal task tuples from _generate_candidate_tasks.
+            candidate_input: Enhanced input tensor.
+            y: Target tensor.
+            residual_error: Residual error tensor.
+
+        Returns:
+            List of CandidateTrainingResult objects.
+        """
+        round_id = str(uuid.uuid4())
+        self.logger.info(
+            "CascadeCorrelationNetwork: _dispatch_to_remote_workers: Dispatching %d tasks to remote workers (round %s)",
+            len(tasks),
+            round_id,
+        )
+
+        # Convert tensors to numpy for wire protocol
+        tensors = {
+            "candidate_input": candidate_input.numpy().astype(np.float32),
+            "y": y.numpy().astype(np.float32),
+            "residual_error": residual_error.numpy().astype(np.float32),
+        }
+
+        # Convert internal task tuples to wire protocol task specs
+        task_specs = []
+        for task_idx, candidate_data_tuple, training_inputs in tasks:
+            candidate_index, input_size, activation_name, random_value_scale, candidate_uuid, candidate_seed, random_max_value, sequence_max_value = candidate_data_tuple
+            task_specs.append({
+                "candidate_index": candidate_index,
+                "candidate_data": {
+                    "input_size": input_size,
+                    "activation_name": activation_name,
+                    "random_value_scale": float(random_value_scale),
+                    "candidate_uuid": candidate_uuid,
+                    "candidate_seed": candidate_seed,
+                    "random_max_value": float(random_max_value),
+                    "sequence_max_value": float(sequence_max_value),
+                },
+                "training_params": {
+                    "epochs": int(training_inputs[1]),
+                    "learning_rate": float(training_inputs[4]),
+                    "display_frequency": int(training_inputs[5]),
+                },
+            })
+
+        # Submit to coordinator
+        self._worker_coordinator.submit_tasks(round_id, task_specs, tensors)
+
+        # Block until results arrive
+        timeout = getattr(self, "candidate_training_shutdown_timeout", 120.0)
+        remote_results = self._worker_coordinator.collect_results(timeout=timeout)
+
+        # Convert TaskResults back to CandidateTrainingResult
+        results = []
+        for tr in remote_results:
+            # Reconstruct tensors as torch tensors
+            weights = torch.tensor(tr.tensors.get("weights", np.array([])), dtype=torch.float32) if "weights" in tr.tensors else None
+            bias = torch.tensor(tr.tensors.get("bias", np.array([])), dtype=torch.float32) if "bias" in tr.tensors else None
+            norm_output = torch.tensor(tr.tensors["norm_output"], dtype=torch.float32) if "norm_output" in tr.tensors else None
+            norm_error = torch.tensor(tr.tensors["norm_error"], dtype=torch.float32) if "norm_error" in tr.tensors else None
+
+            # Create a CandidateUnit from the result data
+            candidate = CandidateUnit(
+                CandidateUnit__input_size=task_specs[tr.candidate_id]["candidate_data"]["input_size"],
+                CandidateUnit__activation_function_name=tr.activation_name,
+            )
+            if weights is not None:
+                candidate.weights = nn.Parameter(weights)
+            if bias is not None:
+                candidate.bias = nn.Parameter(bias)
+
+            ctr = CandidateTrainingResult(
+                candidate_id=tr.candidate_id,
+                candidate_uuid=tr.candidate_uuid,
+                correlation=tr.correlation,
+                candidate=candidate,
+                best_corr_idx=tr.best_corr_idx,
+                all_correlations=tr.all_correlations,
+                norm_output=norm_output,
+                norm_error=norm_error,
+                numerator=tr.numerator,
+                denominator=tr.denominator,
+                success=tr.success,
+                epochs_completed=tr.epochs_completed,
+                error_message=tr.error_message,
+            )
+            results.append(ctr)
+
+        self.logger.info(
+            "CascadeCorrelationNetwork: _dispatch_to_remote_workers: Collected %d/%d results from remote workers",
+            len(results),
+            len(tasks),
+        )
+        return results
 
     def _init_display_components(self) -> None:
         """Initialize display and plotting components."""
@@ -1503,7 +1631,12 @@ class CascadeCorrelationNetwork:
 
     def _execute_candidate_training(self, tasks: list, process_count: int) -> list:
         """
-        Execute candidate training using multiprocessing or sequential processing.
+        Execute candidate training using multiprocessing, remote workers, or sequential processing.
+
+        When remote workers are enabled and available, tasks are split between the local
+        multiprocessing pool and remote WebSocket workers (dual-path dispatch). Workers that
+        join mid-training wait for the next round — no task rebalancing within a round.
+
         Args:
             tasks: List of training tasks
             process_count: Number of processes to use
@@ -1511,10 +1644,45 @@ class CascadeCorrelationNetwork:
             List of training results
         """
         self.logger.info(f"CascadeCorrelationNetwork: _execute_candidate_training: Training {len(tasks)} candidates with {process_count} processes")
+
+        # Phase 1b: Check for remote workers and split tasks if available
+        remote_worker_count = 0
+        if self._remote_workers_enabled and self._worker_coordinator is not None:
+            remote_worker_count = self._worker_coordinator._registry.available_worker_count
+            self.logger.info(f"CascadeCorrelationNetwork: _execute_candidate_training: {remote_worker_count} remote workers available")
+
         results = []
         self.logger.debug(f"CascadeCorrelationNetwork: _execute_candidate_training: Adjusted process count to: {process_count}")
         try:
-            if process_count > 1:
+            if remote_worker_count > 0 and process_count <= 1:
+                # Remote-only path: all tasks go to remote workers
+                self.logger.info("CascadeCorrelationNetwork: _execute_candidate_training: Using remote workers only")
+                # Extract tensors from first task's training_inputs for remote dispatch
+                training_inputs = tasks[0][2]
+                candidate_input, _, y, residual_error = training_inputs[0], training_inputs[1], training_inputs[2], training_inputs[3]
+                results = self._dispatch_to_remote_workers(tasks, candidate_input, y, residual_error)
+            elif remote_worker_count > 0 and process_count > 1:
+                # Dual-path: split tasks between local MP and remote WS
+                # Allocate proportionally based on worker counts
+                total_workers = process_count + remote_worker_count
+                remote_share = max(1, len(tasks) * remote_worker_count // total_workers)
+                local_share = len(tasks) - remote_share
+                local_tasks = tasks[:local_share]
+                remote_tasks = tasks[local_share:]
+                self.logger.info(
+                    "CascadeCorrelationNetwork: _execute_candidate_training: Dual-path dispatch — %d local, %d remote",
+                    len(local_tasks),
+                    len(remote_tasks),
+                )
+
+                # Execute both paths
+                training_inputs = tasks[0][2]
+                candidate_input, _, y, residual_error = training_inputs[0], training_inputs[1], training_inputs[2], training_inputs[3]
+
+                local_results = self._execute_parallel_training(local_tasks, process_count) if local_tasks else []
+                remote_results = self._dispatch_to_remote_workers(remote_tasks, candidate_input, y, residual_error) if remote_tasks else []
+                results = local_results + remote_results
+            elif process_count > 1:
                 self.logger.debug(f"CascadeCorrelationNetwork: _execute_candidate_training: Using {process_count} processes")
                 results = self._execute_parallel_training(tasks, process_count)
 

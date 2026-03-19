@@ -22,6 +22,9 @@ from api.settings import Settings, get_settings
 from api.websocket.control_stream import control_stream_handler
 from api.websocket.manager import WebSocketManager
 from api.websocket.training_stream import training_stream_handler
+from api.websocket.worker_stream import worker_stream_handler
+from api.workers.coordinator import WorkerCoordinator
+from api.workers.registry import WorkerRegistry
 
 _API_VERSION: str = "0.4.0"
 
@@ -52,6 +55,18 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     lifecycle.set_ws_manager(ws_manager)
     app.state.lifecycle = lifecycle
     logger.info("Lifecycle manager initialized")
+
+    # Create worker registry and coordinator for remote WebSocket workers
+    worker_registry = WorkerRegistry(heartbeat_timeout=settings.worker_heartbeat_timeout)
+    worker_coordinator = WorkerCoordinator(
+        registry=worker_registry,
+        task_reassignment_timeout=settings.worker_task_reassignment_timeout,
+    )
+    worker_coordinator.start_monitor()
+    app.state.worker_registry = worker_registry
+    app.state.worker_coordinator = worker_coordinator
+    lifecycle.set_worker_coordinator(worker_coordinator)
+    logger.info("Worker registry and coordinator initialized")
 
     # Auto-start companion services (non-containerized mode)
     managed_services: list = []
@@ -84,6 +99,12 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         asyncio.create_task(_auto_start_canopy(app, settings, managed_services))
 
     yield
+
+    # Shutdown: stop worker coordinator
+    worker_coordinator = getattr(app.state, "worker_coordinator", None)
+    if worker_coordinator is not None:
+        worker_coordinator.shutdown()
+        logger.info("Worker coordinator shut down")
 
     # Shutdown: close all WebSocket connections
     ws_manager = getattr(app.state, "ws_manager", None)
@@ -278,6 +299,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # WebSocket Routes
     app.websocket("/ws/training")(training_stream_handler)
     app.websocket("/ws/control")(control_stream_handler)
+    app.websocket("/ws/v1/workers")(worker_stream_handler)
 
     # Mount Prometheus metrics endpoint
     if settings.metrics_enabled:

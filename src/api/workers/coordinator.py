@@ -1,0 +1,402 @@
+"""Task distribution and result aggregation for remote WebSocket workers.
+
+The WorkerCoordinator distributes candidate training tasks to remote workers
+via WebSocket, collects results, and handles task timeouts/reassignment.
+
+Thread-safety: The coordinator is called from both the async WebSocket handler
+(for result submissions) and the synchronous training thread (for task dispatch).
+All shared state is protected by locks.
+"""
+
+import logging
+import time
+import uuid
+from dataclasses import dataclass, field
+from threading import Event, Lock, Thread
+from typing import Any
+
+import numpy as np
+
+from api.workers.protocol import BinaryFrame, MessageType, WorkerProtocol
+from api.workers.registry import WorkerRegistry
+
+logger = logging.getLogger("juniper_cascor.api.workers.coordinator")
+
+
+@dataclass
+class PendingTask:
+    """A task that has been dispatched but not yet completed."""
+
+    task_id: str
+    round_id: str
+    candidate_index: int
+    candidate_data: dict[str, Any]
+    training_params: dict[str, Any]
+    tensors: dict[str, np.ndarray]
+    assigned_worker_id: str | None = None
+    dispatched_at: float = field(default_factory=time.time)
+    completed: bool = False
+
+
+@dataclass
+class TaskResult:
+    """A validated result from a remote worker."""
+
+    task_id: str
+    candidate_id: int
+    candidate_uuid: str
+    correlation: float
+    success: bool
+    epochs_completed: int
+    activation_name: str
+    all_correlations: list[float]
+    numerator: float
+    denominator: float
+    best_corr_idx: int
+    tensors: dict[str, np.ndarray]
+    error_message: str | None = None
+
+
+class WorkerCoordinator:
+    """Coordinates task distribution and result collection for remote workers.
+
+    The coordinator manages the lifecycle of training tasks:
+    1. Tasks are submitted by the training thread via submit_tasks()
+    2. Tasks are dispatched to idle workers via dispatch_pending()
+    3. Results are collected from workers via submit_result()
+    4. Completed results are retrieved by the training thread via collect_results()
+
+    A background health monitor thread handles stale workers and task reassignment.
+    """
+
+    def __init__(
+        self,
+        registry: WorkerRegistry,
+        task_reassignment_timeout: float = 120.0,
+        health_check_interval: float = 10.0,
+    ) -> None:
+        self._registry = registry
+        self._task_reassignment_timeout = task_reassignment_timeout
+        self._health_check_interval = health_check_interval
+
+        # Task tracking
+        self._pending_tasks: dict[str, PendingTask] = {}  # task_id -> PendingTask
+        self._unassigned_tasks: list[str] = []  # task_ids waiting for workers
+        self._results: dict[str, TaskResult] = {}  # task_id -> TaskResult
+        self._completed_task_ids: set[str] = set()  # for duplicate detection
+        self._lock = Lock()
+
+        # Current round
+        self._current_round_id: str | None = None
+        self._current_round_task_count: int = 0
+        self._results_ready = Event()
+
+        # Health monitor thread
+        self._monitor_stop = Event()
+        self._monitor_thread: Thread | None = None
+
+        # WebSocket send callback (set by worker_stream)
+        self._send_callbacks: dict[str, Any] = {}  # worker_id -> async callback
+
+        logger.info(
+            "WorkerCoordinator initialized (reassignment_timeout=%.1fs, health_check=%.1fs)",
+            task_reassignment_timeout,
+            health_check_interval,
+        )
+
+    def start_monitor(self) -> None:
+        """Start the background health monitoring thread."""
+        if self._monitor_thread is not None and self._monitor_thread.is_alive():
+            return
+        self._monitor_stop.clear()
+        self._monitor_thread = Thread(
+            target=self._health_monitor_loop,
+            name="worker-health-monitor",
+            daemon=True,
+        )
+        self._monitor_thread.start()
+        logger.info("Health monitor thread started")
+
+    def stop_monitor(self) -> None:
+        """Stop the background health monitoring thread."""
+        self._monitor_stop.set()
+        if self._monitor_thread is not None:
+            self._monitor_thread.join(timeout=5.0)
+            self._monitor_thread = None
+        logger.info("Health monitor thread stopped")
+
+    def register_send_callback(self, worker_id: str, callback: Any) -> None:
+        """Register an async send callback for a worker connection."""
+        with self._lock:
+            self._send_callbacks[worker_id] = callback
+
+    def unregister_send_callback(self, worker_id: str) -> None:
+        """Remove the send callback for a disconnected worker."""
+        with self._lock:
+            self._send_callbacks.pop(worker_id, None)
+
+    def submit_tasks(
+        self,
+        round_id: str,
+        tasks: list[dict[str, Any]],
+        tensors: dict[str, np.ndarray],
+    ) -> list[str]:
+        """Submit a batch of training tasks for the current round.
+
+        Called by the training thread at the start of a candidate training round.
+
+        Args:
+            round_id: Unique identifier for this training round.
+            tasks: List of task dicts with candidate_data and training_params.
+            tensors: Shared training tensors (candidate_input, y, residual_error).
+
+        Returns:
+            List of task_ids for the submitted tasks.
+        """
+        with self._lock:
+            self._current_round_id = round_id
+            self._current_round_task_count = len(tasks)
+            self._results_ready.clear()
+            self._results.clear()
+            self._completed_task_ids.clear()
+            task_ids = []
+
+            for task_spec in tasks:
+                task_id = str(uuid.uuid4())
+                pending = PendingTask(
+                    task_id=task_id,
+                    round_id=round_id,
+                    candidate_index=task_spec["candidate_index"],
+                    candidate_data=task_spec["candidate_data"],
+                    training_params=task_spec["training_params"],
+                    tensors=tensors,
+                )
+                self._pending_tasks[task_id] = pending
+                self._unassigned_tasks.append(task_id)
+                task_ids.append(task_id)
+
+            logger.info("Submitted %d tasks for round %s", len(tasks), round_id)
+            return task_ids
+
+    def get_next_assignment(self, worker_id: str) -> tuple[dict[str, Any], list[bytes]] | None:
+        """Get the next task assignment for a worker.
+
+        Called by the WebSocket handler when a worker is ready for work.
+
+        Returns:
+            Tuple of (JSON message, list of binary frames) or None if no tasks available.
+        """
+        with self._lock:
+            if not self._unassigned_tasks:
+                return None
+
+            # Find the next unassigned task
+            task_id = self._unassigned_tasks.pop(0)
+            task = self._pending_tasks.get(task_id)
+            if task is None:
+                return None
+
+            # Assign to worker
+            task.assigned_worker_id = worker_id
+            task.dispatched_at = time.time()
+            self._registry.assign_task(worker_id, task_id)
+
+            # Build assignment message
+            tensor_manifest = {}
+            frames = []
+            for tensor_name, arr in task.tensors.items():
+                tensor_manifest[tensor_name] = {
+                    "shape": list(arr.shape),
+                    "dtype": str(arr.dtype),
+                }
+                frames.append(BinaryFrame.encode(arr))
+
+            msg = WorkerProtocol.build_task_assign(
+                task_id=task_id,
+                round_id=task.round_id,
+                candidate_index=task.candidate_index,
+                candidate_data=task.candidate_data,
+                training_params=task.training_params,
+                tensor_manifest=tensor_manifest,
+            )
+
+            logger.debug("Assigned task %s to worker %s (candidate %d)", task_id, worker_id, task.candidate_index)
+            return msg, frames
+
+    def submit_result(
+        self,
+        worker_id: str,
+        msg: dict[str, Any],
+        tensors: dict[str, np.ndarray],
+    ) -> bool:
+        """Submit a task result from a worker.
+
+        Called by the WebSocket handler when a worker sends a task_result message.
+
+        Args:
+            worker_id: ID of the worker submitting the result.
+            msg: The validated task_result JSON message.
+            tensors: Decoded tensor data from binary frames.
+
+        Returns:
+            True if the result was accepted, False if rejected.
+        """
+        task_id = msg.get("task_id")
+
+        with self._lock:
+            # Duplicate detection (Section 12.7 rule 8)
+            if task_id in self._completed_task_ids:
+                logger.warning("Duplicate result for task %s from worker %s — rejected", task_id, worker_id)
+                return False
+
+            # Task tracking (Section 12.7 rule 2)
+            task = self._pending_tasks.get(task_id)
+            if task is None:
+                logger.warning("Result for unknown task %s from worker %s — rejected", task_id, worker_id)
+                return False
+
+            # Validate against schema (Section 12.7 rules 1, 3)
+            schema_errors = WorkerProtocol.validate_task_result(msg)
+            if schema_errors:
+                logger.warning("Result validation failed for task %s: %s", task_id, schema_errors)
+                self._registry.complete_task(worker_id, success=False)
+                return False
+
+            # Validate tensors (Section 12.7 rules 4, 5, 6, 7)
+            manifest = msg.get("tensor_manifest", {})
+            if manifest:
+                tensor_errors = WorkerProtocol.validate_tensors(tensors, manifest)
+                if tensor_errors:
+                    logger.warning("Tensor validation failed for task %s: %s", task_id, tensor_errors)
+                    self._registry.complete_task(worker_id, success=False)
+                    return False
+
+            # Accept result
+            result = TaskResult(
+                task_id=task_id,
+                candidate_id=msg["candidate_id"],
+                candidate_uuid=msg.get("candidate_uuid", ""),
+                correlation=msg["correlation"],
+                success=msg["success"],
+                epochs_completed=msg["epochs_completed"],
+                activation_name=msg.get("activation_name", ""),
+                all_correlations=msg.get("all_correlations", []),
+                numerator=msg.get("numerator", 0.0),
+                denominator=msg.get("denominator", 1.0),
+                best_corr_idx=msg.get("best_corr_idx", -1),
+                tensors=tensors,
+                error_message=msg.get("error_message"),
+            )
+
+            self._results[task_id] = result
+            self._completed_task_ids.add(task_id)
+            task.completed = True
+            self._registry.complete_task(worker_id, success=msg["success"])
+
+            logger.info(
+                "Accepted result for task %s from worker %s (corr=%.4f, %d/%d complete)",
+                task_id,
+                worker_id,
+                msg["correlation"],
+                len(self._results),
+                self._current_round_task_count,
+            )
+
+            # Signal if all results are in
+            if len(self._results) >= self._current_round_task_count:
+                self._results_ready.set()
+
+            return True
+
+    def collect_results(self, timeout: float = 120.0) -> list[TaskResult]:
+        """Wait for all results from the current round.
+
+        Called by the training thread. Blocks until all results are received
+        or timeout expires.
+
+        Args:
+            timeout: Maximum time to wait in seconds.
+
+        Returns:
+            List of TaskResults received (may be fewer than submitted if timeout).
+        """
+        self._results_ready.wait(timeout=timeout)
+
+        with self._lock:
+            results = list(self._results.values())
+            logger.info(
+                "Collected %d/%d results for round %s",
+                len(results),
+                self._current_round_task_count,
+                self._current_round_id,
+            )
+            return results
+
+    def has_pending_tasks(self) -> bool:
+        """Check if there are unassigned tasks waiting for workers."""
+        with self._lock:
+            return len(self._unassigned_tasks) > 0
+
+    def cancel_round(self) -> None:
+        """Cancel the current round and clear all pending tasks."""
+        with self._lock:
+            self._pending_tasks.clear()
+            self._unassigned_tasks.clear()
+            self._results.clear()
+            self._completed_task_ids.clear()
+            self._current_round_id = None
+            self._current_round_task_count = 0
+            self._results_ready.set()  # Unblock any waiting thread
+            logger.info("Current round cancelled")
+
+    def shutdown(self) -> None:
+        """Shutdown the coordinator: stop monitor, cancel tasks."""
+        self.stop_monitor()
+        self.cancel_round()
+        with self._lock:
+            self._send_callbacks.clear()
+        logger.info("WorkerCoordinator shut down")
+
+    def _health_monitor_loop(self) -> None:
+        """Background thread that monitors worker health and handles task reassignment."""
+        logger.debug("Health monitor loop started")
+        while not self._monitor_stop.wait(timeout=self._health_check_interval):
+            self._check_stale_workers()
+            self._check_task_timeouts()
+
+    def _check_stale_workers(self) -> None:
+        """Deregister workers whose heartbeat has timed out."""
+        stale = self._registry.get_stale_workers()
+        for worker in stale:
+            logger.warning("Worker %s heartbeat timeout — deregistering", worker.worker_id)
+            # If worker had an active task, put it back in the unassigned queue
+            if worker.active_task_id is not None:
+                with self._lock:
+                    task = self._pending_tasks.get(worker.active_task_id)
+                    if task is not None and not task.completed:
+                        task.assigned_worker_id = None
+                        self._unassigned_tasks.append(worker.active_task_id)
+                        logger.info("Task %s reassigned to queue (worker %s died)", worker.active_task_id, worker.worker_id)
+            self._registry.deregister(worker.worker_id)
+            self.unregister_send_callback(worker.worker_id)
+
+    def _check_task_timeouts(self) -> None:
+        """Reassign tasks that have been pending too long."""
+        now = time.time()
+        with self._lock:
+            for task in self._pending_tasks.values():
+                if (
+                    task.assigned_worker_id is not None
+                    and not task.completed
+                    and (now - task.dispatched_at) > self._task_reassignment_timeout
+                ):
+                    logger.warning(
+                        "Task %s timed out on worker %s (%.1fs) — reassigning",
+                        task.task_id,
+                        task.assigned_worker_id,
+                        now - task.dispatched_at,
+                    )
+                    self._registry.complete_task(task.assigned_worker_id, success=False)
+                    task.assigned_worker_id = None
+                    task.dispatched_at = now
+                    self._unassigned_tasks.append(task.task_id)
