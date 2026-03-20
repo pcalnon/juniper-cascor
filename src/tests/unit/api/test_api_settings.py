@@ -37,19 +37,19 @@ class TestSettings:
         from api.settings import Settings
 
         settings = Settings()
-        assert settings.worker_heartbeat_timeout == 30.0
-        assert settings.worker_task_reassignment_timeout == 120.0
+        assert settings.remote_workers_heartbeat_timeout == 30.0
+        assert settings.remote_workers_task_reassignment_timeout == 120.0
 
     def test_worker_settings_env_override(self, monkeypatch):
         """Test worker settings override via environment variables."""
-        monkeypatch.setenv("JUNIPER_CASCOR_WORKER_HEARTBEAT_TIMEOUT", "15.0")
-        monkeypatch.setenv("JUNIPER_CASCOR_WORKER_TASK_REASSIGNMENT_TIMEOUT", "60.0")
+        monkeypatch.setenv("JUNIPER_CASCOR_REMOTE_WORKERS_HEARTBEAT_TIMEOUT", "15.0")
+        monkeypatch.setenv("JUNIPER_CASCOR_REMOTE_WORKERS_TASK_REASSIGNMENT_TIMEOUT", "60.0")
 
         from api.settings import Settings
 
         settings = Settings()
-        assert settings.worker_heartbeat_timeout == 15.0
-        assert settings.worker_task_reassignment_timeout == 60.0
+        assert settings.remote_workers_heartbeat_timeout == 15.0
+        assert settings.remote_workers_task_reassignment_timeout == 60.0
 
     def test_get_settings_cached(self):
         """Test that get_settings returns cached instance."""
