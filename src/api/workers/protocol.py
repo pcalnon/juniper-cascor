@@ -21,6 +21,7 @@ Message Types:
 
 import struct
 import time
+from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any
 
@@ -327,3 +328,103 @@ class WorkerProtocol:
         elif not isinstance(msg["capabilities"], dict):
             errors.append("capabilities must be a dict")
         return errors
+
+
+# ---------------------------------------------------------------------------
+# Typed message dataclasses
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class TaskAssignment:
+    """Typed representation of a task_assign message.
+
+    Provides type-safe construction of task assignment payloads.
+    Use ``to_dict()`` to serialize for the wire protocol.
+    """
+
+    task_id: str
+    round_id: str
+    candidate_index: int
+    candidate_data: dict[str, Any]
+    training_params: dict[str, Any]
+    tensor_manifest: dict[str, dict[str, Any]] = field(default_factory=dict)
+
+    def to_dict(self) -> dict[str, Any]:
+        """Serialize to a wire-protocol dict via WorkerProtocol."""
+        return WorkerProtocol.build_task_assign(
+            task_id=self.task_id,
+            round_id=self.round_id,
+            candidate_index=self.candidate_index,
+            candidate_data=self.candidate_data,
+            training_params=self.training_params,
+            tensor_manifest=self.tensor_manifest,
+        )
+
+
+@dataclass
+class TaskResultMessage:
+    """Typed representation of a task_result message.
+
+    Provides type-safe construction and parsing of task result payloads.
+    Named ``TaskResultMessage`` to distinguish from the coordinator's
+    internal ``TaskResult`` which includes decoded tensor arrays.
+    """
+
+    task_id: str
+    candidate_id: int
+    candidate_uuid: str = ""
+    correlation: float = 0.0
+    success: bool = False
+    epochs_completed: int = 0
+    activation_name: str = ""
+    all_correlations: list[float] = field(default_factory=list)
+    numerator: float = 0.0
+    denominator: float = 1.0
+    best_corr_idx: int = -1
+    tensor_manifest: dict[str, dict[str, Any]] = field(default_factory=dict)
+    error_message: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        """Serialize to a wire-protocol dict via WorkerProtocol."""
+        return WorkerProtocol.build_task_result(
+            task_id=self.task_id,
+            candidate_id=self.candidate_id,
+            candidate_uuid=self.candidate_uuid,
+            correlation=self.correlation,
+            success=self.success,
+            epochs_completed=self.epochs_completed,
+            activation_name=self.activation_name,
+            all_correlations=self.all_correlations,
+            numerator=self.numerator,
+            denominator=self.denominator,
+            best_corr_idx=self.best_corr_idx,
+            tensor_manifest=self.tensor_manifest,
+            error_message=self.error_message,
+        )
+
+    @classmethod
+    def from_dict(cls, msg: dict[str, Any]) -> "TaskResultMessage":
+        """Parse a wire-protocol dict into a typed dataclass.
+
+        Raises:
+            ValueError: If required fields are missing or validation fails.
+        """
+        errors = WorkerProtocol.validate_task_result(msg)
+        if errors:
+            raise ValueError(f"Invalid task_result message: {'; '.join(errors)}")
+        return cls(
+            task_id=msg["task_id"],
+            candidate_id=msg["candidate_id"],
+            candidate_uuid=msg.get("candidate_uuid", ""),
+            correlation=msg["correlation"],
+            success=msg["success"],
+            epochs_completed=msg["epochs_completed"],
+            activation_name=msg.get("activation_name", ""),
+            all_correlations=msg.get("all_correlations", []),
+            numerator=msg.get("numerator", 0.0),
+            denominator=msg.get("denominator", 1.0),
+            best_corr_idx=msg.get("best_corr_idx", -1),
+            tensor_manifest=msg.get("tensor_manifest", {}),
+            error_message=msg.get("error_message"),
+        )
