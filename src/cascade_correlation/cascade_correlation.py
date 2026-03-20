@@ -127,6 +127,7 @@ from cascor_constants.constants import (  # TODO: Commented out for F401 complia
 from cascor_plotter.cascor_plotter import CascadeCorrelationPlotter
 from log_config.log_config import LogConfig
 from log_config.logger.logger import Logger
+from parallelism.task_distributor import TaskDistributor
 from utils.utils import display_progress
 
 
@@ -673,6 +674,9 @@ class CascadeCorrelationNetwork:
         self._worker_coordinator = None
         self._remote_workers_enabled = getattr(self.config, "enable_remote_workers", False)
 
+        # Phase 3: Unified TaskDistributor for local + remote scheduling
+        self._task_distributor = TaskDistributor(dist_logger=self.logger)
+
         # Initialize multiprocessing config values
         self.candidate_training_queue_authkey = self.config.candidate_training_queue_authkey
         self.candidate_training_queue_address = self.config.candidate_training_queue_address
@@ -702,6 +706,7 @@ class CascadeCorrelationNetwork:
         """
         self._worker_coordinator = coordinator
         self._remote_workers_enabled = True
+        self._task_distributor.set_coordinator(coordinator)
         self.logger.info("CascadeCorrelationNetwork: Remote worker coordinator set — dual-path dispatch enabled")
 
     def _dispatch_to_remote_workers(
@@ -1695,11 +1700,14 @@ class CascadeCorrelationNetwork:
 
     def _execute_candidate_training(self, tasks: list, process_count: int) -> list:
         """
-        Execute candidate training using multiprocessing, remote workers, or sequential processing.
+        Execute candidate training via the TaskDistributor (Phase 3).
 
-        When remote workers are enabled and available, tasks are split between the local
-        multiprocessing pool and remote WebSocket workers (dual-path dispatch). Workers that
-        join mid-training wait for the next round — no task rebalancing within a round.
+        The TaskDistributor handles local-first scheduling: local workers fill
+        first, overflow goes to remote WebSocket workers. Failed remote tasks
+        are automatically retried on the local pool.
+
+        Sequential fallback (process_count <= 1, no remote workers) is handled
+        directly here since it bypasses the distributor.
 
         Args:
             tasks: List of training tasks
@@ -1709,56 +1717,42 @@ class CascadeCorrelationNetwork:
         """
         self.logger.info(f"CascadeCorrelationNetwork: _execute_candidate_training: Training {len(tasks)} candidates with {process_count} processes")
 
-        # Phase 1b: Check for remote workers and split tasks if available
-        remote_worker_count = 0
-        if self._remote_workers_enabled and self._worker_coordinator is not None:
-            remote_worker_count = self._worker_coordinator._registry.available_worker_count
-            self.logger.info(f"CascadeCorrelationNetwork: _execute_candidate_training: {remote_worker_count} remote workers available")
-
         results = []
-        self.logger.debug(f"CascadeCorrelationNetwork: _execute_candidate_training: Adjusted process count to: {process_count}")
         try:
-            if remote_worker_count > 0 and process_count <= 1:
-                # Remote-only path: all tasks go to remote workers
-                self.logger.info("CascadeCorrelationNetwork: _execute_candidate_training: Using remote workers only")
-                # Extract tensors from first task's training_inputs for remote dispatch
-                training_inputs = tasks[0][2]
-                candidate_input, _, y, residual_error = training_inputs[0], training_inputs[1], training_inputs[2], training_inputs[3]
-                results = self._dispatch_to_remote_workers(tasks, candidate_input, y, residual_error)
-            elif remote_worker_count > 0 and process_count > 1:
-                # Dual-path: split tasks between local MP and remote WS
-                # Allocate proportionally based on worker counts
-                total_workers = process_count + remote_worker_count
-                remote_share = max(1, len(tasks) * remote_worker_count // total_workers)
-                local_share = len(tasks) - remote_share
-                local_tasks = tasks[:local_share]
-                remote_tasks = tasks[local_share:]
-                self.logger.info(
-                    "CascadeCorrelationNetwork: _execute_candidate_training: Dual-path dispatch — %d local, %d remote",
-                    len(local_tasks),
-                    len(remote_tasks),
-                )
+            remote_available = self._task_distributor.remote_worker_count > 0
 
-                # Execute both paths
-                training_inputs = tasks[0][2]
-                candidate_input, _, y, residual_error = training_inputs[0], training_inputs[1], training_inputs[2], training_inputs[3]
-
-                local_results = self._execute_parallel_training(local_tasks, process_count) if local_tasks else []
-                remote_results = self._dispatch_to_remote_workers(remote_tasks, candidate_input, y, residual_error) if remote_tasks else []
-                results = local_results + remote_results
-            elif process_count > 1:
-                self.logger.debug(f"CascadeCorrelationNetwork: _execute_candidate_training: Using {process_count} processes")
-                results = self._execute_parallel_training(tasks, process_count)
-
-                # Validate results were actually obtained
-                if not results:
-                    self.logger.warning("CascadeCorrelationNetwork: _execute_candidate_training: Parallel processing returned no results, falling back to sequential")
-                    raise RuntimeError("CascadeCorrelationNetwork: _execute_candidate_training: Parallel processing failed to return results")
-                self.logger.debug("CascadeCorrelationNetwork: _execute_candidate_training: Completed parallel processing")
-            else:
+            if process_count <= 1 and not remote_available:
+                # Sequential: no local pool, no remote workers
                 self.logger.debug("CascadeCorrelationNetwork: _execute_candidate_training: Using sequential processing")
                 results = self._execute_sequential_training(tasks)
                 self.logger.debug("CascadeCorrelationNetwork: _execute_candidate_training: Completed sequential processing")
+            else:
+                # Use TaskDistributor for local-first scheduling with optional remote overflow
+                # Build remote dispatch callable that captures tensors from the tasks
+                training_inputs = tasks[0][2]
+                candidate_input, _, y, residual_error = training_inputs[0], training_inputs[1], training_inputs[2], training_inputs[3]
+
+                def remote_fn(remote_tasks):
+                    return self._dispatch_to_remote_workers(remote_tasks, candidate_input, y, residual_error)
+
+                def local_fn(local_tasks, pc):
+                    if pc <= 1:
+                        return self._execute_sequential_training(local_tasks)
+                    return self._execute_parallel_training(local_tasks, pc)
+
+                timeout = getattr(self, "candidate_training_shutdown_timeout", 120.0)
+                results = self._task_distributor.distribute_and_collect(
+                    tasks=tasks,
+                    local_capacity=max(1, process_count),
+                    local_fn=local_fn,
+                    remote_fn=remote_fn,
+                    timeout=timeout,
+                )
+
+                if not results:
+                    self.logger.warning("CascadeCorrelationNetwork: _execute_candidate_training: TaskDistributor returned no results, falling back to sequential")
+                    raise RuntimeError("CascadeCorrelationNetwork: _execute_candidate_training: TaskDistributor failed to return results")
+                self.logger.debug("CascadeCorrelationNetwork: _execute_candidate_training: Completed distributed processing")
         except Exception as e:
             self.logger.error(f"CascadeCorrelationNetwork: _execute_candidate_training: Error in candidate node training: {e}")
             import traceback
@@ -1772,7 +1766,6 @@ class CascadeCorrelationNetwork:
                 self.logger.info("CascadeCorrelationNetwork: _execute_candidate_training: Sequential training completed successfully")
             except Exception as seq_error:
                 self.logger.error(f"CascadeCorrelationNetwork: _execute_candidate_training: Sequential training also failed: {seq_error}")
-                # Create dummy failure results for each task only if sequential also fails
                 self.logger.warning("CascadeCorrelationNetwork: _execute_candidate_training: Creating dummy results for failed training")
                 results = self._get_dummy_results(len(tasks))
         self.logger.debug(f"CascadeCorrelationNetwork: _execute_candidate_training: Obtained {len(results)} results")
