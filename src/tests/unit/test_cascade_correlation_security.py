@@ -253,8 +253,8 @@ class TestQueueSizeLimits:
     """Tests for queue maxsize enforcement."""
 
     def test_manager_task_queue_has_maxsize(self) -> None:
-        """Manager-hosted task queue should have maxsize=1000."""
-        from cascade_correlation.cascade_correlation import _create_task_queue, _task_queue
+        """Manager-hosted task queue should have maxsize=_QUEUE_MAXSIZE (1024)."""
+        from cascade_correlation.cascade_correlation import _QUEUE_MAXSIZE, _create_task_queue
 
         import cascade_correlation.cascade_correlation as cc_module
 
@@ -263,13 +263,13 @@ class TestQueueSizeLimits:
         cc_module._task_queue = None
         try:
             q = _create_task_queue()
-            assert q.maxsize == 1000
+            assert q.maxsize == _QUEUE_MAXSIZE
         finally:
             cc_module._task_queue = original
 
     def test_manager_result_queue_has_maxsize(self) -> None:
-        """Manager-hosted result queue should have maxsize=1000."""
-        from cascade_correlation.cascade_correlation import _create_result_queue
+        """Manager-hosted result queue should have maxsize=_QUEUE_MAXSIZE (1024)."""
+        from cascade_correlation.cascade_correlation import _QUEUE_MAXSIZE, _create_result_queue
 
         import cascade_correlation.cascade_correlation as cc_module
 
@@ -277,7 +277,7 @@ class TestQueueSizeLimits:
         cc_module._result_queue = None
         try:
             q = _create_result_queue()
-            assert q.maxsize == 1000
+            assert q.maxsize == _QUEUE_MAXSIZE
         finally:
             cc_module._result_queue = original
 

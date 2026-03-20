@@ -57,10 +57,10 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     logger.info("Lifecycle manager initialized")
 
     # Create worker registry and coordinator for remote WebSocket workers
-    worker_registry = WorkerRegistry(heartbeat_timeout=settings.worker_heartbeat_timeout)
+    worker_registry = WorkerRegistry(heartbeat_timeout=settings.remote_workers_heartbeat_timeout)
     worker_coordinator = WorkerCoordinator(
         registry=worker_registry,
-        task_reassignment_timeout=settings.worker_task_reassignment_timeout,
+        task_reassignment_timeout=settings.remote_workers_task_reassignment_timeout,
     )
     worker_coordinator.start_monitor()
     app.state.worker_registry = worker_registry

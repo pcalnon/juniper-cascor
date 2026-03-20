@@ -184,6 +184,10 @@ class ValidateTrainingResults:
     value_accuracy: float
 
 
+# Maximum queue size to prevent unbounded memory growth (DoS vector)
+_QUEUE_MAXSIZE = 1024
+
+
 # Server-owned queues (live in Manager server process)--created in the manager server process
 _task_queue = None
 _result_queue = None
@@ -196,7 +200,7 @@ def _create_task_queue():
     """
     global _task_queue
     if _task_queue is None:
-        _task_queue = Queue(maxsize=1000)
+        _task_queue = Queue(maxsize=_QUEUE_MAXSIZE)
     return _task_queue
 
 
@@ -207,7 +211,7 @@ def _create_result_queue():
     """
     global _result_queue
     if _result_queue is None:
-        _result_queue = Queue(maxsize=1000)
+        _result_queue = Queue(maxsize=_QUEUE_MAXSIZE)
     return _result_queue
 
 
@@ -250,9 +254,21 @@ class RestrictedUnpickler(pickle.Unpickler):
         ("torch", "float64"),
         ("torch", "int64"),
         # PyTorch activation modules (used by CandidateUnit.activation_fn_base)
+        # All activation types from _PROJECT_MODEL_ACTIVATION_FUNCTIONS_DICT must be listed
+        # to allow deserialization of CandidateUnit objects using any supported activation.
+        ("torch.nn.modules.linear", "Identity"),
         ("torch.nn.modules.activation", "Tanh"),
         ("torch.nn.modules.activation", "Sigmoid"),
         ("torch.nn.modules.activation", "ReLU"),
+        ("torch.nn.modules.activation", "LeakyReLU"),
+        ("torch.nn.modules.activation", "ELU"),
+        ("torch.nn.modules.activation", "SELU"),
+        ("torch.nn.modules.activation", "GELU"),
+        ("torch.nn.modules.activation", "Softmax"),
+        ("torch.nn.modules.activation", "Softplus"),
+        ("torch.nn.modules.activation", "Hardtanh"),
+        ("torch.nn.modules.activation", "Softshrink"),
+        ("torch.nn.modules.activation", "Tanhshrink"),
         # Collections and codecs
         ("collections", "OrderedDict"),
         ("_codecs", "encode"),
@@ -260,6 +276,7 @@ class RestrictedUnpickler(pickle.Unpickler):
         ("numpy", "ndarray"),
         ("numpy", "dtype"),
         ("numpy.core.multiarray", "_reconstruct"),
+        ("numpy._core.multiarray", "_reconstruct"),  # Python 3.14+ internal rename
     }
 
     def find_class(self, module, name):
@@ -1908,11 +1925,14 @@ class CascadeCorrelationNetwork:
                 results.append((task[0], task[1][4] if len(task[1]) > 4 else None, 0.0, None))
         return results
 
+    # Maximum absolute weight/bias magnitude allowed in training results (V-4 threat model)
+    _RESULT_MAX_WEIGHT_MAGNITUDE = 100.0
+
     def _validate_training_result(self, result) -> bool:
         """Validate a CandidateTrainingResult from the result queue.
 
-        Checks type, field types, and bounds to detect corrupted or malicious results.
-        Returns True if the result is valid, False otherwise.
+        Checks type, field types, bounds, and tensor integrity to detect
+        corrupted or malicious results. Returns True if valid, False otherwise.
         """
         if not isinstance(result, CandidateTrainingResult):
             self.logger.error(f"SECURITY: Result queue returned unexpected type: {type(result).__name__}")
@@ -1934,6 +1954,17 @@ class CascadeCorrelationNetwork:
             if torch.isnan(result.norm_error).any() or torch.isinf(result.norm_error).any():
                 self.logger.warning("CascadeCorrelationNetwork: _validate_training_result: norm_error contains NaN or Inf")
                 return False
+        # Validate candidate weight/bias magnitude (V-4: training poisoning defense)
+        if result.candidate is not None and isinstance(result.candidate, CandidateUnit):
+            for param_name in ("weights", "bias"):
+                param = getattr(result.candidate, param_name, None)
+                if param is not None and isinstance(param, torch.Tensor):
+                    if torch.isnan(param).any() or torch.isinf(param).any():
+                        self.logger.warning(f"CascadeCorrelationNetwork: _validate_training_result: candidate {param_name} contains NaN or Inf")
+                        return False
+                    if param.abs().max().item() > self._RESULT_MAX_WEIGHT_MAGNITUDE:
+                        self.logger.warning(f"CascadeCorrelationNetwork: _validate_training_result: candidate {param_name} magnitude {param.abs().max().item():.2f} exceeds limit {self._RESULT_MAX_WEIGHT_MAGNITUDE}")
+                        return False
         return True
 
     def _collect_training_results(
@@ -2746,8 +2777,8 @@ class CascadeCorrelationNetwork:
             self._shutdown_worker_pool()
 
         # Create fresh queues and workers
-        self._persistent_task_queue = self._mp_ctx.Queue(maxsize=1000)
-        self._persistent_result_queue = self._mp_ctx.Queue(maxsize=1000)
+        self._persistent_task_queue = self._mp_ctx.Queue(maxsize=_QUEUE_MAXSIZE)
+        self._persistent_result_queue = self._mp_ctx.Queue(maxsize=_QUEUE_MAXSIZE)
         self._persistent_pool_size = num_workers
         _worker_thread_count = getattr(self.config, "worker_thread_count", 1)
 
