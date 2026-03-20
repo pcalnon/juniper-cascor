@@ -73,11 +73,7 @@ class WorkerRegistry:
     def available_worker_count(self) -> int:
         """Number of idle, alive workers available for task assignment."""
         with self._lock:
-            return sum(
-                1
-                for w in self._workers.values()
-                if w.idle and w.is_alive(self._heartbeat_timeout)
-            )
+            return sum(1 for w in self._workers.values() if w.idle and w.is_alive(self._heartbeat_timeout))
 
     def register(self, worker_id: str, capabilities: dict[str, Any]) -> WorkerRegistration:
         """Register a worker. Replaces any existing registration for the same ID.
@@ -163,19 +159,13 @@ class WorkerRegistry:
     def get_idle_workers(self) -> list[WorkerRegistration]:
         """Get all idle, alive workers sorted by health score (best first)."""
         with self._lock:
-            idle = [
-                w for w in self._workers.values()
-                if w.idle and w.is_alive(self._heartbeat_timeout)
-            ]
+            idle = [w for w in self._workers.values() if w.idle and w.is_alive(self._heartbeat_timeout)]
             return sorted(idle, key=lambda w: w.health_score, reverse=True)
 
     def get_stale_workers(self) -> list[WorkerRegistration]:
         """Get workers whose heartbeat has timed out."""
         with self._lock:
-            return [
-                w for w in self._workers.values()
-                if not w.is_alive(self._heartbeat_timeout)
-            ]
+            return [w for w in self._workers.values() if not w.is_alive(self._heartbeat_timeout)]
 
     def get_all_workers(self) -> list[WorkerRegistration]:
         """Get a snapshot of all registered workers."""

@@ -97,16 +97,12 @@ class TaskDistributor:
 
         if not local_tasks:
             # All remote
-            remote_results = self._execute_remote_with_fallback(
-                remote_tasks, remote_fn, remote_retry_fn, local_capacity, timeout
-            )
+            remote_results = self._execute_remote_with_fallback(remote_tasks, remote_fn, remote_retry_fn, local_capacity, timeout)
             return remote_results
 
         # Dual-path: execute both tiers
         local_results = local_fn(local_tasks, local_capacity)
-        remote_results = self._execute_remote_with_fallback(
-            remote_tasks, remote_fn, remote_retry_fn, local_capacity, timeout
-        )
+        remote_results = self._execute_remote_with_fallback(remote_tasks, remote_fn, remote_retry_fn, local_capacity, timeout)
         return local_results + remote_results
 
     def _split_tasks(self, tasks: list, local_capacity: int, remote_count: int) -> tuple[list, list]:

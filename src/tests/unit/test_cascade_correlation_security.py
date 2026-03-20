@@ -18,7 +18,6 @@ from candidate_unit.candidate_unit import CandidateTrainingResult, CandidateUnit
 from cascade_correlation.cascade_correlation import CascadeCorrelationNetwork, RestrictedUnpickler
 from cascade_correlation.cascade_correlation_config.cascade_correlation_config import CascadeCorrelationConfig
 
-
 # ===================================================================
 # RestrictedUnpickler Tests
 # ===================================================================
@@ -254,9 +253,8 @@ class TestQueueSizeLimits:
 
     def test_manager_task_queue_has_maxsize(self) -> None:
         """Manager-hosted task queue should have maxsize=_QUEUE_MAXSIZE (1024)."""
-        from cascade_correlation.cascade_correlation import _QUEUE_MAXSIZE, _create_task_queue
-
         import cascade_correlation.cascade_correlation as cc_module
+        from cascade_correlation.cascade_correlation import _QUEUE_MAXSIZE, _create_task_queue
 
         # Reset module-level queue to force recreation
         original = cc_module._task_queue
@@ -269,9 +267,8 @@ class TestQueueSizeLimits:
 
     def test_manager_result_queue_has_maxsize(self) -> None:
         """Manager-hosted result queue should have maxsize=_QUEUE_MAXSIZE (1024)."""
-        from cascade_correlation.cascade_correlation import _QUEUE_MAXSIZE, _create_result_queue
-
         import cascade_correlation.cascade_correlation as cc_module
+        from cascade_correlation.cascade_correlation import _QUEUE_MAXSIZE, _create_result_queue
 
         original = cc_module._result_queue
         cc_module._result_queue = None

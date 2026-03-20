@@ -93,6 +93,7 @@ class CandidateTrainingResult:
     success: bool = True
     epochs_completed: int = 0
     error_message: Optional[str] = None
+    round_id: Optional[str] = None  # PARALLEL-FIX (RC-5): Training round identifier for cross-round contamination detection
 
 
 @dataclass

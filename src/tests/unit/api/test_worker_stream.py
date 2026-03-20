@@ -6,15 +6,10 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import numpy as np
 import pytest
 
+from api.websocket.worker_stream import _handle_registration, _handle_task_result, _try_dispatch_task, worker_stream_handler
 from api.workers.coordinator import WorkerCoordinator
 from api.workers.protocol import BinaryFrame, MessageType, WorkerProtocol
 from api.workers.registry import WorkerRegistry
-from api.websocket.worker_stream import (
-    _handle_registration,
-    _handle_task_result,
-    _try_dispatch_task,
-    worker_stream_handler,
-)
 
 
 def _make_websocket(headers=None, app_state=None):
@@ -91,11 +86,7 @@ class TestHandleRegistration:
     async def test_valid_registration(self, registry):
         """Valid registration message registers the worker."""
         ws = AsyncMock()
-        ws.receive_text = AsyncMock(
-            return_value=json.dumps(
-                WorkerProtocol.build_register("w1", {"cpu_cores": 4})
-            )
-        )
+        ws.receive_text = AsyncMock(return_value=json.dumps(WorkerProtocol.build_register("w1", {"cpu_cores": 4})))
 
         worker_id = await _handle_registration(ws, registry)
         assert worker_id == "w1"
@@ -115,9 +106,7 @@ class TestHandleRegistration:
     async def test_wrong_message_type(self, registry):
         """Non-registration first message closes the connection."""
         ws = AsyncMock()
-        ws.receive_text = AsyncMock(
-            return_value=json.dumps({"type": "heartbeat", "worker_id": "w1"})
-        )
+        ws.receive_text = AsyncMock(return_value=json.dumps({"type": "heartbeat", "worker_id": "w1"}))
 
         worker_id = await _handle_registration(ws, registry)
         assert worker_id is None
@@ -126,9 +115,7 @@ class TestHandleRegistration:
     async def test_missing_fields(self, registry):
         """Registration with missing fields closes the connection."""
         ws = AsyncMock()
-        ws.receive_text = AsyncMock(
-            return_value=json.dumps({"type": "register"})  # Missing worker_id and capabilities
-        )
+        ws.receive_text = AsyncMock(return_value=json.dumps({"type": "register"}))  # Missing worker_id and capabilities
 
         worker_id = await _handle_registration(ws, registry)
         assert worker_id is None

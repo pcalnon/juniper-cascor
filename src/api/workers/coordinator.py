@@ -385,11 +385,7 @@ class WorkerCoordinator:
         now = time.time()
         with self._lock:
             for task in self._pending_tasks.values():
-                if (
-                    task.assigned_worker_id is not None
-                    and not task.completed
-                    and (now - task.dispatched_at) > self._task_reassignment_timeout
-                ):
+                if task.assigned_worker_id is not None and not task.completed and (now - task.dispatched_at) > self._task_reassignment_timeout:
                     logger.warning(
                         "Task %s timed out on worker %s (%.1fs) — reassigning",
                         task.task_id,

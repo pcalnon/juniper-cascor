@@ -768,23 +768,25 @@ class CascadeCorrelationNetwork:
         task_specs = []
         for task_idx, candidate_data_tuple, training_inputs in tasks:
             candidate_index, input_size, activation_name, random_value_scale, candidate_uuid, candidate_seed, random_max_value, sequence_max_value = candidate_data_tuple
-            task_specs.append({
-                "candidate_index": candidate_index,
-                "candidate_data": {
-                    "input_size": input_size,
-                    "activation_name": activation_name,
-                    "random_value_scale": float(random_value_scale),
-                    "candidate_uuid": candidate_uuid,
-                    "candidate_seed": candidate_seed,
-                    "random_max_value": float(random_max_value),
-                    "sequence_max_value": float(sequence_max_value),
-                },
-                "training_params": {
-                    "epochs": int(training_inputs[1]),
-                    "learning_rate": float(training_inputs[4]),
-                    "display_frequency": int(training_inputs[5]),
-                },
-            })
+            task_specs.append(
+                {
+                    "candidate_index": candidate_index,
+                    "candidate_data": {
+                        "input_size": input_size,
+                        "activation_name": activation_name,
+                        "random_value_scale": float(random_value_scale),
+                        "candidate_uuid": candidate_uuid,
+                        "candidate_seed": candidate_seed,
+                        "random_max_value": float(random_max_value),
+                        "sequence_max_value": float(sequence_max_value),
+                    },
+                    "training_params": {
+                        "epochs": int(training_inputs[1]),
+                        "learning_rate": float(training_inputs[4]),
+                        "display_frequency": int(training_inputs[5]),
+                    },
+                }
+            )
 
         # Submit to coordinator
         self._worker_coordinator.submit_tasks(round_id, task_specs, tensors)
@@ -1383,19 +1385,6 @@ class CascadeCorrelationNetwork:
         # TODO:  this code is repeated in the train candidates method--refactor it into a common method
         self.logger.info(f"CascadeCorrelationNetwork: fit: Starting main training loop with max epochs: {max_epochs}, early stopping: {early_stopping}")
         self.grow_network(
-            candidate=CandidateUnit(
-                _CandidateUnit__activation_function=self.activation_fn,
-                _CandidateUnit__candidate_pool_size=self.candidate_pool_size,
-                _CandidateUnit__display_frequency=self.display_frequency,
-                _CandidateUnit__epochs_max=self.epochs_max,
-                _CandidateUnit__input_size=self.input_size,
-                _CandidateUnit__learning_rate=self.learning_rate,
-                _CandidateUnit__log_file_name=self.log_file_name,
-                _CandidateUnit__log_file_path=self.log_file_path,
-                _CandidateUnit__log_level_name=self.log_level_name,
-                _CandidateUnit__output_size=self.output_size,
-                _CandidateUnit__random_value_scale=self.random_value_scale,
-            ),
             x_train=x_train,
             y_train=y_train,
             max_epochs=max_epochs,
@@ -1841,6 +1830,31 @@ class CascadeCorrelationNetwork:
         # self.logger.trace("CascadeCorrelationNetwork: _execute_parallel_training: Created task and result queues")
         self.logger.debug("CascadeCorrelationNetwork: _execute_parallel_training: Created task and result queues")
         try:
+            # PARALLEL-FIX (RC-5): Drain stale results from previous rounds before submitting new tasks.
+            # The persistent pool (RC-4) reuses result_queue across rounds. If a slow worker from
+            # round N completes after collection ends, its result stays in the queue and contaminates
+            # round N+1, potentially returning a candidate trained with a stale input_size.
+            from queue import Empty as _QueueEmpty
+
+            drained_count = 0
+            while True:
+                try:
+                    stale_result = result_queue.get_nowait()
+                    drained_count += 1
+                    self.logger.warning(
+                        f"CascadeCorrelationNetwork: _execute_parallel_training: "
+                        f"Drained stale result from previous round: "
+                        f"candidate_id={getattr(stale_result, 'candidate_id', '?')}, "
+                        f"correlation={getattr(stale_result, 'correlation', '?')}"
+                    )
+                except _QueueEmpty:
+                    break
+            if drained_count:
+                self.logger.warning(
+                    f"CascadeCorrelationNetwork: _execute_parallel_training: "
+                    f"Drained {drained_count} stale result(s) from persistent result queue"
+                )
+
             # Add full tasks to the queue. With persistent workers (RC-4), shared_training_inputs
             # cannot be passed at worker startup since it changes each round (residual_error evolves).
             # The RC-2 direct queue improvement still provides significant speedup over the original
@@ -1850,9 +1864,14 @@ class CascadeCorrelationNetwork:
             # for task in tasks:
             #     lightweight_task = (task[0], task[1])
             #     task_queue.put(lightweight_task)
+            # PARALLEL-FIX (RC-5): Tag tasks with a round_id so stale results from previous
+            # rounds can be identified and filtered during result collection.
+            round_id = str(uuid.uuid4())
+            self.logger.debug(f"CascadeCorrelationNetwork: _execute_parallel_training: Round ID: {round_id}")
             self.logger.debug("CascadeCorrelationNetwork: _execute_parallel_training: Adding tasks to persistent pool queue")
             for task in tasks:
-                task_queue.put(task)
+                tagged_task = (task[0], task[1], task[2], round_id)
+                task_queue.put(tagged_task)
             self.logger.debug(f"CascadeCorrelationNetwork: _execute_parallel_training: Added {len(tasks)} tasks to queue")
 
             # PARALLEL-FIX (RC-4): Workers are already running in the persistent pool.
@@ -1895,7 +1914,7 @@ class CascadeCorrelationNetwork:
 
             # Collect results, NOTE: results is of type list of data class: [candidate_training_result, ...]
             self.logger.debug("CascadeCorrelationNetwork: _execute_parallel_training: Collecting results from workers")
-            results = self._collect_training_results(result_queue, len(tasks))
+            results = self._collect_training_results(result_queue, len(tasks), round_id=round_id)
             self.logger.debug(f"CascadeCorrelationNetwork: _execute_parallel_training: Collected {len(results)} results")
 
             # PARALLEL-FIX (RC-4): Do NOT stop workers — they persist for the next training round.
@@ -1974,6 +1993,7 @@ class CascadeCorrelationNetwork:
         # TODO: Make these into proper constants
         queue_timeout: float = 60.0,
         request_timeout: float = 1.0,
+        round_id: Optional[str] = None,
     ) -> list:
         """
         Description:
@@ -1984,6 +2004,7 @@ class CascadeCorrelationNetwork:
             num_tasks: Number of expected results
             queue_timeout: Total timeout for collecting all results
             request_timeout: Timeout for each individual get request
+            round_id: Expected round identifier. Results with a mismatched round_id are discarded (RC-5).
         Raises:
             Exception: If an error occurs during result collection
         Notes:
@@ -1995,7 +2016,8 @@ class CascadeCorrelationNetwork:
 
         results = []
         collected_results = 0
-        self.logger.debug(f"CascadeCorrelationNetwork: _collect_training_results: Collecting {num_tasks} results")
+        stale_discarded = 0
+        self.logger.debug(f"CascadeCorrelationNetwork: _collect_training_results: Collecting {num_tasks} results (round_id={round_id})")
         self.logger.debug(f"CascadeCorrelationNetwork: _collect_training_results: Timeout set to {queue_timeout} seconds")
         self.logger.debug(f"CascadeCorrelationNetwork: _collect_training_results: Result Queue: Length: {result_queue.qsize()}, Contents: {list(result_queue.queue) if hasattr(result_queue, 'queue') else 'N/A'}")
         deadline = time.time() + queue_timeout
@@ -2005,6 +2027,16 @@ class CascadeCorrelationNetwork:
                 self.logger.debug(f"CascadeCorrelationNetwork: _collect_training_results: Retrieved result: {result}")
                 if not self._validate_training_result(result):
                     self.logger.error("CascadeCorrelationNetwork: _collect_training_results: Discarding invalid training result")
+                    continue
+                # PARALLEL-FIX (RC-5): Discard results from stale training rounds.
+                result_round = getattr(result, "round_id", None)
+                if round_id is not None and result_round is not None and result_round != round_id:
+                    stale_discarded += 1
+                    self.logger.warning(
+                        f"CascadeCorrelationNetwork: _collect_training_results: "
+                        f"Discarding stale result from round {result_round} "
+                        f"(current round: {round_id}, candidate_id={result.candidate_id})"
+                    )
                     continue
                 results.append(result)
                 collected_results += 1
@@ -2018,6 +2050,11 @@ class CascadeCorrelationNetwork:
 
                 self.logger.error(traceback.format_exc())
                 break
+        if stale_discarded:
+            self.logger.warning(
+                f"CascadeCorrelationNetwork: _collect_training_results: "
+                f"Discarded {stale_discarded} stale result(s) from previous training rounds"
+            )
         self.logger.debug(f"CascadeCorrelationNetwork: _collect_training_results: Collected {collected_results} results")
         return results
 
@@ -2536,6 +2573,8 @@ class CascadeCorrelationNetwork:
                 worker_id=worker_id,
                 worker_uuid=worker_uuid,
             )
+            # PARALLEL-FIX (RC-5): Tag result with round_id for cross-round contamination detection
+            result.round_id = candidate_inputs.get("round_id")
             logger.info(f"CascadeCorrelationNetwork: train_candidate_worker: Returning from Candidate Unit Training: Worker ID: {worker_id}, Worker UUID: {worker_uuid}, Candidate ID: {result.candidate_id}, Candidate UUID: {result.candidate_uuid}, Candidate Correlation: {float(result.correlation):.6f}")
             return result
 
@@ -2554,6 +2593,7 @@ class CascadeCorrelationNetwork:
                 success=False,
                 epochs_completed=0,
                 error_message=str(e),
+                round_id=candidate_inputs.get("round_id") if candidate_inputs else None,
             )
 
     @staticmethod
@@ -2570,7 +2610,13 @@ class CascadeCorrelationNetwork:
         logger.debug(f"CascadeCorrelationNetwork: _build_candidate_inputs: Attempting to Unpack Task data, Candidate data, and Training inputs: Worker ID: {worker_id}, Worker UUID: {worker_uuid}")
         logger.verbose(f"CascadeCorrelationNetwork: _build_candidate_inputs: Task data: length: {len(task_data_input)}, Type: {type(task_data_input)}, Content:\n{task_data_input}")
         logger.debug(f"CascadeCorrelationNetwork: _build_candidate_inputs: Task data unpacked: Worker ID: {worker_id}, Worker UUID: {worker_uuid}")
-        (candidate_index, candidate_data, training_inputs) = task_data_input  # Unpack training task data)
+        # PARALLEL-FIX (RC-5): Support optional round_id as 4th element in task tuple.
+        # Backward compatible: 3-element tuples from sequential path have round_id=None.
+        if len(task_data_input) >= 4:
+            (candidate_index, candidate_data, training_inputs, round_id) = task_data_input
+        else:
+            (candidate_index, candidate_data, training_inputs) = task_data_input
+            round_id = None
         logger.debug(f"CascadeCorrelationNetwork: _build_candidate_inputs: Successfully Unpacked Task data: Worker ID: {worker_id}, Worker UUID: {worker_uuid}")
         logger.verbose(f"CascadeCorrelationNetwork: _build_candidate_inputs: Candidate Index: {candidate_index}, Type: {type(candidate_index)}, Value: {candidate_index}: Worker ID: {worker_id}, Worker UUID: {worker_uuid}")
         logger.verbose(f"CascadeCorrelationNetwork: _build_candidate_inputs: Candidate Inputs: Length: {len(training_inputs)}, Type: {type(training_inputs)}, Content:\n{training_inputs}: Worker ID: {worker_id}, Worker UUID: {worker_uuid}")
@@ -2623,6 +2669,7 @@ class CascadeCorrelationNetwork:
             "candidate_learning_rate": candidate_learning_rate,
             "candidate_display_frequency": candidate_display_frequency,
             "activation_fn": activation_fn,
+            "round_id": round_id,
         }
         logger.debug(f"CascadeCorrelationNetwork: _build_candidate_inputs: Successfully built candidate inputs: {candidate_inputs}")
         return candidate_inputs
@@ -3085,6 +3132,21 @@ class CascadeCorrelationNetwork:
         }
         self.logger.debug(f"CascadeCorrelationNetwork: add_unit: Adding new hidden unit with weights: {new_unit['weights']}, bias: {new_unit['bias']}, correlation: {new_unit['correlation']:.6f}, Unit: {new_unit}")
 
+        # PARALLEL-FIX (RC-5): Validate that candidate weight dimensions match current input.
+        # A stale candidate from a previous training round (result queue contamination) would
+        # have weights sized for a different input dimension. Catch this before the cryptic
+        # RuntimeError from element-wise multiplication.
+        expected_weight_size = candidate_input.shape[1]
+        actual_weight_size = new_unit["weights"].shape[0]
+        if expected_weight_size != actual_weight_size:
+            raise ValidationError(
+                f"Candidate weight dimension mismatch in add_unit: "
+                f"candidate_input has {expected_weight_size} features "
+                f"(original_input={x.shape[1]}, hidden_units={len(self.hidden_units)}), "
+                f"but candidate weights have {actual_weight_size} elements. "
+                f"This indicates a stale candidate from a previous training round."
+            )
+
         # Add the new unit to the network
         self.hidden_units.append(new_unit)
         self.logger.debug(f"CascadeCorrelationNetwork: add_unit: Current number of hidden units: {len(self.hidden_units)}, Hidden units: {self.hidden_units}")
@@ -3176,18 +3238,74 @@ class CascadeCorrelationNetwork:
             candidates: List of CandidateTrainingResult objects
             x: Input tensor for calculating outputs
         Notes:
-            - Each candidate in the list is added as a separate hidden unit.
-            - The output layer weights are updated to include the new units.
+            - All candidates were trained with the same candidate_input (same number of hidden units).
+            - candidate_input is pre-computed ONCE before adding any units, so that all candidates
+              are evaluated against the input state they were trained on (compute-then-mutate pattern).
+            - The output layer weights are updated after all units are added.
         Returns:
             None
         """
         self.logger.info(f"CascadeCorrelationNetwork: add_units_as_layer: Adding layer with {len(candidates)} units")
-        for candidate in candidates:
-            if candidate.candidate and hasattr(candidate.candidate, "weights"):
-                self.add_unit(candidate.candidate, x)
+
+        # Pre-compute candidate_input from current hidden units BEFORE adding any new units.
+        # All candidates in this batch were trained with this exact input shape.
+        hidden_outputs = []
+        for unit in self.hidden_units:
+            unit_input = torch.cat([x] + hidden_outputs, dim=1) if hidden_outputs else x
+            unit_output = unit["activation_fn"](torch.sum(unit_input * unit["weights"], dim=1) + unit["bias"]).unsqueeze(1)
+            hidden_outputs.append(unit_output)
+        candidate_input = torch.cat([x] + hidden_outputs, dim=1) if hidden_outputs else x
+
+        # Save current output weights before any mutations
+        old_output_weights = self.output_weights.clone().detach()
+        old_output_bias = self.output_bias.clone().detach()
+
+        # Add all candidate units using the pre-computed candidate_input
+        added_count = 0
+        for candidate_result in candidates:
+            candidate = candidate_result.candidate
+            if candidate and hasattr(candidate, "weights"):
+                # Validate weight dimensions match pre-computed input
+                expected_size = candidate_input.shape[1]
+                actual_size = candidate.weights.shape[0]
+                if expected_size != actual_size:
+                    self.logger.warning(
+                        f"CascadeCorrelationNetwork: add_units_as_layer: "
+                        f"Skipping candidate with mismatched weights: expected {expected_size}, got {actual_size}"
+                    )
+                    continue
+
+                new_unit = {
+                    "weights": candidate.weights.clone().detach(),
+                    "bias": candidate.bias.clone().detach(),
+                    "activation_fn": self.activation_fn,
+                    "correlation": candidate.correlation,
+                }
+                self.hidden_units.append(new_unit)
+                added_count += 1
+
+                self.history["hidden_units_added"].append(
+                    {
+                        "correlation": candidate.correlation,
+                        "weights": candidate.weights.clone().detach().numpy(),
+                        "bias": candidate.bias.clone().detach().numpy(),
+                    }
+                )
             else:
-                self.logger.warning(f"CascadeCorrelationNetwork: add_units_as_layer: Skipping invalid candidate: {candidate}")
-        self.logger.info(f"CascadeCorrelationNetwork: add_units_as_layer: Layer added, total hidden units: {len(self.hidden_units)}")
+                self.logger.warning(f"CascadeCorrelationNetwork: add_units_as_layer: Skipping invalid candidate: {candidate_result}")
+
+        # Update output weights once for all new units
+        if added_count > 0:
+            if hidden_outputs:
+                new_input_size = x.shape[1] + len(hidden_outputs) + added_count
+            else:
+                new_input_size = x.shape[1] + added_count
+            self.output_weights = torch.randn(new_input_size, self.output_size, requires_grad=True) * 0.1
+            input_size_before = x.shape[1] + len(hidden_outputs) if hidden_outputs else x.shape[1]
+            self.output_weights[:input_size_before, :] = old_output_weights
+            self.output_bias = old_output_bias
+
+        self.logger.info(f"CascadeCorrelationNetwork: add_units_as_layer: Layer added ({added_count} units), total hidden units: {len(self.hidden_units)}")
 
     #################################################################################################################################################################################################
     # Public Method to grow the network by adding hidden units
@@ -3200,7 +3318,6 @@ class CascadeCorrelationNetwork:
         max_epochs: int = 1000,
         early_stopping: bool = True,
         patience_counter: int = 0,
-        candidate: CandidateUnit = None,
         best_value_loss: float = float("inf"),
         x_val: Optional[torch.Tensor] = None,
         y_val: Optional[torch.Tensor] = None,
@@ -3214,7 +3331,6 @@ class CascadeCorrelationNetwork:
             max_epochs: Maximum number of epochs to train
             early_stopping: Whether to use early stopping
             patience_counter: Counter for early stopping patience
-            candidate: Candidate unit for training
             best_value_loss: Best validation loss seen so far
             x_val: Validation input tensor
             y_val: Validation target tensor

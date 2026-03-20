@@ -59,10 +59,12 @@ async def worker_stream_handler(websocket: WebSocket) -> None:
         return
 
     await websocket.accept()
-    await websocket.send_json({
-        "type": "connection_established",
-        "data": {"channel": "workers"},
-    })
+    await websocket.send_json(
+        {
+            "type": "connection_established",
+            "data": {"channel": "workers"},
+        }
+    )
 
     worker_id: str | None = None
 
@@ -128,11 +130,13 @@ async def _handle_registration(websocket: WebSocket, registry: WorkerRegistry) -
 
     registry.register(worker_id, capabilities)
 
-    await websocket.send_json({
-        "type": "registration_ack",
-        "worker_id": worker_id,
-        "data": {"status": "registered"},
-    })
+    await websocket.send_json(
+        {
+            "type": "registration_ack",
+            "worker_id": worker_id,
+            "data": {"status": "registered"},
+        }
+    )
 
     return worker_id
 
@@ -222,17 +226,21 @@ async def _handle_task_result(
     accepted = coordinator.submit_result(worker_id, msg, tensors)
 
     if accepted:
-        await websocket.send_json({
-            "type": "result_ack",
-            "task_id": msg.get("task_id"),
-            "status": "accepted",
-        })
+        await websocket.send_json(
+            {
+                "type": "result_ack",
+                "task_id": msg.get("task_id"),
+                "status": "accepted",
+            }
+        )
     else:
-        await websocket.send_json({
-            "type": "result_ack",
-            "task_id": msg.get("task_id"),
-            "status": "rejected",
-        })
+        await websocket.send_json(
+            {
+                "type": "result_ack",
+                "task_id": msg.get("task_id"),
+                "status": "rejected",
+            }
+        )
 
 
 async def _try_dispatch_task(

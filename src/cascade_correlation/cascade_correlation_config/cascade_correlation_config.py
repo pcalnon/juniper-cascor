@@ -223,6 +223,7 @@ class CascadeCorrelationConfig:
         # Multiprocessing configuration
         if candidate_training_queue_authkey is None:
             import secrets
+
             candidate_training_queue_authkey = secrets.token_hex(32)
         self.candidate_training_queue_authkey = candidate_training_queue_authkey
         self.candidate_training_queue_address = candidate_training_queue_address

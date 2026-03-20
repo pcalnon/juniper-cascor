@@ -240,20 +240,22 @@ class AnomalyDetector:
 
         with self._lock:
             history = self._worker_history.setdefault(worker_id, [])
-            history.append(_ResultRecord(
-                task_id=task_id,
-                correlation=correlation,
-                duration=training_duration,
-                timestamp=time.time(),
-            ))
+            history.append(
+                _ResultRecord(
+                    task_id=task_id,
+                    correlation=correlation,
+                    duration=training_duration,
+                    timestamp=time.time(),
+                )
+            )
 
             # Trim history
             if len(history) > self._duplicate_window:
-                history[:] = history[-self._duplicate_window:]
+                history[:] = history[-self._duplicate_window :]
 
             # Check for duplicate correlations (possible replay attack)
             if len(history) >= 3:
-                recent_corrs = [r.correlation for r in history[-self._duplicate_window:]]
+                recent_corrs = [r.correlation for r in history[-self._duplicate_window :]]
                 corr_hash = hashlib.sha256(str(sorted(recent_corrs)).encode()).hexdigest()[:8]
                 unique = len(set(f"{c:.6f}" for c in recent_corrs))
                 if unique == 1 and len(recent_corrs) >= 3:
