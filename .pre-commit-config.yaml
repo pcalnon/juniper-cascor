@@ -299,40 +299,6 @@ repos:
         types: [yaml]
 
   # ═══════════════════════════════════════════════════════════════════════════
-  # Unit Tests with Coverage Data Collection
-  # Runs unit tests (excluding slow) and collects coverage data.
-  # Uses system Python (conda JuniperPython env) for torch/numpy dependencies.
-  # Coverage config sourced from pyproject.toml [tool.coverage.*] sections.
-  # Skipped in CI via SKIP env var (CI has its own unit-tests job).
-  # ═══════════════════════════════════════════════════════════════════════════
-  - repo: local
-    hooks:
-      - id: pytest-unit
-        name: Run unit tests with coverage collection
-        entry: bash -c 'cd src && python -m pytest -m "unit and not slow" tests/unit -q --tb=short --no-header -p no:warnings --cov=. --cov-config=../pyproject.toml --cov-report=term-missing:skip-covered'
-        language: system
-        pass_filenames: false
-        always_run: true
-        types: [python]
-        stages: [pre-commit]
-
-  # ═══════════════════════════════════════════════════════════════════════════
-  # Code Coverage Gate - Enforces 80% coverage threshold
-  # Runs after pytest-unit to check collected coverage data.
-  # Skipped in CI via SKIP env var (CI has its own coverage gate step).
-  # ═══════════════════════════════════════════════════════════════════════════
-  - repo: local
-    hooks:
-      - id: coverage-gate
-        name: Enforce coverage gate (80%)
-        entry: bash -c 'cd src && python -m coverage report --fail-under=80'
-        language: system
-        pass_filenames: false
-        always_run: true
-        types: [python]
-        stages: [pre-commit]
-
-  # ═══════════════════════════════════════════════════════════════════════════
   # SOPS: Block unencrypted .env files from being committed
   # ═══════════════════════════════════════════════════════════════════════════
   - repo: local
