@@ -122,7 +122,6 @@ from cascor_constants.constants import (  # TODO: Commented out for F401 complia
     _CASCADE_CORRELATION_NETWORK_TARGET_ACCURACY,
     _CASCADE_CORRELATION_NETWORK_TASK_QUEUE_TIMEOUT,
     _CASCADE_CORRELATION_NETWORK_WORKER_STANDBY_SLEEPYTIME,
-    _CASCADE_CORRELATION_NETWORK_WORKER_THREAD_COUNT,
 )
 from cascor_plotter.cascor_plotter import CascadeCorrelationPlotter
 from log_config.log_config import LogConfig
@@ -766,7 +765,7 @@ class CascadeCorrelationNetwork:
 
         # Convert internal task tuples to wire protocol task specs
         task_specs = []
-        for task_idx, candidate_data_tuple, training_inputs in tasks:
+        for _task_idx, candidate_data_tuple, training_inputs in tasks:
             candidate_index, input_size, activation_name, random_value_scale, candidate_uuid, candidate_seed, random_max_value, sequence_max_value = candidate_data_tuple
             task_specs.append(
                 {
@@ -2871,7 +2870,7 @@ class CascadeCorrelationNetwork:
                     try:
                         os.kill(worker.pid, signal.SIGKILL)
                         worker.join(timeout=0.5)
-                    except Exception:
+                    except Exception:  # nosec B110 — cleanup must not propagate exceptions
                         pass
 
         self._persistent_workers = []

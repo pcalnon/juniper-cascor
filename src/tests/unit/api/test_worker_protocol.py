@@ -5,7 +5,7 @@ import struct
 import numpy as np
 import pytest
 
-from api.workers.protocol import BinaryFrame, MessageType, WorkerProtocol
+from api.workers.protocol import BinaryFrame, MessageType, TaskAssignment, TaskResultMessage, WorkerProtocol
 
 
 @pytest.mark.unit
@@ -315,3 +315,58 @@ class TestValidateRegister:
         msg = {"worker_id": "w1", "capabilities": "not a dict"}
         errors = WorkerProtocol.validate_register(msg)
         assert any("dict" in e for e in errors)
+
+
+@pytest.mark.unit
+class TestDataclassFieldIntegrity:
+    """Regression tests for dataclasses.field import integrity.
+
+    Verifies that the dataclasses.field callable is not shadowed by loop variables
+    in protocol.py (regression for F402 fix in validate_task_result).
+    """
+
+    def test_task_assignment_default_factory(self):
+        """TaskAssignment.tensor_manifest uses field(default_factory=dict)."""
+        ta = TaskAssignment(task_id="t1", round_id="r1", candidate_index=0, candidate_data={}, training_params={})
+        assert ta.tensor_manifest == {}
+        assert isinstance(ta.tensor_manifest, dict)
+
+    def test_task_result_message_default_factories(self):
+        """TaskResultMessage uses field(default_factory=...) for list and dict fields."""
+        tr = TaskResultMessage(task_id="t1", candidate_id=0)
+        assert tr.all_correlations == []
+        assert isinstance(tr.all_correlations, list)
+        assert tr.tensor_manifest == {}
+        assert isinstance(tr.tensor_manifest, dict)
+
+    def test_task_result_message_default_factories_independent(self):
+        """Each TaskResultMessage instance gets independent default factory objects."""
+        tr1 = TaskResultMessage(task_id="t1", candidate_id=0)
+        tr2 = TaskResultMessage(task_id="t2", candidate_id=1)
+        tr1.all_correlations.append(0.5)
+        tr1.tensor_manifest["key"] = {"shape": [1]}
+        assert tr2.all_correlations == []
+        assert tr2.tensor_manifest == {}
+
+
+@pytest.mark.unit
+class TestValidateTaskResultFieldNames:
+    """Regression tests for validate_task_result loop variable naming.
+
+    Ensures the error messages correctly report missing field names after
+    the F402 fix (field -> field_name loop variable rename).
+    """
+
+    def test_missing_field_error_message_format(self):
+        """Error message includes the exact missing field name."""
+        msg = {"type": "task_result"}
+        errors = WorkerProtocol.validate_task_result(msg)
+        expected_fields = ["task_id", "candidate_id", "correlation", "success", "epochs_completed"]
+        for expected in expected_fields:
+            assert any(expected in e for e in errors), f"Expected '{expected}' in error messages"
+
+    def test_missing_single_field_exact_message(self):
+        """Single missing field produces correctly formatted error."""
+        msg = {"type": "task_result", "task_id": "t1", "candidate_id": 0, "correlation": 0.5, "success": True}
+        errors = WorkerProtocol.validate_task_result(msg)
+        assert "Missing required field: epochs_completed" in errors

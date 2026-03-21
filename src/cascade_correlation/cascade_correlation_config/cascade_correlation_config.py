@@ -160,7 +160,7 @@ class CascadeCorrelationConfig:
         worker_thread_count: int = _CASCADE_CORRELATION_NETWORK_WORKER_THREAD_COUNT,
         # Remote worker configuration (Phase 1b — WebSocket-based distributed workers)
         enable_remote_workers: bool = False,
-        ws_worker_token_secret: str = "",
+        ws_worker_token_secret: str = "",  # nosec B107 — default empty, set from env at runtime
         heartbeat_timeout: float = 30.0,
         task_reassignment_timeout: float = 120.0,
         # cascade_correlation_network_snapshots_dir: str = _HDF5_PROJECT_SNAPSHOTS_DIR,

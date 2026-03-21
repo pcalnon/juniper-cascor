@@ -35,7 +35,7 @@ class MessageType(StrEnum):
     HEARTBEAT = "heartbeat"
     TASK_ASSIGN = "task_assign"
     TASK_RESULT = "task_result"
-    TOKEN_REFRESH = "token_refresh"
+    TOKEN_REFRESH = "token_refresh"  # nosec B105 — enum value, not a password
     ERROR = "error"
 
 
@@ -246,9 +246,9 @@ class WorkerProtocol:
 
         # Required fields
         required = ["task_id", "candidate_id", "correlation", "success", "epochs_completed"]
-        for field in required:
-            if field not in msg:
-                errors.append(f"Missing required field: {field}")
+        for field_name in required:
+            if field_name not in msg:
+                errors.append(f"Missing required field: {field_name}")
 
         if errors:
             return errors
