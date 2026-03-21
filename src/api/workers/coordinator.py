@@ -17,7 +17,7 @@ from typing import Any
 
 import numpy as np
 
-from api.workers.protocol import BinaryFrame, MessageType, WorkerProtocol
+from api.workers.protocol import BinaryFrame, WorkerProtocol
 from api.workers.registry import WorkerRegistry
 
 logger = logging.getLogger("juniper_cascor.api.workers.coordinator")

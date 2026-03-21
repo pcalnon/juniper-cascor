@@ -257,7 +257,7 @@ class AnomalyDetector:
             if len(history) >= 3:
                 recent_corrs = [r.correlation for r in history[-self._duplicate_window :]]
                 corr_hash = hashlib.sha256(str(sorted(recent_corrs)).encode()).hexdigest()[:8]
-                unique = len(set(f"{c:.6f}" for c in recent_corrs))
+                unique = len({f"{c:.6f}" for c in recent_corrs})
                 if unique == 1 and len(recent_corrs) >= 3:
                     anomalies.append(f"duplicate_correlations: {unique}/{len(recent_corrs)} unique (hash={corr_hash})")
 
