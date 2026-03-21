@@ -1841,19 +1841,11 @@ class CascadeCorrelationNetwork:
                 try:
                     stale_result = result_queue.get_nowait()
                     drained_count += 1
-                    self.logger.warning(
-                        f"CascadeCorrelationNetwork: _execute_parallel_training: "
-                        f"Drained stale result from previous round: "
-                        f"candidate_id={getattr(stale_result, 'candidate_id', '?')}, "
-                        f"correlation={getattr(stale_result, 'correlation', '?')}"
-                    )
+                    self.logger.warning(f"CascadeCorrelationNetwork: _execute_parallel_training: " f"Drained stale result from previous round: " f"candidate_id={getattr(stale_result, 'candidate_id', '?')}, " f"correlation={getattr(stale_result, 'correlation', '?')}")
                 except _QueueEmpty:
                     break
             if drained_count:
-                self.logger.warning(
-                    f"CascadeCorrelationNetwork: _execute_parallel_training: "
-                    f"Drained {drained_count} stale result(s) from persistent result queue"
-                )
+                self.logger.warning(f"CascadeCorrelationNetwork: _execute_parallel_training: " f"Drained {drained_count} stale result(s) from persistent result queue")
 
             # Add full tasks to the queue. With persistent workers (RC-4), shared_training_inputs
             # cannot be passed at worker startup since it changes each round (residual_error evolves).
@@ -2032,11 +2024,7 @@ class CascadeCorrelationNetwork:
                 result_round = getattr(result, "round_id", None)
                 if round_id is not None and result_round is not None and result_round != round_id:
                     stale_discarded += 1
-                    self.logger.warning(
-                        f"CascadeCorrelationNetwork: _collect_training_results: "
-                        f"Discarding stale result from round {result_round} "
-                        f"(current round: {round_id}, candidate_id={result.candidate_id})"
-                    )
+                    self.logger.warning(f"CascadeCorrelationNetwork: _collect_training_results: " f"Discarding stale result from round {result_round} " f"(current round: {round_id}, candidate_id={result.candidate_id})")
                     continue
                 results.append(result)
                 collected_results += 1
@@ -2051,10 +2039,7 @@ class CascadeCorrelationNetwork:
                 self.logger.error(traceback.format_exc())
                 break
         if stale_discarded:
-            self.logger.warning(
-                f"CascadeCorrelationNetwork: _collect_training_results: "
-                f"Discarded {stale_discarded} stale result(s) from previous training rounds"
-            )
+            self.logger.warning(f"CascadeCorrelationNetwork: _collect_training_results: " f"Discarded {stale_discarded} stale result(s) from previous training rounds")
         self.logger.debug(f"CascadeCorrelationNetwork: _collect_training_results: Collected {collected_results} results")
         return results
 
@@ -3139,13 +3124,7 @@ class CascadeCorrelationNetwork:
         expected_weight_size = candidate_input.shape[1]
         actual_weight_size = new_unit["weights"].shape[0]
         if expected_weight_size != actual_weight_size:
-            raise ValidationError(
-                f"Candidate weight dimension mismatch in add_unit: "
-                f"candidate_input has {expected_weight_size} features "
-                f"(original_input={x.shape[1]}, hidden_units={len(self.hidden_units)}), "
-                f"but candidate weights have {actual_weight_size} elements. "
-                f"This indicates a stale candidate from a previous training round."
-            )
+            raise ValidationError(f"Candidate weight dimension mismatch in add_unit: " f"candidate_input has {expected_weight_size} features " f"(original_input={x.shape[1]}, hidden_units={len(self.hidden_units)}), " f"but candidate weights have {actual_weight_size} elements. " f"This indicates a stale candidate from a previous training round.")
 
         # Add the new unit to the network
         self.hidden_units.append(new_unit)
@@ -3269,10 +3248,7 @@ class CascadeCorrelationNetwork:
                 expected_size = candidate_input.shape[1]
                 actual_size = candidate.weights.shape[0]
                 if expected_size != actual_size:
-                    self.logger.warning(
-                        f"CascadeCorrelationNetwork: add_units_as_layer: "
-                        f"Skipping candidate with mismatched weights: expected {expected_size}, got {actual_size}"
-                    )
+                    self.logger.warning(f"CascadeCorrelationNetwork: add_units_as_layer: " f"Skipping candidate with mismatched weights: expected {expected_size}, got {actual_size}")
                     continue
 
                 new_unit = {
