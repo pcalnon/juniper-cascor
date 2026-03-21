@@ -298,9 +298,11 @@ class TestExecuteParallelTraining:
 
         tasks = [(0, x, y, residual, candidate)]
 
-        # Mock the manager and queue infrastructure
+        # Mock the queue infrastructure (RC-4 persistent pool API)
         mock_task_queue = MagicMock()
         mock_result_queue = MagicMock()
+        # Drain loop calls get_nowait() — must raise queue.Empty to break the loop
+        mock_result_queue.get_nowait.side_effect = queue.Empty()
 
         # Simulate result collection
         mock_result = CandidateTrainingResult(
@@ -310,25 +312,18 @@ class TestExecuteParallelTraining:
             candidate=candidate,
             success=True,
         )
-        mock_result_queue.get.side_effect = [mock_result, queue.Empty()]
 
-        with patch.object(simple_network, "_start_manager"):
-            with patch.object(simple_network, "_stop_manager"):
-                simple_network._task_queue = mock_task_queue
-                simple_network._result_queue = mock_result_queue
+        # Mock persistent worker
+        mock_process = MagicMock()
+        mock_process.is_alive.return_value = False
+        mock_process.pid = 12345
 
-                # Mock process creation
-                mock_process = MagicMock()
-                mock_process.is_alive.return_value = False
-                mock_process.pid = 12345
-
-                with patch.object(simple_network, "_mp_ctx") as mock_ctx:
-                    mock_ctx.Process.return_value = mock_process
-                    with patch.object(simple_network, "_collect_training_results", return_value=[mock_result]):
-                        with patch.object(simple_network, "_stop_workers"):
-                            simple_network.task_queue_timeout = 1.0
-                            results = simple_network._execute_parallel_training(tasks, process_count=1)
-                            assert isinstance(results, list)
+        with patch.object(simple_network, "_ensure_worker_pool", return_value=(mock_task_queue, mock_result_queue)):
+            simple_network._persistent_workers = [mock_process]
+            simple_network.task_queue_timeout = 1.0
+            with patch.object(simple_network, "_collect_training_results", return_value=[mock_result]):
+                results = simple_network._execute_parallel_training(tasks, process_count=1)
+                assert isinstance(results, list)
 
 
 # ---------------------------------------------------------------------------

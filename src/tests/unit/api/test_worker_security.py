@@ -148,6 +148,10 @@ class TestAnomalyDetector:
 class TestAuditLogger:
     def test_log_event(self, caplog):
         audit = AuditLogger()
+        # The test suite's LogConfig calls dictConfig() which disables loggers not
+        # in the YAML config (disable_existing_loggers defaults to True). Re-enable
+        # so caplog can capture the audit record.
+        audit._logger.disabled = False
         with caplog.at_level(AUDIT_LEVEL, logger="juniper_cascor.api.workers.audit"):
             audit.log(AuditEventType.AUTH_SUCCESS, worker_id="w-1", source_ip="10.0.0.1")
         assert "AUDIT" in caplog.text
