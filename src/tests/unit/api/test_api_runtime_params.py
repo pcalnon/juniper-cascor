@@ -39,9 +39,7 @@ class TestUpdateTrainingParams:
 
     def test_update_learning_rate(self, test_client_with_network):
         """PATCH /v1/training/params updates learning_rate successfully."""
-        response = test_client_with_network.patch(
-            "/v1/training/params", json={"learning_rate": 0.005}
-        )
+        response = test_client_with_network.patch("/v1/training/params", json={"learning_rate": 0.005})
         assert response.status_code == 200
         data = response.json()
         assert data["status"] == "success"
@@ -68,9 +66,7 @@ class TestUpdateTrainingParams:
         # Get current learning_rate
         before = test_client_with_network.get("/v1/training/params").json()["data"]["learning_rate"]
         # PATCH with only correlation_threshold
-        test_client_with_network.patch(
-            "/v1/training/params", json={"correlation_threshold": 0.2}
-        )
+        test_client_with_network.patch("/v1/training/params", json={"correlation_threshold": 0.2})
         # learning_rate should be unchanged
         after = test_client_with_network.get("/v1/training/params").json()["data"]["learning_rate"]
         assert before == after

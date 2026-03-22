@@ -511,8 +511,13 @@ class TrainingLifecycleManager:
             if self.network is None:
                 raise ValueError("No network exists — create a network first")
             updatable_keys = {
-                "learning_rate", "candidate_learning_rate", "correlation_threshold",
-                "candidate_pool_size", "max_hidden_units", "epochs_max", "patience",
+                "learning_rate",
+                "candidate_learning_rate",
+                "correlation_threshold",
+                "candidate_pool_size",
+                "max_hidden_units",
+                "epochs_max",
+                "patience",
             }
             for key, value in params.items():
                 if key in updatable_keys and hasattr(self.network, key):
