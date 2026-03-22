@@ -6,7 +6,7 @@ import torch
 from fastapi import APIRouter, HTTPException, Request
 
 from api.models.common import success_response
-from api.models.training import TrainingStartRequest
+from api.models.training import TrainingParamUpdateRequest, TrainingStartRequest
 
 logger = logging.getLogger("juniper_cascor.api.routes.training")
 
@@ -120,6 +120,23 @@ async def get_params(request: Request) -> dict:
     if not lifecycle.has_network():
         raise HTTPException(status_code=404, detail="No network created")
     return success_response(lifecycle.get_training_params())
+
+
+@router.patch("/params")
+async def update_training_params(request: Request, body: TrainingParamUpdateRequest) -> dict:
+    """Update runtime-modifiable training parameters.
+
+    Modifies parameters on the running network without requiring a restart.
+    All fields are optional — only provided fields are updated (PATCH semantics).
+    """
+    lifecycle = _get_lifecycle(request)
+    if not lifecycle.has_network():
+        raise HTTPException(status_code=404, detail="No network created")
+    try:
+        updated = lifecycle.update_params(body.model_dump(exclude_none=True))
+        return success_response(updated)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
 
 
 def _generate_spiral_data(params: dict):
