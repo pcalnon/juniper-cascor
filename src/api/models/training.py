@@ -40,3 +40,15 @@ class TrainingStatus(BaseModel):
     state_machine: dict
     monitor: dict
     training_state: dict
+
+
+class TrainingParamUpdateRequest(BaseModel):
+    """Runtime-modifiable training parameters (PATCH semantics — all fields optional)."""
+
+    learning_rate: Optional[float] = Field(None, gt=0, description="Output layer learning rate")
+    candidate_learning_rate: Optional[float] = Field(None, gt=0, description="Candidate training learning rate")
+    correlation_threshold: Optional[float] = Field(None, gt=0, le=1.0, description="Minimum correlation to accept candidate")
+    candidate_pool_size: Optional[int] = Field(None, ge=1, description="Number of candidate units per round")
+    max_hidden_units: Optional[int] = Field(None, ge=1, description="Maximum hidden units (takes effect on next cascade)")
+    epochs_max: Optional[int] = Field(None, ge=1, description="Global maximum training epochs")
+    patience: Optional[int] = Field(None, ge=1, description="Early stopping patience epochs")
