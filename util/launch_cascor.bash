@@ -11,6 +11,6 @@ SOURCE_DIR="${APPLICATION_DIR}/src"
 export JUNIPER_CASCOR_PORT="8201"
 export JUNIPER_CASCOR_AUTO_START="true"
 
-cd "${SOURCE_DIR}"
+cd "${SOURCE_DIR}" || exit 1
 # python main.py
 python server.py
