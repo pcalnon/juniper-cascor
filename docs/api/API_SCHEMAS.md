@@ -1,7 +1,7 @@
 # Juniper Cascor - API Schemas
 
-**Version**: 0.3.21  
-**Last Updated**: 2026-01-29  
+**Version**: 0.3.21
+**Last Updated**: 2026-01-29
 **Purpose**: Data schema documentation for serialization and data structures
 
 ---
@@ -23,7 +23,7 @@ The HDF5 snapshot format stores the complete state of a `CascadeCorrelationNetwo
 
 ### Top-Level Structure
 
-```
+```bash
 snapshot.h5
 ├── metadata/                    # Required
 │   ├── uuid                     # Network unique identifier (string)
@@ -71,26 +71,26 @@ snapshot.h5
 
 ### Metadata Group
 
-| Dataset | Type | Description |
-|---------|------|-------------|
-| `uuid` | `string` | UUID4 identifying this network instance |
-| `version` | `string` | Cascor version that created this file |
-| `creation_time` | `string` | ISO 8601 timestamp |
-| `checksum` | `bytes` | SHA-256 hash of critical data |
+| Dataset         | Type     | Description                             |
+|-----------------|----------|-----------------------------------------|
+| `uuid`          | `string` | UUID4 identifying this network instance |
+| `version`       | `string` | Cascor version that created this file   |
+| `creation_time` | `string` | ISO 8601 timestamp                      |
+| `checksum`      | `bytes`  | SHA-256 hash of critical data           |
 
 ### Architecture Group
 
-| Dataset | Type | Description |
-|---------|------|-------------|
-| `input_size` | `int64` | Number of input features |
-| `output_size` | `int64` | Number of output classes |
-| `hidden_unit_count` | `int64` | Current number of hidden units |
+| Dataset               | Type     | Description                                |
+|-----------------------|----------|--------------------------------------------|
+| `input_size`          | `int64`  | Number of input features                   |
+| `output_size`         | `int64`  | Number of output classes                   |
+| `hidden_unit_count`   | `int64`  | Current number of hidden units             |
 | `activation_function` | `string` | Name of activation function (e.g., "tanh") |
 
 ### Config Group
 
-| Dataset | Type | Description |
-|---------|------|-------------|
+| Dataset       | Type     | Description                             |
+|---------------|----------|-----------------------------------------|
 | `json_config` | `string` | JSON-encoded `CascadeCorrelationConfig` |
 
 **Excluded from JSON** (non-serializable):
@@ -491,5 +491,5 @@ If verification fails:
 
 ---
 
-**Document Version**: 0.3.21  
+**Document Version**: 0.3.21
 **Last Updated**: 2026-01-29

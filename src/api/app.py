@@ -169,9 +169,11 @@ async def _auto_start_training(app: FastAPI, settings: Settings) -> None:
         y_train = torch.tensor(arrays["y_train"], dtype=torch.float32)
         logger.info(f"Auto-start: training data loaded — {x_train.shape[0]} samples, {x_train.shape[1]} features")
 
-        # Create network
+        # Create network — infer input/output sizes from training data
         network_config = json.loads(settings.auto_network)
         network_config.setdefault("epochs_max", settings.auto_train_epochs)
+        network_config.setdefault("input_size", x_train.shape[1])
+        network_config.setdefault("output_size", y_train.shape[1] if y_train.dim() > 1 else 1)
         lifecycle: TrainingLifecycleManager = app.state.lifecycle
         network_info = lifecycle.create_network(**network_config)
         logger.info(f"Auto-start: network created — {network_info['input_size']}x{network_info['output_size']}")

@@ -1,7 +1,7 @@
 # Juniper Cascor - API Reference
 
-**Version**: 0.3.21  
-**Last Updated**: 2026-01-29  
+**Version**: 0.3.21
+**Last Updated**: 2026-01-29
 **Purpose**: Complete API documentation for developers and integrators
 
 ---
@@ -40,7 +40,7 @@
 
 ## CascadeCorrelationNetwork
 
-**Location**: `src/cascade_correlation/cascade_correlation.py`  
+**Location**: `src/cascade_correlation/cascade_correlation.py`
 **Stability**: Stable
 
 The main neural network class implementing the Cascade Correlation algorithm.
@@ -126,10 +126,7 @@ Train the network using the cascade correlation algorithm.
     'val_accuracy': List[float],    # If validation provided
     'hidden_units_added': List[dict]  # Unit info per addition
 }
-```
-
-**Example**:
-
+``JUNIPER_CASCOR_PORT=8201 python server.py
 ```python
 from cascade_correlation.cascade_correlation import CascadeCorrelationNetwork
 from cascade_correlation.cascade_correlation_config.cascade_correlation_config import CascadeCorrelationConfig
@@ -281,7 +278,7 @@ Create a timestamped snapshot of the network.
 
 ## CascadeCorrelationConfig
 
-**Location**: `src/cascade_correlation/cascade_correlation_config/cascade_correlation_config.py`  
+**Location**: `src/cascade_correlation/cascade_correlation_config/cascade_correlation_config.py`
 **Stability**: Stable
 
 Configuration object for network parameters.
@@ -371,7 +368,7 @@ config = CascadeCorrelationConfig(optimizer_config=sgd_config)
 
 ## CandidateUnit
 
-**Location**: `src/candidate_unit/candidate_unit.py`  
+**Location**: `src/candidate_unit/candidate_unit.py`
 **Stability**: Semi-stable (internal API)
 
 Represents a candidate hidden unit during network growth.
@@ -423,7 +420,7 @@ Train with detailed result information.
 
 ## SpiralProblem
 
-**Location**: `src/spiral_problem/spiral_problem.py`  
+**Location**: `src/spiral_problem/spiral_problem.py`
 **Stability**: Stable
 
 Classic two-spiral classification problem for testing.
@@ -488,7 +485,7 @@ Generate spiral classification data.
 
 ## JuniperDataClient
 
-**Location**: `src/juniper_data_client/client.py`  
+**Location**: `src/juniper_data_client/client.py`
 **Stability**: Semi-stable
 
 REST API client for the JuniperData service, used for dataset generation and retrieval.
@@ -582,7 +579,7 @@ print(f"Dataset shape: x={x_train.shape}, y={y_train.shape}")
 
 ## Serialization API
 
-**Location**: `src/snapshots/`  
+**Location**: `src/snapshots/`
 **Stability**: Stable
 
 ### CascadeHDF5Serializer
@@ -630,7 +627,7 @@ python -m snapshots.snapshot_cli cleanup ./snapshots/ --keep 5
 
 ## Profiling API
 
-**Location**: `src/profiling/`  
+**Location**: `src/profiling/`
 **Stability**: Experimental (new in 0.3.20)
 
 ### ProfileContext
@@ -692,7 +689,7 @@ log_if_enabled(logger, "debug", f"Expensive: {expensive_computation()}")
 
 ## Logger API
 
-**Location**: `src/log_config/`  
+**Location**: `src/log_config/`
 **Stability**: Semi-stable
 
 ### Logger Class
@@ -940,5 +937,5 @@ The `CascadeCorrelationNetwork` class is **NOT thread-safe**. Do not share netwo
 
 ---
 
-**Document Version**: 0.3.21  
+**Document Version**: 0.3.21
 **Last Updated**: 2026-01-29

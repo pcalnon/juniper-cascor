@@ -6,19 +6,22 @@
 
 ## Common Commands
 
-| Task                     | Command                                                                                                     |
-|--------------------------|-------------------------------------------------------------------------------------------------------------|
-| Run application          | `cd src && python main.py`                                                                                  |
-| Run all tests            | `cd src/tests && bash scripts/run_tests.bash`                                                               |
-| Unit / integration tests | `bash scripts/run_tests.bash -u` / `bash scripts/run_tests.bash -i`                                         |
-| Tests with coverage      | `bash scripts/run_tests.bash -v -c`                                                                         |
-| Run by marker            | `python -m pytest -m "spiral" -v`                                                                           |
-| Long-running tests       | `python -m pytest --run-long`                                                                               |
-| Benchmarks (quiet)       | `cd src/tests/scripts && bash run_benchmarks.bash -q -n 10`                                                 |
-| Pre-commit               | `pre-commit run --all-files`                                                                                |
-| Type check               | `cd src && python -m mypy cascade_correlation/ candidate_unit/ --ignore-missing-imports`                    |
-| Lint / format / isort    | `python -m flake8 . --max-line-length=512` / `python -m black --check .` / `python -m isort --check-only .` |
-| Security scan            | `bandit -r src/`                                                                                            |
+| Task                                    | Command                                                                                                     |
+|-----------------------------------------|-------------------------------------------------------------------------------------------------------------|
+| Run application, training only          | `cd src && python main.py`                                                                                  |
+| Run API server and cascor training loop | cd src && JUNIPER_CASCOR_PORT=8201 uvicorn api.app:app                                                      |
+|                                         | cd src && JUNIPER_CASCOR_PORT=8201 python server.py                                                         |
+|                                         | Note: server.py — starts uvicorn on settings.host:settings.port (default 127.0.0.1:8200)                    |
+| Run all tests                           | `cd src/tests && bash scripts/run_tests.bash`                                                               |
+| Unit / integration tests                | `bash scripts/run_tests.bash -u` / `bash scripts/run_tests.bash -i`                                         |
+| Tests with coverage                     | `bash scripts/run_tests.bash -v -c`                                                                         |
+| Run by marker                           | `python -m pytest -m "spiral" -v`                                                                           |
+| Long-running tests                      | `python -m pytest --run-long`                                                                               |
+| Benchmarks (quiet)                      | `cd src/tests/scripts && bash run_benchmarks.bash -q -n 10`                                                 |
+| Pre-commit                              | `pre-commit run --all-files`                                                                                |
+| Type check                              | `cd src && python -m mypy cascade_correlation/ candidate_unit/ --ignore-missing-imports`                    |
+| Lint / format / isort                   | `python -m flake8 . --max-line-length=512` / `python -m black --check .` / `python -m isort --check-only .` |
+| Security scan                           | `bandit -r src/`                                                                                            |
 
 > See: [AGENTS.md](../AGENTS.md) | [Configuration Reference](install/REFERENCE.md)
 
