@@ -28,13 +28,20 @@ class TestMonitoringHooks:
         if hasattr(manager.network, "grow_network"):
             assert "grow_network" in manager._original_methods
 
-    def test_install_hooks_wraps_train_output_layer(self):
-        """Monitoring hooks wrap train_output_layer if available."""
+    def test_install_hooks_wraps_validate_training(self):
+        """Monitoring hooks wrap validate_training if available."""
         manager = TrainingLifecycleManager()
         manager.create_network(input_size=2, output_size=2)
 
-        if hasattr(manager.network, "train_output_layer"):
-            assert "train_output_layer" in manager._original_methods
+        if hasattr(manager.network, "validate_training"):
+            assert "validate_training" in manager._original_methods
+
+    def test_train_output_layer_not_hooked(self):
+        """train_output_layer should NOT be hooked (fires before history update)."""
+        manager = TrainingLifecycleManager()
+        manager.create_network(input_size=2, output_size=2)
+
+        assert "train_output_layer" not in manager._original_methods
 
     def test_restore_original_methods(self):
         """Restoring original methods clears monitoring state."""
@@ -134,3 +141,46 @@ class TestMonitoringHooks:
         original_fit = manager.network.fit
         manager._install_monitoring_hooks()  # Should be no-op (already active)
         assert manager.network.fit is original_fit
+
+    def test_extract_metrics_no_new_data(self):
+        """_extract_and_record_metrics does nothing when history hasn't grown."""
+        manager = TrainingLifecycleManager()
+        manager.create_network(input_size=2, output_size=2)
+
+        # No history data — should be a no-op
+        manager._extract_and_record_metrics()
+        assert manager._last_emitted_history_len == 0
+        assert manager.training_monitor.get_current_state()["total_metrics"] == 0
+
+    def test_extract_metrics_emits_new_entries(self):
+        """_extract_and_record_metrics emits only new history entries."""
+        manager = TrainingLifecycleManager()
+        manager.create_network(input_size=2, output_size=2)
+
+        # Simulate history populated by the network
+        manager.network.history["train_loss"].append(0.5)
+        manager.network.history["train_accuracy"].append(0.6)
+
+        manager._extract_and_record_metrics()
+        assert manager._last_emitted_history_len == 1
+        assert manager.training_monitor.get_current_state()["total_metrics"] == 1
+
+        # Call again — should be no-op (no new data)
+        manager._extract_and_record_metrics()
+        assert manager._last_emitted_history_len == 1
+        assert manager.training_monitor.get_current_state()["total_metrics"] == 1
+
+        # Add another entry
+        manager.network.history["train_loss"].append(0.3)
+        manager.network.history["train_accuracy"].append(0.8)
+
+        manager._extract_and_record_metrics()
+        assert manager._last_emitted_history_len == 2
+        assert manager.training_monitor.get_current_state()["total_metrics"] == 2
+
+    def test_high_water_mark_reset_on_reset(self):
+        """reset() clears the high-water-mark."""
+        manager = TrainingLifecycleManager()
+        manager._last_emitted_history_len = 5
+        manager.reset()
+        assert manager._last_emitted_history_len == 0

@@ -46,6 +46,7 @@ class TrainingLifecycleManager:
         self._stop_requested = threading.Event()
         self._pause_event = threading.Event()
         self._pause_event.set()  # Not paused initially
+        self._last_emitted_history_len = 0
 
         # Monkey-patched originals
         self._original_methods: Dict[str, Callable] = {}
@@ -195,8 +196,8 @@ class TrainingLifecycleManager:
 
         Hooks:
         - fit(): Wraps the top-level training call with start/end tracking
-        - train_output_layer(): Wraps per-cycle output training for per-epoch metrics
-        - grow_network(): Wraps cascade addition for cascade_add events
+        - validate_training(): Wraps per-iteration validation for metrics emission
+        - grow_network(): Wraps cascade growth for cascade_add events and phase tracking
         """
         if self.network is None or self._monitoring_active:
             return
@@ -211,6 +212,7 @@ class TrainingLifecycleManager:
         manager_ref = self
 
         def monitored_fit(x, y, x_val=None, y_val=None, **kwargs):
+            manager_ref._last_emitted_history_len = 0
             monitor.on_training_start()
             sm.handle_command(Command.START)
             state.update_state(status="Started", phase="Output")
@@ -238,35 +240,46 @@ class TrainingLifecycleManager:
 
         self.network.fit = monitored_fit
 
-        # Hook train_output_layer for per-cycle metrics extraction
-        if hasattr(self.network, "train_output_layer"):
-            original_train_output = self.network.train_output_layer
-            self._original_methods["train_output_layer"] = original_train_output
+        # Hook validate_training for per-iteration metrics emission.
+        # validate_training is called at the end of each grow_network iteration,
+        # AFTER _retrain_output_layer appends train_loss, _calculate_train_accuracy
+        # appends train_accuracy, and validate_training itself appends value_loss
+        # and value_accuracy. This is the correct point to extract metrics.
+        if hasattr(self.network, "validate_training"):
+            original_validate = self.network.validate_training
+            self._original_methods["validate_training"] = original_validate
 
-            def monitored_train_output(*args, **kwargs):
-                state.update_state(phase="Output")
-                result = original_train_output(*args, **kwargs)
+            def monitored_validate(*args, **kwargs):
+                result = original_validate(*args, **kwargs)
                 manager_ref._extract_and_record_metrics()
                 return result
 
-            self.network.train_output_layer = monitored_train_output
+            self.network.validate_training = monitored_validate
 
-        # Hook grow_network for cascade_add events
+        # Hook grow_network for cascade_add events and phase tracking
         if hasattr(self.network, "grow_network"):
             original_grow = self.network.grow_network
             self._original_methods["grow_network"] = original_grow
 
             def monitored_grow(*args, **kwargs):
+                # Pre-call: capture initial output training metrics
+                # (appended by fit() between train_output_layer() and grow_network())
+                manager_ref._extract_and_record_metrics()
+
                 prev_hidden = len(manager_ref.network.hidden_units)
                 state.update_state(phase="Candidate")
                 result = original_grow(*args, **kwargs)
                 new_hidden = len(manager_ref.network.hidden_units)
+
                 if new_hidden > prev_hidden:
-                    monitor.on_cascade_add(
-                        hidden_unit_index=new_hidden - 1,
-                        correlation=0.0,  # Actual correlation not easily accessible here
-                    )
-                    manager_ref._extract_and_record_metrics()
+                    for i in range(prev_hidden, new_hidden):
+                        monitor.on_cascade_add(
+                            hidden_unit_index=i,
+                            correlation=0.0,
+                        )
+
+                # Post-call: catch-all for any remaining metrics
+                manager_ref._extract_and_record_metrics()
                 return result
 
             self.network.grow_network = monitored_grow
@@ -285,9 +298,16 @@ class TrainingLifecycleManager:
         self.logger.info("Original methods restored")
 
     def _extract_and_record_metrics(self) -> None:
-        """Extract current metrics from network history and record them."""
+        """Extract NEW metrics from network history and record them.
+
+        Uses a high-water-mark (_last_emitted_history_len) to only emit
+        history entries that haven't been emitted yet. Safe to call
+        multiple times — idempotent when no new data exists.
+        """
         if self.network is None or not hasattr(self.network, "history"):
             return
+
+        # Snapshot history under lock
         with self._metrics_lock:
             try:
                 history = self.network.history
@@ -296,24 +316,35 @@ class TrainingLifecycleManager:
                 val_loss_list = list(history.get("value_loss", []))
                 val_accuracy_list = list(history.get("value_accuracy", []))
                 hidden_units_count = len(self.network.hidden_units)
+                last_emitted = self._last_emitted_history_len
             except (RuntimeError, KeyError):
                 return
 
-        epoch = len(train_loss_list)
-        if epoch > 0:
+        current_len = len(train_loss_list)
+        if current_len <= last_emitted:
+            return  # No new data
+
+        # Emit all new entries
+        for i in range(last_emitted, current_len):
+            epoch = i + 1
             self.training_monitor.on_epoch_end(
                 epoch=epoch,
-                loss=train_loss_list[-1] if train_loss_list else 0.0,
-                accuracy=train_accuracy_list[-1] if train_accuracy_list else 0.0,
+                loss=train_loss_list[i],
+                accuracy=train_accuracy_list[i] if i < len(train_accuracy_list) else 0.0,
                 learning_rate=getattr(self.network, "learning_rate", 0.0),
                 hidden_units=hidden_units_count,
-                validation_loss=val_loss_list[-1] if val_loss_list else None,
-                validation_accuracy=val_accuracy_list[-1] if val_accuracy_list else None,
+                validation_loss=val_loss_list[i] if i < len(val_loss_list) else None,
+                validation_accuracy=val_accuracy_list[i] if i < len(val_accuracy_list) else None,
             )
-            self.training_state.update_state(
-                current_epoch=epoch,
-                current_step=epoch,
-            )
+
+        # Update high-water-mark
+        with self._metrics_lock:
+            self._last_emitted_history_len = current_len
+
+        self.training_state.update_state(
+            current_epoch=current_len,
+            current_step=current_len,
+        )
 
     # ------------------------------------------------------------------
     # Training control
@@ -401,6 +432,7 @@ class TrainingLifecycleManager:
     def reset(self) -> Dict[str, Any]:
         """Reset training state."""
         self._stop_requested.set()
+        self._last_emitted_history_len = 0
         self.state_machine.handle_command(Command.RESET)
         self.training_monitor.clear_metrics()
         self.training_state.update_state(
