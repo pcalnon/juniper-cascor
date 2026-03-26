@@ -389,10 +389,10 @@ Response from `POST /v1/datasets`:
 
 Downloaded via `download_artifact_npz()`:
 
-| Array Name | Type | Shape | Description |
-|------------|------|-------|-------------|
-| `x` | float32 | (n_samples, 2) | Input features (x, y coordinates) |
-| `y` | float32 | (n_samples, n_classes) | One-hot encoded labels |
+| Array Name | Type    | Shape                  | Description                       |
+|------------|---------|------------------------|-----------------------------------|
+| `x`        | float32 | (n_samples, 2)         | Input features (x, y coordinates) |
+| `y`        | float32 | (n_samples, n_classes) | One-hot encoded labels            |
 
 ---
 
@@ -410,11 +410,11 @@ with h5py.File('snapshot.h5', 'r') as f:
 
 ### Compatibility Matrix
 
-| File Version | Loader Version | Status |
-|--------------|----------------|--------|
-| 0.3.x | 0.3.21 | ✅ Compatible |
-| 0.2.x | 0.3.21 | ⚠️ May require migration |
-| 0.1.x | 0.3.21 | ❌ Not compatible |
+| File Version | Loader Version | Status                   |
+|--------------|----------------|--------------------------|
+| 0.3.x        | 0.3.21         | ✅ Compatible            |
+| 0.2.x        | 0.3.21         | ⚠️ May require migration |
+| 0.1.x        | 0.3.21         | ❌ Not compatible        |
 
 ### Breaking Changes by Version
 
