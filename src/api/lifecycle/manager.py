@@ -18,7 +18,7 @@ import numpy as np
 import torch
 
 from api.lifecycle.monitor import TrainingMonitor, TrainingState
-from api.lifecycle.state_machine import Command, TrainingStateMachine
+from api.lifecycle.state_machine import Command, TrainingPhase, TrainingStateMachine
 
 
 class TrainingLifecycleManager:
@@ -211,12 +211,28 @@ class TrainingLifecycleManager:
         sm = self.state_machine
         manager_ref = self
 
+        def _output_training_callback(epoch, epochs, loss):
+            monitor.on_epoch_end(
+                epoch=epoch,
+                loss=loss,
+                accuracy=None,
+                learning_rate=getattr(manager_ref.network, "learning_rate", 0.0),
+                hidden_units=len(manager_ref.network.hidden_units),
+            )
+            state.update_state(
+                current_epoch=epoch,
+                phase_detail="training_output",
+            )
+
         def monitored_fit(x, y, x_val=None, y_val=None, **kwargs):
             manager_ref._last_emitted_history_len = 0
             monitor.on_training_start()
             monitor.current_phase = "output"
             sm.handle_command(Command.START)
-            state.update_state(status="Started", phase="Output")
+            state.update_state(status="Started", phase="Output", phase_started_at=datetime.now().isoformat())
+
+            # Inject output training callback (Approach B — attribute fallback)
+            manager_ref.network._output_epoch_callback = _output_training_callback
 
             try:
                 result = original_fit(x, y, x_val=x_val, y_val=y_val, **kwargs)
@@ -262,6 +278,16 @@ class TrainingLifecycleManager:
             original_grow = self.network.grow_network
             self._original_methods["grow_network"] = original_grow
 
+            def _grow_iteration_callback(iteration, max_iterations, best_correlation, candidates_trained, candidates_total, phase_detail):
+                state.update_state(
+                    grow_iteration=iteration,
+                    grow_max=max_iterations,
+                    best_correlation=best_correlation,
+                    candidates_trained=candidates_trained,
+                    candidates_total=candidates_total,
+                    phase_detail=phase_detail,
+                )
+
             def monitored_grow(*args, **kwargs):
                 # Pre-call: capture initial output training metrics
                 # (appended by fit() between train_output_layer() and grow_network())
@@ -269,7 +295,12 @@ class TrainingLifecycleManager:
 
                 prev_hidden = len(manager_ref.network.hidden_units)
                 monitor.current_phase = "candidate"
-                state.update_state(phase="Candidate")
+                sm.set_phase(TrainingPhase.CANDIDATE)
+                state.update_state(phase="Candidate", phase_started_at=datetime.now().isoformat())
+
+                # Inject grow iteration callback (Approach B — attribute fallback)
+                manager_ref.network._grow_iteration_callback = _grow_iteration_callback
+
                 result = original_grow(*args, **kwargs)
                 new_hidden = len(manager_ref.network.hidden_units)
 
@@ -282,7 +313,8 @@ class TrainingLifecycleManager:
 
                 # Post-call: return to output phase after grow completes
                 monitor.current_phase = "output"
-                state.update_state(phase="Output")
+                sm.set_phase(TrainingPhase.OUTPUT)
+                state.update_state(phase="Output", phase_detail="")
                 # Catch-all for any remaining metrics
                 manager_ref._extract_and_record_metrics()
                 return result
@@ -335,7 +367,7 @@ class TrainingLifecycleManager:
             self.training_monitor.on_epoch_end(
                 epoch=epoch,
                 loss=train_loss_list[i],
-                accuracy=train_accuracy_list[i] if i < len(train_accuracy_list) else 0.0,
+                accuracy=train_accuracy_list[i] if i < len(train_accuracy_list) else None,
                 learning_rate=getattr(self.network, "learning_rate", 0.0),
                 hidden_units=hidden_units_count,
                 validation_loss=val_loss_list[i] if i < len(val_loss_list) else None,

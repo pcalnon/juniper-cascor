@@ -34,6 +34,13 @@ class TrainingState:
         "threshold_function",
         "optimizer_name",
         "timestamp",
+        "phase_detail",
+        "grow_iteration",
+        "grow_max",
+        "best_correlation",
+        "candidates_trained",
+        "candidates_total",
+        "phase_started_at",
     }
 
     def __init__(self):
@@ -50,6 +57,13 @@ class TrainingState:
         self._threshold_function: str = ""
         self._optimizer_name: str = ""
         self._timestamp: float = time.time()
+        self._phase_detail: str = ""
+        self._grow_iteration: int = 0
+        self._grow_max: int = 0
+        self._best_correlation: float = 0.0
+        self._candidates_trained: int = 0
+        self._candidates_total: int = 0
+        self._phase_started_at: str = ""
 
     def get_state(self) -> Dict[str, Any]:
         """Get current state as dictionary."""
@@ -67,6 +81,13 @@ class TrainingState:
                 "threshold_function": self._threshold_function,
                 "optimizer_name": self._optimizer_name,
                 "timestamp": self._timestamp,
+                "phase_detail": self._phase_detail,
+                "grow_iteration": self._grow_iteration,
+                "grow_max": self._grow_max,
+                "best_correlation": self._best_correlation,
+                "candidates_trained": self._candidates_trained,
+                "candidates_total": self._candidates_total,
+                "phase_started_at": self._phase_started_at,
             }
 
     def update_state(self, **kwargs) -> None:
