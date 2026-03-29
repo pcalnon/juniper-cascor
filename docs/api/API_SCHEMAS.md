@@ -262,11 +262,20 @@ All REST responses are wrapped in:
         "candidates_trained": int,
         "candidates_total": int,
         "phase_started_at": str,       # ISO 8601 timestamp
+        "candidate_epoch": int,        # 1-based candidate epoch from worker progress
+        "candidate_total_epochs": int,
     },
     "network_loaded": bool,
     "training_active": bool,
 }
 ```
+
+`phase_detail` currently uses:
+
+- `training_output`
+- `training_candidates`
+- `adding_candidate`
+- `""` (empty string when no active detail)
 
 ### `metrics/history` Entry Schema
 
@@ -292,6 +301,7 @@ The lifecycle manager can receive callback-driven updates from core training cod
 
 - Output-layer callback emits at epoch 1, every 25 epochs, and final epoch.
 - Grow callback emits once per grow iteration after best candidate selection.
+- Candidate callback emits at epoch 1, every 50 epochs, and final epoch per candidate.
 
 This means `metrics/history` may contain:
 
@@ -299,6 +309,29 @@ This means `metrics/history` may contain:
 - Additional coarse-grained callback emissions for real-time UX updates.
 
 Consumers should treat `accuracy` as nullable and avoid assuming fixed interval spacing.
+
+### WebSocket `candidate_progress` Message Schema
+
+`WS /ws/training` can emit candidate training progress messages:
+
+```python
+{
+    "type": "candidate_progress",
+    "timestamp": float,               # unix timestamp
+    "data": {
+        "candidate_id": int,
+        "candidate_uuid": str,
+        "epoch": int,                 # 1-based epoch index
+        "total_epochs": int,
+        "correlation": float,
+    },
+}
+```
+
+Behavior constraints:
+
+- Messages are best-effort under queue pressure (`put_nowait` drop-on-full behavior in worker loop).
+- `training_state.candidate_epoch` and `training_state.candidate_total_epochs` are updated from this stream.
 
 ---
 
