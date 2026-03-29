@@ -99,11 +99,13 @@ CascadeCorrelationNetwork(
 ```python
 def fit(
     self,
-    x: torch.Tensor,
-    y: torch.Tensor,
-    epochs: int = None,
+    x_train: torch.Tensor,
+    y_train: torch.Tensor,
     x_val: torch.Tensor = None,
     y_val: torch.Tensor = None,
+    max_epochs: int = None,
+    epochs: int = None,
+    early_stopping: bool = True,
 ) -> dict
 ```
 
@@ -111,11 +113,13 @@ Train the network using the cascade correlation algorithm.
 
 **Parameters**:
 
-- `x`: Input tensor of shape `(batch_size, input_features)`
-- `y`: Target tensor of shape `(batch_size, output_features)` (one-hot encoded)
-- `epochs`: Maximum training epochs (uses config default if None)
+- `x_train`: Input tensor of shape `(batch_size, input_features)`
+- `y_train`: Target tensor of shape `(batch_size, output_features)` (one-hot encoded)
 - `x_val`: Validation input tensor (optional)
 - `y_val`: Validation target tensor (optional)
+- `max_epochs`: Maximum training epochs (uses config defaults when `None`)
+- `epochs`: Backward-compatible alias for `max_epochs`
+- `early_stopping`: Enable/disable early stopping behavior
 
 **Returns**: Training history dictionary:
 
@@ -123,11 +127,15 @@ Train the network using the cascade correlation algorithm.
 {
     'train_loss': List[float],      # Loss per epoch
     'train_accuracy': List[float],  # Accuracy per epoch
-    'val_loss': List[float],        # If validation provided
-    'val_accuracy': List[float],    # If validation provided
+    'value_loss': List[float],      # If validation provided
+    'value_accuracy': List[float],  # If validation provided
     'hidden_units_added': List[dict]  # Unit info per addition
 }
 ```
+
+`fit()` uses canonical internal history keys `value_loss` and `value_accuracy`.
+Lifecycle REST snapshots (`GET /v1/metrics`) expose these as `val_loss` and
+`val_accuracy` for API payload readability.
 
 **Example**:
 
