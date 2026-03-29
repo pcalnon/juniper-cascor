@@ -18,7 +18,7 @@ import numpy as np
 import torch
 
 from api.lifecycle.monitor import TrainingMonitor, TrainingState
-from api.lifecycle.state_machine import Command, TrainingStateMachine
+from api.lifecycle.state_machine import Command, TrainingPhase, TrainingStateMachine
 
 
 class TrainingLifecycleManager:
@@ -269,6 +269,7 @@ class TrainingLifecycleManager:
 
                 prev_hidden = len(manager_ref.network.hidden_units)
                 monitor.current_phase = "candidate"
+                sm.set_phase(TrainingPhase.CANDIDATE)
                 state.update_state(phase="Candidate")
                 result = original_grow(*args, **kwargs)
                 new_hidden = len(manager_ref.network.hidden_units)
@@ -282,6 +283,7 @@ class TrainingLifecycleManager:
 
                 # Post-call: return to output phase after grow completes
                 monitor.current_phase = "output"
+                sm.set_phase(TrainingPhase.OUTPUT)
                 state.update_state(phase="Output")
                 # Catch-all for any remaining metrics
                 manager_ref._extract_and_record_metrics()
