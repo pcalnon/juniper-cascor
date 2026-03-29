@@ -94,7 +94,7 @@ class TrainingLifecycleManager:
         if self._ws_manager is None:
             return
 
-        from api.websocket.messages import create_cascade_add_message, create_event_message, create_metrics_message, create_state_message
+        from api.websocket.messages import create_candidate_progress_message, create_cascade_add_message, create_event_message, create_metrics_message, create_state_message
 
         ws = self._ws_manager
 
@@ -113,6 +113,10 @@ class TrainingLifecycleManager:
         self.training_monitor.register_callback(
             "training_end",
             lambda **kw: ws.broadcast_from_thread(create_event_message({"event": "training_complete"})),
+        )
+        self.training_monitor.register_callback(
+            "candidate_progress",
+            lambda progress, **kw: ws.broadcast_from_thread(create_candidate_progress_message(progress)),
         )
 
         self.logger.info("WebSocket broadcast callbacks registered")
@@ -288,6 +292,25 @@ class TrainingLifecycleManager:
                     phase_detail=phase_detail,
                 )
 
+            def _drain_progress_queue(progress_queue, stop_event):
+                """Background thread that reads candidate progress from workers."""
+                import queue as _queue_mod
+
+                while not stop_event.is_set():
+                    try:
+                        progress = progress_queue.get(timeout=0.25)
+                    except _queue_mod.Empty:
+                        continue
+                    except Exception:
+                        break
+                    state.update_state(
+                        phase_detail="training_candidates",
+                        candidate_epoch=progress.get("epoch", 0),
+                        candidate_total_epochs=progress.get("total_epochs", 0),
+                        best_correlation=progress.get("correlation", 0.0),
+                    )
+                    monitor.on_candidate_progress(progress)
+
             def monitored_grow(*args, **kwargs):
                 # Pre-call: capture initial output training metrics
                 # (appended by fit() between train_output_layer() and grow_network())
@@ -301,7 +324,27 @@ class TrainingLifecycleManager:
                 # Inject grow iteration callback (Approach B — attribute fallback)
                 manager_ref.network._grow_iteration_callback = _grow_iteration_callback
 
-                result = original_grow(*args, **kwargs)
+                # Start drain thread for candidate progress from worker pool
+                _drain_stop = threading.Event()
+                _drain_thread = None
+                _pq = getattr(manager_ref.network, "_persistent_progress_queue", None)
+                if _pq is not None:
+                    _drain_thread = threading.Thread(
+                        target=_drain_progress_queue,
+                        args=(_pq, _drain_stop),
+                        daemon=True,
+                        name="candidate-progress-drain",
+                    )
+                    _drain_thread.start()
+
+                try:
+                    result = original_grow(*args, **kwargs)
+                finally:
+                    # Stop drain thread
+                    _drain_stop.set()
+                    if _drain_thread is not None:
+                        _drain_thread.join(timeout=2.0)
+
                 new_hidden = len(manager_ref.network.hidden_units)
 
                 if new_hidden > prev_hidden:
@@ -314,7 +357,7 @@ class TrainingLifecycleManager:
                 # Post-call: return to output phase after grow completes
                 monitor.current_phase = "output"
                 sm.set_phase(TrainingPhase.OUTPUT)
-                state.update_state(phase="Output", phase_detail="")
+                state.update_state(phase="Output", phase_detail="", candidate_epoch=0, candidate_total_epochs=0)
                 # Catch-all for any remaining metrics
                 manager_ref._extract_and_record_metrics()
                 return result

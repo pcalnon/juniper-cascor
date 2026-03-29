@@ -59,6 +59,15 @@ def create_cascade_add_message(data: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+def create_candidate_progress_message(data: Dict[str, Any]) -> Dict[str, Any]:
+    """Create a candidate training progress message."""
+    return {
+        "type": "candidate_progress",
+        "timestamp": time.time(),
+        "data": data,
+    }
+
+
 def create_control_ack_message(
     command: str,
     status: str,

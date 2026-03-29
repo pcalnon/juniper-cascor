@@ -221,12 +221,13 @@ class TestSetWsManager:
         with patch.object(mgr.training_monitor, "register_callback") as mock_register:
             mgr._register_ws_callbacks()
 
-            assert mock_register.call_count == 4
+            assert mock_register.call_count == 5
             event_names = [call.args[0] for call in mock_register.call_args_list]
             assert "epoch_end" in event_names
             assert "cascade_add" in event_names
             assert "training_start" in event_names
             assert "training_end" in event_names
+            assert "candidate_progress" in event_names
 
 
 class TestMonitoringHooks:

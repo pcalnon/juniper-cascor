@@ -621,6 +621,7 @@ class CandidateUnit:
         residual_error: torch.Tensor = None,
         learning_rate: float = _CANDIDATE_UNIT_LEARNING_RATE,
         display_frequency: int = _CANDIDATE_UNIT_DISPLAY_FREQUENCY,
+        progress_callback=None,
     ) -> CandidateTrainingResult:
         """
         Description:
@@ -718,6 +719,17 @@ class CandidateUnit:
                     self.logger.info(f"CandidateUnit: train: Early stopping at epoch {epoch + 1} - no improvement for {self.patience} epochs")
                     early_stopped = True
                     break
+
+            # Throttled progress emission for real-time monitoring
+            _pcb = progress_callback or getattr(self, "_progress_callback", None)
+            if _pcb is not None and (epoch % 50 == 0 or epoch == epochs - 1):
+                _pcb(
+                    candidate_id=getattr(self, "candidate_index", 0),
+                    candidate_uuid=str(getattr(self, "uuid", "")),
+                    epoch=epoch + 1,
+                    total_epochs=epochs,
+                    correlation=float(self.correlation),
+                )
 
             # Display training progress at specified frequency
             self.logger.debug("CandidateUnit: train: Display training progress at specified frequency")
