@@ -22,6 +22,13 @@ class TestTrainingState:
         assert s["current_epoch"] == 0
         assert s["current_step"] == 0
         assert "timestamp" in s
+        assert s["phase_detail"] == ""
+        assert s["grow_iteration"] == 0
+        assert s["grow_max"] == 0
+        assert s["best_correlation"] == 0.0
+        assert s["candidates_trained"] == 0
+        assert s["candidates_total"] == 0
+        assert s["phase_started_at"] == ""
 
     def test_update_state(self):
         """Can update individual fields."""
@@ -31,6 +38,27 @@ class TestTrainingState:
         assert s["status"] == "Started"
         assert s["phase"] == "Output"
         assert s["learning_rate"] == 0.01
+
+    def test_update_state_new_phase_metadata_fields(self):
+        """Can update grow-network metadata and phase detail fields."""
+        state = TrainingState()
+        state.update_state(
+            phase_detail="adding_candidate",
+            grow_iteration=2,
+            grow_max=10,
+            best_correlation=0.92,
+            candidates_trained=8,
+            candidates_total=16,
+            phase_started_at="2026-03-29T10:00:00",
+        )
+        s = state.get_state()
+        assert s["phase_detail"] == "adding_candidate"
+        assert s["grow_iteration"] == 2
+        assert s["grow_max"] == 10
+        assert s["best_correlation"] == 0.92
+        assert s["candidates_trained"] == 8
+        assert s["candidates_total"] == 16
+        assert s["phase_started_at"] == "2026-03-29T10:00:00"
 
     def test_update_ignores_unknown_fields(self):
         """Unknown fields are silently ignored."""
