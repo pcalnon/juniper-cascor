@@ -372,7 +372,7 @@ class TestCandidateProgressCallbacks:
         with patch.object(candidate, "_get_correlations", return_value=fake_result), patch.object(candidate, "_update_weights_and_bias", return_value=None), patch.object(
             candidate, "_display_training_progress", return_value=None
         ):
-            candidate.train(
+            candidate.train_detailed(
                 x=x,
                 epochs=3,
                 residual_error=residual_error,
@@ -420,7 +420,7 @@ class TestCandidateProgressCallbacks:
         with patch.object(candidate, "_get_correlations", return_value=fake_result), patch.object(candidate, "_update_weights_and_bias", return_value=None), patch.object(
             candidate, "_display_training_progress", return_value=None
         ):
-            candidate.train(
+            candidate.train_detailed(
                 x=x,
                 epochs=1,
                 residual_error=residual_error,
