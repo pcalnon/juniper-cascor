@@ -335,5 +335,103 @@ class TestCandidateUnitCorrelation:
                 assert -1.0 <= abs(float(correlation)) <= 1.0
 
 
+class TestCandidateProgressCallbacks:
+    """Tests for candidate training progress callback emissions."""
+
+    @pytest.mark.unit
+    def test_train_emits_progress_callback_at_first_and_final_epoch(self):
+        """Progress callback should emit at epoch 1 and final epoch."""
+        candidate = CandidateUnit(
+            CandidateUnit__input_size=2,
+            CandidateUnit__output_size=2,
+            CandidateUnit__epochs=3,
+            CandidateUnit__early_stopping=False,
+            CandidateUnit__candidate_index=7,
+            CandidateUnit__uuid="candidate-progress-uuid",
+        )
+        x = torch.randn(6, 2)
+        residual_error = torch.randn(6, 2)
+        emitted = []
+
+        def progress_callback(**kwargs):
+            emitted.append(kwargs)
+
+        fake_result = CandidateTrainingResult(
+            candidate_id=7,
+            candidate_uuid="candidate-progress-uuid",
+            correlation=0.5,
+            candidate=candidate,
+            success=True,
+            best_corr_idx=0,
+            norm_output=torch.zeros(6),
+            norm_error=torch.zeros(6),
+            numerator=1.0,
+            denominator=1.0,
+        )
+
+        with patch.object(candidate, "_get_correlations", return_value=fake_result), patch.object(candidate, "_update_weights_and_bias", return_value=None), patch.object(
+            candidate, "_display_training_progress", return_value=None
+        ):
+            candidate.train(
+                x=x,
+                epochs=3,
+                residual_error=residual_error,
+                progress_callback=progress_callback,
+            )
+
+        assert len(emitted) == 2
+        assert emitted[0]["candidate_id"] == 7
+        assert emitted[0]["candidate_uuid"] == "candidate-progress-uuid"
+        assert emitted[0]["epoch"] == 1
+        assert emitted[0]["total_epochs"] == 3
+        assert emitted[1]["epoch"] == 3
+        assert emitted[1]["total_epochs"] == 3
+
+    @pytest.mark.unit
+    def test_train_uses_instance_progress_callback_fallback(self):
+        """When no explicit callback is passed, _progress_callback should be used."""
+        candidate = CandidateUnit(
+            CandidateUnit__input_size=2,
+            CandidateUnit__output_size=2,
+            CandidateUnit__epochs=1,
+            CandidateUnit__early_stopping=False,
+            CandidateUnit__candidate_index=11,
+            CandidateUnit__uuid="candidate-progress-fallback",
+        )
+        x = torch.randn(4, 2)
+        residual_error = torch.randn(4, 2)
+        emitted = []
+
+        candidate._progress_callback = lambda **kwargs: emitted.append(kwargs)
+
+        fake_result = CandidateTrainingResult(
+            candidate_id=11,
+            candidate_uuid="candidate-progress-fallback",
+            correlation=0.33,
+            candidate=candidate,
+            success=True,
+            best_corr_idx=0,
+            norm_output=torch.zeros(4),
+            norm_error=torch.zeros(4),
+            numerator=1.0,
+            denominator=1.0,
+        )
+
+        with patch.object(candidate, "_get_correlations", return_value=fake_result), patch.object(candidate, "_update_weights_and_bias", return_value=None), patch.object(
+            candidate, "_display_training_progress", return_value=None
+        ):
+            candidate.train(
+                x=x,
+                epochs=1,
+                residual_error=residual_error,
+            )
+
+        assert len(emitted) == 1
+        assert emitted[0]["candidate_id"] == 11
+        assert emitted[0]["candidate_uuid"] == "candidate-progress-fallback"
+        assert emitted[0]["epoch"] == 1
+        assert emitted[0]["total_epochs"] == 1
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v", "-m", "unit"])

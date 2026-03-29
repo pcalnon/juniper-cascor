@@ -29,6 +29,8 @@ class TestTrainingState:
         assert s["candidates_trained"] == 0
         assert s["candidates_total"] == 0
         assert s["phase_started_at"] == ""
+        assert s["candidate_epoch"] == 0
+        assert s["candidate_total_epochs"] == 0
 
     def test_update_state(self):
         """Can update individual fields."""
@@ -50,6 +52,8 @@ class TestTrainingState:
             candidates_trained=8,
             candidates_total=16,
             phase_started_at="2026-03-29T10:00:00",
+            candidate_epoch=25,
+            candidate_total_epochs=100,
         )
         s = state.get_state()
         assert s["phase_detail"] == "adding_candidate"
@@ -59,6 +63,8 @@ class TestTrainingState:
         assert s["candidates_trained"] == 8
         assert s["candidates_total"] == 16
         assert s["phase_started_at"] == "2026-03-29T10:00:00"
+        assert s["candidate_epoch"] == 25
+        assert s["candidate_total_epochs"] == 100
 
     def test_update_ignores_unknown_fields(self):
         """Unknown fields are silently ignored."""
@@ -221,6 +227,18 @@ class TestTrainingMonitor:
         )
         assert len(called) == 1
         assert called[0]["epoch"] == 1
+
+    def test_candidate_progress_callback_dispatch(self):
+        """candidate_progress callbacks receive worker progress payloads."""
+        monitor = TrainingMonitor()
+        called = []
+
+        monitor.register_callback("candidate_progress", lambda **kwargs: called.append(kwargs))
+        progress = {"candidate_id": 1, "epoch": 50, "total_epochs": 100, "correlation": 0.61}
+        monitor.on_candidate_progress(progress)
+
+        assert len(called) == 1
+        assert called[0]["progress"] == progress
 
     def test_register_unknown_callback(self):
         """Registering unknown event type logs warning but doesn't crash."""

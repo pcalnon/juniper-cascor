@@ -69,6 +69,7 @@ class TestMonitoringHooks:
         assert len(manager.training_monitor.callbacks["cascade_add"]) > 0
         assert len(manager.training_monitor.callbacks["training_start"]) > 0
         assert len(manager.training_monitor.callbacks["training_end"]) > 0
+        assert len(manager.training_monitor.callbacks["candidate_progress"]) > 0
 
     def test_ws_callbacks_broadcast_on_epoch_end(self):
         """Epoch end callback broadcasts metrics via WebSocket."""
@@ -118,6 +119,27 @@ class TestMonitoringHooks:
         ws_mgr.broadcast_from_thread.assert_called()
         call_args = ws_mgr.broadcast_from_thread.call_args[0][0]
         assert call_args["type"] == "cascade_add"
+
+    def test_ws_callbacks_broadcast_on_candidate_progress(self):
+        """Candidate progress callback broadcasts candidate_progress message type."""
+        manager = TrainingLifecycleManager()
+        ws_mgr = MagicMock()
+        manager.set_ws_manager(ws_mgr)
+
+        manager.training_monitor.on_candidate_progress(
+            {
+                "candidate_id": 3,
+                "candidate_uuid": "abc",
+                "epoch": 50,
+                "total_epochs": 200,
+                "correlation": 0.81,
+            }
+        )
+
+        ws_mgr.broadcast_from_thread.assert_called()
+        call_args = ws_mgr.broadcast_from_thread.call_args[0][0]
+        assert call_args["type"] == "candidate_progress"
+        assert call_args["data"]["candidate_id"] == 3
 
     def test_get_dataset_no_data(self):
         """get_dataset returns loaded=False when no data."""
