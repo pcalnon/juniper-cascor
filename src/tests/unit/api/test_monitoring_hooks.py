@@ -3,8 +3,10 @@
 from unittest.mock import MagicMock, patch
 
 import pytest
+import torch
 
 from api.lifecycle.manager import TrainingLifecycleManager
+from api.lifecycle.state_machine import Command
 
 
 @pytest.mark.unit
@@ -177,6 +179,99 @@ class TestMonitoringHooks:
         manager._extract_and_record_metrics()
         assert manager._last_emitted_history_len == 2
         assert manager.training_monitor.get_current_state()["total_metrics"] == 2
+
+    def test_extract_metrics_missing_accuracy_emits_none(self):
+        """Missing train_accuracy should emit metrics with accuracy=None."""
+        manager = TrainingLifecycleManager()
+        manager.create_network(input_size=2, output_size=2)
+
+        manager.network.history["train_loss"].append(0.42)
+        # Intentionally omit train_accuracy entry for this epoch.
+
+        manager._extract_and_record_metrics()
+
+        metrics = manager.training_monitor.get_recent_metrics(1)
+        assert len(metrics) == 1
+        assert metrics[0]["loss"] == 0.42
+        assert metrics[0]["accuracy"] is None
+
+    def test_monitored_fit_injects_output_callback_and_updates_state(self):
+        """Wrapped fit injects callback that records output-phase metrics."""
+        from cascade_correlation.cascade_correlation import CascadeCorrelationNetwork
+
+        original_fit = CascadeCorrelationNetwork.fit
+
+        def fake_fit(self_network, x, y, x_val=None, y_val=None, **kwargs):
+            assert hasattr(self_network, "_output_epoch_callback")
+            self_network._output_epoch_callback(epoch=3, epochs=10, loss=0.123)
+            return {"train_loss": [0.123]}
+
+        CascadeCorrelationNetwork.fit = fake_fit
+        try:
+            manager = TrainingLifecycleManager()
+            manager.create_network(input_size=2, output_size=2)
+            x = torch.randn(8, 2)
+            y = torch.randn(8, 2)
+
+            manager.network.fit(x, y)
+
+            state = manager.training_state.get_state()
+            metrics = manager.training_monitor.get_recent_metrics(1)
+            assert state["status"] == "Completed"
+            assert state["phase"] == "Idle"
+            assert state["current_epoch"] == 3
+            assert state["phase_detail"] == "training_output"
+            assert state["phase_started_at"] != ""
+            assert metrics[0]["epoch"] == 3
+            assert metrics[0]["accuracy"] is None
+            assert metrics[0]["phase"] == "output"
+        finally:
+            CascadeCorrelationNetwork.fit = original_fit
+
+    def test_monitored_grow_injects_iteration_callback_and_restores_output_phase(self):
+        """Wrapped grow_network updates grow metadata and returns to output phase."""
+        from cascade_correlation.cascade_correlation import CascadeCorrelationNetwork
+
+        original_grow = CascadeCorrelationNetwork.grow_network
+
+        def fake_grow(self_network, *args, **kwargs):
+            assert hasattr(self_network, "_grow_iteration_callback")
+            self_network._grow_iteration_callback(
+                iteration=2,
+                max_iterations=8,
+                best_correlation=0.77,
+                candidates_trained=4,
+                candidates_total=12,
+                phase_detail="adding_candidate",
+            )
+            self_network.hidden_units.append({})
+            return {"ok": True}
+
+        CascadeCorrelationNetwork.grow_network = fake_grow
+        try:
+            manager = TrainingLifecycleManager()
+            manager.create_network(input_size=2, output_size=2)
+            manager.state_machine.handle_command(Command.START)
+
+            x = torch.randn(8, 2)
+            y = torch.randn(8, 2)
+            manager.network.grow_network(x, y, max_epochs=1)
+
+            state = manager.training_state.get_state()
+            sm_state = manager.state_machine.get_state_summary()
+            assert state["phase"] == "Output"
+            assert state["phase_detail"] == ""
+            assert state["grow_iteration"] == 2
+            assert state["grow_max"] == 8
+            assert state["best_correlation"] == 0.77
+            assert state["candidates_trained"] == 4
+            assert state["candidates_total"] == 12
+            assert state["phase_started_at"] != ""
+            assert manager.training_monitor.current_phase == "output"
+            assert manager.training_monitor.get_current_state()["current_hidden_units"] == 1
+            assert sm_state["phase"] == "OUTPUT"
+        finally:
+            CascadeCorrelationNetwork.grow_network = original_grow
 
     def test_high_water_mark_reset_on_reset(self):
         """reset() clears the high-water-mark."""
