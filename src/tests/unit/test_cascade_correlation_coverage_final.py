@@ -483,6 +483,80 @@ class TestWorkerLoopExceptions:
         # Should have put a failure result
         assert not result_queue.empty()
 
+    @pytest.mark.unit
+    def test_worker_loop_progress_callback_enqueues_updates(self):
+        """Progress callback from worker loop should enqueue updates."""
+        task_queue = queue.Queue()
+        result_queue = queue.Queue()
+        progress_queue = queue.Queue()
+
+        # Minimal task shape used by worker loop
+        task_queue.put((0, ("candidate_data",), ("training_inputs",)))
+        task_queue.put(None)  # Sentinel
+
+        mock_result = CandidateTrainingResult(candidate_id=0, candidate_uuid="test", correlation=0.5, candidate=None, success=True)
+
+        def _fake_train_candidate_worker(*args, **kwargs):
+            progress_callback = kwargs.get("progress_callback")
+            assert callable(progress_callback)
+            progress_callback(
+                candidate_id=0,
+                candidate_uuid="test",
+                epoch=1,
+                total_epochs=3,
+                correlation=0.5,
+            )
+            return mock_result
+
+        with patch.object(CascadeCorrelationNetwork, "train_candidate_worker", side_effect=_fake_train_candidate_worker):
+            CascadeCorrelationNetwork._worker_loop(
+                task_queue,
+                result_queue,
+                parallel=False,
+                task_queue_timeout=1.0,
+                progress_queue=progress_queue,
+            )
+
+        assert not result_queue.empty()
+        assert not progress_queue.empty()
+        progress = progress_queue.get_nowait()
+        assert progress["epoch"] == 1
+        assert progress["total_epochs"] == 3
+        assert progress["candidate_id"] == 0
+
+    @pytest.mark.unit
+    def test_worker_loop_progress_queue_full_is_non_fatal(self):
+        """Full progress queue should not fail task processing."""
+        task_queue = queue.Queue()
+        result_queue = queue.Queue()
+        progress_queue = queue.Queue(maxsize=1)
+        progress_queue.put({"pre_filled": True})  # Force put_nowait Full path
+
+        task_queue.put((0, ("candidate_data",), ("training_inputs",)))
+        task_queue.put(None)  # Sentinel
+
+        mock_result = CandidateTrainingResult(candidate_id=0, candidate_uuid="test", correlation=0.5, candidate=None, success=True)
+
+        def _fake_train_candidate_worker(*args, **kwargs):
+            progress_callback = kwargs.get("progress_callback")
+            assert callable(progress_callback)
+            # Should be swallowed if queue is full
+            progress_callback(candidate_id=0, epoch=2, total_epochs=3, correlation=0.6)
+            return mock_result
+
+        with patch.object(CascadeCorrelationNetwork, "train_candidate_worker", side_effect=_fake_train_candidate_worker):
+            CascadeCorrelationNetwork._worker_loop(
+                task_queue,
+                result_queue,
+                parallel=False,
+                task_queue_timeout=1.0,
+                progress_queue=progress_queue,
+            )
+
+        assert not result_queue.empty()
+        still_pre_filled = progress_queue.get_nowait()
+        assert still_pre_filled == {"pre_filled": True}
+
 
 # ---------------------------------------------------------------------------
 # train_candidate_worker error paths
