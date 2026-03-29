@@ -684,6 +684,7 @@ class CascadeCorrelationNetwork:
         self._persistent_workers = []
         self._persistent_task_queue = None
         self._persistent_result_queue = None
+        self._persistent_progress_queue = None
         self._persistent_pool_size = 0
 
         # Phase 1b: Remote worker coordinator reference (set via set_worker_coordinator)
@@ -2493,7 +2494,7 @@ class CascadeCorrelationNetwork:
         return optimizer
 
     @staticmethod
-    def train_candidate_worker(task_data_input: tuple = None, parallel: bool = True) -> None:
+    def train_candidate_worker(task_data_input: tuple = None, parallel: bool = True, progress_callback=None) -> None:
         logger = Logger
         logger.info("CascadeCorrelationNetwork: train_candidate_worker: Starting training of Candidate Units in Pool.")
         try:  # Get task data for process worker
@@ -2562,6 +2563,7 @@ class CascadeCorrelationNetwork:
                 candidate_display_frequency=candidate_inputs.get("candidate_display_frequency"),
                 worker_id=worker_id,
                 worker_uuid=worker_uuid,
+                progress_callback=progress_callback,
             )
             # PARALLEL-FIX (RC-5): Tag result with round_id for cross-round contamination detection
             result.round_id = candidate_inputs.get("round_id")
@@ -2677,6 +2679,7 @@ class CascadeCorrelationNetwork:
         candidate_display_frequency: int = 0,
         worker_id: int = 0,
         worker_uuid: str = "None",
+        progress_callback=None,
     ) -> CandidateTrainingResult:
         # Train the candidate unit
         global shared_object_dict
@@ -2691,6 +2694,7 @@ class CascadeCorrelationNetwork:
                 residual_error=residual_error,
                 learning_rate=candidate_learning_rate,
                 display_frequency=candidate_display_frequency,
+                progress_callback=progress_callback,
             )
             logger.info(f"CascadeCorrelationNetwork: _train_candidate_unit: Completed Training CandidateUnit object: Worker ID: {worker_id}, Worker UUID: {worker_uuid}, Candidate Index: {candidate_index}, Candidate UUID: {candidate_uuid}, Correlation: {float(training_result.correlation):.6f}")
             logger.debug(f"CascadeCorrelationNetwork: _train_candidate_unit: Clearing Display Progress and Display Status for Candidate Unit: Worker ID: {worker_id}, Worker UUID: {worker_uuid}, Candidate Index: {candidate_index}, Candidate UUID: {candidate_uuid}")
@@ -2816,6 +2820,7 @@ class CascadeCorrelationNetwork:
         # Create fresh queues and workers
         self._persistent_task_queue = self._mp_ctx.Queue(maxsize=_QUEUE_MAXSIZE)
         self._persistent_result_queue = self._mp_ctx.Queue(maxsize=_QUEUE_MAXSIZE)
+        self._persistent_progress_queue = self._mp_ctx.Queue(maxsize=_QUEUE_MAXSIZE)
         self._persistent_pool_size = num_workers
         _worker_thread_count = getattr(self.config, "worker_thread_count", 1)
 
@@ -2830,6 +2835,7 @@ class CascadeCorrelationNetwork:
                     _CASCADE_CORRELATION_NETWORK_TASK_QUEUE_TIMEOUT,
                     _worker_thread_count,
                     shared_training_inputs,
+                    self._persistent_progress_queue,
                 ),
                 daemon=True,
                 name=f"CandidateWorker-{i}",
@@ -2882,6 +2888,7 @@ class CascadeCorrelationNetwork:
         self._persistent_workers = []
         self._persistent_task_queue = None
         self._persistent_result_queue = None
+        self._persistent_progress_queue = None
         self._persistent_pool_size = 0
         self.logger.debug("CascadeCorrelationNetwork: _shutdown_worker_pool: Persistent pool shut down")
 
@@ -2898,6 +2905,7 @@ class CascadeCorrelationNetwork:
         # being duplicated in every task through the queue. None for backward compatibility
         # with sequential training path or legacy callers.
         shared_training_inputs: tuple = None,
+        progress_queue: Queue = None,
     ):
         """
         Description:
@@ -2976,10 +2984,20 @@ class CascadeCorrelationNetwork:
                     # Legacy format: task already contains training_inputs
                     full_task = task
 
+                # Build progress callback from progress_queue if available
+                _progress_cb = None
+                if progress_queue is not None:
+                    from queue import Full as _FullQ
+
+                    def _progress_cb(**kwargs):
+                        try:
+                            progress_queue.put_nowait(kwargs)
+                        except _FullQ:
+                            pass
+
                 # Process the task
                 logger.debug(f"CascadeCorrelationNetwork: _worker_loop: Processing task: {full_task[0] if full_task else 'None'}")
-                # Original call: result = CascadeCorrelationNetwork.train_candidate_worker(task_data_input=task, parallel=parallel)
-                result = CascadeCorrelationNetwork.train_candidate_worker(task_data_input=full_task, parallel=parallel)
+                result = CascadeCorrelationNetwork.train_candidate_worker(task_data_input=full_task, parallel=parallel, progress_callback=_progress_cb)
                 logger.debug("CascadeCorrelationNetwork: _worker_loop: Task processed, putting result in queue")
 
                 # Add timeout to prevent deadlock if queue is full

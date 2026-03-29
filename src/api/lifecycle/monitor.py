@@ -41,6 +41,8 @@ class TrainingState:
         "candidates_trained",
         "candidates_total",
         "phase_started_at",
+        "candidate_epoch",
+        "candidate_total_epochs",
     }
 
     def __init__(self):
@@ -64,6 +66,8 @@ class TrainingState:
         self._candidates_trained: int = 0
         self._candidates_total: int = 0
         self._phase_started_at: str = ""
+        self._candidate_epoch: int = 0
+        self._candidate_total_epochs: int = 0
 
     def get_state(self) -> Dict[str, Any]:
         """Get current state as dictionary."""
@@ -88,6 +92,8 @@ class TrainingState:
                 "candidates_trained": self._candidates_trained,
                 "candidates_total": self._candidates_total,
                 "phase_started_at": self._phase_started_at,
+                "candidate_epoch": self._candidate_epoch,
+                "candidate_total_epochs": self._candidate_total_epochs,
             }
 
     def update_state(self, **kwargs) -> None:
@@ -138,6 +144,7 @@ class TrainingMonitor:
             "training_start": [],
             "training_end": [],
             "topology_change": [],
+            "candidate_progress": [],
         }
 
         self.metrics_queue: queue.Queue = queue.Queue()
@@ -213,6 +220,10 @@ class TrainingMonitor:
         }
         self.logger.info(f"Cascade unit {hidden_unit_index} added (correlation={correlation:.4f})")
         self._trigger_callbacks("cascade_add", event=event)
+
+    def on_candidate_progress(self, progress: Dict[str, Any]) -> None:
+        """Handle candidate training progress update from worker pool."""
+        self._trigger_callbacks("candidate_progress", progress=progress)
 
     def get_recent_metrics(self, count: int = 100) -> List[Dict[str, Any]]:
         with self._lock:
