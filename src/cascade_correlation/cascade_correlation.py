@@ -1451,6 +1451,7 @@ class CascadeCorrelationNetwork:
         x: torch.Tensor = None,
         y: torch.Tensor = None,
         epochs: int = None,
+        on_epoch_callback=None,
     ) -> float:
         """
         Description:
@@ -1527,6 +1528,11 @@ class CascadeCorrelationNetwork:
             if self._network_display_progress(epoch):
                 self.logger.info(f"CascadeCorrelationNetwork: train_output_layer: Output Layer Training - Epoch {epoch + 1}, Loss: {loss.item():.6f}")
             self.logger.debug(f"CascadeCorrelationNetwork: train_output_layer: Output Layer Training - Epoch {epoch + 1}, Loss: {loss.item():.6f}")
+
+            # Throttled callback for real-time metrics emission
+            _cb = on_epoch_callback or getattr(self, "_output_epoch_callback", None)
+            if _cb is not None and (epoch % 25 == 0 or epoch == epochs - 1):
+                _cb(epoch=epoch + 1, epochs=epochs, loss=loss.item())
 
         # Update our model's weights with the trained values
         with torch.no_grad():
@@ -3296,6 +3302,7 @@ class CascadeCorrelationNetwork:
         best_value_loss: float = float("inf"),
         x_val: Optional[torch.Tensor] = None,
         y_val: Optional[torch.Tensor] = None,
+        on_grow_iteration_callback=None,
     ) -> ValidateTrainingResults:
         """
         Description:
@@ -3353,6 +3360,19 @@ class CascadeCorrelationNetwork:
                 self.logger.info(f"CascadeCorrelationNetwork: grow_network: No candidate met correlation threshold: {self.correlation_threshold}, Best Correlation Achieved: {training_results.best_candidate.get_correlation():.6f}")
                 break
             self.logger.info(f"CascadeCorrelationNetwork: grow_network: Best Candidate: {training_results.best_candidate.get_correlation() if training_results.best_candidate else None}, Met correlation threshold: {self.correlation_threshold}")
+
+            # Grow iteration callback for real-time state updates
+            _grow_cb = on_grow_iteration_callback or getattr(self, "_grow_iteration_callback", None)
+            if _grow_cb is not None:
+                pool_size = getattr(self, "candidate_pool_size", 0)
+                _grow_cb(
+                    iteration=epoch,
+                    max_iterations=max_epochs,
+                    best_correlation=float(training_results.best_candidate.get_correlation()),
+                    candidates_trained=len(getattr(training_results, "candidate_objects", [])),
+                    candidates_total=pool_size,
+                    phase_detail="adding_candidate",
+                )
 
             # Determine number of candidates to add
             candidates_per_layer = getattr(self, "candidates_per_layer", 1)
