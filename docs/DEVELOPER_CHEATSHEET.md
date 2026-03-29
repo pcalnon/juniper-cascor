@@ -69,16 +69,18 @@ docker compose --profile full up -d                            # Docker start
 
 `training_state` now carries phase-granularity fields useful for UI/progress bars:
 
-- `phase_detail` (`training_output`, `adding_candidate`, or empty)
+- `phase_detail` (`training_output`, `training_candidates`, `adding_candidate`, or empty)
 - `grow_iteration`, `grow_max`
 - `best_correlation`
 - `candidates_trained`, `candidates_total`
 - `phase_started_at` (ISO timestamp)
+- `candidate_epoch`, `candidate_total_epochs` (real-time per-candidate progress)
 
 Metrics nuance:
 
 - `/v1/metrics/history` and `/ws/training` include callback-driven output-phase points (epoch 1, every 25 epochs, final epoch).
 - `accuracy` can be `null` for those output-phase callback emissions.
+- `/ws/training` can also emit `candidate_progress` messages (epoch 1, every 50 epochs, final epoch per candidate).
 
 **Middleware** (outermost first): CORS -> Security -> Prometheus -> RequestId. **Models:** Pydantic (API), dataclasses (config).
 

@@ -841,6 +841,14 @@ All REST responses use the standard response envelope:
 - `phase_detail`, `phase_started_at`
 - `grow_iteration`, `grow_max`
 - `best_correlation`, `candidates_trained`, `candidates_total`
+- `candidate_epoch`, `candidate_total_epochs`
+
+`phase_detail` currently uses these values during active training:
+
+- `training_output`: output-layer training is running
+- `training_candidates`: candidate workers are actively training
+- `adding_candidate`: best candidate is being installed into the cascade
+- `""` (empty string): no active phase detail
 
 ### `/v1/metrics/history` Entry Example
 
@@ -869,7 +877,7 @@ All REST responses use the standard response envelope:
 1. `connection_established`
 2. `initial_status`
 3. `state`
-4. ongoing broadcast messages (`metrics`, `cascade_add`, `event`)
+4. ongoing broadcast messages (`metrics`, `cascade_add`, `candidate_progress`, `event`)
 
 Message envelope:
 
@@ -882,6 +890,29 @@ Message envelope:
 ```
 
 `/ws/training` is read-only for clients; updates are broadcast from the lifecycle manager/monitor.
+
+### `candidate_progress` Message Payload
+
+Candidate worker progress updates are emitted with:
+
+```python
+{
+    "type": "candidate_progress",
+    "timestamp": <unix_timestamp>,
+    "data": {
+        "candidate_id": int,
+        "candidate_uuid": str,
+        "epoch": int,           # 1-based candidate epoch
+        "total_epochs": int,
+        "correlation": float,
+    },
+}
+```
+
+Emission behavior:
+
+- Progress is throttled in candidate training: epoch `1`, every `50` epochs (`51`, `101`, ...), and final epoch.
+- Delivery is best-effort when queues are saturated (updates may be dropped to keep workers non-blocking).
 
 ---
 
