@@ -214,6 +214,7 @@ class TrainingLifecycleManager:
         def monitored_fit(x, y, x_val=None, y_val=None, **kwargs):
             manager_ref._last_emitted_history_len = 0
             monitor.on_training_start()
+            monitor.current_phase = "output"
             sm.handle_command(Command.START)
             state.update_state(status="Started", phase="Output")
 
@@ -267,6 +268,7 @@ class TrainingLifecycleManager:
                 manager_ref._extract_and_record_metrics()
 
                 prev_hidden = len(manager_ref.network.hidden_units)
+                monitor.current_phase = "candidate"
                 state.update_state(phase="Candidate")
                 result = original_grow(*args, **kwargs)
                 new_hidden = len(manager_ref.network.hidden_units)
@@ -278,7 +280,10 @@ class TrainingLifecycleManager:
                             correlation=0.0,
                         )
 
-                # Post-call: catch-all for any remaining metrics
+                # Post-call: return to output phase after grow completes
+                monitor.current_phase = "output"
+                state.update_state(phase="Output")
+                # Catch-all for any remaining metrics
                 manager_ref._extract_and_record_metrics()
                 return result
 
