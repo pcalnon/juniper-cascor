@@ -54,6 +54,32 @@ docker compose --profile full up -d                            # Docker start
 
 **WebSocket:** `/ws/training` (metrics), `/ws/control` (commands). Update `ws_client.py` and canopy when adding.
 
+### Training Lifecycle Quick Paths
+
+| Endpoint | Method | Purpose |
+|--------------------------------|--------|----------------------------------------------|
+| `/v1/training/start`           | POST   | Start async training (inline or generated data) |
+| `/v1/training/stop`            | POST   | Request stop |
+| `/v1/training/pause`           | POST   | Pause active training |
+| `/v1/training/resume`          | POST   | Resume paused training |
+| `/v1/training/reset`           | POST   | Reset lifecycle state and metric buffer |
+| `/v1/training/status`          | GET    | Combined FSM + monitor + training_state snapshot |
+| `/v1/metrics`                  | GET    | Latest metric |
+| `/v1/metrics/history?count=50` | GET    | Recent metric history |
+
+`training_state` now carries phase-granularity fields useful for UI/progress bars:
+
+- `phase_detail` (`training_output`, `adding_candidate`, or empty)
+- `grow_iteration`, `grow_max`
+- `best_correlation`
+- `candidates_trained`, `candidates_total`
+- `phase_started_at` (ISO timestamp)
+
+Metrics nuance:
+
+- `/v1/metrics/history` and `/ws/training` include callback-driven output-phase points (epoch 1, every 25 epochs, final epoch).
+- `accuracy` can be `null` for those output-phase callback emissions.
+
 **Middleware** (outermost first): CORS -> Security -> Prometheus -> RequestId. **Models:** Pydantic (API), dataclasses (config).
 
 > See: [API Reference](api/API_REFERENCE.md) | [API Schemas](api/API_SCHEMAS.md)

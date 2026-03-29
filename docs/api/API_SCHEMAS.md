@@ -1,7 +1,7 @@
 # Juniper Cascor - API Schemas
 
 **Version**: 0.3.21
-**Last Updated**: 2026-01-29
+**Last Updated**: 2026-03-29
 **Purpose**: Data schema documentation for serialization and data structures
 
 ---
@@ -10,10 +10,11 @@
 
 1. [HDF5 Snapshot Schema](#hdf5-snapshot-schema)
 2. [Training History Schema](#training-history-schema)
-3. [Configuration Schema](#configuration-schema)
-4. [Data Class Schemas](#data-class-schemas)
-5. [JuniperData Artifact Schemas](#juniperdata-artifact-schemas)
-6. [Backward Compatibility](#backward-compatibility)
+3. [Training Lifecycle Service Schemas](#training-lifecycle-service-schemas)
+4. [Configuration Schema](#configuration-schema)
+5. [Data Class Schemas](#data-class-schemas)
+6. [JuniperData Artifact Schemas](#juniperdata-artifact-schemas)
+7. [Backward Compatibility](#backward-compatibility)
 
 ---
 
@@ -197,6 +198,107 @@ print(f"Final accuracy: {history['train_accuracy'][-1]}")
 for unit in history['hidden_units_added']:
     print(f"Added unit at epoch {unit['epoch']} with correlation {unit['correlation']:.4f}")
 ```
+
+---
+
+## Training Lifecycle Service Schemas
+
+The FastAPI service exposes runtime lifecycle and metrics payloads under:
+
+- `GET /v1/training/status`
+- `GET /v1/metrics`
+- `GET /v1/metrics/history`
+- `WS /ws/training`
+
+### Standard REST Envelope
+
+All REST responses are wrapped in:
+
+```python
+{
+    "status": "success",
+    "data": ...,
+    "meta": {
+        "timestamp": float,
+        "version": "0.4.0",
+    },
+}
+```
+
+### `training/status` Data Schema
+
+```python
+{
+    "state_machine": {
+        "status": str,                 # STOPPED|STARTED|PAUSED|COMPLETED|FAILED
+        "phase": str,                  # IDLE|OUTPUT|CANDIDATE|INFERENCE
+        "paused_phase": Optional[str],
+        "has_candidate_state": bool,
+    },
+    "monitor": {
+        "is_training": bool,
+        "current_epoch": int,
+        "current_hidden_units": int,
+        "current_phase": str,          # "output" | "candidate"
+        "total_metrics": int,
+    },
+    "training_state": {
+        "status": str,                 # e.g. "Started", "Completed", "Failed"
+        "phase": str,                  # e.g. "Output", "Candidate", "Idle"
+        "learning_rate": float,
+        "max_hidden_units": int,
+        "max_epochs": int,
+        "current_epoch": int,
+        "current_step": int,
+        "network_name": str,
+        "dataset_name": str,
+        "threshold_function": str,
+        "optimizer_name": str,
+        "timestamp": float,
+        "phase_detail": str,           # e.g. "training_output", "adding_candidate"
+        "grow_iteration": int,         # zero-based grow iteration
+        "grow_max": int,
+        "best_correlation": float,
+        "candidates_trained": int,
+        "candidates_total": int,
+        "phase_started_at": str,       # ISO 8601 timestamp
+    },
+    "network_loaded": bool,
+    "training_active": bool,
+}
+```
+
+### `metrics/history` Entry Schema
+
+Entries in `GET /v1/metrics/history` and `WS /ws/training` `metrics` messages:
+
+```python
+{
+    "epoch": int,                       # 1-based epoch index
+    "timestamp": str,                   # ISO 8601 timestamp
+    "loss": float,
+    "accuracy": Optional[float],        # null for output-phase callback emissions
+    "learning_rate": float,
+    "hidden_units": int,
+    "phase": str,                       # "output" | "candidate"
+    "validation_loss": Optional[float],
+    "validation_accuracy": Optional[float],
+}
+```
+
+### Callback-Driven Emission Granularity
+
+The lifecycle manager can receive callback-driven updates from core training code:
+
+- Output-layer callback emits at epoch 1, every 25 epochs, and final epoch.
+- Grow callback emits once per grow iteration after best candidate selection.
+
+This means `metrics/history` may contain:
+
+- Dense history-derived metrics (from network history extraction), and
+- Additional coarse-grained callback emissions for real-time UX updates.
+
+Consumers should treat `accuracy` as nullable and avoid assuming fixed interval spacing.
 
 ---
 
@@ -492,4 +594,4 @@ If verification fails:
 ---
 
 **Document Version**: 0.3.21
-**Last Updated**: 2026-01-29
+**Last Updated**: 2026-03-29
