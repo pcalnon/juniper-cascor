@@ -1,7 +1,7 @@
 # Juniper Cascor - API Reference
 
 **Version**: 0.3.21
-**Last Updated**: 2026-01-29
+**Last Updated**: 2026-03-29
 **Purpose**: Complete API documentation for developers and integrators
 
 ---
@@ -16,9 +16,10 @@
 6. [Serialization API](#serialization-api)
 7. [Profiling API](#profiling-api)
 8. [Logger API](#logger-api)
-9. [Utility Functions](#utility-functions)
-10. [Data Classes](#data-classes)
-11. [Exceptions](#exceptions)
+9. [Training Service API (FastAPI)](#training-service-api-fastapi)
+10. [Utility Functions](#utility-functions)
+11. [Data Classes](#data-classes)
+12. [Exceptions](#exceptions)
 
 ---
 
@@ -126,7 +127,10 @@ Train the network using the cascade correlation algorithm.
     'val_accuracy': List[float],    # If validation provided
     'hidden_units_added': List[dict]  # Unit info per addition
 }
-``JUNIPER_CASCOR_PORT=8201 python server.py
+```
+
+**Example**:
+
 ```python
 from cascade_correlation.cascade_correlation import CascadeCorrelationNetwork
 from cascade_correlation.cascade_correlation_config.cascade_correlation_config import CascadeCorrelationConfig
@@ -192,12 +196,107 @@ def train_output_layer(
     x: torch.Tensor,
     y: torch.Tensor,
     epochs: int = None,
+    on_epoch_callback: Optional[Callable[..., None]] = None,
 ) -> float
 ```
 
 Train only the output layer weights (used internally).
 
 **Returns**: Final loss value
+
+**Optional callback**:
+
+- `on_epoch_callback`: Receives throttled progress updates:
+
+```python
+on_epoch_callback(epoch: int, epochs: int, loss: float) -> None
+```
+
+**Emission cadence**:
+
+- Callback is called on epoch `1`, every `25` epochs (`26`, `51`, ...), and the final epoch.
+- Epoch value is 1-based.
+
+**Example**:
+
+```python
+def on_output_epoch(epoch: int, epochs: int, loss: float) -> None:
+    print(f"[output] {epoch}/{epochs} loss={loss:.6f}")
+
+final_loss = network.train_output_layer(
+    x_train,
+    y_train,
+    epochs=100,
+    on_epoch_callback=on_output_epoch,
+)
+```
+
+#### grow_network
+
+```python
+def grow_network(
+    self,
+    x_train: torch.Tensor,
+    y_train: torch.Tensor,
+    max_epochs: int = 1000,
+    early_stopping: bool = True,
+    patience_counter: int = 0,
+    best_value_loss: float = float("inf"),
+    x_val: Optional[torch.Tensor] = None,
+    y_val: Optional[torch.Tensor] = None,
+    on_grow_iteration_callback: Optional[Callable[..., None]] = None,
+) -> ValidateTrainingResults
+```
+
+Grow the network by iteratively training candidate units and adding selected units.
+
+**Returns**: `ValidateTrainingResults`
+
+**Optional callback**:
+
+- `on_grow_iteration_callback`: Receives per-iteration grow progress:
+
+```python
+on_grow_iteration_callback(
+    iteration: int,
+    max_iterations: int,
+    best_correlation: float,
+    candidates_trained: int,
+    candidates_total: int,
+    phase_detail: str,
+) -> None
+```
+
+**Callback semantics**:
+
+- `iteration` is zero-based (first grow iteration is `0`).
+- `phase_detail` is currently emitted as `"adding_candidate"` for grow-step updates.
+
+**Example**:
+
+```python
+def on_grow_iter(
+    iteration: int,
+    max_iterations: int,
+    best_correlation: float,
+    candidates_trained: int,
+    candidates_total: int,
+    phase_detail: str,
+) -> None:
+    print(
+        f"[grow] iter={iteration}/{max_iterations} "
+        f"corr={best_correlation:.6f} "
+        f"candidates={candidates_trained}/{candidates_total} "
+        f"phase_detail={phase_detail}"
+    )
+
+result = network.grow_network(
+    x_train=x_train,
+    y_train=y_train,
+    max_epochs=50,
+    on_grow_iteration_callback=on_grow_iter,
+)
+```
 
 #### train_candidates
 
@@ -687,6 +786,105 @@ log_if_enabled(logger, "debug", f"Expensive: {expensive_computation()}")
 
 ---
 
+## Training Service API (FastAPI)
+
+**Location**: `src/api/`
+**Stability**: Stable (service interface), semi-stable (field additions possible)
+
+All REST responses use the standard response envelope:
+
+```python
+{
+    "status": "success",
+    "data": ...,
+    "meta": {
+        "timestamp": <unix_timestamp>,
+        "version": "0.4.0",
+    },
+}
+```
+
+### Training Lifecycle Endpoints
+
+| Endpoint | Method | Description |
+| -------- | ------ | ----------- |
+| `/v1/training/start` | `POST` | Start async training (inline data or dataset source) |
+| `/v1/training/stop` | `POST` | Request stop |
+| `/v1/training/pause` | `POST` | Pause active training |
+| `/v1/training/resume` | `POST` | Resume paused training |
+| `/v1/training/reset` | `POST` | Reset lifecycle state and metric buffer |
+| `/v1/training/status` | `GET` | Return state machine, monitor, and training-state snapshots |
+| `/v1/training/params` | `GET` | Get runtime training params |
+| `/v1/training/params` | `PATCH` | Update runtime-modifiable params |
+
+### Metrics Endpoints
+
+| Endpoint | Method | Description |
+| -------- | ------ | ----------- |
+| `/v1/metrics` | `GET` | Latest metrics snapshot |
+| `/v1/metrics/history` | `GET` | Metrics history (`count` query optional) |
+
+### `/v1/training/status` Data Shape
+
+`data` includes:
+
+- `state_machine`: FSM status/phase summary
+- `monitor`: Monitor runtime summary
+- `training_state`: Thread-safe lifecycle state
+- `network_loaded`: Whether a network exists
+- `training_active`: Whether lifecycle is currently started
+
+`training_state` fields include:
+
+- `status`, `phase`, `current_epoch`, `current_step`
+- `learning_rate`, `max_hidden_units`, `max_epochs`
+- `phase_detail`, `phase_started_at`
+- `grow_iteration`, `grow_max`
+- `best_correlation`, `candidates_trained`, `candidates_total`
+
+### `/v1/metrics/history` Entry Example
+
+```python
+{
+    "epoch": 26,
+    "timestamp": "2026-03-29T12:34:56.789012",
+    "loss": 0.0842,
+    "accuracy": None,
+    "learning_rate": 0.01,
+    "hidden_units": 3,
+    "phase": "output",
+    "validation_loss": None,
+    "validation_accuracy": None,
+}
+```
+
+### Accuracy Nullability
+
+`accuracy` can be `null` (`None` in Python) for output-phase callback emissions where only loss is emitted.
+
+### WebSocket Training Stream
+
+`/ws/training` pushes server-to-client updates. Typical sequence on connect:
+
+1. `connection_established`
+2. `initial_status`
+3. `state`
+4. ongoing broadcast messages (`metrics`, `cascade_add`, `event`)
+
+Message envelope:
+
+```python
+{
+    "type": "<message_type>",
+    "timestamp": <unix_timestamp>,
+    "data": {...},
+}
+```
+
+`/ws/training` is read-only for clients; updates are broadcast from the lifecycle manager/monitor.
+
+---
+
 ## Logger API
 
 **Location**: `src/log_config/`
@@ -938,4 +1136,4 @@ The `CascadeCorrelationNetwork` class is **NOT thread-safe**. Do not share netwo
 ---
 
 **Document Version**: 0.3.21
-**Last Updated**: 2026-01-29
+**Last Updated**: 2026-03-29
