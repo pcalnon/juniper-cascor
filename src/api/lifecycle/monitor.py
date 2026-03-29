@@ -7,7 +7,6 @@ DataAdapter dependency — metrics are stored as plain dicts.
 
 import json
 import logging
-import queue
 import threading
 import time
 from collections import deque
@@ -147,7 +146,6 @@ class TrainingMonitor:
             "candidate_progress": [],
         }
 
-        self.metrics_queue: queue.Queue = queue.Queue()
         self._lock = threading.Lock()
         self.logger.info("TrainingMonitor initialized")
 
@@ -205,7 +203,6 @@ class TrainingMonitor:
             self.current_epoch = epoch
             self.metrics_buffer.append(metrics)
 
-        self.metrics_queue.put(metrics)
         self._trigger_callbacks("epoch_end", metrics=metrics, epoch=epoch, loss=loss, accuracy=accuracy)
 
     def on_cascade_add(self, hidden_unit_index: int, correlation: float) -> None:
@@ -249,8 +246,3 @@ class TrainingMonitor:
             self.metrics_buffer.clear()
         self.logger.info("Metrics buffer cleared")
 
-    def poll_metrics_queue(self, timeout: float = 0.1) -> Optional[Dict[str, Any]]:
-        try:
-            return self.metrics_queue.get(timeout=timeout)
-        except queue.Empty:
-            return None
