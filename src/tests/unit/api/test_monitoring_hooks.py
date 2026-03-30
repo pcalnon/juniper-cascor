@@ -1,5 +1,6 @@
 """Tests for lifecycle manager monitoring hooks."""
 
+import queue
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -118,6 +119,19 @@ class TestMonitoringHooks:
         ws_mgr.broadcast_from_thread.assert_called()
         call_args = ws_mgr.broadcast_from_thread.call_args[0][0]
         assert call_args["type"] == "cascade_add"
+
+    def test_ws_callbacks_broadcast_on_candidate_progress(self):
+        """Candidate progress callback broadcasts candidate_progress via WebSocket."""
+        manager = TrainingLifecycleManager()
+        ws_mgr = MagicMock()
+        manager.set_ws_manager(ws_mgr)
+
+        manager.training_monitor.on_candidate_progress({"candidate_id": 3, "epoch": 51, "total_epochs": 200, "correlation": 0.61})
+
+        ws_mgr.broadcast_from_thread.assert_called()
+        call_args = ws_mgr.broadcast_from_thread.call_args[0][0]
+        assert call_args["type"] == "candidate_progress"
+        assert call_args["data"]["candidate_id"] == 3
 
     def test_get_dataset_no_data(self):
         """get_dataset returns loaded=False when no data."""
@@ -270,6 +284,48 @@ class TestMonitoringHooks:
             assert manager.training_monitor.current_phase == "output"
             assert manager.training_monitor.get_current_state()["current_hidden_units"] == 1
             assert sm_state["phase"] == "OUTPUT"
+        finally:
+            CascadeCorrelationNetwork.grow_network = original_grow
+
+    def test_monitored_grow_drains_candidate_progress_queue_and_resets_fields(self):
+        """Wrapped grow_network drains progress queue and resets candidate counters."""
+        from cascade_correlation.cascade_correlation import CascadeCorrelationNetwork
+
+        original_grow = CascadeCorrelationNetwork.grow_network
+
+        def fake_grow(self_network, *args, **kwargs):
+            # Wait briefly for drain thread to consume queued progress payload.
+            import time as _time
+
+            deadline = _time.time() + 1.0
+            while _time.time() < deadline and not events:
+                _time.sleep(0.02)
+            return {"ok": True}
+
+        CascadeCorrelationNetwork.grow_network = fake_grow
+        try:
+            manager = TrainingLifecycleManager()
+            manager.create_network(input_size=2, output_size=2)
+            manager.state_machine.handle_command(Command.START)
+
+            events = []
+            manager.training_monitor.register_callback("candidate_progress", lambda progress, **kw: events.append(progress))
+
+            pq = queue.Queue()
+            pq.put({"candidate_id": 7, "epoch": 25, "total_epochs": 100, "correlation": 0.73})
+            manager.network._persistent_progress_queue = pq
+
+            x = torch.randn(8, 2)
+            y = torch.randn(8, 2)
+            manager.network.grow_network(x, y, max_epochs=1)
+
+            state = manager.training_state.get_state()
+            assert len(events) == 1
+            assert events[0]["candidate_id"] == 7
+            assert state["phase"] == "Output"
+            assert state["phase_detail"] == ""
+            assert state["candidate_epoch"] == 0
+            assert state["candidate_total_epochs"] == 0
         finally:
             CascadeCorrelationNetwork.grow_network = original_grow
 

@@ -1634,6 +1634,35 @@ class TestWorkerLoopEdgeCases:
         # Worker should have exited without producing results
         assert result_q.empty()
 
+    @pytest.mark.unit
+    def test_worker_loop_passes_progress_callback_to_worker(self):
+        """Worker loop should build and pass a progress callback when queue is provided."""
+        task_q = queue.Queue()
+        result_q = queue.Queue()
+        progress_q = queue.Queue()
+
+        task_q.put(("task",))
+        task_q.put(None)
+
+        with patch.object(CascadeCorrelationNetwork, "train_candidate_worker", return_value=CandidateTrainingResult(candidate_id=1, correlation=0.5, success=True)) as mock_worker:
+            CascadeCorrelationNetwork._worker_loop(
+                task_q,
+                result_q,
+                parallel=False,
+                task_queue_timeout=1.0,
+                shared_training_inputs=None,
+                progress_queue=progress_q,
+            )
+
+        assert mock_worker.called
+        passed_callback = mock_worker.call_args.kwargs.get("progress_callback")
+        assert callable(passed_callback)
+
+        passed_callback(candidate_id=9, epoch=3, total_epochs=10, correlation=0.88)
+        progress_item = progress_q.get(timeout=0.5)
+        assert progress_item["candidate_id"] == 9
+        assert progress_item["epoch"] == 3
+
 
 class TestExecuteCandidateTrainingWithRealSequential:
     """Test _execute_candidate_training calling real _execute_sequential_training."""

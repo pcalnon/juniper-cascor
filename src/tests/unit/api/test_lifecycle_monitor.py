@@ -29,6 +29,8 @@ class TestTrainingState:
         assert s["candidates_trained"] == 0
         assert s["candidates_total"] == 0
         assert s["phase_started_at"] == ""
+        assert s["candidate_epoch"] == 0
+        assert s["candidate_total_epochs"] == 0
 
     def test_update_state(self):
         """Can update individual fields."""
@@ -59,6 +61,14 @@ class TestTrainingState:
         assert s["candidates_trained"] == 8
         assert s["candidates_total"] == 16
         assert s["phase_started_at"] == "2026-03-29T10:00:00"
+
+    def test_update_state_candidate_progress_fields(self):
+        """Can update candidate progress metadata fields."""
+        state = TrainingState()
+        state.update_state(candidate_epoch=7, candidate_total_epochs=50)
+        s = state.get_state()
+        assert s["candidate_epoch"] == 7
+        assert s["candidate_total_epochs"] == 50
 
     def test_update_ignores_unknown_fields(self):
         """Unknown fields are silently ignored."""
@@ -273,3 +283,14 @@ class TestTrainingMonitor:
         )
         monitor.on_training_start()
         assert monitor.get_current_state()["total_metrics"] == 0
+
+    def test_on_candidate_progress_triggers_callback(self):
+        """Candidate progress events are delivered to registered callbacks."""
+        monitor = TrainingMonitor()
+        observed = []
+        monitor.register_callback("candidate_progress", lambda progress, **kwargs: observed.append(progress))
+        payload = {"candidate_id": 3, "epoch": 11, "total_epochs": 40, "correlation": 0.62}
+
+        monitor.on_candidate_progress(payload)
+
+        assert observed == [payload]
