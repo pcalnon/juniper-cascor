@@ -52,6 +52,8 @@ class TestTrainingState:
             candidates_trained=8,
             candidates_total=16,
             phase_started_at="2026-03-29T10:00:00",
+            candidate_epoch=12,
+            candidate_total_epochs=150,
         )
         s = state.get_state()
         assert s["phase_detail"] == "adding_candidate"
@@ -61,6 +63,8 @@ class TestTrainingState:
         assert s["candidates_trained"] == 8
         assert s["candidates_total"] == 16
         assert s["phase_started_at"] == "2026-03-29T10:00:00"
+        assert s["candidate_epoch"] == 12
+        assert s["candidate_total_epochs"] == 150
 
     def test_update_state_candidate_progress_fields(self):
         """Can update candidate progress metadata fields."""
@@ -232,11 +236,88 @@ class TestTrainingMonitor:
         assert len(called) == 1
         assert called[0]["epoch"] == 1
 
+    def test_on_epoch_end_callback_includes_metrics_payload(self):
+        """Epoch-end callback includes full metrics payload for consumers."""
+        monitor = TrainingMonitor()
+        monitor.current_phase = "candidate"
+        called = []
+        monitor.register_callback("epoch_end", lambda **kwargs: called.append(kwargs))
+
+        monitor.on_epoch_end(
+            epoch=3,
+            loss=0.25,
+            accuracy=0.9,
+            learning_rate=0.005,
+            hidden_units=2,
+        )
+
+        assert len(called) == 1
+        callback_payload = called[0]
+        assert callback_payload["epoch"] == 3
+        assert callback_payload["loss"] == 0.25
+        assert callback_payload["accuracy"] == 0.9
+        assert callback_payload["metrics"]["epoch"] == 3
+        assert callback_payload["metrics"]["phase"] == "candidate"
+        assert callback_payload["metrics"]["hidden_units"] == 2
+
+    def test_callback_exception_does_not_block_other_callbacks(self, caplog):
+        """A failing callback logs an error and does not block subsequent callbacks."""
+        monitor = TrainingMonitor()
+        called = []
+
+        def _raising_callback(**kwargs):
+            raise RuntimeError("boom")
+
+        monitor.register_callback("epoch_end", _raising_callback)
+        monitor.register_callback("epoch_end", lambda **kwargs: called.append(kwargs["epoch"]))
+
+        with caplog.at_level("ERROR"):
+            monitor.on_epoch_end(
+                epoch=4,
+                loss=0.4,
+                accuracy=0.8,
+                learning_rate=0.01,
+                hidden_units=1,
+            )
+
+        assert called == [4]
+        assert "Callback error for epoch_end: boom" in caplog.text
+
+    def test_on_candidate_progress_triggers_callback(self):
+        """Candidate progress updates trigger registered callback payload."""
+        monitor = TrainingMonitor()
+        called = []
+        monitor.register_callback("candidate_progress", lambda **kwargs: called.append(kwargs))
+
+        payload = {
+            "candidate_id": 4,
+            "candidate_uuid": "abc-123",
+            "epoch": 51,
+            "total_epochs": 100,
+            "correlation": 0.88,
+        }
+        monitor.on_candidate_progress(payload)
+
+        assert len(called) == 1
+        assert called[0]["progress"] == payload
+
     def test_register_unknown_callback(self):
         """Registering unknown event type logs warning but doesn't crash."""
         monitor = TrainingMonitor()
         monitor.register_callback("unknown_event", lambda: None)
         # Should not raise
+
+    def test_on_training_end_callback_receives_final_metrics(self):
+        """Training-end callback receives final metrics payload."""
+        monitor = TrainingMonitor()
+        called = []
+        monitor.register_callback("training_end", lambda **kwargs: called.append(kwargs))
+
+        final_metrics = {"loss": 0.123, "accuracy": 0.987}
+        monitor.on_training_end(final_metrics=final_metrics)
+
+        assert len(called) == 1
+        assert called[0]["final_metrics"] == final_metrics
 
     def test_metrics_buffer_bounded(self):
         """Metrics buffer respects maxlen."""
@@ -250,26 +331,6 @@ class TestTrainingMonitor:
                 hidden_units=0,
             )
         assert monitor.get_current_state()["total_metrics"] == 10000
-
-    def test_poll_metrics_queue(self):
-        """Metrics queue receives epoch data."""
-        monitor = TrainingMonitor()
-        monitor.on_epoch_end(
-            epoch=1,
-            loss=0.5,
-            accuracy=0.75,
-            learning_rate=0.01,
-            hidden_units=0,
-        )
-        metric = monitor.poll_metrics_queue(timeout=0.1)
-        assert metric is not None
-        assert metric["epoch"] == 1
-
-    def test_poll_metrics_queue_empty(self):
-        """Empty queue returns None."""
-        monitor = TrainingMonitor()
-        result = monitor.poll_metrics_queue(timeout=0.01)
-        assert result is None
 
     def test_training_start_clears_buffer(self):
         """Starting training clears existing metrics."""

@@ -253,6 +253,49 @@ class TestTrainDisplayProgressException:
             )
             assert isinstance(result, float)
 
+    @pytest.mark.unit
+    def test_train_detailed_progress_callback_emits_first_and_last_epoch(self, candidate):
+        """Progress callback should emit at epoch 1 and final epoch."""
+        x = torch.randn(10, 2)
+        residual_error = torch.randn(10, 2)
+        events = []
+
+        result = candidate.train_detailed(
+            x=x,
+            epochs=3,
+            residual_error=residual_error,
+            learning_rate=0.01,
+            display_frequency=100,
+            progress_callback=lambda **kwargs: events.append(kwargs),
+        )
+
+        assert isinstance(result, CandidateTrainingResult)
+        assert len(events) >= 2
+        assert events[0]["epoch"] == 1
+        assert events[-1]["epoch"] == 3
+        assert events[-1]["total_epochs"] == 3
+
+    @pytest.mark.unit
+    def test_train_detailed_uses_instance_progress_callback_fallback(self, candidate):
+        """train_detailed should use instance _progress_callback when not explicitly provided."""
+        x = torch.randn(10, 2)
+        residual_error = torch.randn(10, 2)
+        events = []
+        candidate._progress_callback = lambda **kwargs: events.append(kwargs)
+
+        result = candidate.train_detailed(
+            x=x,
+            epochs=2,
+            residual_error=residual_error,
+            learning_rate=0.01,
+            display_frequency=100,
+        )
+
+        assert isinstance(result, CandidateTrainingResult)
+        assert len(events) >= 2
+        assert events[0]["epoch"] == 1
+        assert events[-1]["epoch"] == 2
+
 
 # ===========================================================================
 # 6b. train() progress callback emission
