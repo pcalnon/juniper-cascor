@@ -69,6 +69,7 @@ class TestMonitoringHooks:
         assert len(manager.training_monitor.callbacks["cascade_add"]) > 0
         assert len(manager.training_monitor.callbacks["training_start"]) > 0
         assert len(manager.training_monitor.callbacks["training_end"]) > 0
+        assert len(manager.training_monitor.callbacks["candidate_progress"]) > 0
 
     def test_ws_callbacks_broadcast_on_epoch_end(self):
         """Epoch end callback broadcasts metrics via WebSocket."""
