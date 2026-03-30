@@ -55,3 +55,34 @@ class TestDatasetRoute:
         assert body["data"]["train_samples"] == 4
         assert body["data"]["input_features"] == 2
         assert body["data"]["output_features"] == 2
+
+
+@pytest.mark.unit
+class TestDatasetDataRoute:
+    """Test dataset data array route."""
+
+    def test_get_dataset_data_no_data_returns_404(self, client):
+        """GET /v1/dataset/data returns 404 when no dataset loaded."""
+        response = client.get("/v1/dataset/data")
+        assert response.status_code == 404
+
+    def test_get_dataset_data_returns_arrays(self, client):
+        """GET /v1/dataset/data returns train_x and train_y arrays."""
+        client.post("/v1/network", json={"input_size": 2, "output_size": 2})
+        train_x = [[0.0, 0.0], [1.0, 1.0], [0.0, 1.0], [1.0, 0.0]]
+        train_y = [[1.0, 0.0], [0.0, 1.0], [1.0, 0.0], [0.0, 1.0]]
+        with patch.object(TrainingLifecycleManager, "_run_training"):
+            client.post(
+                "/v1/training/start",
+                json={"inline_data": {"train_x": train_x, "train_y": train_y}},
+            )
+        client.post("/v1/training/stop")
+
+        response = client.get("/v1/dataset/data")
+        assert response.status_code == 200
+        body = response.json()
+        assert body["status"] == "success"
+        assert "train_x" in body["data"]
+        assert "train_y" in body["data"]
+        assert len(body["data"]["train_x"]) == 4
+        assert len(body["data"]["train_y"]) == 4

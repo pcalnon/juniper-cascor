@@ -588,6 +588,19 @@ class TrainingLifecycleManager:
             "output_features": self._train_y.shape[1],
         }
 
+    def get_dataset_data(self) -> Optional[Dict[str, Any]]:
+        """Return dataset arrays for visualization."""
+        if self._train_x is None:
+            return None
+        result = {
+            "train_x": self._train_x.detach().cpu().tolist(),
+            "train_y": self._train_y.detach().cpu().tolist(),
+        }
+        if self._val_x is not None:
+            result["val_x"] = self._val_x.detach().cpu().tolist()
+            result["val_y"] = self._val_y.detach().cpu().tolist()
+        return result
+
     def get_training_params(self) -> Dict[str, Any]:
         """Get current training parameters."""
         if self.network is None:

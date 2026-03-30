@@ -19,3 +19,13 @@ async def get_dataset(request: Request) -> dict:
     """Get dataset metadata."""
     lifecycle = _get_lifecycle(request)
     return success_response(lifecycle.get_dataset())
+
+
+@router.get("/data")
+async def get_dataset_data(request: Request) -> dict:
+    """Get dataset arrays for visualization."""
+    lifecycle = _get_lifecycle(request)
+    data = lifecycle.get_dataset_data()
+    if data is None:
+        raise HTTPException(status_code=404, detail="No dataset loaded")
+    return success_response(data)
