@@ -1,7 +1,7 @@
 # Juniper Cascor - API Schemas
 
 **Version**: 0.3.21
-**Last Updated**: 2026-03-29
+**Last Updated**: 2026-03-30
 **Purpose**: Data schema documentation for serialization and data structures
 
 ---
@@ -26,73 +26,107 @@ The HDF5 snapshot format stores the complete state of a `CascadeCorrelationNetwo
 
 ```bash
 snapshot.h5
-├── metadata/                    # Required
-│   ├── uuid                     # Network unique identifier (string)
-│   ├── version                  # Cascor version (string)
-│   ├── creation_time            # ISO timestamp (string)
-│   └── checksum                 # Data integrity hash (bytes)
-├── architecture/                # Required
-│   ├── input_size               # int
-│   ├── output_size              # int
-│   ├── hidden_unit_count        # int
-│   └── activation_function      # string (function name)
+├── / (root attrs)               # Required format metadata
+│   ├── format                   # "juniper.cascor"
+│   ├── format_version           # e.g. "2"
+│   ├── serializer_version       # e.g. "2.0.0"
+│   ├── created                  # ISO timestamp
+│   └── juniper_version          # project version string
+├── meta/                        # Required
+│   ├── attrs.uuid
+│   ├── attrs.creation_timestamp
+│   ├── attrs.snapshot_counter
+│   ├── attrs.current_epoch
+│   ├── attrs.patience_counter
+│   ├── attrs.best_value_loss
+│   ├── attrs.python_version
+│   ├── attrs.torch_version
+│   └── attrs.h5py_version
 ├── config/                      # Required
-│   └── json_config              # JSON-encoded config (string)
-├── weights/                     # Required
-│   ├── output_weights           # float32 array
-│   ├── output_bias              # float32 array
-│   └── hidden_units/            # Group for each unit
-│       ├── unit_0/
-│       │   ├── weights          # float32 array
-│       │   ├── bias             # float32 array
-│       │   └── checksum         # bytes
-│       ├── unit_1/
-│       └── ...
-├── training_state/              # Optional (if include_training_state=True)
-│   ├── history/                 # Training metrics
-│   │   ├── train_loss           # float32 array
-│   │   ├── train_accuracy       # float32 array
-│   │   ├── value_loss           # float32 array (optional)
-│   │   └── value_accuracy       # float32 array (optional)
-│   ├── epochs_completed         # int
-│   ├── patience_counter         # int
-│   ├── best_loss                # float
-│   └── snapshot_counter         # int
-├── random_state/                # Required for deterministic resume
-│   ├── python_random            # bytes (pickled state)
-│   ├── numpy_random             # bytes (pickled state)
-│   ├── torch_random             # bytes (torch state)
-│   └── torch_cuda_random        # bytes (optional, CUDA state)
-└── training_data/               # Optional (if include_training_data=True)
-    ├── x_train                  # float32 array
-    ├── y_train                  # float32 array
-    ├── x_val                    # float32 array (optional)
-    └── y_val                    # float32 array (optional)
+│   ├── config_json              # JSON-encoded config
+│   └── attrs.*                  # selected quick-access config attrs
+├── arch/                        # Required
+│   ├── attrs.input_size
+│   ├── attrs.output_size
+│   ├── attrs.num_hidden_units
+│   ├── attrs.max_hidden_units
+│   ├── attrs.activation_function_name
+│   └── connectivity/            # optional per-unit connectivity metadata
+├── params/                      # Required
+│   └── output_layer/
+│       ├── weights              # float tensor
+│       ├── bias                 # float tensor
+│       ├── checksums            # JSON string dataset (optional)
+│       └── optimizer/           # optional
+│           └── state_dict       # JSON string dataset (best-effort restore)
+├── hidden_units/                # Optional (present when units exist)
+│   ├── attrs.num_units
+│   ├── unit_0/
+│   │   ├── weights              # float tensor
+│   │   ├── bias                 # float tensor
+│   │   ├── checksums            # JSON string dataset
+│   │   └── attrs.correlation / attrs.activation_function_name
+│   └── unit_N/...
+├── random/                      # Required for deterministic resume
+│   ├── python_state             # uint8 array (pickled random.getstate())
+│   ├── numpy_state/
+│   │   └── state_array          # uint32 array + attrs pos/has_gauss/cached_gaussian
+│   ├── torch_state              # uint8 array
+│   └── cuda_states/device_N     # uint8 arrays (optional, CUDA only)
+├── mp/                          # Required group for multiprocessing config
+│   └── attrs role/start_method/address/authkey/timeouts/autostart
+├── history/                     # Optional (if include_training_state=True)
+│   ├── train_loss
+│   ├── train_accuracy
+│   ├── value_loss               # optional
+│   ├── value_accuracy           # optional
+│   └── hidden_units_added/      # optional per-added-unit snapshots
+└── data/                        # Optional (if include_training_data=True)
+    └── x_train/y_train/x_val/y_val (when attached to network._training_data)
 ```
 
-### Metadata Group
+### Root Attributes
 
-| Dataset         | Type     | Description                             |
-|-----------------|----------|-----------------------------------------|
-| `uuid`          | `string` | UUID4 identifying this network instance |
-| `version`       | `string` | Cascor version that created this file   |
-| `creation_time` | `string` | ISO 8601 timestamp                      |
-| `checksum`      | `bytes`  | SHA-256 hash of critical data           |
+| Attribute | Type | Description |
+|-----------|------|-------------|
+| `format` | `string` | Serializer format identifier (`juniper.cascor`) |
+| `format_version` | `string` | Serializer format major version |
+| `serializer_version` | `string` | Serializer implementation version |
+| `created` | `string` | ISO 8601 creation timestamp |
+| `juniper_version` | `string` | Project version string |
 
-### Architecture Group
+### `meta` Group Attributes
 
-| Dataset               | Type     | Description                                |
-|-----------------------|----------|--------------------------------------------|
-| `input_size`          | `int64`  | Number of input features                   |
-| `output_size`         | `int64`  | Number of output classes                   |
-| `hidden_unit_count`   | `int64`  | Current number of hidden units             |
-| `activation_function` | `string` | Name of activation function (e.g., "tanh") |
+| Attribute | Type | Description |
+|-----------|------|-------------|
+| `uuid` | `string` | UUID identifying this network instance |
+| `creation_timestamp` | `string` | Snapshot creation timestamp |
+| `snapshot_counter` | `int64` | Snapshot count stored on network |
+| `current_epoch` | `int64` | Last known epoch counter |
+| `patience_counter` | `int64` | Last known early-stopping patience state |
+| `best_value_loss` | `float64` | Best validation loss seen so far |
+| `python_version` | `string` | Python runtime version |
+| `torch_version` | `string` | PyTorch runtime version |
+| `h5py_version` | `string` | h5py runtime version |
 
-### Config Group
+### `arch` Group Attributes
 
-| Dataset       | Type     | Description                             |
-|---------------|----------|-----------------------------------------|
-| `json_config` | `string` | JSON-encoded `CascadeCorrelationConfig` |
+| Attribute | Type | Description |
+|-----------|------|-------------|
+| `input_size` | `int64` | Number of input features |
+| `output_size` | `int64` | Number of output classes |
+| `num_hidden_units` | `int64` | Current hidden unit count |
+| `max_hidden_units` | `int64` | Configured hidden-unit limit |
+| `activation_function_name` | `string` | Active hidden-unit activation name |
+
+### `config` Group
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `config_json` | `string` | JSON-encoded `CascadeCorrelationConfig` |
+| `attrs.activation_function_name` | `string` | Quick-access activation function name |
+| `attrs.input_size` / `attrs.output_size` | `int64` | Quick-access model shape fields |
+| other selected attrs | primitive | Learning rate, pool size, patience, etc. |
 
 **Excluded from JSON** (non-serializable):
 
@@ -100,31 +134,26 @@ snapshot.h5
 - `log_config`
 - `logger`
 
-### Weights Group
+### `params/output_layer` Group
 
-| Dataset | Type | Shape | Description |
-|---------|------|-------|-------------|
-| `output_weights` | `float32` | `(hidden+input, output)` | Output layer weights |
-| `output_bias` | `float32` | `(output,)` | Output layer bias |
+| Field | Type | Shape | Description |
+|-------|------|-------|-------------|
+| `weights` | tensor | `(input_plus_hidden, output)` | Output layer weights |
+| `bias` | tensor | `(output,)` | Output layer bias |
+| `checksums` | `string` | n/a | JSON checksum payload (optional) |
+| `optimizer/state_dict` | `string` | n/a | JSON optimizer state (optional) |
 
 **Hidden Unit Subgroups** (`hidden_units/unit_N/`):
 
-| Dataset | Type | Shape | Description |
-|---------|------|-------|-------------|
-| `weights` | `float32` | `(connections,)` | Unit input weights |
-| `bias` | `float32` | `(1,)` | Unit bias |
-| `checksum` | `bytes` | - | SHA-256 of weights+bias |
+| Field | Type | Shape | Description |
+|-------|------|-------|-------------|
+| `weights` | tensor | `(connections,)` | Unit input weights |
+| `bias` | tensor | `(1,)` | Unit bias |
+| `checksums` | `string` | n/a | JSON checksum payload |
+| `attrs.correlation` | `float64` | n/a | Correlation captured at add-time |
+| `attrs.activation_function_name` | `string` | n/a | Per-unit activation identifier |
 
-### Training State Group (Optional)
-
-| Dataset | Type | Description |
-|---------|------|-------------|
-| `epochs_completed` | `int64` | Total epochs trained |
-| `patience_counter` | `int64` | Current patience counter |
-| `best_loss` | `float64` | Best validation loss seen |
-| `snapshot_counter` | `int64` | Number of snapshots created |
-
-**History Subgroup**:
+### `history` Group (Optional)
 
 | Dataset | Type | Shape | Description |
 |---------|------|-------|-------------|
@@ -133,14 +162,21 @@ snapshot.h5
 | `value_loss` | `float32` | `(epochs,)` | Validation loss (if provided) |
 | `value_accuracy` | `float32` | `(epochs,)` | Validation accuracy (if provided) |
 
-### Random State Group
+`history/hidden_units_added/unit_N` entries store optional unit snapshots:
 
-| Dataset | Type | Description |
-|---------|------|-------------|
-| `python_random` | `bytes` | `pickle.dumps(random.getstate())` |
-| `numpy_random` | `bytes` | `pickle.dumps(numpy.random.get_state())` |
-| `torch_random` | `bytes` | `torch.get_rng_state().numpy().tobytes()` |
-| `torch_cuda_random` | `bytes` | CUDA RNG state (if CUDA available) |
+- `attrs.correlation` (float)
+- `weights` dataset (if captured)
+- `bias` dataset (if captured)
+
+### `random` Group
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `python_state` | `uint8[]` | `pickle.dumps(random.getstate())` bytes |
+| `numpy_state/state_array` | `uint32[]` | NumPy RNG state array |
+| `numpy_state` attrs | mixed | `state_type`, `pos`, `has_gauss`, `cached_gaussian` |
+| `torch_state` | `uint8[]` | `torch.get_rng_state()` bytes |
+| `cuda_states/device_N` | `uint8[]` | CUDA RNG state per device (if available) |
 
 ### Compression Settings
 
@@ -180,13 +216,14 @@ also accept legacy `val_*` keys and normalize them to `value_*`.
 
 ```python
 {
-    'epoch': int,               # Epoch when unit was added
-    'correlation': float,       # Correlation with residual error
-    'candidate_id': int,        # Index in candidate pool
-    'candidate_uuid': str,      # UUID of the candidate
-    'connections': int,         # Number of input connections
+    "correlation": float,    # Candidate correlation at add-time
+    "weights": np.ndarray,   # Candidate weights snapshot (optional in some paths)
+    "bias": np.ndarray,      # Candidate bias snapshot (optional in some paths)
 }
 ```
+
+`epoch`, `candidate_id`, and `candidate_uuid` are not currently persisted in
+`history["hidden_units_added"]`; consumers should not depend on those fields.
 
 ### Example
 
@@ -199,7 +236,7 @@ print(f"Final accuracy: {history['train_accuracy'][-1]}")
 
 # Access hidden unit info
 for unit in history['hidden_units_added']:
-    print(f"Added unit at epoch {unit['epoch']} with correlation {unit['correlation']:.4f}")
+    print(f"Added unit with correlation {unit['correlation']:.4f}")
 ```
 
 ---
@@ -538,12 +575,14 @@ Downloaded via `download_artifact_npz()`:
 
 ### Version Handling
 
-The HDF5 file includes a version field in metadata:
+The HDF5 file stores serializer/version information in root attributes:
 
 ```python
 # Reading version
 with h5py.File('snapshot.h5', 'r') as f:
-    version = f['metadata/version'][()].decode()
+    format_name = f.attrs.get('format', 'unknown')
+    format_version = f.attrs.get('format_version', 'unknown')
+    serializer_version = f.attrs.get('serializer_version', 'unknown')
 ```
 
 ### Compatibility Matrix
@@ -575,7 +614,7 @@ If loading older snapshots fails:
 
 1. **Check version**: Read the metadata to identify file version
 2. **Common issues**:
-   - Missing `random_state/python_random` → Pre-0.1.1 file
+   - Missing `random/python_state` → Pre-0.1.1 file
    - Wrong history keys → Pre-0.3.5 file
 3. **Migration script** (if needed):
 
@@ -591,13 +630,15 @@ def migrate_old_snapshot(old_path, new_path):
             old.copy(key, new)
 
         # Normalize legacy val_* history keys to canonical value_*
-        if 'training_state/history/val_loss' in new:
-            new.move('training_state/history/val_loss',
-                    'training_state/history/value_loss')
+        if 'history/val_loss' in new:
+            new.move('history/val_loss', 'history/value_loss')
+        if 'history/val_accuracy' in new:
+            new.move('history/val_accuracy', 'history/value_accuracy')
 
-        # Update version
-        del new['metadata/version']
-        new['metadata/version'] = '0.3.21'
+        # Update serializer format attributes
+        new.attrs['format'] = 'juniper.cascor'
+        new.attrs['format_version'] = '2'
+        new.attrs['serializer_version'] = '2.0.0'
 ```
 
 ### Checksum Verification
@@ -606,19 +647,21 @@ Each hidden unit has a checksum for data integrity:
 
 ```python
 import hashlib
+import json
+
+import h5py
+
 
 def verify_unit_checksum(filepath, unit_index):
-    with h5py.File(filepath, 'r') as f:
-        unit = f[f'weights/hidden_units/unit_{unit_index}']
-        weights = unit['weights'][()]
-        bias = unit['bias'][()]
-        stored_checksum = unit['checksum'][()]
+    with h5py.File(filepath, "r") as f:
+        unit = f[f"hidden_units/unit_{unit_index}"]
+        weights = unit["weights"][()]
+        bias = unit["bias"][()]
+        checksums = json.loads(unit["checksums"].asstr()[()])
 
-        # Recompute
-        data = weights.tobytes() + bias.tobytes()
-        computed = hashlib.sha256(data).digest()
-
-        return stored_checksum == computed
+        weights_ok = checksums.get("weights") == hashlib.sha256(weights.tobytes()).hexdigest()
+        bias_ok = checksums.get("bias") == hashlib.sha256(bias.tobytes()).hexdigest()
+        return weights_ok and bias_ok
 ```
 
 If verification fails:
@@ -630,4 +673,4 @@ If verification fails:
 ---
 
 **Document Version**: 0.3.21
-**Last Updated**: 2026-03-29
+**Last Updated**: 2026-03-30
