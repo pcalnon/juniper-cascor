@@ -228,6 +228,53 @@ class TestTrainingMonitor:
         assert len(called) == 1
         assert called[0]["epoch"] == 1
 
+    def test_on_epoch_end_callback_includes_metrics_payload(self):
+        """Epoch-end callback includes full metrics payload for consumers."""
+        monitor = TrainingMonitor()
+        monitor.current_phase = "candidate"
+        called = []
+        monitor.register_callback("epoch_end", lambda **kwargs: called.append(kwargs))
+
+        monitor.on_epoch_end(
+            epoch=3,
+            loss=0.25,
+            accuracy=0.9,
+            learning_rate=0.005,
+            hidden_units=2,
+        )
+
+        assert len(called) == 1
+        callback_payload = called[0]
+        assert callback_payload["epoch"] == 3
+        assert callback_payload["loss"] == 0.25
+        assert callback_payload["accuracy"] == 0.9
+        assert callback_payload["metrics"]["epoch"] == 3
+        assert callback_payload["metrics"]["phase"] == "candidate"
+        assert callback_payload["metrics"]["hidden_units"] == 2
+
+    def test_callback_exception_does_not_block_other_callbacks(self, caplog):
+        """A failing callback logs an error and does not block subsequent callbacks."""
+        monitor = TrainingMonitor()
+        called = []
+
+        def _raising_callback(**kwargs):
+            raise RuntimeError("boom")
+
+        monitor.register_callback("epoch_end", _raising_callback)
+        monitor.register_callback("epoch_end", lambda **kwargs: called.append(kwargs["epoch"]))
+
+        with caplog.at_level("ERROR"):
+            monitor.on_epoch_end(
+                epoch=4,
+                loss=0.4,
+                accuracy=0.8,
+                learning_rate=0.01,
+                hidden_units=1,
+            )
+
+        assert called == [4]
+        assert "Callback error for epoch_end: boom" in caplog.text
+
     def test_on_candidate_progress_triggers_callback(self):
         """Candidate progress updates trigger registered callback payload."""
         monitor = TrainingMonitor()
@@ -251,6 +298,18 @@ class TestTrainingMonitor:
         monitor = TrainingMonitor()
         monitor.register_callback("unknown_event", lambda: None)
         # Should not raise
+
+    def test_on_training_end_callback_receives_final_metrics(self):
+        """Training-end callback receives final metrics payload."""
+        monitor = TrainingMonitor()
+        called = []
+        monitor.register_callback("training_end", lambda **kwargs: called.append(kwargs))
+
+        final_metrics = {"loss": 0.123, "accuracy": 0.987}
+        monitor.on_training_end(final_metrics=final_metrics)
+
+        assert len(called) == 1
+        assert called[0]["final_metrics"] == final_metrics
 
     def test_metrics_buffer_bounded(self):
         """Metrics buffer respects maxlen."""
