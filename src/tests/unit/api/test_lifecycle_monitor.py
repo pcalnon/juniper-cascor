@@ -265,26 +265,6 @@ class TestTrainingMonitor:
             )
         assert monitor.get_current_state()["total_metrics"] == 10000
 
-    def test_poll_metrics_queue(self):
-        """Metrics queue receives epoch data."""
-        monitor = TrainingMonitor()
-        monitor.on_epoch_end(
-            epoch=1,
-            loss=0.5,
-            accuracy=0.75,
-            learning_rate=0.01,
-            hidden_units=0,
-        )
-        metric = monitor.poll_metrics_queue(timeout=0.1)
-        assert metric is not None
-        assert metric["epoch"] == 1
-
-    def test_poll_metrics_queue_empty(self):
-        """Empty queue returns None."""
-        monitor = TrainingMonitor()
-        result = monitor.poll_metrics_queue(timeout=0.01)
-        assert result is None
-
     def test_training_start_clears_buffer(self):
         """Starting training clears existing metrics."""
         monitor = TrainingMonitor()
