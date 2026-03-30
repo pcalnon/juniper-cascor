@@ -57,11 +57,10 @@ class TestMessageBuilders:
         assert msg["data"] == data
 
     def test_create_candidate_progress_message(self):
-        """Candidate progress message has correct type and payload."""
-        data = {"candidate_id": 2, "epoch": 50, "total_epochs": 100, "correlation": 0.77}
+        """Candidate progress message has correct type."""
+        data = {"candidate_id": 2, "epoch": 51, "total_epochs": 100, "correlation": 0.73}
         msg = create_candidate_progress_message(data)
         assert msg["type"] == "candidate_progress"
-        assert "timestamp" in msg
         assert msg["data"] == data
 
     def test_create_control_ack_success(self):

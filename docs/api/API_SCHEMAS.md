@@ -52,8 +52,8 @@ snapshot.h5
 │   ├── history/                 # Training metrics
 │   │   ├── train_loss           # float32 array
 │   │   ├── train_accuracy       # float32 array
-│   │   ├── val_loss             # float32 array (optional)
-│   │   └── val_accuracy         # float32 array (optional)
+│   │   ├── value_loss           # float32 array (optional)
+│   │   └── value_accuracy       # float32 array (optional)
 │   ├── epochs_completed         # int
 │   ├── patience_counter         # int
 │   ├── best_loss                # float
@@ -130,8 +130,8 @@ snapshot.h5
 |---------|------|-------|-------------|
 | `train_loss` | `float32` | `(epochs,)` | Training loss per epoch |
 | `train_accuracy` | `float32` | `(epochs,)` | Training accuracy per epoch |
-| `val_loss` | `float32` | `(epochs,)` | Validation loss (if provided) |
-| `val_accuracy` | `float32` | `(epochs,)` | Validation accuracy (if provided) |
+| `value_loss` | `float32` | `(epochs,)` | Validation loss (if provided) |
+| `value_accuracy` | `float32` | `(epochs,)` | Validation accuracy (if provided) |
 
 ### Random State Group
 
@@ -167,11 +167,14 @@ The training history is a dictionary returned by `fit()` and stored in snapshots
 {
     'train_loss': List[float],      # Required
     'train_accuracy': List[float],  # Required
-    'val_loss': List[float],        # Optional (if validation data provided)
-    'val_accuracy': List[float],    # Optional (if validation data provided)
+    'value_loss': List[float],      # Optional (if validation data provided)
+    'value_accuracy': List[float],  # Optional (if validation data provided)
     'hidden_units_added': List[dict]  # Required
 }
 ```
+
+`value_*` is the canonical in-memory and serialized key family. Serializer load paths
+also accept legacy `val_*` keys and normalize them to `value_*`.
 
 ### hidden_units_added Entry Schema
 
@@ -556,7 +559,7 @@ with h5py.File('snapshot.h5', 'r') as f:
 **0.3.0 → 0.3.5**:
 
 - Changed `CandidateTrainingResult` field names (`candidate_index` → `candidate_id`)
-- Fixed history key names (`value_loss` → `val_loss`)
+- Standardized history keys on `value_loss` / `value_accuracy` with loader fallback for legacy `val_loss` / `val_accuracy`
 
 **0.3.5 → 0.3.19**:
 
@@ -587,10 +590,10 @@ def migrate_old_snapshot(old_path, new_path):
         for key in old.keys():
             old.copy(key, new)
 
-        # Fix history keys if needed
-        if 'training_state/history/value_loss' in new:
-            new.move('training_state/history/value_loss',
-                    'training_state/history/val_loss')
+        # Normalize legacy val_* history keys to canonical value_*
+        if 'training_state/history/val_loss' in new:
+            new.move('training_state/history/val_loss',
+                    'training_state/history/value_loss')
 
         # Update version
         del new['metadata/version']
