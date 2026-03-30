@@ -1,5 +1,6 @@
 """Tests for lifecycle manager monitoring hooks."""
 
+import queue
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -121,7 +122,7 @@ class TestMonitoringHooks:
         assert call_args["type"] == "cascade_add"
 
     def test_ws_callbacks_broadcast_on_candidate_progress(self):
-        """Candidate progress callback broadcasts candidate_progress message."""
+        """Candidate progress callback broadcasts candidate_progress via WebSocket."""
         manager = TrainingLifecycleManager()
         ws_mgr = MagicMock()
         manager.set_ws_manager(ws_mgr)
