@@ -43,46 +43,37 @@ snapshot.h5
 │   ├── attrs.torch_version
 │   └── attrs.h5py_version
 ├── config/                      # Required
-│   ├── config_json              # JSON-encoded config
-│   └── attrs.*                  # selected quick-access config attrs
-├── arch/                        # Required
-│   ├── attrs.input_size
-│   ├── attrs.output_size
-│   ├── attrs.num_hidden_units
-│   ├── attrs.max_hidden_units
-│   ├── attrs.activation_function_name
-│   └── connectivity/            # optional per-unit connectivity metadata
-├── params/                      # Required
-│   └── output_layer/
-│       ├── weights              # float tensor
-│       ├── bias                 # float tensor
-│       ├── checksums            # JSON string dataset (optional)
-│       └── optimizer/           # optional
-│           └── state_dict       # JSON string dataset (best-effort restore)
-├── hidden_units/                # Optional (present when units exist)
-│   ├── attrs.num_units
-│   ├── unit_0/
-│   │   ├── weights              # float tensor
-│   │   ├── bias                 # float tensor
-│   │   ├── checksums            # JSON string dataset
-│   │   └── attrs.correlation / attrs.activation_function_name
-│   └── unit_N/...
-├── random/                      # Required for deterministic resume
-│   ├── python_state             # uint8 array (pickled random.getstate())
-│   ├── numpy_state/
-│   │   └── state_array          # uint32 array + attrs pos/has_gauss/cached_gaussian
-│   ├── torch_state              # uint8 array
-│   └── cuda_states/device_N     # uint8 arrays (optional, CUDA only)
-├── mp/                          # Required group for multiprocessing config
-│   └── attrs role/start_method/address/authkey/timeouts/autostart
-├── history/                     # Optional (if include_training_state=True)
-│   ├── train_loss
-│   ├── train_accuracy
-│   ├── value_loss               # optional
-│   ├── value_accuracy           # optional
-│   └── hidden_units_added/      # optional per-added-unit snapshots
-└── data/                        # Optional (if include_training_data=True)
-    └── x_train/y_train/x_val/y_val (when attached to network._training_data)
+│   └── json_config              # JSON-encoded config (string)
+├── weights/                     # Required
+│   ├── output_weights           # float32 array
+│   ├── output_bias              # float32 array
+│   └── hidden_units/            # Group for each unit
+│       ├── unit_0/
+│       │   ├── weights          # float32 array
+│       │   ├── bias             # float32 array
+│       │   └── checksum         # bytes
+│       ├── unit_1/
+│       └── ...
+├── training_state/              # Optional (if include_training_state=True)
+│   ├── history/                 # Training metrics
+│   │   ├── train_loss           # float32 array
+│   │   ├── train_accuracy       # float32 array
+│   │   ├── value_loss           # float32 array (optional)
+│   │   └── value_accuracy       # float32 array (optional)
+│   ├── epochs_completed         # int
+│   ├── patience_counter         # int
+│   ├── best_loss                # float
+│   └── snapshot_counter         # int
+├── random_state/                # Required for deterministic resume
+│   ├── python_random            # bytes (pickled state)
+│   ├── numpy_random             # bytes (pickled state)
+│   ├── torch_random             # bytes (torch state)
+│   └── torch_cuda_random        # bytes (optional, CUDA state)
+└── training_data/               # Optional (if include_training_data=True)
+    ├── x_train                  # float32 array
+    ├── y_train                  # float32 array
+    ├── x_val                    # float32 array (optional)
+    └── y_val                    # float32 array (optional)
 ```
 
 ### Root Attributes
@@ -161,8 +152,6 @@ snapshot.h5
 | `train_accuracy` | `float32` | `(epochs,)` | Training accuracy per epoch |
 | `value_loss` | `float32` | `(epochs,)` | Validation loss (if provided) |
 | `value_accuracy` | `float32` | `(epochs,)` | Validation accuracy (if provided) |
-
-`history/hidden_units_added/unit_N` entries store optional unit snapshots:
 
 - `attrs.correlation` (float)
 - `weights` dataset (if captured)
@@ -630,10 +619,9 @@ def migrate_old_snapshot(old_path, new_path):
             old.copy(key, new)
 
         # Normalize legacy val_* history keys to canonical value_*
-        if 'history/val_loss' in new:
-            new.move('history/val_loss', 'history/value_loss')
-        if 'history/val_accuracy' in new:
-            new.move('history/val_accuracy', 'history/value_accuracy')
+        if 'training_state/history/val_loss' in new:
+            new.move('training_state/history/val_loss',
+                    'training_state/history/value_loss')
 
         # Update serializer format attributes
         new.attrs['format'] = 'juniper.cascor'

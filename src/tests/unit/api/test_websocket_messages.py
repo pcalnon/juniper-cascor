@@ -4,7 +4,15 @@ import time
 
 import pytest
 
-from api.websocket.messages import create_cascade_add_message, create_control_ack_message, create_event_message, create_metrics_message, create_state_message, create_topology_message
+from api.websocket.messages import (
+    create_candidate_progress_message,
+    create_cascade_add_message,
+    create_control_ack_message,
+    create_event_message,
+    create_metrics_message,
+    create_state_message,
+    create_topology_message,
+)
 
 
 @pytest.mark.unit
@@ -46,6 +54,13 @@ class TestMessageBuilders:
         data = {"hidden_unit_index": 0, "correlation": 0.95}
         msg = create_cascade_add_message(data)
         assert msg["type"] == "cascade_add"
+        assert msg["data"] == data
+
+    def test_create_candidate_progress_message(self):
+        """Candidate progress message has correct type."""
+        data = {"candidate_id": 2, "epoch": 51, "total_epochs": 100, "correlation": 0.73}
+        msg = create_candidate_progress_message(data)
+        assert msg["type"] == "candidate_progress"
         assert msg["data"] == data
 
     def test_create_control_ack_success(self):

@@ -615,6 +615,79 @@ class TestWorkerLoop:
         # Should have a failure result
         assert not result_q.empty()
 
+    @pytest.mark.unit
+    def test_worker_loop_progress_callback_writes_to_progress_queue(self):
+        """_worker_loop should forward progress callback payloads to progress_queue."""
+        task_q = queue.Queue()
+        result_q = queue.Queue()
+        progress_q = queue.Queue()
+
+        x_input = torch.randn(5, 2)
+        y_target = torch.randn(5, 2)
+        residual = torch.randn(5, 2)
+        candidate_data = (0, 2, "Tanh", 0.1, "progress-uuid", 42, 1.0, 100)
+        training_inputs = (x_input, 2, y_target, residual, 0.01, 10)
+        task_q.put((0, candidate_data, training_inputs))
+        task_q.put(None)
+
+        def _fake_train_candidate_worker(task_data_input=None, parallel=True, progress_callback=None):
+            assert progress_callback is not None
+            progress_callback(candidate_id=0, epoch=1, total_epochs=2, correlation=0.42)
+            return CandidateTrainingResult(candidate_id=0, candidate_uuid="progress-uuid", correlation=0.42, success=True)
+
+        with patch.object(CascadeCorrelationNetwork, "train_candidate_worker", side_effect=_fake_train_candidate_worker):
+            CascadeCorrelationNetwork._worker_loop(
+                task_q,
+                result_q,
+                parallel=False,
+                task_queue_timeout=2.0,
+                progress_queue=progress_q,
+            )
+
+        assert not result_q.empty()
+        assert not progress_q.empty()
+        progress = progress_q.get(timeout=1.0)
+        assert progress["candidate_id"] == 0
+        assert progress["epoch"] == 1
+        assert progress["total_epochs"] == 2
+        assert progress["correlation"] == 0.42
+
+    @pytest.mark.unit
+    def test_worker_loop_progress_queue_full_drops_progress(self):
+        """Progress callback should be lossy (drop) when progress_queue is full."""
+        task_q = queue.Queue()
+        result_q = queue.Queue()
+        progress_q = queue.Queue(maxsize=1)
+        progress_q.put({"preexisting": True})
+
+        x_input = torch.randn(5, 2)
+        y_target = torch.randn(5, 2)
+        residual = torch.randn(5, 2)
+        candidate_data = (1, 2, "Tanh", 0.1, "progress-uuid-2", 42, 1.0, 100)
+        training_inputs = (x_input, 2, y_target, residual, 0.01, 10)
+        task_q.put((1, candidate_data, training_inputs))
+        task_q.put(None)
+
+        def _fake_train_candidate_worker(task_data_input=None, parallel=True, progress_callback=None):
+            assert progress_callback is not None
+            # Should not raise when queue is already full.
+            progress_callback(candidate_id=1, epoch=1, total_epochs=2, correlation=0.22)
+            return CandidateTrainingResult(candidate_id=1, candidate_uuid="progress-uuid-2", correlation=0.22, success=True)
+
+        with patch.object(CascadeCorrelationNetwork, "train_candidate_worker", side_effect=_fake_train_candidate_worker):
+            CascadeCorrelationNetwork._worker_loop(
+                task_q,
+                result_q,
+                parallel=False,
+                task_queue_timeout=2.0,
+                progress_queue=progress_q,
+            )
+
+        assert not result_q.empty()
+        # Queue remains bounded and retains preexisting element.
+        assert progress_q.qsize() == 1
+        assert progress_q.get(timeout=1.0)["preexisting"] is True
+
 
 # ---------------------------------------------------------------------------
 # 10. _start_manager and _stop_manager
@@ -1633,6 +1706,35 @@ class TestWorkerLoopEdgeCases:
         CascadeCorrelationNetwork._worker_loop(task_q, result_q, parallel=False, task_queue_timeout=1.0)
         # Worker should have exited without producing results
         assert result_q.empty()
+
+    @pytest.mark.unit
+    def test_worker_loop_passes_progress_callback_to_worker(self):
+        """Worker loop should build and pass a progress callback when queue is provided."""
+        task_q = queue.Queue()
+        result_q = queue.Queue()
+        progress_q = queue.Queue()
+
+        task_q.put(("task",))
+        task_q.put(None)
+
+        with patch.object(CascadeCorrelationNetwork, "train_candidate_worker", return_value=CandidateTrainingResult(candidate_id=1, correlation=0.5, success=True)) as mock_worker:
+            CascadeCorrelationNetwork._worker_loop(
+                task_q,
+                result_q,
+                parallel=False,
+                task_queue_timeout=1.0,
+                shared_training_inputs=None,
+                progress_queue=progress_q,
+            )
+
+        assert mock_worker.called
+        passed_callback = mock_worker.call_args.kwargs.get("progress_callback")
+        assert callable(passed_callback)
+
+        passed_callback(candidate_id=9, epoch=3, total_epochs=10, correlation=0.88)
+        progress_item = progress_q.get(timeout=0.5)
+        assert progress_item["candidate_id"] == 9
+        assert progress_item["epoch"] == 3
 
 
 class TestExecuteCandidateTrainingWithRealSequential:

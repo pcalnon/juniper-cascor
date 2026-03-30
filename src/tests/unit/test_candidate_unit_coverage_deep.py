@@ -253,6 +253,126 @@ class TestTrainDisplayProgressException:
             )
             assert isinstance(result, float)
 
+    @pytest.mark.unit
+    def test_train_detailed_progress_callback_emits_first_and_last_epoch(self, candidate):
+        """Progress callback should emit at epoch 1 and final epoch."""
+        x = torch.randn(10, 2)
+        residual_error = torch.randn(10, 2)
+        events = []
+
+        result = candidate.train_detailed(
+            x=x,
+            epochs=3,
+            residual_error=residual_error,
+            learning_rate=0.01,
+            display_frequency=100,
+            progress_callback=lambda **kwargs: events.append(kwargs),
+        )
+
+        assert isinstance(result, CandidateTrainingResult)
+        assert len(events) >= 2
+        assert events[0]["epoch"] == 1
+        assert events[-1]["epoch"] == 3
+        assert events[-1]["total_epochs"] == 3
+
+    @pytest.mark.unit
+    def test_train_detailed_uses_instance_progress_callback_fallback(self, candidate):
+        """train_detailed should use instance _progress_callback when not explicitly provided."""
+        x = torch.randn(10, 2)
+        residual_error = torch.randn(10, 2)
+        events = []
+        candidate._progress_callback = lambda **kwargs: events.append(kwargs)
+
+        result = candidate.train_detailed(
+            x=x,
+            epochs=2,
+            residual_error=residual_error,
+            learning_rate=0.01,
+            display_frequency=100,
+        )
+
+        assert isinstance(result, CandidateTrainingResult)
+        assert len(events) >= 2
+        assert events[0]["epoch"] == 1
+        assert events[-1]["epoch"] == 2
+
+
+# ===========================================================================
+# 6b. train() progress callback emission
+# ===========================================================================
+class TestTrainProgressCallback:
+    """Test progress callback wiring and throttling in train()."""
+
+    @pytest.mark.unit
+    def test_progress_callback_emits_first_and_last_epoch(self, candidate):
+        """Progress callback should emit on epoch 1 and final epoch (throttled)."""
+        x = torch.randn(10, 2)
+        residual_error = torch.randn(10, 2)
+        observed = []
+
+        fake_training_result = CandidateTrainingResult(
+            correlation=0.42,
+            best_corr_idx=0,
+            all_correlations=[0.42],
+            norm_output=torch.randn(10),
+            norm_error=torch.randn(10),
+            numerator=1.0,
+            denominator=1.0,
+            success=True,
+        )
+
+        with (
+            patch.object(candidate, "_get_correlations", return_value=fake_training_result),
+            patch.object(candidate, "_update_weights_and_bias", return_value=MagicMock()),
+            patch.object(candidate, "_display_training_progress", return_value=None),
+        ):
+            candidate.train(
+                x=x,
+                epochs=51,
+                residual_error=residual_error,
+                learning_rate=0.01,
+                display_frequency=1000,
+                progress_callback=lambda **kwargs: observed.append(kwargs),
+            )
+
+        assert [item["epoch"] for item in observed] == [1, 51]
+        assert all(item["total_epochs"] == 51 for item in observed)
+
+    @pytest.mark.unit
+    def test_progress_callback_falls_back_to_instance_attribute(self, candidate):
+        """When no callback arg is provided, train() should use self._progress_callback."""
+        x = torch.randn(10, 2)
+        residual_error = torch.randn(10, 2)
+        observed = []
+        candidate._progress_callback = lambda **kwargs: observed.append(kwargs)
+
+        fake_training_result = CandidateTrainingResult(
+            correlation=0.33,
+            best_corr_idx=0,
+            all_correlations=[0.33],
+            norm_output=torch.randn(10),
+            norm_error=torch.randn(10),
+            numerator=1.0,
+            denominator=1.0,
+            success=True,
+        )
+
+        with (
+            patch.object(candidate, "_get_correlations", return_value=fake_training_result),
+            patch.object(candidate, "_update_weights_and_bias", return_value=MagicMock()),
+            patch.object(candidate, "_display_training_progress", return_value=None),
+        ):
+            candidate.train(
+                x=x,
+                epochs=1,
+                residual_error=residual_error,
+                learning_rate=0.01,
+                display_frequency=1000,
+            )
+
+        assert len(observed) == 1
+        assert observed[0]["epoch"] == 1
+
 
 # ===========================================================================
 # 7. _get_correlation_abs_value with various types
