@@ -11,8 +11,9 @@ import logging
 import threading
 import time
 from concurrent.futures import Future, ThreadPoolExecutor
-from datetime import datetime
-from typing import Any, Callable, Dict, Optional
+from datetime import UTC, datetime
+from pathlib import Path
+from typing import Any, Callable, Dict, List, Optional
 
 import numpy as np
 import torch
@@ -108,7 +109,7 @@ class TrainingLifecycleManager:
         )
         self.training_monitor.register_callback(
             "training_start",
-            lambda **kw: ws.broadcast_from_thread(create_state_message({"status": "Started", "phase": "Output"})),
+            lambda **kw: self._broadcast_training_state(force=True),
         )
         self.training_monitor.register_callback(
             "training_end",
@@ -120,6 +121,24 @@ class TrainingLifecycleManager:
         )
 
         self.logger.info("WebSocket broadcast callbacks registered")
+
+    def _broadcast_training_state(self, force: bool = False) -> None:
+        """Broadcast full training state via WebSocket.
+
+        Throttled to at most one broadcast per second unless force=True.
+        """
+        if self._ws_manager is None:
+            return
+
+        now = time.monotonic()
+        if not force and hasattr(self, '_last_state_broadcast_time') and now - self._last_state_broadcast_time < 1.0:
+            return
+        self._last_state_broadcast_time = now
+
+        from api.websocket.messages import create_state_message
+        self._ws_manager.broadcast_from_thread(
+            create_state_message(self.training_state.get_state())
+        )
 
     # ------------------------------------------------------------------
     # Network management
@@ -234,6 +253,7 @@ class TrainingLifecycleManager:
             monitor.current_phase = "output"
             sm.handle_command(Command.START)
             state.update_state(status="Started", phase="Output", phase_started_at=datetime.now().isoformat())
+            manager_ref._broadcast_training_state(force=True)
 
             # Inject output training callback (Approach B — attribute fallback)
             manager_ref.network._output_epoch_callback = _output_training_callback
@@ -247,14 +267,17 @@ class TrainingLifecycleManager:
                 if stop_event.is_set():
                     sm.handle_command(Command.STOP)
                     state.update_state(status="Stopped", phase="Idle")
+                    manager_ref._broadcast_training_state(force=True)
                 else:
                     sm.mark_completed()
                     state.update_state(status="Completed", phase="Idle")
+                    manager_ref._broadcast_training_state(force=True)
 
                 return result
             except Exception as e:
                 sm.mark_failed(str(e))
                 state.update_state(status="Failed", phase="Idle")
+                manager_ref._broadcast_training_state(force=True)
                 raise
             finally:
                 monitor.on_training_end()
@@ -291,6 +314,7 @@ class TrainingLifecycleManager:
                     candidates_total=candidates_total,
                     phase_detail=phase_detail,
                 )
+                manager_ref._broadcast_training_state()
 
             def _drain_progress_queue(progress_queue, stop_event):
                 """Background thread that reads candidate progress from workers."""
@@ -310,6 +334,7 @@ class TrainingLifecycleManager:
                         best_correlation=progress.get("correlation", 0.0),
                     )
                     monitor.on_candidate_progress(progress)
+                    manager_ref._broadcast_training_state()
 
             def monitored_grow(*args, **kwargs):
                 # Pre-call: capture initial output training metrics
@@ -320,6 +345,7 @@ class TrainingLifecycleManager:
                 monitor.current_phase = "candidate"
                 sm.set_phase(TrainingPhase.CANDIDATE)
                 state.update_state(phase="Candidate", phase_started_at=datetime.now().isoformat())
+                manager_ref._broadcast_training_state(force=True)
 
                 # Inject grow iteration callback (Approach B — attribute fallback)
                 manager_ref.network._grow_iteration_callback = _grow_iteration_callback
@@ -358,6 +384,7 @@ class TrainingLifecycleManager:
                 monitor.current_phase = "output"
                 sm.set_phase(TrainingPhase.OUTPUT)
                 state.update_state(phase="Output", phase_detail="", candidate_epoch=0, candidate_total_epochs=0)
+                manager_ref._broadcast_training_state(force=True)
                 # Catch-all for any remaining metrics
                 manager_ref._extract_and_record_metrics()
                 return result
@@ -489,6 +516,7 @@ class TrainingLifecycleManager:
         self._stop_requested.set()
         self.state_machine.handle_command(Command.STOP)
         self.training_state.update_state(status="Stopped", phase="Idle")
+        self._broadcast_training_state(force=True)
         return {"status": "stop_requested", "timestamp": time.time()}
 
     def pause_training(self) -> Dict[str, Any]:
@@ -498,6 +526,7 @@ class TrainingLifecycleManager:
         self._pause_event.clear()
         self.state_machine.handle_command(Command.PAUSE)
         self.training_state.update_state(status="Paused")
+        self._broadcast_training_state(force=True)
         return {"status": "paused", "timestamp": time.time()}
 
     def resume_training(self) -> Dict[str, Any]:
@@ -507,6 +536,7 @@ class TrainingLifecycleManager:
         self._pause_event.set()
         self.state_machine.handle_command(Command.RESUME)
         self.training_state.update_state(status="Started")
+        self._broadcast_training_state(force=True)
         return {"status": "resumed", "timestamp": time.time()}
 
     def reset(self) -> Dict[str, Any]:
@@ -521,6 +551,7 @@ class TrainingLifecycleManager:
             current_epoch=0,
             current_step=0,
         )
+        self._broadcast_training_state(force=True)
         return {"status": "reset", "timestamp": time.time()}
 
     # ------------------------------------------------------------------
@@ -743,6 +774,92 @@ class TrainingLifecycleManager:
         except Exception as e:
             self.logger.error(f"Failed to compute decision boundary: {e}", exc_info=True)
             return None
+
+    # ------------------------------------------------------------------
+    # Snapshots
+    # ------------------------------------------------------------------
+
+    def _get_snapshots_dir(self) -> Path:
+        """Return the snapshots directory, creating it if needed."""
+        snapshots_dir = Path(__file__).resolve().parent.parent.parent / "snapshots"
+        snapshots_dir.mkdir(parents=True, exist_ok=True)
+        return snapshots_dir
+
+    def save_snapshot(self, description: str = "") -> Optional[Dict[str, Any]]:
+        """Save current network state to an HDF5 snapshot."""
+        if self.network is None:
+            return None
+
+        from snapshots.snapshot_serializer import CascadeHDF5Serializer
+
+        serializer = CascadeHDF5Serializer()
+        timestamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
+        snapshot_id = f"snapshot_{timestamp}"
+        filepath = self._get_snapshots_dir() / f"{snapshot_id}.h5"
+
+        success = serializer.save_network(self.network, filepath, include_training_state=True)
+        if not success:
+            self.logger.error(f"Failed to save snapshot to {filepath}")
+            return None
+
+        self.logger.info(f"Snapshot saved: {snapshot_id}")
+        return {
+            "id": snapshot_id,
+            "path": str(filepath),
+            "timestamp": timestamp,
+            "description": description,
+        }
+
+    def load_snapshot(self, snapshot_id: str) -> bool:
+        """Load a network snapshot by ID."""
+        snapshots_dir = self._get_snapshots_dir()
+        matches = [f for f in snapshots_dir.glob("*.h5") if f.stem == snapshot_id]
+        if not matches:
+            self.logger.warning(f"Snapshot not found: {snapshot_id}")
+            return False
+
+        from snapshots.snapshot_serializer import CascadeHDF5Serializer
+
+        serializer = CascadeHDF5Serializer()
+        network = serializer.load_network(matches[0])
+        if network is None:
+            self.logger.error(f"Failed to load snapshot: {snapshot_id}")
+            return False
+
+        self._restore_original_methods()
+        self.network = network
+        self._install_monitoring_hooks()
+        if self._worker_coordinator is not None and hasattr(self.network, "set_worker_coordinator"):
+            self.network.set_worker_coordinator(self._worker_coordinator)
+        self.logger.info(f"Snapshot restored: {snapshot_id}")
+        return True
+
+    def list_snapshots(self) -> List[Dict[str, Any]]:
+        """List available snapshots."""
+        snapshots_dir = self._get_snapshots_dir()
+        snapshots = []
+        for filepath in sorted(snapshots_dir.glob("*.h5")):
+            snapshots.append({
+                "id": filepath.stem,
+                "path": str(filepath),
+                "size_bytes": filepath.stat().st_size,
+                "modified": datetime.fromtimestamp(filepath.stat().st_mtime, tz=UTC).isoformat(),
+            })
+        return snapshots
+
+    def get_snapshot(self, snapshot_id: str) -> Optional[Dict[str, Any]]:
+        """Get metadata for a specific snapshot."""
+        snapshots_dir = self._get_snapshots_dir()
+        matches = [f for f in snapshots_dir.glob("*.h5") if f.stem == snapshot_id]
+        if not matches:
+            return None
+        filepath = matches[0]
+        return {
+            "id": filepath.stem,
+            "path": str(filepath),
+            "size_bytes": filepath.stat().st_size,
+            "modified": datetime.fromtimestamp(filepath.stat().st_mtime, tz=UTC).isoformat(),
+        }
 
     # ------------------------------------------------------------------
     # Shutdown
