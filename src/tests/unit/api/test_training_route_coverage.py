@@ -28,7 +28,7 @@ pytestmark = pytest.mark.unit
 @pytest.fixture
 def client():
     """Create a test client with lifecycle manager (lifespan runs)."""
-    settings = Settings()
+    settings = Settings(auto_start=False)
     app = create_app(settings)
     with TestClient(app) as c:
         yield c
@@ -38,7 +38,10 @@ def client():
 def client_with_network(client):
     """Create a test client with a network already created."""
     client.post("/v1/network", json={"input_size": 2, "output_size": 2})
-    return client
+    yield client
+    # Stop any running training before client teardown triggers lifespan shutdown.
+    # Without this, the background training thread blocks TestClient exit.
+    client.post("/v1/training/stop")
 
 
 class TestGetLifecycle:
@@ -46,7 +49,7 @@ class TestGetLifecycle:
 
     def test_lifecycle_not_initialized_returns_503(self):
         """Should return 503 when lifecycle is not on app.state."""
-        settings = Settings()
+        settings = Settings(auto_start=False)
         app = create_app(settings)
 
         # Remove lifecycle from app state
@@ -74,17 +77,13 @@ class TestStartTraining:
                 "inline_data": {
                     "train_x": [[0.1, 0.2], [0.3, 0.4], [0.5, 0.6], [0.7, 0.8]],
                     "train_y": [[1.0, 0.0], [0.0, 1.0], [1.0, 0.0], [0.0, 1.0]],
-                }
+                },
+                "epochs": 1,
             },
         )
         assert response.status_code == 200
         body = response.json()
         assert body["data"]["status"] == "training_started"
-
-        # Wait for background training to settle
-        import time
-
-        time.sleep(0.5)
 
     def test_start_training_with_inline_data_and_validation(self, client_with_network):
         """start_training should accept inline_data with validation data."""
@@ -96,16 +95,13 @@ class TestStartTraining:
                     "train_y": [[1.0, 0.0], [0.0, 1.0], [1.0, 0.0], [0.0, 1.0]],
                     "val_x": [[0.9, 1.0], [1.1, 1.2]],
                     "val_y": [[1.0, 0.0], [0.0, 1.0]],
-                }
+                },
+                "epochs": 1,
             },
         )
         assert response.status_code == 200
         body = response.json()
         assert body["data"]["status"] == "training_started"
-
-        import time
-
-        time.sleep(0.5)
 
     def test_start_training_with_dataset_generator(self, client_with_network):
         """start_training should accept dataset generator specification."""
@@ -118,16 +114,13 @@ class TestStartTraining:
                         "n_per_spiral": 20,
                         "n_spirals": 2,
                     },
-                }
+                },
+                "epochs": 1,
             },
         )
         assert response.status_code == 200
         body = response.json()
         assert body["data"]["status"] == "training_started"
-
-        import time
-
-        time.sleep(0.5)
 
     def test_start_training_with_params(self, client_with_network):
         """start_training should accept training parameter overrides."""
@@ -139,13 +132,10 @@ class TestStartTraining:
                     "train_y": [[1.0, 0.0], [0.0, 1.0], [1.0, 0.0], [0.0, 1.0]],
                 },
                 "params": {"max_hidden_units": 5},
+                "epochs": 1,
             },
         )
         assert response.status_code == 200
-
-        import time
-
-        time.sleep(0.5)
 
     def test_start_training_with_epochs_override(self, client_with_network):
         """start_training should accept epochs override."""
@@ -160,10 +150,6 @@ class TestStartTraining:
             },
         )
         assert response.status_code == 200
-
-        import time
-
-        time.sleep(0.5)
 
     def test_start_training_without_network_returns_error(self, client):
         """start_training should return 409 when no network exists."""

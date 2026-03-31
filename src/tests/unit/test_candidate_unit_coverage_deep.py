@@ -321,12 +321,16 @@ class TestTrainProgressCallback:
             success=True,
         )
 
+        # Disable early stopping so all 51 epochs run (constant mock correlation
+        # would otherwise trigger early stop before the final epoch).
+        candidate.early_stopping = False
+
         with (
             patch.object(candidate, "_get_correlations", return_value=fake_training_result),
             patch.object(candidate, "_update_weights_and_bias", return_value=MagicMock()),
             patch.object(candidate, "_display_training_progress", return_value=None),
         ):
-            candidate.train(
+            candidate.train_detailed(
                 x=x,
                 epochs=51,
                 residual_error=residual_error,

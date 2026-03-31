@@ -271,7 +271,7 @@ class TestTrainingMonitor:
         monitor.register_callback("epoch_end", _raising_callback)
         monitor.register_callback("epoch_end", lambda **kwargs: called.append(kwargs["epoch"]))
 
-        with caplog.at_level("ERROR"):
+        with caplog.at_level("ERROR", logger="api.lifecycle.monitor"):
             monitor.on_epoch_end(
                 epoch=4,
                 loss=0.4,
