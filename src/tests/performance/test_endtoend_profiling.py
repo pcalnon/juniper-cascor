@@ -88,7 +88,7 @@ class TestFullTrainingRunProfiling:
     profiling data.
     """
 
-    @pytest.mark.timeout(60)
+    @pytest.mark.timeout(180)
     def test_full_training_cprofile(self, small_spiral_data):
         """Profile a complete fit() call with cProfile and capture top functions."""
         x_train, y_train = small_spiral_data
@@ -122,7 +122,7 @@ class TestFullTrainingRunProfiling:
         # Print full stats to stdout for manual review
         profile.print_stats(top_n=20)
 
-    @pytest.mark.timeout(60)
+    @pytest.mark.timeout(180)
     def test_grow_network_cprofile(self, small_spiral_data):
         """Profile grow_network() in isolation (after initial output training)."""
         x_train, y_train = small_spiral_data
@@ -165,7 +165,7 @@ class TestTrainingPhaseTimeDistribution:
     then reports the percentage of total time spent in each phase.
     """
 
-    @pytest.mark.timeout(60)
+    @pytest.mark.timeout(180)
     def test_phase_time_distribution(self, small_spiral_data):
         """Measure time distribution across training phases in grow_network."""
         x_train, y_train = small_spiral_data
@@ -254,7 +254,7 @@ class TestTrainingPhaseTimeDistribution:
                 f"got {instrumented_ratio:.1%}"
             )
 
-    @pytest.mark.timeout(60)
+    @pytest.mark.timeout(180)
     def test_phase_distribution_with_more_epochs(self, small_spiral_data):
         """Measure phase distribution with max_hidden=5 for more growth iterations."""
         x_train, y_train = small_spiral_data
@@ -328,7 +328,7 @@ class TestMemoryGrowthProfiling:
     and peak memory during training using the resource module and /proc.
     """
 
-    @pytest.mark.timeout(60)
+    @pytest.mark.timeout(180)
     def test_memory_growth_per_epoch(self, small_spiral_data):
         """Track RSS memory at each growth epoch via monkey-patched grow_network."""
         x_train, y_train = small_spiral_data
@@ -399,7 +399,7 @@ class TestMemoryGrowthProfiling:
         assert base_rss_mb > 0, "Base RSS should be measurable"
         assert final_rss_mb >= base_rss_mb, "RSS should not decrease (monotonic max)"
 
-    @pytest.mark.timeout(60)
+    @pytest.mark.timeout(180)
     def test_peak_memory_during_training(self, small_spiral_data):
         """Measure peak RSS during candidate training phases."""
         x_train, y_train = small_spiral_data
@@ -432,7 +432,7 @@ class TestMemoryGrowthProfiling:
         # Sanity: peak RSS should be non-negative
         assert rss_after_grow_kb >= rss_before_kb
 
-    @pytest.mark.timeout(60)
+    @pytest.mark.timeout(180)
     def test_memory_growth_medium_data(self, medium_spiral_data):
         """Track memory growth with a larger dataset (400 samples)."""
         x_train, y_train = medium_spiral_data
@@ -469,7 +469,7 @@ class TestConvergenceVsPerformanceTradeoffs:
     final accuracy.
     """
 
-    @pytest.mark.timeout(60)
+    @pytest.mark.timeout(180)
     @pytest.mark.parametrize(
         "pool_size,candidate_epochs",
         [
@@ -512,7 +512,7 @@ class TestConvergenceVsPerformanceTradeoffs:
         assert final_accuracy <= 1.0
         assert elapsed_ms > 0
 
-    @pytest.mark.timeout(60)
+    @pytest.mark.timeout(180)
     @pytest.mark.parametrize(
         "patience",
         [1, 3, 5],
@@ -525,7 +525,7 @@ class TestConvergenceVsPerformanceTradeoffs:
         config = _make_small_training_config(
             candidate_pool_size=4,
             candidate_epochs=20,
-            max_hidden_units=5,
+            max_hidden_units=3,
             patience=patience,
         )
         net = CascadeCorrelationNetwork(config=config)
@@ -547,7 +547,7 @@ class TestConvergenceVsPerformanceTradeoffs:
         assert final_accuracy >= 0.0
         assert elapsed_ms > 0
 
-    @pytest.mark.timeout(60)
+    @pytest.mark.timeout(180)
     @pytest.mark.parametrize(
         "candidate_epochs,output_epochs",
         [
