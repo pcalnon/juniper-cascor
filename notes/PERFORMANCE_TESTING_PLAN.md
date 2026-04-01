@@ -70,27 +70,27 @@ fit()
 
 ### Key Performance Constants
 
-| Constant | Default | Location |
-| ---------- | --------- | ---------- |
-| `candidate_pool_size` | 16 | `constants_candidates.py` |
-| `candidate_epochs` | 100 | `constants_candidates.py` |
-| `worker_thread_count` | 1 | `constants_model.py:75` (RC-1 pin) |
-| `task_queue_timeout` | 5.0s | `constants_model.py:67` |
-| `shutdown_timeout` | 10.0s | `constants_model.py:68` |
-| `worker_standby_sleepytime` | 2.0s | `constants_model.py:66` |
-| `_QUEUE_MAXSIZE` | 1024 | `cascade_correlation.py:187` |
+| Constant                    | Default | Location                           |
+|-----------------------------|---------|------------------------------------|
+| `candidate_pool_size`       | 16      | `constants_candidates.py`          |
+| `candidate_epochs`          | 100     | `constants_candidates.py`          |
+| `worker_thread_count`       | 1       | `constants_model.py:75` (RC-1 pin) |
+| `task_queue_timeout`        | 5.0s    | `constants_model.py:67`            |
+| `shutdown_timeout`          | 10.0s   | `constants_model.py:68`            |
+| `worker_standby_sleepytime` | 2.0s    | `constants_model.py:66`            |
+| `_QUEUE_MAXSIZE`            | 1024    | `cascade_correlation.py:187`       |
 
 ### Existing Profiling Infrastructure
 
-| Tool | Location | Status |
-| ------ | ---------- | -------- |
-| cProfile decorator/context manager | `src/profiling/deterministic.py` | Implemented |
-| py-spy sampling profiler wrapper | `util/profile_training.bash` | Implemented |
-| Benchmark harness (bash) | `src/tests/scripts/run_benchmarks.bash` | Implemented |
-| `measure_training_time()` | `src/tests/helpers/utilities.py` | Implemented |
-| `monitor_memory()` context manager | `src/tests/helpers/utilities.py` | Implemented |
-| `--profile` CLI flag | `src/main.py` | Implemented |
-| `--profile-memory` CLI flag | `src/main.py` | Implemented |
+| Tool                               | Location                                | Status      |
+|------------------------------------|-----------------------------------------|-------------|
+| cProfile decorator/context manager | `src/profiling/deterministic.py`        | Implemented |
+| py-spy sampling profiler wrapper   | `util/profile_training.bash`            | Implemented |
+| Benchmark harness (bash)           | `src/tests/scripts/run_benchmarks.bash` | Implemented |
+| `measure_training_time()`          | `src/tests/helpers/utilities.py`        | Implemented |
+| `monitor_memory()` context manager | `src/tests/helpers/utilities.py`        | Implemented |
+| `--profile` CLI flag               | `src/main.py`                           | Implemented |
+| `--profile-memory` CLI flag        | `src/main.py`                           | Implemented |
 
 ---
 
@@ -129,13 +129,13 @@ The following core design elements are requirements and must not be changed:
 
 **Description**: pytest plugin that provides statistical benchmarking with calibration, warmup, and comparison between runs.
 
-| Aspect | Assessment |
-| -------- | ------------ |
-| **Strengths** | Integrates with existing pytest infrastructure; automatic statistical analysis (mean, stddev, rounds, iterations); comparison between runs via `--benchmark-compare`; JSON output for CI/CD regression tracking; pedantic calibration mode |
-| **Weaknesses** | Overhead per benchmark iteration; not suitable for long-running (>30s) benchmarks; limited multiprocessing support |
-| **Risks** | Benchmark timer resolution may hide sub-microsecond differences; noisy CI environments can produce unstable results |
-| **Guardrails** | Use `--benchmark-min-rounds=5`; run on dedicated hardware or use `--benchmark-warmup=on`; pin `--benchmark-disable-gc` for consistency |
-| **Best For** | Component-level micro-benchmarks: forward pass, correlation calculation, weight update, serialization |
+| Aspect         | Assessment                                                                                                                                                                                         |
+|----------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| **Strengths**  | Integrate existing pytest infra; auto stats analysis (mean, stddev, rounds, iterations); comparison between runs `--benchmark-compare`; JSON for CI/CD regression track; pedantic calibration mode |
+| **Weaknesses** | Overhead per benchmark iteration; not suitable for long-running (>30s) benchmarks; limited multiprocessing support                                                                                 |
+| **Risks**      | Benchmark timer resolution may hide sub-microsecond differences; noisy CI environments can produce unstable results                                                                                |
+| **Guardrails** | Use `--benchmark-min-rounds=5`; run on dedicated hardware or use `--benchmark-warmup=on`; pin `--benchmark-disable-gc` for consistency                                                             |
+| **Best For**   | Component-level micro-benchmarks: forward pass, correlation calculation, weight update, serialization                                                                                              |
 
 **Alternative**: The existing `run_benchmarks.bash` harness provides similar functionality with manual timing. pytest-benchmark adds statistical rigor and CI integration but requires an additional dependency.
 
@@ -145,13 +145,13 @@ The following core design elements are requirements and must not be changed:
 
 **Description**: Sampling profiler that attaches to running Python processes with minimal overhead. Already partially integrated via `util/profile_training.bash`.
 
-| Aspect | Assessment |
-| -------- | ------------ |
-| **Strengths** | Near-zero overhead (~2-5%); supports multiprocessing via `--subprocesses`; flame graph and speedscope output; no code changes required; works with forkserver processes |
-| **Weaknesses** | Sampling can miss short-lived functions; requires `sudo` or `SYS_PTRACE` capability; line-level attribution can be noisy |
-| **Risks** | May not capture queue contention or IPC delays (these are kernel-level); security restrictions on CI runners may prevent attachment |
-| **Guardrails** | Use `--rate 200` minimum for fine-grained profiling; always profile with `--subprocesses` for multiprocessing; compare wall time vs CPU time |
-| **Best For** | Full training run profiling, identifying which functions consume the most wall-clock time, visualizing call stacks across workers |
+| Aspect         | Assessment                                                                                                                                                              |
+|----------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| **Strengths**  | Near-zero overhead (~2-5%); supports multiprocessing via `--subprocesses`; flame graph and speedscope output; no code changes required; works with forkserver processes |
+| **Weaknesses** | Sampling can miss short-lived functions; requires `sudo` or `SYS_PTRACE` capability; line-level attribution can be noisy                                                |
+| **Risks**      | May not capture queue contention or IPC delays (these are kernel-level); security restrictions on CI runners may prevent attachment                                     |
+| **Guardrails** | Use `--rate 200` minimum for fine-grained profiling; always profile with `--subprocesses` for multiprocessing; compare wall time vs CPU time                            |
+| **Best For**   | Full training run profiling, identifying which functions consume the most wall-clock time, visualizing call stacks across workers                                       |
 
 **Alternative**: cProfile (already implemented in `src/profiling/deterministic.py`) provides per-function granularity but with 10-30% overhead and no multiprocessing support.
 
@@ -161,13 +161,13 @@ The following core design elements are requirements and must not be changed:
 
 **Description**: High-performance CPU, GPU, and memory profiler with line-level granularity.
 
-| Aspect | Assessment |
-| -------- | ------------ |
-| **Strengths** | Line-level CPU and memory profiling simultaneously; separates Python vs C time; low overhead (< 10%); identifies memory leaks |
-| **Weaknesses** | May not work reliably with forkserver multiprocessing; requires Python 3.8+; less mature than py-spy for process attachment |
-| **Risks** | Forkserver compatibility is **likely broken** -- scalene's process attachment model conflicts with forkserver's server process architecture and preloaded module set (torch, numpy, etc.); may interfere with torch thread management (RC-1) |
-| **Guardrails** | **Do not use for multiprocessing profiling** -- limit to single-process mode only; test compatibility with forkserver before any use; validate against py-spy results |
-| **Best For** | Identifying combined CPU + memory bottlenecks in single-process mode; memory leak detection during long training |
+| Aspect         | Assessment                                                                                                                                                                                     |
+|----------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| **Strengths**  | Line-level CPU and memory profiling simultaneously; separates Python vs C time; low overhead (< 10%); identifies memory leaks                                                                  |
+| **Weaknesses** | May not work reliably with forkserver multiprocessing; requires Python 3.8+; less mature than py-spy for process attachment                                                                    |
+| **Risks**      | Forkserver compat **likely broken** -- scalene's proc attach model conflicts w/ forkserver's server process arch & preload module set (torch, numpy, etc.); interfere torch thread mgmt (RC-1) |
+| **Guardrails** | **Do not use for multiprocessing profiling** -- limit to single-process mode only; test compatibility with forkserver before any use; validate against py-spy results                          |
+| **Best For**   | Identifying combined CPU + memory bottlenecks in single-process mode; memory leak detection during long training                                                                               |
 
 **Alternative**: tracemalloc (built-in) for memory-only profiling with `--profile-memory` flag already implemented.
 
@@ -177,13 +177,13 @@ The following core design elements are requirements and must not be changed:
 
 **Description**: Targeted timing decorators and context managers placed around specific code paths, particularly IPC boundaries that sampling profilers cannot observe.
 
-| Aspect | Assessment |
-| -------- | ------------ |
-| **Strengths** | Works across multiprocessing boundaries; measures queue put/get latency directly; zero-dependency; can be enabled/disabled via config flag |
-| **Weaknesses** | Manual instrumentation effort; must be careful not to introduce overhead that distorts results; risk of accidentally committing debug timing code |
-| **Risks** | Timing code that touches multiprocessing.Queue internals could introduce subtle bugs; clock synchronization across processes |
+| Aspect         | Assessment                                                                                                                                                 |
+|----------------|------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| **Strengths**  | Works across multiprocessing boundaries; measures queue put/get latency directly; zero-dependency; can be enabled/disabled via config flag                 |
+| **Weaknesses** | Manual instrumentation effort; must be careful not to introduce overhead that distorts results; risk of accidentally committing debug timing code          |
+| **Risks**      | Timing code that touches multiprocessing.Queue internals could introduce subtle bugs; clock synchronization across processes                               |
 | **Guardrails** | Use `time.perf_counter_ns()` for precision; gate behind environment variable (`CASCOR_PERF_TIMING=1`); never commit timing code to hot paths without guard |
-| **Best For** | Queue throughput measurement; IPC latency; worker startup/teardown timing; task serialization overhead |
+| **Best For**   | Queue throughput measurement; IPC latency; worker startup/teardown timing; task serialization overhead                                                     |
 
 **Alternative**: None -- sampling profilers cannot observe queue wait times or IPC latency directly.
 
@@ -191,13 +191,13 @@ The following core design elements are requirements and must not be changed:
 
 ### Tool Selection Summary
 
-| Use Case | Primary Tool | Secondary Tool |
-| ---------- | ------------- | ---------------- |
-| Micro-benchmarks (forward, correlation, etc.) | pytest-benchmark | `run_benchmarks.bash` |
-| Full training profiling | py-spy (`--subprocesses`) | cProfile `ProfileContext` |
-| Memory profiling | tracemalloc (`--profile-memory`) | scalene (evaluate) |
-| IPC / Queue analysis | Custom timing instrumentation | py-spy flame graphs |
-| CI regression detection | pytest-benchmark JSON output | None |
+| Use Case                                      | Primary Tool                     | Secondary Tool            |
+|-----------------------------------------------|----------------------------------|---------------------------|
+| Micro-benchmarks (forward, correlation, etc.) | pytest-benchmark                 | `run_benchmarks.bash`     |
+| Full training profiling                       | py-spy (`--subprocesses`)        | cProfile `ProfileContext` |
+| Memory profiling                              | tracemalloc (`--profile-memory`) | scalene (evaluate)        |
+| IPC / Queue analysis                          | Custom timing instrumentation    | py-spy flame graphs       |
+| CI regression detection                       | pytest-benchmark JSON output     | None                      |
 
 ---
 
@@ -272,12 +272,12 @@ The following core design elements are requirements and must not be changed:
 
 **Test Matrix**:
 
-| Parameter | Values | Purpose |
-| ----------- | -------- | --------- |
-| `epochs` | 10, 50, 100, 200 | Measure per-epoch cost |
-| `input_size` | 2, 10, 50 | Scaling with feature dimensionality |
-| `sample_count` | 50, 200, 1000 | Scaling with dataset size |
-| `activation` | tanh, sigmoid, relu | Activation function overhead |
+| Parameter      | Values              | Purpose                             |
+|----------------|---------------------|-------------------------------------|
+| `epochs`       | 10, 50, 100, 200    | Measure per-epoch cost              |
+| `input_size`   | 2, 10, 50           | Scaling with feature dimensionality |
+| `sample_count` | 50, 200, 1000       | Scaling with dataset size           |
+| `activation`   | tanh, sigmoid, relu | Activation function overhead        |
 
 **Metrics Captured**:
 
@@ -294,11 +294,11 @@ The following core design elements are requirements and must not be changed:
 
 **Test Matrix**:
 
-| Parameter | Values | Purpose |
-| ----------- | -------- | --------- |
-| `hidden_units` | 0, 5, 10, 20, 50 | Cascade depth scaling |
-| `sample_count` | 50, 200, 1000 | Batch size impact |
-| `input_size` | 2, 10, 50 | Feature dimensionality |
+| Parameter      | Values           | Purpose                |
+|----------------|------------------|------------------------|
+| `hidden_units` | 0, 5, 10, 20, 50 | Cascade depth scaling  |
+| `sample_count` | 50, 200, 1000    | Batch size impact      |
+| `input_size`   | 2, 10, 50        | Feature dimensionality |
 
 **Key Question**: Does forward pass scale linearly with hidden_units, or is there quadratic behavior from the cascading concatenation pattern?
 
@@ -316,10 +316,10 @@ The CasCor forward pass builds incrementally: each hidden unit receives input + 
 
 **Test Matrix**:
 
-| Parameter | Values | Purpose |
-| ----------- | -------- | --------- |
-| `sample_count` | 50, 200, 1000, 5000 | Scaling with data size |
-| `output_size` | 1, 2, 5, 10 | Multi-output correlation overhead |
+| Parameter      | Values              | Purpose                           |
+|----------------|---------------------|-----------------------------------|
+| `sample_count` | 50, 200, 1000, 5000 | Scaling with data size            |
+| `output_size`  | 1, 2, 5, 10         | Multi-output correlation overhead |
 
 **Metrics Captured**:
 
@@ -333,11 +333,11 @@ The CasCor forward pass builds incrementally: each hidden unit receives input + 
 
 **Test Matrix**:
 
-| Parameter | Values | Purpose |
-| ----------- | -------- | --------- |
-| `hidden_units` | 0, 5, 10, 20, 50 | Network size impact |
-| `output_epochs` | 10, 50, 100 | Epoch count scaling |
-| `sample_count` | 50, 200, 1000 | Dataset size impact |
+| Parameter       | Values           | Purpose             |
+|-----------------|------------------|---------------------|
+| `hidden_units`  | 0, 5, 10, 20, 50 | Network size impact |
+| `output_epochs` | 10, 50, 100      | Epoch count scaling |
+| `sample_count`  | 50, 200, 1000    | Dataset size impact |
 
 **Key Question**: How does output training time scale as the network grows? The output layer width grows with each hidden unit addition.
 
@@ -349,9 +349,9 @@ This method is called `candidate_pool_size * candidate_epochs` times per growth 
 
 **Test Matrix**:
 
-| Parameter | Values | Purpose |
-| ----------- | -------- | --------- |
-| `input_size` | 2, 10, 50 | Gradient computation scaling |
+| Parameter    | Values         | Purpose                          |
+|--------------|----------------|----------------------------------|
+| `input_size` | 2, 10, 50      | Gradient computation scaling     |
 | `iterations` | 100, 500, 1000 | Amortized overhead per iteration |
 
 **Metrics Captured**:
@@ -369,11 +369,11 @@ This method is called `candidate_pool_size * candidate_epochs` times per growth 
 
 **Test Matrix** (extends existing harness):
 
-| Parameter | Values | Purpose |
-| ----------- | -------- | --------- |
-| `hidden_units` | 0, 10, 50, 100 | Model size impact |
-| `compression` | None, gzip, lzf | Compression overhead |
-| `include_training_data` | True, False | Data inclusion overhead |
+| Parameter               | Values          | Purpose                 |
+|-------------------------|-----------------|-------------------------|
+| `hidden_units`          | 0, 10, 50, 100  | Model size impact       |
+| `compression`           | None, gzip, lzf | Compression overhead    |
+| `include_training_data` | True, False     | Data inclusion overhead |
 
 **Metrics Captured**:
 
@@ -393,11 +393,11 @@ This method is called `candidate_pool_size * candidate_epochs` times per growth 
 
 **Test Matrix**:
 
-| Parameter | Values | Purpose |
-| ----------- | -------- | --------- |
-| `process_count` | 1, 2, 4, 8, N_cores | Scaling efficiency |
-| `candidate_pool_size` | 4, 8, 16, 32 | Work saturation point |
-| `candidate_epochs` | 50, 100, 200 | Per-task work granularity |
+| Parameter             | Values              | Purpose                   |
+|-----------------------|---------------------|---------------------------|
+| `process_count`       | 1, 2, 4, 8, N_cores | Scaling efficiency        |
+| `candidate_pool_size` | 4, 8, 16, 32        | Work saturation point     |
+| `candidate_epochs`    | 50, 100, 200        | Per-task work granularity |
 
 **Metrics Captured**:
 
@@ -422,12 +422,12 @@ This method is called `candidate_pool_size * candidate_epochs` times per growth 
 
 **Test Scenarios**:
 
-| Scenario | Description | Metric |
-| ---------- | ------------- | -------- |
-| Uncontested | Single producer, single consumer | Put/Get latency (us) |
-| N-producer | N workers writing results simultaneously | Get latency under contention |
-| Saturation | Queue near MAXSIZE (1024) | Put blocking time |
-| Drain overhead | Stale result drain (RC-5) | Drain time vs queue depth |
+| Scenario       | Description                              | Metric                       |
+|----------------|------------------------------------------|------------------------------|
+| Uncontested    | Single producer, single consumer         | Put/Get latency (us)         |
+| N-producer     | N workers writing results simultaneously | Get latency under contention |
+| Saturation     | Queue near MAXSIZE (1024)                | Put blocking time            |
+| Drain overhead | Stale result drain (RC-5)                | Drain time vs queue depth    |
 
 **Implementation**:
 
@@ -441,20 +441,20 @@ This method is called `candidate_pool_size * candidate_epochs` times per growth 
 
 **What Gets Serialized Per Task**:
 
-| Component | Approximate Size | Serialization Method |
-| ----------- | ----------------- | --------------------- |
-| `candidate_data` tuple | ~200 bytes | pickle |
-| `candidate_input` tensor | 4 x N_samples x input_size bytes | pickle (torch.Tensor) |
-| `y` tensor | 4 x N_samples x output_size bytes | pickle (torch.Tensor) |
-| `residual_error` tensor | 4 x N_samples x output_size bytes | pickle (torch.Tensor) |
+| Component                | Approximate Size                  | Serialization Method  |
+|--------------------------|-----------------------------------|-----------------------|
+| `candidate_data` tuple   | ~200 bytes                        | pickle                |
+| `candidate_input` tensor | 4 x N_samples x input_size bytes  | pickle (torch.Tensor) |
+| `y` tensor               | 4 x N_samples x output_size bytes | pickle (torch.Tensor) |
+| `residual_error` tensor  | 4 x N_samples x output_size bytes | pickle (torch.Tensor) |
 
 **Test Matrix**:
 
-| Parameter | Values | Purpose |
-| ----------- | -------- | --------- |
-| `sample_count` | 50, 200, 1000, 5000 | Payload size scaling |
-| `input_size` | 2, 10, 50 | Feature dimensionality |
-| `shared_inputs` | True, False | RC-3 optimization impact |
+| Parameter       | Values              | Purpose                  |
+|-----------------|---------------------|--------------------------|
+| `sample_count`  | 50, 200, 1000, 5000 | Payload size scaling     |
+| `input_size`    | 2, 10, 50           | Feature dimensionality   |
+| `shared_inputs` | True, False         | RC-3 optimization impact |
 
 **Key Question**: At what dataset size does IPC serialization overhead dominate per-candidate training time?
 
@@ -486,12 +486,12 @@ This method is called `candidate_pool_size * candidate_epochs` times per growth 
 
 **Test Configurations**:
 
-| Configuration | Parameters | Purpose |
-| --------------- | ----------- | --------- |
-| Quick baseline | 2-spiral, pool=8, epochs=50, max_hidden=5 | Minimal viable training |
-| Standard | 2-spiral, pool=16, epochs=100, max_hidden=15 | Typical usage |
-| Stress | 2-spiral, pool=32, epochs=200, max_hidden=30 | Scaling limits |
-| Large data | 5000 samples, pool=16, epochs=100 | Data-heavy workload |
+| Configuration  | Parameters                                   | Purpose                 |
+|----------------|----------------------------------------------|-------------------------|
+| Quick baseline | 2-spiral, pool=8, epochs=50, max_hidden=5    | Minimal viable training |
+| Standard       | 2-spiral, pool=16, epochs=100, max_hidden=15 | Typical usage           |
+| Stress         | 2-spiral, pool=32, epochs=200, max_hidden=30 | Scaling limits          |
+| Large data     | 5000 samples, pool=16, epochs=100            | Data-heavy workload     |
 
 **Execution**:
 
@@ -512,15 +512,15 @@ This method is called `candidate_pool_size * candidate_epochs` times per growth 
 
 **Phases to Measure**:
 
-| Phase | Method | Expected % |
-| ------- | -------- | ----------- |
-| Residual error calculation | `calculate_residual_error()` | 5-15% |
-| Candidate task preparation | `_prepare_candidate_input()` + `_generate_candidate_tasks()` | 1-5% |
-| Candidate training (parallel) | `_execute_candidate_training()` | 60-80% |
-| Result processing | `_process_training_results()` | 1-3% |
-| Unit addition | `add_unit()` | <1% |
-| Output layer retraining | `train_output_layer()` | 10-25% |
-| Validation | `validate_training()` | 2-5% |
+| Phase                         | Method                                                       | Expected % |
+|-------------------------------|--------------------------------------------------------------|------------|
+| Residual error calculation    | `calculate_residual_error()`                                 | 5-15%      |
+| Candidate task preparation    | `_prepare_candidate_input()` + `_generate_candidate_tasks()` | 1-5%       |
+| Candidate training (parallel) | `_execute_candidate_training()`                              | 60-80%     |
+| Result processing             | `_process_training_results()`                                | 1-3%       |
+| Unit addition                 | `add_unit()`                                                 | <1%        |
+| Output layer retraining       | `train_output_layer()`                                       | 10-25%     |
+| Validation                    | `validate_training()`                                        | 2-5%       |
 
 **Implementation**: Use `ProfileContext` around each phase within `grow_network()`, aggregate across iterations, report as percentage of total training time.
 
@@ -543,11 +543,11 @@ This method is called `candidate_pool_size * candidate_epochs` times per growth 
 
 **Test Matrix**:
 
-| Parameter | Values | Measures |
-| ----------- | -------- | ---------- |
-| `candidate_pool_size` | 4, 8, 16, 32, 64 | Speed vs convergence quality |
-| `candidate_epochs` | 25, 50, 100, 200 | Training depth vs time |
-| `patience` | 3, 5, 10, 20 | Early stopping aggressiveness |
+| Parameter             | Values           | Measures                      |
+|-----------------------|------------------|-------------------------------|
+| `candidate_pool_size` | 4, 8, 16, 32, 64 | Speed vs convergence quality  |
+| `candidate_epochs`    | 25, 50, 100, 200 | Training depth vs time        |
+| `patience`            | 3, 5, 10, 20     | Early stopping aggressiveness |
 
 **Metrics**:
 
@@ -592,11 +592,11 @@ For each identified bottleneck, document:
 
 **Options**:
 
-| Option | Description | Pros | Cons |
-| -------- | ------------- | ------ | ------ |
-| pytest-benchmark in scheduled CI | Run benchmarks nightly, compare against stored baselines | Automatic regression alerts; statistical comparison | Noisy CI environments; requires baseline management |
-| Manual baseline comparison | Run benchmarks locally, compare against committed baselines | Stable results; developer-controlled | No automatic detection; relies on discipline |
-| Hybrid | Nightly CI runs benchmarks and posts results; manual review for regressions > 10% | Best of both; reduces false positives | More complex setup |
+| Option                           | Description                                                                       | Pros                                                | Cons                                                |
+|----------------------------------|-----------------------------------------------------------------------------------|-----------------------------------------------------|-----------------------------------------------------|
+| pytest-benchmark in scheduled CI | Run benchmarks nightly, compare against stored baselines                          | Automatic regression alerts; statistical comparison | Noisy CI environments; requires baseline management |
+| Manual baseline comparison       | Run benchmarks locally, compare against committed baselines                       | Stable results; developer-controlled                | No automatic detection; relies on discipline        |
+| Hybrid                           | Nightly CI runs benchmarks and posts results; manual review for regressions > 10% | Best of both; reduces false positives               | More complex setup                                  |
 
 **Recommendation**: Start with **manual baseline comparison** (Option 2), migrate to **hybrid** (Option 3) once baselines stabilize. The existing `scheduled-tests.yml` already runs performance benchmarks nightly -- extend it to save JSON results as artifacts.
 
@@ -610,73 +610,73 @@ For each identified bottleneck, document:
 
 ### Forward Pass Scaling (test_micro_forward_pass.py)
 
-| Hidden Units | Mean (us) | StdDev (us) | Relative | Notes |
-| -------------- | ----------- | ------------- | ---------- | ------- |
-| 0 | 3,252 | 695 | 1.00x | Baseline: input-to-output only |
-| 5 | 6,979 | - | 2.15x | ~745 us per hidden unit |
-| 10 | 2,518 | 2,249 | 0.77x | Faster than 0 (warmup/caching) |
-| 20 | 3,037 | 695 | 0.93x | Minimal growth from 10 |
-| 50 | 6,043 | 1,104 | 1.86x | Sub-linear scaling confirmed |
+| Hidden Units | Mean (us) | StdDev (us) | Relative | Notes                          |
+|--------------|-----------|-------------|----------|--------------------------------|
+| 0            | 3,252     | 695         | 1.00x    | Baseline: input-to-output only |
+| 5            | 6,979     | -           | 2.15x    | ~745 us per hidden unit        |
+| 10           | 2,518     | 2,249       | 0.77x    | Faster than 0 (warmup/caching) |
+| 20           | 3,037     | 695         | 0.93x    | Minimal growth from 10         |
+| 50           | 6,043     | 1,104       | 1.86x    | Sub-linear scaling confirmed   |
 
 **Key Finding**: Forward pass does **NOT** show quadratic scaling. The 0-hidden baseline includes more overhead proportionally. At 50 hidden units, cost is only ~1.9x the 0-hidden case, confirming that `torch.cat()` concatenation is not the dominant cost. **OPT-1 priority should be reduced.**
 
-| Sample Count | Mean (us) | Notes |
-| -------------- | ----------- | ------- |
-| 50 | 6,138 | 10 hidden units |
-| 200 | 4,977 | Faster due to better vectorization |
-| 1000 | 1,676 | Even faster -- torch batch efficiency |
+| Sample Count | Mean (us) | Notes                                 |
+|--------------|-----------|---------------------------------------|
+| 50           | 6,138     | 10 hidden units                       |
+| 200          | 4,977     | Faster due to better vectorization    |
+| 1000         | 1,676     | Even faster -- torch batch efficiency |
 
 **Finding**: Forward pass is **faster** with larger batch sizes (better vectorization amortization).
 
-| Input Size | Mean (us) | Notes |
-| ------------ | ----------- | ------- |
-| 2 | 2,587 | 10 hidden units, 100 samples |
-| 10 | 3,599 | 1.39x |
-| 50 | 2,968 | 1.15x (sub-linear) |
+| Input Size | Mean (us) | Notes                        |
+|------------|-----------|------------------------------|
+| 2          | 2,587     | 10 hidden units, 100 samples |
+| 10         | 3,599     | 1.39x                        |
+| 50         | 2,968     | 1.15x (sub-linear)           |
 
 ### Autograd Overhead (test_micro_autograd.py)
 
-| Operation | Mean (us) | Relative | Notes |
-| ----------- | ----------- | ---------- | ------- |
-| Forward only (no_grad, input_size=2) | 42 | 1.0x | Pure computation baseline |
-| Forward only (no_grad, input_size=10) | 47 | 1.1x | |
-| Autograd cycle (input_size=2) | 269 | 6.4x | clone+detach+requires_grad+forward+backward |
-| Autograd cycle (input_size=10) | 306 | 7.3x | |
-| Autograd cycle (input_size=50) | 356 | 8.5x | |
+| Operation                             | Mean (us) | Relative | Notes                                       |
+|---------------------------------------|-----------|----------|---------------------------------------------|
+| Forward only (no_grad, input_size=2)  | 42        | 1.0x     | Pure computation baseline                   |
+| Forward only (no_grad, input_size=10) | 47        | 1.1x     |                                             |
+| Autograd cycle (input_size=2)         | 269       | 6.4x     | clone+detach+requires_grad+forward+backward |
+| Autograd cycle (input_size=10)        | 306       | 7.3x     |                                             |
+| Autograd cycle (input_size=50)        | 356       | 8.5x     |                                             |
 
 **Key Finding**: Autograd overhead is **6-8.5x** the cost of the pure forward computation. For candidate training (100 epochs x pool_size=16 = 1,600 autograd cycles per growth epoch), this is a significant multiplier. **OPT-2 (fused correlation) matters less than the autograd pattern itself.** Memory growth tests confirm no leaks (< 10MB over 1000 iterations).
 
 ### Correlation Calculation (test_micro_correlation.py)
 
-| Samples | Output Size | Mean (us) | Notes |
-| --------- | ------------- | ----------- | ------- |
-| 50 | 2 | 1,556 | |
-| 200 | 2 | 2,181 | 1.4x for 4x data |
-| 1000 | 2 | 884 | Sub-linear (vectorization) |
-| 5000 | 2 | 1,667 | 1.9x for 5x data |
-| 1000 | 1 | 19,257 | **Anomalous: 22x slower for 1 output** |
-| 1000 | 2 | 709 | |
-| 1000 | 5 | 2,529 | 3.6x for 2.5x outputs |
-| 1000 | 10 | 2,016 | 2.8x for 5x outputs |
+| Samples | Output Size | Mean (us) | Notes                                  |
+|---------|-------------|-----------|----------------------------------------|
+| 50      | 2           | 1,556     |                                        |
+| 200     | 2           | 2,181     | 1.4x for 4x data                       |
+| 1000    | 2           | 884       | Sub-linear (vectorization)             |
+| 5000    | 2           | 1,667     | 1.9x for 5x data                       |
+| 1000    | 1           | 19,257    | **Anomalous: 22x slower for 1 output** |
+| 1000    | 2           | 709       |                                        |
+| 1000    | 5           | 2,529     | 3.6x for 2.5x outputs                  |
+| 1000    | 10          | 2,016     | 2.8x for 5x outputs                    |
 
 **Key Finding**: output_size=1 is anomalously slow (19ms vs 0.7ms for output_size=2). This suggests a code path branch for single-output that is significantly less optimized. **Investigate `_calculate_correlation` single-output path.**
 
 ### Candidate Training (test_micro_candidate.py)
 
-| Epochs | Input | Samples | Activation | Mean (ms) | Notes |
-| -------- | ------- | --------- | ------------ | ----------- | ------- |
-| 10 | 2 | 100 | tanh | 95 | Baseline |
-| 50 | 2 | 100 | tanh | 417 | 4.4x for 5x epochs (linear) |
-| 100 | 2 | 100 | tanh | 821 | 8.6x for 10x epochs (linear) |
-| 200 | 2 | 100 | tanh | 1,706 | 18.0x for 20x epochs (linear) |
-| 50 | 2 | 100 | tanh | 6,072 | Full parametrized version |
-| 50 | 2 | 100 | sigmoid | 6,682 | 1.10x tanh (10% slower) |
-| 50 | 2 | 100 | relu | 5,978 | 0.98x tanh (negligible diff) |
-| 50 | 2 | 50 | tanh | 7,554 | |
-| 50 | 2 | 200 | tanh | 12,239 | |
-| 50 | 2 | 1000 | tanh | 31,372 | |
-| 50 | 10 | 100 | tanh | 10,458 | 1.7x for 5x input features |
-| 50 | 50 | 100 | tanh | 8,500 | 1.4x for 25x input features |
+| Epochs | Input | Samples | Activation | Mean (ms) | Notes                         |
+|--------|-------|---------|------------|-----------|-------------------------------|
+| 10     | 2     | 100     | tanh       | 95        | Baseline                      |
+| 50     | 2     | 100     | tanh       | 417       | 4.4x for 5x epochs (linear)   |
+| 100    | 2     | 100     | tanh       | 821       | 8.6x for 10x epochs (linear)  |
+| 200    | 2     | 100     | tanh       | 1,706     | 18.0x for 20x epochs (linear) |
+| 50     | 2     | 100     | tanh       | 6,072     | Full parametrized version     |
+| 50     | 2     | 100     | sigmoid    | 6,682     | 1.10x tanh (10% slower)       |
+| 50     | 2     | 100     | relu       | 5,978     | 0.98x tanh (negligible diff)  |
+| 50     | 2     | 50      | tanh       | 7,554     |                               |
+| 50     | 2     | 200     | tanh       | 12,239    |                               |
+| 50     | 2     | 1000    | tanh       | 31,372    |                               |
+| 50     | 10    | 100     | tanh       | 10,458    | 1.7x for 5x input features    |
+| 50     | 50    | 100     | tanh       | 8,500     | 1.4x for 25x input features   |
 
 **Key Findings**:
 
@@ -687,19 +687,19 @@ For each identified bottleneck, document:
 
 ### Output Layer Training (test_micro_output_training.py)
 
-| Hidden Units | Epochs | Samples | Mean (ms) | Notes |
-| -------------- | -------- | --------- | ----------- | ------- |
-| 0 | 25 | 100 | 183 | Baseline |
-| 5 | 25 | 100 | 193 | 1.05x |
-| 10 | 25 | 100 | 203 | 1.11x |
-| 20 | 25 | 100 | 215 | 1.18x |
-| 50 | 25 | 100 | 293 | 1.60x |
-| 10 | 10 | 100 | 87 | Epoch baseline |
-| 10 | 50 | 100 | 409 | 4.7x for 5x epochs (linear) |
-| 10 | 100 | 100 | 804 | 9.2x for 10x epochs (linear) |
-| 10 | 25 | 50 | 137 | |
-| 10 | 25 | 200 | 347 | |
-| 10 | 25 | 1000 | 88 | Faster (vectorization) |
+| Hidden Units | Epochs | Samples | Mean (ms) | Notes                        |
+|--------------|--------|---------|-----------|------------------------------|
+| 0            | 25     | 100     | 183       | Baseline                     |
+| 5            | 25     | 100     | 193       | 1.05x                        |
+| 10           | 25     | 100     | 203       | 1.11x                        |
+| 20           | 25     | 100     | 215       | 1.18x                        |
+| 50           | 25     | 100     | 293       | 1.60x                        |
+| 10           | 10     | 100     | 87        | Epoch baseline               |
+| 10           | 50     | 100     | 409       | 4.7x for 5x epochs (linear)  |
+| 10           | 100    | 100     | 804       | 9.2x for 10x epochs (linear) |
+| 10           | 25     | 50      | 137       |                              |
+| 10           | 25     | 200     | 347       |                              |
+| 10           | 25     | 1000    | 88        | Faster (vectorization)       |
 
 **Key Findings**:
 
@@ -708,15 +708,15 @@ For each identified bottleneck, document:
 
 ### Scaling Analysis
 
-| Workers | Pool Size | Round Time (ms) | Speedup | Efficiency | Notes |
-| --------- | ----------- | ---------------- | --------- | ------------ | ------- |
-| 1 (sequential) | *pending Phase 3* | - | 1.00x | 100% | - |
+| Workers        | Pool Size         | Round Time (ms) | Speedup | Efficiency | Notes |
+|----------------|-------------------|-----------------|---------|------------|-------|
+| 1 (sequential) | *pending Phase 3* | -               | 1.00x   | 100%       | -     |
 
 ### Memory Profile
 
-| Network State | RSS (MB) | Delta (MB) | Notes |
-| --------------- | ---------- | ------------ | ------- |
-| *pending Phase 3/4* | - | - | - |
+| Network State       | RSS (MB) | Delta (MB) | Notes |
+|---------------------|----------|------------|-------|
+| *pending Phase 3/4* | -        | -          | -     |
 
 ---
 
@@ -772,32 +772,32 @@ Based on architectural analysis, these are the most likely optimization targets.
 
 ### Phase Prioritization
 
-| Phase | Priority | Effort | Prerequisite | Deliverable |
-| ------- | ---------- | -------- | -------------- | ------------- |
-| Phase 1 (Infrastructure) | **P0 -- Critical** | Medium (3-5 days) | None | Reproducible baselines, benchmark fixtures |
-| Phase 2 (Micro-benchmarks) | **P1 -- High** | Medium (3-5 days) | Phase 1 | Hot path timing data, scaling characteristics |
-| Phase 3 (Concurrency) | **P1 -- High** | High (5-7 days) | Phase 1 | Scaling curves, IPC overhead data |
-| Phase 4 (End-to-End) | **P2 -- Medium** | Medium (3-5 days) | Phase 1 (Steps 4.1-4.3); Phases 2, 3 (Step 4.4) | Full training profiles, bottleneck ranking |
-| Phase 5 (Optimization) | **P2 -- Medium** | Varies per OPT | Phase 4 | Code changes with measured impact |
+| Phase                      | Priority           | Effort            | Prerequisite                                    | Deliverable                                   |
+|----------------------------|--------------------|-------------------|-------------------------------------------------|-----------------------------------------------|
+| Phase 1 (Infrastructure)   | **P0 -- Critical** | Medium (3-5 days) | None                                            | Reproducible baselines, benchmark fixtures    |
+| Phase 2 (Micro-benchmarks) | **P1 -- High**     | Medium (3-5 days) | Phase 1                                         | Hot path timing data, scaling characteristics |
+| Phase 3 (Concurrency)      | **P1 -- High**     | High (5-7 days)   | Phase 1                                         | Scaling curves, IPC overhead data             |
+| Phase 4 (End-to-End)       | **P2 -- Medium**   | Medium (3-5 days) | Phase 1 (Steps 4.1-4.3); Phases 2, 3 (Step 4.4) | Full training profiles, bottleneck ranking    |
+| Phase 5 (Optimization)     | **P2 -- Medium**   | Varies per OPT    | Phase 4                                         | Code changes with measured impact             |
 
 ### Optimization Prioritization
 
-| Optimization | Priority | Effort | Measured/Predicted Impact | Risk |
-| ------------- | ---------- | -------- | -------------------------- | ------ |
-| OPT-6 (Correlation single-output path) | **P0** | Low | **27x anomaly** for output_size=1 | Low |
-| OPT-4 (Cached forward pass) | **P0 — DONE** | Low | 22x–1607x on isolated call; 5-15% total time | Low |
-| OPT-5 (Shared memory tensors) | **P1** | Medium-High | 30-50% for large data (Phase 3 will quantify) | High |
-| OPT-2 (Fused correlation) | **P2** | Low | 5-10% (sub-linear sample scaling observed) | Low |
-| OPT-1 (Pre-allocated forward) | **P3** | Medium | < 10% (**REVISED**: Phase 2 shows sub-linear, not quadratic) | Low |
-| OPT-3 (Persistent output layer) | **P3** | Medium | < 5% (**REVISED**: 0->50 hidden = only 1.6x) | Medium |
+| Optimization                           | Priority      | Effort      | Measured/Predicted Impact                                    | Risk   |
+|----------------------------------------|---------------|-------------|--------------------------------------------------------------|--------|
+| OPT-6 (Correlation single-output path) | **P0 — DONE** | Low         | **37x speedup** (18.24ms → 0.49ms for output_size=1)         | Low    |
+| OPT-4 (Cached forward pass)            | **P0 — DONE** | Low         | 22x–1607x on isolated call; 5-15% total time                 | Low    |
+| OPT-5 (Shared memory tensors)          | **P1**        | Medium-High | 30-50% for large data (Phase 3 will quantify)                | High   |
+| OPT-2 (Fused correlation)              | **P2**        | Low         | 5-10% (sub-linear sample scaling observed)                   | Low    |
+| OPT-1 (Pre-allocated forward)          | **P3**        | Medium      | < 10% (**REVISED**: Phase 2 shows sub-linear, not quadratic) | Low    |
+| OPT-3 (Persistent output layer)        | **P3**        | Medium      | < 5% (**REVISED**: 0->50 hidden = only 1.6x)                 | Medium |
 
-### NEW: OPT-6: Correlation Single-Output Path Anomaly
+### NEW: OPT-6: Correlation Single-Output Path Anomaly — **IMPLEMENTED**
 
-**Location**: `candidate_unit.py` `_calculate_correlation()` lines 1009-1100
-**Issue**: Phase 2 benchmarks reveal that `output_size=1` takes **19.3ms** while `output_size=2` takes **0.7ms** -- a **27x slowdown** for the single-output case. This suggests the single-output code path triggers a fundamentally different (and much slower) computation, likely a validation branch or fallback that performs unnecessary work.
-**Potential Fix**: Investigate and optimize the `output_size=1` code path in `_calculate_correlation()` and `_validate_correlation_params()`.
-**Risk**: Low -- pure numerical computation with no architectural changes.
-**Estimated Improvement**: Up to 27x speedup for single-output problems (regression tasks).
+**Location**: `candidate_unit.py` — 15 log calls across `forward()`, `train()`, `_get_correlations()`, `_multi_output_correlation()`, `_update_weights_and_bias()`
+**Issue**: Phase 2 benchmarks revealed `output_size=1` took **19.3ms** while `output_size=2` took **0.7ms** — a **27x slowdown**. Root cause: f-string tensor formatting in hot-path log calls triggered PyTorch's 1000-element print threshold (`torch._tensor_str`), which performs expensive formatting even at suppressed log levels because Python evaluates f-string arguments eagerly.
+**Fix Applied**: Removed `\n{tensor_value}` patterns from 15 hot-path log calls, replacing with shape/dtype metadata only. Commit `4463217`.
+**Risk**: Low — logging-only changes, no computation changes.
+**Measured Improvement**: output_size=1 went from 18.24ms to 0.49ms (**37x speedup**). Anomaly eliminated — output_size=1 now comparable to output_size=2.
 
 *Note*: Priorities revised using Phase 2 benchmark data (collected 2026-03-31). The user must grant explicit positive permission before implementing each optimization.
 

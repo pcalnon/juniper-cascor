@@ -1397,7 +1397,7 @@ class CascadeCorrelationNetwork:
         )
         self.history["hidden_units_added"].append({"correlation": 0.0, "weights": [], "bias": []})
         self.logger.info("CascadeCorrelationNetwork: fit: Training completed.")
-        self.logger.debug(f"CascadeCorrelationNetwork: fit: Final history:\n{self.history}")
+        self.logger.debug(f"CascadeCorrelationNetwork: fit: Final history: {len(self.history.get('train_loss', []))} epochs recorded")
         self.logger.trace("CascadeCorrelationNetwork: fit: Completed training of the network.")
         return self.history
 
@@ -1438,7 +1438,7 @@ class CascadeCorrelationNetwork:
 
         # Prepare input for the output layer
         output_input = torch.cat([x] + hidden_outputs, dim=1) if hidden_outputs else x
-        self.logger.verbose(f"CascadeCorrelationNetwork: forward: Output input shape: {output_input.shape}, Value: {output_input}")
+        self.logger.verbose(f"CascadeCorrelationNetwork: forward: Output input shape: {output_input.shape}")
 
         # OPT-4: Cache candidate input (output_input == candidate_input) for reuse by _prepare_candidate_input().
         # Keyed by input data pointer to prevent stale cache consumption with different inputs.
@@ -1499,14 +1499,14 @@ class CascadeCorrelationNetwork:
             output_layer.weight.copy_(self.output_weights.t())  # Transpose because nn.Linear expects (out_features, in_features)
             self.logger.debug(f"CascadeCorrelationNetwork: train_output_layer: Output weights shape: {self.output_weights.shape}, Transposed weights shape: {output_layer.weight.shape}")
             output_layer.bias.copy_(self.output_bias)
-            self.logger.debug(f"CascadeCorrelationNetwork: train_output_layer: Output bias shape: {self.output_bias.shape}, Bias: {output_layer.bias}")
+            self.logger.debug(f"CascadeCorrelationNetwork: train_output_layer: Output bias shape: {self.output_bias.shape}")
 
         # Use this layer for optimization (store as instance variable for HDF5 serialization)
         # Create or recreate optimizer using factory method
         self.output_optimizer = self._create_optimizer(output_layer.parameters())
         self.logger.debug(f"CascadeCorrelationNetwork: train_output_layer: Created optimizer: {type(self.output_optimizer).__name__}")
         optimizer = self.output_optimizer
-        self.logger.debug(f"CascadeCorrelationNetwork: train_output_layer: Learning Rate: {self.learning_rate}, Optimizer:\n{optimizer}")
+        self.logger.debug(f"CascadeCorrelationNetwork: train_output_layer: Learning Rate: {self.learning_rate}, Optimizer: {type(optimizer).__name__}")
         self.logger.debug(f"CascadeCorrelationNetwork: train_output_layer: Output layer initialized with weights shape: {output_layer.weight.shape}, Bias shape: {output_layer.bias.shape}")
 
         # Output Layer Training loop
@@ -1523,8 +1523,8 @@ class CascadeCorrelationNetwork:
             output_input = torch.cat([x] + hidden_outputs, dim=1) if hidden_outputs else x
             output = output_layer(output_input)
             self.logger.debug(f"CascadeCorrelationNetwork: train_output_layer: Output shape: {output.shape}, Output Input shape: {output_input.shape}")
-            self.logger.debug(f"CascadeCorrelationNetwork: train_output_layer: Output:\n{output}")
-            self.logger.debug(f"CascadeCorrelationNetwork: train_output_layer: Target shape: {y.shape}, Target:\n{y}")
+            self.logger.debug(f"CascadeCorrelationNetwork: train_output_layer: Output: shape={output.shape}, dtype={output.dtype}")
+            self.logger.debug(f"CascadeCorrelationNetwork: train_output_layer: Target shape: {y.shape}, dtype={y.dtype}")
             loss = criterion(output, y)
 
             # Backward pass
@@ -1543,14 +1543,14 @@ class CascadeCorrelationNetwork:
         # Update our model's weights with the trained values
         with torch.no_grad():
             self.output_weights = output_layer.weight.t().clone()  # Transpose back
-            self.logger.debug(f"CascadeCorrelationNetwork: train_output_layer: Output weights shape: {self.output_weights.shape}, Weights:\n{self.output_weights}")
+            self.logger.debug(f"CascadeCorrelationNetwork: train_output_layer: Output weights shape: {self.output_weights.shape}")
             self.output_bias = output_layer.bias.clone()
-            self.logger.debug(f"CascadeCorrelationNetwork: train_output_layer: Output bias shape: {self.output_bias.shape}, Bias:\n{self.output_bias}")
+            self.logger.debug(f"CascadeCorrelationNetwork: train_output_layer: Output bias shape: {self.output_bias.shape}")
 
         # Final loss
         with torch.no_grad():
             output = self.forward(x)
-            self.logger.debug(f"CascadeCorrelationNetwork: train_output_layer: Final output shape: {output.shape}, Output: {output}")
+            self.logger.debug(f"CascadeCorrelationNetwork: train_output_layer: Final output shape: {output.shape}")
             final_loss = criterion(output, y).item()
             self.logger.info(f"CascadeCorrelationNetwork: train_output_layer: Final output layer training loss: {final_loss:.6f}")
         if snapshot_path := self.create_snapshot() is not None:
@@ -2532,13 +2532,13 @@ class CascadeCorrelationNetwork:
             if candidate_inputs is None or not isinstance(candidate_inputs, dict) or len(candidate_inputs) == 0:
                 logger.error(f"CascadeCorrelationNetwork: train_candidate_worker: No candidate inputs built: Worker ID: {worker_id}, Worker UUID: {worker_uuid}")
                 return (None, None, 0.0, None)
-            logger.debug(f"CascadeCorrelationNetwork: train_candidate_worker: Built candidate inputs: Worker ID: {worker_id}, Worker UUID: {worker_uuid}, Candidate Inputs: {str(candidate_inputs)}")
+            logger.debug(f"CascadeCorrelationNetwork: train_candidate_worker: Built candidate inputs: Worker ID: {worker_id}, Worker UUID: {worker_uuid}, Keys: {list(candidate_inputs.keys()) if isinstance(candidate_inputs, dict) else type(candidate_inputs)}")
 
             # Instantiate a CandidateUnit using factory method (Note: needs network instance for factory)
             logger.debug(f"CascadeCorrelationNetwork: train_candidate_worker: Instantiate a CandidateUnit using factory method (Note: needs network instance for factory, candidate_inputs: {candidate_inputs}): Worker ID: {worker_id}, Worker UUID: {worker_uuid}")
             logger.debug(f"CascadeCorrelationNetwork: train_candidate_worker: Candidate Inputs Key Values: {candidate_inputs.get('candidate_display_frequency')}, Candidate Index: {candidate_inputs.get('candidate_index')}, Candidate UUID: {candidate_inputs.get('candidate_uuid')}")
             try:
-                logger.debug(f"CascadeCorrelationNetwork: train_candidate_worker: Instantiating CandidateUnit Worker ID: {worker_id}, Worker UUID: {worker_uuid}, Candidate Inputs: {str(candidate_inputs)}")
+                logger.debug(f"CascadeCorrelationNetwork: train_candidate_worker: Instantiating CandidateUnit Worker ID: {worker_id}, Worker UUID: {worker_uuid}")
                 # CASCOR-P0-005 FIX: Corrected parameter key names to match _build_candidate_inputs dictionary
                 # OLD (incorrect keys - returned None):
                 # CandidateUnit__epochs=candidate_inputs.get("epochs"),
@@ -2617,7 +2617,7 @@ class CascadeCorrelationNetwork:
         # Unpack task data
         # TODO: consider using data classes for task data, candidate data, and training inputs
         logger.debug(f"CascadeCorrelationNetwork: _build_candidate_inputs: Attempting to Unpack Task data, Candidate data, and Training inputs: Worker ID: {worker_id}, Worker UUID: {worker_uuid}")
-        logger.verbose(f"CascadeCorrelationNetwork: _build_candidate_inputs: Task data: length: {len(task_data_input)}, Type: {type(task_data_input)}, Content:\n{task_data_input}")
+        logger.verbose(f"CascadeCorrelationNetwork: _build_candidate_inputs: Task data: length: {len(task_data_input)}, Type: {type(task_data_input)}")
         logger.debug(f"CascadeCorrelationNetwork: _build_candidate_inputs: Task data unpacked: Worker ID: {worker_id}, Worker UUID: {worker_uuid}")
         # PARALLEL-FIX (RC-5): Support optional round_id as 4th element in task tuple.
         # Backward compatible: 3-element tuples from sequential path have round_id=None.
@@ -2628,8 +2628,8 @@ class CascadeCorrelationNetwork:
             round_id = None
         logger.debug(f"CascadeCorrelationNetwork: _build_candidate_inputs: Successfully Unpacked Task data: Worker ID: {worker_id}, Worker UUID: {worker_uuid}")
         logger.verbose(f"CascadeCorrelationNetwork: _build_candidate_inputs: Candidate Index: {candidate_index}, Type: {type(candidate_index)}, Value: {candidate_index}: Worker ID: {worker_id}, Worker UUID: {worker_uuid}")
-        logger.verbose(f"CascadeCorrelationNetwork: _build_candidate_inputs: Candidate Inputs: Length: {len(training_inputs)}, Type: {type(training_inputs)}, Content:\n{training_inputs}: Worker ID: {worker_id}, Worker UUID: {worker_uuid}")
-        logger.verbose(f"CascadeCorrelationNetwork: _build_candidate_inputs: Candidate Data: length: {len(candidate_data)}, Type: {type(candidate_data)}, Content:\n{candidate_data}: Worker ID: {worker_id}, Worker UUID: {worker_uuid}")
+        logger.verbose(f"CascadeCorrelationNetwork: _build_candidate_inputs: Candidate Inputs: Length: {len(training_inputs)}, Type: {type(training_inputs)}, Worker ID: {worker_id}, Worker UUID: {worker_uuid}")
+        logger.verbose(f"CascadeCorrelationNetwork: _build_candidate_inputs: Candidate Data: length: {len(candidate_data)}, Type: {type(candidate_data)}, Worker ID: {worker_id}, Worker UUID: {worker_uuid}")
         (
             input_size,
             activation_name,
@@ -2642,7 +2642,7 @@ class CascadeCorrelationNetwork:
         logger.debug(f"CascadeCorrelationNetwork: _build_candidate_inputs: Successfully Unpacked Candidate Data: Worker ID: {worker_id}, Worker UUID: {worker_uuid}, Candidate UUID: {candidate_uuid}.")
         logger.verbose(f"CascadeCorrelationNetwork: _build_candidate_inputs: Candidate data unpacked: Candidate ID: {id}, Input Size: {input_size}, Activation Function Name: {activation_name}, Random Value Scale: {random_value_scale}, Candidate UUID: {candidate_uuid}, Random Seed: {candidate_seed}, Random Value Max: {random_max_value}, Sequence Max Value: {sequence_max_value}: Worker ID: {worker_id}, Worker UUID: {worker_uuid}, Candidate UUID: {candidate_uuid}.")
         logger.debug(f"CascadeCorrelationNetwork: _build_candidate_inputs: Attempting to unpack Training inputs: Worker ID: {worker_id}, Worker UUID: {worker_uuid}, Candidate UUID: {candidate_uuid}")
-        logger.verbose(f"CascadeCorrelationNetwork: _build_candidate_inputs: Training inputs: length: {len(training_inputs)}, Type: {type(training_inputs)}, Content:\n{training_inputs}: Worker ID: {worker_id}, Worker UUID: {worker_uuid}, Candidate UUID: {candidate_uuid}")
+        logger.verbose(f"CascadeCorrelationNetwork: _build_candidate_inputs: Training inputs: length: {len(training_inputs)}, Type: {type(training_inputs)}, Worker ID: {worker_id}, Worker UUID: {worker_uuid}, Candidate UUID: {candidate_uuid}")
         (
             candidate_input,
             candidate_epochs,
@@ -2680,7 +2680,7 @@ class CascadeCorrelationNetwork:
             "activation_fn": activation_fn,
             "round_id": round_id,
         }
-        logger.debug(f"CascadeCorrelationNetwork: _build_candidate_inputs: Successfully built candidate inputs: {candidate_inputs}")
+        logger.debug(f"CascadeCorrelationNetwork: _build_candidate_inputs: Successfully built candidate inputs: {len(candidate_inputs)} keys")
         return candidate_inputs
 
     @staticmethod
@@ -3101,13 +3101,13 @@ class CascadeCorrelationNetwork:
             with torch.no_grad():
                 self.logger.debug("CascadeCorrelationNetwork: calculate_residual_error: Performing forward pass without gradient tracking")
                 output = self.forward(x)
-                self.logger.debug(f"CascadeCorrelationNetwork: calculate_residual_error: Forward pass completed, output shape: {output.shape}, Output:\n{output}")
+                self.logger.debug(f"CascadeCorrelationNetwork: calculate_residual_error: Forward pass completed, output shape: {output.shape}")
                 residual = y - output
-                self.logger.debug(f"CascadeCorrelationNetwork: calculate_residual_error: Calculated residual error, shape: {residual.shape}, Residual Error:\n{residual}")
-            self.logger.verbose(f"CascadeCorrelationNetwork: calculate_residual_error: Validating residual error, shape: {residual.shape}, Residual Error:\n{residual}")
+                self.logger.debug(f"CascadeCorrelationNetwork: calculate_residual_error: Calculated residual error, shape: {residual.shape}")
+            self.logger.verbose(f"CascadeCorrelationNetwork: calculate_residual_error: Validating residual error, shape: {residual.shape}")
             residual = (residual, torch.empty(0, self.output_size))[residual is None]
-            self.logger.debug(f"CascadeCorrelationNetwork: calculate_residual_error: Calculated residual error, shape: {residual.shape}, Residual Error:\n{residual}")
-        self.logger.verbose(f"CascadeCorrelationNetwork: calculate_residual_error: Returning residual error, shape: {residual.shape}, Residual Error:\n{residual}")
+            self.logger.debug(f"CascadeCorrelationNetwork: calculate_residual_error: Calculated residual error, shape: {residual.shape}")
+        self.logger.verbose(f"CascadeCorrelationNetwork: calculate_residual_error: Returning residual error, shape: {residual.shape}")
         return residual
 
     #################################################################################################################################################################################################
@@ -3146,7 +3146,7 @@ class CascadeCorrelationNetwork:
             hidden_outputs.append(unit_output)
         self.logger.debug(f"CascadeCorrelationNetwork: add_unit: Hidden outputs shape: {[h.shape for h in hidden_outputs]}")
         candidate_input = torch.cat([x] + hidden_outputs, dim=1) if hidden_outputs else x
-        self.logger.debug(f"CascadeCorrelationNetwork: add_unit: Candidate input shape: {candidate_input.shape}, Input size: {candidate_input.shape[1]}, Candidate Input:\n{candidate_input}")
+        self.logger.debug(f"CascadeCorrelationNetwork: add_unit: Candidate input shape: {candidate_input.shape}, Input size: {candidate_input.shape[1]}")
 
         # Create a new hidden unit
         new_unit = {
@@ -3214,7 +3214,7 @@ class CascadeCorrelationNetwork:
             }
         )
         self.logger.info(f"CascadeCorrelationNetwork: add_unit: Current number of hidden units: {len(self.hidden_units)}")
-        self.logger.debug(f"CascadeCorrelationNetwork: add_unit: Updated history with new hidden unit:\n{self.history['hidden_units_added'][-1]}\nHistory\n{self.history}")
+        self.logger.debug(f"CascadeCorrelationNetwork: add_unit: Updated history with new hidden unit, total hidden: {len(self.hidden_units)}")
         self.logger.trace("CascadeCorrelationNetwork: add_unit: Completed adding a new hidden unit.")
 
     def _select_best_candidates(self, results: list, num_candidates: int = 1) -> list:
@@ -3436,7 +3436,7 @@ class CascadeCorrelationNetwork:
 
                 # Original behavior: Add single best candidate
                 train_loss, train_accuracy = self._add_best_candidate(training_results.best_candidate, x_train, y_train, epoch)
-            self.logger.debug(f"CascadeCorrelationNetwork: grow_network: After adding candidate(s), Training Loss: {train_loss:.6f}, Training Accuracy: {train_accuracy:.4f}, For Current Epoch {epoch}, Post-Train History:\n{self.history}")
+            self.logger.debug(f"CascadeCorrelationNetwork: grow_network: After adding candidate(s), Training Loss: {train_loss:.6f}, Training Accuracy: {train_accuracy:.4f}, For Current Epoch {epoch}")
 
             # Prepare inputs for validation of training results
             validate_training_inputs = ValidateTrainingInputs(
@@ -3483,7 +3483,7 @@ class CascadeCorrelationNetwork:
                 value_accuracy=0.0,
             )
         self.logger.info(f"CascadeCorrelationNetwork: grow_network: Finished training after {epochs_completed} epochs. Total hidden units: {len(self.hidden_units)}")
-        self.logger.debug(f"CascadeCorrelationNetwork: grow_network: Final history:\n{self.history}")
+        self.logger.debug(f"CascadeCorrelationNetwork: grow_network: Final history: {len(self.history.get('train_loss', []))} epochs recorded")
         self.logger.trace("CascadeCorrelationNetwork: grow_network: Completed training of the network.")
         return validate_training_results
 
@@ -3584,9 +3584,9 @@ class CascadeCorrelationNetwork:
             self.add_unit(best_candidate, x_train)
             self.logger.info("CascadeCorrelationNetwork: _add_best_candidate: Added best candidate to the network")
             train_loss = self._retrain_output_layer(x_train=x_train, y_train=y_train, epochs=self.output_epochs, epoch=epoch)
-            self.logger.debug(f"CascadeCorrelationNetwork: _add_best_candidate: Training Loss: {train_loss}, For Current Epoch {epoch}, Post-Train Loss History:\n{self.history}")
+            self.logger.debug(f"CascadeCorrelationNetwork: _add_best_candidate: Training Loss: {train_loss}, For Current Epoch {epoch}")
             train_accuracy = self._calculate_train_accuracy(x_train=x_train, y_train=y_train, epoch=epoch)
-            self.logger.debug(f"CascadeCorrelationNetwork: _add_best_candidate: Training Accuracy: {train_accuracy}, For Current Epoch {epoch}, Post-Train Accuracy History:\n{self.history}")
+            self.logger.debug(f"CascadeCorrelationNetwork: _add_best_candidate: Training Accuracy: {train_accuracy}, For Current Epoch {epoch}")
         except Exception as e:
             self.logger.error(f"CascadeCorrelationNetwork: _add_best_candidate: Caught Exception while adding unit and retraining output layer at epoch {epoch + 1}/{max_epochs}:\nException:\n{e}")
             import traceback
@@ -3611,7 +3611,7 @@ class CascadeCorrelationNetwork:
 
         # Update training history
         self.history["train_accuracy"].append(train_accuracy)
-        self.logger.debug(f"CascadeCorrelationNetwork: _calculate_train_accuracy: For Current Epoch {epoch}, Post-Train Accuracy History:\n{self.history}")
+        self.logger.debug(f"CascadeCorrelationNetwork: _calculate_train_accuracy: For Current Epoch {epoch}, Accuracy: {train_accuracy}")
         return train_accuracy
 
     # Retrain the output layer after adding a new hidden unit
@@ -3637,11 +3637,11 @@ class CascadeCorrelationNetwork:
         # Retrain output layer
         train_loss = self.train_output_layer(x_train, y_train, self.output_epochs)
         self.logger.info(f"CascadeCorrelationNetwork: _retrain_output_layer: Full Network Training Loss after Epoch {epoch}, Train Loss: {train_loss:.6f}")
-        self.logger.debug(f"CascadeCorrelationNetwork: _retrain_output_layer: For Current Epoch: {epoch}, Post-Train Loss History:\n{self.history}")
+        self.logger.debug(f"CascadeCorrelationNetwork: _retrain_output_layer: For Current Epoch: {epoch}, Train Loss: {train_loss}")
 
         # Update training history
         self.history["train_loss"].append(train_loss)
-        self.logger.debug(f"CascadeCorrelationNetwork: _retrain_output_layer: For Current Epoch: {epoch}, Post-Trained History:\n{self.history}")
+        self.logger.debug(f"CascadeCorrelationNetwork: _retrain_output_layer: For Current Epoch: {epoch}, Training complete")
         return train_loss
 
     #################################################################################################################################################################################################
@@ -4345,7 +4345,7 @@ class CascadeCorrelationNetwork:
             self.logger.debug(f"CascadeCorrelationNetwork: calculate_accuracy: Calculating accuracy for input shape: {x.shape}, target shape: {y.shape}")
             with torch.no_grad():
                 output = self.forward(x)
-                self.logger.debug(f"CascadeCorrelationNetwork: calculate_accuracy: Output shape: {output.shape}, Output: {output}")
+                self.logger.debug(f"CascadeCorrelationNetwork: calculate_accuracy: Output shape: {output.shape}")
 
                 # Validate Output Tensor
                 if not isinstance(output, torch.Tensor):
@@ -4399,8 +4399,8 @@ class CascadeCorrelationNetwork:
             self.logger.error(f"CascadeCorrelationNetwork: _accuracy: Output and Target tensors must have the same number of samples. Got {y.shape[0]} and {output.shape[0]}.")
             raise ValueError("CascadeCorrelationNetwork: _accuracy: Output and Target tensors must have the same number of samples.")
         self.logger.debug(f"CascadeCorrelationNetwork: _accuracy: Input shape: {y.shape}, Output shape: {output.shape}")
-        self.logger.verbose(f"CascadeCorrelationNetwork: _accuracy: Input shape: {y.shape}, Input: {y}")
-        self.logger.verbose(f"CascadeCorrelationNetwork: _accuracy: Output shape: {output.shape}, Output: {output}")
+        self.logger.verbose(f"CascadeCorrelationNetwork: _accuracy: Input shape: {y.shape}")
+        self.logger.verbose(f"CascadeCorrelationNetwork: _accuracy: Output shape: {output.shape}")
 
         # Handle empty batch case
         if y.shape[0] == 0:
@@ -4409,9 +4409,9 @@ class CascadeCorrelationNetwork:
 
         # Find predicted and target values
         predicted = torch.argmax(output, dim=1)
-        self.logger.verbose(f"CascadeCorrelationNetwork: _accuracy: Predicted shape: {predicted.shape}, Predicted: {predicted}")
+        self.logger.verbose(f"CascadeCorrelationNetwork: _accuracy: Predicted shape: {predicted.shape}")
         target = torch.argmax(y, dim=1)
-        self.logger.verbose(f"CascadeCorrelationNetwork: _accuracy: Target shape: {target.shape}, Target: {target}")
+        self.logger.verbose(f"CascadeCorrelationNetwork: _accuracy: Target shape: {target.shape}")
         correct = (predicted == target).sum().item()
         self.logger.verbose(f"CascadeCorrelationNetwork: _accuracy: Number of correct predictions: {correct}, Total samples: {len(target)}")
         accuracy = correct / len(target)

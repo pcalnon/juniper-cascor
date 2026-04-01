@@ -672,7 +672,7 @@ class CandidateUnit:
             self.logger.debug(f"CandidateUnit: train: Completed Forward Pass: Output shape: {output.shape}, For Epoch {epoch + 1}")
 
             # Compute correlation with each output and use the maximum absolute correlation
-            self.logger.verbose(f"CandidateUnit: train: Before Correlation Calculation: Residual Error: Shape: {residual_error.shape}, Shape Length: {len(residual_error.shape)}, Type: {type(residual_error)}, Dimensions: {residual_error.dim()}, Dtype: {residual_error.dtype}\nResidual Error:\n{residual_error}, For Epoch {epoch + 1}")
+            self.logger.verbose(f"CandidateUnit: train: Before Correlation Calculation: Residual Error: Shape: {residual_error.shape}, Dimensions: {residual_error.dim()}, Dtype: {residual_error.dtype}, For Epoch {epoch + 1}")
             self.logger.trace(f"CandidateUnit: train: Multi-output Network detected: With residual_error shape: {residual_error.shape}, For Epoch {epoch + 1}")
             self.logger.info(f"CandidateUnit: train: Calculating Correlation: UUID: {self.uuid}, Epoch: {epoch + 1}: Residual Error: Shape: {residual_error.shape}, Length: {len(residual_error)}, Type: {type(residual_error)}, Dtype: {residual_error.dtype}, Dimensions: {residual_error.dim()}, For Epoch: {epoch + 1}")
             candidate_training_result = self._get_correlations(output=output, residual_error=residual_error)
@@ -931,7 +931,7 @@ class CandidateUnit:
 
         self.logger.trace("CandidateUnit: _multi_output_correlation: Completed multi-output correlation calculation")
         self.logger.debug(f"CandidateUnit: _multi_output_correlation: Total correlations calculated: {len(calculated_correlations)}")
-        self.logger.verbose(f"CandidateUnit: _multi_output_correlation: Correlations:\n{calculated_correlations}")
+        self.logger.verbose(f"CandidateUnit: _multi_output_correlation: Correlations computed: {len(calculated_correlations)} outputs")
         self.logger.trace("CandidateUnit: _multi_output_correlation: Completed the _multi_output_correlation method")
 
         # Return the list of correlations
@@ -958,9 +958,9 @@ class CandidateUnit:
             Absolute value of the correlation at the specified index
         """
         self.logger.trace("CandidateUnit: _get_correlation_abs_value: Starting to get the absolute value of the correlation")
-        self.logger.verbose(f"CandidateUnit: _get_correlation_abs_value: Index: {index}, Correlations: Type: {type(self.correlations)}, Length: {len(self.correlations)}\nValue:\n{self.correlations}")
+        self.logger.verbose(f"CandidateUnit: _get_correlation_abs_value: Index: {index}, Correlations: Type: {type(self.correlations)}, Length: {len(self.correlations)}")
         correlation = self.correlations[index]
-        self.logger.debug(f"CandidateUnit: _get_correlation_abs_value: Correlation item at index {index}: Correlation: Type: {type(correlation)}, Length: {len(correlation)}\nValue:\n{correlation}")
+        self.logger.debug(f"CandidateUnit: _get_correlation_abs_value: Correlation item at index {index}: Type: {type(correlation)}, Length: {len(correlation)}")
 
         # Calculate the absolute value of the correlation
         self.logger.trace("CandidateUnit: _get_correlation_abs_value: Calculating absolute value of correlation")

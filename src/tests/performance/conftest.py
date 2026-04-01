@@ -175,7 +175,12 @@ def high_dim_data() -> Tuple[torch.Tensor, torch.Tensor]:
 
 
 def _make_benchmark_config(input_size=2, output_size=2, **overrides):
-    """Create a CascadeCorrelationConfig for benchmarking with sensible defaults."""
+    """Create a CascadeCorrelationConfig for benchmarking with sensible defaults.
+
+    Uses WARNING log level to suppress hot-path logging overhead (Plan guardrail:
+    15+ logger calls per correlation computation; at TRACE/DEBUG these involve
+    string formatting with tensor values that add 5-20% overhead).
+    """
     defaults = {
         "input_size": input_size,
         "output_size": output_size,
@@ -188,6 +193,7 @@ def _make_benchmark_config(input_size=2, output_size=2, **overrides):
         "max_hidden_units": 50,
         "epochs_max": 100,
         "patience": 5,
+        "log_level_name": "WARNING",
     }
     defaults.update(overrides)
     return CascadeCorrelationConfig.create_simple_config(**defaults)
