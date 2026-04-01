@@ -120,6 +120,7 @@ def pytest_addoption(parser):
     parser.addoption("--integration", action="store_true", default=False, help="Run integration tests")
     parser.addoption("--fast-slow", action="store_true", default=False, help="Run slow tests with reduced training parameters for faster execution")
     parser.addoption("--run-long", action="store_true", default=False, help="Run long-running correctness tests (e.g., deterministic training resume)")
+    parser.addoption("--run-performance", action="store_true", default=False, help="Run performance benchmark tests (requires CASCOR_BENCHMARK_MODE=1 or this flag)")
 
 
 def pytest_collection_modifyitems(config, items):
@@ -148,6 +149,14 @@ def pytest_collection_modifyitems(config, items):
         for item in items:
             if "long" in item.keywords:
                 item.add_marker(skip_long)
+
+    # Performance benchmarks: require --run-performance or CASCOR_BENCHMARK_MODE=1
+    run_perf = config.getoption("--run-performance") or os.environ.get("CASCOR_BENCHMARK_MODE") == "1"
+    if not run_perf:
+        skip_perf = pytest.mark.skip(reason="need --run-performance flag or CASCOR_BENCHMARK_MODE=1 to run performance benchmarks")
+        for item in items:
+            if "performance" in item.keywords:
+                item.add_marker(skip_perf)
 
 
 # ===================================================================

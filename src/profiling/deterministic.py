@@ -31,6 +31,7 @@ Usage:
 import cProfile
 import functools
 import io
+import json
 
 # import os  # TODO: F401 - unused import, may be needed for future use
 import pstats
@@ -38,7 +39,7 @@ from datetime import datetime
 from pathlib import Path
 
 # from typing import Any, Callable, Optional  # TODO: F401 - Optional unused
-from typing import Any, Callable
+from typing import Any, Callable, Dict
 
 
 def profile_function(func: Callable = None, *, output_dir: str = None, top_n: int = 30):
@@ -181,6 +182,76 @@ class ProfileContext:
         stats.sort_stats(pstats.SortKey.CUMULATIVE)
         stats.print_stats(top_n)
         return stream.getvalue()
+
+    @property
+    def elapsed_seconds(self) -> float:
+        """Wall-clock elapsed time in seconds."""
+        if self._start_time is None or self._end_time is None:
+            return 0.0
+        return (self._end_time - self._start_time).total_seconds()
+
+    def to_dict(self, top_n: int = 30) -> Dict:
+        """Return structured profile data as a dictionary.
+
+        Args:
+            top_n: Number of top functions to include
+
+        Returns:
+            Dict with profile metadata and top function stats.
+        """
+        if self.stats is None:
+            return {"error": "No profile data. Call stop() first."}
+
+        result = {
+            "name": self.name,
+            "elapsed_seconds": self.elapsed_seconds,
+            "timestamp": self._end_time.isoformat() if self._end_time else None,
+            "total_calls": self.stats.total_calls,
+            "total_tt": self.stats.total_tt,
+            "top_functions": [],
+        }
+
+        # Extract top N functions by cumulative time
+        self.stats.sort_stats(pstats.SortKey.CUMULATIVE)
+        for func_key, (_cc, nc, tt, ct, _callers) in list(self.stats.stats.items())[:top_n]:
+            filename, line, func_name = func_key
+            result["top_functions"].append(
+                {
+                    "function": func_name,
+                    "file": filename,
+                    "line": line,
+                    "calls": nc,
+                    "total_time": round(tt, 6),
+                    "cumulative_time": round(ct, 6),
+                }
+            )
+
+        return result
+
+    def save_json(self, filename: str = None, top_n: int = 30) -> Path:
+        """Save profile data as JSON for machine-readable analysis.
+
+        Args:
+            filename: Output filename (auto-generated if not provided)
+            top_n: Number of top functions to include
+
+        Returns:
+            Path to saved JSON file.
+        """
+        self.output_dir.mkdir(parents=True, exist_ok=True)
+
+        if filename is None:
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename = f"{self.name}_{timestamp}.json"
+
+        filepath = self.output_dir / filename
+        data = self.to_dict(top_n=top_n)
+
+        with open(filepath, "w") as f:
+            json.dump(data, f, indent=2)
+
+        print(f"Profile JSON saved to: {filepath}")
+        return filepath
 
     def save(self, filename: str = None) -> Path:
         """

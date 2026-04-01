@@ -260,8 +260,10 @@ class TestTrainingMonitor:
         assert callback_payload["metrics"]["phase"] == "candidate"
         assert callback_payload["metrics"]["hidden_units"] == 2
 
-    def test_callback_exception_does_not_block_other_callbacks(self, caplog):
+    def test_callback_exception_does_not_block_other_callbacks(self):
         """A failing callback logs an error and does not block subsequent callbacks."""
+        from unittest.mock import patch
+
         monitor = TrainingMonitor()
         called = []
 
@@ -271,7 +273,13 @@ class TestTrainingMonitor:
         monitor.register_callback("epoch_end", _raising_callback)
         monitor.register_callback("epoch_end", lambda **kwargs: called.append(kwargs["epoch"]))
 
-        with caplog.at_level("ERROR", logger="api.lifecycle.monitor"):
+        # Patch the monitor's logger.error directly to avoid interference
+        # from the cascor logging system's root handler configuration
+        # (which can prevent caplog from capturing records when other
+        # tests have initialized the logging hierarchy).
+        error_messages = []
+        original_error = monitor.logger.error
+        with patch.object(monitor.logger, "error", side_effect=lambda msg, *a, **kw: error_messages.append(msg)):
             monitor.on_epoch_end(
                 epoch=4,
                 loss=0.4,
@@ -281,7 +289,7 @@ class TestTrainingMonitor:
             )
 
         assert called == [4]
-        assert "Callback error for epoch_end: boom" in caplog.text
+        assert any("Callback error for epoch_end: boom" in msg for msg in error_messages)
 
     def test_on_candidate_progress_triggers_callback(self):
         """Candidate progress updates trigger registered callback payload."""

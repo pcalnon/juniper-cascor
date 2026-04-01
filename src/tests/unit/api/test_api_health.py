@@ -13,7 +13,7 @@ from api.settings import Settings
 @pytest.fixture
 def client():
     """Create a test client for the API (lifespan runs)."""
-    settings = Settings()
+    settings = Settings(auto_start=False)
     app = create_app(settings)
     with TestClient(app) as c:
         yield c

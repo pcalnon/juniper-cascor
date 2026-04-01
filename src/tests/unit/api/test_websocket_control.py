@@ -12,7 +12,7 @@ from api.settings import Settings
 @pytest.fixture
 def client():
     """Create a test client with lifecycle manager."""
-    settings = Settings()
+    settings = Settings(auto_start=False)
     app = create_app(settings)
     with TestClient(app) as c:
         yield c

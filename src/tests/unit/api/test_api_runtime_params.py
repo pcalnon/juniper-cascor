@@ -13,7 +13,7 @@ pytestmark = pytest.mark.unit
 @pytest.fixture
 def test_client():
     """Create a test client with lifecycle manager (lifespan runs)."""
-    settings = Settings()
+    settings = Settings(auto_start=False)
     app = create_app(settings)
     with TestClient(app) as c:
         yield c

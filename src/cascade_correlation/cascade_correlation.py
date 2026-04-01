@@ -2973,78 +2973,78 @@ class CascadeCorrelationNetwork:
                 logger.debug("CascadeCorrelationNetwork: _worker_loop: Received sentinel, stopping worker")
                 break
             try:
-                # PARALLEL-FIX (RC-3): Reconstruct full task tuple from lightweight task + shared data.
-                # If shared_training_inputs was provided (RC-3 path), tasks only contain
-                # (candidate_index, candidate_data) and we reassemble the full tuple here.
-                # If shared_training_inputs is None (legacy path), task already has all 3 elements.
-                if shared_training_inputs is not None and len(task) == 2:
-                    # Reconstruct full task: (candidate_index, candidate_data, training_inputs)
-                    full_task = (task[0], task[1], shared_training_inputs)
-                else:
-                    # Legacy format: task already contains training_inputs
-                    full_task = task
-
-                # Build progress callback from progress_queue if available
-                _progress_cb = None
-                if progress_queue is not None:
-                    from queue import Full as _FullQ
-
-                    def _progress_cb(**kwargs):
-                        try:
-                            progress_queue.put_nowait(kwargs)
-                        except _FullQ:
-                            pass
-
-                # Process the task
-                logger.debug(f"CascadeCorrelationNetwork: _worker_loop: Processing task: {full_task[0] if full_task else 'None'}")
-                result = CascadeCorrelationNetwork.train_candidate_worker(task_data_input=full_task, parallel=parallel, progress_callback=_progress_cb)
-                logger.debug("CascadeCorrelationNetwork: _worker_loop: Task processed, putting result in queue")
-
-                # Add timeout to prevent deadlock if queue is full
-                from queue import Full
-
-                try:
-                    result_queue.put(result, timeout=30)
-                    logger.debug("CascadeCorrelationNetwork: _worker_loop: Task completed successfully")
-                except Full as fe:
-                    logger.error(f"CascadeCorrelationNetwork: _worker_loop: Result queue full, dropping result: {fe}")
-                    import traceback
-
-                    logger.error(f"CascadeCorrelationNetwork: _worker_loop: Traceback: {traceback.format_exc()}")
-                    raise TrainingError from fe  # Re-raise to trigger error handling
+                CascadeCorrelationNetwork._process_worker_task(task, shared_training_inputs, progress_queue, result_queue, parallel, logger)
             except Exception as e:
                 logger.error(f"CascadeCorrelationNetwork: _worker_loop: Worker task error: {e}")
                 import traceback
 
                 logger.error(f"CascadeCorrelationNetwork: _worker_loop: Traceback: {traceback.format_exc()}")
-
-                # Publish failure result and continue running
-                try:
-                    candidate_index = task[0] if task and len(task) > 0 else 0
-                    candidate_uuid = task[1][4] if task and len(task) > 1 and len(task[1]) > 4 else None
-                    from candidate_unit.candidate_unit import CandidateTrainingResult
-
-                    failure_result = CandidateTrainingResult(
-                        candidate_id=candidate_index,
-                        candidate_uuid=candidate_uuid,
-                        correlation=0.0,
-                        candidate=None,
-                        success=False,
-                        error_message=str(e),
-                    )
-                    result_queue.put(failure_result, timeout=30)
-                    logger.debug("CascadeCorrelationNetwork: _worker_loop: Put failure result")
-                except Full as fq_e:
-                    logger.error(f"CascadeCorrelationNetwork: _worker_loop: Failed to put failure result - queue full: {fq_e}")
-                    import traceback
-
-                    logger.error(f"CascadeCorrelationNetwork: _worker_loop: Traceback: {traceback.format_exc()}")
-                except Exception as put_e:
-                    logger.error(f"CascadeCorrelationNetwork: _worker_loop: Failed to put failure result: {put_e}")
-                    import traceback
-
-                    logger.error(f"CascadeCorrelationNetwork: _worker_loop: Traceback: {traceback.format_exc()}")
+                CascadeCorrelationNetwork._publish_failure_result(task, e, result_queue, logger)
         logger.debug("CascadeCorrelationNetwork: _worker_loop: Worker process ended")
+
+    @staticmethod
+    def _process_worker_task(task, shared_training_inputs, progress_queue, result_queue, parallel, logger):
+        """Process a single candidate training task from the work queue."""
+        # PARALLEL-FIX (RC-3): Reconstruct full task tuple from lightweight task + shared data.
+        if shared_training_inputs is not None and len(task) == 2:
+            full_task = (task[0], task[1], shared_training_inputs)
+        else:
+            full_task = task
+
+        # Build progress callback from progress_queue if available
+        _progress_cb = None
+        if progress_queue is not None:
+            from queue import Full as _FullQ
+
+            def _make_progress_cb(pq):
+                def _cb(**kwargs):
+                    try:
+                        pq.put_nowait(kwargs)
+                    except _FullQ:
+                        pass
+
+                return _cb
+
+            _progress_cb = _make_progress_cb(progress_queue)
+
+        # Process the task
+        logger.debug(f"CascadeCorrelationNetwork: _worker_loop: Processing task: {full_task[0] if full_task else 'None'}")
+        result = CascadeCorrelationNetwork.train_candidate_worker(task_data_input=full_task, parallel=parallel, progress_callback=_progress_cb)
+        logger.debug("CascadeCorrelationNetwork: _worker_loop: Task processed, putting result in queue")
+
+        from queue import Full
+
+        try:
+            result_queue.put(result, timeout=30)
+            logger.debug("CascadeCorrelationNetwork: _worker_loop: Task completed successfully")
+        except Full as fe:
+            logger.error(f"CascadeCorrelationNetwork: _worker_loop: Result queue full, dropping result: {fe}")
+            raise TrainingError from fe
+
+    @staticmethod
+    def _publish_failure_result(task, error, result_queue, logger):
+        """Publish a failure result to the result queue after a task processing error."""
+        from queue import Full
+
+        try:
+            candidate_index = task[0] if task and len(task) > 0 else 0
+            candidate_uuid = task[1][4] if task and len(task) > 1 and len(task[1]) > 4 else None
+            from candidate_unit.candidate_unit import CandidateTrainingResult
+
+            failure_result = CandidateTrainingResult(
+                candidate_id=candidate_index,
+                candidate_uuid=candidate_uuid,
+                correlation=0.0,
+                candidate=None,
+                success=False,
+                error_message=str(error),
+            )
+            result_queue.put(failure_result, timeout=30)
+            logger.debug("CascadeCorrelationNetwork: _worker_loop: Put failure result")
+        except Full as fq_e:
+            logger.error(f"CascadeCorrelationNetwork: _worker_loop: Failed to put failure result - queue full: {fq_e}")
+        except Exception as put_e:
+            logger.error(f"CascadeCorrelationNetwork: _worker_loop: Failed to put failure result: {put_e}")
 
     #################################################################################################################################################################################################
     # Public Method to calculate the residual error of the network

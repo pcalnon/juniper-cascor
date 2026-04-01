@@ -369,9 +369,7 @@ class TestCandidateProgressCallbacks:
             denominator=1.0,
         )
 
-        with patch.object(candidate, "_get_correlations", return_value=fake_result), patch.object(candidate, "_update_weights_and_bias", return_value=None), patch.object(
-            candidate, "_display_training_progress", return_value=None
-        ):
+        with patch.object(candidate, "_get_correlations", return_value=fake_result), patch.object(candidate, "_update_weights_and_bias", return_value=None), patch.object(candidate, "_display_training_progress", return_value=None):
             candidate.train_detailed(
                 x=x,
                 epochs=3,
@@ -417,9 +415,7 @@ class TestCandidateProgressCallbacks:
             denominator=1.0,
         )
 
-        with patch.object(candidate, "_get_correlations", return_value=fake_result), patch.object(candidate, "_update_weights_and_bias", return_value=None), patch.object(
-            candidate, "_display_training_progress", return_value=None
-        ):
+        with patch.object(candidate, "_get_correlations", return_value=fake_result), patch.object(candidate, "_update_weights_and_bias", return_value=None), patch.object(candidate, "_display_training_progress", return_value=None):
             candidate.train_detailed(
                 x=x,
                 epochs=1,

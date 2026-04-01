@@ -27,7 +27,7 @@ pytestmark = pytest.mark.unit
 @pytest.fixture
 def client():
     """Create a test client with lifecycle manager (lifespan runs)."""
-    settings = Settings()
+    settings = Settings(auto_start=False)
     app = create_app(settings)
     with TestClient(app) as c:
         yield c
@@ -38,7 +38,7 @@ class TestNetworkRouteLifecycleErrors:
 
     def test_network_lifecycle_not_initialized_returns_503(self):
         """Network routes should return 503 when lifecycle is not initialized."""
-        settings = Settings()
+        settings = Settings(auto_start=False)
         app = create_app(settings)
 
         with TestClient(app) as c:

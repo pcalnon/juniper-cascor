@@ -245,4 +245,3 @@ class TrainingMonitor:
         with self._lock:
             self.metrics_buffer.clear()
         self.logger.info("Metrics buffer cleared")
-

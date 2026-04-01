@@ -142,7 +142,7 @@ class TestTrainingStreamWSManagerUnavailable:
 
     def test_ws_manager_none_closes_connection(self):
         """When ws_manager is None on app.state, connection is closed with 1011."""
-        settings = Settings()
+        settings = Settings(auto_start=False)
         app = create_app(settings)
         with TestClient(app) as client:
             # Remove ws_manager to simulate it being unavailable
@@ -158,7 +158,7 @@ class TestTrainingStreamLifecycleNull:
 
     def test_lifecycle_none_skips_initial_status(self):
         """When lifecycle is None, initial_status and state messages are skipped."""
-        settings = Settings()
+        settings = Settings(auto_start=False)
         app = create_app(settings)
         with TestClient(app) as client:
             # Set lifecycle to None
@@ -182,7 +182,7 @@ class TestDatasetRouteLifecycleNone:
 
     def test_get_dataset_returns_503_when_lifecycle_none(self):
         """GET /v1/dataset returns 503 when lifecycle is None (line 13)."""
-        settings = Settings()
+        settings = Settings(auto_start=False)
         app = create_app(settings)
         with TestClient(app) as client:
             # Remove lifecycle from app state
@@ -202,7 +202,7 @@ class TestDecisionBoundaryRouteUncovered:
 
     def test_get_boundary_returns_503_when_lifecycle_none(self):
         """GET /v1/decision-boundary returns 503 when lifecycle is None (line 13)."""
-        settings = Settings()
+        settings = Settings(auto_start=False)
         app = create_app(settings)
         with TestClient(app) as client:
             app.state.lifecycle = None
@@ -212,7 +212,7 @@ class TestDecisionBoundaryRouteUncovered:
 
     def test_get_boundary_returns_500_when_computation_fails(self):
         """GET /v1/decision-boundary returns 500 when get_decision_boundary returns None (line 34)."""
-        settings = Settings()
+        settings = Settings(auto_start=False)
         app = create_app(settings)
         with TestClient(app) as client:
             lifecycle = app.state.lifecycle

@@ -296,13 +296,22 @@ class TestMonitoringHooks:
             CascadeCorrelationNetwork.grow_network = original_grow
 
     def test_monitored_grow_drains_progress_queue_and_resets_candidate_progress(self):
-        """Wrapped grow_network drains worker progress queue into lifecycle state."""
-        from cascade_correlation.cascade_correlation import CascadeCorrelationNetwork
+        """Wrapped grow_network drains worker progress queue into lifecycle state.
+
+        The drain thread uses deferred queue discovery: the progress queue is
+        created lazily inside grow_network (via _ensure_worker_pool), so the
+        drain thread must poll for it. This test simulates that by having
+        fake_grow create the queue during execution, just like real training.
+        """
         from queue import Queue
+
+        from cascade_correlation.cascade_correlation import CascadeCorrelationNetwork
 
         original_grow = CascadeCorrelationNetwork.grow_network
 
         def fake_grow(self_network, *args, **kwargs):
+            # Simulate _ensure_worker_pool creating the queue during grow_network
+            self_network._persistent_progress_queue = Queue()
             self_network._persistent_progress_queue.put(
                 {
                     "candidate_id": 1,
@@ -312,10 +321,10 @@ class TestMonitoringHooks:
                     "correlation": 0.66,
                 }
             )
-            # Give the drain thread a chance to consume queued progress
+            # Give the drain thread a chance to discover the queue and consume progress
             import time
 
-            time.sleep(0.05)
+            time.sleep(0.15)
             return {"ok": True}
 
         CascadeCorrelationNetwork.grow_network = fake_grow
@@ -324,7 +333,8 @@ class TestMonitoringHooks:
             manager.create_network(input_size=2, output_size=2)
             manager.state_machine.handle_command(Command.START)
 
-            manager.network._persistent_progress_queue = Queue()
+            # Queue starts as None — drain thread must discover it dynamically
+            manager.network._persistent_progress_queue = None
             progress_events = []
             manager.training_monitor.register_callback("candidate_progress", lambda **kw: progress_events.append(kw["progress"]))
 
@@ -340,6 +350,39 @@ class TestMonitoringHooks:
             assert state["phase_detail"] == ""
             assert state["candidate_epoch"] == 0
             assert state["candidate_total_epochs"] == 0
+        finally:
+            CascadeCorrelationNetwork.grow_network = original_grow
+
+    def test_drain_thread_starts_without_progress_queue(self):
+        """Drain thread starts and exits cleanly when no queue is ever created."""
+        from cascade_correlation.cascade_correlation import CascadeCorrelationNetwork
+
+        original_grow = CascadeCorrelationNetwork.grow_network
+
+        def fake_grow(self_network, *args, **kwargs):
+            # Do NOT create a progress queue — simulate no worker pool
+            import time
+
+            time.sleep(0.15)
+            return {"ok": True}
+
+        CascadeCorrelationNetwork.grow_network = fake_grow
+        try:
+            manager = TrainingLifecycleManager()
+            manager.create_network(input_size=2, output_size=2)
+            manager.state_machine.handle_command(Command.START)
+
+            # Ensure queue is None — drain thread should poll harmlessly
+            manager.network._persistent_progress_queue = None
+
+            x = torch.randn(8, 2)
+            y = torch.randn(8, 2)
+            # Should not raise or hang — drain thread exits via stop_event
+            manager.network.grow_network(x, y, max_epochs=1)
+
+            state = manager.training_state.get_state()
+            assert state["phase"] == "Output"
+            assert state["candidate_epoch"] == 0
         finally:
             CascadeCorrelationNetwork.grow_network = original_grow
 

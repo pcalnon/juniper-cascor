@@ -557,7 +557,7 @@ class CandidateUnit:
             Output of the candidate unit
         """
         self.logger.trace("CandidateUnit: forward: Starting forward pass through the candidate unit")
-        self.logger.verbose(f"CandidateUnit: forward: Input shape: {x.shape}, Input length: {len(x)},\nInput:\n{x}")
+        self.logger.verbose(f"CandidateUnit: forward: Input shape: {x.shape}, Input length: {len(x)}")
 
         # Add shape guard for 1-D inputs
         if x.dim() == 1:
@@ -566,7 +566,7 @@ class CandidateUnit:
 
         self.logger.trace("CandidateUnit: forward: Calculating output using weights and bias")
         output = self.activation_fn(torch.sum(x * self.weights, dim=1) + self.bias)
-        self.logger.debug(f"CandidateUnit: forward: Output shape: {output.shape}, Output length: {len(output)},\nOutput:\n{output}")
+        self.logger.debug(f"CandidateUnit: forward: Output shape: {output.shape}, Output length: {len(output)}")
         self.logger.trace("CandidateUnit: forward: Completed forward pass through the candidate unit")
         return output
 
@@ -645,8 +645,8 @@ class CandidateUnit:
         """
         self.logger.trace("CandidateUnit: train: Starting training of Candidate Unit")
         self.logger.debug(f"CandidateUnit: train: Input parameters - epochs: Type: {type(epochs)}, Value: {epochs}, learning_rate: Type: {type(learning_rate)}, Value: {learning_rate}, display_frequency: Type: {type(display_frequency)}, Value: {display_frequency}")
-        self.logger.debug(f"CandidateUnit: train: Input Tensor (x): Shape: {x.shape}, Type: {type(x)}, Dtype: {x.dtype}, Dimensions: {x.dim()}, Length: {len(x)}\nInput Tensor (x):\n{x}")
-        self.logger.debug(f"CandidateUnit: train: Residual Error Tensor: Shape: {residual_error.shape}, Type: {type(residual_error)}, Dtype: {residual_error.dtype}, Dimensions: {residual_error.dim()}, Length: {len(residual_error)}\nResidual Error Tensor:\n{residual_error}")
+        self.logger.debug(f"CandidateUnit: train: Input Tensor (x): Shape: {x.shape}, Type: {type(x)}, Dtype: {x.dtype}, Dimensions: {x.dim()}, Length: {len(x)}")
+        self.logger.debug(f"CandidateUnit: train: Residual Error Tensor: Shape: {residual_error.shape}, Type: {type(residual_error)}, Dtype: {residual_error.dtype}, Dimensions: {residual_error.dim()}, Length: {len(residual_error)}")
         self.logger.info(f"CandidateUnit: train: Training candidate unit for {epochs} epochs with learning rate {learning_rate} and display frequency {display_frequency}")
 
         # Initialize display progress frequency checker with candidate unit display frequency
@@ -699,7 +699,7 @@ class CandidateUnit:
             self.logger.debug(f"CandidateUnit: train: Candidate Parameters Update Object: {candidate_parameters_update}, For Epoch {epoch + 1}")
             epoch_trained_candidate = self._update_weights_and_bias(candidate_parameters_update=candidate_parameters_update)
             self.logger.debug(f"CandidateUnit: train: Epoch Trained Candidate Object: {epoch_trained_candidate}, For Epoch {epoch + 1}")
-            self.logger.debug(f"CandidateUnit: train: Updated weights and bias based on correlation: For Epoch {epoch + 1}: Weights: {self.weights}, Bias: {self.bias}")
+            self.logger.debug(f"CandidateUnit: train: Updated weights and bias based on correlation: For Epoch {epoch + 1}: Weights shape: {self.weights.shape}, Bias: {self.bias.item() if hasattr(self.bias, 'item') else self.bias}")
 
             # Update instance correlation for monitoring during training
             self.correlation = float(candidate_training_result.correlation)
@@ -739,7 +739,7 @@ class CandidateUnit:
             self.logger.debug(f"CandidateUnit: train: Candidate Training Result: Type: {type(candidate_training_result)}, Value: {candidate_training_result or None}")
             self.logger.debug(f"CandidateUnit: train: Candidate Parameters Update: Type: {type(candidate_parameters_update)}, Value: {candidate_parameters_update or None}")
             self.logger.debug(f"CandidateUnit: train: Epoch Trained Candidate: Type: {type(epoch_trained_candidate)}, Value: {epoch_trained_candidate or None}")
-            self.logger.debug(f"CandidateUnit: train: Residual Error: Shape: {residual_error.shape}, Dtype: {residual_error.dtype}, Value:\n{residual_error}")
+            self.logger.debug(f"CandidateUnit: train: Residual Error: Shape: {residual_error.shape}, Dtype: {residual_error.dtype}")
             try:
                 self._display_training_progress(epoch, candidate_parameters_update, residual_error)
             except Exception as e:
@@ -815,9 +815,9 @@ class CandidateUnit:
         """
         # Compute correlation with each output and use the maximum absolute correlation
         self.logger.trace(f"CandidateUnit: _get_correlations: Getting Correlations for network, residual_error shape: {residual_error.shape}")
-        self.logger.debug(f"CandidateUnit: _get_correlations: Input Params: Residual Error: Shape: {residual_error.shape}, Shape Length: {len(residual_error.shape)}, Type: {type(residual_error)}, Dimensions: {residual_error.dim()}, Dtype: {residual_error.dtype}\nResidual Error:\n{residual_error}")
+        self.logger.debug(f"CandidateUnit: _get_correlations: Input Params: Residual Error: Shape: {residual_error.shape}, Shape Length: {len(residual_error.shape)}, Type: {type(residual_error)}, Dimensions: {residual_error.dim()}, Dtype: {residual_error.dtype}")
         self.logger.debug(f"CandidateUnit: _get_correlations: Output shape: {output.shape}, Output shape len: {len(output.shape)} Output length: {len(output)}")
-        self.logger.verbose(f"CandidateUnit: _get_correlations: Output:\n{output}")
+        self.logger.verbose(f"CandidateUnit: _get_correlations: Output: Shape: {output.shape}, Dtype: {output.dtype}")
 
         # Calculate correlations for current candidate nodes
         self.logger.trace("CandidateUnit: _get_correlations: Starting correlation calculation")
@@ -880,10 +880,8 @@ class CandidateUnit:
             correlations: List of tuples containing correlation, output index, normalized output, normalized error, numerator, and denominator
         """
         self.logger.trace("CandidateUnit: _multi_output_correlation: Starting multi-output correlation calculation")
-        self.logger.verbose(f"CandidateUnit: _multi_output_correlation: Input Params: Residual Error: Shape: {residual_error.shape}, Shape Length: {len(residual_error.shape)}, Type: {type(residual_error)}, Dimensions: {residual_error.dim()}, Dtype: {residual_error.dtype}\nResidual Error:\n{residual_error}")
+        self.logger.verbose(f"CandidateUnit: _multi_output_correlation: Input Params: Residual Error: Shape: {residual_error.shape}, Shape Length: {len(residual_error.shape)}, Type: {type(residual_error)}, Dimensions: {residual_error.dim()}, Dtype: {residual_error.dtype}")
         self.logger.debug(f"CandidateUnit: _multi_output_correlation: Residual error shape: {residual_error.shape}, Output shape: {output.shape}")
-        self.logger.verbose(f"CandidateUnit: _multi_output_correlation: Residual error:\n{residual_error}")
-        self.logger.verbose(f"CandidateUnit: _multi_output_correlation: Output:\n{output}")
 
         # Initialize a list to store correlations for each output
         self.logger.trace("CandidateUnit: _multi_output_correlation: Initializing list to store correlations for each output")
@@ -904,15 +902,15 @@ class CandidateUnit:
             # Handle both 1D and 2D residual_error tensors
             error_i = residual_error[:, i] if residual_error.dim() > 1 else residual_error
             self.logger.debug(f"CandidateUnit: _multi_output_correlation: Output index {i}, Residual error shape: {error_i.shape}")
-            self.logger.verbose(f"CandidateUnit: _multi_output_correlation: Residual error for output Tensor: \n{error_i}")
+            self.logger.verbose(f"CandidateUnit: _multi_output_correlation: Residual error for output Tensor: Shape: {error_i.shape}")
 
             # Calculate correlation for the current output index
             self.logger.trace(f"CandidateUnit: _multi_output_correlation: Calculating correlation for output index {i}")
-            self.logger.verbose(f"CandidateUnit: _multi_output_correlation: Before Corr Calc: Residual Error for output index {i}: Residual Error: Shape: {residual_error.shape}, Shape Length: {len(residual_error.shape)}, Type: {type(residual_error)}, Dimensions: {residual_error.dim()}, Dtype: {residual_error.dtype}\nResidual Error Value:\n{residual_error}")
+            self.logger.verbose(f"CandidateUnit: _multi_output_correlation: Before Corr Calc: Residual Error for output index {i}: Shape: {residual_error.shape}, Dtype: {residual_error.dtype}")
             (correlation, norm_output, norm_error, numerator, denominator) = self._calculate_correlation(output=output, residual_error=error_i)
-            self.logger.verbose(f"CandidateUnit: _multi_output_correlation: After Corr Calc: Residual Error for output index {i}: Residual Error: Shape: {residual_error.shape}, Shape Length: {len(residual_error.shape)}, Type: {type(residual_error)}, Dimensions: {residual_error.dim()}, Dtype: {residual_error.dtype}\nResidual Error Value:\n{residual_error}")
-            self.logger.verbose(f"CandidateUnit: _multi_output_correlation: After Corr Calc: Norm Output: Type: {type(norm_output)}, Value: {norm_output}")
-            self.logger.verbose(f"CandidateUnit: _multi_output_correlation: After Corr Calc: Norm Error: Type: {type(norm_error)}, Value: {norm_error}")
+            self.logger.verbose(f"CandidateUnit: _multi_output_correlation: After Corr Calc: Residual Error for output index {i}: Shape: {residual_error.shape}, Dtype: {residual_error.dtype}")
+            self.logger.verbose(f"CandidateUnit: _multi_output_correlation: After Corr Calc: Norm Output: Type: {type(norm_output)}, Shape: {norm_output.shape}")
+            self.logger.verbose(f"CandidateUnit: _multi_output_correlation: After Corr Calc: Norm Error: Type: {type(norm_error)}, Shape: {norm_error.shape}")
             self.logger.verbose(f"CandidateUnit: _multi_output_correlation: Correlation for output {i}: {correlation}")
             # correlations.append((correlation, i, norm_output, norm_error, numerator, denominator))
             # self.logger.debug(f"CandidateUnit: _multi_output_correlation: Appended correlation for output {i}: {correlations[-1]}")
@@ -1209,9 +1207,9 @@ class CandidateUnit:
         self.logger.debug("CandidateUnit: _update_weights_and_bias: Update weights and bias")
         with torch.no_grad():
             self.weights -= candidate_parameters_update.learning_rate * grad_w
-            self.logger.debug(f"CandidateUnit: _update_weights_and_bias: Weights updated with learning rate {self.weights}")
+            self.logger.debug(f"CandidateUnit: _update_weights_and_bias: Weights updated, shape: {self.weights.shape}, norm: {self.weights.norm():.6f}")
             self.bias -= candidate_parameters_update.learning_rate * grad_b
-            self.logger.debug(f"CandidateUnit: _update_weights_and_bias: Bias updated with learning rate {self.bias}")
+            self.logger.debug(f"CandidateUnit: _update_weights_and_bias: Bias updated: {self.bias.item() if hasattr(self.bias, 'item') else self.bias}")
 
         self.logger.debug(f"CandidateUnit: _update_weights_and_bias: Weight gradient norm: {grad_w.norm():.6f}, Bias gradient: {grad_b.item():.6f}")
         self.logger.trace("CandidateUnit: _update_weights_and_bias: Completed autograd-based weight and bias update")
@@ -1276,7 +1274,7 @@ class CandidateUnit:
         # Ensure that output and residual error have the same number of features if residual_error has more than one dimension
         self.logger.debug(f"CandidateUnit: _validate_correlation_params: Output shape: {output.shape}, Residual error shape: {residual_error.shape}")
         self.logger.trace("CandidateUnit: _validate_correlation_params: Validating output and residual error features for multi-output networks")
-        self.logger.verbose(f"CandidateUnit: _validate_correlation_params: Residual Error: Shape: {residual_error.shape}, Shape Length: {len(residual_error.shape)}, Type: {type(residual_error)}, Dimensions: {residual_error.dim()}, Dtype: {residual_error.dtype}\nResidual Error Value:\n{residual_error}")
+        self.logger.verbose(f"CandidateUnit: _validate_correlation_params: Residual Error: Shape: {residual_error.shape}, Shape Length: {len(residual_error.shape)}, Type: {type(residual_error)}, Dimensions: {residual_error.dim()}, Dtype: {residual_error.dtype}")
         dimensions = residual_error.dim() if hasattr(residual_error, "dim") else len(residual_error.shape)
         index = dimensions - 1 if dimensions > 1 else 0
         self.logger.debug(f"CandidateUnit: _validate_correlation_params: Checking if output and residual error have the same number of features at Index {index}, Dimensions: {dimensions}")

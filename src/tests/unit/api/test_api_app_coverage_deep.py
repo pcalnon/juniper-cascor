@@ -34,7 +34,7 @@ class TestLifespanMetricsEnabled:
 
     def test_set_build_info_called_when_metrics_enabled(self):
         """When metrics_enabled=True, set_build_info is called during startup (line 39)."""
-        settings = Settings(metrics_enabled=True)
+        settings = Settings(metrics_enabled=True, auto_start=False)
         with patch("api.app.set_build_info") as mock_build_info, patch("api.app.get_prometheus_app", return_value=MagicMock()):
             app = create_app(settings)
             with TestClient(app):
@@ -42,7 +42,7 @@ class TestLifespanMetricsEnabled:
 
     def test_metrics_not_called_when_disabled(self):
         """When metrics_enabled=False (default), set_build_info is NOT called."""
-        settings = Settings(metrics_enabled=False)
+        settings = Settings(metrics_enabled=False, auto_start=False)
         with patch("api.app.set_build_info") as mock_build_info:
             app = create_app(settings)
             with TestClient(app):
@@ -85,7 +85,7 @@ class TestLifespanShutdown:
 
     def test_shutdown_closes_ws_manager(self):
         """Shutdown calls ws_manager.close_all() (lines 65-67)."""
-        settings = Settings()
+        settings = Settings(auto_start=False)
         app = create_app(settings)
         with TestClient(app) as client:
             ws_manager = app.state.ws_manager
@@ -97,7 +97,7 @@ class TestLifespanShutdown:
 
     def test_shutdown_calls_lifecycle_shutdown(self):
         """Shutdown calls lifecycle.shutdown() (lines 71-73)."""
-        settings = Settings()
+        settings = Settings(auto_start=False)
         app = create_app(settings)
         with TestClient(app) as client:
             lifecycle = app.state.lifecycle
@@ -105,7 +105,7 @@ class TestLifespanShutdown:
 
     def test_shutdown_handles_missing_ws_manager_gracefully(self):
         """Shutdown handles case where ws_manager is not on app.state (line 64-65)."""
-        settings = Settings()
+        settings = Settings(auto_start=False)
         app = create_app(settings)
         # Remove ws_manager before shutdown to exercise the getattr(..., None) path
         with TestClient(app) as client:
@@ -118,7 +118,7 @@ class TestLifespanShutdown:
 
     def test_full_lifespan_startup_and_shutdown(self):
         """Full lifespan cycle: startup creates managers, shutdown cleans them up."""
-        settings = Settings()
+        settings = Settings(auto_start=False)
         app = create_app(settings)
         with TestClient(app) as client:
             assert hasattr(app.state, "ws_manager")
@@ -305,7 +305,7 @@ class TestExceptionHandlers:
 
     def test_value_error_handler_returns_400(self):
         """ValueError exception handler returns 400 with VALIDATION_ERROR (lines 212-218)."""
-        app = create_app(Settings())
+        app = create_app(Settings(auto_start=False))
 
         @app.get("/test-value-error-deep")
         async def raise_value_error():
@@ -321,7 +321,7 @@ class TestExceptionHandlers:
 
     def test_general_exception_handler_returns_500(self):
         """General exception handler returns 500 with INTERNAL_ERROR (lines 220-226)."""
-        app = create_app(Settings())
+        app = create_app(Settings(auto_start=False))
 
         @app.get("/test-general-error-deep")
         async def raise_runtime_error():
@@ -337,7 +337,7 @@ class TestExceptionHandlers:
 
     def test_type_error_caught_by_general_handler(self):
         """TypeError (non-ValueError) is caught by general exception handler."""
-        app = create_app(Settings())
+        app = create_app(Settings(auto_start=False))
 
         @app.get("/test-type-error-deep")
         async def raise_type_error():
@@ -349,7 +349,7 @@ class TestExceptionHandlers:
 
     def test_os_error_caught_by_general_handler(self):
         """OSError is caught by general exception handler."""
-        app = create_app(Settings())
+        app = create_app(Settings(auto_start=False))
 
         @app.get("/test-os-error-deep")
         async def raise_os_error():
@@ -408,14 +408,14 @@ class TestAppFactoryConfigurations:
 
     def test_websocket_routes_registered(self):
         """WebSocket routes /ws/training and /ws/control are registered."""
-        app = create_app(Settings())
+        app = create_app(Settings(auto_start=False))
         route_paths = [r.path for r in app.routes]
         assert "/ws/training" in route_paths
         assert "/ws/control" in route_paths
 
     def test_rest_routes_registered(self):
         """All REST route prefixes are registered."""
-        app = create_app(Settings())
+        app = create_app(Settings(auto_start=False))
         route_paths = [r.path for r in app.routes if hasattr(r, "path")]
         # Check key route prefixes exist
         assert any("/v1/health" in p for p in route_paths)

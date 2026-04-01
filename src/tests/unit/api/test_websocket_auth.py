@@ -20,7 +20,7 @@ def _reset_security():
 @pytest.fixture
 def auth_client():
     """Create a test client with API key auth enabled."""
-    settings = Settings(api_keys=["test-key"])
+    settings = Settings(api_keys=["test-key"], auto_start=False)
     app = create_app(settings)
     with TestClient(app) as c:
         yield c
@@ -29,7 +29,7 @@ def auth_client():
 @pytest.fixture
 def noauth_client():
     """Create a test client with API key auth disabled."""
-    settings = Settings(api_keys=None)
+    settings = Settings(api_keys=None, auto_start=False)
     app = create_app(settings)
     with TestClient(app) as c:
         yield c

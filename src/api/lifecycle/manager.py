@@ -95,7 +95,7 @@ class TrainingLifecycleManager:
         if self._ws_manager is None:
             return
 
-        from api.websocket.messages import create_candidate_progress_message, create_cascade_add_message, create_event_message, create_metrics_message, create_state_message
+        from api.websocket.messages import create_candidate_progress_message, create_cascade_add_message, create_event_message, create_metrics_message
 
         ws = self._ws_manager
 
@@ -131,14 +131,13 @@ class TrainingLifecycleManager:
             return
 
         now = time.monotonic()
-        if not force and hasattr(self, '_last_state_broadcast_time') and now - self._last_state_broadcast_time < 1.0:
+        if not force and hasattr(self, "_last_state_broadcast_time") and now - self._last_state_broadcast_time < 1.0:
             return
         self._last_state_broadcast_time = now
 
         from api.websocket.messages import create_state_message
-        self._ws_manager.broadcast_from_thread(
-            create_state_message(self.training_state.get_state())
-        )
+
+        self._ws_manager.broadcast_from_thread(create_state_message(self.training_state.get_state()))
 
     # ------------------------------------------------------------------
     # Network management
@@ -301,98 +300,120 @@ class TrainingLifecycleManager:
             self.network.validate_training = monitored_validate
 
         # Hook grow_network for cascade_add events and phase tracking
-        if hasattr(self.network, "grow_network"):
-            original_grow = self.network.grow_network
-            self._original_methods["grow_network"] = original_grow
-
-            def _grow_iteration_callback(iteration, max_iterations, best_correlation, candidates_trained, candidates_total, phase_detail):
-                state.update_state(
-                    grow_iteration=iteration,
-                    grow_max=max_iterations,
-                    best_correlation=best_correlation,
-                    candidates_trained=candidates_trained,
-                    candidates_total=candidates_total,
-                    phase_detail=phase_detail,
-                )
-                manager_ref._broadcast_training_state()
-
-            def _drain_progress_queue(progress_queue, stop_event):
-                """Background thread that reads candidate progress from workers."""
-                import queue as _queue_mod
-
-                while not stop_event.is_set():
-                    try:
-                        progress = progress_queue.get(timeout=0.25)
-                    except _queue_mod.Empty:
-                        continue
-                    except Exception:
-                        break
-                    state.update_state(
-                        phase_detail="training_candidates",
-                        candidate_epoch=progress.get("epoch", 0),
-                        candidate_total_epochs=progress.get("total_epochs", 0),
-                        best_correlation=progress.get("correlation", 0.0),
-                    )
-                    monitor.on_candidate_progress(progress)
-                    manager_ref._broadcast_training_state()
-
-            def monitored_grow(*args, **kwargs):
-                # Pre-call: capture initial output training metrics
-                # (appended by fit() between train_output_layer() and grow_network())
-                manager_ref._extract_and_record_metrics()
-
-                prev_hidden = len(manager_ref.network.hidden_units)
-                monitor.current_phase = "candidate"
-                sm.set_phase(TrainingPhase.CANDIDATE)
-                state.update_state(phase="Candidate", phase_started_at=datetime.now().isoformat())
-                manager_ref._broadcast_training_state(force=True)
-
-                # Inject grow iteration callback (Approach B — attribute fallback)
-                manager_ref.network._grow_iteration_callback = _grow_iteration_callback
-
-                # Start drain thread for candidate progress from worker pool
-                _drain_stop = threading.Event()
-                _drain_thread = None
-                _pq = getattr(manager_ref.network, "_persistent_progress_queue", None)
-                if _pq is not None:
-                    _drain_thread = threading.Thread(
-                        target=_drain_progress_queue,
-                        args=(_pq, _drain_stop),
-                        daemon=True,
-                        name="candidate-progress-drain",
-                    )
-                    _drain_thread.start()
-
-                try:
-                    result = original_grow(*args, **kwargs)
-                finally:
-                    # Stop drain thread
-                    _drain_stop.set()
-                    if _drain_thread is not None:
-                        _drain_thread.join(timeout=2.0)
-
-                new_hidden = len(manager_ref.network.hidden_units)
-
-                if new_hidden > prev_hidden:
-                    for i in range(prev_hidden, new_hidden):
-                        monitor.on_cascade_add(
-                            hidden_unit_index=i,
-                            correlation=0.0,
-                        )
-
-                # Post-call: return to output phase after grow completes
-                monitor.current_phase = "output"
-                sm.set_phase(TrainingPhase.OUTPUT)
-                state.update_state(phase="Output", phase_detail="", candidate_epoch=0, candidate_total_epochs=0)
-                manager_ref._broadcast_training_state(force=True)
-                # Catch-all for any remaining metrics
-                manager_ref._extract_and_record_metrics()
-                return result
-
-            self.network.grow_network = monitored_grow
+        self._install_grow_network_hook(monitor, state, sm, manager_ref)
 
         self._monitoring_active = True
         self.logger.info("Monitoring hooks installed")
+
+    @staticmethod
+    def _drain_progress_queue(network_ref, stop_event, state, monitor, manager_ref):
+        """Background thread that reads candidate progress from workers.
+
+        Uses deferred queue discovery: the persistent progress queue is created
+        lazily inside grow_network() -> _ensure_worker_pool(), so it may not
+        exist when this thread starts. We poll for it until it appears or the
+        stop event is set.
+        """
+        import queue as _queue_mod
+
+        _pq = None
+        while not stop_event.is_set():
+            # Deferred discovery — queue is created inside grow_network
+            if _pq is None:
+                _pq = getattr(network_ref, "_persistent_progress_queue", None)
+                if _pq is None:
+                    try:
+                        stop_event.wait(timeout=0.1)
+                    except Exception:
+                        break
+                    continue
+            try:
+                progress = _pq.get(timeout=0.25)
+            except _queue_mod.Empty:
+                continue
+            except Exception:
+                break
+            state.update_state(
+                phase_detail="training_candidates",
+                candidate_epoch=progress.get("epoch", 0),
+                candidate_total_epochs=progress.get("total_epochs", 0),
+                best_correlation=progress.get("correlation", 0.0),
+            )
+            monitor.on_candidate_progress(progress)
+            manager_ref._broadcast_training_state()
+
+    def _install_grow_network_hook(self, monitor, state, sm, manager_ref) -> None:
+        """Install monitoring hook on grow_network for cascade_add events and phase tracking."""
+        if not hasattr(self.network, "grow_network"):
+            return
+
+        original_grow = self.network.grow_network
+        self._original_methods["grow_network"] = original_grow
+
+        def _grow_iteration_callback(iteration, max_iterations, best_correlation, candidates_trained, candidates_total, phase_detail):
+            state.update_state(
+                grow_iteration=iteration,
+                grow_max=max_iterations,
+                best_correlation=best_correlation,
+                candidates_trained=candidates_trained,
+                candidates_total=candidates_total,
+                phase_detail=phase_detail,
+            )
+            manager_ref._broadcast_training_state()
+
+        def monitored_grow(*args, **kwargs):
+            # Pre-call: capture initial output training metrics
+            # (appended by fit() between train_output_layer() and grow_network())
+            manager_ref._extract_and_record_metrics()
+
+            prev_hidden = len(manager_ref.network.hidden_units)
+            monitor.current_phase = "candidate"
+            sm.set_phase(TrainingPhase.CANDIDATE)
+            state.update_state(phase="Candidate", phase_started_at=datetime.now().isoformat())
+            manager_ref._broadcast_training_state(force=True)
+
+            # Inject grow iteration callback (Approach B — attribute fallback)
+            manager_ref.network._grow_iteration_callback = _grow_iteration_callback
+
+            # Start drain thread for candidate progress from worker pool.
+            # Always started unconditionally — uses deferred queue discovery
+            # because _persistent_progress_queue is created lazily inside
+            # grow_network() → _ensure_worker_pool().
+            _drain_stop = threading.Event()
+            _drain_thread = threading.Thread(
+                target=TrainingLifecycleManager._drain_progress_queue,
+                args=(manager_ref.network, _drain_stop, state, monitor, manager_ref),
+                daemon=True,
+                name="candidate-progress-drain",
+            )
+            _drain_thread.start()
+
+            try:
+                result = original_grow(*args, **kwargs)
+            finally:
+                # Stop drain thread
+                _drain_stop.set()
+                _drain_thread.join(timeout=2.0)
+
+            new_hidden = len(manager_ref.network.hidden_units)
+
+            if new_hidden > prev_hidden:
+                for i in range(prev_hidden, new_hidden):
+                    monitor.on_cascade_add(
+                        hidden_unit_index=i,
+                        correlation=0.0,
+                    )
+
+            # Post-call: return to output phase after grow completes
+            monitor.current_phase = "output"
+            sm.set_phase(TrainingPhase.OUTPUT)
+            state.update_state(phase="Output", phase_detail="", candidate_epoch=0, candidate_total_epochs=0)
+            manager_ref._broadcast_training_state(force=True)
+            # Catch-all for any remaining metrics
+            manager_ref._extract_and_record_metrics()
+            return result
+
+        self.network.grow_network = monitored_grow
 
     def _restore_original_methods(self) -> None:
         """Restore original network methods."""
@@ -839,12 +860,14 @@ class TrainingLifecycleManager:
         snapshots_dir = self._get_snapshots_dir()
         snapshots = []
         for filepath in sorted(snapshots_dir.glob("*.h5")):
-            snapshots.append({
-                "id": filepath.stem,
-                "path": str(filepath),
-                "size_bytes": filepath.stat().st_size,
-                "modified": datetime.fromtimestamp(filepath.stat().st_mtime, tz=UTC).isoformat(),
-            })
+            snapshots.append(
+                {
+                    "id": filepath.stem,
+                    "path": str(filepath),
+                    "size_bytes": filepath.stat().st_size,
+                    "modified": datetime.fromtimestamp(filepath.stat().st_mtime, tz=UTC).isoformat(),
+                }
+            )
         return snapshots
 
     def get_snapshot(self, snapshot_id: str) -> Optional[Dict[str, Any]]:

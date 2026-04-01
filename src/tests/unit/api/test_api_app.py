@@ -15,7 +15,7 @@ class TestAppFactory:
         """Test that create_app returns a FastAPI app."""
         from fastapi import FastAPI
 
-        settings = Settings()
+        settings = Settings(auto_start=False)
         app = create_app(settings)
         assert isinstance(app, FastAPI)
 
@@ -26,13 +26,13 @@ class TestAppFactory:
 
     def test_app_title_and_version(self):
         """Test app metadata."""
-        app = create_app(Settings())
+        app = create_app(Settings(auto_start=False))
         assert app.title == "JuniperCascor API"
         assert app.version == "0.4.0"
 
     def test_cors_middleware_skipped_with_empty_origins(self):
         """Test that CORS middleware is not applied when origins is empty."""
-        app = create_app(Settings())
+        app = create_app(Settings(auto_start=False))
         middleware_classes = [m.cls.__name__ for m in app.user_middleware]
         assert "CORSMiddleware" not in middleware_classes
 
@@ -45,7 +45,7 @@ class TestAppFactory:
 
     def test_value_error_handler(self):
         """Test that ValueError returns 400."""
-        app = create_app(Settings())
+        app = create_app(Settings(auto_start=False))
 
         @app.get("/test-value-error")
         async def raise_value_error():
@@ -60,7 +60,7 @@ class TestAppFactory:
 
     def test_general_exception_handler(self):
         """Test that unhandled exceptions return 500."""
-        app = create_app(Settings())
+        app = create_app(Settings(auto_start=False))
 
         @app.get("/test-error")
         async def raise_error():
