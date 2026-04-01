@@ -724,22 +724,21 @@ For each identified bottleneck, document:
 
 Based on architectural analysis, these are the most likely optimization targets. Actual priority will be determined by profiling data from Phases 1-4.
 
-### OPT-1: Forward Pass Cascade Concatenation
+### OPT-1: Forward Pass Cascade Concatenation — **IMPLEMENTED**
 
-**Location**: `cascade_correlation.py` forward() lines 1404-1446
-**Issue**: Each hidden unit call involves `torch.cat()` concatenation, creating a new tensor per unit. With N hidden units, this creates N intermediate tensors with sizes growing from `input_size` to `input_size + N`.
-**Predicted Impact**: ~~Quadratic memory allocation, significant GC pressure for large networks.~~ **REVISED**: Phase 2 benchmarks show sub-linear scaling (0->50 hidden = 1.86x, not quadratic). PyTorch's tensor operations handle the concatenation efficiently. The forward pass is NOT the bottleneck.
-**Potential Fix**: Pre-allocate a buffer tensor of size `[batch_size, input_size + max_hidden_units]` and fill columns incrementally, avoiding repeated `torch.cat()` allocations.
+**Location**: `cascade_correlation.py` `forward()` and `_prepare_candidate_input()` (fallback path)
+**Issue**: Each hidden unit call involved `torch.cat()` concatenation, creating N+1 intermediate tensors.
+**Fix Applied**: Pre-allocate a single buffer tensor `[batch_size, input_size + N_hidden]`, copy input features once, then fill hidden unit columns incrementally via `buffer[:, col] = activation(...)`. Eliminates all `torch.cat()` calls. Applied to both `forward()` and `_prepare_candidate_input()` fallback.
 **Risk**: Low -- forward pass is a pure computation with no side effects.
-**Estimated Improvement**: ~~20-40% forward pass speedup~~ **REVISED**: Likely < 10% improvement. Deprioritized based on Phase 2 data.
+**Estimated Improvement**: < 10% forward pass speedup (Phase 2 confirmed sub-linear scaling). Eliminates GC pressure from N intermediate tensor allocations.
 
-### OPT-2: Batch Correlation Computation
+### OPT-2: Batch Correlation Computation — **IMPLEMENTED**
 
-**Location**: `candidate_unit.py` `_calculate_correlation()` lines 1009-1100
-**Issue**: Correlation is computed per-candidate, per-epoch. The mean-centering and dot product operations are standard vectorized ops but could benefit from fused operations.
-**Potential Fix**: Use `torch.nn.functional.cosine_similarity()` or manual fused kernel instead of separate mean, subtract, multiply, sum steps.
-**Risk**: Low -- pure numerical computation.
-**Estimated Improvement**: 5-15% per correlation computation.
+**Location**: `candidate_unit.py` `_calculate_correlation()` and `_update_weights_and_bias()`
+**Issue**: Correlation used separate `torch.sum(a * b)` and `torch.sqrt(torch.sum(x**2))` — multiple kernel launches and intermediate tensor allocations.
+**Fix Applied**: Replaced with `torch.dot()` (single BLAS call, no intermediate tensor) and `torch.linalg.norm()` (single BLAS call, avoids square+sum+sqrt). Also applied to the autograd correlation path in `_update_weights_and_bias()`. Reduced hot-path logging.
+**Risk**: Low -- pure numerical computation, same mathematical result.
+**Estimated Improvement**: 5-10% per correlation computation (fewer kernel launches, less allocation).
 
 ### OPT-3: Output Layer Weight Transfer Overhead
 
@@ -787,8 +786,8 @@ Based on architectural analysis, these are the most likely optimization targets.
 | OPT-6 (Correlation single-output path) | **P0 — DONE** | Low         | **37x speedup** (18.24ms → 0.49ms for output_size=1)         | Low    |
 | OPT-4 (Cached forward pass)            | **P0 — DONE** | Low         | 22x–1607x on isolated call; 5-15% total time                 | Low    |
 | OPT-5 (Shared memory tensors)          | **P1**        | Medium-High | 30-50% for large data (Phase 3 will quantify)                | High   |
-| OPT-2 (Fused correlation)              | **P2**        | Low         | 5-10% (sub-linear sample scaling observed)                   | Low    |
-| OPT-1 (Pre-allocated forward)          | **P3**        | Medium      | < 10% (**REVISED**: Phase 2 shows sub-linear, not quadratic) | Low    |
+| OPT-2 (Fused correlation)              | **P2 — DONE** | Low         | 5-10% (torch.dot + linalg.norm fusion)                       | Low    |
+| OPT-1 (Pre-allocated forward)          | **P3 — DONE** | Low         | Eliminates N+1 torch.cat() per forward pass                  | Low    |
 | OPT-3 (Persistent output layer)        | **P3**        | Medium      | < 5% (**REVISED**: 0->50 hidden = only 1.6x)                 | Medium |
 
 ### NEW: OPT-6: Correlation Single-Output Path Anomaly — **IMPLEMENTED**
@@ -811,7 +810,7 @@ This plan was validated on 2026-03-31 against the juniper-cascor codebase. Key f
 
 | Claim | Status | Notes |
 | ------- | -------- | ------- |
-| Forward pass cascade (OPT-1) | Verified | `torch.cat()` per hidden unit confirmed at lines 1425-1432 |
+| Forward pass cascade (OPT-1) | **FIXED** | Pre-allocated buffer eliminates `torch.cat()` per hidden unit |
 | Redundant forward pass (OPT-4) | **FIXED** | Cache in `forward()` consumed by `_prepare_candidate_input()` — eliminates redundant pass |
 | Temporary nn.Linear (OPT-3) | Verified | Created at line 1492, weight transposition at lines 1494 and 1540 |
 | RC-3 shared_training_inputs | Corrected | Parameter belongs to `_ensure_worker_pool()` and `_worker_loop()`, not `_execute_parallel_training()` directly |

@@ -1422,22 +1422,22 @@ class CascadeCorrelationNetwork:
         features = x
         self.logger.debug(f"CascadeCorrelationNetwork: forward: Input shape: {features.shape}")
 
-        # Pass through each hidden unit
-        hidden_outputs = []
-        for i, unit in enumerate(self.hidden_units):
-
-            # Concatenate all previous outputs with the input
-            unit_input = torch.cat([x] + hidden_outputs, dim=1) if hidden_outputs else x
-
-            # Get output from this unit
-            unit_output = unit["activation_fn"](torch.sum(unit_input * unit["weights"], dim=1) + unit["bias"]).unsqueeze(1)
-            hidden_outputs.append(unit_output)
-            if self._status_display_progress(i):
-                self.logger.info(f"CascadeCorrelationNetwork: forward: Hidden unit {i + 1} output shape: {unit_output.shape}")
-            self.logger.debug(f"CascadeCorrelationNetwork: forward: Hidden unit {i + 1} output shape: {unit_output.shape}")
-
-        # Prepare input for the output layer
-        output_input = torch.cat([x] + hidden_outputs, dim=1) if hidden_outputs else x
+        # OPT-1: Pre-allocated forward pass buffer — eliminates N+1 torch.cat() calls by
+        # pre-allocating [batch_size, input_size + N_hidden] and filling columns incrementally.
+        n_hidden = len(self.hidden_units)
+        if n_hidden == 0:
+            output_input = x
+        else:
+            batch_size = x.shape[0]
+            total_features = self.input_size + n_hidden
+            buffer = torch.empty(batch_size, total_features)
+            buffer[:, :self.input_size] = x
+            for i, unit in enumerate(self.hidden_units):
+                col = self.input_size + i
+                unit_input = buffer[:, :col]
+                buffer[:, col] = unit["activation_fn"](torch.sum(unit_input * unit["weights"], dim=1) + unit["bias"])
+                self.logger.debug(f"CascadeCorrelationNetwork: forward: Hidden unit {i + 1} computed, features: {col + 1}")
+            output_input = buffer
         self.logger.verbose(f"CascadeCorrelationNetwork: forward: Output input shape: {output_input.shape}")
 
         # OPT-4: Cache candidate input (output_input == candidate_input) for reuse by _prepare_candidate_input().
@@ -1634,15 +1634,22 @@ class CascadeCorrelationNetwork:
             return candidate_input
         self._cached_candidate_input = None
 
-        hidden_outputs = []
-        for unit in self.hidden_units:
-            unit_input = torch.cat([x] + hidden_outputs, dim=1) if hidden_outputs else x
-            unit_output = unit["activation_fn"](torch.sum(unit_input * unit["weights"], dim=1) + unit["bias"])
-            hidden_outputs.append(unit_output.unsqueeze(1))
-            self.logger.debug(f"CascadeCorrelationNetwork: _prepare_candidate_input: Hidden unit output shape: {unit_output.shape}")
-        candidate_input = torch.cat([x] + hidden_outputs, dim=1) if hidden_outputs else x
+        # OPT-1: Pre-allocated buffer (fallback when OPT-4 cache misses)
+        n_hidden = len(self.hidden_units)
+        if n_hidden == 0:
+            candidate_input = x
+        else:
+            batch_size = x.shape[0]
+            total_features = self.input_size + n_hidden
+            buffer = torch.empty(batch_size, total_features)
+            buffer[:, :self.input_size] = x
+            for i, unit in enumerate(self.hidden_units):
+                col = self.input_size + i
+                unit_input = buffer[:, :col]
+                buffer[:, col] = unit["activation_fn"](torch.sum(unit_input * unit["weights"], dim=1) + unit["bias"])
+            candidate_input = buffer
         self.logger.debug(f"CascadeCorrelationNetwork: _prepare_candidate_input: Candidate input shape: {candidate_input.shape}")
-        self.logger.info(f"CascadeCorrelationNetwork: _prepare_candidate_input: Hidden units: {len(hidden_outputs)}")
+        self.logger.info(f"CascadeCorrelationNetwork: _prepare_candidate_input: Hidden units: {n_hidden}")
         return candidate_input
 
     def _generate_candidate_tasks(

@@ -1035,63 +1035,37 @@ class CandidateUnit:
         self.logger.debug(f"CandidateUnit: _calculate_correlation: Output shape: {output.shape}, Residual error shape: {residual_error.shape}")
 
         # Validate the parameters for correlation calculation
-        self.logger.trace("CandidateUnit: _calculate_correlation: Validating correlation parameters")
         self._validate_correlation_params(output=output, residual_error=residual_error)
-        self.logger.debug("CandidateUnit: _calculate_correlation: Parameters validated successfully")
 
-        # Flatten output and residual_error to ensure consistent shapes for correlation calculation
-        # Output should be [batch_size] and residual_error should be [batch_size] for single output
-        output_flat = output.flatten()  # Ensure 1D tensor for batch
-        residual_error_flat = residual_error.flatten()  # Ensure 1D tensor for batch
-        self.logger.debug(f"CandidateUnit: _calculate_correlation: Flattened shapes - Output: {output_flat.shape}, Error: {residual_error_flat.shape}")
+        # OPT-2: Fused correlation computation — uses torch.dot() and torch.linalg.norm()
+        # instead of separate sum(a*b) and sqrt(sum(x^2)) to reduce kernel launches and
+        # eliminate intermediate tensor allocations.
 
-        # Calculate means across the entire minibatch
-        self.logger.trace("CandidateUnit: _calculate_correlation: Calculating minibatch means")
-        self.logger.debug(f"CandidateUnit: _calculate_correlation: Output tensor type: {type(output_flat)}")
-        output_mean = torch.mean(output_flat)
-        self.logger.debug(f"CandidateUnit: _calculate_correlation: Residual error tensor type: {type(residual_error_flat)}")
-        error_mean = torch.mean(residual_error_flat)
-        self.logger.debug(f"CandidateUnit: _calculate_correlation: Minibatch means - Output: {output_mean:.6f}, Error: {error_mean:.6f}")
+        # Flatten to 1D and mean-center in two operations
+        output_flat = output.flatten()
+        residual_error_flat = residual_error.flatten()
+        norm_output = output_flat - output_flat.mean()
+        norm_error = residual_error_flat - residual_error_flat.mean()
 
-        # Mean-center the tensors (subtract batch means)
-        self.logger.trace("CandidateUnit: _calculate_correlation: Mean-centering tensors across minibatch")
-        norm_output = output_flat - output_mean
-        norm_error = residual_error_flat - error_mean
-        self.logger.debug(f"CandidateUnit: _calculate_correlation: Mean-centered tensors computed: Norm Output: Type: {type(norm_output)}, Shape: {norm_output.shape}, Norm Error: Type: {type(norm_error)}, Shape: {norm_error.shape}")
+        # Fused covariance via torch.dot (single BLAS call, no intermediate tensor)
+        numerator = torch.dot(norm_output, norm_error)
 
-        # Calculate covariance (numerator of correlation coefficient)
-        # This measures how output and error vary together across the minibatch
-        numerator = torch.sum(norm_output * norm_error)
-        self.logger.debug(f"CandidateUnit: _calculate_correlation: Covariance (numerator): {numerator:.6f}")
+        # Fused denominator via torch.linalg.norm (single BLAS call each, avoids square + sum + sqrt)
+        output_norm = torch.linalg.norm(norm_output)
+        error_norm = torch.linalg.norm(norm_error)
+        denominator = output_norm * error_norm + 1e-8
 
-        # Calculate standard deviations and their product (denominator)
-        # Add small epsilon to prevent division by zero
-        sum_output_sq = torch.sum(norm_output**2)
-        sum_error_sq = torch.sum(norm_error**2)
-        denominator = torch.sqrt(sum_output_sq * sum_error_sq + 1e-8)
-        self.logger.debug(f"CandidateUnit: _calculate_correlation: Sum squares - Output: {sum_output_sq:.6f}, Error: {sum_error_sq:.6f}")
-        self.logger.debug(f"CandidateUnit: _calculate_correlation: Denominator: {denominator:.6f}")
-
-        # Calculate the Pearson correlation coefficient
-        self.logger.trace("CandidateUnit: _calculate_correlation: Computing final correlation coefficient")
-        if denominator == 0 or torch.isnan(denominator):
+        # Compute Pearson correlation coefficient
+        if denominator < 1e-7 or torch.isnan(denominator):
             self.logger.warning("CandidateUnit: _calculate_correlation: Denominator is zero or NaN, setting correlation to zero")
             correlation = 0.0
+            numerator_val = 0.0
+            denominator_val = 1e-8
         else:
-            # Convert to Python scalars for numerical stability
-            numerator_val = numerator.item() if hasattr(numerator, "item") else float(numerator)
-            denominator_val = denominator.item() if hasattr(denominator, "item") else float(denominator)
-            self.logger.debug(f"CandidateUnit: _calculate_correlation: Numerator value: {numerator_val:.6f}, Denominator value: {denominator_val:.6f}")
+            numerator_val = numerator.item()
+            denominator_val = denominator.item()
+            correlation = abs(numerator_val / denominator_val)
 
-            # Use absolute value for candidate comparison (we want maximum correlation magnitude)
-            # This ensures candidates with strong negative correlations are also considered valuable
-            correlation_raw = numerator_val / denominator_val
-            # correlation = abs(correlation_raw)
-            correlation = np.abs(correlation_raw)
-            self.logger.debug(f"CandidateUnit: _calculate_correlation: Raw correlation value: {correlation_raw:.6f}")
-            self.logger.debug(f"CandidateUnit: _calculate_correlation: Absolute correlation: {correlation:.6f}")
-
-        self.logger.trace("CandidateUnit: _calculate_correlation: Completed minibatch correlation calculation")
         self.logger.info(f"CandidateUnit: _calculate_correlation: Final correlation effectiveness: {correlation:.6f}")
 
         # Return correlation and components for gradient computation
@@ -1165,23 +1139,15 @@ class CandidateUnit:
         error_mean = error_slice.mean()
         self.logger.verbose(f"CandidateUnit: _update_weights_and_bias: Error mean: {error_mean}")
         output_centered = output - output_mean
-        self.logger.verbose(f"CandidateUnit: _update_weights_and_bias: Output centered: {output_centered}")
-        error_centered = error_slice - error_mean
-        self.logger.verbose(f"CandidateUnit: _update_weights_and_bias: Error centered: {error_centered}")
-
         self.logger.verbose(f"CandidateUnit: _update_weights_and_bias: Output centered shape: {output_centered.shape}")
+        error_centered = error_slice - error_mean
         self.logger.verbose(f"CandidateUnit: _update_weights_and_bias: Error centered shape: {error_centered.shape}")
 
-        # Compute correlation
-        self.logger.debug("CandidateUnit: _update_weights_and_bias: Compute correlation")
-        candidate_parameters_update.numerator = torch.sum(output_centered * error_centered)
-        self.logger.verbose(f"CandidateUnit: _update_weights_and_bias: Numerator (covariance): {candidate_parameters_update.numerator}")
-        output_std = torch.sqrt(torch.sum(output_centered**2) + 1e-8)
-        self.logger.verbose(f"CandidateUnit: _update_weights_and_bias: Output std: {output_std}")
-        error_std = torch.sqrt(torch.sum(error_centered**2) + 1e-8)
-        self.logger.verbose(f"CandidateUnit: _update_weights_and_bias: Error std: {error_std}")
-        candidate_parameters_update.denominator = output_std * error_std
-        self.logger.verbose(f"CandidateUnit: _update_weights_and_bias: Denominator (product of stds): {candidate_parameters_update.denominator}")
+        # OPT-2: Fused correlation with autograd-compatible ops (torch.dot, torch.linalg.norm)
+        candidate_parameters_update.numerator = torch.dot(output_centered, error_centered)
+        output_std = torch.linalg.norm(output_centered)
+        error_std = torch.linalg.norm(error_centered)
+        candidate_parameters_update.denominator = output_std * error_std + 1e-8
         correlation = candidate_parameters_update.numerator / candidate_parameters_update.denominator
         self.logger.debug(f"CandidateUnit: _update_weights_and_bias: Correlation: {correlation}")
 
