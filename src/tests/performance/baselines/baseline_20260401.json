@@ -338,5 +338,515 @@
       "torch_num_threads": 1,
       "omp_num_threads": "1"
     }
+  },
+  {
+    "test_name": "forward_5_hidden",
+    "timestamp": "2026-04-01T18:33:48.605721+00:00",
+    "results": {
+      "hidden_units": 5
+    },
+    "environment": {
+      "python_version": "3.14.3 | packaged by conda-forge | (main, Feb  9 2026, 21:56:02) [GCC 14.3.0]",
+      "torch_version": "2.9.1+cu128",
+      "numpy_version": "2.4.2",
+      "platform": "Linux-6.17.0-19-generic-x86_64-with-glibc2.42",
+      "cpu_count": 16,
+      "torch_num_threads": 1,
+      "omp_num_threads": "1"
+    }
+  },
+  {
+    "test_name": "forward_10_hidden",
+    "timestamp": "2026-04-01T18:33:48.633158+00:00",
+    "results": {
+      "hidden_units": 10
+    },
+    "environment": {
+      "python_version": "3.14.3 | packaged by conda-forge | (main, Feb  9 2026, 21:56:02) [GCC 14.3.0]",
+      "torch_version": "2.9.1+cu128",
+      "numpy_version": "2.4.2",
+      "platform": "Linux-6.17.0-19-generic-x86_64-with-glibc2.42",
+      "cpu_count": 16,
+      "torch_num_threads": 1,
+      "omp_num_threads": "1"
+    }
+  },
+  {
+    "test_name": "memory_base_network",
+    "timestamp": "2026-04-01T18:34:10.490365+00:00",
+    "results": {
+      "rss_before_mb": 729.69,
+      "rss_after_mb": 729.69,
+      "delta_mb": 0.0,
+      "hidden_units": 0
+    },
+    "environment": {
+      "python_version": "3.14.3 | packaged by conda-forge | (main, Feb  9 2026, 21:56:02) [GCC 14.3.0]",
+      "torch_version": "2.9.1+cu128",
+      "numpy_version": "2.4.2",
+      "platform": "Linux-6.17.0-19-generic-x86_64-with-glibc2.42",
+      "cpu_count": 16,
+      "torch_num_threads": 2,
+      "omp_num_threads": "1"
+    }
+  },
+  {
+    "test_name": "memory_5_hidden",
+    "timestamp": "2026-04-01T18:34:10.494786+00:00",
+    "results": {
+      "rss_mb": 729.7,
+      "hidden_units": 5
+    },
+    "environment": {
+      "python_version": "3.14.3 | packaged by conda-forge | (main, Feb  9 2026, 21:56:02) [GCC 14.3.0]",
+      "torch_version": "2.9.1+cu128",
+      "numpy_version": "2.4.2",
+      "platform": "Linux-6.17.0-19-generic-x86_64-with-glibc2.42",
+      "cpu_count": 16,
+      "torch_num_threads": 1,
+      "omp_num_threads": "1"
+    }
+  },
+  {
+    "test_name": "memory_10_hidden",
+    "timestamp": "2026-04-01T18:34:10.499128+00:00",
+    "results": {
+      "rss_mb": 729.72,
+      "hidden_units": 10
+    },
+    "environment": {
+      "python_version": "3.14.3 | packaged by conda-forge | (main, Feb  9 2026, 21:56:02) [GCC 14.3.0]",
+      "torch_version": "2.9.1+cu128",
+      "numpy_version": "2.4.2",
+      "platform": "Linux-6.17.0-19-generic-x86_64-with-glibc2.42",
+      "cpu_count": 16,
+      "torch_num_threads": 1,
+      "omp_num_threads": "1"
+    }
+  },
+  {
+    "test_name": "forward_5_hidden",
+    "timestamp": "2026-04-01T18:48:55.155450+00:00",
+    "results": {
+      "hidden_units": 5
+    },
+    "environment": {
+      "python_version": "3.14.3 | packaged by conda-forge | (main, Feb  9 2026, 21:56:02) [GCC 14.3.0]",
+      "torch_version": "2.9.1+cu128",
+      "numpy_version": "2.4.2",
+      "platform": "Linux-6.17.0-19-generic-x86_64-with-glibc2.42",
+      "cpu_count": 16,
+      "torch_num_threads": 1,
+      "omp_num_threads": "1"
+    }
+  },
+  {
+    "test_name": "forward_10_hidden",
+    "timestamp": "2026-04-01T18:48:55.168883+00:00",
+    "results": {
+      "hidden_units": 10
+    },
+    "environment": {
+      "python_version": "3.14.3 | packaged by conda-forge | (main, Feb  9 2026, 21:56:02) [GCC 14.3.0]",
+      "torch_version": "2.9.1+cu128",
+      "numpy_version": "2.4.2",
+      "platform": "Linux-6.17.0-19-generic-x86_64-with-glibc2.42",
+      "cpu_count": 16,
+      "torch_num_threads": 1,
+      "omp_num_threads": "1"
+    }
+  },
+  {
+    "test_name": "memory_base_network",
+    "timestamp": "2026-04-01T18:49:17.720238+00:00",
+    "results": {
+      "rss_before_mb": 729.59,
+      "rss_after_mb": 729.59,
+      "delta_mb": 0.0,
+      "hidden_units": 0
+    },
+    "environment": {
+      "python_version": "3.14.3 | packaged by conda-forge | (main, Feb  9 2026, 21:56:02) [GCC 14.3.0]",
+      "torch_version": "2.9.1+cu128",
+      "numpy_version": "2.4.2",
+      "platform": "Linux-6.17.0-19-generic-x86_64-with-glibc2.42",
+      "cpu_count": 16,
+      "torch_num_threads": 2,
+      "omp_num_threads": "1"
+    }
+  },
+  {
+    "test_name": "memory_5_hidden",
+    "timestamp": "2026-04-01T18:49:17.724817+00:00",
+    "results": {
+      "rss_mb": 729.62,
+      "hidden_units": 5
+    },
+    "environment": {
+      "python_version": "3.14.3 | packaged by conda-forge | (main, Feb  9 2026, 21:56:02) [GCC 14.3.0]",
+      "torch_version": "2.9.1+cu128",
+      "numpy_version": "2.4.2",
+      "platform": "Linux-6.17.0-19-generic-x86_64-with-glibc2.42",
+      "cpu_count": 16,
+      "torch_num_threads": 1,
+      "omp_num_threads": "1"
+    }
+  },
+  {
+    "test_name": "memory_10_hidden",
+    "timestamp": "2026-04-01T18:49:17.729177+00:00",
+    "results": {
+      "rss_mb": 729.63,
+      "hidden_units": 10
+    },
+    "environment": {
+      "python_version": "3.14.3 | packaged by conda-forge | (main, Feb  9 2026, 21:56:02) [GCC 14.3.0]",
+      "torch_version": "2.9.1+cu128",
+      "numpy_version": "2.4.2",
+      "platform": "Linux-6.17.0-19-generic-x86_64-with-glibc2.42",
+      "cpu_count": 16,
+      "torch_num_threads": 1,
+      "omp_num_threads": "1"
+    }
+  },
+  {
+    "test_name": "forward_5_hidden",
+    "timestamp": "2026-04-01T18:58:58.309939+00:00",
+    "results": {
+      "hidden_units": 5
+    },
+    "environment": {
+      "python_version": "3.14.3 | packaged by conda-forge | (main, Feb  9 2026, 21:56:02) [GCC 14.3.0]",
+      "torch_version": "2.9.1+cu128",
+      "numpy_version": "2.4.2",
+      "platform": "Linux-6.17.0-19-generic-x86_64-with-glibc2.42",
+      "cpu_count": 16,
+      "torch_num_threads": 1,
+      "omp_num_threads": "1"
+    }
+  },
+  {
+    "test_name": "forward_10_hidden",
+    "timestamp": "2026-04-01T18:58:58.324198+00:00",
+    "results": {
+      "hidden_units": 10
+    },
+    "environment": {
+      "python_version": "3.14.3 | packaged by conda-forge | (main, Feb  9 2026, 21:56:02) [GCC 14.3.0]",
+      "torch_version": "2.9.1+cu128",
+      "numpy_version": "2.4.2",
+      "platform": "Linux-6.17.0-19-generic-x86_64-with-glibc2.42",
+      "cpu_count": 16,
+      "torch_num_threads": 1,
+      "omp_num_threads": "1"
+    }
+  },
+  {
+    "test_name": "memory_base_network",
+    "timestamp": "2026-04-01T18:59:19.173586+00:00",
+    "results": {
+      "rss_before_mb": 729.31,
+      "rss_after_mb": 729.32,
+      "delta_mb": 0.0,
+      "hidden_units": 0
+    },
+    "environment": {
+      "python_version": "3.14.3 | packaged by conda-forge | (main, Feb  9 2026, 21:56:02) [GCC 14.3.0]",
+      "torch_version": "2.9.1+cu128",
+      "numpy_version": "2.4.2",
+      "platform": "Linux-6.17.0-19-generic-x86_64-with-glibc2.42",
+      "cpu_count": 16,
+      "torch_num_threads": 2,
+      "omp_num_threads": "1"
+    }
+  },
+  {
+    "test_name": "memory_5_hidden",
+    "timestamp": "2026-04-01T18:59:19.178073+00:00",
+    "results": {
+      "rss_mb": 729.35,
+      "hidden_units": 5
+    },
+    "environment": {
+      "python_version": "3.14.3 | packaged by conda-forge | (main, Feb  9 2026, 21:56:02) [GCC 14.3.0]",
+      "torch_version": "2.9.1+cu128",
+      "numpy_version": "2.4.2",
+      "platform": "Linux-6.17.0-19-generic-x86_64-with-glibc2.42",
+      "cpu_count": 16,
+      "torch_num_threads": 1,
+      "omp_num_threads": "1"
+    }
+  },
+  {
+    "test_name": "memory_10_hidden",
+    "timestamp": "2026-04-01T18:59:19.182695+00:00",
+    "results": {
+      "rss_mb": 729.36,
+      "hidden_units": 10
+    },
+    "environment": {
+      "python_version": "3.14.3 | packaged by conda-forge | (main, Feb  9 2026, 21:56:02) [GCC 14.3.0]",
+      "torch_version": "2.9.1+cu128",
+      "numpy_version": "2.4.2",
+      "platform": "Linux-6.17.0-19-generic-x86_64-with-glibc2.42",
+      "cpu_count": 16,
+      "torch_num_threads": 1,
+      "omp_num_threads": "1"
+    }
+  },
+  {
+    "test_name": "forward_5_hidden",
+    "timestamp": "2026-04-01T19:09:24.449119+00:00",
+    "results": {
+      "hidden_units": 5
+    },
+    "environment": {
+      "python_version": "3.14.3 | packaged by conda-forge | (main, Feb  9 2026, 21:56:02) [GCC 14.3.0]",
+      "torch_version": "2.9.1+cu128",
+      "numpy_version": "2.4.2",
+      "platform": "Linux-6.17.0-19-generic-x86_64-with-glibc2.42",
+      "cpu_count": 16,
+      "torch_num_threads": 1,
+      "omp_num_threads": "1"
+    }
+  },
+  {
+    "test_name": "forward_10_hidden",
+    "timestamp": "2026-04-01T19:09:24.540624+00:00",
+    "results": {
+      "hidden_units": 10
+    },
+    "environment": {
+      "python_version": "3.14.3 | packaged by conda-forge | (main, Feb  9 2026, 21:56:02) [GCC 14.3.0]",
+      "torch_version": "2.9.1+cu128",
+      "numpy_version": "2.4.2",
+      "platform": "Linux-6.17.0-19-generic-x86_64-with-glibc2.42",
+      "cpu_count": 16,
+      "torch_num_threads": 1,
+      "omp_num_threads": "1"
+    }
+  },
+  {
+    "test_name": "forward_5_hidden",
+    "timestamp": "2026-04-01T19:10:01.135933+00:00",
+    "results": {
+      "hidden_units": 5
+    },
+    "environment": {
+      "python_version": "3.14.3 | packaged by conda-forge | (main, Feb  9 2026, 21:56:02) [GCC 14.3.0]",
+      "torch_version": "2.9.1+cu128",
+      "numpy_version": "2.4.2",
+      "platform": "Linux-6.17.0-19-generic-x86_64-with-glibc2.42",
+      "cpu_count": 16,
+      "torch_num_threads": 1,
+      "omp_num_threads": "1"
+    }
+  },
+  {
+    "test_name": "forward_10_hidden",
+    "timestamp": "2026-04-01T19:10:01.209823+00:00",
+    "results": {
+      "hidden_units": 10
+    },
+    "environment": {
+      "python_version": "3.14.3 | packaged by conda-forge | (main, Feb  9 2026, 21:56:02) [GCC 14.3.0]",
+      "torch_version": "2.9.1+cu128",
+      "numpy_version": "2.4.2",
+      "platform": "Linux-6.17.0-19-generic-x86_64-with-glibc2.42",
+      "cpu_count": 16,
+      "torch_num_threads": 1,
+      "omp_num_threads": "1"
+    }
+  },
+  {
+    "test_name": "memory_base_network",
+    "timestamp": "2026-04-01T19:10:35.970784+00:00",
+    "results": {
+      "rss_before_mb": 729.67,
+      "rss_after_mb": 729.67,
+      "delta_mb": 0.0,
+      "hidden_units": 0
+    },
+    "environment": {
+      "python_version": "3.14.3 | packaged by conda-forge | (main, Feb  9 2026, 21:56:02) [GCC 14.3.0]",
+      "torch_version": "2.9.1+cu128",
+      "numpy_version": "2.4.2",
+      "platform": "Linux-6.17.0-19-generic-x86_64-with-glibc2.42",
+      "cpu_count": 16,
+      "torch_num_threads": 2,
+      "omp_num_threads": "1"
+    }
+  },
+  {
+    "test_name": "memory_5_hidden",
+    "timestamp": "2026-04-01T19:10:35.977270+00:00",
+    "results": {
+      "rss_mb": 729.7,
+      "hidden_units": 5
+    },
+    "environment": {
+      "python_version": "3.14.3 | packaged by conda-forge | (main, Feb  9 2026, 21:56:02) [GCC 14.3.0]",
+      "torch_version": "2.9.1+cu128",
+      "numpy_version": "2.4.2",
+      "platform": "Linux-6.17.0-19-generic-x86_64-with-glibc2.42",
+      "cpu_count": 16,
+      "torch_num_threads": 1,
+      "omp_num_threads": "1"
+    }
+  },
+  {
+    "test_name": "memory_10_hidden",
+    "timestamp": "2026-04-01T19:10:35.988062+00:00",
+    "results": {
+      "rss_mb": 729.71,
+      "hidden_units": 10
+    },
+    "environment": {
+      "python_version": "3.14.3 | packaged by conda-forge | (main, Feb  9 2026, 21:56:02) [GCC 14.3.0]",
+      "torch_version": "2.9.1+cu128",
+      "numpy_version": "2.4.2",
+      "platform": "Linux-6.17.0-19-generic-x86_64-with-glibc2.42",
+      "cpu_count": 16,
+      "torch_num_threads": 1,
+      "omp_num_threads": "1"
+    }
+  },
+  {
+    "test_name": "memory_base_network",
+    "timestamp": "2026-04-01T19:11:12.578571+00:00",
+    "results": {
+      "rss_before_mb": 729.86,
+      "rss_after_mb": 729.86,
+      "delta_mb": 0.0,
+      "hidden_units": 0
+    },
+    "environment": {
+      "python_version": "3.14.3 | packaged by conda-forge | (main, Feb  9 2026, 21:56:02) [GCC 14.3.0]",
+      "torch_version": "2.9.1+cu128",
+      "numpy_version": "2.4.2",
+      "platform": "Linux-6.17.0-19-generic-x86_64-with-glibc2.42",
+      "cpu_count": 16,
+      "torch_num_threads": 2,
+      "omp_num_threads": "1"
+    }
+  },
+  {
+    "test_name": "memory_5_hidden",
+    "timestamp": "2026-04-01T19:11:12.587512+00:00",
+    "results": {
+      "rss_mb": 729.89,
+      "hidden_units": 5
+    },
+    "environment": {
+      "python_version": "3.14.3 | packaged by conda-forge | (main, Feb  9 2026, 21:56:02) [GCC 14.3.0]",
+      "torch_version": "2.9.1+cu128",
+      "numpy_version": "2.4.2",
+      "platform": "Linux-6.17.0-19-generic-x86_64-with-glibc2.42",
+      "cpu_count": 16,
+      "torch_num_threads": 1,
+      "omp_num_threads": "1"
+    }
+  },
+  {
+    "test_name": "memory_10_hidden",
+    "timestamp": "2026-04-01T19:11:12.596241+00:00",
+    "results": {
+      "rss_mb": 729.9,
+      "hidden_units": 10
+    },
+    "environment": {
+      "python_version": "3.14.3 | packaged by conda-forge | (main, Feb  9 2026, 21:56:02) [GCC 14.3.0]",
+      "torch_version": "2.9.1+cu128",
+      "numpy_version": "2.4.2",
+      "platform": "Linux-6.17.0-19-generic-x86_64-with-glibc2.42",
+      "cpu_count": 16,
+      "torch_num_threads": 1,
+      "omp_num_threads": "1"
+    }
+  },
+  {
+    "test_name": "forward_5_hidden",
+    "timestamp": "2026-04-01T23:20:12.459350+00:00",
+    "results": {
+      "hidden_units": 5
+    },
+    "environment": {
+      "python_version": "3.14.3 | packaged by conda-forge | (main, Feb  9 2026, 21:56:02) [GCC 14.3.0]",
+      "torch_version": "2.9.1+cu128",
+      "numpy_version": "2.4.2",
+      "platform": "Linux-6.17.0-19-generic-x86_64-with-glibc2.42",
+      "cpu_count": 16,
+      "torch_num_threads": 1,
+      "omp_num_threads": "1"
+    }
+  },
+  {
+    "test_name": "forward_10_hidden",
+    "timestamp": "2026-04-01T23:20:12.477288+00:00",
+    "results": {
+      "hidden_units": 10
+    },
+    "environment": {
+      "python_version": "3.14.3 | packaged by conda-forge | (main, Feb  9 2026, 21:56:02) [GCC 14.3.0]",
+      "torch_version": "2.9.1+cu128",
+      "numpy_version": "2.4.2",
+      "platform": "Linux-6.17.0-19-generic-x86_64-with-glibc2.42",
+      "cpu_count": 16,
+      "torch_num_threads": 1,
+      "omp_num_threads": "1"
+    }
+  },
+  {
+    "test_name": "memory_base_network",
+    "timestamp": "2026-04-01T23:20:35.632623+00:00",
+    "results": {
+      "rss_before_mb": 730.17,
+      "rss_after_mb": 730.18,
+      "delta_mb": 0.0,
+      "hidden_units": 0
+    },
+    "environment": {
+      "python_version": "3.14.3 | packaged by conda-forge | (main, Feb  9 2026, 21:56:02) [GCC 14.3.0]",
+      "torch_version": "2.9.1+cu128",
+      "numpy_version": "2.4.2",
+      "platform": "Linux-6.17.0-19-generic-x86_64-with-glibc2.42",
+      "cpu_count": 16,
+      "torch_num_threads": 2,
+      "omp_num_threads": "1"
+    }
+  },
+  {
+    "test_name": "memory_5_hidden",
+    "timestamp": "2026-04-01T23:20:35.637628+00:00",
+    "results": {
+      "rss_mb": 730.23,
+      "hidden_units": 5
+    },
+    "environment": {
+      "python_version": "3.14.3 | packaged by conda-forge | (main, Feb  9 2026, 21:56:02) [GCC 14.3.0]",
+      "torch_version": "2.9.1+cu128",
+      "numpy_version": "2.4.2",
+      "platform": "Linux-6.17.0-19-generic-x86_64-with-glibc2.42",
+      "cpu_count": 16,
+      "torch_num_threads": 1,
+      "omp_num_threads": "1"
+    }
+  },
+  {
+    "test_name": "memory_10_hidden",
+    "timestamp": "2026-04-01T23:20:35.642484+00:00",
+    "results": {
+      "rss_mb": 730.25,
+      "hidden_units": 10
+    },
+    "environment": {
+      "python_version": "3.14.3 | packaged by conda-forge | (main, Feb  9 2026, 21:56:02) [GCC 14.3.0]",
+      "torch_version": "2.9.1+cu128",
+      "numpy_version": "2.4.2",
+      "platform": "Linux-6.17.0-19-generic-x86_64-with-glibc2.42",
+      "cpu_count": 16,
+      "torch_num_threads": 1,
+      "omp_num_threads": "1"
+    }
   }
 ]

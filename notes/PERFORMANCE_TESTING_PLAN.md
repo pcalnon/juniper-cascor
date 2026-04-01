@@ -781,14 +781,14 @@ Based on architectural analysis, these are the most likely optimization targets.
 
 ### Optimization Prioritization
 
-| Optimization                           | Priority      | Effort      | Measured/Predicted Impact                                    | Risk   |
-|----------------------------------------|---------------|-------------|--------------------------------------------------------------|--------|
-| OPT-6 (Correlation single-output path) | **P0 — DONE** | Low         | **37x speedup** (18.24ms → 0.49ms for output_size=1)         | Low    |
-| OPT-4 (Cached forward pass)            | **P0 — DONE** | Low         | 22x–1607x on isolated call; 5-15% total time                 | Low    |
-| OPT-5 (Shared memory tensors)          | **P1**        | Medium-High | 30-50% for large data (Phase 3 will quantify)                | High   |
-| OPT-2 (Fused correlation)              | **P2 — DONE** | Low         | 5-10% (torch.dot + linalg.norm fusion)                       | Low    |
-| OPT-1 (Pre-allocated forward)          | **P3 — DONE** | Low         | Eliminates N+1 torch.cat() per forward pass                  | Low    |
-| OPT-3 (Persistent output layer)        | **P3**        | Medium      | < 5% (**REVISED**: 0->50 hidden = only 1.6x)                 | Medium |
+| Optimization                           | Priority      | Effort      | Measured/Predicted Impact                            | Risk   |
+|----------------------------------------|---------------|-------------|------------------------------------------------------|--------|
+| OPT-6 (Correlation single-output path) | **P0 — DONE** | Low         | **37x speedup** (18.24ms → 0.49ms for output_size=1) | Low    |
+| OPT-4 (Cached forward pass)            | **P0 — DONE** | Low         | 22x–1607x on isolated call; 5-15% total time         | Low    |
+| OPT-5 (Shared memory tensors)          | **P1**        | Medium-High | 30-50% for large data (Phase 3 will quantify)        | High   |
+| OPT-2 (Fused correlation)              | **P2 — DONE** | Low         | 5-10% (torch.dot + linalg.norm fusion)               | Low    |
+| OPT-1 (Pre-allocated forward)          | **P3 — DONE** | Low         | Eliminates N+1 torch.cat() per forward pass          | Low    |
+| OPT-3 (Persistent output layer)        | **P3**        | Medium      | < 5% (**REVISED**: 0->50 hidden = only 1.6x)         | Medium |
 
 ### NEW: OPT-6: Correlation Single-Output Path Anomaly — **IMPLEMENTED**
 
@@ -808,46 +808,46 @@ This plan was validated on 2026-03-31 against the juniper-cascor codebase. Key f
 
 ### Technical Accuracy Validation
 
-| Claim | Status | Notes |
-| ------- | -------- | ------- |
-| Forward pass cascade (OPT-1) | **FIXED** | Pre-allocated buffer eliminates `torch.cat()` per hidden unit |
-| Redundant forward pass (OPT-4) | **FIXED** | Cache in `forward()` consumed by `_prepare_candidate_input()` — eliminates redundant pass |
-| Temporary nn.Linear (OPT-3) | Verified | Created at line 1492, weight transposition at lines 1494 and 1540 |
-| RC-3 shared_training_inputs | Corrected | Parameter belongs to `_ensure_worker_pool()` and `_worker_loop()`, not `_execute_parallel_training()` directly |
-| All performance constants | Verified | All values and line numbers confirmed exact |
-| Test markers and fixtures | Verified | `@pytest.mark.performance` in pytest.ini, `force_sequential_training` is autouse |
-| Profiling infrastructure | Verified | All 7 tools/utilities exist as described |
+| Claim                          | Status    | Notes                                                                                                          |
+|--------------------------------|-----------|----------------------------------------------------------------------------------------------------------------|
+| Forward pass cascade (OPT-1)   | **FIXED** | Pre-allocated buffer eliminates `torch.cat()` per hidden unit                                                  |
+| Redundant forward pass (OPT-4) | **FIXED** | Cache in `forward()` consumed by `_prepare_candidate_input()` — eliminates redundant pass                      |
+| Temporary nn.Linear (OPT-3)    | Verified  | Created at line 1492, weight transposition at lines 1494 and 1540                                              |
+| RC-3 shared_training_inputs    | Corrected | Parameter belongs to `_ensure_worker_pool()` and `_worker_loop()`, not `_execute_parallel_training()` directly |
+| All performance constants      | Verified  | All values and line numbers confirmed exact                                                                    |
+| Test markers and fixtures      | Verified  | `@pytest.mark.performance` in pytest.ini, `force_sequential_training` is autouse                               |
+| Profiling infrastructure       | Verified  | All 7 tools/utilities exist as described                                                                       |
 
 ### Completeness Validation
 
-| Aspect | Status | Action Taken |
-| -------- | -------- | ------------- |
-| `_update_weights_and_bias()` autograd overhead | Added | Step 2.5 added with test matrix and metrics |
-| Logging overhead in hot paths | Added | Guardrail added requiring `CASCOR_LOG_LEVEL=WARNING` |
-| Thermal throttling | Added | Guardrail added for cooldown periods and first-run discard |
-| PyTorch lazy init in workers | Added | Step 3.4 first-op latency measurement added |
-| CPU affinity / pinning | Added | Note added to Step 3.4 |
-| GIL + mixed threading | Added | Note added to Step 3.4 |
-| GC measurement policy | Added | Guardrail: benchmark both with and without GC |
-| Cross-process clock sync | Added | Guardrail: measure only within-process durations |
-| OMP_NUM_THREADS baseline gap | Added | Guardrail: baseline at both 1 and 2 threads |
-| Scalene forkserver risk | Strengthened | Changed to "Do not use for multiprocessing profiling" |
-| OPT-5 shared_memory risk | Strengthened | Risk raised to High, PoC required before committing |
-| Phase 4 dependency | Relaxed | Steps 4.1-4.3 depend only on Phase 1 |
+| Aspect                                         | Status       | Action Taken                                               |
+|------------------------------------------------|--------------|------------------------------------------------------------|
+| `_update_weights_and_bias()` autograd overhead | Added        | Step 2.5 added with test matrix and metrics                |
+| Logging overhead in hot paths                  | Added        | Guardrail added requiring `CASCOR_LOG_LEVEL=WARNING`       |
+| Thermal throttling                             | Added        | Guardrail added for cooldown periods and first-run discard |
+| PyTorch lazy init in workers                   | Added        | Step 3.4 first-op latency measurement added                |
+| CPU affinity / pinning                         | Added        | Note added to Step 3.4                                     |
+| GIL + mixed threading                          | Added        | Note added to Step 3.4                                     |
+| GC measurement policy                          | Added        | Guardrail: benchmark both with and without GC              |
+| Cross-process clock sync                       | Added        | Guardrail: measure only within-process durations           |
+| OMP_NUM_THREADS baseline gap                   | Added        | Guardrail: baseline at both 1 and 2 threads                |
+| Scalene forkserver risk                        | Strengthened | Changed to "Do not use for multiprocessing profiling"      |
+| OPT-5 shared_memory risk                       | Strengthened | Risk raised to High, PoC required before committing        |
+| Phase 4 dependency                             | Relaxed      | Steps 4.1-4.3 depend only on Phase 1                       |
 
 ---
 
 ## Appendix: File Reference
 
-| File | Purpose |
-| ------ | --------- |
-| `src/cascade_correlation/cascade_correlation.py` | Core CasCor network, worker pool, parallel training |
-| `src/candidate_unit/candidate_unit.py` | Candidate training, correlation computation |
-| `src/parallelism/task_distributor.py` | Local/remote task scheduling |
-| `src/api/workers/coordinator.py` | Remote worker coordination |
-| `src/profiling/deterministic.py` | cProfile decorator and context manager |
-| `src/tests/helpers/utilities.py` | Test timing and memory utilities |
-| `src/tests/scripts/run_benchmarks.bash` | Existing benchmark harness |
-| `src/tests/conftest.py` | Test fixtures, `force_sequential_training` |
-| `src/cascor_constants/constants_model/constants_model.py` | Performance-relevant constants |
-| `util/profile_training.bash` | py-spy profiling wrapper |
+| File                                                      | Purpose                                             |
+|-----------------------------------------------------------|-----------------------------------------------------|
+| `src/cascade_correlation/cascade_correlation.py`          | Core CasCor network, worker pool, parallel training |
+| `src/candidate_unit/candidate_unit.py`                    | Candidate training, correlation computation         |
+| `src/parallelism/task_distributor.py`                     | Local/remote task scheduling                        |
+| `src/api/workers/coordinator.py`                          | Remote worker coordination                          |
+| `src/profiling/deterministic.py`                          | cProfile decorator and context manager              |
+| `src/tests/helpers/utilities.py`                          | Test timing and memory utilities                    |
+| `src/tests/scripts/run_benchmarks.bash`                   | Existing benchmark harness                          |
+| `src/tests/conftest.py`                                   | Test fixtures, `force_sequential_training`          |
+| `src/cascor_constants/constants_model/constants_model.py` | Performance-relevant constants                      |
+| `util/profile_training.bash`                              | py-spy profiling wrapper                            |

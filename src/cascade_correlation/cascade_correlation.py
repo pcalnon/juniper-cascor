@@ -34,6 +34,7 @@
 #
 #
 #####################################################################################################################################################################################################
+import atexit
 import datetime
 import datetime as pd
 import io
@@ -45,11 +46,13 @@ import os
 import pathlib as pl
 import pickle
 import random
+import struct
 import sys
 import time
 import uuid as uuid
 from dataclasses import dataclass
 from multiprocessing.managers import BaseManager
+from multiprocessing.shared_memory import SharedMemory
 from queue import Queue  # Use stdlib queue for manager-hosted objects
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
@@ -212,6 +215,148 @@ def _create_result_queue():
     if _result_queue is None:
         _result_queue = Queue(maxsize=_QUEUE_MAXSIZE)
     return _result_queue
+
+
+#####################################################################################################################################################################################################
+# OPT-5: Shared Memory Training Tensors — zero-copy tensor sharing across worker processes
+#####################################################################################################################################################################################################
+class SharedTrainingMemory:
+    """Manages a POSIX shared memory block for training tensor sharing (OPT-5).
+
+    Creates a named /dev/shm block containing training tensors that worker
+    processes can attach to by name for zero-copy reads. Block layout:
+      - 64-byte header (magic b"JNPR", version, n_tensors)
+      - 32-byte descriptor per tensor (offset, nbytes, ndim, dtype, shape)
+      - Contiguous tensor data
+    """
+
+    MAGIC = b"JNPR"
+    VERSION = 1
+    HEADER_SIZE = 64
+    DESCRIPTOR_SIZE = 32
+    DTYPE_MAP = {torch.float32: 0, torch.float64: 1, torch.int32: 2, torch.int64: 3}
+    DTYPE_RMAP = {v: k for k, v in DTYPE_MAP.items()}
+    NUMPY_DTYPE_MAP = {0: np.float32, 1: np.float64, 2: np.int32, 3: np.int64}
+
+    def __init__(self, tensors: list, name_suffix: str):
+        """Create SharedMemory block and copy tensors into it.
+
+        Args:
+            tensors: List of torch.Tensor to share (must be float32/64, int32/64).
+            name_suffix: Unique suffix for the block name.
+        """
+        contiguous_tensors = []
+        self._tensors_info = []
+        for t in tensors:
+            ct = t.contiguous() if not t.is_contiguous() else t
+            contiguous_tensors.append(ct)
+            dtype_code = self.DTYPE_MAP.get(ct.dtype)
+            if dtype_code is None:
+                raise ValueError(f"Unsupported tensor dtype: {ct.dtype}")
+            self._tensors_info.append({
+                "nbytes": ct.nbytes,
+                "ndim": ct.ndim,
+                "dtype_code": dtype_code,
+                "shape": tuple(ct.shape),
+            })
+
+        n_tensors = len(contiguous_tensors)
+        descriptor_table_size = self.DESCRIPTOR_SIZE * n_tensors
+        data_offset = self.HEADER_SIZE + descriptor_table_size
+        total_data_bytes = sum(info["nbytes"] for info in self._tensors_info)
+        total_size = data_offset + total_data_bytes
+
+        self._name = f"juniper_train_{name_suffix}"
+        self._shm = SharedMemory(name=self._name, create=True, size=total_size)
+        self._closed = False
+        self._unlinked = False
+
+        buf = self._shm.buf
+        # Write header: magic(4s) + version(B) + n_tensors(B) + reserved(58x) = 64 bytes
+        struct.pack_into("<4sBB58x", buf, 0, self.MAGIC, self.VERSION, n_tensors)
+
+        # Write descriptor table and copy tensor data
+        current_offset = data_offset
+        for i, (info, ct) in enumerate(zip(self._tensors_info, contiguous_tensors)):
+            shape_0 = info["shape"][0] if info["ndim"] >= 1 else 0
+            shape_1 = info["shape"][1] if info["ndim"] >= 2 else 0
+            # Descriptor: offset(Q) + nbytes(Q) + ndim(B) + dtype_code(B) + shape0(I) + shape1(I) + reserved(6x) = 32 bytes
+            struct.pack_into(
+                "<QQBBII6x", buf, self.HEADER_SIZE + i * self.DESCRIPTOR_SIZE,
+                current_offset, info["nbytes"], info["ndim"], info["dtype_code"], shape_0, shape_1,
+            )
+            tensor_bytes = ct.numpy().tobytes()
+            buf[current_offset:current_offset + info["nbytes"]] = tensor_bytes
+            current_offset += info["nbytes"]
+
+    @property
+    def name(self) -> str:
+        return self._name
+
+    def get_metadata(self) -> dict:
+        """Return metadata dict for inclusion in lightweight tasks."""
+        return {"shm_name": self._name}
+
+    @staticmethod
+    def reconstruct_tensors(metadata: dict) -> tuple:
+        """Attach to SharedMemory by name and return zero-copy tensor views.
+
+        Returns:
+            (list_of_tensors, shm_handle). Caller MUST keep shm_handle alive
+            until all tensor operations complete, then call shm_handle.close().
+        """
+        shm = SharedMemory(name=metadata["shm_name"], create=False)
+        try:
+            # Prevent Python 3.12+ resource tracker from prematurely unlinking
+            # when the worker process exits. The main process owns the unlink lifecycle.
+            try:
+                from multiprocessing.resource_tracker import unregister
+                unregister(shm.name, "shared_memory")
+            except Exception:
+                pass
+
+            buf = shm.buf
+            magic = bytes(buf[:4])
+            if magic != SharedTrainingMemory.MAGIC:
+                raise ValueError(f"Invalid SharedMemory block header: expected {SharedTrainingMemory.MAGIC!r}, got {magic!r}")
+
+            _version, n_tensors = struct.unpack_from("<BB", buf, 4)
+
+            tensors = []
+            for i in range(n_tensors):
+                desc_offset = SharedTrainingMemory.HEADER_SIZE + i * SharedTrainingMemory.DESCRIPTOR_SIZE
+                offset, nbytes, ndim, dtype_code, shape_0, shape_1 = struct.unpack_from(
+                    "<QQBBII6x", buf, desc_offset,
+                )
+                np_dtype = SharedTrainingMemory.NUMPY_DTYPE_MAP[dtype_code]
+                if ndim == 1:
+                    shape = (shape_0,)
+                elif ndim == 2:
+                    shape = (shape_0, shape_1)
+                else:
+                    shape = (shape_0,) if shape_0 > 0 else ()
+                np_array = np.ndarray(shape=shape, dtype=np_dtype, buffer=buf[offset:offset + nbytes])
+                tensors.append(torch.from_numpy(np_array))
+
+            return tensors, shm
+        except Exception:
+            shm.close()
+            raise
+
+    def close_and_unlink(self):
+        """Release and unlink the SharedMemory block."""
+        if not self._closed:
+            try:
+                self._shm.close()
+            except Exception:
+                pass
+            self._closed = True
+        if not self._unlinked:
+            try:
+                self._shm.unlink()
+            except Exception:
+                pass
+            self._unlinked = True
 
 
 #####################################################################################################################################################################################################
@@ -687,6 +832,10 @@ class CascadeCorrelationNetwork:
         self._persistent_result_queue = None
         self._persistent_progress_queue = None
         self._persistent_pool_size = 0
+
+        # OPT-5: Track active SharedMemory blocks for cleanup on error/shutdown
+        self._active_shm_blocks = []
+        atexit.register(self._cleanup_shared_memory)
 
         # Phase 1b: Remote worker coordinator reference (set via set_worker_coordinator)
         self._worker_coordinator = None
@@ -1668,14 +1817,30 @@ class CascadeCorrelationNetwork:
             List of training tasks
         """
         input_size = candidate_input.shape[1]
-        training_inputs = (
-            candidate_input,
-            self.candidate_epochs,
-            y,
-            residual_error,
-            self.candidate_learning_rate,
-            self.candidate_display_frequency,
-        )
+
+        # OPT-5: Create shared memory block for training tensors (lightweight tasks)
+        try:
+            shm = SharedTrainingMemory(
+                tensors=[candidate_input, y, residual_error],
+                name_suffix=str(uuid.uuid4())[:8],
+            )
+            self._active_shm_blocks.append(shm)
+            shm_metadata = shm.get_metadata()
+            shm_metadata["candidate_epochs"] = self.candidate_epochs
+            shm_metadata["candidate_learning_rate"] = self.candidate_learning_rate
+            shm_metadata["candidate_display_frequency"] = self.candidate_display_frequency
+            training_inputs = shm_metadata
+            self.logger.debug(f"CascadeCorrelationNetwork: _generate_candidate_tasks: OPT-5 SharedMemory block created: {shm.name}")
+        except Exception as shm_err:
+            self.logger.warning(f"CascadeCorrelationNetwork: _generate_candidate_tasks: OPT-5 SharedMemory creation failed, falling back to full tasks: {shm_err}")
+            training_inputs = (
+                candidate_input,
+                self.candidate_epochs,
+                y,
+                residual_error,
+                self.candidate_learning_rate,
+                self.candidate_display_frequency,
+            )
 
         # Generate candidate metadata
         candidate_uuids = [str(uuid.uuid4()) for _ in range(self.candidate_pool_size)]
@@ -1766,7 +1931,14 @@ class CascadeCorrelationNetwork:
                 # Use TaskDistributor for local-first scheduling with optional remote overflow
                 # Build remote dispatch callable that captures tensors from the tasks
                 training_inputs = tasks[0][2]
-                candidate_input, _, y, residual_error = training_inputs[0], training_inputs[1], training_inputs[2], training_inputs[3]
+                if isinstance(training_inputs, dict):
+                    # OPT-5: Reconstruct tensors from SharedMemory for remote dispatch.
+                    # Clone to get independent copies — remote workers can't access local /dev/shm.
+                    tensors, shm_handle = SharedTrainingMemory.reconstruct_tensors(training_inputs)
+                    candidate_input, y, residual_error = tensors[0].clone(), tensors[1].clone(), tensors[2].clone()
+                    shm_handle.close()
+                else:
+                    candidate_input, _, y, residual_error = training_inputs[0], training_inputs[1], training_inputs[2], training_inputs[3]
 
                 def remote_fn(remote_tasks):
                     return self._dispatch_to_remote_workers(remote_tasks, candidate_input, y, residual_error)
@@ -1949,6 +2121,15 @@ class CascadeCorrelationNetwork:
             # Original manager shutdown:
             # self.logger.trace("CascadeCorrelationNetwork: _execute_parallel_training: Stopping manager server")
             # self._stop_manager()
+
+            # OPT-5: Release SharedMemory blocks for this round (runs even on error/interrupt)
+            for shm_block in list(self._active_shm_blocks):
+                try:
+                    shm_block.close_and_unlink()
+                    self._active_shm_blocks.remove(shm_block)
+                except Exception as shm_e:
+                    self.logger.warning(f"CascadeCorrelationNetwork: _execute_parallel_training: OPT-5 SharedMemory cleanup error: {shm_e}")
+
             self.logger.trace("CascadeCorrelationNetwork: _execute_parallel_training: Parallel training round complete (persistent pool, no cleanup needed)")
         return results
 
@@ -2527,6 +2708,7 @@ class CascadeCorrelationNetwork:
         except Exception as e:
             logger.error(f"CascadeCorrelationNetwork: train_candidate_worker: Error retrieving worker ID and UUID: {e}")
             (worker_id, worker_uuid) = (0, "None")
+        shm_handle = None  # OPT-5: track SharedMemory handle for deferred close
         try:
             if task_data_input is None:
                 logger.error("CascadeCorrelationNetwork: train_candidate_worker: No task data input provided.")
@@ -2539,6 +2721,7 @@ class CascadeCorrelationNetwork:
             if candidate_inputs is None or not isinstance(candidate_inputs, dict) or len(candidate_inputs) == 0:
                 logger.error(f"CascadeCorrelationNetwork: train_candidate_worker: No candidate inputs built: Worker ID: {worker_id}, Worker UUID: {worker_uuid}")
                 return (None, None, 0.0, None)
+            shm_handle = candidate_inputs.pop("_shm_handle", None)  # OPT-5: extract handle for deferred close
             logger.debug(f"CascadeCorrelationNetwork: train_candidate_worker: Built candidate inputs: Worker ID: {worker_id}, Worker UUID: {worker_uuid}, Keys: {list(candidate_inputs.keys()) if isinstance(candidate_inputs, dict) else type(candidate_inputs)}")
 
             # Instantiate a CandidateUnit using factory method (Note: needs network instance for factory)
@@ -2611,6 +2794,13 @@ class CascadeCorrelationNetwork:
                 error_message=str(e),
                 round_id=candidate_inputs.get("round_id") if candidate_inputs else None,
             )
+        finally:
+            # OPT-5: Close SharedMemory handle after training completes (or on error)
+            if shm_handle is not None:
+                try:
+                    shm_handle.close()
+                except Exception:
+                    pass
 
     @staticmethod
     def _build_candidate_inputs(
@@ -2649,15 +2839,26 @@ class CascadeCorrelationNetwork:
         logger.debug(f"CascadeCorrelationNetwork: _build_candidate_inputs: Successfully Unpacked Candidate Data: Worker ID: {worker_id}, Worker UUID: {worker_uuid}, Candidate UUID: {candidate_uuid}.")
         logger.verbose(f"CascadeCorrelationNetwork: _build_candidate_inputs: Candidate data unpacked: Candidate ID: {id}, Input Size: {input_size}, Activation Function Name: {activation_name}, Random Value Scale: {random_value_scale}, Candidate UUID: {candidate_uuid}, Random Seed: {candidate_seed}, Random Value Max: {random_max_value}, Sequence Max Value: {sequence_max_value}: Worker ID: {worker_id}, Worker UUID: {worker_uuid}, Candidate UUID: {candidate_uuid}.")
         logger.debug(f"CascadeCorrelationNetwork: _build_candidate_inputs: Attempting to unpack Training inputs: Worker ID: {worker_id}, Worker UUID: {worker_uuid}, Candidate UUID: {candidate_uuid}")
-        logger.verbose(f"CascadeCorrelationNetwork: _build_candidate_inputs: Training inputs: length: {len(training_inputs)}, Type: {type(training_inputs)}, Worker ID: {worker_id}, Worker UUID: {worker_uuid}, Candidate UUID: {candidate_uuid}")
-        (
-            candidate_input,
-            candidate_epochs,
-            y,
-            residual_error,
-            candidate_learning_rate,
-            candidate_display_frequency,
-        ) = training_inputs
+        logger.verbose(f"CascadeCorrelationNetwork: _build_candidate_inputs: Training inputs: Type: {type(training_inputs)}, Worker ID: {worker_id}, Worker UUID: {worker_uuid}, Candidate UUID: {candidate_uuid}")
+        # OPT-5: Handle both dict (SharedMemory metadata) and tuple (legacy) formats
+        shm_handle = None
+        if isinstance(training_inputs, dict):
+            # OPT-5: Reconstruct training tensors from SharedMemory block
+            logger.debug(f"CascadeCorrelationNetwork: _build_candidate_inputs: OPT-5 reconstructing tensors from SharedMemory: {training_inputs.get('shm_name')}")
+            tensors, shm_handle = SharedTrainingMemory.reconstruct_tensors(training_inputs)
+            candidate_input, y, residual_error = tensors
+            candidate_epochs = training_inputs["candidate_epochs"]
+            candidate_learning_rate = training_inputs["candidate_learning_rate"]
+            candidate_display_frequency = training_inputs["candidate_display_frequency"]
+        else:
+            (
+                candidate_input,
+                candidate_epochs,
+                y,
+                residual_error,
+                candidate_learning_rate,
+                candidate_display_frequency,
+            ) = training_inputs
         logger.debug(f"CascadeCorrelationNetwork: _build_candidate_inputs: Successfully Unpacked Training inputs: Worker ID: {worker_id}, Worker UUID: {worker_uuid}, Candidate UUID: {candidate_uuid}.")
         logger.debug(f"CascadeCorrelationNetwork: _build_candidate_inputs: Unpacked Task data, Candidate data, and Training inputs: Worker ID: {worker_id}, Worker UUID: {worker_uuid}, Candidate Index: {candidate_index}, Candidate UUID: {candidate_uuid}, Training Inputs: x shape: {candidate_input.shape}, epochs: {candidate_epochs}, y shape: {y.shape}, residual_error shape: {residual_error.shape}, learning_rate: {candidate_learning_rate}, display_frequency: {candidate_display_frequency}")
         logger.verbose(f"CascadeCorrelationNetwork: _build_candidate_inputs: Training inputs: x shape: {candidate_input.shape}, epochs: {candidate_epochs}, y shape: {y.shape}, residual_error shape: {residual_error.shape}, learning_rate: {candidate_learning_rate}, display_frequency: {candidate_display_frequency}")
@@ -2686,6 +2887,7 @@ class CascadeCorrelationNetwork:
             "candidate_display_frequency": candidate_display_frequency,
             "activation_fn": activation_fn,
             "round_id": round_id,
+            "_shm_handle": shm_handle,  # OPT-5: SharedMemory handle for deferred close (None if legacy path)
         }
         logger.debug(f"CascadeCorrelationNetwork: _build_candidate_inputs: Successfully built candidate inputs: {len(candidate_inputs)} keys")
         return candidate_inputs
@@ -2914,7 +3116,27 @@ class CascadeCorrelationNetwork:
         self._persistent_result_queue = None
         self._persistent_progress_queue = None
         self._persistent_pool_size = 0
+
+        # OPT-5: Clean up any outstanding SharedMemory blocks
+        for shm_block in list(getattr(self, "_active_shm_blocks", [])):
+            try:
+                shm_block.close_and_unlink()
+            except Exception:
+                pass
+        if hasattr(self, "_active_shm_blocks"):
+            self._active_shm_blocks = []
+
         self.logger.debug("CascadeCorrelationNetwork: _shutdown_worker_pool: Persistent pool shut down")
+
+    def _cleanup_shared_memory(self):
+        """Emergency cleanup of SharedMemory blocks on process exit (OPT-5)."""
+        for shm in list(getattr(self, "_active_shm_blocks", [])):
+            try:
+                shm.close_and_unlink()
+            except Exception:
+                pass
+        if hasattr(self, "_active_shm_blocks"):
+            self._active_shm_blocks = []
 
     # TODO: maybe break this up
     @staticmethod
