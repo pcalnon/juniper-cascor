@@ -3,8 +3,10 @@
 from functools import lru_cache
 from typing import Any
 
-from pydantic import field_validator
+from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+from api.secrets import get_secret
 
 # Define Safe and Reasonable Defaults for API Settings
 _JUNIPER_CASCOR_ENV_PREFIX: str = "JUNIPER_CASCOR_"
@@ -95,6 +97,20 @@ class Settings(BaseSettings):
     ws_heartbeat_interval_sec: int = _JUNIPER_CASCOR_API_WS_HEARTBEAT_INTERVAL_SEC_DEFAULT
 
     api_keys: list[str] | None = _JUNIPER_CASCOR_API_KEYS_LIST_EMPTY
+
+    @model_validator(mode="before")
+    @classmethod
+    def _load_api_keys_from_secret_file(cls, data: Any) -> Any:
+        """Load api_keys from a Docker secrets file when not set directly.
+
+        Checks for ``JUNIPER_CASCOR_API_KEYS_FILE`` (via ``get_secret``)
+        and injects the value into the data dict so Pydantic can parse it.
+        """
+        if isinstance(data, dict) and not data.get("api_keys"):
+            secret_value = get_secret("JUNIPER_CASCOR_API_KEYS")
+            if secret_value:
+                data["api_keys"] = secret_value
+        return data
 
     @field_validator("api_keys", mode="before")
     @classmethod

@@ -17,6 +17,7 @@ from api.middleware import RequestBodyLimitMiddleware, SecurityHeadersMiddleware
 from api.models.common import error_response
 from api.observability import PrometheusMiddleware, RequestIdMiddleware, configure_logging, configure_sentry, get_prometheus_app, set_build_info
 from api.routes import dataset, decision_boundary, health, metrics, network, snapshots, training, workers
+from api.secrets import get_secret
 from api.security import APIKeyAuth, RateLimiter
 from api.settings import Settings, get_settings
 from api.websocket.control_stream import control_stream_handler
@@ -140,7 +141,7 @@ async def _auto_start_training(app: FastAPI, settings: Settings) -> None:
         from juniper_data_client import JuniperDataClient
 
         data_url = os.environ.get("JUNIPER_DATA_URL", "http://localhost:8100")
-        api_key = os.environ.get("JUNIPER_DATA_API_KEY")
+        api_key = get_secret("JUNIPER_DATA_API_KEY")
 
         client = JuniperDataClient(base_url=data_url, api_key=api_key)
 
