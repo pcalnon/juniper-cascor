@@ -350,7 +350,7 @@ class TrainingLifecycleManager:
         original_grow = self.network.grow_network
         self._original_methods["grow_network"] = original_grow
 
-        def _grow_iteration_callback(iteration, max_iterations, best_correlation, candidates_trained, candidates_total, phase_detail):
+        def _grow_iteration_callback(iteration, max_iterations, best_correlation, candidates_trained, candidates_total, phase_detail, **kwargs):
             state.update_state(
                 grow_iteration=iteration,
                 grow_max=max_iterations,
@@ -358,6 +358,11 @@ class TrainingLifecycleManager:
                 candidates_trained=candidates_trained,
                 candidates_total=candidates_total,
                 phase_detail=phase_detail,
+                best_candidate_id=kwargs.get("best_candidate_id", -1),
+                best_candidate_uuid=kwargs.get("best_candidate_uuid", ""),
+                second_candidate_id=kwargs.get("second_candidate_id"),
+                second_candidate_correlation=kwargs.get("second_candidate_correlation", 0.0),
+                all_correlations=kwargs.get("all_correlations", []),
             )
             manager_ref._broadcast_training_state()
 

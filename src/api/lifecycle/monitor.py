@@ -42,6 +42,11 @@ class TrainingState:
         "phase_started_at",
         "candidate_epoch",
         "candidate_total_epochs",
+        "best_candidate_id",
+        "best_candidate_uuid",
+        "second_candidate_id",
+        "second_candidate_correlation",
+        "all_correlations",
     }
 
     def __init__(self):
@@ -67,6 +72,11 @@ class TrainingState:
         self._phase_started_at: str = ""
         self._candidate_epoch: int = 0
         self._candidate_total_epochs: int = 0
+        self._best_candidate_id: int = -1
+        self._best_candidate_uuid: str = ""
+        self._second_candidate_id: Optional[int] = None
+        self._second_candidate_correlation: float = 0.0
+        self._all_correlations: List[float] = []
 
     def get_state(self) -> Dict[str, Any]:
         """Get current state as dictionary."""
@@ -93,6 +103,11 @@ class TrainingState:
                 "phase_started_at": self._phase_started_at,
                 "candidate_epoch": self._candidate_epoch,
                 "candidate_total_epochs": self._candidate_total_epochs,
+                "best_candidate_id": self._best_candidate_id,
+                "best_candidate_uuid": self._best_candidate_uuid,
+                "second_candidate_id": self._second_candidate_id,
+                "second_candidate_correlation": self._second_candidate_correlation,
+                "all_correlations": list(self._all_correlations),
             }
 
     def update_state(self, **kwargs) -> None:

@@ -616,6 +616,7 @@ class CascadeCorrelationNetwork:
 
         # Initialize network model parameters)
         self.hidden_units = []
+        self._cached_candidate_input = None  # OPT-4: forward pass cache for candidate input reuse
         self.output_weights = torch.randn(self.config.input_size, self.config.output_size, requires_grad=True) * self.random_value_scale
         self.output_bias = torch.randn(self.config.output_size, requires_grad=True) * self.random_value_scale
         self.history = {
@@ -1439,6 +1440,10 @@ class CascadeCorrelationNetwork:
         output_input = torch.cat([x] + hidden_outputs, dim=1) if hidden_outputs else x
         self.logger.verbose(f"CascadeCorrelationNetwork: forward: Output input shape: {output_input.shape}, Value: {output_input}")
 
+        # OPT-4: Cache candidate input (output_input == candidate_input) for reuse by _prepare_candidate_input().
+        # Keyed by input data pointer to prevent stale cache consumption with different inputs.
+        self._cached_candidate_input = (x.data_ptr(), output_input.detach())
+
         # Output layer (linear combination)
         output = torch.matmul(output_input, self.output_weights) + self.output_bias
         self.logger.debug(f"CascadeCorrelationNetwork: forward: Output shape: {output.shape}")
@@ -1617,6 +1622,18 @@ class CascadeCorrelationNetwork:
         Returns:
             Enhanced input tensor including hidden unit outputs
         """
+        # OPT-4: Reuse cached candidate input from forward() if available and valid.
+        # The cache is set by forward() during calculate_residual_error(), which runs
+        # immediately before train_candidates() in grow_network()'s epoch loop.
+        cached = self._cached_candidate_input
+        if cached is not None and cached[0] == x.data_ptr():
+            self._cached_candidate_input = None
+            candidate_input = cached[1]
+            self.logger.debug(f"CascadeCorrelationNetwork: _prepare_candidate_input: Using cached candidate input, shape: {candidate_input.shape}")
+            self.logger.info(f"CascadeCorrelationNetwork: _prepare_candidate_input: Hidden units: {len(self.hidden_units)}")
+            return candidate_input
+        self._cached_candidate_input = None
+
         hidden_outputs = []
         for unit in self.hidden_units:
             unit_input = torch.cat([x] + hidden_outputs, dim=1) if hidden_outputs else x
@@ -3383,6 +3400,8 @@ class CascadeCorrelationNetwork:
             _grow_cb = on_grow_iteration_callback or getattr(self, "_grow_iteration_callback", None)
             if _grow_cb is not None:
                 pool_size = getattr(self, "candidate_pool_size", 0)
+                _candidate_ids = getattr(training_results, "candidate_ids", [])
+                _correlations = getattr(training_results, "correlations", [])
                 _grow_cb(
                     iteration=epoch,
                     max_iterations=max_epochs,
@@ -3390,6 +3409,11 @@ class CascadeCorrelationNetwork:
                     candidates_trained=len(getattr(training_results, "candidate_objects", [])),
                     candidates_total=pool_size,
                     phase_detail="adding_candidate",
+                    best_candidate_id=getattr(training_results, "best_candidate_id", -1),
+                    best_candidate_uuid=getattr(training_results, "best_candidate_uuid", ""),
+                    second_candidate_id=_candidate_ids[1] if len(_candidate_ids) > 1 else None,
+                    second_candidate_correlation=float(_correlations[1]) if len(_correlations) > 1 else 0.0,
+                    all_correlations=list(_correlations),
                 )
 
             # Determine number of candidates to add

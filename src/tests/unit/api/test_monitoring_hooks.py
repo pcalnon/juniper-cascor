@@ -265,6 +265,11 @@ class TestMonitoringHooks:
                 candidates_trained=4,
                 candidates_total=12,
                 phase_detail="adding_candidate",
+                best_candidate_id=3,
+                best_candidate_uuid="cand-uuid-3",
+                second_candidate_id=7,
+                second_candidate_correlation=0.65,
+                all_correlations=[0.77, 0.65, 0.42],
             )
             self_network.hidden_units.append({})
             return {"ok": True}
@@ -289,6 +294,11 @@ class TestMonitoringHooks:
             assert state["candidates_trained"] == 4
             assert state["candidates_total"] == 12
             assert state["phase_started_at"] != ""
+            assert state["best_candidate_id"] == 3
+            assert state["best_candidate_uuid"] == "cand-uuid-3"
+            assert state["second_candidate_id"] == 7
+            assert state["second_candidate_correlation"] == 0.65
+            assert state["all_correlations"] == [0.77, 0.65, 0.42]
             assert manager.training_monitor.current_phase == "output"
             assert manager.training_monitor.get_current_state()["current_hidden_units"] == 1
             assert sm_state["phase"] == "OUTPUT"
