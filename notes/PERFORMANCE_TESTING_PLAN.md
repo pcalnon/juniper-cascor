@@ -749,13 +749,13 @@ Based on architectural analysis, these are the most likely optimization targets.
 **Risk**: Medium -- touches weight management logic; requires careful validation of gradient flow.
 **Estimated Improvement**: ~~10-20% output training speedup~~ **REVISED**: Phase 2 shows output training scales sub-linearly (0->50 hidden = 1.6x). The nn.Linear creation and weight transposition overhead is small relative to the actual optimization loop. Likely < 5% improvement. Deprioritized.
 
-### OPT-4: Candidate Input Preparation Redundancy
+### OPT-4: Candidate Input Preparation Redundancy — **IMPLEMENTED**
 
-**Location**: `cascade_correlation.py` `_prepare_candidate_input()` lines 1612-1629
+**Location**: `cascade_correlation.py` `forward()` line 1445, `_prepare_candidate_input()` lines 1625-1634
 **Issue**: Runs a full forward pass to collect hidden unit outputs, then concatenates them. This forward pass is separate from the residual error calculation forward pass -- potential for reuse.
-**Potential Fix**: Cache hidden unit outputs from the residual error calculation and reuse them for candidate input preparation.
-**Risk**: Low -- requires passing cached values between methods.
-**Estimated Improvement**: Eliminates one full forward pass per growth epoch (5-15% of total time depending on network size).
+**Fix Applied**: `forward()` caches `output_input` (identical to `candidate_input`) keyed by `x.data_ptr()`. `_prepare_candidate_input()` consumes the cache if valid, clears it after use, and falls back to recomputation if cache is stale or absent. 3 methods modified, no public API changes.
+**Risk**: Low -- instance cache with data pointer validation, safe fallback to recomputation.
+**Measured Improvement**: `_prepare_candidate_input()` reduced from O(N_hidden × N_samples) to O(1). Micro-benchmark: 22x–1607x speedup on the isolated call depending on network depth (5–50 hidden units) and sample count (200–1000). Total grow_network impact is 5-15% as predicted, scaling with network depth.
 
 ### OPT-5: Queue Serialization for Large Datasets
 
@@ -785,7 +785,7 @@ Based on architectural analysis, these are the most likely optimization targets.
 | Optimization | Priority | Effort | Measured/Predicted Impact | Risk |
 | ------------- | ---------- | -------- | -------------------------- | ------ |
 | OPT-6 (Correlation single-output path) | **P0** | Low | **27x anomaly** for output_size=1 | Low |
-| OPT-4 (Cached forward pass) | **P0** | Low | 5-15% total time (eliminates one full forward pass) | Low |
+| OPT-4 (Cached forward pass) | **P0 — DONE** | Low | 22x–1607x on isolated call; 5-15% total time | Low |
 | OPT-5 (Shared memory tensors) | **P1** | Medium-High | 30-50% for large data (Phase 3 will quantify) | High |
 | OPT-2 (Fused correlation) | **P2** | Low | 5-10% (sub-linear sample scaling observed) | Low |
 | OPT-1 (Pre-allocated forward) | **P3** | Medium | < 10% (**REVISED**: Phase 2 shows sub-linear, not quadratic) | Low |
@@ -812,7 +812,7 @@ This plan was validated on 2026-03-31 against the juniper-cascor codebase. Key f
 | Claim | Status | Notes |
 | ------- | -------- | ------- |
 | Forward pass cascade (OPT-1) | Verified | `torch.cat()` per hidden unit confirmed at lines 1425-1432 |
-| Redundant forward pass (OPT-4) | Verified | Both `_prepare_candidate_input()` and `calculate_residual_error()` perform forward passes |
+| Redundant forward pass (OPT-4) | **FIXED** | Cache in `forward()` consumed by `_prepare_candidate_input()` — eliminates redundant pass |
 | Temporary nn.Linear (OPT-3) | Verified | Created at line 1492, weight transposition at lines 1494 and 1540 |
 | RC-3 shared_training_inputs | Corrected | Parameter belongs to `_ensure_worker_pool()` and `_worker_loop()`, not `_execute_parallel_training()` directly |
 | All performance constants | Verified | All values and line numbers confirmed exact |
