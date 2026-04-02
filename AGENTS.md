@@ -1,10 +1,10 @@
 # AGENTS.md - Juniper Cascor Project Guide
 
-**Project**: Juniper Cascade Correlation Neural Network  
-**Version**: 0.3.17
+**Project**: Juniper Cascade Correlation Neural Network
+**Version**: 0.4.0
 **License**: MIT License
 **Author**: Paul Calnon
-**Last Updated**: 2026-02-05
+**Last Updated**: 2026-04-02
 
 ---
 
@@ -13,167 +13,515 @@
 ### Essential Commands
 
 ```bash
-# Run the application
-cd src && python main.py
+# --- Server (primary operational mode) ---
+cd src && python server.py                                        # Development server
+uvicorn api.app:create_app --factory --host 0.0.0.0 --port 8200  # Production server
 
-# Run all unit tests
-cd src/tests && bash scripts/run_tests.bash
+# --- CLI Training (standalone mode) ---
+cd src && python main.py                                          # Train on two-spiral problem
 
-# Run specific test categories
-cd src/tests && bash scripts/run_tests.bash -u              # Unit tests only
-cd src/tests && bash scripts/run_tests.bash -i              # Integration tests
-cd src/tests && bash scripts/run_tests.bash -m "spiral"     # Spiral problem tests
+# --- Docker ---
+docker build -t juniper-cascor:latest .                           # Build container
+docker run -p 8200:8200 juniper-cascor:latest                     # Run container
 
-# Run tests with coverage
-cd src/tests && bash scripts/run_tests.bash -v -c
+# --- Testing ---
+bash src/tests/scripts/run_tests.bash                # Run all tests
+cd src && python -m pytest tests/ -v                 # Verbose test output
+cd src && python -m pytest tests/unit/ -v            # Unit tests only
+cd src && python -m pytest tests/unit/api/ -v        # API unit tests
+cd src && python -m pytest tests/integration/ -v     # Integration tests
+cd src && python -m pytest tests/performance/ -v     # Performance benchmarks
+cd src && python -m pytest tests/ -m "unit" -v       # By marker
+cd src && python -m pytest tests/ -k "spiral" -v     # By keyword
+cd src && python -m pytest tests/ --run-long         # Include long-running tests
+cd src && python -m pytest tests/ --cov=. --cov-report=html:tests/reports/htmlcov  # Coverage
 
-# Run a specific test file
-cd src/tests && python -m pytest unit/test_forward_pass.py -v
+# --- Performance Benchmarks ---
+bash src/tests/scripts/run_benchmarks.bash           # Run performance benchmarks
 
-# Run performance benchmarks (P3-004)
-cd src/tests/scripts && bash run_benchmarks.bash           # All benchmarks
-cd src/tests/scripts && bash run_benchmarks.bash -s        # Serialization only
-cd src/tests/scripts && bash run_benchmarks.bash -q -n 10  # Quiet mode, 10 iterations
+# --- Profiling ---
+cd src && python -m cProfile -o profile.out main.py  # cProfile deterministic profiler
+cd src && python -m profiling.memory                 # Memory profiling
+bash util/profile_training.bash                      # py-spy sampling profiler
 
-# Profiling commands (P3-NEW-001, P3-NEW-002)
-cd src && python main.py --profile                         # cProfile deterministic profiling
-cd src && python main.py --profile-memory                  # tracemalloc memory profiling
-cd src && python main.py --profile --profile-output ./my_profiles  # Custom output dir
-./util/profile_training.bash                               # py-spy sampling profiler
-./util/profile_training.bash --svg                         # Generate SVG flame graph
-./util/profile_training.bash --speedscope                  # Speedscope JSON format
+# --- Type Checking & Linting ---
+cd src && python -m mypy .                           # Type checking
+cd src && python -m flake8 .                         # Linting
+cd src && python -m black . --check                  # Format check
+cd src && python -m isort . --check-only             # Import sort check
+cd src && python -m bandit -r . -c ../pyproject.toml # Security scan
 
-# Type checking with mypy (configured in pyproject.toml)
-cd src && python -m mypy cascade_correlation/ candidate_unit/ --ignore-missing-imports
-
-# Linting with flake8
-cd src && python -m flake8 . --max-line-length=512 --extend-ignore=E203,E266,E501,W503
-
-# Format checking with black
-cd src && python -m black --check --diff .
-
-# Import sorting check with isort
-cd src && python -m isort --check-only --diff .
-
-# Linting via trunk (if available)
-trunk check
-
-# Pre-commit hooks (CI/CD local validation)
-pip install pre-commit                    # Install pre-commit (one-time)
-pre-commit install                        # Install git hooks (one-time)
-pre-commit run --all-files                # Run all hooks on all files
-pre-commit run black --all-files          # Run specific hook
-
-# Security scanning
-pip install bandit pip-audit              # Install security tools
-bandit -r src/                            # Run Bandit SAST scan
-pip-audit                                 # Check for dependency vulnerabilities
+# --- Pre-commit ---
+pre-commit run --all-files                           # Run all hooks
+pre-commit install                                   # Install hooks
 ```
 
 ### Environment Variables
 
-| Variable              | Description                                   | Example Values                      |
-| --------------------- | --------------------------------------------- | ----------------------------------- |
-| `CASCOR_LOG_LEVEL`    | Override log level at runtime (P2-003)        | `WARNING`, `INFO`, `DEBUG`, `ERROR` |
-| `JUNIPER_DATA_URL`    | JuniperData service URL (REQUIRED for datasets) | `http://localhost:8100`             |
-| `CASCOR_BACKEND_PATH` | Path to Cascor src (used by Canopy)           | `/path/to/juniper_cascor`           |
-| `JUNIPER_DATA_API_KEY` | API key for JuniperData authentication       | `your-api-key-here`                 |
-
-**Log Level Override Examples:**
-
-```bash
-# Quiet mode for production/benchmarking (less verbose)
-export CASCOR_LOG_LEVEL=WARNING
-
-# Debug mode for verbose output
-export CASCOR_LOG_LEVEL=DEBUG
-
-# Trace mode for maximum verbosity
-export CASCOR_LOG_LEVEL=TRACE
-```
+| Variable | Description | Default |
+|----------|-------------|---------|
+| **Server Configuration** | | |
+| `JUNIPER_CASCOR_HOST` | API listen address | `127.0.0.1` |
+| `JUNIPER_CASCOR_PORT` | API listen port | `8200` |
+| `JUNIPER_CASCOR_LOG_LEVEL` | Log level (TRACE, DEBUG, INFO, WARNING, ERROR) | `INFO` |
+| `JUNIPER_CASCOR_LOG_FORMAT` | Log output format (`text` or `json`) | `text` |
+| `JUNIPER_CASCOR_CORS_ORIGINS` | CORS allowed origins (JSON list) | `[]` (none) |
+| **Authentication & Security** | | |
+| `JUNIPER_CASCOR_API_KEYS` | Comma-separated API keys for authentication | `None` (auth disabled) |
+| `JUNIPER_CASCOR_RATE_LIMIT_ENABLED` | Enable rate limiting | `false` |
+| `JUNIPER_CASCOR_RATE_LIMIT_REQUESTS_PER_MINUTE` | Requests per minute per IP | `60` |
+| **WebSocket** | | |
+| `JUNIPER_CASCOR_WS_MAX_CONNECTIONS` | Maximum WebSocket connections | `50` |
+| `JUNIPER_CASCOR_WS_HEARTBEAT_INTERVAL_SEC` | WebSocket heartbeat interval | `30` |
+| **Observability** | | |
+| `JUNIPER_CASCOR_SENTRY_DSN` | Sentry DSN for error tracking | `None` (disabled) |
+| `JUNIPER_CASCOR_METRICS_ENABLED` | Enable Prometheus metrics | `false` |
+| **Auto-Start** | | |
+| `JUNIPER_CASCOR_AUTO_START` | Auto-start training on server startup | `true` |
+| `JUNIPER_CASCOR_AUTO_DATASET` | Default dataset generator | `spiral` |
+| `JUNIPER_CASCOR_AUTO_DATASET_PARAMS` | Dataset generator parameters (JSON) | `{}` |
+| `JUNIPER_CASCOR_AUTO_NETWORK` | Network creation parameters (JSON) | `{}` |
+| `JUNIPER_CASCOR_AUTO_TRAIN_EPOCHS` | Auto-start training max epochs | `200` |
+| `JUNIPER_CASCOR_AUTO_START_DATA_SERVICE` | Auto-start juniper-data companion | `false` |
+| `JUNIPER_CASCOR_AUTO_START_DATA_SERVICE_COMMAND` | Command to launch juniper-data service | `python -m juniper_data` |
+| `JUNIPER_CASCOR_AUTO_START_CANOPY` | Auto-start juniper-canopy companion | `false` |
+| `JUNIPER_CASCOR_AUTO_START_CANOPY_COMMAND` | Command to launch juniper-canopy service | `python -m juniper_canopy` |
+| **Remote Workers** | | |
+| `JUNIPER_CASCOR_REMOTE_WORKERS_HEARTBEAT_TIMEOUT` | Worker heartbeat timeout (seconds) | `30.0` |
+| `JUNIPER_CASCOR_REMOTE_WORKERS_TASK_REASSIGNMENT_TIMEOUT` | Task reassignment timeout (seconds) | `120.0` |
+| **Legacy / Integration** | | |
+| `CASCOR_LOG_LEVEL` | Override log level at runtime | `INFO` |
+| `JUNIPER_DATA_URL` | JuniperData service URL | `http://localhost:8100` |
+| `JUNIPER_DATA_API_KEY` | API key for JuniperData authentication | (none) |
 
 ### Key Entry Points
 
-| File                                             | Purpose                              |
-| ------------------------------------------------ | ------------------------------------ |
-| `src/main.py`                                    | Main application entry point         |
-| `src/cascade_correlation/cascade_correlation.py` | Core neural network implementation   |
-| `src/spiral_problem/spiral_problem.py`           | Two-spiral problem solver            |
-| `src/candidate_unit/candidate_unit.py`           | Candidate unit for network growth    |
-| `src/profiling/`                                 | Profiling infrastructure (P3-NEW-001)|
-| `src/tests/run_tests.bash`                       | Test runner script                   |
-| `src/tests/conftest.py`                          | Test configuration and fixtures      |
-| `util/profile_training.bash`                     | py-spy sampling profiler (P3-NEW-002)|
+| File | Purpose |
+|------|---------|
+| `src/server.py` | **FastAPI server entry point** (primary production mode) |
+| `src/main.py` | CLI entry point for standalone two-spiral training |
+| `src/api/app.py` | FastAPI application factory with lifespan management |
+| `src/api/settings.py` | Pydantic-based application configuration |
+| `src/cascade_correlation/cascade_correlation.py` | Core neural network implementation |
+| `src/candidate_unit/candidate_unit.py` | Candidate unit for network growth |
+| `src/spiral_problem/spiral_problem.py` | Two-spiral problem solver |
+| `src/parallelism/task_distributor.py` | Distributed task scheduling (local + remote workers) |
+| `src/profiling/` | Profiling infrastructure (memory, deterministic) |
+| `src/tests/scripts/run_tests.bash` | Test runner script |
+| `src/tests/conftest.py` | Test configuration and fixtures |
+| `util/profile_training.bash` | py-spy sampling profiler |
 
 ---
 
 ## Project Overview
 
-Juniper Cascor is an AI/ML research platform implementing the **Cascade Correlation Neural Network** algorithm from foundational research (Fahlman & Lebiere, 1990). The project emphasizes ground-up implementations from primary literature for transparent exploration of constructive learning algorithms.
+Juniper Cascor is an AI/ML research platform implementing the **Cascade Correlation Neural Network** algorithm from foundational research (Fahlman & Lebiere, 1990). The project provides both a **REST/WebSocket service** for integrated deployment and a **standalone CLI** for direct experimentation.
 
-### Research Philosophy
+**Research Philosophy**:
 
-- **Transparency over convenience**: Algorithms implemented from first principles
-- **Understanding over abstraction**: Full visibility into network behavior
-- **Modularity and scalability**: Designed for research flexibility
+- Transparency over convenience: Algorithms implemented from first principles
+- Understanding over abstraction: Full visibility into network behavior
+- Modularity and scalability: Designed for research flexibility
+
+**Operational Modes**:
+
+| Mode | Entry Point | Purpose |
+|------|-------------|---------|
+| **Service** | `src/server.py` | FastAPI REST/WebSocket server for production and integration use |
+| **CLI** | `src/main.py` | Standalone training on the two-spiral problem |
 
 ---
 
 ## Directory Structure
 
-```bash
-juniper_cascor/
-├── src/                              # Source code root
-│   ├── main.py                       # Application entry point
-│   ├── cascade_correlation/          # Core Cascor network implementation
-│   │   ├── cascade_correlation.py    # Main CascadeCorrelationNetwork class
-│   │   ├── cascade_correlation_config/  # Network configuration
-│   │   └── cascade_correlation_exceptions/  # Custom exceptions
-│   ├── candidate_unit/               # Candidate unit implementation
-│   │   └── candidate_unit.py         # CandidateUnit class
-│   ├── spiral_problem/               # Two-spiral problem implementation
-│   │   └── spiral_problem.py         # SpiralProblem class
-│   ├── cascor_constants/             # All project constants (renamed from constants/)
-│   │   ├── constants.py              # Main constants aggregator
-│   │   ├── constants_activation/     # Activation function constants
-│   │   ├── constants_candidates/     # Candidate training constants
-│   │   ├── constants_hdf5/           # HDF5 serialization constants
-│   │   ├── constants_logging/        # Logging constants
-│   │   ├── constants_model/          # Model architecture constants
-│   │   └── constants_problem/        # Problem-specific constants
-│   ├── log_config/                   # Logging configuration
-│   │   ├── log_config.py             # LogConfig class
-│   │   └── logger/                   # Custom Logger class
-│   ├── cascor_plotter/               # Visualization utilities
-│   │   └── cascor_plotter.py         # CascadeCorrelationPlotter class
-│   ├── snapshots/                    # HDF5 serialization system
-│   │   ├── snapshot_serializer.py    # Main serialization logic
-│   │   ├── snapshot_utils.py         # Utility functions
-│   │   ├── snapshot_cli.py           # CLI tools
-│   │   └── snapshot_common.py        # Common serialization helpers
-│   ├── remote_client/                # Remote multiprocessing client
-│   ├── utils/                        # Utility functions
-│   │   └── utils.py                  # Helper functions
-│   └── tests/                        # Test suite
-│       ├── conftest.py               # Pytest configuration and fixtures
-│       ├── pytest.ini                # Pytest settings
-│       ├── unit/                     # Unit tests
-│       ├── integration/              # Integration tests
-│       ├── helpers/                  # Test utilities
-│       ├── mocks/                    # Mock objects
-│       └── scripts/                  # Test runner scripts
-├── conf/                             # Configuration files
-│   ├── conda_environment.yaml        # Conda environment
-│   ├── logging_config.yaml           # Logging configuration
-│   └── *.conf                        # Various shell config files
-├── util/                             # Shell utility scripts
-├── notes/                            # Project documentation
-├── data/                             # Data directory (gitignored)
-├── logs/                             # Log files (gitignored)
-├── images/                           # Generated images
-├── reports/                          # Generated reports
-└── README.md                         # Project README
 ```
+juniper-cascor/
+├── src/                              # Application source code
+│   ├── main.py                       # CLI entry point (standalone training)
+│   ├── server.py                     # FastAPI server entry point
+│   ├── __init__.py
+│   ├── api/                          # FastAPI REST/WebSocket service layer
+│   │   ├── app.py                    #   Application factory with lifespan
+│   │   ├── settings.py               #   Pydantic-based configuration
+│   │   ├── security.py               #   API key auth and rate limiting
+│   │   ├── middleware.py             #   Security headers, body limits, auth
+│   │   ├── observability.py          #   Logging, Prometheus, Sentry, request IDs
+│   │   ├── service_launcher.py       #   Auto-start companion services
+│   │   ├── secrets.py                #   Docker secrets file loader
+│   │   ├── lifecycle/                #   Training lifecycle management
+│   │   │   ├── manager.py            #     TrainingLifecycleManager
+│   │   │   ├── monitor.py            #     TrainingMonitor (metrics/callbacks)
+│   │   │   └── state_machine.py      #     TrainingStateMachine
+│   │   ├── routes/                   #   REST API endpoint handlers
+│   │   │   ├── health.py             #     Health and readiness probes
+│   │   │   ├── network.py            #     Network CRUD and inspection
+│   │   │   ├── training.py           #     Training control
+│   │   │   ├── dataset.py            #     Dataset metadata and arrays
+│   │   │   ├── decision_boundary.py  #     Decision boundary visualization
+│   │   │   ├── metrics.py            #     Prometheus metrics endpoint
+│   │   │   ├── snapshots.py          #     Network snapshot management
+│   │   │   └── workers.py            #     Remote worker registry
+│   │   ├── websocket/                #   WebSocket real-time channels
+│   │   │   ├── manager.py            #     WebSocketManager (connections, broadcast)
+│   │   │   ├── control_stream.py     #     /ws/control (training commands)
+│   │   │   ├── training_stream.py    #     /ws/training (metrics stream)
+│   │   │   ├── worker_stream.py      #     /ws/v1/workers (remote worker protocol)
+│   │   │   └── messages.py           #     Message builders
+│   │   ├── workers/                  #   Remote WebSocket worker system
+│   │   │   ├── registry.py           #     WorkerRegistry (pool management)
+│   │   │   ├── coordinator.py        #     WorkerCoordinator (task dispatch)
+│   │   │   ├── protocol.py           #     Wire protocol (JSON + binary)
+│   │   │   ├── security.py           #     Worker authentication
+│   │   │   └── audit.py              #     Worker audit logging
+│   │   └── models/                   #   Pydantic request/response models
+│   │       ├── common.py             #     ResponseEnvelope, ErrorResponse
+│   │       ├── health.py             #     ReadinessResponse
+│   │       ├── network.py            #     NetworkCreateRequest
+│   │       └── training.py           #     TrainingStartRequest, TrainingParamUpdateRequest
+│   ├── cascade_correlation/          # Core CasCor neural network
+│   │   ├── cascade_correlation.py    #   CascadeCorrelationNetwork class
+│   │   ├── cascade_correlation_config/
+│   │   │   └── cascade_correlation_config.py  # Network configuration dataclass
+│   │   └── cascade_correlation_exceptions/
+│   │       └── cascade_correlation_exceptions.py  # Custom exceptions
+│   ├── candidate_unit/               # Candidate hidden unit training
+│   │   └── candidate_unit.py         #   CandidateUnit, ActivationWithDerivative
+│   ├── parallelism/                  # Distributed task scheduling
+│   │   └── task_distributor.py       #   TaskDistributor (local-first policy)
+│   ├── spiral_problem/               # Two-spiral classification problem
+│   │   ├── spiral_problem.py         #   SpiralProblem orchestration
+│   │   ├── data_provider.py          #   Spiral data generation
+│   │   └── check.py                  #   Validation utilities
+│   ├── snapshots/                    # Network serialization
+│   │   ├── snapshot_serializer.py    #   Serialize/deserialize networks
+│   │   ├── snapshot_common.py        #   Shared snapshot utilities
+│   │   ├── snapshot_utils.py         #   Helper functions
+│   │   └── snapshot_cli.py           #   CLI for snapshot management
+│   ├── cascor_constants/             # Configuration constants
+│   │   ├── constants.py              #   Master constants file
+│   │   ├── constants_activation/     #   Activation function definitions
+│   │   ├── constants_candidates/     #   Candidate training parameters
+│   │   ├── constants_model/          #   Network architecture parameters
+│   │   ├── constants_logging/        #   Logging configuration
+│   │   ├── constants_problem/        #   Problem-specific settings
+│   │   └── constants_hdf5/           #   Serialization paths
+│   ├── cascor_plotter/               # Visualization
+│   │   └── cascor_plotter.py
+│   ├── log_config/                   # Logging system
+│   │   ├── log_config.py             #   LogConfig (logger configuration)
+│   │   └── logger/
+│   │       └── logger.py             #   Logger wrapper with color support
+│   ├── remote_client/                # HTTP client for API interaction
+│   │   └── remote_client.py
+│   ├── profiling/                    # Performance analysis
+│   │   ├── memory.py                 #   Memory profiling
+│   │   ├── deterministic.py          #   cProfile profiling
+│   │   └── logging_utils.py          #   Profiling log helpers
+│   ├── utils/                        # General utilities
+│   │   └── utils.py
+│   └── tests/                        # Test suite
+│       ├── conftest.py               #   Fixtures and configuration
+│       ├── pytest.ini                #   pytest settings
+│       ├── scripts/
+│       │   ├── run_tests.bash        #   Test runner
+│       │   └── run_benchmarks.bash   #   Benchmark runner
+│       ├── helpers/                  #   Test helper utilities
+│       ├── mocks/                    #   Test mock objects
+│       ├── unit/                     #   Unit tests (70+ files)
+│       │   └── api/                  #   API unit tests (30+ files)
+│       ├── integration/              #   Integration tests
+│       │   └── api/                  #   API integration tests
+│       └── performance/              #   Performance benchmarks
+├── conf/                             # Configuration files
+│   ├── logging_config.yaml           #   Logging configuration
+│   ├── docker-compose.yaml           #   Docker Compose (deprecated, use juniper-deploy)
+│   ├── conda_environment.yaml        #   Conda environment definition
+│   ├── requirements.txt              #   pip requirements
+│   └── *.conf                        #   Shell configuration files
+├── docs/                             # User documentation
+│   ├── INDEX.md                      #   Documentation navigation
+│   ├── DOCUMENTATION_OVERVIEW.md     #   Standards and usage guide
+│   ├── DEVELOPER_CHEATSHEET.md       #   Quick-reference for developers
+│   ├── USER_MANUAL.md
+│   ├── ENVIRONMENT_SETUP.md
+│   ├── api/                          #   API reference and schemas
+│   ├── ci_cd/                        #   CI/CD pipeline documentation
+│   ├── install/                      #   Installation guides
+│   ├── overview/                     #   Architecture and constants guides
+│   ├── source/                       #   Source code documentation
+│   └── testing/                      #   Testing guides
+├── notes/                            # Development documentation
+│   ├── history/                      #   Archived development notes (50+ files)
+│   ├── prompts/                      #   Archived Claude Code session prompts
+│   ├── pull_requests/                #   PR documentation
+│   ├── setup_config_guides/          #   Setup and configuration guides
+│   └── templates/                    #   Document templates
+├── scripts/                          # Automation scripts
+│   ├── check_doc_links.py            #   Documentation link checker
+│   ├── generate_dep_docs.sh          #   Dependency documentation generator
+│   └── tls/
+│       └── generate_certs.bash       #   TLS certificate generation
+├── util/                             # Shell utility scripts
+│   ├── juniper_cascor.bash           #   Main launcher
+│   ├── run_all_tests.bash            #   Test runner
+│   ├── profile_training.bash         #   py-spy profiler
+│   ├── get_code_stats.bash           #   Code statistics
+│   └── (30+ additional utility scripts)
+├── data/                             # Spiral datasets (.pt files)
+├── dist/                             # Build artifacts
+├── .github/                          # GitHub configuration
+│   ├── workflows/
+│   │   ├── ci.yml                    #   Main CI pipeline
+│   │   ├── scheduled-tests.yml       #   Scheduled test runs
+│   │   ├── publish.yml               #   Package publishing
+│   │   ├── lockfile-update.yml       #   Dependency lockfile updates
+│   │   └── security-scan.yml         #   Security scanning
+│   ├── CODEOWNERS                    #   Code ownership rules
+│   └── dependabot.yml                #   Dependency update automation
+├── .serena/memories/                 # Serena MCP server context
+├── pyproject.toml                    # Package metadata and tool configuration
+├── Dockerfile                        # Multi-stage production container
+├── requirements.lock                 # Pinned dependency lockfile
+├── .env.example                      # Environment variable template
+├── .pre-commit-config.yaml           # Pre-commit hook configuration
+├── AGENTS.md                         # This file
+├── CHANGELOG.md                      # Release changelog
+├── README.md                         # Project overview
+└── LICENSE                           # MIT License
+```
+
+---
+
+## REST API
+
+The juniper-cascor service exposes a versioned REST API at the `/v1/` prefix. All responses use the `ResponseEnvelope` wrapper pattern.
+
+### Health Endpoints
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| `GET` | `/v1/health` | No | Simple status check |
+| `GET` | `/v1/health/live` | No | Kubernetes liveness probe |
+| `GET` | `/v1/health/ready` | No | Readiness probe with dependency checks |
+
+### Network Management
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| `POST` | `/v1/network` | Yes | Create new network with configuration |
+| `GET` | `/v1/network` | Yes | Get current network info |
+| `DELETE` | `/v1/network` | Yes | Delete current network |
+| `GET` | `/v1/network/topology` | Yes | Network topology for visualization |
+| `GET` | `/v1/network/stats` | Yes | Weight statistics |
+
+### Training Control
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| `POST` | `/v1/training/start` | Yes | Start training (inline data or dataset generator) |
+| `POST` | `/v1/training/stop` | Yes | Stop training |
+| `POST` | `/v1/training/pause` | Yes | Pause training |
+| `POST` | `/v1/training/resume` | Yes | Resume paused training |
+| `POST` | `/v1/training/reset` | Yes | Reset training state |
+| `GET` | `/v1/training/status` | Yes | Get current training status |
+| `GET` | `/v1/training/params` | Yes | Get training parameters |
+| `PATCH` | `/v1/training/params` | Yes | Update runtime parameters |
+
+### Dataset & Visualization
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| `GET` | `/v1/dataset` | Yes | Dataset metadata |
+| `GET` | `/v1/dataset/data` | Yes | Dataset arrays for visualization |
+| `GET` | `/v1/decision-boundary` | Yes | Decision boundary visualization |
+
+### Snapshots
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| `GET` | `/v1/snapshots` | Yes | List network snapshots |
+| `POST` | `/v1/snapshots` | Yes | Save network snapshot |
+| `GET` | `/v1/snapshots/{snapshot_id}` | Yes | Get metadata for a specific snapshot |
+| `POST` | `/v1/snapshots/{snapshot_id}/restore` | Yes | Restore a network from a snapshot |
+
+### Workers
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| `GET` | `/v1/workers` | Yes | Remote worker registry status |
+| `GET` | `/v1/workers/stats` | Yes | Aggregate worker statistics |
+| `GET` | `/v1/workers/{worker_id}` | Yes | Get details for a specific worker |
+
+### Metrics
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| `GET` | `/v1/metrics` | No | Prometheus metrics (if enabled) |
+| `GET` | `/v1/metrics/history` | Yes | Training metrics history |
+
+### Request/Response Models
+
+| Model | Module | Purpose |
+|-------|--------|---------|
+| `ResponseEnvelope` | `api.models.common` | Standard response wrapper (status, data, error) |
+| `ErrorResponse` | `api.models.common` | Error detail model |
+| `NetworkCreateRequest` | `api.models.network` | Network creation parameters |
+| `TrainingStartRequest` | `api.models.training` | Training start parameters (data source, config) |
+| `TrainingParamUpdateRequest` | `api.models.training` | Runtime parameter update |
+| `ReadinessResponse` | `api.models.health` | Readiness with dependency status |
+
+---
+
+## WebSocket Protocol
+
+Three WebSocket channels provide real-time communication.
+
+### `/ws/control` -- Training Command Channel
+
+- **Direction**: Client to server
+- **Authentication**: X-API-Key header
+- **Purpose**: Send training commands (start, stop, pause, resume, reset)
+- **Message format**: JSON command messages
+- **Handler**: `api.websocket.control_stream.control_stream_handler()`
+
+### `/ws/training` -- Metrics Stream
+
+- **Direction**: Server to client (broadcast)
+- **Authentication**: X-API-Key header
+- **Purpose**: Real-time training metrics, epoch-end events, cascade additions, candidate progress
+- **Message format**: JSON metrics messages
+- **Handler**: `api.websocket.training_stream.training_stream_handler()`
+
+### `/ws/v1/workers` -- Remote Worker Protocol
+
+- **Direction**: Bidirectional (machine-to-machine)
+- **Authentication**: API key; rejects browser Origin headers
+- **Purpose**: Worker registration, heartbeat, task assignment, result collection
+- **Message format**: JSON envelope + binary numpy frames (up to 100MB)
+- **Handler**: `api.websocket.worker_stream.worker_stream_handler()`
+
+### WebSocketManager
+
+- Thread-safe broadcasting via `asyncio.run_coroutine_threadsafe()`
+- Connection lifecycle management with bounded limit (default: 50)
+- Automatic heartbeat/keepalive
+
+---
+
+## Training Lifecycle Management
+
+The lifecycle system coordinates network training through deterministic state transitions.
+
+| Component | Module | Purpose |
+|-----------|--------|---------|
+| `TrainingLifecycleManager` | `api.lifecycle.manager` | Central orchestrator (thread-safe via locks) |
+| `TrainingStateMachine` | `api.lifecycle.state_machine` | Deterministic state transitions (idle, training, paused, etc.) |
+| `TrainingMonitor` | `api.lifecycle.monitor` | Callback-based metrics collection |
+
+**Training Events** (emitted via callbacks):
+
+- `training_start` / `training_end`
+- `epoch_end`
+- `cascade_add`
+- `candidate_progress`
+
+The lifecycle manager wraps the network's training methods non-intrusively to emit events without modifying the core algorithm.
+
+---
+
+## Remote Worker System
+
+Distributed candidate training via WebSocket workers.
+
+| Component | Module | Purpose |
+|-----------|--------|---------|
+| `WorkerRegistry` | `api.workers.registry` | Worker pool management (register, deregister, health) |
+| `WorkerCoordinator` | `api.workers.coordinator` | Task dispatch, monitoring, result collection |
+| Worker Protocol | `api.workers.protocol` | Wire format: JSON envelope + binary numpy frames |
+| Worker Security | `api.workers.security` | Authentication, token management |
+| Worker Audit | `api.workers.audit` | Audit logging for worker operations |
+
+**Worker Lifecycle**:
+
+1. Worker connects via `/ws/v1/workers` with API key
+2. Worker registers with capabilities (CPU/GPU, pool size)
+3. Coordinator assigns candidate training tasks
+4. Worker returns results as binary numpy frames
+5. Heartbeat keepalive (default 30s timeout)
+6. Auto-deregistration on heartbeat timeout
+7. Task reassignment on worker failure (default 120s timeout)
+
+---
+
+## Middleware Stack
+
+Middleware executes in LIFO order (last added = first executed):
+
+| Order | Middleware | Module | Purpose |
+|-------|-----------|--------|---------|
+| 1 | `SecurityHeadersMiddleware` | `api.middleware` | CSP, HSTS, X-Frame-Options, etc. |
+| 2 | `RequestBodyLimitMiddleware` | `api.middleware` | 10MB request body limit |
+| 3 | `SecurityMiddleware` | `api.middleware` | API key auth + rate limiting (exempt paths) |
+| 4 | `PrometheusMiddleware` | `api.observability` | Metrics (if enabled) |
+| 5 | `RequestIdMiddleware` | `api.observability` | X-Request-ID propagation |
+| 6 | `CORSMiddleware` | FastAPI/Starlette | CORS headers (if configured) |
+
+---
+
+## Security
+
+### API Key Authentication
+
+- Header: `X-API-Key`
+- Comparison: HMAC-based (timing-safe)
+- When `JUNIPER_CASCOR_API_KEYS` is unset, authentication is disabled
+- Docker secrets support: `JUNIPER_CASCOR_API_KEYS_FILE` for container deployments
+
+### Rate Limiting
+
+- Fixed-window per IP (thread-safe)
+- Default: 60 requests/minute when enabled
+- Exempt paths: health endpoints, metrics
+
+### Security Headers
+
+CSP, HSTS, X-Frame-Options, X-Content-Type-Options, Referrer-Policy applied to all responses.
+
+### TLS
+
+Certificate generation script: `scripts/tls/generate_certs.bash`
+
+---
+
+## Observability
+
+### Logging
+
+- **Text format** (development): Colored console output with custom formatters
+- **JSON format** (production): Structured JSON logging for log aggregation
+- **Request IDs**: Propagated via `ContextVar` and `X-Request-ID` header
+- **Custom levels**: TRACE, VERBOSE, DEBUG, INFO, WARNING, ERROR, CRITICAL, FATAL
+
+### Prometheus Metrics
+
+When `JUNIPER_CASCOR_METRICS_ENABLED=true`:
+
+- `http_requests_total` -- Request counter by method, path, status
+- `http_request_duration_seconds` -- Request latency histogram
+- Build info labels
+- Endpoint: `GET /v1/metrics`
+
+### Sentry Integration
+
+When `JUNIPER_CASCOR_SENTRY_DSN` is set:
+
+- Automatic error reporting
+- Release tracking with API version
+
+### Health Probes
+
+- **Liveness** (`/v1/health/live`): Process is running
+- **Readiness** (`/v1/health/ready`): Dependencies available, training system initialized
 
 ---
 
@@ -181,217 +529,217 @@ juniper_cascor/
 
 ### CascadeCorrelationNetwork
 
-The main neural network class implementing the Cascade Correlation algorithm.
-
-**Location**: `src/cascade_correlation/cascade_correlation.py`
+Main neural network class (`src/cascade_correlation/cascade_correlation.py`).
 
 **Key Methods**:
 
-- `fit(x, y, epochs)` - Train the network
-- `forward(x)` - Forward pass through network
-- `train_output_layer(x, y, epochs)` - Train output layer only
-- `train_candidates(x, y, residual_error)` - Train candidate pool
-- `get_accuracy(x, y)` - Calculate classification accuracy
-- `save_to_hdf5(filepath)` - Save network to HDF5
-- `load_from_hdf5(filepath)` - Load network from HDF5
-- `create_snapshot()` - Create network snapshot
+- `fit()` -- Train the network (full cascade correlation loop)
+- `forward()` -- Forward pass through the network
+- `train_output_layer()` -- Output layer weight training
+- `train_candidates()` -- Candidate unit training (parallel)
+- `get_accuracy()` -- Classification accuracy
+- `save_to_hdf5()` / `load_from_hdf5()` -- HDF5 serialization
+- `create_snapshot()` -- Network state snapshot
 
-**Key Dataclasses**:
+**Training Process**:
 
-- `TrainingResults` - Aggregated candidate training results
-- `ValidateTrainingInputs` - Inputs for training validation
-- `ValidateTrainingResults` - Results from validation
+1. Train output layer on current network (quickprop/backprop)
+2. Generate candidate pool (configurable size, default 8)
+3. Train candidates in parallel on residual error (decorrelated)
+4. Select best candidate (highest correlation, threshold: 0.4)
+5. Freeze candidate weights, add to network
+6. Repeat until convergence or max hidden units reached
 
 ### CandidateUnit
 
-Represents a candidate hidden unit in the network.
+Single candidate hidden neuron (`src/candidate_unit/candidate_unit.py`).
 
-**Location**: `src/candidate_unit/candidate_unit.py`
-
-**Key Methods**:
-
-- `train(x, residual_error, epochs)` - Train the candidate
-- `_calculate_correlation(output, residual_error)` - Calculate Pearson correlation
-- `_update_weights_and_bias(params)` - Update using autograd
-
-**Key Dataclasses**:
-
-- `CandidateTrainingResult` - Training result for single candidate
-- `CandidateParametersUpdate` - Parameters for weight updates
-- `CandidateCorrelationCalculation` - Correlation calculation results
+- Configurable activation (tanh, sigmoid, relu)
+- Decorrelated training: maximizes correlation with output residuals
+- Early stopping with patience parameter
+- Picklable via `ActivationWithDerivative` wrapper (solves multiprocessing serialization)
 
 ### SpiralProblem
 
-Implements the classic two-spiral classification problem.
+Two-spiral classification problem (`src/spiral_problem/`).
 
-**Location**: `src/spiral_problem/spiral_problem.py`
+- `SpiralProblem` -- Orchestration and training workflow
+- `DataProvider` -- Spiral data generation
+- Configurable: number of spirals, rotations, noise
 
-**Key Methods**:
+### Configuration
 
-- `evaluate(...)` - Run full evaluation pipeline
-- `generate_spiral_dataset(...)` - Generate spiral data
-- `_create_input_features(...)` - Create input tensors
-- `_create_one_hot_targets(...)` - Create target tensors
+Network configuration via `CascadeCorrelationConfig` dataclass:
+
+```python
+from cascade_correlation.cascade_correlation import CascadeCorrelationNetwork
+from cascade_correlation.cascade_correlation_config.cascade_correlation_config import CascadeCorrelationConfig
+
+config = CascadeCorrelationConfig(input_size=2, output_size=2)
+network = CascadeCorrelationNetwork(config=config)
+network.fit(x_train, y_train, epochs=100)
+accuracy = network.get_accuracy(x_test, y_test)
+```
+
+Application/API configuration via Pydantic Settings:
+
+- Class: `api.settings.Settings` (inherits `pydantic_settings.BaseSettings`)
+- Prefix: `JUNIPER_CASCOR_`
+- Loads from environment variables, `.env` file, or Docker secrets
+- Cached via `get_settings()`
+
+### Custom Exceptions
+
+Defined in `cascade_correlation_exceptions/`:
+
+- `ConfigurationError` -- Invalid configuration
+- `TrainingError` -- Training failures
+- `ValidationError` -- Input validation failures
+
+---
+
+## Parallelism and Distribution
+
+### TaskDistributor
+
+Central task scheduler (`src/parallelism/task_distributor.py`):
+
+- **Local-first scheduling**: Assigns tasks to local multiprocessing workers as primary capacity
+- **Remote overflow**: Routes excess tasks to registered WebSocket workers
+- **Fallback**: Reverts to local execution if remote workers fail or timeout
+
+### Local Multiprocessing
+
+- `multiprocessing.Pool` with forkserver context (safer for CUDA, avoids GIL clone issues)
+- Queue-based task distribution via custom manager
+- Shared memory support (numpy arrays via `multiprocessing.shared_memory`)
+- BLAS thread limits set before imports to prevent contention with workers
+
+### Pickling
+
+Classes implement `__getstate__` and `__setstate__` to handle non-picklable objects (loggers, closures). `ActivationWithDerivative` stores function type by name and reconstructs on unpickling.
+
+---
+
+## Serialization System
+
+### HDF5 Snapshots
+
+Save/load network state including architecture, weights, activation functions, training history, random state, UUID, and checksums.
+
+**CLI Tools**:
+
+```bash
+cd src
+python -m snapshots.snapshot_cli save network.pkl snapshot.h5
+python -m snapshots.snapshot_cli load snapshot.h5
+python -m snapshots.snapshot_cli verify snapshot.h5
+python -m snapshots.snapshot_cli list ./snapshots/
+```
 
 ---
 
 ## Programming Conventions
 
-### Naming Conventions
+**Naming**:
 
-**Constants**:
+- Constants: Uppercase with underscores, component-prefixed (e.g., `_CASCADE_CORRELATION_NETWORK_*`)
+- Classes: PascalCase
+- Methods/Functions: snake_case with private methods prefixed by underscore
+- Constructor Parameters: Name-mangled style
 
-- Uppercase with underscores, prefixed by component: `_CASCOR_LOG_LEVEL_NAME`
-- Hierarchical naming: `_CASCADE_CORRELATION_NETWORK_ACTIVATION_FUNCTION`
+**File Headers**: Standardized headers with Project, Sub-Project, Application, Author, Version, File Path, Dates, License, Description, References.
 
-**Classes**:
+**Imports**: Standard library, Third-party, Local application (enforced by isort with `profile = "black"`).
 
-- PascalCase: `CascadeCorrelationNetwork`, `CandidateUnit`
+**Type Hints**: Extensive use throughout (e.g., `def forward(self, x: torch.Tensor = None) -> torch.Tensor:`).
 
-**Methods/Functions**:
+**Logging**: Custom system with levels: TRACE, VERBOSE, DEBUG, INFO, WARNING, ERROR, CRITICAL, FATAL.
 
-- snake_case: `train_candidates`, `calculate_correlation`
-- Private methods prefixed with underscore: `_prepare_candidate_input`
+**Documentation**: Structured docstrings with Description, Args, Returns, Raises, Notes sections.
 
-**Constructor Parameters**:
-
-- Name-mangled style with class prefix: `_SpiralProblem__n_points`, `CandidateUnit__input_size`
-
-### File Headers
-
-All Python files include standardized headers:
-
-```python
-#!/usr/bin/env python
-#####################################################################################################################################################################################################
-# Project:       Juniper
-# Sub-Project:   JuniperCascor
-# Application:   juniper_cascor
-# Purpose:       Juniper Project Cascade Correlation Neural Network
-#
-# Author:        Paul Calnon
-# Version:       0.3.2 (0.7.3)
-# File Name:     [File Name]
-# File Path:     [Project]/[Sub-Project]/[Application]/src/
-
-# Date Created:  [YYYY-MM-DD]
-# Last Modified: [YYYY-MM-DD HH:MM:SS TZ]
-#
-# License:       MIT License
-# Copyright:     Copyright (c) 2024,2025,2026 Paul Calnon
-#
-# Description:
-#     [This is a placeholder for the actual description.]
-#
-#####################################################################################################################################################################################################
-# Notes:
-#
-#####################################################################################################################################################################################################
-# References:
-#
-#####################################################################################################################################################################################################
-# TODO :
-#
-#####################################################################################################################################################################################################
-# COMPLETED:
-#
-#####################################################################################################################################################################################################
-```
-
-### Imports
-
-Standard ordering:
-
-1. Standard library imports
-2. Third-party imports (numpy, torch, etc.)
-3. Local application imports
-
-Path manipulation for local imports:
-
-```python
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-```
-
-### Type Hints
-
-The project uses Python type hints extensively:
-
-```python
-def forward(self, x: torch.Tensor = None) -> torch.Tensor:
-def _calculate_correlation(
-    self,
-    output: torch.Tensor = None,
-    residual_error: torch.Tensor = None,
-) -> tuple([float, torch.Tensor, torch.Tensor, float, float]):
-```
-
-### Logging
-
-Custom logging system with extended log levels:
-
-- TRACE, VERBOSE, DEBUG, INFO, WARNING, ERROR, CRITICAL, FATAL
-
-Logger usage pattern:
-
-```python
-from log_config.logger.logger import Logger
-self.logger = Logger
-self.logger.info("Message")
-self.logger.trace("Detailed trace message")
-self.logger.verbose("Verbose output")
-```
-
-### Documentation
-
-- Docstrings follow structured format with Description, Args, Returns, Raises, Notes sections
-- Extensive inline logging for debugging and tracing
+**Line Length**: 512 for all linters (black, isort, flake8).
 
 ---
 
 ## Testing Infrastructure
 
-### Test Framework
-
-- **Framework**: pytest
-- **Location**: `src/tests/`
-- **Configuration**: `src/tests/pytest.ini`
-- **Fixtures**: `src/tests/conftest.py`
+**Framework**: pytest
+**Location**: `src/tests/`
 
 ### Test Categories (Markers)
 
-| Marker               | Description                                     |
-| -------------------- | ----------------------------------------------- |
-| `unit`               | Unit tests for individual components            |
-| `integration`        | Integration tests for full workflows            |
-| `performance`        | Performance and benchmarking tests              |
-| `slow`               | Tests that take a long time to run              |
-| `long`               | Long-running correctness tests (use --run-long) |
-| `gpu`                | Tests that require GPU/CUDA                     |
-| `multiprocessing`    | Tests using multiprocessing                     |
-| `spiral`             | Spiral problem tests                            |
-| `correlation`        | Correlation calculation tests                   |
-| `network_growth`     | Network growth algorithm tests                  |
-| `candidate_training` | Candidate unit training tests                   |
-| `validation`         | Input validation tests                          |
-| `accuracy`           | Accuracy calculation tests                      |
-| `early_stopping`     | Early stopping logic tests                      |
+| Marker | Description |
+|--------|-------------|
+| `unit` | Unit tests for individual components |
+| `integration` | Integration tests for full workflows |
+| `performance` | Performance and benchmarking tests |
+| `slow` | Long-running tests |
+| `long` | Long-running correctness tests (use `--run-long`) |
+| `gpu` | GPU/CUDA tests |
+| `multiprocessing` | Multiprocessing tests |
+| `spiral` | Spiral problem tests |
+| `correlation` | Correlation calculation tests |
+| `network_growth` | Network growth algorithm tests |
+| `candidate_training` | Candidate unit training tests |
+| `validation` | Input validation tests |
+| `accuracy` | Accuracy calculation tests |
+| `early_stopping` | Early stopping logic tests |
+| `requires_juniper_data` | Tests requiring juniper-data package |
 
-### Running Tests
+### Test Directory Structure
 
-```bash
-# All unit tests with coverage
-cd src/tests && bash scripts/run_tests.bash
-
-# Specific test file
-python -m pytest unit/test_forward_pass.py -v
-
-# By marker
-python -m pytest -m "unit and accuracy" -v
-
-# With specific options
-bash scripts/run_tests.bash -v -c     # Verbose with coverage
-bash scripts/run_tests.bash -j        # Parallel execution
-bash scripts/run_tests.bash -f        # Re-run failed only
+```
+src/tests/
+├── conftest.py                  # Global fixtures
+├── pytest.ini                   # pytest configuration
+├── scripts/
+│   ├── run_tests.bash           # Test runner
+│   └── run_benchmarks.bash      # Benchmark runner
+├── helpers/
+│   ├── assertions.py            # Custom assertion helpers
+│   └── utilities.py             # Test utility functions
+├── mocks/
+│   └── mock_candidate.py        # Mock objects
+├── unit/                        # Unit tests (70+ files)
+│   ├── test_cascade_correlation_*.py   # CasCor network tests
+│   ├── test_candidate_unit_*.py        # Candidate unit tests
+│   ├── test_spiral_*.py                # Spiral problem tests
+│   ├── test_snapshot_*.py              # Serialization tests
+│   ├── test_log_*.py                   # Logging tests
+│   ├── test_server_coverage.py         # Server entry point tests
+│   ├── test_main_*.py                  # CLI entry point tests
+│   └── api/                            # API layer tests (30+ files)
+│       ├── test_api_app.py             #   App factory tests
+│       ├── test_api_health.py          #   Health endpoint tests
+│       ├── test_api_middleware.py       #   Middleware tests
+│       ├── test_api_security.py        #   Security tests
+│       ├── test_api_settings.py        #   Settings tests
+│       ├── test_lifecycle_*.py         #   Lifecycle tests
+│       ├── test_websocket_*.py         #   WebSocket tests
+│       ├── test_worker_*.py            #   Worker system tests
+│       ├── test_*_route*.py            #   Route handler tests
+│       └── test_monitoring_hooks.py    #   Monitoring tests
+├── integration/                 # Integration tests
+│   ├── test_serialization.py
+│   ├── test_spiral_problem.py
+│   ├── test_comprehensive_serialization.py
+│   ├── test_juniper_data_e2e.py
+│   └── api/                     # API integration tests
+│       ├── conftest.py
+│       ├── test_api_full_lifecycle.py
+│       └── test_websocket_streaming.py
+└── performance/                 # Performance benchmarks
+    ├── conftest.py
+    ├── test_baselines.py
+    ├── test_concurrency_scaling.py
+    ├── test_endtoend_profiling.py
+    ├── test_micro_autograd.py
+    ├── test_micro_candidate.py
+    ├── test_micro_correlation.py
+    ├── test_micro_forward_pass.py
+    ├── test_micro_output_training.py
+    └── test_shared_memory.py
 ```
 
 ### Test Output
@@ -402,270 +750,253 @@ bash scripts/run_tests.bash -f        # Re-run failed only
 
 ---
 
+## CI/CD Pipelines
+
+### GitHub Actions Workflows
+
+| Workflow | File | Triggers | Purpose |
+|----------|------|----------|---------|
+| CI/CD Pipeline | `.github/workflows/ci.yml` | Push (main, develop, feature/**, fix/**), PR, dispatch | Pre-commit, unit tests, integration tests, security scanning |
+| Scheduled Long Tests | `.github/workflows/scheduled-tests.yml` | Cron schedule (nightly), dispatch | Slow and long-running correctness tests |
+| Publish | `.github/workflows/publish.yml` | Release event | Package publishing |
+| Lockfile Update | `.github/workflows/lockfile-update.yml` | Push to dependabot/** branches | Dependency lockfile refresh |
+| Security Scan | `.github/workflows/security-scan.yml` | Schedule/dispatch | Gitleaks, Bandit, pip-audit |
+
+### CI Pipeline Jobs (ci.yml)
+
+- Pre-commit hooks (black, isort, flake8, mypy, bandit)
+- Unit tests with coverage enforcement
+- Integration tests
+- Security scanning (Gitleaks, Bandit SARIF, pip-audit)
+- Dependency caching for performance
+- Concurrency: one pipeline per branch, cancel-in-progress
+
+### Additional GitHub Configuration
+
+- `.github/CODEOWNERS` -- Code ownership rules
+- `.github/dependabot.yml` -- Automated dependency updates
+
+---
+
+## Deployment
+
+### Docker
+
+Multi-stage Dockerfile (`Dockerfile`):
+
+```bash
+# Build
+docker build -t juniper-cascor:latest .
+
+# Run
+docker run -p 8200:8200 \
+  -e JUNIPER_DATA_URL=http://localhost:8100 \
+  -e JUNIPER_CASCOR_API_KEYS=your-key-here \
+  juniper-cascor:latest
+```
+
+- **Base image**: `python:3.14-slim`
+- **CPU-only PyTorch** (avoids ~4GB CUDA dependency)
+- **Non-root user** in production stage
+
+### Docker Compose
+
+Per-service compose file in `conf/docker-compose.yaml` is **deprecated**. Use the unified orchestration in `juniper-deploy`:
+
+```bash
+cd ../juniper-deploy && make up
+```
+
+### Service Ports
+
+| Service | Port | Health Endpoint |
+|---------|------|-----------------|
+| juniper-cascor | 8200 | `/v1/health` |
+
+### Service Launcher
+
+When running outside containers, juniper-cascor can auto-start companion services:
+
+- `JUNIPER_CASCOR_AUTO_START_DATA_SERVICE=true` -- Start juniper-data
+- `JUNIPER_CASCOR_AUTO_START_CANOPY=true` -- Start juniper-canopy
+
+The launcher probes health endpoints before declaring readiness.
+
+---
+
 ## Key Dependencies
 
-### Core Libraries
+### Core (always installed)
 
-| Library      | Purpose                               |
-| ------------ | ------------------------------------- |
-| `torch`      | Neural network tensors and operations |
-| `numpy`      | Numerical computations                |
-| `matplotlib` | Plotting and visualization            |
-| `h5py`       | HDF5 file serialization               |
-| `PyYAML`     | YAML configuration parsing            |
-| `requests`   | HTTP client for JuniperData REST API  |
+| Package | Purpose |
+|---------|---------|
+| `numpy>=1.24.0` | Numerical computations |
+| `pydantic>=2.0.0` | Data validation and settings |
+| `sentry-sdk>=2.0.0` | Error tracking |
+| `python-dotenv>=1.0.0` | Environment file loading |
 
-### Testing Libraries
+### ML Extra (`pip install juniper-cascor[ml]`)
 
-| Library      | Purpose            |
-| ------------ | ------------------ |
-| `pytest`     | Test framework     |
+| Package | Purpose |
+|---------|---------|
+| `torch>=2.0.0` | Neural network tensors and operations |
+| `h5py>=3.0.0` | HDF5 file serialization |
+| `matplotlib>=3.5.0` | Plotting and visualization |
+| `PyYAML>=6.0` | YAML configuration parsing |
+
+### API Extra (`pip install juniper-cascor[api]`)
+
+| Package | Purpose |
+|---------|---------|
+| `fastapi>=0.100.0` | REST API framework |
+| `uvicorn[standard]>=0.20.0` | ASGI server |
+| `pydantic-settings>=2.0.0` | Environment-based configuration |
+
+### Observability Extra (`pip install juniper-cascor[observability]`)
+
+| Package | Purpose |
+|---------|---------|
+| `prometheus-client>=0.20.0` | Prometheus metrics |
+
+### Test Extra (`pip install juniper-cascor[test]`)
+
+| Package | Purpose |
+|---------|---------|
+| `pytest>=6.0` | Test framework |
+| `pytest-asyncio>=0.21.0` | Async test support |
 | `pytest-cov` | Coverage reporting |
+| `pytest-timeout` | Test timeout enforcement |
+| `pytest-xdist` | Parallel test execution |
+| `coverage[toml]` | Coverage with TOML configuration support |
+| `httpx>=0.24.0` | Async HTTP client (API testing) |
+| `responses>=0.23.0` | HTTP mocking |
+| `dill>=0.3.6` | Extended pickling |
+| `psutil>=5.9.0` | System metrics for benchmarks |
 
-### Optional Libraries
+### All Extras (`pip install juniper-cascor[all]`)
 
-| Library    | Purpose                           |
-| ---------- | --------------------------------- |
-| `columnar` | Formatted table output (optional) |
-
----
-
-## Serialization System
-
-### HDF5 Snapshots
-
-The project uses HDF5 for network serialization.
-
-**Save Network**:
-
-```python
-network.save_to_hdf5(
-    filepath="./snapshots/network.h5",
-    include_training_state=True,
-    include_training_data=False
-)
-```
-
-**Load Network**:
-
-```python
-loaded_network = CascadeCorrelationNetwork.load_from_hdf5("./snapshots/network.h5")
-```
-
-**CLI Tools**:
-
-```bash
-python -m snapshots.snapshot_cli save network.pkl snapshot.h5
-python -m snapshots.snapshot_cli load snapshot.h5
-python -m snapshots.snapshot_cli verify snapshot.h5
-python -m snapshots.snapshot_cli list ./snapshots/
-```
-
-### What's Serialized
-
-- Network architecture (input/output sizes, hidden units)
-- Trained weights and biases
-- Activation functions
-- Training history
-- Random state (Python, NumPy, PyTorch) for deterministic resume
-- UUID for tracking
-- Checksums for data integrity
+Installs: `ml`, `api`, `observability`, `test`, `juniper-data`
 
 ---
 
-## Multiprocessing
+## Constants Configuration
 
-### Candidate Training
+Hierarchical structure in `src/cascor_constants/`:
 
-Candidate units are trained in parallel using Python's multiprocessing:
-
-```python
-class CandidateTrainingManager(BaseManager):
-    """Custom manager for handling candidate training queues."""
-    pass
-
-CandidateTrainingManager.register("get_task_queue", callable=_create_task_queue)
-CandidateTrainingManager.register("get_result_queue", callable=_create_result_queue)
-```
-
-### Pickling Considerations
-
-Classes implement `__getstate__` and `__setstate__` to handle non-picklable objects (loggers, closures):
-
-```python
-def __getstate__(self):
-    state = self.__dict__.copy()
-    state.pop('logger', None)
-    state.pop('_candidate_display_progress', None)
-    return state
-
-def __setstate__(self, state):
-    self.__dict__.update(state)
-    self.logger = Logger
-```
-
----
-
-## Configuration
-
-### Constants Organization
-
-Constants are organized hierarchically in `src/cascor_constants/`:
-
-- `constants_model/` - Model architecture defaults
-- `constants_candidates/` - Candidate training parameters
-- `constants_activation/` - Activation functions
-- `constants_logging/` - Logging configuration
-- `constants_problem/` - Problem-specific settings
-- `constants_hdf5/` - Serialization paths
-
-### Adjusting Log Levels
-
-Log levels are controlled via constants. To change:
-
-```python
-# In cascor_constants/constants.py, uncomment the desired level:
-# _CASCOR_LOG_LEVEL_NAME = _PROJECT_LOG_LEVEL_NAME_DEBUG
-_CASCOR_LOG_LEVEL_NAME = _PROJECT_LOG_LEVEL_NAME_INFO
-```
-
-### Network Configuration
-
-Use `CascadeCorrelationConfig` for network setup:
-
-```python
-config = CascadeCorrelationConfig(
-    input_size=2,
-    output_size=2,
-    learning_rate=0.01,
-    max_hidden_units=50,
-    candidate_pool_size=16,
-    correlation_threshold=0.001,
-    random_seed=42
-)
-network = CascadeCorrelationNetwork(config=config)
-```
-
----
-
-## Common Patterns
-
-### Creating a Network and Training
-
-```python
-from cascade_correlation.cascade_correlation import CascadeCorrelationNetwork
-from cascade_correlation_config.cascade_correlation_config import CascadeCorrelationConfig
-
-config = CascadeCorrelationConfig(input_size=2, output_size=2)
-network = CascadeCorrelationNetwork(config=config)
-network.fit(x_train, y_train, epochs=100)
-accuracy = network.get_accuracy(x_test, y_test)
-```
-
-### Using the Spiral Problem
-
-```python
-from spiral_problem.spiral_problem import SpiralProblem
-
-sp = SpiralProblem(
-    _SpiralProblem__n_points=100,
-    _SpiralProblem__n_spirals=2,
-    _SpiralProblem__noise=0.1
-)
-sp.evaluate(n_points=100, n_spirals=2, plot=True)
-```
-
-### Error Handling
-
-Custom exceptions in `cascade_correlation_exceptions/`:
-
-- `ConfigurationError` - Invalid configuration
-- `TrainingError` - Training failures
-- `ValidationError` - Input validation failures
-
----
-
-## Known Issues and Workarounds
-
-### Logger Pickling
-
-Loggers cannot be pickled for multiprocessing. Classes exclude logger from `__getstate__`.
-
-### GPU Support
-
-Tests disable GPU by default. Use `--gpu` flag for GPU tests:
-
-```bash
-pytest --gpu
-```
-
-### Long-Running Tests
-
-Critical long-running tests (like deterministic training resume) are skipped by default. Use `--run-long` to run them:
-
-```bash
-pytest --run-long                    # Run long-running correctness tests
-pytest --slow --run-long             # Run both slow and long tests
-```
-
-### Random Reproducibility
-
-Set `random_seed` in config for deterministic training:
-
-```python
-config = CascadeCorrelationConfig(random_seed=42)
-```
-
----
-
-## Development Workflow
-
-### Adding New Features
-
-1. Create feature in appropriate module
-2. Add constants to `src/cascor_constants/`
-3. Add tests in `src/tests/unit/` or `src/tests/integration/`
-4. Update documentation in `notes/`
-5. Run tests: `bash scripts/run_tests.bash`
-
-### Adding New Tests
-
-1. Create test file following `test_<feature>.py` naming
-2. Use appropriate markers (`@pytest.mark.unit`, etc.)
-3. Use fixtures from `conftest.py`
-4. Follow Arrange-Act-Assert pattern
+| Module | Purpose |
+|--------|---------|
+| `constants.py` | Master constants file |
+| `constants_model/` | Network architecture defaults (input_size, output_size, max_hidden_units) |
+| `constants_candidates/` | Candidate training parameters (learning_rate, epochs, pool_size, patience) |
+| `constants_activation/` | Activation functions and their derivatives |
+| `constants_logging/` | Logging formatters, handlers, levels |
+| `constants_problem/` | Problem-specific settings (spiral parameters) |
+| `constants_hdf5/` | Serialization paths and keys |
 
 ---
 
 ## Documentation Files
 
-| File                                                           | Description                           |
-| -------------------------------------------------------------- | ------------------------------------- |
-| `notes/FEATURES_GUIDE.md`                                      | Feature documentation and usage       |
-| `notes/PRE-DEPLOYMENT_ROADMAP-2.md`                            | Pre-deployment roadmap (consolidated) |
-| `notes/JUNIPER-CASCOR_POST-RELEASE_DEVELOPMENT-ROADMAP.md`     | Post-release development roadmap      |
-| `notes/ARCHITECTURE_GUIDE.md`                                  | Architecture overview                 |
-| `notes/API_REFERENCE.md`                                       | API reference documentation           |
-| `notes/INTEGRATION_ROADMAP-01.md`                              | Cascor-Canopy integration tracker     |
-| `src/tests/README.md`                                          | Test suite documentation              |
+### User Documentation (`docs/`)
 
-Archived documentation (plans, roadmaps, implementation summaries from earlier development phases) is preserved in `notes/history/`.
+| Directory | Contents |
+|-----------|----------|
+| `docs/` (root) | INDEX.md, DOCUMENTATION_OVERVIEW.md, DEVELOPER_CHEATSHEET.md, USER_MANUAL.md, ENVIRONMENT_SETUP.md |
+| `docs/api/` | API_REFERENCE.md, API_SCHEMAS.md |
+| `docs/ci_cd/` | QUICK_START.md, ENVIRONMENT_SETUP.md, MANUAL.md, REFERENCE.md, BRANCH_PROTECTION.md |
+| `docs/install/` | QUICK_START.md, ENVIRONMENT_SETUP.md, USER_MANUAL.md, REFERENCE.md |
+| `docs/overview/` | CONSTANTS_GUIDE.md |
+| `docs/source/` | QUICK_START.md, ENVIRONMENT_SETUP.md, MANUAL.md, REFERENCE.md |
+| `docs/testing/` | QUICK_START.md, ENVIRONMENT_SETUP.md, MANUAL.md, REFERENCE.md, SELECTIVE_TESTING_GUIDE.md |
+
+### Development Documentation (`notes/`)
+
+| File | Description |
+|------|-------------|
+| `notes/ARCHITECTURE_GUIDE.md` | System architecture overview |
+| `notes/FEATURES_GUIDE.md` | Feature documentation and usage |
+| `notes/API_REFERENCE.md` | API reference (development version) |
+| `notes/PRE-DEPLOYMENT_ROADMAP-2.md` | Pre-deployment roadmap (consolidated) |
+| `notes/JUNIPER-CASCOR_POST-RELEASE_DEVELOPMENT-ROADMAP.md` | Post-release development roadmap |
+| `notes/INTEGRATION_ROADMAP-01.md` | Cascor-Canopy integration tracker |
+| `notes/PHASE2_SERVICE_API_PLAN.md` | Phase 2 service API plan |
+| `notes/PERFORMANCE_TESTING_PLAN.md` | Performance testing plan |
+| `notes/DEPENDENCY_UPDATE_WORKFLOW.md` | Dependency management workflow |
+| `notes/CI_PIPELINE_DEVELOPMENT_PLAN.md` | CI/CD pipeline plan |
+| `notes/setup_config_guides/` | Setup guides (Serena, Exa, forkserver, CI/CD) |
+| `notes/templates/` | Templates (roadmap, issue, PR, release notes) |
+| `notes/history/` | Archived development notes (50+ files) |
+
+---
+
+## MCP Server Availability
+
+### Serena
+
+The project includes Serena MCP server configuration in `.serena/memories/`:
+
+| File | Purpose |
+|------|---------|
+| `project_overview.md` | Project context for Serena |
+| `code_style_conventions.md` | Coding standards context |
+| `suggested_commands.md` | Suggested development commands |
+| `task_completion_checklist.md` | Task completion guidelines |
+
+Serena provides semantic code analysis tools for navigating the codebase, finding symbols, and understanding architecture through symbolic tools rather than raw file reads.
+
+---
+
+## Known Issues and Workarounds
+
+- **Logger Pickling**: Loggers excluded from `__getstate__` for multiprocessing
+- **GPU Support**: Tests disable GPU by default; use `--gpu` flag for GPU tests
+- **Long-Running Tests**: Skipped by default; use `--run-long` to run them
+- **Random Reproducibility**: Set `random_seed` in config for deterministic training
+- **BLAS Thread Contention**: BLAS thread limits (`OMP_NUM_THREADS`, `MKL_NUM_THREADS`) set before imports to prevent contention with multiprocessing workers
+
+---
+
+## Development Workflow
+
+**Adding Features**:
+
+1. Create feature in appropriate module
+2. Add constants to `src/cascor_constants/`
+3. Add tests in `src/tests/unit/` (or `src/tests/unit/api/` for API features)
+4. Update documentation in `notes/` or `docs/`
+5. Run tests: `cd src && python -m pytest tests/ -v`
+6. Run linting: `pre-commit run --all-files`
+
+**Adding Tests**:
+
+1. Create test file following `test_<feature>.py` naming
+2. Use appropriate markers (`@pytest.mark.unit`, `@pytest.mark.integration`, etc.)
+3. Use fixtures from `conftest.py`
+4. Follow Arrange-Act-Assert pattern
+5. For API tests, use `httpx.AsyncClient` with the `TestClient` pattern
 
 ---
 
 ## Performance Considerations
 
-### Serialization Performance
-
-- Save (100 units): < 2 seconds
-- Load (100 units): < 3 seconds
-- Checksum verification: < 200ms
-
-### Training Tips
+**Training Tips**:
 
 - Optimize `candidate_pool_size` for CPU core count
 - Use N-best candidate selection for faster convergence
 - Tune `patience` for speed vs. accuracy tradeoff
+- Configure BLAS thread limits for multiprocessing environments
+
+**Benchmarks**:
+
+Performance micro-benchmarks in `src/tests/performance/` cover:
+- Forward pass latency
+- Candidate training throughput
+- Correlation calculation
+- Output training
+- Concurrency scaling
+- Shared memory performance
+- Autograd overhead
+- End-to-end profiling
 
 ---
 
@@ -673,144 +1004,79 @@ Archived documentation (plans, roadmaps, implementation summaries from earlier d
 
 - No secrets or API keys in codebase
 - Sensitive files excluded via `.gitignore`
-- Log files contain training data - handle appropriately
+- `.env.example` provided as template; `.env` is gitignored
+- Docker secrets supported for container deployments
+- SOPS encryption available (`.sops.yaml`, `.env.enc`)
+- Log files may contain training data -- handle appropriately
+- Pre-commit hooks include `bandit` security scanner
+- CI pipeline includes Gitleaks and pip-audit scans
 
 ---
 
-## Worktree Procedures (Mandatory — Task Isolation)
+## Worktree Procedures (Mandatory -- Task Isolation)
 
-> **OPERATING INSTRUCTION**: All feature, bugfix, and task work SHOULD use git worktrees for isolation. Worktrees keep the main working directory on the default branch while task work proceeds in a separate checkout.
+Git worktrees allow multiple branches to be checked out simultaneously in separate directories. For the Juniper ecosystem, all worktrees are centralized in **`/home/pcalnon/Development/python/Juniper/worktrees/`** using standardized naming convention: `<repo-name>--<branch-name>--<YYYYMMDD-HHMM>--<short-hash>`
 
-### What This Is
+**Full procedures**:
 
-Git worktrees allow multiple branches of a repository to be checked out simultaneously in separate directories. For the Juniper ecosystem, all worktrees are centralized in **`/home/pcalnon/Development/python/Juniper/worktrees/`** using a standardized naming convention.
+- **`notes/WORKTREE_SETUP_PROCEDURE.md`** -- Creating a worktree
+- **`notes/WORKTREE_CLEANUP_PROCEDURE_V2.md`** -- Merging, removing, pushing (V2 fixes CWD-trap bug)
 
-The full setup and cleanup procedures are defined in:
+**Rules**:
 
-- **`notes/WORKTREE_SETUP_PROCEDURE.md`** — Creating a worktree for a new task
-- **`notes/WORKTREE_CLEANUP_PROCEDURE_V2.md`** — Merging, removing, and pushing after task completion (V2 — fixes CWD-trap bug)
-
-Read the appropriate file when starting or completing a task.
-
-### Worktree Directory Naming
-
-Format: `<repo-name>--<branch-name>--<YYYYMMDD-HHMM>--<short-hash>`
-
-Example: `juniper-cascor--feature--add-validation--20260225-1430--fb530aa1`
-
-- Slashes in branch names are replaced with `--`
-- All worktrees reside in `/home/pcalnon/Development/python/Juniper/worktrees/`
-
-### When to Use Worktrees
-
-| Scenario | Use Worktree? |
-| -------- | ------------- |
-| Feature development (new feature branch) | **Yes** |
-| Bug fix requiring a dedicated branch | **Yes** |
-| Quick single-file documentation fix on main | No |
-| Exploratory work that may be discarded | **Yes** |
-| Hotfix requiring immediate merge | **Yes** |
-
-### Quick Reference
-
-**Setup** (full procedure in `notes/WORKTREE_SETUP_PROCEDURE.md`):
-
-```bash
-cd /home/pcalnon/Development/python/Juniper/juniper-cascor
-git fetch origin && git checkout main && git pull origin main
-BRANCH_NAME="feature/my-task"
-git branch "$BRANCH_NAME" main
-REPO_NAME=$(basename "$(pwd)")
-SAFE_BRANCH=$(echo "$BRANCH_NAME" | sed 's|/|--|g')
-WORKTREE_DIR="/home/pcalnon/Development/python/Juniper/worktrees/${REPO_NAME}--${SAFE_BRANCH}--$(date +%Y%m%d-%H%M)--$(git rev-parse --short=8 HEAD)"
-git worktree add "$WORKTREE_DIR" "$BRANCH_NAME"
-cd "$WORKTREE_DIR"
-```
-
-**Cleanup** (full procedure in `notes/WORKTREE_CLEANUP_PROCEDURE_V2.md`):
-
-```bash
-# Phase 1: Push current work
-cd "$OLD_WORKTREE_DIR" && git push origin "$OLD_BRANCH"
-# Phase 2: Create new worktree BEFORE removing old (prevents CWD-trap)
-git fetch origin
-git worktree add "$NEW_WORKTREE_DIR" -b "$NEW_BRANCH" origin/main
-cd "$NEW_WORKTREE_DIR"
-# Phase 3: Create PR (do NOT merge directly to main)
-gh pr create --base main --head "$OLD_BRANCH" --title "<title>" --body "<body>"
-# Phase 4: Cleanup
-git worktree remove "$OLD_WORKTREE_DIR"
-git branch -d "$OLD_BRANCH"
-git worktree prune
-```
-
-### Rules
-
-- **Centralized location**: All worktrees go in `/home/pcalnon/Development/python/Juniper/worktrees/`. Never create worktrees inside the repo directory.
-- **Clean before you start**: Ensure the main working directory is clean before creating a worktree.
-- **Push before you merge**: Always push the working branch to remote before merging (backup).
-- **Prune after cleanup**: Run `git worktree prune` after removing a worktree to clean metadata.
-- **Do not leave stale worktrees**: Clean up worktrees promptly after merging.
+- Centralized location only
+- Clean before starting
+- Push before merging
+- Prune after cleanup
+- No stale worktrees
 
 ---
 
-## Thread Handoff (Mandatory — Replaces Thread Compaction)
+## Thread Handoff (Mandatory -- Replaces Thread Compaction)
 
-> **CRITICAL OPERATING INSTRUCTION**: Thread handoff MUST be performed instead of thread compaction. This section defines mandatory behavior that overrides Claude Code's default compaction process.
+Critical instruction: Thread handoff MUST replace thread compaction when context limits approach.
 
-### What This Is
+**Trigger threshold**: Initiate handoff at **95% to 99%** of compaction threshold (within 1-5% of compaction threshold).
 
-When a long-running conversation approaches context limits, Claude Code normally performs **thread compaction** — summarizing prior context to free token capacity. This introduces information loss. Instead, Claude Code instances working on this project MUST perform a **proactive thread handoff**: transferring a curated, high-signal summary to a fresh thread with full context capacity.
+**Additional triggers**:
 
-The full handoff protocol is defined in **`notes/THREAD_HANDOFF_PROCEDURE.md`**. Read that file when a handoff is triggered.
-
-### When to Trigger a Handoff
-
-**Automatic trigger (pre-compaction threshold):** Initiate a thread handoff when token utilization reaches **95% to 99%** of the level at which thread compaction would normally be triggered. This means the handoff fires when you are within **1% to 5%** of the compaction threshold, ensuring the handoff completes before compaction would occur.
-
-Concretely:
-
-- If compaction would trigger at N% context utilization, begin handoff at (N − 5)% to (N − 1)%.
-- **Self-assessment rule**: At each turn where you are performing multi-step work, assess whether you are approaching the compaction threshold. If you estimate you are within 5% of it, begin the handoff protocol immediately.
-- When the system compresses prior messages or you receive a context compression notification, treat this as a signal that handoff should have already occurred — immediately initiate one.
-
-**Additional triggers** (from `notes/THREAD_HANDOFF_PROCEDURE.md`):
-
-| Condition                   | Indicator                                                            |
-| --------------------------- | -------------------------------------------------------------------- |
-| **Context saturation**      | Thread has performed 15+ tool calls or edited 5+ files               |
-| **Phase boundary**          | A logical phase of work is complete                                  |
-| **Degraded recall**         | Re-reading a file already read, or re-asking a resolved question     |
-| **Multi-module transition** | Moving between major components                                      |
-| **User request**            | User says "hand off", "new thread", or similar                       |
+| Condition | Indicator |
+|-----------|-----------|
+| Context saturation | 15+ tool calls or 5+ file edits |
+| Phase boundary | Logical work phase complete |
+| Degraded recall | Re-reading files or re-asking questions |
+| Multi-module transition | Moving between major components |
+| User request | User says "hand off", "new thread", or similar |
 
 **Do NOT handoff** when:
 
-- The task is nearly complete (< 2 remaining steps)
-- The current thread is still sharp and producing correct output
-- The work is tightly coupled and splitting would lose critical in-flight state
+- Task nearly complete (< 2 remaining steps)
+- Current thread still sharp
+- Work tightly coupled and splitting loses critical state
 
-### How to Execute a Handoff
+**How to execute**:
 
-1. **Checkpoint**: Inventory what was done, what remains, what was discovered, and what files are in play
-2. **Compose the handoff goal**: Write a concise, actionable summary (see templates in `notes/THREAD_HANDOFF_PROCEDURE.md`)
-3. **Present to user**: Output the handoff goal to the user and recommend starting a new thread with that goal as the initial prompt
-4. **Include verification commands**: Always specify how the new thread should verify its starting state (test commands, file checks)
-5. **State git status**: Mention branch, staged files, and any uncommitted work
+1. Checkpoint work done, remains, discovered, files in play
+2. Compose concise, actionable handoff summary
+3. Present to user and recommend new thread
+4. Include verification commands
+5. State git status
 
-### Rules
+**Rules**:
 
-- **This is not optional.** Every Claude Code instance on this project must follow these rules.
-- **Handoff early, not late.** A handoff at 70% context usage is better than compaction at 95%.
-- **Do not duplicate CLAUDE.md content** in the handoff goal — the new thread reads CLAUDE.md automatically.
-- **Be specific** in the handoff goal: include file paths, decisions made, and test status.
+- Not optional -- every Claude Code instance must follow
+- Handoff early, not late
+- Don't duplicate CLAUDE.md content
+- Be specific: include file paths, decisions, test status
 
 ---
 
 ## Contact
 
-For questions about this codebase, refer to:
+For questions, refer to:
 
-- Project documentation in `notes/`
+- User documentation in `docs/`
+- Development documentation in `notes/`
 - Test examples in `src/tests/`
 - Constants definitions in `src/cascor_constants/`
+- API reference in `docs/api/API_REFERENCE.md`
