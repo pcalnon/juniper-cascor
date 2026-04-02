@@ -59,6 +59,9 @@ log_verbose "Current Directory: $(pwd)"
 #####################################################################################################################################################################################################
 # Run Tests with designated reports
 #####################################################################################################################################################################################################
+export CASCOR_BENCHMARK_MODE=1
+
+
 log_trace "Run Tests with designated reports"
 if [[ "${COVERAGE_REPORT}" == "${FALSE}" ]]; then
 
@@ -95,10 +98,15 @@ JUNIPER_FAST_SLOW=${JUNIPER_FAST_SLOW} && \
 CASCOR_BACKEND_AVAILABLE=${CASCOR_BACKEND_AVAILABLE} && \
 RUN_SERVER_TESTS=${RUN_SERVER_TESTS} && \
 ENABLE_DISPLAY_TESTS=${ENABLE_DISPLAY_TESTS} && \
+JUNIPER_DATA_E2E_TEST=1 \
+REDIS_INTEGRATION_TEST=1 \
+CASSANDRA_INTEGRATION_TEST=1 \
+CASCOR_BENCHMARK_MODE=1 \
 python -m pytest -vv ./src/tests \
 --timeout=${TESTING_TIMEOUT} \
 --slow \
 --fast-slow \
+--run-long \
 --integration \
 --junit-xml=src/tests/reports/junit/results.xml \
 --continue-on-collection-errors \

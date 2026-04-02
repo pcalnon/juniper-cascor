@@ -34,7 +34,7 @@ configurations.
 
 ### 2.1 Current Data Flow
 
-```
+```bash
 train_candidates()
   → _prepare_candidate_input()        → candidate_input  [n_samples × features]
   → _generate_candidate_tasks()        → N tasks, each containing:
@@ -55,54 +55,55 @@ PyTorch registers custom reducers with Python's `ForkingPickler` (used by
 `multiprocessing.Queue`). These reducers automatically move tensors to POSIX shared
 memory (`/dev/shm`) and transmit only file descriptor handles. This means:
 
-| Metric | Expected (naive pickle) | Actual (ForkingPickler) |
-|--------|------------------------|------------------------|
-| Per-task payload | 1.6 MB (xlarge) | 561 bytes (handle) |
-| 16 tasks total | 25.6 MB | 8,976 bytes |
-| PUT latency | High | 0.4 ms (16 puts) |
+| Metric           | Expected (naive pickle) | Actual (ForkingPickler) |
+|------------------|-------------------------|-------------------------|
+| Per-task payload | 1.6 MB (xlarge)         | 561 bytes (handle)      |
+| 16 tasks total   | 25.6 MB                 | 8,976 bytes             |
+| PUT latency      | High                    | 0.4 ms (16 puts)        |
 
 **The data copy problem is already solved.** However, the **GET-side reconstruction**
 from shared memory handles remains expensive:
 
-| Operation | Same-process | Cross-process (forkserver) |
-|-----------|-------------|---------------------------|
-| Full task GET (with tensors) | ~320 us | ~9 ms |
-| Lightweight task GET (no tensors) | ~19 us | ~0.5 ms |
-| 16 full gets | 10.1 ms | ~145 ms |
-| 16 lightweight gets | 0.3 ms | ~8 ms |
+| Operation                         | Same-process | Cross-process (forkserver) |
+|-----------------------------------|--------------|----------------------------|
+| Full task GET (with tensors)      | ~320 us      | ~9 ms                      |
+| Lightweight task GET (no tensors) | ~19 us       | ~0.5 ms                    |
+| 16 full gets                      | 10.1 ms      | ~145 ms                    |
+| 16 lightweight gets               | 0.3 ms       | ~8 ms                      |
 
 ### 2.3 Benchmark Data (Measured 2026-04-01)
 
 **Pickle serialization overhead by dataset size:**
 
-| Config | Samples | Features | Outputs | Raw Tensor MB | Pickle MB | Dumps ms | Loads ms | 16-task MB |
-|--------|---------|----------|---------|---------------|-----------|----------|----------|------------|
-| small | 100 | 10 | 2 | 0.006 | 0.007 | 0.84 | 0.94 | 0.12 |
-| medium | 500 | 20 | 2 | 0.048 | 0.050 | 0.83 | 1.08 | 0.80 |
-| large-2D | 1000 | 50 | 2 | 0.216 | 0.218 | 1.20 | 1.37 | 3.49 |
-| xlarge-10D | 5000 | 60 | 10 | 1.600 | 1.602 | 3.70 | 2.08 | 25.63 |
+| Config     | Samples | Features | Outputs | Raw Tensor MB | Pickle MB | Dumps ms | Loads ms | 16-task MB |
+|------------|---------|----------|---------|---------------|-----------|----------|----------|------------|
+| small      | 100     | 10       | 2       | 0.006         | 0.007     | 0.84     | 0.94     | 0.12       |
+| medium     | 500     | 20       | 2       | 0.048         | 0.050     | 0.83     | 1.08     | 0.80       |
+| large-2D   | 1000    | 50       | 2       | 0.216         | 0.218     | 1.20     | 1.37     | 3.49       |
+| xlarge-10D | 5000    | 60       | 10      | 1.600         | 1.602     | 3.70     | 2.08     | 25.63      |
 
 Note: Above uses `pickle.dumps()`. The Queue's `ForkingPickler` sends only 340-561 bytes
 regardless of tensor size.
 
 **Queue PUT/GET timing (16 tasks, same process):**
 
-| Metric | Full task (tensors) | Lightweight (no tensors) |
-|--------|-------------------|--------------------------|
-| 16× PUT total | 0.407 ms | 0.192 ms |
-| 16× GET total | 10.071 ms | 0.301 ms |
-| GET overhead from tensors | 9.770 ms (97.0%) | — |
+| Metric                    | Full task (tensors) | Lightweight (no tensors) |
+|---------------------------|---------------------|--------------------------|
+| 16× PUT total             | 0.407 ms            | 0.192 ms                 |
+| 16× GET total             | 10.071 ms           | 0.301 ms                 |
+| GET overhead from tensors | 9.770 ms (97.0%)    | —                        |
 
 **First PUT vs subsequent PUTs (same tensor reference):**
+
 - First PUT: 390 us (ForkingPickler shm-move)
 - Subsequent PUTs: ~1 us (handle reuse)
 
 **Cross-process queue overhead (4 workers, forkserver):**
 
-| Config | Full 16-task total | With share_memory_() |
-|--------|-------------------|---------------------|
-| small | 95 ms | 100 ms (worse — shm setup overhead > benefit) |
-| xlarge-10D | 149 ms | 109 ms (27% reduction) |
+| Config     | Full 16-task total | With share_memory_()                          |
+|------------|--------------------|-----------------------------------------------|
+| small      | 95 ms              | 100 ms (worse — shm setup overhead > benefit) |
+| xlarge-10D | 149 ms             | 109 ms (27% reduction)                        |
 
 ### 2.4 Thread Safety Validation
 
@@ -132,24 +133,24 @@ No locks or copies required.
 Call `share_memory_()` on training tensors before `_generate_candidate_tasks()`. The
 ForkingPickler detects they're already in shared memory and skips the shm-move step.
 
-| Aspect | Assessment |
-|--------|-----------|
-| Complexity | Very low (3-5 lines) |
-| Benefit | Negligible — ForkingPickler already sends handles regardless |
-| Risk | None |
-| Verdict | **Rejected** — measured 0% pickle size difference; shm-move is cached after first put |
+| Aspect     | Assessment                                                                            |
+|------------|---------------------------------------------------------------------------------------|
+| Complexity | Very low (3-5 lines)                                                                  |
+| Benefit    | Negligible — ForkingPickler already sends handles regardless                          |
+| Risk       | None                                                                                  |
+| Verdict    | **Rejected** — measured 0% pickle size difference; shm-move is cached after first put |
 
 ### 3.2 Approach B: Round Header Protocol (Queue-Based Broadcast)
 
 Send N_workers "round header" messages containing training data via the task queue, then
 send N lightweight tasks. Workers cache the header's training data for the round.
 
-| Aspect | Assessment |
-|--------|-----------|
-| Complexity | Medium |
-| Benefit | Reduces GET ops with tensors from N to N_workers |
-| Risk | **HIGH** |
-| Verdict | **Rejected** — two fundamental problems |
+| Aspect     | Assessment                                       |
+|------------|--------------------------------------------------|
+| Complexity | Medium                                           |
+| Benefit    | Reduces GET ops with tensors from N to N_workers |
+| Risk       | **HIGH**                                         |
+| Verdict    | **Rejected** — two fundamental problems          |
 
 **Fatal flaw 1 — Race condition**: A single FIFO queue cannot guarantee each worker gets
 exactly one header before any lightweight task. A fast worker could consume two headers
@@ -164,14 +165,15 @@ current round's training data.
 Use `multiprocessing.shared_memory.SharedMemory` to create a named memory block each
 round. Workers attach by name and construct zero-copy tensor views via numpy.
 
-| Aspect | Assessment |
-|--------|-----------|
-| Complexity | Medium |
-| Benefit | Eliminates 97% of GET-side tensor reconstruction overhead |
-| Risk | Medium (lifecycle management) |
-| Verdict | **Recommended** |
+| Aspect     | Assessment                                                |
+|------------|-----------------------------------------------------------|
+| Complexity | Medium                                                    |
+| Benefit    | Eliminates 97% of GET-side tensor reconstruction overhead |
+| Risk       | Medium (lifecycle management)                             |
+| Verdict    | **Recommended**                                           |
 
 **Why this avoids Approach B's problems:**
+
 - No ordering concern — workers attach by name, not from queue
 - No cache loss on worker death — workers re-attach by name on next task
 - No stale cache — block name changes each round (includes round_id)
@@ -183,16 +185,16 @@ round. Workers attach by name and construct zero-copy tensor views via numpy.
 
 ### 4.1 Architecture
 
-```
+```bash
 MAIN PROCESS                          WORKER PROCESSES
 ─────────────                         ─────────────────
 
-1. Create SharedMemory block          
+1. Create SharedMemory block
    - Name: f"juniper_train_{round_id[:8]}"
    - Size: candidate_input + y + residual_error + metadata header
    - Copy tensor data into block
 
-2. Submit N lightweight tasks:        
+2. Submit N lightweight tasks:
    task_queue.put((                   3. Worker receives task
      idx,                                - Extracts shm_name from task
      candidate_data,                     - Attaches: SharedMemory(name=shm_name)
@@ -203,7 +205,7 @@ MAIN PROCESS                          WORKER PROCESSES
                                          - Detaches: shm.close()
                                          - Puts result in result_queue
 
-4. Collect results                    
+4. Collect results
 
 5. Cleanup:
    - shm.close()
@@ -212,7 +214,7 @@ MAIN PROCESS                          WORKER PROCESSES
 
 ### 4.2 SharedMemory Block Layout
 
-```
+```bash
 ┌──────────────────────────────────────────────────┐
 │ Header (64 bytes, fixed)                         │
 │  - magic: b"JNPR" (4 bytes)                     │
@@ -348,7 +350,7 @@ through the call chain to `_process_worker_task()` for cleanup.
 
 ### 4.6 Lifecycle Management
 
-```
+```bash
 Round N starts:
   1. Main creates SharedMemory block: shm_N
   2. Main copies training tensors into shm_N
@@ -397,15 +399,15 @@ This is safe because the main process exclusively owns the unlink lifecycle.
 
 ### 4.7 Fallback Behavior
 
-| Scenario | Behavior |
-|----------|----------|
-| Sequential training | Tasks still contain `shm_metadata` dict; `_build_candidate_inputs()` handles both formats transparently. No IPC benefit but no correctness issue. |
-| Worker death mid-round | New worker attaches to SharedMemory by name — no data loss |
-| SharedMemory creation fails | Fall back to full tasks with tensor tuple (current behavior) |
-| Remote workers | Cannot access local `/dev/shm`; `_execute_candidate_training()` reconstructs full tensors for remote dispatch |
-| Python < 3.8 | Not applicable (project requires >=3.12) |
-| Docker /dev/shm too small | Training tensors are small (< 50 MB); 64 MB default is sufficient for most cases |
-| Non-contiguous tensors | Assert `.is_contiguous()` or call `.contiguous()` before writing to SharedMemory block |
+| Scenario                    | Behavior                                                                                                                                          |
+|-----------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------|
+| Sequential training         | Tasks still contain `shm_metadata` dict; `_build_candidate_inputs()` handles both formats transparently. No IPC benefit but no correctness issue. |
+| Worker death mid-round      | New worker attaches to SharedMemory by name — no data loss                                                                                        |
+| SharedMemory creation fails | Fall back to full tasks with tensor tuple (current behavior)                                                                                      |
+| Remote workers              | Cannot access local `/dev/shm`; `_execute_candidate_training()` reconstructs full tensors for remote dispatch                                     |
+| Python < 3.8                | Not applicable (project requires >=3.12)                                                                                                          |
+| Docker /dev/shm too small   | Training tensors are small (< 50 MB); 64 MB default is sufficient for most cases                                                                  |
+| Non-contiguous tensors      | Assert `.is_contiguous()` or call `.contiguous()` before writing to SharedMemory block                                                            |
 
 ---
 
@@ -443,15 +445,15 @@ This is safe because the main process exclusively owns the unlink lifecycle.
 
 ### 5.3 Risks
 
-| Risk | Severity | Likelihood | Mitigation |
-|------|----------|------------|------------|
-| SharedMemory leak (crash before unlink) | Medium | Low | `atexit` handler + `/dev/shm` monitoring in tests |
-| Worker reads partially-written block | High | Very Low | Write block completely before submitting any tasks (sequential guarantee) |
-| `/dev/shm` exhaustion | Medium | Very Low | Max block size < 50 MB; system has 47 GB `/dev/shm` |
-| Non-contiguous tensor passed | Low | Low | Assert `.is_contiguous()` or call `.contiguous()` before copy |
-| RestrictedUnpickler rejects new types | Low | Medium | `shm_metadata` is a plain dict — no new pickle types needed |
-| Remote workers (Phase 1b) can't access local /dev/shm | High | Medium | Remote workers fall back to full tasks (separate code path) |
-| Python resource tracker prematurely unlinks | Medium | Low | Use `track=False` on Python 3.13+ in workers; on 3.12, the creator process tracks |
+| Risk                                                  | Severity | Likelihood | Mitigation                                                                        |
+|-------------------------------------------------------|----------|------------|-----------------------------------------------------------------------------------|
+| SharedMemory leak (crash before unlink)               | Medium   | Low        | `atexit` handler + `/dev/shm` monitoring in tests                                 |
+| Worker reads partially-written block                  | High     | Very Low   | Write block completely before submitting any tasks (sequential guarantee)         |
+| `/dev/shm` exhaustion                                 | Medium   | Very Low   | Max block size < 50 MB; system has 47 GB `/dev/shm`                               |
+| Non-contiguous tensor passed                          | Low      | Low        | Assert `.is_contiguous()` or call `.contiguous()` before copy                     |
+| RestrictedUnpickler rejects new types                 | Low      | Medium     | `shm_metadata` is a plain dict — no new pickle types needed                       |
+| Remote workers (Phase 1b) can't access local /dev/shm | High     | Medium     | Remote workers fall back to full tasks (separate code path)                       |
+| Python resource tracker prematurely unlinks           | Medium   | Low        | Use `track=False` on Python 3.13+ in workers; on 3.12, the creator process tracks |
 
 ### 5.4 Guardrails
 
@@ -474,40 +476,40 @@ This is safe because the main process exclusively owns the unlink lifecycle.
 
 ### 6.1 Queue Overhead Reduction
 
-| Metric | Current | With OPT-5 | Improvement |
-|--------|---------|-----------|-------------|
-| GET-side tensor reconstruction (16 tasks, same-proc) | 10.1 ms | 0.3 ms | 97% |
-| GET-side (16 tasks, cross-proc forkserver) | ~145 ms | ~8 ms | 94% |
-| PUT-side (16 tasks) | 0.4 ms | 0.2 ms | 50% |
-| SharedMemory setup + copy (per round) | 0 ms | 1-5 ms | (new cost) |
-| **Net queue overhead (cross-proc)** | **~145 ms** | **~13 ms** | **91%** |
+| Metric                                               | Current     | With OPT-5 | Improvement |
+|------------------------------------------------------|-------------|------------|-------------|
+| GET-side tensor reconstruction (16 tasks, same-proc) | 10.1 ms     | 0.3 ms     | 97%         |
+| GET-side (16 tasks, cross-proc forkserver)           | ~145 ms     | ~8 ms      | 94%         |
+| PUT-side (16 tasks)                                  | 0.4 ms      | 0.2 ms     | 50%         |
+| SharedMemory setup + copy (per round)                | 0 ms        | 1-5 ms     | (new cost)  |
+| **Net queue overhead (cross-proc)**                  | **~145 ms** | **~13 ms** | **91%**     |
 
 ### 6.2 Total Round Time Impact
 
 Queue overhead as a fraction of total round time depends on training duration:
 
-| Training Duration | Queue Overhead (current) | Queue Overhead (OPT-5) | Round Improvement |
-|-------------------|--------------------------|------------------------|-------------------|
-| 0.5 s (short, few epochs) | 29.0% | 2.6% | **~26%** |
-| 2.0 s (typical) | 7.3% | 0.7% | **~6.6%** |
-| 5.0 s (long, many epochs) | 2.9% | 0.3% | **~2.7%** |
-| 10.0 s (very long) | 1.5% | 0.1% | **~1.3%** |
+| Training Duration         | Queue Overhead (current) | Queue Overhead (OPT-5) | Round Improvement |
+|---------------------------|--------------------------|------------------------|-------------------|
+| 0.5 s (short, few epochs) | 29.0%                    | 2.6%                   | **~26%**          |
+| 2.0 s (typical)           | 7.3%                     | 0.7%                   | **~6.6%**         |
+| 5.0 s (long, many epochs) | 2.9%                     | 0.3%                   | **~2.7%**         |
+| 10.0 s (very long)        | 1.5%                     | 0.1%                   | **~1.3%**         |
 
 ### 6.3 Scaling with Pool Size
 
-| Pool Size | Current Queue Overhead | OPT-5 Queue Overhead | Savings |
-|-----------|----------------------|---------------------|---------|
-| 8 candidates | ~72 ms | ~9 ms | 63 ms |
-| 16 candidates | ~145 ms | ~13 ms | 132 ms |
-| 32 candidates | ~290 ms | ~21 ms | 269 ms |
+| Pool Size     | Current Queue Overhead | OPT-5 Queue Overhead | Savings |
+|---------------|------------------------|----------------------|---------|
+| 8 candidates  | ~72 ms                 | ~9 ms                | 63 ms   |
+| 16 candidates | ~145 ms                | ~13 ms               | 132 ms  |
+| 32 candidates | ~290 ms                | ~21 ms               | 269 ms  |
 
 ### 6.4 Memory Impact
 
-| Config | Current (per-worker copies) | OPT-5 (one shared block) | Reduction |
-|--------|-----------------------------|--------------------------|-----------|
-| small (100×10×2) | 4 × 6 KB = 24 KB | 6 KB | 75% |
-| large-2D (1000×50×2) | 4 × 216 KB = 864 KB | 216 KB | 75% |
-| xlarge-10D (5000×60×10) | 4 × 1.6 MB = 6.4 MB | 1.6 MB | 75% |
+| Config                  | Current (per-worker copies) | OPT-5 (one shared block) | Reduction |
+|-------------------------|-----------------------------|--------------------------|-----------|
+| small (100×10×2)        | 4 × 6 KB = 24 KB            | 6 KB                     | 75%       |
+| large-2D (1000×50×2)    | 4 × 216 KB = 864 KB         | 216 KB                   | 75%       |
+| xlarge-10D (5000×60×10) | 4 × 1.6 MB = 6.4 MB         | 1.6 MB                   | 75%       |
 
 Note: "per-worker copies" reflects the ForkingPickler's shm storage — each tensor is
 moved to `/dev/shm` once, but each worker's `get()` reconstructs a new Python tensor
@@ -516,7 +518,7 @@ reduced reconstruction overhead.
 
 ### 6.5 When OPT-5 Matters Most
 
-```
+```bash
 High impact:  pool_size >= 16, candidate_epochs <= 30, samples >= 1000
               → 10-26% round time improvement
 
@@ -533,18 +535,18 @@ Low impact:   pool_size <= 4, candidate_epochs >= 200
 
 ### 7.1 Priority-Ordered Changes
 
-| Priority | File | Change | Effort | Risk |
-|----------|------|--------|--------|------|
-| **P0** | `cascade_correlation.py` | Add `SharedTrainingMemory` helper class | Medium | Medium |
-| **P1** | `cascade_correlation.py` | Modify `_generate_candidate_tasks()` to create SharedMemory block | Low | Low |
-| **P1b** | `cascade_correlation.py` | Modify `_execute_candidate_training()` to handle dict-type training_inputs (lines 1768-1769) | Low | Medium |
-| **P2** | `cascade_correlation.py` | Modify `_execute_parallel_training()` — add `finally` cleanup for SharedMemory blocks | Low | Medium |
-| **P3** | `cascade_correlation.py` | Modify `_build_candidate_inputs()` to reconstruct from SharedMemory (returns shm_handle) | Medium | Medium |
-| **P3b** | `cascade_correlation.py` | Modify `_process_worker_task()` to close shm_handle in `finally` block | Low | Medium |
-| **P4** | `cascade_correlation.py` | Add cleanup in `_shutdown_worker_pool()` | Low | Medium |
-| **P5** | `cascade_correlation.py` | Add `atexit` handler and `_active_shm_blocks` tracking in `__init__()` | Low | Low |
-| **P6** | `cascade_correlation.py` | Update `RestrictedUnpickler.ALLOWED_CLASSES` if needed | Low | Low |
-| **P7** | `tests/performance/` | Add SharedMemory integration, concurrent-read stress, and benchmark tests | Medium | Low |
+| Priority | File                     | Change                                                                                       | Effort | Risk   |
+|----------|--------------------------|----------------------------------------------------------------------------------------------|--------|--------|
+| **P0**   | `cascade_correlation.py` | Add `SharedTrainingMemory` helper class                                                      | Medium | Medium |
+| **P1**   | `cascade_correlation.py` | Modify `_generate_candidate_tasks()` to create SharedMemory block                            | Low    | Low    |
+| **P1b**  | `cascade_correlation.py` | Modify `_execute_candidate_training()` to handle dict-type training_inputs (lines 1768-1769) | Low    | Medium |
+| **P2**   | `cascade_correlation.py` | Modify `_execute_parallel_training()` — add `finally` cleanup for SharedMemory blocks        | Low    | Medium |
+| **P3**   | `cascade_correlation.py` | Modify `_build_candidate_inputs()` to reconstruct from SharedMemory (returns shm_handle)     | Medium | Medium |
+| **P3b**  | `cascade_correlation.py` | Modify `_process_worker_task()` to close shm_handle in `finally` block                       | Low    | Medium |
+| **P4**   | `cascade_correlation.py` | Add cleanup in `_shutdown_worker_pool()`                                                     | Low    | Medium |
+| **P5**   | `cascade_correlation.py` | Add `atexit` handler and `_active_shm_blocks` tracking in `__init__()`                       | Low    | Low    |
+| **P6**   | `cascade_correlation.py` | Update `RestrictedUnpickler.ALLOWED_CLASSES` if needed                                       | Low    | Low    |
+| **P7**   | `tests/performance/`     | Add SharedMemory integration, concurrent-read stress, and benchmark tests                    | Medium | Low    |
 
 ### 7.2 Detailed Change Specifications
 
@@ -725,6 +727,7 @@ def _process_worker_task(task, shared_training_inputs, progress_queue, result_qu
 **Design note**: `shm_handle` is set within `_build_candidate_inputs()` (called by
 `train_candidate_worker()`) and needs to be accessible in the outer `finally` block.
 Two approaches:
+
 1. Pass a mutable container (e.g., `[None]`) into the call chain
 2. Store on a thread-local or worker-local variable
 3. Return it alongside the result from `train_candidate_worker()`
@@ -770,18 +773,18 @@ def _cleanup_shared_memory(self):
 
 New test file: `tests/performance/test_shared_memory.py`
 
-| Test | Purpose |
-|------|---------|
-| `test_shared_training_memory_create_reconstruct` | Unit test: create block, reconstruct tensors, verify values match |
-| `test_shared_training_memory_cleanup` | Verify `close_and_unlink()` removes `/dev/shm` block |
-| `test_shared_training_memory_fallback` | Verify graceful fallback when SharedMemory creation fails |
-| `test_shared_training_memory_contiguity` | Verify non-contiguous tensors are handled (forced contiguous or rejected) |
-| `test_lightweight_task_round_trip` | End-to-end: submit lightweight tasks to persistent pool, collect results |
-| `test_concurrent_read_stress` | 4 workers simultaneously read from same SharedMemory block under load |
-| `test_worker_death_recovery` | Kill worker mid-round, verify replacement can still train via SharedMemory |
-| `test_resource_tracker_no_premature_unlink` | Verify worker exit doesn't unlink block prematurely (Python 3.12 tracker) |
-| `test_shm_cleanup_on_interrupt` | Simulate exception during task submission, verify `finally` cleanup runs |
-| `test_shared_memory_benchmark` | Performance comparison: full tasks vs SharedMemory tasks |
+| Test                                             | Purpose                                                                    |
+|--------------------------------------------------|----------------------------------------------------------------------------|
+| `test_shared_training_memory_create_reconstruct` | Unit test: create block, reconstruct tensors, verify values match          |
+| `test_shared_training_memory_cleanup`            | Verify `close_and_unlink()` removes `/dev/shm` block                       |
+| `test_shared_training_memory_fallback`           | Verify graceful fallback when SharedMemory creation fails                  |
+| `test_shared_training_memory_contiguity`         | Verify non-contiguous tensors are handled (forced contiguous or rejected)  |
+| `test_lightweight_task_round_trip`               | End-to-end: submit lightweight tasks to persistent pool, collect results   |
+| `test_concurrent_read_stress`                    | 4 workers simultaneously read from same SharedMemory block under load      |
+| `test_worker_death_recovery`                     | Kill worker mid-round, verify replacement can still train via SharedMemory |
+| `test_resource_tracker_no_premature_unlink`      | Verify worker exit doesn't unlink block prematurely (Python 3.12 tracker)  |
+| `test_shm_cleanup_on_interrupt`                  | Simulate exception during task submission, verify `finally` cleanup runs   |
+| `test_shared_memory_benchmark`                   | Performance comparison: full tasks vs SharedMemory tasks                   |
 
 Existing tests in `test_concurrency_scaling.py` should continue to pass unchanged
 (they use the full task path which remains as fallback).
@@ -802,13 +805,13 @@ Existing tests in `test_concurrency_scaling.py` should continue to pass unchange
 
 ### 8.2 Implementation Validation
 
-| Step | Command | Expected |
-|------|---------|----------|
-| 1. Unit tests pass | `pytest tests/ -m "unit and not slow" --ignore=tests/performance -q` | 2425 passed |
-| 2. SharedMemory tests pass | `pytest tests/performance/test_shared_memory.py --run-performance -v` | All pass |
-| 3. Existing perf tests pass | `pytest tests/performance/ --run-performance --benchmark-disable -q` | 134 passed |
-| 4. No /dev/shm leaks | `ls /dev/shm/juniper_*` after test suite | No files |
-| 5. Benchmark improvement | Compare `test_shared_memory_benchmark` vs baseline | > 50% queue overhead reduction |
+| Step                        | Command                                                               | Expected                       |
+|-----------------------------|-----------------------------------------------------------------------|--------------------------------|
+| 1. Unit tests pass          | `pytest tests/ -m "unit and not slow" --ignore=tests/performance -q`  | 2425 passed                    |
+| 2. SharedMemory tests pass  | `pytest tests/performance/test_shared_memory.py --run-performance -v` | All pass                       |
+| 3. Existing perf tests pass | `pytest tests/performance/ --run-performance --benchmark-disable -q`  | 134 passed                     |
+| 4. No /dev/shm leaks        | `ls /dev/shm/juniper_*` after test suite                              | No files                       |
+| 5. Benchmark improvement    | Compare `test_shared_memory_benchmark` vs baseline                    | > 50% queue overhead reduction |
 
 ### 8.3 Post-Implementation Monitoring
 
@@ -847,12 +850,12 @@ eliminates per-get reconstruction entirely (workers attach once and hold the vie
 
 ## 10. Decision Log
 
-| Date | Decision | Rationale |
-|------|----------|-----------|
-| 2026-04-01 | Pre-share approach rejected | 0% pickle size difference via ForkingPickler; no measurable benefit |
-| 2026-04-01 | Round header approach rejected | Race conditions (FIFO queue ordering) + worker death loses cache |
-| 2026-04-01 | Named SharedMemory selected | No ordering constraints, worker-death resilient, explicit lifecycle |
-| 2026-04-01 | Fallback to full tasks on error | Ensures training never fails due to SharedMemory issues |
+| Date       | Decision                            | Rationale                                                                        |
+|------------|-------------------------------------|----------------------------------------------------------------------------------|
+| 2026-04-01 | Pre-share approach rejected         | 0% pickle size difference via ForkingPickler; no measurable benefit              |
+| 2026-04-01 | Round header approach rejected      | Race conditions (FIFO queue ordering) + worker death loses cache                 |
+| 2026-04-01 | Named SharedMemory selected         | No ordering constraints, worker-death resilient, explicit lifecycle              |
+| 2026-04-01 | Fallback to full tasks on error     | Ensures training never fails due to SharedMemory issues                          |
 | 2026-04-01 | Sequential path uses same code path | `_build_candidate_inputs()` handles dict transparently; no separate logic needed |
 
 ---
@@ -864,24 +867,24 @@ identified and resolved:
 
 ### Critical Issues (Fixed)
 
-| Issue | Description | Resolution |
-|-------|-------------|------------|
-| **Use-after-close** | Original design called `shm.close()` in `_reconstruct_training_tensors()`'s `finally` block, invalidating zero-copy tensor views before training begins | Changed to return `(training_inputs, shm_handle)` — caller closes after training completes (section 4.5) |
-| **`_execute_candidate_training` breakage** | Lines 1768-1769 index into `training_inputs` by position (`[0]`, `[2]`, `[3]`), which fails on dict | Added P1b change specification with `isinstance(training_inputs, dict)` branch (section 7.2) |
+| Issue                                      | Description                                                                                                                                             | Resolution                                                                                               |
+|--------------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------|----------------------------------------------------------------------------------------------------------|
+| **Use-after-close**                        | Original design called `shm.close()` in `_reconstruct_training_tensors()`'s `finally` block, invalidating zero-copy tensor views before training begins | Changed to return `(training_inputs, shm_handle)` — caller closes after training completes (section 4.5) |
+| **`_execute_candidate_training` breakage** | Lines 1768-1769 index into `training_inputs` by position (`[0]`, `[2]`, `[3]`), which fails on dict                                                     | Added P1b change specification with `isinstance(training_inputs, dict)` branch (section 7.2)             |
 
 ### Medium Issues (Fixed)
 
-| Issue | Description | Resolution |
-|-------|-------------|------------|
-| **Python 3.12 resource tracker** | Worker processes' resource tracker may prematurely unlink SharedMemory blocks on clean exit | Added `resource_tracker.unregister()` call after opening in workers (section 4.6) |
-| **Cleanup not in `finally` block** | SharedMemory cleanup was placed after result collection (inside `try`), missing on `KeyboardInterrupt` or exceptions | Moved cleanup to `finally` block in `_execute_parallel_training()` (section 7.2, P2) |
-| **Sequential path narrative** | Plan said "sequential path unchanged" but it receives dict-type training inputs | Corrected fallback table to note that `_build_candidate_inputs()` handles both formats (section 4.7) |
+| Issue                              | Description                                                                                                          | Resolution                                                                                           |
+|------------------------------------|----------------------------------------------------------------------------------------------------------------------|------------------------------------------------------------------------------------------------------|
+| **Python 3.12 resource tracker**   | Worker processes' resource tracker may prematurely unlink SharedMemory blocks on clean exit                          | Added `resource_tracker.unregister()` call after opening in workers (section 4.6)                    |
+| **Cleanup not in `finally` block** | SharedMemory cleanup was placed after result collection (inside `try`), missing on `KeyboardInterrupt` or exceptions | Moved cleanup to `finally` block in `_execute_parallel_training()` (section 7.2, P2)                 |
+| **Sequential path narrative**      | Plan said "sequential path unchanged" but it receives dict-type training inputs                                      | Corrected fallback table to note that `_build_candidate_inputs()` handles both formats (section 4.7) |
 
 ### Low Issues (Noted)
 
-| Issue | Description | Resolution |
-|-------|-------------|------------|
-| **Missing concurrent-read test** | No test for multiple workers reading same block simultaneously | Added `test_concurrent_read_stress` to test plan (section 7.2, P7) |
-| **Remote workers need concrete changes** | Risk table mentioned fallback but no code specification | Added P1b change specification for remote dispatch path |
-| **Non-contiguous tensor handling** | No explicit check before writing to SharedMemory | Added to fallback table (section 4.7) and test plan |
-| **Performance denominator** | Section 6.2 uses training duration (not total round time) as denominator | Acknowledged — estimates are upper bounds; actual improvement is slightly lower |
+| Issue                                    | Description                                                              | Resolution                                                                      |
+|------------------------------------------|--------------------------------------------------------------------------|---------------------------------------------------------------------------------|
+| **Missing concurrent-read test**         | No test for multiple workers reading same block simultaneously           | Added `test_concurrent_read_stress` to test plan (section 7.2, P7)              |
+| **Remote workers need concrete changes** | Risk table mentioned fallback but no code specification                  | Added P1b change specification for remote dispatch path                         |
+| **Non-contiguous tensor handling**       | No explicit check before writing to SharedMemory                         | Added to fallback table (section 4.7) and test plan                             |
+| **Performance denominator**              | Section 6.2 uses training duration (not total round time) as denominator | Acknowledged — estimates are upper bounds; actual improvement is slightly lower |

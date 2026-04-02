@@ -173,22 +173,26 @@ class TestSharedTrainingMemoryCleanup:
         shm.close_and_unlink()  # Should not raise
 
     def test_no_leaked_blocks_after_test(self):
-        """Verify no juniper_train_* blocks remain in /dev/shm after cleanup."""
+        """Verify our blocks are removed from /dev/shm after cleanup."""
+        test_id = str(uuid.uuid4())[:6]
         shm_blocks = []
-        for _ in range(5):
-            shm_blocks.append(SharedTrainingMemory(
-                tensors=[torch.randn(10, 5)],
-                name_suffix=str(uuid.uuid4())[:8],
-            ))
+        names = []
+        for i in range(5):
+            suffix = f"leak_{test_id}_{i}"
+            shm = SharedTrainingMemory(tensors=[torch.randn(10, 5)], name_suffix=suffix)
+            shm_blocks.append(shm)
+            names.append(shm.name)
+
+        # Verify all blocks exist
+        for name in names:
+            assert os.path.exists(f"/dev/shm/{name}"), f"Block {name} should exist"
 
         for shm in shm_blocks:
             shm.close_and_unlink()
 
-        # Check /dev/shm for leaked blocks
-        shm_dir = "/dev/shm"
-        if os.path.isdir(shm_dir):
-            leaked = [f for f in os.listdir(shm_dir) if f.startswith("juniper_train_")]
-            assert len(leaked) == 0, f"Leaked SharedMemory blocks: {leaked}"
+        # Verify our specific blocks are gone
+        for name in names:
+            assert not os.path.exists(f"/dev/shm/{name}"), f"Block {name} should be removed"
 
 
 # ===================================================================
