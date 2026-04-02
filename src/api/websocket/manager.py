@@ -93,9 +93,11 @@ class WebSocketManager:
         """
         if self._event_loop is None or self._event_loop.is_closed():
             return
+        coro = self.broadcast(message)
         try:
-            asyncio.run_coroutine_threadsafe(self.broadcast(message), self._event_loop)
+            asyncio.run_coroutine_threadsafe(coro, self._event_loop)
         except RuntimeError:
+            coro.close()
             logger.debug("Event loop closed, cannot broadcast")
 
     async def send_personal_message(self, websocket: WebSocket, message: dict) -> bool:
