@@ -314,17 +314,8 @@ class SharedTrainingMemory:
             (list_of_tensors, shm_handle). Caller MUST keep shm_handle alive
             until all tensor operations complete, then call shm_handle.close().
         """
-        shm = SharedMemory(name=metadata["shm_name"], create=False)
+        shm = SharedMemory(name=metadata["shm_name"], create=False, track=False)
         try:
-            # Prevent Python 3.12+ resource tracker from prematurely unlinking
-            # when the worker process exits. The main process owns the unlink lifecycle.
-            try:
-                from multiprocessing.resource_tracker import unregister
-
-                unregister(shm.name, "shared_memory")
-            except Exception:  # nosec B110 — cleanup must not propagate exceptions
-                pass
-
             buf = shm.buf
             magic = bytes(buf[:4])
             if magic != SharedTrainingMemory.MAGIC:

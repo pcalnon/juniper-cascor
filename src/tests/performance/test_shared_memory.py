@@ -131,7 +131,7 @@ class TestSharedTrainingMemoryCreateReconstruct:
             try:
                 # The reconstructed tensor should be a view (not a copy).
                 # Verify by checking that data_ptr points into the SharedMemory buffer.
-                assert not tensors[0].is_contiguous() or tensors[0].storage().nbytes() > 0
+                assert not tensors[0].is_contiguous() or tensors[0].untyped_storage().nbytes() > 0
                 assert torch.equal(tensors[0], t)
             finally:
                 handle.close()

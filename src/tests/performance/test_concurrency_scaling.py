@@ -448,7 +448,7 @@ class TestIPCSerialization:
         assert avg_size > 0, "Serialized payload must have nonzero size"
         assert summary["mean_ms"] > 0, "Serialization must take measurable time"
 
-    def test_pickle_dumps_vs_loads_asymmetry(self, benchmark):
+    def test_pickle_dumps_vs_loads_asymmetry(self):
         """Compare dumps vs loads cost for a medium-sized task tuple.
 
         Deserialization (loads) is often slower than serialization (dumps) for
