@@ -346,20 +346,37 @@ class SharedTrainingMemory:
             shm.close()
             raise
 
-    def close_and_unlink(self):
-        """Release and unlink the SharedMemory block."""
+    def close(self):
+        """Close the main process's handle without unlinking.
+
+        Workers may still be reading from this block. Calling close() releases
+        the file descriptor in the current process but keeps the /dev/shm entry
+        alive for other processes. Call unlink() separately when all workers
+        have finished reading.
+        """
         if not self._closed:
             try:
                 self._shm.close()
             except Exception:  # nosec B110 — cleanup must not propagate exceptions
                 pass
             self._closed = True
+
+    def unlink(self):
+        """Unlink the SharedMemory block from /dev/shm.
+
+        Only call this after all worker processes have finished reading from the block.
+        """
         if not self._unlinked:
             try:
                 self._shm.unlink()
             except Exception:  # nosec B110 — cleanup must not propagate exceptions
                 pass
             self._unlinked = True
+
+    def close_and_unlink(self):
+        """Release and unlink the SharedMemory block."""
+        self.close()
+        self.unlink()
 
 
 #####################################################################################################################################################################################################
@@ -2052,6 +2069,18 @@ class CascadeCorrelationNetwork:
             if drained_count:
                 self.logger.warning(f"CascadeCorrelationNetwork: _execute_parallel_training: " f"Drained {drained_count} stale result(s) from persistent result queue")
 
+            # OPT-5: Unlink SharedMemory blocks from previous rounds. By now, all workers
+            # have finished reading from these blocks (results were drained above).
+            pending = getattr(self, "_pending_shm_unlinks", [])
+            if pending:
+                for shm_block in pending:
+                    try:
+                        shm_block.unlink()
+                    except Exception:  # nosec B110 — cleanup must not propagate exceptions
+                        pass
+                self._pending_shm_unlinks = []
+                self.logger.debug(f"CascadeCorrelationNetwork: _execute_parallel_training: OPT-5 unlinked {len(pending)} deferred SharedMemory block(s)")
+
             # Add full tasks to the queue. With persistent workers (RC-4), shared_training_inputs
             # cannot be passed at worker startup since it changes each round (residual_error evolves).
             # The RC-2 direct queue improvement still provides significant speedup over the original
@@ -2125,13 +2154,20 @@ class CascadeCorrelationNetwork:
             # self.logger.trace("CascadeCorrelationNetwork: _execute_parallel_training: Stopping manager server")
             # self._stop_manager()
 
-            # OPT-5: Release SharedMemory blocks for this round (runs even on error/interrupt)
+            # OPT-5: Close main-process SharedMemory handles for this round.
+            # Only close() — do NOT unlink yet. Persistent worker processes may still
+            # hold references to the shared memory block for in-flight tasks. The blocks
+            # are moved to _pending_shm_unlinks and unlinked at the START of the next
+            # training round (after results are drained), or during pool shutdown.
+            if not hasattr(self, "_pending_shm_unlinks"):
+                self._pending_shm_unlinks = []
             for shm_block in list(self._active_shm_blocks):
                 try:
-                    shm_block.close_and_unlink()
-                    self._active_shm_blocks.remove(shm_block)
+                    shm_block.close()
+                    self._pending_shm_unlinks.append(shm_block)
                 except Exception as shm_e:
-                    self.logger.warning(f"CascadeCorrelationNetwork: _execute_parallel_training: OPT-5 SharedMemory cleanup error: {shm_e}")
+                    self.logger.warning(f"CascadeCorrelationNetwork: _execute_parallel_training: OPT-5 SharedMemory close error: {shm_e}")
+            self._active_shm_blocks = []
 
             self.logger.trace("CascadeCorrelationNetwork: _execute_parallel_training: Parallel training round complete (persistent pool, no cleanup needed)")
         return results
@@ -3120,7 +3156,7 @@ class CascadeCorrelationNetwork:
         self._persistent_progress_queue = None
         self._persistent_pool_size = 0
 
-        # OPT-5: Clean up any outstanding SharedMemory blocks
+        # OPT-5: Clean up any outstanding SharedMemory blocks (active + pending unlink)
         for shm_block in list(getattr(self, "_active_shm_blocks", [])):
             try:
                 shm_block.close_and_unlink()
@@ -3128,6 +3164,13 @@ class CascadeCorrelationNetwork:
                 pass
         if hasattr(self, "_active_shm_blocks"):
             self._active_shm_blocks = []
+        for shm_block in list(getattr(self, "_pending_shm_unlinks", [])):
+            try:
+                shm_block.unlink()
+            except Exception:  # nosec B110 — cleanup must not propagate exceptions
+                pass
+        if hasattr(self, "_pending_shm_unlinks"):
+            self._pending_shm_unlinks = []
 
         self.logger.debug("CascadeCorrelationNetwork: _shutdown_worker_pool: Persistent pool shut down")
 
@@ -3140,6 +3183,13 @@ class CascadeCorrelationNetwork:
                 pass
         if hasattr(self, "_active_shm_blocks"):
             self._active_shm_blocks = []
+        for shm in list(getattr(self, "_pending_shm_unlinks", [])):
+            try:
+                shm.unlink()
+            except Exception:  # nosec B110 — cleanup must not propagate exceptions
+                pass
+        if hasattr(self, "_pending_shm_unlinks"):
+            self._pending_shm_unlinks = []
 
     # TODO: maybe break this up
     @staticmethod
