@@ -253,12 +253,14 @@ class SharedTrainingMemory:
             dtype_code = self.DTYPE_MAP.get(ct.dtype)
             if dtype_code is None:
                 raise ValueError(f"Unsupported tensor dtype: {ct.dtype}")
-            self._tensors_info.append({
-                "nbytes": ct.nbytes,
-                "ndim": ct.ndim,
-                "dtype_code": dtype_code,
-                "shape": tuple(ct.shape),
-            })
+            self._tensors_info.append(
+                {
+                    "nbytes": ct.nbytes,
+                    "ndim": ct.ndim,
+                    "dtype_code": dtype_code,
+                    "shape": tuple(ct.shape),
+                }
+            )
 
         n_tensors = len(contiguous_tensors)
         descriptor_table_size = self.DESCRIPTOR_SIZE * n_tensors
@@ -282,11 +284,18 @@ class SharedTrainingMemory:
             shape_1 = info["shape"][1] if info["ndim"] >= 2 else 0
             # Descriptor: offset(Q) + nbytes(Q) + ndim(B) + dtype_code(B) + shape0(I) + shape1(I) + reserved(6x) = 32 bytes
             struct.pack_into(
-                "<QQBBII6x", buf, self.HEADER_SIZE + i * self.DESCRIPTOR_SIZE,
-                current_offset, info["nbytes"], info["ndim"], info["dtype_code"], shape_0, shape_1,
+                "<QQBBII6x",
+                buf,
+                self.HEADER_SIZE + i * self.DESCRIPTOR_SIZE,
+                current_offset,
+                info["nbytes"],
+                info["ndim"],
+                info["dtype_code"],
+                shape_0,
+                shape_1,
             )
             tensor_bytes = ct.numpy().tobytes()
-            buf[current_offset:current_offset + info["nbytes"]] = tensor_bytes
+            buf[current_offset : current_offset + info["nbytes"]] = tensor_bytes
             current_offset += info["nbytes"]
 
     @property
@@ -311,8 +320,9 @@ class SharedTrainingMemory:
             # when the worker process exits. The main process owns the unlink lifecycle.
             try:
                 from multiprocessing.resource_tracker import unregister
+
                 unregister(shm.name, "shared_memory")
-            except Exception:
+            except Exception:  # nosec B110 — cleanup must not propagate exceptions
                 pass
 
             buf = shm.buf
@@ -326,7 +336,9 @@ class SharedTrainingMemory:
             for i in range(n_tensors):
                 desc_offset = SharedTrainingMemory.HEADER_SIZE + i * SharedTrainingMemory.DESCRIPTOR_SIZE
                 offset, nbytes, ndim, dtype_code, shape_0, shape_1 = struct.unpack_from(
-                    "<QQBBII6x", buf, desc_offset,
+                    "<QQBBII6x",
+                    buf,
+                    desc_offset,
                 )
                 np_dtype = SharedTrainingMemory.NUMPY_DTYPE_MAP[dtype_code]
                 if ndim == 1:
@@ -335,7 +347,7 @@ class SharedTrainingMemory:
                     shape = (shape_0, shape_1)
                 else:
                     shape = (shape_0,) if shape_0 > 0 else ()
-                np_array = np.ndarray(shape=shape, dtype=np_dtype, buffer=buf[offset:offset + nbytes])
+                np_array = np.ndarray(shape=shape, dtype=np_dtype, buffer=buf[offset : offset + nbytes])
                 tensors.append(torch.from_numpy(np_array))
 
             return tensors, shm
@@ -348,13 +360,13 @@ class SharedTrainingMemory:
         if not self._closed:
             try:
                 self._shm.close()
-            except Exception:
+            except Exception:  # nosec B110 — cleanup must not propagate exceptions
                 pass
             self._closed = True
         if not self._unlinked:
             try:
                 self._shm.unlink()
-            except Exception:
+            except Exception:  # nosec B110 — cleanup must not propagate exceptions
                 pass
             self._unlinked = True
 
@@ -1580,7 +1592,7 @@ class CascadeCorrelationNetwork:
             batch_size = x.shape[0]
             total_features = self.input_size + n_hidden
             buffer = torch.empty(batch_size, total_features)
-            buffer[:, :self.input_size] = x
+            buffer[:, : self.input_size] = x
             for i, unit in enumerate(self.hidden_units):
                 col = self.input_size + i
                 unit_input = buffer[:, :col]
@@ -1791,7 +1803,7 @@ class CascadeCorrelationNetwork:
             batch_size = x.shape[0]
             total_features = self.input_size + n_hidden
             buffer = torch.empty(batch_size, total_features)
-            buffer[:, :self.input_size] = x
+            buffer[:, : self.input_size] = x
             for i, unit in enumerate(self.hidden_units):
                 col = self.input_size + i
                 unit_input = buffer[:, :col]
@@ -2703,11 +2715,11 @@ class CascadeCorrelationNetwork:
         logger = Logger
         logger.info("CascadeCorrelationNetwork: train_candidate_worker: Starting training of Candidate Units in Pool.")
         try:  # Get task data for process worker
-            (worker_id, worker_uuid) = (mp.current_process().pid, str(uuid.uuid4())) if parallel else (0, "None")
+            worker_id, worker_uuid = (mp.current_process().pid, str(uuid.uuid4())) if parallel else (0, "None")
             logger.debug(f"CascadeCorrelationNetwork: train_candidate_worker: Retrieved worker ID and UUID: Worker ID: {worker_id}, Worker UUID: {worker_uuid}")
         except Exception as e:
             logger.error(f"CascadeCorrelationNetwork: train_candidate_worker: Error retrieving worker ID and UUID: {e}")
-            (worker_id, worker_uuid) = (0, "None")
+            worker_id, worker_uuid = (0, "None")
         shm_handle = None  # OPT-5: track SharedMemory handle for deferred close
         try:
             if task_data_input is None:
@@ -2799,7 +2811,7 @@ class CascadeCorrelationNetwork:
             if shm_handle is not None:
                 try:
                     shm_handle.close()
-                except Exception:
+                except Exception:  # nosec B110 — cleanup must not propagate exceptions
                     pass
 
     @staticmethod
@@ -2819,9 +2831,9 @@ class CascadeCorrelationNetwork:
         # PARALLEL-FIX (RC-5): Support optional round_id as 4th element in task tuple.
         # Backward compatible: 3-element tuples from sequential path have round_id=None.
         if len(task_data_input) >= 4:
-            (candidate_index, candidate_data, training_inputs, round_id) = task_data_input
+            candidate_index, candidate_data, training_inputs, round_id = task_data_input
         else:
-            (candidate_index, candidate_data, training_inputs) = task_data_input
+            candidate_index, candidate_data, training_inputs = task_data_input
             round_id = None
         logger.debug(f"CascadeCorrelationNetwork: _build_candidate_inputs: Successfully Unpacked Task data: Worker ID: {worker_id}, Worker UUID: {worker_uuid}")
         logger.verbose(f"CascadeCorrelationNetwork: _build_candidate_inputs: Candidate Index: {candidate_index}, Type: {type(candidate_index)}, Value: {candidate_index}: Worker ID: {worker_id}, Worker UUID: {worker_uuid}")
@@ -3121,7 +3133,7 @@ class CascadeCorrelationNetwork:
         for shm_block in list(getattr(self, "_active_shm_blocks", [])):
             try:
                 shm_block.close_and_unlink()
-            except Exception:
+            except Exception:  # nosec B110 — cleanup must not propagate exceptions
                 pass
         if hasattr(self, "_active_shm_blocks"):
             self._active_shm_blocks = []
@@ -3133,7 +3145,7 @@ class CascadeCorrelationNetwork:
         for shm in list(getattr(self, "_active_shm_blocks", [])):
             try:
                 shm.close_and_unlink()
-            except Exception:
+            except Exception:  # nosec B110 — cleanup must not propagate exceptions
                 pass
         if hasattr(self, "_active_shm_blocks"):
             self._active_shm_blocks = []
@@ -4318,7 +4330,7 @@ class CascadeCorrelationNetwork:
 
             # Check for early stopping conditions
             # TODO: Consider using named tuple or dataclass for return values
-            (early_stop, patience_counter, best_value_loss) = self.evaluate_early_stopping(
+            early_stop, patience_counter, best_value_loss = self.evaluate_early_stopping(
                 epoch=epoch,
                 max_epochs=max_epochs,
                 train_loss=train_loss,
@@ -4399,7 +4411,7 @@ class CascadeCorrelationNetwork:
 
             # Check if we've reached the end of our patience
             # TODO: Consider using named tuple or dataclass for return values
-            (patience_exhausted, patience_counter, best_value_loss) = self.check_patience(
+            patience_exhausted, patience_counter, best_value_loss = self.check_patience(
                 patience_counter=patience_counter,
                 value_loss=value_loss,
                 best_value_loss=best_value_loss,

@@ -36,7 +36,6 @@ from profiling.deterministic import ProfileContext
 
 from .conftest import BenchmarkTimer, _make_benchmark_config
 
-
 # ===================================================================
 # HELPERS
 # ===================================================================
@@ -106,14 +105,14 @@ class TestFullTrainingRunProfiling:
         assert len(profile_data.get("top_functions", [])) > 0, "Should capture top functions"
 
         # Print structured results for data collection
-        print(f"\n{'='*70}")
+        print("\n" + "=" * 70)
         print("STEP 4.1: Full Training Run cProfile Results")
-        print(f"{'='*70}")
+        print("=" * 70)
         print(f"  Total function calls:  {profile_data['total_calls']}")
         print(f"  Wall-clock time:       {profile_data['elapsed_seconds']:.3f}s")
         print(f"  Total internal time:   {profile_data['total_tt']:.3f}s")
         print(f"  Hidden units added:    {len(net.hidden_units)}")
-        print(f"\n  Top 15 functions by cumulative time:")
+        print("\n  Top 15 functions by cumulative time:")
         print(f"  {'Function':<45} {'Calls':>8} {'TotTime':>10} {'CumTime':>10}")
         print(f"  {'-'*45} {'-'*8} {'-'*10} {'-'*10}")
         for fn in profile_data["top_functions"][:15]:
@@ -139,13 +138,13 @@ class TestFullTrainingRunProfiling:
         profile_data = profile.to_dict(top_n=20)
         assert profile_data.get("total_calls", 0) > 0
 
-        print(f"\n{'='*70}")
+        print("\n" + "=" * 70)
         print("STEP 4.1: grow_network() Isolated cProfile Results")
-        print(f"{'='*70}")
+        print("=" * 70)
         print(f"  Total function calls:  {profile_data['total_calls']}")
         print(f"  Wall-clock time:       {profile_data['elapsed_seconds']:.3f}s")
         print(f"  Hidden units added:    {len(net.hidden_units)}")
-        print(f"\n  Top 10 functions by cumulative time:")
+        print("\n  Top 10 functions by cumulative time:")
         for fn in profile_data["top_functions"][:10]:
             print(f"    {fn['function']:<45} calls={fn['calls']:<6} cum={fn['cumulative_time']:.4f}s")
 
@@ -207,6 +206,7 @@ class TestTrainingPhaseTimeDistribution:
                     timings[name] = timings.get(name, 0.0) + elapsed
                     call_counts[name] = call_counts.get(name, 0) + 1
                     return result
+
                 return timed_method
 
             setattr(net, method_name, make_timed_wrapper(method_name, original_method))
@@ -249,10 +249,7 @@ class TestTrainingPhaseTimeDistribution:
         # (some overhead from logging, loop control, etc. is expected)
         if wall_total > 0.01:  # Only assert ratio for non-trivially-short runs
             instrumented_ratio = instrumented_total / wall_total
-            assert instrumented_ratio > 0.5, (
-                f"Instrumented methods should account for >50% of wall time, "
-                f"got {instrumented_ratio:.1%}"
-            )
+            assert instrumented_ratio > 0.5, f"Instrumented methods should account for >50% of wall time, " f"got {instrumented_ratio:.1%}"
 
     @pytest.mark.timeout(180)
     def test_phase_distribution_with_more_epochs(self, small_spiral_data):
@@ -292,6 +289,7 @@ class TestTrainingPhaseTimeDistribution:
                     timings[name] = timings.get(name, 0.0) + elapsed
                     call_counts[name] = call_counts.get(name, 0) + 1
                     return result
+
                 return timed_method
 
             setattr(net, method_name, make_timed_wrapper(method_name, original_method))
@@ -350,10 +348,12 @@ class TestMemoryGrowthProfiling:
         def tracking_add_unit(*args, **kwargs):
             result = original_add_unit(*args, **kwargs)
             rss_mb = _get_rss_from_proc_mb()
-            memory_snapshots.append({
-                "hidden_units": len(net.hidden_units),
-                "rss_mb": rss_mb,
-            })
+            memory_snapshots.append(
+                {
+                    "hidden_units": len(net.hidden_units),
+                    "rss_mb": rss_mb,
+                }
+            )
             return result
 
         net.add_unit = tracking_add_unit
@@ -597,9 +597,9 @@ class TestConvergenceVsPerformanceTradeoffs:
         x_train, y_train = small_spiral_data
 
         configs = [
-            {"label": "minimal",   "candidate_pool_size": 2, "candidate_epochs": 10, "output_epochs": 10, "max_hidden_units": 3, "patience": 1},
-            {"label": "balanced",  "candidate_pool_size": 4, "candidate_epochs": 20, "output_epochs": 25, "max_hidden_units": 3, "patience": 3},
-            {"label": "thorough",  "candidate_pool_size": 4, "candidate_epochs": 30, "output_epochs": 25, "max_hidden_units": 5, "patience": 5},
+            {"label": "minimal", "candidate_pool_size": 2, "candidate_epochs": 10, "output_epochs": 10, "max_hidden_units": 3, "patience": 1},
+            {"label": "balanced", "candidate_pool_size": 4, "candidate_epochs": 20, "output_epochs": 25, "max_hidden_units": 3, "patience": 3},
+            {"label": "thorough", "candidate_pool_size": 4, "candidate_epochs": 30, "output_epochs": 25, "max_hidden_units": 5, "patience": 5},
             {"label": "wide_pool", "candidate_pool_size": 8, "candidate_epochs": 20, "output_epochs": 25, "max_hidden_units": 3, "patience": 3},
         ]
 
@@ -617,16 +617,18 @@ class TestConvergenceVsPerformanceTradeoffs:
             accuracy = net.calculate_accuracy(x_train, y_train)
             elapsed_ms = timer.times_ms[0]
 
-            results.append({
-                "label": label,
-                "elapsed_ms": elapsed_ms,
-                "accuracy": accuracy,
-                "hidden_units": len(net.hidden_units),
-                "pool_size": cfg["candidate_pool_size"],
-                "cand_epochs": cfg["candidate_epochs"],
-                "out_epochs": cfg["output_epochs"],
-                "patience": cfg["patience"],
-            })
+            results.append(
+                {
+                    "label": label,
+                    "elapsed_ms": elapsed_ms,
+                    "accuracy": accuracy,
+                    "hidden_units": len(net.hidden_units),
+                    "pool_size": cfg["candidate_pool_size"],
+                    "cand_epochs": cfg["candidate_epochs"],
+                    "out_epochs": cfg["output_epochs"],
+                    "patience": cfg["patience"],
+                }
+            )
 
         # Print summary table
         print(f"\n{'='*70}")
@@ -635,11 +637,7 @@ class TestConvergenceVsPerformanceTradeoffs:
         print(f"  {'Config':<12} {'Pool':>5} {'CEp':>5} {'OEp':>5} {'Pat':>5} {'Time(ms)':>10} {'Acc':>8} {'Units':>6}")
         print(f"  {'-'*12} {'-'*5} {'-'*5} {'-'*5} {'-'*5} {'-'*10} {'-'*8} {'-'*6}")
         for r in results:
-            print(
-                f"  {r['label']:<12} {r['pool_size']:>5} {r['cand_epochs']:>5} "
-                f"{r['out_epochs']:>5} {r['patience']:>5} {r['elapsed_ms']:>10.1f} "
-                f"{r['accuracy']:>8.4f} {r['hidden_units']:>6}"
-            )
+            print(f"  {r['label']:<12} {r['pool_size']:>5} {r['cand_epochs']:>5} " f"{r['out_epochs']:>5} {r['patience']:>5} {r['elapsed_ms']:>10.1f} " f"{r['accuracy']:>8.4f} {r['hidden_units']:>6}")
 
         # Verify all configs produced valid results
         for r in results:

@@ -184,6 +184,123 @@ class TestProfileContextExtended:
         assert nested_dir.exists()
         assert saved_path.exists()
 
+    @pytest.mark.unit
+    def test_elapsed_seconds_before_start(self):
+        """Test elapsed_seconds returns 0.0 when profiler has not been started."""
+        from profiling.deterministic import ProfileContext
+
+        profiler = ProfileContext("test")
+        assert profiler.elapsed_seconds == 0.0
+
+    @pytest.mark.unit
+    def test_elapsed_seconds_after_start_before_stop(self):
+        """Test elapsed_seconds returns 0.0 when profiler started but not stopped."""
+        from profiling.deterministic import ProfileContext
+
+        profiler = ProfileContext("test")
+        profiler.start()
+        assert profiler.elapsed_seconds == 0.0
+        profiler.stop()
+
+    @pytest.mark.unit
+    def test_elapsed_seconds_after_stop(self):
+        """Test elapsed_seconds returns positive value after start and stop."""
+        from profiling.deterministic import ProfileContext
+
+        with ProfileContext("test") as p:
+            _ = sum(range(100))
+
+        assert p.elapsed_seconds > 0.0
+
+    @pytest.mark.unit
+    def test_to_dict_no_data(self):
+        """Test to_dict returns error dict when no profiling data exists."""
+        from profiling.deterministic import ProfileContext
+
+        profiler = ProfileContext("test")
+        result = profiler.to_dict()
+
+        assert "error" in result
+        assert "No profile data" in result["error"]
+
+    @pytest.mark.unit
+    def test_to_dict_with_data(self):
+        """Test to_dict returns structured profile data after profiling."""
+        from profiling.deterministic import ProfileContext
+
+        with ProfileContext("test_dict") as p:
+            _ = sum(range(1000))
+
+        result = p.to_dict(top_n=5)
+
+        assert result["name"] == "test_dict"
+        assert result["elapsed_seconds"] > 0.0
+        assert result["timestamp"] is not None
+        assert result["total_calls"] > 0
+        assert isinstance(result["top_functions"], list)
+        assert len(result["top_functions"]) > 0
+
+        func_entry = result["top_functions"][0]
+        assert "function" in func_entry
+        assert "file" in func_entry
+        assert "line" in func_entry
+        assert "calls" in func_entry
+        assert "total_time" in func_entry
+        assert "cumulative_time" in func_entry
+
+    @pytest.mark.unit
+    def test_save_json_auto_filename(self, tmp_path, capsys):
+        """Test save_json with auto-generated filename."""
+        from profiling.deterministic import ProfileContext
+
+        profiler = ProfileContext("test_json", output_dir=str(tmp_path))
+        with profiler:
+            _ = sum(range(100))
+
+        saved_path = profiler.save_json()
+
+        assert saved_path.exists()
+        assert "test_json_" in saved_path.name
+        assert saved_path.suffix == ".json"
+
+        captured = capsys.readouterr()
+        assert "Profile JSON saved to:" in captured.out
+
+        import json
+
+        with open(saved_path) as f:
+            data = json.load(f)
+        assert data["name"] == "test_json"
+
+    @pytest.mark.unit
+    def test_save_json_custom_filename(self, tmp_path, capsys):
+        """Test save_json with custom filename."""
+        from profiling.deterministic import ProfileContext
+
+        profiler = ProfileContext("test_json", output_dir=str(tmp_path))
+        with profiler:
+            _ = sum(range(100))
+
+        saved_path = profiler.save_json(filename="custom.json", top_n=3)
+
+        assert saved_path.exists()
+        assert saved_path.name == "custom.json"
+
+    @pytest.mark.unit
+    def test_save_json_creates_directory(self, tmp_path):
+        """Test save_json creates output directory if it doesn't exist."""
+        from profiling.deterministic import ProfileContext
+
+        nested_dir = tmp_path / "nested" / "json_profiles"
+        profiler = ProfileContext("test", output_dir=str(nested_dir))
+        with profiler:
+            _ = sum(range(100))
+
+        saved_path = profiler.save_json()
+
+        assert nested_dir.exists()
+        assert saved_path.exists()
+
 
 class TestProfileFunctionDecorator:
     """Extended tests for profile_function decorator."""

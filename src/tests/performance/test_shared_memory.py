@@ -35,7 +35,6 @@ from cascade_correlation.cascade_correlation import SharedTrainingMemory
 
 from .conftest import BenchmarkTimer
 
-
 # ===================================================================
 # P7-1: CREATE AND RECONSTRUCT
 # ===================================================================
@@ -320,9 +319,7 @@ class TestLightweightTaskRoundTrip:
             tensor_tuple_size = len(pickle.dumps(tuple(tensors)))
 
             # Metadata should be at least 10x smaller than tensor tuple
-            assert metadata_size < tensor_tuple_size / 10, (
-                f"Metadata ({metadata_size} bytes) should be << tensor tuple ({tensor_tuple_size} bytes)"
-            )
+            assert metadata_size < tensor_tuple_size / 10, f"Metadata ({metadata_size} bytes) should be << tensor tuple ({tensor_tuple_size} bytes)"
         finally:
             shm.close_and_unlink()
 
@@ -383,9 +380,7 @@ class TestConcurrentReadStress:
             assert len(results) == n_workers, f"Expected {n_workers} results, got {len(results)}"
             for status, value in results:
                 assert status == "ok", f"Worker failed: {value}"
-                assert abs(value - expected_sum) < 1e-3, (
-                    f"Checksum mismatch: {value} vs {expected_sum}"
-                )
+                assert abs(value - expected_sum) < 1e-3, f"Checksum mismatch: {value} vs {expected_sum}"
         finally:
             shm.close_and_unlink()
 
@@ -526,13 +521,9 @@ class TestSharedMemoryBenchmark:
         reconstruct_summary = timer_reconstruct.summary()
 
         # Create should be < 10ms for typical tensors
-        assert create_summary["mean_ms"] < 10.0, (
-            f"SharedMemory creation too slow: {create_summary['mean_ms']:.2f}ms"
-        )
+        assert create_summary["mean_ms"] < 10.0, f"SharedMemory creation too slow: {create_summary['mean_ms']:.2f}ms"
         # Reconstruct should be < 1ms (zero-copy)
-        assert reconstruct_summary["mean_ms"] < 1.0, (
-            f"SharedMemory reconstruction too slow: {reconstruct_summary['mean_ms']:.2f}ms"
-        )
+        assert reconstruct_summary["mean_ms"] < 1.0, f"SharedMemory reconstruction too slow: {reconstruct_summary['mean_ms']:.2f}ms"
 
     def test_queue_overhead_comparison(self):
         """Compare queue PUT/GET overhead: full tasks vs lightweight tasks."""
@@ -583,9 +574,6 @@ class TestSharedMemoryBenchmark:
             light_summary = timer_light.summary()
 
             # Lightweight should be faster than full tasks
-            assert light_summary["mean_ms"] < full_summary["mean_ms"], (
-                f"Lightweight ({light_summary['mean_ms']:.2f}ms) should be faster than "
-                f"full ({full_summary['mean_ms']:.2f}ms)"
-            )
+            assert light_summary["mean_ms"] < full_summary["mean_ms"], f"Lightweight ({light_summary['mean_ms']:.2f}ms) should be faster than " f"full ({full_summary['mean_ms']:.2f}ms)"
         finally:
             shm.close_and_unlink()

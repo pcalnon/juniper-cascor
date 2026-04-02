@@ -43,8 +43,8 @@ from cascade_correlation.cascade_correlation import CascadeCorrelationNetwork
 
 from .conftest import BenchmarkTimer, _make_benchmark_config
 
-
 # Module-level functions required for forkserver pickling (cannot use local/lambda functions).
+
 
 def _producer_fn(queue, n_items, producer_id):
     """Worker function that puts items into a shared queue (used by test_multi_producer_throughput)."""
@@ -280,7 +280,7 @@ class TestQueueThroughput:
 
         drain_summary = drain_timer.summary()
 
-        print(f"\n[Step 3.2] Burst throughput (64 items, tensor payload):")
+        print("\n[Step 3.2] Burst throughput (64 items, tensor payload):")
         print(f"  Put burst (5 rounds): mean={put_summary['mean_ms']:.2f} ms, min={put_summary['min_ms']:.2f} ms")
         print(f"  Drain 64 items: {drain_summary['mean_ms']:.2f} ms")
         print(f"  Per-item put: {put_summary['mean_ms'] / len(payloads):.4f} ms")
@@ -397,12 +397,12 @@ class TestIPCSerialization:
             "candidate_index": 0,
         }
         training_inputs = (
-            torch.randn(sample_count, input_size),   # candidate_input (x)
-            30,                                        # epochs
-            torch.randn(sample_count, output_size),   # y targets
-            torch.randn(sample_count, output_size),   # residual_error
-            0.005,                                     # learning_rate
-            0,                                         # display_frequency
+            torch.randn(sample_count, input_size),  # candidate_input (x)
+            30,  # epochs
+            torch.randn(sample_count, output_size),  # y targets
+            torch.randn(sample_count, output_size),  # residual_error
+            0.005,  # learning_rate
+            0,  # display_frequency
         )
         task_tuple = (0, candidate_data, training_inputs)
 
@@ -476,7 +476,7 @@ class TestIPCSerialization:
         dumps_summary = dumps_timer.summary()
         loads_summary = loads_timer.summary()
 
-        print(f"\n[Step 3.3] Pickle asymmetry (200 samples, input_size=10):")
+        print("\n[Step 3.3] Pickle asymmetry (200 samples, input_size=10):")
         print(f"  dumps: mean={dumps_summary['mean_ms']:.3f} ms")
         print(f"  loads: mean={loads_summary['mean_ms']:.3f} ms")
         print(f"  loads/dumps ratio: {loads_summary['mean_ms'] / max(dumps_summary['mean_ms'], 1e-6):.2f}x")
@@ -546,7 +546,7 @@ class TestWorkerLifecycle:
                     task_queue, result_queue = net._ensure_worker_pool(2)
 
             summary = timer.summary()
-            print(f"\n[Step 3.4] Warm reuse (2 workers, 20 iterations):")
+            print("\n[Step 3.4] Warm reuse (2 workers, 20 iterations):")
             print(f"  mean={summary['mean_ms']:.3f} ms, median={summary['median_ms']:.3f} ms, min={summary['min_ms']:.3f} ms")
 
             # Warm reuse should be significantly faster than cold start
@@ -563,7 +563,7 @@ class TestWorkerLifecycle:
 
         results = []
 
-        for trial in range(3):
+        for _ in range(3):
             net = _make_scaling_network(candidate_pool_size=4, candidate_epochs=10)
             net._ensure_worker_pool(2)
 
@@ -577,7 +577,7 @@ class TestWorkerLifecycle:
         min_ms = np.min(results)
         max_ms = np.max(results)
 
-        print(f"\n[Step 3.4] Shutdown (2 workers, 3 trials):")
+        print("\n[Step 3.4] Shutdown (2 workers, 3 trials):")
         print(f"  mean={mean_ms:.1f} ms, min={min_ms:.1f} ms, max={max_ms:.1f} ms")
 
         # Shutdown should complete within the join timeout (5s per worker + overhead)
@@ -633,7 +633,7 @@ class TestWorkerLifecycle:
             first_ms = first_ns / 1_000_000
             warm_ms = warm_ns / 1_000_000
 
-            print(f"\n[Step 3.4] Subprocess torch op latency:")
+            print("\n[Step 3.4] Subprocess torch op latency:")
             print(f"  Process spawn + join: {total_ms:.1f} ms")
             print(f"  First torch op: {first_ms:.3f} ms")
             print(f"  Warm torch op: {warm_ms:.3f} ms")
@@ -655,7 +655,7 @@ class TestWorkerLifecycle:
         shutdown_times = []
 
         try:
-            for cycle in range(3):
+            for _ in range(3):
                 ct = BenchmarkTimer()
                 with ct:
                     net._ensure_worker_pool(2)
@@ -666,7 +666,7 @@ class TestWorkerLifecycle:
                     net._shutdown_worker_pool()
                 shutdown_times.append(st.summary()["mean_ms"])
 
-            print(f"\n[Step 3.4] Pool lifecycle (3 create/destroy cycles, 2 workers):")
+            print("\n[Step 3.4] Pool lifecycle (3 create/destroy cycles, 2 workers):")
             for i in range(3):
                 print(f"  Cycle {i + 1}: create={create_times[i]:.1f} ms, shutdown={shutdown_times[i]:.1f} ms")
             print(f"  Avg create: {np.mean(create_times):.1f} ms")
