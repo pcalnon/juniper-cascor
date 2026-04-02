@@ -1832,6 +1832,7 @@ class CascadeCorrelationNetwork:
             shm_metadata["candidate_epochs"] = self.candidate_epochs
             shm_metadata["candidate_learning_rate"] = self.candidate_learning_rate
             shm_metadata["candidate_display_frequency"] = self.candidate_display_frequency
+            shm_metadata["_fallback_tensors"] = (candidate_input, y, residual_error)
             training_inputs = shm_metadata
             self.logger.debug(f"CascadeCorrelationNetwork: _generate_candidate_tasks: OPT-5 SharedMemory block created: {shm.name}")
         except Exception as shm_err:
@@ -2712,6 +2713,7 @@ class CascadeCorrelationNetwork:
             logger.error(f"CascadeCorrelationNetwork: train_candidate_worker: Error retrieving worker ID and UUID: {e}")
             worker_id, worker_uuid = (0, "None")
         shm_handle = None  # OPT-5: track SharedMemory handle for deferred close
+        candidate_inputs = None  # Guard: prevent UnboundLocalError if _build_candidate_inputs raises
         try:
             if task_data_input is None:
                 logger.error("CascadeCorrelationNetwork: train_candidate_worker: No task data input provided.")
@@ -2847,9 +2849,16 @@ class CascadeCorrelationNetwork:
         shm_handle = None
         if isinstance(training_inputs, dict):
             # OPT-5: Reconstruct training tensors from SharedMemory block
-            logger.debug(f"CascadeCorrelationNetwork: _build_candidate_inputs: OPT-5 reconstructing tensors from SharedMemory: {training_inputs.get('shm_name')}")
-            tensors, shm_handle = SharedTrainingMemory.reconstruct_tensors(training_inputs)
-            candidate_input, y, residual_error = tensors
+            try:
+                logger.debug(f"CascadeCorrelationNetwork: _build_candidate_inputs: OPT-5 reconstructing tensors from SharedMemory: {training_inputs.get('shm_name')}")
+                tensors, shm_handle = SharedTrainingMemory.reconstruct_tensors(training_inputs)
+                candidate_input, y, residual_error = tensors
+            except (FileNotFoundError, OSError) as shm_err:
+                logger.warning(f"CascadeCorrelationNetwork: _build_candidate_inputs: OPT-5 SharedMemory unavailable ({shm_err}), falling back to serialized tensors")
+                fallback = training_inputs.get("_fallback_tensors")
+                if fallback is None:
+                    raise
+                candidate_input, y, residual_error = fallback
             candidate_epochs = training_inputs["candidate_epochs"]
             candidate_learning_rate = training_inputs["candidate_learning_rate"]
             candidate_display_frequency = training_inputs["candidate_display_frequency"]
