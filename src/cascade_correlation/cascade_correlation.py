@@ -36,7 +36,6 @@
 #####################################################################################################################################################################################################
 import atexit
 import datetime
-import datetime as pd
 import io
 
 # import logging
@@ -774,9 +773,6 @@ class CascadeCorrelationNetwork:
             "value_accuracy": [],
             "hidden_units_added": [],
         }
-
-        # Initialize snapshot counter for HDF5 serialization
-        self.snapshot_counter = 0
 
         # Snapshot directory
         self.cascade_correlation_network_snapshots_dir = self.config.cascade_correlation_network_snapshots_dir or _CASCADE_CORRELATION_NETWORK_HDF5_PROJECT_SNAPSHOTS_DIR
@@ -1705,7 +1701,7 @@ class CascadeCorrelationNetwork:
             self.logger.debug(f"CascadeCorrelationNetwork: train_output_layer: Final output shape: {output.shape}")
             final_loss = criterion(output, y).item()
             self.logger.info(f"CascadeCorrelationNetwork: train_output_layer: Final output layer training loss: {final_loss:.6f}")
-        if snapshot_path := self.create_snapshot() is not None:
+        if (snapshot_path := self.create_snapshot()) is not None:
             self.logger.info(f"CascadeCorrelationNetwork: train_output_layer: Created network snapshot at: {snapshot_path}")
             self.snapshot_counter += 1
         self.logger.trace("CascadeCorrelationNetwork: train_output_layer: Completed training of the output layer.")
@@ -1822,6 +1818,7 @@ class CascadeCorrelationNetwork:
         input_size = candidate_input.shape[1]
 
         # OPT-5: Create shared memory block for training tensors (lightweight tasks)
+        shm = None
         try:
             shm = SharedTrainingMemory(
                 tensors=[candidate_input, y, residual_error],
@@ -1836,6 +1833,13 @@ class CascadeCorrelationNetwork:
             training_inputs = shm_metadata
             self.logger.debug(f"CascadeCorrelationNetwork: _generate_candidate_tasks: OPT-5 SharedMemory block created: {shm.name}")
         except Exception as shm_err:
+            if shm is not None:
+                if shm in self._active_shm_blocks:
+                    self._active_shm_blocks.remove(shm)
+                try:
+                    shm.close_and_unlink()
+                except Exception:
+                    pass
             self.logger.warning(f"CascadeCorrelationNetwork: _generate_candidate_tasks: OPT-5 SharedMemory creation failed, falling back to full tasks: {shm_err}")
             training_inputs = (
                 candidate_input,
@@ -2920,7 +2924,6 @@ class CascadeCorrelationNetwork:
         progress_callback=None,
     ) -> CandidateTrainingResult:
         # Train the candidate unit
-        global shared_object_dict
         logger = Logger
 
         try:
@@ -3904,7 +3907,7 @@ class CascadeCorrelationNetwork:
             snapshot_dir.mkdir(parents=True, exist_ok=True)
 
             # Create filename with timestamp and UUID
-            timestamp = pd.datetime.now().strftime("%Y%m%d_%H%M%S")
+            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
             uuid = str(self.get_uuid())
             filename = f"cascor_snapshot_{timestamp}_{uuid}.h5"
             snapshot_path = pl.Path(snapshot_dir).joinpath(filename)
@@ -3985,7 +3988,7 @@ class CascadeCorrelationNetwork:
             snapshot_dir.mkdir(parents=True, exist_ok=True)
 
             # Create filename with object's name, timestamp, and UUID
-            timestamp = pd.Timestamp.now().strftime("%Y%m%d_%H%M%S")
+            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
             uuid = str(objectify.get_uuid())
             object_name = objectify.__name__
             filename = f"{object_name}_snapshot_{timestamp}_{uuid}.h5"
