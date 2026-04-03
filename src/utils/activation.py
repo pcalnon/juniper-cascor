@@ -10,7 +10,7 @@
 # Last Modified: 2026-04-03
 #
 # License:       MIT License
-# Copyright:     Copyright (c) 2024-2025 Paul Calnon
+# Copyright:     Copyright (c) 2024-2026 Paul Calnon
 #
 # Description:
 #    Shared picklable activation function wrapper for multiprocessing support.
@@ -25,7 +25,7 @@ import torch
 #####################################################################################################################################################################################################
 # Picklable Activation Function Wrapper
 # CASCOR-P1-003: Multiprocessing Pickling Error Fix
-# This class replaces the local function 'wrapped_activation' which cannot be pickled for multiprocessing.
+# This class replaces the local function 'wrapped_activation', which cannot be pickled for multiprocessing.
 # The local function defined inside _init_activation_with_derivative() created a closure that Python's
 # pickle module cannot serialize, causing multiprocessing workers to fail when sending results back.
 #####################################################################################################################################################################################################
