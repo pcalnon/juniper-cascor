@@ -600,6 +600,10 @@ class TrainingLifecycleManager:
         monitor_state = self.training_monitor.get_current_state()
         training_state = self.training_state.get_state()
 
+        if self.network is not None:
+            training_state.setdefault("input_size", getattr(self.network, "input_size", 0))
+            training_state.setdefault("output_size", getattr(self.network, "output_size", 0))
+
         return {
             "state_machine": state_summary,
             "monitor": monitor_state,

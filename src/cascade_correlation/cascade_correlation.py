@@ -395,7 +395,7 @@ class RestrictedUnpickler(pickle.Unpickler):
         # Application types
         ("candidate_unit.candidate_unit", "CandidateTrainingResult"),
         ("candidate_unit.candidate_unit", "CandidateUnit"),
-        ("candidate_unit.candidate_unit", "ActivationWithDerivative"),
+        ("utils.activation", "ActivationWithDerivative"),
         # Python builtins
         ("builtins", "list"),
         ("builtins", "dict"),
@@ -530,120 +530,9 @@ def _plot_training_history_worker(history_data):
 #####################################################################################################################################################################################################
 # Picklable Activation Function Wrapper
 # CASCOR-P1-003: Multiprocessing Pickling Error Fix
-# This class replaces the local function 'wrapped_activation' which cannot be pickled for multiprocessing.
-# The local function defined inside _init_activation_with_derivative() created a closure that Python's
-# pickle module cannot serialize, causing multiprocessing workers to fail when sending results back.
+# Extracted to utils.activation to eliminate duplication with candidate_unit.py
 #####################################################################################################################################################################################################
-class ActivationWithDerivative:
-    """
-    Picklable wrapper for activation functions that also provides derivatives.
-
-    This class solves the multiprocessing pickling issue where local functions
-    cannot be serialized. It stores the activation function type by name and
-    reconstructs the function on unpickling.
-
-    Supports: All standard PyTorch activation functions (tanh, sigmoid, relu, etc.)
-    """
-
-    # Mapping of activation names to functions for reconstruction after unpickling
-    ACTIVATION_MAP = {
-        "elu": torch.nn.functional.elu,
-        "hardshrink": torch.nn.functional.hardshrink,
-        "relu": torch.relu,
-        "sigmoid": torch.sigmoid,
-        "tanh": torch.tanh,
-        "ELU": torch.nn.ELU(),
-        "Hardshrink": torch.nn.Hardshrink(),
-        "Hardsigmoid": torch.nn.Hardsigmoid(),
-        "Hardtanh": torch.nn.Hardtanh(),
-        "Hardswish": torch.nn.Hardswish(),
-        "LeakyReLU": torch.nn.LeakyReLU(),
-        "LogSigmoid": torch.nn.LogSigmoid(),
-        "PReLU": torch.nn.PReLU(),
-        "ReLU": torch.nn.ReLU(),
-        "ReLU6": torch.nn.ReLU6(),
-        "RReLU": torch.nn.RReLU(),
-        "SELU": torch.nn.SELU(),
-        "CELU": torch.nn.CELU(),
-        "GELU": torch.nn.GELU(),
-        "Sigmoid": torch.nn.Sigmoid(),
-        "SiLU": torch.nn.SiLU(),
-        "Mish": torch.nn.Mish(),
-        "Softplus": torch.nn.Softplus(),
-        "Softshrink": torch.nn.Softshrink(),
-        "Softsign": torch.nn.Softsign(),
-        "Tanh": torch.nn.Tanh(),
-        "Tanhshrink": torch.nn.Tanhshrink(),
-        "Threshold": torch.nn.Threshold(0.1, 0.0),  # Default threshold=0.1, value=0.0
-        "GLU": torch.nn.GLU(),
-    }
-
-    def __init__(self, activation_fn):
-        """
-        Initialize with an activation function.
-
-        Args:
-            activation_fn: A PyTorch activation function (e.g., torch.tanh, torch.nn.Tanh())
-        """
-        self.activation_fn = activation_fn
-        self._activation_name = self._get_activation_name(activation_fn)
-
-    def _get_activation_name(self, activation_fn) -> str:
-        """
-        Extract a string name from the activation function for serialization.
-
-        Args:
-            activation_fn: The activation function to get the name from
-
-        Returns:
-            String name of the activation function
-        """
-        if hasattr(activation_fn, "__name__"):
-            return activation_fn.__name__
-        elif hasattr(activation_fn, "__class__"):
-            return activation_fn.__class__.__name__
-        else:
-            return str(activation_fn)
-
-    def __call__(self, x, derivative: bool = False):
-        """
-        Apply activation function or compute its derivative.
-
-        Args:
-            x: Input tensor
-            derivative: If True, compute the derivative instead of the activation
-
-        Returns:
-            Activation output or derivative value
-        """
-        if not derivative:
-            return self.activation_fn(x)
-        name = self._activation_name.lower()
-        if name == "tanh":
-            return 1.0 - torch.tanh(x) ** 2
-        elif name == "sigmoid":
-            y = torch.sigmoid(x)
-            return y * (1.0 - y)
-        elif name == "relu":
-            return (x > 0).float()
-        else:
-            # Numerical approximation for other activation functions
-            eps = 1e-6
-            return (self.activation_fn(x + eps) - self.activation_fn(x - eps)) / (2 * eps)
-
-    def __getstate__(self):
-        """Serialize by storing activation name instead of function (for pickle/multiprocessing)."""
-        return {"_activation_name": self._activation_name}
-
-    def __setstate__(self, state):
-        """Reconstruct activation function from name after unpickling."""
-        self._activation_name = state["_activation_name"]
-        # Try to reconstruct from map, fall back to ReLU as default
-        self.activation_fn = self.ACTIVATION_MAP.get(self._activation_name, self.ACTIVATION_MAP.get(self._activation_name.lower(), torch.nn.ReLU()))
-
-    def __repr__(self):
-        """String representation for debugging."""
-        return f"ActivationWithDerivative({self._activation_name})"
+from utils.activation import ActivationWithDerivative  # noqa: F401, E402
 
 
 #####################################################################################################################################################################################################
