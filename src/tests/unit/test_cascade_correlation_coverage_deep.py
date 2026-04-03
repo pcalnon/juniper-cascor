@@ -187,24 +187,38 @@ class TestExecuteCandidateTraining:
 
     @pytest.mark.unit
     def test_parallel_returns_empty_falls_back_to_sequential(self):
-        """When parallel returns empty list, should fallback to sequential."""
+        """When TaskDistributor returns empty list, should fall back to sequential via exception path."""
         network = _make_network()
         mock_result = CandidateTrainingResult(candidate_id=0, correlation=0.3, success=True)
+        # Build a properly structured task tuple: (index, candidate_data, training_inputs)
+        # training_inputs is a legacy tuple: (x, epochs, y, residual_error, lr, display_freq)
+        x = torch.randn(4, 2)
+        y = torch.randn(4, 2)
+        err = torch.randn(4, 2)
+        training_inputs = (x, 3, y, err, 0.01, 10)
+        cand_data = (0, 2, "sigmoid", 1.0, "uuid-0", 42, 100, 100)
+        tasks = [(0, cand_data, training_inputs)]
 
-        with patch.object(network, "_execute_parallel_training", return_value=[]):
+        # Mock the task distributor to return empty results, triggering the RuntimeError fallback
+        with patch.object(network._task_distributor, "distribute_and_collect", return_value=[]):
             with patch.object(network, "_execute_sequential_training", return_value=[mock_result]) as mock_seq:
-                results = network._execute_candidate_training(tasks=[("task1",)], process_count=2)
+                results = network._execute_candidate_training(tasks=tasks, process_count=2)
                 mock_seq.assert_called_once()
                 assert len(results) == 1
 
     @pytest.mark.unit
     def test_both_parallel_and_sequential_fail_returns_dummy(self):
-        """When both parallel and sequential fail, returns dummy results."""
+        """When both distributed and sequential fail, returns dummy results."""
         network = _make_network()
+        x = torch.randn(4, 2)
+        y = torch.randn(4, 2)
+        err = torch.randn(4, 2)
+        training_inputs = (x, 3, y, err, 0.01, 10)
+        cand_data = (0, 2, "sigmoid", 1.0, "uuid-0", 42, 100, 100)
+        tasks = [(0, cand_data, training_inputs), (1, cand_data, training_inputs)]
 
-        with patch.object(network, "_execute_parallel_training", side_effect=RuntimeError("parallel fail")):
+        with patch.object(network._task_distributor, "distribute_and_collect", side_effect=RuntimeError("dist fail")):
             with patch.object(network, "_execute_sequential_training", side_effect=RuntimeError("seq fail")):
-                tasks = [("task0",), ("task1",)]
                 results = network._execute_candidate_training(tasks=tasks, process_count=2)
                 # Should get dummy results
                 assert len(results) == 2
@@ -213,13 +227,19 @@ class TestExecuteCandidateTraining:
 
     @pytest.mark.unit
     def test_sequential_fallback_after_parallel_exception(self):
-        """Parallel raises exception -> sequential fallback succeeds."""
+        """Distributed raises exception -> sequential fallback succeeds."""
         network = _make_network()
         mock_result = CandidateTrainingResult(candidate_id=0, correlation=0.7, success=True)
+        x = torch.randn(4, 2)
+        y = torch.randn(4, 2)
+        err = torch.randn(4, 2)
+        training_inputs = (x, 3, y, err, 0.01, 10)
+        cand_data = (0, 2, "sigmoid", 1.0, "uuid-0", 42, 100, 100)
+        tasks = [(0, cand_data, training_inputs)]
 
-        with patch.object(network, "_execute_parallel_training", side_effect=Exception("mp crash")):
+        with patch.object(network._task_distributor, "distribute_and_collect", side_effect=Exception("mp crash")):
             with patch.object(network, "_execute_sequential_training", return_value=[mock_result]) as mock_seq:
-                results = network._execute_candidate_training(tasks=[("task1",)], process_count=2)
+                results = network._execute_candidate_training(tasks=tasks, process_count=2)
                 mock_seq.assert_called_once()
                 assert results[0].correlation == 0.7
 
