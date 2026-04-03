@@ -1706,7 +1706,7 @@ class CascadeCorrelationNetwork:
                 self.logger.info(f"CascadeCorrelationNetwork: train_output_layer: Created network snapshot at: {snapshot_path}")
                 self.snapshot_counter += 1
         except Exception as snap_err:
-            self.logger.warning(f"CascadeCorrelationNetwork: train_output_layer: Snapshot creation failed: {snap_err}")
+            self.logger.warning(f"CascadeCorrelationNetwork: train_output_layer: Snapshot creation failed (non-fatal): {snap_err}")
         self.logger.trace("CascadeCorrelationNetwork: train_output_layer: Completed training of the output layer.")
         return final_loss
 
@@ -2213,7 +2213,7 @@ class CascadeCorrelationNetwork:
                         self.logger.warning(f"CascadeCorrelationNetwork: _validate_training_result: candidate {param_name} contains NaN or Inf")
                         return False
                     if param.abs().max().item() > 100.0:
-                        self.logger.info(f"CascadeCorrelationNetwork: _validate_training_result: candidate {param_name} magnitude {param.abs().max().item():.2f} is elevated (threshold {self._RESULT_MAX_WEIGHT_MAGNITUDE})")
+                        self.logger.warning(f"CascadeCorrelationNetwork: _validate_training_result: candidate {param_name} magnitude {param.abs().max().item():.2f} is elevated (threshold {self._RESULT_MAX_WEIGHT_MAGNITUDE})")
                     if param.abs().max().item() > self._RESULT_MAX_WEIGHT_MAGNITUDE:
                         self.logger.warning(f"CascadeCorrelationNetwork: _validate_training_result: candidate {param_name} magnitude {param.abs().max().item():.2f} exceeds limit {self._RESULT_MAX_WEIGHT_MAGNITUDE}")
                         return False
@@ -2878,7 +2878,13 @@ class CascadeCorrelationNetwork:
             try:
                 logger.debug(f"CascadeCorrelationNetwork: _build_candidate_inputs: OPT-5 reconstructing tensors from SharedMemory: {training_inputs.get('shm_name')}")
                 tensors, shm_handle = SharedTrainingMemory.reconstruct_tensors(training_inputs)
-                candidate_input, y, residual_error = tensors
+                # OPT-5 FIX: Clone tensors from SharedMemory into owned, writable buffers.
+                # reconstruct_tensors returns zero-copy views into the shared memory block,
+                # which are read-only.  PyTorch autograd and in-place candidate training
+                # operations require writable tensors.  Cloning here preserves the OPT-5
+                # benefit (training data is read once from /dev/shm, not serialized N times
+                # through the task queue) while giving each worker its own mutable copy.
+                candidate_input, y, residual_error = tensors[0].clone(), tensors[1].clone(), tensors[2].clone()
             except (FileNotFoundError, OSError) as shm_err:
                 logger.warning(f"CascadeCorrelationNetwork: _build_candidate_inputs: OPT-5 SharedMemory unavailable ({shm_err}), re-raising for sequential fallback")
                 raise  # Let caller's exception handler trigger sequential fallback with fresh tasks
