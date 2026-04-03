@@ -223,18 +223,20 @@ class TestSaveObject:
 
     @pytest.mark.unit
     def test_save_object_with_mock(self, simple_network):
-        """Test save_object - exercises exception path due to pd.Timestamp usage."""
+        """Test save_object creates a snapshot and returns its path."""
         mock_obj = MagicMock()
         mock_obj.get_uuid.return_value = "test-uuid-12345"
         mock_obj.__name__ = "TestObject"
 
         with tempfile.TemporaryDirectory() as temp_dir:
-            # The current implementation has a bug using pd.Timestamp incorrectly
-            # This exercises the exception handling path
             result = simple_network.save_object(objectify=mock_obj, snapshot_dir=temp_dir)
 
-            # Result is None due to the exception in the method
-            assert result is None
+            # save_object should succeed and return the snapshot path
+            assert result is not None
+            assert result.exists()
+            assert "TestObject_snapshot_" in result.name
+            assert "test-uuid-12345" in result.name
+            assert result.suffix == ".h5"
 
     @pytest.mark.unit
     def test_save_object_failure(self, simple_network):

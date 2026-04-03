@@ -1065,6 +1065,13 @@ class CandidateUnit:
             numerator_val = numerator.item()
             denominator_val = denominator.item()
             correlation = abs(numerator_val / denominator_val)
+            # Clamp to [0, 1] — floating-point arithmetic with the epsilon denominator
+            # can produce values marginally above 1.0 (e.g., 1.0000000149).  The Pearson
+            # correlation coefficient is theoretically bounded to [0, 1] for abs values,
+            # so clamping is mathematically correct.
+            if correlation > 1.0:
+                self.logger.debug(f"CandidateUnit: _calculate_correlation: Clamping correlation {correlation:.10f} to 1.0 (floating-point overshoot)")
+                correlation = 1.0
 
         self.logger.info(f"CandidateUnit: _calculate_correlation: Final correlation effectiveness: {correlation:.6f}")
 

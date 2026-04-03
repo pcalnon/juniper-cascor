@@ -536,6 +536,16 @@ class TrainingLifecycleManager:
             self.network.fit(x, y, x_val=x_val, y_val=y_val, **kwargs)
         except Exception as e:
             self.logger.error(f"Training failed: {e}", exc_info=True)
+            self.state_machine.handle_command(Command.STOP)
+            self.training_state.update_state(status="Failed", phase="Idle")
+            if self._ws_manager:
+                try:
+                    self._ws_manager.broadcast_from_thread({
+                        "type": "training_failed",
+                        "data": {"error": str(e), "phase": str(self.training_state.phase)},
+                    })
+                except Exception:
+                    pass
 
     def stop_training(self) -> Dict[str, Any]:
         """Request training stop."""

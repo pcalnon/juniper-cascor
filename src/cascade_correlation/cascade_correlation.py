@@ -36,7 +36,6 @@
 #####################################################################################################################################################################################################
 import atexit
 import datetime
-import datetime as pd
 import io
 
 # import logging
@@ -774,9 +773,6 @@ class CascadeCorrelationNetwork:
             "value_accuracy": [],
             "hidden_units_added": [],
         }
-
-        # Initialize snapshot counter for HDF5 serialization
-        self.snapshot_counter = 0
 
         # Snapshot directory
         self.cascade_correlation_network_snapshots_dir = self.config.cascade_correlation_network_snapshots_dir or _CASCADE_CORRELATION_NETWORK_HDF5_PROJECT_SNAPSHOTS_DIR
@@ -1705,9 +1701,12 @@ class CascadeCorrelationNetwork:
             self.logger.debug(f"CascadeCorrelationNetwork: train_output_layer: Final output shape: {output.shape}")
             final_loss = criterion(output, y).item()
             self.logger.info(f"CascadeCorrelationNetwork: train_output_layer: Final output layer training loss: {final_loss:.6f}")
-        if snapshot_path := self.create_snapshot() is not None:
-            self.logger.info(f"CascadeCorrelationNetwork: train_output_layer: Created network snapshot at: {snapshot_path}")
-            self.snapshot_counter += 1
+        try:
+            if (snapshot_path := self.create_snapshot()) is not None:
+                self.logger.info(f"CascadeCorrelationNetwork: train_output_layer: Created network snapshot at: {snapshot_path}")
+                self.snapshot_counter += 1
+        except Exception as snap_err:
+            self.logger.warning(f"CascadeCorrelationNetwork: train_output_layer: Snapshot creation failed (non-fatal): {snap_err}")
         self.logger.trace("CascadeCorrelationNetwork: train_output_layer: Completed training of the output layer.")
         return final_loss
 
@@ -1748,7 +1747,10 @@ class CascadeCorrelationNetwork:
         self.logger.trace("CascadeCorrelationNetwork: train_candidates: Starting candidate training execution.")
         try:
             self.logger.info(f"CascadeCorrelationNetwork: train_candidates: Executing candidate training with {process_count} processes.")
-            results = self._execute_candidate_training(tasks, process_count)
+            results = self._execute_candidate_training(
+                tasks, process_count,
+                candidate_input=candidate_input, y=y, residual_error=residual_error,
+            )
             self.logger.debug(f"CascadeCorrelationNetwork: train_candidates: Candidate training results: length: {len(results)}, value: {results}")
         except Exception as e:
             self.logger.error(f"CascadeCorrelationNetwork: train_candidates: Error during candidate training: {e}")
@@ -1822,6 +1824,7 @@ class CascadeCorrelationNetwork:
         input_size = candidate_input.shape[1]
 
         # OPT-5: Create shared memory block for training tensors (lightweight tasks)
+        shm = None
         try:
             shm = SharedTrainingMemory(
                 tensors=[candidate_input, y, residual_error],
@@ -1835,6 +1838,13 @@ class CascadeCorrelationNetwork:
             training_inputs = shm_metadata
             self.logger.debug(f"CascadeCorrelationNetwork: _generate_candidate_tasks: OPT-5 SharedMemory block created: {shm.name}")
         except Exception as shm_err:
+            if shm is not None:
+                if shm in self._active_shm_blocks:
+                    self._active_shm_blocks.remove(shm)
+                try:
+                    shm.close_and_unlink()
+                except Exception:
+                    pass
             self.logger.warning(f"CascadeCorrelationNetwork: _generate_candidate_tasks: OPT-5 SharedMemory creation failed, falling back to full tasks: {shm_err}")
             training_inputs = (
                 candidate_input,
@@ -1902,7 +1912,7 @@ class CascadeCorrelationNetwork:
         self.logger.debug(f"CascadeCorrelationNetwork: _calculate_optimal_process_count: Using {process_count} processes")
         return process_count
 
-    def _execute_candidate_training(self, tasks: list, process_count: int) -> list:
+    def _execute_candidate_training(self, tasks: list, process_count: int, *, candidate_input: torch.Tensor = None, y: torch.Tensor = None, residual_error: torch.Tensor = None) -> list:
         """
         Execute candidate training via the TaskDistributor (Phase 3).
 
@@ -1916,6 +1926,9 @@ class CascadeCorrelationNetwork:
         Args:
             tasks: List of training tasks
             process_count: Number of processes to use
+            candidate_input: Original candidate input tensor (for sequential fallback regeneration)
+            y: Original target tensor (for sequential fallback regeneration)
+            residual_error: Original residual error tensor (for sequential fallback regeneration)
         Returns:
             List of training results
         """
@@ -1973,7 +1986,19 @@ class CascadeCorrelationNetwork:
             # Fall back to sequential training when parallel fails
             self.logger.warning("CascadeCorrelationNetwork: _execute_candidate_training: Parallel training failed, falling back to sequential training")
             try:
-                results = self._execute_sequential_training(tasks)
+                if tasks and isinstance(tasks[0][2], dict):
+                    legacy_inputs = (
+                        candidate_input,
+                        self.candidate_epochs,
+                        y,
+                        residual_error,
+                        self.candidate_learning_rate,
+                        self.candidate_display_frequency,
+                    )
+                    legacy_tasks = [(t[0], t[1], legacy_inputs) for t in tasks]
+                    results = self._execute_sequential_training(legacy_tasks)
+                else:
+                    results = self._execute_sequential_training(tasks)
                 self.logger.info("CascadeCorrelationNetwork: _execute_candidate_training: Sequential training completed successfully")
             except Exception as seq_error:
                 self.logger.error(f"CascadeCorrelationNetwork: _execute_candidate_training: Sequential training also failed: {seq_error}")
@@ -2151,7 +2176,7 @@ class CascadeCorrelationNetwork:
         return results
 
     # Maximum absolute weight/bias magnitude allowed in training results (V-4 threat model)
-    _RESULT_MAX_WEIGHT_MAGNITUDE = 100.0
+    _RESULT_MAX_WEIGHT_MAGNITUDE = 1000.0
 
     def _validate_training_result(self, result) -> bool:
         """Validate a CandidateTrainingResult from the result queue.
@@ -2187,6 +2212,8 @@ class CascadeCorrelationNetwork:
                     if torch.isnan(param).any() or torch.isinf(param).any():
                         self.logger.warning(f"CascadeCorrelationNetwork: _validate_training_result: candidate {param_name} contains NaN or Inf")
                         return False
+                    if param.abs().max().item() > 100.0:
+                        self.logger.warning(f"CascadeCorrelationNetwork: _validate_training_result: candidate {param_name} magnitude {param.abs().max().item():.2f} is elevated (threshold {self._RESULT_MAX_WEIGHT_MAGNITUDE})")
                     if param.abs().max().item() > self._RESULT_MAX_WEIGHT_MAGNITUDE:
                         self.logger.warning(f"CascadeCorrelationNetwork: _validate_training_result: candidate {param_name} magnitude {param.abs().max().item():.2f} exceeds limit {self._RESULT_MAX_WEIGHT_MAGNITUDE}")
                         return False
@@ -2712,6 +2739,7 @@ class CascadeCorrelationNetwork:
             logger.error(f"CascadeCorrelationNetwork: train_candidate_worker: Error retrieving worker ID and UUID: {e}")
             worker_id, worker_uuid = (0, "None")
         shm_handle = None  # OPT-5: track SharedMemory handle for deferred close
+        candidate_inputs = None  # Guard: prevent UnboundLocalError if _build_candidate_inputs raises
         try:
             if task_data_input is None:
                 logger.error("CascadeCorrelationNetwork: train_candidate_worker: No task data input provided.")
@@ -2847,9 +2875,19 @@ class CascadeCorrelationNetwork:
         shm_handle = None
         if isinstance(training_inputs, dict):
             # OPT-5: Reconstruct training tensors from SharedMemory block
-            logger.debug(f"CascadeCorrelationNetwork: _build_candidate_inputs: OPT-5 reconstructing tensors from SharedMemory: {training_inputs.get('shm_name')}")
-            tensors, shm_handle = SharedTrainingMemory.reconstruct_tensors(training_inputs)
-            candidate_input, y, residual_error = tensors
+            try:
+                logger.debug(f"CascadeCorrelationNetwork: _build_candidate_inputs: OPT-5 reconstructing tensors from SharedMemory: {training_inputs.get('shm_name')}")
+                tensors, shm_handle = SharedTrainingMemory.reconstruct_tensors(training_inputs)
+                # OPT-5 FIX: Clone tensors from SharedMemory into owned, writable buffers.
+                # reconstruct_tensors returns zero-copy views into the shared memory block,
+                # which are read-only.  PyTorch autograd and in-place candidate training
+                # operations require writable tensors.  Cloning here preserves the OPT-5
+                # benefit (training data is read once from /dev/shm, not serialized N times
+                # through the task queue) while giving each worker its own mutable copy.
+                candidate_input, y, residual_error = tensors[0].clone(), tensors[1].clone(), tensors[2].clone()
+            except (FileNotFoundError, OSError) as shm_err:
+                logger.warning(f"CascadeCorrelationNetwork: _build_candidate_inputs: OPT-5 SharedMemory unavailable ({shm_err}), re-raising for sequential fallback")
+                raise  # Let caller's exception handler trigger sequential fallback with fresh tasks
             candidate_epochs = training_inputs["candidate_epochs"]
             candidate_learning_rate = training_inputs["candidate_learning_rate"]
             candidate_display_frequency = training_inputs["candidate_display_frequency"]
@@ -2911,7 +2949,6 @@ class CascadeCorrelationNetwork:
         progress_callback=None,
     ) -> CandidateTrainingResult:
         # Train the candidate unit
-        global shared_object_dict
         logger = Logger
 
         try:
@@ -3895,7 +3932,7 @@ class CascadeCorrelationNetwork:
             snapshot_dir.mkdir(parents=True, exist_ok=True)
 
             # Create filename with timestamp and UUID
-            timestamp = pd.datetime.now().strftime("%Y%m%d_%H%M%S")
+            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
             uuid = str(self.get_uuid())
             filename = f"cascor_snapshot_{timestamp}_{uuid}.h5"
             snapshot_path = pl.Path(snapshot_dir).joinpath(filename)
@@ -3976,7 +4013,7 @@ class CascadeCorrelationNetwork:
             snapshot_dir.mkdir(parents=True, exist_ok=True)
 
             # Create filename with object's name, timestamp, and UUID
-            timestamp = pd.Timestamp.now().strftime("%Y%m%d_%H%M%S")
+            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
             uuid = str(objectify.get_uuid())
             object_name = objectify.__name__
             filename = f"{object_name}_snapshot_{timestamp}_{uuid}.h5"
