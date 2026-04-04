@@ -989,6 +989,7 @@ Serena provides semantic code analysis tools for navigating the codebase, findin
 **Benchmarks**:
 
 Performance micro-benchmarks in `src/tests/performance/` cover:
+
 - Forward pass latency
 - Candidate training throughput
 - Correlation calculation

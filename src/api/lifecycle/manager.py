@@ -540,10 +540,12 @@ class TrainingLifecycleManager:
             self.training_state.update_state(status="Failed", phase="Idle")
             if self._ws_manager:
                 try:
-                    self._ws_manager.broadcast_from_thread({
-                        "type": "training_failed",
-                        "data": {"error": str(e), "phase": str(self.training_state.phase)},
-                    })
+                    self._ws_manager.broadcast_from_thread(
+                        {
+                            "type": "training_failed",
+                            "data": {"error": str(e), "phase": str(self.training_state.phase)},
+                        }
+                    )
                 except Exception:
                     pass
 

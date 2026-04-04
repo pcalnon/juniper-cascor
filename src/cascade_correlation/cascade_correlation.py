@@ -114,9 +114,6 @@ from cascor_constants.constants import (  # TODO: Commented out for F401 complia
     _CASCADE_CORRELATION_NETWORK_LOG_LEVEL_NUMBERS_DICT,
     _CASCADE_CORRELATION_NETWORK_LOG_LEVEL_NUMBERS_LIST,
     _CASCADE_CORRELATION_NETWORK_MAX_HIDDEN_UNITS,
-    _CASCADE_CORRELATION_NETWORK_CANDIDATE_CONVERGENCE_THRESHOLD,
-    _CASCADE_CORRELATION_NETWORK_CANDIDATE_PATIENCE,
-    _CASCADE_CORRELATION_NETWORK_CONVERGENCE_THRESHOLD,
     _CASCADE_CORRELATION_NETWORK_NODE_CORRELATION_THRESHOLD,
     _CASCADE_CORRELATION_NETWORK_OUTPUT_EPOCHS,
     _CASCADE_CORRELATION_NETWORK_OUTPUT_SIZE,
@@ -659,12 +656,12 @@ class CascadeCorrelationNetwork:
         self.correlation_threshold = self.config.correlation_threshold or _CASCADE_CORRELATION_NETWORK_NODE_CORRELATION_THRESHOLD
         self.patience = self.config.patience or _CASCADE_CORRELATION_NETWORK_PATIENCE
         self.convergence_threshold = self.config.convergence_threshold or _CASCADE_CORRELATION_NETWORK_CONVERGENCE_THRESHOLD
-        
+
         # self.candidate_convergence_threshold = self.config.candidate_convergence_threshold or _CASCADE_CORRELATION_NETWORK_CANDIDATE_CONVERGENCE_THRESHOLD
         # self.candidate_patience = self.config.candidate_patience or _CASCADE_CORRELATION_NETWORK_CANDIDATE_PATIENCE
-        self.candidate_patience = self.config.candidate_patience if hasattr(self.config, 'candidate_patience') else _CASCADE_CORRELATION_NETWORK_CANDIDATE_PATIENCE
-        self.candidate_convergence_threshold = self.config.candidate_convergence_threshold if hasattr(self.config, 'candidate_convergence_threshold') else _CASCADE_CORRELATION_NETWORK_CANDIDATE_CONVERGENCE_THRESHOLD
-        
+        self.candidate_patience = self.config.candidate_patience if hasattr(self.config, "candidate_patience") else _CASCADE_CORRELATION_NETWORK_CANDIDATE_PATIENCE
+        self.candidate_convergence_threshold = self.config.candidate_convergence_threshold if hasattr(self.config, "candidate_convergence_threshold") else _CASCADE_CORRELATION_NETWORK_CANDIDATE_CONVERGENCE_THRESHOLD
+
         self.candidate_epochs = self.config.candidate_epochs or _CASCADE_CORRELATION_NETWORK_CANDIDATE_EPOCHS
         self.epochs_max = self.config.epochs_max or _CASCADE_CORRELATION_NETWORK_EPOCHS_MAX
         self.output_epochs = self.config.output_epochs or _CASCADE_CORRELATION_NETWORK_OUTPUT_EPOCHS
@@ -1670,8 +1667,11 @@ class CascadeCorrelationNetwork:
         try:
             self.logger.info(f"CascadeCorrelationNetwork: train_candidates: Executing candidate training with {process_count} processes.")
             results = self._execute_candidate_training(
-                tasks, process_count,
-                candidate_input=candidate_input, y=y, residual_error=residual_error,
+                tasks,
+                process_count,
+                candidate_input=candidate_input,
+                y=y,
+                residual_error=residual_error,
             )
             self.logger.debug(f"CascadeCorrelationNetwork: train_candidates: Candidate training results: length: {len(results)}, value: {results}")
         except Exception as e:
@@ -3665,14 +3665,14 @@ class CascadeCorrelationNetwork:
                     break
             else:
 
-            #    # Original behavior: Add single best candidate
-            #    train_loss, train_accuracy = self._add_best_candidate(training_results.best_candidate, x_train, y_train, growth_iteration)
-            # self.logger.debug(f"CascadeCorrelationNetwork: grow_network: After adding candidate(s), Training Loss: {train_loss:.6f}, Training Accuracy: {train_accuracy:.4f}, For Growth Iteration {growth_iteration}")
-            #
-            # # Prepare inputs for validation of training results
-            # validate_training_inputs = ValidateTrainingInputs(
-            #     epoch=growth_iteration,
-            #     max_epochs=max_epochs,
+                #    # Original behavior: Add single best candidate
+                #    train_loss, train_accuracy = self._add_best_candidate(training_results.best_candidate, x_train, y_train, growth_iteration)
+                # self.logger.debug(f"CascadeCorrelationNetwork: grow_network: After adding candidate(s), Training Loss: {train_loss:.6f}, Training Accuracy: {train_accuracy:.4f}, For Growth Iteration {growth_iteration}")
+                #
+                # # Prepare inputs for validation of training results
+                # validate_training_inputs = ValidateTrainingInputs(
+                #     epoch=growth_iteration,
+                #     max_epochs=max_epochs,
                 train_loss, train_accuracy = self._add_best_candidate(training_results.best_candidate, x_train, y_train, iteration)
             self.logger.debug(f"CascadeCorrelationNetwork: grow_network: After adding candidate(s), Training Loss: {train_loss:.6f}, Training Accuracy: {train_accuracy:.4f}, For Current Iteration {iteration}")
 
