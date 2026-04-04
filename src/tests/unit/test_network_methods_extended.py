@@ -31,8 +31,8 @@ class TestValidateTraining:
         from cascade_correlation.cascade_correlation import ValidateTrainingInputs
 
         inputs = ValidateTrainingInputs(
-            epoch=0,
-            max_epochs=10,
+            iteration=0,
+            max_iterations=10,
             patience_counter=0,
             early_stopping=True,
             train_accuracy=0.5,
@@ -221,8 +221,8 @@ class TestValidateTrainingInputs:
         from cascade_correlation.cascade_correlation import ValidateTrainingInputs
 
         inputs = ValidateTrainingInputs(
-            epoch=0,
-            max_epochs=100,
+            iteration=0,
+            max_iterations=100,
             patience_counter=0,
             early_stopping=True,
             train_accuracy=0.5,
@@ -234,8 +234,8 @@ class TestValidateTrainingInputs:
             y_val=np.array([[1, 0]]),
         )
 
-        assert inputs.epoch == 0
-        assert inputs.max_epochs == 100
+        assert inputs.iteration == 0
+        assert inputs.max_iterations == 100
 
 
 class TestValidateTrainingResults:

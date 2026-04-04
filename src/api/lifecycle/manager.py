@@ -173,7 +173,7 @@ class TrainingLifecycleManager:
                 phase="Idle",
                 learning_rate=kwargs.get("learning_rate", 0.01),
                 max_hidden_units=kwargs.get("max_hidden_units", 10),
-                max_epochs=kwargs.get("epochs_max", 200),
+                max_iterations=kwargs.get("epochs_max", 200),
                 network_name=f"CasCor-{kwargs.get('input_size', 2)}x{kwargs.get('output_size', 2)}",
             )
 
@@ -683,6 +683,9 @@ class TrainingLifecycleManager:
             "patience": getattr(self.network, "patience", 0),
             "candidate_pool_size": getattr(self.network, "candidate_pool_size", 0),
             "correlation_threshold": getattr(self.network, "correlation_threshold", 0.0),
+            "convergence_threshold": getattr(self.network, "convergence_threshold", 0.001),
+            "candidate_patience": getattr(self.network, "candidate_patience", 30),
+            "candidate_convergence_threshold": getattr(self.network, "candidate_convergence_threshold", 0.001),
         }
 
     def update_params(self, params: Dict[str, Any]) -> Dict[str, Any]:

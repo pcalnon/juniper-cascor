@@ -845,7 +845,7 @@ class TestGrowNetworkHelpers:
         network = _make_network()
         x = torch.randn(10, 2)
         y = torch.randn(10, 2)
-        result = network._calculate_residual_error_safe(x_train=x, y_train=y, epoch=0, max_epochs=5)
+        result = network._calculate_residual_error_safe(x_train=x, y_train=y, iteration=0, max_iterations=5)
         assert isinstance(result, torch.Tensor)
 
     @pytest.mark.unit
@@ -889,8 +889,8 @@ class TestGrowNetworkHelpers:
                 x_train=torch.randn(10, 2),
                 y_train=torch.randn(10, 2),
                 residual_error=torch.randn(10, 2),
-                epoch=0,
-                max_epochs=5,
+                iteration=0,
+                max_iterations=5,
             )
             assert result is mock_tr
 
@@ -930,8 +930,8 @@ class TestGrowNetworkHelpers:
                         best_candidate=MagicMock(),
                         x_train=x,
                         y_train=y,
-                        epoch=0,
-                        max_epochs=5,
+                        iteration=0,
+                        max_iterations=5,
                     )
                     assert loss == 0.5
                     assert acc == 0.8
@@ -947,8 +947,8 @@ class TestGrowNetworkHelpers:
                     best_candidate=MagicMock(),
                     x_train=torch.randn(10, 2),
                     y_train=torch.randn(10, 2),
-                    epoch=0,
-                    max_epochs=5,
+                    iteration=0,
+                    max_iterations=5,
                 )
 
     # _calculate_train_accuracy
@@ -1033,6 +1033,36 @@ class TestGrowNetworkHelpers:
 
         assert isinstance(loss, (float, int, np.floating, torch.Tensor))
         assert len(network.history["train_loss"]) == initial_history_len + 1
+
+    # adaptive correlation threshold in grow_network
+    @pytest.mark.unit
+    def test_adaptive_correlation_threshold_scales_with_residual(self):
+        """Adaptive threshold should decrease as residual error shrinks."""
+        network = _make_network(correlation_threshold=0.0005)
+        # Large residual: threshold should be the static value (0.0005 < 1.0 * 0.01 = 0.01)
+        large_residual = torch.ones(10, 2)  # magnitude = 1.0
+        adaptive_large = max(1e-6, min(network.correlation_threshold, large_residual.abs().mean().item() * 0.01))
+        assert adaptive_large == network.correlation_threshold  # Static threshold wins when residual is large
+
+        # Small residual: threshold should scale down
+        small_residual = torch.ones(10, 2) * 0.01  # magnitude = 0.01
+        adaptive_small = max(1e-6, min(network.correlation_threshold, small_residual.abs().mean().item() * 0.01))
+        assert adaptive_small < network.correlation_threshold  # Adaptive threshold is lower
+        assert adaptive_small == pytest.approx(0.0001, abs=1e-7)
+
+        # Tiny residual: threshold should hit the floor
+        tiny_residual = torch.ones(10, 2) * 1e-8
+        adaptive_tiny = max(1e-6, min(network.correlation_threshold, tiny_residual.abs().mean().item() * 0.01))
+        assert adaptive_tiny == 1e-6  # Floor value
+
+    @pytest.mark.unit
+    def test_adaptive_correlation_threshold_never_exceeds_static(self):
+        """Adaptive threshold should never exceed the configured static threshold."""
+        network = _make_network(correlation_threshold=0.001)
+        for magnitude in [0.01, 0.1, 1.0, 10.0, 100.0]:
+            residual = torch.ones(10, 2) * magnitude
+            adaptive = max(1e-6, min(network.correlation_threshold, residual.abs().mean().item() * 0.01))
+            assert adaptive <= network.correlation_threshold
 
 
 # ---------------------------------------------------------------------------
@@ -1334,8 +1364,8 @@ class TestDataclasses:
     def test_validate_training_inputs(self):
         """ValidateTrainingInputs should be constructable."""
         vti = ValidateTrainingInputs(
-            epoch=0,
-            max_epochs=10,
+            iteration=0,
+            max_iterations=10,
             patience_counter=0,
             early_stopping=False,
             train_accuracy=0.5,
@@ -1346,8 +1376,8 @@ class TestDataclasses:
             x_val=np.zeros((5, 2)),
             y_val=np.zeros((5, 2)),
         )
-        assert vti.epoch == 0
-        assert vti.max_epochs == 10
+        assert vti.iteration == 0
+        assert vti.max_iterations == 10
 
     @pytest.mark.unit
     def test_validate_training_results(self):

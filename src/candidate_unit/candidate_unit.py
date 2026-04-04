@@ -55,6 +55,7 @@ import torch  # pyright: ignore[reportMissingImports]
 from cascor_constants.constants import (  # _CANDIDATE_UNIT_POOL_SIZE,  # pyright: ignore[reportMissingImports]
     _CANDIDATE_UNIT_ACTIVATION_FUNCTION,
     _CANDIDATE_UNIT_DISPLAY_FREQUENCY,
+    _CANDIDATE_UNIT_CONVERGENCE_THRESHOLD,
     _CANDIDATE_UNIT_EARLY_STOPPING,
     _CANDIDATE_UNIT_EPOCHS,
     _CANDIDATE_UNIT_EPOCHS_MAX,
@@ -155,6 +156,7 @@ class CandidateUnit:
         CandidateUnit__output_size: int = _CANDIDATE_UNIT_OUTPUT_SIZE,
         CandidateUnit__learning_rate: float = _CANDIDATE_UNIT_LEARNING_RATE,
         CandidateUnit__patience: int = _CANDIDATE_UNIT_PATIENCE,
+        CandidateUnit__convergence_threshold: float = _CANDIDATE_UNIT_CONVERGENCE_THRESHOLD,
         CandidateUnit__early_stopping: bool = _CANDIDATE_UNIT_EARLY_STOPPING,
         CandidateUnit__status_frequency: int = _CANDIDATE_UNIT_STATUS_FREQUENCY,
         CandidateUnit__random_max_value: int = _CANDIDATE_UNIT_RANDOM_MAX_VALUE,
@@ -220,6 +222,8 @@ class CandidateUnit:
         self.logger.verbose(f"CandidateUnit: __init__: Early stopping: {self.early_stopping}")
         self.patience = CandidateUnit__patience
         self.logger.verbose(f"CandidateUnit: __init__: Patience: {self.patience}")
+        self.convergence_threshold = CandidateUnit__convergence_threshold
+        self.logger.verbose(f"CandidateUnit: __init__: Convergence threshold: {self.convergence_threshold}")
 
         # Initialize candidate unit attributes with random weights and bias
         self.weights = torch.randn(self.input_size) * self.random_value_scale
@@ -595,7 +599,7 @@ class CandidateUnit:
             # Check for early stopping if enabled
             if self.early_stopping:
                 current_abs_correlation = abs(candidate_training_result.correlation)
-                if current_abs_correlation > abs(best_correlation_so_far):
+                if current_abs_correlation > abs(best_correlation_so_far) + self.convergence_threshold:
                     best_correlation_so_far = candidate_training_result.correlation
                     epochs_without_improvement = 0
                     self.logger.debug(f"CandidateUnit: train: Improved correlation to {best_correlation_so_far:.6f}, resetting patience counter")

@@ -79,7 +79,7 @@ class TestGrowIterationCallback:
             with patch.object(simple_network, "_get_training_results", return_value=mock_results):
                 with patch.object(simple_network, "_add_best_candidate", return_value=(0.2, 0.8)):
                     with patch.object(simple_network, "validate_training", return_value=validate_result):
-                        simple_network.grow_network(x, y, max_epochs=5, on_grow_iteration_callback=grow_callback)
+                        simple_network.grow_network(x, y, max_iterations=5, on_grow_iteration_callback=grow_callback)
 
         grow_callback.assert_called_once()
         callback_kwargs = grow_callback.call_args.kwargs
@@ -115,6 +115,6 @@ class TestGrowIterationCallback:
             with patch.object(simple_network, "_get_training_results", return_value=mock_results):
                 with patch.object(simple_network, "_add_best_candidate", return_value=(0.2, 0.8)):
                     with patch.object(simple_network, "validate_training", return_value=validate_result):
-                        simple_network.grow_network(x, y, max_epochs=1)
+                        simple_network.grow_network(x, y, max_iterations=1)
 
         fallback_callback.assert_called_once()

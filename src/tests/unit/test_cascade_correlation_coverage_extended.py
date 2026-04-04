@@ -311,6 +311,32 @@ class TestEarlyStopping:
         assert counter == 3
 
     @pytest.mark.unit
+    def test_check_patience_improvement_below_convergence_threshold(self, simple_network):
+        """Test that improvement smaller than convergence_threshold does NOT reset patience."""
+        simple_network.convergence_threshold = 0.001
+        simple_network.patience = 10
+        # Loss improved by 0.0005 (less than convergence_threshold of 0.001)
+        patience_exhausted, counter, best = simple_network.check_patience(
+            patience_counter=5, value_loss=0.1995, best_value_loss=0.2
+        )
+        assert not patience_exhausted
+        assert counter == 6  # Incremented, not reset
+        assert best == 0.2   # Best not updated
+
+    @pytest.mark.unit
+    def test_check_patience_improvement_above_convergence_threshold(self, simple_network):
+        """Test that improvement larger than convergence_threshold resets patience."""
+        simple_network.convergence_threshold = 0.001
+        simple_network.patience = 10
+        # Loss improved by 0.002 (more than convergence_threshold of 0.001)
+        patience_exhausted, counter, best = simple_network.check_patience(
+            patience_counter=5, value_loss=0.198, best_value_loss=0.2
+        )
+        assert not patience_exhausted
+        assert counter == 0   # Reset
+        assert best == 0.198  # Best updated
+
+    @pytest.mark.unit
     def test_check_hidden_units_max_not_reached(self, simple_network):
         """Test check_hidden_units_max when not reached."""
         simple_network.hidden_units = []
@@ -339,7 +365,7 @@ class TestEarlyStopping:
     @pytest.mark.unit
     def test_evaluate_early_stopping_no_early_stopping(self, simple_network):
         """Test evaluate_early_stopping with early_stopping=False."""
-        early_stop, counter, best = simple_network.evaluate_early_stopping(epoch=5, max_epochs=10, train_loss=0.1, train_accuracy=0.8, early_stopping=False, value_loss=0.15, best_value_loss=0.2, patience_counter=0)
+        early_stop, counter, best = simple_network.evaluate_early_stopping(iteration=5, max_iterations=10, train_loss=0.1, train_accuracy=0.8, early_stopping=False, value_loss=0.15, best_value_loss=0.2, patience_counter=0)
 
         assert not early_stop
 
@@ -347,7 +373,7 @@ class TestEarlyStopping:
     def test_evaluate_early_stopping_accuracy_reached(self, simple_network):
         """Test early stopping when accuracy target reached."""
         simple_network.target_accuracy = 0.9
-        early_stop, counter, best = simple_network.evaluate_early_stopping(epoch=5, max_epochs=10, train_loss=0.1, train_accuracy=0.95, early_stopping=True, value_loss=0.15, best_value_loss=0.2, patience_counter=0)
+        early_stop, counter, best = simple_network.evaluate_early_stopping(iteration=5, max_iterations=10, train_loss=0.1, train_accuracy=0.95, early_stopping=True, value_loss=0.15, best_value_loss=0.2, patience_counter=0)
 
         assert early_stop
 
@@ -972,7 +998,7 @@ class TestValidateTraining:
         from cascade_correlation.cascade_correlation import ValidateTrainingInputs
 
         x, y = simple_2d_data
-        inputs = ValidateTrainingInputs(epoch=0, max_epochs=10, patience_counter=0, early_stopping=True, train_accuracy=0.8, train_loss=0.2, best_value_loss=float("inf"), x_train=x, y_train=y, x_val=None, y_val=None)
+        inputs = ValidateTrainingInputs(iteration=0, max_iterations=10, patience_counter=0, early_stopping=True, train_accuracy=0.8, train_loss=0.2, best_value_loss=float("inf"), x_train=x, y_train=y, x_val=None, y_val=None)
 
         result = simple_network.validate_training(inputs)
 
@@ -987,7 +1013,7 @@ class TestValidateTraining:
         x, y = simple_2d_data
         split = len(x) // 2
 
-        inputs = ValidateTrainingInputs(epoch=0, max_epochs=10, patience_counter=0, early_stopping=True, train_accuracy=0.8, train_loss=0.2, best_value_loss=float("inf"), x_train=x[:split], y_train=y[:split], x_val=x[split:], y_val=y[split:])
+        inputs = ValidateTrainingInputs(iteration=0, max_iterations=10, patience_counter=0, early_stopping=True, train_accuracy=0.8, train_loss=0.2, best_value_loss=float("inf"), x_train=x[:split], y_train=y[:split], x_val=x[split:], y_val=y[split:])
 
         result = simple_network.validate_training(inputs)
 
