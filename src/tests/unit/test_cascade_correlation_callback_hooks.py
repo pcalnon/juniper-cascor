@@ -84,7 +84,7 @@ class TestGrowIterationCallback:
         grow_callback.assert_called_once()
         callback_kwargs = grow_callback.call_args.kwargs
         assert callback_kwargs["iteration"] == 0
-        assert callback_kwargs["max_iterations"] == 5
+        assert callback_kwargs["max_iterations"] == simple_network.max_hidden_units
         assert callback_kwargs["best_correlation"] == 0.91
         assert callback_kwargs["candidates_trained"] == 3
         assert callback_kwargs["candidates_total"] == simple_network.candidate_pool_size

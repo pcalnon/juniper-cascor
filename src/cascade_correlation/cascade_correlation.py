@@ -3614,7 +3614,7 @@ class CascadeCorrelationNetwork:
                 _correlations = getattr(training_results, "correlations", [])
                 _grow_cb(
                     iteration=growth_iteration,
-                    max_iterations=max_epochs,
+                    max_iterations=self.max_hidden_units,
                     best_correlation=float(training_results.best_candidate.get_correlation()),
                     candidates_trained=len(getattr(training_results, "candidate_objects", [])),
                     candidates_total=pool_size,
