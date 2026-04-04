@@ -1334,8 +1334,8 @@ class TestDataclasses:
     def test_validate_training_inputs(self):
         """ValidateTrainingInputs should be constructable."""
         vti = ValidateTrainingInputs(
-            epoch=0,
-            max_epochs=10,
+            iteration=0,
+            max_iterations=10,
             patience_counter=0,
             early_stopping=False,
             train_accuracy=0.5,
@@ -1346,8 +1346,8 @@ class TestDataclasses:
             x_val=np.zeros((5, 2)),
             y_val=np.zeros((5, 2)),
         )
-        assert vti.epoch == 0
-        assert vti.max_epochs == 10
+        assert vti.iteration == 0
+        assert vti.max_iterations == 10
 
     @pytest.mark.unit
     def test_validate_training_results(self):
