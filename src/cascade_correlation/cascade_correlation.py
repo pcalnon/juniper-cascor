@@ -1765,7 +1765,7 @@ class CascadeCorrelationNetwork:
                     self._active_shm_blocks.remove(shm)
                 try:
                     shm.close_and_unlink()
-                except Exception:
+                except Exception:  # nosec B110 — cleanup must not propagate exceptions
                     pass
             self.logger.warning(f"CascadeCorrelationNetwork: _generate_candidate_tasks: OPT-5 SharedMemory creation failed, falling back to full tasks: {shm_err}")
             training_inputs = (
@@ -1934,6 +1934,82 @@ class CascadeCorrelationNetwork:
             results = self._get_dummy_results(len(tasks))
         return results
 
+    def _drain_stale_results(self, result_queue) -> int:
+        """Drain stale results from previous rounds before submitting new tasks.
+
+        PARALLEL-FIX (RC-5): The persistent pool (RC-4) reuses result_queue across rounds.
+        If a slow worker from round N completes after collection ends, its result stays in
+        the queue and contaminates round N+1, potentially returning a candidate trained with
+        a stale input_size.
+
+        Returns:
+            Number of stale results drained.
+        """
+        from queue import Empty as _QueueEmpty
+
+        drained_count = 0
+        while True:
+            try:
+                stale_result = result_queue.get_nowait()
+                drained_count += 1
+                self.logger.warning(f"CascadeCorrelationNetwork: _drain_stale_results: " f"Drained stale result from previous round: " f"candidate_id={getattr(stale_result, 'candidate_id', '?')}, " f"correlation={getattr(stale_result, 'correlation', '?')}")
+            except _QueueEmpty:
+                break
+        if drained_count:
+            self.logger.warning(f"CascadeCorrelationNetwork: _drain_stale_results: " f"Drained {drained_count} stale result(s) from persistent result queue")
+        return drained_count
+
+    def _cleanup_pending_shared_memory(self) -> None:
+        """Unlink SharedMemory blocks deferred from previous training rounds.
+
+        OPT-5: By now, all workers have finished reading from these blocks
+        (results were drained above). Safe to unlink.
+        """
+        pending = getattr(self, "_pending_shm_unlinks", [])
+        if pending:
+            for shm_block in pending:
+                try:
+                    shm_block.unlink()
+                except Exception:  # nosec B110 — cleanup must not propagate exceptions
+                    pass
+            self._pending_shm_unlinks = []
+            self.logger.debug(f"CascadeCorrelationNetwork: _cleanup_pending_shared_memory: OPT-5 unlinked {len(pending)} deferred SharedMemory block(s)")
+
+    def _collect_worker_results(self, workers, result_queue, tasks, sleepytime, round_id) -> list:
+        """Wait for persistent workers to finish and collect training results.
+
+        CASCOR-P0-001 FIX: Uses bounded timeout with worker liveness checks instead
+        of unreliable busy-wait using empty()/qsize().
+
+        Returns:
+            List of CandidateTrainingResult objects.
+        """
+        max_wait_time = getattr(self, "task_queue_timeout", 60.0)
+        wait_start = time.time()
+        self.logger.debug(f"CascadeCorrelationNetwork: _collect_worker_results: Waiting for workers to complete {len(tasks)} tasks (max {max_wait_time}s).")
+        while time.time() - wait_start < max_wait_time:
+            alive_workers = [w for w in workers if w.is_alive()]
+            if not alive_workers:
+                self.logger.debug("CascadeCorrelationNetwork: _collect_worker_results: All workers have exited.")
+                break
+            # PARALLEL-FIX (RC-4): Check result queue size for early exit when all results are in,
+            # so we don't wait the full timeout when workers finish quickly
+            try:
+                if result_queue.qsize() >= len(tasks):
+                    self.logger.debug("CascadeCorrelationNetwork: _collect_worker_results: All results received, exiting wait loop early.")
+                    break
+            except NotImplementedError:
+                pass  # qsize() not available on all platforms
+            time.sleep(sleepytime)
+        elapsed = time.time() - wait_start
+        self.logger.debug(f"CascadeCorrelationNetwork: _collect_worker_results: Wait completed after {elapsed:.2f}s. Workers alive: {len([w for w in workers if w.is_alive()])}")
+
+        # Collect results, NOTE: results is of type list of data class: [candidate_training_result, ...]
+        self.logger.debug("CascadeCorrelationNetwork: _collect_worker_results: Collecting results from workers")
+        results = self._collect_training_results(result_queue, len(tasks), round_id=round_id)
+        self.logger.debug(f"CascadeCorrelationNetwork: _collect_worker_results: Collected {len(results)} results")
+        return results
+
     def _execute_parallel_training(
         self,
         tasks: list,
@@ -1983,33 +2059,10 @@ class CascadeCorrelationNetwork:
         self.logger.debug("CascadeCorrelationNetwork: _execute_parallel_training: Created task and result queues")
         try:
             # PARALLEL-FIX (RC-5): Drain stale results from previous rounds before submitting new tasks.
-            # The persistent pool (RC-4) reuses result_queue across rounds. If a slow worker from
-            # round N completes after collection ends, its result stays in the queue and contaminates
-            # round N+1, potentially returning a candidate trained with a stale input_size.
-            from queue import Empty as _QueueEmpty
+            self._drain_stale_results(result_queue)
 
-            drained_count = 0
-            while True:
-                try:
-                    stale_result = result_queue.get_nowait()
-                    drained_count += 1
-                    self.logger.warning(f"CascadeCorrelationNetwork: _execute_parallel_training: " f"Drained stale result from previous round: " f"candidate_id={getattr(stale_result, 'candidate_id', '?')}, " f"correlation={getattr(stale_result, 'correlation', '?')}")
-                except _QueueEmpty:
-                    break
-            if drained_count:
-                self.logger.warning(f"CascadeCorrelationNetwork: _execute_parallel_training: " f"Drained {drained_count} stale result(s) from persistent result queue")
-
-            # OPT-5: Unlink SharedMemory blocks from previous rounds. By now, all workers
-            # have finished reading from these blocks (results were drained above).
-            pending = getattr(self, "_pending_shm_unlinks", [])
-            if pending:
-                for shm_block in pending:
-                    try:
-                        shm_block.unlink()
-                    except Exception:  # nosec B110 — cleanup must not propagate exceptions
-                        pass
-                self._pending_shm_unlinks = []
-                self.logger.debug(f"CascadeCorrelationNetwork: _execute_parallel_training: OPT-5 unlinked {len(pending)} deferred SharedMemory block(s)")
+            # OPT-5: Unlink SharedMemory blocks from previous rounds.
+            self._cleanup_pending_shared_memory()
 
             # Add full tasks to the queue. With persistent workers (RC-4), shared_training_inputs
             # cannot be passed at worker startup since it changes each round (residual_error evolves).
@@ -2040,38 +2093,8 @@ class CascadeCorrelationNetwork:
             workers = self._persistent_workers
             self.logger.debug(f"CascadeCorrelationNetwork: _execute_parallel_training: Using {len(workers)} persistent workers")
 
-            # Wait for workers to process all tasks
-            # CASCOR-P0-001 FIX: Replaced unreliable busy-wait using empty()/qsize() with bounded timeout and worker liveness checks
-            # OLD (unreliable - can hang indefinitely if worker crashes):
-            # while not task_queue.empty() or result_queue.qsize() < len(tasks):
-            #     time.sleep(sleepytime)
-            # NEW: Wait for workers with bounded timeout and liveness checks
-            # We rely on _collect_training_results for proper timeout-based result collection
-            # This loop only checks worker liveness and provides early exit if all workers die
-            max_wait_time = getattr(self, "task_queue_timeout", 60.0)
-            wait_start = time.time()
-            self.logger.debug(f"CascadeCorrelationNetwork: _execute_parallel_training: Waiting for workers to complete {len(tasks)} tasks (max {max_wait_time}s).")
-            while time.time() - wait_start < max_wait_time:
-                alive_workers = [w for w in workers if w.is_alive()]
-                if not alive_workers:
-                    self.logger.debug("CascadeCorrelationNetwork: _execute_parallel_training: All workers have exited.")
-                    break
-                # PARALLEL-FIX (RC-4): Check result queue size for early exit when all results are in,
-                # so we don't wait the full timeout when workers finish quickly
-                try:
-                    if result_queue.qsize() >= len(tasks):
-                        self.logger.debug("CascadeCorrelationNetwork: _execute_parallel_training: All results received, exiting wait loop early.")
-                        break
-                except NotImplementedError:
-                    pass  # qsize() not available on all platforms
-                time.sleep(sleepytime)
-            elapsed = time.time() - wait_start
-            self.logger.debug(f"CascadeCorrelationNetwork: _execute_parallel_training: Wait completed after {elapsed:.2f}s. Workers alive: {len([w for w in workers if w.is_alive()])}")
-
-            # Collect results, NOTE: results is of type list of data class: [candidate_training_result, ...]
-            self.logger.debug("CascadeCorrelationNetwork: _execute_parallel_training: Collecting results from workers")
-            results = self._collect_training_results(result_queue, len(tasks), round_id=round_id)
-            self.logger.debug(f"CascadeCorrelationNetwork: _execute_parallel_training: Collected {len(results)} results")
+            # Wait for workers to process all tasks and collect results
+            results = self._collect_worker_results(workers, result_queue, tasks, sleepytime, round_id)
 
             # PARALLEL-FIX (RC-4): Do NOT stop workers — they persist for the next training round.
             # Original per-round worker shutdown:
@@ -2826,7 +2849,7 @@ class CascadeCorrelationNetwork:
                 # benefit (training data is read once from /dev/shm, not serialized N times
                 # through the task queue) while giving each worker its own mutable copy.
                 candidate_input, y, residual_error = tensors[0].clone(), tensors[1].clone(), tensors[2].clone()
-            except (FileNotFoundError, OSError) as shm_err:
+            except OSError as shm_err:
                 logger.warning(f"CascadeCorrelationNetwork: _build_candidate_inputs: OPT-5 SharedMemory unavailable ({shm_err}), re-raising for sequential fallback")
                 raise  # Let caller's exception handler trigger sequential fallback with fresh tasks
             candidate_epochs = training_inputs["candidate_epochs"]
@@ -3054,6 +3077,56 @@ class CascadeCorrelationNetwork:
         self.logger.info(f"CascadeCorrelationNetwork: _ensure_worker_pool: Persistent pool created with {num_workers} workers")
         return self._persistent_task_queue, self._persistent_result_queue
 
+    def _send_shutdown_sentinels(self) -> None:
+        """Send None sentinels to the task queue to signal workers to exit.
+
+        Each worker checks for None as a shutdown signal in its main loop.
+        """
+        if self._persistent_task_queue is not None:
+            for i in range(len(self._persistent_workers)):
+                try:
+                    self._persistent_task_queue.put(None, timeout=2.0)
+                except Exception as e:
+                    self.logger.warning(f"CascadeCorrelationNetwork: _send_shutdown_sentinels: Failed to send sentinel {i}: {e}")
+
+    def _terminate_workers(self) -> None:
+        """Join workers with timeout, escalating to terminate and SIGKILL if needed."""
+        import signal
+
+        for worker in self._persistent_workers:
+            worker.join(timeout=5.0)
+            if worker.is_alive():
+                self.logger.warning(f"CascadeCorrelationNetwork: _terminate_workers: Worker {worker.name} did not stop gracefully, terminating")
+                worker.terminate()
+                worker.join(timeout=1.0)
+                if worker.is_alive():
+                    try:
+                        os.kill(worker.pid, signal.SIGKILL)
+                        worker.join(timeout=0.5)
+                    except Exception:  # nosec B110 — cleanup must not propagate exceptions
+                        pass
+
+    def _cleanup_shared_memory_blocks(self) -> None:
+        """Clean up any outstanding SharedMemory blocks (active + pending unlink).
+
+        OPT-5: Ensures all SharedMemory blocks are properly closed and unlinked
+        during pool shutdown.
+        """
+        for shm_block in list(getattr(self, "_active_shm_blocks", [])):
+            try:
+                shm_block.close_and_unlink()
+            except Exception:  # nosec B110 — cleanup must not propagate exceptions
+                pass
+        if hasattr(self, "_active_shm_blocks"):
+            self._active_shm_blocks = []
+        for shm_block in list(getattr(self, "_pending_shm_unlinks", [])):
+            try:
+                shm_block.unlink()
+            except Exception:  # nosec B110 — cleanup must not propagate exceptions
+                pass
+        if hasattr(self, "_pending_shm_unlinks"):
+            self._pending_shm_unlinks = []
+
     def _shutdown_worker_pool(self) -> None:
         """
         Description:
@@ -3069,28 +3142,10 @@ class CascadeCorrelationNetwork:
         self.logger.debug(f"CascadeCorrelationNetwork: _shutdown_worker_pool: Shutting down {len(self._persistent_workers)} persistent workers")
 
         # Send sentinels to tell workers to exit
-        if self._persistent_task_queue is not None:
-            for i in range(len(self._persistent_workers)):
-                try:
-                    self._persistent_task_queue.put(None, timeout=2.0)
-                except Exception as e:
-                    self.logger.warning(f"CascadeCorrelationNetwork: _shutdown_worker_pool: Failed to send sentinel {i}: {e}")
+        self._send_shutdown_sentinels()
 
-        # Join workers with timeout
-        import signal
-
-        for worker in self._persistent_workers:
-            worker.join(timeout=5.0)
-            if worker.is_alive():
-                self.logger.warning(f"CascadeCorrelationNetwork: _shutdown_worker_pool: Worker {worker.name} did not stop gracefully, terminating")
-                worker.terminate()
-                worker.join(timeout=1.0)
-                if worker.is_alive():
-                    try:
-                        os.kill(worker.pid, signal.SIGKILL)
-                        worker.join(timeout=0.5)
-                    except Exception:  # nosec B110 — cleanup must not propagate exceptions
-                        pass
+        # Join workers with timeout, escalating to terminate/SIGKILL if needed
+        self._terminate_workers()
 
         self._persistent_workers = []
         self._persistent_task_queue = None
@@ -3099,20 +3154,7 @@ class CascadeCorrelationNetwork:
         self._persistent_pool_size = 0
 
         # OPT-5: Clean up any outstanding SharedMemory blocks (active + pending unlink)
-        for shm_block in list(getattr(self, "_active_shm_blocks", [])):
-            try:
-                shm_block.close_and_unlink()
-            except Exception:  # nosec B110 — cleanup must not propagate exceptions
-                pass
-        if hasattr(self, "_active_shm_blocks"):
-            self._active_shm_blocks = []
-        for shm_block in list(getattr(self, "_pending_shm_unlinks", [])):
-            try:
-                shm_block.unlink()
-            except Exception:  # nosec B110 — cleanup must not propagate exceptions
-                pass
-        if hasattr(self, "_pending_shm_unlinks"):
-            self._pending_shm_unlinks = []
+        self._cleanup_shared_memory_blocks()
 
         self.logger.debug("CascadeCorrelationNetwork: _shutdown_worker_pool: Persistent pool shut down")
 
