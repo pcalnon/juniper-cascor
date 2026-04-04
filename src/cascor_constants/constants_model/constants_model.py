@@ -526,6 +526,13 @@ _PROJECT_MODEL_PATIENCE = 50  # This value was used with 100% run
 # _PROJECT_MODEL_PATIENCE = 490
 # _PROJECT_MODEL_PATIENCE = 500
 
+# Convergence threshold: minimum improvement in loss to reset patience counter
+_PROJECT_MODEL_CONVERGENCE_THRESHOLD = 0.001
+
+# Candidate-specific convergence threshold and patience
+_PROJECT_MODEL_CANDIDATE_CONVERGENCE_THRESHOLD = 0.001
+_PROJECT_MODEL_CANDIDATE_PATIENCE = 50
+
 
 #####################################################################################################################################################################################################
 # Define constants for status display frequencies
