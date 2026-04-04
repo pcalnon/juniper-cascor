@@ -101,6 +101,7 @@ from cascor_constants.constants import (  # _PROJECT_MODEL_AUTHKEY,; _PROJECT_MO
     _SPIRAL_PROBLEM_ORIG_POINTS,
     _SPIRAL_PROBLEM_OUTPUT_EPOCHS,
     _SPIRAL_PROBLEM_OUTPUT_SIZE,
+    _SPIRAL_PROBLEM_CONVERGENCE_THRESHOLD,
     _SPIRAL_PROBLEM_PATIENCE,
     _SPIRAL_PROBLEM_RANDOM_SEED,
     _SPIRAL_PROBLEM_RANDOM_VALUE_SCALE,
@@ -163,6 +164,7 @@ class SpiralProblem(object):
         _SpiralProblem__output_epochs: int = _SPIRAL_PROBLEM_OUTPUT_EPOCHS,
         _SpiralProblem__output_size: int = _SPIRAL_PROBLEM_OUTPUT_SIZE,
         _SpiralProblem__patience: int = _SPIRAL_PROBLEM_PATIENCE,
+        _SpiralProblem__convergence_threshold: float = _SPIRAL_PROBLEM_CONVERGENCE_THRESHOLD,
         _SpiralProblem__random_seed: int = _SPIRAL_PROBLEM_RANDOM_SEED,  # Default random seed for reproducibility
         _SpiralProblem__authkey: bytes = _SPIRAL_PROBLEM_AUTHKEY,
         _SpiralProblem__queue_address=_SPIRAL_PROBLEM_BASE_MANAGER_ADDRESS_IP,
@@ -328,6 +330,8 @@ class SpiralProblem(object):
         self.logger.verbose(f"SpiralProblem: __init__: Correlation threshold: {self.correlation_threshold}")
         self.patience = _SpiralProblem__patience
         self.logger.verbose(f"SpiralProblem: __init__: Patience: {self.patience}")
+        self.convergence_threshold = _SpiralProblem__convergence_threshold
+        self.logger.verbose(f"SpiralProblem: __init__: Convergence threshold: {self.convergence_threshold}")
         self.candidate_epochs = _SpiralProblem__candidate_epochs
         self.logger.verbose(f"SpiralProblem: __init__: Candidate epochs: {self.candidate_epochs}")
         self.output_epochs = _SpiralProblem__output_epochs
@@ -405,6 +409,7 @@ class SpiralProblem(object):
                     epochs_max=self.epochs_max,
                     output_epochs=self.output_epochs,
                     patience=self.patience,
+                    convergence_threshold=self.convergence_threshold,
                     correlation_threshold=self.correlation_threshold,
                     display_frequency=self.display_frequency,
                     epoch_display_frequency=self.epoch_display_frequency,

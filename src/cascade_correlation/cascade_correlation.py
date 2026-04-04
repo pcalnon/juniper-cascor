@@ -111,6 +111,9 @@ from cascor_constants.constants import (  # TODO: Commented out for F401 complia
     _CASCADE_CORRELATION_NETWORK_LOG_LEVEL_NUMBERS_DICT,
     _CASCADE_CORRELATION_NETWORK_LOG_LEVEL_NUMBERS_LIST,
     _CASCADE_CORRELATION_NETWORK_MAX_HIDDEN_UNITS,
+    _CASCADE_CORRELATION_NETWORK_CANDIDATE_CONVERGENCE_THRESHOLD,
+    _CASCADE_CORRELATION_NETWORK_CANDIDATE_PATIENCE,
+    _CASCADE_CORRELATION_NETWORK_CONVERGENCE_THRESHOLD,
     _CASCADE_CORRELATION_NETWORK_NODE_CORRELATION_THRESHOLD,
     _CASCADE_CORRELATION_NETWORK_OUTPUT_EPOCHS,
     _CASCADE_CORRELATION_NETWORK_OUTPUT_SIZE,
@@ -652,6 +655,9 @@ class CascadeCorrelationNetwork:
         self.max_hidden_units = self.config.max_hidden_units or _CASCADE_CORRELATION_NETWORK_MAX_HIDDEN_UNITS
         self.correlation_threshold = self.config.correlation_threshold or _CASCADE_CORRELATION_NETWORK_NODE_CORRELATION_THRESHOLD
         self.patience = self.config.patience or _CASCADE_CORRELATION_NETWORK_PATIENCE
+        self.convergence_threshold = self.config.convergence_threshold or _CASCADE_CORRELATION_NETWORK_CONVERGENCE_THRESHOLD
+        self.candidate_patience = self.config.candidate_patience if hasattr(self.config, 'candidate_patience') else _CASCADE_CORRELATION_NETWORK_CANDIDATE_PATIENCE
+        self.candidate_convergence_threshold = self.config.candidate_convergence_threshold if hasattr(self.config, 'candidate_convergence_threshold') else _CASCADE_CORRELATION_NETWORK_CANDIDATE_CONVERGENCE_THRESHOLD
         self.candidate_epochs = self.config.candidate_epochs or _CASCADE_CORRELATION_NETWORK_CANDIDATE_EPOCHS
         self.epochs_max = self.config.epochs_max or _CASCADE_CORRELATION_NETWORK_EPOCHS_MAX
         self.output_epochs = self.config.output_epochs or _CASCADE_CORRELATION_NETWORK_OUTPUT_EPOCHS
@@ -1289,6 +1295,9 @@ class CascadeCorrelationNetwork:
             CandidateUnit__log_level_name=kwargs.get("log_level", "INFO"),
             CandidateUnit__sequence_max_value=kwargs.get("sequence_max_value", self.sequence_max_value),
             CandidateUnit__random_max_value=kwargs.get("random_value_max", self.random_max_value),
+            CandidateUnit__patience=kwargs.get("patience", self.candidate_patience),
+            CandidateUnit__early_stopping=kwargs.get("early_stopping", True),
+            CandidateUnit__convergence_threshold=kwargs.get("convergence_threshold", self.candidate_convergence_threshold),
         )
 
     # TODO: DUPLICATE FUNCTION - This version was commented out because a more complete
@@ -3598,11 +3607,17 @@ class CascadeCorrelationNetwork:
                 self.logger.warning("CascadeCorrelationNetwork: grow_network: Training results are None or best candidate is None, stopping growth of the network.")
                 break
 
-            # Check if best candidate meets correlation threshold
-            elif training_results.best_candidate.get_correlation() < self.correlation_threshold:
-                self.logger.info(f"CascadeCorrelationNetwork: grow_network: No candidate met correlation threshold: {self.correlation_threshold}, Best Correlation Achieved: {training_results.best_candidate.get_correlation():.6f}")
+            # Check if best candidate meets correlation threshold (adaptive)
+            # As training progresses and residual errors shrink, candidates naturally
+            # achieve lower correlations. Use an adaptive threshold that scales with
+            # the residual error magnitude to prevent premature cascade termination.
+            residual_magnitude = residual_error.abs().mean().item()
+            adaptive_threshold = max(1e-6, min(self.correlation_threshold, residual_magnitude * 0.01))
+            best_correlation = training_results.best_candidate.get_correlation()
+            if best_correlation < adaptive_threshold:
+                self.logger.info(f"CascadeCorrelationNetwork: grow_network: No candidate met adaptive correlation threshold: {adaptive_threshold:.6f} (static: {self.correlation_threshold}, residual_mag: {residual_magnitude:.6f}), Best Correlation Achieved: {best_correlation:.6f}")
                 break
-            self.logger.info(f"CascadeCorrelationNetwork: grow_network: Best Candidate: {training_results.best_candidate.get_correlation() if training_results.best_candidate else None}, Met correlation threshold: {self.correlation_threshold}")
+            self.logger.info(f"CascadeCorrelationNetwork: grow_network: Best Candidate: {best_correlation if training_results.best_candidate else None}, Met adaptive correlation threshold: {adaptive_threshold:.6f} (static: {self.correlation_threshold})")
 
             # Grow iteration callback for real-time state updates
             _grow_cb = on_grow_iteration_callback or getattr(self, "_grow_iteration_callback", None)
@@ -4437,7 +4452,7 @@ class CascadeCorrelationNetwork:
         # Check if validation loss improved
         self.logger.trace("CascadeCorrelationNetwork: check_patience: Starting to check patience limit.")
         self.logger.verbose(f"CascadeCorrelationNetwork: check_patience: Current Value Loss: {value_loss:.6f}, Best Value Loss: {best_value_loss:.6f}, Patience Counter: {patience_counter}")
-        if value_loss < best_value_loss:
+        if value_loss < best_value_loss - self.convergence_threshold:
             best_value_loss = value_loss
             patience_counter = 0
         else:
