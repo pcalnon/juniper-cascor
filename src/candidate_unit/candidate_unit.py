@@ -54,8 +54,8 @@ import torch  # pyright: ignore[reportMissingImports]
 
 from cascor_constants.constants import (  # _CANDIDATE_UNIT_POOL_SIZE,  # pyright: ignore[reportMissingImports]
     _CANDIDATE_UNIT_ACTIVATION_FUNCTION,
-    _CANDIDATE_UNIT_DISPLAY_FREQUENCY,
     _CANDIDATE_UNIT_CONVERGENCE_THRESHOLD,
+    _CANDIDATE_UNIT_DISPLAY_FREQUENCY,
     _CANDIDATE_UNIT_EARLY_STOPPING,
     _CANDIDATE_UNIT_EPOCHS,
     _CANDIDATE_UNIT_EPOCHS_MAX,

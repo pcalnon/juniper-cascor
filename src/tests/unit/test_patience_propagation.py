@@ -25,11 +25,12 @@
 #
 #####################################################################################################################################################################################################
 
+from unittest.mock import MagicMock, patch
+
 import pytest
 import torch
-from unittest.mock import patch, MagicMock
 
-from cascade_correlation.cascade_correlation import CascadeCorrelationNetwork, ValidateTrainingResults, ValidateTrainingInputs
+from cascade_correlation.cascade_correlation import CascadeCorrelationNetwork, ValidateTrainingInputs, ValidateTrainingResults
 from cascade_correlation.cascade_correlation_config.cascade_correlation_config import CascadeCorrelationConfig
 
 
@@ -66,10 +67,7 @@ class TestPatienceCounterPropagation:
         class_0 = torch.randn(n // 2, 2) + torch.tensor([-2.0, -2.0])
         class_1 = torch.randn(n // 2, 2) + torch.tensor([2.0, 2.0])
         x = torch.cat([class_0, class_1], dim=0)
-        y = torch.cat([
-            torch.tensor([[1, 0]] * (n // 2)),
-            torch.tensor([[0, 1]] * (n // 2))
-        ], dim=0).float()
+        y = torch.cat([torch.tensor([[1, 0]] * (n // 2)), torch.tensor([[0, 1]] * (n // 2))], dim=0).float()
         return x, y
 
     @pytest.mark.unit
@@ -93,11 +91,11 @@ class TestPatienceCounterPropagation:
             patience_values_seen.append(inputs.patience_counter)
             return original_validate(inputs)
 
-        with patch.object(network, 'validate_training', side_effect=tracking_validate):
+        with patch.object(network, "validate_training", side_effect=tracking_validate):
             network.grow_network(
                 x_train=x_train,
                 y_train=y_train,
-                max_epochs=10,
+                max_iterations=10,
                 early_stopping=True,
                 patience_counter=0,
                 best_value_loss=float("inf"),
@@ -119,10 +117,7 @@ class TestPatienceCounterPropagation:
             has_non_zero = any(p > 0 for p in patience_values_seen[1:])
             all_improving = all(p == 0 for p in patience_values_seen)
             # Either patience incremented at some point (typical) or loss improved every time (rare but valid)
-            assert has_non_zero or all_improving, (
-                f"Patience counter values across iterations: {patience_values_seen}. "
-                f"Expected either increments (non-zero values) or consistent improvement (all zeros with reset)."
-            )
+            assert has_non_zero or all_improving, f"Patience counter values across iterations: {patience_values_seen}. " f"Expected either increments (non-zero values) or consistent improvement (all zeros with reset)."
 
     @pytest.mark.unit
     @pytest.mark.timeout(30)
@@ -141,11 +136,11 @@ class TestPatienceCounterPropagation:
             best_loss_values_seen.append(inputs.best_value_loss)
             return original_validate(inputs)
 
-        with patch.object(network, 'validate_training', side_effect=tracking_validate):
+        with patch.object(network, "validate_training", side_effect=tracking_validate):
             network.grow_network(
                 x_train=x_train,
                 y_train=y_train,
-                max_epochs=10,
+                max_iterations=10,
                 early_stopping=True,
                 patience_counter=0,
                 best_value_loss=float("inf"),
@@ -158,10 +153,7 @@ class TestPatienceCounterPropagation:
             assert best_loss_values_seen[0] == float("inf"), f"First iteration should start with best_value_loss=inf, got {best_loss_values_seen[0]}"
             # After the first iteration, best_value_loss should be updated to a finite value
             # (the validation loss from iteration 0)
-            assert best_loss_values_seen[1] < float("inf"), (
-                f"After first iteration, best_value_loss should be updated to a finite value, "
-                f"got {best_loss_values_seen[1]}. This indicates the propagation bug."
-            )
+            assert best_loss_values_seen[1] < float("inf"), f"After first iteration, best_value_loss should be updated to a finite value, " f"got {best_loss_values_seen[1]}. This indicates the propagation bug."
 
     @pytest.mark.unit
     @pytest.mark.timeout(30)
@@ -175,7 +167,7 @@ class TestPatienceCounterPropagation:
         result = network.grow_network(
             x_train=x,
             y_train=y,
-            max_epochs=50,
+            max_iterations=50,
             early_stopping=True,
             patience_counter=0,
             best_value_loss=float("inf"),
@@ -189,7 +181,4 @@ class TestPatienceCounterPropagation:
         # Either early stopping triggered, or training completed for other reasons (correlation threshold, max units)
         # But it should NOT have run all 50 iterations without any stopping mechanism working
         hidden_units_added = len(network.hidden_units)
-        assert hidden_units_added < 50, (
-            f"Added {hidden_units_added} hidden units. With patience=2 and early_stopping=True, "
-            f"training should have stopped well before 50 growth iterations."
-        )
+        assert hidden_units_added < 50, f"Added {hidden_units_added} hidden units. With patience=2 and early_stopping=True, " f"training should have stopped well before 50 growth iterations."
