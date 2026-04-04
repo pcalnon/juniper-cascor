@@ -10,6 +10,14 @@
 
 ## Quick Reference
 
+### Conda Environment
+
+> **Required:** Activate the `JuniperCascor` conda environment before running any commands.
+
+```bash
+conda activate JuniperCascor
+```
+
 ### Essential Commands
 
 ```bash

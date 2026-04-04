@@ -546,7 +546,7 @@ class TrainingLifecycleManager:
                             "data": {"error": str(e), "phase": str(self.training_state.phase)},
                         }
                     )
-                except Exception:
+                except Exception:  # nosec B110 — broadcast failure must not prevent state update
                     pass
 
     def stop_training(self) -> Dict[str, Any]:
