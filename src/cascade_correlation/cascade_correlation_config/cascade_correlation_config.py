@@ -43,11 +43,14 @@ from cascor_constants.constants import (  # _CASCADE_CORRELATION_NETWORK_ACTIVAT
     _CASCADE_CORRELATION_NETWORK_ACTIVATION_FUNCTIONS_DICT,
     _CASCADE_CORRELATION_NETWORK_AUTHKEY,
     _CASCADE_CORRELATION_NETWORK_BASE_MANAGER_ADDRESS,
+    _CASCADE_CORRELATION_NETWORK_CANDIDATE_CONVERGENCE_THRESHOLD,
     _CASCADE_CORRELATION_NETWORK_CANDIDATE_DISPLAY_FREQUENCY,
     _CASCADE_CORRELATION_NETWORK_CANDIDATE_EPOCHS,
     _CASCADE_CORRELATION_NETWORK_CANDIDATE_LEARNING_RATE,
+    _CASCADE_CORRELATION_NETWORK_CANDIDATE_PATIENCE,
     _CASCADE_CORRELATION_NETWORK_CANDIDATE_POOL_SIZE,
     _CASCADE_CORRELATION_NETWORK_CANDIDATE_TRAINING_CONTEXT,
+    _CASCADE_CORRELATION_NETWORK_CONVERGENCE_THRESHOLD,
     _CASCADE_CORRELATION_NETWORK_DISPLAY_FREQUENCY,
     _CASCADE_CORRELATION_NETWORK_EPOCH_DISPLAY_FREQUENCY,
     _CASCADE_CORRELATION_NETWORK_EPOCHS_MAX,
@@ -125,8 +128,9 @@ class CascadeCorrelationConfig:
         epochs_max: int = _CASCADE_CORRELATION_NETWORK_EPOCHS_MAX,
         output_epochs: int = _CASCADE_CORRELATION_NETWORK_OUTPUT_EPOCHS,
         patience: int = _CASCADE_CORRELATION_NETWORK_PATIENCE,
-        candidate_patience: int = _CASCADE_CORRELATION_NETWORK_CANDIDATE_PATIENCE,
+        convergence_threshold: float = _CASCADE_CORRELATION_NETWORK_CONVERGENCE_THRESHOLD,
         candidate_convergence_threshold: float = _CASCADE_CORRELATION_NETWORK_CANDIDATE_CONVERGENCE_THRESHOLD,
+        candidate_patience: int = _CASCADE_CORRELATION_NETWORK_CANDIDATE_PATIENCE,
         # Thresholds
         correlation_threshold: float = _CASCADE_CORRELATION_NETWORK_NODE_CORRELATION_THRESHOLD,
         convergence_threshold: float = _CASCADE_CORRELATION_NETWORK_CONVERGENCE_THRESHOLD,
@@ -191,8 +195,9 @@ class CascadeCorrelationConfig:
         self.epochs_max = epochs_max
         self.output_epochs = output_epochs
         self.patience = patience
-        self.candidate_patience = candidate_patience
+        self.convergence_threshold = convergence_threshold
         self.candidate_convergence_threshold = candidate_convergence_threshold
+        self.candidate_patience = candidate_patience
 
         # Thresholds
         self.correlation_threshold = correlation_threshold

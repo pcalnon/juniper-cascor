@@ -437,7 +437,7 @@ _PROJECT_MODEL_MAX_HIDDEN_UNITS = 100
 # _PROJECT_MODEL_CORRELATION_THRESHOLD = 0.0008
 # _PROJECT_MODEL_CORRELATION_THRESHOLD = 0.0007
 # _PROJECT_MODEL_CORRELATION_THRESHOLD = 0.0006
-_PROJECT_MODEL_CORRELATION_THRESHOLD = 0.0005  # This value was used with 100% run
+_PROJECT_MODEL_CORRELATION_THRESHOLD = 0.01  # Raised from 0.0005 to reject noise candidates (see REGRESSION_ANALYSIS_2026-04-03.md)
 # _PROJECT_MODEL_CORRELATION_THRESHOLD = 0.0004
 # _PROJECT_MODEL_CORRELATION_THRESHOLD = 0.0003
 # _PROJECT_MODEL_CORRELATION_THRESHOLD = 0.0002
@@ -526,10 +526,13 @@ _PROJECT_MODEL_PATIENCE = 50  # This value was used with 100% run
 # _PROJECT_MODEL_PATIENCE = 490
 # _PROJECT_MODEL_PATIENCE = 500
 
-#####################################################################################################################################################################################################
-# Define constant for convergence threshold (minimum improvement in validation loss to reset patience counter)
+# Convergence threshold: minimum improvement in loss to reset patience counter
 _PROJECT_MODEL_CONVERGENCE_THRESHOLD = 0.001
+
+# Candidate-specific convergence threshold and patience
 _PROJECT_MODEL_CANDIDATE_CONVERGENCE_THRESHOLD = 0.001
+_PROJECT_MODEL_CANDIDATE_PATIENCE = 50
+
 
 #####################################################################################################################################################################################################
 # Define constants for status display frequencies

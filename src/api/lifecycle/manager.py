@@ -718,8 +718,9 @@ class TrainingLifecycleManager:
                 "epochs_max",
                 "patience",
                 "convergence_threshold",
-                "candidate_patience",
                 "candidate_convergence_threshold",
+                "candidate_patience",
+                "candidate_epochs",
             }
             for key, value in params.items():
                 if key in updatable_keys and hasattr(self.network, key):
