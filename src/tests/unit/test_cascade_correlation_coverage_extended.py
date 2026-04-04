@@ -311,6 +311,32 @@ class TestEarlyStopping:
         assert counter == 3
 
     @pytest.mark.unit
+    def test_check_patience_improvement_below_convergence_threshold(self, simple_network):
+        """Test that improvement smaller than convergence_threshold does NOT reset patience."""
+        simple_network.convergence_threshold = 0.001
+        simple_network.patience = 10
+        # Loss improved by 0.0005 (less than convergence_threshold of 0.001)
+        patience_exhausted, counter, best = simple_network.check_patience(
+            patience_counter=5, value_loss=0.1995, best_value_loss=0.2
+        )
+        assert not patience_exhausted
+        assert counter == 6  # Incremented, not reset
+        assert best == 0.2   # Best not updated
+
+    @pytest.mark.unit
+    def test_check_patience_improvement_above_convergence_threshold(self, simple_network):
+        """Test that improvement larger than convergence_threshold resets patience."""
+        simple_network.convergence_threshold = 0.001
+        simple_network.patience = 10
+        # Loss improved by 0.002 (more than convergence_threshold of 0.001)
+        patience_exhausted, counter, best = simple_network.check_patience(
+            patience_counter=5, value_loss=0.198, best_value_loss=0.2
+        )
+        assert not patience_exhausted
+        assert counter == 0   # Reset
+        assert best == 0.198  # Best updated
+
+    @pytest.mark.unit
     def test_check_hidden_units_max_not_reached(self, simple_network):
         """Test check_hidden_units_max when not reached."""
         simple_network.hidden_units = []

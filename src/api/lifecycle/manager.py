@@ -683,6 +683,9 @@ class TrainingLifecycleManager:
             "patience": getattr(self.network, "patience", 0),
             "candidate_pool_size": getattr(self.network, "candidate_pool_size", 0),
             "correlation_threshold": getattr(self.network, "correlation_threshold", 0.0),
+            "convergence_threshold": getattr(self.network, "convergence_threshold", 0.001),
+            "candidate_patience": getattr(self.network, "candidate_patience", 30),
+            "candidate_convergence_threshold": getattr(self.network, "candidate_convergence_threshold", 0.001),
         }
 
     def update_params(self, params: Dict[str, Any]) -> Dict[str, Any]:
@@ -714,6 +717,9 @@ class TrainingLifecycleManager:
                 "max_hidden_units",
                 "epochs_max",
                 "patience",
+                "convergence_threshold",
+                "candidate_patience",
+                "candidate_convergence_threshold",
             }
             for key, value in params.items():
                 if key in updatable_keys and hasattr(self.network, key):

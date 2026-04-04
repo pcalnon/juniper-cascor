@@ -67,6 +67,9 @@ from cascor_constants.constants import (  # _CASCADE_CORRELATION_NETWORK_ACTIVAT
     _CASCADE_CORRELATION_NETWORK_LOG_LEVEL_NUMBERS_DICT,
     _CASCADE_CORRELATION_NETWORK_LOG_LEVEL_NUMBERS_LIST,
     _CASCADE_CORRELATION_NETWORK_MAX_HIDDEN_UNITS,
+    _CASCADE_CORRELATION_NETWORK_CANDIDATE_CONVERGENCE_THRESHOLD,
+    _CASCADE_CORRELATION_NETWORK_CANDIDATE_PATIENCE,
+    _CASCADE_CORRELATION_NETWORK_CONVERGENCE_THRESHOLD,
     _CASCADE_CORRELATION_NETWORK_NODE_CORRELATION_THRESHOLD,
     _CASCADE_CORRELATION_NETWORK_OUTPUT_EPOCHS,
     _CASCADE_CORRELATION_NETWORK_OUTPUT_SIZE,
@@ -122,8 +125,11 @@ class CascadeCorrelationConfig:
         epochs_max: int = _CASCADE_CORRELATION_NETWORK_EPOCHS_MAX,
         output_epochs: int = _CASCADE_CORRELATION_NETWORK_OUTPUT_EPOCHS,
         patience: int = _CASCADE_CORRELATION_NETWORK_PATIENCE,
+        candidate_patience: int = _CASCADE_CORRELATION_NETWORK_CANDIDATE_PATIENCE,
+        candidate_convergence_threshold: float = _CASCADE_CORRELATION_NETWORK_CANDIDATE_CONVERGENCE_THRESHOLD,
         # Thresholds
         correlation_threshold: float = _CASCADE_CORRELATION_NETWORK_NODE_CORRELATION_THRESHOLD,
+        convergence_threshold: float = _CASCADE_CORRELATION_NETWORK_CONVERGENCE_THRESHOLD,
         # Display and visualization
         display_frequency: int = _CASCADE_CORRELATION_NETWORK_DISPLAY_FREQUENCY,
         epoch_display_frequency: int = _CASCADE_CORRELATION_NETWORK_EPOCH_DISPLAY_FREQUENCY,
@@ -185,9 +191,12 @@ class CascadeCorrelationConfig:
         self.epochs_max = epochs_max
         self.output_epochs = output_epochs
         self.patience = patience
+        self.candidate_patience = candidate_patience
+        self.candidate_convergence_threshold = candidate_convergence_threshold
 
         # Thresholds
         self.correlation_threshold = correlation_threshold
+        self.convergence_threshold = convergence_threshold
 
         # N-best candidate selection
         self.candidates_per_layer = 1  # Set to N for layer-based addition
