@@ -723,6 +723,7 @@ class TrainingLifecycleManager:
                 "candidate_convergence_threshold",
                 "candidate_patience",
                 "candidate_epochs",
+                "init_output_weights",
             }
             for key, value in params.items():
                 if key in updatable_keys and hasattr(self.network, key):

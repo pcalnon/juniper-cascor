@@ -99,6 +99,7 @@ from cascor_constants.constants import (  # TODO: Commented out for F401 complia
     _CASCADE_CORRELATION_NETWORK_EPOCH_DISPLAY_FREQUENCY,
     _CASCADE_CORRELATION_NETWORK_EPOCHS_MAX,
     _CASCADE_CORRELATION_NETWORK_GENERATE_PLOTS,
+    _CASCADE_CORRELATION_NETWORK_INIT_OUTPUT_WEIGHTS,
     _CASCADE_CORRELATION_NETWORK_HDF5_PROJECT_SNAPSHOTS_DIR,
     _CASCADE_CORRELATION_NETWORK_INPUT_SIZE,
     _CASCADE_CORRELATION_NETWORK_LEARNING_RATE,
@@ -666,6 +667,7 @@ class CascadeCorrelationNetwork:
         self.epochs_max = self.config.epochs_max or _CASCADE_CORRELATION_NETWORK_EPOCHS_MAX
         self.output_epochs = self.config.output_epochs or _CASCADE_CORRELATION_NETWORK_OUTPUT_EPOCHS
         self.random_value_scale = self.config.random_value_scale or _CASCADE_CORRELATION_NETWORK_RANDOM_VALUE_SCALE
+        self.init_output_weights = getattr(self.config, "init_output_weights", None) or _CASCADE_CORRELATION_NETWORK_INIT_OUTPUT_WEIGHTS
         self.target_accuracy = self.config.candidate_training_target_accuracy or _CASCADE_CORRELATION_NETWORK_TARGET_ACCURACY
         self.worker_standby_sleepytime = self.config.candidate_training_worker_standby_sleepytime or _CASCADE_CORRELATION_NETWORK_WORKER_STANDBY_SLEEPYTIME
         self.shutdown_timeout = self.config.candidate_training_shutdown_timeout or _CASCADE_CORRELATION_NETWORK_SHUTDOWN_TIMEOUT
@@ -3453,9 +3455,12 @@ class CascadeCorrelationNetwork:
             new_input_size = x.shape[1] + 1
         self.logger.debug(f"CascadeCorrelationNetwork: add_unit: New input size for output weights: {new_input_size}, Old input size: {old_output_weights.shape[0]}")
 
-        # Ensure new weights have requires_grad=True
-        self.output_weights = torch.randn(new_input_size, self.output_size, requires_grad=True) * 0.1
-        self.logger.debug(f"CascadeCorrelationNetwork: add_unit: New output weights shape: {self.output_weights.shape}, Weights: {self.output_weights}")
+        # Initialize new output weights based on init_output_weights strategy
+        if self.init_output_weights == "zero":
+            self.output_weights = torch.zeros(new_input_size, self.output_size, requires_grad=True)
+        else:
+            self.output_weights = torch.randn(new_input_size, self.output_size, requires_grad=True) * 0.1
+        self.logger.debug(f"CascadeCorrelationNetwork: add_unit: New output weights shape: {self.output_weights.shape}, init_mode: {self.init_output_weights}")
 
         # Copy old weights
         if hidden_outputs:
@@ -3582,7 +3587,10 @@ class CascadeCorrelationNetwork:
                 new_input_size = x.shape[1] + len(hidden_outputs) + added_count
             else:
                 new_input_size = x.shape[1] + added_count
-            self.output_weights = torch.randn(new_input_size, self.output_size, requires_grad=True) * 0.1
+            if self.init_output_weights == "zero":
+                self.output_weights = torch.zeros(new_input_size, self.output_size, requires_grad=True)
+            else:
+                self.output_weights = torch.randn(new_input_size, self.output_size, requires_grad=True) * 0.1
             input_size_before = x.shape[1] + len(hidden_outputs) if hidden_outputs else x.shape[1]
             self.output_weights[:input_size_before, :] = old_output_weights
             self.output_bias = old_output_bias
