@@ -68,7 +68,9 @@ jobs:
             --extra juniper-data \
             --index-strategy unsafe-best-match \
             --no-emit-package torch \
-            -o requirements.lock
+            -o /tmp/requirements.lock.check
+
+          mv /tmp/requirements.lock.check requirements.lock
 
       - name: Commit updated lockfile
         run: |
