@@ -246,7 +246,7 @@ def grow_network(
     self,
     x_train: torch.Tensor,
     y_train: torch.Tensor,
-    max_epochs: int = 1000,
+    max_iterations: int = 1000,
     early_stopping: bool = True,
     patience_counter: int = 0,
     best_value_loss: float = float("inf"),
@@ -259,6 +259,11 @@ def grow_network(
 Grow the network by iteratively training candidate units and adding selected units.
 
 **Returns**: `ValidateTrainingResults`
+
+**Early-stopping behavior**:
+
+- With validation tensors (`x_val` and `y_val`), stopping is driven by validation loss/patience plus max-hidden-units and target-accuracy checks.
+- Without validation tensors, stopping is driven by training loss/patience (using `convergence_threshold`) plus max-hidden-units and target-accuracy checks.
 
 **Optional callback**:
 
@@ -1049,8 +1054,8 @@ class CandidateTrainingResult:
 ```python
 @dataclass
 class ValidateTrainingInputs:
-    epoch: int
-    max_epochs: int
+    iteration: int
+    max_iterations: int
     patience_counter: int
     early_stopping: bool
     train_accuracy: float
