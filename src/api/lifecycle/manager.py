@@ -173,7 +173,7 @@ class TrainingLifecycleManager:
                 phase="Idle",
                 learning_rate=kwargs.get("learning_rate", 0.01),
                 max_hidden_units=kwargs.get("max_hidden_units", 10),
-                max_epochs=kwargs.get("epochs_max", 200),
+                max_iterations=kwargs.get("epochs_max", 200),
                 network_name=f"CasCor-{kwargs.get('input_size', 2)}x{kwargs.get('output_size', 2)}",
             )
 

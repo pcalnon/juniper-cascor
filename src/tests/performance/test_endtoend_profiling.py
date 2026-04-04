@@ -133,7 +133,7 @@ class TestFullTrainingRunProfiling:
         net.train_output_layer(x_train, y_train, epochs=25)
 
         with ProfileContext("grow_network_only") as profile:
-            net.grow_network(x_train=x_train, y_train=y_train, max_epochs=3)
+            net.grow_network(x_train=x_train, y_train=y_train, max_iterations=3)
 
         profile_data = profile.to_dict(top_n=20)
         assert profile_data.get("total_calls", 0) > 0
@@ -213,7 +213,7 @@ class TestTrainingPhaseTimeDistribution:
 
         # Run grow_network
         wall_start = time.perf_counter()
-        net.grow_network(x_train=x_train, y_train=y_train, max_epochs=3)
+        net.grow_network(x_train=x_train, y_train=y_train, max_iterations=3)
         wall_total = time.perf_counter() - wall_start
 
         # Restore original methods
@@ -295,7 +295,7 @@ class TestTrainingPhaseTimeDistribution:
             setattr(net, method_name, make_timed_wrapper(method_name, original_method))
 
         wall_start = time.perf_counter()
-        net.grow_network(x_train=x_train, y_train=y_train, max_epochs=5)
+        net.grow_network(x_train=x_train, y_train=y_train, max_iterations=5)
         wall_total = time.perf_counter() - wall_start
 
         for method_name, original in originals.items():
@@ -359,7 +359,7 @@ class TestMemoryGrowthProfiling:
         net.add_unit = tracking_add_unit
 
         # Run grow_network
-        net.grow_network(x_train=x_train, y_train=y_train, max_epochs=5)
+        net.grow_network(x_train=x_train, y_train=y_train, max_iterations=5)
 
         # Restore
         net.add_unit = original_add_unit
@@ -415,7 +415,7 @@ class TestMemoryGrowthProfiling:
         net.train_output_layer(x_train, y_train, epochs=25)
         rss_after_output_kb = _get_rss_kb()
 
-        net.grow_network(x_train=x_train, y_train=y_train, max_epochs=3)
+        net.grow_network(x_train=x_train, y_train=y_train, max_iterations=3)
         rss_after_grow_kb = _get_rss_kb()
 
         peak_during_grow_mb = (rss_after_grow_kb - rss_before_kb) / 1024.0

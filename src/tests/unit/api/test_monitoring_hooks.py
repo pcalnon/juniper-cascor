@@ -282,7 +282,7 @@ class TestMonitoringHooks:
 
             x = torch.randn(8, 2)
             y = torch.randn(8, 2)
-            manager.network.grow_network(x, y, max_epochs=1)
+            manager.network.grow_network(x, y, max_iterations=1)
 
             state = manager.training_state.get_state()
             sm_state = manager.state_machine.get_state_summary()
@@ -350,7 +350,7 @@ class TestMonitoringHooks:
 
             x = torch.randn(8, 2)
             y = torch.randn(8, 2)
-            manager.network.grow_network(x, y, max_epochs=1)
+            manager.network.grow_network(x, y, max_iterations=1)
 
             state = manager.training_state.get_state()
             assert len(progress_events) >= 1
@@ -388,7 +388,7 @@ class TestMonitoringHooks:
             x = torch.randn(8, 2)
             y = torch.randn(8, 2)
             # Should not raise or hang — drain thread exits via stop_event
-            manager.network.grow_network(x, y, max_epochs=1)
+            manager.network.grow_network(x, y, max_iterations=1)
 
             state = manager.training_state.get_state()
             assert state["phase"] == "Output"

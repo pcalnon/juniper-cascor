@@ -369,7 +369,7 @@ class TestGrowNetworkMultiCandidate:
                                 value_loss=0.1,
                                 value_accuracy=0.9,
                             )
-                            result = network.grow_network(x, y, max_epochs=1)
+                            result = network.grow_network(x, y, max_iterations=1)
                             assert result is not None
 
     @pytest.mark.unit
@@ -391,7 +391,7 @@ class TestGrowNetworkMultiCandidate:
 
         with patch.object(network, "_get_training_results", return_value=mock_results):
             with patch.object(network, "_select_best_candidates", return_value=[]):
-                result = network.grow_network(x, y, max_epochs=1)
+                result = network.grow_network(x, y, max_iterations=1)
                 assert result is not None
 
     @pytest.mark.unit
@@ -405,7 +405,7 @@ class TestGrowNetworkMultiCandidate:
 
         # Return None for training results to trigger early break
         with patch.object(network, "_calculate_residual_error_safe", return_value=None):
-            result = network.grow_network(x, y, max_epochs=1)
+            result = network.grow_network(x, y, max_iterations=1)
             assert result is not None
 
     @pytest.mark.unit
@@ -424,7 +424,7 @@ class TestGrowNetworkMultiCandidate:
         mock_results.best_candidate = mock_candidate
 
         with patch.object(network, "_get_training_results", return_value=mock_results):
-            result = network.grow_network(x, y, max_epochs=1)
+            result = network.grow_network(x, y, max_iterations=1)
             assert result is not None
 
 

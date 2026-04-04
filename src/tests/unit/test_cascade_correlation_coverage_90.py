@@ -742,7 +742,7 @@ class TestErrorHandlingPaths:
     def test_add_best_candidate_none(self, simple_network, simple_2d_data):
         """Test _add_best_candidate with None candidate."""
         x, y = simple_2d_data
-        result = simple_network._add_best_candidate(best_candidate=None, x_train=x, y_train=y, epoch=0)
+        result = simple_network._add_best_candidate(best_candidate=None, x_train=x, y_train=y, iteration=0)
         assert result == (None, None)
 
     @pytest.mark.unit
@@ -809,8 +809,8 @@ class TestErrorHandlingPaths:
         x, y = simple_2d_data
 
         inputs = ValidateTrainingInputs(
-            epoch=0,
-            max_epochs=10,
+            iteration=0,
+            max_iterations=10,
             patience_counter=0,
             early_stopping=True,
             train_accuracy=0.8,

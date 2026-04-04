@@ -845,7 +845,7 @@ class TestGrowNetworkHelpers:
         network = _make_network()
         x = torch.randn(10, 2)
         y = torch.randn(10, 2)
-        result = network._calculate_residual_error_safe(x_train=x, y_train=y, epoch=0, max_epochs=5)
+        result = network._calculate_residual_error_safe(x_train=x, y_train=y, iteration=0, max_iterations=5)
         assert isinstance(result, torch.Tensor)
 
     @pytest.mark.unit
@@ -889,8 +889,8 @@ class TestGrowNetworkHelpers:
                 x_train=torch.randn(10, 2),
                 y_train=torch.randn(10, 2),
                 residual_error=torch.randn(10, 2),
-                epoch=0,
-                max_epochs=5,
+                iteration=0,
+                max_iterations=5,
             )
             assert result is mock_tr
 
@@ -930,8 +930,8 @@ class TestGrowNetworkHelpers:
                         best_candidate=MagicMock(),
                         x_train=x,
                         y_train=y,
-                        epoch=0,
-                        max_epochs=5,
+                        iteration=0,
+                        max_iterations=5,
                     )
                     assert loss == 0.5
                     assert acc == 0.8
@@ -947,8 +947,8 @@ class TestGrowNetworkHelpers:
                     best_candidate=MagicMock(),
                     x_train=torch.randn(10, 2),
                     y_train=torch.randn(10, 2),
-                    epoch=0,
-                    max_epochs=5,
+                    iteration=0,
+                    max_iterations=5,
                 )
 
     # _calculate_train_accuracy
@@ -1334,8 +1334,8 @@ class TestDataclasses:
     def test_validate_training_inputs(self):
         """ValidateTrainingInputs should be constructable."""
         vti = ValidateTrainingInputs(
-            epoch=0,
-            max_epochs=10,
+            iteration=0,
+            max_iterations=10,
             patience_counter=0,
             early_stopping=False,
             train_accuracy=0.5,
@@ -1346,8 +1346,8 @@ class TestDataclasses:
             x_val=np.zeros((5, 2)),
             y_val=np.zeros((5, 2)),
         )
-        assert vti.epoch == 0
-        assert vti.max_epochs == 10
+        assert vti.iteration == 0
+        assert vti.max_iterations == 10
 
     @pytest.mark.unit
     def test_validate_training_results(self):
