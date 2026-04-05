@@ -247,7 +247,7 @@ def grow_network(
     self,
     x_train: torch.Tensor,
     y_train: torch.Tensor,
-    max_epochs: int = 1000,
+    max_iterations: int = 1000,
     early_stopping: bool = True,
     patience_counter: int = 0,
     best_value_loss: float = float("inf"),
@@ -260,6 +260,11 @@ def grow_network(
 Grow the network by iteratively training candidate units and adding selected units.
 
 **Returns**: `ValidateTrainingResults`
+
+**Early-stopping behavior**:
+
+- With validation tensors (`x_val` and `y_val`), stopping is driven by validation loss/patience plus max-hidden-units and target-accuracy checks.
+- Without validation tensors, stopping is driven by training loss/patience (using `convergence_threshold`) plus max-hidden-units and target-accuracy checks.
 
 **Optional callback**:
 
@@ -834,9 +839,13 @@ All REST responses use the standard response envelope:
 | `/v1/training/params` | `GET` | Get runtime training params |
 | `/v1/training/params` | `PATCH` | Update runtime-modifiable params |
 
-`PATCH /v1/training/params` accepts `init_output_weights` (`"zero"` or `"random"`). This updates the live network setting for subsequent hidden-unit additions.
+### Start Semantics From Terminal States
 
-Current implementation note: `GET /v1/training/params` does not yet include `init_output_weights` in its response payload, even though PATCH accepts and applies it.
+`POST /v1/training/start` supports restart after terminal state without a separate reset call.
+
+- If the lifecycle state machine is `FAILED` or `COMPLETED`, `START` first auto-resets internal FSM state to `STOPPED` and then transitions to `STARTED`.
+- This behavior is implemented in `TrainingStateMachine._handle_start()`.
+- `POST /v1/training/reset` remains useful for explicit operator-driven cleanup and metric-buffer clearing, but is not required just to start the next run from terminal state.
 
 ### Metrics Endpoints
 
@@ -911,6 +920,18 @@ Message envelope:
 ```
 
 `/ws/training` is read-only for clients; updates are broadcast from the lifecycle manager/monitor.
+
+### Lifecycle Failure Handling Path
+
+Training exceptions are handled at the monitored `fit()` wrapper layer in the lifecycle manager.
+
+- `TrainingLifecycleManager._run_training()` executes `network.fit(...)` and allows exceptions to propagate.
+- `TrainingLifecycleManager._install_monitoring_hooks()` wraps `network.fit` with `monitored_fit(...)`, which owns:
+- state transitions (`START`, `FAILED`, `COMPLETED`, `STOPPED`)
+- `training_state` updates (`status`, `phase`)
+- WebSocket/REST-visible broadcast updates
+
+This keeps error handling centralized and avoids duplicate failure transitions in multiple call paths.
 
 ### `candidate_progress` Message Payload
 
@@ -1062,8 +1083,8 @@ class CandidateTrainingResult:
 ```python
 @dataclass
 class ValidateTrainingInputs:
-    epoch: int
-    max_epochs: int
+    iteration: int
+    max_iterations: int
     patience_counter: int
     early_stopping: bool
     train_accuracy: float

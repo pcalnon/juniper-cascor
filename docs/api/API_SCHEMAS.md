@@ -306,6 +306,25 @@ All REST responses are wrapped in:
 - `adding_candidate`
 - `""` (empty string when no active detail)
 
+### Start Command Behavior From Terminal States
+
+For control operations that ultimately invoke `Command.START`:
+
+- If `state_machine.status` is `FAILED` or `COMPLETED`, the state machine auto-resets internally to `STOPPED` first.
+- The same `START` command then transitions to `STARTED` with phase `OUTPUT`.
+- Clients do not need to call `POST /v1/training/reset` solely to recover from terminal lifecycle states before a new start.
+
+`POST /v1/training/reset` is still the explicit "operator reset" endpoint and additionally clears monitor metrics/history buffer.
+
+### Training Failure Propagation and Ownership
+
+Failure state updates are owned by the monitored lifecycle wrapper around `network.fit(...)`:
+
+- `_run_training(...)` acts as a thread entrypoint and does not perform duplicate exception handling.
+- `monitored_fit(...)` (installed by `TrainingLifecycleManager._install_monitoring_hooks`) marks FSM/training state as failed and triggers state broadcasts when exceptions occur.
+
+Consumers should treat the lifecycle status fields (`state_machine.status`, `training_state.status`) as authoritative for failure outcomes instead of inferring from thread implementation details.
+
 ### `metrics/history` Entry Schema
 
 Entries in `GET /v1/metrics/history` and `WS /ws/training` `metrics` messages:
