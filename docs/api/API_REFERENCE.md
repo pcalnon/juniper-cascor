@@ -830,6 +830,14 @@ All REST responses use the standard response envelope:
 | `/v1/training/params` | `GET` | Get runtime training params |
 | `/v1/training/params` | `PATCH` | Update runtime-modifiable params |
 
+### Start Semantics From Terminal States
+
+`POST /v1/training/start` supports restart after terminal state without a separate reset call.
+
+- If the lifecycle state machine is `FAILED` or `COMPLETED`, `START` first auto-resets internal FSM state to `STOPPED` and then transitions to `STARTED`.
+- This behavior is implemented in `TrainingStateMachine._handle_start()`.
+- `POST /v1/training/reset` remains useful for explicit operator-driven cleanup and metric-buffer clearing, but is not required just to start the next run from terminal state.
+
 ### Metrics Endpoints
 
 | Endpoint | Method | Description |
@@ -903,6 +911,18 @@ Message envelope:
 ```
 
 `/ws/training` is read-only for clients; updates are broadcast from the lifecycle manager/monitor.
+
+### Lifecycle Failure Handling Path
+
+Training exceptions are handled at the monitored `fit()` wrapper layer in the lifecycle manager.
+
+- `TrainingLifecycleManager._run_training()` executes `network.fit(...)` and allows exceptions to propagate.
+- `TrainingLifecycleManager._install_monitoring_hooks()` wraps `network.fit` with `monitored_fit(...)`, which owns:
+- state transitions (`START`, `FAILED`, `COMPLETED`, `STOPPED`)
+- `training_state` updates (`status`, `phase`)
+- WebSocket/REST-visible broadcast updates
+
+This keeps error handling centralized and avoids duplicate failure transitions in multiple call paths.
 
 ### `candidate_progress` Message Payload
 
