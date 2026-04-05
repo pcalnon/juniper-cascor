@@ -257,6 +257,12 @@ class SharedTrainingMemory:
             dtype_code = self.DTYPE_MAP.get(ct.dtype)
             if dtype_code is None:
                 raise ValueError(f"Unsupported tensor dtype: {ct.dtype}")
+            if ct.ndim > 2:
+                raise ValueError(
+                    f"SharedTrainingMemory only supports tensors up to 2 dimensions, "
+                    f"got tensor with {ct.ndim} dimensions (shape: {tuple(ct.shape)}). "
+                    f"Higher-dimensional tensor support is planned for a future release."
+                )
             self._tensors_info.append(
                 {
                     "nbytes": ct.nbytes,
@@ -287,6 +293,9 @@ class SharedTrainingMemory:
             shape_0 = info["shape"][0] if info["ndim"] >= 1 else 0
             shape_1 = info["shape"][1] if info["ndim"] >= 2 else 0
             # Descriptor: offset(Q) + nbytes(Q) + ndim(B) + dtype_code(B) + shape0(I) + shape1(I) + reserved(6x) = 32 bytes
+            # NOTE: Struct format only stores shape_0 and shape_1, limiting support to
+            # tensors with ndim <= 2. Validated in __init__. Higher-dimensional support
+            # would require a format change (e.g., variable-length shape encoding).
             struct.pack_into(
                 "<QQBBII6x",
                 buf,
@@ -4706,7 +4715,8 @@ class CascadeCorrelationNetwork:
             target: Target output
             output: Raw output from the network
         Notes:
-            - This method assumes that the target and output tensors are one-hot encoded.
+            - For multi-class (output_size > 1), assumes one-hot encoded tensors and uses argmax.
+            - For binary classification (output_size == 1), uses a 0.5 threshold.
             - The accuracy is calculated as the percentage of correct predictions over the total number of predictions.
             - If either the target or output tensor is missing, an error is raised.
         Returns:
@@ -4734,13 +4744,24 @@ class CascadeCorrelationNetwork:
             return float("nan")
 
         # Find predicted and target values
-        predicted = torch.argmax(output, dim=1)
-        self.logger.verbose(f"CascadeCorrelationNetwork: _accuracy: Predicted shape: {predicted.shape}")
-        target = torch.argmax(y, dim=1)
-        self.logger.verbose(f"CascadeCorrelationNetwork: _accuracy: Target shape: {target.shape}")
-        correct = (predicted == target).sum().item()
-        self.logger.verbose(f"CascadeCorrelationNetwork: _accuracy: Number of correct predictions: {correct}, Total samples: {len(target)}")
-        accuracy = correct / len(target)
+        if output.shape[1] == 1:
+            # Binary classification with single output: threshold at 0.5
+            predicted = (output.squeeze(1) > 0.5).long()
+            self.logger.verbose(f"CascadeCorrelationNetwork: _accuracy: Predicted shape (binary): {predicted.shape}")
+            target_binary = (y.squeeze(1) > 0.5).long()
+            self.logger.verbose(f"CascadeCorrelationNetwork: _accuracy: Target shape (binary): {target_binary.shape}")
+            correct = (predicted == target_binary).sum().item()
+            self.logger.verbose(f"CascadeCorrelationNetwork: _accuracy: Number of correct predictions: {correct}, Total samples: {len(target_binary)}")
+            accuracy = correct / len(target_binary)
+        else:
+            # Multi-class classification: use argmax on one-hot encoded tensors
+            predicted = torch.argmax(output, dim=1)
+            self.logger.verbose(f"CascadeCorrelationNetwork: _accuracy: Predicted shape: {predicted.shape}")
+            target = torch.argmax(y, dim=1)
+            self.logger.verbose(f"CascadeCorrelationNetwork: _accuracy: Target shape: {target.shape}")
+            correct = (predicted == target).sum().item()
+            self.logger.verbose(f"CascadeCorrelationNetwork: _accuracy: Number of correct predictions: {correct}, Total samples: {len(target)}")
+            accuracy = correct / len(target)
         self.logger.info(f"CascadeCorrelationNetwork: _accuracy: Calculated accuracy: {accuracy:.4f}, Percentage: {accuracy * 100:.4f}%")
         self.logger.trace("CascadeCorrelationNetwork: _accuracy: Completed calculating accuracy.")
         return accuracy

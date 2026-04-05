@@ -406,3 +406,104 @@ class TestAccuracyMulticlass:
         assert 0.0 <= accuracy <= 1.0  # trunk-ignore(bandit/B101)
 
         print(f"Imbalanced accuracy: {accuracy}, type: {type(accuracy)}, Data: x={len(x)}, y={y.sum(dim=0)}, n_class0={n_class0}, n_class1={n_class1}")
+
+
+class TestBinaryAccuracySingleOutput:
+    """Test accuracy calculation with output_size=1 binary classification (CR-049)."""
+
+    @pytest.mark.unit
+    @pytest.mark.accuracy
+    def test_binary_perfect_accuracy(self):
+        """Test binary accuracy with perfect predictions (output_size=1)."""
+        from cascade_correlation.cascade_correlation import CascadeCorrelationNetwork
+
+        set_deterministic_behavior()
+        network = CascadeCorrelationNetwork.create_simple_network(input_size=2, output_size=1)
+
+        # Targets above 0.5 -> class 1, outputs match perfectly
+        targets = torch.tensor([[1.0], [0.0], [1.0], [0.0]])
+        outputs = torch.tensor([[0.9], [0.1], [0.8], [0.2]])
+
+        accuracy = network._accuracy(y=targets, output=outputs)
+        assert_approximately_equal(accuracy, 1.0, atol=1e-10)
+
+    @pytest.mark.unit
+    @pytest.mark.accuracy
+    def test_binary_zero_accuracy(self):
+        """Test binary accuracy with completely wrong predictions (output_size=1)."""
+        from cascade_correlation.cascade_correlation import CascadeCorrelationNetwork
+
+        set_deterministic_behavior()
+        network = CascadeCorrelationNetwork.create_simple_network(input_size=2, output_size=1)
+
+        # Targets and outputs are perfectly inverted
+        targets = torch.tensor([[1.0], [0.0], [1.0], [0.0]])
+        outputs = torch.tensor([[0.1], [0.9], [0.2], [0.8]])
+
+        accuracy = network._accuracy(y=targets, output=outputs)
+        assert_approximately_equal(accuracy, 0.0, atol=1e-10)
+
+    @pytest.mark.unit
+    @pytest.mark.accuracy
+    def test_binary_partial_accuracy(self):
+        """Test binary accuracy with 50% correct predictions (output_size=1)."""
+        from cascade_correlation.cascade_correlation import CascadeCorrelationNetwork
+
+        set_deterministic_behavior()
+        network = CascadeCorrelationNetwork.create_simple_network(input_size=2, output_size=1)
+
+        # 2 correct, 2 wrong
+        targets = torch.tensor([[1.0], [0.0], [1.0], [0.0]])
+        outputs = torch.tensor([[0.9], [0.1], [0.2], [0.8]])  # first two correct, last two wrong
+
+        accuracy = network._accuracy(y=targets, output=outputs)
+        assert_approximately_equal(accuracy, 0.5, atol=1e-10)
+
+    @pytest.mark.unit
+    @pytest.mark.accuracy
+    def test_binary_threshold_boundary(self):
+        """Test binary accuracy at the 0.5 threshold boundary (output_size=1)."""
+        from cascade_correlation.cascade_correlation import CascadeCorrelationNetwork
+
+        set_deterministic_behavior()
+        network = CascadeCorrelationNetwork.create_simple_network(input_size=2, output_size=1)
+
+        # Values exactly at 0.5 should be classified as 0 (> 0.5 is True, == 0.5 is False)
+        targets = torch.tensor([[0.0], [1.0]])
+        outputs = torch.tensor([[0.5], [0.5]])  # Both at boundary -> predicted as 0
+
+        accuracy = network._accuracy(y=targets, output=outputs)
+        # target[0]=0 matches predicted=0, target[1]=1 does not match predicted=0
+        assert_approximately_equal(accuracy, 0.5, atol=1e-10)
+
+    @pytest.mark.unit
+    @pytest.mark.accuracy
+    def test_binary_does_not_always_return_100(self):
+        """Regression: output_size=1 must NOT always return 100% accuracy (CR-049)."""
+        from cascade_correlation.cascade_correlation import CascadeCorrelationNetwork
+
+        set_deterministic_behavior()
+        network = CascadeCorrelationNetwork.create_simple_network(input_size=2, output_size=1)
+
+        # Deliberately wrong predictions
+        targets = torch.tensor([[1.0], [1.0], [1.0], [1.0]])
+        outputs = torch.tensor([[0.1], [0.2], [0.3], [0.4]])
+
+        accuracy = network._accuracy(y=targets, output=outputs)
+        # All predictions are below 0.5, targets are all 1.0 -> 0% accuracy
+        assert_approximately_equal(accuracy, 0.0, atol=1e-10)
+
+    @pytest.mark.unit
+    @pytest.mark.accuracy
+    def test_multiclass_still_uses_argmax(self):
+        """Verify that multi-class accuracy still uses argmax (not threshold)."""
+        from cascade_correlation.cascade_correlation import CascadeCorrelationNetwork
+
+        set_deterministic_behavior()
+        network = CascadeCorrelationNetwork.create_simple_network(input_size=2, output_size=3)
+
+        targets = torch.tensor([[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]])
+        outputs = torch.tensor([[0.9, 0.05, 0.05], [0.1, 0.8, 0.1], [0.1, 0.1, 0.8]])
+
+        accuracy = network._accuracy(y=targets, output=outputs)
+        assert_approximately_equal(accuracy, 1.0, atol=1e-10)
