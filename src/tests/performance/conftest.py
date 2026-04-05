@@ -343,6 +343,38 @@ def save_baseline(test_name: str, results: Dict, environment: Dict = None):
         json.dump(existing, f, indent=2)
 
 
+def load_latest_baseline(test_name: str) -> Dict:
+    """Load the most recent baseline result for a given test name.
+
+    Scans all baseline JSON files (sorted by date descending) and returns
+    the most recent entry matching test_name, or None if no baseline exists.
+
+    Args:
+        test_name: The test identifier to look up (e.g. "memory_base_network")
+
+    Returns:
+        The most recent baseline entry dict, or None if not found.
+    """
+    if not BASELINES_DIR.exists():
+        return None
+
+    # Sort baseline files by name descending (newest date first)
+    baseline_files = sorted(BASELINES_DIR.glob("baseline_*.json"), reverse=True)
+
+    for filepath in baseline_files:
+        try:
+            with open(filepath) as f:
+                entries = json.load(f)
+            # Walk entries in reverse (last entry in file is most recent)
+            for entry in reversed(entries):
+                if entry.get("test_name") == test_name:
+                    return entry
+        except (json.JSONDecodeError, KeyError):
+            continue
+
+    return None
+
+
 def _collect_environment() -> Dict:
     """Collect environment metadata for baseline reproducibility."""
     import platform
