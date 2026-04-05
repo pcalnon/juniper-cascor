@@ -1472,7 +1472,7 @@ class CascadeCorrelationNetwork:
             x_val=x_val,
             y_val=y_val,
         )
-        self.history["hidden_units_added"].append({"correlation": 0.0, "weights": [], "bias": []})
+        self.history["hidden_units_added"].append({"correlation": 0.0, "weight_shape": (), "unit_index": -1})
         self.logger.info("CascadeCorrelationNetwork: fit: Training completed.")
         self.logger.debug(f"CascadeCorrelationNetwork: fit: Final history: {len(self.history.get('train_loss', []))} epochs recorded")
         self.logger.trace("CascadeCorrelationNetwork: fit: Completed training of the network.")
@@ -1570,7 +1570,11 @@ class CascadeCorrelationNetwork:
             input_size += len(self.hidden_units)
         self.logger.debug(f"CascadeCorrelationNetwork: train_output_layer: Adjusted input size for output layer with hidden units: {input_size}")
 
-        # Create a temporary linear layer with the same weights as our current output layer
+        # INTENTIONAL: Recreate nn.Linear and optimizer on every call.
+        # In Cascade Correlation, the output layer's parameter space changes each time
+        # a hidden unit is added (input_size grows), so the previous nn.Linear and
+        # optimizer state are invalid.  Rebuilding from the current output_weights
+        # ensures the optimizer tracks the correct parameter tensors.
         output_layer = nn.Linear(input_size, self.output_size)
         with torch.no_grad():
             output_layer.weight.copy_(self.output_weights.t())  # Transpose because nn.Linear expects (out_features, in_features)
@@ -1579,7 +1583,7 @@ class CascadeCorrelationNetwork:
             self.logger.debug(f"CascadeCorrelationNetwork: train_output_layer: Output bias shape: {self.output_bias.shape}")
 
         # Use this layer for optimization (store as instance variable for HDF5 serialization)
-        # Create or recreate optimizer using factory method
+        # Create or recreate optimizer using factory method (see INTENTIONAL note above)
         self.output_optimizer = self._create_optimizer(output_layer.parameters())
         self.logger.debug(f"CascadeCorrelationNetwork: train_output_layer: Created optimizer: {type(self.output_optimizer).__name__}")
         optimizer = self.output_optimizer
@@ -3486,13 +3490,14 @@ class CascadeCorrelationNetwork:
         self.output_bias = old_output_bias
         self.logger.debug(f"CascadeCorrelationNetwork: add_unit: Updated output bias after copying old bias: {self.output_bias}")
 
-        # Add new unit to the history
+        # Add new unit to the history — metadata only; full weight tensors
+        # are already stored in self.hidden_units (see CR-063).
         self.logger.info(f"CascadeCorrelationNetwork: add_unit: Added hidden unit with correlation: {candidate.correlation:.6f}")
         self.history["hidden_units_added"].append(
             {
                 "correlation": candidate.correlation,
-                "weights": candidate.weights.clone().detach().numpy(),
-                "bias": candidate.bias.clone().detach().numpy(),
+                "weight_shape": tuple(candidate.weights.shape),
+                "unit_index": len(self.hidden_units) - 1,
             }
         )
         self.logger.info(f"CascadeCorrelationNetwork: add_unit: Current number of hidden units: {len(self.hidden_units)}")
@@ -3582,11 +3587,13 @@ class CascadeCorrelationNetwork:
                 self.hidden_units.append(new_unit)
                 added_count += 1
 
+                # Store metadata only; full weight tensors are already kept
+                # in self.hidden_units, so duplicating them here wastes memory.
                 self.history["hidden_units_added"].append(
                     {
                         "correlation": candidate.correlation,
-                        "weights": candidate.weights.clone().detach().numpy(),
-                        "bias": candidate.bias.clone().detach().numpy(),
+                        "weight_shape": tuple(candidate.weights.shape),
+                        "unit_index": len(self.hidden_units) - 1,
                     }
                 )
             else:

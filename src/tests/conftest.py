@@ -225,7 +225,7 @@ def fast_training_params(fast_slow_mode):
 @pytest.fixture
 def simple_2d_data(fast_training_params) -> Tuple[torch.Tensor, torch.Tensor]:
     """Generate simple 2D classification data."""
-    torch.manual_seed(42)
+    # Seed is already set by the autouse reset_random_seeds fixture (CR-076)
     n_samples = fast_training_params["n_samples"]
     # Create two classes in 2D space
 
@@ -241,7 +241,7 @@ def simple_2d_data(fast_training_params) -> Tuple[torch.Tensor, torch.Tensor]:
 @pytest.fixture
 def spiral_2d_data() -> Tuple[torch.Tensor, torch.Tensor]:
     """Generate 2-spiral problem data."""
-    torch.manual_seed(42)
+    # Seed is already set by the autouse reset_random_seeds fixture (CR-076)
     n_per_spiral = 100
 
     # Generate spiral data
@@ -266,7 +266,7 @@ def n_spiral_data() -> callable:
     """Generate N-spiral problem data (parameterized)."""
 
     def _generate_n_spiral(n_spirals: int = 3, n_per_spiral: int = 50) -> Tuple[torch.Tensor, torch.Tensor]:
-        torch.manual_seed(42)
+        # Seed is already set by the autouse reset_random_seeds fixture (CR-076)
 
         x_data = []
         y_data = []
@@ -296,7 +296,7 @@ def n_spiral_data() -> callable:
 @pytest.fixture
 def regression_data() -> Tuple[torch.Tensor, torch.Tensor]:
     """Generate regression data for testing."""
-    torch.manual_seed(42)
+    # Seed is already set by the autouse reset_random_seeds fixture (CR-076)
     n_samples = 200
 
     x = torch.randn(n_samples, 2)
@@ -466,14 +466,14 @@ def mock_config():
 @pytest.fixture
 def valid_tensor_2d() -> torch.Tensor:
     """Valid 2D tensor for testing."""
-    torch.manual_seed(42)
+    # Seed is already set by the autouse reset_random_seeds fixture (CR-076)
     return torch.randn(10, 2)
 
 
 @pytest.fixture
 def valid_target_2d() -> torch.Tensor:
     """Valid 2D target tensor (one-hot)."""
-    torch.manual_seed(42)
+    # Seed is already set by the autouse reset_random_seeds fixture (CR-076)
     targets = torch.zeros(10, 2)
     targets[torch.arange(10), torch.randint(0, 2, (10,))] = 1
     return targets

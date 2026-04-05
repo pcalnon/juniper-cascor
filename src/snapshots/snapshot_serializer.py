@@ -542,7 +542,8 @@ class CascadeHDF5Serializer:
                 data = np.array(network.history[network_key])
                 save_numpy_array(history_group, save_key, data, compression, compression_opts)
 
-        # Save hidden units added history
+        # Save hidden units added history (metadata-only since CR-063;
+        # legacy weight/bias arrays are still handled for backward compat)
         if "hidden_units_added" in network.history:
             units_group = history_group.create_group("hidden_units_added")
             for i, unit_data in enumerate(network.history["hidden_units_added"]):
@@ -550,6 +551,12 @@ class CascadeHDF5Serializer:
                 if isinstance(unit_data, dict):
                     if "correlation" in unit_data:
                         unit_group.attrs["correlation"] = float(unit_data["correlation"])
+                    # New metadata-only fields (CR-063)
+                    if "weight_shape" in unit_data:
+                        unit_group.attrs["weight_shape"] = list(unit_data["weight_shape"])
+                    if "unit_index" in unit_data:
+                        unit_group.attrs["unit_index"] = int(unit_data["unit_index"])
+                    # Legacy weight/bias arrays (kept for backward compat with old snapshots)
                     if "weights" in unit_data:
                         save_numpy_array(
                             unit_group,
@@ -897,7 +904,7 @@ class CascadeHDF5Serializer:
                 # self.logger.debug(f"CascadeHDF5Serializer: Loaded history key '{save_key}' as '{network_key}'")  # B907
                 self.logger.debug(f"CascadeHDF5Serializer: Loaded history key {save_key!r} as {network_key!r}")
 
-        # Load hidden units history
+        # Load hidden units history (supports both metadata-only and legacy weight/bias formats)
         if "hidden_units_added" in history_group:
             units_group = history_group["hidden_units_added"]
             for unit_name in sorted(units_group.keys()):
@@ -906,6 +913,12 @@ class CascadeHDF5Serializer:
 
                 if "correlation" in unit_group.attrs:
                     unit_data["correlation"] = float(unit_group.attrs["correlation"])
+                # New metadata-only fields (CR-063)
+                if "weight_shape" in unit_group.attrs:
+                    unit_data["weight_shape"] = tuple(unit_group.attrs["weight_shape"])
+                if "unit_index" in unit_group.attrs:
+                    unit_data["unit_index"] = int(unit_group.attrs["unit_index"])
+                # Legacy weight/bias arrays (from old snapshots)
                 if "weights" in unit_group:
                     unit_data["weights"] = load_numpy_array(unit_group["weights"])
                 if "bias" in unit_group:

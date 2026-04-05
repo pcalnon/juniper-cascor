@@ -245,13 +245,13 @@ class TestHistoryPreservation:
 
     def test_hidden_units_history_preserved(self, network_with_hidden_units, temp_snapshot_file):
         """Test that hidden units added history is preserved."""
-        # Add history of added units
-        for unit in network_with_hidden_units.hidden_units:
+        # Add metadata-only history of added units (CR-063)
+        for idx, unit in enumerate(network_with_hidden_units.hidden_units):
             network_with_hidden_units.history["hidden_units_added"].append(
                 {
-                    "weights": unit["weights"].numpy(),
-                    "bias": unit["bias"].numpy(),
                     "correlation": unit["correlation"],
+                    "weight_shape": tuple(unit["weights"].shape),
+                    "unit_index": idx,
                 }
             )
 
@@ -264,11 +264,11 @@ class TestHistoryPreservation:
         loaded_network = serializer.load_network(temp_snapshot_file)
         assert loaded_network is not None  # trunk-ignore(bandit/B101)
 
-        # Verify hidden units history
+        # Verify hidden units history (metadata-only format)
         assert len(loaded_network.history["hidden_units_added"]) == 3  # trunk-ignore(bandit/B101)
         for unit_data in loaded_network.history["hidden_units_added"]:
-            assert "weights" in unit_data  # trunk-ignore(bandit/B101)
-            assert "bias" in unit_data  # trunk-ignore(bandit/B101)
+            assert "weight_shape" in unit_data  # trunk-ignore(bandit/B101)
+            assert "unit_index" in unit_data  # trunk-ignore(bandit/B101)
             assert "correlation" in unit_data  # trunk-ignore(bandit/B101)
 
 
