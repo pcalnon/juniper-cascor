@@ -1,7 +1,7 @@
 # Juniper Cascor - API Schemas
 
 **Version**: 0.3.21
-**Last Updated**: 2026-03-30
+**Last Updated**: 2026-04-05
 **Purpose**: Data schema documentation for serialization and data structures
 
 ---
@@ -277,6 +277,7 @@ All REST responses are wrapped in:
         "learning_rate": float,
         "max_hidden_units": int,
         "max_epochs": int,
+        "max_iterations": int,
         "current_epoch": int,
         "current_step": int,
         "network_name": str,
@@ -298,6 +299,11 @@ All REST responses are wrapped in:
     "training_active": bool,
 }
 ```
+
+`max_epochs` and `max_iterations` are intentionally separate:
+
+- `max_epochs` is the output-layer training epoch budget.
+- `max_iterations` is the cap on cascade growth iterations.
 
 `phase_detail` currently uses:
 
@@ -378,6 +384,7 @@ Behavior constraints:
 | `candidate_epochs` | `int` | `100` | Epochs per candidate |
 | `output_epochs` | `int` | `100` | Epochs for output layer training |
 | `epochs_max` | `int` | `1000` | Maximum total epochs |
+| `max_iterations` | `int` | `1000` | Maximum cascade growth iterations |
 | `max_hidden_units` | `int` | `50` | Maximum network growth |
 | `correlation_threshold` | `float` | `0.001` | Minimum correlation for selection |
 | `patience` | `int` | `10` | Early stopping patience |
@@ -413,6 +420,17 @@ EXCLUDED_CONFIG_FIELDS = [
 ```
 
 After loading, these fields are re-initialized from defaults.
+
+### Service Request Models (Training Limits)
+
+`max_iterations` is a first-class API field in these request schemas:
+
+- `POST /v1/network` (`NetworkCreateRequest`): includes `max_iterations` (`int`, `ge=1`)
+- `PATCH /v1/training/params` (`TrainingParamUpdateRequest`): includes `max_iterations` (`Optional[int]`, `ge=1`)
+
+Current behavior note:
+
+- `GET /v1/training/params` currently does not include `max_iterations` in its response payload.
 
 ---
 
@@ -661,4 +679,4 @@ If verification fails:
 ---
 
 **Document Version**: 0.3.21
-**Last Updated**: 2026-03-30
+**Last Updated**: 2026-04-05
