@@ -99,6 +99,7 @@ from cascor_constants.constants import (  # TODO: Commented out for F401 complia
     _CASCADE_CORRELATION_NETWORK_EPOCH_DISPLAY_FREQUENCY,
     _CASCADE_CORRELATION_NETWORK_EPOCHS_MAX,
     _CASCADE_CORRELATION_NETWORK_GENERATE_PLOTS,
+    _CASCADE_CORRELATION_NETWORK_MAX_ITERATIONS,
     _CASCADE_CORRELATION_NETWORK_HDF5_PROJECT_SNAPSHOTS_DIR,
     _CASCADE_CORRELATION_NETWORK_INPUT_SIZE,
     _CASCADE_CORRELATION_NETWORK_LEARNING_RATE,
@@ -664,6 +665,7 @@ class CascadeCorrelationNetwork:
 
         self.candidate_epochs = self.config.candidate_epochs or _CASCADE_CORRELATION_NETWORK_CANDIDATE_EPOCHS
         self.epochs_max = self.config.epochs_max or _CASCADE_CORRELATION_NETWORK_EPOCHS_MAX
+        self.max_iterations = getattr(self.config, "max_iterations", None) or _CASCADE_CORRELATION_NETWORK_MAX_ITERATIONS
         self.output_epochs = self.config.output_epochs or _CASCADE_CORRELATION_NETWORK_OUTPUT_EPOCHS
         self.random_value_scale = self.config.random_value_scale or _CASCADE_CORRELATION_NETWORK_RANDOM_VALUE_SCALE
         self.target_accuracy = self.config.candidate_training_target_accuracy or _CASCADE_CORRELATION_NETWORK_TARGET_ACCURACY
@@ -1366,6 +1368,7 @@ class CascadeCorrelationNetwork:
         y_val: Optional[torch.Tensor] = None,
         max_epochs: int = None,
         epochs: int = None,
+        max_iterations: int = None,
         early_stopping: bool = True,
     ) -> Dict[str, List]:
         """
@@ -1375,8 +1378,9 @@ class CascadeCorrelationNetwork:
             y_train: Training target tensor (batch_size, output_features)
             x_val: Validation input tensor (batch_size, input_features), optional
             y_val: Validation target tensor (batch_size, output_features), optional
-            max_epochs: Maximum number of epochs to train (default: from config)
+            max_epochs: Maximum number of output training epochs (default: from config)
             epochs: Backward-compatible alias for max_epochs
+            max_iterations: Maximum number of cascade growth iterations (default: from self.max_iterations)
             early_stopping: Whether to use early stopping
         Raises:
             ValidationError: If input tensors are invalid or have wrong shapes
@@ -1450,12 +1454,13 @@ class CascadeCorrelationNetwork:
         # Main training loop
         patience_counter = 0
         best_value_loss = float("inf") if x_val is not None else None
-        # TODO:  this code is repeated in the train candidates method--refactor it into a common method
-        self.logger.info(f"CascadeCorrelationNetwork: fit: Starting main training loop with max epochs: {max_epochs}, early stopping: {early_stopping}")
+        # Resolve max_iterations: explicit parameter > self.max_iterations
+        max_iterations = max_iterations if max_iterations is not None else self.max_iterations
+        self.logger.info(f"CascadeCorrelationNetwork: fit: Starting main training loop with max_epochs: {max_epochs}, max_iterations: {max_iterations}, early stopping: {early_stopping}")
         self.grow_network(
             x_train=x_train,
             y_train=y_train,
-            max_iterations=max_epochs,
+            max_iterations=max_iterations,
             early_stopping=early_stopping,
             patience_counter=patience_counter,
             best_value_loss=best_value_loss,

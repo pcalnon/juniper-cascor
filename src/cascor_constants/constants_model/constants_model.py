@@ -203,6 +203,7 @@ _PROJECT_MODEL_LEARNING_RATE = 0.05
 #####################################################################################################################################################################################################
 # Define constants for the Cascade Correlation Network training parameters, Output Epochs
 _PROJECT_MODEL_EPOCHS_MAX = 10000
+_PROJECT_MODEL_MAX_ITERATIONS = 1000
 
 # _PROJECT_MODEL_OUTPUT_EPOCHS = 10
 # _PROJECT_MODEL_OUTPUT_EPOCHS = 20
