@@ -19,6 +19,7 @@ Message Types:
     error          — Either direction: error notification
 """
 
+import re
 import struct
 import time
 from dataclasses import dataclass, field
@@ -313,6 +314,8 @@ class WorkerProtocol:
 
         return errors
 
+    _WORKER_ID_PATTERN = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$")
+
     @staticmethod
     def validate_register(msg: dict[str, Any]) -> list[str]:
         """Validate a registration message.
@@ -323,6 +326,12 @@ class WorkerProtocol:
         errors = []
         if "worker_id" not in msg:
             errors.append("Missing required field: worker_id")
+        else:
+            wid = msg["worker_id"]
+            if not isinstance(wid, str):
+                errors.append("worker_id must be a string")
+            elif not WorkerProtocol._WORKER_ID_PATTERN.match(wid):
+                errors.append("worker_id must be 1-64 characters, alphanumeric/hyphens/underscores, starting with alphanumeric")
         if "capabilities" not in msg:
             errors.append("Missing required field: capabilities")
         elif not isinstance(msg["capabilities"], dict):
