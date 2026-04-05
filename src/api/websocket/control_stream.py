@@ -18,7 +18,7 @@ from api.websocket.messages import create_control_ack_message
 
 logger = logging.getLogger("juniper_cascor.api.websocket.control")
 
-_VALID_COMMANDS = {"start", "stop", "pause", "resume", "reset"}
+_VALID_COMMANDS = {"start", "stop", "pause", "resume", "reset", "set_params"}
 _MAX_MESSAGE_SIZE = 65536  # 64KB
 
 
@@ -98,5 +98,9 @@ def _execute_command(lifecycle, command: str, params: dict = None) -> dict:
         return lifecycle.resume_training()
     elif command == "reset":
         return lifecycle.reset()
+    elif command == "set_params":
+        if not params:
+            raise ValueError("set_params requires a 'params' dict")
+        return lifecycle.update_params(params)
     else:
         raise ValueError(f"Unhandled command: {command}")
