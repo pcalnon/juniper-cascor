@@ -266,6 +266,42 @@ class TestActivationMapCoverage:
         assert restored._activation_name == expected_name
 
     @pytest.mark.unit
+    @pytest.mark.parametrize(
+        "activation_name,expected_type,input_tensor,expected_output",
+        [
+            (
+                "identity",
+                torch.nn.Identity,
+                torch.tensor([[1.0, -2.0], [0.0, 3.0]]),
+                torch.tensor([[1.0, -2.0], [0.0, 3.0]]),
+            ),
+            (
+                "softmax",
+                torch.nn.Softmax,
+                torch.tensor([[1.0, 2.0], [0.0, 0.0]]),
+                torch.softmax(torch.tensor([[1.0, 2.0], [0.0, 0.0]]), dim=1),
+            ),
+        ],
+    )
+    def test_legacy_lowercase_module_name_deserialization(self, activation_name, expected_type, input_tensor, expected_output):
+        """Test that legacy lowercase module names deserialize to correct activation modules."""
+        wrapper = CandidateActivationWithDerivative.__new__(CandidateActivationWithDerivative)
+        wrapper.__setstate__({"_activation_name": activation_name})
+
+        assert isinstance(wrapper.activation_fn, expected_type)
+        assert torch.allclose(wrapper(input_tensor), expected_output)
+
+    @pytest.mark.unit
+    def test_case_insensitive_deserialization_uses_lowercase_fallback(self):
+        """Test that mixed-case activation names deserialize via lowercase fallback path."""
+        wrapper = CandidateActivationWithDerivative.__new__(CandidateActivationWithDerivative)
+        wrapper.__setstate__({"_activation_name": "SoFtMaX"})
+
+        x = torch.tensor([[2.0, 1.0], [0.5, -0.5]])
+        expected = torch.softmax(x, dim=1)
+        assert torch.allclose(wrapper(x), expected)
+
+    @pytest.mark.unit
     def test_unknown_activation_raises_value_error(self):
         """Test that unknown activation raises ValueError on deserialization (CR-046)."""
 
