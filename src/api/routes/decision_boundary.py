@@ -1,5 +1,7 @@
 """Decision boundary routes for 2D visualization."""
 
+import asyncio
+
 from fastapi import APIRouter, HTTPException, Query, Request
 
 from api.models.common import success_response
@@ -23,13 +25,14 @@ async def get_decision_boundary(
 
     Computes a grid of network predictions over the input space.
     Requires a network with 2D input and loaded training data.
+    Computation is offloaded to a thread to avoid blocking the event loop.
     """
     lifecycle = _get_lifecycle(request)
     if not lifecycle.has_network():
         raise HTTPException(status_code=404, detail="No network created")
     if not lifecycle.has_training_data():
         raise HTTPException(status_code=404, detail="No training data loaded")
-    boundary = lifecycle.get_decision_boundary(resolution=resolution)
+    boundary = await asyncio.to_thread(lifecycle.get_decision_boundary, resolution=resolution)
     if boundary is None:
         raise HTTPException(status_code=500, detail="Failed to compute decision boundary")
     return success_response(boundary)
