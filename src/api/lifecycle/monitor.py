@@ -26,6 +26,7 @@ class TrainingState:
         "learning_rate",
         "max_hidden_units",
         "max_epochs",
+        "max_iterations",
         "current_epoch",
         "current_step",
         "network_name",
@@ -56,6 +57,7 @@ class TrainingState:
         self._learning_rate: float = 0.0
         self._max_hidden_units: int = 0
         self._max_epochs: int = 200
+        self._max_iterations: int = 1000
         self._current_epoch: int = 0
         self._current_step: int = 0
         self._network_name: str = ""
@@ -87,6 +89,7 @@ class TrainingState:
                 "learning_rate": self._learning_rate,
                 "max_hidden_units": self._max_hidden_units,
                 "max_epochs": self._max_epochs,
+                "max_iterations": self._max_iterations,
                 "current_epoch": self._current_epoch,
                 "current_step": self._current_step,
                 "network_name": self._network_name,

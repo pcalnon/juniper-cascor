@@ -42,6 +42,7 @@ class ActivationWithDerivative:
 
     # Mapping of activation names to functions for reconstruction after unpickling
     ACTIVATION_MAP = {
+        "identity": torch.nn.Identity(),
         "elu": torch.nn.functional.elu,
         "hardshrink": torch.nn.functional.hardshrink,
         "identity": torch.nn.Identity(),
@@ -49,6 +50,7 @@ class ActivationWithDerivative:
         "sigmoid": torch.sigmoid,
         "softmax": torch.nn.Softmax(dim=1),
         "tanh": torch.tanh,
+        "Identity": torch.nn.Identity(),
         "ELU": torch.nn.ELU(),
         "Hardshrink": torch.nn.Hardshrink(),
         "Hardsigmoid": torch.nn.Hardsigmoid(),

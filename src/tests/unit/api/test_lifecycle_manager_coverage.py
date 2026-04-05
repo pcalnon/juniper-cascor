@@ -23,6 +23,7 @@ import torch
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))))
 
 from api.lifecycle.manager import TrainingLifecycleManager
+from api.lifecycle.state_machine import Command
 
 pytestmark = pytest.mark.unit
 
@@ -273,6 +274,63 @@ class TestMonitoringHooks:
                 assert mock_extract.called
         finally:
             CascadeCorrelationNetwork.fit = original_class_fit
+
+    def test_monitored_fit_auto_resets_failed_state_before_restart(self):
+        """Wrapped fit auto-resets FAILED state so restart can complete."""
+        mgr = TrainingLifecycleManager()
+        mgr.create_network(input_size=2, output_size=2)
+
+        # Put state machine in terminal FAILED state from a prior run.
+        mgr.state_machine.handle_command(Command.START)
+        mgr.state_machine.mark_failed("prior failure")
+        assert mgr.state_machine.is_failed()
+
+        # Reinstall hooks around a mocked fit to keep this deterministic/fast.
+        mgr._monitoring_active = False
+        mgr._original_methods.clear()
+        mgr.network.fit = MagicMock(return_value={"train_loss": [0.1]})
+        mgr._install_monitoring_hooks()
+
+        x = torch.randn(8, 2)
+        y = torch.zeros(8, 2)
+        y[:4, 0] = 1
+        y[4:, 1] = 1
+
+        mgr._stop_requested.clear()
+        mgr.network.fit(x, y)
+
+        # Regression assertion: without auto-reset, state machine stayed FAILED.
+        assert mgr.state_machine.is_completed()
+        assert mgr.training_state.get_state()["status"] == "Completed"
+
+    def test_monitored_fit_auto_resets_completed_state_before_stop_path(self):
+        """Wrapped fit auto-resets COMPLETED state so stop path can transition."""
+        mgr = TrainingLifecycleManager()
+        mgr.create_network(input_size=2, output_size=2)
+
+        # Put state machine in terminal COMPLETED state from a prior run.
+        mgr.state_machine.handle_command(Command.START)
+        mgr.state_machine.mark_completed()
+        assert mgr.state_machine.is_completed()
+
+        # Reinstall hooks around a mocked fit to keep this deterministic/fast.
+        mgr._monitoring_active = False
+        mgr._original_methods.clear()
+        mgr.network.fit = MagicMock(return_value={"train_loss": [0.1]})
+        mgr._install_monitoring_hooks()
+
+        x = torch.randn(8, 2)
+        y = torch.zeros(8, 2)
+        y[:4, 0] = 1
+        y[4:, 1] = 1
+
+        # Exercise monitored_fit stop-event branch after terminal-state restart.
+        mgr._stop_requested.set()
+        mgr.network.fit(x, y)
+
+        # Regression assertion: without auto-reset, STOP was invalid from COMPLETED.
+        assert mgr.state_machine.is_stopped()
+        assert mgr.training_state.get_state()["status"] == "Stopped"
 
 
 class TestStartTrainingEdgeCases:
