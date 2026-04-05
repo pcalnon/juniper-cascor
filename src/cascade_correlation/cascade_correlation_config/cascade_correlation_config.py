@@ -98,11 +98,33 @@ class OptimizerConfig:
 
     optimizer_type: str = "Adam"  # Adam, SGD, RMSprop, AdamW, etc.
     learning_rate: float = 0.01
-    momentum: float = 0.9  # For SGD
-    beta1: float = 0.9  # For Adam
-    beta2: float = 0.999  # For Adam
+    momentum: float = 0.9  # For SGD, RMSprop
+    beta1: float = 0.9  # For Adam variants
+    beta2: float = 0.999  # For Adam variants
     weight_decay: float = 0.0
     epsilon: float = 1e-8
+    # Adadelta
+    rho: float = 0.9
+    # Adagrad
+    lr_decay: float = 0.0
+    # Adam, AdamW
+    amsgrad: bool = False
+    # ASGD
+    lambd: float = 1e-4
+    alpha: float = 0.75
+    t0: float = 1e6
+    # LBFGS
+    max_iter: int = 20
+    max_eval: int = 25
+    tolerance_grad: float = 1e-5
+    tolerance_change: float = 1e-9
+    history_size: int = 100
+    line_search_fn: str = "strong_wolfe"
+    # Rprop
+    eta_min: float = 0.5
+    eta_max: float = 1.2
+    step_size_min: float = 1e-6
+    step_size_max: float = 50.0
 
 
 #####################################################################################################################################################################################################
