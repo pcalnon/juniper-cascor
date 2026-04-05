@@ -30,6 +30,7 @@ class WebSocketManager:
         self._max_connections = max_connections
         self._event_loop: Optional[asyncio.AbstractEventLoop] = None
         self._connection_meta: Dict[WebSocket, Dict[str, Any]] = {}
+        self._lock = asyncio.Lock()
         logger.info(f"WebSocketManager initialized (max_connections={max_connections})")
 
     def set_event_loop(self, loop: asyncio.AbstractEventLoop) -> None:
@@ -46,17 +47,18 @@ class WebSocketManager:
         Returns:
             True if connected, False if connection limit reached.
         """
-        if len(self._active_connections) >= self._max_connections:
-            await websocket.close(code=1013, reason="Maximum connections reached")
-            logger.warning(f"Connection rejected: limit of {self._max_connections} reached")
-            return False
+        async with self._lock:
+            if len(self._active_connections) >= self._max_connections:
+                await websocket.close(code=1013, reason="Maximum connections reached")
+                logger.warning(f"Connection rejected: limit of {self._max_connections} reached")
+                return False
 
-        await websocket.accept()
-        self._active_connections.add(websocket)
-        self._connection_meta[websocket] = {
-            "connected_at": time.time(),
-        }
-        logger.info(f"WebSocket connected ({self.connection_count} active)")
+            await websocket.accept()
+            self._active_connections.add(websocket)
+            self._connection_meta[websocket] = {
+                "connected_at": time.time(),
+            }
+            logger.info(f"WebSocket connected ({self.connection_count} active)")
 
         # Send connection established message
         await self._send_json(
@@ -71,9 +73,10 @@ class WebSocketManager:
 
     async def disconnect(self, websocket: WebSocket) -> None:
         """Remove a WebSocket connection."""
-        self._active_connections.discard(websocket)
-        self._connection_meta.pop(websocket, None)
-        logger.info(f"WebSocket disconnected ({self.connection_count} active)")
+        async with self._lock:
+            self._active_connections.discard(websocket)
+            self._connection_meta.pop(websocket, None)
+            logger.info(f"WebSocket disconnected ({self.connection_count} active)")
 
     async def broadcast(self, message: dict) -> None:
         """Send a message to all connected clients."""
