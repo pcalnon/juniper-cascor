@@ -104,6 +104,24 @@ class ActivationWithDerivative:
         else:
             return str(activation_fn)
 
+    def _apply_activation(self, x):
+        """
+        Apply activation with compatibility guards for known module edge cases.
+
+        Softmax modules are often configured with dim=1, but this project invokes
+        activation wrappers on 1-D pre-activation vectors in multiple training paths.
+        Guard invalid dimensions to avoid runtime crashes during forward/derivative use.
+        """
+        if self._activation_name.lower() == "softmax":
+            if x.dim() == 0:
+                return torch.ones_like(x)
+            configured_dim = getattr(self.activation_fn, "dim", -1)
+            dim = configured_dim if isinstance(configured_dim, int) else -1
+            if dim < -x.dim() or dim >= x.dim():
+                dim = -1
+            return torch.softmax(x, dim=dim)
+        return self.activation_fn(x)
+
     def __call__(self, x, derivative: bool = False):
         """
         Apply activation function or compute its derivative.
@@ -116,7 +134,7 @@ class ActivationWithDerivative:
             Activation output or derivative value
         """
         if not derivative:
-            return self.activation_fn(x)
+            return self._apply_activation(x)
         name = self._activation_name.lower()
         if name == "tanh":
             return 1.0 - torch.tanh(x) ** 2
@@ -128,7 +146,7 @@ class ActivationWithDerivative:
         else:
             # Numerical approximation for other activation functions
             eps = 1e-6
-            return (self.activation_fn(x + eps) - self.activation_fn(x - eps)) / (2 * eps)
+            return (self._apply_activation(x + eps) - self._apply_activation(x - eps)) / (2 * eps)
 
     def __getstate__(self):
         """Serialize by storing activation name instead of function (for pickle/multiprocessing)."""

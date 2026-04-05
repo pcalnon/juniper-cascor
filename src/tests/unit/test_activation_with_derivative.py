@@ -266,6 +266,20 @@ class TestActivationMapCoverage:
         assert restored._activation_name == expected_name
 
     @pytest.mark.unit
+    def test_softmax_round_trip_handles_1d_inputs_without_crashing(self):
+        """Test that Softmax deserialization does not crash on 1-D tensors."""
+        wrapper = CandidateActivationWithDerivative(torch.nn.Softmax(dim=1))
+        pickled = pickle.dumps(wrapper)
+        restored = pickle.loads(pickled)
+
+        x = torch.tensor([0.1, -0.2, 0.3], dtype=torch.float32)
+        output = restored(x)
+
+        assert output.shape == x.shape
+        assert torch.allclose(output, torch.softmax(x, dim=0))
+        assert torch.isclose(output.sum(), torch.tensor(1.0, dtype=output.dtype))
+
+    @pytest.mark.unit
     def test_unknown_activation_raises_value_error(self):
         """Test that unknown activation raises ValueError on deserialization (CR-046)."""
 
