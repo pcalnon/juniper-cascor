@@ -1016,6 +1016,131 @@ class TestValidateTraining:
         assert result.value_loss != float("inf")
         assert hasattr(result, "value_accuracy")
 
+    @pytest.mark.unit
+    def test_validate_training_without_validation_data_resets_best_and_patience_on_improvement(self, simple_network, simple_2d_data):
+        """Regression test for no-validation early-stopping improvement branch."""
+        from cascade_correlation.cascade_correlation import ValidateTrainingInputs
+
+        x, y = simple_2d_data
+        simple_network.max_hidden_units = 100
+        simple_network.target_accuracy = 1.0
+        simple_network.patience = 3
+
+        inputs = ValidateTrainingInputs(
+            iteration=1,
+            max_iterations=10,
+            patience_counter=2,
+            early_stopping=True,
+            train_accuracy=0.10,
+            train_loss=0.10,
+            best_value_loss=0.50,
+            x_train=x,
+            y_train=y,
+            x_val=None,
+            y_val=None,
+        )
+
+        result = simple_network.validate_training(inputs)
+
+        assert result.best_value_loss == pytest.approx(0.10)
+        assert result.patience_counter == 0
+        assert result.early_stop is False
+
+    @pytest.mark.unit
+    def test_validate_training_without_validation_data_stops_when_patience_exhausted(self, simple_network, simple_2d_data):
+        """Regression test for no-validation early-stopping patience exhaustion branch."""
+        from cascade_correlation.cascade_correlation import ValidateTrainingInputs
+
+        x, y = simple_2d_data
+        simple_network.max_hidden_units = 100
+        simple_network.target_accuracy = 1.0
+        simple_network.patience = 1
+
+        inputs = ValidateTrainingInputs(
+            iteration=2,
+            max_iterations=10,
+            patience_counter=0,
+            early_stopping=True,
+            train_accuracy=0.10,
+            train_loss=0.60,
+            best_value_loss=0.50,
+            x_train=x,
+            y_train=y,
+            x_val=None,
+            y_val=None,
+        )
+
+        result = simple_network.validate_training(inputs)
+
+        assert result.best_value_loss == pytest.approx(0.50)
+        assert result.patience_counter == 1
+        assert result.early_stop is True
+
+    @pytest.mark.unit
+    def test_grow_network_propagates_validation_state_between_iterations(self, simple_network, simple_2d_data):
+        """Regression test for grow_network state propagation from validate_training."""
+        from cascade_correlation.cascade_correlation import ValidateTrainingResults
+
+        class _DummyBestCandidate:
+            def get_correlation(self):
+                return 0.5
+
+        class _DummyTrainingResults:
+            def __init__(self):
+                self.best_candidate = _DummyBestCandidate()
+                self.candidate_objects = []
+                self.candidate_ids = []
+                self.correlations = []
+
+        x, y = simple_2d_data
+        observed_inputs = []
+
+        def _fake_validate_training(validate_inputs):
+            observed_inputs.append((validate_inputs.patience_counter, validate_inputs.best_value_loss))
+            if len(observed_inputs) == 1:
+                return ValidateTrainingResults(
+                    early_stop=False,
+                    patience_counter=2,
+                    best_value_loss=0.4,
+                    value_output=None,
+                    value_loss=0.4,
+                    value_accuracy=0.0,
+                )
+            return ValidateTrainingResults(
+                early_stop=True,
+                patience_counter=3,
+                best_value_loss=0.2,
+                value_output=None,
+                value_loss=0.2,
+                value_accuracy=0.0,
+            )
+
+        with (
+            patch.object(simple_network, "_calculate_residual_error_safe", return_value=torch.ones((8, 2))),
+            patch.object(simple_network, "_get_training_results", return_value=_DummyTrainingResults()),
+            patch.object(simple_network, "_add_best_candidate", return_value=(0.25, 0.10)),
+            patch.object(simple_network, "validate_training", side_effect=_fake_validate_training),
+        ):
+            result = simple_network.grow_network(
+                x_train=x,
+                y_train=y,
+                max_iterations=5,
+                early_stopping=True,
+                patience_counter=0,
+                best_value_loss=float("inf"),
+                x_val=None,
+                y_val=None,
+            )
+
+        assert len(observed_inputs) >= 2
+        assert observed_inputs[0][0] == 0
+        assert observed_inputs[0][1] == float("inf")
+        assert observed_inputs[1][0] == 2
+        assert observed_inputs[1][1] == pytest.approx(0.4)
+        assert result.early_stop is True
+        assert result.patience_counter == 3
+        assert result.best_value_loss == pytest.approx(0.2)
+
 
 # ===================================================================
 # Add Unit Tests
@@ -1053,6 +1178,50 @@ class TestAddUnit:
         simple_network.add_unit(candidate, x)
 
         assert simple_network.output_weights.shape[0] > initial_weights_shape[0]
+
+    @pytest.mark.unit
+    def test_add_unit_zero_init_preserves_existing_output_weights(self, simple_network, simple_2d_data):
+        """add_unit zero init keeps old rows and zero-initializes new row."""
+        x, _ = simple_2d_data
+        simple_network.init_output_weights = "zero"
+        simple_network.output_weights = torch.tensor(
+            [[0.25, -0.75], [1.25, 0.5]],
+            dtype=torch.float32,
+            requires_grad=True,
+        )
+        old_output_weights = simple_network.output_weights.detach().clone()
+
+        candidate = simple_network._create_candidate_unit(0)
+        candidate.weights = torch.tensor([0.2, -0.3])
+        candidate.bias = torch.tensor([0.1])
+        candidate.correlation = 0.5
+
+        simple_network.add_unit(candidate, x)
+
+        assert torch.allclose(simple_network.output_weights[: old_output_weights.shape[0], :], old_output_weights)
+        assert torch.allclose(simple_network.output_weights[-1, :], torch.zeros(simple_network.output_size))
+
+    @pytest.mark.unit
+    def test_add_unit_random_init_adds_nonzero_new_output_row(self, simple_network, simple_2d_data):
+        """add_unit random init keeps old rows and randomizes new row."""
+        x, _ = simple_2d_data
+        simple_network.init_output_weights = "random"
+        simple_network.output_weights = torch.tensor(
+            [[-0.5, 0.75], [0.1, -0.2]],
+            dtype=torch.float32,
+            requires_grad=True,
+        )
+        old_output_weights = simple_network.output_weights.detach().clone()
+
+        candidate = simple_network._create_candidate_unit(0)
+        candidate.weights = torch.tensor([0.4, 0.6])
+        candidate.bias = torch.tensor([-0.05])
+        candidate.correlation = 0.5
+
+        simple_network.add_unit(candidate, x)
+
+        assert torch.allclose(simple_network.output_weights[: old_output_weights.shape[0], :], old_output_weights)
+        assert torch.any(simple_network.output_weights[-1, :] != 0.0)
 
 
 # ===================================================================
