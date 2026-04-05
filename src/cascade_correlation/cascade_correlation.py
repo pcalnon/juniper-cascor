@@ -3469,8 +3469,10 @@ class CascadeCorrelationNetwork:
             input_size_before = x.shape[1]
         self.logger.debug(f"CascadeCorrelationNetwork: add_unit: Input size before adding new unit: {input_size_before}")
 
-        # Copy old bias
-        self.output_weights[:input_size_before, :] = old_output_weights
+        # Copy existing trained weights into the expanded output layer.
+        # Use no_grad to allow safe in-place initialization when tensor requires grad.
+        with torch.no_grad():
+            self.output_weights[:input_size_before, :] = old_output_weights
         self.logger.debug(f"CascadeCorrelationNetwork: add_unit: Updated output weights after copying old weights: {self.output_weights}")
         self.output_bias = old_output_bias
         self.logger.debug(f"CascadeCorrelationNetwork: add_unit: Updated output bias after copying old bias: {self.output_bias}")
@@ -3592,7 +3594,9 @@ class CascadeCorrelationNetwork:
             else:
                 self.output_weights = torch.randn(new_input_size, self.output_size, requires_grad=True) * 0.1
             input_size_before = x.shape[1] + len(hidden_outputs) if hidden_outputs else x.shape[1]
-            self.output_weights[:input_size_before, :] = old_output_weights
+            # Preserve existing output-layer weights during tensor resize.
+            with torch.no_grad():
+                self.output_weights[:input_size_before, :] = old_output_weights
             self.output_bias = old_output_bias
 
         self.logger.info(f"CascadeCorrelationNetwork: add_units_as_layer: Layer added ({added_count} units), total hidden units: {len(self.hidden_units)}")
