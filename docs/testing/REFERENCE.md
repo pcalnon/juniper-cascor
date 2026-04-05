@@ -24,6 +24,28 @@ Complete reference documentation for the Juniper Cascor test suite.
 | `accuracy`           | Accuracy calculation methods               | Classification accuracy, metrics                     | Runs with unit tests                          |
 | `early_stopping`     | Early stopping logic                       | Convergence detection, patience handling             | Runs with unit tests                          |
 
+### Early-Stopping Regression Coverage (No Validation Data Path)
+
+The no-validation branch in `CascadeCorrelationNetwork.validate_training()` is covered by targeted unit regressions in `src/tests/unit/test_cascade_correlation_coverage_extended.py`.
+
+Key scenarios covered:
+
+- Improvement path: `train_loss` improves by more than `convergence_threshold`, so `best_value_loss` is updated and `patience_counter` resets to `0`.
+- Patience exhaustion path: non-improving `train_loss` increments `patience_counter` until `patience` is exhausted and `early_stop` becomes `True`.
+- Cross-iteration propagation: `grow_network()` feeds updated `patience_counter` and `best_value_loss` from one `validate_training()` call into the next iteration's `ValidateTrainingInputs`.
+
+Run only these regression tests:
+
+```bash
+cd src
+python -m pytest tests/unit/test_cascade_correlation_coverage_extended.py -k "validate_training_without_validation_data or propagates_validation_state" -v
+```
+
+Why this matters:
+
+- The no-validation path is used when `x_val`/`y_val` are omitted, which is common in lightweight training runs.
+- Regressions here can silently disable or destabilize early stopping behavior even if validation-based tests still pass.
+
 ### Marker Combinations
 
 ```bash

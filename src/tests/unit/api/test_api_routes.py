@@ -97,6 +97,31 @@ class TestNetworkRoutes:
         assert body["data"]["input_size"] == 2
         assert body["data"]["output_size"] == 2
 
+    def test_create_network_accepts_init_output_weights_random(self, client):
+        """POST /v1/network accepts init_output_weights='random'."""
+        response = client.post(
+            "/v1/network",
+            json={
+                "input_size": 2,
+                "output_size": 2,
+                "init_output_weights": "random",
+            },
+        )
+        assert response.status_code == 200
+        assert client.app.state.lifecycle.network.init_output_weights == "random"
+
+    def test_create_network_rejects_invalid_init_output_weights(self, client):
+        """POST /v1/network rejects unsupported init_output_weights values."""
+        response = client.post(
+            "/v1/network",
+            json={
+                "input_size": 2,
+                "output_size": 2,
+                "init_output_weights": "invalid",
+            },
+        )
+        assert response.status_code == 422
+
 
 @pytest.mark.unit
 class TestTrainingRoutes:
