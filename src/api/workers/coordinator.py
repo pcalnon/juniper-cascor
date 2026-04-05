@@ -365,9 +365,24 @@ class WorkerCoordinator:
             self._check_task_timeouts()
 
     def _check_stale_workers(self) -> None:
-        """Deregister workers whose heartbeat has timed out."""
+        """Deregister workers whose heartbeat has timed out.
+
+        To close the TOCTOU gap between get_stale_workers() and deregister(),
+        each worker's staleness is re-checked via the registry before removal.
+        A worker that sent a heartbeat between the snapshot and the re-check
+        will be skipped.
+        """
         stale = self._registry.get_stale_workers()
         for worker in stale:
+            # Re-check: the worker may have sent a heartbeat since the snapshot
+            current = self._registry.get(worker.worker_id)
+            if current is None:
+                # Already deregistered by another path
+                continue
+            if current.is_alive(self._registry._heartbeat_timeout):
+                logger.debug("Worker %s recovered (heartbeat received since stale snapshot) — skipping deregister", worker.worker_id)
+                continue
+
             logger.warning("Worker %s heartbeat timeout — deregistering", worker.worker_id)
             # If worker had an active task, put it back in the unassigned queue
             if worker.active_task_id is not None:
