@@ -55,6 +55,22 @@ self._result_queue = None # No queue proxy
 
 **Invariant**: Queue proxies are only valid while the manager is running. Always check `self._manager is not None` before queue operations.
 
+### Early-Stopping State Invariants (`grow_network` + `validate_training`)
+
+Early-stopping state is carried across growth iterations through `ValidateTrainingInputs` and `ValidateTrainingResults`.
+
+1. `grow_network()` passes the current `patience_counter` and `best_value_loss` into `validate_training()`.
+2. `validate_training()` returns updated values in `ValidateTrainingResults`.
+3. `grow_network()` must assign those returned values back to loop state before the next iteration.
+
+This propagation is required for convergence behavior; skipping it causes each iteration to behave like a fresh early-stopping run.
+
+When validation tensors are not provided (`x_val`/`y_val` are both `None`), `validate_training()` uses training loss as the stopping signal:
+
+- Improvement branch: if `train_loss < best_value_loss - convergence_threshold`, update `best_value_loss` and reset `patience_counter` to `0`.
+- Non-improvement branch: increment `patience_counter`.
+- Stop criteria in no-validation mode: `patience_counter >= patience` OR `check_hidden_units_max()` OR `check_training_accuracy(...)`.
+
 ---
 
 ## 2. Data Structures
@@ -180,6 +196,7 @@ class ConfigurationError(CascadeCorrelationError):
 | `ValidationError` | `_validate_tensor_input()` | None tensors, wrong type, empty tensors, NaN/Inf values |
 | `ValidationError` | `_validate_tensor_shapes()` | Non-2D tensors, mismatched batch sizes, wrong feature count |
 | `ValidationError` | `_validate_numeric_parameter()` | Out-of-range values, wrong types |
+| `ValueError` | `ActivationWithDerivative.__setstate__()` | Unknown activation name during unpickling/deserialization |
 | `TrainingError` | `grow_network()` | Validation failures during training loop |
 | `TrainingError` | `_calculate_residual_error_safe()` | Errors during residual calculation |
 | `ConfigurationError` | `set_uuid()` | Attempting to change UUID after initialization |
@@ -349,13 +366,15 @@ class ActivationWithDerivative:
     def __setstate__(self, state):
         """Reconstruct function from name."""
         self._activation_name = state['_activation_name']
-        self.activation_fn = self.ACTIVATION_MAP.get(
-            self._activation_name,
-            torch.nn.ReLU()  # Fallback
-        )
+        activation = self.ACTIVATION_MAP.get(self._activation_name) or self.ACTIVATION_MAP.get(self._activation_name.lower())
+        if activation is None:
+            raise ValueError(
+                f"Unrecognized activation function name during deserialization: '{self._activation_name}'"
+            )
+        self.activation_fn = activation
 ```
 
-**Key insight**: Only the string name is serialized; the actual function is reconstructed from the static `ACTIVATION_MAP` on unpickling.
+**Key insight**: Only the string name is serialized; the actual function is reconstructed from the static `ACTIVATION_MAP` on unpickling. Deserialization is fail-fast for unknown names (no silent fallback).
 
 ---
 
