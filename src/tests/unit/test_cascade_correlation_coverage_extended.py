@@ -1054,6 +1054,50 @@ class TestAddUnit:
 
         assert simple_network.output_weights.shape[0] > initial_weights_shape[0]
 
+    @pytest.mark.unit
+    def test_add_unit_zero_init_preserves_existing_output_weights(self, simple_network, simple_2d_data):
+        """add_unit zero init keeps old rows and zero-initializes new row."""
+        x, _ = simple_2d_data
+        simple_network.init_output_weights = "zero"
+        simple_network.output_weights = torch.tensor(
+            [[0.25, -0.75], [1.25, 0.5]],
+            dtype=torch.float32,
+            requires_grad=True,
+        )
+        old_output_weights = simple_network.output_weights.detach().clone()
+
+        candidate = simple_network._create_candidate_unit(0)
+        candidate.weights = torch.tensor([0.2, -0.3])
+        candidate.bias = torch.tensor([0.1])
+        candidate.correlation = 0.5
+
+        simple_network.add_unit(candidate, x)
+
+        assert torch.allclose(simple_network.output_weights[: old_output_weights.shape[0], :], old_output_weights)
+        assert torch.allclose(simple_network.output_weights[-1, :], torch.zeros(simple_network.output_size))
+
+    @pytest.mark.unit
+    def test_add_unit_random_init_adds_nonzero_new_output_row(self, simple_network, simple_2d_data):
+        """add_unit random init keeps old rows and randomizes new row."""
+        x, _ = simple_2d_data
+        simple_network.init_output_weights = "random"
+        simple_network.output_weights = torch.tensor(
+            [[-0.5, 0.75], [0.1, -0.2]],
+            dtype=torch.float32,
+            requires_grad=True,
+        )
+        old_output_weights = simple_network.output_weights.detach().clone()
+
+        candidate = simple_network._create_candidate_unit(0)
+        candidate.weights = torch.tensor([0.4, 0.6])
+        candidate.bias = torch.tensor([-0.05])
+        candidate.correlation = 0.5
+
+        simple_network.add_unit(candidate, x)
+
+        assert torch.allclose(simple_network.output_weights[: old_output_weights.shape[0], :], old_output_weights)
+        assert torch.any(simple_network.output_weights[-1, :] != 0.0)
+
 
 # ===================================================================
 # Select Best Candidates Tests
