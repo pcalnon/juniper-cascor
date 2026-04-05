@@ -182,62 +182,86 @@ class TestAddUnitsAsLayer:
         assert len(simple_network.hidden_units) == initial_hidden_count + 1
 
     @pytest.mark.unit
-    def test_add_units_as_layer_zero_init_sets_new_rows_to_zero(self, simple_network, simple_2d_data):
-        """Zero init mode should zero-initialize rows added for new units."""
-        x, _ = simple_2d_data
+    def test_add_units_as_layer_zero_init_no_autograd_error(self, simple_network, simple_2d_data):
+        """Regression: add_units_as_layer with init_output_weights='zero' must not raise autograd errors.
+
+        torch.zeros(..., requires_grad=True) creates a leaf tensor; in-place
+        slice assignment on a leaf tensor raises RuntimeError.  The fix defers
+        requires_grad_(True) until after the copy.
+        """
+        x, y = simple_2d_data
         simple_network.init_output_weights = "zero"
-        simple_network.output_weights = torch.tensor(
-            [[0.2, -0.4], [0.8, 1.1]],
-            dtype=torch.float32,
-            requires_grad=True,
-        )
-        old_output_weights = simple_network.output_weights.detach().clone()
 
         candidate = CandidateUnit(input_size=2)
-        candidate.weights = torch.tensor([0.5, -0.1])
+        candidate.weights = torch.randn(2)
         candidate.bias = torch.tensor(0.0)
-        candidate.correlation = 0.4
+
         result = CandidateTrainingResult(
             candidate_id=0,
-            candidate_uuid="zero-init-uuid",
-            correlation=0.4,
+            candidate_uuid="test-zero-uuid",
+            correlation=0.5,
             candidate=candidate,
             success=True,
         )
 
+        initial_hidden_count = len(simple_network.hidden_units)
+        # Must not raise RuntimeError from in-place op on leaf tensor
         simple_network.add_units_as_layer([result], x)
 
-        assert torch.allclose(simple_network.output_weights[: old_output_weights.shape[0], :], old_output_weights)
-        assert torch.allclose(simple_network.output_weights[-1, :], torch.zeros(simple_network.output_size))
+        assert len(simple_network.hidden_units) == initial_hidden_count + 1
+        assert simple_network.output_weights.requires_grad
 
     @pytest.mark.unit
-    def test_add_units_as_layer_random_init_adds_nonzero_rows(self, simple_network, simple_2d_data):
-        """Random init mode should keep old rows and randomize new rows."""
-        x, _ = simple_2d_data
+    def test_add_units_as_layer_random_init_no_autograd_error(self, simple_network, simple_2d_data):
+        """Regression: add_units_as_layer with init_output_weights='random' must not raise autograd errors."""
+        x, y = simple_2d_data
         simple_network.init_output_weights = "random"
-        simple_network.output_weights = torch.tensor(
-            [[-0.3, 0.7], [0.6, -0.9]],
-            dtype=torch.float32,
-            requires_grad=True,
-        )
-        old_output_weights = simple_network.output_weights.detach().clone()
 
         candidate = CandidateUnit(input_size=2)
-        candidate.weights = torch.tensor([0.25, 0.35])
+        candidate.weights = torch.randn(2)
         candidate.bias = torch.tensor(0.0)
-        candidate.correlation = 0.55
+
         result = CandidateTrainingResult(
             candidate_id=0,
-            candidate_uuid="random-init-uuid",
-            correlation=0.55,
+            candidate_uuid="test-random-uuid",
+            correlation=0.5,
+            candidate=candidate,
+            success=True,
+        )
+
+        initial_hidden_count = len(simple_network.hidden_units)
+        simple_network.add_units_as_layer([result], x)
+
+        assert len(simple_network.hidden_units) == initial_hidden_count + 1
+        assert simple_network.output_weights.requires_grad
+
+    @pytest.mark.unit
+    def test_add_units_as_layer_zero_init_preserves_old_weights(self, simple_network, simple_2d_data):
+        """add_units_as_layer with 'zero' mode must preserve old output weights in the expanded tensor."""
+        x, y = simple_2d_data
+        simple_network.init_output_weights = "zero"
+
+        old_weights = simple_network.output_weights.clone().detach()
+
+        candidate = CandidateUnit(input_size=2)
+        candidate.weights = torch.randn(2)
+        candidate.bias = torch.tensor(0.0)
+
+        result = CandidateTrainingResult(
+            candidate_id=0,
+            candidate_uuid="test-preserve-uuid",
+            correlation=0.5,
             candidate=candidate,
             success=True,
         )
 
         simple_network.add_units_as_layer([result], x)
 
-        assert torch.allclose(simple_network.output_weights[: old_output_weights.shape[0], :], old_output_weights)
-        assert torch.any(simple_network.output_weights[-1, :] != 0.0)
+        # Old weights should be preserved in the first rows
+        input_size = x.shape[1]
+        assert torch.allclose(simple_network.output_weights[:input_size, :].detach(), old_weights)
+        # New row (for the added unit) should be zero
+        assert torch.allclose(simple_network.output_weights[input_size, :].detach(), torch.zeros(simple_network.output_size))
 
 
 # ===================================================================

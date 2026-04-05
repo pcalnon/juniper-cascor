@@ -531,23 +531,13 @@ class TrainingLifecycleManager:
         return {"status": "training_started", "timestamp": time.time()}
 
     def _run_training(self, x, y, x_val, y_val, **kwargs) -> None:
-        """Execute training in background thread."""
-        try:
-            self.network.fit(x, y, x_val=x_val, y_val=y_val, **kwargs)
-        except Exception as e:
-            self.logger.error(f"Training failed: {e}", exc_info=True)
-            self.state_machine.handle_command(Command.STOP)
-            self.training_state.update_state(status="Failed", phase="Idle")
-            if self._ws_manager:
-                try:
-                    self._ws_manager.broadcast_from_thread(
-                        {
-                            "type": "training_failed",
-                            "data": {"error": str(e), "phase": str(self.training_state.phase)},
-                        }
-                    )
-                except Exception:  # nosec B110 — broadcast failure must not prevent state update
-                    pass
+        """Execute training in background thread.
+
+        Note: Exception handling (state transitions, status updates, broadcasts)
+        is performed by monitored_fit() which wraps network.fit(). This method
+        intentionally does not duplicate that handling (CR-007 Option C).
+        """
+        self.network.fit(x, y, x_val=x_val, y_val=y_val, **kwargs)
 
     def stop_training(self) -> Dict[str, Any]:
         """Request training stop."""

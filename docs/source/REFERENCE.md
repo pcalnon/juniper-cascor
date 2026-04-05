@@ -349,13 +349,17 @@ class ActivationWithDerivative:
     def __setstate__(self, state):
         """Reconstruct function from name."""
         self._activation_name = state['_activation_name']
-        self.activation_fn = self.ACTIVATION_MAP.get(
-            self._activation_name,
-            torch.nn.ReLU()  # Fallback
-        )
+        activation = self.ACTIVATION_MAP.get(self._activation_name) or self.ACTIVATION_MAP.get(self._activation_name.lower())
+        if activation is None:
+            raise ValueError(
+                f"Unrecognized activation function name during deserialization: '{self._activation_name}'"
+            )
+        self.activation_fn = activation
 ```
 
 **Key insight**: Only the string name is serialized; the actual function is reconstructed from the static `ACTIVATION_MAP` on unpickling.
+
+**Constraint**: Unknown activation names fail fast during unpickling (`ValueError`) instead of silently defaulting to ReLU. This prevents hidden behavior drift when custom or unsupported activation functions are serialized.
 
 ---
 

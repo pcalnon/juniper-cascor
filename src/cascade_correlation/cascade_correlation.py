@@ -3455,11 +3455,13 @@ class CascadeCorrelationNetwork:
             new_input_size = x.shape[1] + 1
         self.logger.debug(f"CascadeCorrelationNetwork: add_unit: New input size for output weights: {new_input_size}, Old input size: {old_output_weights.shape[0]}")
 
-        # Initialize new output weights based on init_output_weights strategy
+        # Initialize new output weights based on init_output_weights strategy.
+        # Create without requires_grad to allow safe in-place slice assignment,
+        # then enable gradient tracking after copying old weights.
         if self.init_output_weights == "zero":
-            self.output_weights = torch.zeros(new_input_size, self.output_size, requires_grad=True)
+            self.output_weights = torch.zeros(new_input_size, self.output_size)
         else:
-            self.output_weights = torch.randn(new_input_size, self.output_size, requires_grad=True) * 0.1
+            self.output_weights = torch.randn(new_input_size, self.output_size) * 0.1
         self.logger.debug(f"CascadeCorrelationNetwork: add_unit: New output weights shape: {self.output_weights.shape}, init_mode: {self.init_output_weights}")
 
         # Copy old weights
@@ -3469,8 +3471,9 @@ class CascadeCorrelationNetwork:
             input_size_before = x.shape[1]
         self.logger.debug(f"CascadeCorrelationNetwork: add_unit: Input size before adding new unit: {input_size_before}")
 
-        # Copy old bias
+        # Copy old weights, then enable gradient tracking
         self.output_weights[:input_size_before, :] = old_output_weights
+        self.output_weights.requires_grad_(True)
         self.logger.debug(f"CascadeCorrelationNetwork: add_unit: Updated output weights after copying old weights: {self.output_weights}")
         self.output_bias = old_output_bias
         self.logger.debug(f"CascadeCorrelationNetwork: add_unit: Updated output bias after copying old bias: {self.output_bias}")
@@ -3587,12 +3590,15 @@ class CascadeCorrelationNetwork:
                 new_input_size = x.shape[1] + len(hidden_outputs) + added_count
             else:
                 new_input_size = x.shape[1] + added_count
+            # Initialize new output weights without requires_grad to allow safe
+            # in-place slice assignment, then enable gradient tracking after copy.
             if self.init_output_weights == "zero":
-                self.output_weights = torch.zeros(new_input_size, self.output_size, requires_grad=True)
+                self.output_weights = torch.zeros(new_input_size, self.output_size)
             else:
-                self.output_weights = torch.randn(new_input_size, self.output_size, requires_grad=True) * 0.1
+                self.output_weights = torch.randn(new_input_size, self.output_size) * 0.1
             input_size_before = x.shape[1] + len(hidden_outputs) if hidden_outputs else x.shape[1]
             self.output_weights[:input_size_before, :] = old_output_weights
+            self.output_weights.requires_grad_(True)
             self.output_bias = old_output_bias
 
         self.logger.info(f"CascadeCorrelationNetwork: add_units_as_layer: Layer added ({added_count} units), total hidden units: {len(self.hidden_units)}")
@@ -3754,16 +3760,9 @@ class CascadeCorrelationNetwork:
                 traceback.print_exc()
                 raise TrainingError from e
 
-            # # Update loop state from validation results (critical for early stopping convergence)
-            # patience_counter = validate_training_results.patience_counter
-            # best_value_loss = validate_training_results.best_value_loss
-            # self.logger.debug(f"CascadeCorrelationNetwork: grow_network: Growth Iteration {growth_iteration}, Early Stop: {validate_training_results.early_stop}, Patience Counter: {patience_counter}, Best Value Loss: {best_value_loss:.6f}, Value Output: {validate_training_results.value_output} Value Loss: {validate_training_results.value_loss:.6f}, Value Accuracy: {validate_training_results.value_accuracy:.4f}")
-            # if validate_training_results.early_stop:
-            #     self.logger.info(f"CascadeCorrelationNetwork: grow_network: Early stopping triggered at growth iteration {growth_iteration}.")
-            #     break
-            # self.logger.info(f"CascadeCorrelationNetwork: grow_network: Growth Iteration {growth_iteration} - Train Loss: {train_loss:.6f}, Train Accuracy: {train_accuracy:.4f}, Early stop: {validate_training_results.early_stop}")
-            # epochs_completed = growth_iteration + 1
-            # Update variables from validation results
+            # Update loop state from validation results (critical for early stopping convergence)
+            patience_counter = validate_training_results.patience_counter
+            best_value_loss = validate_training_results.best_value_loss
             self.logger.debug(f"CascadeCorrelationNetwork: grow_network: Iteration {iteration}, Early Stop: {validate_training_results.early_stop}, Patience Counter: {validate_training_results.patience_counter}, Best Value Loss: {validate_training_results.best_value_loss:.6f}, Value Output: {validate_training_results.value_output} Value Loss: {validate_training_results.value_loss:.6f}, Value Accuracy: {validate_training_results.value_accuracy:.4f}")
             if validate_training_results.early_stop:
                 self.logger.info(f"CascadeCorrelationNetwork: grow_network: Early stopping triggered at iteration {iteration}.")
@@ -4407,29 +4406,27 @@ class CascadeCorrelationNetwork:
             self.logger.info(f"CascadeCorrelationNetwork: validate_training: Early Stopping: {early_stop_flag}, Patience Counter: {patience_counter}, Best Val Loss: {best_value_loss:.6f}")
             self.logger.verbose(f"CascadeCorrelationNetwork: validate_training: Value Output: {value_output}, Value Loss: {value_loss:.6f}, Value Accuracy: {value_accuracy:.4f}")
 
-        # else:
-        #     # No validation data — use training loss for early stopping
-        #     if early_stopping:
-        #         if train_loss < best_value_loss - self.convergence_threshold:
-        #             best_value_loss = train_loss
-        #             patience_counter = 0
-        #         else:
-        #             patience_counter += 1
-        #         patience_exhausted = patience_counter >= self.patience
-        #         max_units_reached = self.check_hidden_units_max()
-        #         train_accuracy_reached = self.check_training_accuracy(
-        #             train_accuracy=train_accuracy,
-        #             accuracy_target=self.target_accuracy,
-        #         )
-        #         early_stop_flag = patience_exhausted or max_units_reached or train_accuracy_reached
-        #         self.logger.info(
-        #             f"CascadeCorrelationNetwork: validate_training: "
-        #             f"Epoch {epoch} (no val data) - Train Loss: {train_loss:.6f}, "
-        #             f"Train Acc: {train_accuracy:.4f}, Patience: {patience_counter}/{self.patience}, "
-        #             f"Early Stop: {early_stop_flag}"
-        #         )
-        #
-        # self.logger.verbose(f"CascadeCorrelationNetwork: validate_training: Epoch {epoch}, Early Stop: {early_stop_flag}, Patience Counter: {patience_counter}, Best Value Loss: {best_value_loss:.6f}, Value Output: {value_output}, Value Loss: {value_loss:.6f}, Value Accuracy: {value_accuracy:.4f}")
+        else:
+            # No validation data — use training loss for early stopping
+            if early_stopping:
+                if train_loss < best_value_loss - self.convergence_threshold:
+                    best_value_loss = train_loss
+                    patience_counter = 0
+                else:
+                    patience_counter += 1
+                patience_exhausted = patience_counter >= self.patience
+                max_units_reached = self.check_hidden_units_max()
+                train_accuracy_reached = self.check_training_accuracy(
+                    train_accuracy=train_accuracy,
+                    accuracy_target=self.target_accuracy,
+                )
+                early_stop_flag = patience_exhausted or max_units_reached or train_accuracy_reached
+                self.logger.info(
+                    f"CascadeCorrelationNetwork: validate_training: "
+                    f"Iteration {iteration} (no val data) - Train Loss: {train_loss:.6f}, "
+                    f"Train Acc: {train_accuracy:.4f}, Patience: {patience_counter}/{self.patience}, "
+                    f"Early Stop: {early_stop_flag}"
+                )
         self.logger.verbose(f"CascadeCorrelationNetwork: validate_training: Iteration {iteration}, Early Stop: {early_stop_flag}, Patience Counter: {patience_counter}, Best Value Loss: {best_value_loss:.6f}, Value Output: {value_output}, Value Loss: {value_loss:.6f}, Value Accuracy: {value_accuracy:.4f}")
         self.logger.trace("CascadeCorrelationNetwork: validate_training: Completed validation of the training process.")
 
