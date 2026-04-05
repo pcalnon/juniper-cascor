@@ -1175,3 +1175,30 @@ class TestFitValidation:
 
         with pytest.raises(ValidationError):
             simple_network.fit(x, y, epochs=1, y_val=y)
+
+    @pytest.mark.unit
+    def test_fit_positional_early_stopping_backward_compat(self, simple_network, simple_2d_data):
+        """Legacy positional `early_stopping` argument must not map to max_iterations."""
+        x, y = simple_2d_data
+        captured = {}
+
+        def _mock_train_output_layer(*args, **kwargs):
+            return 0.1
+
+        def _mock_calculate_accuracy(*args, **kwargs):
+            return 0.5
+
+        def _mock_grow_network(*args, **kwargs):
+            captured.update(kwargs)
+            return None
+
+        simple_network.train_output_layer = _mock_train_output_layer
+        simple_network.calculate_accuracy = _mock_calculate_accuracy
+        simple_network.grow_network = _mock_grow_network
+
+        # Legacy positional call shape from pre-CR-006 signature:
+        # fit(x, y, x_val, y_val, max_epochs, epochs, early_stopping)
+        simple_network.fit(x, y, None, None, 1, None, False)
+
+        assert captured["early_stopping"] is False
+        assert captured["max_iterations"] == simple_network.max_iterations
