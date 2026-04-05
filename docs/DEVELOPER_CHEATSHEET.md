@@ -219,14 +219,16 @@ Core: `torch`, `numpy`, `h5py`, `matplotlib`, `PyYAML`, `requests`
 
 ## Troubleshooting
 
-| Symptom                      | Cause                         | Fix                                                   |
-|------------------------------|-------------------------------|-------------------------------------------------------|
-| `CASCOR_LOG_LEVEL` no effect | Set after import              | Set env var before any `import`                       |
-| Logger pickle error          | Logger in `__getstate__`      | Exclude logger from pickle state                      |
-| GPU tests skipped            | No CUDA or flag missing       | `pytest --gpu` on GPU machine                         |
-| Long tests skipped           | Flag not passed               | `pytest --run-long`                                   |
-| HDF5 load fails              | Corrupted or version mismatch | `python -m snapshots.snapshot_cli verify snapshot.h5` |
-| NaN in training              | LR too high or bad data       | Reduce `learning_rate`, check tensors                 |
+| Symptom                                                               | Cause                                                          | Fix                                                                                                                  |
+|-----------------------------------------------------------------------|----------------------------------------------------------------|----------------------------------------------------------------------------------------------------------------------|
+| `CASCOR_LOG_LEVEL` no effect                                          | Set after import                                               | Set env var before any `import`                                                                                     |
+| Logger pickle error                                                   | Logger in `__getstate__`                                       | Exclude logger from pickle state                                                                                    |
+| `Unrecognized activation function name during deserialization`        | Activation name missing from `ActivationWithDerivative` map    | Add matching key to `src/utils/activation.py` `ACTIVATION_MAP` (function `__name__` or module class name)         |
+| HDF5/pickle restore changed activation unexpectedly (legacy behavior) | Previous fallback-to-ReLU behavior no longer applies           | Use only supported activation names; unknown names now fail fast with `ValueError`                                 |
+| GPU tests skipped                                                     | No CUDA or flag missing                                        | `pytest --gpu` on GPU machine                                                                                       |
+| Long tests skipped                                                    | Flag not passed                                                | `pytest --run-long`                                                                                                 |
+| HDF5 load fails                                                       | Corrupted or version mismatch                                  | `python -m snapshots.snapshot_cli verify snapshot.h5`                                                               |
+| NaN in training                                                       | LR too high or bad data                                        | Reduce `learning_rate`, check tensors                                                                               |
 
 ---
 

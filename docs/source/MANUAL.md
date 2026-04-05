@@ -531,6 +531,26 @@ config = CascadeCorrelationConfig(
 )
 ```
 
+3. Register custom activations for serialization round-trip:
+
+```python
+# src/utils/activation.py
+
+class ActivationWithDerivative:
+    ACTIVATION_MAP = {
+        # Existing mappings...
+        "custom_activation": custom_activation,  # function name from __name__
+        "CustomActivation": CustomActivation(),  # class name from __class__.__name__
+    }
+```
+
+Notes:
+
+- `ActivationWithDerivative.__setstate__()` now raises `ValueError` for unknown activation names.
+- There is no fallback activation during deserialization.
+- For pickle/HDF5 compatibility, the key must match the serialized name exactly (or match by lowercase lookup).
+- This wrapper is shared by both `CandidateUnit` and `CascadeCorrelationNetwork` via `src/utils/activation.py`.
+
 ### Adding New Serialization Formats
 
 1. Create a new serializer class:
