@@ -3455,11 +3455,13 @@ class CascadeCorrelationNetwork:
             new_input_size = x.shape[1] + 1
         self.logger.debug(f"CascadeCorrelationNetwork: add_unit: New input size for output weights: {new_input_size}, Old input size: {old_output_weights.shape[0]}")
 
-        # Initialize new output weights based on init_output_weights strategy
+        # Initialize new output weights based on init_output_weights strategy.
+        # Create without requires_grad to allow safe in-place slice assignment,
+        # then enable gradient tracking after copying old weights.
         if self.init_output_weights == "zero":
-            self.output_weights = torch.zeros(new_input_size, self.output_size, requires_grad=True)
+            self.output_weights = torch.zeros(new_input_size, self.output_size)
         else:
-            self.output_weights = torch.randn(new_input_size, self.output_size, requires_grad=True) * 0.1
+            self.output_weights = torch.randn(new_input_size, self.output_size) * 0.1
         self.logger.debug(f"CascadeCorrelationNetwork: add_unit: New output weights shape: {self.output_weights.shape}, init_mode: {self.init_output_weights}")
 
         # Copy old weights
@@ -3469,8 +3471,9 @@ class CascadeCorrelationNetwork:
             input_size_before = x.shape[1]
         self.logger.debug(f"CascadeCorrelationNetwork: add_unit: Input size before adding new unit: {input_size_before}")
 
-        # Copy old bias
+        # Copy old weights, then enable gradient tracking
         self.output_weights[:input_size_before, :] = old_output_weights
+        self.output_weights.requires_grad_(True)
         self.logger.debug(f"CascadeCorrelationNetwork: add_unit: Updated output weights after copying old weights: {self.output_weights}")
         self.output_bias = old_output_bias
         self.logger.debug(f"CascadeCorrelationNetwork: add_unit: Updated output bias after copying old bias: {self.output_bias}")
@@ -3587,12 +3590,15 @@ class CascadeCorrelationNetwork:
                 new_input_size = x.shape[1] + len(hidden_outputs) + added_count
             else:
                 new_input_size = x.shape[1] + added_count
+            # Initialize new output weights without requires_grad to allow safe
+            # in-place slice assignment, then enable gradient tracking after copy.
             if self.init_output_weights == "zero":
-                self.output_weights = torch.zeros(new_input_size, self.output_size, requires_grad=True)
+                self.output_weights = torch.zeros(new_input_size, self.output_size)
             else:
-                self.output_weights = torch.randn(new_input_size, self.output_size, requires_grad=True) * 0.1
+                self.output_weights = torch.randn(new_input_size, self.output_size) * 0.1
             input_size_before = x.shape[1] + len(hidden_outputs) if hidden_outputs else x.shape[1]
             self.output_weights[:input_size_before, :] = old_output_weights
+            self.output_weights.requires_grad_(True)
             self.output_bias = old_output_bias
 
         self.logger.info(f"CascadeCorrelationNetwork: add_units_as_layer: Layer added ({added_count} units), total hidden units: {len(self.hidden_units)}")
