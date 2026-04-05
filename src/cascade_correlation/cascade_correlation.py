@@ -1372,6 +1372,7 @@ class CascadeCorrelationNetwork:
         epochs: int = None,
         max_iterations: int = None,
         early_stopping: bool = True,
+        max_iterations: int = None,
     ) -> Dict[str, List]:
         """
         Train the network using the cascade correlation algorithm.
@@ -1384,6 +1385,7 @@ class CascadeCorrelationNetwork:
             epochs: Backward-compatible alias for max_epochs
             max_iterations: Maximum number of cascade growth iterations (default: from self.max_iterations)
             early_stopping: Whether to use early stopping
+            max_iterations: Maximum number of cascade growth iterations (default: from self.max_iterations)
         Raises:
             ValidationError: If input tensors are invalid or have wrong shapes
             TrainingError: If training fails due to configuration issues
@@ -1421,6 +1423,8 @@ class CascadeCorrelationNetwork:
         # Validate max_epochs
         if max_epochs is not None:
             self._validate_positive_integer(max_epochs, "max_epochs")
+        if max_iterations is not None:
+            self._validate_positive_integer(max_iterations, "max_iterations")
 
         # Validate early_stopping
         if not isinstance(early_stopping, bool):
@@ -1458,6 +1462,7 @@ class CascadeCorrelationNetwork:
         best_value_loss = float("inf") if x_val is not None else None
         # Resolve max_iterations: explicit parameter > self.max_iterations
         max_iterations = max_iterations if max_iterations is not None else self.max_iterations
+        self._validate_positive_integer(max_iterations, "max_iterations")
         self.logger.info(f"CascadeCorrelationNetwork: fit: Starting main training loop with max_epochs: {max_epochs}, max_iterations: {max_iterations}, early stopping: {early_stopping}")
         self.grow_network(
             x_train=x_train,
