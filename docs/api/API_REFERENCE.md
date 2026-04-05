@@ -1,7 +1,7 @@
 # Juniper Cascor - API Reference
 
 **Version**: 0.3.21
-**Last Updated**: 2026-04-04
+**Last Updated**: 2026-04-05
 **Purpose**: Complete API documentation for developers and integrators
 
 ---
@@ -106,6 +106,7 @@ def fit(
     y_val: torch.Tensor = None,
     max_epochs: int = None,
     epochs: int = None,
+    max_iterations: int = None,
     early_stopping: bool = True,
 ) -> dict
 ```
@@ -120,6 +121,7 @@ Train the network using the cascade correlation algorithm.
 - `y_val`: Validation target tensor (optional)
 - `max_epochs`: Maximum training epochs (uses config defaults when `None`)
 - `epochs`: Backward-compatible alias for `max_epochs`
+- `max_iterations`: Maximum cascade growth iterations (uses network/config default when `None`)
 - `early_stopping`: Enable/disable early stopping behavior
 
 **Returns**: Training history dictionary:
@@ -146,7 +148,7 @@ from cascade_correlation.cascade_correlation_config.cascade_correlation_config i
 
 config = CascadeCorrelationConfig(input_size=2, output_size=2)
 network = CascadeCorrelationNetwork(config=config)
-history = network.fit(x_train, y_train, epochs=100)
+history = network.fit(x_train, y_train, max_epochs=100, max_iterations=250)
 print(f"Final accuracy: {history['train_accuracy'][-1]:.2%}")
 ```
 
@@ -409,6 +411,7 @@ CascadeCorrelationConfig(
     init_output_weights: str = "zero",
     output_epochs: int = 100,
     epochs_max: int = 1000,
+    max_iterations: int = 1000,
     max_hidden_units: int = 50,
     correlation_threshold: float = 0.001,
     patience: int = 10,
@@ -839,13 +842,22 @@ All REST responses use the standard response envelope:
 | `/v1/training/params` | `GET` | Get runtime training params |
 | `/v1/training/params` | `PATCH` | Update runtime-modifiable params |
 
-### Start Semantics From Terminal States
+### Training Limit Semantics
 
-`POST /v1/training/start` supports restart after terminal state without a separate reset call.
+`epochs_max` and `max_iterations` are separate controls:
 
-- If the lifecycle state machine is `FAILED` or `COMPLETED`, `START` first auto-resets internal FSM state to `STOPPED` and then transitions to `STARTED`.
-- This behavior is implemented in `TrainingStateMachine._handle_start()`.
-- `POST /v1/training/reset` remains useful for explicit operator-driven cleanup and metric-buffer clearing, but is not required just to start the next run from terminal state.
+- `epochs_max`: Epoch budget used for output-layer optimization cycles.
+- `max_iterations`: Upper bound on cascade growth iterations in `grow_network()`.
+
+The following interfaces accept `max_iterations`:
+
+- `POST /v1/network` (`NetworkCreateRequest`)
+- `PATCH /v1/training/params` (`TrainingParamUpdateRequest`)
+- In-process Python API: `CascadeCorrelationConfig.max_iterations` and `CascadeCorrelationNetwork.fit(..., max_iterations=...)`
+
+Current behavior note:
+
+- `GET /v1/training/params` does not currently include `max_iterations` in its response payload even though PATCH accepts it and the network uses it.
 
 ### Metrics Endpoints
 
@@ -867,7 +879,7 @@ All REST responses use the standard response envelope:
 `training_state` fields include:
 
 - `status`, `phase`, `current_epoch`, `current_step`
-- `learning_rate`, `max_hidden_units`, `max_epochs`
+- `learning_rate`, `max_hidden_units`, `max_epochs`, `max_iterations`
 - `phase_detail`, `phase_started_at`
 - `grow_iteration`, `grow_max`
 - `best_correlation`, `candidates_trained`, `candidates_total`
@@ -1209,4 +1221,4 @@ The `CascadeCorrelationNetwork` class is **NOT thread-safe**. Do not share netwo
 ---
 
 **Document Version**: 0.3.21
-**Last Updated**: 2026-04-04
+**Last Updated**: 2026-04-05

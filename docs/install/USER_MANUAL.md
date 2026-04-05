@@ -151,6 +151,7 @@ predicted_classes = torch.argmax(predictions, dim=1)
 | `init_output_weights` | str | "zero" | Output-weight init mode when hidden units are added: `"zero"` or `"random"` |
 | `output_epochs` | int | 100 | Epochs to train output layer |
 | `epochs_max` | int | 1000 | Maximum total training epochs |
+| `max_iterations` | int | 1000 | Maximum cascade growth iterations (`grow_network` loop bound) |
 | `patience` | int | 15 | Early stopping patience (epochs without improvement) |
 
 `init_output_weights` affects only the new output-layer rows introduced during cascade growth; existing rows are preserved in both modes.
@@ -863,6 +864,15 @@ If results differ between runs with same seed:
 - Ensure `random_seed` is set in configuration
 - Check that CUDA determinism is enabled (for GPU)
 - Verify same training data is used
+
+### Training appears to stop "too early" or runs longer than expected
+
+If run length does not match expectations, check both training limits:
+
+- `epochs_max` controls output-layer epoch budget.
+- `max_iterations` controls how many cascade growth cycles can run.
+
+These limits are independent, so adjusting only one may not change the behavior you expect.
 
 ### JuniperData connection errors
 
