@@ -23,6 +23,7 @@ import torch
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from log_config.logger.logger import Logger
+from utils.activation import ActivationWithDerivative
 
 from .snapshot_common import calculate_tensor_checksum, load_numpy_array, load_tensor, read_str_attr, read_str_dataset, save_numpy_array, save_tensor, verify_tensor_checksum, write_str_attr, write_str_dataset
 
@@ -382,7 +383,7 @@ class CascadeHDF5Serializer:
 
             # Save activation function name (per unit, in case they differ)
             if "activation_fn" in unit:
-                af_name = getattr(unit["activation_fn"], "__name__", network.activation_function_name)
+                af_name = getattr(unit["activation_fn"], "_activation_name", network.activation_function_name)
                 write_str_attr(unit_group, "activation_function_name", af_name)
             else:
                 write_str_attr(
@@ -783,12 +784,12 @@ class CascadeHDF5Serializer:
             if "correlation" in unit_group.attrs:
                 unit["correlation"] = float(unit_group.attrs["correlation"])
 
-            # Load activation function (per unit)
+            # Load activation function (per unit), wrapped in ActivationWithDerivative for consistency with runtime-created units
             af_name = read_str_attr(unit_group, "activation_function_name", network.activation_function_name)
             if hasattr(network, "activation_functions_dict") and af_name in network.activation_functions_dict:
-                unit["activation_fn"] = network.activation_functions_dict[af_name]
+                unit["activation_fn"] = ActivationWithDerivative(network.activation_functions_dict[af_name])
             else:
-                unit["activation_fn"] = network.activation_fn
+                unit["activation_fn"] = ActivationWithDerivative(network.activation_fn) if not isinstance(network.activation_fn, ActivationWithDerivative) else network.activation_fn
 
             network.hidden_units.append(unit)
 
