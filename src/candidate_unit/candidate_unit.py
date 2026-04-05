@@ -554,29 +554,28 @@ class CandidateUnit:
         actual_epochs_completed = 0
         self.logger.debug(f"CandidateUnit: train: Early stopping enabled: {self.early_stopping}, Patience: {self.patience}")
 
+        # Log constant metadata once before the loop (CR-062: hoist invariant values)
+        _log_debug = self.logger.isEnabledFor(10)  # DEBUG
+        _log_trace = self.logger.isEnabledFor(5)   # TRACE
+        if _log_debug:
+            self.logger.debug("CandidateUnit: train: Residual error shape: %s, dtype: %s, dims: %s", residual_error.shape, residual_error.dtype, residual_error.dim())
+
         # Train candidate unit for specified epochs to maximize correlation with residual error
         for epoch in range(epochs):
             actual_epochs_completed = epoch + 1
-            self.logger.trace(f"CandidateUnit: train: Starting Training Step: Starting training step: For Epoch {epoch + 1}.")
-            self.logger.trace(f"CandidateUnit: train: Performing forward pass for current epoch: For Epoch {epoch + 1}")
-            self.logger.info(f"CandidateUnit: train: Performing Forward Pass: Training Candidate Unit: UUID: {self.uuid}, For Epoch: {epoch + 1}.")
+            if _log_trace:
+                self.logger.trace("CandidateUnit: train: Starting training step for epoch %d", epoch + 1)
+            self.logger.info("CandidateUnit: train: Forward pass: UUID: %s, epoch: %d", self.uuid, epoch + 1)
             output = self.forward(x)  # Forward pass for current input mini-batch (x)
-            self.logger.debug(f"CandidateUnit: train: Completed Forward Pass: Output shape: {output.shape}, For Epoch {epoch + 1}")
 
             # Compute correlation with each output and use the maximum absolute correlation
-            self.logger.verbose(f"CandidateUnit: train: Before Correlation Calculation: Residual Error: Shape: {residual_error.shape}, Dimensions: {residual_error.dim()}, Dtype: {residual_error.dtype}, For Epoch {epoch + 1}")
-            self.logger.trace(f"CandidateUnit: train: Multi-output Network detected: With residual_error shape: {residual_error.shape}, For Epoch {epoch + 1}")
-            self.logger.info(f"CandidateUnit: train: Calculating Correlation: UUID: {self.uuid}, Epoch: {epoch + 1}: Residual Error: Shape: {residual_error.shape}, Length: {len(residual_error)}, Type: {type(residual_error)}, Dtype: {residual_error.dtype}, Dimensions: {residual_error.dim()}, For Epoch: {epoch + 1}")
+            self.logger.info("CandidateUnit: train: Calculating correlation: UUID: %s, epoch: %d", self.uuid, epoch + 1)
             candidate_training_result = self._get_correlations(output=output, residual_error=residual_error)
-            self.logger.info(
-                f"CandidateUnit: train: Completed Correlation Calculation:  UUID: {self.uuid}, Epoch: {epoch + 1}: Best Correlation: {candidate_training_result.correlation}, Best Corr Idx: {candidate_training_result.best_corr_idx}, Best Norm Output Shape: {candidate_training_result.norm_output.shape if candidate_training_result.norm_output is not None else 'None'}, Best Norm Error Shape: {candidate_training_result.norm_error.shape if candidate_training_result.norm_error is not None else 'None'}"
-            )
-            self.logger.debug(f"CandidateUnit: train: Correlation calculation: self correlation: {self.correlation}, parameter: correlation: {candidate_training_result.correlation}, for Epoch {epoch + 1}.")
-            self.logger.debug(f"CandidateUnit: train: Correlation calculation: Best Correlation: {candidate_training_result.correlation}, For Epoch: {epoch + 1}")
-            self.logger.debug(f"CandidateUnit: train: All correlations list: For Epoch {epoch + 1}: Correlations: {candidate_training_result.all_correlations}")
+            self.logger.info("CandidateUnit: train: Correlation result: UUID: %s, epoch: %d, correlation: %s", self.uuid, epoch + 1, candidate_training_result.correlation)
+            if _log_debug:
+                self.logger.debug("CandidateUnit: train: Correlation detail: self=%s, result=%s, all=%s", self.correlation, candidate_training_result.correlation, candidate_training_result.all_correlations)
 
             # Update weights and bias based on correlation
-            self.logger.trace(f"CandidateUnit: train: Updating weights and bias based on correlation: For Epoch {epoch + 1}")
             candidate_parameters_update = CandidateParametersUpdate(
                 x=x,
                 y=output,
@@ -588,10 +587,9 @@ class CandidateUnit:
                 numerator=candidate_training_result.numerator,
                 denominator=candidate_training_result.denominator,
             )
-            self.logger.debug(f"CandidateUnit: train: Candidate Parameters Update Object: {candidate_parameters_update}, For Epoch {epoch + 1}")
             epoch_trained_candidate = self._update_weights_and_bias(candidate_parameters_update=candidate_parameters_update)
-            self.logger.debug(f"CandidateUnit: train: Epoch Trained Candidate Object: {epoch_trained_candidate}, For Epoch {epoch + 1}")
-            self.logger.debug(f"CandidateUnit: train: Updated weights and bias based on correlation: For Epoch {epoch + 1}: Weights shape: {self.weights.shape}, Bias: {self.bias.item() if hasattr(self.bias, 'item') else self.bias}")
+            if _log_debug:
+                self.logger.debug("CandidateUnit: train: Epoch %d: weights shape: %s", epoch + 1, self.weights.shape)
 
             # Update instance correlation for monitoring during training
             self.correlation = float(candidate_training_result.correlation)
@@ -624,14 +622,6 @@ class CandidateUnit:
                 )
 
             # Display training progress at specified frequency
-            self.logger.debug("CandidateUnit: train: Display training progress at specified frequency")
-            self.logger.debug(f"CandidateUnit: train: Display frequency: {self.display_frequency}, Current Epoch: {epoch + 1}")
-            self.logger.debug(f"CandidateUnit: train: Candidate display progress function: {self._candidate_display_progress}")
-            self.logger.debug(f"CandidateUnit: train: Candidate display progress function: {self._display_training_progress}")
-            self.logger.debug(f"CandidateUnit: train: Candidate Training Result: Type: {type(candidate_training_result)}, Value: {candidate_training_result or None}")
-            self.logger.debug(f"CandidateUnit: train: Candidate Parameters Update: Type: {type(candidate_parameters_update)}, Value: {candidate_parameters_update or None}")
-            self.logger.debug(f"CandidateUnit: train: Epoch Trained Candidate: Type: {type(epoch_trained_candidate)}, Value: {epoch_trained_candidate or None}")
-            self.logger.debug(f"CandidateUnit: train: Residual Error: Shape: {residual_error.shape}, Dtype: {residual_error.dtype}")
             try:
                 self._display_training_progress(epoch, candidate_parameters_update, residual_error)
             except Exception as e:
