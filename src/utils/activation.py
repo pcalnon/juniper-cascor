@@ -42,11 +42,14 @@ class ActivationWithDerivative:
 
     # Mapping of activation names to functions for reconstruction after unpickling
     ACTIVATION_MAP = {
+        "identity": torch.nn.Identity(),
         "elu": torch.nn.functional.elu,
         "hardshrink": torch.nn.functional.hardshrink,
         "relu": torch.relu,
         "sigmoid": torch.sigmoid,
+        "softmax": torch.nn.Softmax(dim=1),
         "tanh": torch.tanh,
+        "Identity": torch.nn.Identity(),
         "ELU": torch.nn.ELU(),
         "Hardshrink": torch.nn.Hardshrink(),
         "Hardsigmoid": torch.nn.Hardsigmoid(),
@@ -64,6 +67,7 @@ class ActivationWithDerivative:
         "Sigmoid": torch.nn.Sigmoid(),
         "SiLU": torch.nn.SiLU(),
         "Mish": torch.nn.Mish(),
+        "Softmax": torch.nn.Softmax(dim=1),
         "Softplus": torch.nn.Softplus(),
         "Softshrink": torch.nn.Softshrink(),
         "Softsign": torch.nn.Softsign(),
@@ -133,8 +137,10 @@ class ActivationWithDerivative:
     def __setstate__(self, state):
         """Reconstruct activation function from name after unpickling."""
         self._activation_name = state["_activation_name"]
-        # Try to reconstruct from map, fall back to ReLU as default
-        self.activation_fn = self.ACTIVATION_MAP.get(self._activation_name, self.ACTIVATION_MAP.get(self._activation_name.lower(), torch.nn.ReLU()))
+        activation = self.ACTIVATION_MAP.get(self._activation_name) or self.ACTIVATION_MAP.get(self._activation_name.lower())
+        if activation is None:
+            raise ValueError(f"Unrecognized activation function name during deserialization: '{self._activation_name}'. Known activations: {list(self.ACTIVATION_MAP.keys())}")
+        self.activation_fn = activation
 
     def __repr__(self):
         """String representation for debugging."""

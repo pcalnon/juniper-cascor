@@ -205,6 +205,12 @@ _PROJECT_MODEL_LEARNING_RATE = 0.05
 _PROJECT_MODEL_EPOCHS_MAX = 10000
 _PROJECT_MODEL_MAX_ITERATIONS = 1000
 
+#####################################################################################################################################################################################################
+# Define constants for the Cascade Correlation Network training parameters, Output Weight Initialization
+# "zero" — standard CasCor (Fahlman & Lebiere 1990): zero-initialize new hidden unit output weights
+# "random" — random initialization (torch.randn * 0.1) for experimental use
+_PROJECT_MODEL_INIT_OUTPUT_WEIGHTS = "zero"
+
 # _PROJECT_MODEL_OUTPUT_EPOCHS = 10
 # _PROJECT_MODEL_OUTPUT_EPOCHS = 20
 # _PROJECT_MODEL_OUTPUT_EPOCHS = 30

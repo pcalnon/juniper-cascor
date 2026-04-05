@@ -181,3 +181,23 @@ class TestTrainingStateMachine:
         sm.save_candidate_state({"epoch": 5})
         sm.handle_command(Command.RESET)
         assert sm.get_candidate_state() is None
+
+    def test_start_auto_resets_from_failed(self):
+        """Start command auto-resets from FAILED terminal state (CR-007)."""
+        sm = TrainingStateMachine()
+        sm.handle_command(Command.START)
+        sm.mark_failed("test error")
+        assert sm.is_failed()
+        result = sm.handle_command(Command.START)
+        assert result is True
+        assert sm.is_started()
+
+    def test_start_auto_resets_from_completed(self):
+        """Start command auto-resets from COMPLETED terminal state (CR-007)."""
+        sm = TrainingStateMachine()
+        sm.handle_command(Command.START)
+        sm.mark_completed()
+        assert sm.is_completed()
+        result = sm.handle_command(Command.START)
+        assert result is True
+        assert sm.is_started()

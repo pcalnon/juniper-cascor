@@ -85,6 +85,7 @@ CascadeCorrelationNetwork(
 | `candidate_learning_rate` | `float`                    | `0.01`  | Learning rate for candidates      |
 | `candidate_pool_size`     | `int`                      | `16`    | Number of candidates per round    |
 | `candidate_epochs`        | `int`                      | `100`   | Epochs to train each candidate    |
+| `init_output_weights`     | `str`                      | `"zero"`| New hidden-unit output weight init mode (`"zero"` or `"random"`) |
 | `max_hidden_units`        | `int`                      | `50`    | Maximum network growth            |
 | `correlation_threshold`   | `float`                    | `0.001` | Minimum correlation for selection |
 | `patience`                | `int`                      | `10`    | Early stopping patience           |
@@ -248,7 +249,7 @@ def grow_network(
     self,
     x_train: torch.Tensor,
     y_train: torch.Tensor,
-    max_epochs: int = 1000,
+    max_iterations: int = 1000,
     early_stopping: bool = True,
     patience_counter: int = 0,
     best_value_loss: float = float("inf"),
@@ -261,6 +262,11 @@ def grow_network(
 Grow the network by iteratively training candidate units and adding selected units.
 
 **Returns**: `ValidateTrainingResults`
+
+**Early-stopping behavior**:
+
+- With validation tensors (`x_val` and `y_val`), stopping is driven by validation loss/patience plus max-hidden-units and target-accuracy checks.
+- Without validation tensors, stopping is driven by training loss/patience (using `convergence_threshold`) plus max-hidden-units and target-accuracy checks.
 
 **Optional callback**:
 
@@ -402,6 +408,7 @@ CascadeCorrelationConfig(
     candidate_learning_rate: float = 0.01,
     candidate_pool_size: int = 16,
     candidate_epochs: int = 100,
+    init_output_weights: str = "zero",
     output_epochs: int = 100,
     epochs_max: int = 1000,
     max_iterations: int = 1000,
@@ -415,6 +422,13 @@ CascadeCorrelationConfig(
     optimizer_config: OptimizerConfig = None,
 )
 ```
+
+`init_output_weights` controls how newly added hidden-unit connections into the output layer are initialized during network growth:
+
+- `"zero"`: zero-initialize only the newly added rows, then copy existing output weights forward (default).
+- `"random"`: initialize newly added rows from `torch.randn(...) * 0.1`, then copy existing output weights forward.
+
+Constraint: this setting affects only growth events that add hidden units. It does not retroactively reinitialize existing output weights.
 
 ### Factory Methods
 
@@ -919,6 +933,18 @@ Message envelope:
 
 `/ws/training` is read-only for clients; updates are broadcast from the lifecycle manager/monitor.
 
+### Lifecycle Failure Handling Path
+
+Training exceptions are handled at the monitored `fit()` wrapper layer in the lifecycle manager.
+
+- `TrainingLifecycleManager._run_training()` executes `network.fit(...)` and allows exceptions to propagate.
+- `TrainingLifecycleManager._install_monitoring_hooks()` wraps `network.fit` with `monitored_fit(...)`, which owns:
+- state transitions (`START`, `FAILED`, `COMPLETED`, `STOPPED`)
+- `training_state` updates (`status`, `phase`)
+- WebSocket/REST-visible broadcast updates
+
+This keeps error handling centralized and avoids duplicate failure transitions in multiple call paths.
+
 ### `candidate_progress` Message Payload
 
 Candidate worker progress updates are emitted with:
@@ -1069,8 +1095,8 @@ class CandidateTrainingResult:
 ```python
 @dataclass
 class ValidateTrainingInputs:
-    epoch: int
-    max_epochs: int
+    iteration: int
+    max_iterations: int
     patience_counter: int
     early_stopping: bool
     train_accuracy: float

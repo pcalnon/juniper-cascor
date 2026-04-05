@@ -1,6 +1,6 @@
 """Training API request/response models."""
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Literal, Optional
 
 from pydantic import BaseModel, Field
 
@@ -57,3 +57,4 @@ class TrainingParamUpdateRequest(BaseModel):
     candidate_convergence_threshold: Optional[float] = Field(None, gt=0, description="Minimum loss improvement for candidate training patience")
     candidate_patience: Optional[int] = Field(None, ge=1, description="Candidate training early stopping patience epochs")
     candidate_epochs: Optional[int] = Field(None, ge=1, description="Number of epochs for candidate training")
+    init_output_weights: Optional[Literal["zero", "random"]] = Field(None, description="Initialization mode for new hidden unit output weights")

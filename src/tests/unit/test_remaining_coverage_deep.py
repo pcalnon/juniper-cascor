@@ -705,8 +705,8 @@ class TestLifecycleManagerShutdownDeep:
 class TestRunTrainingExceptionPath:
     """Test _run_training error handling."""
 
-    def test_run_training_logs_exception(self):
-        """_run_training catches and logs exceptions from network.fit (line 354-355)."""
+    def test_run_training_propagates_exception(self):
+        """_run_training lets exceptions propagate — error handling is in monitored_fit (CR-007)."""
         mgr = TrainingLifecycleManager()
         mgr.create_network(input_size=2, output_size=2)
 
@@ -718,6 +718,6 @@ class TestRunTrainingExceptionPath:
         # Make fit raise an exception
         mgr.network.fit = MagicMock(side_effect=ValueError("bad data"))
 
-        # _run_training should catch the exception, not propagate it
-        mgr._run_training(x, y, None, None)
-        # No exception raised — the error was caught and logged
+        # _run_training no longer catches exceptions — monitored_fit handles them
+        with pytest.raises(ValueError, match="bad data"):
+            mgr._run_training(x, y, None, None)
