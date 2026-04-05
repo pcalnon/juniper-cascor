@@ -14,6 +14,7 @@ import logging
 
 from fastapi import WebSocket, WebSocketDisconnect
 
+from api.websocket.manager import ws_authenticate
 from api.websocket.messages import create_control_ack_message
 
 logger = logging.getLogger("juniper_cascor.api.websocket.control")
@@ -24,13 +25,8 @@ _MAX_MESSAGE_SIZE = 65536  # 64KB
 
 async def control_stream_handler(websocket: WebSocket) -> None:
     """Handle /ws/control WebSocket connections."""
-    # Authenticate WebSocket connection (BaseHTTPMiddleware does not intercept WS)
-    auth = getattr(websocket.app.state, "api_key_auth", None)
-    if auth is not None and auth.enabled:
-        api_key = websocket.headers.get("X-API-Key")
-        if not auth.validate(api_key):
-            await websocket.close(code=4001, reason="Authentication required")
-            return
+    if not await ws_authenticate(websocket):
+        return
 
     lifecycle = getattr(websocket.app.state, "lifecycle", None)
 
