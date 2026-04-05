@@ -376,6 +376,8 @@ class ActivationWithDerivative:
 
 **Key insight**: Only the string name is serialized; the actual function is reconstructed from the static `ACTIVATION_MAP` on unpickling. Deserialization is fail-fast for unknown names (no silent fallback).
 
+**Constraint**: Unknown activation names fail fast during unpickling (`ValueError`) instead of silently defaulting to ReLU. This prevents hidden behavior drift when custom or unsupported activation functions are serialized.
+
 ---
 
 ## 5. Multiprocessing Details

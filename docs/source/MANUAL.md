@@ -47,6 +47,9 @@ cascade_correlation/
    - If target accuracy not reached, train candidate pool
    - Select best candidate(s) and add to network
    - Repeat until target accuracy or max hidden units
+   - Early-stopping behavior depends on data availability:
+     - With `x_val`/`y_val`: patience is evaluated against validation loss.
+     - Without validation data: patience is evaluated against training loss using the same convergence threshold.
 
 2. **Network Growth** (`_add_hidden_unit()`):
    - Freeze existing hidden units

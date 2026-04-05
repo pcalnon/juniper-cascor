@@ -1,7 +1,7 @@
 # Juniper Cascor - API Schemas
 
 **Version**: 0.3.21
-**Last Updated**: 2026-03-30
+**Last Updated**: 2026-04-05
 **Purpose**: Data schema documentation for serialization and data structures
 
 ---
@@ -277,6 +277,7 @@ All REST responses are wrapped in:
         "learning_rate": float,
         "max_hidden_units": int,
         "max_epochs": int,
+        "max_iterations": int,
         "current_epoch": int,
         "current_step": int,
         "network_name": str,
@@ -299,12 +300,36 @@ All REST responses are wrapped in:
 }
 ```
 
+`max_epochs` and `max_iterations` are intentionally separate:
+
+- `max_epochs` is the output-layer training epoch budget.
+- `max_iterations` is the cap on cascade growth iterations.
+
 `phase_detail` currently uses:
 
 - `training_output`
 - `training_candidates`
 - `adding_candidate`
 - `""` (empty string when no active detail)
+
+### Start Command Behavior From Terminal States
+
+For control operations that ultimately invoke `Command.START`:
+
+- If `state_machine.status` is `FAILED` or `COMPLETED`, the state machine auto-resets internally to `STOPPED` first.
+- The same `START` command then transitions to `STARTED` with phase `OUTPUT`.
+- Clients do not need to call `POST /v1/training/reset` solely to recover from terminal lifecycle states before a new start.
+
+`POST /v1/training/reset` is still the explicit "operator reset" endpoint and additionally clears monitor metrics/history buffer.
+
+### Training Failure Propagation and Ownership
+
+Failure state updates are owned by the monitored lifecycle wrapper around `network.fit(...)`:
+
+- `_run_training(...)` acts as a thread entrypoint and does not perform duplicate exception handling.
+- `monitored_fit(...)` (installed by `TrainingLifecycleManager._install_monitoring_hooks`) marks FSM/training state as failed and triggers state broadcasts when exceptions occur.
+
+Consumers should treat the lifecycle status fields (`state_machine.status`, `training_state.status`) as authoritative for failure outcomes instead of inferring from thread implementation details.
 
 ### `metrics/history` Entry Schema
 
@@ -376,8 +401,10 @@ Behavior constraints:
 | `candidate_learning_rate` | `float` | `0.01` | Candidate training learning rate |
 | `candidate_pool_size` | `int` | `16` | Candidates per training round |
 | `candidate_epochs` | `int` | `100` | Epochs per candidate |
+| `init_output_weights` | `str` | `"zero"` | Output-weight init mode for newly added hidden units (`"zero"` or `"random"`) |
 | `output_epochs` | `int` | `100` | Epochs for output layer training |
 | `epochs_max` | `int` | `1000` | Maximum total epochs |
+| `max_iterations` | `int` | `1000` | Maximum cascade growth iterations |
 | `max_hidden_units` | `int` | `50` | Maximum network growth |
 | `correlation_threshold` | `float` | `0.001` | Minimum correlation for selection |
 | `patience` | `int` | `10` | Early stopping patience |
@@ -386,6 +413,12 @@ Behavior constraints:
 | `generate_plots` | `bool` | `True` | Enable visualization |
 | `activation_function` | `callable` | `torch.tanh` | Hidden unit activation |
 | `optimizer_config` | `OptimizerConfig` | `None` | Optimizer settings |
+
+`init_output_weights` behavior constraints:
+
+- `"zero"` (default): initialize the new output-layer rows introduced by growth to zeros.
+- `"random"`: initialize those new rows with `torch.randn(...) * 0.1`.
+- Existing output-layer rows are copied from the pre-growth state in both modes.
 
 ### OptimizerConfig
 
@@ -413,6 +446,17 @@ EXCLUDED_CONFIG_FIELDS = [
 ```
 
 After loading, these fields are re-initialized from defaults.
+
+### Service Request Models (Training Limits)
+
+`max_iterations` is a first-class API field in these request schemas:
+
+- `POST /v1/network` (`NetworkCreateRequest`): includes `max_iterations` (`int`, `ge=1`)
+- `PATCH /v1/training/params` (`TrainingParamUpdateRequest`): includes `max_iterations` (`Optional[int]`, `ge=1`)
+
+Current behavior note:
+
+- `GET /v1/training/params` currently does not include `max_iterations` in its response payload.
 
 ---
 
@@ -661,4 +705,4 @@ If verification fails:
 ---
 
 **Document Version**: 0.3.21
-**Last Updated**: 2026-03-30
+**Last Updated**: 2026-04-05
