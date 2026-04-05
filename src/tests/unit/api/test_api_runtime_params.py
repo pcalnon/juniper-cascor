@@ -88,3 +88,20 @@ class TestUpdateTrainingParams:
         # learning_rate should be unchanged
         after = test_client_with_network.get("/v1/training/params").json()["data"]["learning_rate"]
         assert before == after
+
+    def test_update_init_output_weights(self, test_client_with_network):
+        """PATCH /v1/training/params updates init_output_weights on live network."""
+        response = test_client_with_network.patch(
+            "/v1/training/params",
+            json={"init_output_weights": "random"},
+        )
+        assert response.status_code == 200
+        assert test_client_with_network.app.state.lifecycle.network.init_output_weights == "random"
+
+    def test_update_init_output_weights_rejects_invalid_value(self, test_client_with_network):
+        """PATCH /v1/training/params rejects unsupported init_output_weights values."""
+        response = test_client_with_network.patch(
+            "/v1/training/params",
+            json={"init_output_weights": "invalid"},
+        )
+        assert response.status_code == 422

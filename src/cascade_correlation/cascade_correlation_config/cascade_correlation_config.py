@@ -56,6 +56,7 @@ from cascor_constants.constants import (  # _CASCADE_CORRELATION_NETWORK_ACTIVAT
     _CASCADE_CORRELATION_NETWORK_EPOCHS_MAX,
     _CASCADE_CORRELATION_NETWORK_GENERATE_PLOTS,
     _CASCADE_CORRELATION_NETWORK_MAX_ITERATIONS,
+    _CASCADE_CORRELATION_NETWORK_INIT_OUTPUT_WEIGHTS,
     _CASCADE_CORRELATION_NETWORK_HDF5_PROJECT_SNAPSHOTS_DIR,
     _CASCADE_CORRELATION_NETWORK_INPUT_SIZE,
     _CASCADE_CORRELATION_NETWORK_LEARNING_RATE,
@@ -143,6 +144,8 @@ class CascadeCorrelationConfig:
         random_max_value: int = _CASCADE_CORRELATION_NETWORK_RANDOM_MAX_VALUE,
         sequence_max_value: int = _CASCADE_CORRELATION_NETWORK_SEQUENCE_MAX_VALUE,
         random_value_scale: float = _CASCADE_CORRELATION_NETWORK_RANDOM_VALUE_SCALE,
+        # Output weight initialization
+        init_output_weights: str = _CASCADE_CORRELATION_NETWORK_INIT_OUTPUT_WEIGHTS,
         # Logging configuration
         log_config: LogConfig = None,
         log_file_name: str = _CASCADE_CORRELATION_NETWORK_LOG_FILE_NAME,
@@ -217,6 +220,9 @@ class CascadeCorrelationConfig:
         self.random_max_value = random_max_value
         self.sequence_max_value = sequence_max_value
         self.random_value_scale = random_value_scale
+
+        # Output weight initialization
+        self.init_output_weights = init_output_weights
 
         # Logging configuration
         self.log_config = log_config
