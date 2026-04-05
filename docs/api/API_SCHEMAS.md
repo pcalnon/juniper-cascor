@@ -1,7 +1,7 @@
 # Juniper Cascor - API Schemas
 
 **Version**: 0.3.21
-**Last Updated**: 2026-03-30
+**Last Updated**: 2026-04-04
 **Purpose**: Data schema documentation for serialization and data structures
 
 ---
@@ -376,6 +376,7 @@ Behavior constraints:
 | `candidate_learning_rate` | `float` | `0.01` | Candidate training learning rate |
 | `candidate_pool_size` | `int` | `16` | Candidates per training round |
 | `candidate_epochs` | `int` | `100` | Epochs per candidate |
+| `init_output_weights` | `str` | `"zero"` | Output-weight init mode for newly added hidden units (`"zero"` or `"random"`) |
 | `output_epochs` | `int` | `100` | Epochs for output layer training |
 | `epochs_max` | `int` | `1000` | Maximum total epochs |
 | `max_hidden_units` | `int` | `50` | Maximum network growth |
@@ -386,6 +387,12 @@ Behavior constraints:
 | `generate_plots` | `bool` | `True` | Enable visualization |
 | `activation_function` | `callable` | `torch.tanh` | Hidden unit activation |
 | `optimizer_config` | `OptimizerConfig` | `None` | Optimizer settings |
+
+`init_output_weights` behavior constraints:
+
+- `"zero"` (default): initialize the new output-layer rows introduced by growth to zeros.
+- `"random"`: initialize those new rows with `torch.randn(...) * 0.1`.
+- Existing output-layer rows are copied from the pre-growth state in both modes.
 
 ### OptimizerConfig
 
@@ -661,4 +668,4 @@ If verification fails:
 ---
 
 **Document Version**: 0.3.21
-**Last Updated**: 2026-03-30
+**Last Updated**: 2026-04-04

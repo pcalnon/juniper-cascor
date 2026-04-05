@@ -1,7 +1,7 @@
 # Juniper Cascor - API Reference
 
 **Version**: 0.3.21
-**Last Updated**: 2026-03-29
+**Last Updated**: 2026-04-04
 **Purpose**: Complete API documentation for developers and integrators
 
 ---
@@ -85,6 +85,7 @@ CascadeCorrelationNetwork(
 | `candidate_learning_rate` | `float`                    | `0.01`  | Learning rate for candidates      |
 | `candidate_pool_size`     | `int`                      | `16`    | Number of candidates per round    |
 | `candidate_epochs`        | `int`                      | `100`   | Epochs to train each candidate    |
+| `init_output_weights`     | `str`                      | `"zero"`| New hidden-unit output weight init mode (`"zero"` or `"random"`) |
 | `max_hidden_units`        | `int`                      | `50`    | Maximum network growth            |
 | `correlation_threshold`   | `float`                    | `0.001` | Minimum correlation for selection |
 | `patience`                | `int`                      | `10`    | Early stopping patience           |
@@ -400,6 +401,7 @@ CascadeCorrelationConfig(
     candidate_learning_rate: float = 0.01,
     candidate_pool_size: int = 16,
     candidate_epochs: int = 100,
+    init_output_weights: str = "zero",
     output_epochs: int = 100,
     epochs_max: int = 1000,
     max_hidden_units: int = 50,
@@ -412,6 +414,13 @@ CascadeCorrelationConfig(
     optimizer_config: OptimizerConfig = None,
 )
 ```
+
+`init_output_weights` controls how newly added hidden-unit connections into the output layer are initialized during network growth:
+
+- `"zero"`: zero-initialize only the newly added rows, then copy existing output weights forward (default).
+- `"random"`: initialize newly added rows from `torch.randn(...) * 0.1`, then copy existing output weights forward.
+
+Constraint: this setting affects only growth events that add hidden units. It does not retroactively reinitialize existing output weights.
 
 ### Factory Methods
 
@@ -825,6 +834,10 @@ All REST responses use the standard response envelope:
 | `/v1/training/params` | `GET` | Get runtime training params |
 | `/v1/training/params` | `PATCH` | Update runtime-modifiable params |
 
+`PATCH /v1/training/params` accepts `init_output_weights` (`"zero"` or `"random"`). This updates the live network setting for subsequent hidden-unit additions.
+
+Current implementation note: `GET /v1/training/params` does not yet include `init_output_weights` in its response payload, even though PATCH accepts and applies it.
+
 ### Metrics Endpoints
 
 | Endpoint | Method | Description |
@@ -1175,4 +1188,4 @@ The `CascadeCorrelationNetwork` class is **NOT thread-safe**. Do not share netwo
 ---
 
 **Document Version**: 0.3.21
-**Last Updated**: 2026-03-29
+**Last Updated**: 2026-04-04
