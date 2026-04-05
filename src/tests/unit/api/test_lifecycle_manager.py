@@ -53,6 +53,19 @@ class TestLifecycleManagerNetwork:
         assert state["learning_rate"] == 0.02
         assert "CasCor" in state["network_name"]
 
+    def test_create_network_keeps_max_epochs_and_max_iterations_separate(self):
+        """Creating a network keeps epoch and growth limits independent."""
+        mgr = TrainingLifecycleManager()
+        mgr.create_network(
+            input_size=2,
+            output_size=2,
+            epochs_max=11,
+            max_iterations=4,
+        )
+        state = mgr.training_state.get_state()
+        assert state["max_epochs"] == 11
+        assert state["max_iterations"] == 4
+
     def test_get_training_params_no_network(self):
         """Training params returns empty dict without network."""
         mgr = TrainingLifecycleManager()
