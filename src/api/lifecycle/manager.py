@@ -173,7 +173,8 @@ class TrainingLifecycleManager:
                 phase="Idle",
                 learning_rate=kwargs.get("learning_rate", 0.01),
                 max_hidden_units=kwargs.get("max_hidden_units", 10),
-                max_iterations=kwargs.get("epochs_max", 200),
+                max_epochs=kwargs.get("epochs_max", 200),
+                max_iterations=kwargs.get("max_iterations", 1000),
                 network_name=f"CasCor-{kwargs.get('input_size', 2)}x{kwargs.get('output_size', 2)}",
             )
 
@@ -531,23 +532,13 @@ class TrainingLifecycleManager:
         return {"status": "training_started", "timestamp": time.time()}
 
     def _run_training(self, x, y, x_val, y_val, **kwargs) -> None:
-        """Execute training in background thread."""
-        try:
-            self.network.fit(x, y, x_val=x_val, y_val=y_val, **kwargs)
-        except Exception as e:
-            self.logger.error(f"Training failed: {e}", exc_info=True)
-            self.state_machine.handle_command(Command.STOP)
-            self.training_state.update_state(status="Failed", phase="Idle")
-            if self._ws_manager:
-                try:
-                    self._ws_manager.broadcast_from_thread(
-                        {
-                            "type": "training_failed",
-                            "data": {"error": str(e), "phase": str(self.training_state.phase)},
-                        }
-                    )
-                except Exception:  # nosec B110 — broadcast failure must not prevent state update
-                    pass
+        """Execute training in background thread.
+
+        Note: Exception handling (state transitions, status updates, broadcasts)
+        is performed by monitored_fit() which wraps network.fit(). This method
+        intentionally does not duplicate that handling (CR-007 Option C).
+        """
+        self.network.fit(x, y, x_val=x_val, y_val=y_val, **kwargs)
 
     def stop_training(self) -> Dict[str, Any]:
         """Request training stop."""
@@ -718,11 +709,13 @@ class TrainingLifecycleManager:
                 "candidate_pool_size",
                 "max_hidden_units",
                 "epochs_max",
+                "max_iterations",
                 "patience",
                 "convergence_threshold",
                 "candidate_convergence_threshold",
                 "candidate_patience",
                 "candidate_epochs",
+                "init_output_weights",
             }
             for key, value in params.items():
                 if key in updatable_keys and hasattr(self.network, key):

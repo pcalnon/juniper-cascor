@@ -133,6 +133,18 @@ class TestActivationWithDerivative:
         wrapper = ActivationWithDerivative(torch.nn.ReLU())
         assert "ReLU" in wrapper._activation_name
 
+    @pytest.mark.unit
+    def test_activation_setstate_uses_lowercase_fallback(self):
+        """Test __setstate__ resolves mixed/upper-case names via lowercase fallback."""
+        from cascade_correlation.cascade_correlation import ActivationWithDerivative
+
+        wrapper = ActivationWithDerivative(torch.relu)
+        wrapper.__setstate__({"_activation_name": "TANH"})
+
+        x = torch.tensor([0.0, 0.5, -0.5])
+        output = wrapper(x)
+        assert torch.allclose(output, torch.tanh(x))
+
 
 # ===================================================================
 # Validation Methods Tests
@@ -1077,6 +1089,37 @@ class TestValidateTraining:
         assert result.early_stop is True
 
     @pytest.mark.unit
+    def test_validate_training_without_validation_data_stops_when_max_units_reached(self, simple_network, simple_2d_data):
+        """Regression test for no-validation early-stop when max hidden units are already reached."""
+        from cascade_correlation.cascade_correlation import ValidateTrainingInputs
+
+        x, y = simple_2d_data
+        simple_network.target_accuracy = 1.0
+        simple_network.patience = 5
+        simple_network.max_hidden_units = 1
+        simple_network.hidden_units = [{"weights": torch.randn(2), "bias": torch.randn(1), "correlation": 0.5, "activation_fn": torch.tanh}]
+
+        inputs = ValidateTrainingInputs(
+            iteration=3,
+            max_iterations=10,
+            patience_counter=0,
+            early_stopping=True,
+            train_accuracy=0.10,
+            train_loss=0.10,
+            best_value_loss=0.10,
+            x_train=x,
+            y_train=y,
+            x_val=None,
+            y_val=None,
+        )
+
+        result = simple_network.validate_training(inputs)
+
+        assert result.patience_counter == 1
+        assert result.best_value_loss == pytest.approx(0.10)
+        assert result.early_stop is True
+
+    @pytest.mark.unit
     def test_grow_network_propagates_validation_state_between_iterations(self, simple_network, simple_2d_data):
         """Regression test for grow_network state propagation from validate_training."""
         from cascade_correlation.cascade_correlation import ValidateTrainingResults
@@ -1179,6 +1222,50 @@ class TestAddUnit:
 
         assert simple_network.output_weights.shape[0] > initial_weights_shape[0]
 
+    @pytest.mark.unit
+    def test_add_unit_zero_init_preserves_existing_output_weights(self, simple_network, simple_2d_data):
+        """add_unit zero init keeps old rows and zero-initializes new row."""
+        x, _ = simple_2d_data
+        simple_network.init_output_weights = "zero"
+        simple_network.output_weights = torch.tensor(
+            [[0.25, -0.75], [1.25, 0.5]],
+            dtype=torch.float32,
+            requires_grad=True,
+        )
+        old_output_weights = simple_network.output_weights.detach().clone()
+
+        candidate = simple_network._create_candidate_unit(0)
+        candidate.weights = torch.tensor([0.2, -0.3])
+        candidate.bias = torch.tensor([0.1])
+        candidate.correlation = 0.5
+
+        simple_network.add_unit(candidate, x)
+
+        assert torch.allclose(simple_network.output_weights[: old_output_weights.shape[0], :], old_output_weights)
+        assert torch.allclose(simple_network.output_weights[-1, :], torch.zeros(simple_network.output_size))
+
+    @pytest.mark.unit
+    def test_add_unit_random_init_adds_nonzero_new_output_row(self, simple_network, simple_2d_data):
+        """add_unit random init keeps old rows and randomizes new row."""
+        x, _ = simple_2d_data
+        simple_network.init_output_weights = "random"
+        simple_network.output_weights = torch.tensor(
+            [[-0.5, 0.75], [0.1, -0.2]],
+            dtype=torch.float32,
+            requires_grad=True,
+        )
+        old_output_weights = simple_network.output_weights.detach().clone()
+
+        candidate = simple_network._create_candidate_unit(0)
+        candidate.weights = torch.tensor([0.4, 0.6])
+        candidate.bias = torch.tensor([-0.05])
+        candidate.correlation = 0.5
+
+        simple_network.add_unit(candidate, x)
+
+        assert torch.allclose(simple_network.output_weights[: old_output_weights.shape[0], :], old_output_weights)
+        assert torch.any(simple_network.output_weights[-1, :] != 0.0)
+
 
 # ===================================================================
 # Select Best Candidates Tests
@@ -1260,6 +1347,44 @@ class TestFitValidation:
             simple_network.fit(x, y, epochs=10, max_epochs=20)
 
     @pytest.mark.unit
+    def test_fit_uses_explicit_max_iterations_not_max_epochs(self, simple_network, simple_2d_data):
+        """fit() should pass explicit max_iterations to grow_network independently of max_epochs."""
+        x, y = simple_2d_data
+
+        with (
+            patch.object(simple_network, "train_output_layer", return_value=0.05),
+            patch.object(simple_network, "calculate_accuracy", return_value=0.8),
+            patch.object(simple_network, "grow_network") as mock_grow,
+        ):
+            simple_network.fit(x, y, max_epochs=3, max_iterations=7)
+
+        assert mock_grow.call_args.kwargs["max_iterations"] == 7
+
+    @pytest.mark.unit
+    def test_fit_defaults_max_iterations_from_network_config(self, simple_2d_data):
+        """fit() should fall back to network-configured max_iterations when omitted."""
+        from cascade_correlation.cascade_correlation import CascadeCorrelationNetwork
+        from cascade_correlation.cascade_correlation_config.cascade_correlation_config import CascadeCorrelationConfig
+
+        x, y = simple_2d_data
+        network = CascadeCorrelationNetwork(
+            config=CascadeCorrelationConfig(
+                input_size=2,
+                output_size=2,
+                max_iterations=13,
+            )
+        )
+
+        with (
+            patch.object(network, "train_output_layer", return_value=0.05),
+            patch.object(network, "calculate_accuracy", return_value=0.8),
+            patch.object(network, "grow_network") as mock_grow,
+        ):
+            network.fit(x, y, max_epochs=2)
+
+        assert mock_grow.call_args.kwargs["max_iterations"] == 13
+
+    @pytest.mark.unit
     def test_fit_wrong_output_size(self, simple_network, simple_2d_data):
         """Test fit with wrong output size in target."""
         from cascade_correlation.cascade_correlation_exceptions.cascade_correlation_exceptions import ValidationError
@@ -1300,3 +1425,30 @@ class TestFitValidation:
 
         with pytest.raises(ValidationError):
             simple_network.fit(x, y, epochs=1, y_val=y)
+
+    @pytest.mark.unit
+    def test_fit_positional_early_stopping_backward_compat(self, simple_network, simple_2d_data):
+        """Legacy positional `early_stopping` argument must not map to max_iterations."""
+        x, y = simple_2d_data
+        captured = {}
+
+        def _mock_train_output_layer(*args, **kwargs):
+            return 0.1
+
+        def _mock_calculate_accuracy(*args, **kwargs):
+            return 0.5
+
+        def _mock_grow_network(*args, **kwargs):
+            captured.update(kwargs)
+            return None
+
+        simple_network.train_output_layer = _mock_train_output_layer
+        simple_network.calculate_accuracy = _mock_calculate_accuracy
+        simple_network.grow_network = _mock_grow_network
+
+        # Legacy positional call shape from pre-CR-006 signature:
+        # fit(x, y, x_val, y_val, max_epochs, epochs, early_stopping)
+        simple_network.fit(x, y, None, None, 1, None, False)
+
+        assert captured["early_stopping"] is False
+        assert captured["max_iterations"] == simple_network.max_iterations
