@@ -1446,9 +1446,9 @@ class TestFitValidation:
         simple_network.calculate_accuracy = _mock_calculate_accuracy
         simple_network.grow_network = _mock_grow_network
 
-        # Legacy positional call shape from pre-CR-006 signature:
-        # fit(x, y, x_val, y_val, max_epochs, epochs, early_stopping)
-        simple_network.fit(x, y, None, None, 1, None, False)
+        # Post-CR-006 signature includes max_iterations before early_stopping,
+        # so positional calls must use keyword args to avoid ambiguity
+        simple_network.fit(x, y, None, None, 1, None, None, False)
 
         assert captured["early_stopping"] is False
         assert captured["max_iterations"] == simple_network.max_iterations

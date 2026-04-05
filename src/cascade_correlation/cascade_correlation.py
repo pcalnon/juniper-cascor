@@ -1372,7 +1372,6 @@ class CascadeCorrelationNetwork:
         epochs: int = None,
         max_iterations: int = None,
         early_stopping: bool = True,
-        max_iterations: int = None,
     ) -> Dict[str, List]:
         """
         Train the network using the cascade correlation algorithm.
@@ -1385,7 +1384,6 @@ class CascadeCorrelationNetwork:
             epochs: Backward-compatible alias for max_epochs
             max_iterations: Maximum number of cascade growth iterations (default: from self.max_iterations)
             early_stopping: Whether to use early stopping
-            max_iterations: Maximum number of cascade growth iterations (default: from self.max_iterations)
         Raises:
             ValidationError: If input tensors are invalid or have wrong shapes
             TrainingError: If training fails due to configuration issues
