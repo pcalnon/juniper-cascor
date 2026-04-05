@@ -133,6 +133,18 @@ class TestActivationWithDerivative:
         wrapper = ActivationWithDerivative(torch.nn.ReLU())
         assert "ReLU" in wrapper._activation_name
 
+    @pytest.mark.unit
+    def test_activation_setstate_uses_lowercase_fallback(self):
+        """Test __setstate__ resolves mixed/upper-case names via lowercase fallback."""
+        from cascade_correlation.cascade_correlation import ActivationWithDerivative
+
+        wrapper = ActivationWithDerivative(torch.relu)
+        wrapper.__setstate__({"_activation_name": "TANH"})
+
+        x = torch.tensor([0.0, 0.5, -0.5])
+        output = wrapper(x)
+        assert torch.allclose(output, torch.tanh(x))
+
 
 # ===================================================================
 # Validation Methods Tests
@@ -1074,6 +1086,37 @@ class TestValidateTraining:
 
         assert result.best_value_loss == pytest.approx(0.50)
         assert result.patience_counter == 1
+        assert result.early_stop is True
+
+    @pytest.mark.unit
+    def test_validate_training_without_validation_data_stops_when_max_units_reached(self, simple_network, simple_2d_data):
+        """Regression test for no-validation early-stop when max hidden units are already reached."""
+        from cascade_correlation.cascade_correlation import ValidateTrainingInputs
+
+        x, y = simple_2d_data
+        simple_network.target_accuracy = 1.0
+        simple_network.patience = 5
+        simple_network.max_hidden_units = 1
+        simple_network.hidden_units = [{"weights": torch.randn(2), "bias": torch.randn(1), "correlation": 0.5, "activation_fn": torch.tanh}]
+
+        inputs = ValidateTrainingInputs(
+            iteration=3,
+            max_iterations=10,
+            patience_counter=0,
+            early_stopping=True,
+            train_accuracy=0.10,
+            train_loss=0.10,
+            best_value_loss=0.10,
+            x_train=x,
+            y_train=y,
+            x_val=None,
+            y_val=None,
+        )
+
+        result = simple_network.validate_training(inputs)
+
+        assert result.patience_counter == 1
+        assert result.best_value_loss == pytest.approx(0.10)
         assert result.early_stop is True
 
     @pytest.mark.unit
