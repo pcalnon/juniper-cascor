@@ -51,7 +51,11 @@ _MAX_REQUEST_BODY_BYTES = 10 * 1024 * 1024  # 10 MB
 
 
 class RequestBodyLimitMiddleware(BaseHTTPMiddleware):
-    """Reject requests whose Content-Length exceeds a configurable limit."""
+    """Reject requests whose body exceeds a configurable limit.
+
+    Checks Content-Length header when present; for chunked transfer encoding
+    (no Content-Length), reads and measures the body incrementally.
+    """
 
     def __init__(self, app: ASGIApp, max_bytes: int = _MAX_REQUEST_BODY_BYTES) -> None:
         super().__init__(app)
@@ -61,6 +65,10 @@ class RequestBodyLimitMiddleware(BaseHTTPMiddleware):
         content_length = request.headers.get("content-length")
         if content_length is not None and int(content_length) > self._max_bytes:
             return JSONResponse(status_code=413, content={"detail": "Request body too large"})
+        if content_length is None and request.method in ("POST", "PUT", "PATCH"):
+            body = await request.body()
+            if len(body) > self._max_bytes:
+                return JSONResponse(status_code=413, content={"detail": "Request body too large"})
         return await call_next(request)
 
 
