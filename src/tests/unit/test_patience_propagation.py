@@ -182,3 +182,85 @@ class TestPatienceCounterPropagation:
         # But it should NOT have run all 50 iterations without any stopping mechanism working
         hidden_units_added = len(network.hidden_units)
         assert hidden_units_added < 50, f"Added {hidden_units_added} hidden units. With patience=2 and early_stopping=True, " f"training should have stopped well before 50 growth iterations."
+
+    @pytest.mark.unit
+    def test_validate_training_no_val_data_improvement_resets_patience(self, network, simple_data):
+        """No-validation path should use train loss and reset patience on improvement (CR-043)."""
+        x, y = simple_data
+        inputs = ValidateTrainingInputs(
+            iteration=3,
+            max_iterations=10,
+            patience_counter=2,
+            early_stopping=True,
+            train_accuracy=0.1,
+            train_loss=0.25,
+            best_value_loss=0.40,
+            x_train=x,
+            y_train=y,
+            x_val=None,
+            y_val=None,
+        )
+
+        with patch.object(network, "check_hidden_units_max", return_value=False), patch.object(network, "check_training_accuracy", return_value=False):
+            result = network.validate_training(inputs)
+
+        assert result.best_value_loss == pytest.approx(0.25)
+        assert result.patience_counter == 0
+        assert not result.early_stop
+        assert result.value_loss == float("inf")
+
+    @pytest.mark.unit
+    def test_validate_training_no_val_data_patience_exhaustion_stops(self, network, simple_data):
+        """No-validation path should increment patience and early-stop when exhausted (CR-043)."""
+        x, y = simple_data
+        network.patience = 3
+        inputs = ValidateTrainingInputs(
+            iteration=4,
+            max_iterations=10,
+            patience_counter=2,
+            early_stopping=True,
+            train_accuracy=0.1,
+            train_loss=0.35,
+            best_value_loss=0.30,
+            x_train=x,
+            y_train=y,
+            x_val=None,
+            y_val=None,
+        )
+
+        with patch.object(network, "check_hidden_units_max", return_value=False), patch.object(network, "check_training_accuracy", return_value=False):
+            result = network.validate_training(inputs)
+
+        assert result.best_value_loss == pytest.approx(0.30)
+        assert result.patience_counter == 3
+        assert result.early_stop
+
+    @pytest.mark.unit
+    @pytest.mark.parametrize(
+        "max_units_reached,train_accuracy_reached",
+        [(True, False), (False, True)],
+    )
+    def test_validate_training_no_val_data_stops_for_non_patience_conditions(self, network, simple_data, max_units_reached, train_accuracy_reached):
+        """No-validation path should stop for max-units or accuracy target even without patience exhaustion."""
+        x, y = simple_data
+        network.patience = 10
+        inputs = ValidateTrainingInputs(
+            iteration=2,
+            max_iterations=10,
+            patience_counter=0,
+            early_stopping=True,
+            train_accuracy=0.1,
+            train_loss=0.20,
+            best_value_loss=0.25,
+            x_train=x,
+            y_train=y,
+            x_val=None,
+            y_val=None,
+        )
+
+        with patch.object(network, "check_hidden_units_max", return_value=max_units_reached), patch.object(network, "check_training_accuracy", return_value=train_accuracy_reached):
+            result = network.validate_training(inputs)
+
+        assert result.patience_counter == 0
+        assert result.best_value_loss == pytest.approx(0.20)
+        assert result.early_stop
