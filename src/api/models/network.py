@@ -19,6 +19,7 @@ class NetworkCreateRequest(BaseModel):
     candidate_epochs: int = Field(50, ge=1)
     output_epochs: int = Field(25, ge=1)
     epochs_max: int = Field(200, ge=1)
+    max_iterations: int = Field(1000, ge=1, description="Maximum cascade growth iterations")
     init_output_weights: Literal["zero", "random"] = Field("zero", description="Initialization mode for new hidden unit output weights")
 
 

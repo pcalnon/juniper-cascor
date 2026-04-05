@@ -51,6 +51,7 @@ class TrainingParamUpdateRequest(BaseModel):
     candidate_pool_size: Optional[int] = Field(None, ge=1, description="Number of candidate units per round")
     max_hidden_units: Optional[int] = Field(None, ge=1, description="Maximum hidden units (takes effect on next cascade)")
     epochs_max: Optional[int] = Field(None, ge=1, description="Global maximum training epochs")
+    max_iterations: Optional[int] = Field(None, ge=1, description="Maximum cascade growth iterations")
     patience: Optional[int] = Field(None, ge=1, description="Early stopping patience epochs")
     convergence_threshold: Optional[float] = Field(None, gt=0, description="Minimum loss improvement to reset patience counter")
     candidate_convergence_threshold: Optional[float] = Field(None, gt=0, description="Minimum loss improvement for candidate training patience")

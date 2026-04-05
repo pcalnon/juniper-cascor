@@ -55,6 +55,7 @@ from cascor_constants.constants import (  # _CASCADE_CORRELATION_NETWORK_ACTIVAT
     _CASCADE_CORRELATION_NETWORK_EPOCH_DISPLAY_FREQUENCY,
     _CASCADE_CORRELATION_NETWORK_EPOCHS_MAX,
     _CASCADE_CORRELATION_NETWORK_GENERATE_PLOTS,
+    _CASCADE_CORRELATION_NETWORK_MAX_ITERATIONS,
     _CASCADE_CORRELATION_NETWORK_INIT_OUTPUT_WEIGHTS,
     _CASCADE_CORRELATION_NETWORK_HDF5_PROJECT_SNAPSHOTS_DIR,
     _CASCADE_CORRELATION_NETWORK_INPUT_SIZE,
@@ -124,6 +125,7 @@ class CascadeCorrelationConfig:
         candidate_pool_size: int = _CASCADE_CORRELATION_NETWORK_CANDIDATE_POOL_SIZE,
         candidate_epochs: int = _CASCADE_CORRELATION_NETWORK_CANDIDATE_EPOCHS,
         epochs_max: int = _CASCADE_CORRELATION_NETWORK_EPOCHS_MAX,
+        max_iterations: int = _CASCADE_CORRELATION_NETWORK_MAX_ITERATIONS,
         output_epochs: int = _CASCADE_CORRELATION_NETWORK_OUTPUT_EPOCHS,
         patience: int = _CASCADE_CORRELATION_NETWORK_PATIENCE,
         convergence_threshold: float = _CASCADE_CORRELATION_NETWORK_CONVERGENCE_THRESHOLD,
@@ -192,6 +194,7 @@ class CascadeCorrelationConfig:
         self.candidate_pool_size = candidate_pool_size
         self.candidate_epochs = candidate_epochs
         self.epochs_max = epochs_max
+        self.max_iterations = max_iterations
         self.output_epochs = output_epochs
         self.patience = patience
         self.convergence_threshold = convergence_threshold
