@@ -56,6 +56,24 @@ class TestUpdateTrainingParams:
         assert data["data"]["learning_rate"] == pytest.approx(0.003)
         assert data["data"]["correlation_threshold"] == pytest.approx(0.15)
 
+    def test_update_max_iterations_updates_live_network(self, test_client_with_network):
+        """PATCH /v1/training/params applies max_iterations to the live network."""
+        response = test_client_with_network.patch(
+            "/v1/training/params",
+            json={"max_iterations": 17},
+        )
+        assert response.status_code == 200
+        lifecycle = test_client_with_network.app.state.lifecycle
+        assert lifecycle.network.max_iterations == 17
+
+    def test_update_max_iterations_rejects_non_positive_value(self, test_client_with_network):
+        """PATCH /v1/training/params enforces max_iterations >= 1."""
+        response = test_client_with_network.patch(
+            "/v1/training/params",
+            json={"max_iterations": 0},
+        )
+        assert response.status_code == 422
+
     def test_update_params_empty_body_is_noop(self, test_client_with_network):
         """PATCH with empty body returns current params unchanged."""
         response = test_client_with_network.patch("/v1/training/params", json={})
