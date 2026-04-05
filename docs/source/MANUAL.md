@@ -531,25 +531,30 @@ config = CascadeCorrelationConfig(
 )
 ```
 
-3. Register custom activations for serialization round-trip:
+3. Ensure multiprocessing/pickle round-trip support:
 
 ```python
 # src/utils/activation.py
+from utils.activation import ActivationWithDerivative
 
-class ActivationWithDerivative:
-    ACTIVATION_MAP = {
-        # Existing mappings...
-        "custom_activation": custom_activation,  # function name from __name__
-        "CustomActivation": CustomActivation(),  # class name from __class__.__name__
+ActivationWithDerivative.ACTIVATION_MAP.update(
+    {
+        "custom": custom_activation,         # functional form
+        "CustomActivation": CustomActivation(),  # module/class form (if used)
     }
+)
 ```
 
-Notes:
+4. Add/extend activation pickling tests:
 
-- `ActivationWithDerivative.__setstate__()` now raises `ValueError` for unknown activation names.
-- There is no fallback activation during deserialization.
-- For pickle/HDF5 compatibility, the key must match the serialized name exactly (or match by lowercase lookup).
-- This wrapper is shared by both `CandidateUnit` and `CascadeCorrelationNetwork` via `src/utils/activation.py`.
+- Update `src/tests/unit/test_activation_with_derivative.py`.
+- Add a round-trip assertion (`pickle.dumps` -> `pickle.loads`) for every new activation name you add.
+
+**Important constraints**:
+
+- `CandidateUnit` and `CascadeCorrelationNetwork` both call `ActivationWithDerivative(...)` during initialization, so unsupported names fail at deserialization time in worker paths.
+- Unknown activation names raise `ValueError` during `__setstate__`; there is no silent fallback activation.
+- Module activations used in this codebase include both lowercase and class-style keys where applicable (for example `identity`/`Identity` and `softmax`/`Softmax`).
 
 ### Adding New Serialization Formats
 
