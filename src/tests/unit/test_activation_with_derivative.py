@@ -233,9 +233,13 @@ class TestActivationMapCoverage:
             ("tanh", "tanh"),
             ("sigmoid", "sigmoid"),
             ("relu", "relu"),
+            ("identity", "identity"),
+            ("softmax", "softmax"),
             ("Tanh", "Tanh"),
             ("Sigmoid", "Sigmoid"),
             ("ReLU", "ReLU"),
+            ("Identity", "Identity"),
+            ("Softmax", "Softmax"),
             ("GELU", "GELU"),
             ("SELU", "SELU"),
             ("LeakyReLU", "LeakyReLU"),
@@ -244,6 +248,22 @@ class TestActivationMapCoverage:
     def test_activation_map_entries(self, activation_name, expected_class):
         """Test that common activations are in the ACTIVATION_MAP."""
         assert activation_name in CandidateActivationWithDerivative.ACTIVATION_MAP
+
+    @pytest.mark.unit
+    @pytest.mark.parametrize(
+        "activation_fn,expected_name",
+        [
+            (torch.nn.Identity(), "Identity"),
+            (torch.nn.Softmax(dim=1), "Softmax"),
+        ],
+    )
+    def test_supported_module_activation_round_trip(self, activation_fn, expected_name):
+        """Test that known module activations survive pickle round-trip."""
+        wrapper = CandidateActivationWithDerivative(activation_fn)
+        pickled = pickle.dumps(wrapper)
+        restored = pickle.loads(pickled)
+
+        assert restored._activation_name == expected_name
 
     @pytest.mark.unit
     def test_unknown_activation_raises_value_error(self):

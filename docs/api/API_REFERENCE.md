@@ -1,7 +1,7 @@
 # Juniper Cascor - API Reference
 
 **Version**: 0.3.21
-**Last Updated**: 2026-03-29
+**Last Updated**: 2026-04-05
 **Purpose**: Complete API documentation for developers and integrators
 
 ---
@@ -85,6 +85,7 @@ CascadeCorrelationNetwork(
 | `candidate_learning_rate` | `float`                    | `0.01`  | Learning rate for candidates      |
 | `candidate_pool_size`     | `int`                      | `16`    | Number of candidates per round    |
 | `candidate_epochs`        | `int`                      | `100`   | Epochs to train each candidate    |
+| `init_output_weights`     | `str`                      | `"zero"`| New hidden-unit output weight init mode (`"zero"` or `"random"`) |
 | `max_hidden_units`        | `int`                      | `50`    | Maximum network growth            |
 | `correlation_threshold`   | `float`                    | `0.001` | Minimum correlation for selection |
 | `patience`                | `int`                      | `10`    | Early stopping patience           |
@@ -105,6 +106,7 @@ def fit(
     y_val: torch.Tensor = None,
     max_epochs: int = None,
     epochs: int = None,
+    max_iterations: int = None,
     early_stopping: bool = True,
 ) -> dict
 ```
@@ -119,6 +121,7 @@ Train the network using the cascade correlation algorithm.
 - `y_val`: Validation target tensor (optional)
 - `max_epochs`: Maximum training epochs (uses config defaults when `None`)
 - `epochs`: Backward-compatible alias for `max_epochs`
+- `max_iterations`: Maximum cascade growth iterations (uses network/config default when `None`)
 - `early_stopping`: Enable/disable early stopping behavior
 
 **Returns**: Training history dictionary:
@@ -145,7 +148,7 @@ from cascade_correlation.cascade_correlation_config.cascade_correlation_config i
 
 config = CascadeCorrelationConfig(input_size=2, output_size=2)
 network = CascadeCorrelationNetwork(config=config)
-history = network.fit(x_train, y_train, epochs=100)
+history = network.fit(x_train, y_train, max_epochs=100, max_iterations=250)
 print(f"Final accuracy: {history['train_accuracy'][-1]:.2%}")
 ```
 
@@ -405,8 +408,10 @@ CascadeCorrelationConfig(
     candidate_learning_rate: float = 0.01,
     candidate_pool_size: int = 16,
     candidate_epochs: int = 100,
+    init_output_weights: str = "zero",
     output_epochs: int = 100,
     epochs_max: int = 1000,
+    max_iterations: int = 1000,
     max_hidden_units: int = 50,
     correlation_threshold: float = 0.001,
     patience: int = 10,
@@ -417,6 +422,13 @@ CascadeCorrelationConfig(
     optimizer_config: OptimizerConfig = None,
 )
 ```
+
+`init_output_weights` controls how newly added hidden-unit connections into the output layer are initialized during network growth:
+
+- `"zero"`: zero-initialize only the newly added rows, then copy existing output weights forward (default).
+- `"random"`: initialize newly added rows from `torch.randn(...) * 0.1`, then copy existing output weights forward.
+
+Constraint: this setting affects only growth events that add hidden units. It does not retroactively reinitialize existing output weights.
 
 ### Factory Methods
 
@@ -830,6 +842,23 @@ All REST responses use the standard response envelope:
 | `/v1/training/params` | `GET` | Get runtime training params |
 | `/v1/training/params` | `PATCH` | Update runtime-modifiable params |
 
+### Training Limit Semantics
+
+`epochs_max` and `max_iterations` are separate controls:
+
+- `epochs_max`: Epoch budget used for output-layer optimization cycles.
+- `max_iterations`: Upper bound on cascade growth iterations in `grow_network()`.
+
+The following interfaces accept `max_iterations`:
+
+- `POST /v1/network` (`NetworkCreateRequest`)
+- `PATCH /v1/training/params` (`TrainingParamUpdateRequest`)
+- In-process Python API: `CascadeCorrelationConfig.max_iterations` and `CascadeCorrelationNetwork.fit(..., max_iterations=...)`
+
+Current behavior note:
+
+- `GET /v1/training/params` does not currently include `max_iterations` in its response payload even though PATCH accepts it and the network uses it.
+
 ### Metrics Endpoints
 
 | Endpoint | Method | Description |
@@ -850,7 +879,7 @@ All REST responses use the standard response envelope:
 `training_state` fields include:
 
 - `status`, `phase`, `current_epoch`, `current_step`
-- `learning_rate`, `max_hidden_units`, `max_epochs`
+- `learning_rate`, `max_hidden_units`, `max_epochs`, `max_iterations`
 - `phase_detail`, `phase_started_at`
 - `grow_iteration`, `grow_max`
 - `best_correlation`, `candidates_trained`, `candidates_total`
@@ -903,6 +932,18 @@ Message envelope:
 ```
 
 `/ws/training` is read-only for clients; updates are broadcast from the lifecycle manager/monitor.
+
+### Lifecycle Failure Handling Path
+
+Training exceptions are handled at the monitored `fit()` wrapper layer in the lifecycle manager.
+
+- `TrainingLifecycleManager._run_training()` executes `network.fit(...)` and allows exceptions to propagate.
+- `TrainingLifecycleManager._install_monitoring_hooks()` wraps `network.fit` with `monitored_fit(...)`, which owns:
+- state transitions (`START`, `FAILED`, `COMPLETED`, `STOPPED`)
+- `training_state` updates (`status`, `phase`)
+- WebSocket/REST-visible broadcast updates
+
+This keeps error handling centralized and avoids duplicate failure transitions in multiple call paths.
 
 ### `candidate_progress` Message Payload
 
@@ -1180,4 +1221,4 @@ The `CascadeCorrelationNetwork` class is **NOT thread-safe**. Do not share netwo
 ---
 
 **Document Version**: 0.3.21
-**Last Updated**: 2026-03-29
+**Last Updated**: 2026-04-05

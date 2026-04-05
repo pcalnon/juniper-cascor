@@ -111,6 +111,9 @@ class TrainingStateMachine:
         return handler()
 
     def _handle_start(self) -> bool:
+        if self._status in (TrainingStatus.FAILED, TrainingStatus.COMPLETED):
+            self.logger.info(f"Auto-resetting from terminal state {self._status.name} before start")
+            self._reset_to_stopped()
         if self._status == TrainingStatus.STOPPED:
             self._status = TrainingStatus.STARTED
             self._phase = TrainingPhase.OUTPUT
