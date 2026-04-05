@@ -17,6 +17,7 @@ import logging
 
 from fastapi import WebSocket, WebSocketDisconnect
 
+from api.websocket.manager import ws_authenticate
 from api.workers.coordinator import WorkerCoordinator
 from api.workers.protocol import BinaryFrame, MessageType, WorkerProtocol
 from api.workers.registry import WorkerRegistry
@@ -42,13 +43,8 @@ async def worker_stream_handler(websocket: WebSocket) -> None:
         await websocket.close(code=4003, reason="Origin header not allowed on worker endpoint")
         return
 
-    # Authenticate (same pattern as control_stream.py)
-    auth = getattr(websocket.app.state, "api_key_auth", None)
-    if auth is not None and auth.enabled:
-        api_key = websocket.headers.get("X-API-Key")
-        if not auth.validate(api_key):
-            await websocket.close(code=4001, reason="Authentication required")
-            return
+    if not await ws_authenticate(websocket):
+        return
 
     # Get coordinator and registry from app state
     coordinator: WorkerCoordinator | None = getattr(websocket.app.state, "worker_coordinator", None)

@@ -18,6 +18,26 @@ from fastapi import WebSocket
 logger = logging.getLogger("juniper_cascor.api.websocket")
 
 
+async def ws_authenticate(websocket: WebSocket) -> bool:
+    """Authenticate a WebSocket connection via X-API-Key header.
+
+    Shared utility replacing inline auth boilerplate in each stream handler.
+    BaseHTTPMiddleware cannot intercept WebSocket upgrades, so each WS
+    endpoint must authenticate independently.
+
+    Returns:
+        True if authenticated (or auth disabled). False if auth failed
+        (connection is closed with 4001).
+    """
+    auth = getattr(websocket.app.state, "api_key_auth", None)
+    if auth is not None and auth.enabled:
+        api_key = websocket.headers.get("X-API-Key")
+        if not auth.validate(api_key):
+            await websocket.close(code=4001, reason="Authentication required")
+            return False
+    return True
+
+
 class WebSocketManager:
     """Manages WebSocket connections and message broadcasting.
 

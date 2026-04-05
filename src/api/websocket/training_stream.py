@@ -12,6 +12,7 @@ import logging
 
 from fastapi import WebSocket, WebSocketDisconnect
 
+from api.websocket.manager import ws_authenticate
 from api.websocket.messages import create_state_message
 
 logger = logging.getLogger("juniper_cascor.api.websocket.training")
@@ -19,13 +20,8 @@ logger = logging.getLogger("juniper_cascor.api.websocket.training")
 
 async def training_stream_handler(websocket: WebSocket) -> None:
     """Handle /ws/training WebSocket connections."""
-    # Authenticate WebSocket connection (BaseHTTPMiddleware does not intercept WS)
-    auth = getattr(websocket.app.state, "api_key_auth", None)
-    if auth is not None and auth.enabled:
-        api_key = websocket.headers.get("X-API-Key")
-        if not auth.validate(api_key):
-            await websocket.close(code=4001, reason="Authentication required")
-            return
+    if not await ws_authenticate(websocket):
+        return
 
     ws_manager = getattr(websocket.app.state, "ws_manager", None)
     lifecycle = getattr(websocket.app.state, "lifecycle", None)
