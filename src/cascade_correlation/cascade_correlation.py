@@ -1075,8 +1075,17 @@ class CascadeCorrelationNetwork:
         self.logger.trace("CascadeCorrelationNetwork: _roll_sequence_number: Rolling sequence number.")
         self.logger.debug(f"CascadeCorrelationNetwork: _roll_sequence_number: Rolling sequence number to: {sequence} with max value: {max_value} using generator: {generator}")
         if generator is not None:
-            discard = [generator(0, max_value) for _ in range(sequence)]
-            self.logger.verbose(f"CascadeCorrelationNetwork: _roll_sequence_number: Discarded {len(discard)} random numbers to roll to sequence number: {sequence}")
+            # CASCOR-P1-008 / CR-041 FIX: Replaced list comprehension with simple loop to avoid OOM
+            # OLD (can cause OOM if sequence is large - up to 2^32-1):
+            # discard = [generator(0, max_value) for _ in range(sequence)]
+            # NEW: Loop without storing, and cap roll count to prevent excessive iterations
+            MAX_ROLL_COUNT = 10000
+            roll_count = min(sequence, MAX_ROLL_COUNT) if sequence else 0
+            for _ in range(roll_count):
+                generator(0, max_value)
+            self.logger.verbose(f"CascadeCorrelationNetwork: _roll_sequence_number: Discarded {roll_count} random values to roll to the desired sequence.")
+            if sequence and sequence > MAX_ROLL_COUNT:
+                self.logger.warning(f"CascadeCorrelationNetwork: _roll_sequence_number: Sequence {sequence} exceeded MAX_ROLL_COUNT {MAX_ROLL_COUNT}, capped at {MAX_ROLL_COUNT}")
             self.logger.verbose(f"CascadeCorrelationNetwork: _roll_sequence_number: Random Generator rolled for sequence number: {sequence}")
         self.logger.trace("CascadeCorrelationNetwork: _roll_sequence_number: Completed rolling of sequence number.")
 
