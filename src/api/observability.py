@@ -87,7 +87,8 @@ class PrometheusMiddleware(BaseHTTPMiddleware):
         response = await call_next(request)
         duration = time.perf_counter() - start
 
-        endpoint = request.url.path
+        route = request.scope.get("route")
+        endpoint = route.path if route else "unmatched"
         method = request.method
         status = str(response.status_code)
 

@@ -206,29 +206,34 @@ class RateLimiter:
 
 _api_key_auth: APIKeyAuth | None = None
 _rate_limiter: RateLimiter | None = None
+_singleton_lock = Lock()
 
 
 def get_api_key_auth() -> APIKeyAuth:
-    """Get the global API key auth handler, creating if needed."""
+    """Get the global API key auth handler, creating if needed (thread-safe)."""
     global _api_key_auth
     if _api_key_auth is None:
-        settings = get_settings()
-        api_keys = getattr(settings, "api_keys", None)
-        _api_key_auth = APIKeyAuth(api_keys)
+        with _singleton_lock:
+            if _api_key_auth is None:
+                settings = get_settings()
+                api_keys = getattr(settings, "api_keys", None)
+                _api_key_auth = APIKeyAuth(api_keys)
     return _api_key_auth
 
 
 def get_rate_limiter() -> RateLimiter:
-    """Get the global rate limiter, creating if needed."""
+    """Get the global rate limiter, creating if needed (thread-safe)."""
     global _rate_limiter
     if _rate_limiter is None:
-        settings = get_settings()
-        enabled = getattr(settings, "rate_limit_enabled", False)
-        requests_per_minute = getattr(settings, "rate_limit_requests_per_minute", 60)
-        _rate_limiter = RateLimiter(
-            requests_per_minute=requests_per_minute,
-            enabled=enabled,
-        )
+        with _singleton_lock:
+            if _rate_limiter is None:
+                settings = get_settings()
+                enabled = getattr(settings, "rate_limit_enabled", False)
+                requests_per_minute = getattr(settings, "rate_limit_requests_per_minute", 60)
+                _rate_limiter = RateLimiter(
+                    requests_per_minute=requests_per_minute,
+                    enabled=enabled,
+                )
     return _rate_limiter
 
 
