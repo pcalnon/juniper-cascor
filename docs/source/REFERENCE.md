@@ -316,7 +316,7 @@ def __setstate__(self, state):
 
 ### Activation Function Wrapper
 
-The `ActivationWithDerivative` class solves the multiprocessing pickling issue for activation functions:
+The `ActivationWithDerivative` class in `src/utils/activation.py` solves the multiprocessing pickling issue for activation functions. `CandidateUnit` and `CascadeCorrelationNetwork` both initialize this wrapper, so deserialization behavior affects both candidate-worker training and network growth paths:
 
 ```python
 class ActivationWithDerivative:
@@ -360,6 +360,18 @@ class ActivationWithDerivative:
 **Key insight**: Only the string name is serialized; the actual function is reconstructed from the static `ACTIVATION_MAP` on unpickling.
 
 **Constraint**: Unknown activation names fail fast during unpickling (`ValueError`) instead of silently defaulting to ReLU. This prevents hidden behavior drift when custom or unsupported activation functions are serialized.
+
+**Operational rule for activation changes**:
+
+1. Any new activation exposed through configuration must be present in `ActivationWithDerivative.ACTIVATION_MAP` using the serialized name returned by `_get_activation_name()`.
+2. For module-style activations, include class-name keys when needed (for example `Identity`, `Softmax`) and any lowercase aliases used in configuration (for example `identity`, `softmax`).
+3. Add a pickle round-trip test in `src/tests/unit/test_activation_with_derivative.py` for each new key to prevent worker-path regressions.
+
+**Troubleshooting runbook (`ValueError: Unrecognized activation function name during deserialization`)**:
+
+1. Confirm the serialized name in the exception exists in `ActivationWithDerivative.ACTIVATION_MAP`.
+2. If the activation is a `torch.nn.Module`, add both class-name and lowercase keys when the project uses both naming styles.
+3. Re-run `src/tests/unit/test_activation_with_derivative.py` and verify pickle round-trip for the target activation.
 
 ---
 
