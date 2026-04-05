@@ -233,9 +233,13 @@ class TestActivationMapCoverage:
             ("tanh", "tanh"),
             ("sigmoid", "sigmoid"),
             ("relu", "relu"),
+            ("identity", "identity"),
+            ("softmax", "softmax"),
             ("Tanh", "Tanh"),
             ("Sigmoid", "Sigmoid"),
             ("ReLU", "ReLU"),
+            ("Identity", "Identity"),
+            ("Softmax", "Softmax"),
             ("GELU", "GELU"),
             ("SELU", "SELU"),
             ("LeakyReLU", "LeakyReLU"),
@@ -246,8 +250,24 @@ class TestActivationMapCoverage:
         assert activation_name in CandidateActivationWithDerivative.ACTIVATION_MAP
 
     @pytest.mark.unit
-    def test_unknown_activation_fallback(self):
-        """Test that unknown activation falls back to ReLU."""
+    @pytest.mark.parametrize(
+        "activation_fn,expected_name",
+        [
+            (torch.nn.Identity(), "Identity"),
+            (torch.nn.Softmax(dim=1), "Softmax"),
+        ],
+    )
+    def test_supported_module_activation_round_trip(self, activation_fn, expected_name):
+        """Test that known module activations survive pickle round-trip."""
+        wrapper = CandidateActivationWithDerivative(activation_fn)
+        pickled = pickle.dumps(wrapper)
+        restored = pickle.loads(pickled)
+
+        assert restored._activation_name == expected_name
+
+    @pytest.mark.unit
+    def test_unknown_activation_raises_value_error(self):
+        """Test that unknown activation raises ValueError on deserialization (CR-046)."""
 
         class CustomActivation:
             def __call__(self, x):
@@ -255,11 +275,7 @@ class TestActivationMapCoverage:
 
         wrapper = CandidateActivationWithDerivative(CustomActivation())
         pickled = pickle.dumps(wrapper)
-        restored = pickle.loads(pickled)
 
-        # Should fall back to ReLU after unpickling
-        x = torch.tensor([0.5, -0.5])
-        output = restored(x)
-        # ReLU: max(0, x)
-        expected = torch.relu(x)
-        assert torch.allclose(output, expected)
+        # Should raise ValueError instead of silently falling back to ReLU
+        with pytest.raises(ValueError, match="Unrecognized activation function name"):
+            pickle.loads(pickled)
