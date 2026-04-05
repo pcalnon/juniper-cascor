@@ -1,7 +1,7 @@
 # Juniper Cascor - Constants Guide
 
 **Version**: 0.3.21  
-**Last Updated**: 2026-01-29  
+**Last Updated**: 2026-04-04  
 **Purpose**: Complete reference for project constants and configuration
 
 ---
@@ -149,8 +149,11 @@ export CASCOR_LOG_LEVEL=TRACE
 | `_DEFAULT_LEARNING_RATE` | `0.01` | Output layer learning rate |
 | `_DEFAULT_EPOCHS_MAX` | `1000` | Maximum training epochs |
 | `_DEFAULT_OUTPUT_EPOCHS` | `100` | Epochs per output training phase |
+| `_PROJECT_MODEL_INIT_OUTPUT_WEIGHTS` | `"zero"` | Output-weight init mode for rows added during hidden-unit growth (`"zero"` or `"random"`) |
 | `_DEFAULT_TARGET_ACCURACY` | `0.95` | Stop training at this accuracy |
 | `_DEFAULT_PATIENCE` | `10` | Early stopping patience |
+
+`_PROJECT_MODEL_INIT_OUTPUT_WEIGHTS` flows through `constants.py` into `_CASCADE_CORRELATION_NETWORK_INIT_OUTPUT_WEIGHTS` and is used as the default for `CascadeCorrelationConfig.init_output_weights`.
 
 ### Display Frequencies
 
@@ -462,4 +465,4 @@ config = CascadeCorrelationConfig(learning_rate=0.05)
 ---
 
 **Document Version**: 0.3.21  
-**Last Updated**: 2026-01-29
+**Last Updated**: 2026-04-04
