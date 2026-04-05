@@ -15,12 +15,16 @@ class DatasetSource(BaseModel):
 
 
 class InlineDataset(BaseModel):
-    """Inline dataset provided directly in the request body."""
+    """Inline dataset provided directly in the request body.
 
-    train_x: List[List[float]] = Field(..., description="Training features (2D array)")
-    train_y: List[List[float]] = Field(..., description="Training targets (2D array)")
-    val_x: Optional[List[List[float]]] = Field(None, description="Validation features")
-    val_y: Optional[List[List[float]]] = Field(None, description="Validation targets")
+    Size limits enforce that inline data is for small ad-hoc datasets only.
+    For large datasets, use the juniper-data service.
+    """
+
+    train_x: List[List[float]] = Field(..., max_length=100000, description="Training features (2D array)")
+    train_y: List[List[float]] = Field(..., max_length=100000, description="Training targets (2D array)")
+    val_x: Optional[List[List[float]]] = Field(None, max_length=100000, description="Validation features")
+    val_y: Optional[List[List[float]]] = Field(None, max_length=100000, description="Validation targets")
 
 
 class TrainingStartRequest(BaseModel):
