@@ -55,6 +55,22 @@ self._result_queue = None # No queue proxy
 
 **Invariant**: Queue proxies are only valid while the manager is running. Always check `self._manager is not None` before queue operations.
 
+### Early-Stopping State Invariants (`grow_network` + `validate_training`)
+
+Early-stopping state is carried across growth iterations through `ValidateTrainingInputs` and `ValidateTrainingResults`.
+
+1. `grow_network()` passes the current `patience_counter` and `best_value_loss` into `validate_training()`.
+2. `validate_training()` returns updated values in `ValidateTrainingResults`.
+3. `grow_network()` must assign those returned values back to loop state before the next iteration.
+
+This propagation is required for convergence behavior; skipping it causes each iteration to behave like a fresh early-stopping run.
+
+When validation tensors are not provided (`x_val`/`y_val` are both `None`), `validate_training()` uses training loss as the stopping signal:
+
+- Improvement branch: if `train_loss < best_value_loss - convergence_threshold`, update `best_value_loss` and reset `patience_counter` to `0`.
+- Non-improvement branch: increment `patience_counter`.
+- Stop criteria in no-validation mode: `patience_counter >= patience` OR `check_hidden_units_max()` OR `check_training_accuracy(...)`.
+
 ---
 
 ## 2. Data Structures
@@ -180,6 +196,7 @@ class ConfigurationError(CascadeCorrelationError):
 | `ValidationError` | `_validate_tensor_input()` | None tensors, wrong type, empty tensors, NaN/Inf values |
 | `ValidationError` | `_validate_tensor_shapes()` | Non-2D tensors, mismatched batch sizes, wrong feature count |
 | `ValidationError` | `_validate_numeric_parameter()` | Out-of-range values, wrong types |
+| `ValueError` | `ActivationWithDerivative.__setstate__()` | Unknown activation name during unpickling/deserialization |
 | `TrainingError` | `grow_network()` | Validation failures during training loop |
 | `TrainingError` | `_calculate_residual_error_safe()` | Errors during residual calculation |
 | `ConfigurationError` | `set_uuid()` | Attempting to change UUID after initialization |
@@ -316,7 +333,7 @@ def __setstate__(self, state):
 
 ### Activation Function Wrapper
 
-The `ActivationWithDerivative` class solves the multiprocessing pickling issue for activation functions:
+The `ActivationWithDerivative` class in `src/utils/activation.py` solves the multiprocessing pickling issue for activation functions. `CandidateUnit` and `CascadeCorrelationNetwork` both initialize this wrapper, so deserialization behavior affects both candidate-worker training and network growth paths:
 
 ```python
 class ActivationWithDerivative:
@@ -326,8 +343,12 @@ class ActivationWithDerivative:
         'tanh': torch.tanh,
         'sigmoid': torch.sigmoid,
         'relu': torch.relu,
+        'identity': torch.nn.Identity(),
+        'softmax': torch.nn.Softmax(dim=1),
         'ReLU': torch.nn.ReLU(),
         'Tanh': torch.nn.Tanh(),
+        'Identity': torch.nn.Identity(),
+        'Softmax': torch.nn.Softmax(dim=1),
         # ... all standard PyTorch activations
     }
 
@@ -357,9 +378,21 @@ class ActivationWithDerivative:
         self.activation_fn = activation
 ```
 
-**Key insight**: Only the string name is serialized; the actual function is reconstructed from the static `ACTIVATION_MAP` on unpickling.
+**Key insight**: Only the string name is serialized; the actual function is reconstructed from the static `ACTIVATION_MAP` on unpickling. Deserialization is fail-fast for unknown names (no silent fallback).
 
 **Constraint**: Unknown activation names fail fast during unpickling (`ValueError`) instead of silently defaulting to ReLU. This prevents hidden behavior drift when custom or unsupported activation functions are serialized.
+
+**Operational rule for activation changes**:
+
+1. Any new activation exposed through configuration must be present in `ActivationWithDerivative.ACTIVATION_MAP` using the serialized name returned by `_get_activation_name()`.
+2. For module-style activations, include class-name keys when needed (for example `Identity`, `Softmax`) and any lowercase aliases used in configuration (for example `identity`, `softmax`).
+3. Add a pickle round-trip test in `src/tests/unit/test_activation_with_derivative.py` for each new key to prevent worker-path regressions.
+
+**Troubleshooting runbook (`ValueError: Unrecognized activation function name during deserialization`)**:
+
+1. Confirm the serialized name in the exception exists in `ActivationWithDerivative.ACTIVATION_MAP`.
+2. If the activation is a `torch.nn.Module`, add both class-name and lowercase keys when the project uses both naming styles.
+3. Re-run `src/tests/unit/test_activation_with_derivative.py` and verify pickle round-trip for the target activation.
 
 ---
 

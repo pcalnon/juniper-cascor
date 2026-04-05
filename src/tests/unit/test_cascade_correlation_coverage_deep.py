@@ -815,6 +815,65 @@ class TestAddUnit:
         # Output weights should account for input_size + 2 hidden units
         assert network.output_weights.shape[0] == 2 + 2
 
+    @pytest.mark.unit
+    def test_add_unit_zero_init_no_autograd_error(self):
+        """Regression: add_unit with init_output_weights='zero' must not raise autograd errors.
+
+        torch.zeros(..., requires_grad=True) creates a leaf tensor; in-place
+        slice assignment on a leaf tensor raises RuntimeError.  The fix defers
+        requires_grad_(True) until after the copy.
+        """
+        network = _make_network(init_output_weights="zero")
+        x = torch.randn(10, 2)
+
+        candidate = MagicMock()
+        candidate.weights = torch.randn(2)
+        candidate.bias = torch.tensor(0.1)
+        candidate.correlation = 0.75
+
+        # Must not raise RuntimeError from in-place op on leaf tensor
+        network.add_unit(candidate, x)
+
+        assert network.output_weights.requires_grad
+        assert network.output_weights.shape[0] == 2 + 1
+
+    @pytest.mark.unit
+    def test_add_unit_random_init_no_autograd_error(self):
+        """Regression: add_unit with init_output_weights='random' must not raise autograd errors."""
+        network = _make_network(init_output_weights="random")
+        x = torch.randn(10, 2)
+
+        candidate = MagicMock()
+        candidate.weights = torch.randn(2)
+        candidate.bias = torch.tensor(0.1)
+        candidate.correlation = 0.75
+
+        network.add_unit(candidate, x)
+
+        assert network.output_weights.requires_grad
+        assert network.output_weights.shape[0] == 2 + 1
+
+    @pytest.mark.unit
+    def test_add_unit_zero_init_preserves_old_weights(self):
+        """add_unit with 'zero' mode must preserve old output weights in the expanded tensor."""
+        network = _make_network(init_output_weights="zero")
+        x = torch.randn(10, 2)
+
+        # Capture the original output weights
+        old_weights = network.output_weights.clone().detach()
+
+        candidate = MagicMock()
+        candidate.weights = torch.randn(2)
+        candidate.bias = torch.tensor(0.1)
+        candidate.correlation = 0.6
+
+        network.add_unit(candidate, x)
+
+        # Old weights should be preserved in the first rows
+        assert torch.allclose(network.output_weights[:2, :].detach(), old_weights)
+        # New row (for the added unit) should be zero
+        assert torch.allclose(network.output_weights[2, :].detach(), torch.zeros(2))
+
 
 # ---------------------------------------------------------------------------
 # 12. grow_network helpers
