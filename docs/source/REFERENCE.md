@@ -326,8 +326,12 @@ class ActivationWithDerivative:
         'tanh': torch.tanh,
         'sigmoid': torch.sigmoid,
         'relu': torch.relu,
+        'identity': torch.nn.Identity(),
+        'softmax': torch.nn.Softmax(dim=1),
         'ReLU': torch.nn.ReLU(),
         'Tanh': torch.nn.Tanh(),
+        'Identity': torch.nn.Identity(),
+        'Softmax': torch.nn.Softmax(dim=1),
         # ... all standard PyTorch activations
     }
 
@@ -349,13 +353,22 @@ class ActivationWithDerivative:
     def __setstate__(self, state):
         """Reconstruct function from name."""
         self._activation_name = state['_activation_name']
-        self.activation_fn = self.ACTIVATION_MAP.get(
-            self._activation_name,
-            torch.nn.ReLU()  # Fallback
-        )
+        activation = self.ACTIVATION_MAP.get(self._activation_name) or self.ACTIVATION_MAP.get(self._activation_name.lower())
+        if activation is None:
+            raise ValueError(
+                f"Unrecognized activation function name during deserialization: {self._activation_name!r}"
+            )
+        self.activation_fn = activation
 ```
 
 **Key insight**: Only the string name is serialized; the actual function is reconstructed from the static `ACTIVATION_MAP` on unpickling.
+
+**Deserialization constraints**:
+
+- Unknown activation names now fail fast with `ValueError` (no silent fallback activation).
+- Wrapper instances used by both `CascadeCorrelationNetwork` and `CandidateUnit` are imported from `src/utils/activation.py`.
+- Function-style activations serialize using `__name__` (for example, `tanh`), while module instances serialize using class name (for example, `Tanh`, `ReLU`, `Identity`, `Softmax`).
+- If a custom activation must survive pickle/HDF5 round-trip, add a stable key to `ActivationWithDerivative.ACTIVATION_MAP` that matches the serialized name.
 
 ---
 
