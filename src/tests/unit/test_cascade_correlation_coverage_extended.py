@@ -1304,6 +1304,44 @@ class TestFitValidation:
             simple_network.fit(x, y, epochs=10, max_epochs=20)
 
     @pytest.mark.unit
+    def test_fit_uses_explicit_max_iterations_not_max_epochs(self, simple_network, simple_2d_data):
+        """fit() should pass explicit max_iterations to grow_network independently of max_epochs."""
+        x, y = simple_2d_data
+
+        with (
+            patch.object(simple_network, "train_output_layer", return_value=0.05),
+            patch.object(simple_network, "calculate_accuracy", return_value=0.8),
+            patch.object(simple_network, "grow_network") as mock_grow,
+        ):
+            simple_network.fit(x, y, max_epochs=3, max_iterations=7)
+
+        assert mock_grow.call_args.kwargs["max_iterations"] == 7
+
+    @pytest.mark.unit
+    def test_fit_defaults_max_iterations_from_network_config(self, simple_2d_data):
+        """fit() should fall back to network-configured max_iterations when omitted."""
+        from cascade_correlation.cascade_correlation import CascadeCorrelationNetwork
+        from cascade_correlation.cascade_correlation_config.cascade_correlation_config import CascadeCorrelationConfig
+
+        x, y = simple_2d_data
+        network = CascadeCorrelationNetwork(
+            config=CascadeCorrelationConfig(
+                input_size=2,
+                output_size=2,
+                max_iterations=13,
+            )
+        )
+
+        with (
+            patch.object(network, "train_output_layer", return_value=0.05),
+            patch.object(network, "calculate_accuracy", return_value=0.8),
+            patch.object(network, "grow_network") as mock_grow,
+        ):
+            network.fit(x, y, max_epochs=2)
+
+        assert mock_grow.call_args.kwargs["max_iterations"] == 13
+
+    @pytest.mark.unit
     def test_fit_wrong_output_size(self, simple_network, simple_2d_data):
         """Test fit with wrong output size in target."""
         from cascade_correlation.cascade_correlation_exceptions.cascade_correlation_exceptions import ValidationError
