@@ -23,6 +23,8 @@ Description:
     Run with benchmarks: pytest tests/performance/ --run-performance --benchmark-only
 """
 
+import time
+
 import numpy as np
 import psutil
 import pytest
@@ -32,7 +34,85 @@ from candidate_unit.candidate_unit import CandidateUnit
 from cascade_correlation.cascade_correlation import CascadeCorrelationNetwork
 from cascade_correlation.cascade_correlation_config.cascade_correlation_config import CascadeCorrelationConfig
 
-from .conftest import BenchmarkTimer, _make_benchmark_config, save_baseline
+from .conftest import BenchmarkTimer, _make_benchmark_config, load_latest_baseline, save_baseline
+
+# ===================================================================
+# THRESHOLD CONSTANTS
+# ===================================================================
+# These thresholds are intentionally generous to avoid flaky failures
+# in CI while still catching major regressions (2x-3x degradation).
+# All values are upper bounds set well above observed typical values.
+
+# Memory: absolute RSS delta threshold (MB) for network creation.
+# Observed typical delta is < 1 MB; 50 MB catches pathological leaks
+# while tolerating OS-level allocation variability and RSS jitter.
+MEMORY_DELTA_THRESHOLD_MB = 50.0
+
+# Memory: absolute RSS threshold (MB) for total process footprint.
+# The test process (Python + PyTorch + test harness) typically uses
+# ~800-900 MB RSS. 2000 MB catches unbounded growth while allowing
+# headroom for different torch builds and memory allocator behavior.
+MEMORY_ABSOLUTE_THRESHOLD_MB = 2000.0
+
+# Memory: regression threshold as a percentage above the saved baseline.
+# If current RSS exceeds the last saved baseline by more than this
+# percentage, the test fails. Set at 50% to catch major regressions
+# while tolerating normal run-to-run variance in RSS measurements.
+MEMORY_REGRESSION_TOLERANCE_PCT = 50.0
+
+# Timing: upper bound (seconds) for HDF5 save/load round-trip on a
+# small trained network. Observed typical time is < 5s; 30s catches
+# pathological I/O or serialization regressions.
+SERIALIZATION_TIME_THRESHOLD_S = 30.0
+
+# Timing: upper bound (seconds) for net.fit() on tiny data (20 epochs,
+# 2 hidden units max, 100 samples). Observed typical time is < 10s;
+# 60s allows for CI load variance while catching major regressions.
+FIT_TIME_THRESHOLD_S = 60.0
+
+
+def _check_memory_regression(test_name: str, current_value_mb: float, metric_key: str):
+    """Check current memory metric against the most recent saved baseline.
+
+    Issues a soft assertion (pytest.fail with a descriptive message) if
+    the current value exceeds the baseline by more than the tolerance.
+    Silently passes if no baseline exists yet (first run).
+
+    Args:
+        test_name: Baseline test identifier (e.g. "memory_base_network")
+        current_value_mb: Current measured value in MB
+        metric_key: Key in the baseline results dict (e.g. "delta_mb", "rss_mb")
+    """
+    baseline = load_latest_baseline(test_name)
+    if baseline is None:
+        return  # No prior baseline to compare against
+
+    baseline_value = baseline.get("results", {}).get(metric_key)
+    if baseline_value is None:
+        return  # Baseline exists but doesn't have this metric
+
+    # For very small baselines (< 1 MB), use an absolute tolerance
+    # instead of a percentage to avoid failing on trivial fluctuations.
+    if baseline_value < 1.0:
+        absolute_tolerance_mb = 10.0
+        if current_value_mb > baseline_value + absolute_tolerance_mb:
+            pytest.fail(
+                f"Memory regression detected in {test_name}: "
+                f"current {metric_key}={current_value_mb:.2f} MB exceeds "
+                f"baseline {baseline_value:.2f} MB by more than "
+                f"{absolute_tolerance_mb:.0f} MB absolute tolerance"
+            )
+    else:
+        allowed = baseline_value * (1.0 + MEMORY_REGRESSION_TOLERANCE_PCT / 100.0)
+        if current_value_mb > allowed:
+            pct_increase = ((current_value_mb - baseline_value) / baseline_value) * 100.0
+            pytest.fail(
+                f"Memory regression detected in {test_name}: "
+                f"current {metric_key}={current_value_mb:.2f} MB exceeds "
+                f"baseline {baseline_value:.2f} MB by {pct_increase:.1f}% "
+                f"(tolerance: {MEMORY_REGRESSION_TOLERANCE_PCT:.0f}%)"
+            )
+
 
 # ===================================================================
 # FORWARD PASS BASELINES
@@ -295,6 +375,16 @@ class TestMemoryBaseline:
             },
         )
 
+        # Threshold assertion: creating a network with 0 hidden units should
+        # not cause significant memory growth. Typical delta is < 1 MB.
+        assert delta_mb < MEMORY_DELTA_THRESHOLD_MB, (
+            f"Memory growth {delta_mb:.1f} MB from base network creation "
+            f"exceeds {MEMORY_DELTA_THRESHOLD_MB:.0f} MB threshold"
+        )
+
+        # Regression check against saved baseline
+        _check_memory_regression("memory_base_network", delta_mb, "delta_mb")
+
     def test_memory_5_hidden(self, network_5_hidden):
         """Memory footprint after growing to 5 hidden units."""
         process = psutil.Process()
@@ -309,6 +399,16 @@ class TestMemoryBaseline:
             },
         )
 
+        # Threshold assertion: total process RSS with 5 hidden units should
+        # remain within a reasonable envelope for a small test network.
+        assert mem_mb < MEMORY_ABSOLUTE_THRESHOLD_MB, (
+            f"Process RSS {mem_mb:.1f} MB with {n_hidden} hidden units "
+            f"exceeds {MEMORY_ABSOLUTE_THRESHOLD_MB:.0f} MB absolute threshold"
+        )
+
+        # Regression check against saved baseline
+        _check_memory_regression(f"memory_{n_hidden}_hidden", mem_mb, "rss_mb")
+
     def test_memory_10_hidden(self, network_10_hidden):
         """Memory footprint after growing to ~10 hidden units."""
         process = psutil.Process()
@@ -322,6 +422,16 @@ class TestMemoryBaseline:
                 "hidden_units": n_hidden,
             },
         )
+
+        # Threshold assertion: total process RSS with ~10 hidden units should
+        # remain within a reasonable envelope for a small test network.
+        assert mem_mb < MEMORY_ABSOLUTE_THRESHOLD_MB, (
+            f"Process RSS {mem_mb:.1f} MB with {n_hidden} hidden units "
+            f"exceeds {MEMORY_ABSOLUTE_THRESHOLD_MB:.0f} MB absolute threshold"
+        )
+
+        # Regression check against saved baseline
+        _check_memory_regression(f"memory_{n_hidden}_hidden", mem_mb, "rss_mb")
 
 
 # ===================================================================
@@ -351,10 +461,32 @@ class TestSerializationBaseline:
         )
         net = CascadeCorrelationNetwork(config=config)
         x, y = small_spiral_data
+
+        # Time the fit() call separately - tiny data + minimal config should
+        # complete quickly; this catches major training loop regressions.
+        fit_start = time.perf_counter()
         net.fit(x, y, max_epochs=20)
+        fit_elapsed = time.perf_counter() - fit_start
 
         filepath = str(tmp_path / "bench_roundtrip.h5")
+
+        # Time the save step to catch serialization write regressions.
+        save_start = time.perf_counter()
         net.save_to_hdf5(filepath)
+        save_elapsed = time.perf_counter() - save_start
 
         result = benchmark(CascadeCorrelationNetwork.load_from_hdf5, filepath)
         assert result is not None
+
+        # Timing assertion: fit() on tiny data (100 samples, 2 max hidden,
+        # 20 max epochs) should complete well under the threshold.
+        assert fit_elapsed < FIT_TIME_THRESHOLD_S, (
+            f"fit() took {fit_elapsed:.1f}s on tiny data, "
+            f"exceeding {FIT_TIME_THRESHOLD_S:.0f}s threshold"
+        )
+
+        # Timing assertion: HDF5 save on a small network should be fast.
+        assert save_elapsed < SERIALIZATION_TIME_THRESHOLD_S, (
+            f"save_to_hdf5() took {save_elapsed:.1f}s, "
+            f"exceeding {SERIALIZATION_TIME_THRESHOLD_S:.0f}s threshold"
+        )
