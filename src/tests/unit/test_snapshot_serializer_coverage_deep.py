@@ -589,7 +589,7 @@ class TestSaveLoadBranches:
             "train_accuracy": [0.6, 0.7],
             "value_accuracy": [0.5, 0.6],
             "hidden_units_added": [
-                {"correlation": 0.8, "weights": np.array([0.1, 0.2]), "bias": np.array([0.01])},
+                {"correlation": 0.8, "weight_shape": (2,), "unit_index": 0},
             ],
         }
         serializer.save_network(simple_network, temp_hdf5_path, include_training_state=True)

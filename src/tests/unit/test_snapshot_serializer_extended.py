@@ -226,7 +226,7 @@ class TestTrainingHistorySave:
             "train_accuracy": [0.7, 0.8, 0.9],
             "value_accuracy": [0.65, 0.75, 0.85],
             "hidden_units_added": [
-                {"correlation": 0.8, "weights": np.array([0.1, 0.2]), "bias": np.array([0.05])},
+                {"correlation": 0.8, "weight_shape": (2,), "unit_index": 0},
                 {"correlation": 0.9},
             ],
         }

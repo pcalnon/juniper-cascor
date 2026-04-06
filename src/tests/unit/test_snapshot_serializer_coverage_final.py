@@ -133,8 +133,8 @@ class TestHiddenUnitsHistory:
 
         # Add hidden units history
         network.history["hidden_units_added"] = [
-            {"correlation": 0.85, "weights": np.array([0.1, 0.2], dtype=np.float32), "bias": np.array([0.05], dtype=np.float32)},
-            {"correlation": 0.92, "weights": np.array([0.3, 0.4], dtype=np.float32), "bias": np.array([0.1], dtype=np.float32)},
+            {"correlation": 0.85, "weight_shape": (2,), "unit_index": 0},
+            {"correlation": 0.92, "weight_shape": (2,), "unit_index": 1},
         ]
 
         with tempfile.NamedTemporaryFile(suffix=".h5", delete=False) as f:

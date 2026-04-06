@@ -357,13 +357,13 @@ class TestHistoryPreservation(unittest.TestCase):
             "hidden_units_added": [
                 {
                     "correlation": 0.6,
-                    "weights": np.array([0.1, 0.2]),
-                    "bias": np.array([0.05]),
+                    "weight_shape": (2,),
+                    "unit_index": 0,
                 },
                 {
                     "correlation": 0.7,
-                    "weights": np.array([0.3, 0.4, 0.5]),
-                    "bias": np.array([0.06]),
+                    "weight_shape": (3,),
+                    "unit_index": 1,
                 },
             ],
         }

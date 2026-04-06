@@ -132,19 +132,36 @@ class TestNetworkGrowth:
     """Tests for network growth functionality."""
 
     @pytest.mark.unit
-    @pytest.mark.timeout(10)
+    @pytest.mark.timeout(30)
     def test_grow_network_adds_hidden_unit(self, simple_network, simple_2d_data):
-        """Test that grow_network adds hidden units."""
+        """Test that grow_network actually adds a hidden unit (CR-074).
+
+        Previously this test faked the growth by manually appending a dict.
+        Now it calls grow_network() with ultra-minimal parameters so the
+        real candidate-training and unit-installation paths are exercised.
+        """
         set_deterministic_behavior()
         x, y = simple_2d_data
 
-        initial_hidden = len(simple_network.hidden_units)
-        # Use candidate approach instead of full grow_network to avoid timeout
-        candidate = simple_network._create_candidate_unit(0)
-        hidden_unit = {"weights": candidate.weights.clone(), "bias": candidate.bias.clone(), "activation_fn": candidate.activation_fn, "correlation": 0.5}
-        simple_network.hidden_units.append(hidden_unit)
+        # Train the output layer first so there is a meaningful residual error
+        simple_network.train_output_layer(x, y, epochs=3)
 
-        assert len(simple_network.hidden_units) > initial_hidden
+        initial_hidden = len(simple_network.hidden_units)
+
+        # Call the real grow_network with minimal work
+        simple_network.grow_network(
+            x_train=x,
+            y_train=y,
+            max_iterations=1,
+            early_stopping=False,
+        )
+
+        assert len(simple_network.hidden_units) == initial_hidden + 1
+        new_unit = simple_network.hidden_units[-1]
+        assert "weights" in new_unit
+        assert "bias" in new_unit
+        assert "activation_fn" in new_unit
+        assert "correlation" in new_unit
 
     @pytest.mark.unit
     @pytest.mark.timeout(10)
@@ -399,6 +416,57 @@ class TestCandidateCreation:
 
         if len(indices) > 1:
             assert len(set(indices)) > 1  # Should have 0, 1, 2
+
+
+class TestRealLoggerSmoke:
+    """Smoke test exercising fit() with a real logger (CR-073).
+
+    The _NoOpLogger session fixture replaces the entire logging system with
+    no-ops for speed.  This single test verifies that the real logging
+    code-paths (format strings, level checks, etc.) do not raise exceptions
+    when a standard-library logger at WARNING level is attached.
+    """
+
+    @pytest.mark.unit
+    @pytest.mark.timeout(30)
+    def test_fit_with_real_logger_no_exceptions(self):
+        """Run fit() with a real Python logger at WARNING — expect no errors."""
+        import logging
+
+        from cascade_correlation.cascade_correlation import CascadeCorrelationNetwork
+        from cascade_correlation.cascade_correlation_config.cascade_correlation_config import CascadeCorrelationConfig
+
+        config = CascadeCorrelationConfig.create_simple_config(
+            input_size=2,
+            output_size=2,
+            learning_rate=0.1,
+            candidate_learning_rate=0.1,
+            max_hidden_units=1,
+            candidate_pool_size=2,
+            candidate_epochs=3,
+            output_epochs=3,
+            epochs_max=3,
+            patience=1,
+            correlation_threshold=0.01,
+        )
+        network = CascadeCorrelationNetwork(config=config)
+
+        # Replace the no-op logger with a real stdlib logger at WARNING
+        real_logger = logging.getLogger("cascor_smoke_test")
+        real_logger.setLevel(logging.WARNING)
+        # Add custom methods expected by CascadeCorrelationNetwork
+        real_logger.trace = lambda msg, *a, **kw: None
+        real_logger.verbose = lambda msg, *a, **kw: None
+        network.logger = real_logger
+
+        # Minimal XOR-like dataset (4 samples)
+        x = torch.tensor([[0.0, 0.0], [0.0, 1.0], [1.0, 0.0], [1.0, 1.0]])
+        y = torch.tensor([[1.0, 0.0], [0.0, 1.0], [0.0, 1.0], [1.0, 0.0]])
+
+        # This should complete without any logging-related exceptions
+        history = network.fit(x, y, max_epochs=3)
+        assert isinstance(history, dict)
+        assert "train_loss" in history
 
 
 class TestOptimalProcessCount:
