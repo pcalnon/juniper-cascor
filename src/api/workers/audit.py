@@ -16,6 +16,7 @@ import json
 import logging
 import time
 from enum import StrEnum
+from threading import Lock
 from typing import Any
 
 logger = logging.getLogger("juniper_cascor.api.workers.audit")
@@ -53,6 +54,7 @@ class AuditLogger:
     def __init__(self, logger_name: str = "juniper_cascor.api.workers.audit") -> None:
         self._logger = logging.getLogger(logger_name)
         self._counter: dict[str, int] = {}
+        self._lock = Lock()
 
     def log(self, event_type: AuditEventType, **fields: Any) -> None:
         """Log a security audit event.
@@ -62,12 +64,14 @@ class AuditLogger:
             **fields: Key-value pairs to include in the structured log.
                 Common fields: worker_id, source_ip, task_id, details.
         """
-        self._counter[event_type] = self._counter.get(event_type, 0) + 1
+        with self._lock:
+            self._counter[event_type] = self._counter.get(event_type, 0) + 1
+            seq = self._counter[event_type]
 
         record = {
             "event": event_type.value,
             "timestamp": time.time(),
-            "seq": self._counter[event_type],
+            "seq": seq,
             **fields,
         }
 
@@ -76,11 +80,13 @@ class AuditLogger:
 
     def get_counts(self) -> dict[str, int]:
         """Return event counts by type."""
-        return dict(self._counter)
+        with self._lock:
+            return dict(self._counter)
 
     def reset_counts(self) -> None:
         """Reset event counters."""
-        self._counter.clear()
+        with self._lock:
+            self._counter.clear()
 
 
 class WorkerMetrics:
@@ -95,62 +101,70 @@ class WorkerMetrics:
 
     def __init__(self) -> None:
         self._workers: dict[str, _WorkerMetricData] = {}
+        self._lock = Lock()
 
     def on_register(self, worker_id: str, source_ip: str = "") -> None:
         """Record a worker registration."""
-        self._workers[worker_id] = _WorkerMetricData(
-            worker_id=worker_id,
-            source_ip=source_ip,
-            registered_at=time.time(),
-        )
+        with self._lock:
+            self._workers[worker_id] = _WorkerMetricData(
+                worker_id=worker_id,
+                source_ip=source_ip,
+                registered_at=time.time(),
+            )
 
     def on_deregister(self, worker_id: str) -> None:
         """Record a worker deregistration."""
-        data = self._workers.get(worker_id)
-        if data:
-            data.deregistered_at = time.time()
+        with self._lock:
+            data = self._workers.get(worker_id)
+            if data:
+                data.deregistered_at = time.time()
 
     def on_task_complete(self, worker_id: str, success: bool, duration: float) -> None:
         """Record a task completion."""
-        data = self._workers.get(worker_id)
-        if data is None:
-            return
-        data.tasks_completed += 1
-        if success:
-            data.tasks_succeeded += 1
-        else:
-            data.tasks_failed += 1
-        data.total_duration += duration
+        with self._lock:
+            data = self._workers.get(worker_id)
+            if data is None:
+                return
+            data.tasks_completed += 1
+            if success:
+                data.tasks_succeeded += 1
+            else:
+                data.tasks_failed += 1
+            data.total_duration += duration
 
     def on_anomaly(self, worker_id: str, anomaly_type: str) -> None:
         """Record an anomaly detection."""
-        data = self._workers.get(worker_id)
-        if data is None:
-            return
-        data.anomaly_count += 1
-        data.anomaly_types.append(anomaly_type)
+        with self._lock:
+            data = self._workers.get(worker_id)
+            if data is None:
+                return
+            data.anomaly_count += 1
+            data.anomaly_types.append(anomaly_type)
 
     def get_worker_metrics(self, worker_id: str) -> dict[str, Any] | None:
         """Get metrics for a specific worker."""
-        data = self._workers.get(worker_id)
-        if data is None:
-            return None
-        return {
-            "worker_id": data.worker_id,
-            "source_ip": data.source_ip,
-            "registered_at": data.registered_at,
-            "deregistered_at": data.deregistered_at,
-            "tasks_completed": data.tasks_completed,
-            "tasks_succeeded": data.tasks_succeeded,
-            "tasks_failed": data.tasks_failed,
-            "avg_duration": data.total_duration / max(1, data.tasks_completed),
-            "anomaly_count": data.anomaly_count,
-            "success_rate": data.tasks_succeeded / max(1, data.tasks_completed),
-        }
+        with self._lock:
+            data = self._workers.get(worker_id)
+            if data is None:
+                return None
+            return {
+                "worker_id": data.worker_id,
+                "source_ip": data.source_ip,
+                "registered_at": data.registered_at,
+                "deregistered_at": data.deregistered_at,
+                "tasks_completed": data.tasks_completed,
+                "tasks_succeeded": data.tasks_succeeded,
+                "tasks_failed": data.tasks_failed,
+                "avg_duration": data.total_duration / max(1, data.tasks_completed),
+                "anomaly_count": data.anomaly_count,
+                "success_rate": data.tasks_succeeded / max(1, data.tasks_completed),
+            }
 
     def get_all_metrics(self) -> list[dict[str, Any]]:
         """Get metrics for all workers."""
-        return [self.get_worker_metrics(wid) for wid in self._workers if self.get_worker_metrics(wid) is not None]
+        with self._lock:
+            worker_ids = list(self._workers.keys())
+        return [m for wid in worker_ids if (m := self.get_worker_metrics(wid)) is not None]
 
 
 class _WorkerMetricData:
