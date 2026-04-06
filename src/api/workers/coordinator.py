@@ -78,6 +78,7 @@ class WorkerCoordinator:
         self._registry = registry
         self._task_reassignment_timeout = task_reassignment_timeout
         self._health_check_interval = health_check_interval
+        self._anomaly_detector: Any | None = None
 
         # Task tracking
         self._pending_tasks: dict[str, PendingTask] = {}  # task_id -> PendingTask
@@ -270,6 +271,17 @@ class WorkerCoordinator:
                     logger.warning("Tensor validation failed for task %s: %s", task_id, tensor_errors)
                     self._registry.complete_task(worker_id, success=False)
                     return False
+
+            # Anomaly detection (Phase 4) — log warnings but do not reject
+            if self._anomaly_detector is not None:
+                anomalies = self._anomaly_detector.check_result(
+                    worker_id=worker_id,
+                    correlation=msg.get("correlation", 0.0),
+                    training_duration=msg.get("training_duration", 0.0),
+                    task_id=task_id,
+                )
+                if anomalies:
+                    logger.warning("Anomalies detected for worker %s on task %s: %s", worker_id, task_id, anomalies)
 
             # Accept result
             result = TaskResult(

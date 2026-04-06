@@ -46,6 +46,14 @@ async def worker_stream_handler(websocket: WebSocket) -> None:
     if not await ws_authenticate(websocket):
         return
 
+    # Rate limiting check (before accepting the connection)
+    rate_limiter = getattr(websocket.app.state, "worker_rate_limiter", None)
+    if rate_limiter:
+        source_ip = websocket.client[0] if websocket.client else "unknown"
+        if not rate_limiter.allow(source_ip):
+            await websocket.close(code=4029, reason="Rate limited")
+            return
+
     # Get coordinator and registry from app state
     coordinator: WorkerCoordinator | None = getattr(websocket.app.state, "worker_coordinator", None)
     registry: WorkerRegistry | None = getattr(websocket.app.state, "worker_registry", None)
@@ -63,6 +71,8 @@ async def worker_stream_handler(websocket: WebSocket) -> None:
     )
 
     worker_id: str | None = None
+    audit_logger = getattr(websocket.app.state, "audit_logger", None)
+    worker_metrics = getattr(websocket.app.state, "worker_metrics", None)
 
     try:
         # Step 1: Wait for registration message
@@ -72,6 +82,15 @@ async def worker_stream_handler(websocket: WebSocket) -> None:
 
         # Register send callback for this connection
         coordinator.register_send_callback(worker_id, _make_send_callback(websocket))
+
+        # Audit and metrics on successful registration
+        if audit_logger:
+            from api.workers.audit import AuditEventType
+
+            audit_logger.log(AuditEventType.WORKER_REGISTER, worker_id=worker_id)
+        if worker_metrics:
+            source_ip = websocket.client[0] if websocket.client else ""
+            worker_metrics.on_register(worker_id, source_ip)
 
         logger.info("Worker %s connected and registered", worker_id)
 
@@ -87,6 +106,12 @@ async def worker_stream_handler(websocket: WebSocket) -> None:
         if worker_id is not None:
             coordinator.unregister_send_callback(worker_id)
             registry.deregister(worker_id)
+            if audit_logger:
+                from api.workers.audit import AuditEventType
+
+                audit_logger.log(AuditEventType.WORKER_DEREGISTER, worker_id=worker_id)
+            if worker_metrics:
+                worker_metrics.on_deregister(worker_id)
             logger.info("Worker %s cleaned up", worker_id)
 
 

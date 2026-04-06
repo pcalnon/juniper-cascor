@@ -69,6 +69,39 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     lifecycle.set_worker_coordinator(worker_coordinator)
     logger.info("Worker registry and coordinator initialized")
 
+    # Worker Security (Phase 4) — conditionally initialize based on feature flags
+    if settings.worker_rate_limit_enabled:
+        from api.workers.security import ConnectionRateLimiter
+
+        app.state.worker_rate_limiter = ConnectionRateLimiter(
+            max_connections_per_minute=settings.worker_rate_limit_connections_per_minute,
+            burst_size=settings.worker_rate_limit_burst_size,
+        )
+        logger.info("Worker connection rate limiter enabled")
+
+    if settings.worker_anomaly_detection_enabled:
+        from api.workers.security import AnomalyDetector
+
+        anomaly_detector = AnomalyDetector(
+            min_training_time=settings.worker_anomaly_min_training_time,
+            perfect_corr_threshold=settings.worker_anomaly_perfect_corr_threshold,
+        )
+        app.state.anomaly_detector = anomaly_detector
+        worker_coordinator._anomaly_detector = anomaly_detector
+        logger.info("Worker anomaly detection enabled")
+
+    if settings.worker_audit_logging_enabled:
+        from api.workers.audit import AuditLogger
+
+        app.state.audit_logger = AuditLogger()
+        logger.info("Worker audit logging enabled")
+
+    if settings.worker_metrics_enabled:
+        from api.workers.audit import WorkerMetrics
+
+        app.state.worker_metrics = WorkerMetrics()
+        logger.info("Worker metrics collection enabled")
+
     # Auto-start companion services (non-containerized mode)
     managed_services: list = []
     app.state.managed_services = managed_services
