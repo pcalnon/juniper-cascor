@@ -49,7 +49,9 @@ class TestCandidateEpochScaling:
 
         result = benchmark.pedantic(run, rounds=3, warmup_rounds=1)
         assert result is not None
-        assert result.epochs_completed == epochs
+        # train_detailed may early-stop when correlation plateaus, so
+        # epochs_completed can be less than the requested epoch count.
+        assert 1 <= result.epochs_completed <= epochs
 
 
 # ===================================================================

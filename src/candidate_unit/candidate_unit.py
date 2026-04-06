@@ -696,19 +696,25 @@ class CandidateUnit:
             error_val: Normalized error value
         """
         # Compute correlation with each output and use the maximum absolute correlation
-        self.logger.trace(f"CandidateUnit: _get_correlations: Getting Correlations for network, residual_error shape: {residual_error.shape}")
-        self.logger.debug(f"CandidateUnit: _get_correlations: Input Params: Residual Error: Shape: {residual_error.shape}, Shape Length: {len(residual_error.shape)}, Type: {type(residual_error)}, Dimensions: {residual_error.dim()}, Dtype: {residual_error.dtype}")
-        self.logger.debug(f"CandidateUnit: _get_correlations: Output shape: {output.shape}, Output shape len: {len(output.shape)} Output length: {len(output)}")
-        self.logger.verbose(f"CandidateUnit: _get_correlations: Output: Shape: {output.shape}, Dtype: {output.dtype}")
+        # CR-062: Guard log calls that evaluate tensor/object repr to avoid expensive __repr__ in hot path
+        _log_debug = self.logger.isEnabledFor(level=10)  # DEBUG
+        _log_verbose = self.logger.isEnabledFor(level=8)  # VERBOSE
+        _log_trace = self.logger.isEnabledFor(level=5)  # TRACE
+        if _log_trace:
+            self.logger.trace("CandidateUnit: _get_correlations: Getting Correlations for network, residual_error shape: %s", residual_error.shape)
+        if _log_debug:
+            self.logger.debug("CandidateUnit: _get_correlations: Input Params: Residual Error: Shape: %s, Type: %s, Dims: %s, Dtype: %s", residual_error.shape, type(residual_error), residual_error.dim(), residual_error.dtype)
+            self.logger.debug("CandidateUnit: _get_correlations: Output shape: %s, Output length: %d", output.shape, len(output))
 
         # Calculate correlations for current candidate nodes
-        self.logger.trace("CandidateUnit: _get_correlations: Starting correlation calculation")
         candidate_correlations = self._multi_output_correlation(residual_error=residual_error, output=output)
-        self.logger.debug(f"CandidateUnit: _get_correlations: Multi-output correlation result: Cascade Correlations: Length {len(candidate_correlations)}, Value: {candidate_correlations}")
+        if _log_debug:
+            self.logger.debug("CandidateUnit: _get_correlations: Multi-output correlation result: Cascade Correlations: Length %d", len(candidate_correlations))
 
         # Extract all correlations and find the best one
         correlations = [c.correlation for c in candidate_correlations]
-        self.logger.verbose(f"CandidateUnit: _get_correlations: All correlations: {correlations}")
+        if _log_verbose:
+            self.logger.verbose("CandidateUnit: _get_correlations: All correlations: %s", correlations)
 
         # Find the best correlation by maximum absolute value
         best_idx = int(np.argmax(np.abs(np.array(correlations)))) if correlations else -1
@@ -731,13 +737,11 @@ class CandidateUnit:
             numerator = 0.0
             denominator = 1.0
 
-        self.logger.debug(f"CandidateUnit: _get_correlations: Best correlation: {best_correlation}, Best corr idx: {best_corr_idx}")
-        self.logger.trace("CandidateUnit: _get_correlations: Completed correlation calculation")
+        if _log_debug:
+            self.logger.debug("CandidateUnit: _get_correlations: Best correlation: %s, Best corr idx: %s", best_correlation, best_corr_idx)
 
         # Create a CandidateTrainingResult data class to return all relevant training results
-        self.logger.debug("CandidateUnit: _get_correlations: Creating CandidateTrainingResult data class to return all relevant training results")
         candidate_training_result = CandidateTrainingResult(candidate_id=self.candidate_index, candidate_uuid=self.uuid, correlation=best_correlation, best_corr_idx=best_corr_idx, all_correlations=correlations, norm_output=norm_output, norm_error=norm_error, numerator=numerator, denominator=denominator, success=(best_idx >= 0))
-        self.logger.debug(f"CandidateUnit: _get_correlations: Returning training result: {candidate_training_result}")
         return candidate_training_result
 
     #################################################################################################################################################################################################
@@ -761,41 +765,28 @@ class CandidateUnit:
         Returns:
             correlations: List of tuples containing correlation, output index, normalized output, normalized error, numerator, and denominator
         """
-        self.logger.trace("CandidateUnit: _multi_output_correlation: Starting multi-output correlation calculation")
-        self.logger.verbose(f"CandidateUnit: _multi_output_correlation: Input Params: Residual Error: Shape: {residual_error.shape}, Shape Length: {len(residual_error.shape)}, Type: {type(residual_error)}, Dimensions: {residual_error.dim()}, Dtype: {residual_error.dtype}")
-        self.logger.debug(f"CandidateUnit: _multi_output_correlation: Residual error shape: {residual_error.shape}, Output shape: {output.shape}")
+        # CR-062: Guard log calls to avoid expensive f-string evaluation in hot path
+        _log_debug = self.logger.isEnabledFor(level=10)  # DEBUG
+        _log_verbose = self.logger.isEnabledFor(level=8)  # VERBOSE
+
+        if _log_debug:
+            self.logger.debug("CandidateUnit: _multi_output_correlation: Residual error shape: %s, Output shape: %s", residual_error.shape, output.shape)
 
         # Initialize a list to store correlations for each output
-        self.logger.trace("CandidateUnit: _multi_output_correlation: Initializing list to store correlations for each output")
         calculated_correlations = []
-        self.logger.debug("CandidateUnit: _multi_output_correlation: Tuple structure for correlations defined.")
-
-        # Determine the maximum index for multi-output correlation
-        self.logger.trace("CandidateUnit: _multi_output_correlation: Calculating Max Index for residual error")
 
         # Get the max index for the 2nd dim (dim 1) of the residual error.  Dim 0 is number of batches, dim 1 is the number of error values--one for each output.
         max_index = residual_error.shape[1] if hasattr(residual_error, "shape") and len(residual_error.shape) > 1 else 1
-        self.logger.verbose(f"CandidateUnit: _multi_output_correlation: Max index: {max_index}")
 
         # Iterate through each output index and calculate correlation
-        self.logger.trace("CandidateUnit: _multi_output_correlation: Iterating through each output index to calculate correlation")
         for i in range(max_index):
-            self.logger.debug(f"CandidateUnit: _multi_output_correlation: Output index {i}, Max index: {max_index}")
             # Handle both 1D and 2D residual_error tensors
             error_i = residual_error[:, i] if residual_error.dim() > 1 else residual_error
-            self.logger.debug(f"CandidateUnit: _multi_output_correlation: Output index {i}, Residual error shape: {error_i.shape}")
-            self.logger.verbose(f"CandidateUnit: _multi_output_correlation: Residual error for output Tensor: Shape: {error_i.shape}")
 
             # Calculate correlation for the current output index
-            self.logger.trace(f"CandidateUnit: _multi_output_correlation: Calculating correlation for output index {i}")
-            self.logger.verbose(f"CandidateUnit: _multi_output_correlation: Before Corr Calc: Residual Error for output index {i}: Shape: {residual_error.shape}, Dtype: {residual_error.dtype}")
             (correlation, norm_output, norm_error, numerator, denominator) = self._calculate_correlation(output=output, residual_error=error_i)
-            self.logger.verbose(f"CandidateUnit: _multi_output_correlation: After Corr Calc: Residual Error for output index {i}: Shape: {residual_error.shape}, Dtype: {residual_error.dtype}")
-            self.logger.verbose(f"CandidateUnit: _multi_output_correlation: After Corr Calc: Norm Output: Type: {type(norm_output)}, Shape: {norm_output.shape}")
-            self.logger.verbose(f"CandidateUnit: _multi_output_correlation: After Corr Calc: Norm Error: Type: {type(norm_error)}, Shape: {norm_error.shape}")
-            self.logger.verbose(f"CandidateUnit: _multi_output_correlation: Correlation for output {i}: {correlation}")
-            # correlations.append((correlation, i, norm_output, norm_error, numerator, denominator))
-            # self.logger.debug(f"CandidateUnit: _multi_output_correlation: Appended correlation for output {i}: {correlations[-1]}")
+            if _log_verbose:
+                self.logger.verbose("CandidateUnit: _multi_output_correlation: Correlation for output %d: %s", i, correlation)
 
             candidate_correlation_calculation = CandidateCorrelationCalculation(
                 correlation=correlation,
@@ -807,12 +798,10 @@ class CandidateUnit:
                 output=output,
                 residual_error=error_i,
             )
-            self.logger.debug(f"CandidateUnit: _multi_output_correlation: Created CandidateCorrelationCalculation for output {i}: {candidate_correlation_calculation}")
             calculated_correlations.append(candidate_correlation_calculation)
-            self.logger.debug(f"CandidateUnit: _multi_output_correlation: Appended correlation calculation for output {i}: {len(calculated_correlations)} total calculations so far.")
 
-        self.logger.trace("CandidateUnit: _multi_output_correlation: Completed multi-output correlation calculation")
-        self.logger.debug(f"CandidateUnit: _multi_output_correlation: Total correlations calculated: {len(calculated_correlations)}")
+        if _log_debug:
+            self.logger.debug("CandidateUnit: _multi_output_correlation: Total correlations calculated: %d", len(calculated_correlations))
         self.logger.verbose(f"CandidateUnit: _multi_output_correlation: Correlations computed: {len(calculated_correlations)} outputs")
         self.logger.trace("CandidateUnit: _multi_output_correlation: Completed the _multi_output_correlation method")
 
@@ -989,16 +978,17 @@ class CandidateUnit:
             grad_corr: Gradient of correlation with respect to output
             grad_output: Gradient of output with respect to weights
         """
-        self.logger.trace("CandidateUnit: _update_weights_and_bias: Starting autograd-based weight and bias update")
-        self.logger.debug(f"CandidateUnit: _update_weights_and_bias: Input shape: {candidate_parameters_update.x.shape}, Residual error shape: {candidate_parameters_update.residual_error.shape}, Learning rate: {candidate_parameters_update.learning_rate}")
+        # CR-062: Guard log calls to avoid expensive f-string evaluation in hot path
+        _log_debug = self.logger.isEnabledFor(level=10)  # DEBUG
+
+        if _log_debug:
+            self.logger.debug("CandidateUnit: _update_weights_and_bias: Input shape: %s, Residual error shape: %s, Learning rate: %s", candidate_parameters_update.x.shape, candidate_parameters_update.residual_error.shape, candidate_parameters_update.learning_rate)
 
         # Convert weights and bias to require gradients temporarily
-        self.logger.debug("CandidateUnit: _update_weights_and_bias: Converting weights and bias to require gradients temporarily")
         weights_param = self.weights.clone().detach().requires_grad_(True)
         bias_param = self.bias.clone().detach().requires_grad_(True)
 
         # Forward pass with gradient tracking
-        self.logger.debug("CandidateUnit: _update_weights_and_bias: Forward pass with gradient tracking")
         logits = torch.sum(candidate_parameters_update.x * weights_param, dim=1) + bias_param
         output = self.activation_fn(logits)
 
@@ -1019,18 +1009,11 @@ class CandidateUnit:
             self.logger.debug("CandidateUnit: _update_weights_and_bias: Single-output detected, using error as-is")
             error_slice = candidate_parameters_update.residual_error.flatten()
 
-        self.logger.verbose(f"CandidateUnit: _update_weights_and_bias: Error slice shape: {error_slice.shape}")
-
         # Compute mean-centered tensors with gradient tracking
-        self.logger.debug("CandidateUnit: _update_weights_and_bias: Computing mean-centered tensors with gradient tracking")
         output_mean = output.mean()
-        self.logger.verbose(f"CandidateUnit: _update_weights_and_bias: Output mean: {output_mean}")
         error_mean = error_slice.mean()
-        self.logger.verbose(f"CandidateUnit: _update_weights_and_bias: Error mean: {error_mean}")
         output_centered = output - output_mean
-        self.logger.verbose(f"CandidateUnit: _update_weights_and_bias: Output centered shape: {output_centered.shape}")
         error_centered = error_slice - error_mean
-        self.logger.verbose(f"CandidateUnit: _update_weights_and_bias: Error centered shape: {error_centered.shape}")
 
         # OPT-2: Fused correlation with autograd-compatible ops (torch.dot, torch.linalg.norm)
         candidate_parameters_update.numerator = torch.dot(output_centered, error_centered)
@@ -1038,19 +1021,16 @@ class CandidateUnit:
         error_std = torch.linalg.norm(error_centered)
         candidate_parameters_update.denominator = output_std * error_std + 1e-8
         correlation = candidate_parameters_update.numerator / candidate_parameters_update.denominator
-        self.logger.debug(f"CandidateUnit: _update_weights_and_bias: Correlation: {correlation}")
 
         # Objective: maximize absolute correlation (minimize negative absolute correlation)
-        self.logger.debug("CandidateUnit: _update_weights_and_bias: Objective: maximize absolute correlation (minimize negative absolute correlation)")
         loss = -torch.abs(correlation)
-        self.logger.debug(f"CandidateUnit: _update_weights_and_bias: Raw correlation: {correlation:.6f}, Absolute correlation: {torch.abs(correlation):.6f}")
+        if _log_debug:
+            self.logger.debug("CandidateUnit: _update_weights_and_bias: Correlation: %.6f, Loss: %.6f", correlation.item(), loss.item())
 
         # Compute gradients
-        self.logger.debug("CandidateUnit: _update_weights_and_bias: Compute gradients")
         loss.backward()
 
         # Extract gradients
-        self.logger.debug("CandidateUnit: _update_weights_and_bias: Extract gradients")
         grad_w = weights_param.grad
         grad_b = bias_param.grad
 
@@ -1059,18 +1039,14 @@ class CandidateUnit:
             return (torch.zeros_like(output), torch.zeros_like(output))
 
         # Update weights and bias (use -= for gradient descent to minimize loss)
-        self.logger.debug("CandidateUnit: _update_weights_and_bias: Update weights and bias")
         with torch.no_grad():
             self.weights -= candidate_parameters_update.learning_rate * grad_w
-            self.logger.debug(f"CandidateUnit: _update_weights_and_bias: Weights updated, shape: {self.weights.shape}, norm: {self.weights.norm():.6f}")
             self.bias -= candidate_parameters_update.learning_rate * grad_b
-            self.logger.debug(f"CandidateUnit: _update_weights_and_bias: Bias updated: {self.bias.item() if hasattr(self.bias, 'item') else self.bias}")
 
-        self.logger.debug(f"CandidateUnit: _update_weights_and_bias: Weight gradient norm: {grad_w.norm():.6f}, Bias gradient: {grad_b.item():.6f}")
-        self.logger.trace("CandidateUnit: _update_weights_and_bias: Completed autograd-based weight and bias update")
+        if _log_debug:
+            self.logger.debug("CandidateUnit: _update_weights_and_bias: Weights shape: %s, norm: %.6f, Bias gradient: %.6f", self.weights.shape, grad_w.norm().item(), grad_b.item())
 
         # Return dummy gradients for compatibility (not used elsewhere)
-        self.logger.debug(f"CandidateUnit: _update_weights_and_bias: Return dummy gradients for compatibility (not used elsewhere), error_centered: {error_centered}, output_centered: {output_centered}")
         return (error_centered, output_centered)
 
     #################################################################################################################################################################################################
