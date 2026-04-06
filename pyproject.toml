@@ -168,6 +168,10 @@ omit = [
     "*/logs/*",
 ]
 branch = true
+# Explicit data file path to prevent sqlite3.OperationalError when
+# coverage attempts to write parallel data files to the working directory.
+data_file = "src/tests/reports/.coverage"
+parallel = true
 
 [tool.coverage.report]
 fail_under = 80

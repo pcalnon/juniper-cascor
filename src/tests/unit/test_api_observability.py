@@ -189,7 +189,11 @@ class TestPrometheusMiddleware:
             async def mock_call_next(request):
                 return response
 
+            mock_route = MagicMock()
+            mock_route.path = "/v1/test"
+
             request = MagicMock()
+            request.scope = {"route": mock_route}
             request.url.path = "/v1/test"
             request.method = "GET"
 

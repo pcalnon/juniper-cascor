@@ -416,11 +416,14 @@ class Logger(logging.getLoggerClass()):
     ####################################################################################################################################
     # Define Logger class log level Logging with Filtering methods
     @classmethod
-    def _log_at_level(cls, frame=None, tsp=None, level=None, message=None) -> None:
+    def _log_at_level(cls, frame=None, tsp=None, level=None, message=None, args=None) -> None:
         if cls._filter_by_level(
             level=level,
             log_level=cls._get_log_level_check(config_lvl=cls._level_logger_config, norm_lvl=cls._level_logger_name)(cls.is_configured()),
         ):
+            # Lazy formatting: only interpolate %s args when the message passes the level filter
+            if args:
+                message = message % args
             _console_message = cls._logging_message(cls._formatter_string_console, cls._console_dict)
             _file_message = cls._logging_message(cls._formatter_string_file, cls._file_dict)
             print(f"+{_console_message(frame, tsp, level, message)}")
@@ -433,57 +436,65 @@ class Logger(logging.getLoggerClass()):
     def trace(
         cls,
         message=None,
+        *args,
     ) -> None:
-        cls._log_at_level(frame=cls._frm(), tsp=cls._tsp(), level=cls._level_trace, message=message)
+        cls._log_at_level(frame=cls._frm(), tsp=cls._tsp(), level=cls._level_trace, message=message, args=args or None)
 
     @classmethod
     def verbose(
         cls,
         message=None,
+        *args,
     ) -> None:
-        cls._log_at_level(frame=cls._frm(), tsp=cls._tsp(), level=cls._level_verbose, message=message)
+        cls._log_at_level(frame=cls._frm(), tsp=cls._tsp(), level=cls._level_verbose, message=message, args=args or None)
 
     @classmethod
     def debug(
         cls,
         message=None,
+        *args,
     ) -> None:
-        cls._log_at_level(frame=cls._frm(), tsp=cls._tsp(), level=cls._level_debug, message=message)
+        cls._log_at_level(frame=cls._frm(), tsp=cls._tsp(), level=cls._level_debug, message=message, args=args or None)
 
     @classmethod
     def info(
         cls,
         message=None,
+        *args,
     ) -> None:
-        cls._log_at_level(frame=cls._frm(), tsp=cls._tsp(), level=cls._level_info, message=message)
+        cls._log_at_level(frame=cls._frm(), tsp=cls._tsp(), level=cls._level_info, message=message, args=args or None)
 
     @classmethod
     def warning(
         cls,
         message=None,
+        *args,
     ) -> None:
-        cls._log_at_level(frame=cls._frm(), tsp=cls._tsp(), level=cls._level_warning, message=message)
+        cls._log_at_level(frame=cls._frm(), tsp=cls._tsp(), level=cls._level_warning, message=message, args=args or None)
 
     @classmethod
     def error(
         cls,
         message=None,
+        *args,
     ) -> None:
-        cls._log_at_level(frame=cls._frm(), tsp=cls._tsp(), level=cls._level_error, message=message)
+        cls._log_at_level(frame=cls._frm(), tsp=cls._tsp(), level=cls._level_error, message=message, args=args or None)
 
     @classmethod
     def critical(
         cls,
         message=None,
+        *args,
     ) -> None:
-        cls._log_at_level(frame=cls._frm(), tsp=cls._tsp(), level=cls._level_critical, message=message)
+        cls._log_at_level(frame=cls._frm(), tsp=cls._tsp(), level=cls._level_critical, message=message, args=args or None)
 
     @classmethod
     def fatal(
         cls,
         message=None,
+        *args,
     ) -> None:
-        cls._log_at_level(frame=cls._frm(), tsp=cls._tsp(), level=cls._level_fatal, message=message)
+        cls._log_at_level(frame=cls._frm(), tsp=cls._tsp(), level=cls._level_fatal, message=message, args=args or None)
 
     ####################################################################################################################################
     # Define the init method for the Logger class
@@ -878,18 +889,24 @@ class Logger(logging.getLoggerClass()):
         Logger.debug(f"Logger: _generate_uuid: Generated new UUID: {new_uuid}")
         return new_uuid
 
-    def isEnabledFor(self, level: int) -> bool:
+    @classmethod
+    def isEnabledFor(cls, level: int) -> bool:
         """
         Description:
             Check if the logger is enabled for the specified log level.
+
+            Defined as a classmethod for consistency with all other Logger
+            methods (trace, debug, info, etc.), since Logger is used as a
+            class-level singleton via ``self.logger = Logger``.
         Args:
             level: The log level to check.
         Returns:
             bool: True if the logger is enabled for the specified log level, False otherwise.
         """
-        # return super().isEnabledFor(level or self.log_level or logging.NOTSET)
-        # return level >= self._get_level_number(level=self.log_level_name)
-        return level >= self.log_level_numbers_dict.get(self.log_level_name, logging.NOTSET)
+        configured_level = cls.getLevelNumber(cls.get_level())
+        if configured_level is None:
+            configured_level = logging.NOTSET
+        return level >= configured_level
 
     ####################################################################################################################################
     # Define the Logger Class Public Update methods

@@ -527,6 +527,30 @@ def force_sequential_training(monkeypatch):
     )
 
 
+@pytest.fixture(autouse=True)
+def skip_training_snapshots(request, monkeypatch):
+    """Skip HDF5 snapshot creation during training to avoid h5py hangs.
+
+    The create_snapshot() call inside train_output_layer() is non-fatal
+    (already wrapped in try/except with warning) and is not part of the
+    training logic under test. h5py 3.16.0 on Python 3.14 can hang
+    during ObjectID creation and weakref operations, causing indefinite
+    blocks that defeat pytest-timeout.
+
+    Tests that specifically test snapshot/serialization behavior are
+    excluded from this patch (detected by "snapshot" or "serializ" in
+    the test node ID).
+    """
+    node_id = request.node.nodeid.lower()
+    if "snapshot" in node_id or "serializ" in node_id:
+        return  # Let snapshot/serialization tests use real create_snapshot
+    monkeypatch.setattr(
+        CascadeCorrelationNetwork,
+        "create_snapshot",
+        lambda self, snapshot_dir=None: None,
+    )
+
+
 # Cached logger for test performance - avoids two major costs:
 # 1. inspect.getouterframes() during Logger/LogConfig initialization (~55ms per network)
 # 2. f-string evaluation in filtered log calls (e.g., self.logger.debug(f"...{tensor}...")
@@ -654,6 +678,18 @@ def _cache_logging_system():
 
     CandidateUnit.__init__ = _patched_cu_init
 
+    # Patch CandidateUnit.__setstate__ to replace the Logger class reference
+    # with _noop_logger after deserialization (e.g., pickle/unpickle in
+    # multiprocessing or snapshot restore). Without this, __setstate__ resets
+    # self.logger = Logger, bypassing the __init__ patch above.
+    original_cu_setstate = CandidateUnit.__setstate__
+
+    def _patched_cu_setstate(self, state):
+        original_cu_setstate(self, state)
+        self.logger = _noop_logger
+
+    CandidateUnit.__setstate__ = _patched_cu_setstate
+
     # Patch Logger._log_at_level to eliminate inspect.getouterframes() overhead.
     # Every Logger class method (trace, debug, info, verbose, warning, error, etc.)
     # calls _log_at_level which, even for WARNING-filtered messages, incurs overhead.
@@ -671,6 +707,7 @@ def _cache_logging_system():
 
     CascadeCorrelationNetwork._init_logging_system = original_init
     CandidateUnit.__init__ = original_cu_init
+    CandidateUnit.__setstate__ = original_cu_setstate
     Logger._log_at_level = original_log_at_level
 
 
