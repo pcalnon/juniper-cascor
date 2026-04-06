@@ -13,6 +13,36 @@ from api.app import create_app
 from api.settings import Settings
 
 
+def wait_for_state(client, expected_states, *, timeout=5.0, poll_interval=0.1):
+    """Poll training status until state machine reaches one of expected_states.
+
+    Args:
+        client: TestClient instance
+        expected_states: Tuple of state strings to wait for (e.g., ("STARTED", "COMPLETED", "FAILED"))
+        timeout: Maximum wait time in seconds
+        poll_interval: Time between polls in seconds
+
+    Returns:
+        The final status response JSON
+
+    Raises:
+        TimeoutError: If expected state not reached within timeout
+    """
+    deadline = time.monotonic() + timeout
+    sm_status = None
+    while time.monotonic() < deadline:
+        resp = client.get("/v1/training/status")
+        data = resp.json()
+        sm_status = data["data"]["state_machine"]["status"].upper()
+        if sm_status in {s.upper() for s in expected_states}:
+            return data
+        time.sleep(poll_interval)
+    raise TimeoutError(
+        f"Training state did not reach {expected_states} within {timeout}s. "
+        f"Last status: {sm_status}"
+    )
+
+
 @pytest.fixture
 def client():
     """Create a test client with lifecycle manager."""
@@ -74,18 +104,16 @@ class TestFullLifecycle:
         assert resp.status_code == 200
 
         # 3. Wait for training to progress
-        time.sleep(1.0)
+        data = wait_for_state(client, ("STARTED", "COMPLETED", "FAILED"), timeout=5.0)
 
         # 4. Check status
-        resp = client.get("/v1/training/status")
-        assert resp.status_code == 200
-        status = resp.json()["data"]
+        status = data["data"]
         assert status["network_loaded"] is True
 
         # 5. Stop training
         resp = client.post("/v1/training/stop")
         assert resp.status_code == 200
-        time.sleep(0.5)
+        wait_for_state(client, ("STOPPED", "COMPLETED", "FAILED"), timeout=5.0)
 
         # 6. Dataset should be loaded
         resp = client.get("/v1/dataset")
@@ -116,17 +144,10 @@ class TestFullLifecycle:
         )
 
         # Wait for training to complete (tiny params = fast completion)
-        for _ in range(30):
-            time.sleep(0.5)
-            resp = client.get("/v1/training/status")
-            sm_status = resp.json()["data"]["state_machine"]["status"]
-            if sm_status.upper() in ("COMPLETED", "FAILED", "STOPPED"):
-                break
+        data = wait_for_state(client, ("COMPLETED", "FAILED", "STOPPED"), timeout=15.0)
 
         # Verify training ended
-        resp = client.get("/v1/training/status")
-        assert resp.status_code == 200
-        sm_status = resp.json()["data"]["state_machine"]["status"]
+        sm_status = data["data"]["state_machine"]["status"]
         assert sm_status.upper() in ("COMPLETED", "FAILED", "STOPPED")
 
     def test_metrics_endpoint_after_training(self, client):
@@ -136,9 +157,9 @@ class TestFullLifecycle:
             "/v1/training/start",
             json={"inline_data": {"train_x": _TRAIN_X, "train_y": _TRAIN_Y}},
         )
-        time.sleep(0.5)
+        wait_for_state(client, ("STARTED", "COMPLETED", "FAILED"), timeout=5.0)
         client.post("/v1/training/stop")
-        time.sleep(0.3)
+        wait_for_state(client, ("STOPPED", "COMPLETED", "FAILED"), timeout=5.0)
 
         resp = client.get("/v1/metrics")
         assert resp.status_code == 200
@@ -150,9 +171,9 @@ class TestFullLifecycle:
             "/v1/training/start",
             json={"inline_data": {"train_x": _TRAIN_X, "train_y": _TRAIN_Y}},
         )
-        time.sleep(0.5)
+        wait_for_state(client, ("STARTED", "COMPLETED", "FAILED"), timeout=5.0)
         client.post("/v1/training/stop")
-        time.sleep(0.3)
+        wait_for_state(client, ("STOPPED", "COMPLETED", "FAILED"), timeout=5.0)
         client.post("/v1/training/reset")
 
         resp = client.get("/v1/decision-boundary?resolution=10")
@@ -167,9 +188,9 @@ class TestFullLifecycle:
             "/v1/training/start",
             json={"inline_data": {"train_x": _TRAIN_X, "train_y": _TRAIN_Y}},
         )
-        time.sleep(0.3)
+        wait_for_state(client, ("STARTED", "COMPLETED", "FAILED"), timeout=5.0)
         client.post("/v1/training/stop")
-        time.sleep(0.2)
+        wait_for_state(client, ("STOPPED", "COMPLETED", "FAILED"), timeout=5.0)
 
         resp = client.post("/v1/training/reset")
         assert resp.status_code == 200
@@ -203,9 +224,9 @@ class TestFullLifecycle:
             },
         )
         assert resp.status_code == 200
-        time.sleep(0.5)
+        wait_for_state(client, ("STARTED", "COMPLETED", "FAILED"), timeout=5.0)
         client.post("/v1/training/stop")
-        time.sleep(0.2)
+        wait_for_state(client, ("STOPPED", "COMPLETED", "FAILED"), timeout=5.0)
 
         resp = client.get("/v1/dataset")
         assert resp.json()["data"]["loaded"] is True
