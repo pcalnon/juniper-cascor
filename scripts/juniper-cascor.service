@@ -1,0 +1,51 @@
+# =============================================================================
+# juniper-cascor — systemd User Service Unit
+#
+# Installation:
+#   mkdir -p ~/.config/systemd/user
+#   cp scripts/juniper-cascor.service ~/.config/systemd/user/
+#   systemctl --user daemon-reload
+#   systemctl --user enable juniper-cascor
+#   systemctl --user start juniper-cascor
+#
+# Logs:
+#   journalctl --user -u juniper-cascor -f
+#
+# Prerequisites:
+#   - conda environment "JuniperCascor" with all dependencies installed
+#   - .env file configured in the project root (see .env.example)
+#   - juniper-data service running (or JUNIPER_DATA_URL set)
+# =============================================================================
+
+[Unit]
+Description=Juniper CasCor — Cascade Correlation Neural Network Training Service
+Documentation=https://github.com/pcalnon/juniper-cascor
+After=network-online.target juniper-data.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/Development/python/Juniper/juniper-cascor/src
+EnvironmentFile=-%h/Development/python/Juniper/juniper-cascor/.env
+ExecStart=/opt/miniforge3/envs/JuniperCascor/bin/python server.py
+Restart=on-failure
+RestartSec=5
+
+# Resource limits (higher for training workloads)
+MemoryMax=4G
+CPUQuota=400%%
+
+# Security hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=%h/Development/python/Juniper/juniper-cascor/logs
+ReadWritePaths=%h/Development/python/Juniper/juniper-cascor/data
+ReadWritePaths=%h/Development/python/Juniper/juniper-cascor/src/cascor_snapshots
+PrivateTmp=true
+ProtectControlGroups=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+
+[Install]
+WantedBy=default.target
