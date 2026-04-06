@@ -1497,6 +1497,36 @@ class CascadeCorrelationNetwork:
         return self.history
 
     #################################################################################################################################################################################################
+    # Private helper: compute hidden unit outputs using pre-allocated buffer (OPT-1)
+    def _compute_hidden_outputs(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        Compute all hidden unit outputs using the OPT-1 pre-allocated buffer pattern.
+
+        Builds a tensor of shape (batch_size, input_size + n_hidden) by pre-allocating
+        a buffer and filling hidden unit output columns incrementally.  This eliminates
+        N+1 torch.cat() calls that the naive implementation would require.
+
+        Args:
+            x: Input tensor with shape (batch_size, input_features)
+        Returns:
+            Tensor with shape (batch_size, input_size + n_hidden) containing the
+            original input features followed by all hidden unit outputs.  If there
+            are no hidden units, returns x directly.
+        """
+        n_hidden = len(self.hidden_units)
+        if n_hidden == 0:
+            return x
+        batch_size = x.shape[0]
+        total_features = self.input_size + n_hidden
+        buffer = torch.empty(batch_size, total_features)
+        buffer[:, : self.input_size] = x
+        for i, unit in enumerate(self.hidden_units):
+            col = self.input_size + i
+            unit_input = buffer[:, :col]
+            buffer[:, col] = unit["activation_fn"](torch.sum(unit_input * unit["weights"], dim=1) + unit["bias"])
+        return buffer
+
+    #################################################################################################################################################################################################
     # Public Method that Performs a Forward pass through the network
     def forward(self, x: torch.Tensor = None) -> torch.Tensor:
         """
@@ -1517,22 +1547,8 @@ class CascadeCorrelationNetwork:
         features = x
         self.logger.debug(f"CascadeCorrelationNetwork: forward: Input shape: {features.shape}")
 
-        # OPT-1: Pre-allocated forward pass buffer — eliminates N+1 torch.cat() calls by
-        # pre-allocating [batch_size, input_size + N_hidden] and filling columns incrementally.
-        n_hidden = len(self.hidden_units)
-        if n_hidden == 0:
-            output_input = x
-        else:
-            batch_size = x.shape[0]
-            total_features = self.input_size + n_hidden
-            buffer = torch.empty(batch_size, total_features)
-            buffer[:, : self.input_size] = x
-            for i, unit in enumerate(self.hidden_units):
-                col = self.input_size + i
-                unit_input = buffer[:, :col]
-                buffer[:, col] = unit["activation_fn"](torch.sum(unit_input * unit["weights"], dim=1) + unit["bias"])
-                self.logger.debug(f"CascadeCorrelationNetwork: forward: Hidden unit {i + 1} computed, features: {col + 1}")
-            output_input = buffer
+        # OPT-1: Compute hidden unit outputs via shared pre-allocated buffer helper.
+        output_input = self._compute_hidden_outputs(x)
         self.logger.verbose(f"CascadeCorrelationNetwork: forward: Output input shape: {output_input.shape}")
 
         # OPT-4: Cache candidate input (output_input == candidate_input) for reuse by _prepare_candidate_input().
@@ -1608,18 +1624,14 @@ class CascadeCorrelationNetwork:
         self.logger.debug(f"CascadeCorrelationNetwork: train_output_layer: Learning Rate: {self.learning_rate}, Optimizer: {type(optimizer).__name__}")
         self.logger.debug(f"CascadeCorrelationNetwork: train_output_layer: Output layer initialized with weights shape: {output_layer.weight.shape}, Bias shape: {output_layer.bias.shape}")
 
+        # CR-060: Hoist hidden output computation above the epoch loop.
+        # Hidden unit weights are frozen during output training, so their outputs
+        # are constant across epochs.  Computing once eliminates N*E redundant
+        # forward passes through the hidden cascade.
+        output_input = self._compute_hidden_outputs(x)
+
         # Output Layer Training loop
         for epoch in range(epochs):
-
-            # Get the input for the output layer (original input + hidden unit outputs)
-            hidden_outputs = []
-            for unit in self.hidden_units:
-                unit_input = torch.cat([x] + hidden_outputs, dim=1) if hidden_outputs else x
-                unit_output = unit["activation_fn"](torch.sum(unit_input * unit["weights"], dim=1) + unit["bias"]).unsqueeze(1)
-                hidden_outputs.append(unit_output)
-
-            # Calculate Loss by Concatenating inputs with outputs from existing hidden units
-            output_input = torch.cat([x] + hidden_outputs, dim=1) if hidden_outputs else x
             output = output_layer(output_input)
             self.logger.debug(f"CascadeCorrelationNetwork: train_output_layer: Output shape: {output.shape}, Output Input shape: {output_input.shape}")
             self.logger.debug(f"CascadeCorrelationNetwork: train_output_layer: Output: shape={output.shape}, dtype={output.dtype}")
@@ -1743,21 +1755,9 @@ class CascadeCorrelationNetwork:
         self._cached_candidate_input = None
 
         # OPT-1: Pre-allocated buffer (fallback when OPT-4 cache misses)
-        n_hidden = len(self.hidden_units)
-        if n_hidden == 0:
-            candidate_input = x
-        else:
-            batch_size = x.shape[0]
-            total_features = self.input_size + n_hidden
-            buffer = torch.empty(batch_size, total_features)
-            buffer[:, : self.input_size] = x
-            for i, unit in enumerate(self.hidden_units):
-                col = self.input_size + i
-                unit_input = buffer[:, :col]
-                buffer[:, col] = unit["activation_fn"](torch.sum(unit_input * unit["weights"], dim=1) + unit["bias"])
-            candidate_input = buffer
+        candidate_input = self._compute_hidden_outputs(x)
         self.logger.debug(f"CascadeCorrelationNetwork: _prepare_candidate_input: Candidate input shape: {candidate_input.shape}")
-        self.logger.info(f"CascadeCorrelationNetwork: _prepare_candidate_input: Hidden units: {n_hidden}")
+        self.logger.info(f"CascadeCorrelationNetwork: _prepare_candidate_input: Hidden units: {len(self.hidden_units)}")
         return candidate_input
 
     def _generate_candidate_tasks(
@@ -3436,14 +3436,7 @@ class CascadeCorrelationNetwork:
         """
         # Prepare input for the new unit (includes outputs from existing hidden units)
         self.logger.trace("CascadeCorrelationNetwork: add_unit: Starting to add a new hidden unit.")
-        hidden_outputs = []
-        for unit in self.hidden_units:
-            unit_input = torch.cat([x] + hidden_outputs, dim=1) if hidden_outputs else x
-            unit_output = unit["activation_fn"](torch.sum(unit_input * unit["weights"], dim=1) + unit["bias"]).unsqueeze(1)
-            self.logger.debug(f"CascadeCorrelationNetwork: add_unit: Unit output shape: {unit_output.shape}, Unit output: {unit_output}")
-            hidden_outputs.append(unit_output)
-        self.logger.debug(f"CascadeCorrelationNetwork: add_unit: Hidden outputs shape: {[h.shape for h in hidden_outputs]}")
-        candidate_input = torch.cat([x] + hidden_outputs, dim=1) if hidden_outputs else x
+        candidate_input = self._compute_hidden_outputs(x)
         self.logger.debug(f"CascadeCorrelationNetwork: add_unit: Candidate input shape: {candidate_input.shape}, Input size: {candidate_input.shape[1]}")
 
         # Create a new hidden unit
@@ -3479,10 +3472,7 @@ class CascadeCorrelationNetwork:
         self.logger.debug(f"CascadeCorrelationNetwork: add_unit: New unit output shape: {unit_output.shape}, New unit output: {unit_output}")
 
         # Create new output weights with an additional row for the new unit
-        if hidden_outputs:
-            new_input_size = x.shape[1] + len(hidden_outputs) + 1
-        else:
-            new_input_size = x.shape[1] + 1
+        new_input_size = candidate_input.shape[1] + 1
         self.logger.debug(f"CascadeCorrelationNetwork: add_unit: New input size for output weights: {new_input_size}, Old input size: {old_output_weights.shape[0]}")
 
         # Initialize new output weights based on init_output_weights strategy.
@@ -3495,10 +3485,7 @@ class CascadeCorrelationNetwork:
         self.logger.debug(f"CascadeCorrelationNetwork: add_unit: New output weights shape: {self.output_weights.shape}, init_mode: {self.init_output_weights}")
 
         # Copy old weights
-        if hidden_outputs:
-            input_size_before = x.shape[1] + len(hidden_outputs)
-        else:
-            input_size_before = x.shape[1]
+        input_size_before = candidate_input.shape[1]
         self.logger.debug(f"CascadeCorrelationNetwork: add_unit: Input size before adding new unit: {input_size_before}")
 
         # Copy old weights, then enable gradient tracking
@@ -3573,12 +3560,7 @@ class CascadeCorrelationNetwork:
 
         # Pre-compute candidate_input from current hidden units BEFORE adding any new units.
         # All candidates in this batch were trained with this exact input shape.
-        hidden_outputs = []
-        for unit in self.hidden_units:
-            unit_input = torch.cat([x] + hidden_outputs, dim=1) if hidden_outputs else x
-            unit_output = unit["activation_fn"](torch.sum(unit_input * unit["weights"], dim=1) + unit["bias"]).unsqueeze(1)
-            hidden_outputs.append(unit_output)
-        candidate_input = torch.cat([x] + hidden_outputs, dim=1) if hidden_outputs else x
+        candidate_input = self._compute_hidden_outputs(x)
 
         # Save current output weights before any mutations
         old_output_weights = self.output_weights.clone().detach()
@@ -3619,17 +3601,14 @@ class CascadeCorrelationNetwork:
 
         # Update output weights once for all new units
         if added_count > 0:
-            if hidden_outputs:
-                new_input_size = x.shape[1] + len(hidden_outputs) + added_count
-            else:
-                new_input_size = x.shape[1] + added_count
+            new_input_size = candidate_input.shape[1] + added_count
             # Initialize new output weights without requires_grad to allow safe
             # in-place slice assignment, then enable gradient tracking after copy.
             if self.init_output_weights == "zero":
                 self.output_weights = torch.zeros(new_input_size, self.output_size)
             else:
                 self.output_weights = torch.randn(new_input_size, self.output_size) * 0.1
-            input_size_before = x.shape[1] + len(hidden_outputs) if hidden_outputs else x.shape[1]
+            input_size_before = candidate_input.shape[1]
             self.output_weights[:input_size_before, :] = old_output_weights
             self.output_weights.requires_grad_(True)
             self.output_bias = old_output_bias
