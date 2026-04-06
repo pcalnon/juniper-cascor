@@ -555,8 +555,8 @@ class CandidateUnit:
         self.logger.debug(f"CandidateUnit: train: Early stopping enabled: {self.early_stopping}, Patience: {self.patience}")
 
         # Log constant metadata once before the loop (CR-062: hoist invariant values)
-        _log_debug = self.logger.isEnabledFor(10)  # DEBUG
-        _log_trace = self.logger.isEnabledFor(5)   # TRACE
+        _log_debug = self.logger.isEnabledFor(level=10)  # DEBUG
+        _log_trace = self.logger.isEnabledFor(level=5)  # TRACE
         if _log_debug:
             self.logger.debug("CandidateUnit: train: Residual error shape: %s, dtype: %s, dims: %s", residual_error.shape, residual_error.dtype, residual_error.dim())
 
