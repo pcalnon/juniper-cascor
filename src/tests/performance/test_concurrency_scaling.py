@@ -241,6 +241,7 @@ class TestQueueThroughput:
         result = benchmark.pedantic(put_get, rounds=50, warmup_rounds=5)
         assert result is not None
 
+    @pytest.mark.timeout(60)
     def test_burst_throughput(self, forkserver_context):
         """Measure throughput for bursting N items into a queue and draining them.
 
@@ -252,10 +253,10 @@ class TestQueueThroughput:
         timer = BenchmarkTimer()
 
         for _ in range(5):
-            # Burst put
+            # Burst put — use timeout to prevent deadlock if queue feeder stalls
             with timer:
                 for p in payloads:
-                    q.put(p)
+                    q.put(p, timeout=10.0)
 
         put_summary = timer.summary()
 
@@ -272,7 +273,7 @@ class TestQueueThroughput:
 
         # Re-burst and drain for clean measurement
         for p in payloads:
-            q.put(p)
+            q.put(p, timeout=10.0)
 
         with drain_timer:
             for _ in range(len(payloads)):

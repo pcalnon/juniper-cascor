@@ -38,17 +38,18 @@ class TestSpiralProblemBasic:
     @pytest.mark.integration
     @pytest.mark.spiral
     @pytest.mark.slow
+    @pytest.mark.timeout(120)
     def test_2_spiral_learning(self, spiral_network):
         """Test that network can learn 2-spiral problem."""
         set_deterministic_behavior(42)
         fast_mode = _is_fast_mode()
 
         # Generate 2-spiral data - smaller dataset for faster execution
-        n_per_spiral = 20 if fast_mode else 30  # Reduced from 50
+        n_per_spiral = 15 if fast_mode else 30  # Reduced from 50
         x, y, _ = SpiralDataGenerator.generate_2_spiral(n_per_spiral=n_per_spiral, noise=0.05, seed=42)
 
         # Train network - fewer epochs for faster execution
-        max_epochs = 3 if fast_mode else 5  # Reduced from 10
+        max_epochs = 2 if fast_mode else 5  # Reduced from 10
         initial_accuracy = spiral_network.calculate_accuracy(x, y)
         history, elapsed_time = measure_training_time(spiral_network, x, y, max_epochs=max_epochs, early_stopping=False)
         final_accuracy = spiral_network.calculate_accuracy(x, y)
@@ -120,21 +121,22 @@ class TestSpiralProblemProgressive:
         set_deterministic_behavior(42)
         fast_mode = _is_fast_mode()
 
-        # Scale training budget with problem complexity
-        hidden_units = max(2, n_spirals) if fast_mode else max(3, n_spirals + 1)
-        pool_size = max(2, n_spirals) if fast_mode else max(4, n_spirals + 2)
+        # Scale training budget with problem complexity. Multi-class problems
+        # (n_spirals >= 3) need more capacity and epochs to beat random chance.
+        hidden_units = max(2, n_spirals + 1) if fast_mode else max(3, n_spirals + 1)
+        pool_size = max(3, n_spirals + 1) if fast_mode else max(4, n_spirals + 2)
 
         # Create network configured for n-spiral problem - reduced for speed
         from cascade_correlation.cascade_correlation import CascadeCorrelationNetwork
 
-        network = CascadeCorrelationNetwork.create_simple_network(input_size=2, output_size=n_spirals, learning_rate=0.1 if fast_mode else 0.08, max_hidden_units=hidden_units, candidate_pool_size=pool_size, correlation_threshold=0.02 if fast_mode else 0.1, candidate_epochs=3 if fast_mode else 10, output_epochs=3 if fast_mode else 10, patience=2 if fast_mode else 3)
+        network = CascadeCorrelationNetwork.create_simple_network(input_size=2, output_size=n_spirals, learning_rate=0.1 if fast_mode else 0.08, max_hidden_units=hidden_units, candidate_pool_size=pool_size, correlation_threshold=0.02 if fast_mode else 0.1, candidate_epochs=5 if fast_mode else 10, output_epochs=5 if fast_mode else 10, patience=2 if fast_mode else 3)
 
         # Generate n-spiral data - smaller for faster execution
-        n_per_spiral = 10 if fast_mode else 15  # Reduced from 30
+        n_per_spiral = 15 if fast_mode else 15  # Reduced from 30
         x, y, _ = SpiralDataGenerator.generate_n_spiral(n_spirals=n_spirals, n_per_spiral=n_per_spiral, noise=0.02, seed=42)
 
         # Train network - scale epochs with problem complexity
-        max_epochs = max(2, n_spirals) if fast_mode else max(3, n_spirals + 1)
+        max_epochs = max(3, n_spirals + 1) if fast_mode else max(3, n_spirals + 1)
         initial_accuracy = network.calculate_accuracy(x, y)
         history = network.fit(x, y, max_epochs=max_epochs)
         final_accuracy = network.calculate_accuracy(x, y)

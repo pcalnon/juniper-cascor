@@ -3446,7 +3446,8 @@ class CascadeCorrelationNetwork:
             "activation_fn": self.activation_fn,
             "correlation": candidate.correlation,
         }
-        self.logger.debug(f"CascadeCorrelationNetwork: add_unit: Adding new hidden unit with weights: {new_unit['weights']}, bias: {new_unit['bias']}, correlation: {new_unit['correlation']:.6f}, Unit: {new_unit}")
+        if self.logger.isEnabledFor(logging.DEBUG):
+            self.logger.debug(f"CascadeCorrelationNetwork: add_unit: Adding new hidden unit with weights: {new_unit['weights']}, bias: {new_unit['bias']}, correlation: {new_unit['correlation']:.6f}, Unit: {new_unit}")
 
         # PARALLEL-FIX (RC-5): Validate that candidate weight dimensions match current input.
         # A stale candidate from a previous training round (result queue contamination) would
@@ -3459,17 +3460,21 @@ class CascadeCorrelationNetwork:
 
         # Add the new unit to the network
         self.hidden_units.append(new_unit)
-        self.logger.debug(f"CascadeCorrelationNetwork: add_unit: Current number of hidden units: {len(self.hidden_units)}, Hidden units: {self.hidden_units}")
+        if self.logger.isEnabledFor(logging.DEBUG):
+            self.logger.debug(f"CascadeCorrelationNetwork: add_unit: Current number of hidden units: {len(self.hidden_units)}, Hidden units: {self.hidden_units}")
 
         # Update output layer weights to include the new unit
         old_output_weights = self.output_weights.clone().detach()
-        self.logger.debug(f"CascadeCorrelationNetwork: add_unit: Old output weights shape: {old_output_weights.shape}, Weights: {old_output_weights}")
+        if self.logger.isEnabledFor(logging.DEBUG):
+            self.logger.debug(f"CascadeCorrelationNetwork: add_unit: Old output weights shape: {old_output_weights.shape}, Weights: {old_output_weights}")
         old_output_bias = self.output_bias.clone().detach()
-        self.logger.debug(f"CascadeCorrelationNetwork: add_unit: Old output bias shape: {old_output_bias.shape}, Bias: {old_output_bias}")
+        if self.logger.isEnabledFor(logging.DEBUG):
+            self.logger.debug(f"CascadeCorrelationNetwork: add_unit: Old output bias shape: {old_output_bias.shape}, Bias: {old_output_bias}")
 
         # Calculate the output of the new unit
         unit_output = self.activation_fn(torch.sum(candidate_input * new_unit["weights"], dim=1) + new_unit["bias"]).unsqueeze(1)
-        self.logger.debug(f"CascadeCorrelationNetwork: add_unit: New unit output shape: {unit_output.shape}, New unit output: {unit_output}")
+        if self.logger.isEnabledFor(logging.DEBUG):
+            self.logger.debug(f"CascadeCorrelationNetwork: add_unit: New unit output shape: {unit_output.shape}, New unit output: {unit_output}")
 
         # Create new output weights with an additional row for the new unit
         new_input_size = candidate_input.shape[1] + 1
@@ -3491,9 +3496,11 @@ class CascadeCorrelationNetwork:
         # Copy old weights, then enable gradient tracking
         self.output_weights[:input_size_before, :] = old_output_weights
         self.output_weights.requires_grad_(True)
-        self.logger.debug(f"CascadeCorrelationNetwork: add_unit: Updated output weights after copying old weights: {self.output_weights}")
+        if self.logger.isEnabledFor(logging.DEBUG):
+            self.logger.debug(f"CascadeCorrelationNetwork: add_unit: Updated output weights after copying old weights: {self.output_weights}")
         self.output_bias = old_output_bias
-        self.logger.debug(f"CascadeCorrelationNetwork: add_unit: Updated output bias after copying old bias: {self.output_bias}")
+        if self.logger.isEnabledFor(logging.DEBUG):
+            self.logger.debug(f"CascadeCorrelationNetwork: add_unit: Updated output bias after copying old bias: {self.output_bias}")
 
         # Add new unit to the history — metadata only; full weight tensors
         # are already stored in self.hidden_units (see CR-063).
@@ -3758,12 +3765,14 @@ class CascadeCorrelationNetwork:
                 x_val=x_val,
                 y_val=y_val,
             )
-            self.logger.debug(f"CascadeCorrelationNetwork: grow_network: Validate Training Inputs: {validate_training_inputs}")
+            if self.logger.isEnabledFor(logging.DEBUG):
+                self.logger.debug(f"CascadeCorrelationNetwork: grow_network: Validate Training Inputs: {validate_training_inputs}")
 
             # Validation of training results
             try:
                 validate_training_results = self.validate_training(validate_training_inputs)
-                self.logger.debug(f"CascadeCorrelationNetwork: grow_network: Validation Results: {validate_training_results}")
+                if self.logger.isEnabledFor(logging.DEBUG):
+                    self.logger.debug(f"CascadeCorrelationNetwork: grow_network: Validation Results: {validate_training_results}")
             except Exception as e:
                 # self.logger.error(f"CascadeCorrelationNetwork: grow_network: Caught Exception while validating training at growth iteration {growth_iteration + 1}/{max_epochs}:\nException:\n{e}")
                 self.logger.error(f"CascadeCorrelationNetwork: grow_network: Caught Exception while validating training at iteration {iteration + 1}/{max_iterations}:\nException:\n{e}")
@@ -3775,7 +3784,8 @@ class CascadeCorrelationNetwork:
             # Update loop state from validation results (critical for early stopping convergence)
             patience_counter = validate_training_results.patience_counter
             best_value_loss = validate_training_results.best_value_loss
-            self.logger.debug(f"CascadeCorrelationNetwork: grow_network: Iteration {iteration}, Early Stop: {validate_training_results.early_stop}, Patience Counter: {validate_training_results.patience_counter}, Best Value Loss: {validate_training_results.best_value_loss:.6f}, Value Output: {validate_training_results.value_output} Value Loss: {validate_training_results.value_loss:.6f}, Value Accuracy: {validate_training_results.value_accuracy:.4f}")
+            if self.logger.isEnabledFor(logging.DEBUG):
+                self.logger.debug(f"CascadeCorrelationNetwork: grow_network: Iteration {iteration}, Early Stop: {validate_training_results.early_stop}, Patience Counter: {validate_training_results.patience_counter}, Best Value Loss: {validate_training_results.best_value_loss:.6f}, Value Output: {validate_training_results.value_output} Value Loss: {validate_training_results.value_loss:.6f}, Value Accuracy: {validate_training_results.value_accuracy:.4f}")
             if validate_training_results.early_stop:
                 self.logger.info(f"CascadeCorrelationNetwork: grow_network: Early stopping triggered at iteration {iteration}.")
                 break
@@ -3883,7 +3893,8 @@ class CascadeCorrelationNetwork:
         iteration: int = 0,
         max_iterations: int = None,
     ) -> Optional[Tuple[float, float]]:
-        self.logger.info(f"CascadeCorrelationNetwork: _add_best_candidate: Adding best candidate {best_candidate} at iteration {iteration}")
+        if self.logger.isEnabledFor(logging.INFO):
+            self.logger.info(f"CascadeCorrelationNetwork: _add_best_candidate: Adding best candidate {best_candidate} at iteration {iteration}")
         if best_candidate is None:
             self.logger.warning("CascadeCorrelationNetwork: _add_best_candidate: Best candidate is None, cannot add to network")
             return None, None

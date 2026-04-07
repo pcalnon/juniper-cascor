@@ -83,11 +83,17 @@ def pytest_configure(config):
     if not config.getoption("--gpu", default=False):
         os.environ["CUDA_VISIBLE_DEVICES"] = ""
 
+    # Propagate --fast-slow flag to environment so tests that use
+    # os.environ.get("JUNIPER_FAST_SLOW") (e.g., test_spiral_problem.py)
+    # detect fast-slow mode correctly. Without this, only conftest fixtures
+    # see the flag, and integration tests run with full training parameters.
+    if config.getoption("--fast-slow", default=False):
+        os.environ["JUNIPER_FAST_SLOW"] = "1"
+
     # PERFORMANCE FIX: Set log level to WARNING to reduce logging overhead in tests
     # The extensive logging (TRACE, DEBUG, VERBOSE, INFO) adds significant overhead
     # even when log_level_name is set to 'ERROR' in individual components
-    # if config.getoption("--fast-slow", default=False) or os.environ.get("JUNIPER_FAST_SLOW") == "1":
-    if config.getoption("--fast-slow", default=False) or os.environ.get("JUNIPER_FAST_SLOW") == "0":
+    if config.getoption("--fast-slow", default=False) or os.environ.get("JUNIPER_FAST_SLOW") == "1":
         os.environ.setdefault("CASCOR_LOG_LEVEL", "WARNING")
     else:
         # Even in normal mode, reduce logging overhead for slow tests

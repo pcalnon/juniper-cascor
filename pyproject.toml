@@ -156,7 +156,10 @@ markers = [
     "requires_juniper_data: Tests that require the juniper-data package to be installed",
 ]
 timeout = 60
-timeout_method = "signal"
+# Thread-based timeout avoids SIGALRM interference with forkserver IPC
+# in multiprocessing-heavy performance tests. Signal-based timeout can
+# deadlock the forkserver's pipe/socket operations.
+timeout_method = "thread"
 
 [tool.coverage.run]
 # MED-001: Expanded to cover all source directories
