@@ -129,14 +129,14 @@ class TestSpiralProblemProgressive:
         # Create network configured for n-spiral problem - reduced for speed
         from cascade_correlation.cascade_correlation import CascadeCorrelationNetwork
 
-        network = CascadeCorrelationNetwork.create_simple_network(input_size=2, output_size=n_spirals, learning_rate=0.1 if fast_mode else 0.08, max_hidden_units=hidden_units, candidate_pool_size=pool_size, correlation_threshold=0.02 if fast_mode else 0.1, candidate_epochs=5 if fast_mode else 10, output_epochs=5 if fast_mode else 10, patience=2 if fast_mode else 3)
+        network = CascadeCorrelationNetwork.create_simple_network(input_size=2, output_size=n_spirals, learning_rate=0.1 if fast_mode else 0.05, max_hidden_units=hidden_units, candidate_pool_size=pool_size, correlation_threshold=0.02, candidate_epochs=5 if fast_mode else 25, output_epochs=5 if fast_mode else 25, patience=2 if fast_mode else 5)
 
         # Generate n-spiral data - smaller for faster execution
-        n_per_spiral = 15 if fast_mode else 15  # Reduced from 30
+        n_per_spiral = 15 if fast_mode else 30
         x, y, _ = SpiralDataGenerator.generate_n_spiral(n_spirals=n_spirals, n_per_spiral=n_per_spiral, noise=0.02, seed=42)
 
         # Train network - scale epochs with problem complexity
-        max_epochs = max(3, n_spirals + 1) if fast_mode else max(3, n_spirals + 1)
+        max_epochs = max(3, n_spirals + 1) if fast_mode else max(5, n_spirals + 3)
         initial_accuracy = network.calculate_accuracy(x, y)
         history = network.fit(x, y, max_epochs=max_epochs)
         final_accuracy = network.calculate_accuracy(x, y)
