@@ -4,6 +4,7 @@ Tests real-time WebSocket connections with the training lifecycle.
 """
 
 import json
+import threading
 import time
 
 import pytest
@@ -15,17 +16,31 @@ from api.settings import Settings
 
 @pytest.fixture
 def client():
-    """Create a test client with lifecycle manager."""
+    """Create a test client with lifecycle manager.
+
+    Uses daemon-thread approach for TestClient exit (see test_api_full_lifecycle.py).
+    """
     settings = Settings()
     app = create_app(settings)
-    with TestClient(app) as c:
-        yield c
-    # Signal training threads to stop (see test_api_full_lifecycle.py)
+    tc = TestClient(app)
+    tc.__enter__()
+    yield tc
+
+    # Signal all background components to stop
     lifecycle = getattr(app.state, "lifecycle", None)
     if lifecycle:
         lifecycle._stop_requested.set()
         if getattr(lifecycle, "_executor", None):
             lifecycle._executor.shutdown(wait=False, cancel_futures=True)
+
+    coord = getattr(app.state, "worker_coordinator", None)
+    if coord:
+        coord.shutdown()
+
+    # Exit TestClient in a daemon thread with a short timeout
+    exit_thread = threading.Thread(target=lambda: tc.__exit__(None, None, None), daemon=True)
+    exit_thread.start()
+    exit_thread.join(timeout=5)
 
 
 _TRAIN_X = [

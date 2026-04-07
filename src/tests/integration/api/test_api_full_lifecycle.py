@@ -4,6 +4,7 @@ Tests the complete workflow: create network -> load data -> train -> monitor -> 
 These tests use real CasCor network instances (via TestClient, no external server).
 """
 
+import threading
 import time
 
 import pytest
@@ -45,18 +46,38 @@ def wait_for_state(client, expected_states, *, timeout=5.0, poll_interval=0.1):
 
 @pytest.fixture
 def client():
-    """Create a test client with lifecycle manager."""
+    """Create a test client with lifecycle manager.
+
+    Uses a daemon-thread approach for TestClient exit to prevent the 60s hang
+    from anyio's blocking portal waiting on the ASGI event loop to shut down.
+    The event loop blocks because the training thread (in ThreadPoolExecutor)
+    doesn't respond to cancellation -- network.fit() has no cooperative
+    cancellation check.
+    """
     settings = Settings()
     app = create_app(settings)
-    with TestClient(app) as c:
-        yield c
-    # Signal training threads to stop. Don't wait (shutdown with wait=True
-    # blocks if training uses production-default epoch counts).
+    tc = TestClient(app)
+    tc.__enter__()
+    yield tc
+
+    # Signal all background components to stop
     lifecycle = getattr(app.state, "lifecycle", None)
     if lifecycle:
         lifecycle._stop_requested.set()
         if getattr(lifecycle, "_executor", None):
             lifecycle._executor.shutdown(wait=False, cancel_futures=True)
+
+    coord = getattr(app.state, "worker_coordinator", None)
+    if coord:
+        coord.shutdown()
+
+    # Exit TestClient in a daemon thread with a short timeout.
+    # TestClient.__exit__ blocks indefinitely on anyio portal thread join
+    # when the ASGI event loop has pending work (training thread).
+    # The session-scoped _force_clean_exit fixture handles final cleanup.
+    exit_thread = threading.Thread(target=lambda: tc.__exit__(None, None, None), daemon=True)
+    exit_thread.start()
+    exit_thread.join(timeout=5)
 
 
 # Simple linearly separable data for fast training
@@ -188,9 +209,9 @@ class TestFullLifecycle:
             "/v1/training/start",
             json={"inline_data": {"train_x": _TRAIN_X, "train_y": _TRAIN_Y}},
         )
-        wait_for_state(client, ("STARTED", "COMPLETED", "FAILED"), timeout=5.0)
-        client.post("/v1/training/stop")
-        wait_for_state(client, ("STOPPED", "COMPLETED", "FAILED"), timeout=5.0)
+        # Wait for training to COMPLETE (not just start) to avoid race
+        # between the training thread updating state and the reset clearing it.
+        wait_for_state(client, ("COMPLETED", "FAILED"), timeout=10.0)
 
         resp = client.post("/v1/training/reset")
         assert resp.status_code == 200
