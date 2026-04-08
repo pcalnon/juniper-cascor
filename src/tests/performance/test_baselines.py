@@ -96,22 +96,12 @@ def _check_memory_regression(test_name: str, current_value_mb: float, metric_key
     if baseline_value < 1.0:
         absolute_tolerance_mb = 10.0
         if current_value_mb > baseline_value + absolute_tolerance_mb:
-            pytest.fail(
-                f"Memory regression detected in {test_name}: "
-                f"current {metric_key}={current_value_mb:.2f} MB exceeds "
-                f"baseline {baseline_value:.2f} MB by more than "
-                f"{absolute_tolerance_mb:.0f} MB absolute tolerance"
-            )
+            pytest.fail(f"Memory regression detected in {test_name}: " f"current {metric_key}={current_value_mb:.2f} MB exceeds " f"baseline {baseline_value:.2f} MB by more than " f"{absolute_tolerance_mb:.0f} MB absolute tolerance")
     else:
         allowed = baseline_value * (1.0 + MEMORY_REGRESSION_TOLERANCE_PCT / 100.0)
         if current_value_mb > allowed:
             pct_increase = ((current_value_mb - baseline_value) / baseline_value) * 100.0
-            pytest.fail(
-                f"Memory regression detected in {test_name}: "
-                f"current {metric_key}={current_value_mb:.2f} MB exceeds "
-                f"baseline {baseline_value:.2f} MB by {pct_increase:.1f}% "
-                f"(tolerance: {MEMORY_REGRESSION_TOLERANCE_PCT:.0f}%)"
-            )
+            pytest.fail(f"Memory regression detected in {test_name}: " f"current {metric_key}={current_value_mb:.2f} MB exceeds " f"baseline {baseline_value:.2f} MB by {pct_increase:.1f}% " f"(tolerance: {MEMORY_REGRESSION_TOLERANCE_PCT:.0f}%)")
 
 
 # ===================================================================
@@ -377,10 +367,7 @@ class TestMemoryBaseline:
 
         # Threshold assertion: creating a network with 0 hidden units should
         # not cause significant memory growth. Typical delta is < 1 MB.
-        assert delta_mb < MEMORY_DELTA_THRESHOLD_MB, (
-            f"Memory growth {delta_mb:.1f} MB from base network creation "
-            f"exceeds {MEMORY_DELTA_THRESHOLD_MB:.0f} MB threshold"
-        )
+        assert delta_mb < MEMORY_DELTA_THRESHOLD_MB, f"Memory growth {delta_mb:.1f} MB from base network creation " f"exceeds {MEMORY_DELTA_THRESHOLD_MB:.0f} MB threshold"
 
         # Regression check against saved baseline
         _check_memory_regression("memory_base_network", delta_mb, "delta_mb")
@@ -401,10 +388,7 @@ class TestMemoryBaseline:
 
         # Threshold assertion: total process RSS with 5 hidden units should
         # remain within a reasonable envelope for a small test network.
-        assert mem_mb < MEMORY_ABSOLUTE_THRESHOLD_MB, (
-            f"Process RSS {mem_mb:.1f} MB with {n_hidden} hidden units "
-            f"exceeds {MEMORY_ABSOLUTE_THRESHOLD_MB:.0f} MB absolute threshold"
-        )
+        assert mem_mb < MEMORY_ABSOLUTE_THRESHOLD_MB, f"Process RSS {mem_mb:.1f} MB with {n_hidden} hidden units " f"exceeds {MEMORY_ABSOLUTE_THRESHOLD_MB:.0f} MB absolute threshold"
 
         # Regression check against saved baseline
         _check_memory_regression(f"memory_{n_hidden}_hidden", mem_mb, "rss_mb")
@@ -425,10 +409,7 @@ class TestMemoryBaseline:
 
         # Threshold assertion: total process RSS with ~10 hidden units should
         # remain within a reasonable envelope for a small test network.
-        assert mem_mb < MEMORY_ABSOLUTE_THRESHOLD_MB, (
-            f"Process RSS {mem_mb:.1f} MB with {n_hidden} hidden units "
-            f"exceeds {MEMORY_ABSOLUTE_THRESHOLD_MB:.0f} MB absolute threshold"
-        )
+        assert mem_mb < MEMORY_ABSOLUTE_THRESHOLD_MB, f"Process RSS {mem_mb:.1f} MB with {n_hidden} hidden units " f"exceeds {MEMORY_ABSOLUTE_THRESHOLD_MB:.0f} MB absolute threshold"
 
         # Regression check against saved baseline
         _check_memory_regression(f"memory_{n_hidden}_hidden", mem_mb, "rss_mb")
@@ -480,13 +461,7 @@ class TestSerializationBaseline:
 
         # Timing assertion: fit() on tiny data (100 samples, 2 max hidden,
         # 20 max epochs) should complete well under the threshold.
-        assert fit_elapsed < FIT_TIME_THRESHOLD_S, (
-            f"fit() took {fit_elapsed:.1f}s on tiny data, "
-            f"exceeding {FIT_TIME_THRESHOLD_S:.0f}s threshold"
-        )
+        assert fit_elapsed < FIT_TIME_THRESHOLD_S, f"fit() took {fit_elapsed:.1f}s on tiny data, " f"exceeding {FIT_TIME_THRESHOLD_S:.0f}s threshold"
 
         # Timing assertion: HDF5 save on a small network should be fast.
-        assert save_elapsed < SERIALIZATION_TIME_THRESHOLD_S, (
-            f"save_to_hdf5() took {save_elapsed:.1f}s, "
-            f"exceeding {SERIALIZATION_TIME_THRESHOLD_S:.0f}s threshold"
-        )
+        assert save_elapsed < SERIALIZATION_TIME_THRESHOLD_S, f"save_to_hdf5() took {save_elapsed:.1f}s, " f"exceeding {SERIALIZATION_TIME_THRESHOLD_S:.0f}s threshold"

@@ -99,9 +99,8 @@ from cascor_constants.constants import (  # TODO: Commented out for F401 complia
     _CASCADE_CORRELATION_NETWORK_EPOCH_DISPLAY_FREQUENCY,
     _CASCADE_CORRELATION_NETWORK_EPOCHS_MAX,
     _CASCADE_CORRELATION_NETWORK_GENERATE_PLOTS,
-    _CASCADE_CORRELATION_NETWORK_MAX_ITERATIONS,
-    _CASCADE_CORRELATION_NETWORK_INIT_OUTPUT_WEIGHTS,
     _CASCADE_CORRELATION_NETWORK_HDF5_PROJECT_SNAPSHOTS_DIR,
+    _CASCADE_CORRELATION_NETWORK_INIT_OUTPUT_WEIGHTS,
     _CASCADE_CORRELATION_NETWORK_INPUT_SIZE,
     _CASCADE_CORRELATION_NETWORK_LEARNING_RATE,
     _CASCADE_CORRELATION_NETWORK_LOG_DATE_FORMAT,
@@ -116,6 +115,7 @@ from cascor_constants.constants import (  # TODO: Commented out for F401 complia
     _CASCADE_CORRELATION_NETWORK_LOG_LEVEL_NUMBERS_DICT,
     _CASCADE_CORRELATION_NETWORK_LOG_LEVEL_NUMBERS_LIST,
     _CASCADE_CORRELATION_NETWORK_MAX_HIDDEN_UNITS,
+    _CASCADE_CORRELATION_NETWORK_MAX_ITERATIONS,
     _CASCADE_CORRELATION_NETWORK_NODE_CORRELATION_THRESHOLD,
     _CASCADE_CORRELATION_NETWORK_OUTPUT_EPOCHS,
     _CASCADE_CORRELATION_NETWORK_OUTPUT_SIZE,
@@ -258,11 +258,7 @@ class SharedTrainingMemory:
             if dtype_code is None:
                 raise ValueError(f"Unsupported tensor dtype: {ct.dtype}")
             if ct.ndim > 2:
-                raise ValueError(
-                    f"SharedTrainingMemory only supports tensors up to 2 dimensions, "
-                    f"got tensor with {ct.ndim} dimensions (shape: {tuple(ct.shape)}). "
-                    f"Higher-dimensional tensor support is planned for a future release."
-                )
+                raise ValueError(f"SharedTrainingMemory only supports tensors up to 2 dimensions, " f"got tensor with {ct.ndim} dimensions (shape: {tuple(ct.shape)}). " f"Higher-dimensional tensor support is planned for a future release.")
             self._tensors_info.append(
                 {
                     "nbytes": ct.nbytes,
@@ -4444,12 +4440,7 @@ class CascadeCorrelationNetwork:
                     accuracy_target=self.target_accuracy,
                 )
                 early_stop_flag = patience_exhausted or max_units_reached or train_accuracy_reached
-                self.logger.info(
-                    f"CascadeCorrelationNetwork: validate_training: "
-                    f"Iteration {iteration} (no val data) - Train Loss: {train_loss:.6f}, "
-                    f"Train Acc: {train_accuracy:.4f}, Patience: {patience_counter}/{self.patience}, "
-                    f"Early Stop: {early_stop_flag}"
-                )
+                self.logger.info(f"CascadeCorrelationNetwork: validate_training: " f"Iteration {iteration} (no val data) - Train Loss: {train_loss:.6f}, " f"Train Acc: {train_accuracy:.4f}, Patience: {patience_counter}/{self.patience}, " f"Early Stop: {early_stop_flag}")
         self.logger.verbose(f"CascadeCorrelationNetwork: validate_training: Iteration {iteration}, Early Stop: {early_stop_flag}, Patience Counter: {patience_counter}, Best Value Loss: {best_value_loss:.6f}, Value Output: {value_output}, Value Loss: {value_loss:.6f}, Value Accuracy: {value_accuracy:.4f}")
         self.logger.trace("CascadeCorrelationNetwork: validate_training: Completed validation of the training process.")
 

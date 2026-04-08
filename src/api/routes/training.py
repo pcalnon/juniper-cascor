@@ -34,11 +34,21 @@ async def start_training(request: Request, body: TrainingStartRequest = None) ->
 
     # Whitelist of allowed training parameter keys (matches update_params in lifecycle manager)
     _ALLOWED_TRAINING_PARAMS = {
-        "max_epochs", "max_iterations", "early_stopping",
-        "learning_rate", "candidate_learning_rate", "correlation_threshold",
-        "candidate_pool_size", "max_hidden_units", "epochs_max",
-        "patience", "convergence_threshold", "candidate_convergence_threshold",
-        "candidate_patience", "candidate_epochs", "init_output_weights",
+        "max_epochs",
+        "max_iterations",
+        "early_stopping",
+        "learning_rate",
+        "candidate_learning_rate",
+        "correlation_threshold",
+        "candidate_pool_size",
+        "max_hidden_units",
+        "epochs_max",
+        "patience",
+        "convergence_threshold",
+        "candidate_convergence_threshold",
+        "candidate_patience",
+        "candidate_epochs",
+        "init_output_weights",
     }
 
     kwargs = {}
