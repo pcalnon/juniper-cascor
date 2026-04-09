@@ -20,6 +20,7 @@ import torch
 
 from api.lifecycle.monitor import TrainingMonitor, TrainingState
 from api.lifecycle.state_machine import Command, TrainingPhase, TrainingStateMachine
+from cascor_constants.constants_api import _PROJECT_API_DRAIN_THREAD_JOIN_TIMEOUT, _PROJECT_API_LIFECYCLE_DEFAULT_CANDIDATE_PATIENCE, _PROJECT_API_LIFECYCLE_DEFAULT_EPOCHS_MAX, _PROJECT_API_LIFECYCLE_DEFAULT_MAX_HIDDEN_UNITS, _PROJECT_API_LIFECYCLE_DEFAULT_MAX_ITERATIONS, _PROJECT_API_NETWORK_INPUT_SIZE_DEFAULT, _PROJECT_API_NETWORK_LEARNING_RATE_DEFAULT, _PROJECT_API_NETWORK_OUTPUT_SIZE_DEFAULT, _PROJECT_API_PROGRESS_QUEUE_GET_TIMEOUT, _PROJECT_API_PROGRESS_QUEUE_WAIT_TIMEOUT
 
 
 class TrainingLifecycleManager:
@@ -171,11 +172,11 @@ class TrainingLifecycleManager:
             self.training_state.update_state(
                 status="Stopped",
                 phase="Idle",
-                learning_rate=kwargs.get("learning_rate", 0.01),
-                max_hidden_units=kwargs.get("max_hidden_units", 10),
-                max_epochs=kwargs.get("epochs_max", 200),
-                max_iterations=kwargs.get("max_iterations", 1000),
-                network_name=f"CasCor-{kwargs.get('input_size', 2)}x{kwargs.get('output_size', 2)}",
+                learning_rate=kwargs.get("learning_rate", _PROJECT_API_NETWORK_LEARNING_RATE_DEFAULT),
+                max_hidden_units=kwargs.get("max_hidden_units", _PROJECT_API_LIFECYCLE_DEFAULT_MAX_HIDDEN_UNITS),
+                max_epochs=kwargs.get("epochs_max", _PROJECT_API_LIFECYCLE_DEFAULT_EPOCHS_MAX),
+                max_iterations=kwargs.get("max_iterations", _PROJECT_API_LIFECYCLE_DEFAULT_MAX_ITERATIONS),
+                network_name=f"CasCor-{kwargs.get('input_size', _PROJECT_API_NETWORK_INPUT_SIZE_DEFAULT)}x{kwargs.get('output_size', _PROJECT_API_NETWORK_OUTPUT_SIZE_DEFAULT)}",
             )
 
             info = self.get_network_info()
@@ -324,12 +325,12 @@ class TrainingLifecycleManager:
                 _pq = getattr(network_ref, "_persistent_progress_queue", None)
                 if _pq is None:
                     try:
-                        stop_event.wait(timeout=0.1)
+                        stop_event.wait(timeout=_PROJECT_API_PROGRESS_QUEUE_WAIT_TIMEOUT)
                     except Exception:
                         break
                     continue
             try:
-                progress = _pq.get(timeout=0.25)
+                progress = _pq.get(timeout=_PROJECT_API_PROGRESS_QUEUE_GET_TIMEOUT)
             except _queue_mod.Empty:
                 continue
             except Exception:
@@ -399,7 +400,7 @@ class TrainingLifecycleManager:
             finally:
                 # Stop drain thread
                 _drain_stop.set()
-                _drain_thread.join(timeout=2.0)
+                _drain_thread.join(timeout=_PROJECT_API_DRAIN_THREAD_JOIN_TIMEOUT)
 
             new_hidden = len(manager_ref.network.hidden_units)
 
@@ -677,7 +678,7 @@ class TrainingLifecycleManager:
             "candidate_pool_size": getattr(self.network, "candidate_pool_size", 0),
             "correlation_threshold": getattr(self.network, "correlation_threshold", 0.0),
             "convergence_threshold": getattr(self.network, "convergence_threshold", 0.001),
-            "candidate_patience": getattr(self.network, "candidate_patience", 30),
+            "candidate_patience": getattr(self.network, "candidate_patience", _PROJECT_API_LIFECYCLE_DEFAULT_CANDIDATE_PATIENCE),
             "candidate_convergence_threshold": getattr(self.network, "candidate_convergence_threshold", 0.001),
         }
 

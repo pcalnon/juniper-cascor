@@ -5,6 +5,8 @@ from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoin
 from starlette.responses import JSONResponse
 from starlette.types import ASGIApp
 
+from cascor_constants.constants_api import _PROJECT_API_HTTP_413_PAYLOAD_TOO_LARGE, _PROJECT_API_MAX_REQUEST_BODY_BYTES
+
 from .security import APIKeyAuth, RateLimiter
 
 EXEMPT_PATHS = {
@@ -47,7 +49,10 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         return response
 
 
-_MAX_REQUEST_BODY_BYTES = 10 * 1024 * 1024  # 10 MB
+# Module-level alias preserved for tests that import this name directly.
+# The canonical source of truth is
+# :data:`cascor_constants.constants_api._PROJECT_API_MAX_REQUEST_BODY_BYTES`.
+_MAX_REQUEST_BODY_BYTES = _PROJECT_API_MAX_REQUEST_BODY_BYTES
 
 
 class RequestBodyLimitMiddleware(BaseHTTPMiddleware):
@@ -64,11 +69,11 @@ class RequestBodyLimitMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
         content_length = request.headers.get("content-length")
         if content_length is not None and int(content_length) > self._max_bytes:
-            return JSONResponse(status_code=413, content={"detail": "Request body too large"})
+            return JSONResponse(status_code=_PROJECT_API_HTTP_413_PAYLOAD_TOO_LARGE, content={"detail": "Request body too large"})
         if content_length is None and request.method in ("POST", "PUT", "PATCH"):
             body = await request.body()
             if len(body) > self._max_bytes:
-                return JSONResponse(status_code=413, content={"detail": "Request body too large"})
+                return JSONResponse(status_code=_PROJECT_API_HTTP_413_PAYLOAD_TOO_LARGE, content={"detail": "Request body too large"})
         return await call_next(request)
 
 

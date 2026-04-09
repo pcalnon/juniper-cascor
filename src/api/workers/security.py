@@ -16,6 +16,8 @@ from pathlib import Path
 from threading import Lock
 from typing import Any
 
+from cascor_constants.constants_api import _PROJECT_API_ANOMALY_DUPLICATE_CORR_WINDOW, _PROJECT_API_ANOMALY_STALE_CORR_THRESHOLD, _PROJECT_API_RATE_LIMITER_CLEANUP_INTERVAL, _PROJECT_API_TLS_MIN_VERSION_DEFAULT
+
 logger = logging.getLogger("juniper_cascor.api.workers.security")
 
 
@@ -33,7 +35,7 @@ class TLSConfig:
     key_file: str | None = None
     ca_file: str | None = None
     require_client_cert: bool = False
-    min_tls_version: str = "TLSv1.3"
+    min_tls_version: str = _PROJECT_API_TLS_MIN_VERSION_DEFAULT
 
     def build_ssl_context(self) -> ssl.SSLContext | None:
         """Build an SSL context for the server side.
@@ -98,7 +100,7 @@ class ConnectionRateLimiter:
         self,
         max_connections_per_minute: int = 10,
         burst_size: int = 3,
-        cleanup_interval: float = 300.0,
+        cleanup_interval: float = _PROJECT_API_RATE_LIMITER_CLEANUP_INTERVAL,
     ) -> None:
         self._max_rate = max_connections_per_minute
         self._burst = burst_size
@@ -196,8 +198,8 @@ class AnomalyDetector:
         self,
         min_training_time: float = 0.1,
         perfect_corr_threshold: float = 0.999,
-        stale_corr_threshold: float = 0.001,
-        duplicate_corr_window: int = 10,
+        stale_corr_threshold: float = _PROJECT_API_ANOMALY_STALE_CORR_THRESHOLD,
+        duplicate_corr_window: int = _PROJECT_API_ANOMALY_DUPLICATE_CORR_WINDOW,
     ) -> None:
         self._min_training_time = min_training_time
         self._perfect_threshold = perfect_corr_threshold

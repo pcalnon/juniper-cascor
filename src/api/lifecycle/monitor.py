@@ -13,6 +13,8 @@ from collections import deque
 from datetime import datetime
 from typing import Any, Callable, Dict, List, Optional
 
+from cascor_constants.constants_api import _PROJECT_API_METRICS_BUFFER_SIZE
+
 
 class TrainingState:
     """Thread-safe single source of truth for all training state.
@@ -148,7 +150,7 @@ class TrainingMonitor:
     def __init__(self):
         self.logger = logging.getLogger(__name__)
 
-        self.metrics_buffer: deque = deque(maxlen=10000)
+        self.metrics_buffer: deque = deque(maxlen=_PROJECT_API_METRICS_BUFFER_SIZE)
         self.is_training = False
         self.current_epoch = 0
         self.current_hidden_units = 0

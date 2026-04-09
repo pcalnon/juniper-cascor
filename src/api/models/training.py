@@ -4,11 +4,13 @@ from typing import Any, Dict, List, Literal, Optional
 
 from pydantic import BaseModel, Field
 
+from cascor_constants.constants_api import _PROJECT_API_DATASET_SOURCE_DEFAULT, _PROJECT_API_MAX_DATASET_SAMPLES, _PROJECT_API_MAX_DATASET_TARGETS
+
 
 class DatasetSource(BaseModel):
     """Dataset source specification for training."""
 
-    source: str = Field("inline", description="Dataset source: 'inline' or 'juniper-data'")
+    source: str = Field(_PROJECT_API_DATASET_SOURCE_DEFAULT, description="Dataset source: 'inline' or 'juniper-data'")
     url: Optional[str] = Field(None, description="URL for juniper-data source")
     generator: Optional[str] = Field(None, description="Generator name (e.g., 'spiral')")
     params: Optional[Dict[str, Any]] = Field(None, description="Generator parameters")
@@ -21,10 +23,10 @@ class InlineDataset(BaseModel):
     For large datasets, use the juniper-data service.
     """
 
-    train_x: List[List[float]] = Field(..., max_length=100000, description="Training features (2D array)")
-    train_y: List[List[float]] = Field(..., max_length=100000, description="Training targets (2D array)")
-    val_x: Optional[List[List[float]]] = Field(None, max_length=100000, description="Validation features")
-    val_y: Optional[List[List[float]]] = Field(None, max_length=100000, description="Validation targets")
+    train_x: List[List[float]] = Field(..., max_length=_PROJECT_API_MAX_DATASET_SAMPLES, description="Training features (2D array)")
+    train_y: List[List[float]] = Field(..., max_length=_PROJECT_API_MAX_DATASET_TARGETS, description="Training targets (2D array)")
+    val_x: Optional[List[List[float]]] = Field(None, max_length=_PROJECT_API_MAX_DATASET_SAMPLES, description="Validation features")
+    val_y: Optional[List[List[float]]] = Field(None, max_length=_PROJECT_API_MAX_DATASET_TARGETS, description="Validation targets")
 
 
 class TrainingStartRequest(BaseModel):

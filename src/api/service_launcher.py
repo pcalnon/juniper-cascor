@@ -18,6 +18,8 @@ import subprocess  # nosec B404 — subprocess is the core purpose of this modul
 import urllib.request
 from pathlib import Path
 
+from cascor_constants.constants_api import _PROJECT_API_HEALTH_CHECK_HTTP_TIMEOUT, _PROJECT_API_PROCESS_TERMINATION_TIMEOUT, _PROJECT_API_SERVICE_DEFAULT_TERMINATE_TIMEOUT, _PROJECT_API_SERVICE_HEALTH_POLL_INTERVAL, _PROJECT_API_SERVICE_HEALTH_POLL_TIMEOUT, _PROJECT_API_SERVICE_TERMINATION_TIMEOUT
+
 logger = logging.getLogger("juniper_cascor.service_launcher")
 
 _active_services: list["ManagedService"] = []
@@ -39,7 +41,7 @@ class ManagedService:
     def is_running(self) -> bool:
         return self.process.poll() is None
 
-    def terminate(self, timeout: float = 10.0) -> None:
+    def terminate(self, timeout: float = _PROJECT_API_SERVICE_DEFAULT_TERMINATE_TIMEOUT) -> None:
         if not self.is_running():
             logger.debug(f"{self.name} already stopped (rc={self.process.returncode})")
             self._close_log()
@@ -52,7 +54,7 @@ class ManagedService:
         except subprocess.TimeoutExpired:
             logger.warning(f"{self.name} did not stop in {timeout}s, sending SIGKILL")
             self.process.kill()
-            self.process.wait(timeout=5)
+            self.process.wait(timeout=_PROJECT_API_PROCESS_TERMINATION_TIMEOUT)
             logger.info(f"{self.name} killed")
         self._close_log()
 
@@ -69,7 +71,7 @@ def _cleanup_at_exit() -> None:
     """Terminate all managed services on interpreter exit."""
     for svc in _active_services:
         try:
-            svc.terminate(timeout=5)
+            svc.terminate(timeout=_PROJECT_API_SERVICE_TERMINATION_TIMEOUT)
         except Exception:  # nosec B110 — cleanup must not propagate exceptions
             pass
 
@@ -89,8 +91,8 @@ def _resolve_log_dir() -> Path:
 
 async def wait_for_health(
     url: str,
-    timeout: float = 60.0,
-    interval: float = 2.0,
+    timeout: float = _PROJECT_API_SERVICE_HEALTH_POLL_TIMEOUT,
+    interval: float = _PROJECT_API_SERVICE_HEALTH_POLL_INTERVAL,
 ) -> bool:
     """Poll a health endpoint until it responds HTTP 200 or timeout expires."""
     import time
@@ -99,7 +101,7 @@ async def wait_for_health(
     while time.monotonic() < deadline:
         try:
             req = urllib.request.Request(url, method="GET")
-            with urllib.request.urlopen(req, timeout=5) as resp:  # nosec B310 — internal health check URL from configuration
+            with urllib.request.urlopen(req, timeout=_PROJECT_API_HEALTH_CHECK_HTTP_TIMEOUT) as resp:  # nosec B310 — internal health check URL from configuration
                 if resp.status == 200:
                     return True
         except Exception:  # nosec B110 — health poll retries on any exception
@@ -113,7 +115,7 @@ async def start_service(
     command: str,
     health_url: str,
     env_overrides: dict[str, str] | None = None,
-    health_timeout: float = 60.0,
+    health_timeout: float = _PROJECT_API_SERVICE_HEALTH_POLL_TIMEOUT,
 ) -> ManagedService | None:
     """Start a service as a subprocess and wait for it to become healthy.
 
