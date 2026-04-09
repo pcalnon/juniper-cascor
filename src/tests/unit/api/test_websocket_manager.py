@@ -164,6 +164,34 @@ class TestWebSocketManager:
         ws1.close.assert_awaited_once()
         ws2.close.assert_awaited_once()
 
+    @pytest.mark.asyncio
+    async def test_close_all_holds_lock_during_snapshot(self):
+        """close_all acquires the manager lock before snapshotting and
+        clearing the connection set (CR-025). This prevents a connect/
+        shutdown race where a new connection could be added to a partially
+        cleared set."""
+        import asyncio
+
+        mgr = WebSocketManager()
+        ws1 = AsyncMock()
+        await mgr.connect(ws1)
+
+        # Manually acquire the lock and verify close_all is blocked until
+        # released. If close_all bypassed the lock, it would proceed
+        # immediately and the wait_for below would NOT time out.
+        await mgr._lock.acquire()
+        try:
+            task = asyncio.create_task(mgr.close_all())
+            with pytest.raises(asyncio.TimeoutError):
+                await asyncio.wait_for(asyncio.shield(task), timeout=0.1)
+        finally:
+            mgr._lock.release()
+
+        # Once we release the lock, close_all completes.
+        await task
+        assert mgr.connection_count == 0
+        ws1.close.assert_awaited_once()
+
     def test_set_event_loop(self):
         """set_event_loop stores loop reference."""
         mgr = WebSocketManager()

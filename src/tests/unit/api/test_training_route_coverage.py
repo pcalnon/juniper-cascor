@@ -170,6 +170,38 @@ class TestStartTraining:
         assert response.status_code == 409
         assert "cannot be started" in response.json()["detail"].lower()
 
+    def test_start_training_filters_unwhitelisted_params(self, client_with_network):
+        """CR-023 regression: params outside the _ALLOWED_TRAINING_PARAMS
+        whitelist are filtered out (ignored with a warning) rather than
+        forwarded to lifecycle.start_training() as kwargs where they could
+        inject arbitrary behavior. Verifies by patching the lifecycle's
+        start_training and inspecting the forwarded kwargs directly."""
+        lifecycle = client_with_network.app.state.lifecycle
+        with patch.object(lifecycle, "start_training", wraps=lifecycle.start_training) as spy:
+            response = client_with_network.post(
+                "/v1/training/start",
+                json={
+                    "inline_data": {
+                        "train_x": [[0.1, 0.2], [0.3, 0.4], [0.5, 0.6], [0.7, 0.8]],
+                        "train_y": [[1.0, 0.0], [0.0, 1.0], [1.0, 0.0], [0.0, 1.0]],
+                    },
+                    "params": {
+                        "learning_rate": 0.01,  # whitelisted
+                        "evil_injection_key": "pwned",  # NOT whitelisted
+                        "__class__": "hack",  # NOT whitelisted
+                    },
+                    "epochs": 1,
+                },
+            )
+        assert response.status_code == 200
+        spy.assert_called_once()
+        forwarded_kwargs = spy.call_args.kwargs
+        # Whitelisted param made it through
+        assert forwarded_kwargs.get("learning_rate") == 0.01
+        # Non-whitelisted params are NOT forwarded to lifecycle.start_training()
+        assert "evil_injection_key" not in forwarded_kwargs
+        assert "__class__" not in forwarded_kwargs
+
 
 class TestPauseTraining:
     """Tests for POST /training/pause."""

@@ -136,10 +136,21 @@ class WebSocketManager:
             return False
 
     async def close_all(self) -> None:
-        """Close all active connections (used during shutdown)."""
-        for ws in self._active_connections.copy():
+        """Close all active connections (used during shutdown).
+
+        Holds ``self._lock`` around the set mutations so that a concurrent
+        ``connect()`` or ``disconnect()`` cannot race with shutdown and
+        corrupt the connection set (CR-025). The actual ``ws.close()`` calls
+        are issued against a snapshot taken under the lock, avoiding
+        deadlock risk from re-entering the lock via ``disconnect()`` on
+        exception paths.
+        """
+        async with self._lock:
+            snapshot = list(self._active_connections)
+            self._active_connections.clear()
+            self._connection_meta.clear()
+
+        for ws in snapshot:
             with contextlib.suppress(Exception):
                 await ws.close(code=1001, reason="Server shutting down")
-        self._active_connections.clear()
-        self._connection_meta.clear()
         logger.info("All WebSocket connections closed")
