@@ -270,3 +270,11 @@ _LOGGER_PREFIX_FILE_FORMAT_DICT = dict(zip(_LOGGER_PREFIX_FIELD_NAMES_FILE, _LOG
 _LOGGER_CONTENT_FORMAT_FILE = f"[{_LOGGER_CONTENT_LEVELNAME}] {_LOGGER_CONTENT_MESSAGE}"
 
 _LOGGER_CONTENT_FILE_FORMAT_DICT = dict(zip(_LOGGER_CONTENT_FIELD_NAMES_FILE, _LOGGER_CONTENT_FORMAT_FILE, strict=False))
+
+
+#####################################################################################################################################################################################################
+# Log Rotation and Observability Constants (api/observability.py)
+_LOGGER_LOG_FILE_MAX_BYTES: int = 10 * 1024 * 1024  # 10 MB
+_LOGGER_LOG_FILE_BACKUP_COUNT: int = 5
+_LOGGER_SENTRY_TRACES_SAMPLE_RATE: float = 1.0
+_LOGGER_PROMETHEUS_LATENCY_BUCKETS: tuple = (0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1.0, 2.5, 5.0, float("inf"))
