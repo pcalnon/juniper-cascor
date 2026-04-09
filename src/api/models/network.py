@@ -12,7 +12,7 @@ class NetworkCreateRequest(BaseModel):
     output_size: int = Field(2, ge=1, description="Number of output classes")
     learning_rate: float = Field(0.01, gt=0, description="Learning rate")
     candidate_learning_rate: float = Field(0.005, gt=0)
-    max_hidden_units: int = Field(10, ge=1)
+    max_hidden_units: int = Field(1000, ge=1, description="Maximum hidden units cap (aligned with _PROJECT_MODEL_MAX_HIDDEN_UNITS=1000 and canopy UI)")
     candidate_pool_size: int = Field(8, ge=1)
     correlation_threshold: float = Field(0.1, ge=0)
     patience: int = Field(5, ge=1)
