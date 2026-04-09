@@ -18,6 +18,13 @@ def client():
         yield c
 
 
+@pytest.fixture
+def client_with_network(client):
+    """Test client with a network already created via POST /v1/network."""
+    client.post("/v1/network", json={"input_size": 2, "output_size": 2})
+    return client
+
+
 @pytest.mark.unit
 class TestControlStreamHandler:
     """Test /ws/control WebSocket handler."""
@@ -103,4 +110,52 @@ class TestControlStreamHandler:
             ws.send_text(json.dumps({"action": "start"}))
             response = ws.receive_json()
             assert response["type"] == "command_response"
+            assert response["data"]["status"] == "error"
+
+    def test_set_params_updates_live_network(self, client_with_network):
+        """set_params command applies whitelisted params to the live network (CR-008)."""
+        with client_with_network.websocket_connect("/ws/control") as ws:
+            ws.receive_json()  # connection_established
+            ws.send_text(
+                json.dumps(
+                    {
+                        "command": "set_params",
+                        "params": {"learning_rate": 0.007, "max_iterations": 23},
+                    }
+                )
+            )
+            response = ws.receive_json()
+            assert response["type"] == "command_response"
+            assert response["data"]["command"] == "set_params"
+            assert response["data"]["status"] == "success"
+
+        lifecycle = client_with_network.app.state.lifecycle
+        assert lifecycle.network.learning_rate == pytest.approx(0.007)
+        assert lifecycle.network.max_iterations == 23
+
+    def test_set_params_without_params_dict_errors(self, client_with_network):
+        """set_params without a 'params' dict returns error."""
+        with client_with_network.websocket_connect("/ws/control") as ws:
+            ws.receive_json()  # connection_established
+            ws.send_text(json.dumps({"command": "set_params"}))
+            response = ws.receive_json()
+            assert response["type"] == "command_response"
+            assert response["data"]["command"] == "set_params"
+            assert response["data"]["status"] == "error"
+
+    def test_set_params_without_network_errors(self, client):
+        """set_params without a network returns error (update_params raises)."""
+        with client.websocket_connect("/ws/control") as ws:
+            ws.receive_json()  # connection_established
+            ws.send_text(
+                json.dumps(
+                    {
+                        "command": "set_params",
+                        "params": {"learning_rate": 0.01},
+                    }
+                )
+            )
+            response = ws.receive_json()
+            assert response["type"] == "command_response"
+            assert response["data"]["command"] == "set_params"
             assert response["data"]["status"] == "error"
