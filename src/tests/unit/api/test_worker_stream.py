@@ -85,13 +85,61 @@ class TestHandleRegistration:
 
     @pytest.mark.asyncio
     async def test_valid_registration(self, registry):
-        """Valid registration message registers the worker."""
+        """Valid registration message registers the worker with a
+        server-assigned ID, not the client-proposed one (CR-026)."""
         ws = AsyncMock()
         ws.receive_text = AsyncMock(return_value=json.dumps(WorkerProtocol.build_register("w1", {"cpu_cores": 4})))
 
         worker_id = await _handle_registration(ws, registry)
-        assert worker_id == "w1"
+        # Server assigns a UUID-based worker_id; client's "w1" proposal is ignored as identity
+        assert worker_id != "w1"
+        assert worker_id.startswith("worker-")
         assert registry.worker_count == 1
+        # Client-proposed name is retained as a display label only
+        reg = registry.get(worker_id)
+        assert reg is not None
+        assert reg.client_name == "w1"
+
+    @pytest.mark.asyncio
+    async def test_registration_ack_returns_server_assigned_id(self, registry):
+        """The registration_ack payload returns the server-assigned worker_id,
+        not the client's proposal (CR-026)."""
+        ws = AsyncMock()
+        ws.receive_text = AsyncMock(return_value=json.dumps(WorkerProtocol.build_register("my-cool-name", {"cpu_cores": 4})))
+
+        worker_id = await _handle_registration(ws, registry)
+        assert worker_id is not None
+        # The registration_ack send_json call receives the SERVER-ASSIGNED id
+        ack_call_args = None
+        for call in ws.send_json.call_args_list:
+            payload = call.args[0] if call.args else call.kwargs.get("payload")
+            if isinstance(payload, dict) and payload.get("type") == "registration_ack":
+                ack_call_args = payload
+                break
+        assert ack_call_args is not None, "No registration_ack sent"
+        assert ack_call_args["worker_id"] == worker_id
+        assert ack_call_args["worker_id"] != "my-cool-name"
+        assert ack_call_args["data"]["client_name"] == "my-cool-name"
+
+    @pytest.mark.asyncio
+    async def test_two_workers_with_same_client_name_get_distinct_ids(self, registry):
+        """Two workers proposing the same client-side name are assigned
+        distinct server IDs — impersonation is impossible (CR-026)."""
+        ws1 = AsyncMock()
+        ws1.receive_text = AsyncMock(return_value=json.dumps(WorkerProtocol.build_register("victim-worker", {"cpu_cores": 4})))
+        ws2 = AsyncMock()
+        ws2.receive_text = AsyncMock(return_value=json.dumps(WorkerProtocol.build_register("victim-worker", {"cpu_cores": 8})))
+
+        wid1 = await _handle_registration(ws1, registry)
+        wid2 = await _handle_registration(ws2, registry)
+
+        assert wid1 is not None and wid2 is not None
+        assert wid1 != wid2
+        assert registry.worker_count == 2
+        # Both workers retain their (identical) client_name for auditing,
+        # but the registry keys them by distinct server-assigned IDs.
+        assert registry.get(wid1).client_name == "victim-worker"
+        assert registry.get(wid2).client_name == "victim-worker"
 
     @pytest.mark.asyncio
     async def test_invalid_json(self, registry):
