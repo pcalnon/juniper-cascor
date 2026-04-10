@@ -5,6 +5,28 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- Hardcoded-values refactor (Wave 1): new `cascor_constants/constants_api/constants_api_defaults.py` module with 49 `_PROJECT_API_*` constants covering Pydantic field defaults for `NetworkCreateRequest` / `TrainingStartRequest`, lifecycle defaults, middleware body/rate-limit defaults, observability defaults, TLS minimum versions, decision-boundary resolution bounds, juniper-data integration timeouts, and inter-service URL templates. Existing constants modules (model, candidates, hdf5, logging) extended where needed.
+
+### Changed
+
+- Hardcoded-values refactor (Wave 2): replaced ~58 inline literals across 10 api-layer files (`api/app.py`, `api/lifecycle/manager.py`, `api/lifecycle/monitor.py`, `api/middleware.py`, `api/models/network.py`, `api/models/training.py`, `api/observability.py`, `api/routes/decision_boundary.py`, `api/service_launcher.py`, `api/workers/security.py`) with imports from `cascor_constants.constants_api.constants_api_defaults`.
+- Hardcoded-values refactor (Wave 3): replaced 4 inline literals in `src/candidate_unit/candidate_unit.py` and `src/snapshots/snapshot_serializer.py` with constants from `cascor_constants.constants_model` and `cascor_constants.constants_hdf5`.
+- AGENTS.md "Constants Configuration" section updated to document the new `constants_api/` submodule and the cross-repo alignment requirements verified by Wave 5 (Pydantic field/constants alignment, worker protocol bit-identity with `juniper-cascor-worker` and `juniper-cascor-client`, `X-API-Key` literal alignment, binary-frame format alignment).
+
+### Fixed
+
+- Removed an unused `epoch_trained_candidate` return-value assignment in `src/candidate_unit/candidate_unit.py` that flake8 had been flagging as F841 (the side-effecting `_update_weights_and_bias` call is preserved). This was a surgical fix needed to keep pre-commit clean for the Wave 3 commit.
+
+### Notes
+
+- All Wave 5 cross-repo alignment checks pass: `MessageType` ↔ `MSG_TYPE_*` constants in `juniper-cascor-worker` and `juniper-cascor-client` are bit-identical; `_PROJECT_API_NETWORK_*_DEFAULT` values match `NetworkCreateRequest.model_fields[*].default` exactly (`input_size=2`, `output_size=2`, `learning_rate=0.01`, `max_hidden_units=10`, `epochs_max=200`, etc.).
+- All api-unit and unit pytest suites pass without modification; pre-commit on the 12 files this branch modifies is clean.
+- No public API changes; REST request/response shapes, WebSocket message formats, and the binary frame protocol are unchanged.
+
 ## [0.4.0] - 2026-03-03
 
 **Summary**: Comprehensive security hardening — security headers, request body limits, error sanitization, restrictive CORS/rate limiting defaults, WebSocket authentication and message validation, HMAC pickle verification, /metrics auth, conditional docs, CI hardening, and scheduled security scanning.
