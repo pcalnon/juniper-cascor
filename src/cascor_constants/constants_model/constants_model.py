@@ -203,8 +203,10 @@ _PROJECT_MODEL_LEARNING_RATE = 0.05
 #####################################################################################################################################################################################################
 # Define constants for the Cascade Correlation Network training parameters, Output Epochs
 # _PROJECT_MODEL_EPOCHS_MAX = 10000
-_PROJECT_MODEL_EPOCHS_MAX = 1000000000
-_PROJECT_MODEL_MAX_ITERATIONS = 1000
+# _PROJECT_MODEL_EPOCHS_MAX = 1000000000
+_PROJECT_MODEL_EPOCHS_MAX = 100000000000
+# _PROJECT_MODEL_MAX_ITERATIONS = 1000
+_PROJECT_MODEL_MAX_ITERATIONS = 1000000
 
 #####################################################################################################################################################################################################
 # Define constants for the Cascade Correlation Network training parameters, Output Weight Initialization
@@ -338,7 +340,7 @@ _PROJECT_MODEL_OUTPUT_EPOCHS = 10000
 # _PROJECT_MODEL_MAX_HIDDEN_UNITS = 85
 # _PROJECT_MODEL_MAX_HIDDEN_UNITS = 90
 # _PROJECT_MODEL_MAX_HIDDEN_UNITS = 95
-_PROJECT_MODEL_MAX_HIDDEN_UNITS = 100
+# _PROJECT_MODEL_MAX_HIDDEN_UNITS = 100
 # _PROJECT_MODEL_MAX_HIDDEN_UNITS = 105
 # _PROJECT_MODEL_MAX_HIDDEN_UNITS = 110
 # _PROJECT_MODEL_MAX_HIDDEN_UNITS = 115
@@ -403,6 +405,7 @@ _PROJECT_MODEL_MAX_HIDDEN_UNITS = 100
 # _PROJECT_MODEL_MAX_HIDDEN_UNITS = 2000
 # _PROJECT_MODEL_MAX_HIDDEN_UNITS = 2500
 # _PROJECT_MODEL_MAX_HIDDEN_UNITS = 3000
+_PROJECT_MODEL_MAX_HIDDEN_UNITS = 10000
 
 
 #####################################################################################################################################################################################################

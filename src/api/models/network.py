@@ -12,14 +12,14 @@ class NetworkCreateRequest(BaseModel):
     output_size: int = Field(2, ge=1, description="Number of output classes")
     learning_rate: float = Field(0.01, gt=0, description="Learning rate")
     candidate_learning_rate: float = Field(0.005, gt=0)
-    max_hidden_units: int = Field(1000, ge=1, description="Maximum hidden units cap (aligned with _PROJECT_MODEL_MAX_HIDDEN_UNITS=1000 and canopy UI)")
+    max_hidden_units: int = Field(10000, ge=1, description="Maximum hidden units cap (raised to 10,000 per canopy requirements 2026-04-10)")
     candidate_pool_size: int = Field(8, ge=1)
     correlation_threshold: float = Field(0.1, ge=0)
     patience: int = Field(5, ge=1)
     candidate_epochs: int = Field(50, ge=1)
     output_epochs: int = Field(25, ge=1)
-    epochs_max: int = Field(1000000, ge=1, description="Global maximum training epochs (aligned with canopy nn_max_total_epochs default of 1,000,000)")
-    max_iterations: int = Field(1000, ge=1, description="Maximum cascade growth iterations")
+    epochs_max: int = Field(100000000000, ge=1, description="Global maximum training epochs (raised to 100,000,000,000 per canopy requirements 2026-04-10)")
+    max_iterations: int = Field(1000000, ge=1, description="Maximum cascade growth iterations (raised to 1,000,000 per canopy requirements 2026-04-10)")
     init_output_weights: Literal["zero", "random"] = Field("zero", description="Initialization mode for new hidden unit output weights")
 
 
