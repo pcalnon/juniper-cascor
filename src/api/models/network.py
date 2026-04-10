@@ -18,7 +18,7 @@ class NetworkCreateRequest(BaseModel):
     patience: int = Field(5, ge=1)
     candidate_epochs: int = Field(50, ge=1)
     output_epochs: int = Field(25, ge=1)
-    epochs_max: int = Field(200, ge=1)
+    epochs_max: int = Field(1000000, ge=1, description="Global maximum training epochs (aligned with canopy nn_max_total_epochs default of 1,000,000)")
     max_iterations: int = Field(1000, ge=1, description="Maximum cascade growth iterations")
     init_output_weights: Literal["zero", "random"] = Field("zero", description="Initialization mode for new hidden unit output weights")
 

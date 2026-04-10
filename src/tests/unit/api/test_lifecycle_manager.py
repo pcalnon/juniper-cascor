@@ -66,6 +66,21 @@ class TestLifecycleManagerNetwork:
         assert state["max_epochs"] == 11
         assert state["max_iterations"] == 4
 
+    def test_create_network_epochs_max_default_aligned_with_canopy(self):
+        """Phase 1 deferred item: epochs_max default must be 1,000,000 to match
+        canopy's nn_max_total_epochs default. Aligning the API model with the
+        canopy UI prevents the silent 200-epoch cap that surprised users when
+        they didn't pass epochs_max explicitly. See juniper-ml/notes/code-review/
+        CANOPY_CASCOR_INTERFACE_ROADMAP_2026-04-08.md §3.5 for the deferral
+        rationale.
+        """
+        mgr = TrainingLifecycleManager()
+        mgr.create_network(input_size=2, output_size=2)
+        state = mgr.training_state.get_state()
+        assert state["max_epochs"] == 1000000, (
+            f"epochs_max default should be 1,000,000 to match canopy; got {state['max_epochs']}"
+        )
+
     def test_get_training_params_no_network(self):
         """Training params returns empty dict without network."""
         mgr = TrainingLifecycleManager()
