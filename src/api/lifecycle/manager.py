@@ -172,11 +172,12 @@ class TrainingLifecycleManager:
                 status="Stopped",
                 phase="Idle",
                 learning_rate=kwargs.get("learning_rate", 0.01),
-                max_hidden_units=kwargs.get("max_hidden_units", 1000),
-                # epochs_max default aligned with canopy nn_max_total_epochs (1,000,000) — see
+                max_hidden_units=kwargs.get("max_hidden_units", 10000),
+                # Training-limit defaults raised per canopy requirements (2026-04-10):
+                # epochs_max=1e11, max_iterations=1e6, max_hidden_units=1e4. See
                 # juniper-ml/notes/code-review/CANOPY_CASCOR_INTERFACE_ROADMAP_2026-04-08.md §3.5
-                max_epochs=kwargs.get("epochs_max", 1000000),
-                max_iterations=kwargs.get("max_iterations", 1000),
+                max_epochs=kwargs.get("epochs_max", 100000000000),
+                max_iterations=kwargs.get("max_iterations", 1000000),
                 network_name=f"CasCor-{kwargs.get('input_size', 2)}x{kwargs.get('output_size', 2)}",
             )
 

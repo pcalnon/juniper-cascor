@@ -66,20 +66,24 @@ class TestLifecycleManagerNetwork:
         assert state["max_epochs"] == 11
         assert state["max_iterations"] == 4
 
-    def test_create_network_epochs_max_default_aligned_with_canopy(self):
-        """Phase 1 deferred item: epochs_max default must be 1,000,000 to match
-        canopy's nn_max_total_epochs default. Aligning the API model with the
-        canopy UI prevents the silent 200-epoch cap that surprised users when
-        they didn't pass epochs_max explicitly. See juniper-ml/notes/code-review/
-        CANOPY_CASCOR_INTERFACE_ROADMAP_2026-04-08.md §3.5 for the deferral
-        rationale.
+    def test_create_network_training_limit_defaults_aligned_with_canopy(self):
+        """Phase 1 deferred item (revised 2026-04-10): training-limit defaults
+        must match the canopy / requirements-spec values:
+
+        - epochs_max          = 100,000,000,000  (1e11, raised from 1e6)
+        - max_iterations      =       1,000,000  (1e6, raised from 1e3)
+        - max_hidden_units    =          10,000  (1e4, raised from 1e3)
+
+        These caps are intentionally large so the user, not the API model,
+        chooses when to stop. See juniper-ml/notes/code-review/
+        CANOPY_CASCOR_INTERFACE_ROADMAP_2026-04-08.md §3.5.
         """
         mgr = TrainingLifecycleManager()
         mgr.create_network(input_size=2, output_size=2)
         state = mgr.training_state.get_state()
-        assert state["max_epochs"] == 1000000, (
-            f"epochs_max default should be 1,000,000 to match canopy; got {state['max_epochs']}"
-        )
+        assert state["max_epochs"] == 100000000000, f"epochs_max default should be 1e11; got {state['max_epochs']}"
+        assert state["max_iterations"] == 1000000, f"max_iterations default should be 1e6; got {state['max_iterations']}"
+        assert state["max_hidden_units"] == 10000, f"max_hidden_units default should be 1e4; got {state['max_hidden_units']}"
 
     def test_get_training_params_no_network(self):
         """Training params returns empty dict without network."""
