@@ -70,6 +70,7 @@ from cascor_constants.constants import (  # _CANDIDATE_UNIT_POOL_SIZE,  # pyrigh
     _CANDIDATE_UNIT_SEQUENCE_MAX_VALUE,
     _CANDIDATE_UNIT_STATUS_FREQUENCY,
 )
+from cascor_constants.constants_candidates.constants_candidates import _PROJECT_MODEL_CANDIDATE_MAX_ROLL_COUNT, _PROJECT_MODEL_CANDIDATE_RANDOM_MAX_VALUE  # pyright: ignore[reportMissingImports]
 from log_config.logger.logger import Logger  # pyright: ignore[reportMissingImports]
 from utils.utils import display_progress  # pyright: ignore[reportMissingImports]
 
@@ -293,7 +294,7 @@ class CandidateUnit:
         self.logger.verbose(f"CandidateUnit: _initialize_randomness: Random seed set to: {seed}")
         # max_value = max_value or _CANDIDATE_UNIT_RANDOM_MAX_VALUE
         # max_value = 10000
-        max_value = max_value or 10  # Using a small max value to limit the number of random calls needed to roll to the desired sequence
+        max_value = max_value or _PROJECT_MODEL_CANDIDATE_RANDOM_MAX_VALUE  # Using a small max value to limit the number of random calls needed to roll to the desired sequence
         self.logger.verbose(f"CandidateUnit: _initialize_randomness: Random max value set to: {max_value}")
         self._seed_random_generator(seed=seed, max_value=max_value, seeder=np.random.seed, generator=np.random.randint)
         self.logger.trace("CandidateUnit: _initialize_randomness: Completed initialization of numpy random generator with seed and sequence for the candidate unit")
@@ -367,7 +368,7 @@ class CandidateUnit:
             # OLD (can cause OOM if sequence is large - up to 2^32-1):
             # discard = [generator(0, max_value) for _ in range(sequence)]
             # NEW: Loop without storing, and cap roll count to prevent excessive iterations
-            MAX_ROLL_COUNT = 10000
+            MAX_ROLL_COUNT = _PROJECT_MODEL_CANDIDATE_MAX_ROLL_COUNT
             roll_count = min(sequence, MAX_ROLL_COUNT) if sequence else 0
             for _ in range(roll_count):
                 generator(0, max_value)
@@ -587,7 +588,7 @@ class CandidateUnit:
                 numerator=candidate_training_result.numerator,
                 denominator=candidate_training_result.denominator,
             )
-            epoch_trained_candidate = self._update_weights_and_bias(candidate_parameters_update=candidate_parameters_update)
+            self._update_weights_and_bias(candidate_parameters_update=candidate_parameters_update)
             if _log_debug:
                 self.logger.debug("CandidateUnit: train: Epoch %d: weights shape: %s", epoch + 1, self.weights.shape)
 
