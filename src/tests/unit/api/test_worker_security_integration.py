@@ -356,7 +356,8 @@ class TestWorkerMetricsIntegration:
 
     @pytest.mark.asyncio
     async def test_metrics_track_register_and_deregister(self):
-        """Worker metrics records on_register and on_deregister."""
+        """Worker metrics records on_register and on_deregister keyed by the
+        server-assigned worker_id (CR-026), not the client-proposed name."""
         metrics = WorkerMetrics()
         registry = WorkerRegistry(heartbeat_timeout=30.0)
         coordinator = WorkerCoordinator(registry=registry, task_reassignment_timeout=5.0)
@@ -376,11 +377,21 @@ class TestWorkerMetricsIntegration:
 
         await worker_stream_handler(ws)
 
-        worker_data = metrics.get_worker_metrics("w1")
+        # Metrics are keyed by the server-assigned ID, not "w1". Find the
+        # single registered worker via the metrics snapshot.
+        all_metrics = metrics.get_all_metrics()
+        assert len(all_metrics) == 1
+        server_id = all_metrics[0]["worker_id"]
+        assert server_id != "w1"
+        assert server_id.startswith("worker-")
+
+        worker_data = metrics.get_worker_metrics(server_id)
         assert worker_data is not None
-        assert worker_data["worker_id"] == "w1"
+        assert worker_data["worker_id"] == server_id
         assert worker_data["source_ip"] == "127.0.0.1"
         assert worker_data["deregistered_at"] is not None
+        # The stale lookup by client name must NOT return anything.
+        assert metrics.get_worker_metrics("w1") is None
         coordinator.shutdown()
 
 

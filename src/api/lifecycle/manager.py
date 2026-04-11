@@ -667,19 +667,28 @@ class TrainingLifecycleManager:
         return result
 
     def get_training_params(self) -> Dict[str, Any]:
-        """Get current training parameters."""
+        """Get current training parameters.
+
+        Returns every field listed in ``update_params``' ``updatable_keys`` so that
+        clients reconciling UI state after a reconnect observe the live network
+        values rather than falling back to stale defaults.
+        """
         if self.network is None:
             return {}
         return {
             "learning_rate": getattr(self.network, "learning_rate", 0.0),
+            "candidate_learning_rate": getattr(self.network, "candidate_learning_rate", 0.0),
             "max_hidden_units": getattr(self.network, "max_hidden_units", 0),
             "epochs_max": getattr(self.network, "epochs_max", 0),
+            "max_iterations": getattr(self.network, "max_iterations", 0),
             "patience": getattr(self.network, "patience", 0),
             "candidate_pool_size": getattr(self.network, "candidate_pool_size", 0),
             "correlation_threshold": getattr(self.network, "correlation_threshold", 0.0),
             "convergence_threshold": getattr(self.network, "convergence_threshold", 0.001),
             "candidate_patience": getattr(self.network, "candidate_patience", _PROJECT_API_LIFECYCLE_DEFAULT_CANDIDATE_PATIENCE),
             "candidate_convergence_threshold": getattr(self.network, "candidate_convergence_threshold", 0.001),
+            "candidate_epochs": getattr(self.network, "candidate_epochs", 0),
+            "init_output_weights": getattr(self.network, "init_output_weights", "zero"),
         }
 
     def update_params(self, params: Dict[str, Any]) -> Dict[str, Any]:

@@ -66,6 +66,25 @@ class TestLifecycleManagerNetwork:
         assert state["max_epochs"] == 11
         assert state["max_iterations"] == 4
 
+    def test_create_network_training_limit_defaults_aligned_with_canopy(self):
+        """Phase 1 deferred item (revised 2026-04-10): training-limit defaults
+        must match the canopy / requirements-spec values:
+
+        - epochs_max          = 100,000,000,000  (1e11, raised from 1e6)
+        - max_iterations      =       1,000,000  (1e6, raised from 1e3)
+        - max_hidden_units    =          10,000  (1e4, raised from 1e3)
+
+        These caps are intentionally large so the user, not the API model,
+        chooses when to stop. See juniper-ml/notes/code-review/
+        CANOPY_CASCOR_INTERFACE_ROADMAP_2026-04-08.md §3.5.
+        """
+        mgr = TrainingLifecycleManager()
+        mgr.create_network(input_size=2, output_size=2)
+        state = mgr.training_state.get_state()
+        assert state["max_epochs"] == 100000000000, f"epochs_max default should be 1e11; got {state['max_epochs']}"
+        assert state["max_iterations"] == 1000000, f"max_iterations default should be 1e6; got {state['max_iterations']}"
+        assert state["max_hidden_units"] == 10000, f"max_hidden_units default should be 1e4; got {state['max_hidden_units']}"
+
     def test_get_training_params_no_network(self):
         """Training params returns empty dict without network."""
         mgr = TrainingLifecycleManager()
@@ -83,6 +102,31 @@ class TestLifecycleManagerNetwork:
         params = mgr.get_training_params()
         assert params["learning_rate"] == 0.01
         assert params["max_hidden_units"] == 10
+
+    def test_get_training_params_returns_all_updatable_keys(self):
+        """Every key in update_params' updatable_keys whitelist must be present in
+        the get_training_params response so clients reconciling after reconnect
+        observe live values instead of stale defaults (NEW-03)."""
+        mgr = TrainingLifecycleManager()
+        mgr.create_network(input_size=2, output_size=2)
+        params = mgr.get_training_params()
+        expected_keys = {
+            "learning_rate",
+            "candidate_learning_rate",
+            "correlation_threshold",
+            "candidate_pool_size",
+            "max_hidden_units",
+            "epochs_max",
+            "max_iterations",
+            "patience",
+            "convergence_threshold",
+            "candidate_convergence_threshold",
+            "candidate_patience",
+            "candidate_epochs",
+            "init_output_weights",
+        }
+        missing = expected_keys - params.keys()
+        assert not missing, f"get_training_params missing updatable keys: {missing}"
 
     def test_shutdown(self):
         """Shutdown cleans up resources."""

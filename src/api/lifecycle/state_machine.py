@@ -214,7 +214,19 @@ class TrainingStateMachine:
         return False
 
     def get_state_summary(self) -> dict:
-        """Get current state as dictionary."""
+        """Get current state as dictionary.
+
+        Values for ``status``, ``phase``, and ``paused_phase`` are the UPPERCASE
+        Python enum ``.name`` attributes (e.g. ``"STOPPED"``, ``"OUTPUT"``). This
+        is intentional and asymmetric with ``TrainingState.get_state()`` which
+        emits title-case values (e.g. ``"Stopped"``, ``"Output"``) sourced from
+        string fields written by the lifecycle manager.
+
+        Both shapes are included in the ``get_status()`` response body (as
+        ``data.state_machine`` and ``data.training_state`` respectively). Downstream
+        consumers must normalize case-insensitively; canopy's
+        ``backend/state_sync.py::_normalize_status`` is the reference implementation.
+        """
         return {
             "status": self._status.name,
             "phase": self._phase.name,

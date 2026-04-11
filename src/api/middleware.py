@@ -58,8 +58,18 @@ _MAX_REQUEST_BODY_BYTES = _PROJECT_API_MAX_REQUEST_BODY_BYTES
 class RequestBodyLimitMiddleware(BaseHTTPMiddleware):
     """Reject requests whose body exceeds a configurable limit.
 
-    Checks Content-Length header when present; for chunked transfer encoding
-    (no Content-Length), reads and measures the body incrementally.
+    The ``Content-Length`` header is used as an **early reject** fast path but
+    is not trusted as the sole size check (CR-024): a malicious client can
+    under-declare or omit the header and send an unbounded chunked stream.
+    For POST/PUT/PATCH requests we always stream-read the body with a
+    cumulative byte cap, aborting with HTTP 413 as soon as the cap is
+    exceeded. This prevents the classic chunked-encoding memory-exhaustion
+    bypass in which ``await request.body()`` would allocate the entire body
+    before any size check runs.
+
+    The fully-read body is cached on ``request._body`` so downstream FastAPI
+    route handlers can consume it via ``request.body()`` / ``request.json()``
+    / pydantic body parsing without triggering a second read.
     """
 
     def __init__(self, app: ASGIApp, max_bytes: int = _MAX_REQUEST_BODY_BYTES) -> None:
@@ -67,6 +77,8 @@ class RequestBodyLimitMiddleware(BaseHTTPMiddleware):
         self._max_bytes = max_bytes
 
     async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
+        # Fast-path early reject on declared Content-Length. Still untrusted
+        # as a floor, so the stream-read below enforces the real limit.
         content_length = request.headers.get("content-length")
         if content_length is not None and int(content_length) > self._max_bytes:
             return JSONResponse(status_code=_PROJECT_API_HTTP_413_PAYLOAD_TOO_LARGE, content={"detail": "Request body too large"})

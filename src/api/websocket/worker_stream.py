@@ -14,6 +14,7 @@ Wire protocol details: see api.workers.protocol module.
 
 import json
 import logging
+import uuid
 
 from fastapi import WebSocket, WebSocketDisconnect
 
@@ -118,8 +119,17 @@ async def worker_stream_handler(websocket: WebSocket) -> None:
 async def _handle_registration(websocket: WebSocket, registry: WorkerRegistry) -> str | None:
     """Wait for and process the worker registration message.
 
+    The worker proposes a ``worker_id`` in its REGISTER payload, but the
+    server does NOT trust it (CR-026). That field is treated as an
+    untrusted client-supplied display name and captured as ``client_name``
+    on the registration for audit logging only. The server generates a
+    fresh UUID as the authoritative ``worker_id`` and returns it to the
+    worker in the ``registration_ack`` payload. Workers must use the
+    server-assigned ID for any out-of-band references (audit logs,
+    metrics, dashboards).
+
     Returns:
-        The worker_id if registration succeeded, None otherwise.
+        The server-assigned worker_id if registration succeeded, None otherwise.
     """
     raw = await websocket.receive_text()
 
@@ -146,16 +156,21 @@ async def _handle_registration(websocket: WebSocket, registry: WorkerRegistry) -
         await websocket.close(code=4008, reason="Invalid registration")
         return None
 
-    worker_id = msg["worker_id"]
+    # CR-026: Client-supplied worker_id is treated as an untrusted display name
+    # (client_name) and discarded as an identity. Server generates an
+    # authoritative UUID.
+    client_name = msg["worker_id"]
     capabilities = msg["capabilities"]
+    worker_id = f"worker-{uuid.uuid4().hex[:12]}"
 
-    registry.register(worker_id, capabilities)
+    registry.register(worker_id, capabilities, client_name=client_name)
+    logger.info("Worker registered with server ID %s (client_name=%s)", worker_id, client_name)
 
     await websocket.send_json(
         {
             "type": "registration_ack",
             "worker_id": worker_id,
-            "data": {"status": "registered"},
+            "data": {"status": "registered", "client_name": client_name},
         }
     )
 

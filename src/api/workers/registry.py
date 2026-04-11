@@ -15,7 +15,15 @@ logger = logging.getLogger("juniper_cascor.api.workers.registry")
 
 @dataclass
 class WorkerRegistration:
-    """Tracks a single connected worker."""
+    """Tracks a single connected worker.
+
+    The ``worker_id`` field is the server-assigned authoritative identity
+    (see ``WorkerRegistry.register``). The optional ``client_name`` captures
+    the worker's self-proposed display name for audit logging and operator
+    debugging — it is never used as an identity and two workers may report
+    the same ``client_name`` without collision because their ``worker_id``
+    values are independently generated.
+    """
 
     worker_id: str
     capabilities: dict[str, Any] = field(default_factory=dict)
@@ -24,6 +32,7 @@ class WorkerRegistration:
     tasks_completed: int = 0
     tasks_failed: int = 0
     active_task_id: str | None = None
+    client_name: str | None = None
 
     @property
     def health_score(self) -> float:
@@ -75,12 +84,24 @@ class WorkerRegistry:
         with self._lock:
             return sum(1 for w in self._workers.values() if w.idle and w.is_alive(self._heartbeat_timeout))
 
-    def register(self, worker_id: str, capabilities: dict[str, Any]) -> WorkerRegistration:
+    def register(
+        self,
+        worker_id: str,
+        capabilities: dict[str, Any],
+        client_name: str | None = None,
+    ) -> WorkerRegistration:
         """Register a worker. Replaces any existing registration for the same ID.
 
+        The ``worker_id`` must be a server-assigned authoritative identity
+        (see ``api.websocket.worker_stream._handle_registration``), not a
+        client-supplied value. Callers are responsible for generating the
+        server-side identity before calling this method.
+
         Args:
-            worker_id: Unique worker identifier.
+            worker_id: Server-assigned unique worker identifier (e.g. a UUID).
             capabilities: Worker capability metadata.
+            client_name: Optional client-proposed display name for audit
+                logging. Never used as identity.
 
         Returns:
             The new WorkerRegistration.
@@ -88,9 +109,14 @@ class WorkerRegistry:
         with self._lock:
             if worker_id in self._workers:
                 logger.warning("Worker %s re-registering (replacing existing connection)", worker_id)
-            reg = WorkerRegistration(worker_id=worker_id, capabilities=capabilities)
+            reg = WorkerRegistration(worker_id=worker_id, capabilities=capabilities, client_name=client_name)
             self._workers[worker_id] = reg
-            logger.info("Worker registered: %s (total: %d)", worker_id, len(self._workers))
+            logger.info(
+                "Worker registered: %s (client_name=%s, total=%d)",
+                worker_id,
+                client_name or "<none>",
+                len(self._workers),
+            )
             return reg
 
     def deregister(self, worker_id: str) -> WorkerRegistration | None:
