@@ -38,10 +38,7 @@ def wait_for_state(client, expected_states, *, timeout=5.0, poll_interval=0.1):
         if sm_status in {s.upper() for s in expected_states}:
             return data
         time.sleep(poll_interval)
-    raise TimeoutError(
-        f"Training state did not reach {expected_states} within {timeout}s. "
-        f"Last status: {sm_status}"
-    )
+    raise TimeoutError(f"Training state did not reach {expected_states} within {timeout}s. " f"Last status: {sm_status}")
 
 
 @pytest.fixture

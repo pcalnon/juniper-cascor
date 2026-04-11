@@ -23,15 +23,12 @@ from unittest.mock import MagicMock, patch
 import pytest
 import torch
 
-from cascade_correlation.cascade_correlation import (
-    CascadeCorrelationNetwork,
-    SharedTrainingMemory,
-)
-
+from cascade_correlation.cascade_correlation import CascadeCorrelationNetwork, SharedTrainingMemory
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _make_network(**kwargs):
     """Create a minimal CascadeCorrelationNetwork for testing."""
@@ -171,7 +168,11 @@ class TestCollectWorkerResults:
         round_id = str(uuid.uuid4())
 
         results = net._collect_worker_results(
-            workers, result_queue, tasks, sleepytime=0.01, round_id=round_id,
+            workers,
+            result_queue,
+            tasks,
+            sleepytime=0.01,
+            round_id=round_id,
         )
 
         assert len(results) == 2
@@ -202,7 +203,11 @@ class TestCollectWorkerResults:
         tasks = [("task0",), ("task1",)]
 
         results = net._collect_worker_results(
-            workers, result_queue, tasks, sleepytime=0.01, round_id="test-round",
+            workers,
+            result_queue,
+            tasks,
+            sleepytime=0.01,
+            round_id="test-round",
         )
 
         assert len(results) == 2
