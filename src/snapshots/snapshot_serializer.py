@@ -22,6 +22,7 @@ import torch
 # Add parent directories for imports
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from cascor_constants.constants_hdf5.constants_hdf5 import _HDF5_FORMAT_NAME_CURRENT, _HDF5_FORMAT_NAME_LEGACY
 from log_config.logger.logger import Logger
 from utils.activation import ActivationWithDerivative
 
@@ -47,7 +48,7 @@ class CascadeHDF5Serializer:
         self.logger = logger or Logger
         self.version = "2.0.0"
         self.format_version = "2"
-        self.format_name = "juniper.cascor"
+        self.format_name = _HDF5_FORMAT_NAME_CURRENT
 
     def save_network(
         self,
@@ -1074,8 +1075,8 @@ class CascadeHDF5Serializer:
             format_name = read_str_attr(hdf5_file, "format")
             if format_name not in [
                 self.format_name,
-                "cascor_hdf5_v1",
-                "juniper.cascor",
+                _HDF5_FORMAT_NAME_LEGACY,
+                _HDF5_FORMAT_NAME_CURRENT,
             ]:
                 self.logger.error(f"Invalid format: {format_name}")
                 return False

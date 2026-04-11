@@ -26,6 +26,7 @@ from api.websocket.training_stream import training_stream_handler
 from api.websocket.worker_stream import worker_stream_handler
 from api.workers.coordinator import WorkerCoordinator
 from api.workers.registry import WorkerRegistry
+from cascor_constants.constants_api import _PROJECT_API_CANOPY_DEMO_MODE_DISABLED, _PROJECT_API_CANOPY_HEALTH_CHECK_URL, _PROJECT_API_CANOPY_STARTUP_CHECK_INTERVAL, _PROJECT_API_CANOPY_STARTUP_WAIT_TIMEOUT, _PROJECT_API_JUNIPER_DATA_READY_TIMEOUT, _PROJECT_API_JUNIPER_DATA_URL_DEFAULT, _PROJECT_API_SELF_HEALTH_CHECK_URL_TEMPLATE
 
 _API_VERSION: str = "0.4.0"
 
@@ -109,7 +110,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     if settings.auto_start_data_service:
         from api.service_launcher import start_service
 
-        data_url = os.environ.get("JUNIPER_DATA_URL", "http://localhost:8100")
+        data_url = os.environ.get("JUNIPER_DATA_URL", _PROJECT_API_JUNIPER_DATA_URL_DEFAULT)
         logger.info("Auto-start juniper-data service is ENABLED")
         svc = await start_service(
             name="juniper-data",
@@ -173,16 +174,16 @@ async def _auto_start_training(app: FastAPI, settings: Settings) -> None:
     try:
         from juniper_data_client import JuniperDataClient
 
-        data_url = os.environ.get("JUNIPER_DATA_URL", "http://localhost:8100")
+        data_url = os.environ.get("JUNIPER_DATA_URL", _PROJECT_API_JUNIPER_DATA_URL_DEFAULT)
         api_key = get_secret("JUNIPER_DATA_API_KEY")
 
         client = JuniperDataClient(base_url=data_url, api_key=api_key)
 
         # Wait for JuniperData service
         logger.info(f"Auto-start: waiting for JuniperData at {data_url}")
-        ready = await asyncio.to_thread(client.wait_for_ready, timeout=60)
+        ready = await asyncio.to_thread(client.wait_for_ready, timeout=_PROJECT_API_JUNIPER_DATA_READY_TIMEOUT)
         if not ready:
-            logger.error("Auto-start failed: JuniperData not ready after 60s")
+            logger.error(f"Auto-start failed: JuniperData not ready after {_PROJECT_API_JUNIPER_DATA_READY_TIMEOUT}s")
             return
 
         # Create dataset via JuniperData
@@ -234,16 +235,16 @@ async def _auto_start_canopy(
     try:
         from api.service_launcher import start_service, wait_for_health
 
-        own_url = f"http://localhost:{settings.port}/v1/health"
+        own_url = _PROJECT_API_SELF_HEALTH_CHECK_URL_TEMPLATE.format(port=settings.port)
         logger.info(f"Auto-start canopy: waiting for cascor at {own_url}")
-        ready = await wait_for_health(own_url, timeout=30.0, interval=1.0)
+        ready = await wait_for_health(own_url, timeout=_PROJECT_API_CANOPY_STARTUP_WAIT_TIMEOUT, interval=_PROJECT_API_CANOPY_STARTUP_CHECK_INTERVAL)
         if not ready:
-            logger.error("Auto-start canopy: cascor did not become healthy in 30s, aborting")
+            logger.error(f"Auto-start canopy: cascor did not become healthy in {_PROJECT_API_CANOPY_STARTUP_WAIT_TIMEOUT}s, aborting")
             return
 
-        data_url = os.environ.get("JUNIPER_DATA_URL", "http://localhost:8100")
+        data_url = os.environ.get("JUNIPER_DATA_URL", _PROJECT_API_JUNIPER_DATA_URL_DEFAULT)
         canopy_env = {
-            "JUNIPER_CANOPY_DEMO_MODE": "false",
+            "JUNIPER_CANOPY_DEMO_MODE": _PROJECT_API_CANOPY_DEMO_MODE_DISABLED,
             "JUNIPER_CANOPY_CASCOR_SERVICE_URL": f"http://localhost:{settings.port}",
             "JUNIPER_CANOPY_JUNIPER_DATA_URL": data_url,
         }
@@ -251,7 +252,7 @@ async def _auto_start_canopy(
         svc = await start_service(
             name="juniper-canopy",
             command=settings.auto_start_canopy_command,
-            health_url="http://localhost:8050/v1/health",
+            health_url=_PROJECT_API_CANOPY_HEALTH_CHECK_URL,
             env_overrides=canopy_env,
         )
         if svc:

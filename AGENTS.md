@@ -142,7 +142,7 @@ Juniper Cascor is an AI/ML research platform implementing the **Cascade Correlat
 
 ## Directory Structure
 
-```
+```text
 juniper-cascor/
 ├── src/                              # Application source code
 │   ├── main.py                       # CLI entry point (standalone training)
@@ -697,7 +697,7 @@ python -m snapshots.snapshot_cli list ./snapshots/
 
 ### Test Directory Structure
 
-```
+```text
 src/tests/
 ├── conftest.py                  # Global fixtures
 ├── pytest.ini                   # pytest configuration
@@ -900,6 +900,16 @@ Hierarchical structure in `src/cascor_constants/`:
 | `constants_logging/` | Logging formatters, handlers, levels |
 | `constants_problem/` | Problem-specific settings (spiral parameters) |
 | `constants_hdf5/` | Serialization paths and keys |
+| `constants_api/` | API-layer defaults — `constants_api_defaults.py` exposes 49 constants prefixed `_PROJECT_API_*` covering Pydantic field defaults for `NetworkCreateRequest` / `TrainingStartRequest`, lifecycle defaults, middleware body/rate-limit defaults, observability defaults, TLS minimum versions, decision-boundary resolution bounds, juniper-data integration timeouts, and inter-service URL templates |
+
+### Cross-repo alignment (Wave 5 verified)
+
+| Source of truth | Alignment requirement |
+|-----------------|-----------------------|
+| `cascor_constants/constants_api/constants_api_defaults.py` | `_PROJECT_API_NETWORK_*_DEFAULT` values must equal the corresponding `Field(default=...)` in `src/api/models/network.py` and `src/api/models/training.py` |
+| `src/api/workers/protocol.py` `MessageType(StrEnum)` | Canonical wire-protocol message types — `juniper-cascor-worker/constants.py` and `juniper-cascor-client/constants.py` mirror these strings bit-identically |
+| `src/api/security.py` `APIKeyHeader(name="X-API-Key")` | The literal `"X-API-Key"` is the canonical header name; all clients must use the same string |
+| `src/api/workers/protocol.py` `BinaryFrame.encode/decode` | Header struct format `<I` and dtype encoding `utf-8` define the binary frame layout — workers must use the same struct format and encoding |
 
 ---
 

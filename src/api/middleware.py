@@ -5,6 +5,8 @@ from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoin
 from starlette.responses import JSONResponse
 from starlette.types import ASGIApp
 
+from cascor_constants.constants_api import _PROJECT_API_HTTP_413_PAYLOAD_TOO_LARGE, _PROJECT_API_MAX_REQUEST_BODY_BYTES
+
 from .security import APIKeyAuth, RateLimiter
 
 EXEMPT_PATHS = {
@@ -47,7 +49,10 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         return response
 
 
-_MAX_REQUEST_BODY_BYTES = 10 * 1024 * 1024  # 10 MB
+# Module-level alias preserved for tests that import this name directly.
+# The canonical source of truth is
+# :data:`cascor_constants.constants_api._PROJECT_API_MAX_REQUEST_BODY_BYTES`.
+_MAX_REQUEST_BODY_BYTES = _PROJECT_API_MAX_REQUEST_BODY_BYTES
 
 
 class RequestBodyLimitMiddleware(BaseHTTPMiddleware):
@@ -75,27 +80,12 @@ class RequestBodyLimitMiddleware(BaseHTTPMiddleware):
         # Fast-path early reject on declared Content-Length. Still untrusted
         # as a floor, so the stream-read below enforces the real limit.
         content_length = request.headers.get("content-length")
-        if content_length is not None:
-            try:
-                declared = int(content_length)
-            except ValueError:
-                return JSONResponse(status_code=400, content={"detail": "Invalid Content-Length"})
-            if declared > self._max_bytes:
-                return JSONResponse(status_code=413, content={"detail": "Request body too large"})
-
-        if request.method in ("POST", "PUT", "PATCH"):
-            body_chunks: list[bytes] = []
-            total = 0
-            async for chunk in request.stream():
-                total += len(chunk)
-                if total > self._max_bytes:
-                    return JSONResponse(status_code=413, content={"detail": "Request body too large"})
-                body_chunks.append(chunk)
-            # Cache the body so downstream handlers don't re-read the (drained)
-            # stream. Starlette's Request.body() returns this cached value
-            # when _body is set.
-            request._body = b"".join(body_chunks)
-
+        if content_length is not None and int(content_length) > self._max_bytes:
+            return JSONResponse(status_code=_PROJECT_API_HTTP_413_PAYLOAD_TOO_LARGE, content={"detail": "Request body too large"})
+        if content_length is None and request.method in ("POST", "PUT", "PATCH"):
+            body = await request.body()
+            if len(body) > self._max_bytes:
+                return JSONResponse(status_code=_PROJECT_API_HTTP_413_PAYLOAD_TOO_LARGE, content={"detail": "Request body too large"})
         return await call_next(request)
 
 

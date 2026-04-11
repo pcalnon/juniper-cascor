@@ -415,3 +415,9 @@ _PROJECT_MODEL_DISPLAY_FREQUENCY = 10
 # _PROJECT_MODEL_DISPLAY_FREQUENCY = 8000
 # _PROJECT_MODEL_DISPLAY_FREQUENCY = 9000
 # _PROJECT_MODEL_DISPLAY_FREQUENCY = 10000
+
+
+#####################################################################################################################################################################################################
+# Candidate Unit Randomization Constants (candidate_unit/candidate_unit.py)
+_PROJECT_MODEL_CANDIDATE_RANDOM_MAX_VALUE: int = 10
+_PROJECT_MODEL_CANDIDATE_MAX_ROLL_COUNT: int = 10000

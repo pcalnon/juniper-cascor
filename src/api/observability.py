@@ -14,6 +14,8 @@ from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoin
 from starlette.requests import Request
 from starlette.responses import Response
 
+from cascor_constants.constants_logging.constants_logging import _LOGGER_LOG_FILE_BACKUP_COUNT, _LOGGER_LOG_FILE_MAX_BYTES, _LOGGER_PROMETHEUS_LATENCY_BUCKETS, _LOGGER_SENTRY_TRACES_SAMPLE_RATE
+
 request_id_var: ContextVar[str] = ContextVar("request_id", default="")
 
 _SERVICE_NAME_DEFAULT: str = "juniper-cascor"
@@ -147,8 +149,8 @@ def configure_logging(log_level: str, log_format: str, service_name: str = _SERV
     log_file = log_dir / "juniper_cascor.log"
     file_handler = RotatingFileHandler(
         str(log_file),
-        maxBytes=10 * 1024 * 1024,  # 10 MB
-        backupCount=5,
+        maxBytes=_LOGGER_LOG_FILE_MAX_BYTES,
+        backupCount=_LOGGER_LOG_FILE_BACKUP_COUNT,
         encoding="utf-8",
     )
     file_handler.setLevel(logging.DEBUG)
@@ -173,7 +175,7 @@ def configure_sentry(dsn: str | None, service_name: str, version: str) -> None:
         dsn=dsn,
         send_default_pii=True,
         enable_logs=True,
-        traces_sample_rate=1.0,
+        traces_sample_rate=_LOGGER_SENTRY_TRACES_SAMPLE_RATE,
         release=f"{service_name}@{version}",
     )
 
@@ -252,7 +254,7 @@ def _ensure_training_metrics() -> dict:
             "inference_duration_seconds": Histogram(
                 "juniper_cascor_inference_duration_seconds",
                 "Inference latency in seconds",
-                buckets=(0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1.0, 2.5, 5.0, float("inf")),
+                buckets=_LOGGER_PROMETHEUS_LATENCY_BUCKETS,
             ),
         }
     return _training_metrics

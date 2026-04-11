@@ -71,3 +71,9 @@ _HDF5_PROJECT_SNAPSHOTS_DIR = pathlib.Path(_HDF5_PROJECT_SOURCE_DIR).joinpath(_H
 # _HDF5_STORAGE_LOG_DIR = _CASCOR_SPIRAL_DATASET_LOG_DIR_DEFAULT
 # _HDF5_STORAGE_LOG_FILE_PATH = _CASCOR_SPIRAL_DATASET_LOG_FILE_PATH_DEFAULT
 # _HDF5_STORAGE_LOG_LEVEL = _CASCOR_SPIRAL_DATASET_LOG_LEVEL_DEFAULT
+
+
+#####################################################################################################################################################################################################
+# HDF5 Snapshot Format Identifiers (snapshots/snapshot_serializer.py)
+_HDF5_FORMAT_NAME_CURRENT: str = "juniper.cascor"
+_HDF5_FORMAT_NAME_LEGACY: str = "cascor_hdf5_v1"
