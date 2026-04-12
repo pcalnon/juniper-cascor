@@ -131,9 +131,17 @@ async def reset_training(request: Request) -> dict:
 
 @router.get("/status")
 async def get_status(request: Request) -> dict:
-    """Get current training status."""
+    """Get current training status with atomic snapshot_seq."""
     lifecycle = _get_lifecycle(request)
-    return success_response(lifecycle.get_status())
+    status = lifecycle.get_status()
+
+    ws_manager = getattr(request.app.state, "ws_manager", None)
+    if ws_manager is not None:
+        with ws_manager._seq_lock:
+            status["snapshot_seq"] = ws_manager._next_seq - 1
+            status["server_instance_id"] = ws_manager.server_instance_id
+
+    return success_response(status)
 
 
 @router.get("/params")

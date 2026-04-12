@@ -3,7 +3,7 @@
 from functools import lru_cache
 from typing import Any
 
-from pydantic import field_validator, model_validator
+from pydantic import AliasChoices, Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from api.secrets import get_secret
@@ -29,6 +29,23 @@ _JUNIPER_CASCOR_API_WS_MAX_CONNECTIONS_DEFAULT: int = _JUNIPER_CASCOR_API_WS_MAX
 
 _JUNIPER_CASCOR_API_WS_HEARTBEAT_INTERVAL_SEC: int = 30
 _JUNIPER_CASCOR_API_WS_HEARTBEAT_INTERVAL_SEC_DEFAULT: int = _JUNIPER_CASCOR_API_WS_HEARTBEAT_INTERVAL_SEC
+
+# Phase 0-cascor: WebSocket sequencing, replay, and resume settings
+# Env vars match canonical plan kill switch names (JUNIPER_WS_* prefix)
+_JUNIPER_CASCOR_API_WS_REPLAY_BUFFER_SIZE: int = 1024
+_JUNIPER_CASCOR_API_WS_REPLAY_BUFFER_SIZE_DEFAULT: int = _JUNIPER_CASCOR_API_WS_REPLAY_BUFFER_SIZE
+
+_JUNIPER_CASCOR_API_WS_SEND_TIMEOUT_SECONDS: float = 0.5
+_JUNIPER_CASCOR_API_WS_SEND_TIMEOUT_SECONDS_DEFAULT: float = _JUNIPER_CASCOR_API_WS_SEND_TIMEOUT_SECONDS
+
+_JUNIPER_CASCOR_API_WS_RESUME_HANDSHAKE_TIMEOUT_S: float = 5.0
+_JUNIPER_CASCOR_API_WS_RESUME_HANDSHAKE_TIMEOUT_S_DEFAULT: float = _JUNIPER_CASCOR_API_WS_RESUME_HANDSHAKE_TIMEOUT_S
+
+_JUNIPER_CASCOR_API_WS_STATE_THROTTLE_COALESCE_MS: int = 1000
+_JUNIPER_CASCOR_API_WS_STATE_THROTTLE_COALESCE_MS_DEFAULT: int = _JUNIPER_CASCOR_API_WS_STATE_THROTTLE_COALESCE_MS
+
+_JUNIPER_CASCOR_API_WS_PENDING_MAX_DURATION_S: float = 10.0
+_JUNIPER_CASCOR_API_WS_PENDING_MAX_DURATION_S_DEFAULT: float = _JUNIPER_CASCOR_API_WS_PENDING_MAX_DURATION_S
 
 _JUNIPER_CASCOR_API_KEYS_LIST_EMPTY: list[str] | None = None
 _JUNIPER_CASCOR_API_RATELIMIT_DISABLED: bool = False
@@ -107,6 +124,36 @@ class Settings(BaseSettings):
 
     ws_max_connections: int = _JUNIPER_CASCOR_API_WS_MAX_CONNECTIONS_DEFAULT
     ws_heartbeat_interval_sec: int = _JUNIPER_CASCOR_API_WS_HEARTBEAT_INTERVAL_SEC_DEFAULT
+
+    # Phase 0-cascor: WebSocket sequencing, replay, and resume
+    # Kill-switch env vars use JUNIPER_WS_* prefix per canonical plan §3.1
+    ws_replay_buffer_size: int = Field(
+        default=_JUNIPER_CASCOR_API_WS_REPLAY_BUFFER_SIZE_DEFAULT,
+        description="Maximum number of messages in the WebSocket replay buffer (0 disables replay)",
+        ge=0,
+        validation_alias=AliasChoices("ws_replay_buffer_size", "JUNIPER_WS_REPLAY_BUFFER_SIZE"),
+    )
+    ws_send_timeout_seconds: float = Field(
+        default=_JUNIPER_CASCOR_API_WS_SEND_TIMEOUT_SECONDS_DEFAULT,
+        description="Timeout in seconds for individual WebSocket send operations (GAP-WS-07)",
+        gt=0,
+        validation_alias=AliasChoices("ws_send_timeout_seconds", "JUNIPER_WS_SEND_TIMEOUT_SECONDS"),
+    )
+    ws_resume_handshake_timeout_s: float = Field(
+        default=_JUNIPER_CASCOR_API_WS_RESUME_HANDSHAKE_TIMEOUT_S_DEFAULT,
+        description="Timeout in seconds for the resume handshake window on /ws/training",
+        gt=0,
+    )
+    ws_state_throttle_coalesce_ms: int = Field(
+        default=_JUNIPER_CASCOR_API_WS_STATE_THROTTLE_COALESCE_MS_DEFAULT,
+        description="Minimum interval in milliseconds between non-terminal state broadcasts",
+        gt=0,
+    )
+    ws_pending_max_duration_s: float = Field(
+        default=_JUNIPER_CASCOR_API_WS_PENDING_MAX_DURATION_S_DEFAULT,
+        description="Maximum duration in seconds a connection can stay in pending state",
+        gt=0,
+    )
 
     api_keys: list[str] | None = _JUNIPER_CASCOR_API_KEYS_LIST_EMPTY
 

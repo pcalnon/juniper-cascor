@@ -1,21 +1,30 @@
 """WebSocket connection manager for real-time streaming.
 
 Thread-safe manager that handles:
-- Connection lifecycle (connect/disconnect)
-- Broadcasting to all connected clients
+- Connection lifecycle (connect/disconnect/pending)
+- Monotonically increasing sequence numbers on broadcasts
+- Replay buffer for client reconnection
 - Thread-safe bridge for broadcasting from training threads
+- Configurable send timeout to prevent slow-client fan-out blocking
 - Bounded connection limit
 """
 
 import asyncio
 import contextlib
 import logging
+import threading
 import time
-from typing import Any, Dict, Optional, Set
+import uuid
+from collections import deque
+from typing import Any, Dict, List, Optional, Set
 
 from fastapi import WebSocket
 
 logger = logging.getLogger("juniper_cascor.api.websocket")
+
+
+class ReplayOutOfRange(Exception):
+    """Raised when the requested seq is no longer in the replay buffer."""
 
 
 async def ws_authenticate(websocket: WebSocket) -> bool:
@@ -42,66 +51,211 @@ class WebSocketManager:
     """Manages WebSocket connections and message broadcasting.
 
     Provides both async and thread-safe broadcasting to support the
-    training thread -> async WebSocket bridge pattern.
+    training thread -> async WebSocket bridge pattern. Assigns monotonically
+    increasing sequence numbers to all broadcast messages and maintains a
+    bounded replay buffer for client reconnection.
     """
 
-    def __init__(self, max_connections: int = 50):
+    def __init__(
+        self,
+        max_connections: int = 50,
+        max_replay_buffer_size: int = 1024,
+        send_timeout_seconds: float = 0.5,
+    ):
+        # Connection tracking
         self._active_connections: Set[WebSocket] = set()
+        self._pending_connections: Set[WebSocket] = set()
         self._max_connections = max_connections
         self._event_loop: Optional[asyncio.AbstractEventLoop] = None
         self._connection_meta: Dict[WebSocket, Dict[str, Any]] = {}
         self._lock = asyncio.Lock()
-        logger.info(f"WebSocketManager initialized (max_connections={max_connections})")
+
+        # Server identity (D-15: programmatic restart detection)
+        self._server_instance_id: str = str(uuid.uuid4())
+        self._server_start_time: float = time.monotonic()
+
+        # Sequencing and replay (threading.Lock: used from both async and sync contexts)
+        self._next_seq: int = 1
+        self._seq_lock = threading.Lock()
+        self._replay_buffer: deque = deque(maxlen=max_replay_buffer_size if max_replay_buffer_size > 0 else None)
+        self._replay_buffer_max_size = max_replay_buffer_size
+
+        # Send timeout (GAP-WS-07 quick-fix)
+        self._send_timeout_seconds = send_timeout_seconds
+
+        logger.info(
+            "WebSocketManager initialized (max_connections=%d, replay_buffer=%d, send_timeout=%.1fs)",
+            max_connections,
+            max_replay_buffer_size,
+            send_timeout_seconds,
+        )
 
     def set_event_loop(self, loop: asyncio.AbstractEventLoop) -> None:
         """Store the event loop reference for thread-safe broadcasting."""
         self._event_loop = loop
 
     @property
+    def server_instance_id(self) -> str:
+        """UUID4 identifying this server process (D-15)."""
+        return self._server_instance_id
+
+    @property
+    def current_seq(self) -> int:
+        """The last assigned sequence number (0 if none assigned yet)."""
+        with self._seq_lock:
+            return self._next_seq - 1
+
+    @property
     def connection_count(self) -> int:
         return len(self._active_connections)
 
+    # ------------------------------------------------------------------
+    # Connection lifecycle
+    # ------------------------------------------------------------------
+
+    def _build_connection_established(self) -> dict:
+        """Build the connection_established handshake message."""
+        return {
+            "type": "connection_established",
+            "timestamp": time.time(),
+            "data": {
+                "connections": self.connection_count + len(self._pending_connections),
+                "server_instance_id": self._server_instance_id,
+                "server_start_time": self._server_start_time,
+                "replay_buffer_capacity": self._replay_buffer_max_size,
+            },
+        }
+
     async def connect(self, websocket: WebSocket) -> bool:
-        """Accept and register a WebSocket connection.
+        """Accept and register a WebSocket connection as immediately active.
 
         Returns:
             True if connected, False if connection limit reached.
         """
         async with self._lock:
-            if len(self._active_connections) >= self._max_connections:
+            total = len(self._active_connections) + len(self._pending_connections)
+            if total >= self._max_connections:
                 await websocket.close(code=1013, reason="Maximum connections reached")
-                logger.warning(f"Connection rejected: limit of {self._max_connections} reached")
+                logger.warning("Connection rejected: limit of %d reached", self._max_connections)
                 return False
 
             await websocket.accept()
             self._active_connections.add(websocket)
-            self._connection_meta[websocket] = {
-                "connected_at": time.time(),
-            }
-            logger.info(f"WebSocket connected ({self.connection_count} active)")
+            self._connection_meta[websocket] = {"connected_at": time.time()}
+            logger.info("WebSocket connected (%d active)", self.connection_count)
 
-        # Send connection established message
-        await self._send_json(
-            websocket,
-            {
-                "type": "connection_established",
-                "timestamp": time.time(),
-                "data": {"connections": self.connection_count},
-            },
-        )
+        await self._send_json(websocket, self._build_connection_established())
         return True
 
+    async def connect_pending(self, websocket: WebSocket) -> bool:
+        """Accept a WebSocket in pending state (not broadcast-eligible).
+
+        Used during the resume handshake window (D-14). The connection
+        receives connection_established but does NOT receive broadcasts
+        until promote_to_active() is called.
+
+        Returns:
+            True if accepted, False if connection limit reached.
+        """
+        async with self._lock:
+            total = len(self._active_connections) + len(self._pending_connections)
+            if total >= self._max_connections:
+                await websocket.close(code=1013, reason="Maximum connections reached")
+                logger.warning("Connection rejected: limit of %d reached", self._max_connections)
+                return False
+
+            await websocket.accept()
+            self._pending_connections.add(websocket)
+            self._connection_meta[websocket] = {"connected_at": time.time(), "pending": True}
+            logger.info("WebSocket connected as pending (%d pending)", len(self._pending_connections))
+
+        await self._send_json(websocket, self._build_connection_established())
+        return True
+
+    async def promote_to_active(self, websocket: WebSocket) -> None:
+        """Move a pending connection to active (broadcast-eligible).
+
+        Must be called after the resume handshake completes (D-14).
+        """
+        async with self._lock:
+            self._pending_connections.discard(websocket)
+            self._active_connections.add(websocket)
+            meta = self._connection_meta.get(websocket, {})
+            meta.pop("pending", None)
+            logger.info(
+                "WebSocket promoted to active (%d active, %d pending)",
+                self.connection_count,
+                len(self._pending_connections),
+            )
+
     async def disconnect(self, websocket: WebSocket) -> None:
-        """Remove a WebSocket connection."""
+        """Remove a WebSocket connection (from active or pending)."""
         async with self._lock:
             self._active_connections.discard(websocket)
+            self._pending_connections.discard(websocket)
             self._connection_meta.pop(websocket, None)
-            logger.info(f"WebSocket disconnected ({self.connection_count} active)")
+            logger.info(
+                "WebSocket disconnected (%d active, %d pending)",
+                self.connection_count,
+                len(self._pending_connections),
+            )
+
+    # ------------------------------------------------------------------
+    # Sequencing and replay
+    # ------------------------------------------------------------------
+
+    def _assign_seq_and_buffer(self, message: dict) -> dict:
+        """Assign monotonically increasing seq and buffer for replay.
+
+        Called on the event loop thread before broadcast fan-out.
+        Uses threading.Lock (not asyncio.Lock) because it may be invoked
+        from both sync and async contexts. The lock is held only for O(1)
+        operations (integer increment + deque append).
+        """
+        with self._seq_lock:
+            seq = self._next_seq
+            self._next_seq += 1
+            enriched = {**message, "seq": seq, "emitted_at_monotonic": time.monotonic()}
+            if self._replay_buffer_max_size > 0:
+                self._replay_buffer.append(enriched)
+            return enriched
+
+    def replay_since(self, last_seq: int) -> List[dict]:
+        """Return buffered messages with seq > last_seq.
+
+        Args:
+            last_seq: The last sequence number the client received.
+
+        Returns:
+            List of message dicts with seq > last_seq, in order.
+
+        Raises:
+            ReplayOutOfRange: If last_seq is older than the oldest buffered
+                message, or if the replay buffer is disabled (size 0).
+        """
+        with self._seq_lock:
+            if self._replay_buffer_max_size <= 0:
+                raise ReplayOutOfRange("Replay buffer disabled")
+            if not self._replay_buffer:
+                if last_seq > 0:
+                    raise ReplayOutOfRange("Buffer empty, cannot verify continuity")
+                return []
+            oldest_seq = self._replay_buffer[0].get("seq", 0)
+            if last_seq < oldest_seq - 1:
+                raise ReplayOutOfRange(
+                    f"Requested seq {last_seq} older than oldest buffered seq {oldest_seq}"
+                )
+            return [msg for msg in self._replay_buffer if msg.get("seq", 0) > last_seq]
+
+    # ------------------------------------------------------------------
+    # Broadcasting
+    # ------------------------------------------------------------------
 
     async def broadcast(self, message: dict) -> None:
-        """Send a message to all connected clients."""
+        """Assign seq and send a message to all active (non-pending) clients."""
         if not self._active_connections:
             return
+        message = self._assign_seq_and_buffer(message)
         disconnected = []
         for ws in self._active_connections.copy():
             if not await self._send_json(ws, message):
@@ -112,31 +266,59 @@ class WebSocketManager:
     def broadcast_from_thread(self, message: dict) -> None:
         """Thread-safe broadcast using asyncio.run_coroutine_threadsafe.
 
-        Called from the training thread to push messages to all WebSocket clients.
+        Called from the training thread to push messages to all WebSocket
+        clients. Adds a done callback to log exceptions from the coroutine
+        (GAP-WS-29).
         """
         if self._event_loop is None or self._event_loop.is_closed():
             return
         coro = self.broadcast(message)
         try:
-            asyncio.run_coroutine_threadsafe(coro, self._event_loop)
+            future = asyncio.run_coroutine_threadsafe(coro, self._event_loop)
+            future.add_done_callback(self._log_broadcast_exception)
         except Exception:
             coro.close()
             logger.debug("Cannot broadcast: event loop unavailable or closed")
 
+    @staticmethod
+    def _log_broadcast_exception(future) -> None:
+        """Done callback for broadcast futures — logs exceptions (GAP-WS-29)."""
+        try:
+            exc = future.exception()
+            if exc is not None:
+                logger.error("Broadcast from thread failed: %s", exc, exc_info=exc)
+        except Exception:
+            pass  # Future was cancelled
+
     async def send_personal_message(self, websocket: WebSocket, message: dict) -> bool:
-        """Send a message to a specific client."""
+        """Send a message to a specific client (no seq assignment)."""
         return await self._send_json(websocket, message)
 
     async def _send_json(self, websocket: WebSocket, message: dict) -> bool:
-        """Send JSON message to a single WebSocket. Returns False on failure."""
+        """Send JSON message to a single WebSocket with timeout.
+
+        Applies a configurable send timeout (default 0.5s) to prevent slow
+        clients from blocking broadcast fan-out (GAP-WS-07 quick-fix).
+        Returns False on failure or timeout.
+        """
         try:
-            await websocket.send_json(message)
+            await asyncio.wait_for(
+                websocket.send_json(message),
+                timeout=self._send_timeout_seconds,
+            )
             return True
+        except asyncio.TimeoutError:
+            logger.warning("WebSocket send timed out after %.1fs", self._send_timeout_seconds)
+            return False
         except Exception:
             return False
 
+    # ------------------------------------------------------------------
+    # Shutdown
+    # ------------------------------------------------------------------
+
     async def close_all(self) -> None:
-        """Close all active connections (used during shutdown).
+        """Close all active and pending connections (used during shutdown).
 
         Holds ``self._lock`` around the set mutations so that a concurrent
         ``connect()`` or ``disconnect()`` cannot race with shutdown and
@@ -146,8 +328,9 @@ class WebSocketManager:
         exception paths.
         """
         async with self._lock:
-            snapshot = list(self._active_connections)
+            snapshot = list(self._active_connections) + list(self._pending_connections)
             self._active_connections.clear()
+            self._pending_connections.clear()
             self._connection_meta.clear()
 
         for ws in snapshot:

@@ -47,14 +47,22 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     logger.info(f"Listening on {settings.host}:{settings.port}")
 
     # Create WebSocket manager
-    ws_manager = WebSocketManager(max_connections=settings.ws_max_connections)
+    ws_manager = WebSocketManager(
+        max_connections=settings.ws_max_connections,
+        max_replay_buffer_size=settings.ws_replay_buffer_size,
+        send_timeout_seconds=settings.ws_send_timeout_seconds,
+    )
     ws_manager.set_event_loop(asyncio.get_running_loop())
     app.state.ws_manager = ws_manager
+    app.state.settings = settings
     logger.info("WebSocket manager initialized")
 
     # Create lifecycle manager for training coordination
     lifecycle = TrainingLifecycleManager()
-    lifecycle.set_ws_manager(ws_manager)
+    lifecycle.set_ws_manager(
+        ws_manager,
+        state_throttle_interval=settings.ws_state_throttle_coalesce_ms / 1000.0,
+    )
     app.state.lifecycle = lifecycle
     logger.info("Lifecycle manager initialized")
 

@@ -36,18 +36,19 @@ class TestControlStreamHandler:
             assert msg["type"] == "connection_established"
             assert msg["data"]["channel"] == "control"
 
-    def test_invalid_json(self, client):
-        """Sending invalid JSON returns error."""
-        with client.websocket_connect("/ws/control") as ws:
-            ws.receive_json()  # connection_established
-            ws.send_text("not json")
-            response = ws.receive_json()
-            assert response["type"] == "command_response"
-            assert response["data"]["status"] == "error"
-            assert "Invalid JSON" in response["data"]["error"]
+    def test_malformed_json_closes_1003(self, client):
+        """Sending invalid JSON returns error and closes connection with 1003."""
+        from starlette.websockets import WebSocketDisconnect
 
-    def test_unknown_command(self, client):
-        """Unknown command returns error."""
+        with pytest.raises(WebSocketDisconnect):
+            with client.websocket_connect("/ws/control") as ws:
+                ws.receive_json()  # connection_established
+                ws.send_text("not json")
+                ws.receive_json()  # error response
+                ws.receive_json()  # should trigger disconnect
+
+    def test_unknown_command_returns_protocol_error_envelope(self, client):
+        """Unknown command returns error but connection stays open."""
         with client.websocket_connect("/ws/control") as ws:
             ws.receive_json()  # connection_established
             ws.send_text(json.dumps({"command": "unknown_cmd"}))
@@ -55,6 +56,10 @@ class TestControlStreamHandler:
             assert response["type"] == "command_response"
             assert response["data"]["status"] == "error"
             assert "Unknown command" in response["data"]["error"]
+            # Connection stays open — can still send another command
+            ws.send_text(json.dumps({"command": "stop"}))
+            response2 = ws.receive_json()
+            assert response2["data"]["status"] == "success"
 
     def test_stop_command(self, client):
         """Stop command returns success."""
@@ -159,3 +164,28 @@ class TestControlStreamHandler:
             assert response["type"] == "command_response"
             assert response["data"]["command"] == "set_params"
             assert response["data"]["status"] == "error"
+
+    def test_command_id_echoed_in_response(self, client):
+        """command_id from request is echoed in response (D-02)."""
+        with client.websocket_connect("/ws/control") as ws:
+            ws.receive_json()  # connection_established
+            ws.send_text(json.dumps({"command": "stop", "command_id": "req-abc-123"}))
+            response = ws.receive_json()
+            assert response["data"]["command_id"] == "req-abc-123"
+
+    def test_command_id_absent_when_not_sent(self, client):
+        """command_id omitted in response when not in request."""
+        with client.websocket_connect("/ws/control") as ws:
+            ws.receive_json()  # connection_established
+            ws.send_text(json.dumps({"command": "stop"}))
+            response = ws.receive_json()
+            assert "command_id" not in response["data"]
+
+    def test_ws_control_command_response_has_no_seq(self, client):
+        """command_response has no seq field (D-03 contract)."""
+        with client.websocket_connect("/ws/control") as ws:
+            ws.receive_json()  # connection_established
+            ws.send_text(json.dumps({"command": "stop", "command_id": "test"}))
+            response = ws.receive_json()
+            assert response["type"] == "command_response"
+            assert "seq" not in response

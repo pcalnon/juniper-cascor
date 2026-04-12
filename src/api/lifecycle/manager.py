@@ -65,18 +65,25 @@ class TrainingLifecycleManager:
 
         # WebSocket manager (set via set_ws_manager)
         self._ws_manager = None
+        self._state_throttle_interval: float = 1.0  # seconds, configurable via set_ws_manager
 
         # Worker coordinator (set via set_worker_coordinator)
         self._worker_coordinator = None
 
         self.logger.info("TrainingLifecycleManager initialized")
 
-    def set_ws_manager(self, ws_manager) -> None:
+    def set_ws_manager(self, ws_manager, state_throttle_interval: float = 1.0) -> None:
         """Set the WebSocket manager for real-time broadcasting.
 
         Registers monitor callbacks that broadcast metrics/events via WebSocket.
+
+        Args:
+            ws_manager: WebSocketManager instance.
+            state_throttle_interval: Minimum interval in seconds between
+                non-terminal state broadcasts (GAP-WS-21 coalescer).
         """
         self._ws_manager = ws_manager
+        self._state_throttle_interval = state_throttle_interval
         self._register_ws_callbacks()
 
     def set_worker_coordinator(self, coordinator) -> None:
@@ -123,22 +130,33 @@ class TrainingLifecycleManager:
 
         self.logger.info("WebSocket broadcast callbacks registered")
 
+    # Terminal statuses that must always bypass the broadcast throttle (GAP-WS-21)
+    _TERMINAL_STATUSES = frozenset({"Completed", "Failed", "Stopped"})
+
     def _broadcast_training_state(self, force: bool = False) -> None:
         """Broadcast full training state via WebSocket.
 
-        Throttled to at most one broadcast per second unless force=True.
+        Uses a terminal-aware debounced coalescer (GAP-WS-21):
+        - Terminal transitions (Completed/Failed/Stopped) always bypass throttle
+        - force=True always bypasses throttle
+        - Non-terminal transitions throttled to at most once per coalesce interval
         """
         if self._ws_manager is None:
             return
 
+        state_data = self.training_state.get_state()
+        status = state_data.get("status", "")
+        is_terminal = status in self._TERMINAL_STATUSES
+
         now = time.monotonic()
-        if not force and hasattr(self, "_last_state_broadcast_time") and now - self._last_state_broadcast_time < 1.0:
-            return
+        if not force and not is_terminal:
+            if hasattr(self, "_last_state_broadcast_time") and now - self._last_state_broadcast_time < self._state_throttle_interval:
+                return
         self._last_state_broadcast_time = now
 
         from api.websocket.messages import create_state_message
 
-        self._ws_manager.broadcast_from_thread(create_state_message(self.training_state.get_state()))
+        self._ws_manager.broadcast_from_thread(create_state_message(state_data))
 
     # ------------------------------------------------------------------
     # Network management
