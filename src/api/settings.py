@@ -155,6 +155,38 @@ class Settings(BaseSettings):
         gt=0,
     )
 
+    # Phase B-pre-a: WebSocket security (M-SEC-01b, M-SEC-03, M-SEC-04)
+    ws_max_connections_per_ip: int = Field(
+        default=5,
+        description="Maximum concurrent WebSocket connections per source IP (M-SEC-04)",
+        ge=1,
+        validation_alias=AliasChoices("ws_max_connections_per_ip", "JUNIPER_WS_MAX_CONNECTIONS_PER_IP"),
+    )
+    ws_allowed_origins: list[str] = Field(
+        default=[],
+        description="Allowed Origin headers for /ws/training; empty=reject all (fail-closed, M-SEC-01b)",
+        validation_alias=AliasChoices("ws_allowed_origins", "JUNIPER_WS_ALLOWED_ORIGINS"),
+    )
+    ws_idle_timeout_seconds: int = Field(
+        default=120,
+        description="Idle timeout in seconds for WebSocket connections; 0 disables",
+        ge=0,
+        validation_alias=AliasChoices("ws_idle_timeout_seconds", "JUNIPER_WS_IDLE_TIMEOUT_SECONDS"),
+    )
+    ws_max_message_size: int = Field(
+        default=4096,
+        description="Maximum inbound message size in bytes for /ws/training (M-SEC-03)",
+        gt=0,
+    )
+
+    @field_validator("ws_allowed_origins", mode="after")
+    @classmethod
+    def _refuse_wildcard_origin(cls, v: list[str]) -> list[str]:
+        """Refuse '*' in allowed origins (C-30). Prevents panic-edit during incidents."""
+        if "*" in v:
+            raise ValueError("Wildcard '*' is not allowed in ws_allowed_origins (C-30)")
+        return v
+
     api_keys: list[str] | None = _JUNIPER_CASCOR_API_KEYS_LIST_EMPTY
 
     @model_validator(mode="before")

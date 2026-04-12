@@ -83,6 +83,9 @@ class WebSocketManager:
         # Send timeout (GAP-WS-07 quick-fix)
         self._send_timeout_seconds = send_timeout_seconds
 
+        # Per-IP connection tracking (M-SEC-04)
+        self._per_ip_counts: Dict[str, int] = {}
+
         logger.info(
             "WebSocketManager initialized (max_connections=%d, replay_buffer=%d, send_timeout=%.1fs)",
             max_connections,
@@ -108,6 +111,36 @@ class WebSocketManager:
     @property
     def connection_count(self) -> int:
         return len(self._active_connections)
+
+    # ------------------------------------------------------------------
+    # Per-IP connection limits (M-SEC-04)
+    # ------------------------------------------------------------------
+
+    def check_per_ip_limit(self, websocket: WebSocket, max_per_ip: int) -> bool:
+        """Check if the source IP has room for another connection.
+
+        Increments the counter if allowed. Caller must ensure
+        ``_decrement_ip_count()`` is called on disconnect.
+
+        Returns:
+            True if the connection is allowed, False if limit reached.
+        """
+        source_ip = websocket.client[0] if websocket.client else "unknown"
+        current = self._per_ip_counts.get(source_ip, 0)
+        if current >= max_per_ip:
+            logger.warning("Per-IP limit reached for %s (%d/%d)", source_ip, current, max_per_ip)
+            return False
+        self._per_ip_counts[source_ip] = current + 1
+        return True
+
+    def _decrement_ip_count(self, websocket: WebSocket) -> None:
+        """Decrement per-IP counter on disconnect."""
+        source_ip = websocket.client[0] if websocket.client else "unknown"
+        count = self._per_ip_counts.get(source_ip, 0)
+        if count <= 1:
+            self._per_ip_counts.pop(source_ip, None)
+        else:
+            self._per_ip_counts[source_ip] = count - 1
 
     # ------------------------------------------------------------------
     # Connection lifecycle
@@ -194,6 +227,7 @@ class WebSocketManager:
             self._active_connections.discard(websocket)
             self._pending_connections.discard(websocket)
             self._connection_meta.pop(websocket, None)
+            self._decrement_ip_count(websocket)
             logger.info(
                 "WebSocket disconnected (%d active, %d pending)",
                 self.connection_count,
@@ -332,6 +366,7 @@ class WebSocketManager:
             self._active_connections.clear()
             self._pending_connections.clear()
             self._connection_meta.clear()
+            self._per_ip_counts.clear()
 
         for ws in snapshot:
             with contextlib.suppress(Exception):

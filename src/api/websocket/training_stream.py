@@ -1,14 +1,15 @@
 """WebSocket handler for /ws/training — real-time training metrics stream.
 
 Server-to-client streaming endpoint with optional resume support. On connect:
-1. connection_established message (from manager.connect_pending)
-2. Optional resume handshake: client sends ``resume`` frame within timeout
-3. If resume succeeds: replayed events + promote to active
-4. If fresh connect: initial_status + state + promote to active
-5. Ongoing metrics/state/topology broadcasts during training
+1. Authenticate + origin validation + per-IP check
+2. connection_established message (from manager.connect_pending)
+3. Optional resume handshake: client sends ``resume`` frame within timeout
+4. If resume succeeds: replayed events + promote to active
+5. If fresh connect: initial_status + state + promote to active
+6. Ongoing metrics/state/topology broadcasts during training
 
 The client sends only the optional resume frame during the handshake window.
-After promotion, the recv loop detects disconnection only.
+After promotion, the recv loop detects disconnection (with idle timeout).
 """
 
 import asyncio
@@ -20,6 +21,7 @@ from fastapi import WebSocket, WebSocketDisconnect
 
 from api.websocket.manager import ReplayOutOfRange, ws_authenticate
 from api.websocket.messages import create_state_message
+from api.websocket.origin import validate_origin
 
 logger = logging.getLogger("juniper_cascor.api.websocket.training")
 
@@ -29,12 +31,14 @@ async def training_stream_handler(websocket: WebSocket) -> None:
 
     Protocol flow:
     1. Authenticate via API key header
-    2. Accept as pending (connect_pending — not broadcast-eligible)
-    3. Wait for optional 'resume' frame within handshake timeout
-    4. On resume: validate server_instance_id, replay buffered events
-    5. On fresh connect / failed resume: send initial_status + state
-    6. Promote to active (now receives broadcasts)
-    7. Keep-alive recv loop
+    2. Validate Origin header against allowlist (M-SEC-01b)
+    3. Check per-IP connection limit (M-SEC-04)
+    4. Accept as pending (connect_pending — not broadcast-eligible)
+    5. Wait for optional 'resume' frame within handshake timeout
+    6. On resume: validate server_instance_id, replay buffered events
+    7. On fresh connect / failed resume: send initial_status + state
+    8. Promote to active (now receives broadcasts)
+    9. Keep-alive recv loop with idle timeout
     """
     if not await ws_authenticate(websocket):
         return
@@ -47,11 +51,25 @@ async def training_stream_handler(websocket: WebSocket) -> None:
         await websocket.close(code=1011, reason="WebSocket manager not available")
         return
 
+    # M-SEC-01b: Origin allowlist (fail-closed)
+    allowed_origins = getattr(settings, "ws_allowed_origins", []) if settings else []
+    if allowed_origins:
+        if not validate_origin(websocket, allowed_origins):
+            await websocket.close(code=4003, reason="Origin not allowed")
+            return
+
+    # M-SEC-04: Per-IP connection cap
+    max_per_ip = getattr(settings, "ws_max_connections_per_ip", 5) if settings else 5
+    if not ws_manager.check_per_ip_limit(websocket, max_per_ip):
+        await websocket.close(code=1013, reason="Per-IP connection limit reached")
+        return
+
     connected = await ws_manager.connect_pending(websocket)
     if not connected:
         return
 
     resume_timeout = getattr(settings, "ws_resume_handshake_timeout_s", 5.0) if settings else 5.0
+    idle_timeout = getattr(settings, "ws_idle_timeout_seconds", 120) if settings else 120
 
     try:
         # Wait for optional resume frame
@@ -90,7 +108,14 @@ async def training_stream_handler(websocket: WebSocket) -> None:
         # Keep connection alive — broadcasts come from training thread
         # via ws_manager.broadcast_from_thread()
         while True:
-            await websocket.receive_text()
+            if idle_timeout and idle_timeout > 0:
+                await asyncio.wait_for(websocket.receive_text(), timeout=idle_timeout)
+            else:
+                await websocket.receive_text()
+    except asyncio.TimeoutError:
+        # Idle timeout reached — close cleanly
+        logger.info("WebSocket idle timeout (%ds), closing connection", idle_timeout)
+        await websocket.close(code=1000, reason="Idle timeout")
     except WebSocketDisconnect:
         pass
     finally:

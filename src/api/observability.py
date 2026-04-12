@@ -412,6 +412,20 @@ def _ensure_ws_metrics() -> dict:
                 "Duration of command handler execution",
                 ["command"],
             ),
+            # Phase B-pre-a security metrics
+            "oversized_frame_total": Counter(
+                "cascor_ws_oversized_frame_total",
+                "Total oversized frames rejected",
+                ["endpoint", "type"],
+            ),
+            "per_ip_rejected_total": Counter(
+                "cascor_ws_per_ip_rejected_total",
+                "Total connections rejected by per-IP cap",
+            ),
+            "idle_timeout_total": Counter(
+                "cascor_ws_idle_timeout_total",
+                "Total connections closed by idle timeout",
+            ),
         }
     return _ws_metrics
 
