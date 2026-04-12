@@ -3,10 +3,13 @@
 Client-to-server command endpoint. Accepts JSON commands:
 {
     "command": "start" | "stop" | "pause" | "resume" | "reset" | "set_params",
+    "command_id": "<optional-uuid>",  // echoed in response for correlation
     "params": { ... }  // optional, for start/set_params
 }
 
-Responds with command_response acknowledgments.
+Responds with command_response acknowledgments. Note: command_response
+messages have NO ``seq`` field (D-03 canonical). The /ws/control channel
+has no replay buffer.
 """
 
 import json
@@ -50,24 +53,26 @@ async def control_stream_handler(websocket: WebSocket) -> None:
                 msg = json.loads(raw)
             except json.JSONDecodeError:
                 await websocket.send_json(create_control_ack_message("unknown", "error", error="Invalid JSON"))
-                continue
+                await websocket.close(code=1003, reason="Malformed JSON")
+                return
 
             command = msg.get("command", "")
+            command_id = msg.get("command_id")
 
             if command not in _VALID_COMMANDS:
-                await websocket.send_json(create_control_ack_message(command, "error", error=f"Unknown command: {command}"))
+                await websocket.send_json(create_control_ack_message(command, "error", error=f"Unknown command: {command}", command_id=command_id))
                 continue
 
             if lifecycle is None:
-                await websocket.send_json(create_control_ack_message(command, "error", error="Lifecycle manager not available"))
+                await websocket.send_json(create_control_ack_message(command, "error", error="Lifecycle manager not available", command_id=command_id))
                 continue
 
             try:
                 result = _execute_command(lifecycle, command, msg.get("params"))
-                await websocket.send_json(create_control_ack_message(command, "success", data=result))
+                await websocket.send_json(create_control_ack_message(command, "success", data=result, command_id=command_id))
             except Exception as e:
                 logger.error("Command '%s' failed: %s", command, e)
-                await websocket.send_json(create_control_ack_message(command, "error", error="Command execution failed"))
+                await websocket.send_json(create_control_ack_message(command, "error", error="Command execution failed", command_id=command_id))
 
     except WebSocketDisconnect:
         pass

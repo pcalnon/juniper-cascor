@@ -327,3 +327,145 @@ def record_inference(duration: float) -> None:
     m = _ensure_training_metrics()
     m["inference_requests_total"].inc()
     m["inference_duration_seconds"].observe(duration)
+
+
+# ---------------------------------------------------------------------------
+# WebSocket metrics — Phase 0-cascor (15 metrics)
+# ---------------------------------------------------------------------------
+
+_ws_metrics: dict | None = None
+
+_WS_RESUME_REPLAY_BUCKETS = (0, 1, 5, 25, 100, 500, 1024)
+
+
+def _ensure_ws_metrics() -> dict:
+    """Create WebSocket-related Prometheus metrics on first access."""
+    global _ws_metrics
+    if _ws_metrics is None:
+        from prometheus_client import Counter, Gauge, Histogram
+
+        _ws_metrics = {
+            "seq_current": Gauge(
+                "cascor_ws_seq_current",
+                "Current sequence number for WebSocket broadcasts",
+            ),
+            "replay_buffer_occupancy": Gauge(
+                "cascor_ws_replay_buffer_occupancy",
+                "Current number of messages in the replay buffer",
+            ),
+            "replay_buffer_bytes": Gauge(
+                "cascor_ws_replay_buffer_bytes",
+                "Approximate memory usage of the replay buffer in bytes",
+            ),
+            "replay_buffer_capacity_configured": Gauge(
+                "cascor_ws_replay_buffer_capacity_configured",
+                "Configured maximum replay buffer size",
+            ),
+            "resume_requests_total": Counter(
+                "cascor_ws_resume_requests_total",
+                "Total resume requests by outcome",
+                ["outcome"],
+            ),
+            "resume_replayed_events": Histogram(
+                "cascor_ws_resume_replayed_events",
+                "Number of events replayed per successful resume",
+                buckets=_WS_RESUME_REPLAY_BUCKETS,
+            ),
+            "broadcast_timeout_total": Counter(
+                "cascor_ws_broadcast_timeout_total",
+                "Total broadcast send timeouts",
+                ["type"],
+            ),
+            "broadcast_send_duration_seconds": Histogram(
+                "cascor_ws_broadcast_send_duration_seconds",
+                "Duration of individual WebSocket send operations",
+                ["type"],
+            ),
+            "pending_connections": Gauge(
+                "cascor_ws_pending_connections",
+                "Number of WebSocket connections in pending (resume handshake) state",
+            ),
+            "state_throttle_coalesced_total": Counter(
+                "cascor_ws_state_throttle_coalesced_total",
+                "Total state broadcasts coalesced by throttle",
+            ),
+            "broadcast_from_thread_errors_total": Counter(
+                "cascor_ws_broadcast_from_thread_errors_total",
+                "Total errors from broadcast_from_thread coroutine execution",
+            ),
+            "seq_gap_detected_total": Counter(
+                "cascor_ws_seq_gap_detected_total",
+                "Total sequence gaps detected (should be zero in healthy operation)",
+            ),
+            "connections_active": Gauge(
+                "cascor_ws_connections_active",
+                "Number of active WebSocket connections by endpoint",
+                ["endpoint"],
+            ),
+            "command_responses_total": Counter(
+                "cascor_ws_command_responses_total",
+                "Total command responses sent",
+                ["command", "status"],
+            ),
+            "command_handler_seconds": Histogram(
+                "cascor_ws_command_handler_seconds",
+                "Duration of command handler execution",
+                ["command"],
+            ),
+        }
+    return _ws_metrics
+
+
+def ws_set_seq_current(value: int) -> None:
+    """Update the current sequence number gauge."""
+    _ensure_ws_metrics()["seq_current"].set(value)
+
+
+def ws_set_replay_buffer_occupancy(value: int) -> None:
+    """Update the replay buffer occupancy gauge."""
+    _ensure_ws_metrics()["replay_buffer_occupancy"].set(value)
+
+
+def ws_set_replay_buffer_capacity(value: int) -> None:
+    """Set the configured replay buffer capacity gauge."""
+    _ensure_ws_metrics()["replay_buffer_capacity_configured"].set(value)
+
+
+def ws_inc_resume_requests(outcome: str) -> None:
+    """Increment the resume requests counter by outcome."""
+    _ensure_ws_metrics()["resume_requests_total"].labels(outcome=outcome).inc()
+
+
+def ws_observe_resume_replayed(count: int) -> None:
+    """Record the number of events replayed in a successful resume."""
+    _ensure_ws_metrics()["resume_replayed_events"].observe(count)
+
+
+def ws_inc_broadcast_timeout(msg_type: str) -> None:
+    """Increment the broadcast timeout counter."""
+    _ensure_ws_metrics()["broadcast_timeout_total"].labels(type=msg_type).inc()
+
+
+def ws_inc_state_throttle_coalesced() -> None:
+    """Increment the state throttle coalesced counter."""
+    _ensure_ws_metrics()["state_throttle_coalesced_total"].inc()
+
+
+def ws_inc_broadcast_from_thread_errors() -> None:
+    """Increment the broadcast-from-thread errors counter."""
+    _ensure_ws_metrics()["broadcast_from_thread_errors_total"].inc()
+
+
+def ws_set_connections_active(endpoint: str, value: int) -> None:
+    """Set the active connections gauge for a given endpoint."""
+    _ensure_ws_metrics()["connections_active"].labels(endpoint=endpoint).set(value)
+
+
+def ws_inc_command_responses(command: str, status: str) -> None:
+    """Increment the command responses counter."""
+    _ensure_ws_metrics()["command_responses_total"].labels(command=command, status=status).inc()
+
+
+def ws_observe_command_handler(command: str, duration: float) -> None:
+    """Record command handler execution duration."""
+    _ensure_ws_metrics()["command_handler_seconds"].labels(command=command).observe(duration)
