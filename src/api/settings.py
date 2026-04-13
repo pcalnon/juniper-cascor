@@ -30,6 +30,9 @@ _JUNIPER_CASCOR_API_WS_MAX_CONNECTIONS_DEFAULT: int = _JUNIPER_CASCOR_API_WS_MAX
 _JUNIPER_CASCOR_API_WS_HEARTBEAT_INTERVAL_SEC: int = 30
 _JUNIPER_CASCOR_API_WS_HEARTBEAT_INTERVAL_SEC_DEFAULT: int = _JUNIPER_CASCOR_API_WS_HEARTBEAT_INTERVAL_SEC
 
+_JUNIPER_CASCOR_API_WS_HEARTBEAT_PONG_TIMEOUT_SEC: int = 10
+_JUNIPER_CASCOR_API_WS_HEARTBEAT_PONG_TIMEOUT_SEC_DEFAULT: int = _JUNIPER_CASCOR_API_WS_HEARTBEAT_PONG_TIMEOUT_SEC
+
 # Phase 0-cascor: WebSocket sequencing, replay, and resume settings
 # Env vars match canonical plan kill switch names (JUNIPER_WS_* prefix)
 _JUNIPER_CASCOR_API_WS_REPLAY_BUFFER_SIZE: int = 1024
@@ -124,6 +127,7 @@ class Settings(BaseSettings):
 
     ws_max_connections: int = _JUNIPER_CASCOR_API_WS_MAX_CONNECTIONS_DEFAULT
     ws_heartbeat_interval_sec: int = _JUNIPER_CASCOR_API_WS_HEARTBEAT_INTERVAL_SEC_DEFAULT
+    ws_heartbeat_pong_timeout_sec: int = _JUNIPER_CASCOR_API_WS_HEARTBEAT_PONG_TIMEOUT_SEC_DEFAULT
 
     # Phase 0-cascor: WebSocket sequencing, replay, and resume
     # Kill-switch env vars use JUNIPER_WS_* prefix per canonical plan §3.1
