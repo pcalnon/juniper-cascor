@@ -13,11 +13,17 @@ has no replay buffer.
 
 Phase B-pre-b: Origin validation, per-connection leaky bucket (10 cmd/s),
 idle timeout (120s bidirectional), per-origin handshake cooldown.
+
+Phase F: Application-level heartbeat. Server sends ``{"type":"ping","ts":<float>}``
+every ``ws_heartbeat_interval_sec`` (30s). Client must reply
+``{"type":"pong"}`` within ``ws_heartbeat_pong_timeout_sec`` (10s) or
+connection is closed with 1006. Pong receipt resets the idle timeout timer.
 """
 
 import asyncio
 import json
 import logging
+import time
 
 from fastapi import WebSocket, WebSocketDisconnect
 
@@ -113,6 +119,35 @@ async def control_stream_handler(websocket: WebSocket) -> None:
 
     idle_timeout = settings.ws_control_idle_timeout_sec
 
+    # Phase F: heartbeat settings from app.state.settings (testable)
+    app_settings = getattr(websocket.app.state, "settings", None)
+    hb_interval = getattr(app_settings, "ws_heartbeat_interval_sec", 30) if app_settings else 30
+    hb_timeout = getattr(app_settings, "ws_heartbeat_pong_timeout_sec", 10) if app_settings else 10
+
+    # Phase F: heartbeat ping/pong for dead-connection detection
+    pong_received = asyncio.Event()
+    pong_received.set()  # No outstanding ping at start
+
+    async def _ping_loop():
+        while True:
+            await asyncio.sleep(hb_interval)
+            pong_received.clear()
+            try:
+                await websocket.send_json({"type": "ping", "ts": time.time()})
+            except Exception:
+                return
+            try:
+                await asyncio.wait_for(pong_received.wait(), timeout=hb_timeout)
+            except asyncio.TimeoutError:
+                logger.info("Control WS: heartbeat timeout, closing: %s", client_ip)
+                try:
+                    await websocket.close(code=1006, reason="Heartbeat timeout")
+                except Exception:
+                    pass
+                return
+
+    ping_task = asyncio.create_task(_ping_loop())
+
     try:
         while True:
             # Gate 6: Bidirectional idle timeout
@@ -136,6 +171,11 @@ async def control_stream_handler(websocket: WebSocket) -> None:
                 await websocket.send_json(create_control_ack_message("unknown", "error", error="Invalid JSON"))
                 await websocket.close(code=1003, reason="Malformed JSON")
                 return
+
+            # Phase F: pong handling — resets idle timeout (receive_text returned)
+            if msg.get("type") == "pong":
+                pong_received.set()
+                continue
 
             command = msg.get("command", "")
             command_id = msg.get("command_id")
@@ -171,6 +211,12 @@ async def control_stream_handler(websocket: WebSocket) -> None:
 
     except WebSocketDisconnect:
         pass
+    finally:
+        ping_task.cancel()
+        try:
+            await ping_task
+        except asyncio.CancelledError:
+            pass
 
 
 def _execute_command(lifecycle, command: str, params: dict = None) -> dict:

@@ -7,8 +7,10 @@ Server-to-client streaming endpoint with optional resume support. On connect:
 4. If fresh connect: initial_status + state + promote to active
 5. Ongoing metrics/state/topology broadcasts during training
 
-The client sends only the optional resume frame during the handshake window.
-After promotion, the recv loop detects disconnection only.
+After promotion, the server sends application-level ``{"type":"ping","ts":<float>}``
+heartbeats every ``ws_heartbeat_interval_sec`` (default 30s). Client must reply
+with ``{"type":"pong"}`` within ``ws_heartbeat_pong_timeout_sec`` (default 10s)
+or the connection is closed with 1006 (heartbeat timeout).
 """
 
 import asyncio
@@ -87,12 +89,50 @@ async def training_stream_handler(websocket: WebSocket) -> None:
                     create_state_message(state_data),
                 )
 
-        # Keep connection alive — broadcasts come from training thread
-        # via ws_manager.broadcast_from_thread()
-        while True:
-            await websocket.receive_text()
-    except WebSocketDisconnect:
-        pass
+        # Heartbeat + keep-alive: broadcasts come from training thread
+        # via ws_manager.broadcast_from_thread(). The recv loop also
+        # handles pong responses for dead-connection detection.
+        hb_interval = getattr(settings, "ws_heartbeat_interval_sec", 30) if settings else 30
+        hb_timeout = getattr(settings, "ws_heartbeat_pong_timeout_sec", 10) if settings else 10
+        pong_received = asyncio.Event()
+        pong_received.set()  # No outstanding ping at start
+
+        async def _ping_loop():
+            while True:
+                await asyncio.sleep(hb_interval)
+                pong_received.clear()
+                try:
+                    await websocket.send_json({"type": "ping", "ts": time.time()})
+                except Exception:
+                    return  # Connection already closed
+                try:
+                    await asyncio.wait_for(pong_received.wait(), timeout=hb_timeout)
+                except asyncio.TimeoutError:
+                    logger.info("Training WS: heartbeat timeout, closing connection")
+                    try:
+                        await websocket.close(code=1006, reason="Heartbeat timeout")
+                    except Exception:
+                        pass
+                    return
+
+        ping_task = asyncio.create_task(_ping_loop())
+        try:
+            while True:
+                raw = await websocket.receive_text()
+                try:
+                    msg = json.loads(raw)
+                    if msg.get("type") == "pong":
+                        pong_received.set()
+                except (json.JSONDecodeError, AttributeError):
+                    pass  # Non-JSON keep-alive frames are fine
+        except WebSocketDisconnect:
+            pass
+        finally:
+            ping_task.cancel()
+            try:
+                await ping_task
+            except asyncio.CancelledError:
+                pass
     finally:
         await ws_manager.disconnect(websocket)
 
