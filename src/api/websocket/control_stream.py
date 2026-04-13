@@ -10,13 +10,19 @@ Client-to-server command endpoint. Accepts JSON commands:
 Responds with command_response acknowledgments. Note: command_response
 messages have NO ``seq`` field (D-03 canonical). The /ws/control channel
 has no replay buffer.
+
+Phase B-pre-b: Origin validation, per-connection leaky bucket (10 cmd/s),
+idle timeout (120s bidirectional), per-origin handshake cooldown.
 """
 
+import asyncio
 import json
 import logging
 
 from fastapi import WebSocket, WebSocketDisconnect
 
+from api.settings import get_settings
+from api.websocket.control_security import HandshakeCooldown, LeakyBucket, validate_control_origin
 from api.websocket.manager import ws_authenticate
 from api.websocket.messages import create_control_ack_message
 
@@ -25,11 +31,69 @@ logger = logging.getLogger("juniper_cascor.api.websocket.control")
 _VALID_COMMANDS = {"start", "stop", "pause", "resume", "reset", "set_params"}
 _MAX_MESSAGE_SIZE = 65536  # 64KB
 
+# Module-level handshake cooldown (shared across connections, cleared on restart)
+_handshake_cooldown = None
+
+
+def _get_cooldown() -> HandshakeCooldown:
+    """Lazily initialize the handshake cooldown from settings."""
+    global _handshake_cooldown
+    if _handshake_cooldown is None:
+        settings = get_settings()
+        _handshake_cooldown = HandshakeCooldown(
+            max_rejections=settings.ws_control_cooldown_rejections,
+            window_sec=settings.ws_control_cooldown_window_sec,
+            block_sec=settings.ws_control_cooldown_block_sec,
+        )
+    return _handshake_cooldown
+
+
+def _get_client_ip(websocket: WebSocket) -> str:
+    """Extract client IP from WebSocket connection."""
+    if websocket.client:
+        return websocket.client[0]
+    return "unknown"
+
 
 async def control_stream_handler(websocket: WebSocket) -> None:
-    """Handle /ws/control WebSocket connections."""
-    if not await ws_authenticate(websocket):
+    """Handle /ws/control WebSocket connections.
+
+    Security gates (Phase B-pre-b):
+    1. Kill switch check
+    2. Per-origin handshake cooldown (IP block)
+    3. API key authentication
+    4. Origin header validation
+    5. Per-connection leaky bucket rate limiting on commands
+    6. Bidirectional idle timeout
+    """
+    settings = get_settings()
+
+    # Gate 1: Kill switch (CSWSH emergency hard-disable)
+    if settings.disable_ws_control_endpoint:
+        await websocket.close(code=1013, reason="Control endpoint disabled")
         return
+
+    client_ip = _get_client_ip(websocket)
+
+    # Gate 2: Per-origin handshake cooldown — blocked IPs get 429-equivalent
+    cooldown = _get_cooldown()
+    if cooldown.is_blocked(client_ip):
+        remaining = cooldown.get_block_remaining(client_ip)
+        logger.warning("Control WS: IP %s blocked (cooldown), remaining=%ss", client_ip, remaining)
+        await websocket.close(code=4029, reason="Too many rejected handshakes")
+        return
+
+    # Gate 3: API key authentication
+    if not await ws_authenticate(websocket):
+        cooldown.record_rejection(client_ip)
+        return
+
+    # Gate 4: Origin validation
+    if settings.ws_control_allowed_origins:
+        if not validate_control_origin(websocket, settings.ws_control_allowed_origins):
+            cooldown.record_rejection(client_ip)
+            await websocket.close(code=4003, reason="Origin not allowed")
+            return
 
     lifecycle = getattr(websocket.app.state, "lifecycle", None)
 
@@ -41,9 +105,26 @@ async def control_stream_handler(websocket: WebSocket) -> None:
         }
     )
 
+    # Per-connection leaky bucket rate limiter
+    bucket = LeakyBucket(
+        capacity=settings.ws_control_rate_limit_per_sec,
+        refill_rate=float(settings.ws_control_rate_limit_per_sec),
+    )
+
+    idle_timeout = settings.ws_control_idle_timeout_sec
+
     try:
         while True:
-            raw = await websocket.receive_text()
+            # Gate 6: Bidirectional idle timeout
+            try:
+                if idle_timeout and idle_timeout > 0:
+                    raw = await asyncio.wait_for(websocket.receive_text(), timeout=idle_timeout)
+                else:
+                    raw = await websocket.receive_text()
+            except asyncio.TimeoutError:
+                logger.info("Control WS: idle timeout (%ds), closing: %s", idle_timeout, client_ip)
+                await websocket.close(code=1000, reason="Idle timeout")
+                return
 
             if len(raw) > _MAX_MESSAGE_SIZE:
                 await websocket.send_json(create_control_ack_message("unknown", "error", error="Message too large"))
@@ -58,6 +139,20 @@ async def control_stream_handler(websocket: WebSocket) -> None:
 
             command = msg.get("command", "")
             command_id = msg.get("command_id")
+
+            # Gate 5: Per-connection rate limiting
+            if not bucket.try_acquire():
+                retry_after = bucket.retry_after
+                await websocket.send_json(
+                    {
+                        "type": "command_response",
+                        "command": command,
+                        "status": "rate_limited",
+                        "retry_after": retry_after,
+                        **({"command_id": command_id} if command_id else {}),
+                    }
+                )
+                continue
 
             if command not in _VALID_COMMANDS:
                 await websocket.send_json(create_control_ack_message(command, "error", error=f"Unknown command: {command}", command_id=command_id))

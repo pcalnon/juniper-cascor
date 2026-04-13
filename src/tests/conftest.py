@@ -166,6 +166,34 @@ def pytest_collection_modifyitems(config, items):
 
 
 # ===================================================================
+# WEBSOCKET ORIGIN HEADER INJECTION
+# ===================================================================
+# Phase B-pre-b: Control-path origin validation requires all WS test
+# connections to include an allowed Origin header. Monkeypatch globally.
+_WS_TEST_ORIGIN = "http://localhost:8050"
+_original_ws_connect = None
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _inject_ws_origin_header():
+    """Inject Origin header into all TestClient.websocket_connect calls."""
+    from starlette.testclient import TestClient
+
+    global _original_ws_connect
+    _original_ws_connect = TestClient.websocket_connect
+
+    def _patched_ws_connect(self, url, subprotocols=None, **kwargs):
+        headers = kwargs.get("headers", {})
+        headers.setdefault("origin", _WS_TEST_ORIGIN)
+        kwargs["headers"] = headers
+        return _original_ws_connect(self, url, subprotocols=subprotocols, **kwargs)
+
+    TestClient.websocket_connect = _patched_ws_connect
+    yield
+    TestClient.websocket_connect = _original_ws_connect
+
+
+# ===================================================================
 # FAST-SLOW MODE CONFIGURATION
 # ===================================================================
 
