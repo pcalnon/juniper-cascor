@@ -211,6 +211,20 @@ class Settings(BaseSettings):
     worker_audit_logging_enabled: bool = _JUNIPER_CASCOR_API_WORKER_AUDIT_LOGGING_ENABLED_DEFAULT
     worker_metrics_enabled: bool = _JUNIPER_CASCOR_API_WORKER_METRICS_ENABLED_DEFAULT
 
+    # Phase B-pre-b: Control-path security (§S8)
+    ws_control_allowed_origins: list[str] = [
+        "http://localhost:8050",
+        "http://127.0.0.1:8050",
+        "https://localhost:8050",
+        "https://127.0.0.1:8050",
+    ]
+    ws_control_rate_limit_per_sec: int = 10  # leaky bucket: 10 tokens, 10/s refill
+    ws_control_idle_timeout_sec: int = 120  # bidirectional idle timeout
+    ws_control_cooldown_rejections: int = 10  # rejections in cooldown window before IP block
+    ws_control_cooldown_window_sec: int = 60  # cooldown window in seconds
+    ws_control_cooldown_block_sec: int = 300  # 5-minute IP block after cooldown triggers
+    disable_ws_control_endpoint: bool = False  # emergency kill switch (CSWSH hard-disable)
+
 
 @lru_cache
 def get_settings() -> Settings:

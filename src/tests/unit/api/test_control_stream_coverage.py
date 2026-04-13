@@ -25,7 +25,8 @@ class TestControlStreamAuth:
     async def test_auth_enabled_invalid_key_closes_connection(self):
         """WebSocket closed with 4001 when auth enabled and key invalid."""
         ws = AsyncMock()
-        ws.headers = {"X-API-Key": "bad-key"}
+        ws.headers = {"X-API-Key": "bad-key", "origin": "http://localhost:8050"}
+        ws.client = ("127.0.0.1", 12345)
 
         auth = MagicMock()
         auth.enabled = True
@@ -46,7 +47,8 @@ class TestControlStreamAuth:
     async def test_auth_enabled_missing_key_closes_connection(self):
         """WebSocket closed when auth enabled and no key provided."""
         ws = AsyncMock()
-        ws.headers = {}
+        ws.headers = {"origin": "http://localhost:8050"}
+        ws.client = ("127.0.0.1", 12345)
 
         auth = MagicMock()
         auth.enabled = True
@@ -71,6 +73,8 @@ class TestControlStreamMessageSize:
         from fastapi import WebSocketDisconnect
 
         ws = AsyncMock()
+        ws.headers = {"origin": "http://localhost:8050"}
+        ws.client = ("127.0.0.1", 12345)
         app_state = MagicMock()
         app_state.api_key_auth = None
         app_state.lifecycle = MagicMock()
@@ -103,6 +107,8 @@ class TestControlStreamLifecycleUnavailable:
         from fastapi import WebSocketDisconnect
 
         ws = AsyncMock()
+        ws.headers = {"origin": "http://localhost:8050"}
+        ws.client = ("127.0.0.1", 12345)
         app_state = MagicMock()
         app_state.api_key_auth = None
         app_state.lifecycle = None
