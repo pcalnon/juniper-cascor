@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Phase D (§S10) per-command timeouts on `/ws/control`: commands dispatched via `asyncio.to_thread` and bounded by `asyncio.wait_for` with `start=10s`, `stop/pause/resume/reset=2s`, `set_params=1s`. Timeouts emit `command_response{status:"error", error:"Command timed out after Ns"}` while the connection stays open.
+- Phase D (§S10.3) unknown-command envelope now includes `code:"unknown_command"` to let browser clients distinguish protocol errors from execution failures. `create_control_ack_message` gains an optional `code=` keyword argument.
+- Phase D (§S10.7) server-side observability counter `cascor_ws_control_command_received_total{command}` (lazy-registered so test suites without `prometheus_client` stay importable).
 - Hardcoded-values refactor (Wave 1): new `cascor_constants/constants_api/constants_api_defaults.py` module with 49 `_PROJECT_API_*` constants covering Pydantic field defaults for `NetworkCreateRequest` / `TrainingStartRequest`, lifecycle defaults, middleware body/rate-limit defaults, observability defaults, TLS minimum versions, decision-boundary resolution bounds, juniper-data integration timeouts, and inter-service URL templates. Existing constants modules (model, candidates, hdf5, logging) extended where needed.
 
 ### Changed

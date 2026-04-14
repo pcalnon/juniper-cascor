@@ -14,6 +14,11 @@ has no replay buffer.
 Phase B-pre-b: Origin validation, per-connection leaky bucket (10 cmd/s),
 idle timeout (120s bidirectional), per-origin handshake cooldown.
 
+Phase D: Per-command execution timeouts via ``asyncio.wait_for``. Commands
+are dispatched to the thread pool (``asyncio.to_thread``) to avoid blocking
+the event loop, then bounded: start=10s, stop/pause/resume=2s, set_params=1s,
+reset=2s. Timeout → ``command_response{status:"error", error:"...timed out..."}``.
+
 Phase F: Application-level heartbeat. Server sends ``{"type":"ping","ts":<float>}``
 every ``ws_heartbeat_interval_sec`` (30s). Client must reply
 ``{"type":"pong"}`` within ``ws_heartbeat_pong_timeout_sec`` (10s) or
@@ -36,6 +41,37 @@ logger = logging.getLogger("juniper_cascor.api.websocket.control")
 
 _VALID_COMMANDS = {"start", "stop", "pause", "resume", "reset", "set_params"}
 _MAX_MESSAGE_SIZE = 65536  # 64KB
+
+# Phase D: per-command execution timeouts (§S10)
+_COMMAND_TIMEOUTS: dict[str, float] = {
+    "start": 10.0,
+    "stop": 2.0,
+    "pause": 2.0,
+    "resume": 2.0,
+    "reset": 2.0,
+    "set_params": 1.0,
+}
+
+# Observability: lazy-initialized Prometheus counter (§S10.7)
+_command_received_counter = None
+
+
+def _get_command_counter():
+    """Lazily create the command received counter when metrics are available."""
+    global _command_received_counter
+    if _command_received_counter is None:
+        try:
+            from prometheus_client import Counter
+
+            _command_received_counter = Counter(
+                "cascor_ws_control_command_received_total",
+                "WebSocket control commands received",
+                ["command"],
+            )
+        except ImportError:
+            _command_received_counter = False  # sentinel: prometheus not available
+    return _command_received_counter
+
 
 # Module-level handshake cooldown (shared across connections, cleared on restart)
 _handshake_cooldown = None
@@ -195,16 +231,37 @@ async def control_stream_handler(websocket: WebSocket) -> None:
                 continue
 
             if command not in _VALID_COMMANDS:
-                await websocket.send_json(create_control_ack_message(command, "error", error=f"Unknown command: {command}", command_id=command_id))
+                await websocket.send_json(
+                    create_control_ack_message(
+                        command,
+                        "error",
+                        error=f"Unknown command: {command}",
+                        command_id=command_id,
+                        code="unknown_command",
+                    )
+                )
                 continue
 
             if lifecycle is None:
                 await websocket.send_json(create_control_ack_message(command, "error", error="Lifecycle manager not available", command_id=command_id))
                 continue
 
+            # Observability: count command receipt (§S10.7)
+            counter = _get_command_counter()
+            if counter:
+                counter.labels(command=command).inc()
+
+            # Phase D: per-command timeout (§S10)
+            timeout = _COMMAND_TIMEOUTS.get(command, 2.0)
             try:
-                result = _execute_command(lifecycle, command, msg.get("params"))
+                result = await asyncio.wait_for(
+                    asyncio.to_thread(_execute_command, lifecycle, command, msg.get("params")),
+                    timeout=timeout,
+                )
                 await websocket.send_json(create_control_ack_message(command, "success", data=result, command_id=command_id))
+            except asyncio.TimeoutError:
+                logger.error("Command '%s' timed out after %ss", command, timeout)
+                await websocket.send_json(create_control_ack_message(command, "error", error=f"Command timed out after {timeout}s", command_id=command_id))
             except Exception as e:
                 logger.error("Command '%s' failed: %s", command, e)
                 await websocket.send_json(create_control_ack_message(command, "error", error="Command execution failed", command_id=command_id))
