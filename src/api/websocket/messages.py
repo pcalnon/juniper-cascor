@@ -116,6 +116,7 @@ def create_control_ack_message(
     error: Optional[str] = None,
     *,
     command_id: Optional[str] = None,
+    code: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Create a control command acknowledgment message.
 
@@ -136,4 +137,6 @@ def create_control_ack_message(
         msg["data"]["result"] = data
     if error:
         msg["data"]["error"] = error
+    if code is not None:
+        msg["data"]["code"] = code
     return msg
