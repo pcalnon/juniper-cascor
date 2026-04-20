@@ -19,6 +19,7 @@ Training stalls before accuracy/loss reach target values because the patience-ba
 **File**: `cascade_correlation.py:4449`
 
 **Before** (broken):
+
 ```python
 if value_loss < best_value_loss:
     best_value_loss = value_loss
@@ -28,6 +29,7 @@ if value_loss < best_value_loss:
 **Problem**: During late training, loss decreases by infinitesimal amounts each epoch (e.g., 0.523411 -> 0.523410). This always satisfies `<`, resetting patience to 0. The patience limit is never reached, so training continues until `epochs_max`.
 
 **After** (fixed):
+
 ```python
 if value_loss < best_value_loss - self.convergence_threshold:
     best_value_loss = value_loss
@@ -41,11 +43,13 @@ With `convergence_threshold = 0.001`, improvements smaller than 0.001 are not co
 **File**: `candidate_unit.py:602`
 
 **Before** (broken):
+
 ```python
 if current_abs_correlation > abs(best_correlation_so_far):
 ```
 
 **After** (fixed):
+
 ```python
 if current_abs_correlation > abs(best_correlation_so_far) + self.convergence_threshold:
 ```
