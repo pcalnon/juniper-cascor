@@ -60,7 +60,7 @@ Same pattern: candidates now stop training when correlation improvement plateaus
 
 The convergence threshold is configurable at runtime through the full stack:
 
-```
+```bash
 constants_model.py (defaults)
   -> constants.py (propagation)
     -> cascade_correlation_config.py (config class)
@@ -72,12 +72,12 @@ constants_model.py (defaults)
 
 ### Default Values
 
-| Parameter | Default | Scope |
-|-----------|---------|-------|
-| `_PROJECT_MODEL_CONVERGENCE_THRESHOLD` | 0.001 | Output training patience |
-| `_PROJECT_MODEL_CANDIDATE_CONVERGENCE_THRESHOLD` | 0.001 | Candidate training patience |
-| `_PROJECT_MODEL_PATIENCE` | 50 | Output training patience epochs |
-| `_PROJECT_MODEL_CANDIDATE_PATIENCE` | 30 | Candidate training patience epochs |
+| Parameter                                        | Default | Scope                              |
+|--------------------------------------------------|---------|------------------------------------|
+| `_PROJECT_MODEL_CONVERGENCE_THRESHOLD`           | 0.001   | Output training patience           |
+| `_PROJECT_MODEL_CANDIDATE_CONVERGENCE_THRESHOLD` | 0.001   | Candidate training patience        |
+| `_PROJECT_MODEL_PATIENCE`                        | 50      | Output training patience epochs    |
+| `_PROJECT_MODEL_CANDIDATE_PATIENCE`              | 30      | Candidate training patience epochs |
 
 ### Runtime Updateable Parameters
 
@@ -89,11 +89,11 @@ The following new parameters are exposed via `PATCH /v1/training/params`:
 
 ## Risk Assessment
 
-| Risk | Likelihood | Impact | Mitigation |
-|------|-----------|--------|------------|
-| Threshold too high: premature stopping | Low | Medium | Default 0.001 is conservative; tunable at runtime |
-| Threshold too low: stalling persists | Low | High | Monitor training runs; increase if needed |
-| Breaking existing trained models | None | None | Convergence threshold is a training-time parameter only |
+| Risk                                   | Likelihood | Impact | Mitigation                                              |
+|----------------------------------------|------------|--------|---------------------------------------------------------|
+| Threshold too high: premature stopping | Low        | Medium | Default 0.001 is conservative; tunable at runtime       |
+| Threshold too low: stalling persists   | Low        | High   | Monitor training runs; increase if needed               |
+| Breaking existing trained models       | None       | None   | Convergence threshold is a training-time parameter only |
 
 ## Verification
 
