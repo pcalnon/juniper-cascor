@@ -149,6 +149,7 @@ class TestRequestBodyLimitMiddleware:
     def test_chunked_body_under_limit_accepted(self, body_limit_app):
         """Chunked transfer with small body still works end-to-end."""
         client = TestClient(body_limit_app)
+
         # httpx sends as chunked when given a generator
         def body_gen():
             yield b'{"a":'

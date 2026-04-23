@@ -95,6 +95,7 @@ from cascor_constants.constants_api.constants_api_defaults import _PROJECT_API_D
 from cascor_constants.constants_api.constants_api_defaults import _PROJECT_API_DECISION_BOUNDARY_RESOLUTION_MIN  # noqa: F401
 from cascor_constants.constants_api.constants_api_defaults import _PROJECT_API_DRAIN_THREAD_JOIN_TIMEOUT  # noqa: F401
 from cascor_constants.constants_api.constants_api_defaults import _PROJECT_API_HEALTH_CHECK_HTTP_TIMEOUT  # noqa: F401
+from cascor_constants.constants_api.constants_api_defaults import _PROJECT_API_HTTP_400_BAD_REQUEST  # noqa: F401
 from cascor_constants.constants_api.constants_api_defaults import _PROJECT_API_HTTP_404_NOT_FOUND  # noqa: F401
 from cascor_constants.constants_api.constants_api_defaults import _PROJECT_API_HTTP_413_PAYLOAD_TOO_LARGE  # noqa: F401
 from cascor_constants.constants_api.constants_api_defaults import _PROJECT_API_HTTP_500_INTERNAL_SERVER_ERROR  # noqa: F401

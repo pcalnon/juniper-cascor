@@ -2,15 +2,7 @@
 
 import pytest
 
-from api.websocket.messages import (
-    create_cascade_add_message,
-    create_candidate_progress_message,
-    create_control_ack_message,
-    create_event_message,
-    create_metrics_message,
-    create_state_message,
-    create_topology_message,
-)
+from api.websocket.messages import create_candidate_progress_message, create_cascade_add_message, create_control_ack_message, create_event_message, create_metrics_message, create_state_message, create_topology_message
 
 
 @pytest.mark.unit

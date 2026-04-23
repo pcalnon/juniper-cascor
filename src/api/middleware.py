@@ -5,7 +5,7 @@ from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoin
 from starlette.responses import JSONResponse
 from starlette.types import ASGIApp
 
-from cascor_constants.constants_api import _PROJECT_API_HTTP_413_PAYLOAD_TOO_LARGE, _PROJECT_API_MAX_REQUEST_BODY_BYTES
+from cascor_constants.constants_api import _PROJECT_API_HTTP_400_BAD_REQUEST, _PROJECT_API_HTTP_413_PAYLOAD_TOO_LARGE, _PROJECT_API_MAX_REQUEST_BODY_BYTES
 
 from .security import APIKeyAuth, RateLimiter
 
@@ -80,8 +80,13 @@ class RequestBodyLimitMiddleware(BaseHTTPMiddleware):
         # Fast-path early reject on declared Content-Length. Still untrusted
         # as a floor, so the stream-read below enforces the real limit.
         content_length = request.headers.get("content-length")
-        if content_length is not None and int(content_length) > self._max_bytes:
-            return JSONResponse(status_code=_PROJECT_API_HTTP_413_PAYLOAD_TOO_LARGE, content={"detail": "Request body too large"})
+        if content_length is not None:
+            try:
+                declared_length = int(content_length)
+            except ValueError:
+                return JSONResponse(status_code=_PROJECT_API_HTTP_400_BAD_REQUEST, content={"detail": "Invalid Content-Length header"})
+            if declared_length > self._max_bytes:
+                return JSONResponse(status_code=_PROJECT_API_HTTP_413_PAYLOAD_TOO_LARGE, content={"detail": "Request body too large"})
         if content_length is None and request.method in ("POST", "PUT", "PATCH"):
             body = await request.body()
             if len(body) > self._max_bytes:

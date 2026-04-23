@@ -16,6 +16,7 @@ import threading
 import time
 import uuid
 from collections import deque
+from concurrent.futures import CancelledError
 from typing import Any, Dict, List, Optional, Set
 
 from fastapi import WebSocket
@@ -242,9 +243,7 @@ class WebSocketManager:
                 return []
             oldest_seq = self._replay_buffer[0].get("seq", 0)
             if last_seq < oldest_seq - 1:
-                raise ReplayOutOfRange(
-                    f"Requested seq {last_seq} older than oldest buffered seq {oldest_seq}"
-                )
+                raise ReplayOutOfRange(f"Requested seq {last_seq} older than oldest buffered seq {oldest_seq}")
             return [msg for msg in self._replay_buffer if msg.get("seq", 0) > last_seq]
 
     # ------------------------------------------------------------------
@@ -285,10 +284,10 @@ class WebSocketManager:
         """Done callback for broadcast futures — logs exceptions (GAP-WS-29)."""
         try:
             exc = future.exception()
-            if exc is not None:
-                logger.error("Broadcast from thread failed: %s", exc, exc_info=exc)
-        except Exception:
-            pass  # Future was cancelled
+        except CancelledError:
+            return
+        if exc is not None:
+            logger.error("Broadcast from thread failed: %s", exc, exc_info=exc)
 
     async def send_personal_message(self, websocket: WebSocket, message: dict) -> bool:
         """Send a message to a specific client (no seq assignment)."""

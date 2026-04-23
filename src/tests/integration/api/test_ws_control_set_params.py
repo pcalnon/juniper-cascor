@@ -19,7 +19,6 @@ from starlette.websockets import WebSocketDisconnect
 from api.app import create_app
 from api.settings import Settings
 
-
 # ===================================================================
 # Fixtures
 # ===================================================================
@@ -177,11 +176,13 @@ class TestWsControlSetParams:
             _drain_established(ws)
             # Build a payload > 64KB
             huge_value = "x" * 70_000
-            payload = json.dumps({
-                "command": "set_params",
-                "params": {"learning_rate": 0.01},
-                "padding": huge_value,
-            })
+            payload = json.dumps(
+                {
+                    "command": "set_params",
+                    "params": {"learning_rate": 0.01},
+                    "padding": huge_value,
+                }
+            )
             assert len(payload) > 65536
             ws.send_text(payload)
             response = ws.receive_json()
@@ -290,13 +291,17 @@ class TestWsControlSetParams:
             # may allow a few more depending on timing. We just need to see
             # at least one rate_limited response.
             for i in range(15):
-                ws.send_text(json.dumps({
-                    "command": "set_params",
-                    "params": {"learning_rate": 0.01},
-                    "command_id": f"burst-{i}",
-                }))
+                ws.send_text(
+                    json.dumps(
+                        {
+                            "command": "set_params",
+                            "params": {"learning_rate": 0.01},
+                            "command_id": f"burst-{i}",
+                        }
+                    )
+                )
 
-            for i in range(15):
+            for _ in range(15):
                 response = ws.receive_json()
                 if response.get("status") == "rate_limited" or response.get("data", {}).get("status") == "rate_limited":
                     rate_limited_seen = True
@@ -322,11 +327,15 @@ class TestWsControlSetParams:
             # Send all three commands
             for cid, params in zip(ids, params_list):
                 _send_command.__wrapped__ = None  # just use inline send
-                ws.send_text(json.dumps({
-                    "command": "set_params",
-                    "params": params,
-                    "command_id": cid,
-                }))
+                ws.send_text(
+                    json.dumps(
+                        {
+                            "command": "set_params",
+                            "params": params,
+                            "command_id": cid,
+                        }
+                    )
+                )
 
             # Collect all three responses
             responses = {}

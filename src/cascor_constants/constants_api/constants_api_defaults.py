@@ -129,6 +129,7 @@ _PROJECT_API_ANOMALY_DUPLICATE_CORR_WINDOW: int = 10
 #####################################################################################################################################################################################################
 
 _PROJECT_API_MAX_REQUEST_BODY_BYTES: int = 10 * 1024 * 1024  # 10 MB
+_PROJECT_API_HTTP_400_BAD_REQUEST: int = 400
 _PROJECT_API_HTTP_413_PAYLOAD_TOO_LARGE: int = 413
 
 

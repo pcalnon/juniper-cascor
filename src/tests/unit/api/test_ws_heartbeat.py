@@ -16,7 +16,6 @@ from starlette.websockets import WebSocketDisconnect
 from api.app import create_app
 from api.settings import Settings
 
-
 # ===================================================================
 # Fixtures
 # ===================================================================
@@ -140,9 +139,7 @@ class TestWsHeartbeat:
     # 4. Full cycle: 1006 → heartbeat detection → reconnect trigger
     # ------------------------------------------------------------------
 
-    def test_broken_connection_1006_triggers_heartbeat_detection_and_reconnect(
-        self, client_fast_heartbeat
-    ):
+    def test_broken_connection_1006_triggers_heartbeat_detection_and_reconnect(self, client_fast_heartbeat):
         """Full heartbeat failure cycle on /ws/control.
 
         1. Connect to /ws/control
