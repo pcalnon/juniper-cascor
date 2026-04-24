@@ -99,28 +99,38 @@ class TestUtilsColumnarImportFallback:
 
 
 class TestObjectAttributesToTableColumnar:
-    """Test _object_attributes_to_table columnar formatting paths."""
+    """Test _object_attributes_to_table columnar formatting paths.
+
+    BUG-CC-11 (fixed): the walrus-operator precedence bug on line 208 of
+    ``utils/utils.py`` previously bound ``content`` to a bool, so every call
+    with valid inputs raised ``AttributeError`` inside the loop. These tests
+    now lock in the post-fix rendering behavior.
+    """
 
     def test_table_formatting_fallback_without_columnar(self):
-        """When HAS_COLUMNAR is False, fallback string formatting is used (lines 220-222)."""
+        """When HAS_COLUMNAR is False, fallback string formatting renders a string."""
+        from unittest.mock import patch
+
         from utils.utils import _object_attributes_to_table
 
-        # Due to walrus operator precedence bug in line 208, calling with valid
-        # params triggers AttributeError. Document the behavior.
         obj_dict = {"name": "test", "value": 42}
         keys = ["name", "value"]
-        with pytest.raises(AttributeError):
-            _object_attributes_to_table(obj_dict, keys, False)
+        with patch("utils.utils.HAS_COLUMNAR", False), patch("utils.utils.col", None):
+            result = _object_attributes_to_table(obj_dict, keys, False)
+        assert isinstance(result, str)
+        assert "name" in result and "value" in result
 
     def test_table_with_private_attrs_false_skips_underscore(self):
-        """Private attrs starting with _ are skipped when private_attrs=False."""
+        """Private attrs starting with ``_`` are skipped when private_attrs=False."""
         from utils.utils import _object_attributes_to_table
 
         obj_dict = {"_private": "hidden", "public": "visible"}
         keys = ["_private", "public"]
-        # Walrus operator bug prevents reaching the filtering logic
-        with pytest.raises(AttributeError):
-            _object_attributes_to_table(obj_dict, keys, False)
+        result = _object_attributes_to_table(obj_dict, keys, False)
+        assert isinstance(result, str)
+        # Only the public key should appear in the rendered table.
+        assert "public" in result
+        assert "_private" not in result
 
     def test_table_with_private_attrs_true_includes_underscore(self):
         """Private attrs are included when private_attrs=True."""
@@ -128,8 +138,9 @@ class TestObjectAttributesToTableColumnar:
 
         obj_dict = {"_private": "hidden", "public": "visible"}
         keys = ["_private", "public"]
-        with pytest.raises(AttributeError):
-            _object_attributes_to_table(obj_dict, keys, True)
+        result = _object_attributes_to_table(obj_dict, keys, True)
+        assert isinstance(result, str)
+        assert "_private" in result and "public" in result
 
 
 # ======================================================================

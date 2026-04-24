@@ -572,64 +572,23 @@ class SpiralProblem(object):
             This method is called by the `generate_n_spiral_dataset` method to initialize the parameters for generating the spiral dataset.
         """
         self.logger.trace("SpiralProblem: _initialize_spiral_problem_params: Initializing Spiral Problem parameters")
-        # Set the parameters to the provided values or use the class attributes if the parameters are None
-        self.min_new = min_new or self.min_new or _SPIRAL_PROBLEM_MIN_NEW  # Use class attribute if min_new is None
-        # Original corrupted line:
-        # self.max_new = max_new or self.max_new or _SPIRAL_PROBLEM_MAX_NEW\ \ \#\ Use class attribute if max_new is None
-        # Fixed line:
-        self.max_new = max_new or self.max_new or _SPIRAL_PROBLEM_MAX_NEW  # Use class attribute if max_new is None
-        # Original corrupted line:
-        # self.min_orig = min_orig or self.min_orig or _SPIRAL_PROBLEM_MIN_ORIG\ \ \#\ Use class attribute if min_orig is None
-        # Fixed line:
-        self.min_orig = min_orig or self.min_orig or _SPIRAL_PROBLEM_MIN_ORIG  # Use class attribute if min_orig is None
-        # Original corrupted line:
-        # self.max_orig = max_orig or self.max_orig or _SPIRAL_PROBLEM_MAX_ORIG\ \ \#\ Use class attribute if max_orig is None
-        # Fixed line:
-        self.max_orig = max_orig or self.max_orig or _SPIRAL_PROBLEM_MAX_ORIG  # Use class attribute if max_orig is None
-        # Original corrupted line:
-        # self.orig_points = orig_points or self.orig_points or _SPIRAL_PROBLEM_ORIG_POINTS\ \ \#\ Use class attribute if orig_points is None
-        # Fixed line:
-        self.orig_points = orig_points or self.orig_points or _SPIRAL_PROBLEM_ORIG_POINTS  # Use class attribute if orig_points is None
-        # Original corrupted line:
-        # self.train_ratio = train_ratio or self.train_ratio or _SPIRAL_PROBLEM_TRAIN_RATIO\ \ \#\ Use class attribute if train_ratio is None
-        # Fixed line:
-        self.train_ratio = train_ratio or self.train_ratio or _SPIRAL_PROBLEM_TRAIN_RATIO  # Use class attribute if train_ratio is None
-        # Original corrupted line:
-        # self.test_ratio = test_ratio or self.test_ratio or _SPIRAL_PROBLEM_TEST_RATIO\ \ \#\ Use class attribute if test_ratio is None
-        # Fixed line:
-        self.test_ratio = test_ratio or self.test_ratio or _SPIRAL_PROBLEM_TEST_RATIO  # Use class attribute if test_ratio is None
-        # Original corrupted line:
-        # self.clockwise = clockwise or self.clockwise or _SPIRAL_PROBLEM_CLOCKWISE\ \ \#\ Use class attribute if clockwise is None
-        # Fixed line:
-        self.clockwise = clockwise or self.clockwise or _SPIRAL_PROBLEM_CLOCKWISE  # Use class attribute if clockwise is None
-        # Original corrupted line:
-        # self.n_spirals = n_spirals or self.n_spirals or _SPIRAL_PROBLEM_NUM_SPIRALS\ \ \#\ Use class attribute if n_spirals is None
-        # Fixed line:
-        self.n_spirals = n_spirals or self.n_spirals or _SPIRAL_PROBLEM_NUM_SPIRALS  # Use class attribute if n_spirals is None
-        # Original corrupted line:
-        # self.n_rotations = n_rotations or self.n_rotations or _SPIRAL_PROBLEM_NUM_ROTATIONS\ \ \#\ Use class attribute if n_rotations is None
-        # Fixed line:
-        self.n_rotations = n_rotations or self.n_rotations or _SPIRAL_PROBLEM_NUM_ROTATIONS  # Use class attribute if n_rotations is None
-        # Original corrupted line:
-        # self.n_points = n_points or self.n_points or _SPIRAL_PROBLEM_NUMBER_POINTS_PER_SPIRAL\ \ \#\ Use class attribute if n_points is None
-        # Fixed line:
-        self.n_points = n_points or self.n_points or _SPIRAL_PROBLEM_NUMBER_POINTS_PER_SPIRAL  # Use class attribute if n_points is None
-        # Original corrupted line:
-        # self.default_origin = default_origin or self.default_origin or _SPIRAL_PROBLEM_DEFAULT_ORIGIN\ \ \#\ Use class attribute if default_origin is None
-        # Fixed line:
-        self.default_origin = default_origin or self.default_origin or _SPIRAL_PROBLEM_DEFAULT_ORIGIN  # Use class attribute if default_origin is None
-        # Original corrupted line:
-        # self.default_radius = default_radius or self.default_radius or _SPIRAL_PROBLEM_DEFAULT_RADIUS\ \ \#\ Use class attribute if default_radius is None
-        # Fixed line:
-        self.default_radius = default_radius or self.default_radius or _SPIRAL_PROBLEM_DEFAULT_RADIUS  # Use class attribute if default_radius is None
-        # Original corrupted line:
-        # self.noise = noise_level or self.noise or _SPIRAL_PROBLEM_NOISE_FACTOR_DEFAULT\ \ \#\ Use class attribute if noise is None
-        # Fixed line:
-        self.noise = noise_level or self.noise or _SPIRAL_PROBLEM_NOISE_FACTOR_DEFAULT  # Use class attribute if noise is None
-        # Original corrupted line:
-        # self.distribution = distribution or self.distribution or _SPIRAL_PROBLEM_DISTRIBUTION_FACTOR\ \ \#\ Use class attribute if distribution is None
-        # Fixed line:
-        self.distribution = distribution or self.distribution or _SPIRAL_PROBLEM_DISTRIBUTION_FACTOR  # Use class attribute if distribution is None
+        # BUG-CC-03: Use explicit `is not None` checks instead of `or` fallback chains so that
+        # valid falsy values (False, 0, 0.0, "") are not silently overridden by class attributes/defaults.
+        self.min_new = min_new if min_new is not None else (self.min_new if self.min_new is not None else _SPIRAL_PROBLEM_MIN_NEW)
+        self.max_new = max_new if max_new is not None else (self.max_new if self.max_new is not None else _SPIRAL_PROBLEM_MAX_NEW)
+        self.min_orig = min_orig if min_orig is not None else (self.min_orig if self.min_orig is not None else _SPIRAL_PROBLEM_MIN_ORIG)
+        self.max_orig = max_orig if max_orig is not None else (self.max_orig if self.max_orig is not None else _SPIRAL_PROBLEM_MAX_ORIG)
+        self.orig_points = orig_points if orig_points is not None else (self.orig_points if self.orig_points is not None else _SPIRAL_PROBLEM_ORIG_POINTS)
+        self.train_ratio = train_ratio if train_ratio is not None else (self.train_ratio if self.train_ratio is not None else _SPIRAL_PROBLEM_TRAIN_RATIO)
+        self.test_ratio = test_ratio if test_ratio is not None else (self.test_ratio if self.test_ratio is not None else _SPIRAL_PROBLEM_TEST_RATIO)
+        self.clockwise = clockwise if clockwise is not None else (self.clockwise if self.clockwise is not None else _SPIRAL_PROBLEM_CLOCKWISE)
+        self.n_spirals = n_spirals if n_spirals is not None else (self.n_spirals if self.n_spirals is not None else _SPIRAL_PROBLEM_NUM_SPIRALS)
+        self.n_rotations = n_rotations if n_rotations is not None else (self.n_rotations if self.n_rotations is not None else _SPIRAL_PROBLEM_NUM_ROTATIONS)
+        self.n_points = n_points if n_points is not None else (self.n_points if self.n_points is not None else _SPIRAL_PROBLEM_NUMBER_POINTS_PER_SPIRAL)
+        self.default_origin = default_origin if default_origin is not None else (self.default_origin if self.default_origin is not None else _SPIRAL_PROBLEM_DEFAULT_ORIGIN)
+        self.default_radius = default_radius if default_radius is not None else (self.default_radius if self.default_radius is not None else _SPIRAL_PROBLEM_DEFAULT_RADIUS)
+        self.noise = noise_level if noise_level is not None else (self.noise if self.noise is not None else _SPIRAL_PROBLEM_NOISE_FACTOR_DEFAULT)
+        self.distribution = distribution if distribution is not None else (self.distribution if self.distribution is not None else _SPIRAL_PROBLEM_DISTRIBUTION_FACTOR)
         self.total_points = self.n_spirals * self.n_points
         self.logger.trace("SpiralProblem: _initialize_spiral_problem_params: Completed initialization")
 
@@ -1247,23 +1206,24 @@ class SpiralProblem(object):
 
         # Initialize Spiral Problem input parameters
         self.logger.trace("SpiralProblem: solve_n_spiral_problem: Initializing Spiral Problem input parameters")
-        self.n_points = n_points or self.n_points or _SPIRAL_PROBLEM_NUMBER_POINTS_PER_SPIRAL  # Use class attribute if n_points is None
+        # BUG-CC-03: Explicit `is not None` fallbacks preserve valid falsy overrides (False, 0, 0.0).
+        self.n_points = n_points if n_points is not None else (self.n_points if self.n_points is not None else _SPIRAL_PROBLEM_NUMBER_POINTS_PER_SPIRAL)
         self.logger.verbose(f"SpiralProblem: solve_n_spiral_problem: Number of points per spiral: {self.n_points}")
-        self.n_spirals = n_spirals or self.n_spirals or _SPIRAL_PROBLEM_NUM_SPIRALS  # Use class attribute if n_spirals is None
+        self.n_spirals = n_spirals if n_spirals is not None else (self.n_spirals if self.n_spirals is not None else _SPIRAL_PROBLEM_NUM_SPIRALS)
         self.logger.verbose(f"SpiralProblem: solve_n_spiral_problem: Number of spirals to generate: {self.n_spirals}")
-        self.n_rotations = n_rotations or self.n_rotations or _SPIRAL_PROBLEM_NUM_ROTATIONS  # Use class attribute if n_rotations is None
+        self.n_rotations = n_rotations if n_rotations is not None else (self.n_rotations if self.n_rotations is not None else _SPIRAL_PROBLEM_NUM_ROTATIONS)
         self.logger.verbose(f"SpiralProblem: solve_n_spiral_problem: Number of rotations for each spiral: {self.n_rotations}")
-        self.clockwise = clockwise or self.clockwise or _SPIRAL_PROBLEM_CLOCKWISE  # Use class attribute if clockwise is None
+        self.clockwise = clockwise if clockwise is not None else (self.clockwise if self.clockwise is not None else _SPIRAL_PROBLEM_CLOCKWISE)
         self.logger.verbose(f"SpiralProblem: solve_n_spiral_problem: Clockwise spirals: {'Yes' if self.clockwise else 'No'}")
-        self.noise = noise or self.noise or _SPIRAL_PROBLEM_NOISE_FACTOR_DEFAULT  # Use class attribute if noise is None
+        self.noise = noise if noise is not None else (self.noise if self.noise is not None else _SPIRAL_PROBLEM_NOISE_FACTOR_DEFAULT)
         self.logger.verbose(f"SpiralProblem: solve_n_spiral_problem: Noise level: {self.noise}")
-        self.distribution = distribution or self.distribution or _SPIRAL_PROBLEM_DISTRIBUTION_FACTOR  # Use class attribute if distribution is None
+        self.distribution = distribution if distribution is not None else (self.distribution if self.distribution is not None else _SPIRAL_PROBLEM_DISTRIBUTION_FACTOR)
         self.logger.verbose(f"SpiralProblem: solve_n_spiral_problem: Distribution factor: {self.distribution}")
-        self.test_ratio = test_ratio or self.test_ratio or _SPIRAL_PROBLEM_TEST_RATIO  # Use class attribute if test_ratio is None
+        self.test_ratio = test_ratio if test_ratio is not None else (self.test_ratio if self.test_ratio is not None else _SPIRAL_PROBLEM_TEST_RATIO)
         self.logger.verbose(f"SpiralProblem: solve_n_spiral_problem: Test Ratio: {self.test_ratio}")
-        self.train_ratio = train_ratio or self.train_ratio or _SPIRAL_PROBLEM_TRAIN_RATIO  # Use class attribute if train_ratio is None
+        self.train_ratio = train_ratio if train_ratio is not None else (self.train_ratio if self.train_ratio is not None else _SPIRAL_PROBLEM_TRAIN_RATIO)
         self.logger.verbose(f"SpiralProblem: solve_n_spiral_problem: Train Ratio: {self.train_ratio}")
-        self.plot = plot or self.plot or _SPIRAL_PROBLEM_GENERATE_PLOTS_DEFAULT  # Use class attribute if plot is None
+        self.plot = plot if plot is not None else (self.plot if self.plot is not None else _SPIRAL_PROBLEM_GENERATE_PLOTS_DEFAULT)
         self.logger.verbose(f"SpiralProblem: solve_n_spiral_problem: Plotting results: {'Enabled' if self.plot else 'Disabled'}")
 
         # Generate the n spiral dataset
@@ -1406,29 +1366,30 @@ class SpiralProblem(object):
 
         # Set parameters for the two spiral problem
         self.logger.trace("SpiralProblem: evaluate: Setting parameters for the two spiral problem")
-        self.n_points = n_points or self.n_points or _SPIRAL_PROBLEM_NUMBER_POINTS_PER_SPIRAL
+        # BUG-CC-03: Explicit `is not None` fallbacks preserve valid falsy overrides (False, 0, 0.0).
+        self.n_points = n_points if n_points is not None else (self.n_points if self.n_points is not None else _SPIRAL_PROBLEM_NUMBER_POINTS_PER_SPIRAL)
         self.logger.verbose(f"SpiralProblem: evaluate: Number of points per spiral: {self.n_points}")
-        self.n_spirals = n_spirals or self.n_spirals or _SPIRAL_PROBLEM_NUM_SPIRALS
+        self.n_spirals = n_spirals if n_spirals is not None else (self.n_spirals if self.n_spirals is not None else _SPIRAL_PROBLEM_NUM_SPIRALS)
         self.logger.verbose(f"SpiralProblem: evaluate: Number of spirals to generate: {self.n_spirals}")
-        self.n_rotations = n_rotations or self.n_rotations or _SPIRAL_PROBLEM_NUM_ROTATIONS
+        self.n_rotations = n_rotations if n_rotations is not None else (self.n_rotations if self.n_rotations is not None else _SPIRAL_PROBLEM_NUM_ROTATIONS)
         self.logger.verbose(f"SpiralProblem: evaluate: Number of rotations for each spiral: {self.n_rotations}")
-        self.clockwise = clockwise or self.clockwise or _SPIRAL_PROBLEM_CLOCKWISE
+        self.clockwise = clockwise if clockwise is not None else (self.clockwise if self.clockwise is not None else _SPIRAL_PROBLEM_CLOCKWISE)
         self.logger.verbose(f"SpiralProblem: evaluate: Clockwise spirals: {'Yes' if self.clockwise else 'No'}")
-        self.noise = noise or self.noise or _SPIRAL_PROBLEM_NOISE_FACTOR_DEFAULT
+        self.noise = noise if noise is not None else (self.noise if self.noise is not None else _SPIRAL_PROBLEM_NOISE_FACTOR_DEFAULT)
         self.logger.verbose(f"SpiralProblem: evaluate: Noise level: {self.noise}")
-        self.distribution = distribution or self.distribution or _SPIRAL_PROBLEM_DISTRIBUTION_FACTOR
+        self.distribution = distribution if distribution is not None else (self.distribution if self.distribution is not None else _SPIRAL_PROBLEM_DISTRIBUTION_FACTOR)
         self.logger.verbose(f"SpiralProblem: evaluate: Distribution factor: {self.distribution}")
-        self.plot = plot or self.plot or _SPIRAL_PROBLEM_GENERATE_PLOTS_DEFAULT
+        self.plot = plot if plot is not None else (self.plot if self.plot is not None else _SPIRAL_PROBLEM_GENERATE_PLOTS_DEFAULT)
         self.logger.verbose(f"SpiralProblem: evaluate: Plotting results: {'Enabled' if self.plot else 'Disabled'}")
-        self.train_ratio = train_ratio or self.train_ratio or _SPIRAL_PROBLEM_TRAIN_RATIO
+        self.train_ratio = train_ratio if train_ratio is not None else (self.train_ratio if self.train_ratio is not None else _SPIRAL_PROBLEM_TRAIN_RATIO)
         self.logger.verbose(f"SpiralProblem: evaluate: Training data ratio: {self.train_ratio}")
-        self.test_ratio = test_ratio or self.test_ratio or _SPIRAL_PROBLEM_TEST_RATIO
+        self.test_ratio = test_ratio if test_ratio is not None else (self.test_ratio if self.test_ratio is not None else _SPIRAL_PROBLEM_TEST_RATIO)
         self.logger.verbose(f"SpiralProblem: evaluate: Test data ratio: {self.test_ratio}")
-        self.random_value_scale = random_value_scale or self.random_value_scale or _SPIRAL_PROBLEM_RANDOM_VALUE_SCALE
+        self.random_value_scale = random_value_scale if random_value_scale is not None else (self.random_value_scale if self.random_value_scale is not None else _SPIRAL_PROBLEM_RANDOM_VALUE_SCALE)
         self.logger.verbose(f"SpiralProblem: evaluate: Random value scale: {self.random_value_scale}")
-        self.default_origin = default_origin or self.default_origin or _SPIRAL_PROBLEM_DEFAULT_ORIGIN
+        self.default_origin = default_origin if default_origin is not None else (self.default_origin if self.default_origin is not None else _SPIRAL_PROBLEM_DEFAULT_ORIGIN)
         self.logger.verbose(f"SpiralProblem: evaluate: Default origin for spirals: {self.default_origin}")
-        self.default_radius = default_radius or self.default_radius or _SPIRAL_PROBLEM_DEFAULT_RADIUS
+        self.default_radius = default_radius if default_radius is not None else (self.default_radius if self.default_radius is not None else _SPIRAL_PROBLEM_DEFAULT_RADIUS)
         self.logger.verbose(f"SpiralProblem: evaluate: Default radius for spirals: {self.default_radius}")
 
         # Solve the two spiral problem

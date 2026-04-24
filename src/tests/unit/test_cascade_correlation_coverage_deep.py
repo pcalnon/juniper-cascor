@@ -207,8 +207,19 @@ class TestExecuteCandidateTraining:
                 assert len(results) == 1
 
     @pytest.mark.unit
-    def test_both_parallel_and_sequential_fail_returns_dummy(self):
-        """When both distributed and sequential fail, returns dummy results."""
+    def test_both_parallel_and_sequential_fail_raises_candidate_training_error(self):
+        """BUG-CC-18 / ROBUST-01: double failure must raise, not silently install dummies.
+
+        Previously, when both distributed and sequential paths failed,
+        ``_execute_candidate_training`` returned zero-correlation dummy results
+        via ``_get_dummy_results``, corrupting the network with meaningless data.
+        The fix surfaces the failure as ``CandidateTrainingError`` so the caller
+        can abort training.
+        """
+        from cascade_correlation.cascade_correlation_exceptions.cascade_correlation_exceptions import (
+            CandidateTrainingError,
+        )
+
         network = _make_network()
         x = torch.randn(4, 2)
         y = torch.randn(4, 2)
@@ -219,11 +230,8 @@ class TestExecuteCandidateTraining:
 
         with patch.object(network._task_distributor, "distribute_and_collect", side_effect=RuntimeError("dist fail")):
             with patch.object(network, "_execute_sequential_training", side_effect=RuntimeError("seq fail")):
-                results = network._execute_candidate_training(tasks=tasks, process_count=2)
-                # Should get dummy results
-                assert len(results) == 2
-                for r in results:
-                    assert r.success is False
+                with pytest.raises(CandidateTrainingError):
+                    network._execute_candidate_training(tasks=tasks, process_count=2)
 
     @pytest.mark.unit
     def test_sequential_fallback_after_parallel_exception(self):
