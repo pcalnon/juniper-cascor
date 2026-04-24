@@ -57,6 +57,19 @@ class TrainingError(CascadeCorrelationError):
     pass
 
 
+class CandidateTrainingError(TrainingError):
+    """Raised when candidate training fails irrecoverably.
+
+    BUG-CC-18 / ROBUST-01: Replaces the former silent installation of a dummy
+    zero-correlation candidate when both the parallel and sequential training
+    paths fail. Silent dummy installation corrupted the network with meaningless
+    data; raising this error instead fails loudly so callers can abort training
+    or apply their own retry policy.
+    """
+
+    pass
+
+
 class ValidationError(CascadeCorrelationError, ValueError):
     """Raised when input validation fails.
 

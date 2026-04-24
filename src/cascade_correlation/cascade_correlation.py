@@ -82,7 +82,7 @@ from candidate_unit.candidate_unit import CandidateTrainingResult, CandidateUnit
 #
 # Server-owned queues (live in Manager server process)
 from cascade_correlation.cascade_correlation_config.cascade_correlation_config import CascadeCorrelationConfig
-from cascade_correlation.cascade_correlation_exceptions.cascade_correlation_exceptions import ConfigurationError, TrainingError, ValidationError  # CascadeCorrelationError,; NetworkInitializationError,
+from cascade_correlation.cascade_correlation_exceptions.cascade_correlation_exceptions import CandidateTrainingError, ConfigurationError, TrainingError, ValidationError  # CascadeCorrelationError,; NetworkInitializationError,
 from cascor_constants.constants import (  # TODO: Commented out for F401 compliance - may be needed for future activation function selection; _CASCADE_CORRELATION_NETWORK_ACTIVATION_FUNCTION_NN_RELU,; _CASCADE_CORRELATION_NETWORK_ACTIVATION_FUNCTION_NN_SIGMOID,; _CASCADE_CORRELATION_NETWORK_ACTIVATION_FUNCTION_NN_TANH,; _CASCADE_CORRELATION_NETWORK_ACTIVATION_FUNCTION_RELU,; _CASCADE_CORRELATION_NETWORK_ACTIVATION_FUNCTION_SIGMOID,; _CASCADE_CORRELATION_NETWORK_ACTIVATION_FUNCTION_TANH,
     _CASCADE_CORRELATION_NETWORK_ACTIVATION_FUNCTION_DEFAULT,
     _CASCADE_CORRELATION_NETWORK_ACTIVATION_FUNCTION_NAME,
@@ -1714,6 +1714,15 @@ class CascadeCorrelationNetwork:
                 residual_error=residual_error,
             )
             self.logger.debug(f"CascadeCorrelationNetwork: train_candidates: Candidate training results: length: {len(results)}, value: {results}")
+        except CandidateTrainingError:
+            # BUG-CC-18 / ROBUST-01: propagate the specific candidate-training failure
+            # unchanged so callers can distinguish it from generic training errors and
+            # apply appropriate handling (abort, fail the run, surface via API, etc.).
+            import traceback
+
+            self.logger.error(f"CascadeCorrelationNetwork: train_candidates: Candidate training failed irrecoverably; aborting network growth")
+            self.logger.error(traceback.format_exc())
+            raise
         except Exception as e:
             self.logger.error(f"CascadeCorrelationNetwork: train_candidates: Error during candidate training: {e}")
             import traceback
@@ -1951,15 +1960,26 @@ class CascadeCorrelationNetwork:
                     results = self._execute_sequential_training(tasks)
                 self.logger.info("CascadeCorrelationNetwork: _execute_candidate_training: Sequential training completed successfully")
             except Exception as seq_error:
+                # BUG-CC-18 / ROBUST-01: Previously, both-paths-failed silently installed
+                # dummy zero-correlation results via ``_get_dummy_results``. That corrupted
+                # the network with meaningless candidate data while hiding the underlying
+                # failure. Raise an explicit error instead so the caller can abort training.
                 self.logger.error(f"CascadeCorrelationNetwork: _execute_candidate_training: Sequential training also failed: {seq_error}")
-                self.logger.warning("CascadeCorrelationNetwork: _execute_candidate_training: Creating dummy results for failed training")
-                results = self._get_dummy_results(len(tasks))
+                raise CandidateTrainingError(
+                    "Both parallel and sequential candidate training failed. "
+                    "Training cannot continue — network integrity would be compromised."
+                ) from seq_error
         self.logger.debug(f"CascadeCorrelationNetwork: _execute_candidate_training: Obtained {len(results)} results")
 
-        # Ensure we have some results:  For empty results list, create an intelligently empty dummy results
+        # BUG-CC-18 / ROBUST-01: Empty results after a non-exception return means every
+        # candidate silently produced nothing. Refuse to install zero-correlation dummies;
+        # surface the failure so the training loop can stop rather than corrupt the model.
         if not results:
             self.logger.error("CascadeCorrelationNetwork: _execute_candidate_training: No results obtained from either parallel or sequential processing")
-            results = self._get_dummy_results(len(tasks))
+            raise CandidateTrainingError(
+                "Candidate training produced no results after both parallel and sequential paths. "
+                "Refusing to install zero-correlation dummy candidates — network integrity would be compromised."
+            )
         return results
 
     def _drain_stale_results(self, result_queue) -> int:

@@ -205,7 +205,8 @@ def _object_attributes_to_table(obj_dict: dict = None, keys: [str] = None, priva
     Returns:
         String representing the object's attributes and their values in a columnar format.
     """
-    if content := _init_content_list(obj_dict is not None and keys is not None and private_attrs is not None) is not None:
+    # BUG-CC-11: parenthesize walrus so `content` receives the list, not the truthiness of the `is not None` comparison.
+    if (content := _init_content_list(obj_dict is not None and keys is not None and private_attrs is not None)) is not None:
         for key in keys:  # parse attributes from target object
             if key.startswith("_") and not private_attrs:  # Ignore private attributes
                 continue
