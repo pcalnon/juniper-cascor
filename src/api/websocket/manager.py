@@ -62,11 +62,19 @@ class WebSocketManager:
         max_connections: int = 50,
         max_replay_buffer_size: int = 1024,
         send_timeout_seconds: float = 0.5,
+        max_connections_per_ip: int = 5,
     ):
         # Connection tracking
         self._active_connections: Set[WebSocket] = set()
         self._pending_connections: Set[WebSocket] = set()
         self._max_connections = max_connections
+        # SEC-03: per-IP cap. Stored as ``ip -> count`` and updated under
+        # ``self._lock`` alongside the connection sets. Unknown clients
+        # (no ``websocket.client``) all share the sentinel key "unknown",
+        # which is intentional — if the reverse proxy strips the client
+        # address we cannot distinguish attackers anyway.
+        self._max_connections_per_ip = max_connections_per_ip
+        self._per_ip_counts: Dict[str, int] = {}
         self._event_loop: Optional[asyncio.AbstractEventLoop] = None
         self._connection_meta: Dict[WebSocket, Dict[str, Any]] = {}
         self._lock = asyncio.Lock()
@@ -127,6 +135,38 @@ class WebSocketManager:
             },
         }
 
+    def _source_ip(self, websocket: WebSocket) -> str:
+        """Best-effort source-IP for per-IP accounting (SEC-03)."""
+        client = getattr(websocket, "client", None)
+        if client is not None:
+            try:
+                return client[0] or "unknown"
+            except (IndexError, TypeError):
+                return "unknown"
+        return "unknown"
+
+    def _check_and_reserve_per_ip_slot(self, source_ip: str) -> bool:
+        """Reserve a per-IP slot; returns False if the cap would be exceeded.
+
+        Must be called with ``self._lock`` held. On success the caller is
+        responsible for invoking ``_release_per_ip_slot`` on disconnect.
+        """
+        current = self._per_ip_counts.get(source_ip, 0)
+        if current >= self._max_connections_per_ip:
+            return False
+        self._per_ip_counts[source_ip] = current + 1
+        return True
+
+    def _release_per_ip_slot(self, source_ip: Optional[str]) -> None:
+        """Release a per-IP slot previously reserved by _check_and_reserve_per_ip_slot."""
+        if not source_ip:
+            return
+        current = self._per_ip_counts.get(source_ip, 0)
+        if current <= 1:
+            self._per_ip_counts.pop(source_ip, None)
+        else:
+            self._per_ip_counts[source_ip] = current - 1
+
     async def connect(self, websocket: WebSocket) -> bool:
         """Accept and register a WebSocket connection as immediately active.
 
@@ -140,9 +180,22 @@ class WebSocketManager:
                 logger.warning("Connection rejected: limit of %d reached", self._max_connections)
                 return False
 
+            source_ip = self._source_ip(websocket)
+            if not self._check_and_reserve_per_ip_slot(source_ip):
+                # SEC-03: per-IP cap exceeded. Close with the same 1013
+                # used for the global cap so clients see a single "too
+                # many connections" signal.
+                await websocket.close(code=1013, reason="Per-IP connection limit reached")
+                logger.warning(
+                    "Connection rejected: per-IP limit of %d reached for %s",
+                    self._max_connections_per_ip,
+                    source_ip,
+                )
+                return False
+
             await websocket.accept()
             self._active_connections.add(websocket)
-            self._connection_meta[websocket] = {"connected_at": time.time()}
+            self._connection_meta[websocket] = {"connected_at": time.time(), "source_ip": source_ip}
             logger.info("WebSocket connected (%d active)", self.connection_count)
 
         await self._send_json(websocket, self._build_connection_established())
@@ -165,9 +218,19 @@ class WebSocketManager:
                 logger.warning("Connection rejected: limit of %d reached", self._max_connections)
                 return False
 
+            source_ip = self._source_ip(websocket)
+            if not self._check_and_reserve_per_ip_slot(source_ip):
+                await websocket.close(code=1013, reason="Per-IP connection limit reached")
+                logger.warning(
+                    "Pending connection rejected: per-IP limit of %d reached for %s",
+                    self._max_connections_per_ip,
+                    source_ip,
+                )
+                return False
+
             await websocket.accept()
             self._pending_connections.add(websocket)
-            self._connection_meta[websocket] = {"connected_at": time.time(), "pending": True}
+            self._connection_meta[websocket] = {"connected_at": time.time(), "pending": True, "source_ip": source_ip}
             logger.info("WebSocket connected as pending (%d pending)", len(self._pending_connections))
 
         await self._send_json(websocket, self._build_connection_established())
@@ -194,7 +257,12 @@ class WebSocketManager:
         async with self._lock:
             self._active_connections.discard(websocket)
             self._pending_connections.discard(websocket)
-            self._connection_meta.pop(websocket, None)
+            meta = self._connection_meta.pop(websocket, None)
+            # SEC-03: release the per-IP slot reserved at connect time so
+            # a client who reconnects cleanly does not accrue phantom
+            # counts against the cap.
+            if meta is not None:
+                self._release_per_ip_slot(meta.get("source_ip"))
             logger.info(
                 "WebSocket disconnected (%d active, %d pending)",
                 self.connection_count,

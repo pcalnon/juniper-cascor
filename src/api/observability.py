@@ -158,6 +158,31 @@ def configure_logging(log_level: str, log_format: str, service_name: str = _SERV
     root.addHandler(file_handler)
 
 
+# SEC-15: Header names that may carry secrets. We always strip them from
+# Sentry events regardless of ``send_default_pii``; the default is now
+# ``False`` so request headers are not uploaded at all, but the filter
+# remains as a second line of defense if any future integration re-enables
+# per-event header capture (e.g. a custom logging integration).
+_SENTRY_SENSITIVE_HEADERS = frozenset({"x-api-key", "authorization", "cookie"})
+
+
+def _strip_sensitive_headers(event, hint):  # noqa: ARG001 — Sentry hook signature
+    """Replace any sensitive request headers in a Sentry event with ``[Filtered]``.
+
+    Sentry calls this via ``before_send`` for every outbound event. The
+    filter walks the request headers dict and only rewrites keys that
+    match the sensitive set, so non-sensitive diagnostic headers still
+    reach Sentry unchanged.
+    """
+    request_data = event.get("request", {}) if isinstance(event, dict) else {}
+    headers = request_data.get("headers", {}) if isinstance(request_data, dict) else {}
+    if isinstance(headers, dict):
+        for key in list(headers.keys()):
+            if key.lower() in _SENTRY_SENSITIVE_HEADERS:
+                headers[key] = "[Filtered]"
+    return event
+
+
 def configure_sentry(dsn: str | None, service_name: str, version: str) -> None:
     """Initialize Sentry with FastAPI integration. No-op when dsn is None or empty.
 
@@ -173,10 +198,14 @@ def configure_sentry(dsn: str | None, service_name: str, version: str) -> None:
 
     sentry_sdk.init(
         dsn=dsn,
-        send_default_pii=True,
+        # SEC-15: never upload default PII (IP, cookies, user identifiers,
+        # request headers). The before_send filter scrubs any headers that
+        # slip through via other integrations.
+        send_default_pii=False,
         enable_logs=True,
         traces_sample_rate=_LOGGER_SENTRY_TRACES_SAMPLE_RATE,
         release=f"{service_name}@{version}",
+        before_send=_strip_sensitive_headers,
     )
 
 

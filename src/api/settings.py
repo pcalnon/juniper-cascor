@@ -126,6 +126,11 @@ class Settings(BaseSettings):
     cors_origins: list[str] = _JUNIPER_CASCOR_API_CORS_ORIGINS_DEFAULT
 
     ws_max_connections: int = _JUNIPER_CASCOR_API_WS_MAX_CONNECTIONS_DEFAULT
+    # SEC-03: per-IP cap on concurrent WebSocket connections. Mirrors the
+    # canopy ``max_connections_per_ip`` pattern so a single hostile client
+    # cannot monopolize the global ``ws_max_connections`` pool. Applies to
+    # every endpoint routed through ``WebSocketManager.connect*``.
+    ws_max_connections_per_ip: int = 5
     ws_heartbeat_interval_sec: int = _JUNIPER_CASCOR_API_WS_HEARTBEAT_INTERVAL_SEC_DEFAULT
     ws_heartbeat_pong_timeout_sec: int = _JUNIPER_CASCOR_API_WS_HEARTBEAT_PONG_TIMEOUT_SEC_DEFAULT
 

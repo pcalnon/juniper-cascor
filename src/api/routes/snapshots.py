@@ -1,6 +1,7 @@
 """Snapshot management routes."""
 
 import logging
+import re
 
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
@@ -10,6 +11,31 @@ from api.models.common import success_response
 logger = logging.getLogger("juniper_cascor.api.routes.snapshots")
 
 router = APIRouter(prefix="/snapshots", tags=["snapshots"])
+
+# SEC-17: allowlist for snapshot identifiers. The lifecycle manager already
+# matches on file stems via ``glob("*.h5")`` so a crafted path with ``..``
+# or a slash cannot escape the snapshots directory today, but we enforce a
+# strict regex at the route boundary so (a) attempts are rejected with 400
+# before reaching the lifecycle layer, (b) any future code path that uses
+# ``snapshot_id`` to build a path directly inherits the defense, and
+# (c) traversal attempts are audit-logged.
+_SNAPSHOT_ID_PATTERN = re.compile(r"^[A-Za-z0-9_-]{1,128}$")
+
+
+def _validate_snapshot_id(snapshot_id: str, client: str | None = None) -> None:
+    """Reject ``snapshot_id`` values that are not pure alphanumerics/_/-.
+
+    Raises ``HTTPException(400)`` with a fixed detail. Also logs the bad
+    identifier at WARNING so operators can spot traversal probing in the
+    access logs.
+    """
+    if not _SNAPSHOT_ID_PATTERN.fullmatch(snapshot_id or ""):
+        logger.warning(
+            "Rejected snapshot_id (invalid format): %r client=%s",
+            snapshot_id,
+            client or "unknown",
+        )
+        raise HTTPException(status_code=400, detail="Invalid snapshot_id format")
 
 
 class SnapshotCreateRequest(BaseModel):
@@ -48,6 +74,7 @@ async def list_snapshots(request: Request) -> dict:
 @router.get("/{snapshot_id}")
 async def get_snapshot(request: Request, snapshot_id: str) -> dict:
     """Get metadata for a specific snapshot."""
+    _validate_snapshot_id(snapshot_id, client=request.client.host if request.client else None)
     lifecycle = _get_lifecycle(request)
     result = lifecycle.get_snapshot(snapshot_id)
     if result is None:
@@ -58,6 +85,7 @@ async def get_snapshot(request: Request, snapshot_id: str) -> dict:
 @router.post("/{snapshot_id}/restore")
 async def restore_snapshot(request: Request, snapshot_id: str) -> dict:
     """Restore a network from a snapshot."""
+    _validate_snapshot_id(snapshot_id, client=request.client.host if request.client else None)
     lifecycle = _get_lifecycle(request)
     success = lifecycle.load_snapshot(snapshot_id)
     if not success:
