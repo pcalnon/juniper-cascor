@@ -1965,10 +1965,7 @@ class CascadeCorrelationNetwork:
                 # the network with meaningless candidate data while hiding the underlying
                 # failure. Raise an explicit error instead so the caller can abort training.
                 self.logger.error(f"CascadeCorrelationNetwork: _execute_candidate_training: Sequential training also failed: {seq_error}")
-                raise CandidateTrainingError(
-                    "Both parallel and sequential candidate training failed. "
-                    "Training cannot continue — network integrity would be compromised."
-                ) from seq_error
+                raise CandidateTrainingError("Both parallel and sequential candidate training failed. " "Training cannot continue — network integrity would be compromised.") from seq_error
         self.logger.debug(f"CascadeCorrelationNetwork: _execute_candidate_training: Obtained {len(results)} results")
 
         # BUG-CC-18 / ROBUST-01: Empty results after a non-exception return means every
@@ -1976,10 +1973,7 @@ class CascadeCorrelationNetwork:
         # surface the failure so the training loop can stop rather than corrupt the model.
         if not results:
             self.logger.error("CascadeCorrelationNetwork: _execute_candidate_training: No results obtained from either parallel or sequential processing")
-            raise CandidateTrainingError(
-                "Candidate training produced no results after both parallel and sequential paths. "
-                "Refusing to install zero-correlation dummy candidates — network integrity would be compromised."
-            )
+            raise CandidateTrainingError("Candidate training produced no results after both parallel and sequential paths. " "Refusing to install zero-correlation dummy candidates — network integrity would be compromised.")
         return results
 
     def _drain_stale_results(self, result_queue) -> int:

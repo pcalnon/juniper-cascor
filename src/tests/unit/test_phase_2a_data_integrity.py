@@ -177,19 +177,14 @@ class TestBugCC18CandidateTrainingError:
 
     def test_candidate_training_error_is_subclass_of_training_error(self):
         """CandidateTrainingError must be a TrainingError so existing catch blocks still work."""
-        from cascade_correlation.cascade_correlation_exceptions.cascade_correlation_exceptions import (
-            CandidateTrainingError,
-            TrainingError,
-        )
+        from cascade_correlation.cascade_correlation_exceptions.cascade_correlation_exceptions import CandidateTrainingError, TrainingError
 
         assert issubclass(CandidateTrainingError, TrainingError)
 
     def test_execute_raises_when_sequential_fallback_fails(self):
         """Both-paths-failed path must raise CandidateTrainingError instead of returning dummies."""
         from cascade_correlation.cascade_correlation import CascadeCorrelationNetwork
-        from cascade_correlation.cascade_correlation_exceptions.cascade_correlation_exceptions import (
-            CandidateTrainingError,
-        )
+        from cascade_correlation.cascade_correlation_exceptions.cascade_correlation_exceptions import CandidateTrainingError
 
         net = CascadeCorrelationNetwork.__new__(CascadeCorrelationNetwork)
         net.logger = MagicMock()
@@ -210,9 +205,7 @@ class TestBugCC18CandidateTrainingError:
     def test_execute_raises_when_sequential_returns_empty(self):
         """Empty-results branch must also raise rather than synthesize dummies."""
         from cascade_correlation.cascade_correlation import CascadeCorrelationNetwork
-        from cascade_correlation.cascade_correlation_exceptions.cascade_correlation_exceptions import (
-            CandidateTrainingError,
-        )
+        from cascade_correlation.cascade_correlation_exceptions.cascade_correlation_exceptions import CandidateTrainingError
 
         net = CascadeCorrelationNetwork.__new__(CascadeCorrelationNetwork)
         net.logger = MagicMock()

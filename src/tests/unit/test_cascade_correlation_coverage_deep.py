@@ -216,9 +216,7 @@ class TestExecuteCandidateTraining:
         The fix surfaces the failure as ``CandidateTrainingError`` so the caller
         can abort training.
         """
-        from cascade_correlation.cascade_correlation_exceptions.cascade_correlation_exceptions import (
-            CandidateTrainingError,
-        )
+        from cascade_correlation.cascade_correlation_exceptions.cascade_correlation_exceptions import CandidateTrainingError
 
         network = _make_network()
         x = torch.randn(4, 2)
