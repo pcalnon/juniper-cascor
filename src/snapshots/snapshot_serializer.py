@@ -5,6 +5,7 @@ Provides comprehensive state capture and restoration with full multiprocessing s
 """
 
 import datetime
+import io
 import json
 import multiprocessing as mp
 import os
@@ -14,6 +15,68 @@ import random
 import sys
 from pathlib import Path
 from typing import Any, Dict, Optional, Union
+
+# SEC-11: allowlist for the snapshot RNG-state unpickler. Only modules we
+# know Python's ``random.getstate()`` payloads reference (plus their pickle
+# helpers) and a tight set of builtin container types are permitted. Any
+# other ``find_class`` lookup — including torch, numpy, or user code — is
+# rejected so a crafted HDF5 file cannot smuggle an RCE-capable pickle
+# payload into the snapshot restore path.
+_SNAPSHOT_UNPICKLER_ALLOWED_MODULES = frozenset(
+    {
+        "random",
+        "_random",
+        "collections",
+        "collections.abc",
+        "_codecs",
+        "copyreg",
+    }
+)
+_SNAPSHOT_UNPICKLER_ALLOWED_BUILTINS = frozenset(
+    {
+        "dict",
+        "list",
+        "tuple",
+        "set",
+        "frozenset",
+        "int",
+        "float",
+        "str",
+        "bool",
+        "bytes",
+        "complex",
+        "slice",
+        "range",
+        "type",
+    }
+)
+
+
+class SnapshotUnpicklingError(pickle.UnpicklingError):
+    """Raised when a snapshot pickle references a class outside the allowlist."""
+
+
+class _SnapshotRestrictedUnpickler(pickle.Unpickler):
+    """Unpickler used to restore Python RNG state from HDF5 snapshots.
+
+    Overrides ``find_class`` to fail closed on anything outside the
+    allowlists above. This is the last line of defense for snapshot
+    integrity: even a legitimately-signed snapshot file must still pass
+    this check, so a compromised signing key or a file swapped on disk
+    cannot escalate to arbitrary code execution.
+    """
+
+    def find_class(self, module: str, name: str):  # type: ignore[override]
+        if module in _SNAPSHOT_UNPICKLER_ALLOWED_MODULES:
+            return super().find_class(module, name)
+        if module == "builtins" and name in _SNAPSHOT_UNPICKLER_ALLOWED_BUILTINS:
+            return super().find_class(module, name)
+        raise SnapshotUnpicklingError(f"Blocked unpickling of {module}.{name} — not in snapshot allowlist")
+
+
+def _snapshot_restricted_loads(data: bytes):
+    """Run ``pickle.loads`` equivalent against ``_SnapshotRestrictedUnpickler``."""
+    return _SnapshotRestrictedUnpickler(io.BytesIO(data)).load()
 
 import h5py
 import numpy as np
@@ -822,10 +885,13 @@ class CascadeHDF5Serializer:
             if "python_state" in random_group:
                 python_state_array = load_numpy_array(random_group["python_state"])
                 python_state_bytes = python_state_array.tobytes()
-                # SECURITY: pickle.loads is used here to restore Python random state from
-                # HDF5 snapshots. These snapshots are trusted-origin-only artifacts created
-                # by this application. Do NOT load untrusted/third-party snapshot files.
-                python_state = pickle.loads(python_state_bytes)  # trunk-ignore(bandit/B301)
+                # SEC-11: route RNG-state deserialization through the
+                # restricted unpickler so even a tampered snapshot cannot
+                # escalate to arbitrary code execution. ``find_class`` is
+                # locked to the ``random``/``_random`` modules and a small
+                # set of builtin container types; anything else raises
+                # ``SnapshotUnpicklingError`` and aborts the restore.
+                python_state = _snapshot_restricted_loads(python_state_bytes)
                 random.setstate(python_state)
                 self.logger.debug("CascadeHDF5Serializer: Restored Python random state")
 

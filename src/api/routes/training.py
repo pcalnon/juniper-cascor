@@ -32,25 +32,11 @@ async def start_training(request: Request, body: TrainingStartRequest = None) ->
     """
     lifecycle = _get_lifecycle(request)
 
-    # Whitelist of allowed training parameter keys (matches update_params in lifecycle manager)
-    _ALLOWED_TRAINING_PARAMS = {
-        "max_epochs",
-        "max_iterations",
-        "early_stopping",
-        "learning_rate",
-        "candidate_learning_rate",
-        "correlation_threshold",
-        "candidate_pool_size",
-        "max_hidden_units",
-        "epochs_max",
-        "patience",
-        "convergence_threshold",
-        "candidate_convergence_threshold",
-        "candidate_patience",
-        "candidate_epochs",
-        "init_output_weights",
-    }
-
+    # SEC-07: the ``params`` field is now a typed ``TrainingParams`` model
+    # with ``extra="forbid"``; Pydantic rejects unknown keys with 422 at
+    # the request boundary, and per-field validators enforce numeric
+    # ranges. The old hand-maintained ``_ALLOWED_TRAINING_PARAMS`` set and
+    # silent-drop behavior are gone because they left values unchecked.
     kwargs = {}
     x = None
     y = None
@@ -70,13 +56,10 @@ async def start_training(request: Request, body: TrainingStartRequest = None) ->
         if body.dataset is not None and body.dataset.generator == "spiral":
             x, y = _generate_spiral_data(body.dataset.params or {})
 
-        # Handle training params — only allow whitelisted keys
-        if body.params:
-            for key, value in body.params.items():
-                if key in _ALLOWED_TRAINING_PARAMS:
-                    kwargs[key] = value
-                else:
-                    logger.warning("Ignoring unrecognized training param: %s", key)
+        # Handle training params — typed TrainingParams model rejects
+        # unknown keys via Pydantic; forward only explicitly-set fields.
+        if body.params is not None:
+            kwargs.update(body.params.model_dump(exclude_none=True))
 
         if body.epochs is not None:
             kwargs["max_epochs"] = body.epochs
