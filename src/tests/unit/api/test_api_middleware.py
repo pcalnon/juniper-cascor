@@ -172,3 +172,52 @@ class TestRequestBodyLimitMiddleware:
 
         response = client.post("/echo", content=body_gen())
         assert response.status_code == 413
+
+    @pytest.mark.asyncio
+    async def test_bug_cc_15_chunked_body_aborts_before_full_buffer(self):
+        """BUG-CC-15: middleware must abort streaming read before consuming the full body.
+
+        Verified at the dispatch level by counting how many chunks ``request.stream()``
+        yields before the middleware aborts. With max_bytes=1024 and 20 x 512-byte
+        chunks (total 10240 bytes), the middleware must return 413 after reading
+        at most ~1024 + 1 chunk, not 10240 bytes.
+        """
+        from unittest.mock import MagicMock
+
+        bytes_yielded = 0
+
+        async def stream_gen():
+            nonlocal bytes_yielded
+            for _ in range(20):
+                chunk = b"A" * 512
+                bytes_yielded += len(chunk)
+                yield chunk
+
+        request = MagicMock()
+        request.headers = {}
+        request.method = "POST"
+        request.stream = stream_gen
+
+        async def call_next(_req):  # pragma: no cover — should not be reached.
+            raise AssertionError("call_next should not run after 413 abort")
+
+        middleware = RequestBodyLimitMiddleware(app=MagicMock(), max_bytes=1024)
+        response = await middleware.dispatch(request, call_next)
+
+        assert response.status_code == 413
+        # Streaming early-abort: should abort within a single chunk past the limit.
+        assert bytes_yielded <= 1024 + 512, f"Streaming read consumed {bytes_yielded} bytes — should abort near the 1024 byte limit"
+
+    def test_bug_cc_15_body_cached_for_downstream_handlers(self, body_limit_app):
+        """BUG-CC-15: after streaming read, body must remain readable by downstream handlers."""
+        client = TestClient(body_limit_app)
+
+        # Send a chunked body under the limit; handler must still be able to parse JSON.
+        def body_gen():
+            yield b'{"a":"b'
+            yield b'","c":"d"}'
+
+        response = client.post("/echo", content=body_gen())
+        assert response.status_code == 200
+        # Handler echoes received_bytes; presence + 200 confirm body was readable downstream.
+        assert "received_bytes" in response.json()

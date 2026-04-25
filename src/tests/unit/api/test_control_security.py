@@ -151,6 +151,53 @@ class TestHandshakeCooldown:
 
 
 @pytest.mark.unit
+class TestHandshakeCooldownBugCC14Cleanup:
+    """BUG-CC-14: HandshakeCooldown._rejections must be pruned for non-blocked IPs."""
+
+    def test_stale_non_blocked_ips_pruned_after_threshold(self):
+        """After CLEANUP_EVERY_N record_rejection calls, stale non-blocked IPs are dropped."""
+        cd = HandshakeCooldown(max_rejections=1000, window_sec=60, block_sec=300)
+        cd._CLEANUP_EVERY_N = 10
+        # Seed 50 non-blocked IPs each with a single rejection.
+        for i in range(50):
+            cd.record_rejection(f"10.0.0.{i}")
+        # All present so far (cleanup not yet triggered to prune them since they are fresh).
+        assert len(cd._rejections) == 50
+
+        # Push their timestamps far into the past (beyond 2 * window_sec).
+        with cd._lock:
+            for ip in list(cd._rejections):
+                cd._rejections[ip] = [time.monotonic() - (2 * cd._window_sec) - 5]
+
+        # Drive cleanup using a single different IP so its history stays fresh.
+        for _ in range(cd._CLEANUP_EVERY_N):
+            cd.record_rejection("9.9.9.9")
+
+        # The 50 stale non-blocked IPs should have been pruned.
+        for i in range(50):
+            assert f"10.0.0.{i}" not in cd._rejections
+        assert "9.9.9.9" in cd._rejections
+
+    def test_blocked_ips_not_in_rejections_after_block(self):
+        """Sanity: a blocked IP's rejection list is cleared by record_rejection itself."""
+        cd = HandshakeCooldown(max_rejections=2, window_sec=60, block_sec=300)
+        cd.record_rejection("1.1.1.1")
+        cd.record_rejection("1.1.1.1")  # triggers block, clears list.
+        assert cd._rejections.get("1.1.1.1", []) == []
+        assert cd.is_blocked("1.1.1.1") is True
+
+    def test_fresh_non_blocked_ips_preserved(self):
+        """Cleanup must not remove IPs whose timestamps are within the active window."""
+        cd = HandshakeCooldown(max_rejections=100, window_sec=60, block_sec=300)
+        cd._CLEANUP_EVERY_N = 5
+        for i in range(20):
+            cd.record_rejection(f"172.16.0.{i}")
+        # All entries are fresh, so even after cleanup runs they remain.
+        for i in range(20):
+            assert f"172.16.0.{i}" in cd._rejections
+
+
+@pytest.mark.unit
 class TestControlSecuritySettings:
     """Test Phase B-pre-b settings."""
 

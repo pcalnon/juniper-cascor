@@ -88,9 +88,16 @@ class RequestBodyLimitMiddleware(BaseHTTPMiddleware):
             if declared_length > self._max_bytes:
                 return JSONResponse(status_code=_PROJECT_API_HTTP_413_PAYLOAD_TOO_LARGE, content={"detail": "Request body too large"})
         if content_length is None and request.method in ("POST", "PUT", "PATCH"):
-            body = await request.body()
-            if len(body) > self._max_bytes:
-                return JSONResponse(status_code=_PROJECT_API_HTTP_413_PAYLOAD_TOO_LARGE, content={"detail": "Request body too large"})
+            # BUG-CC-15: stream-read with early abort to avoid buffering full body before size check.
+            chunks: list[bytes] = []
+            size = 0
+            async for chunk in request.stream():
+                size += len(chunk)
+                if size > self._max_bytes:
+                    return JSONResponse(status_code=_PROJECT_API_HTTP_413_PAYLOAD_TOO_LARGE, content={"detail": "Request body too large"})
+                chunks.append(chunk)
+            # Cache body for downstream handlers (Starlette convention).
+            request._body = b"".join(chunks)
         return await call_next(request)
 
 

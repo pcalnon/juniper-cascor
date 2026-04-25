@@ -251,6 +251,66 @@ class TestRateLimiter:
 
 
 @pytest.mark.unit
+class TestRateLimiterBugCC13Cleanup:
+    """BUG-CC-13: RateLimiter._counters must be pruned to prevent unbounded growth."""
+
+    def test_expired_entries_pruned_after_cleanup_interval(self) -> None:
+        """After CLEANUP_INTERVAL calls, expired entries (older than 2*window) are removed."""
+        limiter = RateLimiter(requests_per_minute=1000, window_seconds=1, enabled=True)
+        # Seed many distinct keys; each will create a counter entry.
+        for i in range(50):
+            limiter.check(f"key-{i}")
+        # Force timestamps into the past so they are eligible for eviction.
+        with limiter._lock:
+            for k in list(limiter._counters):
+                count, _ts = limiter._counters[k]
+                limiter._counters[k] = (count, time.time() - (2 * limiter._window) - 1)
+        # Drive cleanup by reaching CLEANUP_INTERVAL across one fresh key.
+        for _ in range(limiter._CLEANUP_INTERVAL):
+            limiter.check("driver-key")
+        # Only the driver key should remain; expired keys pruned.
+        with limiter._lock:
+            assert "driver-key" in limiter._counters
+            for i in range(50):
+                assert f"key-{i}" not in limiter._counters
+
+    def test_unbounded_growth_prevented_by_max_entries_cap(self) -> None:
+        """Hard cap _MAX_ENTRIES prevents unbounded counter growth even with fresh keys."""
+        limiter = RateLimiter(requests_per_minute=10, window_seconds=60, enabled=True)
+        # Override cap and interval to keep test fast.
+        limiter._MAX_ENTRIES = 100
+        limiter._CLEANUP_INTERVAL = 50
+        # Insert many more keys than the cap; each is fresh so not "expired".
+        for i in range(500):
+            limiter.check(f"key-{i}")
+        # After cleanup runs, dict size must be bounded near _MAX_ENTRIES
+        # (allow +1 for the current request's freshly-inserted key after the
+        # cleanup pass that ran at the start of this same check() call).
+        assert len(limiter._counters) <= limiter._MAX_ENTRIES + 1
+        # And critically: it must not approach the unbounded-growth scale (500).
+        assert len(limiter._counters) < 200
+
+    def test_cleanup_does_not_evict_fresh_entries_under_cap(self) -> None:
+        """Entries within the active window must not be pruned by periodic cleanup."""
+        limiter = RateLimiter(requests_per_minute=10, window_seconds=60, enabled=True)
+        limiter._CLEANUP_INTERVAL = 5
+        for i in range(20):
+            limiter.check(f"fresh-{i}")
+        # All 20 fresh keys should still be present.
+        for i in range(20):
+            assert f"fresh-{i}" in limiter._counters
+
+    def test_reset_clears_cleanup_counter(self) -> None:
+        """reset() should also reset the cleanup tick counter."""
+        limiter = RateLimiter(requests_per_minute=5, enabled=True)
+        for _ in range(5):
+            limiter.check("key")
+        assert limiter._request_count_since_cleanup > 0
+        limiter.reset()
+        assert limiter._request_count_since_cleanup == 0
+
+
+@pytest.mark.unit
 class TestSecurityModuleFunctions:
     """Tests for module-level security functions."""
 

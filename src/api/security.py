@@ -1,6 +1,7 @@
 """API security: authentication and rate limiting middleware."""
 
 import hmac
+import logging
 import time
 from collections import defaultdict
 from threading import Lock
@@ -9,6 +10,8 @@ from fastapi import HTTPException, Request, status
 from fastapi.security import APIKeyHeader
 
 from .settings import get_settings
+
+logger = logging.getLogger(__name__)
 
 api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
 
@@ -88,6 +91,10 @@ class RateLimiter:
     implementation suitable for single-process deployments.
     """
 
+    # BUG-CC-13: bounded periodic cleanup to prevent unbounded counter growth.
+    _CLEANUP_INTERVAL = 100  # Run cleanup every N check() calls.
+    _MAX_ENTRIES = 10_000  # Hard cap on _counters entries.
+
     def __init__(
         self,
         requests_per_minute: int = 60,
@@ -106,6 +113,22 @@ class RateLimiter:
         self._enabled = enabled
         self._counters: dict[str, tuple[int, float]] = defaultdict(lambda: (0, 0.0))
         self._lock = Lock()
+        self._request_count_since_cleanup = 0  # BUG-CC-13: tracks calls between prunes.
+
+    def _maybe_cleanup(self) -> None:
+        """BUG-CC-13: lazy-prune expired counter buckets. Caller must hold ``_lock``."""
+        now = time.time()
+        cutoff = now - (2 * self._window)
+        expired_keys = [k for k, (_, ts) in self._counters.items() if ts < cutoff]
+        for k in expired_keys:
+            del self._counters[k]
+        if expired_keys:
+            logger.debug("RateLimiter: pruned %d expired entries", len(expired_keys))
+        if len(self._counters) > self._MAX_ENTRIES:
+            # Hard cap: drop oldest entries by window_start timestamp.
+            sorted_keys = sorted(self._counters, key=lambda k: self._counters[k][1])
+            for k in sorted_keys[: len(self._counters) - self._MAX_ENTRIES]:
+                del self._counters[k]
 
     @property
     def enabled(self) -> bool:
@@ -154,6 +177,12 @@ class RateLimiter:
         now = time.time()
 
         with self._lock:
+            # BUG-CC-13: trigger periodic cleanup to bound memory.
+            self._request_count_since_cleanup += 1
+            if self._request_count_since_cleanup >= self._CLEANUP_INTERVAL:
+                self._maybe_cleanup()
+                self._request_count_since_cleanup = 0
+
             count, window_start = self._counters[key]
 
             if now - window_start >= self._window:
@@ -202,6 +231,7 @@ class RateLimiter:
         """Reset all rate limit counters. Useful for testing."""
         with self._lock:
             self._counters.clear()
+            self._request_count_since_cleanup = 0
 
 
 _api_key_auth: APIKeyAuth | None = None
