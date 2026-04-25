@@ -4,7 +4,6 @@
 # Prototype:     Cascade Correlation Neural Network
 # File Name:     run_tests.sh
 # Author:        Paul Calnon
-# Version:       0.1.0
 #
 # Date Created:  2025-09-26
 # Last Modified: 2026-01-12

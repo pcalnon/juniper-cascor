@@ -4,7 +4,6 @@
 # Prototype:     Cascade Correlation Neural Network
 # File Name:     constants_api_defaults.py
 # Author:        Paul Calnon
-# Version:       0.4.0
 #
 # Date Created:  2026-04-09
 # Last Modified: 2026-04-09

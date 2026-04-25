@@ -4,7 +4,6 @@
 # Prototype:     Cascade Correlation Neural Network
 # File Name:     data_provider.py
 # Author:        Paul Calnon
-# Version:       0.3.2 (0.7.3)
 #
 # Date Created:  2026-01-29
 # Last Modified: 2026-01-29

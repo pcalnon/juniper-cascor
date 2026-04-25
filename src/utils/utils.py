@@ -4,7 +4,6 @@
 # Prototype:     Cascade Correlation Neural Network with N-Spiral Dataset Generator
 # File Name:     utils.py
 # Author:        Paul Calnon
-# Version:       0.3.2 (0.7.3)
 #
 # Date Created:  2025-06-01
 # Last Modified: 2026-01-12

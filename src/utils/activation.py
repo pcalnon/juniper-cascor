@@ -4,7 +4,6 @@
 # Prototype:     Cascade Correlation Neural Network
 # File Name:     activation.py
 # Author:        Paul Calnon
-# Version:       0.3.2 (0.7.3)
 #
 # Date Created:  2026-04-03
 # Last Modified: 2026-04-03

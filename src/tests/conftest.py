@@ -6,7 +6,6 @@
 # Purpose:       Juniper Project Cascade Correlation Neural Network
 #
 # Author:        Paul Calnon
-# Version:       0.1.0
 # File Name:     conftest.py
 # File Path:     <Project>/<Sub-Project>/<Application>/src/tests/
 #

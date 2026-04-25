@@ -4,7 +4,6 @@ Project:       Juniper
 Prototype:     Cascade Correlation Neural Network
 File Name:     mock_candidate.py
 Author:        Paul Calnon
-Version:       0.1.0
 
 Date:          2025-09-26
 Last Modified: 2025-09-26

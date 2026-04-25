@@ -4,7 +4,6 @@
 # Prototype:     Cascade Correlation Neural Network
 # File Name:     __init__.py (cascor_constants/constants_api)
 # Author:        Paul Calnon
-# Version:       0.4.0
 #
 # Date Created:  2026-04-09
 # Last Modified: 2026-04-09

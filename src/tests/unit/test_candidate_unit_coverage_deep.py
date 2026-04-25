@@ -5,7 +5,6 @@
 # Application:   juniper_cascor
 # File Name:     test_candidate_unit_coverage_deep.py
 # Author:        Paul Calnon
-# Version:       0.1.0
 #
 # Date Created:  2026-03-12
 # Last Modified: 2026-03-12

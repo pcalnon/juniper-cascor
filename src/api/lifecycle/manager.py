@@ -269,8 +269,9 @@ class TrainingLifecycleManager:
         def monitored_fit(x, y, x_val=None, y_val=None, **kwargs):
             manager_ref._last_emitted_history_len = 0
             monitor.on_training_start()
-            monitor.current_phase = "output"
+            # BUG-CC-07: phase is updated via state-machine wrapper, not manually.
             sm.handle_command(Command.START)
+            monitor.on_phase_change(sm.phase.name.lower())
             state.update_state(status="Started", phase="Output", phase_started_at=datetime.now().isoformat())
             manager_ref._broadcast_training_state(force=True)
 
@@ -322,8 +323,26 @@ class TrainingLifecycleManager:
         # Hook grow_network for cascade_add events and phase tracking
         self._install_grow_network_hook(monitor, state, sm, manager_ref)
 
+        # BUG-CC-07: wrap state machine set_phase to notify monitor
+        self._install_phase_tracker(monitor, sm)
+
         self._monitoring_active = True
         self.logger.info("Monitoring hooks installed")
+
+    def _install_phase_tracker(self, monitor, sm) -> None:
+        """Wrap TrainingStateMachine.set_phase to notify the monitor (BUG-CC-07)."""
+        # Avoid re-wrapping on reinstall.
+        if getattr(self, "_original_set_phase", None) is not None:
+            return
+        original_set_phase = sm.set_phase
+        self._original_set_phase = original_set_phase
+
+        def tracked_set_phase(phase):
+            original_set_phase(phase)
+            phase_name = phase.name.lower() if hasattr(phase, "name") else str(phase)
+            monitor.on_phase_change(phase_name)
+
+        sm.set_phase = tracked_set_phase
 
     @staticmethod
     def _drain_progress_queue(network_ref, stop_event, state, monitor, manager_ref):
@@ -392,7 +411,7 @@ class TrainingLifecycleManager:
             manager_ref._extract_and_record_metrics()
 
             prev_hidden = len(manager_ref.network.hidden_units)
-            monitor.current_phase = "candidate"
+            # BUG-CC-07: phase is updated via state-machine wrapper, not manually.
             sm.set_phase(TrainingPhase.CANDIDATE)
             state.update_state(phase="Candidate", phase_started_at=datetime.now().isoformat())
             manager_ref._broadcast_training_state(force=True)
@@ -423,14 +442,27 @@ class TrainingLifecycleManager:
             new_hidden = len(manager_ref.network.hidden_units)
 
             if new_hidden > prev_hidden:
+                # BUG-CC-01: Wire create_topology_message into lifecycle events
+                # BUG-CC-02: Extract actual correlation from each installed hidden unit
+                from api.websocket.messages import create_topology_message
+
                 for i in range(prev_hidden, new_hidden):
+                    unit = manager_ref.network.hidden_units[i]
+                    actual_correlation = float(getattr(unit, "best_correlation", 0.0) or 0.0)
                     monitor.on_cascade_add(
                         hidden_unit_index=i,
-                        correlation=0.0,
+                        correlation=actual_correlation,
                     )
+                if manager_ref._ws_manager is not None:
+                    topology_data = {
+                        "hidden_units": new_hidden,
+                        "input_size": getattr(manager_ref.network, "input_size", 0),
+                        "output_size": getattr(manager_ref.network, "output_size", 0),
+                        "event": "cascade_add",
+                    }
+                    manager_ref._ws_manager.broadcast_from_thread(create_topology_message(topology_data))
 
             # Post-call: return to output phase after grow completes
-            monitor.current_phase = "output"
             sm.set_phase(TrainingPhase.OUTPUT)
             state.update_state(phase="Output", phase_detail="", candidate_epoch=0, candidate_total_epochs=0)
             manager_ref._broadcast_training_state(force=True)
@@ -442,7 +474,13 @@ class TrainingLifecycleManager:
 
     def _restore_original_methods(self) -> None:
         """Restore original network methods."""
+        # BUG-CC-07: restore unwrapped state-machine set_phase if installed.
+        original_set_phase = getattr(self, "_original_set_phase", None)
+        if original_set_phase is not None:
+            self.state_machine.set_phase = original_set_phase
+            self._original_set_phase = None
         if not self._original_methods or self.network is None:
+            self._monitoring_active = False
             return
         for method_name, original in self._original_methods.items():
             setattr(self.network, method_name, original)

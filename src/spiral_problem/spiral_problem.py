@@ -6,7 +6,6 @@
 # Purpose:       Juniper Project Data Generation and Management
 #
 # Author:        Paul Calnon
-# Version:       0.3.1  (0.7.3)
 # File Name:     spiral_problem.py
 # File Path:     <Project>/<Sub-Project>/<Application>/src/
 #
