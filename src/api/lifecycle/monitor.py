@@ -164,10 +164,18 @@ class TrainingMonitor:
             "training_end": [],
             "topology_change": [],
             "candidate_progress": [],
+            # BUG-CC-07: phase change driven by state machine
+            "phase_change": [],
         }
 
         self._lock = threading.Lock()
         self.logger.info("TrainingMonitor initialized")
+
+    def on_phase_change(self, phase: str) -> None:
+        """Update current_phase from state machine notification (BUG-CC-07)."""
+        with self._lock:
+            self.current_phase = phase
+        self._trigger_callbacks("phase_change", phase=phase)
 
     def register_callback(self, event_type: str, callback: Callable) -> None:
         """Register callback for training event."""

@@ -1,6 +1,7 @@
 """FastAPI application factory and configuration."""
 
 import asyncio
+import importlib.metadata
 import json
 import logging
 import os
@@ -28,7 +29,11 @@ from api.workers.coordinator import WorkerCoordinator
 from api.workers.registry import WorkerRegistry
 from cascor_constants.constants_api import _PROJECT_API_CANOPY_DEMO_MODE_DISABLED, _PROJECT_API_CANOPY_HEALTH_CHECK_URL, _PROJECT_API_CANOPY_STARTUP_CHECK_INTERVAL, _PROJECT_API_CANOPY_STARTUP_WAIT_TIMEOUT, _PROJECT_API_JUNIPER_DATA_READY_TIMEOUT, _PROJECT_API_JUNIPER_DATA_URL_DEFAULT, _PROJECT_API_SELF_HEALTH_CHECK_URL_TEMPLATE
 
-_API_VERSION: str = "0.4.0"
+# BUG-CC-04: single source of truth for version is pyproject.toml; read at runtime.
+try:
+    _API_VERSION: str = importlib.metadata.version("juniper-cascor")
+except importlib.metadata.PackageNotFoundError:
+    _API_VERSION = "0.0.0-dev"
 
 logger = logging.getLogger("juniper_cascor.api")
 

@@ -5,7 +5,6 @@ File Name:     test_concurrency_scaling.py
 File Path:     src/tests/performance/
 
 Author:        Paul Calnon
-Version:       0.1.0
 
 Date Created:  2026-04-01
 Last Modified: 2026-04-01

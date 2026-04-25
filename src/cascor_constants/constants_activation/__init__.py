@@ -4,7 +4,6 @@ Project:       Juniper
 Prototype:     Cascade Correlation Neural Network
 File Name:     __init__.py
 Author:        Paul Calnon
-Version:       0.3.2 (0.7.3)
 
 Date Created:  2026-01-15
 Last Modified: 2026-01-15

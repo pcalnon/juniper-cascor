@@ -4,7 +4,6 @@
 # Prototype:     Cascade Correlation Neural Network
 # File Name:     test_activation_with_derivative.py
 # Author:        Paul Calnon
-# Version:       0.3.12
 #
 # Date Created:  2026-01-21
 # Last Modified: 2026-01-21

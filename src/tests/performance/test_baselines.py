@@ -5,7 +5,6 @@ File Name:     test_baselines.py
 File Path:     src/tests/performance/
 
 Author:        Paul Calnon
-Version:       0.1.0
 
 Date Created:  2026-03-31
 Last Modified: 2026-03-31

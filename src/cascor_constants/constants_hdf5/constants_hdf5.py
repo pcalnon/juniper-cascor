@@ -4,7 +4,6 @@
 # Prototype:     Cascade Correlation Neural Network
 # File Name:     constants_hdf5.py
 # Author:        Paul Calnon
-# Version:       0.3.1 (0.7.3)
 #
 # Date Created:  2025-09-14
 # Last Modified: 2026-01-12

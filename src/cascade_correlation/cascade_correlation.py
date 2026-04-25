@@ -4,7 +4,6 @@
 # Prototype:     Cascade Correlation Neural Network
 # File Name:     cascade_correlation.py
 # Author:        Paul Calnon
-# Version:       0.3.2 (0.7.3)
 #
 # Date Created:  2025-06-11
 # Last Modified: 2026-01-12

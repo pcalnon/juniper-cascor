@@ -5,7 +5,6 @@
 # Application:   juniper_cascor
 # File Name:     test_cascor_getters_setters.py
 # Author:        Paul Calnon
-# Version:       0.3.16
 #
 # Date Created:  2026-01-24
 # Last Modified: 2026-01-24

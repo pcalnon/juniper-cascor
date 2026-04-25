@@ -6,7 +6,6 @@
 # Purpose:       Regression test for patience counter propagation in grow_network()
 #
 # Author:        Paul Calnon
-# Version:       0.1.0
 # File Name:     test_patience_propagation.py
 # File Path:     <Project>/<Sub-Project>/<Application>/src/tests/unit/
 #

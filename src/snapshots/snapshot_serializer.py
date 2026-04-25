@@ -78,6 +78,7 @@ def _snapshot_restricted_loads(data: bytes):
     """Run ``pickle.loads`` equivalent against ``_SnapshotRestrictedUnpickler``."""
     return _SnapshotRestrictedUnpickler(io.BytesIO(data)).load()
 
+
 import h5py
 import numpy as np
 import torch
@@ -199,7 +200,14 @@ class CascadeHDF5Serializer:
         write_str_attr(hdf5_file, "format_version", self.format_version)
         write_str_attr(hdf5_file, "serializer_version", self.version)
         write_str_attr(hdf5_file, "created", datetime.datetime.now().isoformat())
-        write_str_attr(hdf5_file, "juniper_version", "0.3.2")
+        # BUG-CC-04: read juniper-cascor version at runtime from package metadata.
+        try:
+            import importlib.metadata as _ilmd
+
+            _juniper_version = _ilmd.version("juniper-cascor")
+        except Exception:
+            _juniper_version = "0.0.0-dev"
+        write_str_attr(hdf5_file, "juniper_version", _juniper_version)
         self.logger.debug("CascadeHDF5Serializer: _save_root_attributes: Saved root attributes")
 
     def _save_metadata(self, hdf5_file: h5py.File, network) -> None:

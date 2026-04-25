@@ -4,7 +4,6 @@
 # Prototype:     Cascade Correlation Neural Network
 # File Name:     cascor.py
 # Author:        Paul Calnon
-# Version:       0.3.1 (0.7.3)
 #
 # Date Created:  2025-06-11
 # Last Modified: 2026-02-24

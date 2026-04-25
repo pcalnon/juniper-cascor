@@ -6,7 +6,6 @@
 # Purpose:       Deep coverage tests for spiral_problem/spiral_problem.py
 #
 # Author:        Paul Calnon
-# Version:       0.1.0
 # File Name:     test_spiral_problem_coverage_deep.py
 # File Path:     <Project>/<Sub-Project>/<Application>/src/tests/unit/
 #

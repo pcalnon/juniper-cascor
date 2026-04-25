@@ -4,7 +4,6 @@ Project:       Juniper
 Prototype:     Cascade Correlation Neural Network
 File Name:     test_shared_memory_validation.py
 Author:        Paul Calnon
-Version:       0.1.0
 
 Date:          2026-04-05
 Last Modified: 2026-04-05

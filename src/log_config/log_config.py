@@ -4,7 +4,6 @@
 # Application:   Dynamic Neural Network
 # File Name:     LogConfig.py
 # Author:        Paul Calnon
-# Version:       0.7.3
 #
 # Date Created:  2024-04-02
 # Last Modified: 2026-01-12

@@ -6,7 +6,6 @@
 # Purpose:       Juniper Project Cascade Correlation Neural Network
 #
 # Author:        Paul Calnon
-# Version:       1.0.0
 # File Name:     run_tests.bash
 # File Path:     <Project>/<Sub-Project>/<Application>/util/
 #

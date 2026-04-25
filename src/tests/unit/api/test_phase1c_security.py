@@ -1,10 +1,9 @@
 """Phase 1C Track 1 security remediation tests (SEC-03/11/15/17)."""
 
 import pickle  # nosec B403 — needed to hand-craft a hostile payload for SEC-11
-
-import pytest
 from unittest.mock import AsyncMock
 
+import pytest
 
 # =============================================================================
 # SEC-03: per-IP WebSocket connection cap
@@ -91,10 +90,7 @@ class TestSEC11SnapshotRestrictedUnpickler:
         assert rng.random() == ref.random()
 
     def test_rejects_os_system_gadget(self) -> None:
-        from snapshots.snapshot_serializer import (
-            SnapshotUnpicklingError,
-            _snapshot_restricted_loads,
-        )
+        from snapshots.snapshot_serializer import SnapshotUnpicklingError, _snapshot_restricted_loads
 
         class _Gadget:
             def __reduce__(self):
@@ -109,10 +105,7 @@ class TestSEC11SnapshotRestrictedUnpickler:
             _snapshot_restricted_loads(payload)
 
     def test_rejects_arbitrary_module(self) -> None:
-        from snapshots.snapshot_serializer import (
-            SnapshotUnpicklingError,
-            _snapshot_restricted_loads,
-        )
+        from snapshots.snapshot_serializer import SnapshotUnpicklingError, _snapshot_restricted_loads
 
         class _Unknown:
             def __reduce__(self):

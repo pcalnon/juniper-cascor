@@ -4,7 +4,6 @@
 # Prototype:     Cascade Correlation Neural Network
 # File Name:     remote_client.py
 # Author:        Paul Calnon
-# Version:       0.3.2 (0.7.3)
 #
 # Date Created:  2025-09-27
 # Last Modified: 2026-01-12
