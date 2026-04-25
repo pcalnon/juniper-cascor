@@ -81,6 +81,9 @@ class HandshakeCooldown:
     Cleared on server restart (NAT-hostile escape hatch).
     """
 
+    # BUG-CC-14: prune stale rejection histories every N record_rejection calls.
+    _CLEANUP_EVERY_N = 50
+
     def __init__(self, max_rejections: int = 10, window_sec: int = 60, block_sec: int = 300):
         self._max_rejections = max_rejections
         self._window_sec = window_sec
@@ -88,6 +91,17 @@ class HandshakeCooldown:
         self._rejections: dict[str, list[float]] = defaultdict(list)
         self._blocked_until: dict[str, float] = {}
         self._lock = threading.Lock()
+        self._total_rejections_since_cleanup = 0  # BUG-CC-14: cleanup tick counter.
+
+    def _maybe_full_cleanup(self) -> None:
+        """BUG-CC-14: prune ALL stale rejection entries across all IPs. Caller must hold ``_lock``."""
+        now = time.monotonic()
+        cutoff = now - (2 * self._window_sec)
+        stale_ips = [ip for ip, timestamps in self._rejections.items() if not timestamps or all(t < cutoff for t in timestamps)]
+        for ip in stale_ips:
+            del self._rejections[ip]
+        if stale_ips:
+            logger.debug("HandshakeCooldown: pruned rejection history for %d stale IPs", len(stale_ips))
 
     def is_blocked(self, client_ip: str) -> bool:
         """Check if an IP is currently blocked."""
@@ -108,6 +122,12 @@ class HandshakeCooldown:
             # Prune old entries
             self._rejections[client_ip] = [t for t in timestamps if t > cutoff]
             self._rejections[client_ip].append(now)
+
+            # BUG-CC-14: periodically prune stale histories for non-blocked IPs.
+            self._total_rejections_since_cleanup += 1
+            if self._total_rejections_since_cleanup >= self._CLEANUP_EVERY_N:
+                self._maybe_full_cleanup()
+                self._total_rejections_since_cleanup = 0
 
             if len(self._rejections[client_ip]) >= self._max_rejections:
                 self._blocked_until[client_ip] = now + self._block_sec
