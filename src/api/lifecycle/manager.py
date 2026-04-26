@@ -43,6 +43,13 @@ class TrainingLifecycleManager:
         self._training_lock = threading.Lock()
         self._metrics_lock = threading.Lock()
         self._topology_lock = threading.Lock()
+        # CONC-02 / BUG-CC-16 (Phase 3B): guard the broadcast throttle so two
+        # callers cannot both pass the (now - last) < interval check and emit
+        # duplicate state messages. _last_state_broadcast_time is initialized
+        # here so the read in _broadcast_training_state never has to gate on
+        # hasattr() (which itself was part of the original race window).
+        self._broadcast_lock = threading.Lock()
+        self._last_state_broadcast_time: float = 0.0
         self._executor: Optional[ThreadPoolExecutor] = None
         self._training_future: Optional[Future] = None
         self._stop_requested = threading.Event()
@@ -148,11 +155,20 @@ class TrainingLifecycleManager:
         status = state_data.get("status", "")
         is_terminal = status in self._TERMINAL_STATUSES
 
-        now = time.monotonic()
-        if not force and not is_terminal:
-            if hasattr(self, "_last_state_broadcast_time") and now - self._last_state_broadcast_time < self._state_throttle_interval:
-                return
-        self._last_state_broadcast_time = now
+        # CONC-02 / BUG-CC-16 (Phase 3B): the throttle is a check-then-set on
+        # _last_state_broadcast_time. Without a lock two threads (training
+        # thread, monitor thread, control endpoint) could both observe
+        # `now - last >= interval`, both pass, and both broadcast — defeating
+        # the GAP-WS-21 coalescer. Hold _broadcast_lock across the read and
+        # the write so only one caller wins the throttle window. Terminal
+        # transitions and force=True still bypass the throttle but still
+        # update the timestamp under the lock for consistency.
+        with self._broadcast_lock:
+            now = time.monotonic()
+            if not force and not is_terminal:
+                if now - self._last_state_broadcast_time < self._state_throttle_interval:
+                    return
+            self._last_state_broadcast_time = now
 
         from api.websocket.messages import create_state_message
 
@@ -498,7 +514,16 @@ class TrainingLifecycleManager:
         if self.network is None or not hasattr(self.network, "history"):
             return
 
-        # Snapshot history under lock
+        # CONC-03 / BUG-CC-17 (Phase 3B): the previous implementation
+        # released self._metrics_lock between the snapshot+high-water-mark read
+        # and the high-water-mark write. Two concurrent callers could both
+        # observe the same `last_emitted`, both emit the slice
+        # [last_emitted:current_len), and only then race on the write — so each
+        # epoch in that slice was reported to TrainingMonitor twice.
+        # Hold _metrics_lock across the read, the per-entry on_epoch_end calls,
+        # and the high-water-mark advance so the read-process-write cycle is
+        # atomic. The training_state update is idempotent and is left outside
+        # the lock to keep the critical section bounded.
         with self._metrics_lock:
             try:
                 history = self.network.history
@@ -511,25 +536,25 @@ class TrainingLifecycleManager:
             except (RuntimeError, KeyError):
                 return
 
-        current_len = len(train_loss_list)
-        if current_len <= last_emitted:
-            return  # No new data
+            current_len = len(train_loss_list)
+            if current_len <= last_emitted:
+                return  # No new data
 
-        # Emit all new entries
-        for i in range(last_emitted, current_len):
-            epoch = i + 1
-            self.training_monitor.on_epoch_end(
-                epoch=epoch,
-                loss=train_loss_list[i],
-                accuracy=train_accuracy_list[i] if i < len(train_accuracy_list) else None,
-                learning_rate=getattr(self.network, "learning_rate", 0.0),
-                hidden_units=hidden_units_count,
-                validation_loss=val_loss_list[i] if i < len(val_loss_list) else None,
-                validation_accuracy=val_accuracy_list[i] if i < len(val_accuracy_list) else None,
-            )
+            # Emit all new entries
+            for i in range(last_emitted, current_len):
+                epoch = i + 1
+                self.training_monitor.on_epoch_end(
+                    epoch=epoch,
+                    loss=train_loss_list[i],
+                    accuracy=train_accuracy_list[i] if i < len(train_accuracy_list) else None,
+                    learning_rate=getattr(self.network, "learning_rate", 0.0),
+                    hidden_units=hidden_units_count,
+                    validation_loss=val_loss_list[i] if i < len(val_loss_list) else None,
+                    validation_accuracy=val_accuracy_list[i] if i < len(val_accuracy_list) else None,
+                )
 
-        # Update high-water-mark
-        with self._metrics_lock:
+            # Advance the high-water-mark before releasing the lock — this is
+            # the second half of the formerly-split section.
             self._last_emitted_history_len = current_len
 
         self.training_state.update_state(
