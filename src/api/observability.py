@@ -61,6 +61,14 @@ class RequestIdMiddleware(BaseHTTPMiddleware):
             request_id_var.reset(token)
 
 
+# METRICS-MON seed-01 / R1.1: bound cardinality. Restrict the ``endpoint``
+# label to the resolved Starlette route template; collapse unmatched
+# requests into ``UNMATCHED_ENDPOINT_LABEL`` and increment a separate
+# counter so unmatched volume stays observable without polluting the
+# histogram. Aligned with the same fix in juniper-data and juniper-canopy.
+UNMATCHED_ENDPOINT_LABEL = "_unmatched"
+
+
 class PrometheusMiddleware(BaseHTTPMiddleware):
     """Tracks http_requests_total and http_request_duration_seconds with namespace prefix."""
 
@@ -79,6 +87,11 @@ class PrometheusMiddleware(BaseHTTPMiddleware):
             "HTTP request duration in seconds",
             ["method", "endpoint"],
         )
+        self._unmatched_count = Counter(
+            f"{prefix}http_unmatched_requests_total",
+            "HTTP requests not matching any registered route template",
+            ["method"],
+        )
 
     async def dispatch(
         self,
@@ -90,8 +103,14 @@ class PrometheusMiddleware(BaseHTTPMiddleware):
         duration = time.perf_counter() - start
 
         route = request.scope.get("route")
-        endpoint = route.path if route else "unmatched"
+        template = getattr(route, "path", None) if route is not None else None
         method = request.method
+        if template:
+            endpoint = template
+        else:
+            endpoint = UNMATCHED_ENDPOINT_LABEL
+            self._unmatched_count.labels(method=method).inc()
+
         status = str(response.status_code)
 
         self._request_count.labels(method=method, endpoint=endpoint, status=status).inc()
