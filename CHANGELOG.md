@@ -22,6 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **CONC-09** (Track 3 Phase 3C, 2026-04-26): the `auto_start_training` and `auto_start_canopy` background tasks created in `src/api/app.py::lifespan` are no longer fire-and-forget. Each `asyncio.create_task(...)` is now stored on `app.state.startup_tasks`, named for debuggability, and wired with the new `_log_startup_task_exception` done-callback so any non-cancellation exception is surfaced at error level with the original traceback (instead of being silently swallowed and only later emitted as the cryptic "Task exception was never retrieved" warning when the task is GC'd). The shutdown phase cancels any in-flight startup tasks and awaits them with `asyncio.gather(..., return_exceptions=True)` so cancellation errors don't escape the lifespan boundary. Verified by `src/tests/unit/api/test_app_startup_tasks.py` (4 source-level checks that always run + 4 behavioural tests that `importorskip("torch")` so the env's broken torch C-extension doesn't gate the regression coverage).
 - Removed an unused `epoch_trained_candidate` return-value assignment in `src/candidate_unit/candidate_unit.py` that flake8 had been flagging as F841 (the side-effecting `_update_weights_and_bias` call is preserved). This was a surgical fix needed to keep pre-commit clean for the Wave 3 commit.
 
 ### Notes
