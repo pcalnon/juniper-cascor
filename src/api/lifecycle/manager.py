@@ -77,7 +77,73 @@ class TrainingLifecycleManager:
         # Worker coordinator (set via set_worker_coordinator)
         self._worker_coordinator = None
 
+        # METRICS-MON R1.2 / seed-03: liveness heartbeat. A 1-second daemon
+        # bumps ``_liveness_counter`` and ``_liveness_last_tick_at``; the
+        # liveness probe consults ``is_alive()`` to detect a wedged process.
+        # The TrainingMonitor callbacks also bump the counter so progress
+        # in the training thread is an additional liveness signal.
+        self._liveness_counter: int = 0
+        self._liveness_last_tick_at: float = time.monotonic()
+        self._liveness_lock = threading.Lock()
+        self._liveness_stop_event = threading.Event()
+        self._liveness_thread: Optional[threading.Thread] = None
+        self._start_liveness_thread()
+        self._register_liveness_monitor_callbacks()
+
         self.logger.info("TrainingLifecycleManager initialized")
+
+    def _register_liveness_monitor_callbacks(self) -> None:
+        """Bump the heartbeat from every training-monitor event so progress
+        in the training thread is an additional liveness signal.
+        """
+        bump = lambda **_kw: self.bump_liveness()  # noqa: E731 — concise wrapper
+        for event in ("epoch_start", "epoch_end", "cascade_add", "training_start", "training_end", "topology_change", "candidate_progress", "phase_change"):
+            self.training_monitor.register_callback(event, bump)
+
+    def bump_liveness(self) -> None:
+        """Record that the lifecycle is making forward progress.
+
+        Called from the 1-second daemon thread and from TrainingMonitor
+        event callbacks. The probe layer reads the resulting timestamp
+        via ``is_alive()`` to decide liveness.
+        """
+        with self._liveness_lock:
+            self._liveness_counter += 1
+            self._liveness_last_tick_at = time.monotonic()
+
+    def is_alive(self, stale_after_seconds: float = 30.0) -> bool:
+        """Return True if the heartbeat has been bumped within the window.
+
+        ``stale_after_seconds`` defaults to 30 s — well above the daemon
+        thread's 1-second cadence, so transient scheduling jitter does
+        not flap liveness, but well below typical Helm
+        ``failureThreshold`` × ``periodSeconds`` so real wedges still
+        get caught.
+        """
+        with self._liveness_lock:
+            last = self._liveness_last_tick_at
+        return (time.monotonic() - last) < stale_after_seconds
+
+    def _start_liveness_thread(self) -> None:
+        """Start the 1-second daemon that bumps the heartbeat."""
+
+        def _loop() -> None:
+            while not self._liveness_stop_event.is_set():
+                self.bump_liveness()
+                self._liveness_stop_event.wait(1.0)
+
+        self._liveness_thread = threading.Thread(
+            target=_loop,
+            name="lifecycle-liveness",
+            daemon=True,
+        )
+        self._liveness_thread.start()
+
+    def stop_liveness_heartbeat(self) -> None:
+        """Stop the heartbeat thread (used in shutdown / tests)."""
+        self._liveness_stop_event.set()
+        if self._liveness_thread is not None:
+            self._liveness_thread.join(timeout=2.0)
 
     def set_ws_manager(self, ws_manager, state_throttle_interval: float = 1.0) -> None:
         """Set the WebSocket manager for real-time broadcasting.
@@ -1003,6 +1069,7 @@ class TrainingLifecycleManager:
     def shutdown(self) -> None:
         """Clean up resources."""
         self._stop_requested.set()
+        self.stop_liveness_heartbeat()
         self._restore_original_methods()
         if self._executor:
             self._executor.shutdown(wait=False, cancel_futures=True)

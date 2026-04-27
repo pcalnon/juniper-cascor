@@ -137,6 +137,66 @@ class TestLifecycleManagerNetwork:
 
 
 @pytest.mark.unit
+class TestLifecycleHeartbeat:
+    """R1.2 / seed-03: liveness heartbeat counter and is_alive() accessor."""
+
+    def test_heartbeat_initially_alive(self):
+        """Fresh manager: heartbeat just bumped → is_alive() True."""
+        mgr = TrainingLifecycleManager()
+        try:
+            assert mgr.is_alive() is True
+            assert mgr._liveness_counter >= 1  # bumped at least by the daemon thread tick
+        finally:
+            mgr.stop_liveness_heartbeat()
+
+    def test_bump_advances_counter_and_timestamp(self):
+        """bump_liveness() increments counter and updates monotonic timestamp."""
+        mgr = TrainingLifecycleManager()
+        try:
+            mgr.stop_liveness_heartbeat()  # avoid races with the daemon
+            before = mgr._liveness_counter
+            t_before = mgr._liveness_last_tick_at
+            time.sleep(0.001)
+            mgr.bump_liveness()
+            assert mgr._liveness_counter == before + 1
+            assert mgr._liveness_last_tick_at > t_before
+        finally:
+            mgr.stop_liveness_heartbeat()
+
+    def test_is_alive_false_when_stale(self):
+        """is_alive() returns False when last tick is older than the staleness window."""
+        mgr = TrainingLifecycleManager()
+        try:
+            mgr.stop_liveness_heartbeat()
+            with mgr._liveness_lock:
+                mgr._liveness_last_tick_at = time.monotonic() - 100
+            assert mgr.is_alive(stale_after_seconds=30) is False
+        finally:
+            mgr.stop_liveness_heartbeat()
+
+    def test_monitor_event_callback_bumps_heartbeat(self):
+        """TrainingMonitor event callbacks bump the heartbeat (training-thread liveness signal)."""
+        mgr = TrainingLifecycleManager()
+        try:
+            mgr.stop_liveness_heartbeat()
+            before = mgr._liveness_counter
+            mgr.training_monitor.on_phase_change("output")
+            assert mgr._liveness_counter > before
+        finally:
+            mgr.stop_liveness_heartbeat()
+
+    def test_daemon_thread_bumps_periodically(self):
+        """Daemon heartbeat thread bumps the counter at ~1s cadence."""
+        mgr = TrainingLifecycleManager()
+        try:
+            before = mgr._liveness_counter
+            time.sleep(1.5)
+            assert mgr._liveness_counter > before
+        finally:
+            mgr.stop_liveness_heartbeat()
+
+
+@pytest.mark.unit
 class TestLifecycleManagerTrainingControl:
     """Test training start/stop/pause/resume/reset."""
 

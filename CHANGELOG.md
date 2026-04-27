@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed (potentially breaking)
+
+- **METRICS-MON R1.2 / seed-02 / seed-03**: `/v1/health/ready` now returns **HTTP 503** (not 200) when a required dependency is unhealthy, with body `status="not_ready"`. Required deps for cascor are the lifecycle manager (always) and JuniperData (when `JUNIPER_DATA_URL` is set). `/v1/health/live` runs an in-process liveness tick (consults a new `lifecycle.is_alive()` accessor backed by a 1-second heartbeat counter) within a 250 ms budget and returns **HTTP 503** on tick failure or budget exceedance. Both endpoints emit a new `X-Juniper-Readiness` header / liveness body fields (`tick`, `duration_ms`) so probe diagnostics surface in orchestrator logs without body parsing. Adds `TrainingLifecycleManager.bump_liveness()`, `is_alive(stale_after_seconds=30.0)`, and `stop_liveness_heartbeat()` plumbing; `TrainingMonitor` event callbacks (epoch, cascade, phase-change, training-start/end, candidate-progress, topology-change) bump the heartbeat so progress in the training thread is an additional liveness signal. See [`notes/code-review/METRICS_MONITORING_R1.2_PROBE_DESIGN_2026-04-27.md`](https://github.com/pcalnon/juniper-ml/blob/main/notes/code-review/METRICS_MONITORING_R1.2_PROBE_DESIGN_2026-04-27.md) in juniper-ml for the cross-repo contract; companion PRs land in juniper-data, juniper-canopy, and juniper-deploy. `/v1/health` (the legacy combined endpoint) is unchanged.
+
 ### Added
 
 - Phase D (§S10) per-command timeouts on `/ws/control`: commands dispatched via `asyncio.to_thread` and bounded by `asyncio.wait_for` with `start=10s`, `stop/pause/resume/reset=2s`, `set_params=1s`. Timeouts emit `command_response{status:"error", error:"Command timed out after Ns"}` while the connection stays open.

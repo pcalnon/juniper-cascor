@@ -32,26 +32,76 @@ class TestHealthEndpoints:
         assert body["version"] == "0.4.0"
 
     def test_liveness_probe(self, client):
-        """Test GET /v1/health/live returns alive."""
+        """R1.2: GET /v1/health/live runs in-process tick + returns 200 with tick metadata."""
         response = client.get("/v1/health/live")
         assert response.status_code == 200
         body = response.json()
         assert body["status"] == "alive"
+        assert body["tick"] == "juniper-cascor"
+        assert isinstance(body["duration_ms"], int)
+
+    def test_liveness_503_when_lifecycle_missing(self, client):
+        """R1.2 / seed-03: tick raises when lifecycle not bound → 503."""
+        # Clear the lifecycle the lifespan installed.
+        original = client.app.state.lifecycle
+        client.app.state.lifecycle = None
+        try:
+            response = client.get("/v1/health/live")
+            assert response.status_code == 503
+            body = response.json()
+            assert body["status"] == "unresponsive"
+            assert body["tick"] == "juniper-cascor"
+            assert "lifecycle" in body["error"]
+        finally:
+            client.app.state.lifecycle = original
+
+    def test_liveness_503_when_heartbeat_stale(self, client):
+        """R1.2 / seed-03: stale heartbeat → 503."""
+        from api.routes import health as health_module
+
+        # Force the lifecycle's last-tick timestamp to long-past so is_alive() is False.
+        lifecycle = client.app.state.lifecycle
+        with lifecycle._liveness_lock:
+            lifecycle._liveness_last_tick_at = lifecycle._liveness_last_tick_at - (health_module.LIVENESS_STALENESS_SECONDS + 5)
+        # Stop the heartbeat thread so it can't recover before our check.
+        lifecycle.stop_liveness_heartbeat()
+
+        response = client.get("/v1/health/live")
+        assert response.status_code == 503
+        body = response.json()
+        assert body["status"] == "unresponsive"
+        assert "stale" in body["error"]
 
     def test_readiness_probe_default(self, client):
-        """Test GET /v1/health/ready with default lifecycle state."""
+        """Test GET /v1/health/ready with lifecycle bound → 200 + ready."""
         response = client.get("/v1/health/ready")
         assert response.status_code == 200
+        assert response.headers.get("X-Juniper-Readiness") == "ready"
         body = response.json()
-        assert body["status"] in ("ready", "degraded")
+        assert body["status"] == "ready"
         assert body["version"] == "0.4.0"
         assert body["service"] == "juniper-cascor"
         assert "timestamp" in body
         assert body["details"]["network_loaded"] is False
         assert "training_state" in body["details"]
+        assert body["dependencies"]["lifecycle"]["status"] == "healthy"
+
+    def test_readiness_503_when_lifecycle_missing(self, client):
+        """R1.2 / seed-02: lifecycle unbound → 503 + status=not_ready."""
+        original = client.app.state.lifecycle
+        client.app.state.lifecycle = None
+        try:
+            response = client.get("/v1/health/ready")
+            assert response.status_code == 503
+            assert response.headers.get("X-Juniper-Readiness") == "not_ready"
+            body = response.json()
+            assert body["status"] == "not_ready"
+            assert body["dependencies"]["lifecycle"]["status"] == "unhealthy"
+        finally:
+            client.app.state.lifecycle = original
 
     def test_readiness_probe_with_lifecycle(self, client):
-        """Test GET /v1/health/ready with lifecycle manager that has a network."""
+        """Test GET /v1/health/ready details surface mock lifecycle state."""
 
         class MockLifecycle:
             def has_network(self):
@@ -71,16 +121,17 @@ class TestHealthEndpoints:
         assert body["details"]["training_state"] == "idle"
 
     @patch.dict("os.environ", {"JUNIPER_DATA_URL": "http://fake-data:8100"})
-    def test_readiness_probe_data_unhealthy(self, client):
-        """Test degraded status when JuniperData is unreachable."""
+    def test_readiness_503_when_juniper_data_unhealthy(self, client):
+        """R1.2 / seed-02: when JUNIPER_DATA_URL set + dep unhealthy → 503 not_ready."""
         response = client.get("/v1/health/ready")
-        assert response.status_code == 200
+        assert response.status_code == 503
+        assert response.headers.get("X-Juniper-Readiness") == "not_ready"
         body = response.json()
-        assert body["status"] == "degraded"
+        assert body["status"] == "not_ready"
         assert body["dependencies"]["juniper_data"]["status"] == "unhealthy"
 
     def test_readiness_probe_no_data_url(self, client):
-        """Test readiness without JUNIPER_DATA_URL set."""
+        """When JUNIPER_DATA_URL unset, juniper_data dep is skipped entirely → ready."""
         with patch.dict("os.environ", {}, clear=False):
             import os
 
@@ -88,7 +139,7 @@ class TestHealthEndpoints:
             response = client.get("/v1/health/ready")
             assert response.status_code == 200
             body = response.json()
-            # No juniper_data dependency when URL not set
+            assert body["status"] == "ready"
             assert "juniper_data" not in body.get("dependencies", {})
 
 
@@ -173,6 +224,7 @@ class TestResponseFormat:
         response = client.get("/v1/health/live")
         body = response.json()
         assert body["status"] == "alive"
+        assert body["tick"] == "juniper-cascor"
         assert "data" not in body
 
     def test_readiness_flat_response(self, client):
