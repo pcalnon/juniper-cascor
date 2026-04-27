@@ -383,28 +383,55 @@ class WorkerCoordinator:
         each worker's staleness is re-checked via the registry before removal.
         A worker that sent a heartbeat between the snapshot and the re-check
         will be skipped.
+
+        CONC-10 (Phase 3D): also closes the race window between this monitor
+        thread's deregister and `get_next_assignment()` assigning a task to
+        the same worker. The pre-fix flow re-checked liveness, popped the
+        active task back onto the queue under `self._lock`, then called
+        `self._registry.deregister(...)` *outside* the lock — leaving a
+        window in which `get_next_assignment()` (which holds `self._lock`
+        for its entire critical section) could pick a task and call
+        `self._registry.assign_task(worker_id, ...)` after the active-task
+        handling but before the deregister. That assignment would land on a
+        worker about to disappear, and the task would wait for the next
+        120-second `_task_reassignment_timeout`. Holding `self._lock` across
+        the re-check, the active-task reassignment, and the deregister makes
+        the deregistration atomic with respect to assignment so any
+        in-flight `get_next_assignment()` either runs before the worker is
+        considered dead (and assigns normally) or after it is removed (and
+        sees no eligible task / no registered worker).
         """
         stale = self._registry.get_stale_workers()
         for worker in stale:
-            # Re-check: the worker may have sent a heartbeat since the snapshot
-            current = self._registry.get(worker.worker_id)
-            if current is None:
-                # Already deregistered by another path
-                continue
-            if current.is_alive(self._registry._heartbeat_timeout):
-                logger.debug("Worker %s recovered (heartbeat received since stale snapshot) — skipping deregister", worker.worker_id)
-                continue
+            with self._lock:
+                # Re-check: the worker may have sent a heartbeat since the
+                # snapshot or already been deregistered by another path.
+                current = self._registry.get(worker.worker_id)
+                if current is None:
+                    continue
+                if current.is_alive(self._registry._heartbeat_timeout):
+                    logger.debug("Worker %s recovered (heartbeat received since stale snapshot) — skipping deregister", worker.worker_id)
+                    continue
 
-            logger.warning("Worker %s heartbeat timeout — deregistering", worker.worker_id)
-            # If worker had an active task, put it back in the unassigned queue
-            if worker.active_task_id is not None:
-                with self._lock:
-                    task = self._pending_tasks.get(worker.active_task_id)
+                logger.warning("Worker %s heartbeat timeout — deregistering", worker.worker_id)
+                # If worker had an active task, put it back in the unassigned
+                # queue. Read the snapshot's `active_task_id` *and* the
+                # current registry entry's so we don't lose a task that was
+                # just dispatched (between snapshot and re-check) by an
+                # `assign_task()` call serialized under the same lock.
+                active_task_id = current.active_task_id or worker.active_task_id
+                if active_task_id is not None:
+                    task = self._pending_tasks.get(active_task_id)
                     if task is not None and not task.completed:
                         task.assigned_worker_id = None
-                        self._unassigned_tasks.append(worker.active_task_id)
-                        logger.info("Task %s reassigned to queue (worker %s died)", worker.active_task_id, worker.worker_id)
-            self._registry.deregister(worker.worker_id)
+                        self._unassigned_tasks.append(active_task_id)
+                        logger.info("Task %s reassigned to queue (worker %s died)", active_task_id, worker.worker_id)
+                # Deregister inside the same critical section so a concurrent
+                # `get_next_assignment()` cannot land a task on this worker
+                # between the active-task reassignment and the deregister.
+                self._registry.deregister(worker.worker_id)
+            # Send-callback bookkeeping is independent of the registry lock
+            # and may itself take a per-callback lock; keep it outside.
             self.unregister_send_callback(worker.worker_id)
 
     def _check_task_timeouts(self) -> None:
