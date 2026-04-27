@@ -421,6 +421,37 @@ class TestMessageLoop:
         assert len(hb_responses) == 1
 
     @pytest.mark.asyncio
+    async def test_heartbeat_forwards_enriched_fields(self, registry, coordinator):
+        """METRICS-MON R1.3 / seed-04: enriched fields in the heartbeat payload reach the registry."""
+        registry.register("w1", {})
+        coordinator.get_next_assignment = MagicMock(return_value=None)
+
+        hb_msg = json.dumps(
+            {
+                "type": MessageType.HEARTBEAT,
+                "worker_id": "w1",
+                "in_flight_tasks": 3,
+                "last_task_completed_at": 1745816400.0,
+                "rss_mb": 256.5,
+                "tasks_completed": 17,
+                "tasks_failed": 1,
+            }
+        )
+        ws = AsyncMock()
+        ws.receive = AsyncMock(side_effect=[{"text": hb_msg}, WebSocketDisconnect()])
+
+        with pytest.raises(WebSocketDisconnect):
+            await _message_loop(ws, "w1", registry, coordinator)
+
+        reg = registry.get("w1")
+        assert reg is not None
+        assert reg.in_flight_tasks == 3
+        assert reg.last_task_completed_at == 1745816400.0
+        assert reg.rss_mb == 256.5
+        assert reg.tasks_completed == 17
+        assert reg.tasks_failed == 1
+
+    @pytest.mark.asyncio
     async def test_unknown_message_type(self, registry, coordinator):
         """Unknown message types trigger an error response."""
         registry.register("w1", {})

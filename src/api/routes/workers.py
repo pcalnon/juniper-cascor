@@ -24,7 +24,13 @@ def _get_registry(request: Request):
 
 
 def _serialize_worker(worker) -> dict:
-    """Serialize a WorkerRegistration to a JSON-safe dict."""
+    """Serialize a WorkerRegistration to a JSON-safe dict.
+
+    METRICS-MON R1.3 / seed-04: includes ``in_flight_tasks``,
+    ``last_task_completed_at``, and ``rss_mb`` from R1.3-aware workers'
+    enriched heartbeats. Workers running older images report these as
+    0/None defaults until they upgrade.
+    """
     return {
         "worker_id": worker.worker_id,
         "capabilities": worker.capabilities,
@@ -35,6 +41,10 @@ def _serialize_worker(worker) -> dict:
         "active_task_id": worker.active_task_id,
         "health_score": worker.health_score,
         "idle": worker.idle,
+        # METRICS-MON R1.3 / seed-04: enriched fields.
+        "in_flight_tasks": worker.in_flight_tasks,
+        "last_task_completed_at": worker.last_task_completed_at,
+        "rss_mb": worker.rss_mb,
     }
 
 

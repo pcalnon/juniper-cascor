@@ -89,6 +89,10 @@ class TestListWorkers:
             "active_task_id",
             "health_score",
             "idle",
+            # METRICS-MON R1.3 / seed-04: enriched heartbeat fields.
+            "in_flight_tasks",
+            "last_task_completed_at",
+            "rss_mb",
         }
         assert set(worker.keys()) == expected_keys
         assert worker["tasks_completed"] == 5
@@ -96,6 +100,21 @@ class TestListWorkers:
         assert worker["active_task_id"] == "task-42"
         assert worker["idle"] is False
         assert worker["health_score"] == pytest.approx(5 / 7)
+        # Default enriched fields for a worker that hasn't sent an R1.3 heartbeat
+        assert worker["in_flight_tasks"] == 0
+        assert worker["last_task_completed_at"] is None
+        assert worker["rss_mb"] is None
+
+    def test_list_workers_surfaces_enriched_heartbeat_fields(self, client, registry):
+        """METRICS-MON R1.3: when a worker reports enriched fields, /v1/workers shows them."""
+        registry.register("worker-r13", {})
+        registry.heartbeat("worker-r13", in_flight_tasks=2, last_task_completed_at=1745816400.0, rss_mb=412.7)
+        response = client.get("/v1/workers")
+        assert response.status_code == 200
+        worker = next(w for w in response.json()["data"]["workers"] if w["worker_id"] == "worker-r13")
+        assert worker["in_flight_tasks"] == 2
+        assert worker["last_task_completed_at"] == 1745816400.0
+        assert worker["rss_mb"] == 412.7
 
     def test_list_workers_response_envelope(self, client):
         """GET /v1/workers wraps response in standard envelope."""
