@@ -1233,9 +1233,9 @@ pytest src/tests/integration/test_serialization.py::TestRandomStateRestoration::
 
 ### Related Documents
 
-- [NEXT_STEPS.md](NEXT_STEPS.md) - Original MVP plan
-- [P2_ENHANCEMENTS_PLAN.md](P2_ENHANCEMENTS_PLAN.md) - P2 optimization plan
-- [SERIALIZATION_FIXES_SUMMARY.md](SERIALIZATION_FIXES_SUMMARY.md) - Previous fixes
+- [NEXT_STEPS.md](../history/NEXT_STEPS.md) - Original MVP plan (archived)
+- [P2_ENHANCEMENTS_PLAN.md](../history/P2_ENHANCEMENTS_PLAN.md) - P2 optimization plan (archived)
+- [SERIALIZATION_FIXES_SUMMARY.md](../history/SERIALIZATION_FIXES_SUMMARY.md) - Previous fixes (archived)
 
 ### Key Files
 

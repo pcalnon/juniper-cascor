@@ -411,9 +411,9 @@ The 4-phase structure balances:
 
 ## Related Documents
 
-- [DEVELOPMENT_ROADMAP.md](DEVELOPMENT_ROADMAP.md) - The resulting roadmap
-- [PROJECT_ANALYSIS.md](PROJECT_ANALYSIS.md) - Input analysis
-- [CASCOR_ENHANCEMENTS_ROADMAP.md](CASCOR_ENHANCEMENTS_ROADMAP.md) - Previous planning
+- [DEVELOPMENT_ROADMAP.md](history/DEVELOPMENT_ROADMAP.md) - The resulting roadmap (archived)
+- [PROJECT_ANALYSIS.md](history/PROJECT_ANALYSIS.md) - Input analysis (archived)
+- [CASCOR_ENHANCEMENTS_ROADMAP.md](development/CASCOR_ENHANCEMENTS_ROADMAP.md) - Previous planning
 
 ---
 
