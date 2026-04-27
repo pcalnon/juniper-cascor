@@ -38,6 +38,26 @@ except importlib.metadata.PackageNotFoundError:
 logger = logging.getLogger("juniper_cascor.api")
 
 
+def _log_startup_task_exception(task: asyncio.Task) -> None:
+    """Done-callback that surfaces exceptions from fire-and-forget startup tasks.
+
+    CONC-09 (Phase 3C): without this hook the auto_start_training and
+    auto_start_canopy tasks were created with `asyncio.create_task(...)` and
+    no saved reference, which (a) made them eligible for garbage collection
+    while still pending and (b) meant any exception they raised was logged
+    only as the cryptic "Task exception was never retrieved" warning emitted
+    by the loop at GC time. The lifespan handler now stores the task in
+    `app.state.startup_tasks` AND attaches this callback so any non-cancel
+    exception is logged with full traceback at error level the moment the
+    task finishes.
+    """
+    if task.cancelled():
+        return
+    exc = task.exception()
+    if exc is not None:
+        logger.error("Startup task %s failed: %s", task.get_name(), exc, exc_info=exc)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Application lifespan handler for startup/shutdown."""
@@ -137,17 +157,43 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         else:
             logger.error("Failed to auto-start juniper-data service")
 
-    # Auto-start training if configured (runs as background task)
+    # CONC-09 (Phase 3C): track every fire-and-forget startup task on
+    # `app.state.startup_tasks` so the loop keeps a strong reference (the
+    # asyncio docs explicitly warn that tasks created by `asyncio.create_task`
+    # without a saved reference can be garbage-collected mid-flight) and
+    # exceptions are surfaced via a done-callback rather than silently
+    # swallowed by the loop. The task list is also drained during shutdown so
+    # in-flight auto-start work is cancelled cleanly instead of leaking past
+    # the lifespan boundary.
+    startup_tasks: list[asyncio.Task] = []
+    app.state.startup_tasks = startup_tasks
+
     if settings.auto_start:
         logger.warning("Auto-start training is ENABLED — this should only be used in demo/dev environments")
-        asyncio.create_task(_auto_start_training(app, settings))
+        task = asyncio.create_task(_auto_start_training(app, settings), name="auto_start_training")
+        task.add_done_callback(_log_startup_task_exception)
+        startup_tasks.append(task)
 
     # Auto-start canopy as background task (waits for cascor to be accepting connections)
     if settings.auto_start_canopy:
         logger.info("Auto-start juniper-canopy is ENABLED (normal mode)")
-        asyncio.create_task(_auto_start_canopy(app, settings, managed_services))
+        task = asyncio.create_task(_auto_start_canopy(app, settings, managed_services), name="auto_start_canopy")
+        task.add_done_callback(_log_startup_task_exception)
+        startup_tasks.append(task)
 
     yield
+
+    # CONC-09 (Phase 3C): cancel any startup tasks still running at
+    # shutdown so they don't outlive the lifespan and access freshly torn
+    # down state. Awaiting with `return_exceptions=True` lets every task
+    # finish its CancelledError handling without one bad task masking the
+    # others.
+    in_flight_startup_tasks = [t for t in getattr(app.state, "startup_tasks", []) if not t.done()]
+    if in_flight_startup_tasks:
+        logger.info("Cancelling %d in-flight startup task(s) at shutdown", len(in_flight_startup_tasks))
+        for task in in_flight_startup_tasks:
+            task.cancel()
+        await asyncio.gather(*in_flight_startup_tasks, return_exceptions=True)
 
     # Shutdown: stop worker coordinator
     worker_coordinator = getattr(app.state, "worker_coordinator", None)
