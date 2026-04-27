@@ -62,6 +62,55 @@ class TestWorkerRegistration:
 
 
 @pytest.mark.unit
+class TestWorkerRegistrationR1_3:
+    """METRICS-MON R1.3 / seed-04: enriched heartbeat fields."""
+
+    def test_enriched_field_defaults(self):
+        """New registration defaults enriched fields to 0/None."""
+        reg = WorkerRegistration(worker_id="w1")
+        assert reg.in_flight_tasks == 0
+        assert reg.last_task_completed_at is None
+        assert reg.rss_mb is None
+
+    def test_record_heartbeat_minimal_preserves_enriched(self):
+        """Backward compat: minimal heartbeat (no kwargs) preserves prior enriched values."""
+        reg = WorkerRegistration(worker_id="w1")
+        reg.in_flight_tasks = 3
+        reg.last_task_completed_at = 1745816350.0
+        reg.rss_mb = 412.7
+        reg.record_heartbeat()
+        # Prior values preserved
+        assert reg.in_flight_tasks == 3
+        assert reg.last_task_completed_at == 1745816350.0
+        assert reg.rss_mb == 412.7
+
+    def test_record_heartbeat_with_enriched_fields(self):
+        """R1.3-aware worker reports enriched fields → applied atomically."""
+        reg = WorkerRegistration(worker_id="w1")
+        reg.record_heartbeat(in_flight_tasks=2, last_task_completed_at=1745816400.0, rss_mb=512.0)
+        assert reg.in_flight_tasks == 2
+        assert reg.last_task_completed_at == 1745816400.0
+        assert reg.rss_mb == 512.0
+
+    def test_record_heartbeat_partial_kwargs(self):
+        """Mixed minimal/enriched: only the provided fields update."""
+        reg = WorkerRegistration(worker_id="w1")
+        reg.in_flight_tasks = 5
+        reg.rss_mb = 100.0
+        reg.record_heartbeat(in_flight_tasks=1)  # only in_flight_tasks updated
+        assert reg.in_flight_tasks == 1
+        assert reg.rss_mb == 100.0  # preserved
+        assert reg.last_task_completed_at is None  # preserved
+
+    def test_record_heartbeat_updates_task_counters(self):
+        """tasks_completed/failed kwargs update the counters."""
+        reg = WorkerRegistration(worker_id="w1")
+        reg.record_heartbeat(tasks_completed=10, tasks_failed=2)
+        assert reg.tasks_completed == 10
+        assert reg.tasks_failed == 2
+
+
+@pytest.mark.unit
 class TestWorkerRegistry:
     """Test WorkerRegistry thread-safe operations."""
 
@@ -111,6 +160,42 @@ class TestWorkerRegistry:
         """heartbeat returns False for unknown worker."""
         registry = WorkerRegistry()
         assert registry.heartbeat("nope") is False
+
+    def test_heartbeat_forwards_enriched_kwargs(self):
+        """METRICS-MON R1.3 / seed-04: enriched fields on the registry call propagate to the registration."""
+        registry = WorkerRegistry()
+        registry.register("w1", {})
+        assert (
+            registry.heartbeat(
+                "w1",
+                in_flight_tasks=4,
+                last_task_completed_at=1745816400.0,
+                rss_mb=256.0,
+                tasks_completed=42,
+                tasks_failed=1,
+            )
+            is True
+        )
+        reg = registry.get("w1")
+        assert reg is not None
+        assert reg.in_flight_tasks == 4
+        assert reg.last_task_completed_at == 1745816400.0
+        assert reg.rss_mb == 256.0
+        assert reg.tasks_completed == 42
+        assert reg.tasks_failed == 1
+
+    def test_heartbeat_minimal_preserves_prior_enriched(self):
+        """METRICS-MON R1.3: backward compat — old worker's minimal heartbeat preserves prior enriched values."""
+        registry = WorkerRegistry()
+        registry.register("w1", {})
+        registry.heartbeat("w1", in_flight_tasks=7, rss_mb=128.0)
+        # Older worker upgrade rolls back, sends minimal heartbeat — prior enriched
+        # values must NOT be reset to defaults.
+        registry.heartbeat("w1")
+        reg = registry.get("w1")
+        assert reg is not None
+        assert reg.in_flight_tasks == 7
+        assert reg.rss_mb == 128.0
 
     def test_assign_task(self):
         """assign_task marks worker as busy."""

@@ -23,6 +23,12 @@ class WorkerRegistration:
     debugging — it is never used as an identity and two workers may report
     the same ``client_name`` without collision because their ``worker_id``
     values are independently generated.
+
+    METRICS-MON R1.3 / seed-04: ``in_flight_tasks``, ``last_task_completed_at``,
+    and ``rss_mb`` are populated by enriched heartbeat payloads from
+    workers that report them. Older workers send only ``worker_id`` /
+    ``timestamp`` and these fields stay at their defaults (0, None,
+    None) until the worker upgrades.
     """
 
     worker_id: str
@@ -33,6 +39,12 @@ class WorkerRegistration:
     tasks_failed: int = 0
     active_task_id: str | None = None
     client_name: str | None = None
+    # METRICS-MON R1.3 / seed-04: enriched heartbeat fields. Populated by
+    # workers that send the R1.3 heartbeat shape; left at defaults for
+    # workers running older images.
+    in_flight_tasks: int = 0
+    last_task_completed_at: float | None = None
+    rss_mb: float | None = None
 
     @property
     def health_score(self) -> float:
@@ -50,9 +62,32 @@ class WorkerRegistration:
         """Whether the worker is idle (not assigned a task)."""
         return self.active_task_id is None
 
-    def record_heartbeat(self) -> None:
-        """Update last heartbeat timestamp."""
+    def record_heartbeat(
+        self,
+        *,
+        in_flight_tasks: int | None = None,
+        last_task_completed_at: float | None = None,
+        rss_mb: float | None = None,
+        tasks_completed: int | None = None,
+        tasks_failed: int | None = None,
+    ) -> None:
+        """Update last heartbeat timestamp and (optionally) enriched fields.
+
+        METRICS-MON R1.3 / seed-04: keyword-only enriched fields are
+        accepted from R1.3-aware workers. Older workers omit them; the
+        registration's prior values are preserved.
+        """
         self.last_heartbeat = time.time()
+        if in_flight_tasks is not None:
+            self.in_flight_tasks = in_flight_tasks
+        if last_task_completed_at is not None:
+            self.last_task_completed_at = last_task_completed_at
+        if rss_mb is not None:
+            self.rss_mb = rss_mb
+        if tasks_completed is not None:
+            self.tasks_completed = tasks_completed
+        if tasks_failed is not None:
+            self.tasks_failed = tasks_failed
 
     def is_alive(self, timeout: float) -> bool:
         """Check if the worker is alive based on heartbeat timeout."""
@@ -139,8 +174,21 @@ class WorkerRegistry:
         with self._lock:
             return self._workers.get(worker_id)
 
-    def heartbeat(self, worker_id: str) -> bool:
+    def heartbeat(
+        self,
+        worker_id: str,
+        *,
+        in_flight_tasks: int | None = None,
+        last_task_completed_at: float | None = None,
+        rss_mb: float | None = None,
+        tasks_completed: int | None = None,
+        tasks_failed: int | None = None,
+    ) -> bool:
         """Record a heartbeat for a worker.
+
+        METRICS-MON R1.3 / seed-04: keyword-only enriched fields are
+        forwarded to ``WorkerRegistration.record_heartbeat``. Pass
+        ``None`` (the default) for any field not reported by the worker.
 
         Returns:
             True if the worker exists, False otherwise.
@@ -149,7 +197,13 @@ class WorkerRegistry:
             reg = self._workers.get(worker_id)
             if reg is None:
                 return False
-            reg.record_heartbeat()
+            reg.record_heartbeat(
+                in_flight_tasks=in_flight_tasks,
+                last_task_completed_at=last_task_completed_at,
+                rss_mb=rss_mb,
+                tasks_completed=tasks_completed,
+                tasks_failed=tasks_failed,
+            )
             return True
 
     def assign_task(self, worker_id: str, task_id: str) -> bool:

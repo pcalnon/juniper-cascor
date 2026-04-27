@@ -209,7 +209,18 @@ async def _message_loop(
             msg_type = msg.get("type")
 
             if msg_type == MessageType.HEARTBEAT:
-                registry.heartbeat(worker_id)
+                # METRICS-MON R1.3 / seed-04: forward enriched heartbeat
+                # fields when present. Workers running older images send
+                # only ``worker_id`` + ``timestamp``; the missing kwargs
+                # stay at None and prior values are preserved.
+                registry.heartbeat(
+                    worker_id,
+                    in_flight_tasks=msg.get("in_flight_tasks"),
+                    last_task_completed_at=msg.get("last_task_completed_at"),
+                    rss_mb=msg.get("rss_mb"),
+                    tasks_completed=msg.get("tasks_completed"),
+                    tasks_failed=msg.get("tasks_failed"),
+                )
                 await websocket.send_json(WorkerProtocol.build_heartbeat(worker_id))
 
             elif msg_type == MessageType.TASK_RESULT:
