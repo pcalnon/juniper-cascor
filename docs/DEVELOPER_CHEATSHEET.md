@@ -39,7 +39,7 @@
 
 ```bash
 conda activate JuniperCascor && cd juniper-cascor && pip install -e ".[all]"
-cd src && python main.py                                       # native [start](start)
+cd src && python main.py                                       # native start
 curl -s http://localhost:8200/v1/health | python -m json.tool  # health
 docker compose --profile full up -d                            # Docker start
 ```
@@ -234,6 +234,6 @@ Core: `torch`, `numpy`, `h5py`, `matplotlib`, `PyYAML`, `requests`
 
 ## Cross-References
 
-[Ecosystem Cheatsheet](../../juniper-ml/notes/DEVELOPER_CHEATSHEET.md) | [juniper-cascor-client](../../juniper-cascor-client/docs/DEVELOPER_CHEATSHEET.md) | [juniper-deploy](../../juniper-deploy/docs/DEVELOPER_CHEATSHEET.md) | [Parent Ecosystem Guide](../../CLAUDE.md)
+[Ecosystem Cheatsheet](../../juniper-ml/docs/DEVELOPER_CHEATSHEET_JUNIPER-ML.md) | [juniper-cascor-client](../../juniper-cascor-client/docs/DEVELOPER_CHEATSHEET.md) | [juniper-deploy](../../juniper-deploy/docs/DEVELOPER_CHEATSHEET.md) | [Parent Ecosystem Guide](../../CLAUDE.md)
 
 ---

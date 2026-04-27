@@ -4,7 +4,7 @@
 **Version:** 1.7.4
 **Status:** Phase 7 Complete — All steps including 7.5.2
 **Author:** Paul Calnon / Claude Code
-**Companion Document:** [MONOREPO_ANALYSIS.md](MONOREPO_ANALYSIS.md)
+**Companion Document:** [MONOREPO_ANALYSIS.md](../history/MONOREPO_ANALYSIS.md)
 
 ---
 
@@ -1054,7 +1054,7 @@ Note: The worker needs PyTorch because it runs `CascadeCorrelationNetwork._worke
 **Risk:** High (core architectural change to Canopy)
 **Prerequisite:** Phases 2 and 3 complete
 **Status:** COMPLETE (2026-02-25) — Validated 2026-02-25
-**Detailed Plan:** [`DECOUPLE_CANOPY_FROM_CASCOR_PLAN.md`](DECOUPLE_CANOPY_FROM_CASCOR_PLAN.md)
+**Detailed Plan:** [`DECOUPLE_CANOPY_FROM_CASCOR_PLAN.md`](../history/DECOUPLE_CANOPY_FROM_CASCOR_PLAN.md)
 
 > **Note:** A comprehensive, standalone implementation plan exists in
 > `notes/DECOUPLE_CANOPY_FROM_CASCOR_PLAN.md`. It contains full adapter code,
