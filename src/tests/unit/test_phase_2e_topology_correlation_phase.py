@@ -101,9 +101,7 @@ class TestBugCC01TopologyBroadcast:
         """The lifecycle manager source must reference create_topology_message."""
         manager_src = Path(__file__).resolve().parents[2] / "api" / "lifecycle" / "manager.py"
         text = manager_src.read_text()
-        assert "create_topology_message" in text, (
-            "BUG-CC-01: create_topology_message must be referenced in manager.py"
-        )
+        assert "create_topology_message" in text, "BUG-CC-01: create_topology_message must be referenced in manager.py"
 
     def test_create_topology_message_envelope_shape(self):
         from api.websocket.messages import create_topology_message
@@ -180,9 +178,7 @@ class TestBugCC04VersionSingleSource:
         assert match is not None, "version line not found in pyproject.toml"
         declared = match.group(1)
         installed = importlib.metadata.version("juniper-cascor")
-        assert installed == declared, (
-            f"importlib version {installed!r} disagrees with pyproject {declared!r}"
-        )
+        assert installed == declared, f"importlib version {installed!r} disagrees with pyproject {declared!r}"
 
     def test_no_version_header_lines_in_source(self):
         """No production source files should retain `# Version:` headers."""
@@ -205,9 +201,7 @@ class TestBugCC04VersionSingleSource:
                     if re.match(r"^(#\s*)?Version:\s+\S", stripped):
                         offenders.append(str(path.relative_to(src_root)))
                         break
-        assert offenders == [], (
-            "BUG-CC-04: stale `Version:` header lines must be removed: " + ", ".join(offenders)
-        )
+        assert offenders == [], "BUG-CC-04: stale `Version:` header lines must be removed: " + ", ".join(offenders)
 
 
 # ---------------------------------------------------------------------------
