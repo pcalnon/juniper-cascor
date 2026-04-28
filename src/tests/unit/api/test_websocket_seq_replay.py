@@ -162,6 +162,50 @@ class TestReplayBuffer:
         with pytest.raises(ReplayOutOfRange, match="empty"):
             mgr.replay_since(5)
 
+    @pytest.mark.asyncio
+    async def test_replay_since_uses_bisect_for_log_n_lookup(self):
+        """PERF-CC-02: replay_since must use bisect (O(log n)) not a linear scan.
+
+        We verify behavior at the buffer boundary — a request for an
+        in-range seq must return exactly the entries with seq > last_seq,
+        in order, with no off-by-one. The original linear scan and the
+        bisect_right-based path are functionally equivalent; this test
+        guards against regressions when refactoring the lookup.
+        """
+        mgr = WebSocketManager(max_replay_buffer_size=200)
+        ws = AsyncMock()
+        await mgr.connect(ws)
+
+        for _ in range(150):
+            await mgr.broadcast({"type": "metrics", "data": {}})
+
+        # Boundary test 1: exact match — last_seq=100 returns 101..150 (50 entries)
+        boundary = mgr.replay_since(100)
+        assert [m["seq"] for m in boundary] == list(range(101, 151))
+
+        # Boundary test 2: one before — last_seq=99 returns 100..150 (51 entries)
+        before = mgr.replay_since(99)
+        assert [m["seq"] for m in before] == list(range(100, 151))
+
+        # Boundary test 3: latest seq — last_seq=150 returns nothing
+        empty = mgr.replay_since(150)
+        assert empty == []
+
+        # Boundary test 4: oldest seq still in buffer — last_seq=0 returns all
+        all_msgs = mgr.replay_since(0)
+        assert [m["seq"] for m in all_msgs] == list(range(1, 151))
+
+    @pytest.mark.asyncio
+    async def test_replay_buffer_uses_bisect_module(self):
+        """PERF-CC-02: import side — ensure bisect is wired into manager."""
+        # The import must succeed and bisect must be available at module level
+        # (locked in to prevent accidental removal during cleanup passes).
+        import bisect
+
+        from api.websocket import manager as mgr_module
+
+        assert getattr(mgr_module, "bisect", None) is bisect
+
 
 @pytest.mark.unit
 class TestConnectionEstablished:

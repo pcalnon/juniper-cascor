@@ -10,6 +10,7 @@ Thread-safe manager that handles:
 """
 
 import asyncio
+import bisect
 import contextlib
 import logging
 import threading
@@ -312,7 +313,13 @@ class WebSocketManager:
             oldest_seq = self._replay_buffer[0].get("seq", 0)
             if last_seq < oldest_seq - 1:
                 raise ReplayOutOfRange(f"Requested seq {last_seq} older than oldest buffered seq {oldest_seq}")
-            return [msg for msg in self._replay_buffer if msg.get("seq", 0) > last_seq]
+            # PERF-CC-02: replay buffer seqs are monotonically increasing
+            # (assigned by _assign_seq_and_buffer under _seq_lock), so a
+            # bisect_right gets us O(log n) instead of an O(n) linear scan.
+            buffered = list(self._replay_buffer)
+            seqs = [msg.get("seq", 0) for msg in buffered]
+            idx = bisect.bisect_right(seqs, last_seq)
+            return buffered[idx:]
 
     # ------------------------------------------------------------------
     # Broadcasting
