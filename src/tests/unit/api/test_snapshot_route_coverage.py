@@ -106,6 +106,32 @@ class TestSaveSnapshot:
             assert response.status_code == 404
             assert "No network available to snapshot" in response.json()["detail"]
 
+    def test_save_snapshot_runs_in_thread(self, client):
+        """PERF-CC-01: save_snapshot must be invoked via asyncio.to_thread.
+
+        Confirms the route handler offloads the blocking serializer.save_network
+        call rather than calling lifecycle.save_snapshot synchronously on the
+        event loop.
+        """
+        snapshot_data = {"snapshot_id": "snap-thread", "description": "", "created_at": "2026-04-01T00:00:00Z"}
+        captured = {}
+
+        def fake_save_snapshot(description: str = ""):
+            # Record the thread name so we can confirm we're not on the
+            # event-loop thread (FastAPI runs uvicorn's worker on
+            # MainThread; asyncio.to_thread spawns a worker named
+            # asyncio_*).
+            import threading
+
+            captured["thread"] = threading.current_thread().name
+            return snapshot_data
+
+        with patch.object(client.app.state.lifecycle, "has_network", return_value=True), patch.object(client.app.state.lifecycle, "save_snapshot", side_effect=fake_save_snapshot):
+            response = client.post("/v1/snapshots", json={"description": "thread check"})
+            assert response.status_code == 200
+            assert "thread" in captured, "save_snapshot was not invoked"
+            assert captured["thread"] != "MainThread", f"save_snapshot ran on MainThread ({captured['thread']!r}); expected an asyncio worker"
+
 
 # ---------------------------------------------------------------------------
 # GET /v1/snapshots  (list_snapshots)
@@ -197,3 +223,38 @@ class TestRestoreSnapshot:
             response = client.post("/v1/snapshots/snap-bad/restore")
             assert response.status_code == 404
             assert "not found or failed to load" in response.json()["detail"]
+
+    def test_restore_snapshot_runs_in_thread(self, client):
+        """PERF-CC-01: load_snapshot must be invoked via asyncio.to_thread."""
+        captured = {}
+
+        def fake_load_snapshot(snapshot_id: str):
+            import threading
+
+            captured["thread"] = threading.current_thread().name
+            return True
+
+        with patch.object(client.app.state.lifecycle, "load_snapshot", side_effect=fake_load_snapshot):
+            response = client.post("/v1/snapshots/snap-thread/restore")
+            assert response.status_code == 200
+            assert captured["thread"] != "MainThread", f"load_snapshot ran on MainThread ({captured['thread']!r}); expected an asyncio worker"
+
+
+class TestPerfCC01InvariantSource:
+    """PERF-CC-01: lock asyncio.to_thread usage in route source."""
+
+    def test_save_route_uses_to_thread(self):
+        from pathlib import Path
+
+        path = Path(__file__).resolve().parents[3] / "api" / "routes" / "snapshots.py"
+        source = path.read_text(encoding="utf-8")
+        # Both save and restore route handlers must offload via asyncio.to_thread.
+        assert "asyncio.to_thread(lifecycle.save_snapshot" in source
+        assert "asyncio.to_thread(lifecycle.load_snapshot" in source
+
+    def test_imports_asyncio(self):
+        from pathlib import Path
+
+        path = Path(__file__).resolve().parents[3] / "api" / "routes" / "snapshots.py"
+        source = path.read_text(encoding="utf-8")
+        assert "import asyncio" in source

@@ -1,5 +1,6 @@
 """Snapshot management routes."""
 
+import asyncio
 import logging
 import re
 
@@ -58,7 +59,10 @@ async def save_snapshot(request: Request, body: SnapshotCreateRequest = None) ->
     if not lifecycle.has_network():
         raise HTTPException(status_code=404, detail="No network created")
     description = body.description if body else ""
-    result = lifecycle.save_snapshot(description=description)
+    # PERF-CC-01: serializer.save_network is synchronous HDF5 I/O. Run it
+    # off the event loop so concurrent requests aren't blocked while the
+    # snapshot is being written.
+    result = await asyncio.to_thread(lifecycle.save_snapshot, description=description)
     if result is None:
         raise HTTPException(status_code=404, detail="No network available to snapshot")
     return success_response(result)
@@ -87,7 +91,10 @@ async def restore_snapshot(request: Request, snapshot_id: str) -> dict:
     """Restore a network from a snapshot."""
     _validate_snapshot_id(snapshot_id, client=request.client.host if request.client else None)
     lifecycle = _get_lifecycle(request)
-    success = lifecycle.load_snapshot(snapshot_id)
+    # PERF-CC-01: serializer.load_network is synchronous HDF5 I/O. Run it
+    # off the event loop so concurrent requests aren't blocked while the
+    # snapshot is being read.
+    success = await asyncio.to_thread(lifecycle.load_snapshot, snapshot_id)
     if not success:
         raise HTTPException(status_code=404, detail=f"Snapshot '{snapshot_id}' not found or failed to load")
     return success_response({"snapshot_id": snapshot_id, "status": "restored"})
