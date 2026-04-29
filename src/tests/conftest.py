@@ -34,6 +34,39 @@
 #####################################################################################################################################################################################################
 import os
 import sys
+import sysconfig
+
+# ===================================================================
+# Free-threading interpreter guard (PEP 703 / 3.14t)
+# ===================================================================
+# Cascor pulls in psutil, torch, numpy, and other native extensions whose
+# wheels are built for the regular CPython 3.14 ABI. Running pytest under
+# a free-threading interpreter (``python3.14t``) makes those extensions
+# load with the wrong PyObject layout and segfault during module init —
+# typically inside ``psutil/_psutil_linux.abi3.so``'s ``PyInit__psutil_linux``.
+# The crash happens during collection before any test runs, with a very
+# unhelpful diagnostic.
+#
+# Bail out early with an actionable error instead of segfaulting. Override
+# with ``CASCOR_ALLOW_FREE_THREADING=1`` for users who have rebuilt their
+# native deps for the ``t`` ABI and want to try anyway.
+if sysconfig.get_config_var("Py_GIL_DISABLED") and not os.environ.get("CASCOR_ALLOW_FREE_THREADING"):
+    sys.stderr.write(
+        "\n"
+        "ERROR: pytest is running under a free-threading CPython build (Py_GIL_DISABLED=1).\n"
+        "       The conda env's native dependencies (psutil, torch, numpy, ...) are\n"
+        "       built for the regular CPython 3.14 ABI and segfault when loaded\n"
+        "       under the 3.14t interpreter due to PEP 703 PyObject layout changes.\n"
+        "\n"
+        "       Recreate the JuniperCascor conda env with a regular (GIL) Python:\n"
+        "         conda create -n JuniperCascor python=3.13 -c conda-forge -y\n"
+        "         conda activate JuniperCascor\n"
+        "         pip install -e .\n"
+        "\n"
+        "       To override this guard at your own risk, set CASCOR_ALLOW_FREE_THREADING=1.\n"
+        "\n"
+    )
+    raise SystemExit(2)
 
 # ===================================================================
 # CRITICAL: Set CASCOR_LOG_LEVEL BEFORE any cascor imports

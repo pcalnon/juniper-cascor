@@ -18,6 +18,34 @@
 
 set -e # Exit on any error
 
+# ─── Free-threading interpreter guard ───────────────────────────────────────
+# pytest segfaults inside psutil's PyInit__psutil_linux when run under a
+# CPython 3.14 free-threading build (Py_GIL_DISABLED=1) because the conda
+# env's native deps (psutil/torch/numpy) are built for the regular 3.14
+# ABI and have an incompatible PyObject layout. Detect and abort cleanly
+# before pytest is invoked. Override with CASCOR_ALLOW_FREE_THREADING=1.
+if [[ "${CASCOR_ALLOW_FREE_THREADING:-}" != "1" ]]; then
+    if python -c "import sys, sysconfig; sys.exit(0 if sysconfig.get_config_var('Py_GIL_DISABLED') else 1)" 2>/dev/null; then
+        cat >&2 <<'EOF'
+
+ERROR: pytest cannot run under a free-threading CPython build (Py_GIL_DISABLED=1).
+       The JuniperCascor conda env's native deps (psutil, torch, numpy) are
+       built for the regular CPython 3.14 ABI and segfault when loaded under
+       the 3.14t interpreter.
+
+       Recreate the env on a regular (GIL) Python:
+         conda env remove -n JuniperCascor -y
+         conda create -n JuniperCascor python=3.13 -c conda-forge -y
+         conda activate JuniperCascor
+         pip install -e .
+
+       To override at your own risk, set CASCOR_ALLOW_FREE_THREADING=1.
+
+EOF
+        exit 2
+    fi
+fi
+
 # Get script directory
 # trunk-ignore(shellcheck/SC2312)
 SCRIPT_DIR="$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")"
