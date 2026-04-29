@@ -198,3 +198,70 @@ class TestWebSocketManager:
         loop = MagicMock()
         mgr.set_event_loop(loop)
         assert mgr._event_loop is loop
+
+
+@pytest.mark.unit
+class TestTransportStats:
+    """GAP-WS-16: bandwidth instrumentation surfaced via transport_stats()."""
+
+    def test_initial_stats_zeroed(self):
+        mgr = WebSocketManager()
+        stats = mgr.transport_stats()
+        assert stats["bytes_sent_total"] == 0
+        assert stats["messages_sent_total"] == 0
+        assert stats["send_failures"] == 0
+        assert stats["messages_sent_by_type"] == {}
+        assert stats["bytes_sent_by_type"] == {}
+        assert stats["active_connections"] == 0
+        assert stats["pending_connections"] == 0
+
+    @pytest.mark.asyncio
+    async def test_successful_send_increments_counters(self):
+        mgr = WebSocketManager()
+        ws = AsyncMock()
+        await mgr.connect(ws)
+        await mgr.broadcast({"type": "metrics", "data": {"epoch": 1}})
+
+        stats = mgr.transport_stats()
+        # connection_established + broadcast = 2 messages
+        assert stats["messages_sent_total"] == 2
+        assert stats["bytes_sent_total"] > 0
+        assert stats["messages_sent_by_type"]["connection_established"] == 1
+        assert stats["messages_sent_by_type"]["metrics"] == 1
+        assert stats["bytes_sent_by_type"]["metrics"] > 0
+        assert stats["send_failures"] == 0
+
+    @pytest.mark.asyncio
+    async def test_send_timeout_counts_as_failure(self):
+        mgr = WebSocketManager(send_timeout_seconds=0.01)
+        ws = AsyncMock()
+        await mgr.connect(ws)
+
+        async def slow_send(_):
+            await asyncio.sleep(0.5)
+
+        ws.send_json.side_effect = slow_send
+        result = await mgr._send_json(ws, {"type": "metrics", "data": {}})
+        assert result is False
+        stats = mgr.transport_stats()
+        assert stats["send_failures"] >= 1
+
+    @pytest.mark.asyncio
+    async def test_per_type_accounting_distinguishes_msg_types(self):
+        mgr = WebSocketManager()
+        ws = AsyncMock()
+        await mgr.connect(ws)
+        await mgr.broadcast({"type": "metrics", "data": {"epoch": 1}})
+        await mgr.broadcast({"type": "topology", "data": {"hidden": []}})
+        await mgr.broadcast({"type": "metrics", "data": {"epoch": 2}})
+
+        stats = mgr.transport_stats()
+        assert stats["messages_sent_by_type"]["metrics"] == 2
+        assert stats["messages_sent_by_type"]["topology"] == 1
+
+    def test_transport_stats_includes_replay_buffer_state(self):
+        mgr = WebSocketManager(max_replay_buffer_size=512)
+        stats = mgr.transport_stats()
+        assert stats["replay_buffer_capacity"] == 512
+        assert stats["replay_buffer_size"] == 0
+        assert stats["current_seq"] == 0

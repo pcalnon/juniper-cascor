@@ -12,6 +12,7 @@ Thread-safe manager that handles:
 import asyncio
 import bisect
 import contextlib
+import json
 import logging
 import threading
 import time
@@ -92,6 +93,16 @@ class WebSocketManager:
 
         # Send timeout (GAP-WS-07 quick-fix)
         self._send_timeout_seconds = send_timeout_seconds
+
+        # GAP-WS-16: bandwidth counters. Updated under _seq_lock because the
+        # send path is invoked from both the asyncio event loop and the
+        # broadcast-from-thread shim. Counters are cumulative since process
+        # start; surfaced via /v1/metrics/transport for before/after validation.
+        self._bytes_sent_total: int = 0
+        self._messages_sent_total: int = 0
+        self._messages_sent_by_type: Dict[str, int] = {}
+        self._bytes_sent_by_type: Dict[str, int] = {}
+        self._send_failures: int = 0
 
         logger.info(
             "WebSocketManager initialized (max_connections=%d, replay_buffer=%d, send_timeout=%.1fs)",
@@ -380,12 +391,57 @@ class WebSocketManager:
                 websocket.send_json(message),
                 timeout=self._send_timeout_seconds,
             )
-            return True
         except asyncio.TimeoutError:
             logger.warning("WebSocket send timed out after %.1fs", self._send_timeout_seconds)
+            with self._seq_lock:
+                self._send_failures += 1
             return False
         except Exception:
+            with self._seq_lock:
+                self._send_failures += 1
             return False
+        # GAP-WS-16: account bytes after a successful send. We re-serialize
+        # to size the payload because Starlette's send_json hides the wire
+        # bytes from us. The double-encode is cheap; if size estimation
+        # itself fails we record the message but with byte_size=0 so the
+        # message-count counter stays consistent.
+        try:
+            byte_size = len(json.dumps(message, default=str))
+        except (TypeError, ValueError):
+            byte_size = 0
+        self._account_send(message, byte_size)
+        return True
+
+    def _account_send(self, message: dict, byte_size: int) -> None:
+        """GAP-WS-16: record a successful WS send for bandwidth telemetry."""
+        msg_type = str(message.get("type") or "unknown")
+        with self._seq_lock:
+            self._bytes_sent_total += byte_size
+            self._messages_sent_total += 1
+            self._messages_sent_by_type[msg_type] = self._messages_sent_by_type.get(msg_type, 0) + 1
+            self._bytes_sent_by_type[msg_type] = self._bytes_sent_by_type.get(msg_type, 0) + byte_size
+
+    def transport_stats(self) -> Dict[str, Any]:
+        """GAP-WS-16: snapshot of cumulative WS transport counters.
+
+        Surfaced via ``GET /v1/metrics/transport`` to validate the bandwidth
+        delta from REST polling (P0 motivator) once GAP-WS-16 lands. All
+        counters are cumulative since process start.
+        """
+        with self._seq_lock:
+            return {
+                "bytes_sent_total": self._bytes_sent_total,
+                "messages_sent_total": self._messages_sent_total,
+                "send_failures": self._send_failures,
+                "messages_sent_by_type": dict(self._messages_sent_by_type),
+                "bytes_sent_by_type": dict(self._bytes_sent_by_type),
+                "uptime_seconds": time.monotonic() - self._server_start_time,
+                "active_connections": len(self._active_connections),
+                "pending_connections": len(self._pending_connections),
+                "current_seq": self._next_seq - 1,
+                "replay_buffer_size": len(self._replay_buffer),
+                "replay_buffer_capacity": self._replay_buffer_max_size,
+            }
 
     # ------------------------------------------------------------------
     # Shutdown
