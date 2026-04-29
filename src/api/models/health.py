@@ -1,54 +1,27 @@
-"""Health check response models for standardized readiness reporting."""
+"""Health check response models — re-exported from ``juniper-observability``.
 
-import time
-import urllib.request
-from datetime import datetime
-from typing import Literal
+METRICS-MON R2.1.4 / seed-06: the previous in-repo definitions of
+:class:`DependencyStatus`, :class:`ReadinessResponse`, and
+:func:`probe_dependency` have been promoted into the shared
+:mod:`juniper_observability` package so all three Juniper servers
+consume one source of truth. This module is preserved as a thin
+re-export shim for backwards compatibility — any existing code that
+imports ``from api.models.health import DependencyStatus,
+ReadinessResponse, probe_dependency`` continues to work unchanged.
 
-from pydantic import BaseModel, Field
+The migration **closes BUG-JD-06-equivalent naive-tz drift**: cascor's
+former ``timestamp: float = Field(default_factory=lambda: datetime.now().timestamp())``
+used local time, while juniper-data's was already tz-aware UTC. The
+shared model uses ``datetime.now(UTC).timestamp()`` so all services emit
+the same epoch-seconds value regardless of the host timezone.
 
+New code should prefer ``from juniper_observability import …`` to make
+the dependency on the shared lib explicit.
 
-class DependencyStatus(BaseModel):
-    """Health status of a single dependency."""
+See: notes/code-review/METRICS_MONITORING_R2.1_SHARED_OBSERVABILITY_DESIGN_2026-04-28.md
+in juniper-ml.
+"""
 
-    name: str
-    status: Literal["healthy", "unhealthy", "degraded", "not_configured"]
-    latency_ms: float | None = None
-    message: str | None = None
+from juniper_observability import DependencyStatus, ReadinessResponse, probe_dependency
 
-
-class ReadinessResponse(BaseModel):
-    """Standard /v1/health/ready response for all Juniper services."""
-
-    status: Literal["ready", "degraded", "not_ready"]
-    version: str
-    service: str
-    timestamp: float = Field(default_factory=lambda: datetime.now().timestamp())
-    dependencies: dict[str, DependencyStatus] = {}
-    details: dict[str, object] = {}
-
-
-def probe_dependency(name: str, url: str, timeout: float = 5.0) -> DependencyStatus:
-    """Probe a dependency health endpoint. Returns status with latency.
-
-    Args:
-        name: Human-readable name of the dependency.
-        url: Health endpoint URL to probe.
-        timeout: Connection timeout in seconds.
-
-    Returns:
-        DependencyStatus with probe results.
-    """
-    start = time.monotonic()
-    try:
-        urllib.request.urlopen(url, timeout=timeout)  # nosec B310 — internal health probe
-        latency = (time.monotonic() - start) * 1000
-        return DependencyStatus(name=name, status="healthy", latency_ms=round(latency, 1), message=url)
-    except Exception as e:
-        latency = (time.monotonic() - start) * 1000
-        return DependencyStatus(
-            name=name,
-            status="unhealthy",
-            latency_ms=round(latency, 1),
-            message=f"{url} — {type(e).__name__}: {e}",
-        )
+__all__ = ["DependencyStatus", "ReadinessResponse", "probe_dependency"]

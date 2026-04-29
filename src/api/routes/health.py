@@ -25,22 +25,14 @@ import time
 
 from fastapi import APIRouter, Request, Response
 
+# METRICS-MON R2.1.4: liveness/readiness contract constants now live in the
+# shared juniper-observability package so all three Juniper servers cannot
+# drift from the R1.2 cross-service contract.
+from juniper_observability import LIVENESS_STALENESS_SECONDS, LIVENESS_TICK_BUDGET_MS, READINESS_HEADER
+
 from api.models.health import DependencyStatus, ReadinessResponse, probe_dependency
 
 _API_VERSION: str = "0.4.0"
-
-# R1.2: liveness tick budget. The tick is purely in-process (consults the
-# lifecycle heartbeat counter); 250 ms catches event-loop stalls and CPU
-# starvation. Helm timeoutSeconds (5–10) wraps this with headroom.
-LIVENESS_TICK_BUDGET_MS = 250
-
-# R1.2: header surfaces readiness state to ``kubectl describe pod`` /
-# ``curl -I`` without requiring body parsing.
-READINESS_HEADER = "X-Juniper-Readiness"
-
-# R1.2: heartbeat staleness threshold. Lifecycle daemon thread bumps every
-# 1 second; a staleness > 30 s reliably indicates a wedged process.
-LIVENESS_STALENESS_SECONDS = 30.0
 
 router = APIRouter(tags=["health"])
 

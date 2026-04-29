@@ -1,122 +1,49 @@
-"""Observability module for structured logging, Prometheus metrics, and Sentry integration."""
+"""Observability surface for juniper-cascor.
 
-import json
+METRICS-MON R2.1.4 / seed-06: the cross-cutting machinery
+(:class:`JuniperJsonFormatter`, :class:`RequestIdMiddleware`,
+:class:`PrometheusMiddleware`, :data:`UNMATCHED_ENDPOINT_LABEL`,
+:data:`request_id_var`, :func:`get_prometheus_app`,
+:func:`set_build_info`) lives in the shared
+:mod:`juniper_observability` package and is re-exported here for
+backwards compatibility with existing imports across
+``api.app``, route handlers, and tests.
+
+What stays in this module:
+
+- :func:`configure_logging` — wraps the shared formatter with cascor's
+  :class:`RotatingFileHandler` for on-disk persistence.
+- :func:`configure_sentry` — thin wrapper that delegates to the shared
+  implementation while pinning cascor's ``traces_sample_rate``.
+- The service-specific training and WebSocket Prometheus metrics
+  (:func:`record_training_epoch`, :func:`set_training_loss`, the
+  ``ws_*`` helpers, and the lazy-init dicts that back them).
+
+New code should prefer ``from juniper_observability import …`` for the
+re-exported symbols to make the dependency on the shared lib explicit.
+
+See: notes/code-review/METRICS_MONITORING_R2.1_SHARED_OBSERVABILITY_DESIGN_2026-04-28.md
+in juniper-ml.
+"""
+
 import logging
 import os
-import sys
-import time
-import uuid
-from contextvars import ContextVar
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
-from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
-from starlette.requests import Request
-from starlette.responses import Response
+# Cross-service primitives — re-exported from juniper-observability.
+from juniper_observability import DEFAULT_LOG_FORMAT_PLAIN, DEFAULT_SENTRY_TRACES_SAMPLE_RATE, LOG_FORMAT_JSON, UNMATCHED_ENDPOINT_LABEL, JuniperJsonFormatter, PrometheusMiddleware, RequestIdMiddleware  # noqa: F401 — re-exported for backwards compat
+from juniper_observability import configure_sentry as _shared_configure_sentry
+from juniper_observability import get_prometheus_app, request_id_var, set_build_info  # noqa: F401 — re-exported for backwards compat
+
+# Re-export the SEC-15 hook so ``main.py``'s direct sentry_sdk.init still
+# resolves it through the historical import path.
+from juniper_observability.sentry import _strip_sensitive_headers  # noqa: F401 — re-exported for backwards compat
 
 from cascor_constants.constants_logging.constants_logging import _LOGGER_LOG_FILE_BACKUP_COUNT, _LOGGER_LOG_FILE_MAX_BYTES, _LOGGER_PROMETHEUS_LATENCY_BUCKETS, _LOGGER_SENTRY_TRACES_SAMPLE_RATE
 
-request_id_var: ContextVar[str] = ContextVar("request_id", default="")
-
 _SERVICE_NAME_DEFAULT: str = "juniper-cascor"
 _NAMESPACE_DEFAULT: str = "juniper_cascor"
-
-
-class JuniperJsonFormatter(logging.Formatter):
-    """JSON log formatter with request_id propagation."""
-
-    def __init__(self, service: str = _SERVICE_NAME_DEFAULT) -> None:
-        super().__init__()
-        self._service = service
-
-    def format(self, record: logging.LogRecord) -> str:
-        log_entry = {
-            "timestamp": self.formatTime(record, self.datefmt),
-            "level": record.levelname,
-            "logger": record.name,
-            "message": record.getMessage(),
-            "service": self._service,
-            "request_id": request_id_var.get(""),
-        }
-        if record.exc_info and record.exc_info[1] is not None:
-            log_entry["exception"] = self.formatException(record.exc_info)
-        return json.dumps(log_entry)
-
-
-class RequestIdMiddleware(BaseHTTPMiddleware):
-    """Injects X-Request-ID into ContextVar and response header."""
-
-    async def dispatch(
-        self,
-        request: Request,
-        call_next: RequestResponseEndpoint,
-    ) -> Response:
-        rid = request.headers.get("X-Request-ID", str(uuid.uuid4()))
-        token = request_id_var.set(rid)
-        try:
-            response = await call_next(request)
-            response.headers["X-Request-ID"] = rid
-            return response
-        finally:
-            request_id_var.reset(token)
-
-
-# METRICS-MON seed-01 / R1.1: bound cardinality. Restrict the ``endpoint``
-# label to the resolved Starlette route template; collapse unmatched
-# requests into ``UNMATCHED_ENDPOINT_LABEL`` and increment a separate
-# counter so unmatched volume stays observable without polluting the
-# histogram. Aligned with the same fix in juniper-data and juniper-canopy.
-UNMATCHED_ENDPOINT_LABEL = "_unmatched"
-
-
-class PrometheusMiddleware(BaseHTTPMiddleware):
-    """Tracks http_requests_total and http_request_duration_seconds with namespace prefix."""
-
-    def __init__(self, app: object, service_name: str = _SERVICE_NAME_DEFAULT, namespace: str = _NAMESPACE_DEFAULT) -> None:
-        super().__init__(app)
-        from prometheus_client import Counter, Histogram
-
-        prefix = f"{namespace}_" if namespace else ""
-        self._request_count = Counter(
-            f"{prefix}http_requests_total",
-            "Total HTTP requests",
-            ["method", "endpoint", "status"],
-        )
-        self._request_duration = Histogram(
-            f"{prefix}http_request_duration_seconds",
-            "HTTP request duration in seconds",
-            ["method", "endpoint"],
-        )
-        self._unmatched_count = Counter(
-            f"{prefix}http_unmatched_requests_total",
-            "HTTP requests not matching any registered route template",
-            ["method"],
-        )
-
-    async def dispatch(
-        self,
-        request: Request,
-        call_next: RequestResponseEndpoint,
-    ) -> Response:
-        start = time.perf_counter()
-        response = await call_next(request)
-        duration = time.perf_counter() - start
-
-        route = request.scope.get("route")
-        template = getattr(route, "path", None) if route is not None else None
-        method = request.method
-        if template:
-            endpoint = template
-        else:
-            endpoint = UNMATCHED_ENDPOINT_LABEL
-            self._unmatched_count.labels(method=method).inc()
-
-        status = str(response.status_code)
-
-        self._request_count.labels(method=method, endpoint=endpoint, status=status).inc()
-        self._request_duration.labels(method=method, endpoint=endpoint).observe(duration)
-
-        return response
 
 
 def _resolve_log_dir() -> Path:
@@ -131,12 +58,19 @@ def _resolve_log_dir() -> Path:
 
         return Path(_PROJECT_LOG_DIR_DEFAULT)
     except ImportError:
-        # Fallback: derive from this file's location (src/api/observability.py -> project root)
         return Path(__file__).resolve().parent.parent.parent / "logs"
 
 
 def configure_logging(log_level: str, log_format: str, service_name: str = _SERVICE_NAME_DEFAULT) -> None:
     """Configure logging — JSON when log_format='json', plain text otherwise.
+
+    Wraps the shared :class:`JuniperJsonFormatter` with juniper-cascor's
+    :class:`RotatingFileHandler` so structured logs continue to land in
+    the canonical ``logs/juniper_cascor.log`` (fix H2). The shared lib's
+    :func:`juniper_observability.configure_logging` is intentionally
+    *not* called here — its console handler would race the file handler
+    set up below and the lib has no notion of cascor's log directory
+    layout.
 
     Args:
         log_level: Logging level string (e.g. "INFO", "DEBUG").
@@ -147,22 +81,19 @@ def configure_logging(log_level: str, log_format: str, service_name: str = _SERV
     root = logging.getLogger()
     root.setLevel(level)
 
-    # Remove existing handlers to avoid duplicate output
     for handler in root.handlers[:]:
         root.removeHandler(handler)
 
-    # Console handler (StreamHandler)
     console_handler = logging.StreamHandler()
     console_handler.setLevel(level)
 
-    if log_format == "json":
+    if log_format == LOG_FORMAT_JSON:
         console_handler.setFormatter(JuniperJsonFormatter(service=service_name))
     else:
         console_handler.setFormatter(logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s"))
 
     root.addHandler(console_handler)
 
-    # File handler — persist API logs to the canonical logs/ directory (fix H2)
     log_dir = _resolve_log_dir()
     os.makedirs(log_dir, exist_ok=True)
     log_file = log_dir / "juniper_cascor.log"
@@ -177,80 +108,25 @@ def configure_logging(log_level: str, log_format: str, service_name: str = _SERV
     root.addHandler(file_handler)
 
 
-# SEC-15: Header names that may carry secrets. We always strip them from
-# Sentry events regardless of ``send_default_pii``; the default is now
-# ``False`` so request headers are not uploaded at all, but the filter
-# remains as a second line of defense if any future integration re-enables
-# per-event header capture (e.g. a custom logging integration).
-_SENTRY_SENSITIVE_HEADERS = frozenset({"x-api-key", "authorization", "cookie"})
-
-
-def _strip_sensitive_headers(event, hint):  # noqa: ARG001 — Sentry hook signature
-    """Replace any sensitive request headers in a Sentry event with ``[Filtered]``.
-
-    Sentry calls this via ``before_send`` for every outbound event. The
-    filter walks the request headers dict and only rewrites keys that
-    match the sensitive set, so non-sensitive diagnostic headers still
-    reach Sentry unchanged.
-    """
-    request_data = event.get("request", {}) if isinstance(event, dict) else {}
-    headers = request_data.get("headers", {}) if isinstance(request_data, dict) else {}
-    if isinstance(headers, dict):
-        for key in list(headers.keys()):
-            if key.lower() in _SENTRY_SENSITIVE_HEADERS:
-                headers[key] = "[Filtered]"
-    return event
-
-
 def configure_sentry(dsn: str | None, service_name: str, version: str) -> None:
-    """Initialize Sentry with FastAPI integration. No-op when dsn is None or empty.
+    """Initialize Sentry via the shared :func:`juniper_observability.configure_sentry`.
+
+    Cascor pins ``traces_sample_rate`` to ``_LOGGER_SENTRY_TRACES_SAMPLE_RATE``
+    (1.0 — full trace sampling for the research workload) rather than the
+    shared lib's default (0.1). ``send_pii`` stays at the secure default
+    (False); the shared ``before_send`` hook still scrubs sensitive headers.
 
     Args:
         dsn: Sentry DSN URL. Pass None or empty string to skip initialization.
         service_name: Service name for Sentry environment tag.
         version: Application version string.
     """
-    if not dsn:
-        return
-
-    import sentry_sdk
-
-    sentry_sdk.init(
-        dsn=dsn,
-        # SEC-15: never upload default PII (IP, cookies, user identifiers,
-        # request headers). The before_send filter scrubs any headers that
-        # slip through via other integrations.
-        send_default_pii=False,
-        enable_logs=True,
+    _shared_configure_sentry(
+        dsn,
+        service_name,
+        version,
         traces_sample_rate=_LOGGER_SENTRY_TRACES_SAMPLE_RATE,
-        release=f"{service_name}@{version}",
-        before_send=_strip_sensitive_headers,
     )
-
-
-def get_prometheus_app():
-    """Return ASGI app for /metrics endpoint via prometheus_client.make_asgi_app().
-
-    Returns:
-        ASGI application serving Prometheus metrics.
-    """
-    from prometheus_client import make_asgi_app
-
-    return make_asgi_app()
-
-
-def set_build_info(namespace: str, version: str) -> None:
-    """Set build information as a Prometheus Info metric.
-
-    Args:
-        namespace: Metric namespace prefix (e.g. "juniper_cascor").
-        version: Application version string.
-    """
-    from prometheus_client import Info
-
-    python_version = f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
-    info = Info(f"{namespace}_build", f"Build information for {namespace.replace('_', '-')} service")
-    info.info({"version": version, "python_version": python_version})
 
 
 # ---------------------------------------------------------------------------
