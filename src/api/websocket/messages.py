@@ -99,6 +99,31 @@ def create_cascade_add_message(
     return _build_envelope("cascade_add", data, seq=seq, emitted_at_monotonic=emitted_at_monotonic)
 
 
+def create_initial_metrics_message(
+    metrics: list,
+    *,
+    current_seq: Optional[int] = None,
+) -> Dict[str, Any]:
+    """GAP-WS-16: build the initial_metrics burst sent on fresh WS connect.
+
+    Carries up to N most-recent metrics so a freshly-connected client can
+    paint its time-series chart without an immediate REST poll.
+
+    The envelope is a personal (non-broadcast) message — it carries no
+    ``seq`` of its own, but ``data.current_seq`` reflects the last broadcast
+    seq the manager had assigned at send time so the client knows where the
+    live stream picks up.
+    """
+    return _build_envelope(
+        "initial_metrics",
+        {
+            "metrics": metrics,
+            "count": len(metrics),
+            "current_seq": current_seq if current_seq is not None else 0,
+        },
+    )
+
+
 def create_candidate_progress_message(
     data: Dict[str, Any],
     *,

@@ -59,3 +59,37 @@ class TestMetricsRoutes:
         """GET /v1/metrics/history rejects negative count."""
         response = client.get("/v1/metrics/history?count=-1")
         assert response.status_code == 422
+
+
+@pytest.mark.unit
+class TestTransportEndpoint:
+    """GAP-WS-16: GET /v1/metrics/transport surfaces WS bandwidth counters."""
+
+    def test_transport_endpoint_returns_zeroed_stats_at_startup(self, client):
+        response = client.get("/v1/metrics/transport")
+        assert response.status_code == 200
+        body = response.json()
+        assert body["status"] == "success"
+        data = body["data"]
+        assert data["bytes_sent_total"] == 0
+        assert data["messages_sent_total"] == 0
+        assert data["active_connections"] == 0
+        assert data["pending_connections"] == 0
+        assert "messages_sent_by_type" in data
+        assert "bytes_sent_by_type" in data
+        assert "uptime_seconds" in data
+
+    def test_transport_endpoint_reflects_ws_activity(self, client):
+        """A WS connect drives the counters above zero."""
+        with client.websocket_connect("/ws/training") as ws:
+            # Drain the handshake so we know sends have completed
+            for _ in range(4):
+                ws.receive_json()
+
+            response = client.get("/v1/metrics/transport")
+            assert response.status_code == 200
+            data = response.json()["data"]
+            assert data["messages_sent_total"] >= 4
+            assert data["bytes_sent_total"] > 0
+            assert data["messages_sent_by_type"]["connection_established"] >= 1
+            assert data["messages_sent_by_type"]["initial_metrics"] >= 1

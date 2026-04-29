@@ -163,6 +163,16 @@ class Settings(BaseSettings):
         description="Maximum duration in seconds a connection can stay in pending state",
         gt=0,
     )
+    ws_initial_metrics_count: int = Field(
+        default=100,
+        description=(
+            "GAP-WS-16: number of recent metrics to send as initial_metrics on fresh "
+            "/ws/training connect. 0 disables the initial burst (clients must request "
+            "via subscribe_metrics or fall back to REST)."
+        ),
+        ge=0,
+        validation_alias=AliasChoices("ws_initial_metrics_count", "JUNIPER_WS_INITIAL_METRICS_COUNT"),
+    )
 
     api_keys: list[str] | None = _JUNIPER_CASCOR_API_KEYS_LIST_EMPTY
 
