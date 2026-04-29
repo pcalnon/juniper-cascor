@@ -4,7 +4,7 @@ import time
 
 import pytest
 
-from api.websocket.messages import create_candidate_progress_message, create_cascade_add_message, create_control_ack_message, create_event_message, create_initial_metrics_message, create_metrics_message, create_state_message, create_topology_message
+from api.websocket.messages import create_candidate_progress_message, create_cascade_add_message, create_chunked_message, create_control_ack_message, create_event_message, create_initial_metrics_message, create_metrics_message, create_state_message, create_topology_message
 
 
 @pytest.mark.unit
@@ -124,3 +124,38 @@ class TestInitialMetricsMessage:
     def test_current_seq_defaults_when_omitted(self):
         msg = create_initial_metrics_message([{"epoch": 1}])
         assert msg["data"]["current_seq"] == 0
+
+
+@pytest.mark.unit
+class TestChunkedMessageBuilder:
+    """GAP-WS-18: chunked_message envelope shape."""
+
+    def test_envelope_shape(self):
+        msg = create_chunked_message(
+            chunk_id="abc-123",
+            chunk_index=0,
+            total_chunks=3,
+            original_type="topology",
+            payload="<json-fragment>",
+        )
+        assert msg["type"] == "chunked_message"
+        assert "timestamp" in msg
+        assert msg["data"]["chunk_id"] == "abc-123"
+        assert msg["data"]["chunk_index"] == 0
+        assert msg["data"]["total_chunks"] == 3
+        assert msg["data"]["original_type"] == "topology"
+        assert msg["data"]["payload"] == "<json-fragment>"
+
+    def test_no_seq_field_at_construction(self):
+        """Builder does not embed seq — manager assigns one per chunk on broadcast."""
+        msg = create_chunked_message(
+            chunk_id="x", chunk_index=0, total_chunks=1, original_type="t", payload=""
+        )
+        assert "seq" not in msg
+
+    def test_payload_can_be_empty(self):
+        """An empty payload is legal (e.g., the tail chunk of an exact-multiple split)."""
+        msg = create_chunked_message(
+            chunk_id="x", chunk_index=2, total_chunks=3, original_type="t", payload=""
+        )
+        assert msg["data"]["payload"] == ""

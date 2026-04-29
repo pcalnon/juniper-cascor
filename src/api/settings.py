@@ -169,6 +169,28 @@ class Settings(BaseSettings):
         ge=0,
         validation_alias=AliasChoices("ws_initial_metrics_count", "JUNIPER_WS_INITIAL_METRICS_COUNT"),
     )
+    ws_max_message_size_bytes: int = Field(
+        default=60_000,
+        description=(
+            "GAP-WS-18: serialized JSON size threshold above which broadcasts are "
+            "split into chunked_message envelopes. Default 60_000 leaves headroom "
+            "below the WebSocket 64 KB per-frame limit imposed by some intermediaries. "
+            "Set to 0 to disable chunking entirely (oversized broadcasts will be sent "
+            "as-is and may cause silent connection teardown — only use for tests)."
+        ),
+        ge=0,
+        validation_alias=AliasChoices("ws_max_message_size_bytes", "JUNIPER_WS_MAX_MESSAGE_SIZE_BYTES"),
+    )
+    ws_chunk_payload_size_bytes: int = Field(
+        default=32_000,
+        description=(
+            "GAP-WS-18: maximum payload bytes per chunk when chunking is triggered. "
+            "Default 32_000 keeps each chunked envelope (payload + JSON wrapper) safely "
+            "under 60_000. Must be > 0."
+        ),
+        gt=0,
+        validation_alias=AliasChoices("ws_chunk_payload_size_bytes", "JUNIPER_WS_CHUNK_PAYLOAD_SIZE_BYTES"),
+    )
 
     api_keys: list[str] | None = _JUNIPER_CASCOR_API_KEYS_LIST_EMPTY
 

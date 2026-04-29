@@ -65,6 +65,8 @@ class WebSocketManager:
         max_replay_buffer_size: int = 1024,
         send_timeout_seconds: float = 0.5,
         max_connections_per_ip: int = 5,
+        max_message_size_bytes: int = 60_000,
+        chunk_payload_size_bytes: int = 32_000,
     ):
         # Connection tracking
         self._active_connections: Set[WebSocket] = set()
@@ -103,6 +105,20 @@ class WebSocketManager:
         self._messages_sent_by_type: Dict[str, int] = {}
         self._bytes_sent_by_type: Dict[str, int] = {}
         self._send_failures: int = 0
+
+        # GAP-WS-18: message-size guard + chunking. Broadcasts whose serialized
+        # JSON exceeds ``max_message_size_bytes`` are split into a sequence of
+        # ``chunked_message`` envelopes (each with payload ≤ ``chunk_payload_size_bytes``)
+        # so we never push a single frame over the typical 64 KB WebSocket
+        # intermediary limit. Each chunk is its own broadcast (own seq, own
+        # replay-buffer slot), so resume on reconnect reorders them naturally.
+        # ``messages_chunked_total`` counts how often a logical message was
+        # chunked (not how many chunks were emitted) — surfaced via
+        # transport_stats() for observability.
+        self._max_message_size_bytes = max_message_size_bytes
+        self._chunk_payload_size_bytes = chunk_payload_size_bytes
+        self._messages_chunked_total: int = 0
+        self._chunks_emitted_total: int = 0
 
         logger.info(
             "WebSocketManager initialized (max_connections=%d, replay_buffer=%d, send_timeout=%.1fs)",
@@ -333,20 +349,85 @@ class WebSocketManager:
             return buffered[idx:]
 
     # ------------------------------------------------------------------
+    # Chunking (GAP-WS-18)
+    # ------------------------------------------------------------------
+
+    def _maybe_chunk_message(self, message: dict) -> List[dict]:
+        """Return [message] if under threshold, else a list of chunked envelopes.
+
+        GAP-WS-18: oversized broadcasts (~64 KB) silently tear down WebSocket
+        connections at intermediaries. We split here, BEFORE seq assignment,
+        so each chunk gets its own seq + replay slot and resume-on-reconnect
+        reorders chunks naturally.
+
+        Chunking is skipped (returns ``[message]``) when:
+        - ``ws_max_message_size_bytes`` is 0 (kill-switch for tests)
+        - The serialized JSON length is ≤ the threshold
+        - The message is already a ``chunked_message`` envelope (no recursion)
+        """
+        if self._max_message_size_bytes <= 0:
+            return [message]
+        if message.get("type") == "chunked_message":
+            return [message]
+        try:
+            serialized = json.dumps(message, default=str)
+        except (TypeError, ValueError):
+            # If we can't serialize for sizing, let _send_json handle the error.
+            return [message]
+        if len(serialized) <= self._max_message_size_bytes:
+            return [message]
+
+        chunk_size = self._chunk_payload_size_bytes
+        chunk_id = str(uuid.uuid4())
+        original_type = str(message.get("type") or "unknown")
+        payloads = [serialized[i : i + chunk_size] for i in range(0, len(serialized), chunk_size)]
+        total = len(payloads)
+        chunks = [
+            {
+                "type": "chunked_message",
+                "timestamp": time.time(),
+                "data": {
+                    "chunk_id": chunk_id,
+                    "chunk_index": idx,
+                    "total_chunks": total,
+                    "original_type": original_type,
+                    "payload": payload,
+                },
+            }
+            for idx, payload in enumerate(payloads)
+        ]
+        with self._seq_lock:
+            self._messages_chunked_total += 1
+            self._chunks_emitted_total += total
+        logger.info(
+            "WebSocket: chunked %s message (%d bytes) into %d chunks (chunk_id=%s)",
+            original_type,
+            len(serialized),
+            total,
+            chunk_id,
+        )
+        return chunks
+
+    # ------------------------------------------------------------------
     # Broadcasting
     # ------------------------------------------------------------------
 
     async def broadcast(self, message: dict) -> None:
-        """Assign seq and send a message to all active (non-pending) clients."""
+        """Assign seq and send a message to all active (non-pending) clients.
+
+        GAP-WS-18: oversized messages are split into chunked_message envelopes
+        before seq assignment so each chunk gets its own seq and replay slot.
+        """
         if not self._active_connections:
             return
-        message = self._assign_seq_and_buffer(message)
-        disconnected = []
-        for ws in self._active_connections.copy():
-            if not await self._send_json(ws, message):
-                disconnected.append(ws)
-        for ws in disconnected:
-            await self.disconnect(ws)
+        for sub_message in self._maybe_chunk_message(message):
+            enriched = self._assign_seq_and_buffer(sub_message)
+            disconnected = []
+            for ws in self._active_connections.copy():
+                if not await self._send_json(ws, enriched):
+                    disconnected.append(ws)
+            for ws in disconnected:
+                await self.disconnect(ws)
 
     def broadcast_from_thread(self, message: dict) -> None:
         """Thread-safe broadcast using asyncio.run_coroutine_threadsafe.
@@ -376,8 +457,20 @@ class WebSocketManager:
             logger.error("Broadcast from thread failed: %s", exc, exc_info=exc)
 
     async def send_personal_message(self, websocket: WebSocket, message: dict) -> bool:
-        """Send a message to a specific client (no seq assignment)."""
-        return await self._send_json(websocket, message)
+        """Send a message to a specific client (no seq assignment).
+
+        GAP-WS-18: oversized personal messages are split into chunked_message
+        envelopes the same way broadcasts are. Personal messages don't carry
+        seq, so on reconnect a partially-delivered chunk group is dropped by
+        the client (no resume), but no socket teardown.
+
+        Returns True only if every chunk was delivered successfully.
+        """
+        chunks = self._maybe_chunk_message(message)
+        for sub_message in chunks:
+            if not await self._send_json(websocket, sub_message):
+                return False
+        return True
 
     async def _send_json(self, websocket: WebSocket, message: dict) -> bool:
         """Send JSON message to a single WebSocket with timeout.
@@ -427,6 +520,11 @@ class WebSocketManager:
         Surfaced via ``GET /v1/metrics/transport`` to validate the bandwidth
         delta from REST polling (P0 motivator) once GAP-WS-16 lands. All
         counters are cumulative since process start.
+
+        GAP-WS-18: also exposes ``messages_chunked_total`` (number of logical
+        messages that exceeded the size threshold and were split) and
+        ``chunks_emitted_total`` (total chunk envelopes emitted), so we can
+        see how often the chunker is firing in production.
         """
         with self._seq_lock:
             return {
@@ -441,6 +539,10 @@ class WebSocketManager:
                 "current_seq": self._next_seq - 1,
                 "replay_buffer_size": len(self._replay_buffer),
                 "replay_buffer_capacity": self._replay_buffer_max_size,
+                "messages_chunked_total": self._messages_chunked_total,
+                "chunks_emitted_total": self._chunks_emitted_total,
+                "max_message_size_bytes": self._max_message_size_bytes,
+                "chunk_payload_size_bytes": self._chunk_payload_size_bytes,
             }
 
     # ------------------------------------------------------------------
