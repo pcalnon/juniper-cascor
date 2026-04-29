@@ -165,11 +165,7 @@ class Settings(BaseSettings):
     )
     ws_initial_metrics_count: int = Field(
         default=100,
-        description=(
-            "GAP-WS-16: number of recent metrics to send as initial_metrics on fresh "
-            "/ws/training connect. 0 disables the initial burst (clients must request "
-            "via subscribe_metrics or fall back to REST)."
-        ),
+        description=("GAP-WS-16: number of recent metrics to send as initial_metrics on fresh " "/ws/training connect. 0 disables the initial burst (clients must request " "via subscribe_metrics or fall back to REST)."),
         ge=0,
         validation_alias=AliasChoices("ws_initial_metrics_count", "JUNIPER_WS_INITIAL_METRICS_COUNT"),
     )
