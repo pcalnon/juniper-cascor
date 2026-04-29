@@ -112,6 +112,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         max_replay_buffer_size=settings.ws_replay_buffer_size,
         send_timeout_seconds=settings.ws_send_timeout_seconds,
         max_connections_per_ip=settings.ws_max_connections_per_ip,  # SEC-03
+        max_message_size_bytes=settings.ws_max_message_size_bytes,  # GAP-WS-18
+        chunk_payload_size_bytes=settings.ws_chunk_payload_size_bytes,  # GAP-WS-18
     )
     ws_manager.set_event_loop(asyncio.get_running_loop())
     app.state.ws_manager = ws_manager

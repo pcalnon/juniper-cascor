@@ -99,6 +99,44 @@ def create_cascade_add_message(
     return _build_envelope("cascade_add", data, seq=seq, emitted_at_monotonic=emitted_at_monotonic)
 
 
+def create_chunked_message(
+    *,
+    chunk_id: str,
+    chunk_index: int,
+    total_chunks: int,
+    original_type: str,
+    payload: str,
+) -> Dict[str, Any]:
+    """GAP-WS-18: build one chunk of a fragmented oversized message.
+
+    Each chunk is itself a normal envelope and gets its own ``seq`` from the
+    manager — chunks of one logical message land on consecutive seqs so the
+    replay buffer reorders them naturally on resume.
+
+    Args:
+        chunk_id: UUID4 identifying the logical message all chunks belong to.
+        chunk_index: 0-based position of this chunk within the message.
+        total_chunks: Total number of chunks the logical message was split into.
+        original_type: ``type`` field of the pre-chunked message (e.g., "topology").
+        payload: A slice of the JSON-serialized original message as a string.
+            The client concatenates payloads in chunk_index order and parses the
+            result as JSON to reconstruct the original envelope.
+
+    Returns:
+        Envelope with type "chunked_message".
+    """
+    return _build_envelope(
+        "chunked_message",
+        {
+            "chunk_id": chunk_id,
+            "chunk_index": chunk_index,
+            "total_chunks": total_chunks,
+            "original_type": original_type,
+            "payload": payload,
+        },
+    )
+
+
 def create_initial_metrics_message(
     metrics: list,
     *,
