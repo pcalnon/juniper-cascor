@@ -58,12 +58,20 @@ class TestJuniperJsonFormatter:
             assert "exception" in parsed
             assert "ValueError" in parsed["exception"]
 
-    def test_format_default_service_name(self):
+    def test_format_default_service_name_is_shared_lib_default(self):
+        """METRICS-MON R2.1.4: cascor consumes the shared formatter.
+
+        Cascor used to default to ``"juniper-cascor"``; after migrating
+        to ``juniper_observability.JuniperJsonFormatter``, the unset
+        default is the shared lib's ``"juniper-service"``. All cascor
+        call sites pass the service name explicitly (see
+        ``configure_logging`` and ``api.app.lifespan``).
+        """
         formatter = JuniperJsonFormatter()
         record = logging.LogRecord(name="test", level=logging.INFO, pathname="", lineno=0, msg="hi", args=None, exc_info=None)
         output = formatter.format(record)
         parsed = json.loads(output)
-        assert parsed["service"] == "juniper-cascor"
+        assert parsed["service"] == "juniper-service"
 
 
 @pytest.mark.unit
@@ -338,3 +346,87 @@ class TestTrainingMetrics:
             mock_gauge.labels().set.assert_called_with(0.25)
 
         obs._training_metrics = None
+
+
+@pytest.mark.unit
+class TestObservabilityShim:
+    """METRICS-MON R2.1.4: ``api.observability`` re-exports from the shared lib.
+
+    These tests pin the migration: every cross-cutting symbol that
+    historically lived inline must now resolve to the same object the
+    shared :mod:`juniper_observability` package exposes. If a future
+    change accidentally re-introduces a local copy, these assertions
+    fail loudly.
+    """
+
+    def test_json_formatter_is_shared(self):
+        import juniper_observability
+
+        import api.observability as cascor_obs
+
+        assert cascor_obs.JuniperJsonFormatter is juniper_observability.JuniperJsonFormatter
+
+    def test_request_id_middleware_is_shared(self):
+        import juniper_observability
+
+        import api.observability as cascor_obs
+
+        assert cascor_obs.RequestIdMiddleware is juniper_observability.RequestIdMiddleware
+        assert cascor_obs.request_id_var is juniper_observability.request_id_var
+
+    def test_prometheus_middleware_is_shared(self):
+        import juniper_observability
+
+        import api.observability as cascor_obs
+
+        assert cascor_obs.PrometheusMiddleware is juniper_observability.PrometheusMiddleware
+        assert cascor_obs.UNMATCHED_ENDPOINT_LABEL == juniper_observability.UNMATCHED_ENDPOINT_LABEL
+
+    def test_prometheus_app_helpers_are_shared(self):
+        import juniper_observability
+
+        import api.observability as cascor_obs
+
+        assert cascor_obs.get_prometheus_app is juniper_observability.get_prometheus_app
+        assert cascor_obs.set_build_info is juniper_observability.set_build_info
+
+    def test_strip_sensitive_headers_is_shared(self):
+        from juniper_observability.sentry import _strip_sensitive_headers as shared
+
+        import api.observability as cascor_obs
+
+        assert cascor_obs._strip_sensitive_headers is shared
+
+    def test_health_models_are_shared(self):
+        import juniper_observability
+
+        from api.models.health import DependencyStatus, ReadinessResponse, probe_dependency
+
+        assert DependencyStatus is juniper_observability.DependencyStatus
+        assert ReadinessResponse is juniper_observability.ReadinessResponse
+        assert probe_dependency is juniper_observability.probe_dependency
+
+    def test_route_constants_are_shared(self):
+        import juniper_observability
+
+        import api.routes.health as health_routes
+
+        assert health_routes.LIVENESS_TICK_BUDGET_MS == juniper_observability.LIVENESS_TICK_BUDGET_MS
+        assert health_routes.LIVENESS_STALENESS_SECONDS == juniper_observability.LIVENESS_STALENESS_SECONDS
+        assert health_routes.READINESS_HEADER == juniper_observability.READINESS_HEADER
+
+    def test_readiness_timestamp_is_tz_aware_utc(self):
+        """METRICS-MON R2.1.4: closes BUG-JD-06-equivalent naive-tz drift.
+
+        Cascor's former ``ReadinessResponse.timestamp`` defaulted to
+        ``datetime.now().timestamp()`` (locale-dependent). The shared
+        model uses ``datetime.now(UTC).timestamp()`` so all services emit
+        the same epoch-seconds value regardless of the host timezone.
+        """
+        import time
+
+        from juniper_observability import ReadinessResponse
+
+        rr = ReadinessResponse(status="ready", version="0.4.0", service="juniper-cascor")
+        # tz-aware UTC unix timestamp must be within 60s of "now".
+        assert abs(time.time() - rr.timestamp) < 60.0

@@ -43,6 +43,13 @@ dependencies = [
     "pydantic>=2.0.0",
     "sentry-sdk>=2.0.0",
     "python-dotenv>=1.0.0",
+    # METRICS-MON R2.1.4 / seed-06: shared observability primitives
+    # (DependencyStatus, ReadinessResponse, probe_dependency,
+    # JuniperJsonFormatter, RequestIdMiddleware, PrometheusMiddleware,
+    # configure_sentry, get_prometheus_app, set_build_info, and the
+    # R1.1/R1.2/R1.3 contract constants). Pinned at the first stable
+    # release; consumers should never resolve back to the alpha line.
+    "juniper-observability>=0.1.1",
 ]
 
 [project.optional-dependencies]
