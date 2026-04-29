@@ -401,3 +401,112 @@ class TestLifecycleWorkerCoordinator:
         mgr.create_network(input_size=2, output_size=2)
         assert mgr.network._worker_coordinator is None
         assert mgr.network._remote_workers_enabled is False
+
+
+@pytest.mark.unit
+class TestUpdateParamsAtomicity:
+    """GAP-WS-28: update_params applies all keys or none — never half.
+
+    The race itself is closed by ``_training_lock`` (one writer at a time);
+    these tests cover the all-or-nothing semantics for the case where a
+    property setter rejects a value mid-loop. No setter currently raises,
+    so we drive the path with a fake network that raises on a chosen key.
+    """
+
+    class _FakeNetwork:
+        """Minimal stand-in with the attributes update_params() touches.
+
+        ``failing_key`` (when set) makes setattr for that key raise ValueError,
+        modeling a future property setter that validates input.
+        """
+
+        def __init__(self, failing_key: str | None = None):
+            self.learning_rate = 0.01
+            self.candidate_learning_rate = 0.02
+            self.correlation_threshold = 0.1
+            self.candidate_pool_size = 8
+            self.max_hidden_units = 50
+            self.epochs_max = 100
+            self.max_iterations = 200
+            self.patience = 5
+            self.convergence_threshold = 1e-4
+            self.candidate_convergence_threshold = 1e-4
+            self.candidate_patience = 3
+            self.candidate_epochs = 10
+            self.init_output_weights = "zero"
+            self._failing_key = failing_key
+
+        def __setattr__(self, name, value):
+            failing = self.__dict__.get("_failing_key")
+            if failing is not None and name == failing:
+                raise ValueError(f"setter rejected: {name}={value!r}")
+            object.__setattr__(self, name, value)
+
+    def _mgr_with_network(self, network):
+        mgr = TrainingLifecycleManager()
+        mgr.network = network
+        return mgr
+
+    def test_happy_path_applies_all_keys(self):
+        """All updatable keys are applied when no setter raises."""
+        net = self._FakeNetwork()
+        mgr = self._mgr_with_network(net)
+        mgr.update_params(
+            {"learning_rate": 0.005, "correlation_threshold": 0.2, "patience": 10}
+        )
+        assert net.learning_rate == pytest.approx(0.005)
+        assert net.correlation_threshold == pytest.approx(0.2)
+        assert net.patience == 10
+
+    def test_unrecognized_keys_silently_skipped(self):
+        """Unknown keys don't raise and don't change state."""
+        net = self._FakeNetwork()
+        mgr = self._mgr_with_network(net)
+        before = net.learning_rate
+        mgr.update_params({"this_is_not_a_real_key": 99, "learning_rate": before + 0.1})
+        assert net.learning_rate == pytest.approx(before + 0.1)
+
+    def test_setter_failure_rolls_back_earlier_keys(self):
+        """If patience setter raises, learning_rate and correlation_threshold
+        (applied before patience in iteration order) must be reverted."""
+        net = self._FakeNetwork(failing_key="patience")
+        mgr = self._mgr_with_network(net)
+
+        original_lr = net.learning_rate
+        original_threshold = net.correlation_threshold
+        original_patience = net.patience
+
+        with pytest.raises(ValueError, match="setter rejected: patience"):
+            # Dict order matters: in Python 3.7+ dicts preserve insertion order,
+            # so learning_rate and correlation_threshold are applied before patience.
+            mgr.update_params(
+                {
+                    "learning_rate": 0.999,
+                    "correlation_threshold": 0.999,
+                    "patience": 999,
+                }
+            )
+
+        # GAP-WS-28: all three must be at their original values.
+        assert net.learning_rate == pytest.approx(original_lr), "learning_rate not rolled back"
+        assert net.correlation_threshold == pytest.approx(original_threshold), "correlation_threshold not rolled back"
+        assert net.patience == original_patience, "patience never advanced (correct)"
+
+    def test_setter_failure_on_first_key_no_state_change(self):
+        """If the first key's setter raises, nothing was applied — nothing to revert."""
+        net = self._FakeNetwork(failing_key="learning_rate")
+        mgr = self._mgr_with_network(net)
+        original_lr = net.learning_rate
+        original_threshold = net.correlation_threshold
+
+        with pytest.raises(ValueError):
+            mgr.update_params({"learning_rate": 0.999, "correlation_threshold": 0.999})
+
+        assert net.learning_rate == pytest.approx(original_lr)
+        assert net.correlation_threshold == pytest.approx(original_threshold)
+
+    def test_no_network_raises_value_error(self):
+        """Pre-existing contract preserved: no network → ValueError."""
+        mgr = TrainingLifecycleManager()
+        with pytest.raises(ValueError, match="No network exists"):
+            mgr.update_params({"learning_rate": 0.005})

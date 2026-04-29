@@ -847,6 +847,15 @@ class TrainingLifecycleManager:
         Parameters effective at next cascade/epoch: max_hidden_units, epochs_max,
         patience.
 
+        GAP-WS-28: applies all updates atomically. If any setattr raises,
+        every previously-applied key is reverted to its pre-call value
+        before re-raising, so the network is never left in a half-updated
+        state. The ``_training_lock`` already prevents the race itself; this
+        adds the all-or-nothing semantics for the case where a property
+        setter rejects a value (currently no setters do, but adding a
+        defensive guard now means future validation can be wired in
+        without re-introducing torn writes).
+
         Args:
             params: Dict of parameter names and new values (None values excluded).
 
@@ -855,6 +864,8 @@ class TrainingLifecycleManager:
 
         Raises:
             ValueError: If no network exists.
+            Exception: Re-raises whatever setattr raised, after rolling back
+                any partially-applied updates.
         """
         with self._training_lock:
             if self.network is None:
@@ -874,9 +885,23 @@ class TrainingLifecycleManager:
                 "candidate_epochs",
                 "init_output_weights",
             }
-            for key, value in params.items():
-                if key in updatable_keys and hasattr(self.network, key):
+            applicable = {k: v for k, v in params.items() if k in updatable_keys and hasattr(self.network, k)}
+            old_values = {k: getattr(self.network, k) for k in applicable}
+            applied: list[str] = []
+            try:
+                for key, value in applicable.items():
                     setattr(self.network, key, value)
+                    applied.append(key)
+            except Exception:
+                # GAP-WS-28: revert any partial application before propagating.
+                for key in reversed(applied):
+                    try:
+                        setattr(self.network, key, old_values[key])
+                    except Exception:
+                        # If revert itself raises, log and continue rolling
+                        # back the rest — best-effort consistency.
+                        self.logger.exception("update_params rollback: revert of %s failed", key)
+                raise
             return self.get_training_params()
 
     # ------------------------------------------------------------------
