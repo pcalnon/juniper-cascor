@@ -14,6 +14,7 @@ Covers:
 """
 
 import importlib.metadata
+import logging
 import os
 import re
 import subprocess
@@ -191,7 +192,8 @@ class TestBugCC04VersionSingleSource:
                 continue
             try:
                 text = path.read_text(encoding="utf-8", errors="ignore")
-            except Exception:
+            except OSError as exc:
+                logging.debug("test_no_version_header_lines_in_source: skipping unreadable %s: %s", path, exc)
                 continue
             for line in text.splitlines():
                 stripped = line.lstrip()

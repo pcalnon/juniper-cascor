@@ -32,7 +32,7 @@ from cascade_correlation.cascade_correlation import CascadeCorrelationNetwork, S
 
 def _make_network(**kwargs):
     """Create a minimal CascadeCorrelationNetwork for testing."""
-    defaults = dict(input_size=2, output_size=2)
+    defaults = {"input_size": 2, "output_size": 2}
     defaults.update(kwargs)
     return CascadeCorrelationNetwork(**defaults)
 

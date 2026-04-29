@@ -97,6 +97,143 @@ def _get_client_ip(websocket: WebSocket) -> str:
     return "unknown"
 
 
+async def _check_handshake_gates(websocket: WebSocket, settings, client_ip: str) -> bool:
+    """Run pre-accept handshake gates. Returns True if the connection may proceed."""
+    if settings.disable_ws_control_endpoint:
+        await websocket.close(code=1013, reason="Control endpoint disabled")
+        return False
+
+    cooldown = _get_cooldown()
+    if cooldown.is_blocked(client_ip):
+        remaining = cooldown.get_block_remaining(client_ip)
+        logger.warning("Control WS: IP %s blocked (cooldown), remaining=%ss", client_ip, remaining)
+        await websocket.close(code=4029, reason="Too many rejected handshakes")
+        return False
+
+    if not await ws_authenticate(websocket):
+        cooldown.record_rejection(client_ip)
+        return False
+
+    if settings.ws_control_allowed_origins:
+        if not validate_control_origin(websocket, settings.ws_control_allowed_origins):
+            cooldown.record_rejection(client_ip)
+            await websocket.close(code=4003, reason="Origin not allowed")
+            return False
+
+    return True
+
+
+async def _handle_command_message(websocket: WebSocket, lifecycle, msg: dict, bucket: LeakyBucket) -> None:
+    """Validate and dispatch a single command message; send the response."""
+    command = msg.get("command", "")
+    command_id = msg.get("command_id")
+
+    if not bucket.try_acquire():
+        retry_after = bucket.retry_after
+        await websocket.send_json(
+            {
+                "type": "command_response",
+                "command": command,
+                "status": "rate_limited",
+                "retry_after": retry_after,
+                **({"command_id": command_id} if command_id else {}),
+            }
+        )
+        return
+
+    if command not in _VALID_COMMANDS:
+        await websocket.send_json(
+            create_control_ack_message(
+                command,
+                "error",
+                error=f"Unknown command: {command}",
+                command_id=command_id,
+                code="unknown_command",
+            )
+        )
+        return
+
+    if lifecycle is None:
+        await websocket.send_json(create_control_ack_message(command, "error", error="Lifecycle manager not available", command_id=command_id))
+        return
+
+    counter = _get_command_counter()
+    if counter:
+        counter.labels(command=command).inc()
+
+    timeout = _COMMAND_TIMEOUTS.get(command, 2.0)
+    try:
+        result = await asyncio.wait_for(
+            asyncio.to_thread(_execute_command, lifecycle, command, msg.get("params")),
+            timeout=timeout,
+        )
+        await websocket.send_json(create_control_ack_message(command, "success", data=result, command_id=command_id))
+    except asyncio.TimeoutError:
+        logger.error("Command '%s' timed out after %ss", command, timeout)
+        await websocket.send_json(create_control_ack_message(command, "error", error=f"Command timed out after {timeout}s", command_id=command_id))
+    except Exception as e:
+        logger.error("Command '%s' failed: %s", command, e)
+        await websocket.send_json(create_control_ack_message(command, "error", error="Command execution failed", command_id=command_id))
+
+
+async def _control_ping_loop(websocket: WebSocket, client_ip: str, hb_interval: float, hb_timeout: float, pong_received: asyncio.Event) -> None:
+    """Application-level ping/pong loop closing the connection on pong timeout."""
+    while True:
+        await asyncio.sleep(hb_interval)
+        pong_received.clear()
+        try:
+            await websocket.send_json({"type": "ping", "ts": time.time()})
+        except Exception:
+            return
+        try:
+            await asyncio.wait_for(pong_received.wait(), timeout=hb_timeout)
+        except asyncio.TimeoutError:
+            logger.info("Control WS: heartbeat timeout, closing: %s", client_ip)
+            try:
+                await websocket.close(code=1006, reason="Heartbeat timeout")
+            except Exception:
+                logger.debug("Control WS: close after heartbeat timeout failed for %s", client_ip, exc_info=True)
+            return
+
+
+async def _control_recv_loop(
+    websocket: WebSocket,
+    lifecycle,
+    bucket: LeakyBucket,
+    pong_received: asyncio.Event,
+    idle_timeout: float,
+    client_ip: str,
+) -> None:
+    """Receive loop: enforce idle timeout, dispatch commands, route pong frames."""
+    while True:
+        try:
+            if idle_timeout and idle_timeout > 0:
+                raw = await asyncio.wait_for(websocket.receive_text(), timeout=idle_timeout)
+            else:
+                raw = await websocket.receive_text()
+        except asyncio.TimeoutError:
+            logger.info("Control WS: idle timeout (%ds), closing: %s", idle_timeout, client_ip)
+            await websocket.close(code=1000, reason="Idle timeout")
+            return
+
+        if len(raw) > _MAX_MESSAGE_SIZE:
+            await websocket.send_json(create_control_ack_message("unknown", "error", error="Message too large"))
+            continue
+
+        try:
+            msg = json.loads(raw)
+        except json.JSONDecodeError:
+            await websocket.send_json(create_control_ack_message("unknown", "error", error="Invalid JSON"))
+            await websocket.close(code=1003, reason="Malformed JSON")
+            return
+
+        if msg.get("type") == "pong":
+            pong_received.set()
+            continue
+
+        await _handle_command_message(websocket, lifecycle, msg, bucket)
+
+
 async def control_stream_handler(websocket: WebSocket) -> None:
     """Handle /ws/control WebSocket connections.
 
@@ -109,33 +246,10 @@ async def control_stream_handler(websocket: WebSocket) -> None:
     6. Bidirectional idle timeout
     """
     settings = get_settings()
-
-    # Gate 1: Kill switch (CSWSH emergency hard-disable)
-    if settings.disable_ws_control_endpoint:
-        await websocket.close(code=1013, reason="Control endpoint disabled")
-        return
-
     client_ip = _get_client_ip(websocket)
 
-    # Gate 2: Per-origin handshake cooldown — blocked IPs get 429-equivalent
-    cooldown = _get_cooldown()
-    if cooldown.is_blocked(client_ip):
-        remaining = cooldown.get_block_remaining(client_ip)
-        logger.warning("Control WS: IP %s blocked (cooldown), remaining=%ss", client_ip, remaining)
-        await websocket.close(code=4029, reason="Too many rejected handshakes")
+    if not await _check_handshake_gates(websocket, settings, client_ip):
         return
-
-    # Gate 3: API key authentication
-    if not await ws_authenticate(websocket):
-        cooldown.record_rejection(client_ip)
-        return
-
-    # Gate 4: Origin validation
-    if settings.ws_control_allowed_origins:
-        if not validate_control_origin(websocket, settings.ws_control_allowed_origins):
-            cooldown.record_rejection(client_ip)
-            await websocket.close(code=4003, reason="Origin not allowed")
-            return
 
     lifecycle = getattr(websocket.app.state, "lifecycle", None)
 
@@ -147,7 +261,6 @@ async def control_stream_handler(websocket: WebSocket) -> None:
         }
     )
 
-    # Per-connection leaky bucket rate limiter
     bucket = LeakyBucket(
         capacity=settings.ws_control_rate_limit_per_sec,
         refill_rate=float(settings.ws_control_rate_limit_per_sec),
@@ -160,112 +273,13 @@ async def control_stream_handler(websocket: WebSocket) -> None:
     hb_interval = getattr(app_settings, "ws_heartbeat_interval_sec", 30) if app_settings else 30
     hb_timeout = getattr(app_settings, "ws_heartbeat_pong_timeout_sec", 10) if app_settings else 10
 
-    # Phase F: heartbeat ping/pong for dead-connection detection
     pong_received = asyncio.Event()
     pong_received.set()  # No outstanding ping at start
 
-    async def _ping_loop():
-        while True:
-            await asyncio.sleep(hb_interval)
-            pong_received.clear()
-            try:
-                await websocket.send_json({"type": "ping", "ts": time.time()})
-            except Exception:
-                return
-            try:
-                await asyncio.wait_for(pong_received.wait(), timeout=hb_timeout)
-            except asyncio.TimeoutError:
-                logger.info("Control WS: heartbeat timeout, closing: %s", client_ip)
-                try:
-                    await websocket.close(code=1006, reason="Heartbeat timeout")
-                except Exception:
-                    pass
-                return
-
-    ping_task = asyncio.create_task(_ping_loop())
+    ping_task = asyncio.create_task(_control_ping_loop(websocket, client_ip, hb_interval, hb_timeout, pong_received))
 
     try:
-        while True:
-            # Gate 6: Bidirectional idle timeout
-            try:
-                if idle_timeout and idle_timeout > 0:
-                    raw = await asyncio.wait_for(websocket.receive_text(), timeout=idle_timeout)
-                else:
-                    raw = await websocket.receive_text()
-            except asyncio.TimeoutError:
-                logger.info("Control WS: idle timeout (%ds), closing: %s", idle_timeout, client_ip)
-                await websocket.close(code=1000, reason="Idle timeout")
-                return
-
-            if len(raw) > _MAX_MESSAGE_SIZE:
-                await websocket.send_json(create_control_ack_message("unknown", "error", error="Message too large"))
-                continue
-
-            try:
-                msg = json.loads(raw)
-            except json.JSONDecodeError:
-                await websocket.send_json(create_control_ack_message("unknown", "error", error="Invalid JSON"))
-                await websocket.close(code=1003, reason="Malformed JSON")
-                return
-
-            # Phase F: pong handling — resets idle timeout (receive_text returned)
-            if msg.get("type") == "pong":
-                pong_received.set()
-                continue
-
-            command = msg.get("command", "")
-            command_id = msg.get("command_id")
-
-            # Gate 5: Per-connection rate limiting
-            if not bucket.try_acquire():
-                retry_after = bucket.retry_after
-                await websocket.send_json(
-                    {
-                        "type": "command_response",
-                        "command": command,
-                        "status": "rate_limited",
-                        "retry_after": retry_after,
-                        **({"command_id": command_id} if command_id else {}),
-                    }
-                )
-                continue
-
-            if command not in _VALID_COMMANDS:
-                await websocket.send_json(
-                    create_control_ack_message(
-                        command,
-                        "error",
-                        error=f"Unknown command: {command}",
-                        command_id=command_id,
-                        code="unknown_command",
-                    )
-                )
-                continue
-
-            if lifecycle is None:
-                await websocket.send_json(create_control_ack_message(command, "error", error="Lifecycle manager not available", command_id=command_id))
-                continue
-
-            # Observability: count command receipt (§S10.7)
-            counter = _get_command_counter()
-            if counter:
-                counter.labels(command=command).inc()
-
-            # Phase D: per-command timeout (§S10)
-            timeout = _COMMAND_TIMEOUTS.get(command, 2.0)
-            try:
-                result = await asyncio.wait_for(
-                    asyncio.to_thread(_execute_command, lifecycle, command, msg.get("params")),
-                    timeout=timeout,
-                )
-                await websocket.send_json(create_control_ack_message(command, "success", data=result, command_id=command_id))
-            except asyncio.TimeoutError:
-                logger.error("Command '%s' timed out after %ss", command, timeout)
-                await websocket.send_json(create_control_ack_message(command, "error", error=f"Command timed out after {timeout}s", command_id=command_id))
-            except Exception as e:
-                logger.error("Command '%s' failed: %s", command, e)
-                await websocket.send_json(create_control_ack_message(command, "error", error="Command execution failed", command_id=command_id))
-
+        await _control_recv_loop(websocket, lifecycle, bucket, pong_received, idle_timeout, client_ip)
     except WebSocketDisconnect:
         pass
     finally:

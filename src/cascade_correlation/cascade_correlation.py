@@ -1719,7 +1719,7 @@ class CascadeCorrelationNetwork:
             # apply appropriate handling (abort, fail the run, surface via API, etc.).
             import traceback
 
-            self.logger.error(f"CascadeCorrelationNetwork: train_candidates: Candidate training failed irrecoverably; aborting network growth")
+            self.logger.error("CascadeCorrelationNetwork: train_candidates: Candidate training failed irrecoverably; aborting network growth")
             self.logger.error(traceback.format_exc())
             raise
         except Exception as e:

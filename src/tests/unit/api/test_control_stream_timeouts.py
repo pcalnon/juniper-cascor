@@ -128,7 +128,7 @@ class TestCommandTimeoutBehavior:
             WebSocketDisconnect(code=1000),
         ]
 
-        with patch("api.websocket.control_stream._COMMAND_TIMEOUTS", {k: 0.1 for k in _COMMAND_TIMEOUTS}):
+        with patch("api.websocket.control_stream._COMMAND_TIMEOUTS", dict.fromkeys(_COMMAND_TIMEOUTS, 0.1)):
             await control_stream_handler(ws)
 
         responses = [call.args[0] for call in ws.send_json.call_args_list if isinstance(call.args[0], dict) and call.args[0].get("type") == "command_response"]
@@ -171,7 +171,7 @@ class TestCommandTimeoutBehavior:
             WebSocketDisconnect(code=1000),
         ]
 
-        with patch("api.websocket.control_stream._COMMAND_TIMEOUTS", {k: 0.1 for k in _COMMAND_TIMEOUTS}):
+        with patch("api.websocket.control_stream._COMMAND_TIMEOUTS", dict.fromkeys(_COMMAND_TIMEOUTS, 0.1)):
             await control_stream_handler(ws)
 
         responses = [call.args[0] for call in ws.send_json.call_args_list if isinstance(call.args[0], dict) and call.args[0].get("type") == "command_response"]
