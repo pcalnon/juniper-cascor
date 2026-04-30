@@ -62,9 +62,14 @@ def test_worker_all_matches_expected():
         assert hasattr(worker_pkg, sym), f"missing worker symbol: {sym}"
 
 
-def test_version_is_alpha_string():
-    """0.1.0a0 — first publishable alpha, never released."""
-    assert juniper_cascor_protocol.__version__ == "0.1.0a0"
+def test_version_is_stable_string():
+    """0.1.0 — first stable release after the cascor server soak (R2.2.3).
+
+    Released as the post-alpha stable. The previous alpha (``0.1.0a0``)
+    remains on PyPI for reproducibility but consumers should pin
+    ``juniper-cascor-protocol>=0.1.0`` going forward.
+    """
+    assert juniper_cascor_protocol.__version__ == "0.1.0"
 
 
 def test_worker_subpackage_does_not_import_pydantic():
