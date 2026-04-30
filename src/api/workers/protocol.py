@@ -1,139 +1,56 @@
 """Wire protocol for WebSocket worker communication.
 
-Defines message formats and binary frame encoding for the worker protocol.
-All serialization uses JSON envelopes + raw numpy binary frames — no pickle.
+METRICS-MON R2.2.2 / seed-05: the canonical wire-protocol message types
+and binary-frame codec live in :mod:`juniper_cascor_protocol.worker`
+(published as ``juniper-cascor-protocol`` on PyPI). This module re-
+exports them for backwards compatibility with existing imports across
+``api/workers/``, ``api/websocket/worker_stream.py``, and the test
+suites — new code should prefer
+``from juniper_cascor_protocol.worker import …``.
 
-Binary Frame Format:
-    [4 bytes: shape dimension count (uint32)]
-    [N * 4 bytes: shape values (uint32 each)]
-    [4 bytes: dtype string length (uint32)]
-    [M bytes: dtype string (utf-8)]
-    [remaining bytes: raw array data]
+What stays in this module:
 
-Message Types:
-    register       — Worker -> Server: first message after connect
-    heartbeat      — Bidirectional: keepalive
-    task_assign    — Server -> Worker: candidate training task
-    task_result    — Worker -> Server: training result
-    token_refresh  — Server -> Worker: new auth token before expiry
-    error          — Either direction: error notification
+- :class:`WorkerProtocol` — imperative builder/validator helpers used by
+  the cascor server's worker_stream handler. The builders now reference
+  :class:`MessageType` re-exported from the shared lib so the wire
+  values stay single-sourced.
+- :class:`TaskAssignment`, :class:`TaskResultMessage` — typed dataclasses
+  cascor uses internally for type-safe construction. They serialize to
+  the same dicts the workers expect.
+
+Binary frame format and the message-type enum are defined in
+:mod:`juniper_cascor_protocol.worker.binary_frame` and
+:mod:`juniper_cascor_protocol.worker.messages` respectively. See
+``notes/code-review/METRICS_MONITORING_R2.2_WS_FRAME_SCHEMA_DESIGN_2026-04-29.md``
+in juniper-ml for the cross-repo design.
 """
 
 import re
-import struct
 import time
 from dataclasses import dataclass, field
-from enum import StrEnum
 from typing import Any
 
 import numpy as np
+from juniper_cascor_protocol.worker import BinaryFrame, WorkerMessageType
 
+# METRICS-MON R2.2.2: re-export the shared StrEnum under its historical
+# server-side alias. Worker stream code, tests, and downstream callers
+# that imported ``MessageType`` continue to work unchanged.
+MessageType = WorkerMessageType
 
-class MessageType(StrEnum):
-    """All valid wire protocol message types."""
-
-    REGISTER = "register"
-    HEARTBEAT = "heartbeat"
-    TASK_ASSIGN = "task_assign"
-    TASK_RESULT = "task_result"
-    TOKEN_REFRESH = "token_refresh"  # nosec B105 — enum value, not a password
-    ERROR = "error"
+__all__ = [
+    "BinaryFrame",
+    "MessageType",
+    "WorkerProtocol",
+    "TaskAssignment",
+    "TaskResultMessage",
+]
 
 
 # Validation bounds (Section 12.7 of concurrency plan)
 _MAX_CORRELATION = 1.0
 _MIN_CORRELATION = 0.0
 _MAX_WEIGHT_MAGNITUDE = 100.0
-_MAX_FRAME_SIZE = 100 * 1024 * 1024  # 100MB
-
-
-class BinaryFrame:
-    """Encode/decode numpy arrays as binary WebSocket frames.
-
-    Format: shape header + dtype header + raw data bytes.
-    No pickle involved — reconstructible from numpy + struct only.
-    """
-
-    @staticmethod
-    def encode(array: np.ndarray) -> bytes:
-        """Encode a numpy array into a binary frame.
-
-        Args:
-            array: C-contiguous numpy array to encode.
-
-        Returns:
-            Binary frame bytes.
-        """
-        arr = np.ascontiguousarray(array)
-        shape = arr.shape
-        dtype_str = str(arr.dtype).encode("utf-8")
-
-        header = struct.pack(f"<I{len(shape)}I", len(shape), *shape)
-        header += struct.pack("<I", len(dtype_str))
-        header += dtype_str
-
-        return header + arr.tobytes()
-
-    @staticmethod
-    def decode(data: bytes) -> np.ndarray:
-        """Decode a binary frame into a numpy array.
-
-        Args:
-            data: Binary frame bytes.
-
-        Returns:
-            Reconstructed numpy array.
-
-        Raises:
-            ValueError: If frame is malformed or exceeds size limits.
-        """
-        if len(data) > _MAX_FRAME_SIZE:
-            raise ValueError(f"Binary frame exceeds maximum size ({len(data)} > {_MAX_FRAME_SIZE})")
-
-        offset = 0
-
-        # Read shape dimension count
-        if len(data) < 4:
-            raise ValueError("Binary frame too short for shape header")
-        (ndim,) = struct.unpack_from("<I", data, offset)
-        offset += 4
-
-        if ndim > 10:
-            raise ValueError(f"Unreasonable number of dimensions: {ndim}")
-
-        # Read shape values
-        if len(data) < offset + ndim * 4:
-            raise ValueError("Binary frame too short for shape values")
-        shape = struct.unpack_from(f"<{ndim}I", data, offset)
-        offset += ndim * 4
-
-        # Read dtype string
-        if len(data) < offset + 4:
-            raise ValueError("Binary frame too short for dtype header")
-        (dtype_len,) = struct.unpack_from("<I", data, offset)
-        offset += 4
-
-        if dtype_len > 64:
-            raise ValueError(f"Unreasonable dtype string length: {dtype_len}")
-        if len(data) < offset + dtype_len:
-            raise ValueError("Binary frame too short for dtype string")
-        dtype_str = data[offset : offset + dtype_len].decode("utf-8")
-        offset += dtype_len
-
-        # Validate dtype before use
-        try:
-            dtype = np.dtype(dtype_str)
-        except TypeError as e:
-            raise ValueError(f"Invalid dtype string: {dtype_str!r}") from e
-
-        # Read array data
-        expected_size = int(np.prod(shape)) * dtype.itemsize if shape else dtype.itemsize
-        actual_size = len(data) - offset
-        if actual_size != expected_size:
-            raise ValueError(f"Data size mismatch: expected {expected_size} bytes, got {actual_size}")
-
-        array = np.frombuffer(data[offset:], dtype=dtype).reshape(shape)
-        return array.copy()  # Return owned copy, not view into buffer
 
 
 class WorkerProtocol:
