@@ -63,6 +63,16 @@ class TrainingParams(BaseModel):
     # construction; this surfaces it on the start-of-training override surface.
     output_epochs: Optional[int] = Field(None, ge=1, le=1_000_000, description="Per-output-training-phase epoch budget (separate from epochs_max)")
     init_output_weights: Optional[Literal["zero", "random"]] = Field(None, description="Initialization mode for new hidden unit output weights")
+    # CAN-010 / ENH-006 (Phase 6E Sprint A-2): output-layer optimizer override.
+    # Honored at the next output-training pass — the network's
+    # ``_create_optimizer`` consults ``self.config.optimizer_config.optimizer_type``
+    # each pass, so changing this between passes swaps the optimizer cleanly.
+    # Mid-pass changes are not supported (the running optimizer instance keeps
+    # its momentum).
+    optimizer_type: Optional[Literal[
+        "Adam", "AdamW", "SGD", "RMSprop", "NAdam", "RAdam", "Adamax",
+        "Adagrad", "Adadelta", "Adafactor", "ASGD", "LBFGS", "Rprop", "Muon",
+    ]] = Field(None, description="Output-layer optimizer override")
 
 
 class TrainingStartRequest(BaseModel):
@@ -102,3 +112,8 @@ class TrainingParamUpdateRequest(BaseModel):
     # CAS-002 (Phase 6E Sprint A-1): runtime-patchable counterpart to TrainingParams.output_epochs.
     output_epochs: Optional[int] = Field(None, ge=1, description="Per-output-training-phase epoch budget (separate from epochs_max)")
     init_output_weights: Optional[Literal["zero", "random"]] = Field(None, description="Initialization mode for new hidden unit output weights")
+    # CAN-010 / ENH-006 (A-2): runtime-patchable counterpart.
+    optimizer_type: Optional[Literal[
+        "Adam", "AdamW", "SGD", "RMSprop", "NAdam", "RAdam", "Adamax",
+        "Adagrad", "Adadelta", "Adafactor", "ASGD", "LBFGS", "Rprop", "Muon",
+    ]] = Field(None, description="Output-layer optimizer override")

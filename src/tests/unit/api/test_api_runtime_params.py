@@ -140,3 +140,51 @@ class TestUpdateTrainingParams:
         # Live network has a non-zero default — verify it's a positive int.
         assert isinstance(data["output_epochs"], int)
         assert data["output_epochs"] >= 1
+
+    # CAN-010 / ENH-006 (Phase 6E Sprint A-2): optimizer_type lives in a
+    # nested config (network.config.optimizer_config.optimizer_type) rather
+    # than directly on the network — runtime patching goes through a
+    # special-cased setter in update_params (_write_optimizer_type).
+    def test_update_optimizer_type_updates_nested_config(self, test_client_with_network):
+        """PATCH /v1/training/params applies optimizer_type to the nested config."""
+        response = test_client_with_network.patch(
+            "/v1/training/params",
+            json={"optimizer_type": "AdamW"},
+        )
+        assert response.status_code == 200
+        lifecycle = test_client_with_network.app.state.lifecycle
+        assert lifecycle.network.config.optimizer_config.optimizer_type == "AdamW"
+
+    def test_update_optimizer_type_rejects_unsupported(self, test_client_with_network):
+        """Pydantic Literal rejects optimizer names outside the supported set."""
+        response = test_client_with_network.patch(
+            "/v1/training/params",
+            json={"optimizer_type": "NotARealOptimizer"},
+        )
+        assert response.status_code == 422
+
+    def test_update_optimizer_type_accepts_full_registry(self, test_client_with_network):
+        """Each Literal-allowed optimizer is accepted by the API."""
+        for name in ("Adam", "AdamW", "SGD", "RMSprop", "NAdam", "RAdam", "Adamax", "Adagrad"):
+            response = test_client_with_network.patch(
+                "/v1/training/params",
+                json={"optimizer_type": name},
+            )
+            assert response.status_code == 200, f"PATCH rejected supported optimizer {name!r}"
+
+    def test_get_training_params_includes_optimizer_type(self, test_client_with_network):
+        """GET surfaces optimizer_type so UI clients can reconcile after reconnect."""
+        response = test_client_with_network.get("/v1/training/params")
+        assert response.status_code == 200
+        data = response.json()["data"]
+        assert "optimizer_type" in data
+        assert data["optimizer_type"] in {
+            "Adam", "AdamW", "SGD", "RMSprop", "NAdam", "RAdam", "Adamax",
+            "Adagrad", "Adadelta", "Adafactor", "ASGD", "LBFGS", "Rprop", "Muon",
+        }
+
+    def test_update_optimizer_type_round_trip(self, test_client_with_network):
+        """PATCH then GET — the optimizer_type round-trips correctly."""
+        test_client_with_network.patch("/v1/training/params", json={"optimizer_type": "SGD"})
+        data = test_client_with_network.get("/v1/training/params").json()["data"]
+        assert data["optimizer_type"] == "SGD"

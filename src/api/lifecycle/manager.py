@@ -23,6 +23,24 @@ from api.lifecycle.state_machine import Command, TrainingPhase, TrainingStateMac
 from cascor_constants.constants_api import _PROJECT_API_DRAIN_THREAD_JOIN_TIMEOUT, _PROJECT_API_LIFECYCLE_DEFAULT_CANDIDATE_PATIENCE, _PROJECT_API_LIFECYCLE_DEFAULT_EPOCHS_MAX, _PROJECT_API_LIFECYCLE_DEFAULT_MAX_HIDDEN_UNITS, _PROJECT_API_LIFECYCLE_DEFAULT_MAX_ITERATIONS, _PROJECT_API_NETWORK_INPUT_SIZE_DEFAULT, _PROJECT_API_NETWORK_LEARNING_RATE_DEFAULT, _PROJECT_API_NETWORK_OUTPUT_SIZE_DEFAULT, _PROJECT_API_PROGRESS_QUEUE_GET_TIMEOUT, _PROJECT_API_PROGRESS_QUEUE_WAIT_TIMEOUT
 
 
+def _read_optimizer_type(network: Any) -> str:
+    """CAN-010 / ENH-006 (A-2): read ``optimizer_type`` through the nested
+    ``config.optimizer_config`` path. Falls back to ``"Adam"`` if the chain
+    is missing — same default as ``OptimizerConfig`` itself."""
+    config = getattr(network, "config", None)
+    optimizer_config = getattr(config, "optimizer_config", None) if config is not None else None
+    return getattr(optimizer_config, "optimizer_type", "Adam") if optimizer_config is not None else "Adam"
+
+
+def _write_optimizer_type(network: Any, value: str) -> None:
+    """CAN-010 / ENH-006 (A-2): set ``optimizer_type`` through the nested
+    ``config.optimizer_config`` path. Used by ``update_params`` so the
+    setattr-on-network pattern in ``updatable_keys`` works for this nested
+    field. Raises if the chain is missing — matches the contract of the
+    other setters."""
+    network.config.optimizer_config.optimizer_type = value
+
+
 class TrainingLifecycleManager:
     """Central coordinator for CasCor network training lifecycle.
 
@@ -839,6 +857,10 @@ class TrainingLifecycleManager:
             # distinct from ``epochs_max`` (the global cap).
             "output_epochs": getattr(self.network, "output_epochs", 0),
             "init_output_weights": getattr(self.network, "init_output_weights", "zero"),
+            # CAN-010 / ENH-006 (Phase 6E Sprint A-2): output-layer optimizer.
+            # Reads through the nested ``config.optimizer_config`` so a runtime
+            # patch via ``update_params`` is reflected here on the next GET.
+            "optimizer_type": _read_optimizer_type(self.network),
         }
 
     def update_params(self, params: Dict[str, Any]) -> Dict[str, Any]:
@@ -888,19 +910,38 @@ class TrainingLifecycleManager:
                 "candidate_epochs",
                 "output_epochs",  # CAS-002 (Phase 6E Sprint A-1)
                 "init_output_weights",
+                "optimizer_type",  # CAN-010 / ENH-006 (Phase 6E Sprint A-2) — nested setter
             }
-            applicable = {k: v for k, v in params.items() if k in updatable_keys and hasattr(self.network, k)}
+            # Plain setattr targets — keys that map directly to network attributes.
+            simple_keys = updatable_keys - {"optimizer_type"}
+            applicable = {k: v for k, v in params.items() if k in simple_keys and hasattr(self.network, k)}
             old_values = {k: getattr(self.network, k) for k in applicable}
+
+            # CAN-010 / ENH-006: ``optimizer_type`` lives at
+            # ``self.network.config.optimizer_config.optimizer_type``, not on
+            # the network directly. Treated separately so the rollback path
+            # below still works through the same revert mechanism.
+            optimizer_pending = "optimizer_type" in params and params["optimizer_type"] is not None
+            old_optimizer_type = _read_optimizer_type(self.network) if optimizer_pending else None
+
             applied: list[str] = []
             try:
                 for key, value in applicable.items():
                     setattr(self.network, key, value)
                     applied.append(key)
+                if optimizer_pending:
+                    _write_optimizer_type(self.network, params["optimizer_type"])
+                    applied.append("optimizer_type")
             except Exception:
                 # GAP-WS-28: revert any partial application before propagating.
+                # CAN-010 / ENH-006 (A-2): optimizer_type goes through the
+                # nested setter, so the revert needs to mirror the apply path.
                 for key in reversed(applied):
                     try:
-                        setattr(self.network, key, old_values[key])
+                        if key == "optimizer_type":
+                            _write_optimizer_type(self.network, old_optimizer_type)
+                        else:
+                            setattr(self.network, key, old_values[key])
                     except Exception:
                         # If revert itself raises, log and continue rolling
                         # back the rest — best-effort consistency.
