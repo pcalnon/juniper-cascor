@@ -73,6 +73,16 @@ class TrainingParams(BaseModel):
         "Adam", "AdamW", "SGD", "RMSprop", "NAdam", "RAdam", "Adamax",
         "Adagrad", "Adadelta", "Adafactor", "ASGD", "LBFGS", "Rprop", "Muon",
     ]] = Field(None, description="Output-layer optimizer override")
+    # CAN-011 (Phase 6E Sprint A-3): hidden-unit activation function override.
+    # Honored at the next cascade growth pass — the network's
+    # ``_init_activation_function`` consults ``self.config.activation_function_name``
+    # so changing this between passes swaps the activation cleanly. Existing
+    # cascaded units retain whatever activation they were trained with.
+    activation_function_name: Optional[Literal[
+        "Identity", "Tanh", "Sigmoid", "ReLU", "LeakyReLU", "ELU", "SELU", "GELU",
+        "Softmax", "Softplus", "Hardtanh", "Softshrink", "Tanhshrink",
+        "tanh", "sigmoid", "relu",
+    ]] = Field(None, description="Hidden-unit activation function override")
 
 
 class TrainingStartRequest(BaseModel):
@@ -117,3 +127,9 @@ class TrainingParamUpdateRequest(BaseModel):
         "Adam", "AdamW", "SGD", "RMSprop", "NAdam", "RAdam", "Adamax",
         "Adagrad", "Adadelta", "Adafactor", "ASGD", "LBFGS", "Rprop", "Muon",
     ]] = Field(None, description="Output-layer optimizer override")
+    # CAN-011 (A-3): runtime-patchable counterpart to TrainingParams.activation_function_name.
+    activation_function_name: Optional[Literal[
+        "Identity", "Tanh", "Sigmoid", "ReLU", "LeakyReLU", "ELU", "SELU", "GELU",
+        "Softmax", "Softplus", "Hardtanh", "Softshrink", "Tanhshrink",
+        "tanh", "sigmoid", "relu",
+    ]] = Field(None, description="Hidden-unit activation function override")

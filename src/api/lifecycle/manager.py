@@ -41,6 +41,25 @@ def _write_optimizer_type(network: Any, value: str) -> None:
     network.config.optimizer_config.optimizer_type = value
 
 
+def _read_activation_function_name(network: Any) -> str:
+    """CAN-011 (A-3): read ``activation_function_name`` from the network.
+    Falls back to ``"Tanh"`` (matches ``_init_activation_function``'s
+    fallback in ``cascade_correlation.py``) when the attribute is missing."""
+    return getattr(network, "activation_function_name", "Tanh") or "Tanh"
+
+
+def _write_activation_function_name(network: Any, value: str) -> None:
+    """CAN-011 (A-3): swap ``activation_function_name`` and re-run
+    ``_init_activation_function`` so ``activation_fn`` / ``activation_fn_no_diff``
+    pick up the new mapping from the registry. Without the re-init the
+    surface attribute would change but the network would keep computing the
+    old activation. Existing cascaded units retain whatever activation they
+    were trained with — this only affects future cascade growth and the
+    output-layer activation chain."""
+    network.config.activation_function_name = value
+    network._init_activation_function()
+
+
 class TrainingLifecycleManager:
     """Central coordinator for CasCor network training lifecycle.
 
@@ -861,6 +880,8 @@ class TrainingLifecycleManager:
             # Reads through the nested ``config.optimizer_config`` so a runtime
             # patch via ``update_params`` is reflected here on the next GET.
             "optimizer_type": _read_optimizer_type(self.network),
+            # CAN-011 (Phase 6E Sprint A-3): hidden-unit activation function.
+            "activation_function_name": _read_activation_function_name(self.network),
         }
 
     def update_params(self, params: Dict[str, Any]) -> Dict[str, Any]:
@@ -911,9 +932,13 @@ class TrainingLifecycleManager:
                 "output_epochs",  # CAS-002 (Phase 6E Sprint A-1)
                 "init_output_weights",
                 "optimizer_type",  # CAN-010 / ENH-006 (Phase 6E Sprint A-2) — nested setter
+                "activation_function_name",  # CAN-011 (Phase 6E Sprint A-3) — re-init on swap
             }
             # Plain setattr targets — keys that map directly to network attributes.
-            simple_keys = updatable_keys - {"optimizer_type"}
+            # ``optimizer_type`` and ``activation_function_name`` go through
+            # special-cased setters that touch nested config / re-init paths.
+            nested_keys = {"optimizer_type", "activation_function_name"}
+            simple_keys = updatable_keys - nested_keys
             applicable = {k: v for k, v in params.items() if k in simple_keys and hasattr(self.network, k)}
             old_values = {k: getattr(self.network, k) for k in applicable}
 
@@ -924,6 +949,12 @@ class TrainingLifecycleManager:
             optimizer_pending = "optimizer_type" in params and params["optimizer_type"] is not None
             old_optimizer_type = _read_optimizer_type(self.network) if optimizer_pending else None
 
+            # CAN-011 (A-3): ``activation_function_name`` requires re-running
+            # ``_init_activation_function`` so ``activation_fn`` picks up the
+            # new mapping. Same revert pattern as optimizer_type.
+            activation_pending = "activation_function_name" in params and params["activation_function_name"] is not None
+            old_activation_function_name = _read_activation_function_name(self.network) if activation_pending else None
+
             applied: list[str] = []
             try:
                 for key, value in applicable.items():
@@ -932,14 +963,19 @@ class TrainingLifecycleManager:
                 if optimizer_pending:
                     _write_optimizer_type(self.network, params["optimizer_type"])
                     applied.append("optimizer_type")
+                if activation_pending:
+                    _write_activation_function_name(self.network, params["activation_function_name"])
+                    applied.append("activation_function_name")
             except Exception:
                 # GAP-WS-28: revert any partial application before propagating.
-                # CAN-010 / ENH-006 (A-2): optimizer_type goes through the
-                # nested setter, so the revert needs to mirror the apply path.
+                # CAN-010 / ENH-006 (A-2) + CAN-011 (A-3): nested setters
+                # need their own revert path — mirror the apply branch.
                 for key in reversed(applied):
                     try:
                         if key == "optimizer_type":
                             _write_optimizer_type(self.network, old_optimizer_type)
+                        elif key == "activation_function_name":
+                            _write_activation_function_name(self.network, old_activation_function_name)
                         else:
                             setattr(self.network, key, old_values[key])
                     except Exception:
