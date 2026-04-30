@@ -835,6 +835,9 @@ class TrainingLifecycleManager:
             "candidate_patience": getattr(self.network, "candidate_patience", _PROJECT_API_LIFECYCLE_DEFAULT_CANDIDATE_PATIENCE),
             "candidate_convergence_threshold": getattr(self.network, "candidate_convergence_threshold", 0.001),
             "candidate_epochs": getattr(self.network, "candidate_epochs", 0),
+            # CAS-002 (Phase 6E Sprint A-1): per-output-training-phase budget,
+            # distinct from ``epochs_max`` (the global cap).
+            "output_epochs": getattr(self.network, "output_epochs", 0),
             "init_output_weights": getattr(self.network, "init_output_weights", "zero"),
         }
 
@@ -883,6 +886,7 @@ class TrainingLifecycleManager:
                 "candidate_convergence_threshold",
                 "candidate_patience",
                 "candidate_epochs",
+                "output_epochs",  # CAS-002 (Phase 6E Sprint A-1)
                 "init_output_weights",
             }
             applicable = {k: v for k, v in params.items() if k in updatable_keys and hasattr(self.network, k)}
