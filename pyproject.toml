@@ -50,6 +50,13 @@ dependencies = [
     # R1.1/R1.2/R1.3 contract constants). Pinned at the first stable
     # release; consumers should never resolve back to the alpha line.
     "juniper-observability>=0.1.1",
+    # METRICS-MON R2.2.2 / seed-05: WebSocket frame schemas (envelope
+    # Pydantic models for /ws/training and /ws/control + WorkerMessageType
+    # StrEnum + BinaryFrame numpy codec for /ws/v1/workers). The cascor
+    # server is the first consumer of its own protocol package, so the
+    # source of truth lives in juniper-cascor-protocol and the server
+    # imports it. Promotion to >=0.1.0 stable follows the alpha soak.
+    "juniper-cascor-protocol>=0.1.0a0",
 ]
 
 [project.optional-dependencies]
