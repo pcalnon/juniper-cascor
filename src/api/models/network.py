@@ -5,6 +5,7 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 from cascor_constants.constants_api import (
+    _PROJECT_API_NETWORK_ACTIVATION_FUNCTION_DEFAULT,
     _PROJECT_API_NETWORK_CANDIDATE_EPOCHS_DEFAULT,
     _PROJECT_API_NETWORK_CANDIDATE_LEARNING_RATE_DEFAULT,
     _PROJECT_API_NETWORK_CANDIDATE_POOL_SIZE_DEFAULT,
@@ -46,6 +47,17 @@ class NetworkCreateRequest(BaseModel):
         "Adam", "AdamW", "SGD", "RMSprop", "NAdam", "RAdam", "Adamax",
         "Adagrad", "Adadelta", "Adafactor", "ASGD", "LBFGS", "Rprop", "Muon",
     ] = Field("Adam", description="Output-layer optimizer (defaults to Adam)")
+    # CAN-011 (Phase 6E Sprint A-3): output-layer activation function.
+    # Mirrors ``_PROJECT_MODEL_ACTIVATION_FUNCTIONS_NAME_LIST`` in
+    # ``constants_activation.py`` (the source of truth for the supported
+    # registry); duplicating it as a Literal here returns a 422 on
+    # unsupported names rather than letting the network silently fall back
+    # to the default at ``_init_activation_function`` time.
+    activation_function_name: Literal[
+        "Identity", "Tanh", "Sigmoid", "ReLU", "LeakyReLU", "ELU", "SELU", "GELU",
+        "Softmax", "Softplus", "Hardtanh", "Softshrink", "Tanhshrink",
+        "tanh", "sigmoid", "relu",
+    ] = Field(_PROJECT_API_NETWORK_ACTIVATION_FUNCTION_DEFAULT, description="Hidden-unit activation function (defaults to Tanh)")
 
 
 class NetworkInfo(BaseModel):

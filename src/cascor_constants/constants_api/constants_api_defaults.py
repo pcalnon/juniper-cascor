@@ -63,6 +63,9 @@ _PROJECT_API_NETWORK_OUTPUT_EPOCHS_DEFAULT: int = 25
 _PROJECT_API_NETWORK_EPOCHS_MAX_DEFAULT: int = 200
 _PROJECT_API_NETWORK_MAX_ITERATIONS_DEFAULT: int = 1000
 _PROJECT_API_NETWORK_INIT_OUTPUT_WEIGHTS_DEFAULT: str = "zero"
+# CAN-011 (Phase 6E Sprint A-3): output-layer activation function default.
+# Mirrors cascade_correlation.py::_init_activation_function's fallback.
+_PROJECT_API_NETWORK_ACTIVATION_FUNCTION_DEFAULT: str = "Tanh"
 
 
 #####################################################################################################################################################################################################

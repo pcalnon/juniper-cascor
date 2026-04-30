@@ -188,3 +188,63 @@ class TestUpdateTrainingParams:
         test_client_with_network.patch("/v1/training/params", json={"optimizer_type": "SGD"})
         data = test_client_with_network.get("/v1/training/params").json()["data"]
         assert data["optimizer_type"] == "SGD"
+
+    # CAN-011 (Phase 6E Sprint A-3): activation_function_name surface.
+    # Lives on the network directly but requires re-running
+    # ``_init_activation_function`` to refresh ``activation_fn`` /
+    # ``activation_fn_no_diff`` from the registry — the runtime PATCH path
+    # goes through ``_write_activation_function_name`` which sets
+    # ``config.activation_function_name`` and re-runs the init routine.
+    def test_update_activation_function_updates_live_network(self, test_client_with_network):
+        """PATCH /v1/training/params applies activation_function_name and re-inits the activation."""
+        response = test_client_with_network.patch(
+            "/v1/training/params",
+            json={"activation_function_name": "ReLU"},
+        )
+        assert response.status_code == 200
+        lifecycle = test_client_with_network.app.state.lifecycle
+        assert lifecycle.network.activation_function_name == "ReLU"
+        # The re-init also refreshes ``activation_fn`` / ``activation_fn_no_diff``
+        # from the registry, so the network is actually using the new function
+        # rather than the surface attribute drifting from the live module.
+        assert lifecycle.network.activation_fn_no_diff is not None
+        assert lifecycle.network.config.activation_function_name == "ReLU"
+
+    def test_update_activation_function_rejects_unsupported(self, test_client_with_network):
+        """Pydantic Literal rejects activation names outside the supported registry."""
+        response = test_client_with_network.patch(
+            "/v1/training/params",
+            json={"activation_function_name": "NotARealActivation"},
+        )
+        assert response.status_code == 422
+
+    def test_update_activation_function_accepts_full_registry(self, test_client_with_network):
+        """Each Literal-allowed activation function is accepted by the API."""
+        for name in (
+            "Identity", "Tanh", "Sigmoid", "ReLU", "LeakyReLU", "ELU", "SELU", "GELU",
+            "Softmax", "Softplus", "Hardtanh", "Softshrink", "Tanhshrink",
+            "tanh", "sigmoid", "relu",
+        ):
+            response = test_client_with_network.patch(
+                "/v1/training/params",
+                json={"activation_function_name": name},
+            )
+            assert response.status_code == 200, f"PATCH rejected supported activation {name!r}"
+
+    def test_get_training_params_includes_activation_function(self, test_client_with_network):
+        """GET surfaces activation_function_name so UI clients can reconcile after reconnect."""
+        response = test_client_with_network.get("/v1/training/params")
+        assert response.status_code == 200
+        data = response.json()["data"]
+        assert "activation_function_name" in data
+        assert data["activation_function_name"] in {
+            "Identity", "Tanh", "Sigmoid", "ReLU", "LeakyReLU", "ELU", "SELU", "GELU",
+            "Softmax", "Softplus", "Hardtanh", "Softshrink", "Tanhshrink",
+            "tanh", "sigmoid", "relu",
+        }
+
+    def test_update_activation_function_round_trip(self, test_client_with_network):
+        """PATCH then GET — the activation_function_name round-trips correctly."""
+        test_client_with_network.patch("/v1/training/params", json={"activation_function_name": "GELU"})
+        data = test_client_with_network.get("/v1/training/params").json()["data"]
+        assert data["activation_function_name"] == "GELU"

@@ -114,6 +114,7 @@ from cascor_constants.constants_api.constants_api_defaults import _PROJECT_API_N
 from cascor_constants.constants_api.constants_api_defaults import _PROJECT_API_NETWORK_CANDIDATE_POOL_SIZE_DEFAULT  # noqa: F401
 from cascor_constants.constants_api.constants_api_defaults import _PROJECT_API_NETWORK_CORRELATION_THRESHOLD_DEFAULT  # noqa: F401
 from cascor_constants.constants_api.constants_api_defaults import _PROJECT_API_NETWORK_EPOCHS_MAX_DEFAULT  # noqa: F401
+from cascor_constants.constants_api.constants_api_defaults import _PROJECT_API_NETWORK_ACTIVATION_FUNCTION_DEFAULT  # noqa: F401
 from cascor_constants.constants_api.constants_api_defaults import _PROJECT_API_NETWORK_INIT_OUTPUT_WEIGHTS_DEFAULT  # noqa: F401
 from cascor_constants.constants_api.constants_api_defaults import _PROJECT_API_NETWORK_INPUT_SIZE_DEFAULT  # noqa: F401
 from cascor_constants.constants_api.constants_api_defaults import _PROJECT_API_NETWORK_LEARNING_RATE_DEFAULT  # noqa: F401
