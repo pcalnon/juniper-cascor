@@ -329,6 +329,25 @@ class CascadeHDF5Serializer:
         config_group.attrs["patience"] = network.patience
         config_group.attrs["random_seed"] = network.random_seed
 
+        # CAN-014 (Phase 6E Sprint A-5): persist the runtime-tunable training
+        # params that ``update_params``' whitelist exposes so a snapshot
+        # restore brings back the values the operator actually trained with.
+        # Without this, ``epochs_max`` / ``max_iterations`` / etc. silently
+        # revert to construction-time defaults on restore — defeating the
+        # whole point of the wire-throughs in PRs #157, #158, #162. Each
+        # field is read with ``getattr(..., default)`` so older networks
+        # (or a partially-initialized network from a corner case) still
+        # serialize cleanly. The load path mirrors the same ``getattr``
+        # pattern in ``_load_config_to_network``.
+        config_group.attrs["epochs_max"] = getattr(network, "epochs_max", 0)
+        config_group.attrs["max_iterations"] = getattr(network, "max_iterations", 0)
+        config_group.attrs["output_epochs"] = getattr(network, "output_epochs", 0)
+        config_group.attrs["candidate_patience"] = getattr(network, "candidate_patience", 0)
+        config_group.attrs["candidate_epochs"] = getattr(network, "candidate_epochs", 0)
+        config_group.attrs["convergence_threshold"] = getattr(network, "convergence_threshold", 0.0)
+        config_group.attrs["candidate_convergence_threshold"] = getattr(network, "candidate_convergence_threshold", 0.0)
+        write_str_attr(config_group, "init_output_weights", getattr(network, "init_output_weights", "zero"))
+
         self.logger.debug("CascadeHDF5Serializer: Saved configuration")
 
     def _save_architecture(self, hdf5_file: h5py.File, network) -> None:
@@ -695,6 +714,12 @@ class CascadeHDF5Serializer:
                 if not network:
                     return None
                 self._load_architecture(hdf5_file, network)
+                # CAN-014 (Phase 6E Sprint A-5): restore the runtime-tunable
+                # training params persisted in the ``config`` group so the
+                # rehydrated network actually reflects the values the
+                # operator trained with — not just construction-time
+                # defaults from CascadeCorrelationConfig.
+                self._load_config_to_network(hdf5_file, network)
                 self._load_parameters(hdf5_file, network)
                 self._load_hidden_units(hdf5_file, network)
                 self._load_random_state(hdf5_file, network)
@@ -734,6 +759,59 @@ class CascadeHDF5Serializer:
         network._init_activation_function()
 
         self.logger.debug(f"CascadeHDF5Serializer: Loaded architecture with activation function: {af_name}")
+
+    def _load_config_to_network(self, hdf5_file: h5py.File, network) -> None:
+        """CAN-014 (Phase 6E Sprint A-5): restore runtime-tunable params
+        from the ``config`` HDF5 group onto the live network.
+
+        ``_save_configuration`` persists every field listed in
+        ``update_params``' whitelist. This method restores them, mirrored
+        as direct attributes on ``network`` so subsequent
+        ``get_training_params`` reflects the snapshot rather than
+        whatever ``CascadeCorrelationConfig`` defaults the constructor
+        used.
+
+        Each load is gated on ``is_attr`` so older snapshots that
+        pre-date a given field still load cleanly — the missing field
+        simply falls back to whatever the freshly-constructed network
+        already has. The list of fields here matches
+        ``_save_configuration`` exactly; keep them in sync when adding
+        new tunables.
+        """
+        if "config" not in hdf5_file:
+            return
+        config_group = hdf5_file["config"]
+
+        # Numeric attributes — straight setattr, but only when the field
+        # was actually persisted (older snapshots may be missing some).
+        for key in (
+            "learning_rate",
+            "candidate_learning_rate",
+            "max_hidden_units",
+            "correlation_threshold",
+            "candidate_pool_size",
+            "patience",
+            "epochs_max",
+            "max_iterations",
+            "output_epochs",
+            "candidate_patience",
+            "candidate_epochs",
+            "convergence_threshold",
+            "candidate_convergence_threshold",
+        ):
+            if key in config_group.attrs:
+                value = config_group.attrs[key]
+                # ``getattr`` rather than ``hasattr`` so a freshly-loaded
+                # network missing the attribute still picks up the value
+                # — none of cascor's tunables are read-only properties.
+                setattr(network, key, value)
+
+        # String attribute — ``init_output_weights`` round-trip.
+        if "init_output_weights" in config_group.attrs:
+            value = read_str_attr(config_group, "init_output_weights", getattr(network, "init_output_weights", "zero"))
+            network.init_output_weights = value
+
+        self.logger.debug("CascadeHDF5Serializer: Loaded runtime-tunable params from config group")
 
     def _load_parameters(self, hdf5_file: h5py.File, network) -> None:
         """Load model parameters."""

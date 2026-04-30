@@ -210,6 +210,47 @@ class TestRestoreSnapshot:
             assert body["data"]["snapshot_id"] == "snap-001"
             assert body["data"]["status"] == "restored"
 
+    def test_restore_snapshot_surfaces_post_restore_training_params(self, client):
+        """CAN-014 (Phase 6E Sprint A-5): restore response includes the
+        post-restore ``training_params`` so a tuning UI can reconcile
+        local state without an extra ``GET /v1/training/params`` call.
+
+        Mocks ``get_training_params`` to a known shape (the test client
+        starts without a network, so the real call would raise) — the
+        contract under test is "the route surfaces whatever
+        get_training_params returns under the ``training_params`` key,"
+        not the precise field set, which is owned by the lifecycle."""
+        fake_params = {
+            "learning_rate": 0.005,
+            "max_hidden_units": 25,
+            "epochs_max": 1234,
+            "max_iterations": 78,
+            "output_epochs": 66,
+            "init_output_weights": "random",
+            "optimizer_type": "AdamW",
+            "activation_function_name": "ReLU",
+        }
+        with patch.object(client.app.state.lifecycle, "load_snapshot", return_value=True), patch.object(client.app.state.lifecycle, "get_training_params", return_value=fake_params):
+            response = client.post("/v1/snapshots/snap-with-params/restore")
+            assert response.status_code == 200
+            body = response.json()
+            assert "training_params" in body["data"], "restore response is missing training_params (CAN-014 contract)"
+            assert body["data"]["training_params"] == fake_params
+
+    def test_restore_snapshot_falls_back_when_get_training_params_fails(self, client):
+        """If ``get_training_params`` raises after a successful restore
+        the route still returns 200 with the minimal payload — surfacing
+        params is best-effort and must not undo a successful load."""
+        with patch.object(client.app.state.lifecycle, "load_snapshot", return_value=True), patch.object(client.app.state.lifecycle, "get_training_params", side_effect=RuntimeError("boom")):
+            response = client.post("/v1/snapshots/snap-fallback/restore")
+            assert response.status_code == 200
+            body = response.json()
+            assert body["data"]["snapshot_id"] == "snap-fallback"
+            assert body["data"]["status"] == "restored"
+            # Defensive fallback: training_params is omitted rather than
+            # the whole restore appearing failed.
+            assert "training_params" not in body["data"]
+
     def test_restore_snapshot_not_found_returns_404(self, client):
         """restore_snapshot should return 404 when snapshot is not found."""
         with patch.object(client.app.state.lifecycle, "load_snapshot", return_value=False):

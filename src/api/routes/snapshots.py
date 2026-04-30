@@ -88,7 +88,15 @@ async def get_snapshot(request: Request, snapshot_id: str) -> dict:
 
 @router.post("/{snapshot_id}/restore")
 async def restore_snapshot(request: Request, snapshot_id: str) -> dict:
-    """Restore a network from a snapshot."""
+    """Restore a network from a snapshot.
+
+    CAN-014 (Phase 6E Sprint A-5): the response now includes the
+    post-restore ``training_params`` so the client can verify the
+    round-trip without making a second ``GET /v1/training/params``
+    call. The serializer round-trips every field listed in
+    ``update_params``' whitelist (PR #163 / CAN-014); surfacing them
+    here lets a tuning UI immediately reconcile its local state.
+    """
     _validate_snapshot_id(snapshot_id, client=request.client.host if request.client else None)
     lifecycle = _get_lifecycle(request)
     # PERF-CC-01: serializer.load_network is synchronous HDF5 I/O. Run it
@@ -97,4 +105,18 @@ async def restore_snapshot(request: Request, snapshot_id: str) -> dict:
     success = await asyncio.to_thread(lifecycle.load_snapshot, snapshot_id)
     if not success:
         raise HTTPException(status_code=404, detail=f"Snapshot '{snapshot_id}' not found or failed to load")
-    return success_response({"snapshot_id": snapshot_id, "status": "restored"})
+    # ``get_training_params`` is cheap (synchronous attribute reads under
+    # the training lock) and it would be surprising to surface restore
+    # without surfacing what the client actually got back.
+    try:
+        params = lifecycle.get_training_params()
+    except Exception:
+        # Defensive — if the params extraction fails, the restore itself
+        # already succeeded; fall back to the original minimal response
+        # rather than making the round-trip look failed.
+        logger.exception("restore_snapshot: get_training_params failed after successful restore")
+        params = None
+    payload: dict = {"snapshot_id": snapshot_id, "status": "restored"}
+    if params is not None:
+        payload["training_params"] = params
+    return success_response(payload)
