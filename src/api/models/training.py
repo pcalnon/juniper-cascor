@@ -57,6 +57,11 @@ class TrainingParams(BaseModel):
     candidate_convergence_threshold: Optional[float] = Field(None, gt=0, description="Minimum loss improvement for candidate training patience")
     candidate_patience: Optional[int] = Field(None, ge=1, le=100_000, description="Candidate training patience epochs")
     candidate_epochs: Optional[int] = Field(None, ge=1, le=1_000_000, description="Number of epochs for candidate training")
+    # CAS-002 (Phase 6E Sprint A-1): per-output-training-phase epoch budget,
+    # distinct from the global ``epochs_max``. The network already exposes
+    # ``self.output_epochs`` and consumes ``self.config.output_epochs`` at
+    # construction; this surfaces it on the start-of-training override surface.
+    output_epochs: Optional[int] = Field(None, ge=1, le=1_000_000, description="Per-output-training-phase epoch budget (separate from epochs_max)")
     init_output_weights: Optional[Literal["zero", "random"]] = Field(None, description="Initialization mode for new hidden unit output weights")
 
 
@@ -94,4 +99,6 @@ class TrainingParamUpdateRequest(BaseModel):
     candidate_convergence_threshold: Optional[float] = Field(None, gt=0, description="Minimum loss improvement for candidate training patience")
     candidate_patience: Optional[int] = Field(None, ge=1, description="Candidate training early stopping patience epochs")
     candidate_epochs: Optional[int] = Field(None, ge=1, description="Number of epochs for candidate training")
+    # CAS-002 (Phase 6E Sprint A-1): runtime-patchable counterpart to TrainingParams.output_epochs.
+    output_epochs: Optional[int] = Field(None, ge=1, description="Per-output-training-phase epoch budget (separate from epochs_max)")
     init_output_weights: Optional[Literal["zero", "random"]] = Field(None, description="Initialization mode for new hidden unit output weights")

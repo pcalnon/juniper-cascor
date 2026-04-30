@@ -105,3 +105,38 @@ class TestUpdateTrainingParams:
             json={"init_output_weights": "invalid"},
         )
         assert response.status_code == 422
+
+    # CAS-002 (Phase 6E Sprint A-1): output_epochs is a per-output-training-phase
+    # epoch budget, distinct from the global ``epochs_max``. The network already
+    # exposes ``self.output_epochs``; this PR surfaces it on the param-update
+    # surface (TrainingParamUpdateRequest) and the get/set lifecycle path.
+    def test_update_output_epochs_updates_live_network(self, test_client_with_network):
+        """PATCH /v1/training/params applies output_epochs to the live network."""
+        response = test_client_with_network.patch(
+            "/v1/training/params",
+            json={"output_epochs": 250},
+        )
+        assert response.status_code == 200
+        lifecycle = test_client_with_network.app.state.lifecycle
+        assert lifecycle.network.output_epochs == 250
+
+    def test_update_output_epochs_rejects_non_positive(self, test_client_with_network):
+        """PATCH /v1/training/params enforces output_epochs >= 1 (matches the
+        Pydantic validator on TrainingParamUpdateRequest)."""
+        response = test_client_with_network.patch(
+            "/v1/training/params",
+            json={"output_epochs": 0},
+        )
+        assert response.status_code == 422
+
+    def test_get_training_params_includes_output_epochs(self, test_client_with_network):
+        """GET /v1/training/params returns output_epochs alongside the other fields,
+        so a reconnecting client can reconcile UI state without falling back to
+        stale defaults."""
+        response = test_client_with_network.get("/v1/training/params")
+        assert response.status_code == 200
+        data = response.json()["data"]
+        assert "output_epochs" in data
+        # Live network has a non-zero default — verify it's a positive int.
+        assert isinstance(data["output_epochs"], int)
+        assert data["output_epochs"] >= 1
