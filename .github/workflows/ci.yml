@@ -489,8 +489,10 @@ jobs:
           # Create requirements from pyproject.toml deps for auditing
           pip install torch numpy h5py pyyaml matplotlib
           pip freeze > reports/security/pip-freeze.txt
-          # CRIT-005: Fail on high/critical vulnerabilities instead of just warning
-          pip-audit -r reports/security/pip-freeze.txt --strict --desc on \
+          # CRIT-005: Fail on high/critical vulnerabilities instead of just warning.
+          # --ignore-vuln CVE-2026-3219: pip 26.0.1 on the runner image has
+          # no fix available as of 2026-04-29.
+          pip-audit -r reports/security/pip-freeze.txt --strict --desc on --ignore-vuln CVE-2026-3219 \
             || (echo "::error::Critical/High vulnerabilities found in dependencies" && exit 1)
 
       - name: Upload Security Reports
