@@ -669,6 +669,15 @@ class TrainingLifecycleManager:
     # Training control
     # ------------------------------------------------------------------
 
+    # Network.fit()'s narrow signature — anything outside this set raises
+    # TypeError if passed to fit(**kwargs). TrainingParams is intentionally
+    # broader (covers every runtime-tunable param), so start_training has
+    # to split the request body into "fit-shaped" and "network-attribute"
+    # kwargs and route them through different paths. See
+    # juniper-ml/notes/CASCOR_FIT_KWARGS_LATENT_BUG.md for the full trace
+    # and rationale (Option 1 — filter at the start_training boundary).
+    _FIT_KWARGS: frozenset = frozenset({"max_epochs", "epochs", "max_iterations", "early_stopping"})
+
     def start_training(
         self,
         x: Optional[torch.Tensor] = None,
@@ -684,7 +693,13 @@ class TrainingLifecycleManager:
             y: Training targets tensor
             x_val: Validation features
             y_val: Validation targets
-            **kwargs: Additional kwargs passed to network.fit()
+            **kwargs: TrainingParams body. Fields in ``_FIT_KWARGS`` are
+                forwarded to ``network.fit``; everything else is applied
+                in-place via ``update_params`` so the next fit pass sees
+                the new values. Unknown keys (not in fit and not in
+                ``update_params``' whitelist) raise immediately so a
+                typo at the API boundary fails loud rather than getting
+                swallowed on the background thread.
 
         Returns:
             Status dictionary
@@ -712,7 +727,20 @@ class TrainingLifecycleManager:
             if self._executor is None:
                 self._executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="cascor-train")
 
-            self._training_future = self._executor.submit(self._run_training, self._train_x, self._train_y, self._val_x, self._val_y, **kwargs)
+            fit_kwargs = {k: v for k, v in kwargs.items() if k in self._FIT_KWARGS}
+            network_kwargs = {k: v for k, v in kwargs.items() if k not in self._FIT_KWARGS and v is not None}
+
+            # Apply network-attribute kwargs in-place BEFORE submitting the
+            # training future so the next fit pass observes the new values.
+            # ``_apply_params_unlocked`` shares the same whitelist + atomic-
+            # rollback path as ``update_params``; calling it here while we
+            # hold ``_training_lock`` avoids re-entering the non-reentrant
+            # lock and avoids the race where the background thread could
+            # start fit() before update_params lands.
+            if network_kwargs:
+                self._apply_params_unlocked(network_kwargs)
+
+            self._training_future = self._executor.submit(self._run_training, self._train_x, self._train_y, self._val_x, self._val_y, **fit_kwargs)
 
         return {"status": "training_started", "timestamp": time.time()}
 
@@ -983,7 +1011,71 @@ class TrainingLifecycleManager:
                         # back the rest — best-effort consistency.
                         self.logger.exception("update_params rollback: revert of %s failed", key)
                 raise
-            return self.get_training_params()
+            return self._apply_params_unlocked(params)
+
+    def _apply_params_unlocked(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Apply runtime params assuming the caller already holds ``_training_lock``.
+
+        Internal helper extracted from ``update_params`` so that
+        ``start_training`` can route TrainingParams body fields through the
+        same whitelist + atomic-rollback path without re-entering the
+        non-reentrant ``_training_lock`` (see CASCOR_FIT_KWARGS_LATENT_BUG.md).
+        """
+        if self.network is None:
+            raise ValueError("No network exists — create a network first")
+        updatable_keys = {
+            "learning_rate",
+            "candidate_learning_rate",
+            "correlation_threshold",
+            "candidate_pool_size",
+            "max_hidden_units",
+            "epochs_max",
+            "max_iterations",
+            "patience",
+            "convergence_threshold",
+            "candidate_convergence_threshold",
+            "candidate_patience",
+            "candidate_epochs",
+            "output_epochs",  # CAS-002 (Phase 6E Sprint A-1)
+            "init_output_weights",
+            "optimizer_type",  # CAN-010 / ENH-006 (Phase 6E Sprint A-2) — nested setter
+        }
+        # Plain setattr targets — keys that map directly to network attributes.
+        simple_keys = updatable_keys - {"optimizer_type"}
+        applicable = {k: v for k, v in params.items() if k in simple_keys and hasattr(self.network, k)}
+        old_values = {k: getattr(self.network, k) for k in applicable}
+
+        # CAN-010 / ENH-006: ``optimizer_type`` lives at
+        # ``self.network.config.optimizer_config.optimizer_type``, not on
+        # the network directly. Treated separately so the rollback path
+        # below still works through the same revert mechanism.
+        optimizer_pending = "optimizer_type" in params and params["optimizer_type"] is not None
+        old_optimizer_type = _read_optimizer_type(self.network) if optimizer_pending else None
+
+        applied: list[str] = []
+        try:
+            for key, value in applicable.items():
+                setattr(self.network, key, value)
+                applied.append(key)
+            if optimizer_pending:
+                _write_optimizer_type(self.network, params["optimizer_type"])
+                applied.append("optimizer_type")
+        except Exception:
+            # GAP-WS-28: revert any partial application before propagating.
+            # CAN-010 / ENH-006 (A-2): optimizer_type goes through the
+            # nested setter, so the revert needs to mirror the apply path.
+            for key in reversed(applied):
+                try:
+                    if key == "optimizer_type":
+                        _write_optimizer_type(self.network, old_optimizer_type)
+                    else:
+                        setattr(self.network, key, old_values[key])
+                except Exception:
+                    # If revert itself raises, log and continue rolling
+                    # back the rest — best-effort consistency.
+                    self.logger.exception("update_params rollback: revert of %s failed", key)
+            raise
+        return self.get_training_params()
 
     # ------------------------------------------------------------------
     # Topology & statistics
