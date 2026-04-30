@@ -271,5 +271,142 @@ class TestConfigSerialization:
         assert loaded.max_hidden_units == 10
 
 
+class TestPhase6EA5SnapshotRoundTrip:
+    """Phase 6E Sprint A-5 (CAN-014): runtime-tunable training params
+    must survive snapshot save → load.
+
+    Pre-A-5, the serializer persisted ``learning_rate`` /
+    ``candidate_learning_rate`` / ``max_hidden_units`` / etc., but the
+    fields wired through the API surface in PRs #157 / #158 / #162
+    (``output_epochs``, ``optimizer_type``, ``activation_function_name``)
+    plus a handful of older tunables (``epochs_max``, ``max_iterations``,
+    ``candidate_patience``, ``candidate_epochs``,
+    ``convergence_threshold``, ``candidate_convergence_threshold``,
+    ``init_output_weights``) were silently dropped on load — the
+    rehydrated network reverted to construction-time defaults from
+    ``CascadeCorrelationConfig``.
+
+    These tests pin the contract: every field listed in
+    ``update_params``' whitelist round-trips cleanly through
+    ``save_network`` → ``load_network``.
+    """
+
+    def test_epochs_max_roundtrip(self, serializer, temp_file):
+        config = CascadeCorrelationConfig.create_simple_config(input_size=2, output_size=1, max_hidden_units=3, epochs_max=777)
+        network = CascadeCorrelationNetwork(config=config)
+        serializer.save_network(network, temp_file)
+        loaded = serializer.load_network(temp_file, CascadeCorrelationNetwork)
+        assert loaded.epochs_max == 777
+
+    def test_max_iterations_roundtrip(self, serializer, temp_file):
+        config = CascadeCorrelationConfig.create_simple_config(input_size=2, output_size=1, max_hidden_units=3, max_iterations=42)
+        network = CascadeCorrelationNetwork(config=config)
+        serializer.save_network(network, temp_file)
+        loaded = serializer.load_network(temp_file, CascadeCorrelationNetwork)
+        assert loaded.max_iterations == 42
+
+    def test_output_epochs_roundtrip(self, serializer, temp_file):
+        config = CascadeCorrelationConfig.create_simple_config(input_size=2, output_size=1, max_hidden_units=3, output_epochs=99)
+        network = CascadeCorrelationNetwork(config=config)
+        serializer.save_network(network, temp_file)
+        loaded = serializer.load_network(temp_file, CascadeCorrelationNetwork)
+        assert loaded.output_epochs == 99
+
+    def test_candidate_patience_roundtrip(self, serializer, temp_file):
+        config = CascadeCorrelationConfig.create_simple_config(input_size=2, output_size=1, max_hidden_units=3, candidate_patience=17)
+        network = CascadeCorrelationNetwork(config=config)
+        serializer.save_network(network, temp_file)
+        loaded = serializer.load_network(temp_file, CascadeCorrelationNetwork)
+        assert loaded.candidate_patience == 17
+
+    def test_candidate_epochs_roundtrip(self, serializer, temp_file):
+        config = CascadeCorrelationConfig.create_simple_config(input_size=2, output_size=1, max_hidden_units=3, candidate_epochs=33)
+        network = CascadeCorrelationNetwork(config=config)
+        serializer.save_network(network, temp_file)
+        loaded = serializer.load_network(temp_file, CascadeCorrelationNetwork)
+        assert loaded.candidate_epochs == 33
+
+    def test_convergence_threshold_roundtrip(self, serializer, temp_file):
+        config = CascadeCorrelationConfig.create_simple_config(input_size=2, output_size=1, max_hidden_units=3, convergence_threshold=0.0042)
+        network = CascadeCorrelationNetwork(config=config)
+        serializer.save_network(network, temp_file)
+        loaded = serializer.load_network(temp_file, CascadeCorrelationNetwork)
+        assert loaded.convergence_threshold == pytest.approx(0.0042)
+
+    def test_candidate_convergence_threshold_roundtrip(self, serializer, temp_file):
+        config = CascadeCorrelationConfig.create_simple_config(input_size=2, output_size=1, max_hidden_units=3, candidate_convergence_threshold=0.0033)
+        network = CascadeCorrelationNetwork(config=config)
+        serializer.save_network(network, temp_file)
+        loaded = serializer.load_network(temp_file, CascadeCorrelationNetwork)
+        assert loaded.candidate_convergence_threshold == pytest.approx(0.0033)
+
+    def test_init_output_weights_roundtrip(self, serializer, temp_file):
+        config = CascadeCorrelationConfig.create_simple_config(input_size=2, output_size=1, max_hidden_units=3, init_output_weights="random")
+        network = CascadeCorrelationNetwork(config=config)
+        serializer.save_network(network, temp_file)
+        loaded = serializer.load_network(temp_file, CascadeCorrelationNetwork)
+        assert loaded.init_output_weights == "random"
+
+    def test_full_tunable_set_roundtrip(self, serializer, temp_file):
+        """Every newly-persisted field at once — guards against any single
+        field shadowing another (e.g. a name collision between an arch
+        attr and a config attr) during load."""
+        config = CascadeCorrelationConfig.create_simple_config(
+            input_size=2,
+            output_size=1,
+            max_hidden_units=5,
+            epochs_max=1234,
+            max_iterations=78,
+            output_epochs=66,
+            candidate_patience=21,
+            candidate_epochs=55,
+            convergence_threshold=0.0011,
+            candidate_convergence_threshold=0.0012,
+            init_output_weights="random",
+        )
+        network = CascadeCorrelationNetwork(config=config)
+        serializer.save_network(network, temp_file)
+        loaded = serializer.load_network(temp_file, CascadeCorrelationNetwork)
+        assert loaded.epochs_max == 1234
+        assert loaded.max_iterations == 78
+        assert loaded.output_epochs == 66
+        assert loaded.candidate_patience == 21
+        assert loaded.candidate_epochs == 55
+        assert loaded.convergence_threshold == pytest.approx(0.0011)
+        assert loaded.candidate_convergence_threshold == pytest.approx(0.0012)
+        assert loaded.init_output_weights == "random"
+
+    def test_load_tolerates_legacy_snapshot_missing_new_fields(self, serializer, simple_network, temp_file):
+        """A snapshot that pre-dates the A-5 expansion (no new attrs in
+        the config group) must still load — the missing fields fall
+        back to whatever the freshly-constructed network already has,
+        rather than crashing on a missing-key access. Simulate by
+        deleting the new attrs after save."""
+        import h5py
+
+        serializer.save_network(simple_network, temp_file)
+        # Strip the A-5-added attrs to simulate an older snapshot.
+        with h5py.File(temp_file, "r+") as f:
+            for key in (
+                "epochs_max",
+                "max_iterations",
+                "output_epochs",
+                "candidate_patience",
+                "candidate_epochs",
+                "convergence_threshold",
+                "candidate_convergence_threshold",
+                "init_output_weights",
+            ):
+                if key in f["config"].attrs:
+                    del f["config"].attrs[key]
+        # Load should still succeed — missing fields just don't get
+        # re-applied (the constructor's defaults stand).
+        loaded = serializer.load_network(temp_file, CascadeCorrelationNetwork)
+        assert loaded is not None
+        # Non-A-5 fields still round-trip (the rest of the config block
+        # was untouched).
+        assert loaded.learning_rate == simple_network.learning_rate
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
