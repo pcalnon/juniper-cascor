@@ -37,6 +37,15 @@ class NetworkCreateRequest(BaseModel):
     epochs_max: int = Field(_PROJECT_API_NETWORK_EPOCHS_MAX_DEFAULT, ge=1)
     max_iterations: int = Field(_PROJECT_API_NETWORK_MAX_ITERATIONS_DEFAULT, ge=1, description="Maximum cascade growth iterations")
     init_output_weights: Literal["zero", "random"] = Field(_PROJECT_API_NETWORK_INIT_OUTPUT_WEIGHTS_DEFAULT, description="Initialization mode for new hidden unit output weights")
+    # CAN-010 / ENH-006 (Phase 6E Sprint A-2): output-layer optimizer.
+    # The full registry lives in ``cascade_correlation.py::_create_optimizer``
+    # — duplicating it as a Literal here keeps the API surface explicit and
+    # gives clients a 422 instead of a runtime warning when they ask for an
+    # unsupported optimizer.
+    optimizer_type: Literal[
+        "Adam", "AdamW", "SGD", "RMSprop", "NAdam", "RAdam", "Adamax",
+        "Adagrad", "Adadelta", "Adafactor", "ASGD", "LBFGS", "Rprop", "Muon",
+    ] = Field("Adam", description="Output-layer optimizer (defaults to Adam)")
 
 
 class NetworkInfo(BaseModel):

@@ -167,6 +167,14 @@ class CascadeCorrelationConfig:
         random_value_scale: float = _CASCADE_CORRELATION_NETWORK_RANDOM_VALUE_SCALE,
         # Output weight initialization
         init_output_weights: str = _CASCADE_CORRELATION_NETWORK_INIT_OUTPUT_WEIGHTS,
+        # CAN-010 / ENH-006 (Phase 6E Sprint A-2): output-layer optimizer
+        # type. Mirrors to ``self.optimizer_config.optimizer_type`` so the
+        # existing ``_create_optimizer`` registry dispatch picks it up at
+        # the next output-training pass. Validation against the registry
+        # happens inside ``_create_optimizer`` (warns + falls back to
+        # "Adam" for unknown values). Pydantic Literal at the API boundary
+        # already restricts the wire to the supported set.
+        optimizer_type: str = "Adam",
         # Logging configuration
         log_config: LogConfig = None,
         log_file_name: str = _CASCADE_CORRELATION_NETWORK_LOG_FILE_NAME,
@@ -283,8 +291,11 @@ class CascadeCorrelationConfig:
         # Snapshot directory
         self.cascade_correlation_network_snapshots_dir = cascade_correlation_network_snapshots_dir
 
-        # Optimizer configuration
-        self.optimizer_config = OptimizerConfig(learning_rate=learning_rate)
+        # Optimizer configuration. CAN-010 / ENH-006 (A-2): forward
+        # ``optimizer_type`` from the constructor kwargs so creation-time
+        # selection (POST /v1/network with ``optimizer_type``) and
+        # start-time override (TrainingParams) both reach the registry.
+        self.optimizer_config = OptimizerConfig(learning_rate=learning_rate, optimizer_type=optimizer_type)
 
         # UUID
         self.uuid = uuid
