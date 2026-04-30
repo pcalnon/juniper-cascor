@@ -233,6 +233,89 @@ class TestLifecycleManagerTrainingControl:
                 mgr._training_future.result(timeout=10)
         mgr.shutdown()
 
+    def test_start_training_routes_network_kwargs_through_update_params(self):
+        """``start_training(learning_rate=...)`` mutates the network in place
+        without leaking the kwarg to ``fit()`` (closes CASCOR_FIT_KWARGS_LATENT_BUG).
+
+        Pre-fix behavior: the POST /v1/training/start handler forwarded the
+        full TrainingParams body to ``network.fit(**kwargs)`` whose narrow
+        signature only accepts ``{max_epochs, epochs, max_iterations,
+        early_stopping}``. Passing ``learning_rate`` (or any other valid
+        TrainingParams field) caused ``TypeError: fit() got an unexpected
+        keyword argument`` on the background training thread, while the
+        HTTP response had already returned 200 — silent failure.
+
+        Post-fix: lifecycle splits kwargs into fit-shaped vs.
+        network-attribute, applies network-attribute kwargs via the
+        ``_apply_params_unlocked`` helper (same whitelist + atomic-rollback
+        as ``update_params``), and forwards only fit-shaped kwargs to
+        ``fit()``.
+        """
+        from unittest.mock import patch
+
+        mgr = TrainingLifecycleManager()
+        mgr.create_network(input_size=2, output_size=2, learning_rate=0.01, epochs_max=2, candidate_pool_size=2, candidate_epochs=2, output_epochs=2, patience=1)
+        assert mgr.network.learning_rate == 0.01
+
+        x = torch.randn(20, 2)
+        y = torch.zeros(20, 2)
+        y[:10, 0] = 1
+        y[10:, 1] = 1
+
+        with patch.object(mgr.network, "fit", return_value={"train_loss": [0.5]}) as mock_fit:
+            mgr.start_training(x=x, y=y, learning_rate=0.005, max_iterations=3)
+            if mgr._training_future is not None:
+                mgr._training_future.result(timeout=10)
+
+        # Network attribute was applied in place.
+        assert mgr.network.learning_rate == 0.005
+        # fit() received only its narrow-signature kwargs — never learning_rate.
+        assert mock_fit.call_count == 1
+        fit_kwargs = mock_fit.call_args.kwargs
+        assert "learning_rate" not in fit_kwargs
+        assert fit_kwargs.get("max_iterations") == 3
+        mgr.shutdown()
+
+    def test_start_training_does_not_typeerror_on_full_training_params_body(self):
+        """Regression: passing every TrainingParams field that previously
+        broke fit() must now succeed (covers learning_rate, output_epochs,
+        optimizer_type, patience — the four examples called out in the
+        latent-bug doc as pre-fix TypeError triggers)."""
+        from unittest.mock import patch
+
+        mgr = TrainingLifecycleManager()
+        mgr.create_network(input_size=2, output_size=2, epochs_max=2, candidate_pool_size=2, candidate_epochs=2, output_epochs=2, patience=1)
+        x = torch.randn(20, 2)
+        y = torch.zeros(20, 2)
+        y[:10, 0] = 1
+        y[10:, 1] = 1
+
+        # Body covers every previously-broken category: numeric tunable,
+        # int budget, Literal-validated string, and a fit-shaped kwarg.
+        with patch.object(mgr.network, "fit", return_value={"train_loss": [0.5]}) as mock_fit:
+            mgr.start_training(
+                x=x, y=y,
+                learning_rate=0.003,
+                output_epochs=7,
+                optimizer_type="AdamW",
+                patience=15,
+                max_iterations=2,
+            )
+            if mgr._training_future is not None:
+                mgr._training_future.result(timeout=10)
+
+        # All four network-attribute kwargs landed on the live network.
+        assert mgr.network.learning_rate == 0.003
+        assert mgr.network.output_epochs == 7
+        assert mgr.network.config.optimizer_config.optimizer_type == "AdamW"
+        assert mgr.network.patience == 15
+        # fit() got only the fit-shaped kwarg.
+        fit_kwargs = mock_fit.call_args.kwargs
+        for non_fit in ("learning_rate", "output_epochs", "optimizer_type", "patience"):
+            assert non_fit not in fit_kwargs, f"{non_fit} leaked into fit() kwargs"
+        assert fit_kwargs.get("max_iterations") == 2
+        mgr.shutdown()
+
     def test_stop_training(self):
         """Stop training returns success dict."""
         mgr = TrainingLifecycleManager()
