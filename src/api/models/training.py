@@ -83,6 +83,14 @@ class TrainingParams(BaseModel):
         "Softmax", "Softplus", "Hardtanh", "Softshrink", "Tanhshrink",
         "tanh", "sigmoid", "relu",
     ]] = Field(None, description="Hidden-unit activation function override")
+    # CAS-006 (Phase 6E Sprint A-4): auto-snap-best toggle. When True, the
+    # lifecycle subscribes to the training monitor's epoch_end event and
+    # saves an HDF5 snapshot every time the (validation) accuracy beats
+    # the best-seen-so-far for the current run, gated by
+    # ``auto_snap_min_epochs`` to suppress noise from the early epochs of
+    # training when the metric is volatile.
+    auto_snap_best: Optional[bool] = Field(None, description="Auto-save a snapshot whenever the model beats its best (validation) accuracy")
+    auto_snap_min_epochs: Optional[int] = Field(None, ge=0, le=1_000_000, description="Suppress auto-snap until this many epochs have elapsed (default 50)")
 
 
 class TrainingStartRequest(BaseModel):
@@ -133,3 +141,6 @@ class TrainingParamUpdateRequest(BaseModel):
         "Softmax", "Softplus", "Hardtanh", "Softshrink", "Tanhshrink",
         "tanh", "sigmoid", "relu",
     ]] = Field(None, description="Hidden-unit activation function override")
+    # CAS-006 (A-4): runtime-patchable counterparts to TrainingParams.auto_snap_*.
+    auto_snap_best: Optional[bool] = Field(None, description="Auto-save a snapshot whenever the model beats its best (validation) accuracy")
+    auto_snap_min_epochs: Optional[int] = Field(None, ge=0, le=1_000_000, description="Suppress auto-snap until this many epochs have elapsed")

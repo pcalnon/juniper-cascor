@@ -248,3 +248,215 @@ class TestUpdateTrainingParams:
         test_client_with_network.patch("/v1/training/params", json={"activation_function_name": "GELU"})
         data = test_client_with_network.get("/v1/training/params").json()["data"]
         assert data["activation_function_name"] == "GELU"
+
+    # CAS-006 (Phase 6E Sprint A-4): auto_snap_best is a lifecycle-level
+    # toggle (not a network attribute). Runtime PATCH lands on
+    # ``self._auto_snap_best`` / ``self._auto_snap_min_epochs`` on the
+    # lifecycle manager, and ``get_training_params`` surfaces the
+    # current values. The functional behavior — the epoch_end callback
+    # actually saving a snapshot when accuracy beats the best — is
+    # exercised by ``TestAutoSnapBestCallback`` further down.
+    def test_update_auto_snap_best_updates_lifecycle_flag(self, test_client_with_network):
+        """PATCH /v1/training/params toggles auto_snap_best on the lifecycle."""
+        response = test_client_with_network.patch(
+            "/v1/training/params",
+            json={"auto_snap_best": True},
+        )
+        assert response.status_code == 200
+        lifecycle = test_client_with_network.app.state.lifecycle
+        assert lifecycle._auto_snap_best is True
+
+    def test_update_auto_snap_min_epochs_updates_lifecycle(self, test_client_with_network):
+        """PATCH /v1/training/params updates auto_snap_min_epochs on the lifecycle."""
+        response = test_client_with_network.patch(
+            "/v1/training/params",
+            json={"auto_snap_min_epochs": 200},
+        )
+        assert response.status_code == 200
+        lifecycle = test_client_with_network.app.state.lifecycle
+        assert lifecycle._auto_snap_min_epochs == 200
+
+    def test_update_auto_snap_min_epochs_rejects_negative(self, test_client_with_network):
+        """PATCH /v1/training/params enforces ``auto_snap_min_epochs >= 0``."""
+        response = test_client_with_network.patch(
+            "/v1/training/params",
+            json={"auto_snap_min_epochs": -1},
+        )
+        assert response.status_code == 422
+
+    def test_get_training_params_includes_auto_snap_fields(self, test_client_with_network):
+        """GET surfaces both auto_snap_* fields so a reconnecting client can reconcile."""
+        response = test_client_with_network.get("/v1/training/params")
+        assert response.status_code == 200
+        data = response.json()["data"]
+        assert "auto_snap_best" in data
+        assert "auto_snap_min_epochs" in data
+        assert isinstance(data["auto_snap_best"], bool)
+        assert isinstance(data["auto_snap_min_epochs"], int)
+        assert data["auto_snap_min_epochs"] >= 0
+
+    def test_update_auto_snap_round_trip(self, test_client_with_network):
+        """PATCH then GET — both auto_snap_* fields round-trip correctly."""
+        test_client_with_network.patch(
+            "/v1/training/params",
+            json={"auto_snap_best": True, "auto_snap_min_epochs": 75},
+        )
+        data = test_client_with_network.get("/v1/training/params").json()["data"]
+        assert data["auto_snap_best"] is True
+        assert data["auto_snap_min_epochs"] == 75
+
+    def test_update_auto_snap_best_resets_metric_tracker_on_toggle_on(self, test_client_with_network):
+        """Toggling auto_snap_best from False -> True resets the best-metric tracker.
+
+        Otherwise a previous run's accuracy ceiling would suppress every
+        snapshot in the new run — an obvious footgun if the user enables
+        the feature mid-session after some earlier experiment.
+        """
+        lifecycle = test_client_with_network.app.state.lifecycle
+        # Simulate a prior run leaving a stale tracker (without disturbing
+        # any lifecycle thread state).
+        with lifecycle._auto_snap_lock:
+            lifecycle._auto_snap_best_metric = 0.95
+        # Toggle on via the API.
+        test_client_with_network.patch("/v1/training/params", json={"auto_snap_best": True})
+        assert lifecycle._auto_snap_best is True
+        assert lifecycle._auto_snap_best_metric is None
+
+
+@pytest.mark.unit
+class TestAutoSnapBestCallback:
+    """Functional tests for the CAS-006 epoch_end callback.
+
+    The route-level tests above cover the wiring (PATCH lands the flag,
+    GET surfaces it, validation rejects bad values). These tests cover
+    the actual behavior: when ``training_monitor.on_epoch_end`` fires,
+    does the lifecycle save a snapshot at the right moments and skip
+    the wrong ones?
+    """
+
+    def test_callback_skips_when_disabled(self):
+        """Default state: feature off → no snapshot saved no matter what."""
+        from unittest.mock import MagicMock
+
+        from api.lifecycle.manager import TrainingLifecycleManager
+
+        mgr = TrainingLifecycleManager()
+        mgr.create_network(input_size=2, output_size=2)
+        mgr.save_snapshot = MagicMock()  # type: ignore[method-assign]
+        # auto_snap_best defaults to False.
+        mgr._maybe_auto_snap_callback(metrics={"validation_accuracy": 0.99}, epoch=1000, loss=0.01, accuracy=0.99)
+        mgr.save_snapshot.assert_not_called()
+        mgr.shutdown()
+
+    def test_callback_skips_during_warmup(self):
+        """Even with feature on, snapshots are suppressed until ``auto_snap_min_epochs`` is reached."""
+        from unittest.mock import MagicMock
+
+        from api.lifecycle.manager import TrainingLifecycleManager
+
+        mgr = TrainingLifecycleManager()
+        mgr.create_network(input_size=2, output_size=2)
+        mgr.save_snapshot = MagicMock()  # type: ignore[method-assign]
+        with mgr._auto_snap_lock:
+            mgr._auto_snap_best = True
+            mgr._auto_snap_min_epochs = 100
+        mgr._maybe_auto_snap_callback(metrics={"validation_accuracy": 0.5}, epoch=10, loss=0.5, accuracy=0.5)
+        mgr._maybe_auto_snap_callback(metrics={"validation_accuracy": 0.9}, epoch=99, loss=0.1, accuracy=0.9)
+        mgr.save_snapshot.assert_not_called()
+        mgr.shutdown()
+
+    def test_callback_saves_on_first_eligible_epoch(self):
+        """First eligible epoch (post-warmup, accuracy > None) saves a snapshot."""
+        from unittest.mock import MagicMock
+
+        from api.lifecycle.manager import TrainingLifecycleManager
+
+        mgr = TrainingLifecycleManager()
+        mgr.create_network(input_size=2, output_size=2)
+        mgr.save_snapshot = MagicMock(return_value={"id": "snap_x"})  # type: ignore[method-assign]
+        with mgr._auto_snap_lock:
+            mgr._auto_snap_best = True
+            mgr._auto_snap_min_epochs = 50
+            mgr._auto_snap_best_metric = None
+        mgr._maybe_auto_snap_callback(metrics={"validation_accuracy": 0.7}, epoch=50, loss=0.3, accuracy=0.6)
+        assert mgr.save_snapshot.call_count == 1
+        # Should track the validation_accuracy, not the (lower) training accuracy.
+        assert mgr._auto_snap_best_metric == 0.7
+        # Description carries the epoch + accuracy so the snapshot list is human-readable.
+        kwargs = mgr.save_snapshot.call_args.kwargs
+        assert "epoch=50" in kwargs.get("description", "")
+        assert "0.700000" in kwargs.get("description", "")
+        mgr.shutdown()
+
+    def test_callback_only_snaps_on_strict_improvement(self):
+        """Tied or worse accuracy after the first save → no additional snapshots."""
+        from unittest.mock import MagicMock
+
+        from api.lifecycle.manager import TrainingLifecycleManager
+
+        mgr = TrainingLifecycleManager()
+        mgr.create_network(input_size=2, output_size=2)
+        mgr.save_snapshot = MagicMock(return_value={"id": "snap_x"})  # type: ignore[method-assign]
+        with mgr._auto_snap_lock:
+            mgr._auto_snap_best = True
+            mgr._auto_snap_min_epochs = 0
+        mgr._maybe_auto_snap_callback(metrics={"validation_accuracy": 0.8}, epoch=10, loss=0.2, accuracy=0.8)
+        mgr._maybe_auto_snap_callback(metrics={"validation_accuracy": 0.8}, epoch=11, loss=0.2, accuracy=0.8)  # tie
+        mgr._maybe_auto_snap_callback(metrics={"validation_accuracy": 0.79}, epoch=12, loss=0.21, accuracy=0.79)  # worse
+        mgr._maybe_auto_snap_callback(metrics={"validation_accuracy": 0.85}, epoch=13, loss=0.15, accuracy=0.85)  # better → snap
+        assert mgr.save_snapshot.call_count == 2
+        assert mgr._auto_snap_best_metric == 0.85
+        mgr.shutdown()
+
+    def test_callback_falls_back_to_training_accuracy_without_validation(self):
+        """When ``validation_accuracy`` is None, the callback uses ``accuracy`` instead."""
+        from unittest.mock import MagicMock
+
+        from api.lifecycle.manager import TrainingLifecycleManager
+
+        mgr = TrainingLifecycleManager()
+        mgr.create_network(input_size=2, output_size=2)
+        mgr.save_snapshot = MagicMock(return_value={"id": "snap_x"})  # type: ignore[method-assign]
+        with mgr._auto_snap_lock:
+            mgr._auto_snap_best = True
+            mgr._auto_snap_min_epochs = 0
+        mgr._maybe_auto_snap_callback(metrics={"validation_accuracy": None}, epoch=5, loss=0.3, accuracy=0.7)
+        assert mgr.save_snapshot.call_count == 1
+        assert mgr._auto_snap_best_metric == 0.7
+        mgr.shutdown()
+
+    def test_callback_swallows_save_snapshot_exceptions(self):
+        """A failing ``save_snapshot`` must not crash the training loop."""
+        from unittest.mock import MagicMock
+
+        from api.lifecycle.manager import TrainingLifecycleManager
+
+        mgr = TrainingLifecycleManager()
+        mgr.create_network(input_size=2, output_size=2)
+        mgr.save_snapshot = MagicMock(side_effect=RuntimeError("disk full"))  # type: ignore[method-assign]
+        with mgr._auto_snap_lock:
+            mgr._auto_snap_best = True
+            mgr._auto_snap_min_epochs = 0
+        # Should NOT raise — the exception is caught and logged.
+        mgr._maybe_auto_snap_callback(metrics={"validation_accuracy": 0.9}, epoch=5, loss=0.1, accuracy=0.9)
+        assert mgr.save_snapshot.call_count == 1
+        mgr.shutdown()
+
+    def test_callback_subscribed_to_epoch_end_event(self):
+        """The callback is registered on ``training_monitor.epoch_end`` at __init__."""
+        from unittest.mock import MagicMock
+
+        from api.lifecycle.manager import TrainingLifecycleManager
+
+        mgr = TrainingLifecycleManager()
+        mgr.create_network(input_size=2, output_size=2)
+        # Stub the actual snapshot so we can observe firing.
+        mgr.save_snapshot = MagicMock(return_value={"id": "snap_x"})  # type: ignore[method-assign]
+        with mgr._auto_snap_lock:
+            mgr._auto_snap_best = True
+            mgr._auto_snap_min_epochs = 0
+        # Trigger the public monitor event — the lifecycle's callback
+        # registration must wire through.
+        mgr.training_monitor.on_epoch_end(epoch=10, loss=0.2, accuracy=0.8, learning_rate=0.01, validation_accuracy=0.85)
+        assert mgr.save_snapshot.call_count == 1
+        mgr.shutdown()
