@@ -127,7 +127,57 @@ class TrainingLifecycleManager:
         self._start_liveness_thread()
         self._register_liveness_monitor_callbacks()
 
+        # CAS-006 (Phase 6E Sprint A-4): auto-snap-best.
+        # Hooks ``training_monitor.epoch_end`` and saves a snapshot every
+        # time (validation) accuracy beats the best-seen-so-far for the
+        # current run. Defaults: feature off, 50-epoch warmup. Both are
+        # exposed via TrainingParams + TrainingParamUpdateRequest and
+        # included in ``updatable_keys`` so users can toggle mid-run.
+        self._auto_snap_best: bool = False
+        self._auto_snap_min_epochs: int = 50
+        self._auto_snap_best_metric: Optional[float] = None
+        self._auto_snap_lock = threading.Lock()
+        self.training_monitor.register_callback("epoch_end", self._maybe_auto_snap_callback)
+
         self.logger.info("TrainingLifecycleManager initialized")
+
+    def _maybe_auto_snap_callback(self, metrics=None, epoch=None, loss=None, accuracy=None, **_kwargs) -> None:
+        """CAS-006 (A-4): epoch_end callback that saves a snapshot when the
+        current (validation) accuracy beats the best-seen-so-far for the
+        current run. No-op when the feature is disabled, when the warmup
+        threshold has not been reached, or when no usable accuracy metric
+        is available.
+
+        Tracks the best metric on the lifecycle (not the network) because
+        a single network instance can be used across multiple training
+        runs; ``start_training`` resets the tracker so each run starts
+        fresh. Prefers ``validation_accuracy`` over ``accuracy`` so the
+        snapshot reflects generalization rather than training-set fit.
+        """
+        with self._auto_snap_lock:
+            if not self._auto_snap_best:
+                return
+            if epoch is None or epoch < self._auto_snap_min_epochs:
+                return
+            current = None
+            if isinstance(metrics, dict):
+                current = metrics.get("validation_accuracy")
+            if current is None:
+                current = accuracy
+            if current is None:
+                return
+            best = self._auto_snap_best_metric
+            if best is not None and current <= best:
+                return
+            self._auto_snap_best_metric = current
+            description = f"auto_snap_best epoch={epoch} accuracy={current:.6f}"
+        # Save outside the auto_snap_lock so a slow filesystem doesn't
+        # serialize the next epoch_end callback. ``save_snapshot`` has
+        # its own internal failure handling.
+        try:
+            self.save_snapshot(description=description)
+        except Exception:
+            self.logger.exception("auto_snap_best: save_snapshot failed (epoch=%s, accuracy=%s)", epoch, current)
 
     def _register_liveness_monitor_callbacks(self) -> None:
         """Bump the heartbeat from every training-monitor event so progress
@@ -724,6 +774,12 @@ class TrainingLifecycleManager:
             self._stop_requested.clear()
             self._pause_event.set()
 
+            # CAS-006 (A-4): each training run starts fresh — we don't want
+            # a snapshot from a previous run's accuracy ceiling to suppress
+            # auto-snaps in this run.
+            with self._auto_snap_lock:
+                self._auto_snap_best_metric = None
+
             if self._executor is None:
                 self._executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="cascor-train")
 
@@ -910,6 +966,12 @@ class TrainingLifecycleManager:
             "optimizer_type": _read_optimizer_type(self.network),
             # CAN-011 (Phase 6E Sprint A-3): hidden-unit activation function.
             "activation_function_name": _read_activation_function_name(self.network),
+            # CAS-006 (Phase 6E Sprint A-4): auto-snap-best lifecycle flags.
+            # These live on the lifecycle (not the network) so a single
+            # network instance can be re-used across runs while the auto-
+            # snap counter resets each ``start_training``.
+            "auto_snap_best": self._auto_snap_best,
+            "auto_snap_min_epochs": self._auto_snap_min_epochs,
         }
 
     def update_params(self, params: Dict[str, Any]) -> Dict[str, Any]:
@@ -942,75 +1004,6 @@ class TrainingLifecycleManager:
                 any partially-applied updates.
         """
         with self._training_lock:
-            if self.network is None:
-                raise ValueError("No network exists — create a network first")
-            updatable_keys = {
-                "learning_rate",
-                "candidate_learning_rate",
-                "correlation_threshold",
-                "candidate_pool_size",
-                "max_hidden_units",
-                "epochs_max",
-                "max_iterations",
-                "patience",
-                "convergence_threshold",
-                "candidate_convergence_threshold",
-                "candidate_patience",
-                "candidate_epochs",
-                "output_epochs",  # CAS-002 (Phase 6E Sprint A-1)
-                "init_output_weights",
-                "optimizer_type",  # CAN-010 / ENH-006 (Phase 6E Sprint A-2) — nested setter
-                "activation_function_name",  # CAN-011 (Phase 6E Sprint A-3) — re-init on swap
-            }
-            # Plain setattr targets — keys that map directly to network attributes.
-            # ``optimizer_type`` and ``activation_function_name`` go through
-            # special-cased setters that touch nested config / re-init paths.
-            nested_keys = {"optimizer_type", "activation_function_name"}
-            simple_keys = updatable_keys - nested_keys
-            applicable = {k: v for k, v in params.items() if k in simple_keys and hasattr(self.network, k)}
-            old_values = {k: getattr(self.network, k) for k in applicable}
-
-            # CAN-010 / ENH-006: ``optimizer_type`` lives at
-            # ``self.network.config.optimizer_config.optimizer_type``, not on
-            # the network directly. Treated separately so the rollback path
-            # below still works through the same revert mechanism.
-            optimizer_pending = "optimizer_type" in params and params["optimizer_type"] is not None
-            old_optimizer_type = _read_optimizer_type(self.network) if optimizer_pending else None
-
-            # CAN-011 (A-3): ``activation_function_name`` requires re-running
-            # ``_init_activation_function`` so ``activation_fn`` picks up the
-            # new mapping. Same revert pattern as optimizer_type.
-            activation_pending = "activation_function_name" in params and params["activation_function_name"] is not None
-            old_activation_function_name = _read_activation_function_name(self.network) if activation_pending else None
-
-            applied: list[str] = []
-            try:
-                for key, value in applicable.items():
-                    setattr(self.network, key, value)
-                    applied.append(key)
-                if optimizer_pending:
-                    _write_optimizer_type(self.network, params["optimizer_type"])
-                    applied.append("optimizer_type")
-                if activation_pending:
-                    _write_activation_function_name(self.network, params["activation_function_name"])
-                    applied.append("activation_function_name")
-            except Exception:
-                # GAP-WS-28: revert any partial application before propagating.
-                # CAN-010 / ENH-006 (A-2) + CAN-011 (A-3): nested setters
-                # need their own revert path — mirror the apply branch.
-                for key in reversed(applied):
-                    try:
-                        if key == "optimizer_type":
-                            _write_optimizer_type(self.network, old_optimizer_type)
-                        elif key == "activation_function_name":
-                            _write_activation_function_name(self.network, old_activation_function_name)
-                        else:
-                            setattr(self.network, key, old_values[key])
-                    except Exception:
-                        # If revert itself raises, log and continue rolling
-                        # back the rest — best-effort consistency.
-                        self.logger.exception("update_params rollback: revert of %s failed", key)
-                raise
             return self._apply_params_unlocked(params)
 
     def _apply_params_unlocked(self, params: Dict[str, Any]) -> Dict[str, Any]:
@@ -1019,7 +1012,25 @@ class TrainingLifecycleManager:
         Internal helper extracted from ``update_params`` so that
         ``start_training`` can route TrainingParams body fields through the
         same whitelist + atomic-rollback path without re-entering the
-        non-reentrant ``_training_lock`` (see CASCOR_FIT_KWARGS_LATENT_BUG.md).
+        non-reentrant ``_training_lock`` (see CASCOR_FIT_KWARGS_LATENT_BUG.md
+        for the full rationale of the split).
+
+        Three storage flavors are supported:
+
+        - **simple_keys** — plain attributes on ``self.network`` set via
+          ``setattr``. The bulk of ``updatable_keys``.
+        - **nested_keys** — fields that live on ``network.config`` or in
+          a sub-config and need a special-cased setter (``optimizer_type``
+          via ``_write_optimizer_type``; ``activation_function_name`` via
+          ``_write_activation_function_name``, which also re-runs
+          ``_init_activation_function`` so ``activation_fn`` actually
+          refreshes from the registry).
+        - **lifecycle_keys** — flags that live on the lifecycle (``self``)
+          rather than the network (``auto_snap_*``).
+
+        All three flavors share the same GAP-WS-28 atomic-rollback contract:
+        if any setter raises, every previously-applied key is reverted to
+        its pre-call value before re-raising.
         """
         if self.network is None:
             raise ValueError("No network exists — create a network first")
@@ -1039,18 +1050,37 @@ class TrainingLifecycleManager:
             "output_epochs",  # CAS-002 (Phase 6E Sprint A-1)
             "init_output_weights",
             "optimizer_type",  # CAN-010 / ENH-006 (Phase 6E Sprint A-2) — nested setter
+            "activation_function_name",  # CAN-011 (Phase 6E Sprint A-3) — re-init on swap
+            "auto_snap_best",  # CAS-006 (Phase 6E Sprint A-4) — lifecycle attribute
+            "auto_snap_min_epochs",  # CAS-006 (Phase 6E Sprint A-4) — lifecycle attribute
         }
-        # Plain setattr targets — keys that map directly to network attributes.
-        simple_keys = updatable_keys - {"optimizer_type"}
+        nested_keys = {"optimizer_type", "activation_function_name"}
+        lifecycle_keys = {"auto_snap_best", "auto_snap_min_epochs"}
+        simple_keys = updatable_keys - nested_keys - lifecycle_keys
         applicable = {k: v for k, v in params.items() if k in simple_keys and hasattr(self.network, k)}
         old_values = {k: getattr(self.network, k) for k in applicable}
 
-        # CAN-010 / ENH-006: ``optimizer_type`` lives at
-        # ``self.network.config.optimizer_config.optimizer_type``, not on
-        # the network directly. Treated separately so the rollback path
-        # below still works through the same revert mechanism.
+        # CAN-010 / ENH-006 (A-2): ``optimizer_type`` lives at
+        # ``self.network.config.optimizer_config.optimizer_type``.
         optimizer_pending = "optimizer_type" in params and params["optimizer_type"] is not None
         old_optimizer_type = _read_optimizer_type(self.network) if optimizer_pending else None
+
+        # CAN-011 (A-3): ``activation_function_name`` requires re-running
+        # ``_init_activation_function`` so ``activation_fn`` picks up the
+        # new mapping.
+        activation_pending = "activation_function_name" in params and params["activation_function_name"] is not None
+        old_activation_function_name = _read_activation_function_name(self.network) if activation_pending else None
+
+        # CAS-006 (A-4): ``auto_snap_*`` live on the lifecycle. Snapshot
+        # the old values (plus the best-metric tracker) so the same
+        # rollback semantics extend to lifecycle storage.
+        auto_snap_pending = {k: params[k] for k in lifecycle_keys if k in params and params[k] is not None}
+        old_lifecycle_values: Dict[str, Any] = {}
+        old_auto_snap_best_metric: Optional[float] = None
+        if auto_snap_pending:
+            with self._auto_snap_lock:
+                old_lifecycle_values = {k: getattr(self, f"_{k}") for k in auto_snap_pending}
+                old_auto_snap_best_metric = self._auto_snap_best_metric
 
         applied: list[str] = []
         try:
@@ -1060,14 +1090,34 @@ class TrainingLifecycleManager:
             if optimizer_pending:
                 _write_optimizer_type(self.network, params["optimizer_type"])
                 applied.append("optimizer_type")
+            if activation_pending:
+                _write_activation_function_name(self.network, params["activation_function_name"])
+                applied.append("activation_function_name")
+            if auto_snap_pending:
+                with self._auto_snap_lock:
+                    for key, value in auto_snap_pending.items():
+                        setattr(self, f"_{key}", value)
+                        applied.append(key)
+                    # Toggling auto_snap_best off-then-on within a run would
+                    # otherwise inherit the prior ceiling. Reset the tracker
+                    # whenever the toggle flips on so the next epoch is
+                    # treated as a fresh baseline.
+                    if "auto_snap_best" in auto_snap_pending and auto_snap_pending["auto_snap_best"] and not old_lifecycle_values.get("auto_snap_best", False):
+                        self._auto_snap_best_metric = None
         except Exception:
             # GAP-WS-28: revert any partial application before propagating.
-            # CAN-010 / ENH-006 (A-2): optimizer_type goes through the
-            # nested setter, so the revert needs to mirror the apply path.
+            # CAN-010 / ENH-006 (A-2) + CAN-011 (A-3) + CAS-006 (A-4): each
+            # flavor has its own revert path — mirror the apply branch.
             for key in reversed(applied):
                 try:
                     if key == "optimizer_type":
                         _write_optimizer_type(self.network, old_optimizer_type)
+                    elif key == "activation_function_name":
+                        _write_activation_function_name(self.network, old_activation_function_name)
+                    elif key in lifecycle_keys:
+                        with self._auto_snap_lock:
+                            setattr(self, f"_{key}", old_lifecycle_values[key])
+                            self._auto_snap_best_metric = old_auto_snap_best_metric
                     else:
                         setattr(self.network, key, old_values[key])
                 except Exception:
