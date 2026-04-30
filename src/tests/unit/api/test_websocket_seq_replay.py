@@ -92,6 +92,96 @@ class TestSequenceNumbers:
 
 
 @pytest.mark.unit
+class TestReplayBufferOverflowAtConfiguredCapacity:
+    """METRICS-MON R3.5 / seed-07: replay-buffer overflow at the production default.
+
+    Pin the eviction contract specifically at the configured capacity
+    (``_JUNIPER_CASCOR_API_WS_REPLAY_BUFFER_SIZE = 1024`` by default in
+    ``api/settings.py``). The existing
+    ``TestReplayBuffer.test_replay_buffer_bounded_to_configured_capacity``
+    covers eviction with ``size=10, iters=20`` — useful for fast unit
+    coverage but doesn't lock in the production default. seed-07 calls
+    out the absence of an N+1-boundary regression at the actual
+    deployed capacity.
+
+    Tests in this class:
+
+      * exactly N+1 broadcasts → buffer length stays at N, oldest
+        evicted, newest retained, **no exception**;
+      * the boundary case (exactly N broadcasts → buffer == N,
+        nothing evicted yet) — sanity for the +1 test;
+      * a stress case (10 × N broadcasts) — confirms no pathological
+        behavior accumulating past the boundary.
+    """
+
+    # Pin at the production default. If the default ever changes the
+    # tests still measure overflow at *whatever the default is* —
+    # ``settings.ws_replay_buffer_size`` is the source of truth.
+    @staticmethod
+    def _default_capacity() -> int:
+        from api.settings import Settings
+
+        return Settings(api_keys=()).ws_replay_buffer_size
+
+    @pytest.mark.asyncio
+    async def test_overflow_by_one_evicts_oldest_keeps_newest_no_exception(self):
+        """N+1 broadcasts at default capacity → buffer length == N; oldest evicted; newest retained."""
+        capacity = self._default_capacity()
+        mgr = WebSocketManager(max_replay_buffer_size=capacity)
+        ws = AsyncMock()
+        await mgr.connect(ws)
+
+        # Drive exactly capacity + 1 broadcasts. If any of these raises,
+        # this test fails — the contract is "no exception at the boundary".
+        for i in range(capacity + 1):
+            await mgr.broadcast({"type": "metrics", "data": {"i": i}})
+
+        # Buffer is bounded at capacity, not capacity+1.
+        assert len(mgr._replay_buffer) == capacity
+        # Oldest message was the very first one (seq=1); it must have been evicted.
+        # The earliest surviving seq is therefore 2.
+        assert mgr._replay_buffer[0]["seq"] == 2
+        # Newest message is the (capacity+1)-th broadcast, seq = capacity + 1.
+        assert mgr._replay_buffer[-1]["seq"] == capacity + 1
+        # Internal monotonic sequence reflects every broadcast, not just buffered ones.
+        assert mgr.current_seq == capacity + 1
+
+    @pytest.mark.asyncio
+    async def test_at_capacity_nothing_evicted_yet(self):
+        """Sanity boundary: exactly N broadcasts → buffer == N, oldest still present."""
+        capacity = self._default_capacity()
+        mgr = WebSocketManager(max_replay_buffer_size=capacity)
+        ws = AsyncMock()
+        await mgr.connect(ws)
+
+        for _ in range(capacity):
+            await mgr.broadcast({"type": "metrics", "data": {}})
+
+        assert len(mgr._replay_buffer) == capacity
+        # Oldest is still seq=1 — eviction has not begun.
+        assert mgr._replay_buffer[0]["seq"] == 1
+        assert mgr._replay_buffer[-1]["seq"] == capacity
+
+    @pytest.mark.asyncio
+    async def test_far_overflow_no_pathological_growth_or_exception(self):
+        """10 × N broadcasts → buffer still bounded at N; latest 10% retained; no exception."""
+        capacity = self._default_capacity()
+        mgr = WebSocketManager(max_replay_buffer_size=capacity)
+        ws = AsyncMock()
+        await mgr.connect(ws)
+
+        total = capacity * 10
+        for _ in range(total):
+            await mgr.broadcast({"type": "metrics", "data": {}})
+
+        assert len(mgr._replay_buffer) == capacity
+        # Earliest surviving seq is total - capacity + 1.
+        assert mgr._replay_buffer[0]["seq"] == total - capacity + 1
+        assert mgr._replay_buffer[-1]["seq"] == total
+        assert mgr.current_seq == total
+
+
+@pytest.mark.unit
 class TestReplayBuffer:
     """Test replay buffer storage and query."""
 
