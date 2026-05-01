@@ -497,3 +497,144 @@ class TestPerfCC01InvariantSource:
         path = Path(__file__).resolve().parents[3] / "api" / "routes" / "snapshots.py"
         source = path.read_text(encoding="utf-8")
         assert "import asyncio" in source
+
+
+class TestUnifiedResponseShape:
+    """CAN-015d (Phase 6E Sprint B B-4): all four snapshot operation
+    endpoints share a unified response shape — ``snapshot_id``,
+    ``operation``, ``fsm_state``, ``time_index``, and
+    ``training_params``. Pre-B-4 fields like ``status`` and
+    ``resume_point_epoch`` are retained as a strict superset.
+
+    These tests pin the new fields. Existing tests in
+    TestRestoreSnapshot / TestRetrainFromSnapshot / TestResumeSnapshot
+    pin the legacy backward-compat fields and remain unchanged.
+    """
+
+    def _force_fsm_state(self, lifecycle, target_marker: str):
+        """Helper: mock load_snapshot/restore_for_retrain/resume_from_snapshot
+        to actually transition the FSM, since the route reads
+        state_machine.status.name to populate the response.
+
+        ``target_marker`` is one of "investigating", "stopped", "resume_ready".
+        """
+        if target_marker == "investigating":
+            return lambda *args, **kwargs: (lifecycle.state_machine.mark_investigating(), True)[1]
+        if target_marker == "resume_ready":
+            return lambda *args, **kwargs: (lifecycle.state_machine.mark_resume_ready(), True)[1]
+        if target_marker == "stopped":
+            from api.lifecycle.state_machine import Command
+
+            return lambda *args, **kwargs: (lifecycle.state_machine.handle_command(Command.RESET), True)[1]
+        raise ValueError(f"unknown target_marker {target_marker!r}")
+
+    def test_restore_response_includes_unified_fields(self, client):
+        """POST /restore response contains operation/fsm_state/time_index."""
+        lifecycle = client.app.state.lifecycle
+        side_effect = self._force_fsm_state(lifecycle, "investigating")
+        with patch.object(lifecycle, "load_snapshot", side_effect=side_effect):
+            response = client.post("/v1/snapshots/snap-001/restore")
+            assert response.status_code == 200
+            body = response.json()
+            data = body["data"]
+            assert data["operation"] == "restore"
+            assert data["fsm_state"] == "INVESTIGATING"
+            assert "time_index" in data
+            assert data["time_index"]["default"] == "end"
+            assert "snapshot_window" in data["time_index"]
+            assert "start_epoch" in data["time_index"]["snapshot_window"]
+            assert "end_epoch" in data["time_index"]["snapshot_window"]
+            # Backward-compat fields preserved.
+            assert data["status"] == "restored"
+            assert data["snapshot_id"] == "snap-001"
+
+    def test_retrain_response_includes_unified_fields(self, client):
+        """POST /retrain response contains operation/fsm_state/time_index."""
+        lifecycle = client.app.state.lifecycle
+        side_effect = self._force_fsm_state(lifecycle, "stopped")
+        with patch.object(lifecycle, "restore_for_retrain", side_effect=side_effect):
+            response = client.post("/v1/snapshots/snap-002/retrain")
+            assert response.status_code == 200
+            data = response.json()["data"]
+            assert data["operation"] == "retrain"
+            # Retrain transitions to Stopped.
+            assert data["fsm_state"] == "STOPPED"
+            # Retrain resets history to 0, so time_index default is 0.
+            assert data["time_index"]["default"] == 0
+            # Backward-compat fields preserved.
+            assert data["status"] == "ready"
+            assert data["snapshot_id"] == "snap-002"
+
+    def test_resume_response_includes_unified_fields(self, client):
+        """POST /resume response contains operation/fsm_state/time_index plus resume_point_epoch."""
+        lifecycle = client.app.state.lifecycle
+
+        def side_effect(snapshot_id):
+            lifecycle.state_machine.mark_resume_ready()
+            lifecycle._resume_point_epoch = 42
+            return True
+
+        with patch.object(lifecycle, "resume_from_snapshot", side_effect=side_effect):
+            response = client.post("/v1/snapshots/snap-003/resume")
+            assert response.status_code == 200
+            data = response.json()["data"]
+            assert data["operation"] == "resume"
+            assert data["fsm_state"] == "RESUME_READY"
+            # Resume lands at end of window.
+            assert data["time_index"]["default"] == "end"
+            # Backward-compat fields from B-2 preserved.
+            assert data["status"] == "ready"
+            assert data["resume_point_epoch"] == 42
+
+    def test_time_index_snapshot_window_reflects_loaded_history(self, client):
+        """``snapshot_window.end_epoch`` matches the longest history array's length."""
+        lifecycle = client.app.state.lifecycle
+
+        # Install a fake network with a known history.
+        class FakeNetwork:
+            history = {
+                "train_loss": [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7],  # 7 entries
+                "value_loss": [0.2, 0.3, 0.4],                       # 3 entries
+                "train_accuracy": [0.6, 0.7],                         # 2 entries
+                "value_accuracy": [],                                  # 0 entries
+            }
+
+        lifecycle.network = FakeNetwork()
+        side_effect = self._force_fsm_state(lifecycle, "investigating")
+        try:
+            with patch.object(lifecycle, "load_snapshot", side_effect=side_effect):
+                response = client.post("/v1/snapshots/snap-window/restore")
+                assert response.status_code == 200
+                data = response.json()["data"]
+                # Longest array (train_loss) has 7 entries.
+                assert data["time_index"]["snapshot_window"] == {"start_epoch": 0, "end_epoch": 7}
+        finally:
+            lifecycle.network = None
+
+    def test_restore_rejected_when_training_active(self, client):
+        """The pre-flight FSM check returns 409 when training is Started.
+        This was an implicit contract before (load_snapshot would race
+        with the running fit) — B-4 makes it explicit at the route layer."""
+        from api.lifecycle.state_machine import Command
+
+        lifecycle = client.app.state.lifecycle
+        lifecycle.state_machine.handle_command(Command.START)
+        try:
+            response = client.post("/v1/snapshots/snap-active/restore")
+            assert response.status_code == 409
+            assert "Cannot restore" in response.json()["detail"]
+        finally:
+            lifecycle.state_machine.handle_command(Command.RESET)
+
+    def test_restore_rejected_when_paused(self, client):
+        """Paused state also rejected with 409."""
+        from api.lifecycle.state_machine import Command
+
+        lifecycle = client.app.state.lifecycle
+        lifecycle.state_machine.handle_command(Command.START)
+        lifecycle.state_machine.handle_command(Command.PAUSE)
+        try:
+            response = client.post("/v1/snapshots/snap-paused/restore")
+            assert response.status_code == 409
+        finally:
+            lifecycle.state_machine.handle_command(Command.RESET)

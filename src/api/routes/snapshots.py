@@ -52,6 +52,80 @@ def _get_lifecycle(request: Request):
     return lifecycle
 
 
+def _compute_snapshot_window(lifecycle) -> dict:
+    """CAN-015d (Phase 6E Sprint B B-4): compute the snapshot window
+    metadata for the unified response shape's ``time_index`` block.
+
+    The window is derived from the longest history array on the loaded
+    network — same source as ``resume_from_snapshot``'s
+    ``_resume_point_epoch`` calculation. ``start_epoch`` is always 0
+    (snapshots can't yet represent a model that has skipped epochs);
+    ``end_epoch`` is the count of epochs the loaded network has trained
+    for. Falls back to ``{0, 0}`` when the network has no history.
+    """
+    network = getattr(lifecycle, "network", None)
+    if network is None:
+        return {"start_epoch": 0, "end_epoch": 0}
+    history = getattr(network, "history", None)
+    end = 0
+    if isinstance(history, dict):
+        # Match the lifecycle's _NETWORK_HISTORY_KEYS scope so the route
+        # surface stays consistent with what Resume / Retrain operate on.
+        for key in ("train_loss", "value_loss", "train_accuracy", "value_accuracy"):
+            series = history.get(key, ())
+            try:
+                end = max(end, len(series))
+            except TypeError:
+                continue
+    return {"start_epoch": 0, "end_epoch": end}
+
+
+def _build_unified_payload(
+    lifecycle,
+    snapshot_id: str,
+    operation: str,
+    time_index_default,
+    *,
+    extra: dict | None = None,
+) -> dict:
+    """CAN-015d (Phase 6E Sprint B B-4): assemble the unified response
+    body for the four snapshot operation endpoints.
+
+    Per ``notes/PHASE_6E_SPRINT_B_DESIGN.md`` §3, every snapshot
+    operation returns the same shape — ``snapshot_id`` + ``operation``
+    + ``fsm_state`` + ``time_index`` + ``training_params``. Fields like
+    ``status`` and ``resume_point_epoch`` (added pre-B-4 by B-1 and B-2
+    respectively) are preserved as a strict superset for backward
+    compatibility — existing canopy clients keying off them keep
+    working.
+
+    ``time_index_default`` is the operation-specific default position
+    in the snapshot's narrative: ``"end"`` for Restore / Resume,
+    ``0`` for Retrain (history reset), ``"start"`` for Replay (B-3,
+    not yet shipped).
+    """
+    fsm_state = lifecycle.state_machine.status.name
+    snapshot_window = _compute_snapshot_window(lifecycle)
+    payload: dict = {
+        "snapshot_id": snapshot_id,
+        "operation": operation,
+        "fsm_state": fsm_state,
+        "time_index": {
+            "default": time_index_default,
+            "snapshot_window": snapshot_window,
+        },
+    }
+    try:
+        payload["training_params"] = lifecycle.get_training_params()
+    except Exception:
+        # Defensive: surfacing params is best-effort. A failure here
+        # should not undo a successful snapshot operation.
+        logger.exception("snapshots: get_training_params failed after successful operation %r", operation)
+    if extra:
+        payload.update(extra)
+    return payload
+
+
 @router.post("")
 async def save_snapshot(request: Request, body: SnapshotCreateRequest = None) -> dict:
     """Save a snapshot of the current network state."""
@@ -88,37 +162,51 @@ async def get_snapshot(request: Request, snapshot_id: str) -> dict:
 
 @router.post("/{snapshot_id}/restore")
 async def restore_snapshot(request: Request, snapshot_id: str) -> dict:
-    """Restore a network from a snapshot.
+    """Restore a network from a snapshot for inspection and modification.
 
-    CAN-014 (Phase 6E Sprint A-5): the response now includes the
-    post-restore ``training_params`` so the client can verify the
-    round-trip without making a second ``GET /v1/training/params``
-    call. The serializer round-trips every field listed in
-    ``update_params``' whitelist (PR #163 / CAN-014); surfacing them
-    here lets a tuning UI immediately reconcile its local state.
+    CAN-015d (Phase 6E Sprint B B-4): Restore is now an explicit
+    inspection / modification mode rather than an implicit "load + can
+    train next" shortcut. The lifecycle transitions to the new
+    ``Investigating`` FSM state which rejects ``start_training`` /
+    ``pause_training`` / ``resume_training`` until the user explicitly
+    invokes ``/retrain`` or ``/resume``. The user can edit
+    meta-params via ``PATCH /v1/training/params``, replace the dataset,
+    and re-snapshot the modified state — all of which are permitted in
+    ``Investigating``.
+
+    Rejected with 409 if training is currently active (Started /
+    Paused) — same FSM-guard contract as Resume / Retrain.
+
+    CAN-014 (Sprint A-5): response includes the post-restore
+    ``training_params`` so a tuning UI can reconcile state. CAN-015d
+    further unifies the response shape with ``operation`` /
+    ``fsm_state`` / ``time_index``. The pre-existing ``status:
+    "restored"`` field is retained as a strict superset so existing
+    canopy clients keying off it keep working.
+
+    See ``juniper-ml/notes/PHASE_6E_SPRINT_B_DESIGN.md`` §2.1, §3.
     """
     _validate_snapshot_id(snapshot_id, client=request.client.host if request.client else None)
     lifecycle = _get_lifecycle(request)
+    # Pre-flight FSM check — surface 409 at the route boundary rather
+    # than letting the lifecycle's own check map to a generic 404.
+    if lifecycle.state_machine.is_started() or lifecycle.state_machine.is_paused():
+        raise HTTPException(status_code=409, detail=f"Cannot restore from snapshot while training is {lifecycle.state_machine.status.name}")
     # PERF-CC-01: serializer.load_network is synchronous HDF5 I/O. Run it
     # off the event loop so concurrent requests aren't blocked while the
     # snapshot is being read.
     success = await asyncio.to_thread(lifecycle.load_snapshot, snapshot_id)
     if not success:
         raise HTTPException(status_code=404, detail=f"Snapshot '{snapshot_id}' not found or failed to load")
-    # ``get_training_params`` is cheap (synchronous attribute reads under
-    # the training lock) and it would be surprising to surface restore
-    # without surfacing what the client actually got back.
-    try:
-        params = lifecycle.get_training_params()
-    except Exception:
-        # Defensive — if the params extraction fails, the restore itself
-        # already succeeded; fall back to the original minimal response
-        # rather than making the round-trip look failed.
-        logger.exception("restore_snapshot: get_training_params failed after successful restore")
-        params = None
-    payload: dict = {"snapshot_id": snapshot_id, "status": "restored"}
-    if params is not None:
-        payload["training_params"] = params
+    payload = _build_unified_payload(
+        lifecycle,
+        snapshot_id,
+        operation="restore",
+        time_index_default="end",
+        # Strict-superset backward-compatibility: keep the pre-B-4
+        # ``status: "restored"`` field so existing clients keep working.
+        extra={"status": "restored"},
+    )
     return success_response(payload)
 
 
@@ -153,14 +241,15 @@ async def retrain_from_snapshot(request: Request, snapshot_id: str) -> dict:
     success = await asyncio.to_thread(lifecycle.restore_for_retrain, snapshot_id)
     if not success:
         raise HTTPException(status_code=404, detail=f"Snapshot '{snapshot_id}' not found or failed to load")
-    try:
-        params = lifecycle.get_training_params()
-    except Exception:
-        logger.exception("retrain_from_snapshot: get_training_params failed after successful restore_for_retrain")
-        params = None
-    payload: dict = {"snapshot_id": snapshot_id, "operation": "retrain", "status": "ready"}
-    if params is not None:
-        payload["training_params"] = params
+    payload = _build_unified_payload(
+        lifecycle,
+        snapshot_id,
+        operation="retrain",
+        # Retrain resets history / counters to 0, so the time index is 0.
+        time_index_default=0,
+        # Strict-superset backward-compatibility for the B-1 response shape.
+        extra={"status": "ready"},
+    )
     return success_response(payload)
 
 
@@ -198,17 +287,16 @@ async def resume_snapshot(request: Request, snapshot_id: str) -> dict:
     success = await asyncio.to_thread(lifecycle.resume_from_snapshot, snapshot_id)
     if not success:
         raise HTTPException(status_code=404, detail=f"Snapshot '{snapshot_id}' not found or failed to load")
-    try:
-        params = lifecycle.get_training_params()
-    except Exception:
-        logger.exception("resume_snapshot: get_training_params failed after successful resume_from_snapshot")
-        params = None
-    payload: dict = {
-        "snapshot_id": snapshot_id,
-        "operation": "resume",
-        "status": "ready",
-        "resume_point_epoch": lifecycle._resume_point_epoch,
-    }
-    if params is not None:
-        payload["training_params"] = params
+    payload = _build_unified_payload(
+        lifecycle,
+        snapshot_id,
+        operation="resume",
+        # Resume lands the user at the snapshot's terminal epoch.
+        time_index_default="end",
+        # Strict-superset backward-compatibility for the B-2 response shape.
+        extra={
+            "status": "ready",
+            "resume_point_epoch": lifecycle._resume_point_epoch,
+        },
+    )
     return success_response(payload)

@@ -770,6 +770,15 @@ class TrainingLifecycleManager:
         with self._training_lock:
             if self.state_machine.is_started():
                 raise RuntimeError("Training already in progress")
+            # CAN-015d (B-4): Investigating is the inspection / modification
+            # mode loaded by ``/restore``. Training commands are explicitly
+            # rejected — the user must invoke ``/retrain`` or ``/resume`` to
+            # transition out of Investigating before starting training.
+            # Failing fast at the API boundary is much clearer than
+            # letting the future submit and the FSM transition fail
+            # silently inside monitored_fit.
+            if self.state_machine.is_investigating():
+                raise RuntimeError("Cannot start training while Investigating a snapshot — invoke /v1/snapshots/{id}/retrain or /resume to transition out of Investigating first")
 
             if x is not None:
                 self._train_x = x
@@ -1395,17 +1404,40 @@ class TrainingLifecycleManager:
         """Load a network snapshot by ID (Restore semantics).
 
         Preserves the full snapshotted state — weights, topology, training
-        history, all meta-parameters per A-5 (CAN-014). Does NOT reset the
-        training-state counters or FSM; the user is expected to either
-        invoke a separate operation (Retrain / Resume) to enter a training
-        state, or modify the network and re-snapshot.
+        history, all meta-parameters per A-5 (CAN-014). The FSM transitions
+        to ``INVESTIGATING`` so the user can edit meta-params, replace the
+        dataset, and re-snapshot, but cannot start training directly. To
+        enter a training state, the user must invoke ``restore_for_retrain``
+        (clean slate) or ``resume_from_snapshot`` (extend history).
+
+        Rejected when training is currently active (Started / Paused) —
+        same FSM-guard contract as Resume / Retrain. Returns False so
+        the route layer can map to 409.
 
         See ``notes/PHASE_6E_SPRINT_B_DESIGN.md`` §2.1.
         """
+        # Same pre-flight as resume_from_snapshot: investigating an
+        # active training run would race with the running fit() and
+        # leave the lifecycle in a confused state.
+        if self.state_machine.is_started() or self.state_machine.is_paused():
+            self.logger.warning(f"load_snapshot rejected: training is {self.state_machine.status.name}")
+            return False
+
         ok = self._load_snapshot_to_network(snapshot_id)
-        if ok:
-            self.logger.info(f"Snapshot restored: {snapshot_id}")
-        return ok
+        if not ok:
+            return False
+
+        # CAN-015d (B-4): transition to Investigating and clear any
+        # state from prior snapshot operations. The user explicitly
+        # invoked /restore (not /retrain or /resume) so we want the
+        # inspection-only contract: training commands rejected, no
+        # implicit history reset, no resume marker.
+        self.state_machine.mark_investigating()
+        self._resume_point_epoch = None
+        self.training_state.update_state(status="Stopped", phase="Idle")
+        self._broadcast_training_state(force=True)
+        self.logger.info(f"Snapshot restored: {snapshot_id} (FSM=Investigating)")
+        return True
 
     def restore_for_retrain(self, snapshot_id: str) -> bool:
         """Load a snapshot and reset training history for a fresh run (CAN-015a).

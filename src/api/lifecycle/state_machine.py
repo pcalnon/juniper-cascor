@@ -32,6 +32,15 @@ class TrainingStatus(Enum):
     # PRESERVING the loaded history (in contrast to a Retrain which
     # resets it). See ``notes/PHASE_6E_SPRINT_B_DESIGN.md`` §2.3.
     RESUME_READY = auto()
+    # CAN-015d (Phase 6E Sprint B B-4): a snapshot has been loaded with
+    # ``load_snapshot`` for inspection or modification — NOT for
+    # continuing training. The user can edit meta-params, replace the
+    # dataset, and re-snapshot, but ``start_training`` /
+    # ``pause_training`` / ``resume_training`` are explicitly rejected.
+    # The user must invoke ``/retrain`` or ``/resume`` (or load a
+    # different snapshot via those endpoints) to enter a training
+    # state. See ``notes/PHASE_6E_SPRINT_B_DESIGN.md`` §2.1.
+    INVESTIGATING = auto()
 
 
 class Command(Enum):
@@ -104,6 +113,12 @@ class TrainingStateMachine:
         continue from the snapshotted point."""
         return self._status == TrainingStatus.RESUME_READY
 
+    def is_investigating(self) -> bool:
+        """CAN-015d (Phase 6E Sprint B B-4): a snapshot has been loaded
+        for inspection / modification — training commands are explicitly
+        rejected from this state."""
+        return self._status == TrainingStatus.INVESTIGATING
+
     def handle_command(self, command: Command) -> bool:
         """Handle control command and perform state transition.
 
@@ -123,6 +138,14 @@ class TrainingStateMachine:
         return handler()
 
     def _handle_start(self) -> bool:
+        # CAN-015d (B-4): INVESTIGATING explicitly rejects training commands.
+        # The user loaded a snapshot for inspection / modification; they
+        # must invoke /retrain or /resume (or a different snapshot via
+        # those endpoints) before training can begin. Auto-transitioning
+        # silently would defeat the entire Investigating contract.
+        if self._status == TrainingStatus.INVESTIGATING:
+            self.logger.warning("Invalid transition: START while Investigating — invoke /retrain or /resume to enter a training state")
+            return False
         if self._status in (TrainingStatus.FAILED, TrainingStatus.COMPLETED):
             self.logger.info(f"Auto-resetting from terminal state {self._status.name} before start")
             self._reset_to_stopped()
@@ -250,7 +273,7 @@ class TrainingStateMachine:
         re-marking, e.g. if the user calls /resume twice on different
         snapshots without an intervening start).
         """
-        if self._status in (TrainingStatus.STOPPED, TrainingStatus.COMPLETED, TrainingStatus.FAILED, TrainingStatus.RESUME_READY):
+        if self._status in (TrainingStatus.STOPPED, TrainingStatus.COMPLETED, TrainingStatus.FAILED, TrainingStatus.RESUME_READY, TrainingStatus.INVESTIGATING):
             prev = self._status.name
             self._status = TrainingStatus.RESUME_READY
             self._phase = TrainingPhase.IDLE
@@ -259,6 +282,30 @@ class TrainingStateMachine:
             self.logger.info(f"State transition: {prev} -> ResumeReady")
             return True
         self.logger.warning(f"Invalid transition: mark_resume_ready while {self._status.name}")
+        return False
+
+    def mark_investigating(self) -> bool:
+        """CAN-015d (Phase 6E Sprint B B-4): mark the FSM as inspecting
+        a loaded snapshot. Call from ``lifecycle.load_snapshot`` after
+        the snapshot is loaded.
+
+        Investigating is the inspection / modification mode — the user
+        can edit meta-params and re-snapshot but cannot start training
+        directly (must invoke /retrain or /resume first). Permitted
+        from non-active states (Stopped / Completed / Failed /
+        RESUME_READY / INVESTIGATING) — a user can replace one loaded
+        snapshot with another without explicitly resetting in between.
+        Rejected from STARTED / PAUSED: training must stop first.
+        """
+        if self._status in (TrainingStatus.STOPPED, TrainingStatus.COMPLETED, TrainingStatus.FAILED, TrainingStatus.RESUME_READY, TrainingStatus.INVESTIGATING):
+            prev = self._status.name
+            self._status = TrainingStatus.INVESTIGATING
+            self._phase = TrainingPhase.IDLE
+            self._paused_phase = None
+            self._candidate_sub_state = None
+            self.logger.info(f"State transition: {prev} -> Investigating")
+            return True
+        self.logger.warning(f"Invalid transition: mark_investigating while {self._status.name}")
         return False
 
     def get_state_summary(self) -> dict:
