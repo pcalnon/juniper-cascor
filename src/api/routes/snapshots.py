@@ -33,7 +33,7 @@ def _validate_snapshot_id(snapshot_id: str, client: str | None = None) -> None:
     if not _SNAPSHOT_ID_PATTERN.fullmatch(snapshot_id or ""):
         logger.warning(
             "Rejected snapshot_id (invalid format): %r client=%s",
-            snapshot_id.replace('\r\n','').replace('\n',''),
+            snapshot_id.replace("\r\n", "").replace("\n", ""),
             client or "unknown",
         )
         raise HTTPException(status_code=400, detail="Invalid snapshot_id format")
