@@ -944,7 +944,7 @@ docs/overview/CONSTANTS_GUIDE.md # Constants reference
 **Version:** 0.4.1
 **Maintainer:** Paul Calnon
 
-> See the [Juniper Ecosystem Guide](../../CLAUDE.md) for the full project map and dependency graph.
+> See the [Juniper Ecosystem Guide](https://github.com/pcalnon/juniper-ml/blob/main/CLAUDE.md) for the full project map and dependency graph.
 
 ---
 
