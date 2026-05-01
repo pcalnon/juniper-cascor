@@ -490,10 +490,18 @@ jobs:
           echo "╔════════════════════════════════════════════════════════════╗"
           echo "║       Juniper Cascor - Bandit Security Scan                ║"
           echo "╚════════════════════════════════════════════════════════════╝"
+          # --skip + --exclude mirror the pre-commit `bandit`
+          # source-side hook in .pre-commit-config.yaml exactly:
+          #   files:   ^src/.*\.py$
+          #   exclude: ^src/tests/
+          #   --skip:  B101,B301,B311,B403
+          # Tests stay in the separate pre-commit "Bandit (relaxed)"
+          # hook with a wider skip-list. See V20 in
+          # juniper-ml/notes/CI_VALIDATION_FINDINGS_2026-04-29.md.
           # Generate SARIF report (always succeeds for upload)
-          bandit -r src -f sarif -o reports/security/bandit.sarif --exit-zero
+          bandit -r src --exclude src/tests --skip B101,B301,B311,B403 -f sarif -o reports/security/bandit.sarif --exit-zero
           # Blocking check - fail on medium or higher severity
-          bandit -r src --confidence-level medium --severity-level medium
+          bandit -r src --exclude src/tests --skip B101,B301,B311,B403 --confidence-level medium --severity-level medium
 
       - name: Upload Bandit SARIF to GitHub Security
         uses: github/codeql-action/upload-sarif@95e58e9a2cdfd71adc6e0353d5c52f41a045d225  # v4.35.2
