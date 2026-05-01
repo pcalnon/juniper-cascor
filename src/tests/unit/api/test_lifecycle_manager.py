@@ -793,3 +793,242 @@ class TestRestoreForRetrain:
         assert state["current_epoch"] == 42
         assert state["current_step"] == 999
         mgr.shutdown()
+
+
+@pytest.mark.unit
+class TestResumeFromSnapshot:
+    """CAN-015b (Phase 6E Sprint B B-2): tests for the new
+    ``resume_from_snapshot`` lifecycle method.
+
+    Resume preserves history (in contrast to Retrain which resets it),
+    transitions the FSM to ``RESUME_READY``, and records
+    ``_resume_point_epoch`` so canopy can render a visual boundary.
+    The auto-snap-best ratchet is also preserved so a re-snap only
+    fires when the resumed training beats the prior run's best.
+    """
+
+    def test_returns_false_when_snapshot_missing(self, tmp_path):
+        """Snapshot ID with no matching .h5 file → False, no FSM transition."""
+        from unittest.mock import patch
+
+        mgr = TrainingLifecycleManager()
+        with patch.object(mgr, "_get_snapshots_dir", return_value=tmp_path):
+            assert mgr.resume_from_snapshot("nonexistent") is False
+        assert mgr.state_machine.is_stopped()
+        assert not mgr.state_machine.is_resume_ready()
+        mgr.shutdown()
+
+    def test_returns_false_when_training_active(self, tmp_path):
+        """Resume rejected while training is Started; FSM unchanged."""
+        from unittest.mock import patch
+
+        mgr = TrainingLifecycleManager()
+        mgr.create_network(input_size=2, output_size=2)
+        mgr.state_machine.handle_command(Command.START)
+        assert mgr.state_machine.is_started()
+        with patch.object(mgr, "_get_snapshots_dir", return_value=tmp_path):
+            assert mgr.resume_from_snapshot("anything") is False
+        assert mgr.state_machine.is_started()
+        assert not mgr.state_machine.is_resume_ready()
+        mgr.shutdown()
+
+    def test_preserves_network_history_arrays(self, tmp_path):
+        """After successful resume_from_snapshot, network.history arrays are intact."""
+        from unittest.mock import MagicMock, patch
+
+        mgr = TrainingLifecycleManager()
+        mgr.create_network(input_size=2, output_size=2)
+        loaded = MagicMock()
+        loaded.history = {
+            "train_loss": [0.5, 0.4, 0.3],
+            "value_loss": [0.6, 0.5, 0.4],
+            "train_accuracy": [0.7, 0.8, 0.85],
+            "value_accuracy": [0.65, 0.75, 0.8],
+        }
+        fake_file = tmp_path / "snap.h5"
+        fake_file.write_bytes(b"")
+        with patch.object(mgr, "_get_snapshots_dir", return_value=tmp_path), patch("snapshots.snapshot_serializer.CascadeHDF5Serializer.load_network", return_value=loaded), patch.object(mgr, "_restore_original_methods"), patch.object(mgr, "_install_monitoring_hooks"):
+            assert mgr.resume_from_snapshot("snap") is True
+
+        assert loaded.history["train_loss"] == [0.5, 0.4, 0.3]
+        assert loaded.history["value_loss"] == [0.6, 0.5, 0.4]
+        assert loaded.history["train_accuracy"] == [0.7, 0.8, 0.85]
+        assert loaded.history["value_accuracy"] == [0.65, 0.75, 0.8]
+        mgr.shutdown()
+
+    def test_preserves_auto_snap_best_metric(self, tmp_path):
+        """Resume preserves the auto-snap-best ratchet (in contrast to Retrain)."""
+        from unittest.mock import MagicMock, patch
+
+        mgr = TrainingLifecycleManager()
+        mgr.create_network(input_size=2, output_size=2)
+        with mgr._auto_snap_lock:
+            mgr._auto_snap_best_metric = 0.95
+        loaded = MagicMock()
+        loaded.history = {"train_loss": [], "value_loss": [], "train_accuracy": [], "value_accuracy": []}
+        fake_file = tmp_path / "snap.h5"
+        fake_file.write_bytes(b"")
+        with patch.object(mgr, "_get_snapshots_dir", return_value=tmp_path), patch("snapshots.snapshot_serializer.CascadeHDF5Serializer.load_network", return_value=loaded), patch.object(mgr, "_restore_original_methods"), patch.object(mgr, "_install_monitoring_hooks"):
+            mgr.resume_from_snapshot("snap")
+
+        assert mgr._auto_snap_best_metric == 0.95
+        mgr.shutdown()
+
+    def test_transitions_fsm_to_resume_ready(self, tmp_path):
+        """FSM goes to RESUME_READY after a successful resume."""
+        from unittest.mock import MagicMock, patch
+
+        mgr = TrainingLifecycleManager()
+        mgr.create_network(input_size=2, output_size=2)
+        loaded = MagicMock()
+        loaded.history = {"train_loss": [0.1], "value_loss": [], "train_accuracy": [], "value_accuracy": []}
+        fake_file = tmp_path / "snap.h5"
+        fake_file.write_bytes(b"")
+        with patch.object(mgr, "_get_snapshots_dir", return_value=tmp_path), patch("snapshots.snapshot_serializer.CascadeHDF5Serializer.load_network", return_value=loaded), patch.object(mgr, "_restore_original_methods"), patch.object(mgr, "_install_monitoring_hooks"):
+            mgr.resume_from_snapshot("snap")
+
+        assert mgr.state_machine.is_resume_ready()
+        mgr.shutdown()
+
+    def test_records_resume_point_epoch(self, tmp_path):
+        """``_resume_point_epoch`` reflects the longest history array's length."""
+        from unittest.mock import MagicMock, patch
+
+        mgr = TrainingLifecycleManager()
+        mgr.create_network(input_size=2, output_size=2)
+        loaded = MagicMock()
+        loaded.history = {
+            "train_loss": [0.1, 0.2, 0.3, 0.4, 0.5],  # 5
+            "value_loss": [0.2, 0.3],                  # 2
+            "train_accuracy": [0.6, 0.7, 0.8],         # 3
+            "value_accuracy": [],                       # 0
+        }
+        fake_file = tmp_path / "snap.h5"
+        fake_file.write_bytes(b"")
+        with patch.object(mgr, "_get_snapshots_dir", return_value=tmp_path), patch("snapshots.snapshot_serializer.CascadeHDF5Serializer.load_network", return_value=loaded), patch.object(mgr, "_restore_original_methods"), patch.object(mgr, "_install_monitoring_hooks"):
+            mgr.resume_from_snapshot("snap")
+
+        # Longest array (train_loss) = 5.
+        assert mgr._resume_point_epoch == 5
+        mgr.shutdown()
+
+    def test_resume_point_zero_for_empty_history(self, tmp_path):
+        """An empty history dict produces resume_point_epoch=0."""
+        from unittest.mock import MagicMock, patch
+
+        mgr = TrainingLifecycleManager()
+        mgr.create_network(input_size=2, output_size=2)
+        loaded = MagicMock()
+        loaded.history = {}
+        fake_file = tmp_path / "snap.h5"
+        fake_file.write_bytes(b"")
+        with patch.object(mgr, "_get_snapshots_dir", return_value=tmp_path), patch("snapshots.snapshot_serializer.CascadeHDF5Serializer.load_network", return_value=loaded), patch.object(mgr, "_restore_original_methods"), patch.object(mgr, "_install_monitoring_hooks"):
+            assert mgr.resume_from_snapshot("snap") is True
+
+        assert mgr._resume_point_epoch == 0
+        mgr.shutdown()
+
+    def test_resume_point_zero_when_history_missing(self, tmp_path):
+        """A network without a ``history`` attribute produces resume_point_epoch=0."""
+        from unittest.mock import patch
+
+        mgr = TrainingLifecycleManager()
+        mgr.create_network(input_size=2, output_size=2)
+
+        class NetworkWithoutHistory:
+            input_size = 2
+            output_size = 2
+
+        loaded = NetworkWithoutHistory()
+        fake_file = tmp_path / "snap.h5"
+        fake_file.write_bytes(b"")
+        with patch.object(mgr, "_get_snapshots_dir", return_value=tmp_path), patch("snapshots.snapshot_serializer.CascadeHDF5Serializer.load_network", return_value=loaded), patch.object(mgr, "_restore_original_methods"), patch.object(mgr, "_install_monitoring_hooks"):
+            assert mgr.resume_from_snapshot("snap") is True
+
+        assert mgr._resume_point_epoch == 0
+        mgr.shutdown()
+
+    def test_retrain_after_resume_clears_marker(self, tmp_path):
+        """A Retrain after a Resume clears the resume marker — Retrain is a clean slate."""
+        from unittest.mock import MagicMock, patch
+
+        mgr = TrainingLifecycleManager()
+        mgr.create_network(input_size=2, output_size=2)
+        loaded = MagicMock()
+        loaded.history = {"train_loss": [0.1, 0.2, 0.3], "value_loss": [], "train_accuracy": [], "value_accuracy": []}
+        fake_file = tmp_path / "snap.h5"
+        fake_file.write_bytes(b"")
+        with patch.object(mgr, "_get_snapshots_dir", return_value=tmp_path), patch("snapshots.snapshot_serializer.CascadeHDF5Serializer.load_network", return_value=loaded), patch.object(mgr, "_restore_original_methods"), patch.object(mgr, "_install_monitoring_hooks"):
+            mgr.resume_from_snapshot("snap")
+            assert mgr._resume_point_epoch == 3
+            mgr.restore_for_retrain("snap")
+            assert mgr._resume_point_epoch is None
+        mgr.shutdown()
+
+    def test_start_training_after_resume_preserves_auto_snap_baseline(self, tmp_path):
+        """When start_training fires from RESUME_READY, the auto-snap baseline
+        is preserved (the existing reset-on-start applies only to non-resume
+        starts). The resume marker is consumed (cleared) once start_training
+        runs."""
+        from unittest.mock import MagicMock, patch
+
+        import torch
+
+        mgr = TrainingLifecycleManager()
+        mgr.create_network(input_size=2, output_size=2, candidate_pool_size=2, candidate_epochs=2, output_epochs=2, patience=1)
+        loaded = MagicMock()
+        loaded.history = {"train_loss": [0.5, 0.4], "value_loss": [], "train_accuracy": [], "value_accuracy": []}
+        # Carry the network attributes start_training reads.
+        for attr in ("input_size", "output_size"):
+            setattr(loaded, attr, getattr(mgr.network, attr, 2))
+
+        fake_file = tmp_path / "snap.h5"
+        fake_file.write_bytes(b"")
+        with patch.object(mgr, "_get_snapshots_dir", return_value=tmp_path), patch("snapshots.snapshot_serializer.CascadeHDF5Serializer.load_network", return_value=loaded), patch.object(mgr, "_restore_original_methods"), patch.object(mgr, "_install_monitoring_hooks"):
+            mgr.resume_from_snapshot("snap")
+
+        # Set ratchet to a known value AFTER resume to isolate this test.
+        with mgr._auto_snap_lock:
+            mgr._auto_snap_best_metric = 0.85
+        assert mgr.state_machine.is_resume_ready()
+        assert mgr._resume_point_epoch == 2
+
+        x = torch.randn(20, 2)
+        y = torch.zeros(20, 2)
+        y[:10, 0] = 1
+        y[10:, 1] = 1
+        with patch.object(mgr.network, "fit", return_value={"train_loss": [0.3]}):
+            mgr.start_training(x=x, y=y)
+            if mgr._training_future is not None:
+                mgr._training_future.result(timeout=10)
+
+        # Ratchet preserved across the resume-to-start transition.
+        assert mgr._auto_snap_best_metric == 0.85
+        # Resume marker consumed.
+        assert mgr._resume_point_epoch is None
+        mgr.shutdown()
+
+    def test_start_training_from_stopped_resets_auto_snap_baseline(self, tmp_path):
+        """Regression: a normal start_training (FSM = Stopped, not RESUME_READY)
+        still resets the auto-snap ratchet."""
+        from unittest.mock import patch
+
+        import torch
+
+        mgr = TrainingLifecycleManager()
+        mgr.create_network(input_size=2, output_size=2, candidate_pool_size=2, candidate_epochs=2, output_epochs=2, patience=1)
+        with mgr._auto_snap_lock:
+            mgr._auto_snap_best_metric = 0.85
+        assert mgr.state_machine.is_stopped()
+
+        x = torch.randn(20, 2)
+        y = torch.zeros(20, 2)
+        y[:10, 0] = 1
+        y[10:, 1] = 1
+        with patch.object(mgr.network, "fit", return_value={"train_loss": [0.3]}):
+            mgr.start_training(x=x, y=y)
+            if mgr._training_future is not None:
+                mgr._training_future.result(timeout=10)
+
+        assert mgr._auto_snap_best_metric is None
+        mgr.shutdown()
