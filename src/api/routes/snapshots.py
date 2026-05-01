@@ -300,3 +300,108 @@ async def resume_snapshot(request: Request, snapshot_id: str) -> dict:
         },
     )
     return success_response(payload)
+
+
+class ReplayControlRequest(BaseModel):
+    """CAN-015c (Phase 6E Sprint B B-3): body for the replay-control
+    endpoint. ``action`` is the discriminator; the parameter fields
+    are validated by the lifecycle's ``replay_control`` method."""
+
+    action: str
+    time_index: int | None = None
+    value: float | None = None
+    start: int | None = None
+    end: int | None = None
+
+
+@router.post("/{snapshot_id}/replay")
+async def start_replay_endpoint(request: Request, snapshot_id: str) -> dict:
+    """Start a replay session for a snapshot's training history (CAN-015c).
+
+    Phase 6E Sprint B B-3. Loads the snapshot, transitions the FSM to
+    ``REPLAYING``, and spawns a background driver thread that emits
+    synthetic ``epoch_end`` events from the loaded network's history
+    arrays at a configurable speed. The session is initially paused
+    at time index 0; canopy controls playback via
+    ``POST /v1/snapshots/{snapshot_id}/replay/control``.
+
+    V1 scope: metric arrays + topology evolution metadata only. Per-
+    epoch weight history is deferred to CAN-015g.
+
+    Rejected with 409 if training is currently active (Started /
+    Paused) — same FSM-guard contract as Resume / Restore. Replacing
+    one replay session with another is permitted (the old session is
+    torn down first).
+
+    See ``juniper-ml/notes/PHASE_6E_SPRINT_B_DESIGN.md`` §2.2.
+    """
+    _validate_snapshot_id(snapshot_id, client=request.client.host if request.client else None)
+    lifecycle = _get_lifecycle(request)
+    if lifecycle.state_machine.is_started() or lifecycle.state_machine.is_paused():
+        raise HTTPException(status_code=409, detail=f"Cannot start replay while training is {lifecycle.state_machine.status.name}")
+    # PERF-CC-01: HDF5 I/O off the event loop. The thread spawn itself
+    # is fast but lives on the worker so we don't need a separate path.
+    success = await asyncio.to_thread(lifecycle.start_replay, snapshot_id)
+    if not success:
+        raise HTTPException(status_code=404, detail=f"Snapshot '{snapshot_id}' not found or failed to load")
+    payload = _build_unified_payload(
+        lifecycle,
+        snapshot_id,
+        operation="replay",
+        # Replay starts at the beginning of the snapshot window.
+        time_index_default="start",
+        extra={
+            "status": "replaying",
+            "session": lifecycle._replay_session.state_summary() if lifecycle._replay_session is not None else None,
+        },
+    )
+    return success_response(payload)
+
+
+@router.post("/{snapshot_id}/replay/control")
+async def replay_control_endpoint(request: Request, snapshot_id: str, body: ReplayControlRequest) -> dict:
+    """Control the active replay session (CAN-015c).
+
+    Phase 6E Sprint B B-3. Dispatches to the lifecycle's
+    ``replay_control`` method. Supported actions:
+
+    - ``play`` — start advancing the time index at current speed
+    - ``pause`` — stop advancing
+    - ``seek`` — jump to ``time_index`` (clamped to range)
+    - ``speed`` — set playback ``value`` (allowed -10×..10×, |value| < 0.1 treated as pause)
+    - ``range`` — restrict playback to ``[start, end)``
+    - ``stop`` — exit ``REPLAYING`` and tear down the session
+
+    The ``snapshot_id`` in the URL must match the active session's
+    ``snapshot_id`` — a 409 is returned otherwise to prevent a stale
+    canopy tab from accidentally controlling a different replay.
+    """
+    _validate_snapshot_id(snapshot_id, client=request.client.host if request.client else None)
+    lifecycle = _get_lifecycle(request)
+    if not lifecycle.state_machine.is_replaying() or lifecycle._replay_session is None:
+        raise HTTPException(status_code=409, detail="No active replay session — call POST /snapshots/{id}/replay first")
+    if lifecycle._replay_session.snapshot_id != snapshot_id:
+        raise HTTPException(status_code=409, detail=f"Active replay is for '{lifecycle._replay_session.snapshot_id}', not '{snapshot_id}'")
+    params: dict = {}
+    if body.time_index is not None:
+        params["time_index"] = body.time_index
+    if body.value is not None:
+        params["value"] = body.value
+    if body.start is not None:
+        params["start"] = body.start
+    if body.end is not None:
+        params["end"] = body.end
+    try:
+        # Replay control is fast (mutex + condition signal), no need to
+        # offload to a thread. ``stop`` does join the driver but that's
+        # bounded by the session's join timeout.
+        result = lifecycle.replay_control(body.action, **params)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    payload: dict = {"snapshot_id": snapshot_id, "operation": "replay_control", "action": body.action.lower(), "result": result}
+    # If stop succeeded, surface the post-stop FSM state for clarity.
+    if isinstance(result, dict) and result.get("status") == "stopped":
+        payload["fsm_state"] = lifecycle.state_machine.status.name
+    return success_response(payload)

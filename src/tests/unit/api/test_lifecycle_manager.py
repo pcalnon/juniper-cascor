@@ -1155,3 +1155,324 @@ class TestLoadSnapshotInvestigating:
             assert mgr.state_machine.is_resume_ready()
             assert not mgr.state_machine.is_investigating()
         mgr.shutdown()
+
+
+@pytest.mark.unit
+class TestReplaySessionUnit:
+    """CAN-015c (Phase 6E Sprint B B-3): unit tests for the
+    ``_ReplaySession`` class itself, exercised without the full
+    lifecycle context. Validates the playback state transitions
+    (play/pause/seek/speed/range), boundary handling, and the
+    synthetic-event emission contract.
+
+    The background thread is NOT started in these tests — each method
+    is exercised synchronously via the public API."""
+
+    def _make_session(self, history=None, monitor=None):
+        from unittest.mock import MagicMock
+
+        from api.lifecycle.manager import _ReplaySession
+
+        if history is None:
+            history = {
+                "train_loss": [0.5, 0.4, 0.3, 0.2, 0.1],
+                "value_loss": [0.6, 0.5, 0.4, 0.3, 0.2],
+                "train_accuracy": [0.6, 0.7, 0.8, 0.85, 0.9],
+                "value_accuracy": [0.55, 0.65, 0.75, 0.8, 0.85],
+            }
+        if monitor is None:
+            monitor = MagicMock()
+            monitor._trigger_callbacks = MagicMock()
+        return _ReplaySession("snap-test", history, monitor), monitor
+
+    def test_initializes_with_paused_at_index_zero(self):
+        session, _ = self._make_session()
+        assert session.length == 5
+        assert session.time_index == 0
+        assert session.speed == 1.0
+        assert session.paused is True
+        assert session.range_start == 0
+        assert session.range_end == 5
+
+    def test_play_clears_paused_flag(self):
+        session, _ = self._make_session()
+        session.play()
+        assert session.paused is False
+
+    def test_pause_sets_paused_flag(self):
+        session, _ = self._make_session()
+        session.play()
+        session.pause()
+        assert session.paused is True
+
+    def test_seek_clamps_to_valid_range(self):
+        session, monitor = self._make_session()
+        landed = session.seek(99)
+        assert landed == 4
+        landed = session.seek(-1)
+        assert landed == 0
+        # Seek emits the frame each time — 2 calls so far.
+        assert monitor._trigger_callbacks.call_count == 2
+
+    def test_seek_emits_synthetic_event_with_replay_marker(self):
+        session, monitor = self._make_session()
+        session.seek(2)
+        assert monitor._trigger_callbacks.call_count == 1
+        call = monitor._trigger_callbacks.call_args
+        assert call.args[0] == "epoch_end"
+        metrics = call.kwargs["metrics"]
+        assert metrics["loss"] == pytest.approx(0.3)
+        assert metrics["accuracy"] == pytest.approx(0.8)
+        assert metrics["validation_loss"] == pytest.approx(0.4)
+        assert metrics["validation_accuracy"] == pytest.approx(0.75)
+        assert metrics["replay"] is True
+        assert metrics["snapshot_id"] == "snap-test"
+        assert metrics["phase"] == "Replay"
+
+    def test_set_speed_clamps_to_allowed_range(self):
+        session, _ = self._make_session()
+        assert session.set_speed(100.0) == 10.0
+        assert session.set_speed(-100.0) == -10.0
+        assert session.set_speed(0.05) == 0.0
+        assert session.paused is True
+
+    def test_set_speed_zero_pauses(self):
+        session, _ = self._make_session()
+        session.play()
+        session.set_speed(0)
+        assert session.paused is True
+        assert session.speed == 0.0
+
+    def test_set_speed_preserves_negative_sign(self):
+        session, _ = self._make_session()
+        assert session.set_speed(-2.0) == -2.0
+        assert session.speed == -2.0
+
+    def test_set_range_clamps_and_re_clamps_time_index(self):
+        session, _ = self._make_session()
+        session.seek(4)
+        result = session.set_range(0, 3)
+        assert result == {"start": 0, "end": 3, "time_index": 2}
+        assert session.time_index == 2
+
+    def test_set_range_clamps_negative_start(self):
+        session, _ = self._make_session()
+        result = session.set_range(-10, 100)
+        assert result["start"] == 0
+        assert result["end"] == 5
+
+    def test_state_summary_includes_all_fields(self):
+        session, _ = self._make_session()
+        session.set_speed(2.5)
+        session.seek(1)
+        summary = session.state_summary()
+        assert summary["snapshot_id"] == "snap-test"
+        assert summary["length"] == 5
+        assert summary["time_index"] == 1
+        assert summary["speed"] == 2.5
+        session.set_range(0, 4)
+        summary = session.state_summary()
+        assert summary["range"] == {"start": 0, "end": 4}
+
+    def test_emit_frame_skips_when_index_out_of_history(self):
+        session, monitor = self._make_session()
+        session._emit_frame(99)
+        assert monitor._trigger_callbacks.call_count == 0
+
+    def test_empty_history_produces_zero_length(self):
+        session, monitor = self._make_session(history={})
+        assert session.length == 0
+        landed = session.seek(0)
+        assert landed == 0
+        assert monitor._trigger_callbacks.call_count == 0
+
+
+@pytest.mark.unit
+class TestReplayLifecycleIntegration:
+    """CAN-015c (Phase 6E Sprint B B-3): tests for ``start_replay`` /
+    ``replay_control`` / ``stop_replay`` on the lifecycle manager."""
+
+    def _stub_load(self, mgr, tmp_path, history):
+        """Helper: install a stub snapshot at ``tmp_path`` and patch the
+        serializer to return a network with the given history."""
+        from unittest.mock import MagicMock, patch
+
+        loaded = MagicMock()
+        loaded.history = history
+        (tmp_path / "snap.h5").write_bytes(b"")
+        return patch.object(mgr, "_get_snapshots_dir", return_value=tmp_path), patch("snapshots.snapshot_serializer.CascadeHDF5Serializer.load_network", return_value=loaded), patch.object(mgr, "_restore_original_methods"), patch.object(mgr, "_install_monitoring_hooks")
+
+    def test_start_replay_returns_false_when_training_active(self, tmp_path):
+        from unittest.mock import patch
+
+        mgr = TrainingLifecycleManager()
+        mgr.create_network(input_size=2, output_size=2)
+        mgr.state_machine.handle_command(Command.START)
+        with patch.object(mgr, "_get_snapshots_dir", return_value=tmp_path):
+            assert mgr.start_replay("anything") is False
+        assert mgr.state_machine.is_started()
+        mgr.shutdown()
+
+    def test_start_replay_returns_false_when_snapshot_missing(self, tmp_path):
+        from unittest.mock import patch
+
+        mgr = TrainingLifecycleManager()
+        with patch.object(mgr, "_get_snapshots_dir", return_value=tmp_path):
+            assert mgr.start_replay("nonexistent") is False
+        assert mgr.state_machine.is_stopped()
+        assert mgr._replay_session is None
+        mgr.shutdown()
+
+    def test_start_replay_transitions_fsm_and_installs_session(self, tmp_path):
+        mgr = TrainingLifecycleManager()
+        mgr.create_network(input_size=2, output_size=2)
+        ctxs = self._stub_load(mgr, tmp_path, {"train_loss": [0.1, 0.2, 0.3], "value_loss": [], "train_accuracy": [], "value_accuracy": []})
+        with ctxs[0], ctxs[1], ctxs[2], ctxs[3]:
+            try:
+                assert mgr.start_replay("snap") is True
+                assert mgr.state_machine.is_replaying()
+                assert mgr._replay_session is not None
+                assert mgr._replay_session.snapshot_id == "snap"
+                assert mgr._replay_session.length == 3
+            finally:
+                mgr.stop_replay()
+        mgr.shutdown()
+
+    def test_start_replay_replaces_prior_session(self, tmp_path):
+        from unittest.mock import MagicMock, patch
+
+        mgr = TrainingLifecycleManager()
+        mgr.create_network(input_size=2, output_size=2)
+        loaded_a = MagicMock()
+        loaded_a.history = {"train_loss": [0.1], "value_loss": [], "train_accuracy": [], "value_accuracy": []}
+        loaded_b = MagicMock()
+        loaded_b.history = {"train_loss": [0.5, 0.4, 0.3], "value_loss": [], "train_accuracy": [], "value_accuracy": []}
+        (tmp_path / "snap-a.h5").write_bytes(b"")
+        (tmp_path / "snap-b.h5").write_bytes(b"")
+        with patch.object(mgr, "_get_snapshots_dir", return_value=tmp_path), patch.object(mgr, "_restore_original_methods"), patch.object(mgr, "_install_monitoring_hooks"):
+            try:
+                with patch("snapshots.snapshot_serializer.CascadeHDF5Serializer.load_network", return_value=loaded_a):
+                    mgr.start_replay("snap-a")
+                first_session = mgr._replay_session
+                assert first_session is not None
+                with patch("snapshots.snapshot_serializer.CascadeHDF5Serializer.load_network", return_value=loaded_b):
+                    mgr.start_replay("snap-b")
+                second_session = mgr._replay_session
+                assert second_session is not first_session
+                assert second_session.snapshot_id == "snap-b"
+                assert second_session.length == 3
+            finally:
+                mgr.stop_replay()
+        mgr.shutdown()
+
+    def test_replay_control_dispatches_play_pause(self, tmp_path):
+        mgr = TrainingLifecycleManager()
+        mgr.create_network(input_size=2, output_size=2)
+        ctxs = self._stub_load(mgr, tmp_path, {"train_loss": [0.1, 0.2, 0.3], "value_loss": [], "train_accuracy": [], "value_accuracy": []})
+        with ctxs[0], ctxs[1], ctxs[2], ctxs[3]:
+            try:
+                mgr.start_replay("snap")
+                state = mgr.replay_control("play")
+                assert state["paused"] is False
+                state = mgr.replay_control("pause")
+                assert state["paused"] is True
+            finally:
+                mgr.stop_replay()
+        mgr.shutdown()
+
+    def test_replay_control_seek_speed_range(self, tmp_path):
+        mgr = TrainingLifecycleManager()
+        mgr.create_network(input_size=2, output_size=2)
+        ctxs = self._stub_load(mgr, tmp_path, {"train_loss": [0.1, 0.2, 0.3, 0.4, 0.5], "value_loss": [], "train_accuracy": [], "value_accuracy": []})
+        with ctxs[0], ctxs[1], ctxs[2], ctxs[3]:
+            try:
+                mgr.start_replay("snap")
+                state = mgr.replay_control("seek", time_index=3)
+                assert state["time_index"] == 3
+                state = mgr.replay_control("speed", value=2.5)
+                assert state["speed"] == 2.5
+                state = mgr.replay_control("range", start=1, end=4)
+                assert state["range"] == {"start": 1, "end": 4}
+            finally:
+                mgr.stop_replay()
+        mgr.shutdown()
+
+    def test_replay_control_stop_exits_replaying(self, tmp_path):
+        mgr = TrainingLifecycleManager()
+        mgr.create_network(input_size=2, output_size=2)
+        ctxs = self._stub_load(mgr, tmp_path, {"train_loss": [0.1], "value_loss": [], "train_accuracy": [], "value_accuracy": []})
+        with ctxs[0], ctxs[1], ctxs[2], ctxs[3]:
+            mgr.start_replay("snap")
+            assert mgr.state_machine.is_replaying()
+            result = mgr.replay_control("stop")
+            assert result["status"] == "stopped"
+            assert mgr.state_machine.is_stopped()
+            assert mgr._replay_session is None
+        mgr.shutdown()
+
+    def test_replay_control_seek_requires_time_index(self, tmp_path):
+        mgr = TrainingLifecycleManager()
+        mgr.create_network(input_size=2, output_size=2)
+        ctxs = self._stub_load(mgr, tmp_path, {"train_loss": [0.1], "value_loss": [], "train_accuracy": [], "value_accuracy": []})
+        with ctxs[0], ctxs[1], ctxs[2], ctxs[3]:
+            try:
+                mgr.start_replay("snap")
+                with pytest.raises(ValueError, match="time_index"):
+                    mgr.replay_control("seek")
+            finally:
+                mgr.stop_replay()
+        mgr.shutdown()
+
+    def test_replay_control_unknown_action_raises(self, tmp_path):
+        mgr = TrainingLifecycleManager()
+        mgr.create_network(input_size=2, output_size=2)
+        ctxs = self._stub_load(mgr, tmp_path, {"train_loss": [0.1], "value_loss": [], "train_accuracy": [], "value_accuracy": []})
+        with ctxs[0], ctxs[1], ctxs[2], ctxs[3]:
+            try:
+                mgr.start_replay("snap")
+                with pytest.raises(ValueError, match="Unknown replay action"):
+                    mgr.replay_control("teleport")
+            finally:
+                mgr.stop_replay()
+        mgr.shutdown()
+
+    def test_replay_control_without_active_session_raises(self):
+        mgr = TrainingLifecycleManager()
+        with pytest.raises(RuntimeError, match="No active replay session"):
+            mgr.replay_control("play")
+        mgr.shutdown()
+
+    def test_stop_replay_without_session_returns_not_active(self):
+        mgr = TrainingLifecycleManager()
+        result = mgr.stop_replay()
+        assert result == {"status": "not_active"}
+        mgr.shutdown()
+
+    def test_start_training_rejected_while_replaying(self, tmp_path):
+        import torch
+
+        mgr = TrainingLifecycleManager()
+        mgr.create_network(input_size=2, output_size=2)
+        ctxs = self._stub_load(mgr, tmp_path, {"train_loss": [0.1], "value_loss": [], "train_accuracy": [], "value_accuracy": []})
+        with ctxs[0], ctxs[1], ctxs[2], ctxs[3]:
+            try:
+                mgr.start_replay("snap")
+                x = torch.randn(20, 2)
+                y = torch.zeros(20, 2)
+                with pytest.raises(RuntimeError, match="replay"):
+                    mgr.start_training(x=x, y=y)
+            finally:
+                mgr.stop_replay()
+        mgr.shutdown()
+
+    def test_load_snapshot_rejected_while_replaying(self, tmp_path):
+        mgr = TrainingLifecycleManager()
+        mgr.create_network(input_size=2, output_size=2)
+        ctxs = self._stub_load(mgr, tmp_path, {"train_loss": [0.1], "value_loss": [], "train_accuracy": [], "value_accuracy": []})
+        with ctxs[0], ctxs[1], ctxs[2], ctxs[3]:
+            try:
+                mgr.start_replay("snap")
+                assert mgr.load_snapshot("snap") is False
+            finally:
+                mgr.stop_replay()
+        mgr.shutdown()
