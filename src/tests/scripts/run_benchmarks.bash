@@ -270,6 +270,12 @@ def benchmark_forward_pass(iterations: int = 5) -> dict:
                     "activation_fn": network.activation_fn,
                 })
 
+            # Resize output_weights to match the new (input_size + n_hidden, output_size)
+            # shape that forward() expects after manual hidden-unit insertion.
+            # Production add_unit() handles this automatically; the benchmark bypasses it.
+            if hidden_units > 0:
+                network.output_weights = torch.randn(network.input_size + hidden_units, network.output_size) * 0.1
+
             # Create input batch
             x = torch.randn(batch_size, network.input_size)
 
