@@ -26,6 +26,12 @@ class TrainingStatus(Enum):
     PAUSED = auto()
     COMPLETED = auto()
     FAILED = auto()
+    # CAN-015b (Phase 6E Sprint B B-2): a snapshot has been loaded with
+    # ``resume_from_snapshot`` and the lifecycle is ready to continue
+    # training. The next ``start_training`` transitions to STARTED while
+    # PRESERVING the loaded history (in contrast to a Retrain which
+    # resets it). See ``notes/PHASE_6E_SPRINT_B_DESIGN.md`` §2.3.
+    RESUME_READY = auto()
 
 
 class Command(Enum):
@@ -92,6 +98,12 @@ class TrainingStateMachine:
     def is_failed(self) -> bool:
         return self._status == TrainingStatus.FAILED
 
+    def is_resume_ready(self) -> bool:
+        """CAN-015b (Phase 6E Sprint B B-2): a snapshot has been loaded
+        for resume, the lifecycle is awaiting ``start_training`` to
+        continue from the snapshotted point."""
+        return self._status == TrainingStatus.RESUME_READY
+
     def handle_command(self, command: Command) -> bool:
         """Handle control command and perform state transition.
 
@@ -120,6 +132,18 @@ class TrainingStateMachine:
             self._paused_phase = None
             self._candidate_sub_state = None
             self.logger.info("State transition: Stopped -> Started (Output)")
+            return True
+        # CAN-015b (B-2): RESUME_READY transitions to STARTED with the
+        # same fresh-phase semantics as STOPPED -> STARTED. The history
+        # difference (RESUME_READY preserves the snapshotted history,
+        # whereas a fresh STOPPED -> STARTED has no history yet) is a
+        # data-side concern handled by the lifecycle, not the FSM.
+        if self._status == TrainingStatus.RESUME_READY:
+            self._status = TrainingStatus.STARTED
+            self._phase = TrainingPhase.OUTPUT
+            self._paused_phase = None
+            self._candidate_sub_state = None
+            self.logger.info("State transition: ResumeReady -> Started (Output)")
             return True
         if self._status == TrainingStatus.PAUSED:
             return self._restore_from_paused()
@@ -211,6 +235,30 @@ class TrainingStateMachine:
             self.logger.info(f"State transition: {prev} -> Failed ({reason})")
             return True
         self.logger.warning(f"Invalid transition: mark_failed while {self._status.name}")
+        return False
+
+    def mark_resume_ready(self) -> bool:
+        """CAN-015b (Phase 6E Sprint B B-2): mark the FSM as ready to
+        resume from a loaded snapshot. Call from
+        ``lifecycle.resume_from_snapshot`` after the snapshot is loaded
+        but before ``start_training`` runs.
+
+        Permitted from non-active states (Stopped / Completed / Failed)
+        — a user who finishes one run and resumes from its snapshot is
+        fine. From STARTED or PAUSED the call is rejected: the user
+        must stop training first. RESUME_READY is idempotent (allows
+        re-marking, e.g. if the user calls /resume twice on different
+        snapshots without an intervening start).
+        """
+        if self._status in (TrainingStatus.STOPPED, TrainingStatus.COMPLETED, TrainingStatus.FAILED, TrainingStatus.RESUME_READY):
+            prev = self._status.name
+            self._status = TrainingStatus.RESUME_READY
+            self._phase = TrainingPhase.IDLE
+            self._paused_phase = None
+            self._candidate_sub_state = None
+            self.logger.info(f"State transition: {prev} -> ResumeReady")
+            return True
+        self.logger.warning(f"Invalid transition: mark_resume_ready while {self._status.name}")
         return False
 
     def get_state_summary(self) -> dict:

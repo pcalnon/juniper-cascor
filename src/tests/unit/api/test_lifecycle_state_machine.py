@@ -201,3 +201,106 @@ class TestTrainingStateMachine:
         result = sm.handle_command(Command.START)
         assert result is True
         assert sm.is_started()
+
+
+@pytest.mark.unit
+class TestResumeReadyState:
+    """CAN-015b (Phase 6E Sprint B B-2): tests for the new
+    ``RESUME_READY`` state and ``mark_resume_ready`` method."""
+
+    def test_initial_state_is_not_resume_ready(self):
+        """Fresh state machine is Stopped, not ResumeReady."""
+        sm = TrainingStateMachine()
+        assert not sm.is_resume_ready()
+
+    def test_mark_resume_ready_from_stopped(self):
+        """Stopped -> ResumeReady transition succeeds."""
+        sm = TrainingStateMachine()
+        result = sm.mark_resume_ready()
+        assert result is True
+        assert sm.is_resume_ready()
+        assert sm.status == TrainingStatus.RESUME_READY
+        # Phase resets to IDLE on entry — same as Stopped.
+        assert sm.phase == TrainingPhase.IDLE
+
+    def test_mark_resume_ready_from_completed(self):
+        """Completed -> ResumeReady is permitted (resume after a finished run)."""
+        sm = TrainingStateMachine()
+        sm.handle_command(Command.START)
+        sm.mark_completed()
+        assert sm.is_completed()
+        result = sm.mark_resume_ready()
+        assert result is True
+        assert sm.is_resume_ready()
+
+    def test_mark_resume_ready_from_failed(self):
+        """Failed -> ResumeReady is permitted (resume after a failed run)."""
+        sm = TrainingStateMachine()
+        sm.handle_command(Command.START)
+        sm.mark_failed("test failure")
+        assert sm.is_failed()
+        result = sm.mark_resume_ready()
+        assert result is True
+        assert sm.is_resume_ready()
+
+    def test_mark_resume_ready_idempotent(self):
+        """ResumeReady -> ResumeReady is permitted (re-resume on a different snapshot)."""
+        sm = TrainingStateMachine()
+        sm.mark_resume_ready()
+        assert sm.is_resume_ready()
+        # Calling again still succeeds.
+        result = sm.mark_resume_ready()
+        assert result is True
+        assert sm.is_resume_ready()
+
+    def test_mark_resume_ready_rejected_when_started(self):
+        """Started -> ResumeReady is REJECTED — must stop training first."""
+        sm = TrainingStateMachine()
+        sm.handle_command(Command.START)
+        assert sm.is_started()
+        result = sm.mark_resume_ready()
+        assert result is False
+        # FSM unchanged.
+        assert sm.is_started()
+        assert not sm.is_resume_ready()
+
+    def test_mark_resume_ready_rejected_when_paused(self):
+        """Paused -> ResumeReady is REJECTED — must stop training first."""
+        sm = TrainingStateMachine()
+        sm.handle_command(Command.START)
+        sm.handle_command(Command.PAUSE)
+        assert sm.is_paused()
+        result = sm.mark_resume_ready()
+        assert result is False
+        # FSM unchanged.
+        assert sm.is_paused()
+        assert not sm.is_resume_ready()
+
+    def test_start_from_resume_ready_transitions_to_started(self):
+        """ResumeReady + START command -> Started (Output phase) — same as
+        Stopped + START, but the lifecycle wraps this with history-preserving
+        logic. The FSM transition itself looks identical."""
+        sm = TrainingStateMachine()
+        sm.mark_resume_ready()
+        assert sm.is_resume_ready()
+        result = sm.handle_command(Command.START)
+        assert result is True
+        assert sm.is_started()
+        assert sm.phase == TrainingPhase.OUTPUT
+
+    def test_reset_from_resume_ready(self):
+        """ResumeReady + RESET command -> Stopped (any state -> Stopped)."""
+        sm = TrainingStateMachine()
+        sm.mark_resume_ready()
+        result = sm.handle_command(Command.RESET)
+        assert result is True
+        assert sm.is_stopped()
+        assert not sm.is_resume_ready()
+
+    def test_get_state_summary_reports_resume_ready(self):
+        """get_state_summary surfaces the new state name."""
+        sm = TrainingStateMachine()
+        sm.mark_resume_ready()
+        summary = sm.get_state_summary()
+        assert summary["status"] == "RESUME_READY"
+        assert summary["phase"] == "IDLE"

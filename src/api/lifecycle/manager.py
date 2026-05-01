@@ -137,6 +137,16 @@ class TrainingLifecycleManager:
         self._auto_snap_min_epochs: int = 50
         self._auto_snap_best_metric: Optional[float] = None
         self._auto_snap_lock = threading.Lock()
+
+        # CAN-015b (Phase 6E Sprint B B-2): resume-from-snapshot marker.
+        # ``resume_from_snapshot`` sets this to the snapshot's terminal
+        # epoch count so canopy can render a visual boundary in the
+        # metrics-curve component (a vertical line separating the
+        # pre-resume read-only history from the new training that
+        # appends past it). Cleared once consumed by ``start_training``
+        # (so a subsequent run from the same snapshot doesn't mistakenly
+        # carry over the marker).
+        self._resume_point_epoch: Optional[int] = None
         self.training_monitor.register_callback("epoch_end", self._maybe_auto_snap_callback)
 
         self.logger.info("TrainingLifecycleManager initialized")
@@ -774,11 +784,20 @@ class TrainingLifecycleManager:
             self._stop_requested.clear()
             self._pause_event.set()
 
-            # CAS-006 (A-4): each training run starts fresh — we don't want
-            # a snapshot from a previous run's accuracy ceiling to suppress
-            # auto-snaps in this run.
-            with self._auto_snap_lock:
-                self._auto_snap_best_metric = None
+            # CAS-006 (A-4) + CAN-015b (B-2): each training run normally
+            # starts fresh — we don't want a snapshot from a previous run's
+            # accuracy ceiling to suppress auto-snaps in this run. EXCEPTION:
+            # when the FSM is RESUME_READY we're continuing a snapshotted
+            # run, so the loaded ratchet stays as the baseline (a re-snap
+            # only fires when the resumed training truly beats the prior
+            # run's best). We also clear the resume marker once consumed
+            # so a stop-then-restart-without-resume doesn't carry it over.
+            resuming = self.state_machine.is_resume_ready()
+            if not resuming:
+                with self._auto_snap_lock:
+                    self._auto_snap_best_metric = None
+            else:
+                self._resume_point_epoch = None
 
             if self._executor is None:
                 self._executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="cascor-train")
@@ -1446,9 +1465,83 @@ class TrainingLifecycleManager:
         )
         with self._auto_snap_lock:
             self._auto_snap_best_metric = None
+        # CAN-015b (B-2): a Retrain over a previously-loaded Resume
+        # snapshot should not carry forward the resume marker — the
+        # whole point of Retrain is the clean slate.
+        self._resume_point_epoch = None
         self._broadcast_training_state(force=True)
 
         self.logger.info(f"Snapshot restored for retrain: {snapshot_id}")
+        return True
+
+    def resume_from_snapshot(self, snapshot_id: str) -> bool:
+        """Load a snapshot and prepare to continue training (CAN-015b).
+
+        Phase 6E Sprint B B-2. Loads the snapshot identically to
+        ``load_snapshot`` (so weights, topology, meta-params, AND the
+        training history are preserved) then transitions the FSM to
+        ``RESUME_READY`` and records the snapshot's terminal-epoch count
+        as ``_resume_point_epoch`` so canopy can render a visual
+        boundary between the pre-resume read-only history and the new
+        training that extends past it.
+
+        In contrast to ``restore_for_retrain`` (which clears history,
+        counters, and the auto-snap-best ratchet so the new run starts
+        fresh), Resume PRESERVES every history-bearing field. The next
+        ``start_training`` extends the existing arrays rather than
+        starting at epoch 0, and the auto-snap-best ratchet keeps its
+        prior accuracy ceiling so a re-snapshot only fires when the new
+        training genuinely beats the previous run.
+
+        Resume requires a non-active state (Stopped / Completed /
+        Failed / RESUME_READY again). From STARTED or PAUSED the
+        underlying ``mark_resume_ready`` call rejects and this method
+        returns False.
+
+        See ``notes/PHASE_6E_SPRINT_B_DESIGN.md`` §2.3 for the full
+        spec.
+        """
+        if self.state_machine.is_started() or self.state_machine.is_paused():
+            self.logger.warning(f"resume_from_snapshot rejected: training is {self.state_machine.status.name}")
+            return False
+
+        ok = self._load_snapshot_to_network(snapshot_id)
+        if not ok:
+            return False
+
+        # Compute the resume-point epoch from the loaded network's
+        # history. Use the longest array's length so a snapshot that's
+        # missing some keys still produces a sensible marker. Falls back
+        # to 0 if no history is present (a network freshly loaded with
+        # no training-state included would land here — unusual but
+        # tolerated).
+        history = getattr(self.network, "history", None)
+        resume_point = 0
+        if isinstance(history, dict):
+            for key in self._NETWORK_HISTORY_KEYS:
+                series = history.get(key, ())
+                try:
+                    resume_point = max(resume_point, len(series))
+                except TypeError:
+                    # Unexpected type — skip, keep current best.
+                    continue
+
+        self._resume_point_epoch = resume_point
+        self.state_machine.mark_resume_ready()
+        # Surface the resume point in the broadcast so canopy clients
+        # that subscribe to state updates pick it up immediately.
+        # Mirrors the pattern used by reset() / restore_for_retrain.
+        # NOTE: ``training_state.status`` stays "Stopped" rather than
+        # "ResumeReady" — canopy reads RESUME_READY from the FSM summary
+        # (state_machine.get_state_summary()), not from training_state.
+        self.training_state.update_state(
+            status="Stopped",
+            phase="Idle",
+            current_epoch=resume_point,
+        )
+        self._broadcast_training_state(force=True)
+
+        self.logger.info(f"Snapshot restored for resume: {snapshot_id} (resume_point_epoch={resume_point})")
         return True
 
     def list_snapshots(self) -> List[Dict[str, Any]]:

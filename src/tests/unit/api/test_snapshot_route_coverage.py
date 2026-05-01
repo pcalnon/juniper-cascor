@@ -366,6 +366,115 @@ class TestRetrainFromSnapshot:
         assert response.status_code in (400, 404, 422), f"unexpected status {response.status_code} for traversal attempt"
 
 
+class TestResumeSnapshot:
+    """CAN-015b (Phase 6E Sprint B B-2): tests for the new
+    ``POST /v1/snapshots/{id}/resume`` route. The route mirrors the
+    /restore + /retrain shape (snapshot_id + training_params + status)
+    and additionally surfaces ``resume_point_epoch`` so canopy can
+    render the visual boundary between pre-resume read-only history and
+    new training. Lifecycle reset/preserve semantics are exercised in
+    test_lifecycle_manager.py."""
+
+    def test_resume_snapshot_success(self, client):
+        """resume route returns ``operation: resume``, ``status: ready``,
+        and the resume_point_epoch read from the lifecycle."""
+        # Mock the lifecycle method directly; we set _resume_point_epoch
+        # before the call so the route observes it after success.
+        lifecycle = client.app.state.lifecycle
+        lifecycle._resume_point_epoch = 42
+
+        with patch.object(lifecycle, "resume_from_snapshot", return_value=True):
+            response = client.post("/v1/snapshots/snap-001/resume")
+            assert response.status_code == 200
+            body = response.json()
+            assert body["status"] == "success"
+            assert body["data"]["snapshot_id"] == "snap-001"
+            assert body["data"]["operation"] == "resume"
+            assert body["data"]["status"] == "ready"
+            assert body["data"]["resume_point_epoch"] == 42
+
+    def test_resume_snapshot_surfaces_post_load_training_params(self, client):
+        """Response includes training_params so canopy can reconcile."""
+        fake_params = {
+            "learning_rate": 0.005,
+            "epochs_max": 1234,
+            "optimizer_type": "AdamW",
+        }
+        lifecycle = client.app.state.lifecycle
+        lifecycle._resume_point_epoch = 7
+        with patch.object(lifecycle, "resume_from_snapshot", return_value=True), patch.object(lifecycle, "get_training_params", return_value=fake_params):
+            response = client.post("/v1/snapshots/snap-with-params/resume")
+            assert response.status_code == 200
+            body = response.json()
+            assert "training_params" in body["data"]
+            assert body["data"]["training_params"] == fake_params
+
+    def test_resume_snapshot_falls_back_when_get_training_params_fails(self, client):
+        """A failing ``get_training_params`` after a successful resume must
+        NOT make the route appear failed — same defensive pattern as /restore."""
+        lifecycle = client.app.state.lifecycle
+        lifecycle._resume_point_epoch = 0
+        with patch.object(lifecycle, "resume_from_snapshot", return_value=True), patch.object(lifecycle, "get_training_params", side_effect=RuntimeError("boom")):
+            response = client.post("/v1/snapshots/snap-fallback/resume")
+            assert response.status_code == 200
+            body = response.json()
+            assert body["data"]["snapshot_id"] == "snap-fallback"
+            assert body["data"]["operation"] == "resume"
+            assert "training_params" not in body["data"]
+
+    def test_resume_snapshot_not_found_returns_404(self, client):
+        """When resume_from_snapshot returns False (missing snapshot or
+        deserializer failure), the route maps to 404."""
+        with patch.object(client.app.state.lifecycle, "resume_from_snapshot", return_value=False):
+            response = client.post("/v1/snapshots/nonexistent/resume")
+            assert response.status_code == 404
+            assert "not found or failed to load" in response.json()["detail"]
+
+    def test_resume_snapshot_rejected_when_training_active(self, client):
+        """The pre-flight FSM check returns 409 when training is Started."""
+        from api.lifecycle.state_machine import Command
+
+        lifecycle = client.app.state.lifecycle
+        # Force the FSM to Started (no actual network/training needed for the check).
+        lifecycle.state_machine.handle_command(Command.START)
+        try:
+            response = client.post("/v1/snapshots/snap-active/resume")
+            assert response.status_code == 409
+            assert "Cannot resume" in response.json()["detail"]
+        finally:
+            # Clean up so other tests aren't affected.
+            lifecycle.state_machine.handle_command(Command.RESET)
+
+    def test_resume_snapshot_rejected_when_paused(self, client):
+        """Paused state also rejected with 409."""
+        from api.lifecycle.state_machine import Command
+
+        lifecycle = client.app.state.lifecycle
+        lifecycle.state_machine.handle_command(Command.START)
+        lifecycle.state_machine.handle_command(Command.PAUSE)
+        try:
+            response = client.post("/v1/snapshots/snap-paused/resume")
+            assert response.status_code == 409
+        finally:
+            lifecycle.state_machine.handle_command(Command.RESET)
+
+    def test_resume_snapshot_runs_in_thread(self, client):
+        """PERF-CC-01: HDF5 I/O off the main event loop."""
+        captured: dict = {}
+
+        def fake_resume(snapshot_id: str):
+            import threading
+
+            captured["thread"] = threading.current_thread().name
+            return True
+
+        client.app.state.lifecycle._resume_point_epoch = 0
+        with patch.object(client.app.state.lifecycle, "resume_from_snapshot", side_effect=fake_resume):
+            response = client.post("/v1/snapshots/snap-thread/resume")
+            assert response.status_code == 200
+            assert captured["thread"] != "MainThread", f"resume_from_snapshot ran on MainThread ({captured['thread']!r}); expected an asyncio worker"
+
+
 class TestPerfCC01InvariantSource:
     """PERF-CC-01: lock asyncio.to_thread usage in route source."""
 
@@ -374,11 +483,13 @@ class TestPerfCC01InvariantSource:
 
         path = Path(__file__).resolve().parents[3] / "api" / "routes" / "snapshots.py"
         source = path.read_text(encoding="utf-8")
-        # Save / restore / retrain route handlers must all offload via asyncio.to_thread.
+        # Save / restore / retrain / resume route handlers must all offload via asyncio.to_thread.
         assert "asyncio.to_thread(lifecycle.save_snapshot" in source
         assert "asyncio.to_thread(lifecycle.load_snapshot" in source
         # CAN-015a (Phase 6E Sprint B B-1): retrain route added.
         assert "asyncio.to_thread(lifecycle.restore_for_retrain" in source
+        # CAN-015b (Phase 6E Sprint B B-2): resume route added.
+        assert "asyncio.to_thread(lifecycle.resume_from_snapshot" in source
 
     def test_imports_asyncio(self):
         from pathlib import Path
