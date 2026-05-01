@@ -441,3 +441,115 @@ class TestInvestigatingState:
         summary = sm.get_state_summary()
         assert summary["status"] == "INVESTIGATING"
         assert summary["phase"] == "IDLE"
+
+
+@pytest.mark.unit
+class TestReplayingState:
+    """CAN-015c (Phase 6E Sprint B B-3): tests for the new ``REPLAYING``
+    state and ``mark_replaying`` method.
+
+    Replaying is the read-only-playback mode used by ``/replay``.
+    Training commands are rejected; only ``/replay/control`` is
+    permitted. ``RESET`` exits the state.
+    """
+
+    def test_initial_state_is_not_replaying(self):
+        sm = TrainingStateMachine()
+        assert not sm.is_replaying()
+
+    def test_mark_replaying_from_stopped(self):
+        sm = TrainingStateMachine()
+        assert sm.mark_replaying() is True
+        assert sm.is_replaying()
+        assert sm.status == TrainingStatus.REPLAYING
+        assert sm.phase == TrainingPhase.IDLE
+
+    def test_mark_replaying_from_investigating(self):
+        """Replay over a prior Restore is permitted."""
+        sm = TrainingStateMachine()
+        sm.mark_investigating()
+        assert sm.mark_replaying() is True
+        assert sm.is_replaying()
+
+    def test_mark_replaying_from_resume_ready(self):
+        sm = TrainingStateMachine()
+        sm.mark_resume_ready()
+        assert sm.mark_replaying() is True
+
+    def test_mark_replaying_idempotent(self):
+        """Replacing one replay session with another is permitted."""
+        sm = TrainingStateMachine()
+        sm.mark_replaying()
+        assert sm.mark_replaying() is True
+        assert sm.is_replaying()
+
+    def test_mark_replaying_from_completed(self):
+        sm = TrainingStateMachine()
+        sm.handle_command(Command.START)
+        sm.mark_completed()
+        assert sm.mark_replaying() is True
+
+    def test_mark_replaying_from_failed(self):
+        sm = TrainingStateMachine()
+        sm.handle_command(Command.START)
+        sm.mark_failed("test")
+        assert sm.mark_replaying() is True
+
+    def test_mark_replaying_rejected_when_started(self):
+        sm = TrainingStateMachine()
+        sm.handle_command(Command.START)
+        assert sm.mark_replaying() is False
+        assert sm.is_started()
+
+    def test_mark_replaying_rejected_when_paused(self):
+        sm = TrainingStateMachine()
+        sm.handle_command(Command.START)
+        sm.handle_command(Command.PAUSE)
+        assert sm.mark_replaying() is False
+        assert sm.is_paused()
+
+    def test_start_rejected_from_replaying(self):
+        sm = TrainingStateMachine()
+        sm.mark_replaying()
+        assert sm.handle_command(Command.START) is False
+        assert sm.is_replaying()
+
+    def test_pause_rejected_from_replaying(self):
+        sm = TrainingStateMachine()
+        sm.mark_replaying()
+        assert sm.handle_command(Command.PAUSE) is False
+        assert sm.is_replaying()
+
+    def test_resume_command_rejected_from_replaying(self):
+        sm = TrainingStateMachine()
+        sm.mark_replaying()
+        assert sm.handle_command(Command.RESUME) is False
+        assert sm.is_replaying()
+
+    def test_reset_from_replaying(self):
+        """RESET transitions Replaying -> Stopped (escape hatch alongside /replay/control stop)."""
+        sm = TrainingStateMachine()
+        sm.mark_replaying()
+        assert sm.handle_command(Command.RESET) is True
+        assert sm.is_stopped()
+
+    def test_get_state_summary_reports_replaying(self):
+        sm = TrainingStateMachine()
+        sm.mark_replaying()
+        summary = sm.get_state_summary()
+        assert summary["status"] == "REPLAYING"
+        assert summary["phase"] == "IDLE"
+
+    def test_mark_investigating_rejected_from_replaying(self):
+        """A Restore can't pre-empt a running replay — user must /replay/control stop first."""
+        sm = TrainingStateMachine()
+        sm.mark_replaying()
+        assert sm.mark_investigating() is False
+        assert sm.is_replaying()
+
+    def test_mark_resume_ready_rejected_from_replaying(self):
+        """Same for Resume."""
+        sm = TrainingStateMachine()
+        sm.mark_replaying()
+        assert sm.mark_resume_ready() is False
+        assert sm.is_replaying()
