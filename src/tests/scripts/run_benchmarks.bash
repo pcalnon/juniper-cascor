@@ -314,7 +314,7 @@ def benchmark_training(iterations: int = 3) -> dict:
         network = CascadeCorrelationNetwork(config=config)
 
         def train_output():
-            network.train_output_layer(x, y, epochs=epochs, display_frequency=1000)
+            network.train_output_layer(x, y, epochs=epochs)
 
         mean, std, min_t = time_function(train_output, iterations)
         results[f"output_epochs{epochs}"] = {"mean": mean, "std": std, "min": min_t}
