@@ -1332,8 +1332,25 @@ class TrainingLifecycleManager:
             "description": description,
         }
 
-    def load_snapshot(self, snapshot_id: str) -> bool:
-        """Load a network snapshot by ID."""
+    # CAN-015 (Phase 6E Sprint B): keys on ``network.history`` whose contents
+    # represent per-epoch training metrics. ``restore_for_retrain`` empties
+    # each one so a freshly-retrained run starts with a clean curve. Kept as
+    # a class-level constant so the four B-sprint endpoints (Restore /
+    # Replay / Resume / Retrain) share a single source of truth for what
+    # "history" means; B-2 (Resume) and B-3 (Replay) will read from the
+    # same set when locking it as read-only.
+    _NETWORK_HISTORY_KEYS: tuple = ("train_loss", "value_loss", "train_accuracy", "value_accuracy")
+
+    def _load_snapshot_to_network(self, snapshot_id: str) -> bool:
+        """Locate the snapshot, deserialize, and install on the lifecycle.
+
+        Internal helper extracted from ``load_snapshot`` so each Phase 6E
+        Sprint B operation (Restore / Replay / Resume / Retrain) can share
+        the load semantics while diverging on post-load state mutations
+        (FSM transitions, history resets, replay-session setup, etc.).
+        Returns True on success, False if the snapshot is missing or the
+        deserializer fails.
+        """
         snapshots_dir = self._get_snapshots_dir()
         matches = [f for f in snapshots_dir.glob("*.h5") if f.stem == snapshot_id]
         if not matches:
@@ -1353,7 +1370,85 @@ class TrainingLifecycleManager:
         self._install_monitoring_hooks()
         if self._worker_coordinator is not None and hasattr(self.network, "set_worker_coordinator"):
             self.network.set_worker_coordinator(self._worker_coordinator)
-        self.logger.info(f"Snapshot restored: {snapshot_id}")
+        return True
+
+    def load_snapshot(self, snapshot_id: str) -> bool:
+        """Load a network snapshot by ID (Restore semantics).
+
+        Preserves the full snapshotted state — weights, topology, training
+        history, all meta-parameters per A-5 (CAN-014). Does NOT reset the
+        training-state counters or FSM; the user is expected to either
+        invoke a separate operation (Retrain / Resume) to enter a training
+        state, or modify the network and re-snapshot.
+
+        See ``notes/PHASE_6E_SPRINT_B_DESIGN.md`` §2.1.
+        """
+        ok = self._load_snapshot_to_network(snapshot_id)
+        if ok:
+            self.logger.info(f"Snapshot restored: {snapshot_id}")
+        return ok
+
+    def restore_for_retrain(self, snapshot_id: str) -> bool:
+        """Load a snapshot and reset training history for a fresh run (CAN-015a).
+
+        Phase 6E Sprint B B-1. Loads the snapshot identically to
+        ``load_snapshot`` (so weights, topology, and meta-params are
+        preserved per A-5) then resets every history-bearing field so the
+        next ``start_training`` call starts at epoch 0 with empty metric
+        curves. The user benefits from the snapshot's prior training as a
+        starting point but the new run is judged on its own merits.
+
+        Reset scope per ``notes/PHASE_6E_SPRINT_B_DESIGN.md`` §9:
+
+        - Network ``history`` arrays (train/value loss + accuracy) — cleared
+        - ``training_state`` counters (current_epoch, current_step) — 0
+        - ``_auto_snap_best_metric`` — None (so the new run gets fresh
+          ratchet baseline; this also happens in ``start_training`` but
+          we do it here too so a ``GET /v1/training/params`` between
+          retrain and start_training already shows the cleared value)
+        - FSM — Stopped / Idle (via ``Command.RESET``)
+        - ``training_monitor.metrics_buffer`` — cleared
+        - ``_last_emitted_history_len`` — 0
+        """
+        ok = self._load_snapshot_to_network(snapshot_id)
+        if not ok:
+            return False
+
+        # Clear history arrays on the network. ``getattr`` rather than direct
+        # attribute access so a network that doesn't expose ``history`` yet
+        # (older snapshots, or a partially-initialized network from a corner
+        # case) doesn't crash the retrain — best-effort consistency mirrors
+        # the legacy-snapshot tolerance from A-5.
+        history = getattr(self.network, "history", None)
+        if isinstance(history, dict):
+            for key in self._NETWORK_HISTORY_KEYS:
+                if key in history:
+                    # Preserve the container type (list vs deque vs other) by
+                    # replacing with an empty instance of the same type. Falls
+                    # back to ``[]`` if the container isn't a known builtin.
+                    try:
+                        history[key] = type(history[key])()
+                    except Exception:
+                        history[key] = []
+
+        # Reset lifecycle-level training state. Mirrors ``reset()`` (line ~840)
+        # but without the ``_stop_requested.set()`` since no training is
+        # currently running — Retrain is invoked from a stopped state and
+        # ``start_training`` will clear the event itself.
+        self._last_emitted_history_len = 0
+        self.state_machine.handle_command(Command.RESET)
+        self.training_monitor.clear_metrics()
+        self.training_state.update_state(
+            status="Stopped",
+            phase="Idle",
+            current_epoch=0,
+            current_step=0,
+        )
+        with self._auto_snap_lock:
+            self._auto_snap_best_metric = None
+        self._broadcast_training_state(force=True)
+
+        self.logger.info(f"Snapshot restored for retrain: {snapshot_id}")
         return True
 
     def list_snapshots(self) -> List[Dict[str, Any]]:

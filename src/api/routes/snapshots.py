@@ -120,3 +120,45 @@ async def restore_snapshot(request: Request, snapshot_id: str) -> dict:
     if params is not None:
         payload["training_params"] = params
     return success_response(payload)
+
+
+@router.post("/{snapshot_id}/retrain")
+async def retrain_from_snapshot(request: Request, snapshot_id: str) -> dict:
+    """Restore a snapshot and reset history for a fresh training run.
+
+    CAN-015a (Phase 6E Sprint B B-1). The lifecycle loads the snapshot
+    identically to ``/restore`` (preserving weights, topology, and all
+    A-5 meta-parameters) then resets the training history arrays,
+    counters, FSM state, and auto-snap-best ratchet so the next
+    ``POST /v1/training/start`` call begins at epoch 0 with empty
+    metric curves. The user benefits from the snapshot's prior
+    training as a starting point but the new run is judged on its own
+    merits.
+
+    See ``juniper-ml/notes/PHASE_6E_SPRINT_B_DESIGN.md`` §2.4 for the
+    full reset scope and §9 for the field-by-field table.
+
+    Response shape mirrors ``/restore`` (snapshot_id + training_params),
+    differing only in the ``operation`` field. The unified response
+    shape with ``fsm_state`` and ``time_index`` lands in B-4 alongside
+    the Investigating-state work; B-1 stays close to the existing
+    ``/restore`` shape so clients written against either endpoint can
+    transition between them with minimal changes.
+    """
+    _validate_snapshot_id(snapshot_id, client=request.client.host if request.client else None)
+    lifecycle = _get_lifecycle(request)
+    # PERF-CC-01: HDF5 I/O off the event loop, same as the other
+    # snapshot routes. The reset side-effects (FSM, monitor, training_state)
+    # are quick attribute writes — no need to fan out further.
+    success = await asyncio.to_thread(lifecycle.restore_for_retrain, snapshot_id)
+    if not success:
+        raise HTTPException(status_code=404, detail=f"Snapshot '{snapshot_id}' not found or failed to load")
+    try:
+        params = lifecycle.get_training_params()
+    except Exception:
+        logger.exception("retrain_from_snapshot: get_training_params failed after successful restore_for_retrain")
+        params = None
+    payload: dict = {"snapshot_id": snapshot_id, "operation": "retrain", "status": "ready"}
+    if params is not None:
+        payload["training_params"] = params
+    return success_response(payload)
