@@ -217,7 +217,7 @@ def benchmark_serialization(iterations: int = 5) -> dict:
             network.hidden_units.append({
                 "weights": torch.randn(network.input_size + i),
                 "bias": torch.randn(1),
-                "activation": network.activation_fn,
+                "activation_fn": network.activation_fn,
             })
 
         with tempfile.NamedTemporaryFile(suffix=".h5", delete=False) as f:
@@ -267,7 +267,7 @@ def benchmark_forward_pass(iterations: int = 5) -> dict:
                 network.hidden_units.append({
                     "weights": torch.randn(network.input_size + i),
                     "bias": torch.randn(1),
-                    "activation": network.activation_fn,
+                    "activation_fn": network.activation_fn,
                 })
 
             # Create input batch
