@@ -592,3 +592,204 @@ class TestUpdateParamsAtomicity:
         mgr = TrainingLifecycleManager()
         with pytest.raises(ValueError, match="No network exists"):
             mgr.update_params({"learning_rate": 0.005})
+
+
+@pytest.mark.unit
+class TestRestoreForRetrain:
+    """CAN-015a (Phase 6E Sprint B B-1): tests for the new
+    ``restore_for_retrain`` lifecycle path.
+
+    The method shares the load step with ``load_snapshot`` but adds the
+    full reset scope from ``PHASE_6E_SPRINT_B_DESIGN.md`` §9. These tests
+    pin each piece of the reset contract individually plus the
+    return-False-on-missing-snapshot behavior.
+    """
+
+    def test_returns_false_when_snapshot_missing(self, tmp_path):
+        """Snapshot ID with no matching .h5 file → False, no state changes."""
+        from unittest.mock import patch
+
+        mgr = TrainingLifecycleManager()
+        # Empty snapshots dir — no matching file.
+        with patch.object(mgr, "_get_snapshots_dir", return_value=tmp_path):
+            assert mgr.restore_for_retrain("nonexistent-snapshot") is False
+        # No network was created — verify the call didn't accidentally make one.
+        assert mgr.network is None
+        mgr.shutdown()
+
+    def test_returns_false_when_deserializer_fails(self, tmp_path):
+        """Deserializer returning None → False, original network preserved."""
+        from unittest.mock import patch
+
+        mgr = TrainingLifecycleManager()
+        mgr.create_network(input_size=2, output_size=2)
+        original_network = mgr.network
+        fake_file = tmp_path / "broken.h5"
+        fake_file.write_bytes(b"not actually an hdf5 file")
+        with patch.object(mgr, "_get_snapshots_dir", return_value=tmp_path), patch("snapshots.snapshot_serializer.CascadeHDF5Serializer.load_network", return_value=None):
+            assert mgr.restore_for_retrain("broken") is False
+        # Original network is still installed — failed retrain doesn't
+        # leave the lifecycle in a half-replaced state.
+        assert mgr.network is original_network
+        mgr.shutdown()
+
+    def test_resets_network_history_arrays(self, tmp_path):
+        """After successful restore_for_retrain, network.history arrays are empty."""
+        from unittest.mock import MagicMock, patch
+
+        mgr = TrainingLifecycleManager()
+        mgr.create_network(input_size=2, output_size=2)
+        loaded = MagicMock()
+        loaded.history = {
+            "train_loss": [0.5, 0.4, 0.3],
+            "value_loss": [0.6, 0.5, 0.4],
+            "train_accuracy": [0.7, 0.8, 0.85],
+            "value_accuracy": [0.65, 0.75, 0.8],
+        }
+        fake_file = tmp_path / "snap.h5"
+        fake_file.write_bytes(b"")
+        with patch.object(mgr, "_get_snapshots_dir", return_value=tmp_path), patch("snapshots.snapshot_serializer.CascadeHDF5Serializer.load_network", return_value=loaded), patch.object(mgr, "_restore_original_methods"), patch.object(mgr, "_install_monitoring_hooks"):
+            assert mgr.restore_for_retrain("snap") is True
+
+        for key in ("train_loss", "value_loss", "train_accuracy", "value_accuracy"):
+            assert loaded.history[key] == [], f"history[{key!r}] not cleared by retrain"
+        mgr.shutdown()
+
+    def test_resets_training_state_counters(self, tmp_path):
+        """current_epoch / current_step go to 0; status is Stopped, phase is Idle."""
+        from unittest.mock import MagicMock, patch
+
+        mgr = TrainingLifecycleManager()
+        mgr.create_network(input_size=2, output_size=2)
+        mgr.training_state.update_state(current_epoch=42, current_step=999, status="Started", phase="Output")
+        loaded = MagicMock()
+        loaded.history = {}
+        fake_file = tmp_path / "snap.h5"
+        fake_file.write_bytes(b"")
+        with patch.object(mgr, "_get_snapshots_dir", return_value=tmp_path), patch("snapshots.snapshot_serializer.CascadeHDF5Serializer.load_network", return_value=loaded), patch.object(mgr, "_restore_original_methods"), patch.object(mgr, "_install_monitoring_hooks"):
+            mgr.restore_for_retrain("snap")
+
+        state = mgr.training_state.get_state()
+        assert state["current_epoch"] == 0
+        assert state["current_step"] == 0
+        assert state["status"] == "Stopped"
+        assert state["phase"] == "Idle"
+        mgr.shutdown()
+
+    def test_resets_auto_snap_best_metric(self, tmp_path):
+        """The auto-snap-best ratchet is reset so the next run starts
+        from a fresh accuracy ceiling."""
+        from unittest.mock import MagicMock, patch
+
+        mgr = TrainingLifecycleManager()
+        mgr.create_network(input_size=2, output_size=2)
+        with mgr._auto_snap_lock:
+            mgr._auto_snap_best_metric = 0.95
+        loaded = MagicMock()
+        loaded.history = {}
+        fake_file = tmp_path / "snap.h5"
+        fake_file.write_bytes(b"")
+        with patch.object(mgr, "_get_snapshots_dir", return_value=tmp_path), patch("snapshots.snapshot_serializer.CascadeHDF5Serializer.load_network", return_value=loaded), patch.object(mgr, "_restore_original_methods"), patch.object(mgr, "_install_monitoring_hooks"):
+            mgr.restore_for_retrain("snap")
+
+        assert mgr._auto_snap_best_metric is None
+        mgr.shutdown()
+
+    def test_resets_last_emitted_history_len(self, tmp_path):
+        """The history-emission cursor is reset so the next training run
+        re-emits from epoch 0 rather than skipping to the loaded snapshot's
+        end."""
+        from unittest.mock import MagicMock, patch
+
+        mgr = TrainingLifecycleManager()
+        mgr.create_network(input_size=2, output_size=2)
+        mgr._last_emitted_history_len = 100
+        loaded = MagicMock()
+        loaded.history = {}
+        fake_file = tmp_path / "snap.h5"
+        fake_file.write_bytes(b"")
+        with patch.object(mgr, "_get_snapshots_dir", return_value=tmp_path), patch("snapshots.snapshot_serializer.CascadeHDF5Serializer.load_network", return_value=loaded), patch.object(mgr, "_restore_original_methods"), patch.object(mgr, "_install_monitoring_hooks"):
+            mgr.restore_for_retrain("snap")
+
+        assert mgr._last_emitted_history_len == 0
+        mgr.shutdown()
+
+    def test_clears_training_monitor_metrics(self, tmp_path):
+        """The training_monitor's metrics buffer is cleared."""
+        from unittest.mock import MagicMock, patch
+
+        mgr = TrainingLifecycleManager()
+        mgr.create_network(input_size=2, output_size=2)
+        loaded = MagicMock()
+        loaded.history = {}
+        fake_file = tmp_path / "snap.h5"
+        fake_file.write_bytes(b"")
+        with patch.object(mgr, "_get_snapshots_dir", return_value=tmp_path), patch("snapshots.snapshot_serializer.CascadeHDF5Serializer.load_network", return_value=loaded), patch.object(mgr, "_restore_original_methods"), patch.object(mgr, "_install_monitoring_hooks"), patch.object(mgr.training_monitor, "clear_metrics") as mock_clear:
+            mgr.restore_for_retrain("snap")
+            mock_clear.assert_called_once()
+        mgr.shutdown()
+
+    def test_tolerates_missing_history_attr(self, tmp_path):
+        """A loaded network without a ``history`` attribute doesn't crash
+        the retrain — best-effort consistency mirroring A-5's
+        legacy-snapshot tolerance."""
+        from unittest.mock import patch
+
+        mgr = TrainingLifecycleManager()
+        mgr.create_network(input_size=2, output_size=2)
+
+        class NetworkWithoutHistory:
+            input_size = 2
+            output_size = 2
+
+        loaded = NetworkWithoutHistory()
+        fake_file = tmp_path / "snap.h5"
+        fake_file.write_bytes(b"")
+        with patch.object(mgr, "_get_snapshots_dir", return_value=tmp_path), patch("snapshots.snapshot_serializer.CascadeHDF5Serializer.load_network", return_value=loaded), patch.object(mgr, "_restore_original_methods"), patch.object(mgr, "_install_monitoring_hooks"):
+            assert mgr.restore_for_retrain("snap") is True
+        mgr.shutdown()
+
+    def test_tolerates_non_dict_history(self, tmp_path):
+        """A loaded network whose ``history`` is not a dict (e.g. None) is
+        also tolerated — same defensive reasoning."""
+        from unittest.mock import patch
+
+        mgr = TrainingLifecycleManager()
+        mgr.create_network(input_size=2, output_size=2)
+
+        class NetworkWithNoneHistory:
+            input_size = 2
+            output_size = 2
+            history = None
+
+        loaded = NetworkWithNoneHistory()
+        fake_file = tmp_path / "snap.h5"
+        fake_file.write_bytes(b"")
+        with patch.object(mgr, "_get_snapshots_dir", return_value=tmp_path), patch("snapshots.snapshot_serializer.CascadeHDF5Serializer.load_network", return_value=loaded), patch.object(mgr, "_restore_original_methods"), patch.object(mgr, "_install_monitoring_hooks"):
+            assert mgr.restore_for_retrain("snap") is True
+        mgr.shutdown()
+
+    def test_load_snapshot_unchanged_by_retrain_refactor(self, tmp_path):
+        """Regression: ``load_snapshot`` (Restore semantics) keeps its
+        existing behavior after the ``_load_snapshot_to_network`` extraction.
+        It should NOT clear history or reset counters — that's only Retrain."""
+        from unittest.mock import MagicMock, patch
+
+        mgr = TrainingLifecycleManager()
+        mgr.create_network(input_size=2, output_size=2)
+        mgr.training_state.update_state(current_epoch=42, current_step=999)
+        loaded = MagicMock()
+        loaded.history = {"train_loss": [0.1, 0.2], "value_loss": [], "train_accuracy": [], "value_accuracy": []}
+        fake_file = tmp_path / "snap.h5"
+        fake_file.write_bytes(b"")
+        with patch.object(mgr, "_get_snapshots_dir", return_value=tmp_path), patch("snapshots.snapshot_serializer.CascadeHDF5Serializer.load_network", return_value=loaded), patch.object(mgr, "_restore_original_methods"), patch.object(mgr, "_install_monitoring_hooks"):
+            assert mgr.load_snapshot("snap") is True
+
+        # History on the loaded network is preserved — Restore is a load,
+        # not a reset.
+        assert loaded.history["train_loss"] == [0.1, 0.2]
+        # Counters on training_state are NOT reset by Restore.
+        state = mgr.training_state.get_state()
+        assert state["current_epoch"] == 42
+        assert state["current_step"] == 999
+        mgr.shutdown()
