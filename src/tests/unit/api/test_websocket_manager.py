@@ -304,6 +304,7 @@ class TestSizeGuardAndChunking:
         assert len(chunks) > 1
         reassembled_text = "".join(c["data"]["payload"] for c in chunks)
         import json as _json
+
         reassembled = _json.loads(reassembled_text)
         assert reassembled["type"] == original["type"]
         assert reassembled["data"]["big"] == original["data"]["big"]

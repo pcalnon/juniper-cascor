@@ -179,8 +179,20 @@ class TestUpdateTrainingParams:
         data = response.json()["data"]
         assert "optimizer_type" in data
         assert data["optimizer_type"] in {
-            "Adam", "AdamW", "SGD", "RMSprop", "NAdam", "RAdam", "Adamax",
-            "Adagrad", "Adadelta", "Adafactor", "ASGD", "LBFGS", "Rprop", "Muon",
+            "Adam",
+            "AdamW",
+            "SGD",
+            "RMSprop",
+            "NAdam",
+            "RAdam",
+            "Adamax",
+            "Adagrad",
+            "Adadelta",
+            "Adafactor",
+            "ASGD",
+            "LBFGS",
+            "Rprop",
+            "Muon",
         }
 
     def test_update_optimizer_type_round_trip(self, test_client_with_network):
@@ -221,9 +233,22 @@ class TestUpdateTrainingParams:
     def test_update_activation_function_accepts_full_registry(self, test_client_with_network):
         """Each Literal-allowed activation function is accepted by the API."""
         for name in (
-            "Identity", "Tanh", "Sigmoid", "ReLU", "LeakyReLU", "ELU", "SELU", "GELU",
-            "Softmax", "Softplus", "Hardtanh", "Softshrink", "Tanhshrink",
-            "tanh", "sigmoid", "relu",
+            "Identity",
+            "Tanh",
+            "Sigmoid",
+            "ReLU",
+            "LeakyReLU",
+            "ELU",
+            "SELU",
+            "GELU",
+            "Softmax",
+            "Softplus",
+            "Hardtanh",
+            "Softshrink",
+            "Tanhshrink",
+            "tanh",
+            "sigmoid",
+            "relu",
         ):
             response = test_client_with_network.patch(
                 "/v1/training/params",
@@ -238,9 +263,22 @@ class TestUpdateTrainingParams:
         data = response.json()["data"]
         assert "activation_function_name" in data
         assert data["activation_function_name"] in {
-            "Identity", "Tanh", "Sigmoid", "ReLU", "LeakyReLU", "ELU", "SELU", "GELU",
-            "Softmax", "Softplus", "Hardtanh", "Softshrink", "Tanhshrink",
-            "tanh", "sigmoid", "relu",
+            "Identity",
+            "Tanh",
+            "Sigmoid",
+            "ReLU",
+            "LeakyReLU",
+            "ELU",
+            "SELU",
+            "GELU",
+            "Softmax",
+            "Softplus",
+            "Hardtanh",
+            "Softshrink",
+            "Tanhshrink",
+            "tanh",
+            "sigmoid",
+            "relu",
         }
 
     def test_update_activation_function_round_trip(self, test_client_with_network):

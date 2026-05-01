@@ -44,7 +44,7 @@ curl -s http://localhost:8200/v1/health | python -m json.tool  # health
 docker compose --profile full up -d                            # Docker start
 ```
 
-> See: [Ecosystem Service Ports](../../CLAUDE.md#service-ports) | [juniper-deploy AGENTS.md](../../juniper-deploy/AGENTS.md)
+> See: [Ecosystem Service Ports](https://github.com/pcalnon/juniper-ml/blob/main/docs/REFERENCE.md#service-ports) | [juniper-deploy AGENTS.md](https://github.com/pcalnon/juniper-deploy/blob/main/AGENTS.md)
 
 ---
 
@@ -194,7 +194,7 @@ Levels: TRACE(5) -> VERBOSE(7) -> DEBUG(10) -> INFO(20) -> WARNING(30) -> ERROR(
 
 **Prometheus metrics:** Namespace `juniper_cascor_*`. Pattern: `juniper_cascor_<subsystem>_<name>_<unit>`. Grafana: **JuniperCascor** (UID `juniper-cascor`).
 
-> See: [Observability Guide](../../juniper-deploy/docs/OBSERVABILITY_GUIDE.md) | [Configuration Reference](install/REFERENCE.md#logging-configuration)
+> See: [Observability Guide](https://github.com/pcalnon/juniper-deploy/blob/main/docs/OBSERVABILITY_GUIDE.md) | [Configuration Reference](install/REFERENCE.md#logging-configuration)
 
 ---
 
@@ -234,6 +234,6 @@ Core: `torch`, `numpy`, `h5py`, `matplotlib`, `PyYAML`, `requests`
 
 ## Cross-References
 
-[Ecosystem Cheatsheet](../../juniper-ml/docs/DEVELOPER_CHEATSHEET_JUNIPER-ML.md) | [juniper-cascor-client](../../juniper-cascor-client/docs/DEVELOPER_CHEATSHEET.md) | [juniper-deploy](../../juniper-deploy/docs/DEVELOPER_CHEATSHEET.md) | [Parent Ecosystem Guide](../../CLAUDE.md)
+[Ecosystem Cheatsheet](https://github.com/pcalnon/juniper-ml/blob/main/docs/DEVELOPER_CHEATSHEET_JUNIPER-ML.md) | [juniper-cascor-client](https://github.com/pcalnon/juniper-cascor-client/blob/main/docs/DEVELOPER_CHEATSHEET.md) | [juniper-deploy](https://github.com/pcalnon/juniper-deploy/blob/main/docs/DEVELOPER_CHEATSHEET.md) | [Parent Ecosystem Guide](https://github.com/pcalnon/juniper-ml/blob/main/CLAUDE.md)
 
 ---

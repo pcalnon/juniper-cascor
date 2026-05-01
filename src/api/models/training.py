@@ -69,20 +69,49 @@ class TrainingParams(BaseModel):
     # each pass, so changing this between passes swaps the optimizer cleanly.
     # Mid-pass changes are not supported (the running optimizer instance keeps
     # its momentum).
-    optimizer_type: Optional[Literal[
-        "Adam", "AdamW", "SGD", "RMSprop", "NAdam", "RAdam", "Adamax",
-        "Adagrad", "Adadelta", "Adafactor", "ASGD", "LBFGS", "Rprop", "Muon",
-    ]] = Field(None, description="Output-layer optimizer override")
+    optimizer_type: Optional[
+        Literal[
+            "Adam",
+            "AdamW",
+            "SGD",
+            "RMSprop",
+            "NAdam",
+            "RAdam",
+            "Adamax",
+            "Adagrad",
+            "Adadelta",
+            "Adafactor",
+            "ASGD",
+            "LBFGS",
+            "Rprop",
+            "Muon",
+        ]
+    ] = Field(None, description="Output-layer optimizer override")
     # CAN-011 (Phase 6E Sprint A-3): hidden-unit activation function override.
     # Honored at the next cascade growth pass — the network's
     # ``_init_activation_function`` consults ``self.config.activation_function_name``
     # so changing this between passes swaps the activation cleanly. Existing
     # cascaded units retain whatever activation they were trained with.
-    activation_function_name: Optional[Literal[
-        "Identity", "Tanh", "Sigmoid", "ReLU", "LeakyReLU", "ELU", "SELU", "GELU",
-        "Softmax", "Softplus", "Hardtanh", "Softshrink", "Tanhshrink",
-        "tanh", "sigmoid", "relu",
-    ]] = Field(None, description="Hidden-unit activation function override")
+    activation_function_name: Optional[
+        Literal[
+            "Identity",
+            "Tanh",
+            "Sigmoid",
+            "ReLU",
+            "LeakyReLU",
+            "ELU",
+            "SELU",
+            "GELU",
+            "Softmax",
+            "Softplus",
+            "Hardtanh",
+            "Softshrink",
+            "Tanhshrink",
+            "tanh",
+            "sigmoid",
+            "relu",
+        ]
+    ] = Field(None, description="Hidden-unit activation function override")
     # CAS-006 (Phase 6E Sprint A-4): auto-snap-best toggle. When True, the
     # lifecycle subscribes to the training monitor's epoch_end event and
     # saves an HDF5 snapshot every time the (validation) accuracy beats
@@ -131,16 +160,45 @@ class TrainingParamUpdateRequest(BaseModel):
     output_epochs: Optional[int] = Field(None, ge=1, description="Per-output-training-phase epoch budget (separate from epochs_max)")
     init_output_weights: Optional[Literal["zero", "random"]] = Field(None, description="Initialization mode for new hidden unit output weights")
     # CAN-010 / ENH-006 (A-2): runtime-patchable counterpart.
-    optimizer_type: Optional[Literal[
-        "Adam", "AdamW", "SGD", "RMSprop", "NAdam", "RAdam", "Adamax",
-        "Adagrad", "Adadelta", "Adafactor", "ASGD", "LBFGS", "Rprop", "Muon",
-    ]] = Field(None, description="Output-layer optimizer override")
+    optimizer_type: Optional[
+        Literal[
+            "Adam",
+            "AdamW",
+            "SGD",
+            "RMSprop",
+            "NAdam",
+            "RAdam",
+            "Adamax",
+            "Adagrad",
+            "Adadelta",
+            "Adafactor",
+            "ASGD",
+            "LBFGS",
+            "Rprop",
+            "Muon",
+        ]
+    ] = Field(None, description="Output-layer optimizer override")
     # CAN-011 (A-3): runtime-patchable counterpart to TrainingParams.activation_function_name.
-    activation_function_name: Optional[Literal[
-        "Identity", "Tanh", "Sigmoid", "ReLU", "LeakyReLU", "ELU", "SELU", "GELU",
-        "Softmax", "Softplus", "Hardtanh", "Softshrink", "Tanhshrink",
-        "tanh", "sigmoid", "relu",
-    ]] = Field(None, description="Hidden-unit activation function override")
+    activation_function_name: Optional[
+        Literal[
+            "Identity",
+            "Tanh",
+            "Sigmoid",
+            "ReLU",
+            "LeakyReLU",
+            "ELU",
+            "SELU",
+            "GELU",
+            "Softmax",
+            "Softplus",
+            "Hardtanh",
+            "Softshrink",
+            "Tanhshrink",
+            "tanh",
+            "sigmoid",
+            "relu",
+        ]
+    ] = Field(None, description="Hidden-unit activation function override")
     # CAS-006 (A-4): runtime-patchable counterparts to TrainingParams.auto_snap_*.
     auto_snap_best: Optional[bool] = Field(None, description="Auto-save a snapshot whenever the model beats its best (validation) accuracy")
     auto_snap_min_epochs: Optional[int] = Field(None, ge=0, le=1_000_000, description="Suppress auto-snap until this many epochs have elapsed")

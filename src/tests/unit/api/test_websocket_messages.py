@@ -148,14 +148,10 @@ class TestChunkedMessageBuilder:
 
     def test_no_seq_field_at_construction(self):
         """Builder does not embed seq — manager assigns one per chunk on broadcast."""
-        msg = create_chunked_message(
-            chunk_id="x", chunk_index=0, total_chunks=1, original_type="t", payload=""
-        )
+        msg = create_chunked_message(chunk_id="x", chunk_index=0, total_chunks=1, original_type="t", payload="")
         assert "seq" not in msg
 
     def test_payload_can_be_empty(self):
         """An empty payload is legal (e.g., the tail chunk of an exact-multiple split)."""
-        msg = create_chunked_message(
-            chunk_id="x", chunk_index=2, total_chunks=3, original_type="t", payload=""
-        )
+        msg = create_chunked_message(chunk_id="x", chunk_index=2, total_chunks=3, original_type="t", payload="")
         assert msg["data"]["payload"] == ""

@@ -294,7 +294,8 @@ class TestLifecycleManagerTrainingControl:
         # int budget, Literal-validated string, and a fit-shaped kwarg.
         with patch.object(mgr.network, "fit", return_value={"train_loss": [0.5]}) as mock_fit:
             mgr.start_training(
-                x=x, y=y,
+                x=x,
+                y=y,
                 learning_rate=0.003,
                 output_epochs=7,
                 optimizer_type="AdamW",
@@ -534,9 +535,7 @@ class TestUpdateParamsAtomicity:
         """All updatable keys are applied when no setter raises."""
         net = self._FakeNetwork()
         mgr = self._mgr_with_network(net)
-        mgr.update_params(
-            {"learning_rate": 0.005, "correlation_threshold": 0.2, "patience": 10}
-        )
+        mgr.update_params({"learning_rate": 0.005, "correlation_threshold": 0.2, "patience": 10})
         assert net.learning_rate == pytest.approx(0.005)
         assert net.correlation_threshold == pytest.approx(0.2)
         assert net.patience == 10

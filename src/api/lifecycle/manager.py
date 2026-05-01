@@ -1078,10 +1078,10 @@ class TrainingLifecycleManager:
             #             self.logger.exception("update_params rollback: revert of %s failed", key)
             #     raise
             ########################################################################################
-            
+
             return self._apply_params_unlocked(params)
 
-    def _apply_params_unlocked(self, params: Dict[str, Any]) -> Dict[str, Any]:
+    def _apply_params_unlocked(self, params: Dict[str, Any]) -> Dict[str, Any]:  # noqa: C901
         """Apply runtime params assuming the caller already holds ``_training_lock``.
 
         Internal helper extracted from ``update_params`` so that

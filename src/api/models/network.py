@@ -44,8 +44,20 @@ class NetworkCreateRequest(BaseModel):
     # gives clients a 422 instead of a runtime warning when they ask for an
     # unsupported optimizer.
     optimizer_type: Literal[
-        "Adam", "AdamW", "SGD", "RMSprop", "NAdam", "RAdam", "Adamax",
-        "Adagrad", "Adadelta", "Adafactor", "ASGD", "LBFGS", "Rprop", "Muon",
+        "Adam",
+        "AdamW",
+        "SGD",
+        "RMSprop",
+        "NAdam",
+        "RAdam",
+        "Adamax",
+        "Adagrad",
+        "Adadelta",
+        "Adafactor",
+        "ASGD",
+        "LBFGS",
+        "Rprop",
+        "Muon",
     ] = Field("Adam", description="Output-layer optimizer (defaults to Adam)")
     # CAN-011 (Phase 6E Sprint A-3): output-layer activation function.
     # Mirrors ``_PROJECT_MODEL_ACTIVATION_FUNCTIONS_NAME_LIST`` in
@@ -54,9 +66,22 @@ class NetworkCreateRequest(BaseModel):
     # unsupported names rather than letting the network silently fall back
     # to the default at ``_init_activation_function`` time.
     activation_function_name: Literal[
-        "Identity", "Tanh", "Sigmoid", "ReLU", "LeakyReLU", "ELU", "SELU", "GELU",
-        "Softmax", "Softplus", "Hardtanh", "Softshrink", "Tanhshrink",
-        "tanh", "sigmoid", "relu",
+        "Identity",
+        "Tanh",
+        "Sigmoid",
+        "ReLU",
+        "LeakyReLU",
+        "ELU",
+        "SELU",
+        "GELU",
+        "Softmax",
+        "Softplus",
+        "Hardtanh",
+        "Softshrink",
+        "Tanhshrink",
+        "tanh",
+        "sigmoid",
+        "relu",
     ] = Field(_PROJECT_API_NETWORK_ACTIVATION_FUNCTION_DEFAULT, description="Hidden-unit activation function (defaults to Tanh)")
 
 
