@@ -6,6 +6,7 @@ import pytest
 import torch
 
 from api.lifecycle.manager import TrainingLifecycleManager
+from api.lifecycle.state_machine import Command
 
 
 @pytest.mark.unit
