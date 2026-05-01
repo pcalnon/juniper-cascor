@@ -304,3 +304,140 @@ class TestResumeReadyState:
         summary = sm.get_state_summary()
         assert summary["status"] == "RESUME_READY"
         assert summary["phase"] == "IDLE"
+
+
+@pytest.mark.unit
+class TestInvestigatingState:
+    """CAN-015d (Phase 6E Sprint B B-4): tests for the new
+    ``INVESTIGATING`` state and ``mark_investigating`` method.
+
+    Investigating is the inspection / modification mode loaded by
+    ``/restore`` — the user can edit meta-params and re-snapshot but
+    cannot start training directly. They must invoke ``/retrain`` or
+    ``/resume`` to transition out of Investigating before training can
+    begin.
+    """
+
+    def test_initial_state_is_not_investigating(self):
+        """Fresh state machine is Stopped, not Investigating."""
+        sm = TrainingStateMachine()
+        assert not sm.is_investigating()
+
+    def test_mark_investigating_from_stopped(self):
+        """Stopped -> Investigating transition succeeds."""
+        sm = TrainingStateMachine()
+        result = sm.mark_investigating()
+        assert result is True
+        assert sm.is_investigating()
+        assert sm.status == TrainingStatus.INVESTIGATING
+        assert sm.phase == TrainingPhase.IDLE
+
+    def test_mark_investigating_from_completed(self):
+        """Completed -> Investigating is permitted (load a snapshot after a finished run)."""
+        sm = TrainingStateMachine()
+        sm.handle_command(Command.START)
+        sm.mark_completed()
+        assert sm.is_completed()
+        assert sm.mark_investigating() is True
+        assert sm.is_investigating()
+
+    def test_mark_investigating_from_failed(self):
+        """Failed -> Investigating is permitted."""
+        sm = TrainingStateMachine()
+        sm.handle_command(Command.START)
+        sm.mark_failed("test failure")
+        assert sm.is_failed()
+        assert sm.mark_investigating() is True
+        assert sm.is_investigating()
+
+    def test_mark_investigating_from_resume_ready(self):
+        """ResumeReady -> Investigating is permitted (replace a Resume target with a Restore target)."""
+        sm = TrainingStateMachine()
+        sm.mark_resume_ready()
+        assert sm.is_resume_ready()
+        assert sm.mark_investigating() is True
+        assert sm.is_investigating()
+
+    def test_mark_investigating_idempotent(self):
+        """Investigating -> Investigating is permitted (replace one inspected snapshot with another)."""
+        sm = TrainingStateMachine()
+        sm.mark_investigating()
+        assert sm.mark_investigating() is True
+        assert sm.is_investigating()
+
+    def test_mark_investigating_rejected_when_started(self):
+        """Started -> Investigating is REJECTED — must stop training first."""
+        sm = TrainingStateMachine()
+        sm.handle_command(Command.START)
+        result = sm.mark_investigating()
+        assert result is False
+        assert sm.is_started()
+        assert not sm.is_investigating()
+
+    def test_mark_investigating_rejected_when_paused(self):
+        """Paused -> Investigating is REJECTED."""
+        sm = TrainingStateMachine()
+        sm.handle_command(Command.START)
+        sm.handle_command(Command.PAUSE)
+        result = sm.mark_investigating()
+        assert result is False
+        assert sm.is_paused()
+
+    def test_start_rejected_from_investigating(self):
+        """START command is REJECTED from Investigating — the whole
+        contract: user must invoke /retrain or /resume to enter a
+        training state."""
+        sm = TrainingStateMachine()
+        sm.mark_investigating()
+        assert sm.is_investigating()
+        result = sm.handle_command(Command.START)
+        assert result is False
+        # FSM still in Investigating — not silently auto-transitioned.
+        assert sm.is_investigating()
+        assert not sm.is_started()
+
+    def test_resume_command_rejected_from_investigating(self):
+        """RESUME command (used to resume from Paused) is REJECTED from
+        Investigating — same logic as START."""
+        sm = TrainingStateMachine()
+        sm.mark_investigating()
+        result = sm.handle_command(Command.RESUME)
+        assert result is False
+        assert sm.is_investigating()
+
+    def test_pause_rejected_from_investigating(self):
+        """PAUSE command is REJECTED from Investigating (no training to pause)."""
+        sm = TrainingStateMachine()
+        sm.mark_investigating()
+        result = sm.handle_command(Command.PAUSE)
+        assert result is False
+        assert sm.is_investigating()
+
+    def test_reset_from_investigating(self):
+        """RESET command transitions Investigating -> Stopped — escape hatch
+        for clearing the state if the user wants a fresh start without
+        going through /retrain or /resume."""
+        sm = TrainingStateMachine()
+        sm.mark_investigating()
+        result = sm.handle_command(Command.RESET)
+        assert result is True
+        assert sm.is_stopped()
+        assert not sm.is_investigating()
+
+    def test_mark_resume_ready_from_investigating(self):
+        """Investigating -> ResumeReady is permitted (the user explicitly
+        invokes /resume after first inspecting via /restore)."""
+        sm = TrainingStateMachine()
+        sm.mark_investigating()
+        result = sm.mark_resume_ready()
+        assert result is True
+        assert sm.is_resume_ready()
+        assert not sm.is_investigating()
+
+    def test_get_state_summary_reports_investigating(self):
+        """get_state_summary surfaces the new state name."""
+        sm = TrainingStateMachine()
+        sm.mark_investigating()
+        summary = sm.get_state_summary()
+        assert summary["status"] == "INVESTIGATING"
+        assert summary["phase"] == "IDLE"

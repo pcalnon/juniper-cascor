@@ -769,10 +769,11 @@ class TestRestoreForRetrain:
             assert mgr.restore_for_retrain("snap") is True
         mgr.shutdown()
 
-    def test_load_snapshot_unchanged_by_retrain_refactor(self, tmp_path):
-        """Regression: ``load_snapshot`` (Restore semantics) keeps its
-        existing behavior after the ``_load_snapshot_to_network`` extraction.
-        It should NOT clear history or reset counters — that's only Retrain."""
+    def test_load_snapshot_preserves_history_and_counters(self, tmp_path):
+        """Regression: ``load_snapshot`` (Restore semantics) preserves
+        history arrays and ``training_state`` counters. B-4 added the FSM
+        transition to INVESTIGATING but the data-side preservation
+        contract is unchanged from B-1."""
         from unittest.mock import MagicMock, patch
 
         mgr = TrainingLifecycleManager()
@@ -788,7 +789,10 @@ class TestRestoreForRetrain:
         # History on the loaded network is preserved — Restore is a load,
         # not a reset.
         assert loaded.history["train_loss"] == [0.1, 0.2]
-        # Counters on training_state are NOT reset by Restore.
+        # Counters on training_state are NOT reset by Restore (only Retrain
+        # resets these). status / phase ARE updated by B-4 to keep
+        # training_state in sync with the FSM transition to Investigating,
+        # but the epoch/step counters reflect the loaded snapshot.
         state = mgr.training_state.get_state()
         assert state["current_epoch"] == 42
         assert state["current_step"] == 999
@@ -1031,4 +1035,123 @@ class TestResumeFromSnapshot:
                 mgr._training_future.result(timeout=10)
 
         assert mgr._auto_snap_best_metric is None
+        mgr.shutdown()
+
+
+@pytest.mark.unit
+class TestLoadSnapshotInvestigating:
+    """CAN-015d (Phase 6E Sprint B B-4): tests for the new ``load_snapshot``
+    Investigating contract.
+
+    Restore now transitions the FSM to ``INVESTIGATING`` so the user
+    can edit / re-snapshot but cannot start training directly.
+    Pre-flight check rejects when training is currently active.
+    """
+
+    def test_returns_false_when_training_active(self, tmp_path):
+        """load_snapshot rejected while training is Started."""
+        from unittest.mock import patch
+
+        mgr = TrainingLifecycleManager()
+        mgr.create_network(input_size=2, output_size=2)
+        mgr.state_machine.handle_command(Command.START)
+        with patch.object(mgr, "_get_snapshots_dir", return_value=tmp_path):
+            assert mgr.load_snapshot("anything") is False
+        # FSM still in Started — Restore didn't sneak through.
+        assert mgr.state_machine.is_started()
+        mgr.shutdown()
+
+    def test_transitions_fsm_to_investigating(self, tmp_path):
+        """Successful load_snapshot transitions FSM to INVESTIGATING."""
+        from unittest.mock import MagicMock, patch
+
+        mgr = TrainingLifecycleManager()
+        mgr.create_network(input_size=2, output_size=2)
+        loaded = MagicMock()
+        loaded.history = {"train_loss": [0.1, 0.2], "value_loss": [], "train_accuracy": [], "value_accuracy": []}
+        fake_file = tmp_path / "snap.h5"
+        fake_file.write_bytes(b"")
+        with patch.object(mgr, "_get_snapshots_dir", return_value=tmp_path), patch("snapshots.snapshot_serializer.CascadeHDF5Serializer.load_network", return_value=loaded), patch.object(mgr, "_restore_original_methods"), patch.object(mgr, "_install_monitoring_hooks"):
+            assert mgr.load_snapshot("snap") is True
+
+        assert mgr.state_machine.is_investigating()
+        mgr.shutdown()
+
+    def test_clears_resume_marker(self, tmp_path):
+        """A Restore over a previously-resumed snapshot clears the
+        resume marker — Restore is the inspection-only entry point."""
+        from unittest.mock import MagicMock, patch
+
+        mgr = TrainingLifecycleManager()
+        mgr.create_network(input_size=2, output_size=2)
+        # Simulate a prior Resume having set the marker.
+        mgr._resume_point_epoch = 5
+        loaded = MagicMock()
+        loaded.history = {"train_loss": [], "value_loss": [], "train_accuracy": [], "value_accuracy": []}
+        fake_file = tmp_path / "snap.h5"
+        fake_file.write_bytes(b"")
+        with patch.object(mgr, "_get_snapshots_dir", return_value=tmp_path), patch("snapshots.snapshot_serializer.CascadeHDF5Serializer.load_network", return_value=loaded), patch.object(mgr, "_restore_original_methods"), patch.object(mgr, "_install_monitoring_hooks"):
+            mgr.load_snapshot("snap")
+
+        assert mgr._resume_point_epoch is None
+        mgr.shutdown()
+
+    def test_start_training_rejected_when_investigating(self):
+        """``start_training`` raises RuntimeError when FSM is INVESTIGATING.
+
+        The user must invoke /retrain or /resume to transition out of
+        Investigating before training can begin. Failing fast at the API
+        boundary is much clearer than letting the future submit and the
+        FSM transition fail silently inside monitored_fit.
+        """
+        import torch
+
+        mgr = TrainingLifecycleManager()
+        mgr.create_network(input_size=2, output_size=2)
+        # Force FSM to Investigating without actually loading a snapshot.
+        mgr.state_machine.mark_investigating()
+        x = torch.randn(20, 2)
+        y = torch.zeros(20, 2)
+        with pytest.raises(RuntimeError, match="Investigating"):
+            mgr.start_training(x=x, y=y)
+        # FSM unchanged — failed start didn't accidentally transition.
+        assert mgr.state_machine.is_investigating()
+        mgr.shutdown()
+
+    def test_retrain_after_restore_clears_investigating(self, tmp_path):
+        """Retrain after Restore transitions out of Investigating to
+        Stopped — Retrain explicitly moves to a training-ready state."""
+        from unittest.mock import MagicMock, patch
+
+        mgr = TrainingLifecycleManager()
+        mgr.create_network(input_size=2, output_size=2)
+        loaded = MagicMock()
+        loaded.history = {"train_loss": [0.1], "value_loss": [], "train_accuracy": [], "value_accuracy": []}
+        fake_file = tmp_path / "snap.h5"
+        fake_file.write_bytes(b"")
+        with patch.object(mgr, "_get_snapshots_dir", return_value=tmp_path), patch("snapshots.snapshot_serializer.CascadeHDF5Serializer.load_network", return_value=loaded), patch.object(mgr, "_restore_original_methods"), patch.object(mgr, "_install_monitoring_hooks"):
+            mgr.load_snapshot("snap")
+            assert mgr.state_machine.is_investigating()
+            mgr.restore_for_retrain("snap")
+            # After Retrain the FSM is Stopped (Retrain calls Command.RESET).
+            assert mgr.state_machine.is_stopped()
+            assert not mgr.state_machine.is_investigating()
+        mgr.shutdown()
+
+    def test_resume_after_restore_clears_investigating(self, tmp_path):
+        """Resume after Restore transitions Investigating -> ResumeReady."""
+        from unittest.mock import MagicMock, patch
+
+        mgr = TrainingLifecycleManager()
+        mgr.create_network(input_size=2, output_size=2)
+        loaded = MagicMock()
+        loaded.history = {"train_loss": [0.1, 0.2, 0.3], "value_loss": [], "train_accuracy": [], "value_accuracy": []}
+        fake_file = tmp_path / "snap.h5"
+        fake_file.write_bytes(b"")
+        with patch.object(mgr, "_get_snapshots_dir", return_value=tmp_path), patch("snapshots.snapshot_serializer.CascadeHDF5Serializer.load_network", return_value=loaded), patch.object(mgr, "_restore_original_methods"), patch.object(mgr, "_install_monitoring_hooks"):
+            mgr.load_snapshot("snap")
+            assert mgr.state_machine.is_investigating()
+            mgr.resume_from_snapshot("snap")
+            assert mgr.state_machine.is_resume_ready()
+            assert not mgr.state_machine.is_investigating()
         mgr.shutdown()
