@@ -16,6 +16,16 @@ import numpy as np
 import pytest
 import torch
 
+# spiral_problem.check was archived to src/backups/check.py; the canonical
+# SpiralProblem now lives at spiral_problem.spiral_problem.SpiralProblem.
+# Skip the entire module rather than delete it so the historical coverage
+# can be revived if/when the legacy check.py module returns. Same pattern
+# as V31 (remote_client.remote_client_0).
+pytest.importorskip(
+    "spiral_problem.check",
+    reason="spiral_problem.check has been archived to src/backups/",
+)
+
 
 @pytest.mark.unit
 class TestSpiralProblemCheckInit:
