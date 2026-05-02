@@ -213,6 +213,10 @@ async def _message_loop(
                 # fields when present. Workers running older images send
                 # only ``worker_id`` + ``timestamp``; the missing kwargs
                 # stay at None and prior values are preserved.
+                # METRICS-MON R4.4: three additional optional fields from
+                # R4.4-aware workers (training-loop instrumentation).
+                # ``msg.get(...)`` returns None for absent keys — same
+                # additive-compatibility shape as R1.3.
                 registry.heartbeat(
                     worker_id,
                     in_flight_tasks=msg.get("in_flight_tasks"),
@@ -220,6 +224,9 @@ async def _message_loop(
                     rss_mb=msg.get("rss_mb"),
                     tasks_completed=msg.get("tasks_completed"),
                     tasks_failed=msg.get("tasks_failed"),
+                    last_task_duration_seconds=msg.get("last_task_duration_seconds"),
+                    recent_task_durations_seconds=msg.get("recent_task_durations_seconds"),
+                    gpu_utilization_pct=msg.get("gpu_utilization_pct"),
                 )
                 await websocket.send_json(WorkerProtocol.build_heartbeat(worker_id))
 

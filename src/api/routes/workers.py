@@ -28,8 +28,14 @@ def _serialize_worker(worker) -> dict:
 
     METRICS-MON R1.3 / seed-04: includes ``in_flight_tasks``,
     ``last_task_completed_at``, and ``rss_mb`` from R1.3-aware workers'
-    enriched heartbeats. Workers running older images report these as
-    0/None defaults until they upgrade.
+    enriched heartbeats.
+
+    METRICS-MON R4.4: includes ``last_task_duration_seconds``,
+    ``recent_task_durations_seconds``, and ``gpu_utilization_pct`` from
+    R4.4-aware workers' training-loop instrumentation.
+
+    Workers running older images report missing fields as ``0`` / ``None``
+    / ``[]`` defaults until they upgrade.
     """
     return {
         "worker_id": worker.worker_id,
@@ -45,6 +51,10 @@ def _serialize_worker(worker) -> dict:
         "in_flight_tasks": worker.in_flight_tasks,
         "last_task_completed_at": worker.last_task_completed_at,
         "rss_mb": worker.rss_mb,
+        # METRICS-MON R4.4: training-loop instrumentation fields.
+        "last_task_duration_seconds": worker.last_task_duration_seconds,
+        "recent_task_durations_seconds": worker.recent_task_durations_seconds,
+        "gpu_utilization_pct": worker.gpu_utilization_pct,
     }
 
 
