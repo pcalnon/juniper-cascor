@@ -96,7 +96,12 @@ class RequestBodyLimitMiddleware(BaseHTTPMiddleware):
                 if size > self._max_bytes:
                     return JSONResponse(status_code=_PROJECT_API_HTTP_413_PAYLOAD_TOO_LARGE, content={"detail": "Request body too large"})
                 chunks.append(chunk)
-            # Cache body for downstream handlers (Starlette convention).
+            # Cache body for downstream handlers. Starlette's
+            # ``BaseHTTPMiddleware._CachedRequest.wrapped_receive`` short-
+            # circuits to a synthetic ``http.request`` message constructed
+            # from ``self._body`` when that attribute is set, so subsequent
+            # ``await request.body()`` / ``request.json()`` / Pydantic body
+            # parsing in downstream handlers all see the cached payload.
             request._body = b"".join(chunks)
         return await call_next(request)
 

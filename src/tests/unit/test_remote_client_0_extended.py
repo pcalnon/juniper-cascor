@@ -15,7 +15,14 @@ import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from remote_client.remote_client_0 import RemoteCandidateTrainingClient
+# remote_client_0 was archived to src/backups/ (no longer importable).
+# Skip the entire module rather than delete it so the historical coverage
+# can be revived if/when the legacy client comes back.
+remote_client_0 = pytest.importorskip(
+    "remote_client.remote_client_0",
+    reason="remote_client.remote_client_0 has been archived to src/backups/",
+)
+RemoteCandidateTrainingClient = remote_client_0.RemoteCandidateTrainingClient
 
 pytestmark = pytest.mark.unit
 

@@ -149,7 +149,7 @@ class TestProbeDependency:
 
     def test_probe_healthy_service(self):
         """Test probing a healthy service."""
-        with patch("api.models.health.urllib.request.urlopen") as mock_urlopen:
+        with patch("juniper_observability.health.probe.urllib.request.urlopen") as mock_urlopen:
             mock_urlopen.return_value.__enter__ = lambda s: s
             mock_urlopen.return_value.__exit__ = lambda s, *a: None
             result = probe_dependency("Test Service", "http://localhost:8100/v1/health/live")
@@ -160,7 +160,7 @@ class TestProbeDependency:
 
     def test_probe_unhealthy_service(self):
         """Test probing an unreachable service."""
-        with patch("api.models.health.urllib.request.urlopen", side_effect=ConnectionRefusedError("refused")):
+        with patch("juniper_observability.health.probe.urllib.request.urlopen", side_effect=ConnectionRefusedError("refused")):
             result = probe_dependency("Test Service", "http://localhost:9999/v1/health/live", timeout=1.0)
             assert result.status == "unhealthy"
             assert result.latency_ms is not None
@@ -170,7 +170,7 @@ class TestProbeDependency:
         """Test probing a service that times out."""
         from urllib.error import URLError
 
-        with patch("api.models.health.urllib.request.urlopen", side_effect=URLError("timeout")):
+        with patch("juniper_observability.health.probe.urllib.request.urlopen", side_effect=URLError("timeout")):
             result = probe_dependency("Slow Service", "http://localhost:8100/v1/health/live", timeout=0.1)
             assert result.status == "unhealthy"
             assert "URLError" in result.message

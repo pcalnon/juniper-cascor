@@ -141,6 +141,14 @@ if [[ "${QUIET}" == "true" ]]; then
     export CASCOR_LOG_LEVEL=WARNING
 fi
 
+# Resolve OUTPUT_FILE to an absolute path while we still hold the caller's
+# CWD; the script `cd`s into ${SRC_DIR} below, so a relative --output path
+# would otherwise be interpreted relative to src/ instead of the workflow's
+# repo root (caused tee to fail with "No such file or directory" in CI).
+if [[ -n "${OUTPUT_FILE}" && "${OUTPUT_FILE}" != /* ]]; then
+    OUTPUT_FILE="$(pwd)/${OUTPUT_FILE}"
+fi
+
 # Change to source directory
 cd "${SRC_DIR}" || exit 1
 
@@ -217,7 +225,7 @@ def benchmark_serialization(iterations: int = 5) -> dict:
             network.hidden_units.append({
                 "weights": torch.randn(network.input_size + i),
                 "bias": torch.randn(1),
-                "activation": network.activation_fn,
+                "activation_fn": network.activation_fn,
             })
 
         with tempfile.NamedTemporaryFile(suffix=".h5", delete=False) as f:
@@ -267,8 +275,14 @@ def benchmark_forward_pass(iterations: int = 5) -> dict:
                 network.hidden_units.append({
                     "weights": torch.randn(network.input_size + i),
                     "bias": torch.randn(1),
-                    "activation": network.activation_fn,
+                    "activation_fn": network.activation_fn,
                 })
+
+            # Resize output_weights to match the new (input_size + n_hidden, output_size)
+            # shape that forward() expects after manual hidden-unit insertion.
+            # Production add_unit() handles this automatically; the benchmark bypasses it.
+            if hidden_units > 0:
+                network.output_weights = torch.randn(network.input_size + hidden_units, network.output_size) * 0.1
 
             # Create input batch
             x = torch.randn(batch_size, network.input_size)
@@ -308,7 +322,7 @@ def benchmark_training(iterations: int = 3) -> dict:
         network = CascadeCorrelationNetwork(config=config)
 
         def train_output():
-            network.train_output_layer(x, y, epochs=epochs, display_frequency=1000)
+            network.train_output_layer(x, y, epochs=epochs)
 
         mean, std, min_t = time_function(train_output, iterations)
         results[f"output_epochs{epochs}"] = {"mean": mean, "std": std, "min": min_t}

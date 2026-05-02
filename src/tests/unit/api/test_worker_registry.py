@@ -111,6 +111,92 @@ class TestWorkerRegistrationR1_3:
 
 
 @pytest.mark.unit
+class TestWorkerRegistrationR4_4:
+    """METRICS-MON R4.4: training-loop instrumentation fields.
+
+    Mirrors R1.3 test patterns above — defaults, minimal-heartbeat
+    preserves prior values, kwargs update only what's provided.
+    """
+
+    def test_r4_4_field_defaults(self):
+        """New registration defaults R4.4 fields to None / [] / None."""
+        reg = WorkerRegistration(worker_id="w1")
+        assert reg.last_task_duration_seconds is None
+        assert reg.recent_task_durations_seconds == []
+        assert reg.gpu_utilization_pct is None
+
+    def test_record_heartbeat_minimal_preserves_r4_4_fields(self):
+        """Pre-R4.4 worker (minimal heartbeat) preserves prior R4.4 values.
+
+        Backward-compat regression guard: if a worker is upgraded to R4.4,
+        downgraded to pre-R4.4, then sends a minimal heartbeat, the prior
+        R4.4 values must persist (matches the R1.3 pattern). Operators
+        watching the dashboard for the percentile window during a
+        rolling restart should not see the values reset to defaults.
+        """
+        reg = WorkerRegistration(worker_id="w1")
+        reg.last_task_duration_seconds = 0.42
+        reg.recent_task_durations_seconds = [0.1, 0.2, 0.42]
+        reg.gpu_utilization_pct = 67.5
+        reg.record_heartbeat()
+        assert reg.last_task_duration_seconds == 0.42
+        assert reg.recent_task_durations_seconds == [0.1, 0.2, 0.42]
+        assert reg.gpu_utilization_pct == 67.5
+
+    def test_record_heartbeat_with_r4_4_fields(self):
+        """R4.4-aware worker reports all 3 fields → applied atomically."""
+        reg = WorkerRegistration(worker_id="w1")
+        reg.record_heartbeat(
+            last_task_duration_seconds=1.25,
+            recent_task_durations_seconds=[0.5, 0.8, 1.25],
+            gpu_utilization_pct=88.0,
+        )
+        assert reg.last_task_duration_seconds == 1.25
+        assert reg.recent_task_durations_seconds == [0.5, 0.8, 1.25]
+        assert reg.gpu_utilization_pct == 88.0
+
+    def test_record_heartbeat_recent_durations_defensive_copy(self):
+        """Caller's list mutation must not leak through to the registration.
+
+        Pinning this matters because the worker's deque is converted to a
+        list right before send; if cascor stored a shared reference, a
+        future refactor that reuses the list buffer (e.g. via msgpack
+        zero-copy) would silently mutate registered worker state.
+        """
+        reg = WorkerRegistration(worker_id="w1")
+        caller_list = [0.1, 0.2, 0.3]
+        reg.record_heartbeat(recent_task_durations_seconds=caller_list)
+        caller_list.append(999.0)
+        assert reg.recent_task_durations_seconds == [0.1, 0.2, 0.3]
+
+    def test_record_heartbeat_partial_r4_4_kwargs(self):
+        """Mixed: only the provided R4.4 fields update; others preserved."""
+        reg = WorkerRegistration(worker_id="w1")
+        reg.last_task_duration_seconds = 0.5
+        reg.gpu_utilization_pct = 50.0
+        reg.record_heartbeat(last_task_duration_seconds=0.8)
+        assert reg.last_task_duration_seconds == 0.8
+        assert reg.gpu_utilization_pct == 50.0  # preserved
+        assert reg.recent_task_durations_seconds == []  # never set
+
+    def test_registry_heartbeat_forwards_r4_4_fields(self):
+        """``WorkerRegistry.heartbeat()`` forwards R4.4 kwargs to ``record_heartbeat``."""
+        registry = WorkerRegistry()
+        registry.register("w1", {"cpu_cores": 8})
+        ok = registry.heartbeat(
+            "w1",
+            last_task_duration_seconds=2.5,
+            recent_task_durations_seconds=[1.0, 2.5],
+            gpu_utilization_pct=90.0,
+        )
+        assert ok is True
+        reg = registry.get("w1")
+        assert reg.last_task_duration_seconds == 2.5
+        assert reg.recent_task_durations_seconds == [1.0, 2.5]
+        assert reg.gpu_utilization_pct == 90.0
+
+
+@pytest.mark.unit
 class TestWorkerRegistry:
     """Test WorkerRegistry thread-safe operations."""
 
