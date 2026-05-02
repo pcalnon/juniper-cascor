@@ -155,7 +155,13 @@ class TestRequestBodyLimitMiddleware:
             yield b'{"a":'
             yield b'"b"}'
 
-        response = client.post("/echo", content=body_gen())
+        # ``content=`` doesn't auto-set Content-Type; FastAPI/Pydantic body
+        # parsing for the ``payload: dict`` annotation only invokes JSON
+        # parsing when Content-Type is application/json (since FastAPI 0.100+
+        # / Starlette 1.x). Without this header the raw JSON string would be
+        # passed to Pydantic and rejected with 422 ("Input should be a valid
+        # dictionary") regardless of what the body-limit middleware does.
+        response = client.post("/echo", content=body_gen(), headers={"Content-Type": "application/json"})
         assert response.status_code == 200
 
     def test_chunked_body_over_limit_rejected(self, body_limit_app):
@@ -217,7 +223,9 @@ class TestRequestBodyLimitMiddleware:
             yield b'{"a":"b'
             yield b'","c":"d"}'
 
-        response = client.post("/echo", content=body_gen())
+        # See note in test_chunked_body_under_limit_accepted: FastAPI's
+        # ``payload: dict`` parsing requires Content-Type: application/json.
+        response = client.post("/echo", content=body_gen(), headers={"Content-Type": "application/json"})
         assert response.status_code == 200
         # Handler echoes received_bytes; presence + 200 confirm body was readable downstream.
         assert "received_bytes" in response.json()
