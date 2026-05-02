@@ -45,6 +45,21 @@ class WorkerRegistration:
     in_flight_tasks: int = 0
     last_task_completed_at: float | None = None
     rss_mb: float | None = None
+    # METRICS-MON R4.4: training-loop instrumentation fields populated by
+    # workers running images >= R4.4. Defaults match the R1.3 ``None`` /
+    # ``[]`` pattern so older workers leave the registration's prior
+    # values untouched. Field semantics:
+    # * ``last_task_duration_seconds`` — wall-clock duration of the
+    #   most recently completed task (any outcome).
+    # * ``recent_task_durations_seconds`` — sliding window (oldest →
+    #   newest) of the last N task durations. Server-side percentile
+    #   estimators (p50, p99) compute over the union of all workers'
+    #   windows on each scrape.
+    # * ``gpu_utilization_pct`` — best-effort 0–100 reading; ``None``
+    #   when no CUDA / NVML / torch.
+    last_task_duration_seconds: float | None = None
+    recent_task_durations_seconds: list[float] = field(default_factory=list)
+    gpu_utilization_pct: float | None = None
 
     @property
     def health_score(self) -> float:
@@ -70,12 +85,20 @@ class WorkerRegistration:
         rss_mb: float | None = None,
         tasks_completed: int | None = None,
         tasks_failed: int | None = None,
+        last_task_duration_seconds: float | None = None,
+        recent_task_durations_seconds: list[float] | None = None,
+        gpu_utilization_pct: float | None = None,
     ) -> None:
         """Update last heartbeat timestamp and (optionally) enriched fields.
 
         METRICS-MON R1.3 / seed-04: keyword-only enriched fields are
         accepted from R1.3-aware workers. Older workers omit them; the
         registration's prior values are preserved.
+
+        METRICS-MON R4.4: three additional optional fields accepted from
+        R4.4-aware workers (``last_task_duration_seconds``,
+        ``recent_task_durations_seconds``, ``gpu_utilization_pct``).
+        Same ``None``-default-preserves-prior-value pattern as R1.3.
         """
         self.last_heartbeat = time.time()
         if in_flight_tasks is not None:
@@ -88,6 +111,14 @@ class WorkerRegistration:
             self.tasks_completed = tasks_completed
         if tasks_failed is not None:
             self.tasks_failed = tasks_failed
+        if last_task_duration_seconds is not None:
+            self.last_task_duration_seconds = last_task_duration_seconds
+        if recent_task_durations_seconds is not None:
+            # Defensive copy: callers shouldn't be able to mutate the
+            # registration's window through a shared reference.
+            self.recent_task_durations_seconds = list(recent_task_durations_seconds)
+        if gpu_utilization_pct is not None:
+            self.gpu_utilization_pct = gpu_utilization_pct
 
     def is_alive(self, timeout: float) -> bool:
         """Check if the worker is alive based on heartbeat timeout."""
@@ -183,12 +214,20 @@ class WorkerRegistry:
         rss_mb: float | None = None,
         tasks_completed: int | None = None,
         tasks_failed: int | None = None,
+        last_task_duration_seconds: float | None = None,
+        recent_task_durations_seconds: list[float] | None = None,
+        gpu_utilization_pct: float | None = None,
     ) -> bool:
         """Record a heartbeat for a worker.
 
         METRICS-MON R1.3 / seed-04: keyword-only enriched fields are
         forwarded to ``WorkerRegistration.record_heartbeat``. Pass
         ``None`` (the default) for any field not reported by the worker.
+
+        METRICS-MON R4.4: three additional R4.4-only fields forwarded to
+        ``record_heartbeat`` (training-loop instrumentation). Same
+        ``None``-default semantics: workers running pre-R4.4 images
+        don't send them; prior values are preserved.
 
         Returns:
             True if the worker exists, False otherwise.
@@ -203,6 +242,9 @@ class WorkerRegistry:
                 rss_mb=rss_mb,
                 tasks_completed=tasks_completed,
                 tasks_failed=tasks_failed,
+                last_task_duration_seconds=last_task_duration_seconds,
+                recent_task_durations_seconds=recent_task_durations_seconds,
+                gpu_utilization_pct=gpu_utilization_pct,
             )
             return True
 

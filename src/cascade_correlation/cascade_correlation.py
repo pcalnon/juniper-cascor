@@ -322,7 +322,16 @@ class SharedTrainingMemory:
             (list_of_tensors, shm_handle). Caller MUST keep shm_handle alive
             until all tensor operations complete, then call shm_handle.close().
         """
-        shm = SharedMemory(name=metadata["shm_name"], create=False, track=False)
+        # ``track=False`` is Python 3.13+ on multiprocessing.shared_memory; on
+        # 3.12 it raises ``TypeError``. Pass it conditionally so the test
+        # matrix (which still includes 3.12) doesn't blow up — when the kwarg
+        # isn't available, the resource_tracker registers the segment and
+        # cleans it up on interpreter shutdown, which is the safer default
+        # and matches the historical 3.12 behavior.
+        if sys.version_info >= (3, 13):
+            shm = SharedMemory(name=metadata["shm_name"], create=False, track=False)
+        else:
+            shm = SharedMemory(name=metadata["shm_name"], create=False)
         try:
             buf = shm.buf
             magic = bytes(buf[:4])

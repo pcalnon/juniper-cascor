@@ -94,7 +94,10 @@ class TestMessageBuilders:
             "float": 0.123,
         }
         msg = create_metrics_message(complex_data)
-        assert msg["data"] is complex_data
+        # ``model_dump`` always returns a fresh dict, so identity (``is``)
+        # comparison is unreliable; we only require value-equality for the
+        # passthrough contract.
+        assert msg["data"] == complex_data
 
 
 @pytest.mark.unit
@@ -106,7 +109,9 @@ class TestInitialMetricsMessage:
         msg = create_initial_metrics_message(metrics, current_seq=42)
         assert msg["type"] == "initial_metrics"
         assert "timestamp" in msg
-        assert msg["data"]["metrics"] is metrics
+        # ``model_dump`` always returns fresh containers; assert value-equality
+        # rather than identity (``is``).
+        assert msg["data"]["metrics"] == metrics
         assert msg["data"]["count"] == 2
         assert msg["data"]["current_seq"] == 42
 

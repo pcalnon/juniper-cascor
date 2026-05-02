@@ -81,9 +81,15 @@ _PROJECT_API_MAX_DATASET_TARGETS: int = 100000
 # Lifecycle Manager Defaults (api/lifecycle/manager.py and api/lifecycle/monitor.py)
 #####################################################################################################################################################################################################
 
-_PROJECT_API_LIFECYCLE_DEFAULT_MAX_HIDDEN_UNITS: int = 10
-_PROJECT_API_LIFECYCLE_DEFAULT_EPOCHS_MAX: int = 200
-_PROJECT_API_LIFECYCLE_DEFAULT_MAX_ITERATIONS: int = 1000
+# Lifecycle training-limit caps are intentionally large so the user (or the
+# canopy UI), not the API default, chooses when to stop. Aligned with the
+# canopy / requirements-spec values per
+# juniper-ml/notes/code-review/CANOPY_CASCOR_INTERFACE_ROADMAP_2026-04-08.md
+# §3.5 (PR #122 raised these from 1e3/1e3/1e3; rolled back to small values
+# during the Waves 1-6 hardcoded-values cleanup #123 — V35d re-aligns).
+_PROJECT_API_LIFECYCLE_DEFAULT_MAX_HIDDEN_UNITS: int = 10_000
+_PROJECT_API_LIFECYCLE_DEFAULT_EPOCHS_MAX: int = 100_000_000_000
+_PROJECT_API_LIFECYCLE_DEFAULT_MAX_ITERATIONS: int = 1_000_000
 _PROJECT_API_METRICS_BUFFER_SIZE: int = 10000
 _PROJECT_API_PROGRESS_QUEUE_WAIT_TIMEOUT: float = 0.1
 _PROJECT_API_PROGRESS_QUEUE_GET_TIMEOUT: float = 0.25

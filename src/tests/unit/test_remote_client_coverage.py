@@ -12,7 +12,23 @@ import pytest
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 from remote_client.remote_client import RemoteWorkerClient
-from remote_client.remote_client_0 import RemoteCandidateTrainingClient
+
+# remote_client_0 was archived to src/backups/ (no longer importable from the
+# package). The RemoteCandidateTrainingClient test classes below are skipped
+# at the class level when the module isn't present; the RemoteWorkerClient
+# tests still run unaffected.
+try:
+    from remote_client.remote_client_0 import RemoteCandidateTrainingClient
+
+    _has_remote_client_0 = True
+except ImportError:
+    RemoteCandidateTrainingClient = None  # type: ignore[assignment,misc]
+    _has_remote_client_0 = False
+
+_skip_no_rc0 = pytest.mark.skipif(
+    not _has_remote_client_0,
+    reason="remote_client.remote_client_0 has been archived to src/backups/",
+)
 
 
 @pytest.mark.unit
@@ -367,6 +383,7 @@ class TestRemoteWorkerClientContextManager:
         assert client.manager is None
 
 
+@_skip_no_rc0
 @pytest.mark.unit
 class TestRemoteCandidateTrainingClientInit:
     """Tests for RemoteCandidateTrainingClient initialization."""
@@ -394,6 +411,7 @@ class TestRemoteCandidateTrainingClientInit:
         assert client.authkey == authkey
 
 
+@_skip_no_rc0
 @pytest.mark.unit
 class TestRemoteCandidateTrainingClientConnect:
     """Tests for RemoteCandidateTrainingClient.connect method."""
@@ -423,6 +441,7 @@ class TestRemoteCandidateTrainingClientConnect:
         assert result is False
 
 
+@_skip_no_rc0
 @pytest.mark.unit
 class TestRemoteCandidateTrainingClientProcessTasks:
     """Tests for RemoteCandidateTrainingClient.process_tasks method."""
@@ -457,6 +476,7 @@ class TestRemoteCandidateTrainingClientProcessTasks:
             assert mock_proc.join.call_count == 2
 
 
+@_skip_no_rc0
 @pytest.mark.unit
 class TestRemoteCandidateTrainingClientWorkerProcess:
     """Tests for RemoteCandidateTrainingClient._worker_process static method."""
@@ -497,6 +517,7 @@ class TestRemoteCandidateTrainingClientWorkerProcess:
         assert "Worker 2 error" in captured.out
 
 
+@_skip_no_rc0
 @pytest.mark.unit
 class TestRemoteCandidateTrainingClientTrainRemote:
     """Tests for RemoteCandidateTrainingClient._train_candidate_remote static method."""
@@ -513,6 +534,7 @@ class TestRemoteCandidateTrainingClientTrainRemote:
         assert result[3] is None
 
 
+@_skip_no_rc0
 @pytest.mark.unit
 class TestTestRemoteConnection:
     """Tests for test_remote_connection function."""
