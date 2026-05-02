@@ -177,7 +177,10 @@ def _ensure_training_metrics() -> dict:
             ),
             "inference_duration_seconds": Histogram(
                 "juniper_cascor_inference_duration_seconds",
-                "Inference latency in seconds",
+                # METRICS-MON R4.1: bucket layout is **tentative pending
+                # R5.1**. Per-boundary SLO rationale in
+                # ``notes/observability/HISTOGRAM_BUCKETS_RATIONALE_2026-05-02.md``.
+                "Inference latency in seconds (R4.1 buckets tentative pending R5.1)",
                 buckets=_LOGGER_PROMETHEUS_LATENCY_BUCKETS,
             ),
         }
@@ -292,7 +295,12 @@ def _ensure_ws_metrics() -> dict:
             ),
             "resume_replayed_events": Histogram(
                 "cascor_ws_resume_replayed_events",
-                "Number of events replayed per successful resume",
+                # METRICS-MON R4.1: bucket layout is **tentative pending
+                # R5.1**. Discrete-count metric, not duration; boundaries
+                # map to operational regimes of the replay buffer.
+                # Rationale in
+                # ``notes/observability/HISTOGRAM_BUCKETS_RATIONALE_2026-05-02.md``.
+                "Number of events replayed per successful resume (R4.1 buckets tentative pending R5.1)",
                 buckets=_WS_RESUME_REPLAY_BUCKETS,
             ),
             "broadcast_timeout_total": Counter(
@@ -302,7 +310,14 @@ def _ensure_ws_metrics() -> dict:
             ),
             "broadcast_send_duration_seconds": Histogram(
                 "cascor_ws_broadcast_send_duration_seconds",
-                "Duration of individual WebSocket send operations",
+                # METRICS-MON R4.1: uses Prometheus default buckets;
+                # **flagged for re-bucketing in R5.1** because the
+                # default 5 ms floor is too coarse for the actual
+                # distribution (sub-millisecond on a healthy connection).
+                # Rationale + proposed re-bucket in
+                # ``notes/observability/HISTOGRAM_BUCKETS_RATIONALE_2026-05-02.md``
+                # §4.
+                "Duration of individual WebSocket send operations (R4.1 default buckets tentative pending R5.1 re-bucketing)",
                 ["type"],
             ),
             "pending_connections": Gauge(
@@ -333,7 +348,16 @@ def _ensure_ws_metrics() -> dict:
             ),
             "command_handler_seconds": Histogram(
                 "cascor_ws_command_handler_seconds",
-                "Duration of command handler execution",
+                # METRICS-MON R4.1: uses Prometheus default buckets;
+                # **flagged for re-bucketing in R5.1** because the
+                # `command` label spans widely-varying duration
+                # distributions (sub-ms `pause`/`resume` flips vs.
+                # ~50 ms `update_params` lifecycle paths) and a single
+                # bucket layout cannot serve all. R5.1 may split per
+                # command-class. Rationale in
+                # ``notes/observability/HISTOGRAM_BUCKETS_RATIONALE_2026-05-02.md``
+                # §5.
+                "Duration of command handler execution (R4.1 default buckets tentative pending R5.1 re-bucketing)",
                 ["command"],
             ),
         }
