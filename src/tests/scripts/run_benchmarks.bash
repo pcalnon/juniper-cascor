@@ -141,6 +141,14 @@ if [[ "${QUIET}" == "true" ]]; then
     export CASCOR_LOG_LEVEL=WARNING
 fi
 
+# Resolve OUTPUT_FILE to an absolute path while we still hold the caller's
+# CWD; the script `cd`s into ${SRC_DIR} below, so a relative --output path
+# would otherwise be interpreted relative to src/ instead of the workflow's
+# repo root (caused tee to fail with "No such file or directory" in CI).
+if [[ -n "${OUTPUT_FILE}" && "${OUTPUT_FILE}" != /* ]]; then
+    OUTPUT_FILE="$(pwd)/${OUTPUT_FILE}"
+fi
+
 # Change to source directory
 cd "${SRC_DIR}" || exit 1
 
