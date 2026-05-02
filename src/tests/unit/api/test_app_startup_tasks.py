@@ -127,16 +127,18 @@ class TestLogStartupTaskException:
         finally:
             loop.close()
 
-    def test_logs_with_traceback_on_exception(self, _log_startup_task_exception):
+    def test_logs_with_traceback_on_exception(self, _app_module, _log_startup_task_exception):
         """A task that raised must log at error level with the original exception.
 
-        Earlier revisions of this test relied on pytest's ``caplog`` fixture,
-        but in CI the records never showed up — propagation from
-        ``juniper_cascor.api`` to root is suppressed by other tests' logging
-        setup (dictConfig with ``disable_existing_loggers``, etc.) in
-        ways we cannot reliably control from this single test. Use a private
-        capturing handler attached directly to the target logger so the test
-        is fully self-contained.
+        Earlier revisions of this test relied on pytest's ``caplog`` and on
+        attaching a handler to ``logging.getLogger("juniper_cascor.api")``.
+        Both lost records in CI in ways that didn't reproduce locally — the
+        most likely cause is some other test's logging dictConfig running
+        before us and either mutating filters on the ``juniper_cascor.api``
+        logger or replacing it. Make the test bulletproof by monkey-patching
+        ``api.app.logger`` itself so the function under test resolves to a
+        fresh, isolated ``logging.Logger`` instance with a single capture
+        handler that we control end-to-end.
         """
         loop = asyncio.new_event_loop()
         try:
@@ -154,18 +156,20 @@ class TestLogStartupTaskException:
                 def emit(self, record: logging.LogRecord) -> None:
                     captured.append(record)
 
-            target_logger = logging.getLogger("juniper_cascor.api")
-            previous_level = target_logger.level
-            target_logger.setLevel(logging.ERROR)
-            handler = _Capture(level=logging.ERROR)
-            target_logger.addHandler(handler)
+            # Build a fresh, isolated logger that has no parent and no
+            # filters; attach exactly one capture handler.
+            isolated = logging.Logger("test_app_startup_tasks_isolated", level=logging.ERROR)
+            isolated.propagate = False
+            isolated.addHandler(_Capture(level=logging.ERROR))
+
+            previous_logger = _app_module.logger
+            _app_module.logger = isolated
             try:
                 _log_startup_task_exception(task)
             finally:
-                target_logger.removeHandler(handler)
-                target_logger.setLevel(previous_level)
+                _app_module.logger = previous_logger
 
-            assert len(captured) == 1
+            assert len(captured) == 1, f"expected 1 captured record, got {len(captured)}; task.done={task.done()} cancelled={task.cancelled()} exc={task.exception()!r}"
             record = captured[0]
             assert record.levelno == logging.ERROR
             assert "auto_start_failing" in record.getMessage()

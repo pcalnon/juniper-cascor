@@ -93,6 +93,12 @@ class TestListWorkers:
             "in_flight_tasks",
             "last_task_completed_at",
             "rss_mb",
+            # METRICS-MON R4.4 / R4.4b: training-loop telemetry surfaced on
+            # the /v1/workers serializer (V37a — wired in but the test
+            # wasn't updated when the serializer was extended).
+            "last_task_duration_seconds",
+            "gpu_utilization_pct",
+            "recent_task_durations_seconds",
         }
         assert set(worker.keys()) == expected_keys
         assert worker["tasks_completed"] == 5
