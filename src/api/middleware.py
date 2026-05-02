@@ -96,8 +96,26 @@ class RequestBodyLimitMiddleware(BaseHTTPMiddleware):
                 if size > self._max_bytes:
                     return JSONResponse(status_code=_PROJECT_API_HTTP_413_PAYLOAD_TOO_LARGE, content={"detail": "Request body too large"})
                 chunks.append(chunk)
-            # Cache body for downstream handlers (Starlette convention).
-            request._body = b"".join(chunks)
+            cached_body = b"".join(chunks)
+            # Cache body for downstream handlers. Setting ``request._body`` is
+            # the historical Starlette convention but on its own is no longer
+            # sufficient under Starlette 1.x — once ``request.stream()`` has
+            # been consumed, the underlying ASGI ``receive`` channel is empty,
+            # and downstream handlers (FastAPI/Pydantic body parsing) which
+            # call ``request.stream()`` rather than ``request.body()`` see no
+            # data and return 422. Replace the receive callable with a
+            # one-shot replayer so a fresh stream-read sees the cached body.
+            request._body = cached_body
+            replay_state = {"sent": False}
+
+            async def _replay_receive():
+                if not replay_state["sent"]:
+                    replay_state["sent"] = True
+                    return {"type": "http.request", "body": cached_body, "more_body": False}
+                return {"type": "http.disconnect"}
+
+            request._receive = _replay_receive
+            request._stream_consumed = False
         return await call_next(request)
 
 

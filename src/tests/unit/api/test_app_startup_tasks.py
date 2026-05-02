@@ -139,8 +139,25 @@ class TestLogStartupTaskException:
             with pytest.raises(RuntimeError):
                 loop.run_until_complete(task)
 
-            with caplog.at_level(logging.ERROR, logger="juniper_cascor.api"):
+            # ``caplog.at_level(level, logger=...)`` only elevates the level on
+            # the named logger; caplog's handler stays attached to root, so we
+            # rely on propagation. Some test environments (cascor's logging
+            # setup loaded via dictConfig in other tests, dictConfig with
+            # ``disable_existing_loggers``) can suppress that propagation,
+            # producing the misleading "logger.error never fired" failure mode
+            # observed in V35b. Attach caplog's handler directly to the
+            # ``juniper_cascor.api`` logger to make the test independent of
+            # propagation state. Pin the logger level so the record passes the
+            # handler filter regardless of the inherited effective level.
+            target_logger = logging.getLogger("juniper_cascor.api")
+            previous_level = target_logger.level
+            target_logger.setLevel(logging.ERROR)
+            target_logger.addHandler(caplog.handler)
+            try:
                 _log_startup_task_exception(task)
+            finally:
+                target_logger.removeHandler(caplog.handler)
+                target_logger.setLevel(previous_level)
 
             assert len(caplog.records) == 1
             record = caplog.records[0]
