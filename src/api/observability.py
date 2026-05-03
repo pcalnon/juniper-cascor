@@ -159,6 +159,40 @@ _TRAINING_STEP_DURATION_BUCKETS: tuple = (
 )
 
 
+def _register_or_reuse(cls, name: str, *args, **kwargs):
+    """Construct a Prometheus collector idempotently against the default registry.
+
+    The lazy ``_ensure_*_metrics`` singletons cache module-globals as
+    Python references. Tests sometimes clear those globals (to force a
+    fresh ``_ensure`` path) without unregistering the underlying
+    collectors from ``prometheus_client.REGISTRY``. The next ``cls(name,
+    ...)`` then raises ``ValueError: Duplicated timeseries`` because the
+    metric name is still bound in the registry even though our cache
+    forgot the Python reference.
+
+    Catch that specific case, look the existing collector up by name,
+    unregister it, and retry — yielding a fresh collector that reflects
+    the current call's labels/buckets without depending on stale state.
+    Other ``ValueError`` causes (genuinely invalid name, etc.) are
+    re-raised unchanged.
+    """
+    from prometheus_client import REGISTRY
+
+    try:
+        return cls(name, *args, **kwargs)
+    except ValueError as exc:
+        if "Duplicated timeseries" not in str(exc):
+            raise
+        # Find the orphaned collector by name and unregister it. The
+        # ``_collector_to_names`` mapping is the same lookup ``register``
+        # itself uses for the duplicate check.
+        for collector, names in list(REGISTRY._collector_to_names.items()):
+            if name in names:
+                REGISTRY.unregister(collector)
+                break
+        return cls(name, *args, **kwargs)
+
+
 def _ensure_training_metrics() -> dict:
     """Create training-related Prometheus metrics on first access."""
     global _training_metrics
@@ -166,7 +200,8 @@ def _ensure_training_metrics() -> dict:
         from prometheus_client import Counter, Gauge, Histogram
 
         _training_metrics = {
-            "sessions_active": Gauge(
+            "sessions_active": _register_or_reuse(
+                Gauge,
                 "juniper_cascor_training_sessions_active",
                 "Number of currently active training sessions",
             ),
@@ -179,39 +214,47 @@ def _ensure_training_metrics() -> dict:
             #   sum(rate(juniper_cascor_training_sessions_completed_total{status="success"}[5m]))
             #   / sum(rate(juniper_cascor_training_sessions_completed_total[5m]))
             # See juniper-deploy notes/SLO_CATALOG_2026-05-03.md §3.3.
-            "sessions_completed_total": Counter(
+            "sessions_completed_total": _register_or_reuse(
+                Counter,
                 "juniper_cascor_training_sessions_completed_total",
                 "Total terminal training-session transitions by outcome (closed-set status)",
                 ["status"],
             ),
-            "epochs_total": Counter(
+            "epochs_total": _register_or_reuse(
+                Counter,
                 "juniper_cascor_training_epochs_total",
                 "Total training epochs completed across all sessions",
                 ["phase"],
             ),
-            "loss": Gauge(
+            "loss": _register_or_reuse(
+                Gauge,
                 "juniper_cascor_training_loss",
                 "Current training loss value",
                 ["phase", "loss_type"],
             ),
-            "accuracy_ratio": Gauge(
+            "accuracy_ratio": _register_or_reuse(
+                Gauge,
                 "juniper_cascor_training_accuracy_ratio",
                 "Current training accuracy (0-1 ratio)",
                 ["phase"],
             ),
-            "hidden_units_total": Gauge(
+            "hidden_units_total": _register_or_reuse(
+                Gauge,
                 "juniper_cascor_hidden_units_total",
                 "Current number of hidden units in the cascade network",
             ),
-            "candidate_correlation": Gauge(
+            "candidate_correlation": _register_or_reuse(
+                Gauge,
                 "juniper_cascor_candidate_correlation",
                 "Best candidate unit correlation with residual error",
             ),
-            "inference_requests_total": Counter(
+            "inference_requests_total": _register_or_reuse(
+                Counter,
                 "juniper_cascor_inference_requests_total",
                 "Total inference requests processed",
             ),
-            "inference_duration_seconds": Histogram(
+            "inference_duration_seconds": _register_or_reuse(
+                Histogram,
                 "juniper_cascor_inference_duration_seconds",
                 # METRICS-MON R4.1: bucket layout is **tentative pending
                 # R5.1**. Per-boundary SLO rationale in
@@ -229,7 +272,8 @@ def _ensure_training_metrics() -> dict:
             # forward+backward+update cycle (an "epoch" at the
             # api-lifecycle level — see §1 / §6 of the rationale doc for
             # the boundary discussion).
-            "step_duration_seconds": Histogram(
+            "step_duration_seconds": _register_or_reuse(
+                Histogram,
                 "juniper_cascor_training_step_duration_seconds",
                 "Buckets target SLO 3.4 (p95 < 5s); see SLO_CATALOG §3.4 in juniper-deploy.",
                 ["phase"],
@@ -396,28 +440,34 @@ def _ensure_ws_metrics() -> dict:
         from prometheus_client import Counter, Gauge, Histogram
 
         _ws_metrics = {
-            "seq_current": Gauge(
+            "seq_current": _register_or_reuse(
+                Gauge,
                 "cascor_ws_seq_current",
                 "Current sequence number for WebSocket broadcasts",
             ),
-            "replay_buffer_occupancy": Gauge(
+            "replay_buffer_occupancy": _register_or_reuse(
+                Gauge,
                 "cascor_ws_replay_buffer_occupancy",
                 "Current number of messages in the replay buffer",
             ),
-            "replay_buffer_bytes": Gauge(
+            "replay_buffer_bytes": _register_or_reuse(
+                Gauge,
                 "cascor_ws_replay_buffer_bytes",
                 "Approximate memory usage of the replay buffer in bytes",
             ),
-            "replay_buffer_capacity_configured": Gauge(
+            "replay_buffer_capacity_configured": _register_or_reuse(
+                Gauge,
                 "cascor_ws_replay_buffer_capacity_configured",
                 "Configured maximum replay buffer size",
             ),
-            "resume_requests_total": Counter(
+            "resume_requests_total": _register_or_reuse(
+                Counter,
                 "cascor_ws_resume_requests_total",
                 "Total resume requests by outcome",
                 ["outcome"],
             ),
-            "resume_replayed_events": Histogram(
+            "resume_replayed_events": _register_or_reuse(
+                Histogram,
                 "cascor_ws_resume_replayed_events",
                 # METRICS-MON R4.1: bucket layout is **tentative pending
                 # R5.1**. Discrete-count metric, not duration; boundaries
@@ -427,12 +477,14 @@ def _ensure_ws_metrics() -> dict:
                 "Number of events replayed per successful resume (R4.1 buckets tentative pending R5.1)",
                 buckets=_WS_RESUME_REPLAY_BUCKETS,
             ),
-            "broadcast_timeout_total": Counter(
+            "broadcast_timeout_total": _register_or_reuse(
+                Counter,
                 "cascor_ws_broadcast_timeout_total",
                 "Total broadcast send timeouts",
                 ["type"],
             ),
-            "broadcast_send_duration_seconds": Histogram(
+            "broadcast_send_duration_seconds": _register_or_reuse(
+                Histogram,
                 "cascor_ws_broadcast_send_duration_seconds",
                 # METRICS-MON R5.1b: re-bucketed from the Prometheus
                 # default layout (5 ms floor) to a sub-millisecond
@@ -445,33 +497,40 @@ def _ensure_ws_metrics() -> dict:
                 ["type"],
                 buckets=_WS_SUB_MS_LATENCY_BUCKETS,
             ),
-            "pending_connections": Gauge(
+            "pending_connections": _register_or_reuse(
+                Gauge,
                 "cascor_ws_pending_connections",
                 "Number of WebSocket connections in pending (resume handshake) state",
             ),
-            "state_throttle_coalesced_total": Counter(
+            "state_throttle_coalesced_total": _register_or_reuse(
+                Counter,
                 "cascor_ws_state_throttle_coalesced_total",
                 "Total state broadcasts coalesced by throttle",
             ),
-            "broadcast_from_thread_errors_total": Counter(
+            "broadcast_from_thread_errors_total": _register_or_reuse(
+                Counter,
                 "cascor_ws_broadcast_from_thread_errors_total",
                 "Total errors from broadcast_from_thread coroutine execution",
             ),
-            "seq_gap_detected_total": Counter(
+            "seq_gap_detected_total": _register_or_reuse(
+                Counter,
                 "cascor_ws_seq_gap_detected_total",
                 "Total sequence gaps detected (should be zero in healthy operation)",
             ),
-            "connections_active": Gauge(
+            "connections_active": _register_or_reuse(
+                Gauge,
                 "cascor_ws_connections_active",
                 "Number of active WebSocket connections by endpoint",
                 ["endpoint"],
             ),
-            "command_responses_total": Counter(
+            "command_responses_total": _register_or_reuse(
+                Counter,
                 "cascor_ws_command_responses_total",
                 "Total command responses sent",
                 ["command", "status"],
             ),
-            "command_handler_seconds": Histogram(
+            "command_handler_seconds": _register_or_reuse(
+                Histogram,
                 "cascor_ws_command_handler_seconds",
                 # METRICS-MON R5.1b: re-bucketed from the Prometheus
                 # default layout to the sub-millisecond layout shared
