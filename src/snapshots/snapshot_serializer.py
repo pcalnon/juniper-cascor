@@ -665,7 +665,101 @@ class CascadeHDF5Serializer:
                             compression_opts,
                         )
 
+        # CAN-015g (Phase 6E follow-on, g-1): per-sample weight history
+        # for Replay V2. Persisted only when the network exposes a
+        # ``weight_history`` dict (populated by the lifecycle in g-2);
+        # absence is the V1 / pre-g case and silently skipped so all
+        # existing snapshots and the metric-only Replay V1 path keep
+        # working unchanged.
+        if hasattr(network, "weight_history") and network.weight_history:
+            self._save_weight_history(history_group, network.weight_history, compression, compression_opts)
+
         self.logger.debug("CascadeHDF5Serializer: Saved training history")
+
+    # ------------------------------------------------------------------
+    # CAN-015g (Phase 6E follow-on): per-sample weight history
+    # ------------------------------------------------------------------
+    # Schema v2 layout under ``history/weights/``:
+    #   meta/                               (subgroup, attrs only)
+    #     schema_version       (int64 attr) — always 2 for this writer
+    #     sampling_strategy    (str attr)   — "adaptive" | "every_n" | "trigger"
+    #     sampling_interval    (int64 attr) — N (epochs); 0 == trigger-only
+    #     num_samples          (int64 attr) — len(sample_indices)
+    #   sample_indices         (int64 dataset, [num_samples])
+    #   output_weights/                     (subgroup of per-sample datasets)
+    #     0000  (float32 dataset, [in + hid_at_sample_0, out])
+    #     0001  (float32 dataset, [in + hid_at_sample_1, out])
+    #     ...
+    #   output_bias/                        (subgroup of per-sample datasets)
+    #     0000  (float32 dataset, [out])
+    #     ...
+    #   hidden_units/
+    #     0000/                             (one subgroup per unit)
+    #       first_sample_index (int64 attr)
+    #       activation         (str attr)
+    #       weights/                        (subgroup of per-sample datasets)
+    #         0050  (float32 dataset, [in + cascade_index])
+    #         ...
+    #       bias/                           (subgroup of per-sample datasets)
+    #         0050  (float32 dataset, [])   — scalar
+    #         ...
+    #
+    # Per-sample subgroups are used (rather than a single 3D dataset) because
+    # the output-layer width grows with each cascade-add event — there is no
+    # single fixed shape. The numeric subgroup names are zero-padded so they
+    # sort lexicographically (HDF5 returns keys in insertion order, but the
+    # readers tolerate either).
+
+    _WEIGHT_HISTORY_SCHEMA_VERSION = 2
+
+    def _save_weight_history(self, history_group: h5py.Group, weight_history: Dict[str, Any], compression: str, compression_opts: int) -> None:
+        """Persist per-sample weight tensors under ``history/weights/``."""
+        weights_group = history_group.create_group("weights")
+        meta_group = weights_group.create_group("meta")
+
+        sample_indices = list(weight_history.get("sample_indices", []))
+        meta_group.attrs["schema_version"] = self._WEIGHT_HISTORY_SCHEMA_VERSION
+        meta_group.attrs["num_samples"] = len(sample_indices)
+        write_str_attr(meta_group, "sampling_strategy", str(weight_history.get("sampling_strategy", "adaptive")))
+        meta_group.attrs["sampling_interval"] = int(weight_history.get("sampling_interval", 0))
+
+        if not sample_indices:
+            self.logger.debug("CascadeHDF5Serializer: weight_history has no samples — wrote meta only")
+            return
+
+        save_numpy_array(weights_group, "sample_indices", np.asarray(sample_indices, dtype=np.int64), compression, compression_opts)
+
+        output_weights = list(weight_history.get("output_weights", []))
+        output_bias = list(weight_history.get("output_bias", []))
+        if len(output_weights) != len(sample_indices) or len(output_bias) != len(sample_indices):
+            raise ValueError(f"weight_history output arrays length mismatch: got {len(output_weights)} weights, {len(output_bias)} biases for {len(sample_indices)} samples")
+
+        ow_group = weights_group.create_group("output_weights")
+        ob_group = weights_group.create_group("output_bias")
+        for i, (w, b) in enumerate(zip(output_weights, output_bias)):
+            sample_key = f"{i:04d}"
+            save_numpy_array(ow_group, sample_key, np.ascontiguousarray(w, dtype=np.float32), compression, compression_opts)
+            save_numpy_array(ob_group, sample_key, np.ascontiguousarray(b, dtype=np.float32), compression, compression_opts)
+
+        hidden_units = list(weight_history.get("hidden_units", []))
+        if hidden_units:
+            units_group = weights_group.create_group("hidden_units")
+            for unit_idx, unit in enumerate(hidden_units):
+                unit_group = units_group.create_group(f"{unit_idx:04d}")
+                unit_group.attrs["first_sample_index"] = int(unit.get("first_sample_index", 0))
+                write_str_attr(unit_group, "activation", str(unit.get("activation", "")))
+                unit_w = unit.get("weights", [])
+                unit_b = unit.get("bias", [])
+                if len(unit_w) != len(unit_b):
+                    raise ValueError(f"weight_history hidden unit {unit_idx} weights/bias length mismatch: {len(unit_w)} vs {len(unit_b)}")
+                w_group = unit_group.create_group("weights")
+                b_group = unit_group.create_group("bias")
+                for j, (w, b) in enumerate(zip(unit_w, unit_b)):
+                    sample_key = f"{j:04d}"
+                    save_numpy_array(w_group, sample_key, np.ascontiguousarray(w, dtype=np.float32), compression, compression_opts)
+                    save_numpy_array(b_group, sample_key, np.asarray(b, dtype=np.float32), compression, compression_opts)
+
+        self.logger.debug(f"CascadeHDF5Serializer: Saved weight_history with {len(sample_indices)} samples, {len(hidden_units)} hidden units")
 
     def _save_training_data(
         self,
@@ -1079,7 +1173,83 @@ class CascadeHDF5Serializer:
 
                 network.history["hidden_units_added"].append(unit_data)
 
+        # CAN-015g (g-1): per-sample weight history. Loaded into a sibling
+        # ``weight_history`` attribute on the network so g-2's
+        # ``_ReplaySession`` weight cache can consume it. Absent in V1
+        # snapshots — silently no-op so V1 files load identically to
+        # before this change.
+        if "weights" in history_group:
+            try:
+                network.weight_history = self._load_weight_history(history_group["weights"])
+            except Exception as e:
+                # Don't fail the whole snapshot load if the weight history is
+                # corrupt — degrade to V1 behaviour with a WARNING. The
+                # replay session checks ``weights_available`` before using
+                # this attribute.
+                self.logger.warning(f"CascadeHDF5Serializer: Failed to load weight_history; degrading to V1 replay: {e}")
+                network.weight_history = None
+
         self.logger.debug("CascadeHDF5Serializer: Loaded training history")
+
+    def _load_weight_history(self, weights_group: h5py.Group) -> Dict[str, Any]:
+        """Restore per-sample weight history written by ``_save_weight_history``.
+
+        Returns the same dict shape that the writer expects, so the lifecycle
+        layer can ``network.weight_history = serializer.load(...)`` round-trip
+        without re-shaping.
+        """
+        meta_group = weights_group.get("meta")
+        if meta_group is None:
+            raise ValueError("weight_history is missing required 'meta' subgroup")
+
+        schema_version = int(meta_group.attrs.get("schema_version", 0))
+        if schema_version != self._WEIGHT_HISTORY_SCHEMA_VERSION:
+            raise ValueError(f"Unsupported weight_history schema_version: {schema_version} (expected {self._WEIGHT_HISTORY_SCHEMA_VERSION})")
+
+        result: Dict[str, Any] = {
+            "schema_version": schema_version,
+            "sampling_strategy": read_str_attr(meta_group, "sampling_strategy", "adaptive"),
+            "sampling_interval": int(meta_group.attrs.get("sampling_interval", 0)),
+            "sample_indices": [],
+            "output_weights": [],
+            "output_bias": [],
+            "hidden_units": [],
+        }
+
+        if "sample_indices" not in weights_group:
+            return result
+
+        result["sample_indices"] = load_numpy_array(weights_group["sample_indices"]).astype(np.int64).tolist()
+
+        ow_group = weights_group.get("output_weights")
+        ob_group = weights_group.get("output_bias")
+        if ow_group is not None and ob_group is not None:
+            for sample_key in sorted(ow_group.keys()):
+                result["output_weights"].append(load_numpy_array(ow_group[sample_key]))
+                result["output_bias"].append(load_numpy_array(ob_group[sample_key]))
+
+        units_group = weights_group.get("hidden_units")
+        if units_group is not None:
+            for unit_key in sorted(units_group.keys()):
+                unit_group = units_group[unit_key]
+                w_subgroup = unit_group.get("weights")
+                b_subgroup = unit_group.get("bias")
+                unit_weights = []
+                unit_bias = []
+                if w_subgroup is not None and b_subgroup is not None:
+                    for sample_key in sorted(w_subgroup.keys()):
+                        unit_weights.append(load_numpy_array(w_subgroup[sample_key]))
+                        unit_bias.append(load_numpy_array(b_subgroup[sample_key]))
+                result["hidden_units"].append(
+                    {
+                        "first_sample_index": int(unit_group.attrs.get("first_sample_index", 0)),
+                        "activation": read_str_attr(unit_group, "activation", ""),
+                        "weights": unit_weights,
+                        "bias": unit_bias,
+                    }
+                )
+
+        return result
 
     def _restore_multiprocessing_state(self, hdf5_file: h5py.File, network) -> None:
         """Restore multiprocessing state."""
