@@ -48,47 +48,56 @@ Tests also require the core project dependencies:
 
 ## Test Configuration
 
-### pytest.ini Settings
+### pytest Settings
 
-The test configuration is defined in `src/tests/pytest.ini`:
+Test configuration lives in the repo-root `pyproject.toml` under
+`[tool.pytest.ini_options]` (the legacy `src/tests/pytest.ini` was
+removed in favour of a single source of truth). Pytest discovers the
+config by walking up from the invocation CWD, so it works the same
+whether you run from the repo root or from `src/tests/`.
 
-```ini
-[pytest]
-minversion = 6.0
-testpaths = tests
-python_files = test_*.py
-python_classes = Test*
-python_functions = test_*
+```toml
+[tool.pytest.ini_options]
+minversion = "6.0"
+testpaths = ["src/tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
 
-# Timeout configuration (CASCOR-P0-002)
+# Timeout configuration (CASCOR-P0-002). Thread-based timeout avoids
+# SIGALRM interference with forkserver IPC in multiprocessing-heavy
+# performance tests.
 timeout = 60
-timeout_method = signal
+timeout_method = "thread"
 
-addopts =
-    -ra                              # Show extra test summary for all except passed
-    -q                               # Quiet mode
-    -p no:warnings                   # Disable warning capture
-    --strict-markers                 # Error on unknown markers
-    --strict-config                  # Error on config issues
-    --continue-on-collection-errors  # Continue if collection fails
-    --tb=short                       # Short traceback format
-    --cov=cascade_correlation        # Coverage for cascade_correlation
-    --cov=candidate_unit             # Coverage for candidate_unit
-    --cov-report=term-missing        # Terminal report with missing lines
-    --cov-report=html:htmlcov        # HTML report
-    --cov-report=xml                 # XML report for CI
+addopts = [
+    "-ra",                              # Show extra test summary for all except passed
+    "-q",                               # Quiet mode
+    "--strict-markers",                 # Error on unknown markers
+    "--strict-config",                  # Error on config issues
+    "--continue-on-collection-errors",  # Continue if collection fails
+    "--tb=short",                       # Short traceback format
+    "-p", "no:dash",                    # Block dash autoload (psutil-segfault chain)
+    "-p", "no:playwright",              # Block pytest-playwright (often missing playwright)
+]
 ```
+
+Coverage is opt-in (run `pytest --cov=cascade_correlation
+--cov=candidate_unit --cov-report=term-missing --cov-report=html:htmlcov
+--cov-report=xml` explicitly, or use `src/tests/run_tests.bash` which
+adds the flags by default unless `--no-coverage` is passed).
 
 #### Key Settings Explained
 
 | Setting | Description |
 |---------|-------------|
-| `minversion = 6.0` | Minimum pytest version required |
+| `minversion = "6.0"` | Minimum pytest version required |
 | `timeout = 60` | Default 60-second timeout per test |
-| `timeout_method = signal` | Use signal-based timeout (Linux/macOS) |
+| `timeout_method = "thread"` | Thread-based timeout (avoids SIGALRM/forkserver deadlocks) |
 | `--strict-markers` | Fail on unregistered markers |
 | `-ra` | Show summary for all test results |
 | `--tb=short` | Condensed traceback output |
+| `-p no:dash`, `-p no:playwright` | Block plugin autoload that breaks under partial-install envs |
 
 ### Timeout Configuration
 
@@ -245,9 +254,7 @@ This ensures consistent CPU-based test behavior unless GPU testing is explicitly
 
 ### pytest-cov Setup
 
-Coverage is configured in both `pytest.ini` and `pyproject.toml`:
-
-**pyproject.toml (primary):**
+Coverage is configured in `pyproject.toml`:
 
 ```toml
 [tool.coverage.run]
@@ -344,7 +351,7 @@ if os.environ.get("PYTEST_XDIST_WORKER"):
 On Windows, change the timeout method:
 
 ```ini
-# pytest.ini or pyproject.toml
+# pyproject.toml
 timeout_method = thread  # Instead of 'signal'
 ```
 
