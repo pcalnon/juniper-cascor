@@ -855,6 +855,53 @@ def _reap_multiprocessing_children(timeout: float = 2.0) -> None:
         pass
 
 
+@pytest.fixture
+def pdeathsig_workers(monkeypatch):
+    """Opt-in Linux-only defense: set ``PR_SET_PDEATHSIG = SIGKILL`` on
+    every multiprocessing child this test spawns, so the kernel kills
+    them immediately when the pytest parent dies (no waiting for the
+    forkserver's heartbeat-based parent-death detection).
+
+    Issue 3 step 4. Use this on tests that legitimately spawn worker
+    pools and want OS-level orphan protection as a defence-in-depth on
+    top of the autouse ``_reap_test_spawned_children`` fixture (which
+    only fires if pytest reaches normal teardown — a SIGKILL of the
+    pytest parent itself bypasses it). Example:
+
+        def test_my_thing(pdeathsig_workers, ...):
+            net = CascadeCorrelationNetwork(...)
+            net._ensure_worker_pool(2)
+            ...
+
+    No-op on non-Linux platforms.
+    """
+    import sys
+
+    if sys.platform != "linux":
+        return
+
+    import ctypes
+    import multiprocessing.process as _mp_process
+
+    libc = ctypes.CDLL("libc.so.6", use_errno=True)
+    _PR_SET_PDEATHSIG = 1
+    _SIGKILL = 9
+
+    original_bootstrap = _mp_process.BaseProcess._bootstrap
+
+    def _bootstrap_with_pdeathsig(self, *args, **kwargs):
+        # prctl runs in the child immediately after fork — failures here
+        # are non-fatal (worst case is parent-death detection falls back
+        # to the heartbeat).
+        try:
+            libc.prctl(_PR_SET_PDEATHSIG, _SIGKILL, 0, 0, 0)
+        except Exception:  # nosec B110
+            pass
+        return original_bootstrap(self, *args, **kwargs)
+
+    monkeypatch.setattr(_mp_process.BaseProcess, "_bootstrap", _bootstrap_with_pdeathsig)
+
+
 @pytest.fixture(autouse=True)
 def _reap_test_spawned_children():
     """Per-test safety net: terminate any multiprocessing children
