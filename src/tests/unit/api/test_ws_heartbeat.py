@@ -65,12 +65,17 @@ class TestWsHeartbeat:
         message format: {"type": "ping", "ts": <float>}.
         """
         with client_fast_heartbeat.websocket_connect("/ws/training") as ws:
-            # Drain connection_established + initial_status + state
-            for _ in range(3):
-                ws.receive_json()
-
-            # Wait for the first heartbeat ping (interval = 1s)
-            ping = ws.receive_json()
+            # Drain non-ping connect frames (connection_established,
+            # initial_status, state, plus the GAP-WS-16 initial_metrics
+            # frame added on /ws/training). The exact set may grow, so
+            # drain until we see the first ping rather than counting.
+            ping = None
+            for _ in range(10):
+                frame = ws.receive_json()
+                if frame.get("type") == "ping":
+                    ping = frame
+                    break
+            assert ping is not None, "no ping received within drain budget"
             assert ping["type"] == "ping"
             assert isinstance(ping["ts"], float)
             assert ping["ts"] > 0
@@ -78,11 +83,16 @@ class TestWsHeartbeat:
             # Reply with pong to keep connection alive
             ws.send_text(json.dumps({"type": "pong"}))
 
-        # Also verify on /ws/control
+        # Also verify on /ws/control — drain until ping (control stream
+        # may send connection_established and possibly other initial frames).
         with client_fast_heartbeat.websocket_connect("/ws/control") as ws:
-            ws.receive_json()  # connection_established
-
-            ping = ws.receive_json()
+            ping = None
+            for _ in range(10):
+                frame = ws.receive_json()
+                if frame.get("type") == "ping":
+                    ping = frame
+                    break
+            assert ping is not None, "no ping received within drain budget on /ws/control"
             assert ping["type"] == "ping"
             assert isinstance(ping["ts"], float)
 
@@ -98,15 +108,23 @@ class TestWsHeartbeat:
         Survives two full ping/pong cycles — connection stays open.
         """
         with client_fast_heartbeat.websocket_connect("/ws/training") as ws:
-            # Drain connect sequence
-            for _ in range(3):
-                ws.receive_json()
+            # Drain non-ping connect frames; see V37b note in
+            # test_ping_sent_every_30_seconds for why we look up
+            # ``ping`` rather than counting.
+            for _ in range(10):
+                frame = ws.receive_json()
+                if frame.get("type") == "ping":
+                    ws.send_text(json.dumps({"type": "pong"}))
+                    break
 
-            # Survive two ping/pong cycles
-            for _ in range(2):
-                ping = ws.receive_json()
-                assert ping["type"] == "ping"
-                ws.send_text(json.dumps({"type": "pong"}))
+            # Survive one more ping/pong cycle
+            for _ in range(10):
+                frame = ws.receive_json()
+                if frame.get("type") == "ping":
+                    ws.send_text(json.dumps({"type": "pong"}))
+                    break
+            else:
+                raise AssertionError("expected a second ping within drain budget")
 
             # Connection still alive — no disconnect
 
@@ -122,13 +140,15 @@ class TestWsHeartbeat:
         """
         with pytest.raises(WebSocketDisconnect) as exc_info:
             with client_fast_heartbeat.websocket_connect("/ws/training") as ws:
-                # Drain connect sequence
-                for _ in range(3):
-                    ws.receive_json()
-
-                # Receive ping but do NOT send pong
-                ping = ws.receive_json()
-                assert ping["type"] == "ping"
+                # Drain non-ping connect frames until we see the ping;
+                # do NOT send pong (so the server times out and closes).
+                ping = None
+                for _ in range(10):
+                    frame = ws.receive_json()
+                    if frame.get("type") == "ping":
+                        ping = frame
+                        break
+                assert ping is not None, "no ping received within drain budget"
 
                 # Wait for server to close — next receive triggers disconnect
                 ws.receive_json()

@@ -23,15 +23,15 @@ JuniperCascor is the **training service** of the Juniper ecosystem. It depends o
 
 ```text
 ┌─────────────────────┐     REST+WS      ┌──────────────────────┐
-│   juniper-canopy     │ ◄──────────────► │  JuniperCascor       │
+│   juniper-canopy    │ ◄──────────────► │  JuniperCascor       │
 │   Dashboard         │                  │  Training Svc        │
 │   Port 8050         │                  │  Port 8200  ◄── here │
 └──────────┬──────────┘                  └──────────┬───────────┘
            │ REST                                    │ REST
            ▼                                         ▼
 ┌──────────────────────────────────────────────────────────────┐
-│                      JuniperData                              │
-│                   Dataset Service  ·  Port 8100               │
+│                      JuniperData                             │
+│                   Dataset Service  ·  Port 8100              │
 └──────────────────────────────────────────────────────────────┘
 ```
 
@@ -139,7 +139,7 @@ For detailed installation instructions, see the [Quick Start Guide](docs/install
 | [User Manual](docs/install/USER_MANUAL.md)               | Comprehensive usage guide             |
 | [API Reference](docs/api/API_REFERENCE.md)               | Complete API documentation            |
 | [Testing Guide](docs/testing/QUICK_START.md)             | Testing instructions                  |
-| [CI/CD Guide](docs/ci_cd/QUICK_START.md)                    | Continuous integration                |
+| [CI/CD Guide](docs/ci_cd/QUICK_START.md)                 | Continuous integration                |
 | [Source Code Guide](docs/source/QUICK_START.md)          | Contributor documentation             |
 | [Constants Reference](docs/overview/CONSTANTS_GUIDE.md)  | Configuration constants               |
 

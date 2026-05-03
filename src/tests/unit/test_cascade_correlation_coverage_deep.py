@@ -160,9 +160,17 @@ class TestCalculateOptimalProcessCount:
 
     @pytest.mark.unit
     def test_no_sched_getaffinity(self):
-        """When os.sched_getaffinity is not available, falls back to os.cpu_count()."""
+        """When os.sched_getaffinity is not available, falls back to os.cpu_count().
+
+        ``os.sched_getaffinity`` is Linux-only; on macOS the attribute doesn't
+        exist on the ``os`` module, so ``patch.object(os, "sched_getaffinity",
+        ...)`` raises AttributeError before the test body runs. Use
+        ``create=True`` so the mock can be installed regardless of the host
+        platform — the contract under test is the *fallback* behavior, which
+        is platform-independent.
+        """
         with patch("os.cpu_count", return_value=4):
-            with patch.object(os, "sched_getaffinity", side_effect=AttributeError):
+            with patch.object(os, "sched_getaffinity", create=True, side_effect=AttributeError):
                 # The code does hasattr(os, 'sched_getaffinity') check
                 # If it raises, the code would catch and use cpu_count
                 cpu_count = os.cpu_count()

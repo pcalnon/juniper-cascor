@@ -1,0 +1,32 @@
+# Gitleaks configuration for juniper-cascor.
+#
+# Extends gitleaks' default rules and allowlists known false-positive paths
+# and patterns surfaced by historical commits in this repository:
+#
+#   * notes/setup_config_guides/*.md  - documentation with placeholder API
+#     keys (e.g. `YOUR_API_KEY` inside a curl example).
+#   * notes/FIX_RESOURCE_TRACKER_AND_WARNINGS.md - a debug log capture
+#     containing `KeyError: 'juniper_train_<hash>'` strings that gitleaks'
+#     generic-api-key entropy heuristic flags.
+#   * conf/temp/conda_environment.yaml - a conda lockfile snapshot whose
+#     package build hashes (e.g. `fastapi=0.123.9=pyhcf101f3_0`) trip the
+#     same entropy heuristic.
+#
+# All of the above are documentation/build artifacts, not credentials.
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Test fixtures, conda lockfile build hashes, and documentation placeholders."
+paths = [
+  '''conf/temp/.*''',
+  '''notes/setup_config_guides/.*''',
+  '''notes/FIX_RESOURCE_TRACKER_AND_WARNINGS\.md''',
+]
+regexes = [
+  # Placeholder API keys that show up in setup guides and READMEs.
+  '''(?i)YOUR[_-]?API[_-]?KEY''',
+  # Conda build hashes: <name>=<version>=<py?h?XXXXXXXX_N>
+  '''=py[a-z0-9]{6,12}_\d+''',
+  '''=h[a-z0-9]{6,12}_\d+''',
+]

@@ -29,9 +29,23 @@ jobs:
         run: mkdir -p reports/security
 
       - name: Run Bandit (SAST)
+        # --skip + --exclude mirror the pre-commit `bandit` source-side
+        # hook in .pre-commit-config.yaml exactly:
+        #
+        #   files:   ^src/.*\.py$
+        #   exclude: ^src/tests/
+        #   --skip:  B101,B301,B311,B403
+        #     (B101 assert_used; B301 pickle for snapshot serialization;
+        #      B311 random for non-crypto sampling; B403 import_pickle)
+        #
+        # Tests are scanned by the separate "Bandit (relaxed)"
+        # pre-commit hook with a wider skip-list (B104/B108/B110/B404/
+        # B614 added) — those cases stay out of the CI standalone
+        # invocation deliberately. See V20 in
+        # juniper-ml/notes/CI_VALIDATION_FINDINGS_2026-04-29.md.
         run: |
-          bandit -r src -f sarif -o reports/security/bandit.sarif --exit-zero
-          bandit -r src --confidence-level medium --severity-level medium
+          bandit -r src --exclude src/tests --skip B101,B301,B311,B403 -f sarif -o reports/security/bandit.sarif --exit-zero
+          bandit -r src --exclude src/tests --skip B101,B301,B311,B403 --confidence-level medium --severity-level medium
 
       - name: Run pip-audit (Dependency Vulnerabilities)
         # --ignore-vuln CVE-2026-3219: pip 26.0.1 (pre-installed on the

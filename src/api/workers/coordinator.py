@@ -188,6 +188,16 @@ class WorkerCoordinator:
             Tuple of (JSON message, list of binary frames) or None if no tasks available.
         """
         with self._lock:
+            # CONC-10 (Phase 3D): closing this race requires a registry
+            # check inside the same critical section that pops the task.
+            # `_check_stale_workers` deregisters under `self._lock`, so if
+            # the worker is already gone we MUST NOT pop a task on its
+            # behalf — otherwise the task ends up assigned to a worker
+            # that no longer exists and waits the full
+            # `_task_reassignment_timeout` before the next reaper sweep
+            # picks it up.
+            if self._registry.get(worker_id) is None:
+                return None
             if not self._unassigned_tasks:
                 return None
 

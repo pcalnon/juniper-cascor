@@ -89,11 +89,17 @@ class TestCalculateOptimalProcessCountFinal:
 
     @pytest.mark.unit
     def test_sched_getaffinity_path(self, simple_network):
-        """Test CPU affinity detection path."""
+        """Test CPU affinity detection path.
+
+        ``os.sched_getaffinity`` is Linux-only and missing on macOS, so the
+        ``patch("os.sched_getaffinity", ...)`` form raises AttributeError on
+        Darwin runners. Use ``create=True`` so the mock can be installed
+        regardless of host platform.
+        """
         env = os.environ.copy()
         env.pop("CASCOR_NUM_PROCESSES", None)
         with patch.dict(os.environ, env, clear=True):
-            with patch("os.sched_getaffinity", return_value=set(range(4))):
+            with patch("os.sched_getaffinity", create=True, return_value=set(range(4))):
                 with patch("os.cpu_count", return_value=8):
                     result = _real_calc_process_count(simple_network)
                     assert result >= 1

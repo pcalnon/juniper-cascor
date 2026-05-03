@@ -1,7 +1,6 @@
 """Tests for training state machine."""
 
 import pytest
-
 from api.lifecycle.state_machine import Command, TrainingPhase, TrainingStateMachine, TrainingStatus
 
 

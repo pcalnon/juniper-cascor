@@ -4,10 +4,9 @@ import asyncio
 import logging
 import re
 
+from api.models.common import success_response
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
-
-from api.models.common import success_response
 
 logger = logging.getLogger("juniper_cascor.api.routes.snapshots")
 
@@ -33,7 +32,7 @@ def _validate_snapshot_id(snapshot_id: str, client: str | None = None) -> None:
     if not _SNAPSHOT_ID_PATTERN.fullmatch(snapshot_id or ""):
         logger.warning(
             "Rejected snapshot_id (invalid format): %r client=%s",
-            snapshot_id,
+            snapshot_id.replace("\r\n", "").replace("\n", ""),
             client or "unknown",
         )
         raise HTTPException(status_code=400, detail="Invalid snapshot_id format")

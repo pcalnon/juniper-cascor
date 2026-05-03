@@ -135,6 +135,15 @@ addopts = [
     "--strict-config",
     "--continue-on-collection-errors",
     "--tb=short",
+    # Block pytest plugins whose entrypoints get auto-discovered from the
+    # active env even when this project does not use them. dash.testing.plugin
+    # transitively imports psutil; if the env's psutil wheel is built for the
+    # wrong CPython ABI (e.g. a non-FT abi3 wheel landing in a python3.14t env),
+    # the dash plugin import segfaults during pytest startup before the
+    # free-threading guard in src/tests/conftest.py can fire. pytest_playwright
+    # is similarly autoloaded and breaks when `playwright` is not installed.
+    "-p", "no:dash",
+    "-p", "no:playwright",
 ]
 # MED-007: Targeted warning filters instead of suppressing all warnings
 filterwarnings = [
