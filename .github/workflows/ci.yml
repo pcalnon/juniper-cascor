@@ -202,30 +202,12 @@ jobs:
           mkdir -p logs src/logs reports/junit reports/htmlcov src/tests/reports
 
       - name: Run Unit Tests
-        env:
-          # P-6: pyproject.toml's ``[tool.coverage.run] data_file =
-          # "src/tests/reports/.coverage"`` + ``parallel = true`` was
-          # causing pytest-cov to silently lose its writes — pytest
-          # exited 0 but no .coverage file was written anywhere on disk
-          # (verified by the diagnostic step). Force COVERAGE_FILE to a
-          # known-good location at the repo root and disable buffered
-          # stdout so any session-finish summary or pytest-cov error
-          # actually surfaces in the live log.
-          COVERAGE_FILE: ${{ github.workspace }}/.coverage
-          PYTHONUNBUFFERED: "1"
         run: |
           echo "╔════════════════════════════════════════════════════════════╗"
           echo "║       Juniper Cascor - Unit Tests (Fast Only)              ║"
           echo "╚════════════════════════════════════════════════════════════╝"
 
-          # Diagnostics for P-6 follow-up: confirm pytest-cov is loaded
-          # and the version pin we're testing against.
-          python -m pytest --version 2>&1 || true
-          python -c "import pytest_cov; print(f'pytest-cov={pytest_cov.__version__}')" 2>&1 || true
-          python -c "import coverage; print(f'coverage={coverage.__version__}')" 2>&1 || true
-
-          set -o pipefail
-          python -u -m pytest \
+          python -m pytest \
             -m "unit and not slow" \
             src/tests/unit \
             --verbose \
@@ -235,29 +217,9 @@ jobs:
             --cov=src \
             --cov-report=term-missing \
             --cov-report=xml:reports/coverage.xml \
-            --cov-report=html:reports/htmlcov 2>&1 | tee reports/pytest-output.log
-          PYTEST_EXIT=${PIPESTATUS[0]}
-          echo "═════════ pytest exit code: ${PYTEST_EXIT} ═════════"
-          exit "${PYTEST_EXIT}"
-
-      - name: Diagnostic — show pytest tail and reports directory
-        if: always()
-        run: |
-          echo "═════════ pytest tail (last 80 lines) ═════════"
-          tail -80 reports/pytest-output.log 2>/dev/null || echo "(no pytest-output.log)"
-          echo "═════════ reports/ tree ═════════"
-          ls -la reports/ 2>/dev/null || echo "(no reports/)"
-          ls -la reports/junit/ 2>/dev/null || echo "(no reports/junit/)"
-          echo "═════════ src/tests/reports/ tree ═════════"
-          ls -la src/tests/reports/ 2>/dev/null || echo "(no src/tests/reports/)"
-          echo "═════════ stray .coverage* files in repo root ═════════"
-          ls -la .coverage* 2>/dev/null || echo "(no .coverage* in repo root)"
-          echo "═════════ all .coverage* files anywhere ═════════"
-          find . -name '.coverage*' -not -path './.git/*' 2>/dev/null || true
+            --cov-report=html:reports/htmlcov
 
       - name: Enforce Coverage Gate (80%)
-        env:
-          COVERAGE_FILE: ${{ github.workspace }}/.coverage
         run: |
           echo "╔════════════════════════════════════════════════════════════╗"
           echo "║       Juniper Cascor - Coverage Gate Enforcement           ║"
