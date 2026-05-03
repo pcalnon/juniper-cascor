@@ -757,7 +757,12 @@ class CascadeHDF5Serializer:
                 for j, (w, b) in enumerate(zip(unit_w, unit_b)):
                     sample_key = f"{j:04d}"
                     save_numpy_array(w_group, sample_key, np.ascontiguousarray(w, dtype=np.float32), compression, compression_opts)
-                    save_numpy_array(b_group, sample_key, np.asarray(b, dtype=np.float32), compression, compression_opts)
+                    # Per-unit bias is logically a scalar but written as
+                    # a 1-d length-1 array because h5py rejects
+                    # compression filters on 0-d datasets. Loader
+                    # unwraps in ``_load_weight_history``.
+                    bias_arr = np.atleast_1d(np.asarray(b, dtype=np.float32))
+                    save_numpy_array(b_group, sample_key, bias_arr, compression, compression_opts)
 
         self.logger.debug(f"CascadeHDF5Serializer: Saved weight_history with {len(sample_indices)} samples, {len(hidden_units)} hidden units")
 
@@ -1239,7 +1244,11 @@ class CascadeHDF5Serializer:
                 if w_subgroup is not None and b_subgroup is not None:
                     for sample_key in sorted(w_subgroup.keys()):
                         unit_weights.append(load_numpy_array(w_subgroup[sample_key]))
-                        unit_bias.append(load_numpy_array(b_subgroup[sample_key]))
+                        # Unwrap the length-1 array the writer used as a
+                        # scalar-bias workaround (h5py rejects compression
+                        # on 0-d datasets).
+                        bias_arr = load_numpy_array(b_subgroup[sample_key])
+                        unit_bias.append(float(bias_arr.flat[0]))
                 result["hidden_units"].append(
                     {
                         "first_sample_index": int(unit_group.attrs.get("first_sample_index", 0)),
