@@ -1,8 +1,9 @@
 # juniper-cascor — Histogram Bucket Rationale
 
-**Date:** 2026-05-02
-**METRICS-MON sub-track:** R4.1 / seed-14
-**Status:** Initial draft — bucket layouts marked **tentative pending R5.1**.
+**Date:** 2026-05-02 (R4.1 draft) / 2026-05-03 (R5.1b update)
+**METRICS-MON sub-track:** R4.1 / seed-14, plus **R5.1b** (this PR)
+**Status:** §4 and §5 layouts **implemented in R5.1b**. §2 and §3
+remain **tentative pending R5.1** SLO ratification.
 **Related:** [`METRICS_MONITORING_R4_ENTRY_PLAN_2026-05-01.md`](https://github.com/pcalnon/juniper-ml/blob/main/notes/code-review/METRICS_MONITORING_R4_ENTRY_PLAN_2026-05-01.md) §3 Q1 (hybrid: document current rationale now; mark tentative; R5.1 ratifies).
 
 ---
@@ -16,13 +17,15 @@ surface:
 |---|---|---|---|
 | `cascor_inference_duration_seconds` | _(none)_ | `_LOGGER_PROMETHEUS_LATENCY_BUCKETS` (in `cascor_constants/constants_logging/`) | Inference RPC latency for the `/v1/inference` endpoint. |
 | `cascor_ws_resume_replayed_events` | _(none)_ | `_WS_RESUME_REPLAY_BUCKETS` (local) | Number of buffered events replayed when a WebSocket client successfully resumes via the seq-replay handshake. **Discrete count, not duration.** |
-| `cascor_ws_broadcast_send_duration_seconds` | `type` | _Prometheus default_ | Wall-clock for individual WebSocket `send_*` operations on a single client. |
-| `cascor_ws_command_handler_seconds` | `command` | _Prometheus default_ | Wall-clock for command-handler dispatch (e.g. `pause`, `resume`, `start_training`). |
+| `cascor_ws_broadcast_send_duration_seconds` | `type` | `_WS_SUB_MS_LATENCY_BUCKETS` (R5.1b) | Wall-clock for individual WebSocket `send_*` operations on a single client. |
+| `cascor_ws_command_handler_seconds` | `command` | `_WS_SUB_MS_LATENCY_BUCKETS` (R5.1b) | Wall-clock for command-handler dispatch (e.g. `pause`, `resume`, `start_training`). |
 
-Two histograms have **explicit buckets** chosen for their distribution
-shape; two use **Prometheus defaults** (`(.005, .01, .025, .05, .075,
-.1, .25, .5, .75, 1, 2.5, 5, 7.5, 10, +inf)`) and are flagged for
-re-evaluation in R5.1.
+As of **R5.1b** (this PR) all four histograms now carry explicit
+buckets chosen for their distribution shape. The two WebSocket
+latency histograms previously used the Prometheus default layout
+(`(.005, .01, .025, .05, .075, .1, .25, .5, .75, 1, 2.5, 5, 7.5, 10,
++inf)`); they have been re-bucketed to the shared
+`_WS_SUB_MS_LATENCY_BUCKETS` constant — see §4.
 
 ---
 
@@ -110,52 +113,65 @@ quantile-precision for alerting use cases.
 
 ## 4. `cascor_ws_broadcast_send_duration_seconds`
 
-### 4.1 Current bucket layout
+### 4.1 Bucket layout
 
-**Default Prometheus buckets** (no explicit `buckets=` kwarg):
+**Implemented in R5.1b (this PR).** Adopted via the shared
+`_WS_SUB_MS_LATENCY_BUCKETS` constant in `src/api/observability.py`:
 
+```python
+_WS_SUB_MS_LATENCY_BUCKETS: tuple = (
+    0.0001,  # 100 µs
+    0.0005,  # 500 µs
+    0.001,   # 1 ms
+    0.005,   # 5 ms
+    0.01,    # 10 ms
+    0.05,    # 50 ms
+    0.1,     # 100 ms
+    float("inf"),
+)
 ```
-(.005, .01, .025, .05, .075, .1, .25, .5, .75, 1, 2.5, 5, 7.5, 10, +inf)
-```
 
-15 buckets. Designed as a "general HTTP" default — likely too sparse
-in the sub-10 ms region where WS broadcast send durations actually
-sit.
+8 buckets including `+inf`. Replaces the Prometheus default layout
+(`(.005, .01, .025, .05, .075, .1, .25, .5, .75, 1, 2.5, 5, 7.5, 10,
++inf)`, 15 buckets), whose 5 ms floor was too coarse for the actual
+distribution.
 
 ### 4.2 Rationale
 
-**No explicit rationale in current source.** WebSocket broadcast send
-operations on a single client should typically complete in
-sub-millisecond on a healthy connection (the actual write to the OS
-socket buffer) — sub-5 ms in pathological cases. The default bucket
-floor at 5 ms means most observations land in the first bucket and
-quantile estimation in the healthy regime is impossible.
+WebSocket broadcast send operations on a single client should
+typically complete in sub-millisecond on a healthy connection (the
+actual write to the OS socket buffer) — sub-5 ms in pathological
+cases. The previous default-bucket floor at 5 ms meant most
+observations landed in the first bucket and quantile estimation in
+the healthy regime was impossible. The R5.1b layout adds three
+sub-millisecond boundaries (100 µs / 500 µs / 1 ms) for the healthy
+regime, retains 5 ms / 10 ms as the "soft slow" markers, and uses
+50 ms / 100 ms to flag genuine slowness while keeping bucket count
+low (8 vs. the default's 15).
 
-### 4.3 R5.1 ratification candidate
+### 4.3 R5.1b implementation note
 
-R5.1 should re-bucket this to bracket the actual distribution:
-
-```python
-# Proposed; not adopted in this PR (R5.1 territory):
-buckets=(0.0001, 0.0005, 0.001, 0.005, 0.01, 0.05, 0.1, float("inf"))
-```
-
-Sub-millisecond resolution for the healthy regime, 5 ms / 10 ms /
-50 ms / 100 ms boundaries to flag genuine slowness. **Status: tentative;
-re-bucket in R5.1.**
+Adopted as written above. The HELP line on the metric no longer
+carries the `(R4.1 buckets tentative pending R5.1)` suffix; the
+inline source comment now points at this section as the rationale of
+record. SLO ratification (R5.1 proper) remains pending — re-bucketing
+is a metric-version event but not a SemVer-major break, so a future
+ratification PR can adjust boundaries without breaking dashboards
+beyond a normal metric-version bump.
 
 ---
 
 ## 5. `cascor_ws_command_handler_seconds`
 
-### 5.1 Current bucket layout
+### 5.1 Bucket layout
 
-**Default Prometheus buckets** (same as §4.1).
+**Implemented in R5.1b (this PR).** Adopts the same
+`_WS_SUB_MS_LATENCY_BUCKETS` constant defined in §4.1 — 8 boundaries
+spanning 100 µs → 100 ms (+inf).
 
 ### 5.2 Rationale
 
-**No explicit rationale in current source.** Command-handler durations
-vary widely by `command` label:
+Command-handler durations vary widely by `command` label:
 
 - `pause` / `resume`: simple state flips — sub-millisecond.
 - `start_training`: launches the training loop in a background thread
@@ -163,15 +179,25 @@ vary widely by `command` label:
 - `update_params`: lifecycle-lock acquire + atomic-rollback path —
   sub-50 ms in nominal case.
 
-Defaults are roughly OK for the slower commands but waste resolution
-on the fast ones. R5.1 may consider splitting the metric per command
-class or adopting the per-metric override approach
-(`buckets_for_command={"pause": ..., "start_training": ...}`).
+The previous default Prometheus layout was roughly OK for the slower
+commands but wasted resolution on the fast ones (everything below 5 ms
+landed in the first bucket). The R5.1b sub-millisecond layout
+(100 µs / 500 µs / 1 ms) gives quantile precision for the
+`pause`/`resume` regime, while the 5 ms / 10 ms / 50 ms / 100 ms
+boundaries continue to bracket `update_params` and `start_training`
+durations. The single shared layout keeps the metric un-split and the
+`command` label as the discriminator, which preserves dashboard and
+alert authoring simplicity at a small cost in per-command bucket
+fit.
 
-### 5.3 R5.1 ratification candidate
+### 5.3 R5.1b implementation note
 
-Status: tentative; re-evaluate in R5.1 once SLO catalog assigns
-per-command latency budgets.
+Adopted as written. The HELP line no longer carries the
+`(R4.1 buckets tentative pending R5.1)` suffix; the inline source
+comment points at §4–§5 of this document as the rationale of record.
+A future R5.1 SLO catalog may still split the metric per command-class
+if a single layout proves insufficient — that would be a metric-rename
+event, not just a re-bucket, and is out of scope for R5.1b.
 
 ---
 
@@ -186,12 +212,12 @@ When R5.1 designs the cascor SLO catalog:
 - [ ] **Resume replay**: pick one of the operational thresholds (25,
       100, 500) as the "client-degraded" signal and align with the
       cascor-canopy reconnection alert.
-- [ ] **Broadcast send**: re-bucket to add sub-millisecond resolution.
-      The default Prometheus layout is wrong for this distribution.
-- [ ] **Command handler**: decide between (a) one histogram with the
-      `command` label and proposed sub-millisecond buckets, or
-      (b) split into per-command-class metrics for clearer SLO
-      mapping.
+- [x] **Broadcast send**: re-bucketed to add sub-millisecond
+      resolution in **R5.1b** (this PR). New layout is the shared
+      `_WS_SUB_MS_LATENCY_BUCKETS` constant — see §4.1.
+- [x] **Command handler**: kept as a single histogram with the
+      `command` label; adopted the same sub-millisecond layout in
+      **R5.1b**. Per-command-class split deferred — see §5.3.
 - [ ] Consider lifting `_LOGGER_PROMETHEUS_LATENCY_BUCKETS` into
       `juniper-observability` as a shared "general RPC latency"
       bucket constant if R5.1's SLO catalog identifies a unified
@@ -201,14 +227,18 @@ When R5.1 designs the cascor SLO catalog:
 
 ## 7. Process notes
 
-- HELP-string markers: all 4 histograms carry a "tentative pending
-  R5.1" suffix on their HELP lines so operators reading `/metrics`
-  directly see the marker. Inline comments at each definition point
-  at this rationale doc.
+- HELP-string markers: as of R5.1b, the two re-bucketed histograms
+  (`cascor_ws_broadcast_send_duration_seconds` and
+  `cascor_ws_command_handler_seconds`) **no longer** carry the
+  "tentative pending R5.1" suffix. The remaining two
+  (`juniper_cascor_inference_duration_seconds`,
+  `cascor_ws_resume_replayed_events`) keep the suffix because they
+  await SLO ratification (R5.1 proper), not re-bucketing. Inline
+  comments at each definition point at this rationale doc.
 - Re-bucketing is a metric-version event but **not** a public-API
   break. No SemVer-major beat is required when R5.1 ratifies or
   reshapes.
-- `cascor_ws_broadcast_send_duration_seconds` and
-  `cascor_ws_command_handler_seconds` are flagged as
-  **likely-needs-re-bucketing** (default Prometheus layout doesn't
-  match their actual distribution); R5.1 should prioritize them.
+- R5.1b status (`cascor_ws_broadcast_send_duration_seconds` and
+  `cascor_ws_command_handler_seconds`): **re-bucketed.** Both metrics
+  now share the `_WS_SUB_MS_LATENCY_BUCKETS` layout defined in
+  `src/api/observability.py`; default Prometheus buckets removed.

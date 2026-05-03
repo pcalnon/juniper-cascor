@@ -415,6 +415,133 @@ class TestObservabilityShim:
         assert health_routes.LIVENESS_STALENESS_SECONDS == juniper_observability.LIVENESS_STALENESS_SECONDS
         assert health_routes.READINESS_HEADER == juniper_observability.READINESS_HEADER
 
+
+@pytest.mark.unit
+class TestWebSocketHistogramBuckets:
+    """METRICS-MON R5.1b: sub-millisecond bucket layout for WS latency histograms.
+
+    Pins the bucket boundaries on
+    ``cascor_ws_broadcast_send_duration_seconds`` and
+    ``cascor_ws_command_handler_seconds`` against the
+    ``_WS_SUB_MS_LATENCY_BUCKETS`` constant. If a future change
+    accidentally reverts to the Prometheus default layout (5 ms floor)
+    or alters the boundaries without updating the rationale doc, these
+    assertions fail loudly. Rationale lives in
+    ``notes/observability/HISTOGRAM_BUCKETS_RATIONALE_2026-05-02.md``
+    §4 (broadcast_send) and §5 (command_handler).
+    """
+
+    EXPECTED_UPPER_BOUNDS = [0.0001, 0.0005, 0.001, 0.005, 0.01, 0.05, 0.1, float("inf")]
+
+    def setup_method(self):
+        # Force lazy re-init so each test sees a freshly-registered set
+        # of metrics. The shim teardown also clears the registry below.
+        import api.observability as obs
+
+        obs._ws_metrics = None
+
+    def teardown_method(self):
+        from prometheus_client import REGISTRY
+
+        import api.observability as obs
+
+        if obs._ws_metrics is not None:
+            for metric in list(obs._ws_metrics.values()):
+                try:
+                    REGISTRY.unregister(metric)
+                except Exception as exc:
+                    logging.getLogger(__name__).debug(
+                        "Ignoring metric unregister failure during teardown for %r: %s",
+                        metric,
+                        exc,
+                    )
+            obs._ws_metrics = None
+
+    def test_sub_ms_bucket_constant_matches_rationale_doc(self):
+        """The shared constant is the authoritative source; verify its shape."""
+        from api.observability import _WS_SUB_MS_LATENCY_BUCKETS
+
+        assert list(_WS_SUB_MS_LATENCY_BUCKETS) == self.EXPECTED_UPPER_BOUNDS
+
+    def test_broadcast_send_duration_uses_sub_ms_buckets(self):
+        from api.observability import _ensure_ws_metrics
+
+        metrics = _ensure_ws_metrics()
+        hist = metrics["broadcast_send_duration_seconds"]
+        # ``_upper_bounds`` includes the implicit ``+inf`` upper edge.
+        assert hist._upper_bounds == self.EXPECTED_UPPER_BOUNDS
+
+    def test_command_handler_seconds_uses_sub_ms_buckets(self):
+        from api.observability import _ensure_ws_metrics
+
+        metrics = _ensure_ws_metrics()
+        hist = metrics["command_handler_seconds"]
+        assert hist._upper_bounds == self.EXPECTED_UPPER_BOUNDS
+
+    def test_broadcast_send_help_string_no_longer_carries_r4_1_marker(self):
+        """R5.1b removed the ``(R4.1 buckets tentative pending R5.1)`` suffix."""
+        from api.observability import _ensure_ws_metrics
+
+        metrics = _ensure_ws_metrics()
+        hist = metrics["broadcast_send_duration_seconds"]
+        assert "tentative pending R5.1" not in hist._documentation
+        assert "R4.1" not in hist._documentation
+
+    def test_command_handler_help_string_no_longer_carries_r4_1_marker(self):
+        from api.observability import _ensure_ws_metrics
+
+        metrics = _ensure_ws_metrics()
+        hist = metrics["command_handler_seconds"]
+        assert "tentative pending R5.1" not in hist._documentation
+        assert "R4.1" not in hist._documentation
+
+
+@pytest.mark.unit
+class TestObservabilityShim_R5_1b:
+    """Sanity-check that the **other** four histograms still carry the
+    R4.1 ``(buckets tentative pending R5.1)`` suffix — those still await
+    R5.1 SLO ratification, not re-bucketing. Guards against accidental
+    HELP-string drift in future PRs.
+    """
+
+    def setup_method(self):
+        import api.observability as obs
+
+        obs._ws_metrics = None
+        obs._training_metrics = None
+
+    def teardown_method(self):
+        from prometheus_client import REGISTRY
+
+        import api.observability as obs
+
+        for cache_attr in ("_ws_metrics", "_training_metrics"):
+            cache = getattr(obs, cache_attr, None)
+            if cache is not None:
+                for metric in list(cache.values()):
+                    try:
+                        REGISTRY.unregister(metric)
+                    except Exception as exc:
+                        logging.debug("Best-effort metric unregister failed in teardown for %r: %s", metric, exc)
+                setattr(obs, cache_attr, None)
+
+    def test_inference_duration_seconds_help_keeps_r4_1_marker(self):
+        from api.observability import _ensure_training_metrics
+
+        metrics = _ensure_training_metrics()
+        hist = metrics["inference_duration_seconds"]
+        assert "(R4.1 buckets tentative pending R5.1)" in hist._documentation
+
+    def test_resume_replayed_events_help_keeps_r4_1_marker(self):
+        from api.observability import _ensure_ws_metrics
+
+        metrics = _ensure_ws_metrics()
+        hist = metrics["resume_replayed_events"]
+        assert "(R4.1 buckets tentative pending R5.1)" in hist._documentation
+
+
+@pytest.mark.unit
+class TestObservabilityReadinessTimestamp:
     def test_readiness_timestamp_is_tz_aware_utc(self):
         """METRICS-MON R2.1.4: closes BUG-JD-06-equivalent naive-tz drift.
 
