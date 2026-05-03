@@ -200,7 +200,7 @@ cd src/tests && python -m pytest --timeout=300
 
 | Configuration | Value | Location |
 |---------------|-------|----------|
-| Global pytest timeout | 60 seconds | `pytest.ini` |
+| Global pytest timeout | 60 seconds | `pyproject.toml` (`[tool.pytest.ini_options]`) |
 | Unit test timeout (CI) | 60 seconds | `ci.yml` (`--timeout=60`) |
 | Integration test timeout (CI) | 120 seconds | `ci.yml` (`--timeout=120`) |
 | Slow test timeout | 300 seconds | Per-test `@pytest.mark.timeout(300)` |
