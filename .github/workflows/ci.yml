@@ -676,7 +676,14 @@ jobs:
 
       - name: Verify Package Import
         run: |
-          docker exec juniper-cascor-test python -c "import juniper_cascor; print(juniper_cascor.__version__)"
+          # The wheel publishes as PyPI name ``juniper-cascor`` but the
+          # source is laid out as flat modules (``cascade_correlation``,
+          # ``api``, ``snapshots``, …) under ``src/``, with no
+          # importable top-level ``juniper_cascor`` namespace. Use
+          # ``importlib.metadata.version`` to confirm the wheel is
+          # installed, then import a real module to confirm it loads.
+          docker exec juniper-cascor-test python -c "from importlib.metadata import version; print('juniper-cascor', version('juniper-cascor'))"
+          docker exec juniper-cascor-test python -c "import cascade_correlation, api, snapshots; print('modules importable')"
 
       - name: Verify Health Endpoint
         run: |
