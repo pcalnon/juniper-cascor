@@ -131,17 +131,20 @@ class TestCandidateTraining:
 class TestNetworkGrowth:
     """Tests for network growth functionality."""
 
-    # V38a (closed via Option E fallback per
-    # juniper-ml/notes/V38_GROW_NETWORK_INVESTIGATION_PLAN_2026-05-02.md):
-    # this test exercises the real grow_network → train_candidates →
-    # add_unit path with ultra-minimal parameters and asserts an exact
-    # hidden-unit count. Diagnostic instrumentation revealed an RC-4
-    # multiprocessing-timing heisenbug: `print(flush=True)` calls in
-    # _execute_candidate_training make the test pass deterministically,
-    # which strongly indicates a race in the candidate-training
-    # dispatcher. Move to the `integration` marker so the unit-test
-    # gate stays green; the underlying race is tracked separately.
-    @pytest.mark.integration
+    # V38a — flipped back to ``@pytest.mark.unit`` after the P-1 RC-4 fix
+    # landed. The race lived in ``_collect_worker_results``'s qsize-based
+    # early exit, which polled ``multiprocessing.Queue.qsize()`` while
+    # worker feeder threads were still flushing put() writes to the
+    # underlying Pipe. Under sub-second per-candidate budgets the
+    # parent's qsize check raced ahead, exited the wait loop, and
+    # ``_collect_training_results`` then timed out on results that
+    # hadn't yet bumped the queue's semaphore — yielding the
+    # ``best_candidate=None`` symptom. The fix drops the polling loop
+    # entirely; ``_collect_training_results.get(timeout=...)`` already
+    # blocks on the semaphore, which IS correctly synchronized with
+    # worker puts. See ``notes/P1_RC4_INVESTIGATION_PLAN_2026-05-03.md``
+    # (juniper-ml) §4.
+    @pytest.mark.unit
     @pytest.mark.timeout(30)
     def test_grow_network_adds_hidden_unit(self, simple_network, simple_2d_data):
         """Test that grow_network actually adds a hidden unit (CR-074).

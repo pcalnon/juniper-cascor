@@ -151,6 +151,52 @@ def pytest_configure(config):
     torch.backends.cudnn.benchmark = False
 
 
+# ===================================================================
+# P-1 RC-4 RING-BUFFER DUMP ON FAILURE
+# ===================================================================
+# When CASCOR_RC4_RING_BUFFER=1, dump the cross-process event ring on
+# any test failure so the diagnostic signature shows up in the pytest
+# "Captured stdout" section. Reset the buffer between tests so each
+# failure shows only its own events.
+#
+# See notes/P1_RC4_INVESTIGATION_PLAN_2026-05-03.md (juniper-ml) §3.2
+# for the strategy and §3.3 for the per-hypothesis decision rules.
+
+
+@pytest.hookimpl(hookwrapper=True)
+def pytest_runtest_makereport(item, call):
+    """Dump the RC-4 ring buffer on test failure (call phase only)."""
+    outcome = yield
+    if not os.environ.get("CASCOR_RC4_RING_BUFFER"):
+        return
+    report = outcome.get_result()
+    if report.when != "call":
+        return
+    if report.failed:
+        try:
+            from parallelism import rc4_ring_buffer as _rc4_dump
+
+            print("\n" + "=" * 78, flush=True)
+            print(f"P-1 RC-4 ring-buffer dump for FAILED {item.nodeid}:", flush=True)
+            print("=" * 78, flush=True)
+            print(_rc4_dump.dump_sorted(), flush=True)
+            print("=" * 78, flush=True)
+        except Exception as exc:  # nosec B110 - diagnostic dump must not perturb teardown
+            print(f"[rc4-ring-buffer] dump failed: {exc}", flush=True)
+
+
+@pytest.fixture(autouse=True)
+def _rc4_ring_buffer_reset():
+    """Reset the RC-4 ring buffer between tests so each failure dump is scoped."""
+    if not os.environ.get("CASCOR_RC4_RING_BUFFER"):
+        yield
+        return
+    from parallelism import rc4_ring_buffer as _rc4_reset
+
+    _rc4_reset.reset()
+    yield
+
+
 def pytest_addoption(parser):
     """Add custom command line options."""
     parser.addoption("--gpu", action="store_true", default=False, help="Run GPU tests")
