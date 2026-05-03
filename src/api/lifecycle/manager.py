@@ -61,6 +61,399 @@ def _write_activation_function_name(network: Any, value: str) -> None:
     network._init_activation_function()
 
 
+class _WeightHistoryRecorder:
+    """CAN-015g (Phase 6E follow-on, g-6): training-loop weight history capture.
+
+    Populates ``network.weight_history`` during a training run so the
+    serializer's V2 path (g-1) actually has data to persist when the
+    user calls ``POST /v1/snapshots``. Without this, V2 replay only
+    works against ad-hoc test fixtures — production training would
+    still produce V1-only snapshots.
+
+    Plan: ``notes/PHASE_6E_DEFERRED_CAN-015GH_DESIGN.md`` §"Live
+    capture during training (g-6)".
+
+    Three trigger points:
+      1. **Every Nth epoch** — registered as a callback on
+         ``training_monitor.on_epoch_end``. ``N`` = network's
+         ``config.weight_history_sampling_interval`` (default 50;
+         set to 1 for every-epoch capture; set to 0 to disable the
+         periodic trigger and rely on cascade-add only).
+      2. **Cascade-grow events** — registered as a callback on
+         ``training_monitor.on_cascade_add``. Always captures
+         regardless of the periodic interval since these are the
+         narrative anchors per the parent design.
+      3. **Terminal capture** — call ``capture_terminal()`` from the
+         lifecycle's training-completion path so the last sample
+         reflects the truly-final weights even when training stops
+         mid-interval.
+
+    Memory ceiling: ``config.weight_history_max_samples`` (default
+    1000) is a soft cap. On overflow the recorder decimates
+    inter-cascade samples by 2× while always retaining cascade-add
+    samples (they're the visually-meaningful moments).
+
+    Idempotency: a single epoch can fire both Nth-epoch and
+    cascade-add triggers. The recorder dedupes by epoch number — a
+    sample for a given epoch is recorded at most once, with the
+    cascade-add capture winning if both fire (it has the latest
+    post-grow state).
+
+    Thread safety: capture runs in the training thread (the same
+    thread that fires ``on_epoch_end`` / ``on_cascade_add``). No
+    cross-thread coordination is needed because ``network.weight_history``
+    is only read by the lifecycle in (a) ``save_snapshot`` and
+    (b) replay-session loading — both of which fire while training
+    is paused or stopped per the FSM.
+    """
+
+    # Marker on a sample's metadata: ``True`` means this sample was
+    # captured at a cascade-add event and is exempt from decimation.
+    _CASCADE_FLAG_KEY = "_cascade_add"
+
+    def __init__(self, network, monitor, *, sampling_interval: Optional[int] = None, max_samples: Optional[int] = None) -> None:
+        self.network = network
+        self.monitor = monitor
+        config = getattr(network, "config", None)
+        self.sampling_interval: int = int(sampling_interval if sampling_interval is not None else getattr(config, "weight_history_sampling_interval", 50))
+        self.max_samples: int = int(max_samples if max_samples is not None else getattr(config, "weight_history_max_samples", 1000))
+        self.logger = logging.getLogger(__name__)
+        self._registered: bool = False
+        self._init_weight_history()
+
+    def _init_weight_history(self) -> None:
+        """Ensure ``network.weight_history`` exists with the expected shape.
+
+        Pre-g-6 networks won't have the attribute — initialize it
+        with the same dict layout the g-1 serializer reads. Idempotent
+        so reattaching the recorder mid-run doesn't clobber existing
+        samples.
+        """
+        wh = getattr(self.network, "weight_history", None)
+        if not isinstance(wh, dict):
+            self.network.weight_history = {
+                "sampling_strategy": "adaptive",
+                "sampling_interval": self.sampling_interval,
+                "sample_indices": [],
+                "output_weights": [],
+                "output_bias": [],
+                # Per-unit dicts: {first_sample_index, activation, weights[], bias[]}.
+                # See plan §"Hidden-unit slicing convention".
+                "hidden_units": [],
+                # Internal: epochs already captured (dedupe + decimation
+                # bookkeeping). Not consumed by the serializer.
+                "_captured_epochs": [],
+                "_cascade_epochs": set(),
+            }
+        else:
+            # Refresh the periodic interval so a runtime-tunable change
+            # via PATCH /v1/training/params lands on the next trigger.
+            wh["sampling_interval"] = self.sampling_interval
+            wh.setdefault("sampling_strategy", "adaptive")
+            wh.setdefault("sample_indices", [])
+            wh.setdefault("output_weights", [])
+            wh.setdefault("output_bias", [])
+            wh.setdefault("hidden_units", [])
+            wh.setdefault("_captured_epochs", [])
+            wh.setdefault("_cascade_epochs", set())
+
+    # ------------------------------------------------------------------
+    # Registration
+    # ------------------------------------------------------------------
+
+    def register(self) -> None:
+        """Subscribe to ``on_epoch_end`` and ``on_cascade_add`` events.
+
+        Idempotent — repeated calls are no-ops so multiple
+        ``start_training`` invocations don't double-register.
+        """
+        if self._registered or self.monitor is None:
+            return
+        self.monitor.register_callback("epoch_end", self._on_epoch_end)
+        self.monitor.register_callback("cascade_add", self._on_cascade_add)
+        self._registered = True
+
+    # ------------------------------------------------------------------
+    # Trigger callbacks
+    # ------------------------------------------------------------------
+
+    def _on_epoch_end(self, **kwargs) -> None:
+        """Periodic trigger: capture every Nth epoch.
+
+        Skipped silently when ``sampling_interval == 0`` (cascade-add
+        only mode). Best-effort — exceptions are logged but never
+        crash the training thread.
+        """
+        if self.sampling_interval <= 0:
+            return
+        epoch = kwargs.get("epoch")
+        if epoch is None:
+            return
+        try:
+            epoch_int = int(epoch)
+        except (TypeError, ValueError):
+            return
+        # Trigger on epoch numbers that are multiples of the interval
+        # (epoch=1 with interval=50 does NOT fire; epoch=50 does).
+        # Epoch 0 fires too — gives canopy the initial state.
+        if epoch_int % self.sampling_interval != 0:
+            return
+        try:
+            self._capture(epoch_int, is_cascade_add=False)
+        except Exception:
+            self.logger.exception("g-6: epoch_end capture raised; continuing")
+
+    def _on_cascade_add(self, **kwargs) -> None:
+        """Cascade-grow trigger: always capture.
+
+        Fires after a unit has been fully installed (matches the
+        existing ``hidden_units_added`` append point in
+        ``cascade_correlation.add_unit``). Uses the monitor's
+        ``current_epoch`` because the event payload doesn't carry it.
+        """
+        epoch = getattr(self.monitor, "current_epoch", None) if self.monitor is not None else None
+        if epoch is None:
+            return
+        try:
+            epoch_int = int(epoch)
+        except (TypeError, ValueError):
+            return
+        try:
+            self._capture(epoch_int, is_cascade_add=True)
+        except Exception:
+            self.logger.exception("g-6: cascade_add capture raised; continuing")
+
+    def capture_terminal(self) -> None:
+        """Final-epoch capture from the lifecycle's training-completion path.
+
+        Public so the caller can invoke it explicitly; uses the
+        monitor's ``current_epoch`` like ``_on_cascade_add`` and
+        marks the sample as cascade-equivalent (decimation-exempt)
+        so the terminal frame survives even on long runs that hit
+        the soft cap.
+        """
+        epoch = getattr(self.monitor, "current_epoch", None) if self.monitor is not None else None
+        if epoch is None:
+            return
+        try:
+            epoch_int = int(epoch)
+        except (TypeError, ValueError):
+            return
+        try:
+            self._capture(epoch_int, is_cascade_add=True)
+        except Exception:
+            self.logger.exception("g-6: terminal capture raised; continuing")
+
+    # ------------------------------------------------------------------
+    # Capture mechanics
+    # ------------------------------------------------------------------
+
+    def _capture(self, epoch: int, *, is_cascade_add: bool) -> None:
+        """Snapshot the network's current weights into ``weight_history``.
+
+        Dedupes by epoch — a second trigger at the same epoch
+        overwrites the previous sample's tensors (the cascade-add
+        capture wins because it sees the latest post-grow state).
+        Tensors are detached + ``cpu().numpy().copy()`` so the
+        history holds an independent snapshot the optimizer can't
+        mutate later.
+        """
+        self._init_weight_history()
+        wh = self.network.weight_history
+
+        captured = wh["_captured_epochs"]
+        cascade_epochs = wh["_cascade_epochs"]
+
+        if epoch in captured:
+            existing_idx = captured.index(epoch)
+            self._write_sample_at(existing_idx, epoch, is_cascade_add=is_cascade_add)
+            if is_cascade_add:
+                cascade_epochs.add(epoch)
+            return
+
+        # New sample — append.
+        captured.append(epoch)
+        wh["sample_indices"].append(epoch)
+        wh["output_weights"].append(self._copy_output_weights())
+        wh["output_bias"].append(self._copy_output_bias())
+        new_index = len(captured) - 1
+        # Hidden-unit per-sample slice: append a per-unit array entry.
+        self._append_hidden_unit_slices(new_index, captured)
+        if is_cascade_add:
+            cascade_epochs.add(epoch)
+
+        # Enforce the soft cap with cascade-aware decimation.
+        if self.max_samples > 0 and len(captured) > self.max_samples:
+            self._decimate(captured, cascade_epochs)
+
+    def _write_sample_at(self, index: int, epoch: int, *, is_cascade_add: bool) -> None:
+        """Overwrite an existing sample's tensors (dedupe path)."""
+        wh = self.network.weight_history
+        wh["output_weights"][index] = self._copy_output_weights()
+        wh["output_bias"][index] = self._copy_output_bias()
+        # Refresh per-unit slices for this sample only.
+        captured = wh["_captured_epochs"]
+        for unit_idx, unit_dict in enumerate(wh["hidden_units"]):
+            first = unit_dict["first_sample_index"]
+            local = index - first
+            if local < 0:
+                continue
+            unit_w, unit_b = self._copy_unit(unit_idx)
+            if unit_w is None:
+                continue
+            while len(unit_dict["weights"]) <= local:
+                unit_dict["weights"].append(unit_w)
+                unit_dict["bias"].append(unit_b)
+            unit_dict["weights"][local] = unit_w
+            unit_dict["bias"][local] = unit_b
+        # Ensure any newly-cascade-grown unit (added between this
+        # sample's first capture and the rewrite) gets a slot.
+        self._append_hidden_unit_slices(index, captured, rewrite=True)
+
+    def _append_hidden_unit_slices(self, sample_index: int, captured: list, rewrite: bool = False) -> None:
+        """Ensure every current hidden unit has a per-sample slice for ``sample_index``."""
+        wh = self.network.weight_history
+        units = getattr(self.network, "hidden_units", None) or []
+        for unit_idx, _ in enumerate(units):
+            if unit_idx >= len(wh["hidden_units"]):
+                # First time we've seen this unit — record its
+                # ``first_sample_index`` (sample-list index, NOT
+                # epoch — matches the g-2 cache convention).
+                activation = self._unit_activation_name(unit_idx)
+                wh["hidden_units"].append(
+                    {
+                        "first_sample_index": sample_index,
+                        "activation": activation,
+                        "weights": [],
+                        "bias": [],
+                    }
+                )
+            unit_dict = wh["hidden_units"][unit_idx]
+            first = unit_dict["first_sample_index"]
+            local = sample_index - first
+            if local < 0:
+                continue
+            unit_w, unit_b = self._copy_unit(unit_idx)
+            if unit_w is None:
+                continue
+            if rewrite and local < len(unit_dict["weights"]):
+                unit_dict["weights"][local] = unit_w
+                unit_dict["bias"][local] = unit_b
+            else:
+                while len(unit_dict["weights"]) <= local:
+                    # Pad with zeros if a prior sample skipped this
+                    # unit (shouldn't happen with the current trigger
+                    # set but defensive against future trigger types).
+                    unit_dict["weights"].append(unit_w)
+                    unit_dict["bias"].append(unit_b)
+
+    # ------------------------------------------------------------------
+    # Tensor copy helpers (training-thread, no autograd retention)
+    # ------------------------------------------------------------------
+
+    def _copy_output_weights(self):
+        ow = getattr(self.network, "output_weights", None)
+        return self._tensor_to_numpy(ow)
+
+    def _copy_output_bias(self):
+        ob = getattr(self.network, "output_bias", None)
+        return self._tensor_to_numpy(ob)
+
+    def _copy_unit(self, unit_idx: int):
+        units = getattr(self.network, "hidden_units", None) or []
+        if unit_idx >= len(units):
+            return None, None
+        unit = units[unit_idx]
+        w = unit.get("weights") if isinstance(unit, dict) else getattr(unit, "weights", None)
+        b = unit.get("bias") if isinstance(unit, dict) else getattr(unit, "bias", None)
+        w_np = self._tensor_to_numpy(w)
+        b_np = self._tensor_to_numpy(b)
+        if b_np is None:
+            return w_np, 0.0
+        # Per-unit bias is logically a scalar — flatten to a Python float
+        # so the (g-1) serializer's atleast_1d wrap path stays uniform.
+        return w_np, float(b_np.flat[0]) if b_np.size > 0 else 0.0
+
+    @staticmethod
+    def _tensor_to_numpy(t):
+        if t is None:
+            return None
+        # Torch tensor path — detach to drop autograd, cpu() to leave
+        # any device, numpy() + copy() so the buffer survives
+        # subsequent in-place updates by the optimizer.
+        try:
+            return np.ascontiguousarray(t.detach().cpu().numpy(), dtype=np.float32).copy()
+        except AttributeError:
+            try:
+                return np.ascontiguousarray(t, dtype=np.float32).copy()
+            except (TypeError, ValueError):
+                return None
+
+    def _unit_activation_name(self, unit_idx: int) -> str:
+        units = getattr(self.network, "hidden_units", None) or []
+        if unit_idx >= len(units):
+            return ""
+        unit = units[unit_idx]
+        if isinstance(unit, dict):
+            act = unit.get("activation_fn") or unit.get("activation")
+            if act is None:
+                return ""
+            name = getattr(act, "__name__", None) or str(act).__class__.__name__
+            return str(name)
+        return ""
+
+    # ------------------------------------------------------------------
+    # Decimation (memory ceiling)
+    # ------------------------------------------------------------------
+
+    def _decimate(self, captured: list, cascade_epochs: set) -> None:
+        """Halve the inter-cascade sample density when the soft cap is hit.
+
+        Drops every other non-cascade sample. Cascade-add samples
+        (and the terminal sample, if marked) are always retained
+        because they carry the narrative arc the user actually wants
+        to scrub through.
+        """
+        wh = self.network.weight_history
+        keep_mask: List[bool] = []
+        non_cascade_seen = 0
+        for epoch in captured:
+            if epoch in cascade_epochs:
+                keep_mask.append(True)
+            else:
+                # Drop every second non-cascade sample.
+                keep = (non_cascade_seen % 2) == 0
+                keep_mask.append(keep)
+                non_cascade_seen += 1
+
+        # Apply mask in-place to the parallel arrays.
+        new_captured = [e for e, k in zip(captured, keep_mask) if k]
+        new_indices = [v for v, k in zip(wh["sample_indices"], keep_mask) if k]
+        new_outputs = [v for v, k in zip(wh["output_weights"], keep_mask) if k]
+        new_biases = [v for v, k in zip(wh["output_bias"], keep_mask) if k]
+
+        # Drop the same indices from each hidden unit's per-sample arrays;
+        # adjust ``first_sample_index`` if that unit's first sample fell.
+        for unit_dict in wh["hidden_units"]:
+            old_first = unit_dict["first_sample_index"]
+            unit_keep = keep_mask[old_first:]
+            unit_dict["weights"] = [v for v, k in zip(unit_dict["weights"], unit_keep) if k]
+            unit_dict["bias"] = [v for v, k in zip(unit_dict["bias"], unit_keep) if k]
+            # Re-index ``first_sample_index`` to the new compacted list.
+            kept_before = sum(1 for k in keep_mask[:old_first] if k)
+            unit_dict["first_sample_index"] = kept_before
+
+        wh["_captured_epochs"] = new_captured
+        wh["sample_indices"] = new_indices
+        wh["output_weights"] = new_outputs
+        wh["output_bias"] = new_biases
+        # ``_cascade_epochs`` already only references retained epochs.
+
+        # Bump the *recorded* sampling_interval to reflect the
+        # decimation so loaders / canopy can interpret the gap.
+        wh["sampling_interval"] = max(1, wh.get("sampling_interval", self.sampling_interval) * 2)
+
+
 class _WeightCache:
     """CAN-015g (Phase 6E follow-on, g-2): per-sample weight tensor cache.
 
@@ -559,6 +952,11 @@ class TrainingLifecycleManager:
         # Network creation params (for reset)
         self._network_params: Optional[Dict[str, Any]] = None
 
+        # CAN-015g (g-6): training-loop weight history recorder.
+        # Lazily attached on first ``start_training`` call; persists
+        # across re-trains so callbacks register exactly once.
+        self._weight_history_recorder: Optional["_WeightHistoryRecorder"] = None
+
         # WebSocket manager (set via set_ws_manager)
         self._ws_manager = None
         self._state_throttle_interval: float = 1.0  # seconds, configurable via set_ws_manager
@@ -956,6 +1354,15 @@ class TrainingLifecycleManager:
                 # Extract any remaining metrics after fit completes
                 manager_ref._extract_and_record_metrics()
 
+                # CAN-015g (g-6): capture the truly-final weights so
+                # the last sample reflects training's terminal state
+                # even when fit() exited mid-interval (e.g. early
+                # stopping mid-N). Wraps both the cancelled and
+                # completed paths because both are valid terminal
+                # states the user can replay against.
+                if manager_ref._weight_history_recorder is not None:
+                    manager_ref._weight_history_recorder.capture_terminal()
+
                 if stop_event.is_set():
                     sm.handle_command(Command.STOP)
                     state.update_state(status="Stopped", phase="Idle")
@@ -1240,6 +1647,28 @@ class TrainingLifecycleManager:
     # and rationale (Option 1 — filter at the start_training boundary).
     _FIT_KWARGS: frozenset = frozenset({"max_epochs", "epochs", "max_iterations", "early_stopping"})
 
+    def _attach_weight_history_recorder(self) -> None:
+        """CAN-015g (g-6): instantiate + register the weight history recorder.
+
+        Idempotent — call before each training run. The recorder
+        reads ``config.weight_history_sampling_interval`` /
+        ``config.weight_history_max_samples`` at attach time, so a
+        runtime PATCH /v1/training/params change before this point
+        affects subsequent samples (changes mid-run land at the next
+        ``register`` call when re-attached).
+        """
+        if self.network is None or self.training_monitor is None:
+            return
+        existing = self._weight_history_recorder
+        if existing is None or existing.network is not self.network:
+            self._weight_history_recorder = _WeightHistoryRecorder(self.network, self.training_monitor)
+        else:
+            # Re-init in case config tunables changed since last training run.
+            existing.sampling_interval = int(getattr(self.network.config, "weight_history_sampling_interval", existing.sampling_interval))
+            existing.max_samples = int(getattr(self.network.config, "weight_history_max_samples", existing.max_samples))
+            existing._init_weight_history()
+        self._weight_history_recorder.register()
+
     def start_training(
         self,
         x: Optional[torch.Tensor] = None,
@@ -1329,6 +1758,14 @@ class TrainingLifecycleManager:
             # start fit() before update_params lands.
             if network_kwargs:
                 self._apply_params_unlocked(network_kwargs)
+
+            # CAN-015g (g-6): attach the weight-history recorder before
+            # the training future runs so the first epoch_end /
+            # cascade_add events get captured. Lazy attach: the
+            # recorder reads ``config.weight_history_*`` so a runtime
+            # PATCH /v1/training/params change before this point lands
+            # in the recorder's snapshot of those values.
+            self._attach_weight_history_recorder()
 
             self._training_future = self._executor.submit(self._run_training, self._train_x, self._train_y, self._val_x, self._val_y, **fit_kwargs)
 

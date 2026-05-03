@@ -205,6 +205,18 @@ class CascadeCorrelationConfig:
         task_reassignment_timeout: float = 120.0,
         # cascade_correlation_network_snapshots_dir: str = _HDF5_PROJECT_SNAPSHOTS_DIR,
         cascade_correlation_network_snapshots_dir: pathlib.Path = _CASCADE_CORRELATION_NETWORK_HDF5_PROJECT_SNAPSHOTS_DIR,
+        # CAN-015g (g-6): per-sample weight history capture during
+        # training. ``weight_history_sampling_interval`` is N for the
+        # every-Nth-epoch trigger (50 by default; 1 captures every
+        # epoch — Option A in the design's storage-strategy table; 0
+        # disables the periodic trigger so only cascade-add events
+        # are sampled — Option D). ``weight_history_max_samples`` is
+        # a soft cap on the in-memory history length before
+        # decimation kicks in (see plan §"Live capture during
+        # training (g-6)" / "Memory ceiling"); 0 means unbounded
+        # (use with care on long runs).
+        weight_history_sampling_interval: int = 50,
+        weight_history_max_samples: int = 1000,
         # UUID
         uuid: uuid.UUID = None,
     ):
@@ -290,6 +302,10 @@ class CascadeCorrelationConfig:
 
         # Snapshot directory
         self.cascade_correlation_network_snapshots_dir = cascade_correlation_network_snapshots_dir
+
+        # CAN-015g (g-6): per-sample weight history capture during training.
+        self.weight_history_sampling_interval = weight_history_sampling_interval
+        self.weight_history_max_samples = weight_history_max_samples
 
         # Optimizer configuration. CAN-010 / ENH-006 (A-2): forward
         # ``optimizer_type`` from the constructor kwargs so creation-time
