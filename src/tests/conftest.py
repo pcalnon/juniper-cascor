@@ -992,6 +992,22 @@ def pytest_unconfigure(config):
     alive = [t for t in threading.enumerate() if not t.daemon and t is not threading.main_thread()]
     if alive:
         import os
+        import sys
+
+        # Issue 2: ``os._exit`` skips ``atexit``, finalizers, AND the
+        # implicit stdout/stderr flush that normal Python exit performs.
+        # When pytest's stdout is redirected to a file (CI, ``> log``,
+        # tee, etc.) the streams are block-buffered, so the freshly-
+        # written ``X passed in Ys`` summary line and any post-summary
+        # diagnostic output sits in the buffer and is silently
+        # discarded the moment ``os._exit`` fires. Flush explicitly so
+        # the user sees the same final output whether or not the
+        # non-daemon-thread escape hatch was needed.
+        try:
+            sys.stdout.flush()
+            sys.stderr.flush()
+        except Exception:  # nosec B110 — never let cleanup raise here
+            pass
 
         os._exit(0)
 
