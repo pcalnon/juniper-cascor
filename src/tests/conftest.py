@@ -782,20 +782,31 @@ def _cache_logging_system():
 # ===================================================================
 
 
-@pytest.fixture(autouse=True, scope="session")
-def _force_clean_exit():
-    """Force process exit after all tests to prevent hangs from orphaned threads.
+@pytest.hookimpl(trylast=True)
+def pytest_unconfigure(config):
+    """Force process exit after pytest finalize to prevent hangs from orphaned threads.
 
-    Two sources of hangs:
+    Two sources of hangs at session end:
     1. concurrent.futures.thread registers an atexit handler that calls
        shutdown(wait=True) on every live ThreadPoolExecutor.
     2. Non-daemon training threads (e.g. from API integration tests)
        prevent the main thread from exiting even after atexit handlers run.
 
-    We unregister the atexit handler AND use os._exit() as a last resort
-    if non-daemon threads are still alive after tests complete.
+    Earlier (pre-P-6) this lived in a ``scope="session"`` autouse fixture
+    that ran during fixture teardown — *before* pytest's
+    ``pytest_sessionfinish`` (writes JUnit XML, lets pytest-cov save the
+    .coverage data file) and ``pytest_terminal_summary`` (prints the
+    summary line and the coverage report). ``os._exit(0)`` bypasses all
+    Python finalization, so the JUnit XML, coverage data, terminal
+    summary, and HTML coverage report were all silently dropped on every
+    CI run since the fixture was introduced — masked for months by the
+    upstream test failures keeping the gate skipped.
+
+    Moving the logic to ``pytest_unconfigure(trylast=True)`` runs it
+    *after* pytest-cov's own ``pytest_unconfigure`` (and after
+    ``pytest_sessionfinish`` / ``pytest_terminal_summary`` have already
+    fired), so all reports land on disk before we force-exit.
     """
-    yield
     import atexit
     import concurrent.futures.thread as _thread_mod
     import threading

@@ -193,7 +193,13 @@ jobs:
 
       - name: Create required directories
         run: |
-          mkdir -p logs src/logs reports/junit reports/htmlcov
+          # ``src/tests/reports`` is required because pyproject.toml's
+          # ``[tool.coverage.run] data_file = "src/tests/reports/.coverage"``
+          # — pytest-cov silently fails to write its parallel ``.coverage.*``
+          # files if the parent dir doesn't exist (gitignored, so absent on
+          # fresh CI checkout), which then leaves the Enforce Coverage Gate
+          # step with "No data to report".
+          mkdir -p logs src/logs reports/junit reports/htmlcov src/tests/reports
 
       - name: Run Unit Tests
         run: |
@@ -587,6 +593,47 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
 
+      # juniper-cascor's runtime ``JUNIPER_DATA_URL`` defaults to
+      # ``http://localhost:8100`` and the ``/v1/health/ready`` probe pings
+      # ``$JUNIPER_DATA_URL/v1/health/live`` (see src/api/routes/health.py:141).
+      # The smoke test therefore needs a juniper-data sidecar reachable on
+      # the same Docker network, otherwise readiness returns 503 and the
+      # container never reports ``healthy``.
+      - name: Clone juniper-data sidecar source
+        run: |
+          # Cloned to /tmp (outside the workspace) so it doesn't bloat
+          # cascor's docker build context.
+          git clone --depth 1 https://github.com/pcalnon/juniper-data.git /tmp/juniper-data
+
+      - name: Create Docker network
+        run: docker network create juniper-smoke
+
+      - name: Build & start juniper-data sidecar
+        run: |
+          echo "╔════════════════════════════════════════════════════════════╗"
+          echo "║       Juniper Data - Sidecar Build & Start                ║"
+          echo "╚════════════════════════════════════════════════════════════╝"
+          docker build -t juniper-data:ci-${{ github.sha }} /tmp/juniper-data
+          docker run -d --name juniper-data-sidecar \
+            --network juniper-smoke \
+            --network-alias juniper-data \
+            -p 8100:8100 \
+            juniper-data:ci-${{ github.sha }}
+
+          echo "Waiting for juniper-data to become healthy..."
+          for i in $(seq 1 60); do
+            if docker inspect --format='{{.State.Health.Status}}' juniper-data-sidecar 2>/dev/null | grep -q healthy; then
+              echo "juniper-data is healthy"
+              break
+            fi
+            if [ $i -eq 60 ]; then
+              echo "::error::juniper-data sidecar did not become healthy"
+              docker logs juniper-data-sidecar
+              exit 1
+            fi
+            sleep 2
+          done
+
       - name: Build Docker Image
         run: |
           echo "╔════════════════════════════════════════════════════════════╗"
@@ -599,19 +646,29 @@ jobs:
           echo "╔════════════════════════════════════════════════════════════╗"
           echo "║       Juniper Cascor - Docker Smoke Test                  ║"
           echo "╚════════════════════════════════════════════════════════════╝"
+          # Override JUNIPER_DATA_URL so the readiness probe targets the
+          # sidecar via its Docker network alias instead of the
+          # in-container localhost:8100 default (which would only resolve
+          # if cascor and juniper-data ran in the same container — they
+          # don't here).
           docker run -d --name juniper-cascor-test \
+            --network juniper-smoke \
+            -e JUNIPER_DATA_URL=http://juniper-data:8100 \
             -p 8200:8200 \
             juniper-cascor:ci-${{ github.sha }}
 
-          echo "Waiting for service to become healthy..."
+          echo "Waiting for juniper-cascor to become healthy..."
           for i in $(seq 1 30); do
             if docker inspect --format='{{.State.Health.Status}}' juniper-cascor-test 2>/dev/null | grep -q healthy; then
-              echo "Service is healthy!"
+              echo "juniper-cascor is healthy"
               break
             fi
             if [ $i -eq 30 ]; then
-              echo "::error::Service did not become healthy within 30 attempts"
+              echo "::error::juniper-cascor did not become healthy within 30 attempts"
+              echo "──── juniper-cascor logs ────"
               docker logs juniper-cascor-test
+              echo "──── juniper-data logs ────"
+              docker logs juniper-data-sidecar
               exit 1
             fi
             sleep 2
@@ -619,17 +676,30 @@ jobs:
 
       - name: Verify Package Import
         run: |
-          docker exec juniper-cascor-test python -c "import juniper_cascor; print(juniper_cascor.__version__)"
+          # The wheel publishes as PyPI name ``juniper-cascor`` but the
+          # source is laid out as flat modules (``cascade_correlation``,
+          # ``api``, ``snapshots``, …) under ``src/``, with no
+          # importable top-level ``juniper_cascor`` namespace. Use
+          # ``importlib.metadata.version`` to confirm the wheel is
+          # installed, then import a real module to confirm it loads.
+          docker exec juniper-cascor-test python -c "from importlib.metadata import version; print('juniper-cascor', version('juniper-cascor'))"
+          docker exec juniper-cascor-test python -c "import cascade_correlation, api, snapshots; print('modules importable')"
 
       - name: Verify Health Endpoint
         run: |
           curl -sf http://localhost:8200/v1/health | python3 -m json.tool
+          # ``/v1/health/ready`` should now be 200 with juniper_data dep
+          # status ``healthy`` thanks to the sidecar.
+          curl -sf http://localhost:8200/v1/health/ready | python3 -m json.tool
 
       - name: Cleanup
         if: always()
         run: |
           docker stop juniper-cascor-test 2>/dev/null || true
           docker rm juniper-cascor-test 2>/dev/null || true
+          docker stop juniper-data-sidecar 2>/dev/null || true
+          docker rm juniper-data-sidecar 2>/dev/null || true
+          docker network rm juniper-smoke 2>/dev/null || true
 
   # ═══════════════════════════════════════════════════════════════════════════════════════════════
   # Required Checks Aggregator: Final quality gate
