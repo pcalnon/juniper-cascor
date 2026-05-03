@@ -521,8 +521,8 @@ class TestObservabilityShim_R5_1b:
                 for metric in list(cache.values()):
                     try:
                         REGISTRY.unregister(metric)
-                    except Exception:
-                        pass
+                    except Exception as exc:
+                        logging.debug("Best-effort metric unregister failed in teardown for %r: %s", metric, exc)
                 setattr(obs, cache_attr, None)
 
     def test_inference_duration_seconds_help_keeps_r4_1_marker(self):
