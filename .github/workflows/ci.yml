@@ -202,18 +202,30 @@ jobs:
           mkdir -p logs src/logs reports/junit reports/htmlcov src/tests/reports
 
       - name: Run Unit Tests
+        env:
+          # P-6: pyproject.toml's ``[tool.coverage.run] data_file =
+          # "src/tests/reports/.coverage"`` + ``parallel = true`` was
+          # causing pytest-cov to silently lose its writes — pytest
+          # exited 0 but no .coverage file was written anywhere on disk
+          # (verified by the diagnostic step). Force COVERAGE_FILE to a
+          # known-good location at the repo root and disable buffered
+          # stdout so any session-finish summary or pytest-cov error
+          # actually surfaces in the live log.
+          COVERAGE_FILE: ${{ github.workspace }}/.coverage
+          PYTHONUNBUFFERED: "1"
         run: |
           echo "╔════════════════════════════════════════════════════════════╗"
           echo "║       Juniper Cascor - Unit Tests (Fast Only)              ║"
           echo "╚════════════════════════════════════════════════════════════╝"
 
-          # P-6 diagnostic: pytest-cov was silently dropping its writes
-          # in CI even after we created src/tests/reports. Capture
-          # stdout+stderr to a file so the post-run inventory step below
-          # can echo the full pytest tail (GitHub Actions' streaming-log
-          # API truncates the last ~5 seconds of any step's output).
+          # Diagnostics for P-6 follow-up: confirm pytest-cov is loaded
+          # and the version pin we're testing against.
+          python -m pytest --version 2>&1 || true
+          python -c "import pytest_cov; print(f'pytest-cov={pytest_cov.__version__}')" 2>&1 || true
+          python -c "import coverage; print(f'coverage={coverage.__version__}')" 2>&1 || true
+
           set -o pipefail
-          python -m pytest \
+          python -u -m pytest \
             -m "unit and not slow" \
             src/tests/unit \
             --verbose \
@@ -224,6 +236,9 @@ jobs:
             --cov-report=term-missing \
             --cov-report=xml:reports/coverage.xml \
             --cov-report=html:reports/htmlcov 2>&1 | tee reports/pytest-output.log
+          PYTEST_EXIT=${PIPESTATUS[0]}
+          echo "═════════ pytest exit code: ${PYTEST_EXIT} ═════════"
+          exit "${PYTEST_EXIT}"
 
       - name: Diagnostic — show pytest tail and reports directory
         if: always()
@@ -241,6 +256,8 @@ jobs:
           find . -name '.coverage*' -not -path './.git/*' 2>/dev/null || true
 
       - name: Enforce Coverage Gate (80%)
+        env:
+          COVERAGE_FILE: ${{ github.workspace }}/.coverage
         run: |
           echo "╔════════════════════════════════════════════════════════════╗"
           echo "║       Juniper Cascor - Coverage Gate Enforcement           ║"
