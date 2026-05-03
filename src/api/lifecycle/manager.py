@@ -309,7 +309,7 @@ class _ReplaySession:
         # sample_indices). Populated only when the cache is available;
         # the emitter checks membership to decide whether to attach a
         # ``weights`` block to the synthetic event.
-        self._epoch_to_sample: Dict[int, int] = ({int(epoch): i for i, epoch in enumerate(self.weight_cache.sample_indices)} if self.weight_cache.available else {})
+        self._epoch_to_sample: Dict[int, int] = {int(epoch): i for i, epoch in enumerate(self.weight_cache.sample_indices)} if self.weight_cache.available else {}
         # Playback state — guarded by the lock for cross-thread reads.
         self._lock = threading.Lock()
         self.time_index: int = 0
