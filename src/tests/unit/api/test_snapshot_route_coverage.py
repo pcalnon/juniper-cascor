@@ -594,9 +594,9 @@ class TestUnifiedResponseShape:
         class FakeNetwork:
             history = {
                 "train_loss": [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7],  # 7 entries
-                "value_loss": [0.2, 0.3, 0.4],  # 3 entries
-                "train_accuracy": [0.6, 0.7],  # 2 entries
-                "value_accuracy": [],  # 0 entries
+                "value_loss": [0.2, 0.3, 0.4],                      # 3 entries
+                "train_accuracy": [0.6, 0.7],                       # 2 entries
+                "value_accuracy": [],                               # 0 entries
             }
 
         lifecycle.network = FakeNetwork()

@@ -902,12 +902,11 @@ class TestResumeFromSnapshot:
         mgr = TrainingLifecycleManager()
         mgr.create_network(input_size=2, output_size=2)
         loaded = MagicMock()
-        # TODO: migrate hard-coded values into constants
         loaded.history = {
             "train_loss": [0.1, 0.2, 0.3, 0.4, 0.5],  # 5
-            "value_loss": [0.2, 0.3],  # 2
-            "train_accuracy": [0.6, 0.7, 0.8],  # 3
-            "value_accuracy": [],  # 0
+            "value_loss": [0.2, 0.3],                 # 2
+            "train_accuracy": [0.6, 0.7, 0.8],        # 3
+            "value_accuracy": [],                     # 0
         }
         fake_file = tmp_path / "snap.h5"
         fake_file.write_bytes(b"")
