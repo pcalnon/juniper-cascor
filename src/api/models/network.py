@@ -129,3 +129,51 @@ class PatchWeightsRequest(BaseModel):
     values: list = Field(description="New values, shape must match target exactly")
     hidden_unit_index: int | None = Field(default=None, ge=0, description="Required iff target == 'hidden_unit'")
     dtype: Literal["float32", "float64"] = Field(default="float32", description="Source dtype; cast to float32 internally")
+
+
+# ---------------------------------------------------------------------
+# CAN-015h-2: POST /v1/network/hidden-units request body
+# ---------------------------------------------------------------------
+
+
+class AddHiddenUnitRequest(BaseModel):
+    """Body for ``POST /v1/network/hidden-units`` (CAN-015h-2).
+
+    Append a fresh hidden unit at the cascade tail. The new unit's
+    output-layer column is initialized to zero, so it contributes
+    nothing to predictions until the user re-trains or patches the
+    output layer (see h-1 → ``PATCH /v1/network/weights``).
+
+    V1 limits:
+
+    - ``position`` is **tail-only**. Insert-at-position is documented
+      in the design plan but deferred from V1 because the
+      connectivity-rewrite semantics are user-surprising and worth
+      shipping with explicit UI text. A future PR will add
+      ``position: int`` once that text exists.
+
+    Plan: ``notes/PHASE_6E_DEFERRED_CAN-015GH_DESIGN.md`` §"Endpoint
+    design / 2. POST /v1/network/hidden-units" (juniper-ml).
+    """
+
+    weights: list = Field(description="Weight vector, shape [input_size + num_existing_hidden_units]")
+    bias: float = Field(default=0.0, description="Bias scalar")
+    activation: Literal[
+        "Identity",
+        "Tanh",
+        "Sigmoid",
+        "ReLU",
+        "LeakyReLU",
+        "ELU",
+        "SELU",
+        "GELU",
+        "Softmax",
+        "Softplus",
+        "Hardtanh",
+        "Softshrink",
+        "Tanhshrink",
+        "tanh",
+        "sigmoid",
+        "relu",
+    ] = Field(default="Tanh", description="Activation function name (mirrors the network-create registry)")
+    position: Literal["tail"] = Field(default="tail", description="V1 supports tail-only; insert-at-position deferred")
