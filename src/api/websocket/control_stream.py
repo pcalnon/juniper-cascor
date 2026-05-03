@@ -162,18 +162,38 @@ async def _handle_command_message(websocket: WebSocket, lifecycle, msg: dict, bu
         counter.labels(command=command).inc()
 
     timeout = _COMMAND_TIMEOUTS.get(command, 2.0)
+    # OBS-WIRE-01 (A.3): time only the dispatch — the
+    # ``asyncio.wait_for(asyncio.to_thread(...))`` span — NOT the
+    # surrounding parse/validate/ack-send work. This binds catalog
+    # SLI 4.4 (command-handler p95 < 50 ms). The send-ack call below
+    # is itself instrumented via the broadcast-send histogram from
+    # ``WebSocketManager._send_json``, so we don't double-count.
+    handler_start = time.perf_counter()
     try:
         result = await asyncio.wait_for(
             asyncio.to_thread(_execute_command, lifecycle, command, msg.get("params")),
             timeout=timeout,
         )
+        handler_duration = time.perf_counter() - handler_start
         await websocket.send_json(create_control_ack_message(command, "success", data=result, command_id=command_id))
     except asyncio.TimeoutError:
+        handler_duration = time.perf_counter() - handler_start
         logger.error("Command '%s' timed out after %ss", command, timeout)
         await websocket.send_json(create_control_ack_message(command, "error", error=f"Command timed out after {timeout}s", command_id=command_id))
     except Exception as e:
+        handler_duration = time.perf_counter() - handler_start
         logger.error("Command '%s' failed: %s", command, e)
         await websocket.send_json(create_control_ack_message(command, "error", error="Command execution failed", command_id=command_id))
+    # OBS-WIRE-01 (A.3): observe the command-handler histogram. Done
+    # outside the try/except chain so a single observation is emitted
+    # whether the handler completed, timed out, or raised — the
+    # SLO PromQL aggregates across all three.
+    try:
+        from api.observability import ws_observe_command_handler
+
+        ws_observe_command_handler(command, handler_duration)
+    except Exception:
+        logger.debug("ws_observe_command_handler emission failed", exc_info=True)
 
 
 async def _control_ping_loop(websocket: WebSocket, client_ip: str, hb_interval: float, hb_timeout: float, pong_received: asyncio.Event) -> None:

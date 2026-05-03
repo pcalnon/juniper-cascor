@@ -478,7 +478,20 @@ class WebSocketManager:
         Applies a configurable send timeout (default 0.5s) to prevent slow
         clients from blocking broadcast fan-out (GAP-WS-07 quick-fix).
         Returns False on failure or timeout.
+
+        OBS-WIRE-01 (A.3): the per-connection send is timed with
+        ``time.perf_counter`` and observed into
+        ``cascor_ws_broadcast_send_duration_seconds`` (catalog SLI 4.3 —
+        broadcast fan-out p95 < 1 ms). Only the wait_for() span is
+        timed; serialization-for-bandwidth-accounting (``_account_send``)
+        is excluded so the histogram reflects pure socket-write latency.
         """
+        # OBS-WIRE-01 (A.3): start the broadcast-send timer. The metric
+        # ``type`` label is closed-set-by-convention — fall back to
+        # ``"unknown"`` if the message has no ``type`` field, matching
+        # the pattern in ``_account_send``.
+        msg_type = str(message.get("type") or "unknown")
+        send_start = time.perf_counter()
         try:
             await asyncio.wait_for(
                 websocket.send_json(message),
@@ -493,6 +506,18 @@ class WebSocketManager:
             with self._seq_lock:
                 self._send_failures += 1
             return False
+        finally:
+            # OBS-WIRE-01 (A.3): observe the broadcast-send histogram
+            # in ``finally`` so timeouts and exceptions still produce a
+            # sample (the slow / failed sends are exactly what we care
+            # about for SLI 4.3). Defensive try/except: prometheus_client
+            # may not be importable in some test environments.
+            try:
+                from api.observability import _ensure_ws_metrics
+
+                _ensure_ws_metrics()["broadcast_send_duration_seconds"].labels(type=msg_type).observe(time.perf_counter() - send_start)
+            except Exception:
+                logger.debug("broadcast_send_duration emission failed", exc_info=True)
         # GAP-WS-16: account bytes after a successful send. We re-serialize
         # to size the payload because Starlette's send_json hides the wire
         # bytes from us. The double-encode is cheap; if size estimation
