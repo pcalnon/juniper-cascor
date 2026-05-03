@@ -2623,10 +2623,15 @@ class TrainingLifecycleManager:
             end = params.get("end")
             if start is None or end is None:
                 raise ValueError("range requires both 'start' and 'end' parameters")
-            range_result = session.set_range(int(start), int(end))
-            summary = session.state_summary()
-            summary["range"] = range_result
-            return summary
+            session.set_range(int(start), int(end))
+            # state_summary() already reflects the new range (set_range mutated
+            # self.range_start/self.range_end) and any re-clamped time_index.
+            # Don't overlay set_range's return value — it includes a
+            # ``time_index`` field that breaks the documented
+            # ``range == {"start", "end"}`` contract asserted by
+            # test_replay_control_seek_speed_range and
+            # test_state_summary_includes_all_fields.
+            return session.state_summary()
         elif action_lower == "stop":
             return self.stop_replay()
         else:
