@@ -844,6 +844,8 @@ def _reap_multiprocessing_children(timeout: float = 2.0) -> None:
             try:
                 os.kill(pid, signal.SIGTERM)
             except (ProcessLookupError, PermissionError):
+                # Process already exited or cannot be signaled in this environment;
+                # teardown should remain best-effort and continue.
                 pass
             try:
                 os.waitpid(pid, 0)
