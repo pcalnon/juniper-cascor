@@ -264,6 +264,26 @@ _ws_metrics: dict | None = None
 
 _WS_RESUME_REPLAY_BUCKETS = (0, 1, 5, 25, 100, 500, 1024)
 
+# METRICS-MON R5.1b: sub-millisecond bucket layout for the two
+# WebSocket-side latency histograms whose actual distributions sit
+# below the 5 ms floor of the Prometheus default layout. Boundaries
+# (in seconds) — 100 µs, 500 µs, 1 ms, 5 ms, 10 ms, 50 ms, 100 ms,
+# +inf — give sub-millisecond resolution for the healthy regime
+# (socket writes; ``pause``/``resume`` flips) while still bracketing
+# pathological slow-paths at 50 ms / 100 ms. Rationale and per-boundary
+# justification live in
+# ``notes/observability/HISTOGRAM_BUCKETS_RATIONALE_2026-05-02.md`` §4.
+_WS_SUB_MS_LATENCY_BUCKETS: tuple = (
+    0.0001,  # 100 µs
+    0.0005,  # 500 µs
+    0.001,  # 1 ms
+    0.005,  # 5 ms
+    0.01,  # 10 ms
+    0.05,  # 50 ms
+    0.1,  # 100 ms
+    float("inf"),
+)
+
 
 def _ensure_ws_metrics() -> dict:
     """Create WebSocket-related Prometheus metrics on first access."""
@@ -310,15 +330,16 @@ def _ensure_ws_metrics() -> dict:
             ),
             "broadcast_send_duration_seconds": Histogram(
                 "cascor_ws_broadcast_send_duration_seconds",
-                # METRICS-MON R4.1: uses Prometheus default buckets;
-                # **flagged for re-bucketing in R5.1** because the
-                # default 5 ms floor is too coarse for the actual
-                # distribution (sub-millisecond on a healthy connection).
-                # Rationale + proposed re-bucket in
+                # METRICS-MON R5.1b: re-bucketed from the Prometheus
+                # default layout (5 ms floor) to a sub-millisecond
+                # layout matching the actual distribution of WS socket
+                # writes on a healthy connection. Per-boundary rationale
+                # in
                 # ``notes/observability/HISTOGRAM_BUCKETS_RATIONALE_2026-05-02.md``
                 # §4.
-                "Duration of individual WebSocket send operations (R4.1 default buckets tentative pending R5.1 re-bucketing)",
+                "Duration of individual WebSocket send operations",
                 ["type"],
+                buckets=_WS_SUB_MS_LATENCY_BUCKETS,
             ),
             "pending_connections": Gauge(
                 "cascor_ws_pending_connections",
@@ -348,17 +369,20 @@ def _ensure_ws_metrics() -> dict:
             ),
             "command_handler_seconds": Histogram(
                 "cascor_ws_command_handler_seconds",
-                # METRICS-MON R4.1: uses Prometheus default buckets;
-                # **flagged for re-bucketing in R5.1** because the
-                # `command` label spans widely-varying duration
-                # distributions (sub-ms `pause`/`resume` flips vs.
-                # ~50 ms `update_params` lifecycle paths) and a single
-                # bucket layout cannot serve all. R5.1 may split per
-                # command-class. Rationale in
+                # METRICS-MON R5.1b: re-bucketed from the Prometheus
+                # default layout to the sub-millisecond layout shared
+                # with ``broadcast_send_duration_seconds``. The
+                # ``command`` label spans a wide duration range — sub-ms
+                # ``pause``/``resume`` flips through ~50 ms
+                # ``update_params`` lifecycle paths — and the chosen
+                # boundaries (100 µs → 100 ms, +inf) bracket every
+                # command class without splitting the metric. Per-boundary
+                # rationale in
                 # ``notes/observability/HISTOGRAM_BUCKETS_RATIONALE_2026-05-02.md``
-                # §5.
-                "Duration of command handler execution (R4.1 default buckets tentative pending R5.1 re-bucketing)",
+                # §4–§5.
+                "Duration of command handler execution",
                 ["command"],
+                buckets=_WS_SUB_MS_LATENCY_BUCKETS,
             ),
         }
     return _ws_metrics
