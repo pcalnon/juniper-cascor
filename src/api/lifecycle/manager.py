@@ -61,6 +61,197 @@ def _write_activation_function_name(network: Any, value: str) -> None:
     network._init_activation_function()
 
 
+class _WeightCache:
+    """CAN-015g (Phase 6E follow-on, g-2): per-sample weight tensor cache.
+
+    Lifts the dict-of-numpy-arrays produced by g-1's
+    ``snapshot_serializer._load_weight_history`` into an LRU cache so
+    ``_ReplaySession`` can serve weight payloads to canopy without
+    re-walking the (potentially large) source dict on every scrubber
+    move. Plan: ``notes/PHASE_6E_DEFERRED_CAN-015GH_DESIGN.md`` §
+    "In-memory cache".
+
+    The "LRU eviction with byte budget" design lives here rather than
+    leaning on a generic library because:
+      • The byte cost of an entry is the sum of ``ndarray.nbytes`` for
+        every tensor in the sample (output + per-unit) — not something
+        a generic cache can introspect.
+      • The budget is a soft cap for fairness across long-running
+        sessions, not a hard limit; missing the budget by one sample
+        is preferable to evicting the just-requested entry.
+
+    All public methods are thread-safe (the cache is read by the
+    replay driver thread and written by the route response thread on
+    cache misses).
+    """
+
+    DEFAULT_BUDGET_BYTES: int = 256 * 1024 * 1024  # 256 MB; g-2 of plan
+
+    def __init__(self, weight_history: Optional[Dict[str, Any]], byte_budget: int = DEFAULT_BUDGET_BYTES):
+        self._wh = weight_history or {}
+        self._budget = max(1, int(byte_budget))
+        # OrderedDict for LRU: ``move_to_end`` on access, ``popitem(last=False)``
+        # for eviction. Key = sample_index (int).
+        from collections import OrderedDict as _OrderedDict
+
+        self._entries: "_OrderedDict[int, Dict[str, Any]]" = _OrderedDict()
+        self._sizes: Dict[int, int] = {}
+        self._total_bytes: int = 0
+        self._lock = threading.Lock()
+        self._hits: int = 0
+        self._misses: int = 0
+        self._evictions: int = 0
+
+    # ------------------------------------------------------------------
+    # Introspection
+    # ------------------------------------------------------------------
+
+    @property
+    def available(self) -> bool:
+        """True iff the underlying weight_history has any samples."""
+        return bool(self._wh.get("sample_indices"))
+
+    @property
+    def sample_indices(self) -> List[int]:
+        return list(self._wh.get("sample_indices", []))
+
+    @property
+    def num_samples(self) -> int:
+        return len(self._wh.get("sample_indices", []))
+
+    @property
+    def sampling_strategy(self) -> str:
+        return str(self._wh.get("sampling_strategy", ""))
+
+    @property
+    def sampling_interval(self) -> int:
+        return int(self._wh.get("sampling_interval", 0))
+
+    def stats(self) -> Dict[str, int]:
+        with self._lock:
+            return {
+                "hits": self._hits,
+                "misses": self._misses,
+                "evictions": self._evictions,
+                "entries": len(self._entries),
+                "bytes": self._total_bytes,
+                "budget_bytes": self._budget,
+            }
+
+    # ------------------------------------------------------------------
+    # Lookup
+    # ------------------------------------------------------------------
+
+    def get(self, sample_index: int) -> Optional[Dict[str, Any]]:
+        """Return the per-sample weight payload, or ``None`` if the
+        index is out of range / weights aren't available.
+
+        On a cache hit the entry is promoted to most-recently-used.
+        On a miss the payload is built from the source dict and
+        admitted (possibly evicting older entries to fit the budget).
+        """
+        if not self.available:
+            return None
+        if sample_index < 0 or sample_index >= self.num_samples:
+            return None
+
+        with self._lock:
+            if sample_index in self._entries:
+                self._entries.move_to_end(sample_index)
+                self._hits += 1
+                return self._entries[sample_index]
+            self._misses += 1
+
+        payload = self._build_payload(sample_index)
+        size = self._sizeof(payload)
+
+        with self._lock:
+            # Evict LRU entries until the new payload fits the budget.
+            # Always admit at least the current payload even if it alone
+            # exceeds the budget — the user explicitly asked for it.
+            while self._entries and (self._total_bytes + size) > self._budget:
+                evicted_key, _ = self._entries.popitem(last=False)
+                self._total_bytes -= self._sizes.pop(evicted_key, 0)
+                self._evictions += 1
+            self._entries[sample_index] = payload
+            self._sizes[sample_index] = size
+            self._total_bytes += size
+
+        return payload
+
+    # ------------------------------------------------------------------
+    # Internals
+    # ------------------------------------------------------------------
+
+    def _build_payload(self, sample_index: int) -> Dict[str, Any]:
+        """Project the per-sample slice out of the source weight_history.
+
+        Layout matches what g-3 will emit in the synthetic ``epoch_end``
+        event's ``weights`` block — keeping it stable here lets g-3
+        forward this dict directly to subscribers.
+        """
+        output_weights = self._wh.get("output_weights", [])
+        output_bias = self._wh.get("output_bias", [])
+        hidden_units = self._wh.get("hidden_units", [])
+
+        ow = output_weights[sample_index] if sample_index < len(output_weights) else None
+        ob = output_bias[sample_index] if sample_index < len(output_bias) else None
+
+        # Hidden-unit per-sample slicing. Each unit's per-sample arrays
+        # are indexed relative to ``first_sample_index``, defined as the
+        # **0-based index into the global ``sample_indices`` list** at
+        # which this unit first appeared (NOT an epoch number). Skip
+        # units whose first sample is in the future. The convention is
+        # documented here because the data layout is otherwise opaque —
+        # g-3's emitter and any future consumers must use the same
+        # interpretation.
+        hu_payload = []
+        for unit in hidden_units:
+            first = int(unit.get("first_sample_index", 0))
+            if sample_index < first:
+                continue
+            local_idx = sample_index - first
+            unit_w = unit.get("weights", [])
+            unit_b = unit.get("bias", [])
+            if local_idx >= len(unit_w):
+                continue
+            hu_payload.append(
+                {
+                    "first_sample_index": first,
+                    "activation": unit.get("activation", ""),
+                    "weights": unit_w[local_idx],
+                    "bias": float(unit_b[local_idx]) if local_idx < len(unit_b) else 0.0,
+                }
+            )
+
+        return {
+            "sample_index": sample_index,
+            "epoch": int(self._wh.get("sample_indices", [sample_index])[sample_index]),
+            "output_weights": ow,
+            "output_bias": ob,
+            "hidden_units": hu_payload,
+        }
+
+    @staticmethod
+    def _sizeof(payload: Dict[str, Any]) -> int:
+        """Approximate the byte cost of a payload entry.
+
+        Sums ``ndarray.nbytes`` for every tensor referenced. Skips
+        Python overhead — close enough for budget-eviction decisions.
+        """
+        size = 0
+        for key in ("output_weights", "output_bias"):
+            arr = payload.get(key)
+            if hasattr(arr, "nbytes"):
+                size += int(arr.nbytes)
+        for unit in payload.get("hidden_units", []):
+            arr = unit.get("weights")
+            if hasattr(arr, "nbytes"):
+                size += int(arr.nbytes)
+            # bias is a Python float — negligible.
+        return size
+
+
 class _ReplaySession:
     """CAN-015c (Phase 6E Sprint B B-3): per-snapshot replay session.
 
@@ -92,7 +283,7 @@ class _ReplaySession:
     # at very low speeds.
     _MAX_TICK_SLEEP: float = 0.5
 
-    def __init__(self, snapshot_id: str, history: Dict[str, list], monitor) -> None:
+    def __init__(self, snapshot_id: str, history: Dict[str, list], monitor, weight_history: Optional[Dict[str, Any]] = None, weight_cache_budget_bytes: Optional[int] = None) -> None:
         self.snapshot_id = snapshot_id
         # Pre-extract the history arrays we know about so the loop
         # doesn't re-fetch every tick. Stored as plain lists (not
@@ -105,6 +296,14 @@ class _ReplaySession:
         # loop correctly idles.
         self.length: int = max((len(v) for v in self._history.values()), default=0)
         self._monitor = monitor
+        # CAN-015g (g-2): per-sample weight cache. Empty / absent
+        # weight_history (V1 snapshots, or networks where g-1
+        # serializer didn't load any samples) yields a cache that
+        # advertises ``available=False``; canopy then knows to disable
+        # the decision-boundary scrubber. The cache is constructed
+        # eagerly even in the V1 case so consumers don't have to
+        # branch on ``is None``.
+        self.weight_cache = _WeightCache(weight_history, byte_budget=weight_cache_budget_bytes if weight_cache_budget_bytes is not None else _WeightCache.DEFAULT_BUDGET_BYTES)
         # Playback state — guarded by the lock for cross-thread reads.
         self._lock = threading.Lock()
         self.time_index: int = 0
@@ -192,7 +391,7 @@ class _ReplaySession:
     def state_summary(self) -> Dict[str, Any]:
         """Snapshot of the current session state for the route response."""
         with self._lock:
-            return {
+            summary: Dict[str, Any] = {
                 "snapshot_id": self.snapshot_id,
                 "length": self.length,
                 "time_index": self.time_index,
@@ -200,6 +399,31 @@ class _ReplaySession:
                 "paused": self.paused,
                 "range": {"start": self.range_start, "end": self.range_end},
             }
+        # CAN-015g (g-2): expose weight-cache state so canopy knows
+        # whether decision-boundary playback is available and can
+        # render the scrubber accordingly. ``sample_epochs`` is the
+        # epoch number at each sample boundary — canopy uses these to
+        # snap the scrubber to the closest sample.
+        summary["weights_available"] = self.weight_cache.available
+        if self.weight_cache.available:
+            summary["weight_sampling"] = {
+                "strategy": self.weight_cache.sampling_strategy,
+                "interval": self.weight_cache.sampling_interval,
+                "num_samples": self.weight_cache.num_samples,
+                "sample_epochs": self.weight_cache.sample_indices,
+            }
+        return summary
+
+    def weights_at(self, sample_index: int) -> Optional[Dict[str, Any]]:
+        """Return the per-sample weight payload for ``sample_index``,
+        or ``None`` if the snapshot has no weight history or the
+        index is out of range.
+
+        Wrapper around the cache so callers (g-3's emitter, ad-hoc
+        ops queries) don't have to reach into ``self.weight_cache``
+        directly.
+        """
+        return self.weight_cache.get(sample_index)
 
     def _clamp_to_range(self, index: int) -> int:
         if self.range_end <= self.range_start:
@@ -1906,7 +2130,12 @@ class TrainingLifecycleManager:
 
         history = getattr(self.network, "history", None)
         history_dict = history if isinstance(history, dict) else {}
-        session = _ReplaySession(snapshot_id, history_dict, self.training_monitor)
+        # CAN-015g (g-2): pull the per-sample weight history that the
+        # g-1 serializer loaded onto the network. V1 snapshots have
+        # no such attribute (or it's None) — the cache then advertises
+        # weights_available=false to canopy via state_summary.
+        weight_history = getattr(self.network, "weight_history", None)
+        session = _ReplaySession(snapshot_id, history_dict, self.training_monitor, weight_history=weight_history)
         self._replay_session = session
         # Marker fields used by Resume / Restore are not relevant here.
         self._resume_point_epoch = None
