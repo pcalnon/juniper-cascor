@@ -20,6 +20,7 @@ import torch
 
 from api.lifecycle.monitor import TrainingMonitor, TrainingState
 from api.lifecycle.state_machine import Command, TrainingPhase, TrainingStateMachine
+from api.observability import TRAINING_SESSION_STATUS_CANCELLED, TRAINING_SESSION_STATUS_FAILURE, TRAINING_SESSION_STATUS_SUCCESS, inc_training_session_completed, observe_training_step_duration
 from cascor_constants.constants_api import _PROJECT_API_DRAIN_THREAD_JOIN_TIMEOUT, _PROJECT_API_LIFECYCLE_DEFAULT_CANDIDATE_PATIENCE, _PROJECT_API_LIFECYCLE_DEFAULT_EPOCHS_MAX, _PROJECT_API_LIFECYCLE_DEFAULT_MAX_HIDDEN_UNITS, _PROJECT_API_LIFECYCLE_DEFAULT_MAX_ITERATIONS, _PROJECT_API_NETWORK_INPUT_SIZE_DEFAULT, _PROJECT_API_NETWORK_LEARNING_RATE_DEFAULT, _PROJECT_API_NETWORK_OUTPUT_SIZE_DEFAULT, _PROJECT_API_PROGRESS_QUEUE_GET_TIMEOUT, _PROJECT_API_PROGRESS_QUEUE_WAIT_TIMEOUT
 
 
@@ -666,6 +667,17 @@ class TrainingLifecycleManager:
         sm = self.state_machine
         manager_ref = self
 
+        # METRICS-MON R5.4-pre: per-fit closure box that holds the
+        # ``time.perf_counter()`` of the most recent epoch boundary so
+        # ``_output_training_callback`` can compute the train-step
+        # duration as a delta between successive callback invocations.
+        # The box is reset by ``monitored_fit`` on each new fit() entry
+        # so observations from the previous run never leak into the next
+        # one. ``None`` means "no prior boundary recorded yet" — the
+        # first callback of a fit() seeds the timer instead of emitting
+        # a bogus first-epoch sample.
+        _step_timer: dict[str, float | None] = {"prev": None}
+
         def _output_training_callback(epoch, epochs, loss):
             monitor.on_epoch_end(
                 epoch=epoch,
@@ -678,9 +690,32 @@ class TrainingLifecycleManager:
                 current_epoch=epoch,
                 phase_detail="training_output",
             )
+            # METRICS-MON R5.4-pre: train-step duration histogram. One
+            # output-phase epoch == one forward+backward+update cycle
+            # over the training batch (see HISTOGRAM_BUCKETS_RATIONALE
+            # §6 for the boundary discussion). Measured as the delta
+            # between successive callback invocations using
+            # ``time.perf_counter`` so the sample reflects actual
+            # compute time and is robust to wall-clock adjustments. The
+            # first callback of a fit() seeds the timer and emits no
+            # sample; subsequent callbacks emit the time-since-prior.
+            now = time.perf_counter()
+            prev = _step_timer["prev"]
+            if prev is not None:
+                try:
+                    observe_training_step_duration("output", now - prev)
+                except Exception:
+                    # Defensive: never let metrics emission break the
+                    # train loop. The metric is best-effort by design.
+                    manager_ref.logger.debug("training_step_duration emission failed", exc_info=True)
+            _step_timer["prev"] = now
 
         def monitored_fit(x, y, x_val=None, y_val=None, **kwargs):
             manager_ref._last_emitted_history_len = 0
+            # METRICS-MON R5.4-pre: reset the per-fit step timer so
+            # observations from a previous fit() can't leak into this
+            # one (e.g. across retrain or resume_from_snapshot).
+            _step_timer["prev"] = None
             monitor.on_training_start()
             # BUG-CC-07: phase is updated via state-machine wrapper, not manually.
             sm.handle_command(Command.START)
@@ -701,16 +736,25 @@ class TrainingLifecycleManager:
                     sm.handle_command(Command.STOP)
                     state.update_state(status="Stopped", phase="Idle")
                     manager_ref._broadcast_training_state(force=True)
+                    # METRICS-MON R5.4-pre: terminal transition —
+                    # session was cancelled by an explicit stop request.
+                    inc_training_session_completed(TRAINING_SESSION_STATUS_CANCELLED)
                 else:
                     sm.mark_completed()
                     state.update_state(status="Completed", phase="Idle")
                     manager_ref._broadcast_training_state(force=True)
+                    # METRICS-MON R5.4-pre: terminal transition —
+                    # session reached convergence / max-iterations cleanly.
+                    inc_training_session_completed(TRAINING_SESSION_STATUS_SUCCESS)
 
                 return result
             except Exception as e:
                 sm.mark_failed(str(e))
                 state.update_state(status="Failed", phase="Idle")
                 manager_ref._broadcast_training_state(force=True)
+                # METRICS-MON R5.4-pre: terminal transition — session
+                # ended with an unhandled exception.
+                inc_training_session_completed(TRAINING_SESSION_STATUS_FAILURE)
                 raise
             finally:
                 monitor.on_training_end()

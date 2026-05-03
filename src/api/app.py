@@ -58,6 +58,53 @@ def _log_startup_task_exception(task: asyncio.Task) -> None:
         logger.error("Startup task %s failed: %s", task.get_name(), exc, exc_info=exc)
 
 
+def _register_worker_metrics_collector(app: FastAPI, settings: Settings, worker_registry: WorkerRegistry) -> None:
+    """Register the worker -> Prometheus bridge collector at startup.
+
+    METRICS-MON R5.4-pre: closes the gap flagged by R5.1
+    (juniper-deploy#48) and R5.3 (juniper-deploy#46) — heartbeat
+    freshness, last-task duration, recent-task p50/p95, and GPU
+    utilisation are now exposed on the cascor ``/metrics`` surface for
+    two internal SLIs and the operator dashboard. Single-registration
+    per R1.4: the collector instance is held on ``app.state`` so the
+    shutdown path can unregister it cleanly when the lifespan exits.
+    Extracted from the lifespan handler purely for cyclomatic-complexity
+    discipline (flake8 C901 budget) — the initialization itself is
+    one-shot and unconditional given ``metrics_enabled``.
+    """
+    if not settings.metrics_enabled:
+        return
+
+    from prometheus_client import REGISTRY
+
+    from api.workers.metrics import WorkerRegistryCollector
+
+    worker_metrics_collector = WorkerRegistryCollector(worker_registry)
+    REGISTRY.register(worker_metrics_collector)
+    app.state.worker_metrics_collector = worker_metrics_collector
+    logger.info("Worker -> Prometheus bridge collector registered")
+
+
+def _unregister_worker_metrics_collector(app: FastAPI) -> None:
+    """Unregister the worker bridge collector at shutdown.
+
+    METRICS-MON R5.4-pre: re-creating the app (test harness, in-process
+    restart) without unregistering would trip the prometheus_client
+    "duplicated metric" guard. Best-effort: a missing or already-gone
+    collector is logged at debug level rather than raised.
+    """
+    worker_metrics_collector = getattr(app.state, "worker_metrics_collector", None)
+    if worker_metrics_collector is None:
+        return
+    try:
+        from prometheus_client import REGISTRY
+
+        REGISTRY.unregister(worker_metrics_collector)
+        logger.info("Worker -> Prometheus bridge collector unregistered")
+    except Exception as exc:
+        logger.debug("Best-effort worker collector unregister failed: %s", exc)
+
+
 def _init_worker_security(app: FastAPI, settings: Settings, worker_coordinator: WorkerCoordinator) -> None:
     """Initialize optional worker-security subsystems based on feature flags."""
     if settings.worker_rate_limit_enabled:
@@ -141,6 +188,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     lifecycle.set_worker_coordinator(worker_coordinator)
     logger.info("Worker registry and coordinator initialized")
 
+    _register_worker_metrics_collector(app, settings, worker_registry)
+
     # Worker Security (Phase 4) — conditionally initialize based on feature flags
     _init_worker_security(app, settings, worker_coordinator)
 
@@ -201,6 +250,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         for task in in_flight_startup_tasks:
             task.cancel()
         await asyncio.gather(*in_flight_startup_tasks, return_exceptions=True)
+
+    _unregister_worker_metrics_collector(app)
 
     # Shutdown: stop worker coordinator
     worker_coordinator = getattr(app.state, "worker_coordinator", None)
