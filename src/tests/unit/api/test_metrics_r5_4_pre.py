@@ -121,12 +121,15 @@ class TestTrainingStepDurationHistogram:
         view is computed at scrape time). A 0.7 s observation sits in
         the half-open interval (0.5, 1.0] and so increments the bucket
         whose upper bound is 1.0 — and ONLY that bucket.
+
+        OBS-WIRE-01 (A.6): the histogram no longer carries a ``phase``
+        label — see the metric-definition comment in
+        ``api.observability``.
         """
-        observe_training_step_duration("output", 0.7)
+        observe_training_step_duration(0.7)
 
         hist = _ensure_training_metrics()["step_duration_seconds"]
-        labelled = hist.labels(phase="output")
-        bucket_counts = {ub: bucket.get() for ub, bucket in zip(hist._upper_bounds, labelled._buckets)}
+        bucket_counts = {ub: bucket.get() for ub, bucket in zip(hist._upper_bounds, hist._buckets)}
 
         assert bucket_counts[1.0] == 1, f"sample of 0.7 must land in the le=1.0 bucket: counts={bucket_counts}"
         for ub, count in bucket_counts.items():
@@ -137,14 +140,17 @@ class TestTrainingStepDurationHistogram:
         # The cumulative contract IS still observable via _sum and the
         # final +inf observation count: every observation contributes
         # to _sum exactly once.
-        assert labelled._sum.get() == pytest.approx(0.7)
+        assert hist._sum.get() == pytest.approx(0.7)
 
-    def test_phase_label_supports_output(self):
-        """The histogram is keyed by phase; output is the R5.4-pre seed value."""
-        observe_training_step_duration("output", 0.123)
+    def test_phase_label_dropped(self):
+        """OBS-WIRE-01 (A.6): the histogram is unlabelled — no labelnames."""
         hist = _ensure_training_metrics()["step_duration_seconds"]
-        # Sum of observations should be 0.123 within float epsilon.
-        assert hist.labels(phase="output")._sum.get() == pytest.approx(0.123)
+        # ``Histogram._labelnames`` is the public-ish accessor for the
+        # declared label set; an empty tuple means the metric has no
+        # labels (post-A.6 contract).
+        assert hist._labelnames == (), f"expected no labels post-A.6, got {hist._labelnames!r}"
+        observe_training_step_duration(0.123)
+        assert hist._sum.get() == pytest.approx(0.123)
 
 
 @pytest.mark.unit
@@ -431,13 +437,12 @@ class TestLifecycleStepDurationCallback:
         mgr.network.fit(torch.zeros(2, 2), torch.zeros(2, 2))
 
         hist = _ensure_training_metrics()["step_duration_seconds"]
-        labelled = hist.labels(phase="output")
-        # ``_sum`` is the cumulative observation total — should be >0
-        # because exactly one sample was emitted (the second callback
-        # observes the delta from the first).
-        observed_sum = labelled._sum.get()
+        # OBS-WIRE-01 (A.6): the histogram is unlabelled — observations
+        # land directly on ``hist._sum`` / ``hist._buckets`` rather
+        # than the per-label child.
+        observed_sum = hist._sum.get()
         assert observed_sum > 0.0, "no train-step duration sample emitted"
         # ``_buckets`` is non-cumulative in modern prometheus_client.
         # Across all buckets the observation count must total exactly 1.
-        total_count = sum(bucket.get() for bucket in labelled._buckets)
+        total_count = sum(bucket.get() for bucket in hist._buckets)
         assert total_count == 1, f"expected exactly 1 sample emitted across all buckets, got {total_count}"

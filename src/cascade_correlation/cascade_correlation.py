@@ -3507,6 +3507,20 @@ class CascadeCorrelationNetwork:
 
     #################################################################################################################################################################################################
     # Public Method to add a new hidden unit based on the correlation
+    def _emit_candidate_correlation(self, value) -> None:
+        """OBS-WIRE-01 (A.2): emit the best-candidate-correlation gauge.
+
+        Defensive: never let a metrics-emit failure break the training
+        loop. Kept as a method (not a free function) so unit tests can
+        ``patch.object`` it on a per-instance basis.
+        """
+        try:
+            from api.observability import set_candidate_correlation as _set_candidate_correlation
+
+            _set_candidate_correlation(float(value))
+        except Exception:
+            self.logger.debug("set_candidate_correlation emission failed", exc_info=True)
+
     def _install_hidden_unit(
         self,
         weights: torch.Tensor,
@@ -3827,6 +3841,12 @@ class CascadeCorrelationNetwork:
             residual_magnitude = residual_error.abs().mean().item()
             adaptive_threshold = max(1e-6, min(self.correlation_threshold, residual_magnitude * 0.01))
             best_correlation = training_results.best_candidate.get_correlation()
+            # OBS-WIRE-01 (A.2): emit the best-candidate correlation
+            # gauge. Sampled once per grow-iteration after the
+            # candidate pool finishes training. Extracted into a tiny
+            # helper to keep the grow_network branch count under the
+            # flake8 C901 ceiling.
+            self._emit_candidate_correlation(best_correlation)
             if best_correlation < adaptive_threshold:
                 self.logger.info(f"CascadeCorrelationNetwork: grow_network: No candidate met adaptive correlation threshold: {adaptive_threshold:.6f} (static: {self.correlation_threshold}, residual_mag: {residual_magnitude:.6f}), Best Correlation Achieved: {best_correlation:.6f}")
                 break

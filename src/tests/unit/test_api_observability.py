@@ -525,12 +525,16 @@ class TestObservabilityShim_R5_1b:
                         logging.debug("Best-effort metric unregister failed in teardown for %r: %s", metric, exc)
                 setattr(obs, cache_attr, None)
 
-    def test_inference_duration_seconds_help_keeps_r4_1_marker(self):
+    def test_inference_metrics_were_removed_obs_wire_01(self):
+        """OBS-WIRE-01 (A.5): the ``juniper_cascor_inference_*`` family
+        was removed because cascor exposes no inference endpoint. Pin
+        the removal so a future revert lands a regression alongside it.
+        """
         from api.observability import _ensure_training_metrics
 
         metrics = _ensure_training_metrics()
-        hist = metrics["inference_duration_seconds"]
-        assert "(R4.1 buckets tentative pending R5.1)" in hist._documentation
+        assert "inference_requests_total" not in metrics
+        assert "inference_duration_seconds" not in metrics
 
     def test_resume_replayed_events_help_keeps_r4_1_marker(self):
         from api.observability import _ensure_ws_metrics

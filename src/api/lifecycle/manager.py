@@ -20,7 +20,7 @@ import torch
 
 from api.lifecycle.monitor import TrainingMonitor, TrainingState
 from api.lifecycle.state_machine import Command, TrainingPhase, TrainingStateMachine
-from api.observability import TRAINING_SESSION_STATUS_CANCELLED, TRAINING_SESSION_STATUS_FAILURE, TRAINING_SESSION_STATUS_SUCCESS, inc_training_session_completed, observe_training_step_duration
+from api.observability import TRAINING_SESSION_STATUS_CANCELLED, TRAINING_SESSION_STATUS_FAILURE, TRAINING_SESSION_STATUS_SUCCESS, dec_training_sessions, inc_training_session_completed, inc_training_sessions, observe_training_step_duration, record_training_epoch, set_hidden_units, set_training_accuracy, set_training_loss
 from cascor_constants.constants_api import _PROJECT_API_DRAIN_THREAD_JOIN_TIMEOUT, _PROJECT_API_LIFECYCLE_DEFAULT_CANDIDATE_PATIENCE, _PROJECT_API_LIFECYCLE_DEFAULT_EPOCHS_MAX, _PROJECT_API_LIFECYCLE_DEFAULT_MAX_HIDDEN_UNITS, _PROJECT_API_LIFECYCLE_DEFAULT_MAX_ITERATIONS, _PROJECT_API_NETWORK_INPUT_SIZE_DEFAULT, _PROJECT_API_NETWORK_LEARNING_RATE_DEFAULT, _PROJECT_API_NETWORK_OUTPUT_SIZE_DEFAULT, _PROJECT_API_PROGRESS_QUEUE_GET_TIMEOUT, _PROJECT_API_PROGRESS_QUEUE_WAIT_TIMEOUT
 
 
@@ -1325,7 +1325,12 @@ class TrainingLifecycleManager:
             prev = _step_timer["prev"]
             if prev is not None:
                 try:
-                    observe_training_step_duration("output", now - prev)
+                    # OBS-WIRE-01 (A.6): the ``phase`` label was dropped
+                    # from the histogram — it was effectively a constant
+                    # ``"output"`` and the SLI regex never matched the
+                    # other two values. See observability.py for the
+                    # metric-definition comment.
+                    observe_training_step_duration(now - prev)
                 except Exception:
                     # Defensive: never let metrics emission break the
                     # train loop. The metric is best-effort by design.
@@ -1347,6 +1352,19 @@ class TrainingLifecycleManager:
 
             # Inject output training callback (Approach B — attribute fallback)
             manager_ref.network._output_epoch_callback = _output_training_callback
+
+            # OBS-WIRE-01 (A.1): mark the session active. Paired with
+            # the ``dec_training_sessions`` call in the ``finally``
+            # block below so the gauge stays balanced across normal,
+            # cancelled, and exception-failure terminal paths. The
+            # gauge gates three SLO alerts (TrainingStalled,
+            # TrainingLossNotDecreasing, LowCandidateCorrelation) which
+            # silently never fired pre-OBS-WIRE-01 because the gauge
+            # was perpetually zero.
+            try:
+                inc_training_sessions()
+            except Exception:
+                manager_ref.logger.debug("inc_training_sessions emission failed", exc_info=True)
 
             try:
                 result = original_fit(x, y, x_val=x_val, y_val=y_val, **kwargs)
@@ -1388,6 +1406,15 @@ class TrainingLifecycleManager:
                 inc_training_session_completed(TRAINING_SESSION_STATUS_FAILURE)
                 raise
             finally:
+                # OBS-WIRE-01 (A.1): always decrement, even on the
+                # exception path, so the active-sessions gauge stays
+                # balanced and the alerts that gate on
+                # ``... > 0`` (TrainingStalled etc.) actually drop
+                # back to zero when no training is in flight.
+                try:
+                    dec_training_sessions()
+                except Exception:
+                    manager_ref.logger.debug("dec_training_sessions emission failed", exc_info=True)
                 monitor.on_training_end()
 
         self.network.fit = monitored_fit
@@ -1624,6 +1651,40 @@ class TrainingLifecycleManager:
                     validation_loss=val_loss_list[i] if i < len(val_loss_list) else None,
                     validation_accuracy=val_accuracy_list[i] if i < len(val_accuracy_list) else None,
                 )
+                # OBS-WIRE-01 (A.2): bump the per-phase epoch counter
+                # exactly once per newly-emitted history row. Counters
+                # MUST NOT be throttled (rate() would under-count by
+                # the throttle factor); we emit one increment per row
+                # here, mirroring the high-water-mark advance.
+                try:
+                    record_training_epoch(phase="output")
+                    if i < len(val_loss_list):
+                        # Validation pass also constitutes a "training
+                        # epoch" from the SLI perspective. Keep the
+                        # phase distinction so the validation-vs-train
+                        # ratio stays observable.
+                        record_training_epoch(phase="validation")
+                except Exception:
+                    self.logger.debug("record_training_epoch emission failed", exc_info=True)
+
+            # OBS-WIRE-01 (A.2): set the loss / accuracy / hidden-units
+            # gauges from the latest history row. Gauges are last-value
+            # observations, so a single set() per drain is sufficient
+            # — the per-row emit-loop above advances the underlying
+            # counter; here we only need the terminal sample. ``last``
+            # is the index of the newest entry (current_len - 1).
+            last = current_len - 1
+            try:
+                set_training_loss(phase="output", loss_type="train", value=float(train_loss_list[last]))
+                if last < len(train_accuracy_list) and train_accuracy_list[last] is not None:
+                    set_training_accuracy(phase="output", value=float(train_accuracy_list[last]))
+                if last < len(val_loss_list) and val_loss_list[last] is not None:
+                    set_training_loss(phase="output", loss_type="validation", value=float(val_loss_list[last]))
+                if last < len(val_accuracy_list) and val_accuracy_list[last] is not None:
+                    set_training_accuracy(phase="validation", value=float(val_accuracy_list[last]))
+                set_hidden_units(int(hidden_units_count))
+            except Exception:
+                self.logger.debug("training gauge emission failed", exc_info=True)
 
             # Advance the high-water-mark before releasing the lock — this is
             # the second half of the formerly-split section.
