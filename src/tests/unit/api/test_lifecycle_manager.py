@@ -1393,11 +1393,15 @@ class TestReplayLifecycleIntegration:
                 state = mgr.replay_control("speed", value=2.5)
                 assert state["speed"] == 2.5
                 state = mgr.replay_control("range", start=1, end=4)
-                # P-2 cluster B (PR #183): the ``range`` action now merges
-                # ``set_range``'s return dict (with re-clamped ``time_index``)
-                # into ``state_summary``, matching the contract asserted by
-                # ``test_replay_control_range`` over the HTTP route surface.
-                assert state["range"] == {"start": 1, "end": 4, "time_index": 3}
+                # PR #195 finalised the contract: ``range`` is just
+                # ``{start, end}``; the (possibly re-clamped) ``time_index``
+                # is exposed as a top-level field on the same response,
+                # not nested inside ``range``. ``set_range`` mutates
+                # ``self.range_*`` and clamps ``self.time_index`` in-place
+                # under the lock, so ``state_summary`` already reflects
+                # both atomically.
+                assert state["range"] == {"start": 1, "end": 4}
+                assert state["time_index"] == 3
             finally:
                 mgr.stop_replay()
         mgr.shutdown()
