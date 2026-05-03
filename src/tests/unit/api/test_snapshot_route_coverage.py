@@ -764,7 +764,12 @@ class TestReplaySnapshot:
             self._install_replay_session(lifecycle, "snap-range", length=5)
             response = client.post("/v1/snapshots/snap-range/replay/control", json={"action": "range", "start": 1, "end": 4})
             assert response.status_code == 200
-            assert response.json()["data"]["result"]["range"] == {"start": 1, "end": 4, "time_index": 1}
+            # PR #195: ``range`` carries only ``{start, end}``. The post-clamp
+            # ``time_index`` lives at the top level of the result payload
+            # (state_summary's own field), not nested inside ``range``.
+            result = response.json()["data"]["result"]
+            assert result["range"] == {"start": 1, "end": 4}
+            assert result["time_index"] == 1
         finally:
             self._teardown_replay_session(lifecycle)
 
