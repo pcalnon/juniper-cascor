@@ -82,7 +82,12 @@ jobs:
 
       - name: Create required directories
         run: |
-          mkdir -p logs src/logs reports/junit reports/htmlcov
+          # ``src/tests/reports`` is required because pyproject.toml's
+          # ``[tool.coverage.run] data_file = "src/tests/reports/.coverage"``
+          # — pytest-cov silently fails to write its parallel ``.coverage.*``
+          # files if the parent dir doesn't exist (gitignored, so absent on
+          # fresh CI checkout). See ci.yml for the same fix.
+          mkdir -p logs src/logs reports/junit reports/htmlcov src/tests/reports
 
       - name: Run Slow Unit Tests
         run: |
