@@ -7,7 +7,7 @@ from fastapi import APIRouter, HTTPException, Request
 logger = logging.getLogger("juniper_cascor.api.routes.network")
 
 from api.models.common import success_response
-from api.models.network import NetworkCreateRequest, PatchWeightsRequest
+from api.models.network import AddHiddenUnitRequest, NetworkCreateRequest, PatchWeightsRequest
 
 router = APIRouter(prefix="/network", tags=["network"])
 
@@ -119,3 +119,58 @@ async def patch_weights(request: Request, body: PatchWeightsRequest) -> dict:
     # Defensive — unmapped sentinel from the lifecycle layer.
     logger.error("patch_weights: unmapped status %r", status)
     raise HTTPException(status_code=500, detail="patch_weights returned an unexpected status")
+
+
+@router.post("/hidden-units")
+async def add_hidden_unit(request: Request, body: AddHiddenUnitRequest) -> dict:
+    """CAN-015h-2: append a fresh hidden unit at the cascade tail.
+
+    FSM-gated to ``Investigating``. The new unit's output-layer
+    column is initialized to **zero** so it contributes nothing
+    until the user re-trains or patches the output layer.
+
+    Status codes:
+
+    - 200 — unit appended; response body carries the new
+      ``unit_index``, ``num_hidden_units``, ``operation``,
+      ``fsm_state``.
+    - 400 — bad shape (weight vector length does not match
+      input_size + num_existing_hidden_units).
+    - 404 — no network created.
+    - 409 — FSM not Investigating, or network at
+      ``max_hidden_units`` cap.
+    - 422 — NaN/Inf in weights or bias / unknown activation.
+
+    Plan: ``notes/PHASE_6E_DEFERRED_CAN-015GH_DESIGN.md`` §"Endpoint
+    design / 2. POST /v1/network/hidden-units" (juniper-ml).
+    """
+    lifecycle = _get_lifecycle(request)
+    result = lifecycle.add_hidden_unit_manual(
+        weights=body.weights,
+        bias=body.bias,
+        activation=body.activation,
+    )
+    status = result.get("status")
+    detail = result.get("detail", "add failed")
+
+    if status == lifecycle._ADD_OK:
+        info = lifecycle.get_network_info()
+        info.update(
+            {
+                "operation": "add_hidden_unit",
+                "fsm_state": lifecycle.state_machine.status.name,
+                "unit_index": result.get("unit_index"),
+                "num_hidden_units": result.get("num_hidden_units"),
+            }
+        )
+        return success_response(info)
+    if status == lifecycle._ADD_NO_NETWORK:
+        raise HTTPException(status_code=404, detail=detail)
+    if status in (lifecycle._ADD_FSM_REJECTED, lifecycle._ADD_AT_CAP):
+        raise HTTPException(status_code=409, detail=detail)
+    if status in (lifecycle._ADD_NAN_INF, lifecycle._ADD_BAD_ACTIVATION):
+        raise HTTPException(status_code=422, detail=detail)
+    if status == lifecycle._ADD_BAD_SHAPE:
+        raise HTTPException(status_code=400, detail=detail)
+    logger.error("add_hidden_unit_manual: unmapped status %r", status)
+    raise HTTPException(status_code=500, detail="add_hidden_unit_manual returned an unexpected status")
