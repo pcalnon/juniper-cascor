@@ -17,10 +17,20 @@ from typing import Any, Callable, Dict, List, Optional
 
 import numpy as np
 import torch
-
 from api.lifecycle.monitor import TrainingMonitor, TrainingState
 from api.lifecycle.state_machine import Command, TrainingPhase, TrainingStateMachine
-from cascor_constants.constants_api import _PROJECT_API_DRAIN_THREAD_JOIN_TIMEOUT, _PROJECT_API_LIFECYCLE_DEFAULT_CANDIDATE_PATIENCE, _PROJECT_API_LIFECYCLE_DEFAULT_EPOCHS_MAX, _PROJECT_API_LIFECYCLE_DEFAULT_MAX_HIDDEN_UNITS, _PROJECT_API_LIFECYCLE_DEFAULT_MAX_ITERATIONS, _PROJECT_API_NETWORK_INPUT_SIZE_DEFAULT, _PROJECT_API_NETWORK_LEARNING_RATE_DEFAULT, _PROJECT_API_NETWORK_OUTPUT_SIZE_DEFAULT, _PROJECT_API_PROGRESS_QUEUE_GET_TIMEOUT, _PROJECT_API_PROGRESS_QUEUE_WAIT_TIMEOUT
+from cascor_constants.constants_api import (
+    _PROJECT_API_DRAIN_THREAD_JOIN_TIMEOUT,
+    _PROJECT_API_LIFECYCLE_DEFAULT_CANDIDATE_PATIENCE,
+    _PROJECT_API_LIFECYCLE_DEFAULT_EPOCHS_MAX,
+    _PROJECT_API_LIFECYCLE_DEFAULT_MAX_HIDDEN_UNITS,
+    _PROJECT_API_LIFECYCLE_DEFAULT_MAX_ITERATIONS,
+    _PROJECT_API_NETWORK_INPUT_SIZE_DEFAULT,
+    _PROJECT_API_NETWORK_LEARNING_RATE_DEFAULT,
+    _PROJECT_API_NETWORK_OUTPUT_SIZE_DEFAULT,
+    _PROJECT_API_PROGRESS_QUEUE_GET_TIMEOUT,
+    _PROJECT_API_PROGRESS_QUEUE_WAIT_TIMEOUT,
+)
 
 
 def _read_optimizer_type(network: Any) -> str:
@@ -58,6 +68,233 @@ def _write_activation_function_name(network: Any, value: str) -> None:
     output-layer activation chain."""
     network.config.activation_function_name = value
     network._init_activation_function()
+
+
+class _ReplaySession:
+    """CAN-015c (Phase 6E Sprint B B-3): per-snapshot replay session.
+
+    Holds the playback state for a single replay run — current time
+    index, speed (with sign for direction), pause flag, range
+    sub-window — plus the background thread that ticks while playing
+    and emits synthetic ``epoch_end`` events from the loaded network's
+    history arrays.
+
+    V1 scope (per ``notes/PHASE_6E_SPRINT_B_DESIGN.md`` §2.2 / §10.1):
+    metric arrays + topology evolution metadata only. Per-epoch weight
+    history (decision boundary playback, per-unit weight evolution) is
+    deferred to CAN-015g — would require a snapshot-format extension.
+
+    The thread emits via ``monitor._trigger_callbacks`` directly rather
+    than ``monitor.on_epoch_end`` so synthetic frames don't pollute the
+    live ``metrics_buffer``. Subscribers (WS broadcasters, canopy
+    metrics-curve renderer) receive the events identically — only the
+    replay-buffer side-effect differs.
+    """
+
+    # Allowed speed range. 0 ≡ pause, sign carries direction, magnitude
+    # caps at 10× to avoid pathological CPU usage on very long
+    # snapshots. Values beyond the range are clamped at /control time.
+    _MIN_SPEED: float = -10.0
+    _MAX_SPEED: float = 10.0
+    _MIN_NONZERO_MAG: float = 0.1
+    # Cap inter-frame sleeps so /pause / /seek wake up promptly even
+    # at very low speeds.
+    _MAX_TICK_SLEEP: float = 0.5
+
+    def __init__(self, snapshot_id: str, history: Dict[str, list], monitor) -> None:
+        self.snapshot_id = snapshot_id
+        # Pre-extract the history arrays we know about so the loop
+        # doesn't re-fetch every tick. Stored as plain lists (not
+        # references to network.history) so a future Restore-while-
+        # somehow-still-replaying race doesn't mutate them under us.
+        self._history: Dict[str, list] = {key: list(history.get(key, [])) for key in ("train_loss", "value_loss", "train_accuracy", "value_accuracy")}
+        # Length is the longest known array. Time index is bounded
+        # exclusively by ``self.length`` (i.e. valid indices are
+        # ``[0, length-1]``). Empty histories produce length=0 and the
+        # loop correctly idles.
+        self.length: int = max((len(v) for v in self._history.values()), default=0)
+        self._monitor = monitor
+        # Playback state — guarded by the lock for cross-thread reads.
+        self._lock = threading.Lock()
+        self.time_index: int = 0
+        self.speed: float = 1.0
+        self.paused: bool = True
+        self.range_start: int = 0
+        self.range_end: int = self.length  # exclusive
+        self._stop_event = threading.Event()
+        self._wake_event = threading.Event()
+        self._thread: Optional[threading.Thread] = None
+        self.logger = logging.getLogger(__name__)
+
+    def start_thread(self) -> None:
+        """Start the playback driver thread. Idempotent (a session can
+        be re-started after pause without spawning a new thread)."""
+        if self._thread is not None and self._thread.is_alive():
+            return
+        self._thread = threading.Thread(target=self._run, name=f"replay-{self.snapshot_id}", daemon=True)
+        self._thread.start()
+
+    def stop(self) -> None:
+        """Signal the playback thread to exit and wait briefly for it
+        to drain. Safe to call from any thread including the lifecycle
+        shutdown path."""
+        self._stop_event.set()
+        self._wake_event.set()  # break out of any pending wait
+        if self._thread is not None:
+            self._thread.join(timeout=2.0)
+            self._thread = None
+
+    def play(self) -> None:
+        with self._lock:
+            self.paused = False
+        self._wake_event.set()
+
+    def pause(self) -> None:
+        with self._lock:
+            self.paused = True
+        self._wake_event.set()
+
+    def seek(self, target: int) -> int:
+        """Jump to a specific time index. Returns the actual landed
+        position after clamping to the active range."""
+        with self._lock:
+            self.time_index = self._clamp_to_range(target)
+            landed = self.time_index
+        self._wake_event.set()
+        # Emit the seek-target frame immediately so canopy gets visual
+        # feedback even if we're paused.
+        self._emit_frame(landed)
+        return landed
+
+    def set_speed(self, value: float) -> float:
+        """Set playback speed. ``0`` is treated as pause. Returns the
+        effective (clamped) speed."""
+        # Clamp magnitude to [_MIN_NONZERO_MAG, _MAX_SPEED] preserving
+        # sign; treat tiny magnitudes as 0 (pause).
+        if abs(value) < self._MIN_NONZERO_MAG:
+            value = 0.0
+        elif value > 0:
+            value = min(value, self._MAX_SPEED)
+        else:
+            value = max(value, self._MIN_SPEED)
+        with self._lock:
+            self.speed = value
+            # speed=0 is functionally pause; surface the flag too so
+            # /play later doesn't have to also call /speed.
+            if value == 0.0:
+                self.paused = True
+        self._wake_event.set()
+        return value
+
+    def set_range(self, start: int, end: int) -> Dict[str, int]:
+        """Restrict playback to ``[start, end)``. End may be at most
+        ``self.length``. Time index is re-clamped if it's now outside
+        the new range. Returns the resulting range as a dict."""
+        with self._lock:
+            self.range_start = max(0, min(start, self.length))
+            self.range_end = max(self.range_start, min(end, self.length))
+            self.time_index = self._clamp_to_range(self.time_index)
+            result = {"start": self.range_start, "end": self.range_end, "time_index": self.time_index}
+        self._wake_event.set()
+        return result
+
+    def state_summary(self) -> Dict[str, Any]:
+        """Snapshot of the current session state for the route response."""
+        with self._lock:
+            return {
+                "snapshot_id": self.snapshot_id,
+                "length": self.length,
+                "time_index": self.time_index,
+                "speed": self.speed,
+                "paused": self.paused,
+                "range": {"start": self.range_start, "end": self.range_end},
+            }
+
+    def _clamp_to_range(self, index: int) -> int:
+        if self.range_end <= self.range_start:
+            return self.range_start
+        return max(self.range_start, min(self.range_end - 1, index))
+
+    def _emit_frame(self, index: int) -> None:
+        """Emit a synthetic ``epoch_end`` event for the given index.
+
+        Bypasses ``monitor.on_epoch_end`` (which would write to
+        ``metrics_buffer``) and calls ``_trigger_callbacks`` directly
+        so the WS broadcasters fire but live training state stays
+        untouched. Per the design's read-only-history guarantee."""
+        if self._monitor is None:
+            return
+        if index < 0 or index >= self.length:
+            return
+
+        def _series_at(key: str):
+            series = self._history.get(key, [])
+            return series[index] if index < len(series) else None
+
+        metrics = {
+            "epoch": index + 1,  # 1-indexed for canopy display, matches on_epoch_end
+            "loss": _series_at("train_loss"),
+            "accuracy": _series_at("train_accuracy"),
+            "validation_loss": _series_at("value_loss"),
+            "validation_accuracy": _series_at("value_accuracy"),
+            "phase": "Replay",
+            "replay": True,  # marker so subscribers can distinguish synthetic frames
+            "snapshot_id": self.snapshot_id,
+        }
+        try:
+            self._monitor._trigger_callbacks(
+                "epoch_end",
+                metrics=metrics,
+                epoch=metrics["epoch"],
+                loss=metrics["loss"],
+                accuracy=metrics["accuracy"],
+            )
+        except Exception:
+            # Best-effort emission — a subscriber that raises mustn't
+            # crash the playback thread.
+            self.logger.exception("replay session: synthetic _trigger_callbacks raised")
+
+    def _run(self) -> None:
+        """Background thread driver. Sleeps for ``1/abs(speed)`` between
+        frames while playing, polls every ``_MAX_TICK_SLEEP`` while
+        paused. Wake-event short-circuits any wait so /pause / /seek /
+        /speed take effect immediately."""
+        # Emit an initial frame on session start so subscribers see
+        # the entry point (epoch 0) before any /play.
+        self._emit_frame(0)
+        while not self._stop_event.is_set():
+            with self._lock:
+                paused = self.paused
+                speed = self.speed
+                time_index = self.time_index
+                range_start = self.range_start
+                range_end = self.range_end
+            if paused or abs(speed) < self._MIN_NONZERO_MAG:
+                # Idle until woken up — by /play, /seek, /speed change,
+                # or /stop. Bounded wait so /stop_event from a separate
+                # call still terminates the thread promptly.
+                if self._wake_event.wait(self._MAX_TICK_SLEEP):
+                    self._wake_event.clear()
+                continue
+            # Compute sleep duration for this frame. Bounded above so
+            # very low speeds still yield to wake events promptly.
+            sleep_s = min(1.0 / abs(speed), self._MAX_TICK_SLEEP)
+            if self._wake_event.wait(sleep_s):
+                self._wake_event.clear()
+                continue
+            # Advance the time index respecting direction and range.
+            with self._lock:
+                step = 1 if speed > 0 else -1
+                new_index = time_index + step
+                if new_index < range_start or new_index >= range_end:
+                    # Reached a boundary — auto-pause at the edge.
+                    self.paused = True
+                    self.time_index = self._clamp_to_range(new_index)
+                    landed = self.time_index
+                else:
+                    self.time_index = new_index
+                    landed = new_index
+            self._emit_frame(landed)
 
 
 class TrainingLifecycleManager:
@@ -137,6 +374,13 @@ class TrainingLifecycleManager:
         self._auto_snap_min_epochs: int = 50
         self._auto_snap_best_metric: Optional[float] = None
         self._auto_snap_lock = threading.Lock()
+
+        # CAN-015c (Phase 6E Sprint B B-3): replay session. ``None``
+        # outside of an active replay; an ``_ReplaySession`` instance
+        # while ``state_machine.is_replaying()``. The route layer reads
+        # the session state for /control responses and dispatches
+        # play/pause/seek/speed/range/stop into it.
+        self._replay_session: Optional["_ReplaySession"] = None
 
         # CAN-015b (Phase 6E Sprint B B-2): resume-from-snapshot marker.
         # ``resume_from_snapshot`` sets this to the snapshot's terminal
@@ -779,6 +1023,10 @@ class TrainingLifecycleManager:
             # silently inside monitored_fit.
             if self.state_machine.is_investigating():
                 raise RuntimeError("Cannot start training while Investigating a snapshot — invoke /v1/snapshots/{id}/retrain or /resume to transition out of Investigating first")
+            # CAN-015c (B-3): Replaying is read-only playback. Same
+            # rejection contract — user must /replay/control stop first.
+            if self.state_machine.is_replaying():
+                raise RuntimeError("Cannot start training while replaying a snapshot — invoke /v1/snapshots/{id}/replay/control with action='stop' first")
 
             if x is not None:
                 self._train_x = x
@@ -1418,9 +1666,11 @@ class TrainingLifecycleManager:
         """
         # Same pre-flight as resume_from_snapshot: investigating an
         # active training run would race with the running fit() and
-        # leave the lifecycle in a confused state.
-        if self.state_machine.is_started() or self.state_machine.is_paused():
-            self.logger.warning(f"load_snapshot rejected: training is {self.state_machine.status.name}")
+        # leave the lifecycle in a confused state. CAN-015c (B-3) adds
+        # the REPLAYING rejection so a Restore can't yank the network
+        # out from under an active replay thread.
+        if self.state_machine.is_started() or self.state_machine.is_paused() or self.state_machine.is_replaying():
+            self.logger.warning(f"load_snapshot rejected: lifecycle is {self.state_machine.status.name}")
             return False
 
         ok = self._load_snapshot_to_network(snapshot_id)
@@ -1460,7 +1710,13 @@ class TrainingLifecycleManager:
         - FSM — Stopped / Idle (via ``Command.RESET``)
         - ``training_monitor.metrics_buffer`` — cleared
         - ``_last_emitted_history_len`` — 0
+
+        CAN-015c (B-3): rejected when a replay session is active (would
+        race with the replay thread reading from network.history).
         """
+        if self.state_machine.is_started() or self.state_machine.is_paused() or self.state_machine.is_replaying():
+            self.logger.warning(f"restore_for_retrain rejected: lifecycle is {self.state_machine.status.name}")
+            return False
         ok = self._load_snapshot_to_network(snapshot_id)
         if not ok:
             return False
@@ -1533,8 +1789,8 @@ class TrainingLifecycleManager:
         See ``notes/PHASE_6E_SPRINT_B_DESIGN.md`` §2.3 for the full
         spec.
         """
-        if self.state_machine.is_started() or self.state_machine.is_paused():
-            self.logger.warning(f"resume_from_snapshot rejected: training is {self.state_machine.status.name}")
+        if self.state_machine.is_started() or self.state_machine.is_paused() or self.state_machine.is_replaying():
+            self.logger.warning(f"resume_from_snapshot rejected: lifecycle is {self.state_machine.status.name}")
             return False
 
         ok = self._load_snapshot_to_network(snapshot_id)
@@ -1576,6 +1832,128 @@ class TrainingLifecycleManager:
         self.logger.info(f"Snapshot restored for resume: {snapshot_id} (resume_point_epoch={resume_point})")
         return True
 
+    def start_replay(self, snapshot_id: str) -> bool:
+        """Load a snapshot and start a replay session (CAN-015c).
+
+        Phase 6E Sprint B B-3. Loads the snapshot identically to
+        ``load_snapshot`` then transitions the FSM to ``REPLAYING`` and
+        spawns a background ``_ReplaySession`` thread that emits
+        synthetic ``epoch_end`` events from the loaded network's
+        history arrays at a configurable speed.
+
+        V1 scope: metric arrays + topology evolution metadata only.
+        Per-epoch weight history (decision-boundary playback) is
+        deferred to CAN-015g — would require a snapshot-format
+        extension.
+
+        Rejected when training is currently active (Started / Paused).
+        Replacing one replay session with another is permitted — the
+        old session's thread is stopped and the new session is
+        installed.
+
+        See ``notes/PHASE_6E_SPRINT_B_DESIGN.md`` §2.2.
+        """
+        if self.state_machine.is_started() or self.state_machine.is_paused():
+            self.logger.warning(f"start_replay rejected: training is {self.state_machine.status.name}")
+            return False
+
+        ok = self._load_snapshot_to_network(snapshot_id)
+        if not ok:
+            return False
+
+        # If a previous replay session was running, tear it down first
+        # so its thread doesn't keep emitting against the new history.
+        prev_session = self._replay_session
+        if prev_session is not None:
+            try:
+                prev_session.stop()
+            except Exception:
+                self.logger.exception("start_replay: failed to stop previous replay session")
+
+        history = getattr(self.network, "history", None)
+        history_dict = history if isinstance(history, dict) else {}
+        session = _ReplaySession(snapshot_id, history_dict, self.training_monitor)
+        self._replay_session = session
+        # Marker fields used by Resume / Restore are not relevant here.
+        self._resume_point_epoch = None
+        self.state_machine.mark_replaying()
+        self.training_state.update_state(status="Stopped", phase="Idle")
+        self._broadcast_training_state(force=True)
+        # Start the driver thread AFTER the FSM transitions so the
+        # initial frame emission lands while subscribers are looking
+        # at a Replaying state.
+        session.start_thread()
+
+        self.logger.info(f"Snapshot replay started: {snapshot_id} (length={session.length})")
+        return True
+
+    def replay_control(self, action: str, **params: Any) -> Dict[str, Any]:
+        """Apply a control action to the active replay session (CAN-015c).
+
+        Supported actions: ``play`` / ``pause`` / ``seek`` (param
+        ``time_index``) / ``speed`` (param ``value``) / ``range``
+        (params ``start`` and ``end``) / ``stop``. ``stop`` exits
+        Replaying — the FSM transitions back to ``STOPPED`` and the
+        session thread is joined.
+
+        Returns the post-action session state for the route response.
+        Raises ``RuntimeError`` if no session is active.
+        """
+        session = self._replay_session
+        if session is None or not self.state_machine.is_replaying():
+            raise RuntimeError("No active replay session")
+
+        action_lower = action.lower() if isinstance(action, str) else ""
+        if action_lower == "play":
+            session.play()
+        elif action_lower == "pause":
+            session.pause()
+        elif action_lower == "seek":
+            target = params.get("time_index")
+            if target is None:
+                raise ValueError("seek requires a 'time_index' parameter")
+            session.seek(int(target))
+        elif action_lower == "speed":
+            value = params.get("value")
+            if value is None:
+                raise ValueError("speed requires a 'value' parameter")
+            session.set_speed(float(value))
+        elif action_lower == "range":
+            start = params.get("start")
+            end = params.get("end")
+            if start is None or end is None:
+                raise ValueError("range requires both 'start' and 'end' parameters")
+            session.set_range(int(start), int(end))
+        elif action_lower == "stop":
+            return self.stop_replay()
+        else:
+            raise ValueError(f"Unknown replay action: {action!r}")
+        return session.state_summary()
+
+    def stop_replay(self) -> Dict[str, Any]:
+        """End the active replay session (CAN-015c).
+
+        Joins the background thread, clears ``_replay_session``,
+        transitions the FSM to STOPPED via ``Command.RESET``, and
+        broadcasts the resulting state. Idempotent — calling on an
+        inactive session returns a minimal "not_active" status.
+        """
+        session = self._replay_session
+        if session is None:
+            return {"status": "not_active"}
+        try:
+            session.stop()
+        finally:
+            self._replay_session = None
+        # RESET is the universal "back to Stopped" transition. The FSM
+        # already documents that REPLAYING accepts RESET as the escape
+        # hatch alongside the explicit /control stop.
+        self.state_machine.handle_command(Command.RESET)
+        self.training_state.update_state(status="Stopped", phase="Idle")
+        self._broadcast_training_state(force=True)
+        self.logger.info(f"Snapshot replay stopped: {session.snapshot_id}")
+        return {"status": "stopped", "snapshot_id": session.snapshot_id}
+
     def list_snapshots(self) -> List[Dict[str, Any]]:
         """List available snapshots."""
         snapshots_dir = self._get_snapshots_dir()
@@ -1614,6 +1992,14 @@ class TrainingLifecycleManager:
         self._stop_requested.set()
         self.stop_liveness_heartbeat()
         self._restore_original_methods()
+        # CAN-015c (B-3): drain any active replay session so the
+        # background driver thread doesn't outlive the lifecycle.
+        if self._replay_session is not None:
+            try:
+                self._replay_session.stop()
+            except Exception:
+                self.logger.exception("shutdown: failed to stop replay session")
+            self._replay_session = None
         if self._executor:
             self._executor.shutdown(wait=False, cancel_futures=True)
             self._executor = None

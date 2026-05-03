@@ -638,3 +638,178 @@ class TestUnifiedResponseShape:
             assert response.status_code == 409
         finally:
             lifecycle.state_machine.handle_command(Command.RESET)
+
+
+class TestReplaySnapshot:
+    """CAN-015c (Phase 6E Sprint B B-3): tests for the new
+    ``POST /v1/snapshots/{id}/replay`` and
+    ``POST /v1/snapshots/{id}/replay/control`` routes."""
+
+    def _install_replay_session(self, lifecycle, snapshot_id="snap-test", length=5):
+        """Install a synthetic replay session bypassing the load step."""
+        from api.lifecycle.manager import _ReplaySession
+
+        history = {
+            "train_loss": [0.5] * length,
+            "value_loss": [],
+            "train_accuracy": [],
+            "value_accuracy": [],
+        }
+        session = _ReplaySession(snapshot_id, history, lifecycle.training_monitor)
+        lifecycle._replay_session = session
+        lifecycle.state_machine.mark_replaying()
+        return session
+
+    def _teardown_replay_session(self, lifecycle):
+        from api.lifecycle.state_machine import Command
+
+        if lifecycle._replay_session is not None:
+            lifecycle._replay_session.stop()
+            lifecycle._replay_session = None
+        lifecycle.state_machine.handle_command(Command.RESET)
+
+    def test_start_replay_route_success(self, client):
+        lifecycle = client.app.state.lifecycle
+
+        def fake_start(snapshot_id):
+            self._install_replay_session(lifecycle, snapshot_id, length=3)
+            return True
+
+        try:
+            with patch.object(lifecycle, "start_replay", side_effect=fake_start):
+                response = client.post("/v1/snapshots/snap-001/replay")
+                assert response.status_code == 200
+                data = response.json()["data"]
+                assert data["snapshot_id"] == "snap-001"
+                assert data["operation"] == "replay"
+                assert data["fsm_state"] == "REPLAYING"
+                assert data["time_index"]["default"] == "start"
+                assert data["status"] == "replaying"
+                assert data["session"]["snapshot_id"] == "snap-001"
+                assert data["session"]["length"] == 3
+        finally:
+            self._teardown_replay_session(lifecycle)
+
+    def test_start_replay_route_404_when_load_fails(self, client):
+        with patch.object(client.app.state.lifecycle, "start_replay", return_value=False):
+            response = client.post("/v1/snapshots/nonexistent/replay")
+            assert response.status_code == 404
+
+    def test_start_replay_route_409_when_training_active(self, client):
+        from api.lifecycle.state_machine import Command
+
+        lifecycle = client.app.state.lifecycle
+        lifecycle.state_machine.handle_command(Command.START)
+        try:
+            response = client.post("/v1/snapshots/snap-active/replay")
+            assert response.status_code == 409
+            assert "Cannot start replay" in response.json()["detail"]
+        finally:
+            lifecycle.state_machine.handle_command(Command.RESET)
+
+    def test_start_replay_route_runs_in_thread(self, client):
+        captured: dict = {}
+
+        def fake_start(snapshot_id):
+            import threading
+
+            captured["thread"] = threading.current_thread().name
+            self._install_replay_session(client.app.state.lifecycle, snapshot_id)
+            return True
+
+        try:
+            with patch.object(client.app.state.lifecycle, "start_replay", side_effect=fake_start):
+                response = client.post("/v1/snapshots/snap-thread/replay")
+                assert response.status_code == 200
+                assert captured["thread"] != "MainThread"
+        finally:
+            self._teardown_replay_session(client.app.state.lifecycle)
+
+    def test_replay_control_play(self, client):
+        lifecycle = client.app.state.lifecycle
+        try:
+            self._install_replay_session(lifecycle, "snap-ctrl", length=3)
+            response = client.post("/v1/snapshots/snap-ctrl/replay/control", json={"action": "play"})
+            assert response.status_code == 200
+            data = response.json()["data"]
+            assert data["operation"] == "replay_control"
+            assert data["action"] == "play"
+            assert data["result"]["paused"] is False
+        finally:
+            self._teardown_replay_session(lifecycle)
+
+    def test_replay_control_seek(self, client):
+        lifecycle = client.app.state.lifecycle
+        try:
+            self._install_replay_session(lifecycle, "snap-seek", length=5)
+            response = client.post("/v1/snapshots/snap-seek/replay/control", json={"action": "seek", "time_index": 3})
+            assert response.status_code == 200
+            assert response.json()["data"]["result"]["time_index"] == 3
+        finally:
+            self._teardown_replay_session(lifecycle)
+
+    def test_replay_control_speed(self, client):
+        lifecycle = client.app.state.lifecycle
+        try:
+            self._install_replay_session(lifecycle, "snap-speed", length=3)
+            response = client.post("/v1/snapshots/snap-speed/replay/control", json={"action": "speed", "value": 2.5})
+            assert response.status_code == 200
+            assert response.json()["data"]["result"]["speed"] == 2.5
+        finally:
+            self._teardown_replay_session(lifecycle)
+
+    def test_replay_control_range(self, client):
+        lifecycle = client.app.state.lifecycle
+        try:
+            self._install_replay_session(lifecycle, "snap-range", length=5)
+            response = client.post("/v1/snapshots/snap-range/replay/control", json={"action": "range", "start": 1, "end": 4})
+            assert response.status_code == 200
+            assert response.json()["data"]["result"]["range"] == {"start": 1, "end": 4, "time_index": 1}
+        finally:
+            self._teardown_replay_session(lifecycle)
+
+    def test_replay_control_stop(self, client):
+        lifecycle = client.app.state.lifecycle
+        self._install_replay_session(lifecycle, "snap-stop")
+        response = client.post("/v1/snapshots/snap-stop/replay/control", json={"action": "stop"})
+        assert response.status_code == 200
+        data = response.json()["data"]
+        assert data["action"] == "stop"
+        assert data["result"]["status"] == "stopped"
+        assert data["fsm_state"] == "STOPPED"
+        assert lifecycle._replay_session is None
+
+    def test_replay_control_without_active_session_returns_409(self, client):
+        response = client.post("/v1/snapshots/snap-none/replay/control", json={"action": "play"})
+        assert response.status_code == 409
+        assert "No active replay session" in response.json()["detail"]
+
+    def test_replay_control_snapshot_id_mismatch_returns_409(self, client):
+        lifecycle = client.app.state.lifecycle
+        try:
+            self._install_replay_session(lifecycle, "snap-actual")
+            response = client.post("/v1/snapshots/snap-different/replay/control", json={"action": "play"})
+            assert response.status_code == 409
+            assert "snap-actual" in response.json()["detail"]
+        finally:
+            self._teardown_replay_session(lifecycle)
+
+    def test_replay_control_unknown_action_returns_400(self, client):
+        lifecycle = client.app.state.lifecycle
+        try:
+            self._install_replay_session(lifecycle, "snap-bad-action")
+            response = client.post("/v1/snapshots/snap-bad-action/replay/control", json={"action": "teleport"})
+            assert response.status_code == 400
+            assert "Unknown replay action" in response.json()["detail"]
+        finally:
+            self._teardown_replay_session(lifecycle)
+
+    def test_replay_control_seek_missing_param_returns_400(self, client):
+        lifecycle = client.app.state.lifecycle
+        try:
+            self._install_replay_session(lifecycle, "snap-missing-param")
+            response = client.post("/v1/snapshots/snap-missing-param/replay/control", json={"action": "seek"})
+            assert response.status_code == 400
+            assert "time_index" in response.json()["detail"]
+        finally:
+            self._teardown_replay_session(lifecycle)

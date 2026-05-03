@@ -41,6 +41,15 @@ class TrainingStatus(Enum):
     # different snapshot via those endpoints) to enter a training
     # state. See ``notes/PHASE_6E_SPRINT_B_DESIGN.md`` §2.1.
     INVESTIGATING = auto()
+    # CAN-015c (Phase 6E Sprint B B-3): a replay session is active —
+    # the lifecycle is emitting synthetic ``epoch_end`` events from a
+    # snapshot's training history at a configurable speed. All training
+    # commands AND meta-param mutations are rejected; only
+    # ``/replay/control`` (play/pause/seek/speed/range/stop) is
+    # permitted. Exit via ``/replay/control`` with ``action="stop"`` or
+    # via ``Command.RESET``. See ``notes/PHASE_6E_SPRINT_B_DESIGN.md``
+    # §2.2.
+    REPLAYING = auto()
 
 
 class Command(Enum):
@@ -119,6 +128,12 @@ class TrainingStateMachine:
         rejected from this state."""
         return self._status == TrainingStatus.INVESTIGATING
 
+    def is_replaying(self) -> bool:
+        """CAN-015c (Phase 6E Sprint B B-3): a replay session is active.
+        Training commands and meta-param mutations are rejected; only
+        replay-control commands are permitted."""
+        return self._status == TrainingStatus.REPLAYING
+
     def handle_command(self, command: Command) -> bool:
         """Handle control command and perform state transition.
 
@@ -145,6 +160,13 @@ class TrainingStateMachine:
         # silently would defeat the entire Investigating contract.
         if self._status == TrainingStatus.INVESTIGATING:
             self.logger.warning("Invalid transition: START while Investigating — invoke /retrain or /resume to enter a training state")
+            return False
+        # CAN-015c (B-3): REPLAYING explicitly rejects training commands.
+        # The user is watching a snapshot's training history play back;
+        # they must invoke /replay/control with action="stop" before any
+        # training-related command is permitted.
+        if self._status == TrainingStatus.REPLAYING:
+            self.logger.warning("Invalid transition: START while Replaying — stop replay first")
             return False
         if self._status in (TrainingStatus.FAILED, TrainingStatus.COMPLETED):
             self.logger.info(f"Auto-resetting from terminal state {self._status.name} before start")
@@ -295,7 +317,8 @@ class TrainingStateMachine:
         from non-active states (Stopped / Completed / Failed /
         RESUME_READY / INVESTIGATING) — a user can replace one loaded
         snapshot with another without explicitly resetting in between.
-        Rejected from STARTED / PAUSED: training must stop first.
+        Rejected from STARTED / PAUSED / REPLAYING: training or replay
+        must stop first.
         """
         if self._status in (TrainingStatus.STOPPED, TrainingStatus.COMPLETED, TrainingStatus.FAILED, TrainingStatus.RESUME_READY, TrainingStatus.INVESTIGATING):
             prev = self._status.name
@@ -306,6 +329,29 @@ class TrainingStateMachine:
             self.logger.info(f"State transition: {prev} -> Investigating")
             return True
         self.logger.warning(f"Invalid transition: mark_investigating while {self._status.name}")
+        return False
+
+    def mark_replaying(self) -> bool:
+        """CAN-015c (Phase 6E Sprint B B-3): mark the FSM as replaying
+        a snapshot's training history. Call from
+        ``lifecycle.start_replay`` after the snapshot is loaded and the
+        replay session is initialized.
+
+        Permitted from non-active states (Stopped / Completed / Failed
+        / RESUME_READY / INVESTIGATING / REPLAYING — replacing one
+        replay session with another is fine). Rejected from STARTED /
+        PAUSED: a live training run can't be replaced by a replay
+        session without explicit shutdown first.
+        """
+        if self._status in (TrainingStatus.STOPPED, TrainingStatus.COMPLETED, TrainingStatus.FAILED, TrainingStatus.RESUME_READY, TrainingStatus.INVESTIGATING, TrainingStatus.REPLAYING):
+            prev = self._status.name
+            self._status = TrainingStatus.REPLAYING
+            self._phase = TrainingPhase.IDLE
+            self._paused_phase = None
+            self._candidate_sub_state = None
+            self.logger.info(f"State transition: {prev} -> Replaying")
+            return True
+        self.logger.warning(f"Invalid transition: mark_replaying while {self._status.name}")
         return False
 
     def get_state_summary(self) -> dict:
