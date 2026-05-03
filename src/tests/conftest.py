@@ -828,6 +828,173 @@ def _cache_logging_system():
 # ===================================================================
 
 
+# ===================================================================
+# MULTIPROCESSING CLEANUP HELPERS (Issue 3)
+# ===================================================================
+# A test that spins up a CascadeCorrelationNetwork (or directly uses
+# multiprocessing) can leave forkserver / worker children behind if the
+# test crashes, the network is garbage-collected without an explicit
+# ``_shutdown_worker_pool`` call, or the session terminates via
+# ``os._exit(0)`` (which bypasses every atexit / Finalize handler that
+# would otherwise reap them). The forkserver's parent-death detection
+# uses a pipe heartbeat that can take many minutes to fire, so the
+# children survive across pytest sessions and accumulate to multi-GB
+# RSS — observed at 12 GB across three worktrees on 2026-05-03,
+# eventually saturating swap and causing OOM kills of new pytest runs.
+#
+# These helpers + the per-test and session-end hooks below ensure no
+# multiprocessing children outlive the pytest process they were
+# spawned by.
+
+
+def _reap_multiprocessing_children(timeout: float = 2.0) -> None:
+    """Terminate every live multiprocessing child + the forkserver.
+
+    Walks ``multiprocessing.active_children()`` first (workers, manager
+    server processes, ``mp.Process`` instances created via any context),
+    then explicitly stops ``multiprocessing.forkserver._forkserver`` so
+    the long-lived forkserver process itself doesn't survive as an
+    orphan. Each step is wrapped in a broad ``try/except`` because this
+    runs at process tear-down — re-raising would defeat the whole point.
+    """
+    import multiprocessing
+    import os
+    import signal
+
+    # Phase 1: ask each child to terminate.
+    for child in list(multiprocessing.active_children()):
+        try:
+            child.terminate()
+        except Exception:  # nosec B110 — cleanup must not propagate
+            pass
+
+    # Phase 2: join with a deadline; SIGKILL stragglers.
+    for child in list(multiprocessing.active_children()):
+        try:
+            child.join(timeout=timeout)
+            if child.is_alive() and child.pid is not None:
+                os.kill(child.pid, signal.SIGKILL)
+                child.join(timeout=0.5)
+        except Exception:  # nosec B110
+            pass
+
+    # Phase 3: stop the forkserver itself (the long-lived process that
+    # spawns workers on demand). It auto-exits when its socket closes
+    # but only after the parent-death heartbeat fires — which is what
+    # we're trying to avoid.
+    try:
+        from multiprocessing.forkserver import _forkserver
+
+        pid = getattr(_forkserver, "_forkserver_pid", None)
+        if pid is not None:
+            try:
+                os.kill(pid, signal.SIGTERM)
+            except (ProcessLookupError, PermissionError):
+                # Process already exited or cannot be signaled in this environment;
+                # teardown should remain best-effort and continue.
+                pass
+            try:
+                os.waitpid(pid, 0)
+            except (ChildProcessError, OSError) as exc:
+                # Best-effort teardown: the process may already be reaped or
+                # not waitable in this context; ignore to avoid shutdown noise.
+                _ = exc
+            _forkserver._forkserver_pid = None
+            _forkserver._forkserver_address = None
+    except Exception:  # nosec B110
+        pass
+
+
+@pytest.fixture
+def pdeathsig_workers(monkeypatch):
+    """Opt-in Linux-only defense: set ``PR_SET_PDEATHSIG = SIGKILL`` on
+    every multiprocessing child this test spawns, so the kernel kills
+    them immediately when the pytest parent dies (no waiting for the
+    forkserver's heartbeat-based parent-death detection).
+
+    Issue 3 step 4. Use this on tests that legitimately spawn worker
+    pools and want OS-level orphan protection as a defence-in-depth on
+    top of the autouse ``_reap_test_spawned_children`` fixture (which
+    only fires if pytest reaches normal teardown — a SIGKILL of the
+    pytest parent itself bypasses it). Example:
+
+        def test_my_thing(pdeathsig_workers, ...):
+            net = CascadeCorrelationNetwork(...)
+            net._ensure_worker_pool(2)
+            ...
+
+    No-op on non-Linux platforms.
+    """
+    import sys
+
+    if sys.platform != "linux":
+        return
+
+    import ctypes
+    import multiprocessing.process as _mp_process
+
+    libc = ctypes.CDLL("libc.so.6", use_errno=True)
+    _PR_SET_PDEATHSIG = 1
+    _SIGKILL = 9
+
+    original_bootstrap = _mp_process.BaseProcess._bootstrap
+
+    def _bootstrap_with_pdeathsig(self, *args, **kwargs):
+        # prctl runs in the child immediately after fork — failures here
+        # are non-fatal (worst case is parent-death detection falls back
+        # to the heartbeat).
+        try:
+            libc.prctl(_PR_SET_PDEATHSIG, _SIGKILL, 0, 0, 0)
+        except Exception:  # nosec B110
+            pass
+        return original_bootstrap(self, *args, **kwargs)
+
+    monkeypatch.setattr(_mp_process.BaseProcess, "_bootstrap", _bootstrap_with_pdeathsig)
+
+
+@pytest.fixture(autouse=True)
+def _reap_test_spawned_children():
+    """Per-test safety net: terminate any multiprocessing children
+    spawned during this test that the test itself didn't clean up.
+
+    Issue 3 step 2. Tests that opt in to real multiprocessing (network
+    construction with the autouse ``force_sequential_training`` fixture
+    still produces a 1-worker pool whose forkserver lives in the
+    background) historically did not call ``_shutdown_worker_pool`` on
+    teardown, so each test would leak its forkserver + worker until the
+    session ended — at which point ``pytest_unconfigure``'s
+    ``os._exit(0)`` orphaned them entirely.
+
+    This fixture records the children that already existed at test
+    start and, after the test completes, terminates only those that
+    appeared during the test. Pre-existing children (e.g. session-scoped
+    workers, the forkserver if shared across tests) are left alone so
+    we don't break performance tests that intentionally reuse a pool.
+    """
+    import multiprocessing
+    import os
+    import signal
+
+    pre = {c.pid for c in multiprocessing.active_children() if c.pid is not None}
+    try:
+        yield
+    finally:
+        new_children = [c for c in multiprocessing.active_children() if c.pid is not None and c.pid not in pre]
+        for child in new_children:
+            try:
+                child.terminate()
+            except Exception:  # nosec B110
+                pass
+        for child in new_children:
+            try:
+                child.join(timeout=2.0)
+                if child.is_alive() and child.pid is not None:
+                    os.kill(child.pid, signal.SIGKILL)
+                    child.join(timeout=0.5)
+            except Exception:  # nosec B110
+                pass
+
+
 @pytest.hookimpl(trylast=True)
 def pytest_unconfigure(config):
     """Force process exit after pytest finalize to prevent hangs from orphaned threads.
@@ -852,6 +1019,13 @@ def pytest_unconfigure(config):
     *after* pytest-cov's own ``pytest_unconfigure`` (and after
     ``pytest_sessionfinish`` / ``pytest_terminal_summary`` have already
     fired), so all reports land on disk before we force-exit.
+
+    Issue 3 step 3: ``os._exit(0)`` skips ``atexit`` handlers and
+    multiprocessing's ``Finalize`` callbacks, so any surviving
+    forkserver / worker children would be orphaned and live for many
+    minutes after the parent exits (the forkserver's parent-death
+    detection is heartbeat-based). Reap them explicitly here, *before*
+    forcing the exit.
     """
     import atexit
     import concurrent.futures.thread as _thread_mod
@@ -859,11 +1033,31 @@ def pytest_unconfigure(config):
 
     atexit.unregister(_thread_mod._python_exit)
 
+    # Always reap multiprocessing children before we lose the chance.
+    # Cheap when there are none; essential when there are.
+    _reap_multiprocessing_children()
+
     # If non-daemon threads are still alive (e.g. training threads from
     # API integration tests), force immediate process exit.
     alive = [t for t in threading.enumerate() if not t.daemon and t is not threading.main_thread()]
     if alive:
         import os
+        import sys
+
+        # Issue 2: ``os._exit`` skips ``atexit``, finalizers, AND the
+        # implicit stdout/stderr flush that normal Python exit performs.
+        # When pytest's stdout is redirected to a file (CI, ``> log``,
+        # tee, etc.) the streams are block-buffered, so the freshly-
+        # written ``X passed in Ys`` summary line and any post-summary
+        # diagnostic output sits in the buffer and is silently
+        # discarded the moment ``os._exit`` fires. Flush explicitly so
+        # the user sees the same final output whether or not the
+        # non-daemon-thread escape hatch was needed.
+        try:
+            sys.stdout.flush()
+            sys.stderr.flush()
+        except Exception:  # nosec B110 — never let cleanup raise here
+            pass
 
         os._exit(0)
 
