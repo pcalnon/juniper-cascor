@@ -449,8 +449,12 @@ class TestWebSocketHistogramBuckets:
             for metric in list(obs._ws_metrics.values()):
                 try:
                     REGISTRY.unregister(metric)
-                except Exception:
-                    pass
+                except Exception as exc:
+                    logging.getLogger(__name__).debug(
+                        "Ignoring metric unregister failure during teardown for %r: %s",
+                        metric,
+                        exc,
+                    )
             obs._ws_metrics = None
 
     def test_sub_ms_bucket_constant_matches_rationale_doc(self):
