@@ -207,6 +207,12 @@ jobs:
           echo "║       Juniper Cascor - Unit Tests (Fast Only)              ║"
           echo "╚════════════════════════════════════════════════════════════╝"
 
+          # P-6 diagnostic: pytest-cov was silently dropping its writes
+          # in CI even after we created src/tests/reports. Capture
+          # stdout+stderr to a file so the post-run inventory step below
+          # can echo the full pytest tail (GitHub Actions' streaming-log
+          # API truncates the last ~5 seconds of any step's output).
+          set -o pipefail
           python -m pytest \
             -m "unit and not slow" \
             src/tests/unit \
@@ -217,7 +223,22 @@ jobs:
             --cov=src \
             --cov-report=term-missing \
             --cov-report=xml:reports/coverage.xml \
-            --cov-report=html:reports/htmlcov
+            --cov-report=html:reports/htmlcov 2>&1 | tee reports/pytest-output.log
+
+      - name: Diagnostic — show pytest tail and reports directory
+        if: always()
+        run: |
+          echo "═════════ pytest tail (last 80 lines) ═════════"
+          tail -80 reports/pytest-output.log 2>/dev/null || echo "(no pytest-output.log)"
+          echo "═════════ reports/ tree ═════════"
+          ls -la reports/ 2>/dev/null || echo "(no reports/)"
+          ls -la reports/junit/ 2>/dev/null || echo "(no reports/junit/)"
+          echo "═════════ src/tests/reports/ tree ═════════"
+          ls -la src/tests/reports/ 2>/dev/null || echo "(no src/tests/reports/)"
+          echo "═════════ stray .coverage* files in repo root ═════════"
+          ls -la .coverage* 2>/dev/null || echo "(no .coverage* in repo root)"
+          echo "═════════ all .coverage* files anywhere ═════════"
+          find . -name '.coverage*' -not -path './.git/*' 2>/dev/null || true
 
       - name: Enforce Coverage Gate (80%)
         run: |
