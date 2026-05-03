@@ -849,8 +849,10 @@ def _reap_multiprocessing_children(timeout: float = 2.0) -> None:
                 pass
             try:
                 os.waitpid(pid, 0)
-            except (ChildProcessError, OSError):
-                pass
+            except (ChildProcessError, OSError) as exc:
+                # Best-effort teardown: the process may already be reaped or
+                # not waitable in this context; ignore to avoid shutdown noise.
+                _ = exc
             _forkserver._forkserver_pid = None
             _forkserver._forkserver_address = None
     except Exception:  # nosec B110
