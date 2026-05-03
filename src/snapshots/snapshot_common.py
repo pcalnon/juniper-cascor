@@ -188,7 +188,12 @@ def save_numpy_array(group: h5py.Group, name: str, array: np.ndarray, compressio
     Returns:
         Created dataset
     """
-    dataset = group.create_dataset(name, data=array, compression=compression, compression_opts=compression_opts)
+    # h5py rejects chunk/filter options on scalar (0-d) datasets, so we
+    # only request compression for arrays that have at least one axis.
+    if array.ndim == 0:
+        dataset = group.create_dataset(name, data=array)
+    else:
+        dataset = group.create_dataset(name, data=array, compression=compression, compression_opts=compression_opts)
 
     # Store metadata
     write_str_attr(dataset, "array_type", "numpy.ndarray")

@@ -1913,7 +1913,10 @@ class TrainingLifecycleManager:
             end = params.get("end")
             if start is None or end is None:
                 raise ValueError("range requires both 'start' and 'end' parameters")
-            session.set_range(int(start), int(end))
+            range_result = session.set_range(int(start), int(end))
+            summary = session.state_summary()
+            summary["range"] = range_result
+            return summary
         elif action_lower == "stop":
             return self.stop_replay()
         else:
