@@ -304,6 +304,12 @@ class _ReplaySession:
         # eagerly even in the V1 case so consumers don't have to
         # branch on ``is None``.
         self.weight_cache = _WeightCache(weight_history, byte_budget=weight_cache_budget_bytes if weight_cache_budget_bytes is not None else _WeightCache.DEFAULT_BUDGET_BYTES)
+        # CAN-015g (g-3): O(1) reverse lookup from time_index (0-based
+        # epoch in the metric arrays) → sample_index (0-based into
+        # sample_indices). Populated only when the cache is available;
+        # the emitter checks membership to decide whether to attach a
+        # ``weights`` block to the synthetic event.
+        self._epoch_to_sample: Dict[int, int] = ({int(epoch): i for i, epoch in enumerate(self.weight_cache.sample_indices)} if self.weight_cache.available else {})
         # Playback state — guarded by the lock for cross-thread reads.
         self._lock = threading.Lock()
         self.time_index: int = 0
@@ -436,7 +442,20 @@ class _ReplaySession:
         Bypasses ``monitor.on_epoch_end`` (which would write to
         ``metrics_buffer``) and calls ``_trigger_callbacks`` directly
         so the WS broadcasters fire but live training state stays
-        untouched. Per the design's read-only-history guarantee."""
+        untouched. Per the design's read-only-history guarantee.
+
+        CAN-015g (g-3): when ``index`` lands on a sample-boundary
+        epoch (i.e. a position the serializer captured weight tensors
+        for) and the snapshot has weight history available, the
+        emitted event additionally carries a ``weights`` block with
+        base64-encoded float32 tensors. Sub-sample epochs carry
+        ``is_sample_boundary=False`` and no weight payload — canopy
+        holds the previously-received weights until a new boundary
+        arrives. V1 snapshots (no weight cache) emit identically to
+        the pre-g-3 shape (no ``is_sample_boundary`` field at all),
+        preserving backward compatibility for canopy clients that
+        pre-date the V2 protocol.
+        """
         if self._monitor is None:
             return
         if index < 0 or index >= self.length:
@@ -446,7 +465,7 @@ class _ReplaySession:
             series = self._history.get(key, [])
             return series[index] if index < len(series) else None
 
-        metrics = {
+        metrics: Dict[str, Any] = {
             "epoch": index + 1,  # 1-indexed for canopy display, matches on_epoch_end
             "loss": _series_at("train_loss"),
             "accuracy": _series_at("train_accuracy"),
@@ -456,6 +475,13 @@ class _ReplaySession:
             "replay": True,  # marker so subscribers can distinguish synthetic frames
             "snapshot_id": self.snapshot_id,
         }
+        if self.weight_cache.available:
+            sample_index = self._epoch_to_sample.get(index)
+            metrics["is_sample_boundary"] = sample_index is not None
+            if sample_index is not None:
+                payload = self.weights_at(sample_index)
+                if payload is not None:
+                    metrics["weights"] = self._encode_weight_payload(payload)
         try:
             self._monitor._trigger_callbacks(
                 "epoch_end",
@@ -468,6 +494,65 @@ class _ReplaySession:
             # Best-effort emission — a subscriber that raises mustn't
             # crash the playback thread.
             self.logger.exception("replay session: synthetic _trigger_callbacks raised")
+
+    @staticmethod
+    def _encode_weight_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
+        """CAN-015g (g-3): base64-encode the per-sample weight tensors.
+
+        Wire format per ``notes/PHASE_6E_DEFERRED_CAN-015GH_DESIGN.md``
+        §"Synthetic epoch_end event (additive)". JSON-friendly
+        envelope (`{dtype, shape, data}`) keeps the payload trivially
+        decodable from canopy's clientside JS without binary WS frame
+        plumbing — that optimization is deferred per the plan's
+        "Out of scope" list pending profiling data.
+
+        Returns a fresh dict; the input cache payload is not mutated
+        because the cache may serve the same payload to multiple
+        subscribers across scrubber moves.
+        """
+        return {
+            "sample_index": payload["sample_index"],
+            "epoch": payload["epoch"],
+            "output_weights": _ReplaySession._encode_tensor(payload.get("output_weights")),
+            "output_bias": _ReplaySession._encode_tensor(payload.get("output_bias")),
+            "hidden_units": [
+                {
+                    "first_sample_index": int(unit.get("first_sample_index", 0)),
+                    "activation": str(unit.get("activation", "")),
+                    "weights": _ReplaySession._encode_tensor(unit.get("weights")),
+                    # Bias is a Python float in the cache payload; ship
+                    # as-is so canopy doesn't pay base64-decode cost on
+                    # a single scalar.
+                    "bias": float(unit.get("bias", 0.0)),
+                }
+                for unit in payload.get("hidden_units", [])
+            ],
+        }
+
+    @staticmethod
+    def _encode_tensor(arr) -> Optional[Dict[str, Any]]:
+        """Encode a numpy array as ``{dtype, shape, data: base64(...)}``.
+
+        Returns ``None`` when ``arr`` is ``None`` or has no shape — the
+        caller (encoder) treats absent tensors as "skip this field" so
+        a snapshot missing one of the optional weight components
+        (e.g. zero hidden units) doesn't fail emission outright.
+        """
+        if arr is None:
+            return None
+        if not hasattr(arr, "tobytes"):
+            return None
+        # Force float32 for wire-side determinism; the cache already
+        # stores float32 from g-1's writer but a future ragged-storage
+        # change might admit float64 — coerce defensively.
+        as_f32 = np.ascontiguousarray(arr, dtype=np.float32)
+        import base64 as _base64
+
+        return {
+            "dtype": "float32",
+            "shape": list(as_f32.shape),
+            "data": _base64.b64encode(as_f32.tobytes()).decode("ascii"),
+        }
 
     def _run(self) -> None:
         """Background thread driver. Sleeps for ``1/abs(speed)`` between
