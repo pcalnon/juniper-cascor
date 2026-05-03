@@ -2224,6 +2224,175 @@ class TrainingLifecycleManager:
             return {}
 
     # ------------------------------------------------------------------
+    # CAN-015h-1: PATCH /v1/network/weights — surgical weight edit
+    # ------------------------------------------------------------------
+
+    # Sentinel values returned to the route layer so the route can map
+    # them to the right HTTP status. Plain string codes keep the
+    # lifecycle-↔-route boundary serializable for tests without
+    # requiring HTTPException to escape into the lifecycle layer.
+    _PATCH_OK: str = "ok"
+    _PATCH_FSM_REJECTED: str = "fsm_rejected"
+    _PATCH_NO_NETWORK: str = "no_network"
+    _PATCH_BAD_TARGET: str = "bad_target"
+    _PATCH_SHAPE_MISMATCH: str = "shape_mismatch"
+    _PATCH_NAN_INF: str = "nan_inf"
+    _PATCH_HIDDEN_UNIT_OUT_OF_RANGE: str = "hidden_unit_out_of_range"
+
+    def patch_weights(
+        self,
+        target: str,
+        field: str,
+        values: Any,
+        hidden_unit_index: Optional[int] = None,
+        dtype: str = "float32",
+    ) -> Dict[str, Any]:
+        """CAN-015h-1: surgically rewrite a single parameter group.
+
+        Returns a dict ``{"status": <code>, "detail": <str>}`` where
+        ``status`` is one of the ``_PATCH_*`` sentinels. The route
+        layer maps these to HTTP statuses (200 / 400 / 404 / 409 /
+        422) — see ``routes/network.py``.
+
+        FSM gate: requires INVESTIGATING (entered via ``/restore``).
+        Any other state returns ``_PATCH_FSM_REJECTED``.
+
+        Validation contract per the design plan:
+
+        - ``values`` must match the target tensor's shape exactly.
+          Partial updates are rejected with ``_PATCH_SHAPE_MISMATCH``.
+          Rationale: forces canopy to be explicit; prevents subtle
+          off-by-one bugs at the wire layer.
+        - NaN / Inf values are rejected with ``_PATCH_NAN_INF``.
+        - ``dtype`` is float32 by default. float64 inputs are auto-
+          cast (lossless when fitting in float32 range; the
+          plan-time concern about precision-losing casts is
+          captured by the NaN check post-cast).
+
+        Side-effects after a successful patch:
+
+        - The touched parameter is reassigned with a fresh tensor
+          carrying the new values, with ``requires_grad`` matching
+          the pre-patch attribute (so optimizer wiring elsewhere
+          doesn't toggle).
+        - The output-layer optimizer's state for the touched
+          parameter group is **zeroed** (Adam ``m`` and ``v``
+          buffers reset). Stale momentum from pre-patch weights is
+          meaningless after the rewrite.
+        """
+        if self.network is None:
+            return {"status": self._PATCH_NO_NETWORK, "detail": "No network created"}
+
+        if not self.state_machine.is_investigating():
+            return {
+                "status": self._PATCH_FSM_REJECTED,
+                "detail": f"patch_weights requires INVESTIGATING state (currently {self.state_machine.status.name})",
+            }
+
+        if target not in ("output", "hidden_unit"):
+            return {"status": self._PATCH_BAD_TARGET, "detail": f"unknown target: {target!r}"}
+        if field not in ("weights", "bias"):
+            return {"status": self._PATCH_BAD_TARGET, "detail": f"unknown field: {field!r}"}
+
+        # Resolve the tensor we're rewriting + a setter. The setter is
+        # a closure so we do not have to special-case the assignment
+        # logic at each branch — and the optimizer-state zero-out
+        # below uses the same closure to find the parameter group.
+        try:
+            new_tensor = self._build_patch_tensor(values, dtype)
+        except (TypeError, ValueError) as e:
+            return {"status": self._PATCH_NAN_INF, "detail": f"invalid tensor data: {e}"}
+
+        # NaN/Inf check after dtype cast (catches values that would
+        # otherwise become Inf when promoted to float32).
+        if not torch.isfinite(new_tensor).all():
+            return {"status": self._PATCH_NAN_INF, "detail": "values contain NaN or Inf"}
+
+        if target == "hidden_unit":
+            if hidden_unit_index is None or hidden_unit_index < 0 or hidden_unit_index >= len(self.network.hidden_units):
+                return {
+                    "status": self._PATCH_HIDDEN_UNIT_OUT_OF_RANGE,
+                    "detail": f"hidden_unit_index={hidden_unit_index} out of range (have {len(self.network.hidden_units)} units)",
+                }
+            current = self.network.hidden_units[hidden_unit_index][field]
+            if tuple(current.shape) != tuple(new_tensor.shape):
+                return {
+                    "status": self._PATCH_SHAPE_MISMATCH,
+                    "detail": f"shape mismatch: hidden_unit[{hidden_unit_index}].{field} expects {tuple(current.shape)}, got {tuple(new_tensor.shape)}",
+                }
+            # Zero the optimizer state BEFORE reassignment because the
+            # optimizer's state dict is keyed by tensor identity —
+            # ``current`` is the live key, ``new_tensor`` won't be
+            # found until a new optimizer is constructed against it.
+            self._zero_optimizer_state_for(current)
+            self.network.hidden_units[hidden_unit_index][field] = new_tensor
+        else:
+            attr = "output_weights" if field == "weights" else "output_bias"
+            current = getattr(self.network, attr)
+            if tuple(current.shape) != tuple(new_tensor.shape):
+                return {
+                    "status": self._PATCH_SHAPE_MISMATCH,
+                    "detail": f"shape mismatch: {attr} expects {tuple(current.shape)}, got {tuple(new_tensor.shape)}",
+                }
+            # Zero the optimizer state BEFORE reassignment (see above).
+            self._zero_optimizer_state_for(current)
+            requires_grad = bool(getattr(current, "requires_grad", False))
+            if requires_grad:
+                new_tensor.requires_grad_(True)
+            setattr(self.network, attr, new_tensor)
+
+        return {"status": self._PATCH_OK, "detail": "ok"}
+
+    @staticmethod
+    def _build_patch_tensor(values: Any, dtype: str) -> "torch.Tensor":
+        """Coerce a JSON-decoded ``values`` payload into a float32 tensor.
+
+        Raises ``ValueError`` on shape-irregular nested lists. The
+        NaN/Inf check is performed by the caller after this returns
+        so dtype-cast-induced infinities are also caught.
+        """
+        torch_dtype = torch.float64 if dtype == "float64" else torch.float32
+        try:
+            tensor = torch.tensor(values, dtype=torch_dtype)
+        except (TypeError, RuntimeError, ValueError) as e:
+            raise ValueError(f"could not coerce values to tensor: {e}") from e
+        # Force float32 on the wire side so storage and downstream
+        # forward-pass dtypes stay uniform with the existing network.
+        return tensor.to(dtype=torch.float32)
+
+    def _zero_optimizer_state_for(self, parameter) -> None:
+        """Zero out the optimizer's momentum/variance buffers for a
+        single parameter, if the network exposes a step-LR optimizer
+        whose ``state`` keys include the parameter object identity.
+
+        Best-effort: if the optimizer is None, missing state, or
+        keyed differently, the function is a no-op. The patched
+        weights still take effect; only the optimizer's stale
+        momentum survives, and the next training step will overwrite
+        it within a few iterations regardless.
+        """
+        optimizer = getattr(self.network, "output_optimizer", None)
+        if optimizer is None:
+            return
+        state = getattr(optimizer, "state", None)
+        if not isinstance(state, dict):
+            return
+        param_state = state.get(parameter)
+        if not isinstance(param_state, dict):
+            return
+        for key, val in list(param_state.items()):
+            if not isinstance(val, torch.Tensor):
+                continue
+            # Skip 0-d tensors (Adam's ``step`` counter is stored as a
+            # scalar tensor in newer PyTorch versions). Only the
+            # running-statistic buffers (``exp_avg``, ``exp_avg_sq``,
+            # etc.) carry the bias from pre-patch gradients and need
+            # zeroing.
+            if val.dim() == 0:
+                continue
+            param_state[key] = torch.zeros_like(val)
+
+    # ------------------------------------------------------------------
     # Decision boundary
     # ------------------------------------------------------------------
 

@@ -94,3 +94,38 @@ class NetworkInfo(BaseModel):
     max_hidden_units: int
     learning_rate: float
     uuid: str = ""
+
+
+# ---------------------------------------------------------------------
+# CAN-015h-1: PATCH /v1/network/weights request body
+# ---------------------------------------------------------------------
+
+
+class PatchWeightsRequest(BaseModel):
+    """Body for ``PATCH /v1/network/weights`` (CAN-015h-1).
+
+    Targets one of the network's mutable parameter groups:
+
+    - ``target="output"``: rewrites the entire output-layer
+      ``weights`` matrix or ``bias`` vector. ``hidden_unit_index``
+      must be ``None``.
+    - ``target="hidden_unit"``: rewrites a specific hidden unit's
+      ``weights`` vector or ``bias`` scalar.
+      ``hidden_unit_index`` is required and must be a valid index
+      into the current ``hidden_units`` list.
+
+    The caller must include the **exact** shape — partial updates
+    are rejected with 400 (see lifecycle's ``patch_weights``).
+    Rationale per the design plan: forces the canopy UI to be
+    explicit and prevents subtle off-by-one bugs in the wire
+    layer. NaN/Inf values are rejected with 422.
+
+    Plan: ``notes/PHASE_6E_DEFERRED_CAN-015GH_DESIGN.md`` §"Endpoint
+    design / 1. PATCH /v1/network/weights" (juniper-ml).
+    """
+
+    target: Literal["output", "hidden_unit"] = Field(description="Which parameter group to patch")
+    field: Literal["weights", "bias"] = Field(description="Which field on the target to patch")
+    values: list = Field(description="New values, shape must match target exactly")
+    hidden_unit_index: int | None = Field(default=None, ge=0, description="Required iff target == 'hidden_unit'")
+    dtype: Literal["float32", "float64"] = Field(default="float32", description="Source dtype; cast to float32 internally")
