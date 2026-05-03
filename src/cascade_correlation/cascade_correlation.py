@@ -3428,6 +3428,96 @@ class CascadeCorrelationNetwork:
 
     #################################################################################################################################################################################################
     # Public Method to add a new hidden unit based on the correlation
+    def _install_hidden_unit(
+        self,
+        weights: torch.Tensor,
+        bias: torch.Tensor,
+        activation_fn,
+        correlation: float = 0.0,
+    ) -> int:
+        """CAN-015h-0: shared helper that appends a hidden unit to the network.
+
+        Used by both the cascade-grow path (``add_unit`` /
+        ``add_units_as_layer``) and the future
+        ``POST /v1/network/hidden-units`` endpoint (h-2). Keeping
+        the unit-installation logic in one place prevents the two
+        callers from drifting apart on dict shape, history-record
+        layout, or unit-index accounting.
+
+        The helper is **install only** — it does NOT resize
+        ``self.output_weights``. Call
+        ``_resize_output_layer_for_new_units`` separately. The
+        two-step split lets ``add_units_as_layer`` batch one resize
+        for N units instead of N resizes.
+
+        Args:
+            weights: Cloned + detached weight tensor for the new unit.
+            bias: Cloned + detached bias tensor for the new unit.
+            activation_fn: Callable applied to the unit's pre-activation.
+            correlation: Recorded in history. ``0.0`` is a sane
+                default for manual inserts where correlation is
+                undefined.
+
+        Returns:
+            int: 0-based index of the appended unit (i.e.
+            ``len(self.hidden_units) - 1`` after the append).
+        """
+        new_unit = {
+            "weights": weights.clone().detach(),
+            "bias": bias.clone().detach(),
+            "activation_fn": activation_fn,
+            "correlation": correlation,
+        }
+        self.hidden_units.append(new_unit)
+        new_index = len(self.hidden_units) - 1
+        # Metadata-only history entry (CR-063 — full weight tensors
+        # already live in self.hidden_units).
+        self.history["hidden_units_added"].append(
+            {
+                "correlation": correlation,
+                "weight_shape": tuple(weights.shape),
+                "unit_index": new_index,
+            }
+        )
+        return new_index
+
+    def _resize_output_layer_for_new_units(self, num_added: int, prev_input_size: int) -> None:
+        """CAN-015h-0: shared helper that widens ``self.output_weights``.
+
+        Re-initializes the output-layer weight matrix with
+        ``prev_input_size + num_added`` rows per
+        ``self.init_output_weights`` (zero or random×0.1), copies the
+        old weights into the ``[:prev_input_size, :]`` slice, and
+        enables gradient tracking. ``self.output_bias`` is preserved
+        untouched (its shape is ``[output_size]``, independent of
+        the input width).
+
+        No-op when ``num_added <= 0`` so callers don't have to
+        special-case the empty-add case.
+
+        **RNG-sensitive**: the random-init path consumes one
+        ``torch.randn`` call. Callers in a deterministic context
+        must invoke this at the same point in the RNG stream as the
+        pre-refactor inline code did. The bit-identity test in
+        ``test_install_hidden_unit_helper.py`` pins this.
+        """
+        if num_added <= 0:
+            return
+        old_output_weights = self.output_weights.clone().detach()
+        # Pre-refactor (line ~3488 in add_unit, ~3592 in add_units_as_layer)
+        # clones + detaches output_bias and reassigns it. Functionally a
+        # ``requires_grad`` strip — preserve here so the refactor is bit-
+        # identical from the optimizer's perspective.
+        old_output_bias = self.output_bias.clone().detach()
+        new_input_size = prev_input_size + num_added
+        if self.init_output_weights == "zero":
+            self.output_weights = torch.zeros(new_input_size, self.output_size)
+        else:
+            self.output_weights = torch.randn(new_input_size, self.output_size) * 0.1
+        self.output_weights[:prev_input_size, :] = old_output_weights
+        self.output_weights.requires_grad_(True)
+        self.output_bias = old_output_bias
+
     def add_unit(
         self,
         candidate: CandidateUnit = None,
@@ -3457,81 +3547,46 @@ class CascadeCorrelationNetwork:
         candidate_input = self._compute_hidden_outputs(x)
         self.logger.debug(f"CascadeCorrelationNetwork: add_unit: Candidate input shape: {candidate_input.shape}, Input size: {candidate_input.shape[1]}")
 
-        # Create a new hidden unit
-        new_unit = {
-            "weights": candidate.weights.clone().detach(),
-            "bias": candidate.bias.clone().detach(),
-            "activation_fn": self.activation_fn,
-            "correlation": candidate.correlation,
-        }
-        if self.logger.isEnabledFor(logging.DEBUG):
-            self.logger.debug(f"CascadeCorrelationNetwork: add_unit: Adding new hidden unit with weights: {new_unit['weights']}, bias: {new_unit['bias']}, correlation: {new_unit['correlation']:.6f}, Unit: {new_unit}")
-
         # PARALLEL-FIX (RC-5): Validate that candidate weight dimensions match current input.
         # A stale candidate from a previous training round (result queue contamination) would
         # have weights sized for a different input dimension. Catch this before the cryptic
         # RuntimeError from element-wise multiplication.
         expected_weight_size = candidate_input.shape[1]
-        actual_weight_size = new_unit["weights"].shape[0]
+        actual_weight_size = candidate.weights.shape[0]
         if expected_weight_size != actual_weight_size:
             raise ValidationError(f"Candidate weight dimension mismatch in add_unit: " f"candidate_input has {expected_weight_size} features " f"(original_input={x.shape[1]}, hidden_units={len(self.hidden_units)}), " f"but candidate weights have {actual_weight_size} elements. " f"This indicates a stale candidate from a previous training round.")
 
-        # Add the new unit to the network
-        self.hidden_units.append(new_unit)
+        # CAN-015h-0: install the unit via the shared helper. The helper
+        # appends to ``hidden_units`` and ``history``; we still need to
+        # widen the output layer below.
+        self._install_hidden_unit(
+            weights=candidate.weights,
+            bias=candidate.bias,
+            activation_fn=self.activation_fn,
+            correlation=candidate.correlation,
+        )
         if self.logger.isEnabledFor(logging.DEBUG):
             self.logger.debug(f"CascadeCorrelationNetwork: add_unit: Current number of hidden units: {len(self.hidden_units)}, Hidden units: {self.hidden_units}")
 
-        # Update output layer weights to include the new unit
-        old_output_weights = self.output_weights.clone().detach()
+        # Calculate the output of the new unit (logging only — does
+        # not contribute to persisted state, kept for parity with
+        # pre-refactor logging).
         if self.logger.isEnabledFor(logging.DEBUG):
-            self.logger.debug(f"CascadeCorrelationNetwork: add_unit: Old output weights shape: {old_output_weights.shape}, Weights: {old_output_weights}")
-        old_output_bias = self.output_bias.clone().detach()
-        if self.logger.isEnabledFor(logging.DEBUG):
-            self.logger.debug(f"CascadeCorrelationNetwork: add_unit: Old output bias shape: {old_output_bias.shape}, Bias: {old_output_bias}")
-
-        # Calculate the output of the new unit
-        unit_output = self.activation_fn(torch.sum(candidate_input * new_unit["weights"], dim=1) + new_unit["bias"]).unsqueeze(1)
-        if self.logger.isEnabledFor(logging.DEBUG):
+            new_unit = self.hidden_units[-1]
+            unit_output = self.activation_fn(torch.sum(candidate_input * new_unit["weights"], dim=1) + new_unit["bias"]).unsqueeze(1)
             self.logger.debug(f"CascadeCorrelationNetwork: add_unit: New unit output shape: {unit_output.shape}, New unit output: {unit_output}")
 
-        # Create new output weights with an additional row for the new unit
-        new_input_size = candidate_input.shape[1] + 1
-        self.logger.debug(f"CascadeCorrelationNetwork: add_unit: New input size for output weights: {new_input_size}, Old input size: {old_output_weights.shape[0]}")
-
-        # Initialize new output weights based on init_output_weights strategy.
-        # Create without requires_grad to allow safe in-place slice assignment,
-        # then enable gradient tracking after copying old weights.
-        if self.init_output_weights == "zero":
-            self.output_weights = torch.zeros(new_input_size, self.output_size)
-        else:
-            self.output_weights = torch.randn(new_input_size, self.output_size) * 0.1
-        self.logger.debug(f"CascadeCorrelationNetwork: add_unit: New output weights shape: {self.output_weights.shape}, init_mode: {self.init_output_weights}")
-
-        # Copy old weights
-        input_size_before = candidate_input.shape[1]
-        self.logger.debug(f"CascadeCorrelationNetwork: add_unit: Input size before adding new unit: {input_size_before}")
-
-        # Copy old weights, then enable gradient tracking
-        self.output_weights[:input_size_before, :] = old_output_weights
-        self.output_weights.requires_grad_(True)
-        if self.logger.isEnabledFor(logging.DEBUG):
-            self.logger.debug(f"CascadeCorrelationNetwork: add_unit: Updated output weights after copying old weights: {self.output_weights}")
-        self.output_bias = old_output_bias
-        if self.logger.isEnabledFor(logging.DEBUG):
-            self.logger.debug(f"CascadeCorrelationNetwork: add_unit: Updated output bias after copying old bias: {self.output_bias}")
-
-        # Add new unit to the history — metadata only; full weight tensors
-        # are already stored in self.hidden_units (see CR-063).
-        self.logger.info(f"CascadeCorrelationNetwork: add_unit: Added hidden unit with correlation: {candidate.correlation:.6f}")
-        self.history["hidden_units_added"].append(
-            {
-                "correlation": candidate.correlation,
-                "weight_shape": tuple(candidate.weights.shape),
-                "unit_index": len(self.hidden_units) - 1,
-            }
+        # CAN-015h-0: widen the output layer via the shared helper.
+        # Single-unit add ⇒ ``num_added=1`` against the pre-add input size.
+        self._resize_output_layer_for_new_units(
+            num_added=1,
+            prev_input_size=candidate_input.shape[1],
         )
+        if self.logger.isEnabledFor(logging.DEBUG):
+            self.logger.debug(f"CascadeCorrelationNetwork: add_unit: New output weights shape: {self.output_weights.shape}, init_mode: {self.init_output_weights}")
+
+        self.logger.info(f"CascadeCorrelationNetwork: add_unit: Added hidden unit with correlation: {candidate.correlation:.6f}")
         self.logger.info(f"CascadeCorrelationNetwork: add_unit: Current number of hidden units: {len(self.hidden_units)}")
-        self.logger.debug(f"CascadeCorrelationNetwork: add_unit: Updated history with new hidden unit, total hidden: {len(self.hidden_units)}")
         self.logger.trace("CascadeCorrelationNetwork: add_unit: Completed adding a new hidden unit.")
 
     def _select_best_candidates(self, results: list, num_candidates: int = 1) -> list:
@@ -3587,11 +3642,9 @@ class CascadeCorrelationNetwork:
         # All candidates in this batch were trained with this exact input shape.
         candidate_input = self._compute_hidden_outputs(x)
 
-        # Save current output weights before any mutations
-        old_output_weights = self.output_weights.clone().detach()
-        old_output_bias = self.output_bias.clone().detach()
-
-        # Add all candidate units using the pre-computed candidate_input
+        # CAN-015h-0: install via the shared helper. Each successful
+        # candidate appends to ``hidden_units`` + ``history`` in
+        # exactly the same order as the pre-refactor inline append.
         added_count = 0
         for candidate_result in candidates:
             candidate = candidate_result.candidate
@@ -3602,41 +3655,23 @@ class CascadeCorrelationNetwork:
                 if expected_size != actual_size:
                     self.logger.warning(f"CascadeCorrelationNetwork: add_units_as_layer: " f"Skipping candidate with mismatched weights: expected {expected_size}, got {actual_size}")
                     continue
-
-                new_unit = {
-                    "weights": candidate.weights.clone().detach(),
-                    "bias": candidate.bias.clone().detach(),
-                    "activation_fn": self.activation_fn,
-                    "correlation": candidate.correlation,
-                }
-                self.hidden_units.append(new_unit)
-                added_count += 1
-
-                # Store metadata only; full weight tensors are already kept
-                # in self.hidden_units, so duplicating them here wastes memory.
-                self.history["hidden_units_added"].append(
-                    {
-                        "correlation": candidate.correlation,
-                        "weight_shape": tuple(candidate.weights.shape),
-                        "unit_index": len(self.hidden_units) - 1,
-                    }
+                self._install_hidden_unit(
+                    weights=candidate.weights,
+                    bias=candidate.bias,
+                    activation_fn=self.activation_fn,
+                    correlation=candidate.correlation,
                 )
+                added_count += 1
             else:
                 self.logger.warning(f"CascadeCorrelationNetwork: add_units_as_layer: Skipping invalid candidate: {candidate_result}")
 
-        # Update output weights once for all new units
-        if added_count > 0:
-            new_input_size = candidate_input.shape[1] + added_count
-            # Initialize new output weights without requires_grad to allow safe
-            # in-place slice assignment, then enable gradient tracking after copy.
-            if self.init_output_weights == "zero":
-                self.output_weights = torch.zeros(new_input_size, self.output_size)
-            else:
-                self.output_weights = torch.randn(new_input_size, self.output_size) * 0.1
-            input_size_before = candidate_input.shape[1]
-            self.output_weights[:input_size_before, :] = old_output_weights
-            self.output_weights.requires_grad_(True)
-            self.output_bias = old_output_bias
+        # CAN-015h-0: single batch resize for all newly-installed units.
+        # The helper is a no-op when ``num_added == 0`` so we don't
+        # have to special-case the all-skipped path.
+        self._resize_output_layer_for_new_units(
+            num_added=added_count,
+            prev_input_size=candidate_input.shape[1],
+        )
 
         self.logger.info(f"CascadeCorrelationNetwork: add_units_as_layer: Layer added ({added_count} units), total hidden units: {len(self.hidden_units)}")
 
