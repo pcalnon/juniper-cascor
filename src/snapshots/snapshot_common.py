@@ -213,6 +213,11 @@ def load_numpy_array(dataset: h5py.Dataset) -> np.ndarray:
     Returns:
         Numpy array
     """
+    # ``dataset[:]`` raises ``ValueError: Illegal slicing argument for
+    # scalar dataspace`` on 0-d datasets. Use ``dataset[()]`` for those
+    # so callers get the expected ndarray uniformly.
+    if dataset.ndim == 0:
+        return np.asarray(dataset[()])
     return dataset[:]
 
 
