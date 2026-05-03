@@ -1240,12 +1240,14 @@ class CascadeHDF5Serializer:
                     for sample_key in sorted(w_subgroup.keys()):
                         unit_weights.append(load_numpy_array(w_subgroup[sample_key]))
                         unit_bias.append(load_numpy_array(b_subgroup[sample_key]))
-                result["hidden_units"].append({
-                    "first_sample_index": int(unit_group.attrs.get("first_sample_index", 0)),
-                    "activation": read_str_attr(unit_group, "activation", ""),
-                    "weights": unit_weights,
-                    "bias": unit_bias,
-                })
+                result["hidden_units"].append(
+                    {
+                        "first_sample_index": int(unit_group.attrs.get("first_sample_index", 0)),
+                        "activation": read_str_attr(unit_group, "activation", ""),
+                        "weights": unit_weights,
+                        "bias": unit_bias,
+                    }
+                )
 
         return result
 

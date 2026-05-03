@@ -84,12 +84,14 @@ def _make_weight_history(num_samples=4, in_size=2, out_size=1, num_hidden=2, sam
             ub = float(np.random.RandomState(unit_idx * 10 + j + 1).randn())
             unit_weights.append(uw)
             unit_bias.append(ub)
-        hidden_units.append({
-            "first_sample_index": first_sample_index,
-            "activation": "tanh",
-            "weights": unit_weights,
-            "bias": unit_bias,
-        })
+        hidden_units.append(
+            {
+                "first_sample_index": first_sample_index,
+                "activation": "tanh",
+                "weights": unit_weights,
+                "bias": unit_bias,
+            }
+        )
 
     return {
         "sampling_strategy": "adaptive",
