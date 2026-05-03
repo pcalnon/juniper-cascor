@@ -1,17 +1,20 @@
 # juniper-cascor — Histogram Bucket Rationale
 
-**Date:** 2026-05-02 (R4.1 draft) / 2026-05-03 (R5.1b update)
-**METRICS-MON sub-track:** R4.1 / seed-14, plus **R5.1b** (this PR)
-**Status:** §4 and §5 layouts **implemented in R5.1b**. §2 and §3
-remain **tentative pending R5.1** SLO ratification.
+**Date:** 2026-05-02 (R4.1 draft) / 2026-05-03 (R5.1b update) / 2026-05-03 (R5.4-pre §6 add)
+**METRICS-MON sub-track:** R4.1 / seed-14, plus **R5.1b** and **R5.4-pre**
+**Status:** §4, §5 layouts **implemented in R5.1b**. §6 layout
+**implemented in R5.4-pre** (this addendum) and is **born SLO-aligned**
+(no "tentative pending R5.1" suffix — bound to SLO 3.4 in
+juniper-deploy SLO_CATALOG_2026-05-03.md). §2 and §3 remain
+**tentative pending R5.1** SLO ratification.
 **Related:** [`METRICS_MONITORING_R4_ENTRY_PLAN_2026-05-01.md`](https://github.com/pcalnon/juniper-ml/blob/main/notes/code-review/METRICS_MONITORING_R4_ENTRY_PLAN_2026-05-01.md) §3 Q1 (hybrid: document current rationale now; mark tentative; R5.1 ratifies).
 
 ---
 
 ## 1. Inventory
 
-juniper-cascor exposes **four** Prometheus histograms on the production
-surface:
+juniper-cascor exposes **five** Prometheus histograms on the production
+surface (four pre-existing plus one added by R5.4-pre):
 
 | Metric | Labels | Bucket constant | Purpose |
 |---|---|---|---|
@@ -19,13 +22,50 @@ surface:
 | `cascor_ws_resume_replayed_events` | _(none)_ | `_WS_RESUME_REPLAY_BUCKETS` (local) | Number of buffered events replayed when a WebSocket client successfully resumes via the seq-replay handshake. **Discrete count, not duration.** |
 | `cascor_ws_broadcast_send_duration_seconds` | `type` | `_WS_SUB_MS_LATENCY_BUCKETS` (R5.1b) | Wall-clock for individual WebSocket `send_*` operations on a single client. |
 | `cascor_ws_command_handler_seconds` | `command` | `_WS_SUB_MS_LATENCY_BUCKETS` (R5.1b) | Wall-clock for command-handler dispatch (e.g. `pause`, `resume`, `start_training`). |
+| `juniper_cascor_training_step_duration_seconds` | `phase` | `_TRAINING_STEP_DURATION_BUCKETS` (R5.4-pre) | Wall-clock around one forward+backward+update cycle of the cascor train loop (one output-phase epoch over the training batch). Binds SLO 3.4. |
 
-As of **R5.1b** (this PR) all four histograms now carry explicit
+As of **R5.1b** all four pre-existing histograms carry explicit
 buckets chosen for their distribution shape. The two WebSocket
 latency histograms previously used the Prometheus default layout
 (`(.005, .01, .025, .05, .075, .1, .25, .5, .75, 1, 2.5, 5, 7.5, 10,
 +inf)`); they have been re-bucketed to the shared
-`_WS_SUB_MS_LATENCY_BUCKETS` constant — see §4.
+`_WS_SUB_MS_LATENCY_BUCKETS` constant — see §4. The fifth metric is
+new in R5.4-pre — see §6.
+
+### 1.1 Train-step boundary choice (R5.4-pre)
+
+The `juniper_cascor_training_step_duration_seconds` histogram is
+emitted from the **api-lifecycle** layer (`api.lifecycle.manager`'s
+`_output_training_callback`), measuring the delta between successive
+per-epoch callback invocations using `time.perf_counter`. A single
+emission represents one output-phase epoch — the train loop's
+forward + backward + optimizer-step over the entire training batch.
+
+Two boundary alternatives were considered:
+
+- **Per mini-batch step** inside `cascade_correlation.cascade_correlation`
+  (around `loss.backward(); optimizer.step()`). Rejected: that file
+  lives below the api boundary and adding a Prometheus dependency
+  there would couple the neural-net layer to the observability
+  surface. Rejected per layering discipline.
+- **Per epoch at the api-lifecycle level** (chosen). The boundary
+  that the existing `_output_training_callback` already wraps; the
+  same span the `cascor_ws_command_handler_seconds` histogram covers
+  but at a different code level (api-lifecycle vs. WS command
+  dispatch). The "step" naming aligns with the SLO catalog's
+  vocabulary even though the granularity is one cascor epoch — for
+  the cascade correlation algorithm the per-epoch path IS the
+  forward+backward+update granularity at the api layer, and matches
+  the SLO target ("p95 < 5 s") which was authored against this
+  layer's emission rate.
+
+**I/O exclusion.** The measurement is wall-clock `perf_counter`
+deltas around the in-thread training step; there is no network /
+disk I/O inside the boundary (data is already loaded as tensors when
+fit() runs). The candidate-phase epoch loop is NOT instrumented in
+this PR — the `phase` label is currently only ever `"output"`. A
+follow-up may wire candidate-phase emission once the candidate-loop
+callback contract stabilises.
 
 ---
 
@@ -201,7 +241,70 @@ event, not just a re-bucket, and is out of scope for R5.1b.
 
 ---
 
-## 6. R5.1 ratification queue
+## 6. `juniper_cascor_training_step_duration_seconds`
+
+### 6.1 Bucket layout
+
+**Implemented in R5.4-pre (this addendum).** Defined as
+`_TRAINING_STEP_DURATION_BUCKETS` in `src/api/observability.py`:
+
+```python
+_TRAINING_STEP_DURATION_BUCKETS: tuple = (
+    0.05,    # 50 ms
+    0.1,     # 100 ms
+    0.5,     # 500 ms
+    1.0,     # 1 s
+    2.0,     # 2 s
+    5.0,     # 5 s — SLO 3.4 p95 target
+    10.0,    # 10 s
+    30.0,    # 30 s
+    float("inf"),
+)
+```
+
+9 buckets including `+inf`. Spans 3 orders of magnitude (50 ms → 30 s).
+
+### 6.2 Rationale per boundary
+
+Targets SLO 3.4 ("p95 train-step duration < 5 s"; see juniper-deploy
+`notes/SLO_CATALOG_2026-05-03.md` §3.4) and bracket every legitimate
+operational regime — fast steps on small models with hot caches up
+through slow steps on large networks or saturated GPUs.
+
+| Boundary | What it discriminates | SLO target served |
+|---|---|---|
+| **0.05 s (50 ms)** | Hot-cache step on a tiny network (~10 hidden units, small batch). Floor of the healthy regime. | Useful for "ideal" floor / capacity headroom queries. |
+| **0.1 s (100 ms)** | Typical sub-second step on a small-to-medium network. | Operational signal. |
+| **0.5 s (500 ms)** | Mid-sized network step under nominal load. | Operational signal. |
+| **1.0 s (1 s)** | Approaching the warning band — large network, modest batch. | **Candidate** for an "early warning" alert at p95. |
+| **2.0 s (2 s)** | Resolution boundary just below the SLO target. | Quantile precision around the SLO. |
+| **5.0 s (5 s)** | **SLO 3.4 p95 target.** The load-bearing boundary. | **Required** by SLO 3.4 PromQL. |
+| **10.0 s (10 s)** | "Slow step" — large network on a saturated GPU, OR I/O contention if the boundary leaks. | Alert threshold candidate. |
+| **30.0 s (30 s)** | Pathological — usually indicates GPU contention with another tenant or a swap-thrashing host. | Pageable threshold. |
+| **+inf** | Mandatory upper bound. | — |
+
+### 6.3 Trade-off
+
+9 buckets is denser than the WS sub-ms layout (8) but appropriate for
+the wider operational range (50 ms → 30 s spans 600x; the WS layout
+spans 1000x in 8 boundaries because the distribution is bimodal
+between sub-ms healthy and slow-path commands). The 5 s boundary is
+load-bearing and may NOT be removed without SLO-catalog renegotiation.
+
+### 6.4 R5.4-pre implementation note
+
+The HELP line carries the explicit SLO callout (`Buckets target SLO
+3.4 (p95 < 5s); see SLO_CATALOG §3.4 in juniper-deploy.`) and does
+NOT carry the `(R4.1 buckets tentative pending R5.1)` suffix — this
+metric is born SLO-aligned. The metric is emitted at the
+api-lifecycle layer (see §1.1 for the boundary discussion); the
+`phase` label is currently always `"output"` because only the
+output-phase epoch callback is instrumented. Candidate / input phase
+emission is on the R5.4 follow-up queue.
+
+---
+
+## 7. R5.1 ratification queue
 
 When R5.1 designs the cascor SLO catalog:
 
@@ -225,7 +328,7 @@ When R5.1 designs the cascor SLO catalog:
 
 ---
 
-## 7. Process notes
+## 8. Process notes
 
 - HELP-string markers: as of R5.1b, the two re-bucketed histograms
   (`cascor_ws_broadcast_send_duration_seconds` and

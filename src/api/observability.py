@@ -136,6 +136,28 @@ def configure_sentry(dsn: str | None, service_name: str, version: str) -> None:
 
 _training_metrics: dict | None = None
 
+# METRICS-MON R5.4-pre: bucket layout for the train-step duration
+# histogram. Targets SLO 3.4 ("p95 train-step duration < 5 s"; see
+# juniper-deploy notes/SLO_CATALOG_2026-05-03.md §3.4) and bracket every
+# legitimate operational regime: sub-100 ms (small models, hot cache),
+# ~1 s (typical mid-sized network output-phase epoch), 5 s (SLO p95
+# target), 30 s (saturated GPU / very large network). Boundaries are
+# logarithmic-ish to keep bucket count low (9 incl. +inf) while still
+# giving quantile-precision around the SLO target. Per-boundary
+# rationale in
+# ``notes/observability/HISTOGRAM_BUCKETS_RATIONALE_2026-05-02.md`` §6.
+_TRAINING_STEP_DURATION_BUCKETS: tuple = (
+    0.05,  # 50 ms
+    0.1,  # 100 ms
+    0.5,  # 500 ms
+    1.0,  # 1 s
+    2.0,  # 2 s
+    5.0,  # 5 s — SLO 3.4 p95 target
+    10.0,  # 10 s
+    30.0,  # 30 s
+    float("inf"),
+)
+
 
 def _ensure_training_metrics() -> dict:
     """Create training-related Prometheus metrics on first access."""
@@ -147,6 +169,20 @@ def _ensure_training_metrics() -> dict:
             "sessions_active": Gauge(
                 "juniper_cascor_training_sessions_active",
                 "Number of currently active training sessions",
+            ),
+            # METRICS-MON R5.4-pre: terminal-transition counter that
+            # binds SLO 3.3 (training-session success ratio). Closed-set
+            # ``status`` label values — ``success`` / ``failure`` /
+            # ``cancelled`` — per R1.1 cardinality discipline. Bumped
+            # exactly once per terminal FSM transition by the lifecycle
+            # manager. SLO PromQL:
+            #   sum(rate(juniper_cascor_training_sessions_completed_total{status="success"}[5m]))
+            #   / sum(rate(juniper_cascor_training_sessions_completed_total[5m]))
+            # See juniper-deploy notes/SLO_CATALOG_2026-05-03.md §3.3.
+            "sessions_completed_total": Counter(
+                "juniper_cascor_training_sessions_completed_total",
+                "Total terminal training-session transitions by outcome (closed-set status)",
+                ["status"],
             ),
             "epochs_total": Counter(
                 "juniper_cascor_training_epochs_total",
@@ -182,6 +218,22 @@ def _ensure_training_metrics() -> dict:
                 # ``notes/observability/HISTOGRAM_BUCKETS_RATIONALE_2026-05-02.md``.
                 "Inference latency in seconds (R4.1 buckets tentative pending R5.1)",
                 buckets=_LOGGER_PROMETHEUS_LATENCY_BUCKETS,
+            ),
+            # METRICS-MON R5.4-pre: train-step duration histogram born
+            # SLO-aligned (no "tentative pending R5.1" suffix). Buckets
+            # target SLO 3.4 (p95 < 5s); see SLO_CATALOG §3.4 in
+            # juniper-deploy and §6 of
+            # ``notes/observability/HISTOGRAM_BUCKETS_RATIONALE_2026-05-02.md``
+            # for per-boundary rationale and the train-step boundary
+            # choice. The metric measures wall-clock around one
+            # forward+backward+update cycle (an "epoch" at the
+            # api-lifecycle level — see §1 / §6 of the rationale doc for
+            # the boundary discussion).
+            "step_duration_seconds": Histogram(
+                "juniper_cascor_training_step_duration_seconds",
+                "Buckets target SLO 3.4 (p95 < 5s); see SLO_CATALOG §3.4 in juniper-deploy.",
+                ["phase"],
+                buckets=_TRAINING_STEP_DURATION_BUCKETS,
             ),
         }
     return _training_metrics
@@ -254,6 +306,58 @@ def record_inference(duration: float) -> None:
     m = _ensure_training_metrics()
     m["inference_requests_total"].inc()
     m["inference_duration_seconds"].observe(duration)
+
+
+# METRICS-MON R5.4-pre: closed-set status values for the
+# ``training_sessions_completed_total`` counter (R1.1 cardinality
+# discipline — every increment site MUST pass one of these strings).
+TRAINING_SESSION_STATUS_SUCCESS: str = "success"
+TRAINING_SESSION_STATUS_FAILURE: str = "failure"
+TRAINING_SESSION_STATUS_CANCELLED: str = "cancelled"
+_TRAINING_SESSION_STATUSES: frozenset[str] = frozenset(
+    {
+        TRAINING_SESSION_STATUS_SUCCESS,
+        TRAINING_SESSION_STATUS_FAILURE,
+        TRAINING_SESSION_STATUS_CANCELLED,
+    }
+)
+
+
+def inc_training_session_completed(status: str) -> None:
+    """Increment the terminal-transition counter for a training session.
+
+    METRICS-MON R5.4-pre: bumped exactly once per terminal FSM transition
+    by the lifecycle manager. Binds SLO 3.3 (training-session success
+    ratio) — see juniper-deploy notes/SLO_CATALOG_2026-05-03.md §3.3.
+
+    Args:
+        status: One of ``"success"``, ``"failure"``, or ``"cancelled"``
+            (closed set, R1.1 cardinality discipline).
+
+    Raises:
+        ValueError: If ``status`` is not in the closed set. Catches
+            instrumentation drift early rather than silently emitting
+            high-cardinality labels.
+    """
+    if status not in _TRAINING_SESSION_STATUSES:
+        raise ValueError(f"invalid training-session status {status!r}; expected one of {sorted(_TRAINING_SESSION_STATUSES)!r}")
+    _ensure_training_metrics()["sessions_completed_total"].labels(status=status).inc()
+
+
+def observe_training_step_duration(phase: str, duration: float) -> None:
+    """Record a single train-step duration observation.
+
+    METRICS-MON R5.4-pre: measures wall-clock around one
+    forward+backward+update cycle. Binds SLO 3.4 (p95 train-step
+    duration < 5 s) — see juniper-deploy notes/SLO_CATALOG_2026-05-03.md
+    §3.4 and §6 of the cascor histogram-buckets rationale doc.
+
+    Args:
+        phase: Training phase — "output", "candidate", or "input".
+        duration: Step duration in seconds (typically a
+            ``time.perf_counter`` delta).
+    """
+    _ensure_training_metrics()["step_duration_seconds"].labels(phase=phase).observe(duration)
 
 
 # ---------------------------------------------------------------------------
