@@ -895,7 +895,8 @@ def _reap_multiprocessing_children(timeout: float = 2.0) -> None:
                 pass
             try:
                 os.waitpid(pid, 0)
-            except (ChildProcessError, OSError) as exc:
+            except (OSError) as exc:
+                # Best-effort teardown: the process may already be reaped or
                 # Best-effort teardown: the process may already be reaped or
                 # not waitable in this context; ignore to avoid shutdown noise.
                 _ = exc
