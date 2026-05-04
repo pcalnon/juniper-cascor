@@ -1678,10 +1678,21 @@ class TrainingLifecycleManager:
                 set_training_loss(phase="output", loss_type="train", value=float(train_loss_list[last]))
                 if last < len(train_accuracy_list) and train_accuracy_list[last] is not None:
                     set_training_accuracy(phase="output", value=float(train_accuracy_list[last]))
-                if last < len(val_loss_list) and val_loss_list[last] is not None:
-                    set_training_loss(phase="output", loss_type="validation", value=float(val_loss_list[last]))
-                if last < len(val_accuracy_list) and val_accuracy_list[last] is not None:
-                    set_training_accuracy(phase="validation", value=float(val_accuracy_list[last]))
+                # P-23: validation history is typically shorter than the
+                # training history (validation may run every K epochs).
+                # Indexing the validation lists with the training-side
+                # ``last = current_len - 1`` skips the gauge update
+                # whenever the latest training epoch had no validation
+                # pass — the test
+                # ``test_drain_emits_loss_accuracy_hidden_units_and_counter``
+                # exercises that case. Gauges are "most recent
+                # observation", so emit the last validation entry
+                # whenever any exists. Single-conditional form keeps the
+                # function under flake8 C901's complexity cap.
+                if val_loss_list and val_loss_list[-1] is not None:
+                    set_training_loss(phase="output", loss_type="validation", value=float(val_loss_list[-1]))
+                if val_accuracy_list and val_accuracy_list[-1] is not None:
+                    set_training_accuracy(phase="validation", value=float(val_accuracy_list[-1]))
                 set_hidden_units(int(hidden_units_count))
             except Exception:
                 self.logger.debug("training gauge emission failed", exc_info=True)
