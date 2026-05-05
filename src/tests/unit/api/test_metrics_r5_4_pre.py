@@ -446,3 +446,110 @@ class TestLifecycleStepDurationCallback:
         # Across all buckets the observation count must total exactly 1.
         total_count = sum(bucket.get() for bucket in hist._buckets)
         assert total_count == 1, f"expected exactly 1 sample emitted across all buckets, got {total_count}"
+
+
+@pytest.mark.unit
+class TestPendingTasksGaugeAudit_4_2:
+    """Audit-doc §4.2 — ``juniper_cascor_pending_tasks`` bridge gauge.
+
+    The pre-existing :class:`api.workers.coordinator.WorkerCoordinator`
+    tracks in-flight tasks in an internal ``_pending_tasks`` dict that
+    was JSON-only (no Prometheus surface) until this audit follow-up.
+    The corresponding ``CascorPendingTasksSaturated`` alert
+    (juniper-deploy/prometheus/alert_rules.yml) carried an
+    ``absent_over_time(...) == 0`` inertness guard while the bridge
+    was missing.
+
+    These tests exercise the wire-up:
+      * ``pending_tasks_count()`` accessor on the coordinator.
+      * The optional ``coordinator=`` kwarg on
+        :class:`api.workers.metrics.WorkerRegistryCollector`.
+      * The ``juniper_cascor_pending_tasks`` gauge emission when wired.
+      * Backward-compat: missing-coordinator path stays silent
+        (preserves the alert's inertness guard for test fixtures).
+    """
+
+    def _samples_by_metric(self, collector):
+        out: dict[str, list] = {}
+        for fam in collector.collect():
+            out.setdefault(fam.name, []).extend(fam.samples)
+        return out
+
+    def _build_coordinator_with_n_pending(self, n: int):
+        """Inject ``n`` pending tasks into a freshly-constructed coordinator.
+
+        The coordinator's full ``submit_tasks`` flow requires a round-id
+        and websocket dispatch; for a unit test we inject directly into
+        ``_pending_tasks`` under the lock to avoid the integration
+        surface. The accessor doesn't care about task shape, only count.
+        """
+        from api.workers.coordinator import WorkerCoordinator
+        from api.workers.registry import WorkerRegistry
+
+        reg = WorkerRegistry(heartbeat_timeout=30.0)
+        coord = WorkerCoordinator(registry=reg)
+        with coord._lock:  # noqa: SLF001 — test poke under the same lock
+            for i in range(n):
+                coord._pending_tasks[f"task-{i}"] = object()  # type: ignore[assignment]
+        return coord, reg
+
+    def test_pending_tasks_count_returns_dict_size(self):
+        """Direct accessor: returns ``len(_pending_tasks)`` under the lock."""
+        coord, _reg = self._build_coordinator_with_n_pending(7)
+        assert coord.pending_tasks_count() == 7
+
+    def test_pending_tasks_count_zero_when_empty(self):
+        """No tasks pending → 0 (not None / not raises)."""
+        coord, _reg = self._build_coordinator_with_n_pending(0)
+        assert coord.pending_tasks_count() == 0
+
+    def test_collector_emits_pending_tasks_when_coordinator_wired(self):
+        """When ``coordinator=`` is set, the gauge appears in collect() output."""
+        from api.workers.metrics import WorkerRegistryCollector
+
+        coord, reg = self._build_coordinator_with_n_pending(3)
+        collector = WorkerRegistryCollector(reg, coordinator=coord)
+        samples = self._samples_by_metric(collector)
+
+        assert "juniper_cascor_pending_tasks" in samples, "pending_tasks gauge must appear when coordinator is wired"
+        gauge_samples = samples["juniper_cascor_pending_tasks"]
+        # Single unlabelled sample.
+        assert len(gauge_samples) == 1
+        assert gauge_samples[0].labels == {}
+        assert gauge_samples[0].value == 3.0
+
+    def test_collector_omits_pending_tasks_when_no_coordinator(self):
+        """Without ``coordinator=``, the gauge is silently skipped (back-compat)."""
+        from api.workers.metrics import WorkerRegistryCollector
+        from api.workers.registry import WorkerRegistry
+
+        reg = WorkerRegistry(heartbeat_timeout=30.0)
+        collector = WorkerRegistryCollector(reg)  # NO coordinator
+        samples = self._samples_by_metric(collector)
+
+        assert "juniper_cascor_pending_tasks" not in samples, "pending_tasks gauge must be omitted when no coordinator wired — " "preserves the alert rule's absent_over_time(...) == 0 inertness " "guard for test fixtures + lightweight harnesses"
+
+    def test_collector_skips_gauge_on_coordinator_exception(self):
+        """If the coordinator raises during count read, scrape continues."""
+        from api.workers.metrics import WorkerRegistryCollector
+        from api.workers.registry import WorkerRegistry
+
+        class _BrokenCoordinator:
+            def pending_tasks_count(self) -> int:
+                raise RuntimeError("simulated coordinator failure")
+
+        reg = WorkerRegistry(heartbeat_timeout=30.0)
+        collector = WorkerRegistryCollector(reg, coordinator=_BrokenCoordinator())
+        samples = self._samples_by_metric(collector)
+
+        # Other gauges still emit; the pending_tasks gauge is skipped
+        # (logged but not raised — matches the per-snapshot try/except
+        # pattern in the rest of collect()).
+        assert "juniper_cascor_pending_tasks" not in samples
+
+    def test_pending_tasks_count_drops_to_zero_after_cancel_round(self):
+        """Wire-up regression: cancel_round() clears _pending_tasks → gauge drops."""
+        coord, _reg = self._build_coordinator_with_n_pending(5)
+        assert coord.pending_tasks_count() == 5
+        coord.cancel_round()
+        assert coord.pending_tasks_count() == 0

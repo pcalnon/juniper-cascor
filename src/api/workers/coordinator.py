@@ -359,6 +359,20 @@ class WorkerCoordinator:
         with self._lock:
             return len(self._unassigned_tasks) > 0
 
+    def pending_tasks_count(self) -> int:
+        """Return the current number of pending (in-flight) tasks.
+
+        Snapshot read under :attr:`_lock`. Used by the
+        :class:`api.workers.metrics.WorkerRegistryCollector` to emit the
+        ``juniper_cascor_pending_tasks`` gauge on every Prometheus
+        scrape (audit-doc §4.2). Counts every task in
+        :attr:`_pending_tasks` regardless of round-id, status, or
+        assignment — the dict tracks all tasks the coordinator considers
+        in-flight (unassigned + dispatched-but-not-yet-completed).
+        """
+        with self._lock:
+            return len(self._pending_tasks)
+
     def cancel_round(self) -> None:
         """Cancel the current round and clear all pending tasks."""
         with self._lock:
