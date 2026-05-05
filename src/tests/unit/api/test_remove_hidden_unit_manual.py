@@ -193,9 +193,7 @@ class TestRemoveMiddle:
 
         new_unit_0_w = lc.network.hidden_units[0]["weights"].detach()
         # Was prev_unit_1_w with index 2 dropped → length 2.
-        np.testing.assert_array_almost_equal(
-            new_unit_0_w.numpy(), prev_unit_1_w[[0, 1]].numpy()
-        )
+        np.testing.assert_array_almost_equal(new_unit_0_w.numpy(), prev_unit_1_w[[0, 1]].numpy())
         new_unit_1_w = lc.network.hidden_units[1]["weights"].detach()
         # Was prev_unit_2_w with index 2 dropped → length 3.
         np.testing.assert_array_almost_equal(
