@@ -58,7 +58,12 @@ def _log_startup_task_exception(task: asyncio.Task) -> None:
         logger.error("Startup task %s failed: %s", task.get_name(), exc, exc_info=exc)
 
 
-def _register_worker_metrics_collector(app: FastAPI, settings: Settings, worker_registry: WorkerRegistry) -> None:
+def _register_worker_metrics_collector(
+    app: FastAPI,
+    settings: Settings,
+    worker_registry: WorkerRegistry,
+    worker_coordinator: WorkerCoordinator,
+) -> None:
     """Register the worker -> Prometheus bridge collector at startup.
 
     METRICS-MON R5.4-pre: closes the gap flagged by R5.1
@@ -71,6 +76,12 @@ def _register_worker_metrics_collector(app: FastAPI, settings: Settings, worker_
     Extracted from the lifespan handler purely for cyclomatic-complexity
     discipline (flake8 C901 budget) — the initialization itself is
     one-shot and unconditional given ``metrics_enabled``.
+
+    Audit-doc §4.2 (2026-05-04): the coordinator is now also wired so
+    the collector can emit ``juniper_cascor_pending_tasks`` on each
+    scrape. Closes the catalog §4.2 SLI gap and lifts the
+    ``CascorPendingTasksSaturated`` alert's ``absent_over_time(...) == 0``
+    inertness guard (juniper-deploy/prometheus/alert_rules.yml).
     """
     if not settings.metrics_enabled:
         return
@@ -79,7 +90,10 @@ def _register_worker_metrics_collector(app: FastAPI, settings: Settings, worker_
 
     from api.workers.metrics import WorkerRegistryCollector
 
-    worker_metrics_collector = WorkerRegistryCollector(worker_registry)
+    worker_metrics_collector = WorkerRegistryCollector(
+        worker_registry,
+        coordinator=worker_coordinator,
+    )
     REGISTRY.register(worker_metrics_collector)
     app.state.worker_metrics_collector = worker_metrics_collector
     logger.info("Worker -> Prometheus bridge collector registered")
@@ -188,7 +202,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     lifecycle.set_worker_coordinator(worker_coordinator)
     logger.info("Worker registry and coordinator initialized")
 
-    _register_worker_metrics_collector(app, settings, worker_registry)
+    _register_worker_metrics_collector(app, settings, worker_registry, worker_coordinator)
 
     # Worker Security (Phase 4) — conditionally initialize based on feature flags
     _init_worker_security(app, settings, worker_coordinator)

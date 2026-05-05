@@ -64,6 +64,7 @@ from typing import TYPE_CHECKING, Callable, Iterable
 if TYPE_CHECKING:
     from prometheus_client.core import Metric
 
+    from api.workers.coordinator import WorkerCoordinator
     from api.workers.registry import WorkerRegistry
 
 logger = logging.getLogger("juniper_cascor.api.workers.metrics")
@@ -77,6 +78,13 @@ _METRIC_GPU_UTILIZATION_PCT: str = "juniper_cascor_worker_gpu_utilization_pct"
 _METRIC_RECENT_DURATION_P50: str = "juniper_cascor_worker_recent_task_duration_seconds_p50"
 _METRIC_RECENT_DURATION_P95: str = "juniper_cascor_worker_recent_task_duration_seconds_p95"
 _METRIC_HEARTBEAT_AGE: str = "juniper_cascor_worker_heartbeat_age_seconds"
+
+# Audit-doc §4.2: bridge the coordinator's in-flight task count to the
+# Prometheus surface so the catalog §4.2 SLI ("queue-depth saturation")
+# can compute and the matching ``CascorPendingTasksSaturated`` alert
+# rule (juniper-deploy/prometheus/alert_rules.yml) lifts its
+# ``absent_over_time(...) == 0`` guard.
+_METRIC_PENDING_TASKS: str = "juniper_cascor_pending_tasks"
 
 
 class WorkerRegistryCollector:
@@ -92,6 +100,16 @@ class WorkerRegistryCollector:
         registry: The cascor :class:`WorkerRegistry` to snapshot. The
             collector keeps a reference and re-reads it on every
             scrape; it does NOT copy on construction.
+        coordinator: Optional :class:`WorkerCoordinator`. When provided
+            (the normal cascor app wiring), the collector additionally
+            emits ``juniper_cascor_pending_tasks`` on each scrape using
+            the coordinator's ``pending_tasks_count()`` accessor (audit-
+            doc §4.2 / juniper-deploy alert ``CascorPendingTasksSaturated``).
+            When ``None`` (test fixtures, lightweight harnesses), the
+            pending-tasks gauge is silently skipped — preserving
+            R1.4 single-registration discipline and avoiding a
+            misleading zero-emission for callers that intentionally
+            don't have a coordinator wired.
         time_source: Optional callable returning the current wall-clock
             time as a float (defaults to :func:`time.time`). Injected
             for deterministic unit tests.
@@ -101,9 +119,11 @@ class WorkerRegistryCollector:
         self,
         registry: "WorkerRegistry",
         *,
+        coordinator: "WorkerCoordinator | None" = None,
         time_source: Callable[[], float] = time.time,
     ) -> None:
         self._registry = registry
+        self._coordinator = coordinator
         self._now = time_source
 
     def collect(self) -> Iterable["Metric"]:  # noqa: D401 — prometheus_client interface
@@ -196,6 +216,23 @@ class WorkerRegistryCollector:
         yield gpu_utilization
         yield recent_p50
         yield recent_p95
+
+        # Audit-doc §4.2: pending-tasks gauge. Emit only when a
+        # coordinator was wired at construction; missing-coordinator is
+        # treated as "no data" (gauge omitted) rather than zero-emit so
+        # the alert rule's ``absent_over_time(...) == 0`` guard keeps
+        # working in test fixtures + lightweight harnesses that don't
+        # construct a coordinator.
+        if self._coordinator is not None:
+            pending_tasks = GaugeMetricFamily(
+                _METRIC_PENDING_TASKS,
+                "Number of in-flight tasks tracked by the worker coordinator (unassigned + dispatched-but-not-yet-completed).",
+            )
+            try:
+                pending_tasks.add_metric([], float(self._coordinator.pending_tasks_count()))
+                yield pending_tasks
+            except Exception:
+                logger.exception("WorkerRegistryCollector failed to read coordinator.pending_tasks_count() — skipping gauge emission")
 
 
 def _percentiles(samples: list[float]) -> tuple[float, float]:
