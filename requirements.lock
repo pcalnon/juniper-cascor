@@ -146,7 +146,7 @@ pyyaml==6.0.3
     #   uvicorn
 requests==2.33.1
     # via juniper-data-client
-sentry-sdk==2.58.0
+sentry-sdk==2.59.0
     # via juniper-cascor (pyproject.toml)
 setuptools==81.0.0
     # via torch
