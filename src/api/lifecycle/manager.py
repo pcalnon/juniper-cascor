@@ -20,6 +20,7 @@ import torch
 
 from api.lifecycle.monitor import TrainingMonitor, TrainingState
 from api.lifecycle.state_machine import Command, TrainingPhase, TrainingStateMachine
+from api.models.common import coerce_native_scalars as _common_coerce_native_scalars
 from api.observability import TRAINING_SESSION_STATUS_CANCELLED, TRAINING_SESSION_STATUS_FAILURE, TRAINING_SESSION_STATUS_SUCCESS, dec_training_sessions, inc_training_session_completed, inc_training_sessions, observe_training_step_duration, record_training_epoch, set_hidden_units, set_training_accuracy, set_training_loss
 from cascor_constants.constants_api import _PROJECT_API_DRAIN_THREAD_JOIN_TIMEOUT, _PROJECT_API_LIFECYCLE_DEFAULT_CANDIDATE_PATIENCE, _PROJECT_API_LIFECYCLE_DEFAULT_EPOCHS_MAX, _PROJECT_API_LIFECYCLE_DEFAULT_MAX_HIDDEN_UNITS, _PROJECT_API_LIFECYCLE_DEFAULT_MAX_ITERATIONS, _PROJECT_API_NETWORK_INPUT_SIZE_DEFAULT, _PROJECT_API_NETWORK_LEARNING_RATE_DEFAULT, _PROJECT_API_NETWORK_OUTPUT_SIZE_DEFAULT, _PROJECT_API_PROGRESS_QUEUE_GET_TIMEOUT, _PROJECT_API_PROGRESS_QUEUE_WAIT_TIMEOUT
 
@@ -61,41 +62,13 @@ def _write_activation_function_name(network: Any, value: str) -> None:
     network._init_activation_function()
 
 
-def _coerce_native_scalars(value: Any) -> Any:
-    """Coerce numpy scalar types to Python natives, recursively.
-
-    pydantic-core's JSON serializer rejects ``numpy.int64`` /
-    ``numpy.float64`` with ``PydanticSerializationError: Unable to
-    serialize unknown type: <class 'numpy.int64'>``. After
-    ``load_snapshot`` the network's scalar attributes come back from
-    HDF5 as numpy scalars (h5py's default for attribute reads), so any
-    response payload that includes those values would fail
-    serialization with an opaque 400 (the cascor ``value_error_handler``
-    strips the detail).
-
-    Walks dicts and lists/tuples; pass-throughs anything that doesn't
-    expose ``.item()``. Used at the API surface (e.g.
-    ``get_training_params``) so the rest of the code can keep working
-    with numpy values internally.
-    """
-    if isinstance(value, dict):
-        return {k: _coerce_native_scalars(v) for k, v in value.items()}
-    if isinstance(value, (list, tuple)):
-        coerced = [_coerce_native_scalars(v) for v in value]
-        return type(value)(coerced) if isinstance(value, tuple) else coerced
-    item = getattr(value, "item", None)
-    if callable(item):
-        # numpy scalars and 0-d numpy arrays expose ``.item()``
-        # returning a Python native. Plain str/int/float/bool/None
-        # don't have it, so they pass through unchanged.
-        try:
-            return item()
-        except (ValueError, TypeError):
-            # Defensive: any object whose ``.item()`` doesn't behave
-            # like a numpy scalar's (e.g. takes args, raises) falls
-            # through unchanged.
-            return value
-    return value
+# ``_coerce_native_scalars`` previously lived here as a private helper;
+# it's been promoted to ``api.models.common.coerce_native_scalars`` and
+# applied at the response envelope so every route is covered (not just
+# routes that thread through ``get_training_params``). The local alias
+# is kept so existing internal callers don't have to be edited in this
+# PR — they can move to the public name as a follow-up.
+_coerce_native_scalars = _common_coerce_native_scalars
 
 
 class _WeightHistoryRecorder:
