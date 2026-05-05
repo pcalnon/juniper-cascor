@@ -180,10 +180,12 @@ class TestResumeRequestsAndReplayedEmission:
         hist = obs._ensure_ws_metrics()["resume_replayed_events"]
         # ``prometheus_client.Histogram`` appends an implicit ``+inf``
         # upper edge to whatever ``buckets=`` tuple it was constructed
-        # with.  Assert the layout matches the constant + the implicit
-        # ``+inf`` sentinel so a future re-bucket has to update both
-        # the constant and this test in lockstep.
-        expected = tuple(_WS_RESUME_REPLAY_BUCKETS) + (float("inf"),)
+        # with and exposes the result as a ``list[float]`` in
+        # ``_upper_bounds``.  Assert the layout matches the constant
+        # (cast to floats) + the implicit ``+inf`` sentinel so a future
+        # re-bucket has to update both the constant and this test in
+        # lockstep.
+        expected = [float(b) for b in _WS_RESUME_REPLAY_BUCKETS] + [float("inf")]
         assert hist._upper_bounds == expected
 
     def test_handle_resume_emits_malformed_outcome(self):
