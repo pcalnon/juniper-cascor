@@ -146,39 +146,49 @@ class WorkerRegistryCollector:
         )
 
         now = self._now()
+        # OBS-WIRE-02 (E.2): take a frozen snapshot of every metric-
+        # relevant field under ``self._registry._lock`` via the
+        # registry's ``snapshot_for_metrics`` accessor. Reading
+        # ``recent_task_durations_seconds`` directly off the live
+        # registration object outside the lock raced with concurrent
+        # ``record_heartbeat`` calls; the snapshot returns immutable
+        # tuples so percentile computation cannot observe a partial
+        # write.
         try:
-            workers = self._registry.get_all_workers()
+            snapshots = self._registry.snapshot_for_metrics()
         except Exception:
             logger.exception("WorkerRegistryCollector failed to snapshot registry — emitting empty scrape")
-            workers = []
+            snapshots = []
 
-        for reg in workers:
+        for snap in snapshots:
             try:
-                worker_id = reg.worker_id
+                worker_id = snap["worker_id"]
 
                 # Always emit heartbeat age — every registration has a
                 # ``last_heartbeat`` populated by the constructor.
-                heartbeat_age.add_metric([worker_id], max(0.0, now - reg.last_heartbeat))
+                heartbeat_age.add_metric([worker_id], max(0.0, now - snap["last_heartbeat"]))
 
                 # Optional fields: skip on None / empty (do NOT zero-emit).
-                if reg.last_task_duration_seconds is not None:
-                    last_task_duration.add_metric([worker_id], float(reg.last_task_duration_seconds))
+                last_dur = snap["last_task_duration_seconds"]
+                if last_dur is not None:
+                    last_task_duration.add_metric([worker_id], float(last_dur))
 
-                if reg.gpu_utilization_pct is not None:
-                    gpu_utilization.add_metric([worker_id], float(reg.gpu_utilization_pct))
+                gpu_util = snap["gpu_utilization_pct"]
+                if gpu_util is not None:
+                    gpu_utilization.add_metric([worker_id], float(gpu_util))
 
                 # ``statistics.quantiles`` requires at least 2 samples;
                 # below that threshold any percentile is degenerate so
                 # we omit rather than emit a misleading value.
-                window = list(reg.recent_task_durations_seconds or [])
+                window = list(snap["recent_task_durations_seconds"] or ())
                 if len(window) >= 2:
                     p50, p95 = _percentiles(window)
                     recent_p50.add_metric([worker_id], p50)
                     recent_p95.add_metric([worker_id], p95)
             except Exception:
                 logger.exception(
-                    "WorkerRegistryCollector skipping malformed registration (worker_id=%r)",
-                    getattr(reg, "worker_id", "<unknown>"),
+                    "WorkerRegistryCollector skipping malformed snapshot (worker_id=%r)",
+                    snap.get("worker_id", "<unknown>") if isinstance(snap, dict) else "<unknown>",
                 )
 
         yield heartbeat_age

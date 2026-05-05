@@ -202,6 +202,13 @@ async def training_stream_handler(websocket: WebSocket) -> None:
 
         # Promote to active (now eligible for broadcasts)
         await ws_manager.promote_to_active(websocket)
+        # OBS-WIRE-02 (Q3): record this connection in the per-endpoint
+        # bookkeeping bucket and re-emit
+        # ``cascor_ws_connections_active{endpoint="training"}``. The
+        # matching ``unregister_endpoint_connection`` lives in the
+        # outer ``finally`` so the gauge always re-emits on disconnect,
+        # including exception paths.
+        ws_manager.register_endpoint_connection(websocket, "training")
 
         if not resumed:
             await _send_initial_state(websocket, ws_manager, lifecycle, initial_metrics_count)
@@ -231,6 +238,10 @@ async def training_stream_handler(websocket: WebSocket) -> None:
             except asyncio.CancelledError:
                 pass
     finally:
+        # OBS-WIRE-02 (Q3): re-emit the per-endpoint gauge before the
+        # outer disconnect (which only mutates the unlabeled active /
+        # pending sets).
+        ws_manager.unregister_endpoint_connection(websocket)
         await ws_manager.disconnect(websocket)
 
 
@@ -244,6 +255,19 @@ async def _handle_resume(
     last_seq = data.get("last_seq")
     client_server_id = data.get("server_instance_id")
 
+    # OBS-WIRE-02 (3.4, 3.5): the four return arms of this function
+    # populate ``cascor_ws_resume_requests_total{outcome=...}``; the
+    # success arm additionally observes
+    # ``cascor_ws_resume_replayed_events`` with the count replayed.
+    # All emissions are wrapped in defensive try/except per OBS-WIRE-01.
+    def _emit_outcome(outcome: str) -> None:
+        try:
+            from api.observability import ws_inc_resume_requests
+
+            ws_inc_resume_requests(outcome)
+        except Exception:
+            logger.debug("ws_inc_resume_requests emission failed for outcome=%s", outcome, exc_info=True)
+
     if last_seq is None or client_server_id is None:
         await ws_manager.send_personal_message(
             websocket,
@@ -254,6 +278,7 @@ async def _handle_resume(
             },
         )
         logger.debug("Resume failed: malformed resume frame (missing last_seq or server_instance_id)")
+        _emit_outcome("malformed_resume")
         return False
 
     # D-15: server restart detection via UUID mismatch
@@ -267,6 +292,7 @@ async def _handle_resume(
             },
         )
         logger.info("Resume failed: server_instance_id mismatch (server restarted)")
+        _emit_outcome("server_restarted")
         return False
 
     try:
@@ -281,6 +307,7 @@ async def _handle_resume(
             },
         )
         logger.info("Resume failed: %s", e)
+        _emit_outcome("out_of_range")
         return False
 
     # Resume succeeded
@@ -298,4 +325,11 @@ async def _handle_resume(
         await ws_manager.send_personal_message(websocket, event)
 
     logger.info("Resume succeeded: replayed %d events from seq %d", len(events), last_seq)
+    _emit_outcome("success")
+    try:
+        from api.observability import ws_observe_resume_replayed
+
+        ws_observe_resume_replayed(len(events))
+    except Exception:
+        logger.debug("ws_observe_resume_replayed emission failed", exc_info=True)
     return True

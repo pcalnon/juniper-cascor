@@ -331,10 +331,15 @@ class TestMonitoringHooks:
                     "correlation": 0.66,
                 }
             )
-            # Give the drain thread a chance to discover the queue and consume progress
+            # Give the drain thread a chance to discover the queue and consume progress.
+            # P-25: bumped 0.15s → 0.5s after macOS-3.12 leg observed an empty
+            # progress_events list at 0.15s. The drain thread polls every ~50 ms but
+            # macOS thread scheduling under spawn-mode multiprocessing setup adds
+            # variance; 0.5s gives ~10 poll cycles of headroom and still keeps the
+            # whole test under 1s on linux runners.
             import time
 
-            time.sleep(0.15)
+            time.sleep(0.5)
             return {"ok": True}
 
         CascadeCorrelationNetwork.grow_network = fake_grow

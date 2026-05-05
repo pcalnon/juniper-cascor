@@ -44,28 +44,23 @@ def tiny_data():
     return x, y
 
 
-# V38a/V38c (closed via Option E fallback per
-# juniper-ml/notes/V38_GROW_NETWORK_INVESTIGATION_PLAN_2026-05-02.md):
-# this class exercises the full fit() pipeline with ultraminimal
-# parameters. The 3 tests that assert exact hidden-unit counts
-# (`test_fit_executes_full_training_path`,
-# `test_fit_output_weights_grow_after_unit_addition`,
-# `test_fit_multiple_iterations`) are flaky on the unit-test gate due
-# to a multiprocessing-timing heisenbug in the candidate-training
-# path — diagnostic instrumentation that adds `print(flush=True)`
-# I/O-sync calls makes them pass deterministically. Per the planning
-# doc's Phase A.2 finding (RC-4: race in `_execute_candidate_training`
-# / TaskDistributor under sub-second per-candidate budgets), these
-# three migrate to the `integration` marker so the unit-test gate
-# stays green; the underlying race is tracked separately. The other
-# two tests in this class (`test_fit_with_validation_data`,
-# `test_fit_history_tracks_accuracy`) do not assert exact unit count
-# and pass deterministically — they keep the `unit` marker.
+# V38a/V38c — flipped back to ``@pytest.mark.unit`` after the P-1 RC-4
+# fix landed. The three formerly-flaky tests (test_fit_executes_full_training_path,
+# test_fit_output_weights_grow_after_unit_addition, test_fit_multiple_iterations)
+# tripped a multiprocessing-timing heisenbug in
+# ``_collect_worker_results`` whose qsize-based early-exit raced ahead
+# of in-flight ``multiprocessing.Queue`` feeder writes under sub-second
+# per-candidate budgets. The fix dropped the qsize-poll wait loop in
+# favour of letting ``_collect_training_results`` block on the queue's
+# own semaphore, which is correctly synchronized with worker put()s.
+# See ``notes/P1_RC4_INVESTIGATION_PLAN_2026-05-03.md`` (juniper-ml) §4
+# for the fix-shape rationale and §3.2 for the ring-buffer instrumentation
+# that's still in place to catch any residual race signature.
 @pytest.mark.timeout(30)
 class TestFastFit:
     """Tests that exercise the complete fit() training pipeline."""
 
-    @pytest.mark.integration
+    @pytest.mark.unit
     def test_fit_executes_full_training_path(self, ultrafast_network, tiny_data):
         """fit() must execute: output training → grow_network → candidate training → add_unit."""
         x, y = tiny_data
@@ -90,7 +85,7 @@ class TestFastFit:
         assert "value_loss" in history
         assert len(history["value_loss"]) > 0
 
-    @pytest.mark.integration
+    @pytest.mark.unit
     def test_fit_output_weights_grow_after_unit_addition(self, ultrafast_network, tiny_data):
         """Output weight matrix must grow by 1 row when a hidden unit is added."""
         x, y = tiny_data
@@ -109,7 +104,7 @@ class TestFastFit:
         assert "train_accuracy" in history
         assert len(history["train_accuracy"]) > 0
 
-    @pytest.mark.integration
+    @pytest.mark.unit
     def test_fit_multiple_iterations(self, tiny_data):
         """fit() with max_iterations=2 and early_stopping=False should add 2 hidden units."""
         config = CascadeCorrelationConfig.create_simple_config(

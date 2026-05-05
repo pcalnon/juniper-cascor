@@ -28,6 +28,7 @@ in juniper-ml.
 
 import logging
 import os
+import threading
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
@@ -40,7 +41,7 @@ from juniper_observability import get_prometheus_app, request_id_var, set_build_
 # resolves it through the historical import path.
 from juniper_observability.sentry import _strip_sensitive_headers  # noqa: F401 — re-exported for backwards compat
 
-from cascor_constants.constants_logging.constants_logging import _LOGGER_LOG_FILE_BACKUP_COUNT, _LOGGER_LOG_FILE_MAX_BYTES, _LOGGER_PROMETHEUS_LATENCY_BUCKETS, _LOGGER_SENTRY_TRACES_SAMPLE_RATE
+from cascor_constants.constants_logging.constants_logging import _LOGGER_LOG_FILE_BACKUP_COUNT, _LOGGER_LOG_FILE_MAX_BYTES, _LOGGER_SENTRY_TRACES_SAMPLE_RATE
 
 _SERVICE_NAME_DEFAULT: str = "juniper-cascor"
 _NAMESPACE_DEFAULT: str = "juniper_cascor"
@@ -134,6 +135,17 @@ def configure_sentry(dsn: str | None, service_name: str, version: str) -> None:
 # prometheus_client at import time (it is an optional dependency).
 # ---------------------------------------------------------------------------
 
+# OBS-WIRE-01 (E.1): module-level locks guarding the lazy-init dicts.
+# Prior to OBS-WIRE-01 the ``if _xxx_metrics is None:`` branches in
+# ``_ensure_training_metrics`` / ``_ensure_ws_metrics`` were not lock-
+# protected. Two concurrent first-callers could both enter the
+# ``is None`` branch; the second would hit ``Duplicated timeseries``,
+# ``_register_or_reuse`` would unregister the live collector, and the
+# first caller's reference would be orphaned. The locks make the
+# check-and-init pair atomic so exactly one caller registers.
+_training_metrics_lock = threading.Lock()
+_ws_metrics_lock = threading.Lock()
+
 _training_metrics: dict | None = None
 
 # METRICS-MON R5.4-pre: bucket layout for the train-step duration
@@ -194,9 +206,22 @@ def _register_or_reuse(cls, name: str, *args, **kwargs):
 
 
 def _ensure_training_metrics() -> dict:
-    """Create training-related Prometheus metrics on first access."""
+    """Create training-related Prometheus metrics on first access.
+
+    OBS-WIRE-01 (E.1): the check-and-init is wrapped in
+    ``_training_metrics_lock`` so concurrent first-callers cannot both
+    enter the ``is None`` branch and orphan a collector via the
+    ``_register_or_reuse`` recovery path.
+    """
     global _training_metrics
-    if _training_metrics is None:
+    # Fast path — the lock is only needed during the one-time init.
+    if _training_metrics is not None:
+        return _training_metrics
+    with _training_metrics_lock:
+        # Double-checked: another thread may have completed init while
+        # we waited on the lock.
+        if _training_metrics is not None:
+            return _training_metrics
         from prometheus_client import Counter, Gauge, Histogram
 
         _training_metrics = {
@@ -248,35 +273,30 @@ def _ensure_training_metrics() -> dict:
                 "juniper_cascor_candidate_correlation",
                 "Best candidate unit correlation with residual error",
             ),
-            "inference_requests_total": _register_or_reuse(
-                Counter,
-                "juniper_cascor_inference_requests_total",
-                "Total inference requests processed",
-            ),
-            "inference_duration_seconds": _register_or_reuse(
-                Histogram,
-                "juniper_cascor_inference_duration_seconds",
-                # METRICS-MON R4.1: bucket layout is **tentative pending
-                # R5.1**. Per-boundary SLO rationale in
-                # ``notes/observability/HISTOGRAM_BUCKETS_RATIONALE_2026-05-02.md``.
-                "Inference latency in seconds (R4.1 buckets tentative pending R5.1)",
-                buckets=_LOGGER_PROMETHEUS_LATENCY_BUCKETS,
-            ),
-            # METRICS-MON R5.4-pre: train-step duration histogram born
-            # SLO-aligned (no "tentative pending R5.1" suffix). Buckets
-            # target SLO 3.4 (p95 < 5s); see SLO_CATALOG §3.4 in
-            # juniper-deploy and §6 of
-            # ``notes/observability/HISTOGRAM_BUCKETS_RATIONALE_2026-05-02.md``
-            # for per-boundary rationale and the train-step boundary
-            # choice. The metric measures wall-clock around one
-            # forward+backward+update cycle (an "epoch" at the
-            # api-lifecycle level — see §1 / §6 of the rationale doc for
-            # the boundary discussion).
+            # OBS-WIRE-01 (A.5): the ``juniper_cascor_inference_*``
+            # family was removed because cascor exposes no inference
+            # endpoint — predictions are produced by downstream
+            # consumers (canopy / data services), not by this service.
+            # The previously-defined Counter and Histogram had zero
+            # production callers. See PR body for the wire-vs-remove
+            # rationale.
+            #
+            # OBS-WIRE-01 (A.6): the ``phase`` label was dropped from
+            # ``juniper_cascor_training_step_duration_seconds``. Pre-
+            # OBS-WIRE-01 the only emission site (lifecycle/manager.py
+            # output-phase callback) hard-coded ``phase="output"`` so
+            # the regex ``phase=~"input|candidate|output"`` in the SLI
+            # PromQL only ever matched a single value. The label
+            # carried no signal and was misleading; keeping it would
+            # have required adding analogous emission sites at the
+            # candidate / input phases (option (b) of the audit), which
+            # is not warranted while cascade-correlation has only an
+            # output-phase epoch loop. See PR body for the
+            # juniper-deploy SLI / alert follow-up.
             "step_duration_seconds": _register_or_reuse(
                 Histogram,
                 "juniper_cascor_training_step_duration_seconds",
                 "Buckets target SLO 3.4 (p95 < 5s); see SLO_CATALOG §3.4 in juniper-deploy.",
-                ["phase"],
                 buckets=_TRAINING_STEP_DURATION_BUCKETS,
             ),
         }
@@ -341,15 +361,11 @@ def dec_training_sessions() -> None:
     _ensure_training_metrics()["sessions_active"].dec()
 
 
-def record_inference(duration: float) -> None:
-    """Record an inference request.
-
-    Args:
-        duration: Inference duration in seconds.
-    """
-    m = _ensure_training_metrics()
-    m["inference_requests_total"].inc()
-    m["inference_duration_seconds"].observe(duration)
+# OBS-WIRE-01 (A.5): ``record_inference`` removed alongside the
+# ``juniper_cascor_inference_*`` metric family. Cascor has no inference
+# endpoint, so the helper was dead. Restore it (and the metric
+# definitions above) if a future PR adds ``POST /v1/predict`` or
+# similar.
 
 
 # METRICS-MON R5.4-pre: closed-set status values for the
@@ -388,7 +404,7 @@ def inc_training_session_completed(status: str) -> None:
     _ensure_training_metrics()["sessions_completed_total"].labels(status=status).inc()
 
 
-def observe_training_step_duration(phase: str, duration: float) -> None:
+def observe_training_step_duration(duration: float) -> None:
     """Record a single train-step duration observation.
 
     METRICS-MON R5.4-pre: measures wall-clock around one
@@ -396,12 +412,14 @@ def observe_training_step_duration(phase: str, duration: float) -> None:
     duration < 5 s) — see juniper-deploy notes/SLO_CATALOG_2026-05-03.md
     §3.4 and §6 of the cascor histogram-buckets rationale doc.
 
+    OBS-WIRE-01 (A.6): the ``phase`` label was dropped — see the
+    metric-definition comment in ``_ensure_training_metrics`` above.
+
     Args:
-        phase: Training phase — "output", "candidate", or "input".
         duration: Step duration in seconds (typically a
             ``time.perf_counter`` delta).
     """
-    _ensure_training_metrics()["step_duration_seconds"].labels(phase=phase).observe(duration)
+    _ensure_training_metrics()["step_duration_seconds"].observe(duration)
 
 
 # ---------------------------------------------------------------------------
@@ -411,6 +429,59 @@ def observe_training_step_duration(phase: str, duration: float) -> None:
 _ws_metrics: dict | None = None
 
 _WS_RESUME_REPLAY_BUCKETS = (0, 1, 5, 25, 100, 500, 1024)
+
+# OBS-WIRE-02 (Q3): closed-set endpoint values for the
+# ``cascor_ws_connections_active{endpoint}`` gauge. The cascor app
+# exposes exactly these three websocket endpoints (see
+# ``api.app:457-459`` — ``app.websocket("/ws/training")`` /
+# ``app.websocket("/ws/control")`` / ``app.websocket("/ws/v1/workers")``).
+# The label value is the trailing path segment chosen for human
+# readability ("training" / "control" / "workers"). Mirrors the R5.4-pre
+# ``_TRAINING_SESSION_STATUSES`` closed-set discipline.
+WS_ENDPOINT_TRAINING: str = "training"
+WS_ENDPOINT_CONTROL: str = "control"
+WS_ENDPOINT_WORKERS: str = "workers"
+_WS_ENDPOINTS: frozenset[str] = frozenset(
+    {
+        WS_ENDPOINT_TRAINING,
+        WS_ENDPOINT_CONTROL,
+        WS_ENDPOINT_WORKERS,
+    }
+)
+
+# OBS-WIRE-02 (3.4): closed-set outcome values for the
+# ``cascor_ws_resume_requests_total{outcome}`` counter. Mirrors the four
+# return arms of ``training_stream._handle_resume`` — see
+# state-analysis doc ``A9_AND_3_2_STATE_ANALYSIS_2026-05-03.md`` §3.4.
+WS_RESUME_OUTCOME_SUCCESS: str = "success"
+WS_RESUME_OUTCOME_OUT_OF_RANGE: str = "out_of_range"
+WS_RESUME_OUTCOME_MALFORMED: str = "malformed_resume"
+WS_RESUME_OUTCOME_SERVER_RESTARTED: str = "server_restarted"
+_WS_RESUME_OUTCOMES: frozenset[str] = frozenset(
+    {
+        WS_RESUME_OUTCOME_SUCCESS,
+        WS_RESUME_OUTCOME_OUT_OF_RANGE,
+        WS_RESUME_OUTCOME_MALFORMED,
+        WS_RESUME_OUTCOME_SERVER_RESTARTED,
+    }
+)
+
+# OBS-WIRE-02 (3.10): closed-set status values for the
+# ``cascor_ws_command_responses_total{command,status}`` counter. The
+# ``command`` label is open-set-by-convention (validated upstream via
+# ``_VALID_COMMANDS`` in ``control_stream``); the ``status`` label is
+# the closed three-way split used by the dispatch in
+# ``control_stream._handle_command_message``.
+WS_COMMAND_STATUS_SUCCESS: str = "success"
+WS_COMMAND_STATUS_ERROR: str = "error"
+WS_COMMAND_STATUS_RATE_LIMITED: str = "rate_limited"
+_WS_COMMAND_STATUSES: frozenset[str] = frozenset(
+    {
+        WS_COMMAND_STATUS_SUCCESS,
+        WS_COMMAND_STATUS_ERROR,
+        WS_COMMAND_STATUS_RATE_LIMITED,
+    }
+)
 
 # METRICS-MON R5.1b: sub-millisecond bucket layout for the two
 # WebSocket-side latency histograms whose actual distributions sit
@@ -434,9 +505,18 @@ _WS_SUB_MS_LATENCY_BUCKETS: tuple = (
 
 
 def _ensure_ws_metrics() -> dict:
-    """Create WebSocket-related Prometheus metrics on first access."""
+    """Create WebSocket-related Prometheus metrics on first access.
+
+    OBS-WIRE-01 (E.1): same lock-guarded check-and-init pattern used in
+    ``_ensure_training_metrics`` — see that function's docstring for
+    the rationale.
+    """
     global _ws_metrics
-    if _ws_metrics is None:
+    if _ws_metrics is not None:
+        return _ws_metrics
+    with _ws_metrics_lock:
+        if _ws_metrics is not None:
+            return _ws_metrics
         from prometheus_client import Counter, Gauge, Histogram
 
         _ws_metrics = {
@@ -512,11 +592,14 @@ def _ensure_ws_metrics() -> dict:
                 "cascor_ws_broadcast_from_thread_errors_total",
                 "Total errors from broadcast_from_thread coroutine execution",
             ),
-            "seq_gap_detected_total": _register_or_reuse(
-                Counter,
-                "cascor_ws_seq_gap_detected_total",
-                "Total sequence gaps detected (should be zero in healthy operation)",
-            ),
+            # OBS-WIRE-02 (Q1, option (a)): the formerly-defined
+            # ``cascor_ws_seq_gap_detected_total`` Counter has been
+            # removed. Sequence-gap detection is inherently client-side
+            # truth — the server emits monotonic seq numbers and has no
+            # read-back signal that would let it observe its own gaps.
+            # The replacement metric ``juniper_canopy_ws_seq_gap_detected_total``
+            # (with cross-service correlation labels) lives on the
+            # canopy side per the OBS-WIRE-02 sister PR.
             "connections_active": _register_or_reuse(
                 Gauge,
                 "cascor_ws_connections_active",
@@ -567,7 +650,16 @@ def ws_set_replay_buffer_capacity(value: int) -> None:
 
 
 def ws_inc_resume_requests(outcome: str) -> None:
-    """Increment the resume requests counter by outcome."""
+    """Increment the resume requests counter by outcome.
+
+    OBS-WIRE-02 (3.4): ``outcome`` is closed-set — one of
+    ``success`` / ``out_of_range`` / ``malformed_resume`` /
+    ``server_restarted``. Drift is rejected at the helper boundary so
+    instrumentation regressions surface as test failures rather than
+    high-cardinality silent drift (R1.1).
+    """
+    if outcome not in _WS_RESUME_OUTCOMES:
+        raise ValueError(f"invalid resume outcome {outcome!r}; expected one of {sorted(_WS_RESUME_OUTCOMES)!r}")
     _ensure_ws_metrics()["resume_requests_total"].labels(outcome=outcome).inc()
 
 
@@ -592,12 +684,30 @@ def ws_inc_broadcast_from_thread_errors() -> None:
 
 
 def ws_set_connections_active(endpoint: str, value: int) -> None:
-    """Set the active connections gauge for a given endpoint."""
+    """Set the active connections gauge for a given endpoint.
+
+    OBS-WIRE-02 (Q3, option (b)): ``endpoint`` is closed-set and must
+    match one of the three websocket routes registered in
+    :mod:`api.app` — ``training`` / ``control`` / ``workers``. The
+    value is wired by :class:`WebSocketManager` per-endpoint
+    bookkeeping. Drift is rejected at the helper boundary to keep
+    cardinality bounded (R1.1).
+    """
+    if endpoint not in _WS_ENDPOINTS:
+        raise ValueError(f"invalid ws endpoint {endpoint!r}; expected one of {sorted(_WS_ENDPOINTS)!r}")
     _ensure_ws_metrics()["connections_active"].labels(endpoint=endpoint).set(value)
 
 
 def ws_inc_command_responses(command: str, status: str) -> None:
-    """Increment the command responses counter."""
+    """Increment the command responses counter.
+
+    OBS-WIRE-02 (3.10): the ``status`` label is closed-set — one of
+    ``success`` / ``error`` / ``rate_limited``. ``command`` is
+    open-set-by-convention (validated upstream via ``_VALID_COMMANDS``
+    in ``control_stream``).
+    """
+    if status not in _WS_COMMAND_STATUSES:
+        raise ValueError(f"invalid command status {status!r}; expected one of {sorted(_WS_COMMAND_STATUSES)!r}")
     _ensure_ws_metrics()["command_responses_total"].labels(command=command, status=status).inc()
 
 

@@ -132,6 +132,11 @@ from cascor_constants.constants import (  # TODO: Commented out for F401 complia
 from cascor_plotter.cascor_plotter import CascadeCorrelationPlotter
 from log_config.log_config import LogConfig
 from log_config.logger.logger import Logger
+
+# P-1 / RC-4 ring buffer (gated by CASCOR_RC4_RING_BUFFER=1; no-op
+# otherwise). See src/parallelism/rc4_ring_buffer.py and
+# notes/P1_RC4_INVESTIGATION_PLAN_2026-05-03.md (juniper-ml).
+from parallelism import rc4_ring_buffer as _rc4
 from parallelism.task_distributor import TaskDistributor
 from utils.utils import display_progress
 
@@ -2002,6 +2007,7 @@ class CascadeCorrelationNetwork:
             try:
                 stale_result = result_queue.get_nowait()
                 drained_count += 1
+                _rc4.emit("parent.drain.stale", candidate_id=getattr(stale_result, "candidate_id", None), round_id=getattr(stale_result, "round_id", None))
                 self.logger.warning(f"CascadeCorrelationNetwork: _drain_stale_results: " f"Drained stale result from previous round: " f"candidate_id={getattr(stale_result, 'candidate_id', '?')}, " f"correlation={getattr(stale_result, 'correlation', '?')}")
             except _QueueEmpty:
                 break
@@ -2034,30 +2040,46 @@ class CascadeCorrelationNetwork:
         Returns:
             List of CandidateTrainingResult objects.
         """
-        max_wait_time = getattr(self, "task_queue_timeout", 60.0)
-        wait_start = time.time()
-        self.logger.debug(f"CascadeCorrelationNetwork: _collect_worker_results: Waiting for workers to complete {len(tasks)} tasks (max {max_wait_time}s).")
-        while time.time() - wait_start < max_wait_time:
-            alive_workers = [w for w in workers if w.is_alive()]
-            if not alive_workers:
-                self.logger.debug("CascadeCorrelationNetwork: _collect_worker_results: All workers have exited.")
-                break
-            # PARALLEL-FIX (RC-4): Check result queue size for early exit when all results are in,
-            # so we don't wait the full timeout when workers finish quickly
-            try:
-                if result_queue.qsize() >= len(tasks):
-                    self.logger.debug("CascadeCorrelationNetwork: _collect_worker_results: All results received, exiting wait loop early.")
-                    break
-            except NotImplementedError:
-                pass  # qsize() not available on all platforms
-            time.sleep(sleepytime)
-        elapsed = time.time() - wait_start
-        self.logger.debug(f"CascadeCorrelationNetwork: _collect_worker_results: Wait completed after {elapsed:.2f}s. Workers alive: {len([w for w in workers if w.is_alive()])}")
+        # P-1 RC-4 fix (H1 — dropped qsize early-exit):
+        #
+        # The previous implementation polled ``result_queue.qsize()`` every
+        # ``sleepytime`` seconds and broke out of a wait loop as soon as
+        # qsize reached ``len(tasks)`` — then called ``_collect_training_results``
+        # to actually drain the queue.
+        #
+        # ``multiprocessing.Queue.put()`` is non-atomic with respect to
+        # ``qsize()``: the worker's ``put()`` returns as soon as the
+        # pickled item lands in the queue's in-process ``_buffer`` deque,
+        # but ``qsize()`` only increments after a daemon "feeder" thread
+        # writes the buffered item to the underlying ``Pipe`` and bumps the
+        # queue's semaphore. Under sub-second per-candidate budgets, the
+        # parent's qsize-based early-exit could race ahead of in-flight
+        # feeder writes, leaving ``_collect_training_results`` to time out
+        # on workers whose results the buffer thread had not yet flushed
+        # — yielding silent ``best_candidate=None`` (V38 Phase A.2).
+        #
+        # The wait loop is also redundant: ``_collect_training_results``
+        # already blocks on ``result_queue.get(timeout=request_timeout)``
+        # which is correctly synchronized with the queue's semaphore and
+        # the feeder thread, and has its own ``queue_timeout`` deadline.
+        # Skipping the wait loop forces every result-collection path
+        # through that single, correctly-synchronized ``get()`` call.
+        #
+        # We still want to log if workers crash (so an empty result set
+        # has a clearer cause). That's now done as a one-shot snapshot at
+        # entry, without polling.
+        alive_at_entry = [w for w in workers if w.is_alive()]
+        if not alive_at_entry:
+            self.logger.warning("CascadeCorrelationNetwork: _collect_worker_results: No alive workers at collect entry — results will be whatever's already on the queue.")
+        _rc4.emit("parent.collect.entry", alive_workers=len(alive_at_entry), expected=len(tasks), round_id=round_id)
 
         # Collect results, NOTE: results is of type list of data class: [candidate_training_result, ...]
         self.logger.debug("CascadeCorrelationNetwork: _collect_worker_results: Collecting results from workers")
         results = self._collect_training_results(result_queue, len(tasks), round_id=round_id)
         self.logger.debug(f"CascadeCorrelationNetwork: _collect_worker_results: Collected {len(results)} results")
+        # ``sleepytime`` is now only consumed by callers that pass it
+        # explicitly. Suppress the unused-arg warning at call sites.
+        del sleepytime
         return results
 
     def _execute_parallel_training(
@@ -2109,10 +2131,13 @@ class CascadeCorrelationNetwork:
         self.logger.debug("CascadeCorrelationNetwork: _execute_parallel_training: Created task and result queues")
         try:
             # PARALLEL-FIX (RC-5): Drain stale results from previous rounds before submitting new tasks.
-            self._drain_stale_results(result_queue)
+            _rc4.emit("parent.before_drain", num_tasks=len(tasks), num_workers=num_workers)
+            drained = self._drain_stale_results(result_queue)
+            _rc4.emit("parent.after_drain", drained=drained)
 
             # OPT-5: Unlink SharedMemory blocks from previous rounds.
             self._cleanup_pending_shared_memory()
+            _rc4.emit("parent.after_shm_cleanup")
 
             # Add full tasks to the queue. With persistent workers (RC-4), shared_training_inputs
             # cannot be passed at worker startup since it changes each round (residual_error evolves).
@@ -2128,9 +2153,11 @@ class CascadeCorrelationNetwork:
             round_id = str(uuid.uuid4())
             self.logger.debug(f"CascadeCorrelationNetwork: _execute_parallel_training: Round ID: {round_id}")
             self.logger.debug("CascadeCorrelationNetwork: _execute_parallel_training: Adding tasks to persistent pool queue")
+            _rc4.emit("parent.before_task_put", round_id=round_id, num_tasks=len(tasks))
             for task in tasks:
                 tagged_task = (task[0], task[1], task[2], round_id)
                 task_queue.put(tagged_task)
+            _rc4.emit("parent.after_task_put", round_id=round_id, num_tasks=len(tasks))
             self.logger.debug(f"CascadeCorrelationNetwork: _execute_parallel_training: Added {len(tasks)} tasks to queue")
 
             # PARALLEL-FIX (RC-4): Workers are already running in the persistent pool.
@@ -2144,7 +2171,9 @@ class CascadeCorrelationNetwork:
             self.logger.debug(f"CascadeCorrelationNetwork: _execute_parallel_training: Using {len(workers)} persistent workers")
 
             # Wait for workers to process all tasks and collect results
+            _rc4.emit("parent.before_collect", round_id=round_id)
             results = self._collect_worker_results(workers, result_queue, tasks, sleepytime, round_id)
+            _rc4.emit("parent.after_collect", round_id=round_id, num_results=len(results))
 
             # PARALLEL-FIX (RC-4): Do NOT stop workers — they persist for the next training round.
             # Original per-round worker shutdown:
@@ -2268,31 +2297,41 @@ class CascadeCorrelationNetwork:
         self.logger.debug(f"CascadeCorrelationNetwork: _collect_training_results: Timeout set to {queue_timeout} seconds")
         self.logger.debug(f"CascadeCorrelationNetwork: _collect_training_results: Result Queue: Length: {result_queue.qsize()}, Contents: {list(result_queue.queue) if hasattr(result_queue, 'queue') else 'N/A'}")
         deadline = time.time() + queue_timeout
+        get_attempts = 0
+        empty_count = 0
         while collected_results < num_tasks and time.time() < deadline:
             try:
+                get_attempts += 1
                 result = result_queue.get(timeout=request_timeout)
                 self.logger.debug(f"CascadeCorrelationNetwork: _collect_training_results: Retrieved result: {result}")
                 if not self._validate_training_result(result):
                     self.logger.error("CascadeCorrelationNetwork: _collect_training_results: Discarding invalid training result")
+                    _rc4.emit("parent.collect.invalid_result")
                     continue
                 # PARALLEL-FIX (RC-5): Discard results from stale training rounds.
                 result_round = getattr(result, "round_id", None)
                 if round_id is not None and result_round is not None and result_round != round_id:
                     stale_discarded += 1
                     self.logger.warning(f"CascadeCorrelationNetwork: _collect_training_results: " f"Discarding stale result from round {result_round} " f"(current round: {round_id}, candidate_id={result.candidate_id})")
+                    _rc4.emit("parent.collect.stale", expected=round_id, got=result_round, candidate_id=getattr(result, "candidate_id", None))
                     continue
                 results.append(result)
                 collected_results += 1
+                _rc4.emit("parent.collect.got", candidate_id=getattr(result, "candidate_id", None), n=collected_results, expected=num_tasks)
                 self.logger.verbose(f"CascadeCorrelationNetwork: _collect_training_results: Collected {collected_results}/{num_tasks}")
             except Empty as empty_e:
+                empty_count += 1
+                _rc4.emit("parent.collect.empty", attempt=get_attempts, empty_count=empty_count, deadline_remaining=max(0.0, deadline - time.time()))
                 self.logger.warning(f"CascadeCorrelationNetwork: _collect_training_results: Result queue empty, continuing: {empty_e}")
                 continue
             except Exception as e:
                 self.logger.error(f"CascadeCorrelationNetwork: _collect_training_results: Error collecting result: {e}")
+                _rc4.emit("parent.collect.exception", error=type(e).__name__)
                 import traceback
 
                 self.logger.error(traceback.format_exc())
                 break
+        _rc4.emit("parent.collect.done", collected=collected_results, expected=num_tasks, empty_count=empty_count, stale_discarded=stale_discarded, get_attempts=get_attempts)
         if stale_discarded:
             self.logger.warning(f"CascadeCorrelationNetwork: _collect_training_results: " f"Discarded {stale_discarded} stale result(s) from previous training rounds")
         self.logger.debug(f"CascadeCorrelationNetwork: _collect_training_results: Collected {collected_results} results")
@@ -3104,6 +3143,12 @@ class CascadeCorrelationNetwork:
         self._persistent_pool_size = num_workers
         _worker_thread_count = getattr(self.config, "worker_thread_count", 1)
 
+        # P-1 RC-4: lazily create the cross-process instrumentation queue
+        # so workers can post events back to the parent. None when the
+        # ring buffer is disabled — _worker_loop's set_worker_queue is
+        # a no-op in that case.
+        instrumentation_queue = _rc4.init_parent_queue(self._mp_ctx)
+
         self.logger.debug(f"CascadeCorrelationNetwork: _ensure_worker_pool: Creating persistent pool of {num_workers} workers")
         for i in range(num_workers):
             worker = self._mp_ctx.Process(
@@ -3116,6 +3161,7 @@ class CascadeCorrelationNetwork:
                     _worker_thread_count,
                     shared_training_inputs,
                     self._persistent_progress_queue,
+                    instrumentation_queue,
                 ),
                 daemon=True,
                 name=f"CandidateWorker-{i}",
@@ -3239,6 +3285,10 @@ class CascadeCorrelationNetwork:
         # with sequential training path or legacy callers.
         shared_training_inputs: tuple = None,
         progress_queue: Queue = None,
+        # P-1 RC-4: optional cross-process instrumentation queue. None when the
+        # ring buffer is disabled (default); set by ``_ensure_worker_pool``
+        # via ``rc4_ring_buffer.init_parent_queue`` when CASCOR_RC4_RING_BUFFER=1.
+        instrumentation_queue=None,
     ):
         """
         Description:
@@ -3282,6 +3332,15 @@ class CascadeCorrelationNetwork:
         logger.debug(f"CascadeCorrelationNetwork: _worker_loop: PyTorch thread count pinned to {_thread_count_str} for worker process isolation")
 
         logger.debug("CascadeCorrelationNetwork: _worker_loop: Worker process started")
+        # P-1 RC-4: hook the worker into the parent's instrumentation queue so
+        # ``rc4_ring_buffer.emit`` calls inside this process post events
+        # cross-process instead of into a worker-local deque the parent will
+        # never see. No-op when ``CASCOR_RC4_RING_BUFFER`` is unset.
+        if instrumentation_queue is not None:
+            from parallelism import rc4_ring_buffer as _rc4_worker
+
+            _rc4_worker.set_worker_queue(instrumentation_queue)
+            _rc4_worker.emit("worker.started")
         if shared_training_inputs is not None:
             logger.debug("CascadeCorrelationNetwork: _worker_loop: Received shared training inputs (RC-3 optimization active)")
         while True:
@@ -3306,7 +3365,15 @@ class CascadeCorrelationNetwork:
                 logger.debug("CascadeCorrelationNetwork: _worker_loop: Received sentinel, stopping worker")
                 break
             try:
+                if instrumentation_queue is not None:
+                    from parallelism import rc4_ring_buffer as _rc4_worker
+
+                    _rc4_worker.emit("worker.task_received", candidate_id=task[0] if task else None, round_id=task[3] if task and len(task) > 3 else None)
                 CascadeCorrelationNetwork._process_worker_task(task, shared_training_inputs, progress_queue, result_queue, parallel, logger)
+                if instrumentation_queue is not None:
+                    from parallelism import rc4_ring_buffer as _rc4_worker
+
+                    _rc4_worker.emit("worker.task_done", candidate_id=task[0] if task else None)
             except Exception as e:
                 logger.error(f"CascadeCorrelationNetwork: _worker_loop: Worker task error: {e}")
                 import traceback
@@ -3342,15 +3409,27 @@ class CascadeCorrelationNetwork:
 
         # Process the task
         logger.debug(f"CascadeCorrelationNetwork: _worker_loop: Processing task: {full_task[0] if full_task else 'None'}")
+        # P-1 RC-4: bracket the actual training call so the dump shows
+        # how long training took vs. how long the put took. The put is
+        # the suspected race-window owner.
+        from parallelism import rc4_ring_buffer as _rc4_worker_inner
+
+        cid = full_task[0] if full_task else None
+        rid = task[3] if task and len(task) > 3 else None
+        _rc4_worker_inner.emit("worker.train_start", candidate_id=cid)
         result = CascadeCorrelationNetwork.train_candidate_worker(task_data_input=full_task, parallel=parallel, progress_callback=_progress_cb)
+        _rc4_worker_inner.emit("worker.train_done", candidate_id=cid, correlation=getattr(result, "correlation", None), success=getattr(result, "success", None))
         logger.debug("CascadeCorrelationNetwork: _worker_loop: Task processed, putting result in queue")
 
         from queue import Full
 
         try:
+            _rc4_worker_inner.emit("worker.put_start", candidate_id=cid, round_id=rid)
             result_queue.put(result, timeout=30)
+            _rc4_worker_inner.emit("worker.put_done", candidate_id=cid)
             logger.debug("CascadeCorrelationNetwork: _worker_loop: Task completed successfully")
         except Full as fe:
+            _rc4_worker_inner.emit("worker.put_full", candidate_id=cid)
             logger.error(f"CascadeCorrelationNetwork: _worker_loop: Result queue full, dropping result: {fe}")
             raise TrainingError from fe
 
@@ -3428,6 +3507,20 @@ class CascadeCorrelationNetwork:
 
     #################################################################################################################################################################################################
     # Public Method to add a new hidden unit based on the correlation
+    def _emit_candidate_correlation(self, value) -> None:
+        """OBS-WIRE-01 (A.2): emit the best-candidate-correlation gauge.
+
+        Defensive: never let a metrics-emit failure break the training
+        loop. Kept as a method (not a free function) so unit tests can
+        ``patch.object`` it on a per-instance basis.
+        """
+        try:
+            from api.observability import set_candidate_correlation as _set_candidate_correlation
+
+            _set_candidate_correlation(float(value))
+        except Exception:
+            self.logger.debug("set_candidate_correlation emission failed", exc_info=True)
+
     def _install_hidden_unit(
         self,
         weights: torch.Tensor,
@@ -3748,6 +3841,12 @@ class CascadeCorrelationNetwork:
             residual_magnitude = residual_error.abs().mean().item()
             adaptive_threshold = max(1e-6, min(self.correlation_threshold, residual_magnitude * 0.01))
             best_correlation = training_results.best_candidate.get_correlation()
+            # OBS-WIRE-01 (A.2): emit the best-candidate correlation
+            # gauge. Sampled once per grow-iteration after the
+            # candidate pool finishes training. Extracted into a tiny
+            # helper to keep the grow_network branch count under the
+            # flake8 C901 ceiling.
+            self._emit_candidate_correlation(best_correlation)
             if best_correlation < adaptive_threshold:
                 self.logger.info(f"CascadeCorrelationNetwork: grow_network: No candidate met adaptive correlation threshold: {adaptive_threshold:.6f} (static: {self.correlation_threshold}, residual_mag: {residual_magnitude:.6f}), Best Correlation Achieved: {best_correlation:.6f}")
                 break

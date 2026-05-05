@@ -265,18 +265,20 @@ python -m pytest integration/ \
 
 | Context              | Timeout  | Configuration Location            |
 |----------------------|----------|-----------------------------------|
-| Standard tests       | 60s      | `pytest.ini` (`timeout = 60`)     |
+| Standard tests       | 60s      | `pyproject.toml` (`timeout = 60`) |
 | CI unit tests        | 60s      | `.github/workflows/ci.yml`        |
 | CI integration tests | 120s     | `.github/workflows/ci.yml`        |
 | Slow tests           | 300s     | Per-test `@pytest.mark.timeout()` |
 
 ### Timeout Method
 
-The project uses `signal` timeout method (configured in `pytest.ini`):
+The project uses the `thread` timeout method (configured in
+`pyproject.toml`). Thread-based timeout avoids SIGALRM interference
+with forkserver IPC in multiprocessing-heavy performance tests:
 
-```ini
+```toml
 timeout = 60
-timeout_method = signal
+timeout_method = "thread"
 ```
 
 ### Overriding Timeouts
@@ -384,5 +386,5 @@ python -m coverage report --fail-under=50    # Check threshold
 
 - [Testing Quick Start](QUICK_START.md) - Getting started with testing
 - [AGENTS.md](../../AGENTS.md) - Project conventions and commands
-- [pytest.ini](../../src/tests/pytest.ini) - pytest configuration
+- [pyproject.toml](../../pyproject.toml) - pytest configuration (`[tool.pytest.ini_options]`)
 - [CI Workflow](../../.github/workflows/ci.yml) - GitHub Actions configuration
