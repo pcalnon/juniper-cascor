@@ -174,3 +174,48 @@ async def add_hidden_unit(request: Request, body: AddHiddenUnitRequest) -> dict:
         raise HTTPException(status_code=400, detail=detail)
     logger.error("add_hidden_unit_manual: unmapped status %r", status)
     raise HTTPException(status_code=500, detail="add_hidden_unit_manual returned an unexpected status")
+
+
+@router.delete("/hidden-units/{idx}")
+async def delete_hidden_unit(request: Request, idx: int) -> dict:
+    """CAN-015h-3: remove the hidden unit at ``idx`` with cascade rebuild.
+
+    FSM-gated to ``Investigating``. Subsequent units shift down by
+    one, and each has its weight at the deleted unit's input
+    position dropped (so the cascade-input width matches the new
+    cascade position). The output layer's corresponding column is
+    removed; the optimizer is dropped.
+
+    Status codes:
+
+    - 200 — unit removed; response body carries
+      ``removed_index``, ``num_hidden_units``, ``operation``,
+      ``fsm_state``.
+    - 404 — no network created OR ``idx`` out of range.
+    - 409 — FSM not Investigating.
+
+    Plan: ``notes/PHASE_6E_DEFERRED_CAN-015GH_DESIGN.md`` §"Endpoint
+    design / 3. DELETE /v1/network/hidden-units/{idx}" (juniper-ml).
+    """
+    lifecycle = _get_lifecycle(request)
+    result = lifecycle.remove_hidden_unit_manual(idx=idx)
+    status = result.get("status")
+    detail = result.get("detail", "remove failed")
+
+    if status == lifecycle._REMOVE_OK:
+        info = lifecycle.get_network_info()
+        info.update(
+            {
+                "operation": "remove_hidden_unit",
+                "fsm_state": lifecycle.state_machine.status.name,
+                "removed_index": result.get("removed_index"),
+                "num_hidden_units": result.get("num_hidden_units"),
+            }
+        )
+        return success_response(info)
+    if status in (lifecycle._REMOVE_NO_NETWORK, lifecycle._REMOVE_OUT_OF_RANGE):
+        raise HTTPException(status_code=404, detail=detail)
+    if status == lifecycle._REMOVE_FSM_REJECTED:
+        raise HTTPException(status_code=409, detail=detail)
+    logger.error("remove_hidden_unit_manual: unmapped status %r", status)
+    raise HTTPException(status_code=500, detail="remove_hidden_unit_manual returned an unexpected status")

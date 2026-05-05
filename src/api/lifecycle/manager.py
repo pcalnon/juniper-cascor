@@ -2602,6 +2602,90 @@ class TrainingLifecycleManager:
         }
 
     # ------------------------------------------------------------------
+    # CAN-015h-3: DELETE /v1/network/hidden-units/{idx} — manual remove
+    # ------------------------------------------------------------------
+
+    _REMOVE_OK: str = "ok"
+    _REMOVE_FSM_REJECTED: str = "fsm_rejected"
+    _REMOVE_NO_NETWORK: str = "no_network"
+    _REMOVE_OUT_OF_RANGE: str = "out_of_range"
+
+    def remove_hidden_unit_manual(self, idx: int) -> Dict[str, Any]:
+        """CAN-015h-3: remove the hidden unit at ``idx``.
+
+        Cascade-rebuild semantics:
+
+        - Unit ``idx`` is removed.
+        - Each subsequent unit ``j > idx`` had a weight at position
+          ``input_size + idx`` that referenced the removed unit's
+          output. That single weight is dropped from each subsequent
+          unit's weight vector. After the surgery, what was unit
+          ``j`` is now unit ``j - 1`` with weight vector length
+          ``input_size + (j - 1)`` — consistent with its new
+          cascade position.
+        - The corresponding column ``input_size + idx`` of
+          ``output_weights`` is removed; ``output_weights`` reshapes
+          to ``[in + num_units - 1, out]``.
+        - The optimizer is dropped (Adam state tensors no longer
+          match the new parameter shapes).
+
+        Returns sentinel-status dict. ``idx`` out of range returns
+        404 (not 409) per the design plan.
+        """
+        if self.network is None:
+            return {"status": self._REMOVE_NO_NETWORK, "detail": "No network created"}
+        if not self.state_machine.is_investigating():
+            return {
+                "status": self._REMOVE_FSM_REJECTED,
+                "detail": f"remove_hidden_unit_manual requires INVESTIGATING state (currently {self.state_machine.status.name})",
+            }
+        n = len(self.network.hidden_units)
+        if not isinstance(idx, int) or idx < 0 or idx >= n:
+            return {
+                "status": self._REMOVE_OUT_OF_RANGE,
+                "detail": f"hidden_unit_index={idx} out of range (have {n} units)",
+            }
+
+        input_size = self.network.input_size
+        col_to_drop = input_size + idx
+
+        # 1. For each subsequent unit, drop its weight at index col_to_drop.
+        #    Unit j > idx has weight vector length input_size + j; after
+        #    surgery the new length is input_size + (j - 1) which matches
+        #    its new cascade position post-shift.
+        for j in range(idx + 1, n):
+            unit = self.network.hidden_units[j]
+            old_weights = unit["weights"].detach()
+            keep_mask = torch.ones(old_weights.shape[0], dtype=torch.bool)
+            keep_mask[col_to_drop] = False
+            unit["weights"] = old_weights[keep_mask].clone().detach()
+
+        # 2. Remove the unit from the hidden_units list.
+        del self.network.hidden_units[idx]
+
+        # 3. Surgically remove the corresponding column from output_weights.
+        old_output = self.network.output_weights.detach()
+        keep_rows = torch.ones(old_output.shape[0], dtype=torch.bool)
+        keep_rows[col_to_drop] = False
+        new_output = old_output[keep_rows].clone().detach()
+        was_grad = bool(getattr(self.network.output_weights, "requires_grad", False))
+        self.network.output_weights = new_output
+        if was_grad:
+            self.network.output_weights.requires_grad_(True)
+        # output_bias is independent of unit count — leave untouched.
+
+        # 4. Drop the optimizer (Adam state shapes invalid after column drop).
+        if hasattr(self.network, "output_optimizer"):
+            self.network.output_optimizer = None
+
+        return {
+            "status": self._REMOVE_OK,
+            "detail": "ok",
+            "removed_index": idx,
+            "num_hidden_units": len(self.network.hidden_units),
+        }
+
+    # ------------------------------------------------------------------
     # Decision boundary
     # ------------------------------------------------------------------
 
