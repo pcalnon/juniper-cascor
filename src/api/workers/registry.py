@@ -13,6 +13,28 @@ from typing import Any
 logger = logging.getLogger("juniper_cascor.api.workers.registry")
 
 
+# Audit-doc juniper-ml#195 finding E.6: cap the registry size so a
+# misbehaving worker pool (or a malicious / runaway client storm)
+# cannot grow ``_workers`` unbounded. 250 is a deliberate ceiling
+# chosen as the user's "for now" expectation — well above any realistic
+# Juniper deployment fleet size today and below a memory-meaningful
+# threshold for the per-registration deque + heartbeat state. Revisit
+# alongside any large-fleet sizing exercise.
+_DEFAULT_MAX_WORKERS: int = 250
+
+
+class WorkerRegistryFullError(RuntimeError):
+    """Raised by :meth:`WorkerRegistry.register` when the registry is at capacity.
+
+    Distinct from generic :class:`RuntimeError` so callers (chiefly the
+    websocket worker handshake handler) can catch this specific case
+    and emit a structured "registry full" close frame to the client
+    rather than an opaque server-error response. Re-registrations of
+    an existing ``worker_id`` do NOT raise — they replace the existing
+    entry and the dict size stays unchanged.
+    """
+
+
 @dataclass
 class WorkerRegistration:
     """Tracks a single connected worker.
@@ -132,17 +154,34 @@ class WorkerRegistry:
     and querying available workers. All public methods are thread-safe.
     """
 
-    def __init__(self, heartbeat_timeout: float = 30.0) -> None:
+    def __init__(
+        self,
+        heartbeat_timeout: float = 30.0,
+        *,
+        max_workers: int = _DEFAULT_MAX_WORKERS,
+    ) -> None:
+        if max_workers <= 0:
+            raise ValueError(f"max_workers must be positive, got {max_workers!r}")
         self._workers: dict[str, WorkerRegistration] = {}
         self._lock = Lock()
         self._heartbeat_timeout = heartbeat_timeout
-        logger.info("WorkerRegistry initialized (heartbeat_timeout=%.1fs)", heartbeat_timeout)
+        self._max_workers = max_workers
+        logger.info(
+            "WorkerRegistry initialized (heartbeat_timeout=%.1fs, max_workers=%d)",
+            heartbeat_timeout,
+            max_workers,
+        )
 
     @property
     def worker_count(self) -> int:
         """Number of currently registered workers."""
         with self._lock:
             return len(self._workers)
+
+    @property
+    def max_workers(self) -> int:
+        """Configured registry capacity (audit-doc E.6)."""
+        return self._max_workers
 
     @property
     def available_worker_count(self) -> int:
@@ -171,10 +210,28 @@ class WorkerRegistry:
 
         Returns:
             The new WorkerRegistration.
+
+        Raises:
+            WorkerRegistryFullError: If the registry is at capacity
+                (:attr:`max_workers`) AND the registration is for a NEW
+                ``worker_id``. Re-registrations of an existing ID do
+                NOT raise (the dict size is unchanged) — they replace
+                the existing entry and emit the usual warning.
         """
         with self._lock:
-            if worker_id in self._workers:
+            is_replacement = worker_id in self._workers
+            if is_replacement:
                 logger.warning("Worker %s re-registering (replacing existing connection)", worker_id)
+            elif len(self._workers) >= self._max_workers:
+                # Audit-doc E.6: refuse new registrations once the cap
+                # is reached. Re-registrations bypass this check above.
+                logger.warning(
+                    "WorkerRegistry rejected new registration: at cap %d (client_name=%s, proposed_id=%s)",
+                    self._max_workers,
+                    client_name or "<none>",
+                    worker_id,
+                )
+                raise WorkerRegistryFullError(f"WorkerRegistry at capacity ({self._max_workers}); " f"reject new worker {worker_id!r}")
             reg = WorkerRegistration(worker_id=worker_id, capabilities=capabilities, client_name=client_name)
             self._workers[worker_id] = reg
             logger.info(
