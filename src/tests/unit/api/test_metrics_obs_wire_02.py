@@ -167,6 +167,25 @@ class TestResumeRequestsAndReplayedEmission:
         assert after_count - before_count == 1
         assert hist._sum.get() == pytest.approx(7)
 
+    def test_replayed_events_histogram_buckets_pinned(self):
+        # Audit-doc D.5: pin ``cascor_ws_resume_replayed_events``
+        # ``_upper_bounds`` against the ``_WS_RESUME_REPLAY_BUCKETS``
+        # constant so future bucket-layout changes produce a
+        # deterministic test failure rather than silently re-bucketing
+        # the operational regimes documented in the rationale doc §7.
+        # Mirrors the cascor R5.4-pre + R5.1b bucket-pin assertion
+        # pattern (see ``test_metrics_r5_4_pre.py``).
+        from api.observability import _WS_RESUME_REPLAY_BUCKETS
+
+        hist = obs._ensure_ws_metrics()["resume_replayed_events"]
+        # ``prometheus_client.Histogram`` appends an implicit ``+inf``
+        # upper edge to whatever ``buckets=`` tuple it was constructed
+        # with.  Assert the layout matches the constant + the implicit
+        # ``+inf`` sentinel so a future re-bucket has to update both
+        # the constant and this test in lockstep.
+        expected = tuple(_WS_RESUME_REPLAY_BUCKETS) + (float("inf"),)
+        assert hist._upper_bounds == expected
+
     def test_handle_resume_emits_malformed_outcome(self):
         """Missing ``last_seq`` triggers the malformed_resume arm."""
         from api.websocket.training_stream import _handle_resume

@@ -239,6 +239,51 @@ A future R5.1 SLO catalog may still split the metric per command-class
 if a single layout proves insufficient — that would be a metric-rename
 event, not just a re-bucket, and is out of scope for R5.1b.
 
+### 5.4 D.2 audit follow-up (2026-05-04): tight breach-detection headroom — accepted
+
+The post-METRICS-MON observability audit (juniper-ml#195) finding
+**D.2** (P2) flagged that the `juniper-deploy/notes/SLO_CATALOG_2026-05-03.md`
+§4.4 SLO target (`p95 < 50 ms`) sits **one bucket below the `+inf`
+cap** (the `0.1` boundary, i.e. 100 ms) in the current
+`_WS_SUB_MS_LATENCY_BUCKETS` layout. With only the `0.05` and `0.1`
+boundaries straddling the SLO target, a healthy slow-command regime
+that drifts from 40 ms → 80 ms is bucketed identically to a regression
+that drifts from 80 ms → 200 ms — both increment the `0.1` (and
+implicitly `+inf`) buckets. Quantile-precision for breach detection
+in that 50 ms → 200 ms band is degraded.
+
+**Decision (2026-05-04): accepted as-is for now; re-evaluate at the
+30-day soak-window calibration (R5.1c).**
+
+Rationale:
+1. **Adding `0.025` and `0.2` boundaries now is premature.** The R5.1
+   SLO catalog itself flags every target as "initial — to revisit
+   after 30-day soak". If the soak data shifts the target to e.g.
+   `p95 < 25 ms` or `p95 < 100 ms`, the optimal additional boundaries
+   change accordingly. Choosing them now risks doing the work twice.
+2. **The shared `_WS_SUB_MS_LATENCY_BUCKETS` constant backs both
+   `command_handler_seconds` AND `broadcast_send_duration_seconds`.**
+   Splitting the constant to widen one without affecting the other is
+   a metric-rationale change with broader blast radius than the audit
+   finding warrants today.
+3. **Operational impact during soak is bounded.** The R5.4 burn-rate
+   alerts ship in log-only severity per catalog §2.6 (paging gated
+   on the soak-window calibration); fast-burn alerts on this metric
+   are explicitly informational pending soak. So the breach-detection
+   precision gap maps to "informational alerts have noisier
+   slow-fraction estimates," not to "operators miss real breaches."
+
+**Plan for R5.1c (post-soak):** if the calibrated SLO target stays in
+the 25–100 ms band, propose `_WS_SUB_MS_LATENCY_BUCKETS_V2` adding
+`0.025` and `0.2` boundaries — with the constant rename so the
+re-bucket is a clearly-tracked event in the rationale doc and tests.
+If the calibrated target lands outside that band, re-evaluate the
+boundary choices from scratch.
+
+**Tracking:** audit-doc D.2 row is closed by this acceptance note. The
+re-bucket itself, if needed, becomes a small future cascor sub-track
+sized for the R5.1c PR window.
+
 ---
 
 ## 6. `juniper_cascor_training_step_duration_seconds`
