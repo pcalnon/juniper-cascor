@@ -57,17 +57,37 @@ _command_received_counter = None
 
 
 def _get_command_counter():
-    """Lazily create the command received counter when metrics are available."""
+    """Lazily create the command received counter when metrics are available.
+
+    Idempotent against the global ``prometheus_client.REGISTRY``: if a
+    test fixture (or in-process re-init) has nulled the module-level
+    cache while leaving the underlying Counter registered, re-fetch
+    the existing collector instead of raising
+    ``ValueError: Duplicated timeseries``. Same shape as the
+    ``_register_or_reuse`` helper in
+    ``src/api/observability.py:_ensure_training_metrics``.
+    """
     global _command_received_counter
     if _command_received_counter is None:
         try:
-            from prometheus_client import Counter
+            from prometheus_client import REGISTRY, Counter
 
-            _command_received_counter = Counter(
-                "cascor_ws_control_command_received_total",
-                "WebSocket control commands received",
-                ["command"],
-            )
+            metric_name = "cascor_ws_control_command_received_total"
+            try:
+                _command_received_counter = Counter(
+                    metric_name,
+                    "WebSocket control commands received",
+                    ["command"],
+                )
+            except ValueError:
+                # Already registered — adopt the existing collector.
+                # ``prometheus_client`` registers under both the bare name
+                # and the suffixed sample names (``_total``, ``_created``);
+                # lookup with the name we passed returns the same object.
+                existing = REGISTRY._names_to_collectors.get(metric_name)
+                if existing is None:
+                    raise
+                _command_received_counter = existing
         except ImportError:
             _command_received_counter = False  # sentinel: prometheus not available
     return _command_received_counter
