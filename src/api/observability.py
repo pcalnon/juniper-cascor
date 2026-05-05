@@ -430,6 +430,59 @@ _ws_metrics: dict | None = None
 
 _WS_RESUME_REPLAY_BUCKETS = (0, 1, 5, 25, 100, 500, 1024)
 
+# OBS-WIRE-02 (Q3): closed-set endpoint values for the
+# ``cascor_ws_connections_active{endpoint}`` gauge. The cascor app
+# exposes exactly these three websocket endpoints (see
+# ``api.app:457-459`` — ``app.websocket("/ws/training")`` /
+# ``app.websocket("/ws/control")`` / ``app.websocket("/ws/v1/workers")``).
+# The label value is the trailing path segment chosen for human
+# readability ("training" / "control" / "workers"). Mirrors the R5.4-pre
+# ``_TRAINING_SESSION_STATUSES`` closed-set discipline.
+WS_ENDPOINT_TRAINING: str = "training"
+WS_ENDPOINT_CONTROL: str = "control"
+WS_ENDPOINT_WORKERS: str = "workers"
+_WS_ENDPOINTS: frozenset[str] = frozenset(
+    {
+        WS_ENDPOINT_TRAINING,
+        WS_ENDPOINT_CONTROL,
+        WS_ENDPOINT_WORKERS,
+    }
+)
+
+# OBS-WIRE-02 (3.4): closed-set outcome values for the
+# ``cascor_ws_resume_requests_total{outcome}`` counter. Mirrors the four
+# return arms of ``training_stream._handle_resume`` — see
+# state-analysis doc ``A9_AND_3_2_STATE_ANALYSIS_2026-05-03.md`` §3.4.
+WS_RESUME_OUTCOME_SUCCESS: str = "success"
+WS_RESUME_OUTCOME_OUT_OF_RANGE: str = "out_of_range"
+WS_RESUME_OUTCOME_MALFORMED: str = "malformed_resume"
+WS_RESUME_OUTCOME_SERVER_RESTARTED: str = "server_restarted"
+_WS_RESUME_OUTCOMES: frozenset[str] = frozenset(
+    {
+        WS_RESUME_OUTCOME_SUCCESS,
+        WS_RESUME_OUTCOME_OUT_OF_RANGE,
+        WS_RESUME_OUTCOME_MALFORMED,
+        WS_RESUME_OUTCOME_SERVER_RESTARTED,
+    }
+)
+
+# OBS-WIRE-02 (3.10): closed-set status values for the
+# ``cascor_ws_command_responses_total{command,status}`` counter. The
+# ``command`` label is open-set-by-convention (validated upstream via
+# ``_VALID_COMMANDS`` in ``control_stream``); the ``status`` label is
+# the closed three-way split used by the dispatch in
+# ``control_stream._handle_command_message``.
+WS_COMMAND_STATUS_SUCCESS: str = "success"
+WS_COMMAND_STATUS_ERROR: str = "error"
+WS_COMMAND_STATUS_RATE_LIMITED: str = "rate_limited"
+_WS_COMMAND_STATUSES: frozenset[str] = frozenset(
+    {
+        WS_COMMAND_STATUS_SUCCESS,
+        WS_COMMAND_STATUS_ERROR,
+        WS_COMMAND_STATUS_RATE_LIMITED,
+    }
+)
+
 # METRICS-MON R5.1b: sub-millisecond bucket layout for the two
 # WebSocket-side latency histograms whose actual distributions sit
 # below the 5 ms floor of the Prometheus default layout. Boundaries
@@ -539,11 +592,14 @@ def _ensure_ws_metrics() -> dict:
                 "cascor_ws_broadcast_from_thread_errors_total",
                 "Total errors from broadcast_from_thread coroutine execution",
             ),
-            "seq_gap_detected_total": _register_or_reuse(
-                Counter,
-                "cascor_ws_seq_gap_detected_total",
-                "Total sequence gaps detected (should be zero in healthy operation)",
-            ),
+            # OBS-WIRE-02 (Q1, option (a)): the formerly-defined
+            # ``cascor_ws_seq_gap_detected_total`` Counter has been
+            # removed. Sequence-gap detection is inherently client-side
+            # truth — the server emits monotonic seq numbers and has no
+            # read-back signal that would let it observe its own gaps.
+            # The replacement metric ``juniper_canopy_ws_seq_gap_detected_total``
+            # (with cross-service correlation labels) lives on the
+            # canopy side per the OBS-WIRE-02 sister PR.
             "connections_active": _register_or_reuse(
                 Gauge,
                 "cascor_ws_connections_active",
@@ -594,7 +650,16 @@ def ws_set_replay_buffer_capacity(value: int) -> None:
 
 
 def ws_inc_resume_requests(outcome: str) -> None:
-    """Increment the resume requests counter by outcome."""
+    """Increment the resume requests counter by outcome.
+
+    OBS-WIRE-02 (3.4): ``outcome`` is closed-set — one of
+    ``success`` / ``out_of_range`` / ``malformed_resume`` /
+    ``server_restarted``. Drift is rejected at the helper boundary so
+    instrumentation regressions surface as test failures rather than
+    high-cardinality silent drift (R1.1).
+    """
+    if outcome not in _WS_RESUME_OUTCOMES:
+        raise ValueError(f"invalid resume outcome {outcome!r}; expected one of {sorted(_WS_RESUME_OUTCOMES)!r}")
     _ensure_ws_metrics()["resume_requests_total"].labels(outcome=outcome).inc()
 
 
@@ -619,12 +684,30 @@ def ws_inc_broadcast_from_thread_errors() -> None:
 
 
 def ws_set_connections_active(endpoint: str, value: int) -> None:
-    """Set the active connections gauge for a given endpoint."""
+    """Set the active connections gauge for a given endpoint.
+
+    OBS-WIRE-02 (Q3, option (b)): ``endpoint`` is closed-set and must
+    match one of the three websocket routes registered in
+    :mod:`api.app` — ``training`` / ``control`` / ``workers``. The
+    value is wired by :class:`WebSocketManager` per-endpoint
+    bookkeeping. Drift is rejected at the helper boundary to keep
+    cardinality bounded (R1.1).
+    """
+    if endpoint not in _WS_ENDPOINTS:
+        raise ValueError(f"invalid ws endpoint {endpoint!r}; expected one of {sorted(_WS_ENDPOINTS)!r}")
     _ensure_ws_metrics()["connections_active"].labels(endpoint=endpoint).set(value)
 
 
 def ws_inc_command_responses(command: str, status: str) -> None:
-    """Increment the command responses counter."""
+    """Increment the command responses counter.
+
+    OBS-WIRE-02 (3.10): the ``status`` label is closed-set — one of
+    ``success`` / ``error`` / ``rate_limited``. ``command`` is
+    open-set-by-convention (validated upstream via ``_VALID_COMMANDS``
+    in ``control_stream``).
+    """
+    if status not in _WS_COMMAND_STATUSES:
+        raise ValueError(f"invalid command status {status!r}; expected one of {sorted(_WS_COMMAND_STATUSES)!r}")
     _ensure_ws_metrics()["command_responses_total"].labels(command=command, status=status).inc()
 
 

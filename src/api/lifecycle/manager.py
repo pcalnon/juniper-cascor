@@ -1187,6 +1187,21 @@ class TrainingLifecycleManager:
             now = time.monotonic()
             if not force and not is_terminal:
                 if now - self._last_state_broadcast_time < self._state_throttle_interval:
+                    # OBS-WIRE-02 (3.7): the GAP-WS-21 coalescer just
+                    # dropped a non-terminal state broadcast. Bump the
+                    # counter so a sudden zero-rate while broadcast
+                    # count is high becomes a regression signal.
+                    try:
+                        from api.observability import ws_inc_state_throttle_coalesced
+
+                        ws_inc_state_throttle_coalesced()
+                    except Exception:
+                        # Defensive: prometheus_client may be absent
+                        # in some test environments. Match the
+                        # OBS-WIRE-01 logger.debug pattern so the
+                        # failure is recoverable in production logs
+                        # without short-circuiting the throttle path.
+                        self.logger.debug("ws_inc_state_throttle_coalesced emission failed", exc_info=True)
                     return
             self._last_state_broadcast_time = now
 

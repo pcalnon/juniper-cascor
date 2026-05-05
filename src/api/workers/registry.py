@@ -294,6 +294,49 @@ class WorkerRegistry:
         with self._lock:
             return list(self._workers.values())
 
+    def snapshot_for_metrics(self) -> list[dict[str, Any]]:
+        """Return per-worker frozen snapshots of metric-relevant fields.
+
+        OBS-WIRE-02 (E.2): the previous Prometheus collector path read
+        ``WorkerRegistration.recent_task_durations_seconds`` *outside*
+        the registry lock — concurrent
+        :meth:`WorkerRegistration.record_heartbeat` calls could mutate
+        the list while the collector was computing percentiles, leading
+        to ``statistics.quantiles`` raising on a partially-replaced
+        window. This method walks every registration under
+        ``self._lock`` and returns a list of immutable, fully copied
+        snapshots (one dict per worker) so the collector can do its
+        per-worker math without touching the live registration objects.
+
+        Returned dict shape (per worker):
+
+        - ``worker_id``: str — server-assigned authoritative identity.
+        - ``last_heartbeat``: float — wall-clock seconds since epoch.
+        - ``last_task_duration_seconds``: float | None — most recent
+          completed-task duration, ``None`` if the worker has not
+          reported one.
+        - ``gpu_utilization_pct``: float | None — best-effort 0–100,
+          ``None`` if not reported.
+        - ``recent_task_durations_seconds``: tuple[float, ...] —
+          immutable copy of the sliding window.
+
+        The list itself is fresh; the caller is free to mutate it.
+        """
+        with self._lock:
+            return [
+                {
+                    "worker_id": reg.worker_id,
+                    "last_heartbeat": reg.last_heartbeat,
+                    "last_task_duration_seconds": reg.last_task_duration_seconds,
+                    "gpu_utilization_pct": reg.gpu_utilization_pct,
+                    # Tuple is immutable so even if a future caller
+                    # tries to mutate the snapshot it cannot pollute
+                    # the registration's window.
+                    "recent_task_durations_seconds": tuple(reg.recent_task_durations_seconds or ()),
+                }
+                for reg in self._workers.values()
+            ]
+
     def clear(self) -> int:
         """Remove all workers. Returns the number removed."""
         with self._lock:

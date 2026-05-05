@@ -71,6 +71,25 @@ class WebSocketManager:
         # Connection tracking
         self._active_connections: Set[WebSocket] = set()
         self._pending_connections: Set[WebSocket] = set()
+        # OBS-WIRE-02 (Q3): per-endpoint active-connection sets, used to
+        # populate the ``cascor_ws_connections_active{endpoint}`` gauge
+        # without inferring endpoint from request paths after the fact.
+        # Keys are the closed-set endpoint values registered in
+        # ``api.observability._WS_ENDPOINTS``. Sets are kept disjoint
+        # from one another and disjoint from ``_active_connections``
+        # only at construction; in steady state every WS in
+        # ``_active_connections`` lives in exactly one endpoint set.
+        # Pending (resume-handshake) connections are NOT counted here —
+        # the gauge tracks broadcast-eligible connections.
+        self._endpoint_connections: Dict[str, Set[WebSocket]] = {
+            "training": set(),
+            "control": set(),
+            "workers": set(),
+        }
+        # Reverse lookup: ws -> endpoint, populated at connect time
+        # and consulted at disconnect to know which endpoint set to
+        # mutate without scanning all of them.
+        self._connection_endpoint: Dict[WebSocket, str] = {}
         self._max_connections = max_connections
         # SEC-03: per-IP cap. Stored as ``ip -> count`` and updated under
         # ``self._lock`` alongside the connection sets. Unknown clients
@@ -127,6 +146,17 @@ class WebSocketManager:
             send_timeout_seconds,
         )
 
+        # OBS-WIRE-02 (3.3): emit the configured replay-buffer capacity
+        # exactly once at construction. Defensive try/except mirrors
+        # the OBS-WIRE-01 pattern — prometheus_client may be unavailable
+        # in certain test environments.
+        try:
+            from api.observability import ws_set_replay_buffer_capacity
+
+            ws_set_replay_buffer_capacity(max_replay_buffer_size)
+        except Exception:
+            logger.debug("ws_set_replay_buffer_capacity emission failed", exc_info=True)
+
     def set_event_loop(self, loop: asyncio.AbstractEventLoop) -> None:
         """Store the event loop reference for thread-safe broadcasting."""
         self._event_loop = loop
@@ -145,6 +175,64 @@ class WebSocketManager:
     @property
     def connection_count(self) -> int:
         return len(self._active_connections)
+
+    # ------------------------------------------------------------------
+    # Per-endpoint connection bookkeeping (OBS-WIRE-02 / Q3)
+    # ------------------------------------------------------------------
+
+    def _emit_endpoint_gauge(self, endpoint: str) -> None:
+        """Push the current per-endpoint count to the Prometheus gauge.
+
+        OBS-WIRE-02 (Q3): pure best-effort emission — defensive so a
+        prometheus_client absence (test envs) does not block the
+        connect/disconnect path. ``endpoint`` MUST be in the closed
+        set validated by ``ws_set_connections_active``.
+        """
+        bucket = self._endpoint_connections.get(endpoint)
+        if bucket is None:
+            return
+        try:
+            from api.observability import ws_set_connections_active
+
+            ws_set_connections_active(endpoint, len(bucket))
+        except Exception:
+            logger.debug("ws_set_connections_active emission failed for endpoint=%s", endpoint, exc_info=True)
+
+    def register_endpoint_connection(self, websocket: WebSocket, endpoint: str) -> None:
+        """Add ``websocket`` to the ``endpoint`` bucket and emit the gauge.
+
+        OBS-WIRE-02 (Q3): callers (each WS endpoint handler) invoke this
+        after ``websocket.accept()`` so the gauge reflects the
+        broadcast-eligible connection set, not the in-handshake set.
+        Wrap in a try/finally with :meth:`unregister_endpoint_connection`
+        so disconnects always re-emit, even on exception paths.
+        """
+        if endpoint not in self._endpoint_connections:
+            # Unknown endpoint — log once and treat as no-op rather than
+            # silently miscount. The closed set is enforced again by
+            # ``ws_set_connections_active`` so this is just defense in
+            # depth.
+            logger.warning("register_endpoint_connection: unknown endpoint %r (no-op)", endpoint)
+            return
+        self._endpoint_connections[endpoint].add(websocket)
+        self._connection_endpoint[websocket] = endpoint
+        self._emit_endpoint_gauge(endpoint)
+
+    def unregister_endpoint_connection(self, websocket: WebSocket) -> None:
+        """Remove ``websocket`` from its endpoint bucket and re-emit the gauge.
+
+        OBS-WIRE-02 (Q3): idempotent — repeat calls are no-ops. Looks up
+        the endpoint via ``_connection_endpoint`` so the caller does not
+        need to re-pass it (matches the existing
+        :meth:`disconnect` pattern that has no endpoint argument).
+        """
+        endpoint = self._connection_endpoint.pop(websocket, None)
+        if endpoint is None:
+            return
+        bucket = self._endpoint_connections.get(endpoint)
+        if bucket is not None:
+            bucket.discard(websocket)
+        self._emit_endpoint_gauge(endpoint)
 
     # ------------------------------------------------------------------
     # Connection lifecycle
@@ -308,6 +396,13 @@ class WebSocketManager:
         Uses threading.Lock (not asyncio.Lock) because it may be invoked
         from both sync and async contexts. The lock is held only for O(1)
         operations (integer increment + deque append).
+
+        OBS-WIRE-02 (3.1, 3.2): emits ``cascor_ws_seq_current`` (current
+        sequence number) and ``cascor_ws_replay_buffer_occupancy`` (deque
+        size) on every assignment. Both are computed under the lock — the
+        deque ``len()`` is O(1) — and emission is fired *after* releasing
+        the lock so a Prometheus exception cannot cascade into a held
+        lock. Defensive try/except mirrors the OBS-WIRE-01 pattern.
         """
         with self._seq_lock:
             seq = self._next_seq
@@ -315,7 +410,15 @@ class WebSocketManager:
             enriched = {**message, "seq": seq, "emitted_at_monotonic": time.monotonic()}
             if self._replay_buffer_max_size > 0:
                 self._replay_buffer.append(enriched)
-            return enriched
+            occupancy_snapshot = len(self._replay_buffer) if self._replay_buffer_max_size > 0 else 0
+        try:
+            from api.observability import ws_set_replay_buffer_occupancy, ws_set_seq_current
+
+            ws_set_seq_current(seq)
+            ws_set_replay_buffer_occupancy(occupancy_snapshot)
+        except Exception:
+            logger.debug("ws_set_seq_current / ws_set_replay_buffer_occupancy emission failed", exc_info=True)
+        return enriched
 
     def replay_since(self, last_seq: int) -> List[dict]:
         """Return buffered messages with seq > last_seq.
@@ -448,13 +551,25 @@ class WebSocketManager:
 
     @staticmethod
     def _log_broadcast_exception(future) -> None:
-        """Done callback for broadcast futures — logs exceptions (GAP-WS-29)."""
+        """Done callback for broadcast futures — logs exceptions (GAP-WS-29).
+
+        OBS-WIRE-02 (3.8): also increments
+        ``cascor_ws_broadcast_from_thread_errors_total`` so the
+        previously log-only error path is observable as a counter
+        (paired with GAP-WS-29).
+        """
         try:
             exc = future.exception()
         except CancelledError:
             return
         if exc is not None:
             logger.error("Broadcast from thread failed: %s", exc, exc_info=exc)
+            try:
+                from api.observability import ws_inc_broadcast_from_thread_errors
+
+                ws_inc_broadcast_from_thread_errors()
+            except Exception:
+                logger.debug("ws_inc_broadcast_from_thread_errors emission failed", exc_info=True)
 
     async def send_personal_message(self, websocket: WebSocket, message: dict) -> bool:
         """Send a message to a specific client (no seq assignment).
@@ -501,6 +616,15 @@ class WebSocketManager:
             logger.warning("WebSocket send timed out after %.1fs", self._send_timeout_seconds)
             with self._seq_lock:
                 self._send_failures += 1
+            # OBS-WIRE-02 (3.6): increment broadcast-timeout counter
+            # by message ``type`` (closed-by-convention). Paired with
+            # SLI 4.3 fan-out p95.
+            try:
+                from api.observability import ws_inc_broadcast_timeout
+
+                ws_inc_broadcast_timeout(msg_type)
+            except Exception:
+                logger.debug("ws_inc_broadcast_timeout emission failed", exc_info=True)
             return False
         except Exception:
             with self._seq_lock:

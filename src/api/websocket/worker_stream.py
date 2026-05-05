@@ -71,6 +71,15 @@ async def worker_stream_handler(websocket: WebSocket) -> None:
         }
     )
 
+    # OBS-WIRE-02 (Q3): per-endpoint ``connections_active{endpoint="workers"}``
+    # bookkeeping. Register *after* successful accept so the gauge
+    # reflects broadcast-eligible connections; the matching unregister
+    # in ``finally`` re-emits on every disconnect path including
+    # exceptions.
+    ws_manager = getattr(websocket.app.state, "ws_manager", None)
+    if ws_manager is not None:
+        ws_manager.register_endpoint_connection(websocket, "workers")
+
     worker_id: str | None = None
     audit_logger = getattr(websocket.app.state, "audit_logger", None)
     worker_metrics = getattr(websocket.app.state, "worker_metrics", None)
@@ -103,6 +112,9 @@ async def worker_stream_handler(websocket: WebSocket) -> None:
     except Exception:
         logger.exception("Unexpected error in worker stream for %s", worker_id or "unknown")
     finally:
+        # OBS-WIRE-02 (Q3): always re-emit the gauge on disconnect.
+        if ws_manager is not None:
+            ws_manager.unregister_endpoint_connection(websocket)
         # Cleanup on disconnect
         if worker_id is not None:
             coordinator.unregister_send_callback(worker_id)

@@ -128,6 +128,19 @@ async def _handle_command_message(websocket: WebSocket, lifecycle, msg: dict, bu
     command = msg.get("command", "")
     command_id = msg.get("command_id")
 
+    # OBS-WIRE-02 (3.10): emit ``cascor_ws_command_responses_total`` on
+    # every response arm. ``status`` is closed-set (``success`` /
+    # ``error`` / ``rate_limited``); ``command`` is open-set-by-convention
+    # but bounded by ``_VALID_COMMANDS`` upstream. All emissions are
+    # wrapped in defensive try/except per OBS-WIRE-01.
+    def _emit_response(cmd: str, status: str) -> None:
+        try:
+            from api.observability import ws_inc_command_responses
+
+            ws_inc_command_responses(cmd, status)
+        except Exception:
+            logger.debug("ws_inc_command_responses emission failed for command=%s status=%s", cmd, status, exc_info=True)
+
     if not bucket.try_acquire():
         retry_after = bucket.retry_after
         await websocket.send_json(
@@ -139,6 +152,7 @@ async def _handle_command_message(websocket: WebSocket, lifecycle, msg: dict, bu
                 **({"command_id": command_id} if command_id else {}),
             }
         )
+        _emit_response(command, "rate_limited")
         return
 
     if command not in _VALID_COMMANDS:
@@ -151,10 +165,12 @@ async def _handle_command_message(websocket: WebSocket, lifecycle, msg: dict, bu
                 code="unknown_command",
             )
         )
+        _emit_response(command, "error")
         return
 
     if lifecycle is None:
         await websocket.send_json(create_control_ack_message(command, "error", error="Lifecycle manager not available", command_id=command_id))
+        _emit_response(command, "error")
         return
 
     counter = _get_command_counter()
@@ -176,14 +192,17 @@ async def _handle_command_message(websocket: WebSocket, lifecycle, msg: dict, bu
         )
         handler_duration = time.perf_counter() - handler_start
         await websocket.send_json(create_control_ack_message(command, "success", data=result, command_id=command_id))
+        _emit_response(command, "success")
     except asyncio.TimeoutError:
         handler_duration = time.perf_counter() - handler_start
         logger.error("Command '%s' timed out after %ss", command, timeout)
         await websocket.send_json(create_control_ack_message(command, "error", error=f"Command timed out after {timeout}s", command_id=command_id))
+        _emit_response(command, "error")
     except Exception as e:
         handler_duration = time.perf_counter() - handler_start
         logger.error("Command '%s' failed: %s", command, e)
         await websocket.send_json(create_control_ack_message(command, "error", error="Command execution failed", command_id=command_id))
+        _emit_response(command, "error")
     # OBS-WIRE-01 (A.3): observe the command-handler histogram. Done
     # outside the try/except chain so a single observation is emitted
     # whether the handler completed, timed out, or raised — the
@@ -272,6 +291,7 @@ async def control_stream_handler(websocket: WebSocket) -> None:
         return
 
     lifecycle = getattr(websocket.app.state, "lifecycle", None)
+    ws_manager = getattr(websocket.app.state, "ws_manager", None)
 
     await websocket.accept()
     await websocket.send_json(
@@ -280,6 +300,13 @@ async def control_stream_handler(websocket: WebSocket) -> None:
             "data": {"channel": "control"},
         }
     )
+    # OBS-WIRE-02 (Q3): per-endpoint ``connections_active{endpoint="control"}``
+    # bookkeeping. Register *after* successful accept so the gauge
+    # reflects broadcast-eligible connections; the matching unregister
+    # in ``finally`` re-emits on every disconnect path including
+    # exceptions.
+    if ws_manager is not None:
+        ws_manager.register_endpoint_connection(websocket, "control")
 
     bucket = LeakyBucket(
         capacity=settings.ws_control_rate_limit_per_sec,
@@ -308,6 +335,9 @@ async def control_stream_handler(websocket: WebSocket) -> None:
             await ping_task
         except asyncio.CancelledError:
             pass
+        # OBS-WIRE-02 (Q3): always re-emit the gauge on disconnect.
+        if ws_manager is not None:
+            ws_manager.unregister_endpoint_connection(websocket)
 
 
 def _execute_command(lifecycle, command: str, params: dict = None) -> dict:
