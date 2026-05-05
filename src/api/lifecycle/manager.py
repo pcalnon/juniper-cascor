@@ -61,6 +61,43 @@ def _write_activation_function_name(network: Any, value: str) -> None:
     network._init_activation_function()
 
 
+def _coerce_native_scalars(value: Any) -> Any:
+    """Coerce numpy scalar types to Python natives, recursively.
+
+    pydantic-core's JSON serializer rejects ``numpy.int64`` /
+    ``numpy.float64`` with ``PydanticSerializationError: Unable to
+    serialize unknown type: <class 'numpy.int64'>``. After
+    ``load_snapshot`` the network's scalar attributes come back from
+    HDF5 as numpy scalars (h5py's default for attribute reads), so any
+    response payload that includes those values would fail
+    serialization with an opaque 400 (the cascor ``value_error_handler``
+    strips the detail).
+
+    Walks dicts and lists/tuples; pass-throughs anything that doesn't
+    expose ``.item()``. Used at the API surface (e.g.
+    ``get_training_params``) so the rest of the code can keep working
+    with numpy values internally.
+    """
+    if isinstance(value, dict):
+        return {k: _coerce_native_scalars(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        coerced = [_coerce_native_scalars(v) for v in value]
+        return type(value)(coerced) if isinstance(value, tuple) else coerced
+    item = getattr(value, "item", None)
+    if callable(item):
+        # numpy scalars and 0-d numpy arrays expose ``.item()``
+        # returning a Python native. Plain str/int/float/bool/None
+        # don't have it, so they pass through unchanged.
+        try:
+            return item()
+        except (ValueError, TypeError):
+            # Defensive: any object whose ``.item()`` doesn't behave
+            # like a numpy scalar's (e.g. takes args, raises) falls
+            # through unchanged.
+            return value
+    return value
+
+
 class _WeightHistoryRecorder:
     """CAN-015g (Phase 6E follow-on, g-6): training-loop weight history capture.
 
@@ -1998,39 +2035,49 @@ class TrainingLifecycleManager:
         Returns every field listed in ``update_params``' ``updatable_keys`` so that
         clients reconciling UI state after a reconnect observe the live network
         values rather than falling back to stale defaults.
+
+        Numpy scalars are coerced to Python natives via ``.item()`` so the
+        result round-trips through pydantic-core's JSON serializer. After a
+        snapshot restore the network's scalar attributes come back from
+        HDF5 as ``numpy.int64`` / ``numpy.float64`` (h5py's default), which
+        pydantic-core rejects with ``PydanticSerializationError``;
+        coercing here keeps the wire format clean without forcing every
+        snapshot consumer to do it.
         """
         if self.network is None:
             return {}
-        return {
-            "learning_rate": getattr(self.network, "learning_rate", 0.0),
-            "candidate_learning_rate": getattr(self.network, "candidate_learning_rate", 0.0),
-            "max_hidden_units": getattr(self.network, "max_hidden_units", 0),
-            "epochs_max": getattr(self.network, "epochs_max", 0),
-            "max_iterations": getattr(self.network, "max_iterations", 0),
-            "patience": getattr(self.network, "patience", 0),
-            "candidate_pool_size": getattr(self.network, "candidate_pool_size", 0),
-            "correlation_threshold": getattr(self.network, "correlation_threshold", 0.0),
-            "convergence_threshold": getattr(self.network, "convergence_threshold", 0.001),
-            "candidate_patience": getattr(self.network, "candidate_patience", _PROJECT_API_LIFECYCLE_DEFAULT_CANDIDATE_PATIENCE),
-            "candidate_convergence_threshold": getattr(self.network, "candidate_convergence_threshold", 0.001),
-            "candidate_epochs": getattr(self.network, "candidate_epochs", 0),
-            # CAS-002 (Phase 6E Sprint A-1): per-output-training-phase budget,
-            # distinct from ``epochs_max`` (the global cap).
-            "output_epochs": getattr(self.network, "output_epochs", 0),
-            "init_output_weights": getattr(self.network, "init_output_weights", "zero"),
-            # CAN-010 / ENH-006 (Phase 6E Sprint A-2): output-layer optimizer.
-            # Reads through the nested ``config.optimizer_config`` so a runtime
-            # patch via ``update_params`` is reflected here on the next GET.
-            "optimizer_type": _read_optimizer_type(self.network),
-            # CAN-011 (Phase 6E Sprint A-3): hidden-unit activation function.
-            "activation_function_name": _read_activation_function_name(self.network),
-            # CAS-006 (Phase 6E Sprint A-4): auto-snap-best lifecycle flags.
-            # These live on the lifecycle (not the network) so a single
-            # network instance can be re-used across runs while the auto-
-            # snap counter resets each ``start_training``.
-            "auto_snap_best": self._auto_snap_best,
-            "auto_snap_min_epochs": self._auto_snap_min_epochs,
-        }
+        return _coerce_native_scalars(
+            {
+                "learning_rate": getattr(self.network, "learning_rate", 0.0),
+                "candidate_learning_rate": getattr(self.network, "candidate_learning_rate", 0.0),
+                "max_hidden_units": getattr(self.network, "max_hidden_units", 0),
+                "epochs_max": getattr(self.network, "epochs_max", 0),
+                "max_iterations": getattr(self.network, "max_iterations", 0),
+                "patience": getattr(self.network, "patience", 0),
+                "candidate_pool_size": getattr(self.network, "candidate_pool_size", 0),
+                "correlation_threshold": getattr(self.network, "correlation_threshold", 0.0),
+                "convergence_threshold": getattr(self.network, "convergence_threshold", 0.001),
+                "candidate_patience": getattr(self.network, "candidate_patience", _PROJECT_API_LIFECYCLE_DEFAULT_CANDIDATE_PATIENCE),
+                "candidate_convergence_threshold": getattr(self.network, "candidate_convergence_threshold", 0.001),
+                "candidate_epochs": getattr(self.network, "candidate_epochs", 0),
+                # CAS-002 (Phase 6E Sprint A-1): per-output-training-phase budget,
+                # distinct from ``epochs_max`` (the global cap).
+                "output_epochs": getattr(self.network, "output_epochs", 0),
+                "init_output_weights": getattr(self.network, "init_output_weights", "zero"),
+                # CAN-010 / ENH-006 (Phase 6E Sprint A-2): output-layer optimizer.
+                # Reads through the nested ``config.optimizer_config`` so a runtime
+                # patch via ``update_params`` is reflected here on the next GET.
+                "optimizer_type": _read_optimizer_type(self.network),
+                # CAN-011 (Phase 6E Sprint A-3): hidden-unit activation function.
+                "activation_function_name": _read_activation_function_name(self.network),
+                # CAS-006 (Phase 6E Sprint A-4): auto-snap-best lifecycle flags.
+                # These live on the lifecycle (not the network) so a single
+                # network instance can be re-used across runs while the auto-
+                # snap counter resets each ``start_training``.
+                "auto_snap_best": self._auto_snap_best,
+                "auto_snap_min_epochs": self._auto_snap_min_epochs,
+            }
+        )
 
     def update_params(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Update runtime-modifiable training parameters (thread-safe).
