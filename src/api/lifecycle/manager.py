@@ -2480,6 +2480,128 @@ class TrainingLifecycleManager:
             param_state[key] = torch.zeros_like(val)
 
     # ------------------------------------------------------------------
+    # CAN-015h-2: POST /v1/network/hidden-units — manual unit append
+    # ------------------------------------------------------------------
+
+    _ADD_OK: str = "ok"
+    _ADD_FSM_REJECTED: str = "fsm_rejected"
+    _ADD_NO_NETWORK: str = "no_network"
+    _ADD_AT_CAP: str = "at_cap"
+    _ADD_BAD_ACTIVATION: str = "bad_activation"
+    _ADD_BAD_SHAPE: str = "bad_shape"
+    _ADD_NAN_INF: str = "nan_inf"
+
+    def add_hidden_unit_manual(
+        self,
+        weights: Any,
+        bias: float = 0.0,
+        activation: str = "Tanh",
+    ) -> Dict[str, Any]:
+        """CAN-015h-2: append a hidden unit at the cascade tail.
+
+        Companion to ``add_unit`` (training-loop cascade-grow), but
+        invoked manually from the canopy editor while the FSM is
+        Investigating. Reuses the h-0 helpers
+        (``_install_hidden_unit`` + ``_resize_output_layer_for_new_units``)
+        so the cascade-grow code path and the manual-append code
+        path can never drift apart on dict shape, history record
+        layout, or output-layer rebuild semantics.
+
+        Returns a sentinel-status dict like ``patch_weights``. Per
+        the design plan: the new output-layer column is forced to
+        **zero** (regardless of ``self.init_output_weights``)
+        because the user hasn't trained against this unit yet —
+        zero output column means zero contribution to predictions
+        until ``PATCH /v1/network/weights`` rewrites it.
+        """
+        if self.network is None:
+            return {"status": self._ADD_NO_NETWORK, "detail": "No network created"}
+        if not self.state_machine.is_investigating():
+            return {
+                "status": self._ADD_FSM_REJECTED,
+                "detail": f"add_hidden_unit_manual requires INVESTIGATING state (currently {self.state_machine.status.name})",
+            }
+        # max_hidden_units cap — same contract as the training-loop
+        # cascade-grow path (which raises rather than returning a
+        # sentinel; here we surface 409 to the route layer).
+        if len(self.network.hidden_units) >= getattr(self.network, "max_hidden_units", 0):
+            return {
+                "status": self._ADD_AT_CAP,
+                "detail": f"network is at max_hidden_units cap ({self.network.max_hidden_units})",
+            }
+        # Activation resolution against the network's registry. Pydantic
+        # at the route boundary already restricts to the supported
+        # Literal set, but we re-check here for direct lifecycle calls.
+        registry = getattr(self.network, "activation_functions_dict", {}) or {}
+        activation_fn = registry.get(activation)
+        if activation_fn is None:
+            return {
+                "status": self._ADD_BAD_ACTIVATION,
+                "detail": f"unknown activation: {activation!r} (registry keys: {sorted(registry.keys())})",
+            }
+        # Tensor coercion + NaN/Inf check (same path as patch_weights).
+        try:
+            weights_tensor = self._build_patch_tensor(weights, "float32")
+        except (TypeError, ValueError) as e:
+            return {"status": self._ADD_NAN_INF, "detail": f"invalid weights: {e}"}
+        if not torch.isfinite(weights_tensor).all():
+            return {"status": self._ADD_NAN_INF, "detail": "weights contain NaN or Inf"}
+        if not (isinstance(bias, (int, float)) and torch.isfinite(torch.tensor(float(bias))).item()):
+            return {"status": self._ADD_NAN_INF, "detail": "bias must be a finite scalar"}
+
+        # Shape check: weight vector length must match the current
+        # cascade-input width (= input_size + num_existing_hidden_units).
+        prev_input_size = self.network.output_weights.shape[0]
+        if weights_tensor.ndim != 1 or weights_tensor.shape[0] != prev_input_size:
+            return {
+                "status": self._ADD_BAD_SHAPE,
+                "detail": f"weights shape {tuple(weights_tensor.shape)} does not match expected [{prev_input_size}] (input_size + num_existing_hidden_units)",
+            }
+
+        # Install via the h-0 helper. Correlation is undefined for
+        # manual inserts — record 0.0 as a sentinel so downstream
+        # consumers (history viewer, replay) can distinguish manual
+        # from training-loop additions if needed.
+        self.network._install_hidden_unit(
+            weights=weights_tensor,
+            bias=torch.tensor([float(bias)], dtype=torch.float32),
+            activation_fn=activation_fn,
+            correlation=0.0,
+        )
+
+        # Resize the output layer with a forced zero-init so the
+        # appended unit's output column doesn't contribute to
+        # predictions until trained or patched. Save and restore
+        # ``init_output_weights`` so the network's persistent config
+        # stays whatever the user originally set.
+        original_init = self.network.init_output_weights
+        try:
+            self.network.init_output_weights = "zero"
+            self.network._resize_output_layer_for_new_units(
+                num_added=1,
+                prev_input_size=prev_input_size,
+            )
+        finally:
+            self.network.init_output_weights = original_init
+
+        # Optimizer state for the now-stale output_weights tensor is
+        # invalid (the parameter object was replaced by the resize
+        # AND the dimension itself changed). Best-effort drop of the
+        # optimizer; the next training pass will reconstruct it. We
+        # drop rather than zero-out because Adam's state tensors no
+        # longer match the new parameter shape.
+        if hasattr(self.network, "output_optimizer"):
+            self.network.output_optimizer = None
+
+        new_index = len(self.network.hidden_units) - 1
+        return {
+            "status": self._ADD_OK,
+            "detail": "ok",
+            "unit_index": new_index,
+            "num_hidden_units": len(self.network.hidden_units),
+        }
+
+    # ------------------------------------------------------------------
     # Decision boundary
     # ------------------------------------------------------------------
 
