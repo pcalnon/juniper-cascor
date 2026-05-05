@@ -21,7 +21,7 @@ from fastapi import WebSocket, WebSocketDisconnect
 from api.websocket.manager import ws_authenticate
 from api.workers.coordinator import WorkerCoordinator
 from api.workers.protocol import BinaryFrame, MessageType, WorkerProtocol
-from api.workers.registry import WorkerRegistry
+from api.workers.registry import WorkerRegistry, WorkerRegistryFullError
 
 logger = logging.getLogger("juniper_cascor.api.websocket.worker_stream")
 
@@ -175,7 +175,28 @@ async def _handle_registration(websocket: WebSocket, registry: WorkerRegistry) -
     capabilities = msg["capabilities"]
     worker_id = f"worker-{uuid.uuid4().hex[:12]}"
 
-    registry.register(worker_id, capabilities, client_name=client_name)
+    try:
+        registry.register(worker_id, capabilities, client_name=client_name)
+    except WorkerRegistryFullError as exc:
+        # Audit-doc E.6: the registry has hit its capacity cap. Reject
+        # the handshake cleanly with a structured error frame and a
+        # dedicated close code so operators (and future tests) can
+        # distinguish "saturation" from generic 4008 "invalid
+        # registration" failures.
+        logger.warning(
+            "Worker handshake rejected — registry at capacity (client_name=%s): %s",
+            client_name,
+            exc,
+        )
+        await websocket.send_json(
+            WorkerProtocol.build_error(
+                "Worker registry at capacity",
+                details=str(exc),
+            )
+        )
+        await websocket.close(code=4013, reason="Worker registry at capacity")
+        return None
+
     logger.info("Worker registered with server ID %s (client_name=%s)", worker_id, client_name)
 
     await websocket.send_json(

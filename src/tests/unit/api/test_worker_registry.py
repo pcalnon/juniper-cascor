@@ -355,3 +355,114 @@ class TestWorkerRegistry:
         count = registry.clear()
         assert count == 2
         assert registry.worker_count == 0
+
+
+@pytest.mark.unit
+class TestWorkerRegistrySizeCapAuditE6:
+    """Audit-doc juniper-ml#195 finding E.6 — registry size cap.
+
+    The registry was previously unbounded; a misbehaving worker pool
+    or a malicious / runaway client storm could grow ``_workers``
+    without limit. This test class pins the cap behavior end-to-end:
+
+      * Default cap is 250.
+      * Reaching the cap raises :class:`WorkerRegistryFullError` for a
+        new ``worker_id``.
+      * Re-registering an existing ``worker_id`` at the cap is allowed
+        (the dict size stays unchanged).
+      * Custom ``max_workers`` constructor kwarg is honored.
+      * Non-positive caps are rejected at construction time.
+      * The exception class is distinct so the WS handshake handler
+        can catch it specifically.
+    """
+
+    def test_default_cap_is_250(self):
+        from api.workers.registry import _DEFAULT_MAX_WORKERS
+
+        assert _DEFAULT_MAX_WORKERS == 250
+        registry = WorkerRegistry()
+        assert registry.max_workers == 250
+
+    def test_constructor_validates_max_workers(self):
+        with pytest.raises(ValueError, match="max_workers must be positive"):
+            WorkerRegistry(max_workers=0)
+        with pytest.raises(ValueError, match="max_workers must be positive"):
+            WorkerRegistry(max_workers=-1)
+
+    def test_register_rejects_new_worker_at_cap(self):
+        from api.workers.registry import WorkerRegistryFullError
+
+        registry = WorkerRegistry(max_workers=3)
+        registry.register("w1", {})
+        registry.register("w2", {})
+        registry.register("w3", {})
+        assert registry.worker_count == 3
+
+        with pytest.raises(WorkerRegistryFullError, match=r"at capacity \(3\)"):
+            registry.register("w4", {})
+
+        # The 4th attempt did NOT pollute the dict.
+        assert registry.worker_count == 3
+        assert "w4" not in {w.worker_id for w in registry.get_all_workers()}
+
+    def test_re_register_at_cap_is_allowed(self):
+        """Re-registering an existing worker_id keeps dict size unchanged → no raise."""
+        registry = WorkerRegistry(max_workers=2)
+        registry.register("w1", {"gpu": "rtx-4090"})
+        registry.register("w2", {"gpu": "a100"})
+        # At cap. Re-register w1 with new capabilities — replacement,
+        # not new entry.
+        replaced = registry.register("w1", {"gpu": "rtx-5090"})
+        assert replaced.capabilities == {"gpu": "rtx-5090"}
+        assert registry.worker_count == 2
+
+    def test_deregister_below_cap_re_enables_new_registration(self):
+        """After deregistering, the freed slot accepts a new worker."""
+        from api.workers.registry import WorkerRegistryFullError
+
+        registry = WorkerRegistry(max_workers=2)
+        registry.register("w1", {})
+        registry.register("w2", {})
+        with pytest.raises(WorkerRegistryFullError):
+            registry.register("w3", {})
+
+        registry.deregister("w1")
+        assert registry.worker_count == 1
+
+        # Now w3 fits.
+        registry.register("w3", {})
+        assert registry.worker_count == 2
+
+    def test_custom_cap_independent_of_default(self):
+        """A registry with max_workers=500 accepts up to 500 (smoke test, capped at 5)."""
+        registry = WorkerRegistry(max_workers=500)
+        assert registry.max_workers == 500
+        # Smoke: the first 5 registrations fit; default-cap=250 logic
+        # would not affect us.
+        for i in range(5):
+            registry.register(f"w{i}", {})
+        assert registry.worker_count == 5
+
+    def test_full_error_is_runtime_error_subclass(self):
+        """Catchable as RuntimeError for callers that don't import the specific class."""
+        from api.workers.registry import WorkerRegistryFullError
+
+        assert issubclass(WorkerRegistryFullError, RuntimeError)
+
+    def test_clear_resets_capacity_state(self):
+        """After clear(), the registry can fully repopulate to the cap."""
+        from api.workers.registry import WorkerRegistryFullError
+
+        registry = WorkerRegistry(max_workers=2)
+        registry.register("w1", {})
+        registry.register("w2", {})
+        with pytest.raises(WorkerRegistryFullError):
+            registry.register("w3", {})
+
+        cleared = registry.clear()
+        assert cleared == 2
+
+        # All slots free again.
+        registry.register("w1", {})
+        registry.register("w2", {})
+        assert registry.worker_count == 2
