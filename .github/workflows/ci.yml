@@ -80,7 +80,7 @@ jobs:
 
       - name: Install pre-commit
         run: |
-          python -m pip install --upgrade pip
+          python -m pip install --upgrade "pip>=26.1.1"
           pip install pre-commit
 
       - name: Cache pre-commit hooks
@@ -173,7 +173,7 @@ jobs:
           echo "║       Juniper Cascor - Install Dependencies                ║"
           echo "║       Python ${{ matrix.python-version }} on ${{ matrix.os }}              ║"
           echo "╚════════════════════════════════════════════════════════════╝"
-          python -m pip install --upgrade pip
+          python -m pip install --upgrade "pip>=26.1.1"
           # METRICS-MON R3.7: torch wheel resolution differs by OS.
           # Linux uses the CPU-only PyTorch index to avoid pulling CUDA
           # wheels; macOS finds its native wheels via the default PyPI
@@ -268,7 +268,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          python -m pip install --upgrade pip
+          python -m pip install --upgrade "pip>=26.1.1"
           pip install torch --index-url https://download.pytorch.org/whl/cpu
           # juniper-data-client requires Python >=3.12 and is not yet on PyPI
           python -c "import sys; sys.exit(0 if sys.version_info >= (3,12) else 1)" && \
@@ -329,7 +329,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          python -m pip install --upgrade pip
+          python -m pip install --upgrade "pip>=26.1.1"
           pip install torch --index-url https://download.pytorch.org/whl/cpu
           # juniper-data-client requires Python >=3.12 and is not yet on PyPI
           python -c "import sys; sys.exit(0 if sys.version_info >= (3,12) else 1)" && \
@@ -386,7 +386,7 @@ jobs:
 
       - name: Install build tools
         run: |
-          python -m pip install --upgrade pip
+          python -m pip install --upgrade "pip>=26.1.1"
           pip install build
 
       - name: Build package
@@ -437,7 +437,7 @@ jobs:
           echo "╔════════════════════════════════════════════════════════════╗"
           echo "║       Juniper Cascor - Install Dependencies (Dep Docs)    ║"
           echo "╚════════════════════════════════════════════════════════════╝"
-          python -m pip install --upgrade pip
+          python -m pip install --upgrade "pip>=26.1.1"
           pip install torch --index-url https://download.pytorch.org/whl/cpu
           # juniper-data-client requires Python >=3.12 and is not yet on PyPI
           python -c "import sys; sys.exit(0 if sys.version_info >= (3,12) else 1)" && \
@@ -497,7 +497,7 @@ jobs:
 
       - name: Install security tools
         run: |
-          python -m pip install --upgrade pip
+          python -m pip install --upgrade "pip>=26.1.1"
           pip install "bandit[sarif]" pip-audit
 
       - name: Create reports directory
@@ -537,9 +537,7 @@ jobs:
           pip install torch numpy h5py pyyaml matplotlib
           pip freeze > reports/security/pip-freeze.txt
           # CRIT-005: Fail on high/critical vulnerabilities instead of just warning.
-          # --ignore-vuln CVE-2026-3219: pip 26.0.1 on the runner image has
-          # no fix available as of 2026-04-29.
-          pip-audit -r reports/security/pip-freeze.txt --strict --desc on --ignore-vuln CVE-2026-3219 \
+          pip-audit -r reports/security/pip-freeze.txt --strict --desc on \
             || (echo "::error::Critical/High vulnerabilities found in dependencies" && exit 1)
 
       - name: Upload Security Reports
