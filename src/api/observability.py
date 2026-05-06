@@ -171,38 +171,27 @@ _TRAINING_STEP_DURATION_BUCKETS: tuple = (
 )
 
 
-def _register_or_reuse(cls, name: str, *args, **kwargs):
-    """Construct a Prometheus collector idempotently against the default registry.
-
-    The lazy ``_ensure_*_metrics`` singletons cache module-globals as
-    Python references. Tests sometimes clear those globals (to force a
-    fresh ``_ensure`` path) without unregistering the underlying
-    collectors from ``prometheus_client.REGISTRY``. The next ``cls(name,
-    ...)`` then raises ``ValueError: Duplicated timeseries`` because the
-    metric name is still bound in the registry even though our cache
-    forgot the Python reference.
-
-    Catch that specific case, look the existing collector up by name,
-    unregister it, and retry — yielding a fresh collector that reflects
-    the current call's labels/buckets without depending on stale state.
-    Other ``ValueError`` causes (genuinely invalid name, etc.) are
-    re-raised unchanged.
-    """
-    from prometheus_client import REGISTRY
-
-    try:
-        return cls(name, *args, **kwargs)
-    except ValueError as exc:
-        if "Duplicated timeseries" not in str(exc):
-            raise
-        # Find the orphaned collector by name and unregister it. The
-        # ``_collector_to_names`` mapping is the same lookup ``register``
-        # itself uses for the duplicate check.
-        for collector, names in list(REGISTRY._collector_to_names.items()):
-            if name in names:
-                REGISTRY.unregister(collector)
-                break
-        return cls(name, *args, **kwargs)
+# Idempotent collector registration helper. The original local
+# implementation (cascor PR ?? from before juniper-observability 0.2.0)
+# used drop-and-recreate semantics: on a duplicate, unregister the
+# existing collector and retry the construction so the latest call's
+# labels/buckets win at the cost of discarding any accumulated samples.
+#
+# Phase 2c migration (juniper-ml#216 / juniper-observability 0.2.0):
+# the call sites below were already calling ``_register_or_reuse(cls,
+# name, *args, **kwargs)`` with identical args every time (lazy-init
+# singleton dict pattern), so the drop-and-recreate semantics never
+# meaningfully differed from adopt-existing for production. The
+# canonical helper is ``juniper_observability.register_or_reuse`` which
+# adopts the existing collector — preserving accumulated samples across
+# in-process re-init (test fixtures rebuilding the app, dev autoreload).
+# Aliased here as ``_register_or_reuse`` so the 22+ call sites in this
+# module remain stable.
+#
+# Use ``juniper_observability.register_fresh`` instead at any future
+# call site that genuinely wants the drop-and-recreate behaviour
+# (test fixture exercising different bucket boundaries, etc.).
+from juniper_observability import register_or_reuse as _register_or_reuse
 
 
 def _ensure_training_metrics() -> dict:
