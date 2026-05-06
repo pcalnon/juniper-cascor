@@ -369,5 +369,3 @@ class TestRemoteWorkerClientContextManager:
         client.__exit__(ValueError, ValueError("test"), None)
 
         assert client.manager is None
-
-
