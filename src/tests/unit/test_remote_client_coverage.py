@@ -1,7 +1,12 @@
 #!/usr/bin/env python
 """
-Tests for remote_client module to increase code coverage.
-Tests RemoteWorkerClient and RemoteCandidateTrainingClient classes.
+Tests for remote_client.RemoteWorkerClient code coverage.
+
+The RemoteCandidateTrainingClient tests previously in this file targeted
+``remote_client.remote_client_0``, which has been archived to
+``src/backups/``; those test classes were unconditionally skipped and
+have been removed. Restore them from git history if the legacy client
+is ever reintroduced.
 """
 import os
 import sys
@@ -12,23 +17,6 @@ import pytest
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 from remote_client.remote_client import RemoteWorkerClient
-
-# remote_client_0 was archived to src/backups/ (no longer importable from the
-# package). The RemoteCandidateTrainingClient test classes below are skipped
-# at the class level when the module isn't present; the RemoteWorkerClient
-# tests still run unaffected.
-try:
-    from remote_client.remote_client_0 import RemoteCandidateTrainingClient
-
-    _has_remote_client_0 = True
-except ImportError:
-    RemoteCandidateTrainingClient = None  # type: ignore[assignment,misc]
-    _has_remote_client_0 = False
-
-_skip_no_rc0 = pytest.mark.skipif(
-    not _has_remote_client_0,
-    reason="remote_client.remote_client_0 has been archived to src/backups/",
-)
 
 
 @pytest.mark.unit
@@ -381,181 +369,3 @@ class TestRemoteWorkerClientContextManager:
         client.__exit__(ValueError, ValueError("test"), None)
 
         assert client.manager is None
-
-
-@_skip_no_rc0
-@pytest.mark.unit
-class TestRemoteCandidateTrainingClientInit:
-    """Tests for RemoteCandidateTrainingClient initialization."""
-
-    def test_init_defaults(self):
-        """Test initialization with default values."""
-        client = RemoteCandidateTrainingClient()
-
-        assert client.server_address == ("127.0.0.1", 50000)
-        assert client.authkey == b"Juniper_Cascade_Correlation_Multiprocessing_Authkey"
-        assert client.manager is None
-
-    def test_init_custom_address(self):
-        """Test initialization with custom address."""
-        address = ("192.168.1.100", 60000)
-        client = RemoteCandidateTrainingClient(server_address=address)
-
-        assert client.server_address == address
-
-    def test_init_custom_authkey(self):
-        """Test initialization with custom authkey."""
-        authkey = b"custom_key"
-        client = RemoteCandidateTrainingClient(authkey=authkey)
-
-        assert client.authkey == authkey
-
-
-@_skip_no_rc0
-@pytest.mark.unit
-class TestRemoteCandidateTrainingClientConnect:
-    """Tests for RemoteCandidateTrainingClient.connect method."""
-
-    def test_connect_success(self):
-        """Test successful connection returns True."""
-        client = RemoteCandidateTrainingClient()
-
-        with patch.object(client, "manager", create=True) as mock_manager:
-            with patch("remote_client.remote_client_0.BaseManager") as mock_base_manager:
-                mock_instance = MagicMock()
-                mock_base_manager.return_value = mock_instance
-
-                with patch.object(RemoteCandidateTrainingClient, "connect", return_value=True):
-                    result = client.connect()
-
-        assert result is True
-
-    def test_connect_failure_returns_false(self):
-        """Test connection failure returns False."""
-        client = RemoteCandidateTrainingClient()
-
-        with patch("remote_client.remote_client_0.RemoteCandidateTrainingClient.connect") as mock_connect:
-            mock_connect.return_value = False
-            result = mock_connect()
-
-        assert result is False
-
-
-@_skip_no_rc0
-@pytest.mark.unit
-class TestRemoteCandidateTrainingClientProcessTasks:
-    """Tests for RemoteCandidateTrainingClient.process_tasks method."""
-
-    def test_process_tasks_without_manager(self, capsys):
-        """Test process_tasks without connection prints error."""
-        client = RemoteCandidateTrainingClient()
-
-        client.process_tasks(num_workers=2)
-
-        captured = capsys.readouterr()
-        assert "Not connected to manager" in captured.out
-
-    def test_process_tasks_with_manager(self):
-        """Test process_tasks starts worker processes."""
-        client = RemoteCandidateTrainingClient()
-        client.manager = MagicMock()
-
-        mock_tasks_queue = MagicMock()
-        mock_done_queue = MagicMock()
-        client.manager.get_tasks_queue.return_value = mock_tasks_queue
-        client.manager.get_done_queue.return_value = mock_done_queue
-
-        with patch("remote_client.remote_client_0.mp.Process") as mock_process:
-            mock_proc = MagicMock()
-            mock_process.return_value = mock_proc
-
-            client.process_tasks(num_workers=2)
-
-            assert mock_process.call_count == 2
-            assert mock_proc.start.call_count == 2
-            assert mock_proc.join.call_count == 2
-
-
-@_skip_no_rc0
-@pytest.mark.unit
-class TestRemoteCandidateTrainingClientWorkerProcess:
-    """Tests for RemoteCandidateTrainingClient._worker_process static method."""
-
-    def test_worker_process_exits_on_sentinel(self, capsys):
-        """Test worker process exits when receiving None sentinel."""
-        mock_tasks_queue = MagicMock()
-        mock_tasks_queue.get.return_value = None
-        mock_done_queue = MagicMock()
-
-        RemoteCandidateTrainingClient._worker_process(mock_tasks_queue, mock_done_queue, 0)
-
-        captured = capsys.readouterr()
-        assert "Worker 0 started" in captured.out
-        assert "Worker 0 finished" in captured.out
-
-    def test_worker_process_handles_timeout(self, capsys):
-        """Test worker process handles queue timeout."""
-        mock_tasks_queue = MagicMock()
-        mock_tasks_queue.get.side_effect = Exception("timed out")
-        mock_done_queue = MagicMock()
-
-        RemoteCandidateTrainingClient._worker_process(mock_tasks_queue, mock_done_queue, 1)
-
-        captured = capsys.readouterr()
-        assert "Worker 1 started" in captured.out
-        assert "Worker 1 finished" in captured.out
-
-    def test_worker_process_handles_error(self, capsys):
-        """Test worker process handles other exceptions."""
-        mock_tasks_queue = MagicMock()
-        mock_tasks_queue.get.side_effect = Exception("Some other error")
-        mock_done_queue = MagicMock()
-
-        RemoteCandidateTrainingClient._worker_process(mock_tasks_queue, mock_done_queue, 2)
-
-        captured = capsys.readouterr()
-        assert "Worker 2 error" in captured.out
-
-
-@_skip_no_rc0
-@pytest.mark.unit
-class TestRemoteCandidateTrainingClientTrainRemote:
-    """Tests for RemoteCandidateTrainingClient._train_candidate_remote static method."""
-
-    def test_train_candidate_remote_error_handling(self, capsys):
-        """Test _train_candidate_remote handles errors gracefully."""
-        invalid_task = (0, "invalid_data", "more_invalid")
-
-        result = RemoteCandidateTrainingClient._train_candidate_remote(invalid_task)
-
-        captured = capsys.readouterr()
-        assert "Remote training error" in captured.out
-        assert result[2] == 0.0
-        assert result[3] is None
-
-
-@_skip_no_rc0
-@pytest.mark.unit
-class TestTestRemoteConnection:
-    """Tests for test_remote_connection function."""
-
-    def test_test_remote_connection_success(self, capsys):
-        """Test test_remote_connection with successful connection."""
-        with patch.object(RemoteCandidateTrainingClient, "connect", return_value=True):
-            with patch.object(RemoteCandidateTrainingClient, "process_tasks"):
-                from remote_client.remote_client_0 import test_remote_connection
-
-                test_remote_connection()
-
-        captured = capsys.readouterr()
-        assert "Testing remote multiprocessing manager connection" in captured.out
-
-    def test_test_remote_connection_failure(self, capsys):
-        """Test test_remote_connection with failed connection."""
-        with patch.object(RemoteCandidateTrainingClient, "connect", return_value=False):
-            from remote_client.remote_client_0 import test_remote_connection
-
-            test_remote_connection()
-
-        captured = capsys.readouterr()
-        assert "Connection failed!" in captured.out
