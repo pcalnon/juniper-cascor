@@ -2,7 +2,6 @@
 """
 Tests for utils/utils.py to increase code coverage.
 """
-import io
 import os
 import sys
 import tempfile
@@ -226,23 +225,67 @@ class TestCheckObjectPickleability:
 
 
 class TestLoadDataset:
-    """Tests for load_dataset function (lines 90-92)."""
+    """Tests for load_dataset function.
 
-    def test_load_dataset_from_yaml_file_object(self):
-        """Test loading dataset from a file-like object with YAML content."""
-        yaml_content = "x: [1, 2, 3]\ny: [4, 5, 6]"
-        file_obj = io.StringIO(yaml_content)
-        x, y = load_dataset(file_obj)
-        assert x == [1, 2, 3]
-        assert y == [4, 5, 6]
+    Pre-BUG-CC-12 fix this read files as YAML, which never
+    round-tripped a real ``save_dataset`` payload. Tests now exercise
+    the corrected ``torch.load(weights_only=True)`` path against real
+    ``save_dataset`` output.
+    """
 
-    def test_load_dataset_with_nested_data(self):
-        """Test loading dataset with nested structure."""
-        yaml_content = "x:\n  - [1, 2]\n  - [3, 4]\ny:\n  - [0, 1]\n  - [1, 0]"
-        file_obj = io.StringIO(yaml_content)
-        x, y = load_dataset(file_obj)
-        assert x == [[1, 2], [3, 4]]
-        assert y == [[0, 1], [1, 0]]
+    def test_load_dataset_round_trip(self):
+        """save_dataset → load_dataset returns the same tensors."""
+        x = torch.randn(10, 3)
+        y = torch.randint(0, 2, (10,))
+
+        with tempfile.NamedTemporaryFile(suffix=".pt", delete=False) as f:
+            temp_file = f.name
+
+        try:
+            save_dataset(x, y, temp_file)
+            loaded_x, loaded_y = load_dataset(temp_file)
+            torch.testing.assert_close(loaded_x, x)
+            torch.testing.assert_close(loaded_y, y)
+        finally:
+            if os.path.exists(temp_file):
+                os.unlink(temp_file)
+
+    def test_load_dataset_returns_tensors(self):
+        """The returned values are torch.Tensor, not lists or numpy."""
+        x = torch.tensor([[1.0, 2.0], [3.0, 4.0]])
+        y = torch.tensor([0.0, 1.0])
+
+        with tempfile.NamedTemporaryFile(suffix=".pt", delete=False) as f:
+            temp_file = f.name
+
+        try:
+            save_dataset(x, y, temp_file)
+            loaded_x, loaded_y = load_dataset(temp_file)
+            assert isinstance(loaded_x, torch.Tensor)
+            assert isinstance(loaded_y, torch.Tensor)
+        finally:
+            if os.path.exists(temp_file):
+                os.unlink(temp_file)
+
+    def test_load_dataset_accepts_pathlib(self):
+        """``file_path`` works with pathlib.Path as well as str."""
+        from pathlib import Path
+
+        x = torch.randn(5, 2)
+        y = torch.randint(0, 2, (5,))
+
+        with tempfile.NamedTemporaryFile(suffix=".pt", delete=False) as f:
+            temp_file = f.name
+        path_obj = Path(temp_file)
+
+        try:
+            save_dataset(x, y, path_obj)
+            loaded_x, loaded_y = load_dataset(path_obj)
+            torch.testing.assert_close(loaded_x, x)
+            torch.testing.assert_close(loaded_y, y)
+        finally:
+            if os.path.exists(temp_file):
+                os.unlink(temp_file)
 
 
 class TestDisplayProgressNegativeEpoch:

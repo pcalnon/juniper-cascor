@@ -43,7 +43,8 @@
 #####################################################################################################################################################################################################
 
 # from typing import Tuple, Dict, Any
-from typing import Dict, Tuple
+import os
+from typing import Dict, Tuple, Union
 
 try:
     import columnar as col
@@ -54,7 +55,6 @@ except ImportError:
     col = None
 import numpy as np
 import torch
-import yaml
 
 from log_config.logger.logger import Logger
 
@@ -62,11 +62,13 @@ from log_config.logger.logger import Logger
 def save_dataset(
     x: torch.Tensor,
     y: torch.Tensor,
-    file_path: str,
+    file_path: Union[str, "os.PathLike[str]"],
 ) -> None:
     """
     Description:
-        Save a dataset to a file.
+        Save a dataset to a file. Writes a torch checkpoint
+        containing ``{"x": x, "y": y}``; round-trips through
+        ``load_dataset``.
     Args:
         x: Input features tensor
         y: Target tensor
@@ -75,19 +77,29 @@ def save_dataset(
     torch.save({"x": x, "y": y}, file_path)
 
 
-def load_dataset(file_path: str) -> Tuple[torch.Tensor, torch.Tensor]:
+def load_dataset(file_path: Union[str, "os.PathLike[str]"]) -> Tuple[torch.Tensor, torch.Tensor]:
     """
     Description:
-        Load a dataset from a file.
+        Load a dataset from a file written by ``save_dataset``.
     Args:
-        file_path: Path to the saved dataset
+        file_path: Path to the saved dataset (the same path passed
+            to ``save_dataset``).
     Returns:
         Tuple containing:
             - x: Input features tensor
             - y: Target tensor
+
+    Notes:
+        Inverts ``save_dataset`` (which writes via ``torch.save``).
+        Pre-fix this function read the file as YAML (BUG-CC-12,
+        2026-05-05 audit), which never round-tripped a real
+        ``torch.save`` payload — the active path was a half-finished
+        format swap that only compiled because no production caller
+        exercised it. Now uses ``torch.load(weights_only=True)`` so
+        only safe primitive types can resolve from the saved
+        checkpoint (the torch ≥ 2.6 default; required from 2.8).
     """
-    data = yaml.safe_load(file_path.read())
-    # data = torch.load(file_path)
+    data = torch.load(file_path, map_location="cpu", weights_only=True)
     return (data["x"], data["y"])
 
 
