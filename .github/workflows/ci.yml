@@ -128,16 +128,16 @@ jobs:
           python scripts/check_doc_links.py --exclude templates --exclude history
 
   # ═══════════════════════════════════════════════════════════════════════════════════════════════
-  # Async-route audit (Phase 2 — soft-fail visibility).
+  # Async-route audit (Phase 4 — enforced).
   # Catches the BUG-JD-10 bug class (sync-blocking calls inside async def
-  # route handlers). `continue-on-error: true` so violations surface as
-  # PR annotations without blocking merge. Phase 4 will flip this off.
+  # route handlers). Hard-fails on any new violation. The only intentional
+  # sync surface (``src/api/service_launcher.py``, an orchestration helper)
+  # carries a per-file-ignore in pyproject.toml [tool.ruff.lint.per-file-ignores].
   # See juniper-ml notes/ASYNC_ROUTE_AUDIT_HOOK_MIGRATION_PLAN.md §4.
   # ═══════════════════════════════════════════════════════════════════════════════════════════════
   async-route-audit:
-    name: Async-route audit (BUG-JD-10 class, soft-fail)
+    name: Async-route audit (BUG-JD-10 class)
     runs-on: ubuntu-latest
-    continue-on-error: true
 
     steps:
       - name: Checkout Code
