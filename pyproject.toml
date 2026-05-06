@@ -242,3 +242,37 @@ module = [
     "yaml.*",
 ]
 ignore_missing_imports = true
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Ruff — async-route audit only (Phase 1 wiring, disabled state).
+# Cascor's primary lint stack stays flake8 + black + isort + bandit + mypy.
+# Ruff is added solely for the ASYNC* ruleset (BUG-JD-10 class prevention),
+# enforced via a manual-stage pre-commit hook. See juniper-ml notes/
+# ASYNC_ROUTE_AUDIT_HOOK_MIGRATION_PLAN.md.
+# ═══════════════════════════════════════════════════════════════════════════
+[tool.ruff]
+# Note: ruff >=0.15 caps line-length at 320. Cascor's ecosystem
+# convention is 512, but since this ruff config is only used for the
+# ASYNC* ruleset (not formatting), the value doesn't affect output;
+# pinned at the 320 cap so the config parses without error.
+line-length = 320
+target-version = "py312"
+
+[tool.ruff.lint]
+# Empty `select` so regular `ruff check` is a no-op. The ASYNC* ruleset is
+# explicitly opted into via the pre-commit hook's `--select ASYNC` arg.
+# Phase 4 may flip this to `select = ["ASYNC"]` if we want the rules
+# applied during regular runs too.
+select = []
+
+[tool.ruff.lint.per-file-ignores]
+# Phase 0 enumeration (juniper-ml notes/ASYNC_ROUTE_VIOLATIONS_2026-05-06.md)
+# flagged 4 violations in this file. They're all intentional — the file is
+# a service orchestration helper that spawns subprocesses, polls health
+# endpoints, and writes log files. Sync I/O is the whole point of these
+# functions; the async wrapper is for orchestration concurrency, not
+# request handling. Per-file-ignored so the ruff-async-audit hook doesn't
+# surface them as Phase 3 cleanup candidates.
+# why: orchestration helper, not a route handler
+"src/api/service_launcher.py" = ["ASYNC109", "ASYNC210", "ASYNC220", "ASYNC230"]
