@@ -128,6 +128,37 @@ jobs:
           python scripts/check_doc_links.py --exclude templates --exclude history
 
   # ═══════════════════════════════════════════════════════════════════════════════════════════════
+  # Async-route audit (Phase 2 — soft-fail visibility).
+  # Catches the BUG-JD-10 bug class (sync-blocking calls inside async def
+  # route handlers). `continue-on-error: true` so violations surface as
+  # PR annotations without blocking merge. Phase 4 will flip this off.
+  # See juniper-ml notes/ASYNC_ROUTE_AUDIT_HOOK_MIGRATION_PLAN.md §4.
+  # ═══════════════════════════════════════════════════════════════════════════════════════════════
+  async-route-audit:
+    name: Async-route audit (BUG-JD-10 class, soft-fail)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+
+      - name: Set up Python
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6.2.0
+        with:
+          python-version: ${{ env.PYTHON_TEST_VERSION }}
+
+      - name: Install ruff
+        run: pip install "ruff==0.15.6"
+
+      - name: Run async-route audit
+        run: |
+          echo "╔════════════════════════════════════════════════════════════╗"
+          echo "║       Juniper Cascor - Async-route audit (BUG-JD-10)      ║"
+          echo "╚════════════════════════════════════════════════════════════╝"
+          ruff check --select ASYNC --output-format=github src/
+
+  # ═══════════════════════════════════════════════════════════════════════════════════════════════
   # Unit Tests: Run unit tests with coverage enforcement
   # MED-009: Added Python version matrix for multi-version testing
   # Migrated from conda to pip for CI portability (polyrepo Phase 5)
