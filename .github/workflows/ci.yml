@@ -417,7 +417,10 @@ jobs:
         uses: conda-incubator/setup-miniconda@8ee1f361103df19b6f8c8655fd3967a8ecb162d5  # v4.0.1
         with:
           miniforge-version: latest
-          auto-activate-base: true
+          # auto-activate-base was renamed to auto-activate in v4 of the
+          # action. Miniforge uses `base` as its default env, so no
+          # explicit activate-environment is needed.
+          auto-activate: true
           python-version: ${{ env.PYTHON_TEST_VERSION }}
 
       - name: Install dependencies
@@ -474,8 +477,9 @@ jobs:
         uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7  # v2.3.9
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          fail: true
+        # gitleaks-action v2.3.9 has no `fail` input (passing it triggers
+        # "Unexpected input(s) 'fail'" in CI). The action exits non-zero
+        # on leaks by default, which is the behavior we want.
 
       - name: Set up Python
         uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6.2.0
