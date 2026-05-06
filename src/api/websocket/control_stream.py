@@ -68,9 +68,8 @@ def _get_command_counter():
     global _command_received_counter
     if _command_received_counter is None:
         try:
-            from prometheus_client import Counter
-
             from juniper_observability import register_or_reuse
+            from prometheus_client import Counter
 
             _command_received_counter = register_or_reuse(
                 Counter,
