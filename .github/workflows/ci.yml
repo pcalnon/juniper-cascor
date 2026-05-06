@@ -482,6 +482,16 @@ jobs:
           fetch-depth: 0
 
       - name: Run Gitleaks (Secrets Detection)
+        # gitleaks-action v2.3.9 explicitly rejects ``repository_dispatch``
+        # ("ERROR: The [repository_dispatch] event is not yet supported"),
+        # which kills the entire Security Scans job whenever the workflow
+        # is triggered by upstream-published events from juniper-data /
+        # juniper-cascor-worker. The push/PR triggers cover the
+        # human-driven entry points that actually need secret scanning;
+        # the dispatch trigger is for ecosystem-fanout test runs and
+        # doesn't introduce new commits to scan. Mirrors juniper-data /
+        # juniper-canopy.
+        if: github.event_name != 'repository_dispatch'
         uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7  # v2.3.9
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
