@@ -285,7 +285,11 @@ jobs:
           echo "║       Juniper Cascor - Quick Integration Tests             ║"
           echo "╚════════════════════════════════════════════════════════════╝"
 
+          # --integration opts in to integration-marked tests; without it
+          # src/tests/conftest.py adds a skip marker to every integration
+          # test, which silently turned this entire job into a no-op.
           python -m pytest \
+            --integration \
             -m "integration and not slow" \
             src/tests/integration \
             --timeout=60 \
@@ -342,7 +346,11 @@ jobs:
           echo "║       Juniper Cascor - Integration Tests (Fast Only)       ║"
           echo "╚════════════════════════════════════════════════════════════╝"
 
+          # --integration opts in to integration-marked tests; without it
+          # src/tests/conftest.py adds a skip marker to every integration
+          # test, which silently turned this entire job into a no-op.
           python -m pytest \
+            --integration \
             -m "integration and not slow" \
             src/tests/integration \
             --verbose \
