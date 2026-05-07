@@ -42,30 +42,15 @@ class TestPytestBenchmarkAvailable:
         try:
             import pytest_benchmark
         except ImportError as exc:
-            pytest.fail(
-                "pytest-benchmark is not installed in the active env. "
-                "Performance tests will fail with 'fixture benchmark not found'. "
-                "Add it to the [project.optional-dependencies] test extra in "
-                f"pyproject.toml and reinstall (pip install -e .[test]). Underlying error: {exc}"
-            )
+            pytest.fail("pytest-benchmark is not installed in the active env. " "Performance tests will fail with 'fixture benchmark not found'. " "Add it to the [project.optional-dependencies] test extra in " f"pyproject.toml and reinstall (pip install -e .[test]). Underlying error: {exc}")
 
         assert pytest_benchmark.__version__, "pytest-benchmark exposes no __version__"
 
     def test_benchmark_plugin_entry_point_registered(self):
         names = {ep.name for ep in entry_points(group="pytest11")}
-        assert "benchmark" in names, (
-            "pytest-benchmark plugin entry point 'benchmark' is not registered "
-            "in the active env. Reinstall the test extra: pip install -e .[test]. "
-            f"Discovered pytest11 entry points: {sorted(names)}"
-        )
+        assert "benchmark" in names, "pytest-benchmark plugin entry point 'benchmark' is not registered " "in the active env. Reinstall the test extra: pip install -e .[test]. " f"Discovered pytest11 entry points: {sorted(names)}"
 
     def test_benchmark_fixture_resolvable(self, request):
         fixture_names = request.fixturenames if hasattr(request, "fixturenames") else []
         registered = request.session._fixturemanager._arg2fixturedefs  # noqa: SLF001
-        assert "benchmark" in registered, (
-            "Pytest fixture 'benchmark' is not registered. pytest-benchmark "
-            "appears installed but its plugin did not load — check that "
-            "PYTEST_DISABLE_PLUGIN_AUTOLOAD is unset and that no addopts entry "
-            "blocks the plugin (e.g. '-p no:benchmark'). Currently visible "
-            f"fixturenames sample: {sorted(fixture_names)[:10]}"
-        )
+        assert "benchmark" in registered, "Pytest fixture 'benchmark' is not registered. pytest-benchmark " "appears installed but its plugin did not load — check that " "PYTEST_DISABLE_PLUGIN_AUTOLOAD is unset and that no addopts entry " "blocks the plugin (e.g. '-p no:benchmark'). Currently visible " f"fixturenames sample: {sorted(fixture_names)[:10]}"
