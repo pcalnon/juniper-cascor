@@ -53,11 +53,43 @@
     }
   },
   {
-    "test_name": "memory_base_network",
-    "timestamp": "2026-05-07T01:54:56.417241+00:00",
+    "test_name": "forward_5_hidden",
+    "timestamp": "2026-05-07T02:20:47.679880+00:00",
     "results": {
-      "rss_before_mb": 756.46,
-      "rss_after_mb": 756.46,
+      "hidden_units": 5
+    },
+    "environment": {
+      "python_version": "3.13.13 | packaged by conda-forge | (main, Apr  8 2026, 02:00:33) [GCC 14.3.0]",
+      "torch_version": "2.11.0+cu130",
+      "numpy_version": "2.4.4",
+      "platform": "Linux-6.17.0-22-generic-x86_64-with-glibc2.42",
+      "cpu_count": 16,
+      "torch_num_threads": 1,
+      "omp_num_threads": "1"
+    }
+  },
+  {
+    "test_name": "forward_10_hidden",
+    "timestamp": "2026-05-07T02:20:48.285661+00:00",
+    "results": {
+      "hidden_units": 10
+    },
+    "environment": {
+      "python_version": "3.13.13 | packaged by conda-forge | (main, Apr  8 2026, 02:00:33) [GCC 14.3.0]",
+      "torch_version": "2.11.0+cu130",
+      "numpy_version": "2.4.4",
+      "platform": "Linux-6.17.0-22-generic-x86_64-with-glibc2.42",
+      "cpu_count": 16,
+      "torch_num_threads": 1,
+      "omp_num_threads": "1"
+    }
+  },
+  {
+    "test_name": "memory_base_network",
+    "timestamp": "2026-05-07T02:21:00.827819+00:00",
+    "results": {
+      "rss_before_mb": 763.0,
+      "rss_after_mb": 763.01,
       "delta_mb": 0.0,
       "hidden_units": 0
     },
@@ -73,9 +105,9 @@
   },
   {
     "test_name": "memory_5_hidden",
-    "timestamp": "2026-05-07T01:54:56.428703+00:00",
+    "timestamp": "2026-05-07T02:21:00.840834+00:00",
     "results": {
-      "rss_mb": 756.46,
+      "rss_mb": 763.03,
       "hidden_units": 5
     },
     "environment": {
@@ -90,9 +122,9 @@
   },
   {
     "test_name": "memory_10_hidden",
-    "timestamp": "2026-05-07T01:54:56.440748+00:00",
+    "timestamp": "2026-05-07T02:21:00.854495+00:00",
     "results": {
-      "rss_mb": 756.46,
+      "rss_mb": 763.04,
       "hidden_units": 10
     },
     "environment": {
