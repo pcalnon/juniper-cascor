@@ -51,6 +51,18 @@ __init__.cpython*
 **/cascor/cascor_snapshots/*
 cascor_snapshot_*.h5
 
+src/snapshots/snapshot_*.h5
+src/snapshots/*.h5
+src/snapshots/*
+src/snapshots/
+src/snapshots
+
+**/snapshots/snapshot_*.h5
+**/snapshots/*.h5
+**/snapshots/*
+**/snapshots/
+**/snapshots
+
 # Sensitive files and dirs
 .env
 .env.local

@@ -78,46 +78,46 @@ snapshot.h5
 
 ### Root Attributes
 
-| Attribute | Type | Description |
-|-----------|------|-------------|
-| `format` | `string` | Serializer format identifier (`juniper.cascor`) |
-| `format_version` | `string` | Serializer format major version |
-| `serializer_version` | `string` | Serializer implementation version |
-| `created` | `string` | ISO 8601 creation timestamp |
-| `juniper_version` | `string` | Project version string |
+| Attribute            | Type     | Description                                     |
+|----------------------|----------|-------------------------------------------------|
+| `format`             | `string` | Serializer format identifier (`juniper.cascor`) |
+| `format_version`     | `string` | Serializer format major version                 |
+| `serializer_version` | `string` | Serializer implementation version               |
+| `created`            | `string` | ISO 8601 creation timestamp                     |
+| `juniper_version`    | `string` | Project version string                          |
 
 ### `meta` Group Attributes
 
-| Attribute | Type | Description |
-|-----------|------|-------------|
-| `uuid` | `string` | UUID identifying this network instance |
-| `creation_timestamp` | `string` | Snapshot creation timestamp |
-| `snapshot_counter` | `int64` | Snapshot count stored on network |
-| `current_epoch` | `int64` | Last known epoch counter |
-| `patience_counter` | `int64` | Last known early-stopping patience state |
-| `best_value_loss` | `float64` | Best validation loss seen so far |
-| `python_version` | `string` | Python runtime version |
-| `torch_version` | `string` | PyTorch runtime version |
-| `h5py_version` | `string` | h5py runtime version |
+| Attribute            | Type      | Description                              |
+|----------------------|-----------|------------------------------------------|
+| `uuid`               | `string`  | UUID identifying this network instance   |
+| `creation_timestamp` | `string`  | Snapshot creation timestamp              |
+| `snapshot_counter`   | `int64`   | Snapshot count stored on network         |
+| `current_epoch`      | `int64`   | Last known epoch counter                 |
+| `patience_counter`   | `int64`   | Last known early-stopping patience state |
+| `best_value_loss`    | `float64` | Best validation loss seen so far         |
+| `python_version`     | `string`  | Python runtime version                   |
+| `torch_version`      | `string`  | PyTorch runtime version                  |
+| `h5py_version`       | `string`  | h5py runtime version                     |
 
 ### `arch` Group Attributes
 
-| Attribute | Type | Description |
-|-----------|------|-------------|
-| `input_size` | `int64` | Number of input features |
-| `output_size` | `int64` | Number of output classes |
-| `num_hidden_units` | `int64` | Current hidden unit count |
-| `max_hidden_units` | `int64` | Configured hidden-unit limit |
+| Attribute                  | Type     | Description                        |
+|----------------------------|----------|------------------------------------|
+| `input_size`               | `int64`  | Number of input features           |
+| `output_size`              | `int64`  | Number of output classes           |
+| `num_hidden_units`         | `int64`  | Current hidden unit count          |
+| `max_hidden_units`         | `int64`  | Configured hidden-unit limit       |
 | `activation_function_name` | `string` | Active hidden-unit activation name |
 
 ### `config` Group
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `config_json` | `string` | JSON-encoded `CascadeCorrelationConfig` |
-| `attrs.activation_function_name` | `string` | Quick-access activation function name |
-| `attrs.input_size` / `attrs.output_size` | `int64` | Quick-access model shape fields |
-| other selected attrs | primitive | Learning rate, pool size, patience, etc. |
+| Field                                    | Type      | Description                              |
+|------------------------------------------|-----------|------------------------------------------|
+| `config_json`                            | `string`  | JSON-encoded `CascadeCorrelationConfig`  |
+| `attrs.activation_function_name`         | `string`  | Quick-access activation function name    |
+| `attrs.input_size` / `attrs.output_size` | `int64`   | Quick-access model shape fields          |
+| other selected attrs                     | primitive | Learning rate, pool size, patience, etc. |
 
 **Excluded from JSON** (non-serializable):
 
@@ -127,30 +127,30 @@ snapshot.h5
 
 ### `params/output_layer` Group
 
-| Field | Type | Shape | Description |
-|-------|------|-------|-------------|
-| `weights` | tensor | `(input_plus_hidden, output)` | Output layer weights |
-| `bias` | tensor | `(output,)` | Output layer bias |
-| `checksums` | `string` | n/a | JSON checksum payload (optional) |
-| `optimizer/state_dict` | `string` | n/a | JSON optimizer state (optional) |
+| Field                  | Type     | Shape                         | Description                      |
+|------------------------|----------|-------------------------------|----------------------------------|
+| `weights`              | tensor   | `(input_plus_hidden, output)` | Output layer weights             |
+| `bias`                 | tensor   | `(output,)`                   | Output layer bias                |
+| `checksums`            | `string` | n/a                           | JSON checksum payload (optional) |
+| `optimizer/state_dict` | `string` | n/a                           | JSON optimizer state (optional)  |
 
 **Hidden Unit Subgroups** (`hidden_units/unit_N/`):
 
-| Field | Type | Shape | Description |
-|-------|------|-------|-------------|
-| `weights` | tensor | `(connections,)` | Unit input weights |
-| `bias` | tensor | `(1,)` | Unit bias |
-| `checksums` | `string` | n/a | JSON checksum payload |
-| `attrs.correlation` | `float64` | n/a | Correlation captured at add-time |
-| `attrs.activation_function_name` | `string` | n/a | Per-unit activation identifier |
+| Field                            | Type      | Shape            | Description                      |
+|----------------------------------|-----------|------------------|----------------------------------|
+| `weights`                        | tensor    | `(connections,)` | Unit input weights               |
+| `bias`                           | tensor    | `(1,)`           | Unit bias                        |
+| `checksums`                      | `string`  | n/a              | JSON checksum payload            |
+| `attrs.correlation`              | `float64` | n/a              | Correlation captured at add-time |
+| `attrs.activation_function_name` | `string`  | n/a              | Per-unit activation identifier   |
 
 ### `history` Group (Optional)
 
-| Dataset | Type | Shape | Description |
-|---------|------|-------|-------------|
-| `train_loss` | `float32` | `(epochs,)` | Training loss per epoch |
-| `train_accuracy` | `float32` | `(epochs,)` | Training accuracy per epoch |
-| `value_loss` | `float32` | `(epochs,)` | Validation loss (if provided) |
+| Dataset          | Type      | Shape       | Description                       |
+|------------------|-----------|-------------|-----------------------------------|
+| `train_loss`     | `float32` | `(epochs,)` | Training loss per epoch           |
+| `train_accuracy` | `float32` | `(epochs,)` | Training accuracy per epoch       |
+| `value_loss`     | `float32` | `(epochs,)` | Validation loss (if provided)     |
 | `value_accuracy` | `float32` | `(epochs,)` | Validation accuracy (if provided) |
 
 - `attrs.correlation` (float)
@@ -159,20 +159,20 @@ snapshot.h5
 
 ### `random` Group
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `python_state` | `uint8[]` | `pickle.dumps(random.getstate())` bytes |
-| `numpy_state/state_array` | `uint32[]` | NumPy RNG state array |
-| `numpy_state` attrs | mixed | `state_type`, `pos`, `has_gauss`, `cached_gaussian` |
-| `torch_state` | `uint8[]` | `torch.get_rng_state()` bytes |
-| `cuda_states/device_N` | `uint8[]` | CUDA RNG state per device (if available) |
+| Field                     | Type       | Description                                         |
+|---------------------------|------------|-----------------------------------------------------|
+| `python_state`            | `uint8[]`  | `pickle.dumps(random.getstate())` bytes             |
+| `numpy_state/state_array` | `uint32[]` | NumPy RNG state array                               |
+| `numpy_state` attrs       | mixed      | `state_type`, `pos`, `has_gauss`, `cached_gaussian` |
+| `torch_state`             | `uint8[]`  | `torch.get_rng_state()` bytes                       |
+| `cuda_states/device_N`    | `uint8[]`  | CUDA RNG state per device (if available)            |
 
 ### Compression Settings
 
-| Setting | Default | Description |
-|---------|---------|-------------|
-| `compression` | `"gzip"` | Compression algorithm |
-| `compression_opts` | `4` | Compression level (1-9) |
+| Setting            | Default  | Description             |
+|--------------------|----------|-------------------------|
+| `compression`      | `"gzip"` | Compression algorithm   |
+| `compression_opts` | `4`      | Compression level (1-9) |
 
 **Trade-offs**:
 
@@ -393,26 +393,26 @@ Behavior constraints:
 
 ### CascadeCorrelationConfig
 
-| Field | Type | Default | Description |
-|-------|------|---------|-------------|
-| `input_size` | `int` | `2` | Number of input features |
-| `output_size` | `int` | `2` | Number of output classes |
-| `learning_rate` | `float` | `0.01` | Output layer learning rate |
-| `candidate_learning_rate` | `float` | `0.01` | Candidate training learning rate |
-| `candidate_pool_size` | `int` | `16` | Candidates per training round |
-| `candidate_epochs` | `int` | `100` | Epochs per candidate |
-| `init_output_weights` | `str` | `"zero"` | Output-weight init mode for newly added hidden units (`"zero"` or `"random"`) |
-| `output_epochs` | `int` | `100` | Epochs for output layer training |
-| `epochs_max` | `int` | `1000` | Maximum total epochs |
-| `max_iterations` | `int` | `1000` | Maximum cascade growth iterations |
-| `max_hidden_units` | `int` | `50` | Maximum network growth |
-| `correlation_threshold` | `float` | `0.001` | Minimum correlation for selection |
-| `patience` | `int` | `10` | Early stopping patience |
-| `target_accuracy` | `float` | `0.95` | Stop when accuracy reached |
-| `random_seed` | `int` | `42` | For reproducibility |
-| `generate_plots` | `bool` | `True` | Enable visualization |
-| `activation_function` | `callable` | `torch.tanh` | Hidden unit activation |
-| `optimizer_config` | `OptimizerConfig` | `None` | Optimizer settings |
+| Field                     | Type              | Default      | Description                                                                   |
+|---------------------------|-------------------|--------------|-------------------------------------------------------------------------------|
+| `input_size`              | `int`             | `2`          | Number of input features                                                      |
+| `output_size`             | `int`             | `2`          | Number of output classes                                                      |
+| `learning_rate`           | `float`           | `0.01`       | Output layer learning rate                                                    |
+| `candidate_learning_rate` | `float`           | `0.01`       | Candidate training learning rate                                              |
+| `candidate_pool_size`     | `int`             | `16`         | Candidates per training round                                                 |
+| `candidate_epochs`        | `int`             | `100`        | Epochs per candidate                                                          |
+| `init_output_weights`     | `str`             | `"zero"`     | Output-weight init mode for newly added hidden units (`"zero"` or `"random"`) |
+| `output_epochs`           | `int`             | `100`        | Epochs for output layer training                                              |
+| `epochs_max`              | `int`             | `1000`       | Maximum total epochs                                                          |
+| `max_iterations`          | `int`             | `1000`       | Maximum cascade growth iterations                                             |
+| `max_hidden_units`        | `int`             | `50`         | Maximum network growth                                                        |
+| `correlation_threshold`   | `float`           | `0.001`      | Minimum correlation for selection                                             |
+| `patience`                | `int`             | `10`         | Early stopping patience                                                       |
+| `target_accuracy`         | `float`           | `0.95`       | Stop when accuracy reached                                                    |
+| `random_seed`             | `int`             | `42`         | For reproducibility                                                           |
+| `generate_plots`          | `bool`            | `True`       | Enable visualization                                                          |
+| `activation_function`     | `callable`        | `torch.tanh` | Hidden unit activation                                                        |
+| `optimizer_config`        | `OptimizerConfig` | `None`       | Optimizer settings                                                            |
 
 `init_output_weights` behavior constraints:
 
@@ -422,16 +422,16 @@ Behavior constraints:
 
 ### OptimizerConfig
 
-| Field | Type | Default | Description |
-|-------|------|---------|-------------|
-| `optimizer_type` | `str` | `'Adam'` | `'Adam'`, `'SGD'`, `'RMSprop'`, `'AdamW'` |
-| `learning_rate` | `float` | `0.01` | Learning rate |
-| `momentum` | `float` | `0.9` | Momentum (SGD, RMSprop) |
-| `beta1` | `float` | `0.9` | Beta1 (Adam, AdamW) |
-| `beta2` | `float` | `0.999` | Beta2 (Adam, AdamW) |
-| `weight_decay` | `float` | `0.0` | Weight decay |
-| `epsilon` | `float` | `1e-8` | Epsilon for stability |
-| `amsgrad` | `bool` | `False` | Use AMSGrad variant |
+| Field            | Type    | Default  | Description                               |
+|------------------|---------|----------|-------------------------------------------|
+| `optimizer_type` | `str`   | `'Adam'` | `'Adam'`, `'SGD'`, `'RMSprop'`, `'AdamW'` |
+| `learning_rate`  | `float` | `0.01`   | Learning rate                             |
+| `momentum`       | `float` | `0.9`    | Momentum (SGD, RMSprop)                   |
+| `beta1`          | `float` | `0.9`    | Beta1 (Adam, AdamW)                       |
+| `beta2`          | `float` | `0.999`  | Beta2 (Adam, AdamW)                       |
+| `weight_decay`   | `float` | `0.0`    | Weight decay                              |
+| `epsilon`        | `float` | `1e-8`   | Epsilon for stability                     |
+| `amsgrad`        | `bool`  | `False`  | Use AMSGrad variant                       |
 
 ### JSON Serialization
 
@@ -466,107 +466,107 @@ Current behavior note:
 
 Returned by `train_candidates()` method.
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `epochs_completed` | `int` | Total epochs across all candidates |
-| `candidate_ids` | `List[int]` | Pool indices of trained candidates |
-| `candidate_uuids` | `List[str]` | UUIDs of trained candidates |
-| `correlations` | `List[float]` | Final correlations achieved |
-| `candidate_objects` | `List[CandidateUnit]` | Trained candidate objects |
-| `best_candidate_id` | `int` | Index of best candidate |
-| `best_candidate_uuid` | `str` | UUID of best candidate |
-| `best_correlation` | `float` | Best correlation achieved |
-| `best_candidate` | `CandidateUnit` | Best candidate object |
-| `success_count` | `int` | Successfully trained candidates |
-| `successful_candidates` | `int` | Alias for success_count |
-| `failed_count` | `int` | Failed candidate trainings |
-| `error_messages` | `List[str]` | Error messages from failures |
-| `max_correlation` | `float` | Maximum correlation seen |
-| `start_time` | `datetime` | Training start time |
-| `end_time` | `datetime` | Training end time |
+| Field                   | Type                  | Description                        |
+|-------------------------|-----------------------|------------------------------------|
+| `epochs_completed`      | `int`                 | Total epochs across all candidates |
+| `candidate_ids`         | `List[int]`           | Pool indices of trained candidates |
+| `candidate_uuids`       | `List[str]`           | UUIDs of trained candidates        |
+| `correlations`          | `List[float]`         | Final correlations achieved        |
+| `candidate_objects`     | `List[CandidateUnit]` | Trained candidate objects          |
+| `best_candidate_id`     | `int`                 | Index of best candidate            |
+| `best_candidate_uuid`   | `str`                 | UUID of best candidate             |
+| `best_correlation`      | `float`               | Best correlation achieved          |
+| `best_candidate`        | `CandidateUnit`       | Best candidate object              |
+| `success_count`         | `int`                 | Successfully trained candidates    |
+| `successful_candidates` | `int`                 | Alias for success_count            |
+| `failed_count`          | `int`                 | Failed candidate trainings         |
+| `error_messages`        | `List[str]`           | Error messages from failures       |
+| `max_correlation`       | `float`               | Maximum correlation seen           |
+| `start_time`            | `datetime`            | Training start time                |
+| `end_time`              | `datetime`            | Training end time                  |
 
 ### CandidateTrainingResult
 
 Returned by `CandidateUnit.train_detailed()`.
 
-| Field | Type | Default | Description |
-|-------|------|---------|-------------|
-| `candidate_id` | `int` | `-1` | Pool index |
-| `candidate_uuid` | `str` | `None` | Candidate UUID |
-| `correlation` | `float` | `0.0` | Final correlation |
-| `candidate` | `CandidateUnit` | `None` | Trained candidate object |
-| `best_corr_idx` | `int` | `-1` | Output index with best correlation |
-| `all_correlations` | `List[float]` | `[]` | Correlation per epoch |
-| `norm_output` | `torch.Tensor` | `None` | Normalized output |
-| `norm_error` | `torch.Tensor` | `None` | Normalized error |
-| `numerator` | `float` | `0.0` | Correlation numerator |
-| `denominator` | `float` | `1.0` | Correlation denominator |
-| `success` | `bool` | `True` | Training succeeded |
-| `epochs_completed` | `int` | `0` | Epochs actually run |
-| `error_message` | `str` | `None` | Error if failed |
+| Field              | Type            | Default | Description                        |
+|--------------------|-----------------|---------|------------------------------------|
+| `candidate_id`     | `int`           | `-1`    | Pool index                         |
+| `candidate_uuid`   | `str`           | `None`  | Candidate UUID                     |
+| `correlation`      | `float`         | `0.0`   | Final correlation                  |
+| `candidate`        | `CandidateUnit` | `None`  | Trained candidate object           |
+| `best_corr_idx`    | `int`           | `-1`    | Output index with best correlation |
+| `all_correlations` | `List[float]`   | `[]`    | Correlation per epoch              |
+| `norm_output`      | `torch.Tensor`  | `None`  | Normalized output                  |
+| `norm_error`       | `torch.Tensor`  | `None`  | Normalized error                   |
+| `numerator`        | `float`         | `0.0`   | Correlation numerator              |
+| `denominator`      | `float`         | `1.0`   | Correlation denominator            |
+| `success`          | `bool`          | `True`  | Training succeeded                 |
+| `epochs_completed` | `int`           | `0`     | Epochs actually run                |
+| `error_message`    | `str`           | `None`  | Error if failed                    |
 
 ### CandidateParametersUpdate
 
 Used internally for weight updates.
 
-| Field | Type | Default | Description |
-|-------|------|---------|-------------|
-| `x` | `torch.Tensor` | `None` | Input data |
-| `y` | `torch.Tensor` | `None` | Target data |
-| `residual_error` | `torch.Tensor` | `None` | Current residual |
-| `learning_rate` | `float` | `0.01` | Update learning rate |
-| `norm_output` | `torch.Tensor` | `None` | Normalized output |
-| `norm_error` | `torch.Tensor` | `None` | Normalized error |
-| `best_corr_idx` | `int` | `-1` | Best correlation index |
-| `numerator` | `float` | `0.0` | Correlation numerator |
-| `denominator` | `float` | `1.0` | Correlation denominator |
-| `success` | `bool` | `True` | Update succeeded |
+| Field            | Type           | Default | Description             |
+|------------------|----------------|---------|-------------------------|
+| `x`              | `torch.Tensor` | `None`  | Input data              |
+| `y`              | `torch.Tensor` | `None`  | Target data             |
+| `residual_error` | `torch.Tensor` | `None`  | Current residual        |
+| `learning_rate`  | `float`        | `0.01`  | Update learning rate    |
+| `norm_output`    | `torch.Tensor` | `None`  | Normalized output       |
+| `norm_error`     | `torch.Tensor` | `None`  | Normalized error        |
+| `best_corr_idx`  | `int`          | `-1`    | Best correlation index  |
+| `numerator`      | `float`        | `0.0`   | Correlation numerator   |
+| `denominator`    | `float`        | `1.0`   | Correlation denominator |
+| `success`        | `bool`         | `True`  | Update succeeded        |
 
 ### CandidateCorrelationCalculation
 
 Result of correlation calculation.
 
-| Field | Type | Default | Description |
-|-------|------|---------|-------------|
-| `correlation` | `float` | `0.0` | Computed correlation |
-| `best_corr_idx` | `int` | `-1` | Best output index |
-| `best_norm_output` | `torch.Tensor` | `None` | Best normalized output |
-| `best_norm_error` | `torch.Tensor` | `None` | Best normalized error |
-| `numerator` | `float` | `0.0` | Correlation numerator |
-| `denominator` | `float` | `0.0` | Correlation denominator |
-| `output` | `torch.Tensor` | `None` | Raw output |
-| `residual_error` | `torch.Tensor` | `None` | Residual error |
+| Field              | Type           | Default | Description             |
+|--------------------|----------------|---------|-------------------------|
+| `correlation`      | `float`        | `0.0`   | Computed correlation    |
+| `best_corr_idx`    | `int`          | `-1`    | Best output index       |
+| `best_norm_output` | `torch.Tensor` | `None`  | Best normalized output  |
+| `best_norm_error`  | `torch.Tensor` | `None`  | Best normalized error   |
+| `numerator`        | `float`        | `0.0`   | Correlation numerator   |
+| `denominator`      | `float`        | `0.0`   | Correlation denominator |
+| `output`           | `torch.Tensor` | `None`  | Raw output              |
+| `residual_error`   | `torch.Tensor` | `None`  | Residual error          |
 
 ### ValidateTrainingInputs
 
 Input validation for training.
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `epoch` | `int` | Current epoch |
-| `max_epochs` | `int` | Maximum epochs |
-| `patience_counter` | `int` | Current patience |
-| `early_stopping` | `bool` | Early stopping enabled |
-| `train_accuracy` | `float` | Current training accuracy |
-| `train_loss` | `float` | Current training loss |
-| `best_value_loss` | `float` | Best validation loss |
-| `x_train` | `np.ndarray` | Training inputs |
-| `y_train` | `np.ndarray` | Training targets |
-| `x_val` | `np.ndarray` | Validation inputs |
-| `y_val` | `np.ndarray` | Validation targets |
+| Field              | Type         | Description               |
+|--------------------|--------------|---------------------------|
+| `epoch`            | `int`        | Current epoch             |
+| `max_epochs`       | `int`        | Maximum epochs            |
+| `patience_counter` | `int`        | Current patience          |
+| `early_stopping`   | `bool`       | Early stopping enabled    |
+| `train_accuracy`   | `float`      | Current training accuracy |
+| `train_loss`       | `float`      | Current training loss     |
+| `best_value_loss`  | `float`      | Best validation loss      |
+| `x_train`          | `np.ndarray` | Training inputs           |
+| `y_train`          | `np.ndarray` | Training targets          |
+| `x_val`            | `np.ndarray` | Validation inputs         |
+| `y_val`            | `np.ndarray` | Validation targets        |
 
 ### ValidateTrainingResults
 
 Result of validation.
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `early_stop` | `bool` | Should stop early |
-| `patience_counter` | `int` | Updated patience |
-| `best_value_loss` | `float` | Updated best loss |
-| `value_output` | `float` | Validation output |
-| `value_loss` | `float` | Validation loss |
-| `value_accuracy` | `float` | Validation accuracy |
+| Field              | Type    | Description         |
+|--------------------|---------|---------------------|
+| `early_stop`       | `bool`  | Should stop early   |
+| `patience_counter` | `int`   | Updated patience    |
+| `best_value_loss`  | `float` | Updated best loss   |
+| `value_output`     | `float` | Validation output   |
+| `value_loss`       | `float` | Validation loss     |
+| `value_accuracy`   | `float` | Validation accuracy |
 
 ---
 
