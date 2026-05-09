@@ -121,6 +121,75 @@ class TestMonitoringHooks:
         call_args = ws_mgr.broadcast_from_thread.call_args[0][0]
         assert call_args["type"] == "cascade_add"
 
+    def test_cascade_add_topology_broadcast_carries_full_serialized_network(self):
+        """After cascade growth, the WS ``topology`` broadcast must carry the
+        full serialized network — ``hidden_units`` as a list of per-unit dicts
+        plus ``output_weights``/``output_bias`` — not a count-only stub.
+
+        Regression: a count-only stub (``hidden_units: int``) was previously
+        broadcast on cascade_add. Canopy's ``_transform_topology`` saw
+        ``isinstance(int, list) is False`` and silently rendered 0 hidden
+        units, so the Network Topology view never updated as the cascade
+        grew. The fix is to broadcast ``manager.get_topology()`` directly.
+        """
+        from cascade_correlation.cascade_correlation import CascadeCorrelationNetwork
+
+        original_grow = CascadeCorrelationNetwork.grow_network
+
+        def fake_grow_one_unit(self_network, *args, **kwargs):
+            # Append a structurally-valid hidden unit so get_topology()
+            # serializes a list-shaped payload.
+            self_network.hidden_units.append(
+                {
+                    "weights": torch.tensor([0.10, 0.20, 0.30]),
+                    "bias": torch.tensor(0.05),
+                    "activation_fn": torch.sigmoid,
+                }
+            )
+            return None
+
+        CascadeCorrelationNetwork.grow_network = fake_grow_one_unit
+        try:
+            manager = TrainingLifecycleManager()
+            manager.create_network(input_size=2, output_size=2)
+
+            ws_mgr = MagicMock()
+            manager.set_ws_manager(ws_mgr)
+
+            # Trigger the wrapped grow path
+            manager.network.grow_network()
+
+            # Find the topology broadcast among all broadcast calls
+            topology_calls = [
+                call_args[0][0]
+                for call_args in ws_mgr.broadcast_from_thread.call_args_list
+                if isinstance(call_args[0][0], dict) and call_args[0][0].get("type") == "topology"
+            ]
+            assert len(topology_calls) >= 1, "expected at least one ``topology`` broadcast after cascade_add"
+
+            payload = topology_calls[-1]["data"]
+            # The whole point of the fix: hidden_units must be a list, not an int
+            hidden_units = payload.get("hidden_units")
+            assert isinstance(hidden_units, list), (
+                f"hidden_units must be a list (was {type(hidden_units).__name__}: {hidden_units!r}). "
+                "A count-only stub corrupts canopy's topology view."
+            )
+            assert len(hidden_units) >= 1, "expected at least one serialized hidden unit"
+
+            unit = hidden_units[0]
+            for required in ("id", "weights", "bias", "activation"):
+                assert required in unit, f"hidden unit missing {required!r}: {unit}"
+            assert isinstance(unit["weights"], list), "weights must be serialized as a list"
+
+            # Canopy's _transform_topology iterates output_weights to build
+            # input→output and hidden→output edges. Both must be present.
+            assert "output_weights" in payload
+            assert "output_bias" in payload
+            assert "input_size" in payload
+            assert "output_size" in payload
+        finally:
+            CascadeCorrelationNetwork.grow_network = original_grow
+
     def test_ws_callbacks_broadcast_on_candidate_progress(self):
         """Candidate progress callback broadcasts candidate_progress via WebSocket."""
         manager = TrainingLifecycleManager()
