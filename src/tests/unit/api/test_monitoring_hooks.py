@@ -160,20 +160,13 @@ class TestMonitoringHooks:
             manager.network.grow_network()
 
             # Find the topology broadcast among all broadcast calls
-            topology_calls = [
-                call_args[0][0]
-                for call_args in ws_mgr.broadcast_from_thread.call_args_list
-                if isinstance(call_args[0][0], dict) and call_args[0][0].get("type") == "topology"
-            ]
+            topology_calls = [call_args[0][0] for call_args in ws_mgr.broadcast_from_thread.call_args_list if isinstance(call_args[0][0], dict) and call_args[0][0].get("type") == "topology"]
             assert len(topology_calls) >= 1, "expected at least one ``topology`` broadcast after cascade_add"
 
             payload = topology_calls[-1]["data"]
             # The whole point of the fix: hidden_units must be a list, not an int
             hidden_units = payload.get("hidden_units")
-            assert isinstance(hidden_units, list), (
-                f"hidden_units must be a list (was {type(hidden_units).__name__}: {hidden_units!r}). "
-                "A count-only stub corrupts canopy's topology view."
-            )
+            assert isinstance(hidden_units, list), f"hidden_units must be a list (was {type(hidden_units).__name__}: {hidden_units!r}). " "A count-only stub corrupts canopy's topology view."
             assert len(hidden_units) >= 1, "expected at least one serialized hidden unit"
 
             unit = hidden_units[0]
