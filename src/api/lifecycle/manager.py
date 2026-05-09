@@ -1594,13 +1594,19 @@ class TrainingLifecycleManager:
                         correlation=actual_correlation,
                     )
                 if manager_ref._ws_manager is not None:
-                    topology_data = {
-                        "hidden_units": new_hidden,
-                        "input_size": getattr(manager_ref.network, "input_size", 0),
-                        "output_size": getattr(manager_ref.network, "output_size", 0),
-                        "event": "cascade_add",
-                    }
-                    manager_ref._ws_manager.broadcast_from_thread(create_topology_message(topology_data))
+                    # The cascade_add ``topology`` broadcast must carry the
+                    # full serialized network — hidden_units as a list of
+                    # per-unit dicts (weights/bias/activation) plus
+                    # output_weights/output_bias — so canopy's
+                    # _transform_topology can render the new hidden node and
+                    # its cascade connections. A count-only stub here
+                    # previously caused canopy to render 0 hidden units after
+                    # every cascade growth (the WS frame overrode REST and
+                    # `len(int)` raised inside the transform's isinstance
+                    # check, collapsing the topology to inputs+outputs only).
+                    full_topology = manager_ref.get_topology()
+                    if full_topology is not None:
+                        manager_ref._ws_manager.broadcast_from_thread(create_topology_message(full_topology))
 
             # Post-call: return to output phase after grow completes
             sm.set_phase(TrainingPhase.OUTPUT)
