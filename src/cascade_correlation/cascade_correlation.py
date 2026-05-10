@@ -3691,37 +3691,114 @@ class CascadeCorrelationNetwork:
         self.logger.info(f"CascadeCorrelationNetwork: add_unit: Current number of hidden units: {len(self.hidden_units)}")
         self.logger.trace("CascadeCorrelationNetwork: add_unit: Completed adding a new hidden unit.")
 
-    def _select_best_candidates(self, results: list, num_candidates: int = 1) -> list:
+    def _select_best_candidates(
+        self,
+        results: list,
+        num_candidates: int = 1,
+        *,
+        strategy: Optional[str] = None,
+        top_count: Optional[int] = None,
+        random_count: Optional[int] = None,
+    ) -> list:
         """
         Description:
-            Select top N candidates for layer addition.
+            Select N candidates for layer addition. Honors the strategy /
+            counts written by the canopy adapter via the PR-4a PATCH surface
+            (multi_candidate / candidate_selection / selected_candidates /
+            top_candidates / random_candidates).
         Args:
-            results: List of CandidateTrainingResult objects
-            num_candidates: Number of candidates to select
+            results: List of CandidateTrainingResult objects.
+            num_candidates: Total candidates to select (S in the §1.5 C2.1
+                triple). Defaults to 1, preserving the legacy single-best
+                behavior when called without strategy kwargs.
+            strategy: One of "top" / "random" / "mixed". If None, falls
+                back to ``self.candidate_selection`` (default "top").
+            top_count: T in the triple. When ``strategy=="mixed"``, the
+                first T picks are by descending correlation. Defaults to
+                ``self.top_candidates``.
+            random_count: R in the triple. When ``strategy=="mixed"``, the
+                last R picks are random from candidates remaining after the
+                top-T selection. Defaults to ``self.random_candidates``.
         Notes:
-            - Candidates are sorted by absolute correlation.
-            - Top N candidates are selected.
-            - Candidates below a correlation threshold are filtered out.
+            - Threshold filtering (``correlation_threshold``) is applied to
+              the *pool* before selection — random/mixed picks never include
+              below-threshold candidates.
+            - Numerical determinism for ``random``/``mixed`` uses
+              ``random.Random(self.random_seed)`` if a seed exists, else
+              the module ``random`` singleton.
         Returns:
-            List of selected CandidateTrainingResult objects
+            List of selected CandidateTrainingResult objects (length <= S).
         """
-        self.logger.debug(f"CascadeCorrelationNetwork: _select_best_candidates: Selecting top {num_candidates} from {len(results)} candidates")
+        strategy = strategy or getattr(self, "candidate_selection", "top") or "top"
+        if top_count is None:
+            top_count = getattr(self, "top_candidates", num_candidates)
+        if random_count is None:
+            random_count = getattr(self, "random_candidates", 0)
 
-        # Sort by absolute correlation
-        sorted_results = sorted(
-            results,
-            key=lambda r: abs(r.correlation) if r.correlation else 0,
-            reverse=True,
-        )
+        self.logger.debug(f"CascadeCorrelationNetwork: _select_best_candidates: strategy={strategy!r} S={num_candidates} T={top_count} R={random_count} pool={len(results)}")
 
-        # Select top N
-        selected = sorted_results[:num_candidates]
-
-        # Filter by threshold
+        # Threshold filter first — every strategy honors it.
         threshold = getattr(self, "correlation_threshold", 0.0)
-        selected = [r for r in selected if abs(r.correlation) >= threshold]
-        self.logger.info(f"CascadeCorrelationNetwork: _select_best_candidates: Selected {len(selected)} candidates with correlations: {[r.correlation for r in selected]}")
+        eligible = [r for r in results if r.correlation is not None and abs(r.correlation) >= threshold]
+        if not eligible:
+            self.logger.info("CascadeCorrelationNetwork: _select_best_candidates: no candidates above correlation_threshold")
+            return []
+
+        # Sort by absolute correlation (descending) — used as the input order
+        # for top-N and as the "remainder pool" for mixed.
+        sorted_eligible = sorted(eligible, key=lambda r: abs(r.correlation), reverse=True)
+
+        if strategy == "top":
+            selected = sorted_eligible[:num_candidates]
+        elif strategy == "random":
+            # Uniform pick from the eligible pool. ``num_candidates`` is the
+            # upper bound; if the pool has fewer eligible members we just
+            # return all of them.
+            rng = self._candidate_selection_rng()
+            selected = list(rng.sample(sorted_eligible, min(num_candidates, len(sorted_eligible))))
+        elif strategy == "mixed":
+            # T picks by descending correlation, then R uniform random from
+            # the remainder. The §1.5 C2.1 invariant guarantees T+R==S when
+            # both nonzero, but we defensively bound by ``len(sorted_eligible)``.
+            top_slice = sorted_eligible[:top_count]
+            remainder = sorted_eligible[top_count:]
+            rng = self._candidate_selection_rng()
+            random_slice = list(rng.sample(remainder, min(random_count, len(remainder))))
+            selected = top_slice + random_slice
+        else:
+            self.logger.warning(f"CascadeCorrelationNetwork: _select_best_candidates: unknown strategy {strategy!r}, falling back to 'top'")
+            selected = sorted_eligible[:num_candidates]
+
+        self.logger.info(f"CascadeCorrelationNetwork: _select_best_candidates: Selected {len(selected)} via {strategy!r} with correlations: {[round(r.correlation, 4) for r in selected]}")
         return selected
+
+    def _candidate_selection_rng(self) -> random.Random:
+        """Return a deterministic RNG seeded from the network's ``random_seed``
+        if available, else the module ``random`` singleton.
+
+        Local instance so a parallel candidate-training pass on another
+        thread doesn't perturb this selection's draw sequence.
+        """
+        seed = getattr(self, "random_seed", None)
+        return random.Random(seed) if seed is not None else random.Random()
+
+    def _effective_candidate_count(self) -> int:
+        """How many candidates ``grow_network`` should promote per iteration.
+
+        Resolution order (first match wins):
+
+          1. ``self.candidates_per_layer`` if > 1 — legacy attribute that
+             scripted runs may have set; preserved for backward compatibility.
+          2. ``self.selected_candidates`` if ``self.multi_candidate`` is True
+             — the PR-4a PATCH-surface knobs.
+          3. 1 — the single-best-candidate path.
+        """
+        legacy_count = getattr(self, "candidates_per_layer", None)
+        if legacy_count is not None and legacy_count > 1:
+            return int(legacy_count)
+        if getattr(self, "multi_candidate", False):
+            return int(getattr(self, "selected_candidates", 1))
+        return 1
 
     def add_units_as_layer(self, candidates: list, x: torch.Tensor) -> None:
         """
@@ -3883,19 +3960,22 @@ class CascadeCorrelationNetwork:
                     all_correlations=list(_correlations),
                 )
 
-            # Determine number of candidates to add
-            candidates_per_layer = getattr(self, "candidates_per_layer", 1)
+            # FRONTEND_ISSUES_PLAN_2026-05-09 §1.5 C2 / Issue #1 — multi-candidate
+            # promotion plus the (S, T, R) selection-strategy triple, wired
+            # through the PR-4a PATCH surface (multi_candidate /
+            # candidate_selection / selected_candidates / top/random_candidates).
+            effective_count = self._effective_candidate_count()
 
             # Add candidate(s) to the network and retrain the output layer
-            if candidates_per_layer > 1:
+            if effective_count > 1:
                 if selected_candidates := self._select_best_candidates(
                     training_results.candidate_objects,
-                    num_candidates=candidates_per_layer,
+                    num_candidates=effective_count,
                 ):
                     self.add_units_as_layer([c for c in selected_candidates if c.candidate], x_train)
                     train_loss = self.train_output_layer(x_train, y_train, self.output_epochs)
                     train_accuracy = self.get_accuracy(x_train, y_train)
-                    self.logger.info(f"CascadeCorrelationNetwork: grow_network: Added {len(selected_candidates)} candidates as layer")
+                    self.logger.info(f"CascadeCorrelationNetwork: grow_network: Added {len(selected_candidates)} candidates as layer (strategy={getattr(self, 'candidate_selection', 'top')!r})")
                 else:
                     self.logger.warning("CascadeCorrelationNetwork: grow_network: No candidates met selection criteria")
                     break
