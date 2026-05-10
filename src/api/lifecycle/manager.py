@@ -2290,6 +2290,38 @@ class TrainingLifecycleManager:
     # Topology & statistics
     # ------------------------------------------------------------------
 
+    @staticmethod
+    def _activation_name(activation_fn: Any) -> str:
+        """Best-effort name extraction for a hidden unit's activation.
+
+        Handles all three shapes that can land in ``unit["activation_fn"]``:
+
+        - ``ActivationWithDerivative`` wrappers (the production path —
+          cascade_correlation.py wraps the user's activation in this picklable
+          class for multiprocessing). The wrapper stores its name in
+          ``_activation_name``; it does **not** expose ``__name__``, so the
+          previous ``activation_fn.__name__`` access raised AttributeError
+          and silently failed inside ``get_topology``'s except clause —
+          collapsing the topology view because the REST endpoint then
+          returned 500 and the WS broadcast skipped the frame entirely.
+        - Plain torch builtins (e.g. ``torch.sigmoid``, ``torch.tanh``) used
+          by manual ``add_hidden_unit_manual`` callers — these expose
+          ``__name__``.
+        - ``torch.nn.Module`` instances — expose the class name.
+
+        Returns ``"sigmoid"`` for ``None`` to preserve the prior fallback
+        behavior (was ``unit.get("activation_fn", torch.sigmoid).__name__``).
+        """
+        if activation_fn is None:
+            return "sigmoid"
+        wrapper_name = getattr(activation_fn, "_activation_name", None)
+        if isinstance(wrapper_name, str) and wrapper_name:
+            return wrapper_name
+        builtin_name = getattr(activation_fn, "__name__", None)
+        if isinstance(builtin_name, str) and builtin_name:
+            return builtin_name
+        return type(activation_fn).__name__
+
     def get_topology(self) -> Optional[Dict[str, Any]]:
         """Extract network topology for visualization (thread-safe)."""
         if self.network is None:
@@ -2309,7 +2341,7 @@ class TrainingLifecycleManager:
                             "id": i,
                             "weights": unit["weights"].detach().cpu().tolist(),
                             "bias": float(unit["bias"]),
-                            "activation": unit.get("activation_fn", torch.sigmoid).__name__,
+                            "activation": TrainingLifecycleManager._activation_name(unit.get("activation_fn")),
                         }
                     )
             return topology

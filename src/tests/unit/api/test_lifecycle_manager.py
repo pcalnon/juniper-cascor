@@ -416,6 +416,77 @@ class TestLifecycleManagerStatus:
         assert "output_weights" in topology
         assert "hidden_units" in topology
 
+    def test_get_topology_with_hidden_unit_using_activation_wrapper(self):
+        """Regression: ``get_topology`` must serialize a hidden unit whose
+        ``activation_fn`` is an ``ActivationWithDerivative`` instance — the
+        production shape installed by ``grow_network`` after candidate
+        training. Pre-fix, the wrapper had no ``__name__`` attribute, so the
+        previous ``activation_fn.__name__`` access raised AttributeError,
+        ``get_topology`` returned None, ``/v1/network/topology`` returned
+        500, and canopy's Network Topology view stayed stuck on the initial
+        0-hidden snapshot for the rest of the session.
+        """
+        import torch
+
+        from cascade_correlation.cascade_correlation import CascadeCorrelationNetwork
+        from utils.activation import ActivationWithDerivative
+
+        mgr = TrainingLifecycleManager()
+        mgr.create_network(input_size=2, output_size=2)
+
+        # Manually inject a hidden unit shaped exactly like a candidate-
+        # trained unit: weights/bias as Tensors, activation_fn wrapped.
+        wrapper = ActivationWithDerivative(torch.tanh)
+        mgr.network.hidden_units.append(
+            {
+                "weights": torch.tensor([0.10, 0.20]),
+                "bias": torch.tensor([0.05]),  # candidate stores shape [1], not 0-dim
+                "activation_fn": wrapper,
+                "correlation": 0.42,
+            }
+        )
+
+        topology = mgr.get_topology()
+        assert topology is not None, "get_topology returned None — the activation-name extraction regressed"
+
+        hidden = topology["hidden_units"]
+        assert isinstance(hidden, list) and len(hidden) == 1
+        unit = hidden[0]
+        assert unit["id"] == 0
+        assert unit["weights"] == [0.10, 0.20] or all(abs(a - b) < 1e-6 for a, b in zip(unit["weights"], [0.10, 0.20]))
+        assert abs(unit["bias"] - 0.05) < 1e-6
+        # The wrapper exposes its name via _activation_name (e.g. "tanh"),
+        # NOT via __name__. The fix must consult _activation_name first.
+        assert unit["activation"] == "tanh"
+
+    def test_activation_name_helper_handles_known_shapes(self):
+        """The ``_activation_name`` helper must handle every shape that can
+        appear in ``unit['activation_fn']``: ``ActivationWithDerivative``
+        wrappers, plain torch builtins, ``nn.Module`` instances, and None.
+        """
+        import torch
+
+        from utils.activation import ActivationWithDerivative
+
+        helper = TrainingLifecycleManager._activation_name
+
+        # Production path — wrapper around torch.tanh
+        assert helper(ActivationWithDerivative(torch.tanh)) == "tanh"
+        # Manual-add path — plain builtin
+        assert helper(torch.sigmoid) == "sigmoid"
+        assert helper(torch.tanh) == "tanh"
+        # nn.Module instance — class-name fallback
+        assert helper(torch.nn.Tanh()) == "Tanh"
+        assert helper(torch.nn.ReLU()) == "ReLU"
+        # Missing key — preserve prior fallback shape ("sigmoid")
+        assert helper(None) == "sigmoid"
+
+        # Object with neither attribute → class-name fallback
+        class _Bare:
+            pass
+
+        assert helper(_Bare()) == "_Bare"
+
     def test_get_statistics_no_network(self):
         """Statistics returns empty dict without network."""
         mgr = TrainingLifecycleManager()
