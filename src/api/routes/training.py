@@ -5,6 +5,7 @@ import logging
 import torch
 from fastapi import APIRouter, HTTPException, Request
 
+from api.lifecycle.manager import InvalidCandidatePoolError
 from api.models.common import success_response
 from api.models.training import TrainingParamUpdateRequest, TrainingStartRequest
 
@@ -149,6 +150,11 @@ async def update_training_params(request: Request, body: TrainingParamUpdateRequ
     try:
         updated = lifecycle.update_params(body.model_dump(exclude_none=True))
         return success_response(updated)
+    except InvalidCandidatePoolError as e:
+        # FRONTEND_ISSUES_PLAN_2026-05-09 §1.5 C2.1 — surface the violation
+        # string in the JSON body so the canopy adapter can route it through
+        # the same `mismatches`/`skipped` toast machinery from C3.
+        raise HTTPException(status_code=422, detail=str(e))
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
 

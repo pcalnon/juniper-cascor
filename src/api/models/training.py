@@ -120,6 +120,14 @@ class TrainingParams(BaseModel):
     # training when the metric is volatile.
     auto_snap_best: Optional[bool] = Field(None, description="Auto-save a snapshot whenever the model beats its best (validation) accuracy")
     auto_snap_min_epochs: Optional[int] = Field(None, ge=0, le=1_000_000, description="Suppress auto-snap until this many epochs have elapsed (default 50)")
+    # FRONTEND_ISSUES_PLAN_2026-05-09 §1.5 C2 / Issue #1 — see TrainingParamUpdateRequest
+    # for the full per-field rationale; mirrored here so the start-of-training override
+    # surface validates the same way as the runtime PATCH path (no dropped keys).
+    multi_candidate: Optional[bool] = Field(None, description="If True, promote multiple candidates per growth iteration (PR-4b will wire selection logic)")
+    candidate_selection: Optional[Literal["top", "random", "mixed"]] = Field(None, description="Strategy for choosing which trained candidates to promote")
+    selected_candidates: Optional[int] = Field(None, ge=1, le=256, description="Total candidates promoted per growth iteration (S in the C2.1 invariant triple)")
+    top_candidates: Optional[int] = Field(None, ge=0, le=256, description="Top-correlation slice of the promoted set (T)")
+    random_candidates: Optional[int] = Field(None, ge=0, le=256, description="Random slice of the promoted set (R)")
 
 
 class TrainingStartRequest(BaseModel):
@@ -202,3 +210,11 @@ class TrainingParamUpdateRequest(BaseModel):
     # CAS-006 (A-4): runtime-patchable counterparts to TrainingParams.auto_snap_*.
     auto_snap_best: Optional[bool] = Field(None, description="Auto-save a snapshot whenever the model beats its best (validation) accuracy")
     auto_snap_min_epochs: Optional[int] = Field(None, ge=0, le=1_000_000, description="Suppress auto-snap until this many epochs have elapsed")
+    # FRONTEND_ISSUES_PLAN_2026-05-09 §1.5 C2 / Issue #1 — candidate-pool selection knobs.
+    # Schema + post-merge invariant validation (C2.1) ship in PR-4a; the
+    # cascade_correlation.py selection-logic wiring lands in PR-4b.
+    multi_candidate: Optional[bool] = Field(None, description="If True, promote multiple candidates per growth iteration (PR-4b will wire this into selection)")
+    candidate_selection: Optional[Literal["top", "random", "mixed"]] = Field(None, description="Strategy for choosing which trained candidates to promote: top correlation, random, or a mix")
+    selected_candidates: Optional[int] = Field(None, ge=1, description="Total candidates promoted per growth iteration (S in the C2.1 invariant triple); must be in [1, candidate_pool_size]")
+    top_candidates: Optional[int] = Field(None, ge=0, description="Top-correlation slice of the promoted set (T in the C2.1 invariant triple)")
+    random_candidates: Optional[int] = Field(None, ge=0, description="Random slice of the promoted set (R in the C2.1 invariant triple)")
