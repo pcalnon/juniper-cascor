@@ -82,10 +82,7 @@ def test_reset_after_pause_leaves_pause_event_set(mgr):
     # User resets — fix is here.
     mgr.reset()
 
-    assert mgr._pause_event.is_set(), (
-        "BUG-CC-#5 regression: reset() must normalise _pause_event so the next "
-        "start_training() does not inherit a stale clear()"
-    )
+    assert mgr._pause_event.is_set(), "BUG-CC-#5 regression: reset() must normalise _pause_event so the next " "start_training() does not inherit a stale clear()"
     assert mgr._stop_requested.is_set()
 
 
@@ -115,12 +112,7 @@ def _apply(mgr, cmd):
 @pytest.mark.integration
 @pytest.mark.parametrize(
     "seq",
-    [
-        seq
-        for n in range(1, 4)
-        for seq in itertools.product(_COMMANDS, repeat=n)
-        if seq[-1] == "reset"
-    ],
+    [seq for n in range(1, 4) for seq in itertools.product(_COMMANDS, repeat=n) if seq[-1] == "reset"],
 )
 def test_after_reset_pause_event_is_set(mgr, seq):
     """No matter what command sequence preceded a final reset(), _pause_event is set.
