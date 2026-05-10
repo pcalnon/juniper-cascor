@@ -71,6 +71,43 @@ def _write_activation_function_name(network: Any, value: str) -> None:
 _coerce_native_scalars = _common_coerce_native_scalars
 
 
+class InvalidCandidatePoolError(ValueError):
+    """Raised when a candidate-pool PATCH violates the §1.5 C2.1 invariant triple.
+
+    A subclass of ``ValueError`` so existing ``except ValueError`` handlers in
+    ``update_params`` and the PATCH route still see it; the PATCH route promotes
+    instances of this specific subclass to HTTP 422 (the message is the
+    human-readable violation string) while bare ``ValueError`` remains 404.
+    See ``FRONTEND_ISSUES_PLAN_2026-05-09.md §1.5 C2.1`` for the full truth table.
+    """
+
+
+def _validate_candidate_pool_triple(s: int, t: int, r: int, p: int) -> Optional[str]:
+    """Return ``None`` if (S, T, R, P) satisfy the §1.5 C2.1 invariant or a
+    human-readable violation string otherwise.
+
+    Bound to be called against the *post-merge* triple — never against the
+    per-key delta — because a multi-key PATCH that's only valid as a unit
+    (e.g. ``{S: 6, T: 4, R: 2}`` from a prior ``(S=2, T=2, R=0)``) must be
+    accepted in one shot.
+    """
+    if not (1 <= s <= p):
+        return f"selected_candidates {s} not in [1, candidate_pool_size={p}]"
+    if t < 0 or r < 0:
+        return f"top_candidates and random_candidates must be >= 0 (got T={t}, R={r})"
+    if t > s or r > s:
+        return f"each component must be <= selected_candidates (S={s}, T={t}, R={r})"
+    if t == 0 and r == 0:
+        return "top_candidates and random_candidates cannot both be 0"
+    if t == 0 and r != s:
+        return f"with top_candidates=0, random_candidates must equal S={s} (got R={r})"
+    if r == 0 and t != s:
+        return f"with random_candidates=0, top_candidates must equal S={s} (got T={t})"
+    if t > 0 and r > 0 and t + r != s:
+        return f"top_candidates+random_candidates must equal S={s} (got {t}+{r}={t + r})"
+    return None
+
+
 class _WeightHistoryRecorder:
     """CAN-015g (Phase 6E follow-on, g-6): training-loop weight history capture.
 
@@ -2070,6 +2107,14 @@ class TrainingLifecycleManager:
                 # snap counter resets each ``start_training``.
                 "auto_snap_best": self._auto_snap_best,
                 "auto_snap_min_epochs": self._auto_snap_min_epochs,
+                # FRONTEND_ISSUES_PLAN_2026-05-09 §1.5 C2 / Issue #1 — candidate-pool
+                # selection knobs. PR-4a stores them; PR-4b consumes them in
+                # ``_select_best_candidates`` and ``grow_network``.
+                "multi_candidate": getattr(self.network, "multi_candidate", False),
+                "candidate_selection": getattr(self.network, "candidate_selection", "top"),
+                "selected_candidates": getattr(self.network, "selected_candidates", 1),
+                "top_candidates": getattr(self.network, "top_candidates", 1),
+                "random_candidates": getattr(self.network, "random_candidates", 0),
             }
         )
 
@@ -2227,10 +2272,26 @@ class TrainingLifecycleManager:
             "activation_function_name",  # CAN-011 (Phase 6E Sprint A-3) — re-init on swap
             "auto_snap_best",  # CAS-006 (Phase 6E Sprint A-4) — lifecycle attribute
             "auto_snap_min_epochs",  # CAS-006 (Phase 6E Sprint A-4) — lifecycle attribute
+            # FRONTEND_ISSUES_PLAN_2026-05-09 §1.5 C2 — schema-only in PR-4a; selection
+            # logic in PR-4b. Plain network attributes (no nested setter required).
+            "multi_candidate",
+            "candidate_selection",
+            "selected_candidates",
+            "top_candidates",
+            "random_candidates",
         }
         nested_keys = {"optimizer_type", "activation_function_name"}
         lifecycle_keys = {"auto_snap_best", "auto_snap_min_epochs"}
         simple_keys = updatable_keys - nested_keys - lifecycle_keys
+
+        # FRONTEND_ISSUES_PLAN_2026-05-09 §1.5 C2.1 — validate the candidate-pool
+        # triple against the *post-merge* state so a multi-key PATCH that's only
+        # valid as a unit (e.g. {S=6, T=4, R=2} from a prior {S=2, T=2, R=0})
+        # is accepted in one shot. Raises ValueError → 422 if violated; nothing
+        # has been applied yet, so no rollback is needed for this branch.
+        triple_violation = self._validate_candidate_pool_post_merge(params)
+        if triple_violation is not None:
+            raise InvalidCandidatePoolError(triple_violation)
         applicable = {k: v for k, v in params.items() if k in simple_keys and hasattr(self.network, k)}
         old_values = {k: getattr(self.network, k) for k in applicable}
 
@@ -2300,6 +2361,25 @@ class TrainingLifecycleManager:
                     self.logger.exception("update_params rollback: revert of %s failed", key)
             raise
         return self.get_training_params()
+
+    def _validate_candidate_pool_post_merge(self, params: Dict[str, Any]) -> Optional[str]:
+        """Validate the §1.5 C2.1 candidate-pool invariant against the *post-merge*
+        triple — i.e. what (S, T, R, P) would be if every key in ``params``
+        landed.  Returns ``None`` on success or a violation string on failure.
+
+        Skipped when none of {selected_candidates, top_candidates,
+        random_candidates, candidate_pool_size} appears in ``params`` — the
+        ambient triple was already valid (it's an invariant of the network),
+        and validating an unrelated PATCH would be needlessly expensive.
+        """
+        triple_keys = {"selected_candidates", "top_candidates", "random_candidates", "candidate_pool_size"}
+        if not (triple_keys & params.keys()):
+            return None
+        s = params.get("selected_candidates", getattr(self.network, "selected_candidates", 1))
+        t = params.get("top_candidates", getattr(self.network, "top_candidates", 1))
+        r = params.get("random_candidates", getattr(self.network, "random_candidates", 0))
+        p = params.get("candidate_pool_size", getattr(self.network, "candidate_pool_size", 1))
+        return _validate_candidate_pool_triple(int(s), int(t), int(r), int(p))
 
     # ------------------------------------------------------------------
     # Topology & statistics

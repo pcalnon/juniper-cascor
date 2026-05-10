@@ -668,6 +668,15 @@ class CascadeCorrelationNetwork:
         self.input_size = self.config.input_size or _CASCADE_CORRELATION_NETWORK_INPUT_SIZE
         self.output_size = self.config.output_size or _CASCADE_CORRELATION_NETWORK_OUTPUT_SIZE
         self.candidate_pool_size = self.config.candidate_pool_size or _CASCADE_CORRELATION_NETWORK_CANDIDATE_POOL_SIZE
+        # FRONTEND_ISSUES_PLAN_2026-05-09 §1.5 C2 / Issue #1 — candidate-pool selection
+        # knobs. Defaults preserve current behavior (single top-correlation candidate
+        # per growth iteration). PR-4b will rewire ``_select_best_candidates`` to
+        # honour the multi/top/random triple; today these attributes are storage-only.
+        self.multi_candidate = bool(getattr(self.config, "multi_candidate", False) or False)
+        self.candidate_selection = getattr(self.config, "candidate_selection", None) or "top"
+        self.selected_candidates = getattr(self.config, "selected_candidates", None) or 1
+        self.top_candidates = getattr(self.config, "top_candidates", None) if getattr(self.config, "top_candidates", None) is not None else 1
+        self.random_candidates = getattr(self.config, "random_candidates", None) if getattr(self.config, "random_candidates", None) is not None else 0
 
         # Initialize training parameters
         self.learning_rate = self.config.learning_rate or _CASCADE_CORRELATION_NETWORK_LEARNING_RATE
