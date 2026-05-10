@@ -999,6 +999,14 @@ class TrainingLifecycleManager:
         # Network creation params (for reset)
         self._network_params: Optional[Dict[str, Any]] = None
 
+        # FRONTEND_ISSUES_PLAN_2026-05-09 §3.5.1 / Issue #3 Phase 1 — staged
+        # dataset config. Set by ``stage_dataset_config`` (POST /v1/training/
+        # dataset), consumed + cleared by the next ``start_training`` via
+        # ``_reload_dataset``. ``clear_pending_dataset_config`` (DELETE) and
+        # ``get_pending_dataset_config`` (GET .../pending) round it out so the
+        # canopy banner can show the staged change and offer Cancel.
+        self._pending_dataset_config: Optional[Dict[str, Any]] = None
+
         # CAN-015g (g-6): training-loop weight history recorder.
         # Lazily attached on first ``start_training`` call; persists
         # across re-trains so callbacks register exactly once.
@@ -1862,6 +1870,16 @@ class TrainingLifecycleManager:
                 self._val_x = x_val
                 self._val_y = y_val
 
+            # FRONTEND_ISSUES_PLAN_2026-05-09 §3.5.1 / Issue #3 Phase 1 — if
+            # the user staged a dataset change while training was stopped,
+            # consume it now (before the future is submitted). On reload
+            # failure, leave the staged config in place so the user can fix
+            # the upstream juniper-data issue and Restart-and-retry without
+            # losing their selection.
+            if self._pending_dataset_config:
+                self._reload_dataset(**self._pending_dataset_config)
+                self._pending_dataset_config = None
+
             if self._train_x is None or self._train_y is None:
                 raise ValueError("Training data not provided")
 
@@ -1998,6 +2016,10 @@ class TrainingLifecycleManager:
             "training_state": training_state,
             "network_loaded": self.network is not None,
             "training_active": self.state_machine.is_started(),
+            # FRONTEND_ISSUES_PLAN_2026-05-09 §3.5.1 / Issue #3 Phase 1 — drives
+            # the canopy "Dataset change pending — restart training to apply"
+            # banner without canopy having to poll a separate route.
+            "pending_dataset": self.get_pending_dataset_config(),
         }
 
     def get_metrics(self) -> Dict[str, Any]:
@@ -2034,6 +2056,100 @@ class TrainingLifecycleManager:
     def has_training_data(self) -> bool:
         """Check if training data is loaded."""
         return self._train_x is not None and self._train_y is not None
+
+    # ------------------------------------------------------------------
+    # Pending dataset config (FRONTEND_ISSUES_PLAN_2026-05-09 §3.5.1 + §3.5.2 P1)
+    # ------------------------------------------------------------------
+
+    def stage_dataset_config(self, **cfg: Any) -> Dict[str, Any]:
+        """Stage a dataset-config change for the next ``start_training`` call.
+
+        The actual fetch + tensor swap happens in ``_reload_dataset`` at the
+        top of ``start_training``; staging just records intent so the canopy
+        banner can announce "Dataset change pending" until the user restarts.
+
+        Empty ``cfg`` is a no-op (clears any prior staging — same shape as
+        ``clear_pending_dataset_config``) so the route can use ``cfg or {}``
+        without separate validation.
+        """
+        with self._training_lock:
+            if not cfg:
+                self._pending_dataset_config = None
+                return {"status": "cleared", "config": None}
+            self._pending_dataset_config = dict(cfg)
+            return {"status": "staged", "config": dict(cfg)}
+
+    def clear_pending_dataset_config(self) -> Dict[str, Any]:
+        """Discard any staged dataset change so the next start uses current data."""
+        with self._training_lock:
+            prior = self._pending_dataset_config
+            self._pending_dataset_config = None
+        return {"status": "cleared", "discarded": dict(prior) if prior else None}
+
+    def get_pending_dataset_config(self) -> Optional[Dict[str, Any]]:
+        """Return the staged dataset config (or None) — drives the canopy banner."""
+        cfg = self._pending_dataset_config
+        return dict(cfg) if cfg else None
+
+    def _reload_dataset(self, **cfg: Any) -> None:
+        """Fetch a fresh dataset from juniper-data and replace the live tensors.
+
+        Mirrors ``api/app.py::_auto_start_training``'s pattern: instantiate a
+        ``JuniperDataClient`` from env vars, ``create_dataset`` with the
+        staged generator + params, ``download_artifact_npz``, convert to
+        ``torch.float32`` tensors, swap ``_train_x/_train_y`` (and val if
+        the artifact carries them).
+
+        Held under ``_training_lock`` by the caller (``start_training``);
+        any I/O failure surfaces as ``RuntimeError`` so the caller can leave
+        ``_pending_dataset_config`` in place for the user to retry.
+        """
+        try:
+            from juniper_data_client import JuniperDataClient
+        except ImportError as exc:  # juniper-data-client is an optional extra
+            raise RuntimeError("juniper-data-client is not installed; cannot reload dataset") from exc
+
+        # Pop the generator name; everything else is forwarded as ``params``.
+        cfg = dict(cfg)
+        dataset_type = cfg.pop("dataset_type", None)
+        if not dataset_type:
+            raise RuntimeError("Pending dataset config missing required 'dataset_type'")
+
+        import os as _os
+
+        from cascor_constants.constants_api import _PROJECT_API_JUNIPER_DATA_URL_DEFAULT
+
+        try:
+            from secrets_util import get_secret  # type: ignore[import-not-found]
+        except ImportError:
+            get_secret = lambda _key: None  # noqa: E731
+
+        data_url = _os.environ.get("JUNIPER_DATA_URL", _PROJECT_API_JUNIPER_DATA_URL_DEFAULT)
+        api_key = get_secret("JUNIPER_DATA_API_KEY")
+        client = JuniperDataClient(base_url=data_url, api_key=api_key)
+
+        try:
+            result = client.create_dataset(generator=dataset_type, params=cfg, persist=True)
+            dataset_id = result["dataset_id"]
+            arrays = client.download_artifact_npz(dataset_id)
+        except Exception as exc:
+            raise RuntimeError(f"juniper-data fetch failed: {exc}") from exc
+
+        try:
+            new_train_x = torch.tensor(arrays["X_train"], dtype=torch.float32)
+            new_train_y = torch.tensor(arrays["y_train"], dtype=torch.float32)
+        except KeyError as exc:
+            raise RuntimeError(f"juniper-data artifact missing required key: {exc}") from exc
+
+        self._train_x = new_train_x
+        self._train_y = new_train_y
+        if "X_test" in arrays and "y_test" in arrays:
+            self._val_x = torch.tensor(arrays["X_test"], dtype=torch.float32)
+            self._val_y = torch.tensor(arrays["y_test"], dtype=torch.float32)
+        else:
+            self._val_x = None
+            self._val_y = None
+        self.logger.info("Reloaded dataset %r (%d train samples)", dataset_type, new_train_x.shape[0])
 
     def get_dataset(self) -> Dict[str, Any]:
         """Return dataset metadata."""

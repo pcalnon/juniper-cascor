@@ -7,7 +7,7 @@ from fastapi import APIRouter, HTTPException, Request
 
 from api.lifecycle.manager import InvalidCandidatePoolError
 from api.models.common import success_response
-from api.models.training import TrainingParamUpdateRequest, TrainingStartRequest
+from api.models.training import StageDatasetRequest, TrainingParamUpdateRequest, TrainingStartRequest
 
 logger = logging.getLogger("juniper_cascor.api.routes.training")
 
@@ -157,6 +157,37 @@ async def update_training_params(request: Request, body: TrainingParamUpdateRequ
         raise HTTPException(status_code=422, detail=str(e))
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
+
+
+# FRONTEND_ISSUES_PLAN_2026-05-09 §3.5.1 + §3.5.2 P1 — Issue #3 Phase 1 dataset
+# staging endpoints. Stage a dataset config now, restart training to apply
+# (cold-swap), or DELETE the staged config to cancel before restart.
+
+
+@router.post("/dataset")
+async def stage_dataset(request: Request, body: StageDatasetRequest) -> dict:
+    """Stage a dataset-config change for the next ``start_training``.
+
+    Returns the staged config in ``data``. An empty body clears any prior
+    staging (idempotent with DELETE for that case).
+    """
+    lifecycle = _get_lifecycle(request)
+    cfg = body.model_dump(exclude_none=True)
+    return success_response(lifecycle.stage_dataset_config(**cfg))
+
+
+@router.delete("/dataset")
+async def cancel_dataset_stage(request: Request) -> dict:
+    """Discard any staged dataset change — Phase 1 Cancel button target."""
+    lifecycle = _get_lifecycle(request)
+    return success_response(lifecycle.clear_pending_dataset_config())
+
+
+@router.get("/dataset/pending")
+async def get_pending_dataset(request: Request) -> dict:
+    """Return the staged dataset config (or null) — drives the canopy banner."""
+    lifecycle = _get_lifecycle(request)
+    return success_response({"pending": lifecycle.get_pending_dataset_config()})
 
 
 def _generate_spiral_data(params: dict):
