@@ -82,6 +82,23 @@ class InvalidCandidatePoolError(ValueError):
     """
 
 
+class TrainingInterrupted(Exception):
+    """Sentinel raised from training-loop callbacks when the user requests stop.
+
+    Pre-2026-05-10 the ``pause_training`` and ``stop_training`` REST endpoints
+    set ``_pause_event`` / ``_stop_requested`` and transitioned the FSM, but the
+    flags were never observed inside ``cascade_correlation.fit()`` — training
+    ran to natural completion regardless. The fix wires signal checks into the
+    ``_output_training_callback`` and ``_grow_iteration_callback`` hook points;
+    when ``_stop_requested`` is set, the callback raises this sentinel which
+    ``monitored_fit`` catches as a clean cancellation (FSM → STOP, status
+    Stopped, cancelled-counter incremented; not a failure).
+
+    See ``ISSUE_3_PHASE_2_LIVE_DATASET_SWAP_2026-05-09.md`` §3.4 audit findings
+    for the original defect documentation; this fix is P2-PRE-1 of that plan.
+    """
+
+
 def _validate_candidate_pool_triple(s: int, t: int, r: int, p: int) -> Optional[str]:
     """Return ``None`` if (S, T, R, P) satisfy the §1.5 C2.1 invariant or a
     human-readable violation string otherwise.
@@ -1339,7 +1356,33 @@ class TrainingLifecycleManager:
     # Monitoring hooks (monkey-patch approach from CascorIntegration)
     # ------------------------------------------------------------------
 
-    def _install_monitoring_hooks(self) -> None:
+    def _check_for_interrupt(self) -> None:
+        """Raise ``TrainingInterrupted`` on stop request; block on pause.
+
+        Called from the training-loop callbacks installed by
+        ``_install_monitoring_hooks`` (output-epoch + grow-iteration boundaries).
+        Pre-2026-05-10 the ``pause_training`` and ``stop_training`` REST endpoints
+        were observably no-ops at the training-loop level — they updated the FSM
+        but the loop never observed the events. This method is the missing hook.
+
+        The pause wait uses a 0.5 s timeout so a stop request received WHILE
+        paused is observed promptly (the loop re-checks ``_stop_requested`` on
+        each wakeup). Without the timeout, a stop after pause would block forever
+        since ``_pause_event`` would still be cleared.
+
+        Defined as an instance method (rather than a closure inside
+        ``_install_monitoring_hooks``) so it's reachable from
+        ``_install_grow_network_hook`` (which lives in a separate method scope)
+        and so tests can invoke it directly via ``mgr._check_for_interrupt()``.
+        """
+        if self._stop_requested.is_set():
+            raise TrainingInterrupted("stop_requested")
+        while not self._pause_event.is_set():
+            self._pause_event.wait(timeout=0.5)
+            if self._stop_requested.is_set():
+                raise TrainingInterrupted("stop_requested_during_pause")
+
+    def _install_monitoring_hooks(self) -> None:  # noqa: C901
         """Install monitoring hooks on the network via monkey-patching.
 
         Hooks:
@@ -1359,6 +1402,13 @@ class TrainingLifecycleManager:
         sm = self.state_machine
         manager_ref = self
 
+        # P2-PRE-1 (2026-05-10): _check_for_interrupt is an instance method (see
+        # ``TrainingLifecycleManager._check_for_interrupt`` below). It's called
+        # from both _output_training_callback (this module) and _grow_iteration_callback
+        # (which lives in _install_grow_network_hook, a different method) — making
+        # it an instance method instead of a closure puts it in a single shared
+        # scope and lets tests invoke it directly via ``mgr._check_for_interrupt()``.
+
         # METRICS-MON R5.4-pre: per-fit closure box that holds the
         # ``time.perf_counter()`` of the most recent epoch boundary so
         # ``_output_training_callback`` can compute the train-step
@@ -1371,6 +1421,11 @@ class TrainingLifecycleManager:
         _step_timer: dict[str, float | None] = {"prev": None}
 
         def _output_training_callback(epoch, epochs, loss):
+            # P2-PRE-1 (2026-05-10): check pause/stop signals BEFORE emitting metrics.
+            # Raises TrainingInterrupted on stop; blocks here while paused. Called
+            # every 25 output epochs (or last epoch) per train_output_layer's
+            # callback contract — that's the natural pause boundary.
+            manager_ref._check_for_interrupt()
             monitor.on_epoch_end(
                 epoch=epoch,
                 loss=loss,
@@ -1420,8 +1475,13 @@ class TrainingLifecycleManager:
             state.update_state(status="Started", phase="Output", phase_started_at=datetime.now().isoformat())
             manager_ref._broadcast_training_state(force=True)
 
-            # Inject output training callback (Approach B — attribute fallback)
-            manager_ref.network._output_epoch_callback = _output_training_callback
+            # P2-PRE-1 (2026-05-10): the _output_epoch_callback / _grow_iteration_callback
+            # bindings on the network were moved from here (and from monitored_grow)
+            # down to install-time (after the closure definitions, before the network.fit
+            # replacement). Binding at install time removes a subtle race window where
+            # the callbacks were absent between create_network and the first fit() call,
+            # and lets tests drive _check_for_interrupt via the bound callbacks without
+            # having to first start a real fit.
 
             # OBS-WIRE-01 (A.1): mark the session active. Paired with
             # the ``dec_training_sessions`` call in the ``finally``
@@ -1467,6 +1527,20 @@ class TrainingLifecycleManager:
                     inc_training_session_completed(TRAINING_SESSION_STATUS_SUCCESS)
 
                 return result
+            except TrainingInterrupted:
+                # P2-PRE-1 (2026-05-10): clean cancellation path. Raised by
+                # _check_for_interrupt() in the training-loop callbacks when
+                # _stop_requested is set. Treated as a successful stop, NOT a
+                # failure: same FSM/state transitions and gauge increments as
+                # the post-fit stop_event path above (lines 1500–1506), so a
+                # mid-fit stop and a post-fit stop produce the same observable
+                # state. Don't re-raise — the user requested this; it's not an
+                # error from the API perspective.
+                sm.handle_command(Command.STOP)
+                state.update_state(status="Stopped", phase="Idle")
+                manager_ref._broadcast_training_state(force=True)
+                inc_training_session_completed(TRAINING_SESSION_STATUS_CANCELLED)
+                return None
             except Exception as e:
                 sm.mark_failed(str(e))
                 state.update_state(status="Failed", phase="Idle")
@@ -1486,6 +1560,14 @@ class TrainingLifecycleManager:
                 except Exception:
                     manager_ref.logger.debug("dec_training_sessions emission failed", exc_info=True)
                 monitor.on_training_end()
+
+        # P2-PRE-1 (2026-05-10): bind the output-epoch callback at install time
+        # (was previously bound inside monitored_fit on first invocation, leaving
+        # a window where the attribute was absent between create_network and
+        # the first fit() call). Bind-at-install also lets the new
+        # test_pause_stop_actually_interrupts.py tests drive the callback
+        # directly without first having to start a real fit.
+        self.network._output_epoch_callback = _output_training_callback
 
         self.network.fit = monitored_fit
 
@@ -1575,6 +1657,12 @@ class TrainingLifecycleManager:
         self._original_methods["grow_network"] = original_grow
 
         def _grow_iteration_callback(iteration, max_iterations, best_correlation, candidates_trained, candidates_total, phase_detail, **kwargs):
+            # P2-PRE-1 (2026-05-10): pause/stop check at the cascade-iteration boundary.
+            # Pause inside the multiprocessing candidate-training pool is intentionally
+            # out of scope for this fix — the iteration boundary is the natural pause
+            # point for the cascade-growth loop. (Tighter granularity within candidate
+            # training would require multiprocessing-aware signal threading.)
+            manager_ref._check_for_interrupt()
             state.update_state(
                 grow_iteration=iteration,
                 grow_max=max_iterations,
@@ -1601,8 +1689,8 @@ class TrainingLifecycleManager:
             state.update_state(phase="Candidate", phase_started_at=datetime.now().isoformat())
             manager_ref._broadcast_training_state(force=True)
 
-            # Inject grow iteration callback (Approach B — attribute fallback)
-            manager_ref.network._grow_iteration_callback = _grow_iteration_callback
+            # P2-PRE-1 (2026-05-10): _grow_iteration_callback binding moved to
+            # install time (see corresponding comment in monitored_fit above).
 
             # Start drain thread for candidate progress from worker pool.
             # Always started unconditionally — uses deferred queue discovery
@@ -1660,6 +1748,10 @@ class TrainingLifecycleManager:
             # Catch-all for any remaining metrics
             manager_ref._extract_and_record_metrics()
             return result
+
+        # P2-PRE-1 (2026-05-10): bind the grow-iteration callback at install time
+        # (see corresponding comment in _install_monitoring_hooks above).
+        self.network._grow_iteration_callback = _grow_iteration_callback
 
         self.network.grow_network = monitored_grow
 
