@@ -1912,8 +1912,13 @@ class TrainingLifecycleManager:
         return {"status": "resumed", "timestamp": time.time()}
 
     def reset(self) -> Dict[str, Any]:
-        """Reset training state."""
-        self._stop_requested.set()
+        """Reset training state.
+
+        Normalises the control-event pair via ``_reset_event_state`` so a
+        subsequent ``start_training`` does not inherit a stale
+        ``_pause_event.clear()`` from a prior pause (BUG-CC-#5).
+        """
+        self._reset_event_state()
         self._last_emitted_history_len = 0
         self.state_machine.handle_command(Command.RESET)
         self.training_monitor.clear_metrics()
@@ -1925,6 +1930,16 @@ class TrainingLifecycleManager:
         )
         self._broadcast_training_state(force=True)
         return {"status": "reset", "timestamp": time.time()}
+
+    def _reset_event_state(self) -> None:
+        """Single source of truth for control-event normalisation.
+
+        Post-condition: ``_stop_requested`` is set (signals any in-flight
+        training thread to stop) and ``_pause_event`` is set (no synthetic
+        pause inherited by the next ``start_training`` call).
+        """
+        self._stop_requested.set()
+        self._pause_event.set()
 
     # ------------------------------------------------------------------
     # Status & metrics
