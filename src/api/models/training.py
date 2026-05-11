@@ -164,6 +164,31 @@ class StageDatasetRequest(BaseModel):
     n_spirals: Optional[int] = Field(None, ge=2, le=10, description="Number of spirals (spirals generator only)")
 
 
+class SwapDatasetLiveRequest(StageDatasetRequest):
+    """ISSUE_3_PHASE_2_LIVE_DATASET_SWAP_2026-05-09 §3.3 — body for
+    ``POST /v1/training/dataset/live``.
+
+    Inherits all fields from :class:`StageDatasetRequest` since the live-swap
+    body is shaped identically to the cold-stage body — both describe what
+    dataset to switch to. The semantic difference (live vs. cold) is in the
+    endpoint, not the payload. For P2-1a the new dataset's input/output
+    dimensionality must match the current network; dim changes are rejected
+    with 422 ``dim_change_unsupported`` and will be supported in P2-1c/1d.
+    """
+
+
+class ExperimentalFunctionsToggleRequest(BaseModel):
+    """ISSUE_3_PHASE_2_LIVE_DATASET_SWAP §3.3 — body for the admin route
+    that opens/closes the experimental-functions gate (F2.10).
+
+    The server is the authority for this flag — canopy's local toggle is a
+    UX persistence layer, but if the server reports ``enabled=false`` the
+    canopy UI must defer (see canopy §4.1).
+    """
+
+    enabled: bool = Field(..., description="True opens the gate; False closes it.")
+
+
 class TrainingParamUpdateRequest(BaseModel):
     """Runtime-modifiable training parameters (PATCH semantics — all fields optional)."""
 
