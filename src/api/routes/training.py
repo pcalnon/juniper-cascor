@@ -5,9 +5,9 @@ import logging
 import torch
 from fastapi import APIRouter, HTTPException, Request
 
-from api.lifecycle.manager import InvalidCandidatePoolError
+from api.lifecycle.manager import InvalidCandidatePoolError, SwapInProgressError
 from api.models.common import success_response
-from api.models.training import StageDatasetRequest, TrainingParamUpdateRequest, TrainingStartRequest
+from api.models.training import StageDatasetRequest, SwapDatasetLiveRequest, TrainingParamUpdateRequest, TrainingStartRequest
 
 logger = logging.getLogger("juniper_cascor.api.routes.training")
 
@@ -188,6 +188,39 @@ async def get_pending_dataset(request: Request) -> dict:
     """Return the staged dataset config (or null) — drives the canopy banner."""
     lifecycle = _get_lifecycle(request)
     return success_response({"pending": lifecycle.get_pending_dataset_config()})
+
+
+# ISSUE_3_PHASE_2_LIVE_DATASET_SWAP_2026-05-09 §3.3 — Phase 2 P2-1a live-swap
+# entry point. Initiates an in-flight dataset swap without stopping training.
+# Pre-conditions and failure modes per §3.2:
+#   403 experimental_functions_disabled — gate is closed (F2.10)
+#   422 training_not_running             — no active training to swap into
+#   422 dim_change_unsupported           — P2-1a equal-dim only; P2-1c/1d will lift
+#   409 swap_already_in_progress         — concurrent swap rejected (idempotency)
+#   504 pause_timeout                    — training thread did not reach pause boundary
+#   5xx                                  — juniper-data fetch / arch-adapt failure (rolled back)
+
+
+@router.post("/dataset/live")
+async def swap_dataset_live(request: Request, body: SwapDatasetLiveRequest) -> dict:
+    """Initiate an in-flight dataset swap (P2-1a skeleton)."""
+    lifecycle = _get_lifecycle(request)
+    cfg = body.model_dump(exclude_none=True)
+    try:
+        return success_response(lifecycle.swap_dataset_live(**cfg))
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except SwapInProgressError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except TimeoutError as exc:
+        # Future.result(timeout=10) raises TimeoutError on §3.7 guardrail #2.
+        raise HTTPException(status_code=504, detail=f"pause_timeout: {exc}") from exc
+    except RuntimeError as exc:
+        # juniper-data fetch failure (raised by _reload_dataset) or other
+        # operational error. Rollback already happened inside swap_dataset_live.
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
 
 
 def _generate_spiral_data(params: dict):

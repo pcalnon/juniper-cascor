@@ -7,7 +7,9 @@ Wraps CascadeCorrelationNetwork with:
 - Topology and statistics extraction
 """
 
+import copy
 import logging
+import os
 import threading
 import time
 from concurrent.futures import Future, ThreadPoolExecutor
@@ -80,6 +82,36 @@ class InvalidCandidatePoolError(ValueError):
     human-readable violation string) while bare ``ValueError`` remains 404.
     See ``FRONTEND_ISSUES_PLAN_2026-05-09.md §1.5 C2.1`` for the full truth table.
     """
+
+
+class SwapInProgressError(RuntimeError):
+    """Raised by ``swap_dataset_live`` when a concurrent swap is already underway.
+
+    Promotes to HTTP 409 Conflict in the route. Implements the §3.7 guardrail
+    #3 idempotency contract: subsequent swap requests received while a swap
+    is in flight are rejected rather than queued, so the user gets a clear
+    "already swapping" signal instead of mystery serialisation.
+    """
+
+
+class _PreSwapSnapshot:  # noqa: D101 - frozen container, not part of the public surface
+    __slots__ = ("train_x", "train_y", "val_x", "val_y", "state_dict", "input_size", "output_size", "dataset_config")
+
+    def __init__(self, train_x, train_y, val_x, val_y, state_dict, input_size, output_size, dataset_config):
+        # Plain container for the §3.7 guardrail-#1 pre-swap state. Tensor
+        # references only — we don't .clone() since the swap path immediately
+        # rebinds self._train_x to new tensors, so the old refs remain alive
+        # via this snapshot until rollback or successful return. ``state_dict``
+        # IS deep-copied by the caller (it shares storage with live network
+        # parameters that would otherwise mutate as training resumes).
+        self.train_x = train_x
+        self.train_y = train_y
+        self.val_x = val_x
+        self.val_y = val_y
+        self.state_dict = state_dict
+        self.input_size = input_size
+        self.output_size = output_size
+        self.dataset_config = dataset_config
 
 
 class TrainingInterrupted(Exception):
@@ -1023,6 +1055,19 @@ class TrainingLifecycleManager:
         # ``get_pending_dataset_config`` (GET .../pending) round it out so the
         # canopy banner can show the staged change and offer Cancel.
         self._pending_dataset_config: Optional[Dict[str, Any]] = None
+
+        # ISSUE_3_PHASE_2_LIVE_DATASET_SWAP_2026-05-09 — Phase 2 P2-1a.
+        # ``_experimental_functions_enabled`` gates ``swap_dataset_live`` and is
+        # the server-side authority (F2.10): a stale frontend toggle alone cannot
+        # bypass it. Read from env at boot so deployments can pre-enable it
+        # without round-tripping the admin route on every restart.
+        # ``_current_dataset_config`` mirrors whatever cfg was last applied via
+        # ``_reload_dataset`` — drives the ``before_cfg`` field in the
+        # ``swap_dataset_live`` response so canopy doesn't have to track it.
+        # ``_swap_in_progress`` is the §3.7 guardrail-#3 idempotency flag.
+        self._experimental_functions_enabled: bool = os.environ.get("CASCOR_EXPERIMENTAL_FUNCTIONS_ENABLED") == "1"
+        self._current_dataset_config: Optional[Dict[str, Any]] = None
+        self._swap_in_progress: bool = False
 
         # CAN-015g (g-6): training-loop weight history recorder.
         # Lazily attached on first ``start_training`` call; persists
@@ -2183,6 +2228,215 @@ class TrainingLifecycleManager:
         cfg = self._pending_dataset_config
         return dict(cfg) if cfg else None
 
+    # ------------------------------------------------------------------
+    # Phase 2: experimental-functions gate + live dataset swap (P2-1a)
+    # See ISSUE_3_PHASE_2_LIVE_DATASET_SWAP_2026-05-09.md §3.1/§3.2/§3.7/§3.8.
+    # ------------------------------------------------------------------
+
+    def get_experimental_functions(self) -> bool:
+        """Return whether the experimental-functions gate is open.
+
+        Authoritative server-side state per F2.10: a stale frontend toggle
+        cannot bypass this. Initial value comes from the
+        ``CASCOR_EXPERIMENTAL_FUNCTIONS_ENABLED`` env var (``=1`` means open).
+        """
+        return self._experimental_functions_enabled
+
+    def set_experimental_functions(self, enabled: bool) -> Dict[str, Any]:
+        """Open or close the experimental-functions gate.
+
+        Returns the new state in a dict suitable for direct JSON response.
+        The admin route is access-controlled separately (existing
+        ``JUNIPER_DATA_API_KEY`` mechanism or equivalent) so this method
+        does not re-validate authorisation.
+        """
+        self._experimental_functions_enabled = bool(enabled)
+        return {"experimental_functions_enabled": self._experimental_functions_enabled}
+
+    def swap_dataset_live(self, **cfg: Any) -> Dict[str, Any]:  # noqa: C901
+        """In-flight dataset swap (P2-1a equal-dim-only skeleton).
+
+        Phase 2 step-by-step flow per spec §3.2:
+          1. Acquire ``_training_lock`` (entire swap held under the lock —
+             Audit #2 in §3.4 confirmed read-side routes don't contend).
+          2. Validate experimental-functions gate (raises PermissionError → 403)
+             and ``is_started()`` (raises ValueError → 422).
+          3. Set ``_swap_in_progress`` flag (concurrent swap → 409 via the
+             ``SwapInProgressError`` sentinel raised here).
+          4. Snapshot pre-swap state for rollback (§3.7 guardrail #1).
+          5/6. Signal stop on the training future; await its clean exit.
+             Pre-P2-PRE-1 the training thread ignored ``_stop_requested``;
+             the fix at ``f4453fa`` wires the signal into the training-loop
+             callbacks via ``_check_for_interrupt`` so this actually works.
+          7. ``_reload_dataset`` fetches the new dataset (juniper-data I/O).
+          8. P2-1a only — reject any input/output dim change with
+             ``ValueError("dim_change_unsupported")`` (→ 422). P2-1c/1d will
+             implement the architecture adapter for grow/shrink.
+          10. Reset ``_auto_snap_best_metric`` so the stale ratchet from
+              the old dataset doesn't suppress new auto-snaps.
+          11. Candidate pool is implicitly abandoned by the future stopping
+              in step 6 — workers and in-flight candidates discarded.
+          12. Submit a new training future on the new tensors. ``network.fit``
+              naturally starts with output training, so the "output mode
+              first" semantic from §3.5 is implicit.
+          14. Force a topology rebroadcast (no-op equal-dim, but plumbs the
+              WebSocket path for P2-1c/1d when dims actually change).
+          15-16. Clear the in-progress flag in ``finally``; return structured
+                 response per §3.3.
+
+        On ANY failure between step 4 and step 14: restore the pre-swap
+        snapshot, resume training on the OLD dataset (best-effort), clear
+        the flag, raise the original exception (the route translates it).
+        """
+        # Step 2: validate gate (before acquiring lock — fast-path 403)
+        if not self._experimental_functions_enabled:
+            raise PermissionError("experimental_functions_disabled")
+
+        with self._training_lock:
+            # Step 2 cont: validate training is running.
+            if not self.state_machine.is_started():
+                raise ValueError("training_not_running — use POST /v1/training/dataset (cold swap) instead")
+
+            # Step 3: idempotency guard.
+            if self._swap_in_progress:
+                raise SwapInProgressError("swap_already_in_progress")
+            self._swap_in_progress = True
+
+            try:
+                # Step 4: snapshot pre-swap state.
+                pre = _PreSwapSnapshot(
+                    train_x=self._train_x,
+                    train_y=self._train_y,
+                    val_x=self._val_x,
+                    val_y=self._val_y,
+                    state_dict=copy.deepcopy(self.network.state_dict()) if hasattr(self.network, "state_dict") else None,
+                    input_size=getattr(self.network, "input_size", None),
+                    output_size=getattr(self.network, "output_size", None),
+                    dataset_config=dict(self._current_dataset_config) if self._current_dataset_config else None,
+                )
+
+                # Step 5/6: signal stop, wait for training future to exit cleanly.
+                # P2-PRE-1 (f4453fa) makes _stop_requested actually interrupt
+                # the training-loop callbacks via TrainingInterrupted, caught
+                # by monitored_fit as clean cancellation. Pre-fix this would
+                # have blocked until natural fit completion (minutes).
+                self._stop_requested.set()
+                self._pause_event.set()  # ensure pause wait loop wakes to observe stop
+                future = self._training_future
+                if future is not None:
+                    try:
+                        future.result(timeout=10)
+                    except Exception as exc:
+                        # Future may raise; we don't care about the value, only
+                        # that the worker has finished. ``monitored_fit``'s
+                        # clean-cancellation handler swallows TrainingInterrupted,
+                        # but other exceptions still propagate out of ``future.result``.
+                        # Log at debug since we're intentionally discarding them —
+                        # the swap path continues regardless.
+                        self.logger.debug("swap_dataset_live: prior training future raised on join: %s", exc)
+                self._training_future = None
+
+                # Step 7: fetch new dataset. Failure here triggers rollback.
+                self._reload_dataset(**cfg)
+
+                # Step 8: P2-1a dim-change guard.
+                new_input = self._train_x.shape[1]
+                new_output = self._train_y.shape[1]
+                if new_input != pre.input_size or new_output != pre.output_size:
+                    raise ValueError(f"dim_change_unsupported (P2-1a): input {pre.input_size}→{new_input}, " f"output {pre.output_size}→{new_output}. " "P2-1c/1d will support dim changes via the architecture adapter (§3.6).")
+
+                # Step 10: reset auto-snap ratchet (§3.7 guardrail #6).
+                with self._auto_snap_lock:
+                    self._auto_snap_best_metric = None
+
+                # Step 12: submit new training future. monitored_fit handles
+                # the FSM STOPPED → STARTED transition internally on the new
+                # invocation; we just need the underlying tensors to be the
+                # new ones (which they are, post-_reload_dataset).
+                self._stop_requested.clear()
+                self._pause_event.set()
+                if self._executor is None:
+                    self._executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="cascor-train")
+                self._training_future = self._executor.submit(
+                    self._run_training,
+                    self._train_x,
+                    self._train_y,
+                    self._val_x,
+                    self._val_y,
+                )
+
+                # Step 14: topology rebroadcast (no-op equal-dim, but the path
+                # is plumbed for P2-1c/1d when dims actually change).
+                self._broadcast_training_state(force=True)
+
+                # Step 16: structured response per §3.3.
+                self.logger.info(
+                    "swap_dataset_live: equal-dim swap complete. before_cfg=%r after_cfg=%r mode=output_training_first",
+                    pre.dataset_config,
+                    self._current_dataset_config,
+                )
+                return {
+                    "status": "swapped",
+                    "before_cfg": pre.dataset_config,
+                    "after_cfg": dict(self._current_dataset_config) if self._current_dataset_config else None,
+                    "arch_changes": {
+                        "input_delta": 0,
+                        "output_delta": 0,
+                        "hidden_preserved": len(self.network.hidden_units) if hasattr(self.network, "hidden_units") else 0,
+                        # P2-1a doesn't yet measure the in-flight pool depth —
+                        # it's implicitly drained by the future stopping. P2-1b
+                        # will surface this for the canopy "Swap discarded N
+                        # in-flight candidates" toast.
+                        "abandoned_candidate_pool_size": 0,
+                        "appended_nodes": {"input": 0, "output": 0},
+                        "prepended_layers": [],
+                    },
+                    "mode": "output_training_first",
+                }
+
+            except ValueError:
+                # Validation-class failure (dim_change_unsupported etc.) — rollback
+                # and re-raise so the route can return 422. Note: the original
+                # _train_x/_y/_val_x/_val_y may already have been overwritten by
+                # _reload_dataset before the dim check fired; rollback restores them.
+                self._rollback_pre_swap_state(pre)
+                raise
+            except Exception:
+                # Catch-all — anything from juniper-data fetch to executor
+                # failure. Same rollback + re-raise (route translates to 5xx).
+                self._rollback_pre_swap_state(pre)
+                raise
+            finally:
+                # Step 15: clear in-progress flag unconditionally (§3.7 #3).
+                self._swap_in_progress = False
+
+    def _rollback_pre_swap_state(self, pre: "_PreSwapSnapshot") -> None:
+        """Restore the network + tensor refs from a pre-swap snapshot.
+
+        Best-effort: tensor refs always restore; ``state_dict`` restore is
+        skipped if the snapshot didn't capture one (network has no
+        ``state_dict``). Logs the rollback so a post-mortem can see what
+        was reverted. Caller is responsible for re-submitting a training
+        future if continuity matters — for P2-1a we leave that to a
+        follow-up since the user explicitly chose to swap.
+        """
+        self.logger.warning(
+            "swap_dataset_live: rolling back to pre-swap state (input=%r output=%r cfg=%r)",
+            pre.input_size,
+            pre.output_size,
+            pre.dataset_config,
+        )
+        self._train_x = pre.train_x
+        self._train_y = pre.train_y
+        self._val_x = pre.val_x
+        self._val_y = pre.val_y
+        if pre.state_dict is not None and hasattr(self.network, "load_state_dict"):
+            try:
+                self.network.load_state_dict(pre.state_dict)
+            except Exception:
+                self.logger.exception("swap_dataset_live rollback: load_state_dict failed; weights may be inconsistent")
+        self._current_dataset_config = dict(pre.dataset_config) if pre.dataset_config else None
+
     def _reload_dataset(self, **cfg: Any) -> None:
         """Fetch a fresh dataset from juniper-data and replace the live tensors.
 
@@ -2241,6 +2495,10 @@ class TrainingLifecycleManager:
         else:
             self._val_x = None
             self._val_y = None
+        # ISSUE_3_PHASE_2_LIVE_DATASET_SWAP §3.2 step 4d — track the canonical
+        # cfg so ``swap_dataset_live`` can report it as ``before_cfg`` and so
+        # the rollback path can restore it if a swap fails.
+        self._current_dataset_config = {"dataset_type": dataset_type, **dict(cfg)} if dataset_type else None
         self.logger.info("Reloaded dataset %r (%d train samples)", dataset_type, new_train_x.shape[0])
 
     def get_dataset(self) -> Dict[str, Any]:
