@@ -20,8 +20,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from cascade_correlation.cascade_correlation import CascadeCorrelationNetwork
 from candidate_unit.candidate_unit import CandidateTrainingResult
+from cascade_correlation.cascade_correlation import CascadeCorrelationNetwork
 
 
 def _make_pool(correlations: list[float]) -> list[CandidateTrainingResult]:
