@@ -26,11 +26,13 @@ import pytest
 import torch
 
 from api.lifecycle.manager import (
+    NoSwapInProgressError,
+    SwapCancelledError,
     SwapInProgressError,
     TrainingLifecycleManager,
     _PreSwapSnapshot,
 )
-from api.lifecycle.state_machine import Command
+from api.lifecycle.state_machine import Command, TrainingPhase
 
 
 def _make_dummy_tensors(input_size: int, output_size: int, n_samples: int = 16):
@@ -360,4 +362,259 @@ def test_rollback_restores_tensor_refs():
     assert mgr._train_x is pre_x
     assert mgr._train_y is pre_y
     assert mgr._current_dataset_config == {"dataset_type": "spirals"}
+    mgr.shutdown()
+
+
+# ---------------------------------------------------------------------------
+# P2-1b: cancel mechanism (request_swap_cancel + DELETE route translation)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.integration
+def test_request_swap_cancel_raises_when_no_swap_in_progress():
+    """``DELETE /v1/training/dataset/live`` against an idle lifecycle raises
+    ``NoSwapInProgressError`` (route → 404). Tells the canopy "Cancel" button
+    the swap already finished racing the click."""
+    mgr = TrainingLifecycleManager()
+    mgr.set_experimental_functions(True)
+    assert mgr._swap_in_progress is False
+    with pytest.raises(NoSwapInProgressError, match="no_swap_in_progress"):
+        mgr.request_swap_cancel()
+    mgr.shutdown()
+
+
+@pytest.mark.integration
+def test_request_swap_cancel_sets_signal_when_swap_in_progress():
+    """When a swap IS underway, ``request_swap_cancel`` sets the cancel
+    signal and returns a descriptor dict (no exception)."""
+    mgr = TrainingLifecycleManager()
+    mgr.set_experimental_functions(True)
+    mgr._swap_in_progress = True  # simulate in-flight swap on another thread
+    try:
+        result = mgr.request_swap_cancel()
+        assert result == {"status": "cancel_requested"}
+        assert mgr._swap_cancel_requested.is_set()
+    finally:
+        mgr._swap_in_progress = False
+        mgr._swap_cancel_requested.clear()
+        mgr.shutdown()
+
+
+@pytest.mark.integration
+def test_swap_dataset_live_aborts_when_cancel_set_during_fetch():
+    """A DELETE arriving during ``_reload_dataset`` trips the post-fetch
+    cancel checkpoint → ``SwapCancelledError`` → §3.8 rollback restores the
+    pre-swap tensors. The most common race the user can produce."""
+    mgr = TrainingLifecycleManager()
+    mgr.create_network(input_size=2, output_size=2)
+    mgr.set_experimental_functions(True)
+    pre_train_x, pre_train_y = _make_dummy_tensors(2, 2)
+    mgr._train_x = pre_train_x
+    mgr._train_y = pre_train_y
+    mgr._current_dataset_config = {"dataset_type": "spirals"}
+    mgr.state_machine.handle_command(Command.START)
+
+    def _fake_reload_then_cancel(**cfg):
+        # Simulate the user clicking Cancel while the fetch is in flight.
+        # Real fetch would block on juniper-data HTTP; here we just install
+        # new tensors AND set the cancel flag in the same call.
+        mgr._train_x = torch.randn(8, 2)
+        mgr._train_y = torch.zeros(8, 2)
+        mgr._train_y[:, 0] = 1
+        mgr._current_dataset_config = {"dataset_type": "moons"}
+        mgr._swap_cancel_requested.set()
+
+    mgr._executor = MagicMock()
+    mgr._executor.submit.return_value = MagicMock()
+
+    with patch.object(mgr, "_reload_dataset", side_effect=_fake_reload_then_cancel):
+        with pytest.raises(SwapCancelledError, match="swap_cancelled_by_client"):
+            mgr.swap_dataset_live(dataset_type="moons")
+
+    # §3.8 rollback: pre-swap tensors restored, cancel flag cleared in finally.
+    assert mgr._train_x is pre_train_x
+    assert mgr._train_y is pre_train_y
+    assert mgr._current_dataset_config == {"dataset_type": "spirals"}
+    assert mgr._swap_in_progress is False
+    assert not mgr._swap_cancel_requested.is_set(), "cancel flag not cleared in finally"
+    # No new training future was submitted (we aborted before step 12).
+    assert not mgr._executor.submit.called
+    mgr.shutdown()
+
+
+@pytest.mark.integration
+def test_swap_dataset_live_clears_stale_cancel_flag_at_start():
+    """A cancel signal left set from a previous aborted swap MUST NOT
+    pre-cancel the next swap — the flag is per-swap, not sticky. The
+    swap clears it under the lock right after acquiring ``_swap_in_progress``."""
+    mgr = TrainingLifecycleManager()
+    mgr.create_network(input_size=2, output_size=2)
+    mgr.set_experimental_functions(True)
+    mgr._train_x, mgr._train_y = _make_dummy_tensors(2, 2)
+    mgr._current_dataset_config = {"dataset_type": "spirals"}
+    mgr.state_machine.handle_command(Command.START)
+    # Pre-set the cancel flag as if a prior swap's DELETE leaked through.
+    mgr._swap_cancel_requested.set()
+
+    new_x, new_y = _make_dummy_tensors(2, 2)
+
+    def _fake_reload(**cfg):
+        mgr._train_x = new_x
+        mgr._train_y = new_y
+        mgr._current_dataset_config = {"dataset_type": "moons"}
+
+    mgr._executor = MagicMock()
+    mgr._executor.submit.return_value = MagicMock()
+
+    with patch.object(mgr, "_reload_dataset", side_effect=_fake_reload):
+        # Should complete without raising — the stale flag was cleared.
+        result = mgr.swap_dataset_live(dataset_type="moons")
+
+    assert result["status"] == "swapped"
+    assert mgr._train_x is new_x
+    assert not mgr._swap_cancel_requested.is_set()
+    mgr.shutdown()
+
+
+# ---------------------------------------------------------------------------
+# P2-1b: abandoned_candidate_pool_size accounting
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.integration
+def test_abandoned_candidate_pool_size_zero_outside_candidate_phase():
+    """Output / Idle / Paused phases have no in-flight candidates — the
+    response reports zero (not the configured pool capacity)."""
+    mgr = TrainingLifecycleManager()
+    mgr.create_network(input_size=2, output_size=2)
+    mgr.set_experimental_functions(True)
+    mgr._train_x, mgr._train_y = _make_dummy_tensors(2, 2)
+    mgr._current_dataset_config = {"dataset_type": "spirals"}
+    mgr.state_machine.handle_command(Command.START)
+    # Started lands in TrainingPhase.OUTPUT — no candidates in flight.
+    assert mgr.state_machine.phase == TrainingPhase.OUTPUT
+
+    def _fake_reload(**cfg):
+        mgr._train_x, mgr._train_y = _make_dummy_tensors(2, 2)
+        mgr._current_dataset_config = {"dataset_type": "moons"}
+
+    mgr._executor = MagicMock()
+    mgr._executor.submit.return_value = MagicMock()
+
+    with patch.object(mgr, "_reload_dataset", side_effect=_fake_reload):
+        result = mgr.swap_dataset_live(dataset_type="moons")
+
+    assert result["arch_changes"]["abandoned_candidate_pool_size"] == 0
+    mgr.shutdown()
+
+
+@pytest.mark.integration
+def test_abandoned_candidate_pool_size_reports_pool_when_in_candidate_phase():
+    """Mid-CANDIDATE swaps report the in-flight pool depth (Option C of §3.5).
+    Drives the canopy "Swap discarded N in-flight candidates" UX."""
+    mgr = TrainingLifecycleManager()
+    mgr.create_network(input_size=2, output_size=2)
+    mgr.set_experimental_functions(True)
+    mgr._train_x, mgr._train_y = _make_dummy_tensors(2, 2)
+    mgr._current_dataset_config = {"dataset_type": "spirals"}
+    mgr.state_machine.handle_command(Command.START)
+    # Force into CANDIDATE phase to simulate "swap fired during candidate
+    # training". Real production sets this via the cascade-growth callback.
+    mgr.state_machine.set_phase(TrainingPhase.CANDIDATE)
+    # Pin a known pool size on the network so the assertion is meaningful.
+    mgr.network.candidate_pool_size = 8
+
+    def _fake_reload(**cfg):
+        mgr._train_x, mgr._train_y = _make_dummy_tensors(2, 2)
+        mgr._current_dataset_config = {"dataset_type": "moons"}
+
+    mgr._executor = MagicMock()
+    mgr._executor.submit.return_value = MagicMock()
+
+    with patch.object(mgr, "_reload_dataset", side_effect=_fake_reload):
+        result = mgr.swap_dataset_live(dataset_type="moons")
+
+    assert result["arch_changes"]["abandoned_candidate_pool_size"] == 8
+    mgr.shutdown()
+
+
+# ---------------------------------------------------------------------------
+# P2-1b: §3.7 #5 structured INFO completion log
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.integration
+def test_swap_dataset_live_emits_structured_completion_log():
+    """§3.7 guardrail #5: on completion the swap emits a single INFO line
+    matching the format:
+        "swap: input I_old→I_new, output O_old→O_new, hidden H preserved, candidates C abandoned, mode→output_training"
+
+    Asserts on the format-string + args passed to ``logger.info`` rather than
+    via caplog — the manager's logger has a custom configuration in this
+    project that does not always propagate to the root logger that caplog
+    attaches its handler to. Patching the bound method makes the assertion
+    independent of logging configuration.
+    """
+    mgr = TrainingLifecycleManager()
+    mgr.create_network(input_size=2, output_size=2)
+    mgr.set_experimental_functions(True)
+    mgr._train_x, mgr._train_y = _make_dummy_tensors(2, 2)
+    mgr._current_dataset_config = {"dataset_type": "spirals"}
+    mgr.state_machine.handle_command(Command.START)
+
+    def _fake_reload(**cfg):
+        mgr._train_x, mgr._train_y = _make_dummy_tensors(2, 2)
+        mgr._current_dataset_config = {"dataset_type": "moons"}
+
+    mgr._executor = MagicMock()
+    mgr._executor.submit.return_value = MagicMock()
+
+    with patch.object(mgr.logger, "info") as info_mock:
+        with patch.object(mgr, "_reload_dataset", side_effect=_fake_reload):
+            mgr.swap_dataset_live(dataset_type="moons")
+
+    # Find the structured completion line among all info() calls.
+    matching = [c for c in info_mock.call_args_list if c.args and isinstance(c.args[0], str) and c.args[0].startswith("swap: input ")]
+    assert len(matching) == 1, f"expected 1 completion line, got {info_mock.call_args_list}"
+    fmt, *args = matching[0].args
+    # Equal-dim swap from this test fixture: 2→2 / 2→2, hidden 0 preserved,
+    # 0 candidates abandoned (Output phase).
+    rendered = fmt % tuple(args)
+    assert rendered == "swap: input 2→2, output 2→2, hidden 0 preserved, candidates 0 abandoned, mode→output_training"
+    mgr.shutdown()
+
+
+# ---------------------------------------------------------------------------
+# P2-1b: topology rebroadcast plumbing (§3.7 guardrail #7)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.integration
+def test_swap_dataset_live_forces_topology_rebroadcast_on_completion():
+    """Even an equal-dim swap MUST force a topology rebroadcast — the path
+    is plumbed here so P2-1c/1d (grow/shrink) inherit it. Without the
+    rebroadcast canopy's topology view would lag a real dim change."""
+    mgr = TrainingLifecycleManager()
+    mgr.create_network(input_size=2, output_size=2)
+    mgr.set_experimental_functions(True)
+    mgr._train_x, mgr._train_y = _make_dummy_tensors(2, 2)
+    mgr._current_dataset_config = {"dataset_type": "spirals"}
+    mgr.state_machine.handle_command(Command.START)
+
+    def _fake_reload(**cfg):
+        mgr._train_x, mgr._train_y = _make_dummy_tensors(2, 2)
+        mgr._current_dataset_config = {"dataset_type": "moons"}
+
+    mgr._executor = MagicMock()
+    mgr._executor.submit.return_value = MagicMock()
+
+    with patch.object(mgr, "_broadcast_training_state") as broadcast_mock:
+        with patch.object(mgr, "_reload_dataset", side_effect=_fake_reload):
+            mgr.swap_dataset_live(dataset_type="moons")
+
+    # Exactly one forced broadcast on swap completion. ``force=True`` is the
+    # invariant — the throttled-broadcast path would coalesce the topology
+    # event with metric ticks and lose its standalone framing.
+    forced_calls = [c for c in broadcast_mock.call_args_list if c.kwargs.get("force") is True]
+    assert len(forced_calls) >= 1, f"no force=True broadcast observed: {broadcast_mock.call_args_list}"
     mgr.shutdown()

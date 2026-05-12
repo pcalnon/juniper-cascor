@@ -5,7 +5,12 @@ import logging
 import torch
 from fastapi import APIRouter, HTTPException, Request
 
-from api.lifecycle.manager import InvalidCandidatePoolError, SwapInProgressError
+from api.lifecycle.manager import (
+    InvalidCandidatePoolError,
+    NoSwapInProgressError,
+    SwapCancelledError,
+    SwapInProgressError,
+)
 from api.models.common import success_response
 from api.models.training import StageDatasetRequest, SwapDatasetLiveRequest, TrainingParamUpdateRequest, TrainingStartRequest
 
@@ -203,7 +208,7 @@ async def get_pending_dataset(request: Request) -> dict:
 
 @router.post("/dataset/live")
 async def swap_dataset_live(request: Request, body: SwapDatasetLiveRequest) -> dict:
-    """Initiate an in-flight dataset swap (P2-1a skeleton)."""
+    """Initiate an in-flight dataset swap (P2-1a skeleton; P2-1b cancel-aware)."""
     lifecycle = _get_lifecycle(request)
     cfg = body.model_dump(exclude_none=True)
     try:
@@ -212,6 +217,11 @@ async def swap_dataset_live(request: Request, body: SwapDatasetLiveRequest) -> d
         raise HTTPException(status_code=403, detail=str(exc)) from exc
     except SwapInProgressError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except SwapCancelledError:
+        # P2-1b: a DELETE arrived mid-swap, the §3.8 rollback already restored
+        # pre-swap state. Return 200 with cancelled status — the request was
+        # serviced cleanly; not a failure path.
+        return success_response({"status": "cancelled"})
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     except TimeoutError as exc:
@@ -221,6 +231,33 @@ async def swap_dataset_live(request: Request, body: SwapDatasetLiveRequest) -> d
         # juniper-data fetch failure (raised by _reload_dataset) or other
         # operational error. Rollback already happened inside swap_dataset_live.
         raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@router.delete("/dataset/live")
+async def cancel_swap_dataset_live(request: Request) -> dict:
+    """Cancel an in-flight live dataset swap (P2-1b).
+
+    Sets the cancellation signal observed by ``swap_dataset_live`` at its
+    post-fetch checkpoint. The actual swap may take up to one fetch RTT to
+    observe the flag and unwind — this route only confirms the signal was
+    delivered. The originating ``POST`` returns 200 with
+    ``{"status": "cancelled"}`` once the rollback completes.
+
+    Status codes:
+      200 — cancel signal accepted; an in-flight swap will roll back.
+      403 — experimental-functions gate closed (F2.10).
+      404 — no swap currently in progress.
+    """
+    lifecycle = _get_lifecycle(request)
+    # Gate check mirrors the POST: a closed gate hides the existence of the
+    # entire feature surface, including its cancel side. Avoids a probe vector
+    # where a 404 vs 403 leaks "swap is enabled and idle".
+    if not lifecycle.get_experimental_functions():
+        raise HTTPException(status_code=403, detail="experimental_functions_disabled")
+    try:
+        return success_response(lifecycle.request_swap_cancel())
+    except NoSwapInProgressError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
 def _generate_spiral_data(params: dict):
