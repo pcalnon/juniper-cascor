@@ -127,67 +127,68 @@ def test_swap_dataset_live_409_when_swap_in_progress():
 
 
 # ---------------------------------------------------------------------------
-# swap_dataset_live: dim-change rejection (P2-1a only allows equal-dim)
+# swap_dataset_live: shrink rejection (P2-1c — grow allowed, shrink → P2-1d)
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
-def test_swap_dataset_live_rejects_input_dim_change():
-    """P2-1a's hard guard: new input dim must equal current network input_size.
-    Raises ValueError("dim_change_unsupported") → 422. Rollback restores the
-    original tensors so training can resume on the OLD dataset (§3.8)."""
+def test_swap_dataset_live_rejects_input_shrink():
+    """P2-1c's hard guard: new input dim must be >= current network input_size.
+    Shrink raises ValueError("shrink_unsupported (P2-1c)") → 422. Rollback
+    restores the original tensors so training can resume on the OLD dataset
+    (§3.8). Grow paths are exercised below via the dedicated P2-1c tests."""
     mgr = TrainingLifecycleManager()
-    mgr.create_network(input_size=2, output_size=2)
+    mgr.create_network(input_size=5, output_size=2)
     mgr.set_experimental_functions(True)
-    pre_train_x = torch.randn(8, 2)
+    pre_train_x = torch.randn(8, 5)
     pre_train_y = torch.zeros(8, 2)
     pre_train_y[:, 0] = 1
     mgr._train_x = pre_train_x
     mgr._train_y = pre_train_y
     mgr.state_machine.handle_command(Command.START)
 
-    # Stub _reload_dataset to deliver tensors of a DIFFERENT input dim.
+    # Stub _reload_dataset to deliver tensors of a SMALLER input dim.
     def _fake_reload(**cfg):
-        mgr._train_x = torch.randn(8, 5)  # input_size=5 != current 2
+        mgr._train_x = torch.randn(8, 2)  # input shrunk 5→2
         mgr._train_y = torch.zeros(8, 2)
         mgr._val_x = None
         mgr._val_y = None
-        mgr._current_dataset_config = {"dataset_type": "synthetic_5_2"}
+        mgr._current_dataset_config = {"dataset_type": "synthetic_2_2"}
 
     with patch.object(mgr, "_reload_dataset", side_effect=_fake_reload):
-        with pytest.raises(ValueError, match="dim_change_unsupported"):
-            mgr.swap_dataset_live(dataset_type="synthetic_5_2")
+        with pytest.raises(ValueError, match="shrink_unsupported"):
+            mgr.swap_dataset_live(dataset_type="synthetic_2_2")
 
     # §3.8 rollback contract: original tensors are restored.
-    assert mgr._train_x is pre_train_x, "pre-swap _train_x not restored after dim-change rejection"
+    assert mgr._train_x is pre_train_x, "pre-swap _train_x not restored after shrink rejection"
     assert mgr._train_y is pre_train_y
     assert mgr._swap_in_progress is False, "_swap_in_progress not cleared in finally"
     mgr.shutdown()
 
 
 @pytest.mark.integration
-def test_swap_dataset_live_rejects_output_dim_change():
-    """Same guard, on the output dim. The error message names both deltas so
-    a UI can show "input 2→2, output 2→3 not supported"."""
+def test_swap_dataset_live_rejects_output_shrink():
+    """Same shrink guard, on the output dim. P2-1d will allow this via an
+    appended output-side adapter layer; P2-1c stays additive-only."""
     mgr = TrainingLifecycleManager()
-    mgr.create_network(input_size=2, output_size=2)
+    mgr.create_network(input_size=2, output_size=3)
     mgr.set_experimental_functions(True)
     mgr._train_x = torch.randn(8, 2)
-    mgr._train_y = torch.zeros(8, 2)
+    mgr._train_y = torch.zeros(8, 3)
     mgr._train_y[:, 0] = 1
     mgr.state_machine.handle_command(Command.START)
 
     def _fake_reload(**cfg):
         mgr._train_x = torch.randn(8, 2)
-        mgr._train_y = torch.zeros(8, 3)  # output 3 != current 2
+        mgr._train_y = torch.zeros(8, 2)  # output shrunk 3→2
         mgr._train_y[:, 0] = 1
         mgr._val_x = None
         mgr._val_y = None
-        mgr._current_dataset_config = {"dataset_type": "synthetic_2_3"}
+        mgr._current_dataset_config = {"dataset_type": "synthetic_2_2"}
 
     with patch.object(mgr, "_reload_dataset", side_effect=_fake_reload):
-        with pytest.raises(ValueError, match="dim_change_unsupported"):
-            mgr.swap_dataset_live(dataset_type="synthetic_2_3")
+        with pytest.raises(ValueError, match="shrink_unsupported"):
+            mgr.swap_dataset_live(dataset_type="synthetic_2_2")
 
     assert mgr._swap_in_progress is False
     mgr.shutdown()
@@ -617,4 +618,145 @@ def test_swap_dataset_live_forces_topology_rebroadcast_on_completion():
     # event with metric ticks and lose its standalone framing.
     forced_calls = [c for c in broadcast_mock.call_args_list if c.kwargs.get("force") is True]
     assert len(forced_calls) >= 1, f"no force=True broadcast observed: {broadcast_mock.call_args_list}"
+    mgr.shutdown()
+
+
+# ---------------------------------------------------------------------------
+# P2-1c: grow-input / grow-output happy paths through swap_dataset_live
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.integration
+def test_swap_dataset_live_grow_input_success():
+    """Live swap from input_size=2 to input_size=4 succeeds. Response surfaces
+    ``input_delta=2`` + ``appended_nodes.input=2`` per §3.3. The architecture
+    adapter handles the weight-tensor expansion under the hood; this test
+    pins the response contract callers (canopy) rely on."""
+    mgr = TrainingLifecycleManager()
+    mgr.create_network(input_size=2, output_size=2)
+    mgr.set_experimental_functions(True)
+    mgr._train_x, mgr._train_y = _make_dummy_tensors(2, 2)
+    mgr._current_dataset_config = {"dataset_type": "spirals"}
+    mgr.state_machine.handle_command(Command.START)
+
+    new_x, new_y = _make_dummy_tensors(4, 2)
+
+    def _fake_reload(**cfg):
+        mgr._train_x = new_x
+        mgr._train_y = new_y
+        mgr._current_dataset_config = {"dataset_type": "synthetic_4_2"}
+
+    mgr._executor = MagicMock()
+    mgr._executor.submit.return_value = MagicMock()
+
+    with patch.object(mgr, "_reload_dataset", side_effect=_fake_reload):
+        result = mgr.swap_dataset_live(dataset_type="synthetic_4_2")
+
+    assert result["status"] == "swapped"
+    assert result["arch_changes"]["input_delta"] == 2
+    assert result["arch_changes"]["output_delta"] == 0
+    assert result["arch_changes"]["appended_nodes"] == {"input": 2, "output": 0}
+    assert result["arch_changes"]["prepended_layers"] == []
+    # Network input_size was actually updated in place.
+    assert mgr.network.input_size == 4
+    mgr.shutdown()
+
+
+@pytest.mark.integration
+def test_swap_dataset_live_grow_output_success():
+    """Live swap from output_size=2 to output_size=4 succeeds with
+    ``output_delta=2``. Bias + output_weights gain zero-init columns/elements."""
+    mgr = TrainingLifecycleManager()
+    mgr.create_network(input_size=2, output_size=2)
+    mgr.set_experimental_functions(True)
+    mgr._train_x, mgr._train_y = _make_dummy_tensors(2, 2)
+    mgr._current_dataset_config = {"dataset_type": "spirals"}
+    mgr.state_machine.handle_command(Command.START)
+
+    new_x, new_y = _make_dummy_tensors(2, 4)
+
+    def _fake_reload(**cfg):
+        mgr._train_x = new_x
+        mgr._train_y = new_y
+        mgr._current_dataset_config = {"dataset_type": "synthetic_2_4"}
+
+    mgr._executor = MagicMock()
+    mgr._executor.submit.return_value = MagicMock()
+
+    with patch.object(mgr, "_reload_dataset", side_effect=_fake_reload):
+        result = mgr.swap_dataset_live(dataset_type="synthetic_2_4")
+
+    assert result["arch_changes"]["input_delta"] == 0
+    assert result["arch_changes"]["output_delta"] == 2
+    assert result["arch_changes"]["appended_nodes"] == {"input": 0, "output": 2}
+    assert mgr.network.output_size == 4
+    assert mgr.network.output_weights.shape[1] == 4
+    assert mgr.network.output_bias.shape == torch.Size([4])
+    mgr.shutdown()
+
+
+@pytest.mark.integration
+def test_swap_dataset_live_grow_both_input_and_output():
+    """Mixed grow (input AND output expand) propagates both deltas in the
+    response. Pins that grow-input + grow-output compose without one
+    clobbering the other's tensor mutations."""
+    mgr = TrainingLifecycleManager()
+    mgr.create_network(input_size=2, output_size=2)
+    mgr.set_experimental_functions(True)
+    mgr._train_x, mgr._train_y = _make_dummy_tensors(2, 2)
+    mgr._current_dataset_config = {"dataset_type": "spirals"}
+    mgr.state_machine.handle_command(Command.START)
+
+    new_x, new_y = _make_dummy_tensors(5, 4)
+
+    def _fake_reload(**cfg):
+        mgr._train_x = new_x
+        mgr._train_y = new_y
+        mgr._current_dataset_config = {"dataset_type": "synthetic_5_4"}
+
+    mgr._executor = MagicMock()
+    mgr._executor.submit.return_value = MagicMock()
+
+    with patch.object(mgr, "_reload_dataset", side_effect=_fake_reload):
+        result = mgr.swap_dataset_live(dataset_type="synthetic_5_4")
+
+    assert result["arch_changes"]["input_delta"] == 3
+    assert result["arch_changes"]["output_delta"] == 2
+    assert result["arch_changes"]["appended_nodes"] == {"input": 3, "output": 2}
+    assert mgr.network.input_size == 5
+    assert mgr.network.output_size == 4
+    mgr.shutdown()
+
+
+@pytest.mark.integration
+def test_swap_dataset_live_grow_input_log_line_reports_actual_deltas():
+    """§3.7 #5 log line reflects the real dim deltas (pre-P2-1c it always
+    showed equal-dim because the adapter wasn't wired). Canopy log scraping
+    + human readability both depend on this format being accurate."""
+    mgr = TrainingLifecycleManager()
+    mgr.create_network(input_size=2, output_size=2)
+    mgr.set_experimental_functions(True)
+    mgr._train_x, mgr._train_y = _make_dummy_tensors(2, 2)
+    mgr._current_dataset_config = {"dataset_type": "spirals"}
+    mgr.state_machine.handle_command(Command.START)
+
+    new_x, new_y = _make_dummy_tensors(5, 3)
+
+    def _fake_reload(**cfg):
+        mgr._train_x = new_x
+        mgr._train_y = new_y
+        mgr._current_dataset_config = {"dataset_type": "synthetic_5_3"}
+
+    mgr._executor = MagicMock()
+    mgr._executor.submit.return_value = MagicMock()
+
+    with patch.object(mgr.logger, "info") as info_mock:
+        with patch.object(mgr, "_reload_dataset", side_effect=_fake_reload):
+            mgr.swap_dataset_live(dataset_type="synthetic_5_3")
+
+    matching = [c for c in info_mock.call_args_list if c.args and isinstance(c.args[0], str) and c.args[0].startswith("swap: input ")]
+    assert len(matching) == 1, f"expected 1 completion line, got {info_mock.call_args_list}"
+    fmt, *args = matching[0].args
+    rendered = fmt % tuple(args)
+    assert rendered == "swap: input 2→5, output 2→3, hidden 0 preserved, candidates 0 abandoned, mode→output_training"
     mgr.shutdown()
