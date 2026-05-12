@@ -22,7 +22,11 @@ from fastapi.testclient import TestClient
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))))
 
 from api.app import create_app
-from api.lifecycle.manager import SwapInProgressError
+from api.lifecycle.manager import (
+    NoSwapInProgressError,
+    SwapCancelledError,
+    SwapInProgressError,
+)
 from api.settings import Settings
 
 pytestmark = pytest.mark.unit
@@ -158,3 +162,60 @@ class TestSwapDatasetLiveRoute:
         assert resp.status_code == 200
         body = resp.json()
         assert body["data"] == canned
+
+    def test_200_cancelled_when_swap_cancelled_mid_flight(self, client):
+        """P2-1b: ``SwapCancelledError`` → 200 with ``status="cancelled"`` in the
+        response data. Distinct from a 5xx failure so the canopy "Live Switch
+        failed" toast does NOT fire on a user-initiated cancel."""
+        client.post("/v1/admin/experimental_functions", json={"enabled": True})
+        with patch.object(
+            client.app.state.lifecycle,
+            "swap_dataset_live",
+            side_effect=SwapCancelledError("swap_cancelled_by_client"),
+        ):
+            resp = client.post("/v1/training/dataset/live", json={"dataset_type": "spirals"})
+        assert resp.status_code == 200
+        assert resp.json()["data"] == {"status": "cancelled"}
+
+
+# ---------------------------------------------------------------------------
+# P2-1b: DELETE /v1/training/dataset/live — cancel route
+# ---------------------------------------------------------------------------
+
+
+class TestCancelSwapDatasetLiveRoute:
+    """Pin the DELETE-route contract per §7 P2-1b row of the spec."""
+
+    def test_403_when_gate_closed(self, client):
+        """Closed gate hides the cancel surface too — avoids a probe vector
+        that would distinguish "swap enabled but idle" from "swap disabled"."""
+        resp = client.delete("/v1/training/dataset/live")
+        assert resp.status_code == 403
+        assert "experimental_functions_disabled" in resp.json()["detail"]
+
+    def test_404_when_no_swap_in_progress(self, client):
+        """``NoSwapInProgressError`` → 404. The "swap finished racing the
+        click" signal for the canopy Cancel button."""
+        client.post("/v1/admin/experimental_functions", json={"enabled": True})
+        with patch.object(
+            client.app.state.lifecycle,
+            "request_swap_cancel",
+            side_effect=NoSwapInProgressError("no_swap_in_progress"),
+        ):
+            resp = client.delete("/v1/training/dataset/live")
+        assert resp.status_code == 404
+        assert "no_swap_in_progress" in resp.json()["detail"]
+
+    def test_200_when_swap_in_progress(self, client):
+        """Happy path: returns the lifecycle's descriptor dict (cancel signal
+        accepted) wrapped in the success envelope. The swap rollback itself
+        completes asynchronously — see integration tests."""
+        client.post("/v1/admin/experimental_functions", json={"enabled": True})
+        with patch.object(
+            client.app.state.lifecycle,
+            "request_swap_cancel",
+            return_value={"status": "cancel_requested"},
+        ):
+            resp = client.delete("/v1/training/dataset/live")
+        assert resp.status_code == 200
+        assert resp.json()["data"] == {"status": "cancel_requested"}
