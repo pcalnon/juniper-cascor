@@ -94,6 +94,28 @@ class SwapInProgressError(RuntimeError):
     """
 
 
+class NoSwapInProgressError(RuntimeError):
+    """Raised by ``request_swap_cancel`` when no swap is currently in flight.
+
+    Promotes to HTTP 404 Not Found on ``DELETE /v1/training/dataset/live`` — the
+    resource (an in-flight swap) being cancelled does not exist. Distinct from
+    409 (resource exists, conflicting state) so the canopy "Cancel" affordance
+    can distinguish "nothing to cancel" from "swap already finished racing you".
+    """
+
+
+class SwapCancelledError(RuntimeError):
+    """Raised by ``swap_dataset_live`` when a concurrent cancel was honoured.
+
+    The route translates this to HTTP 200 with ``{"status": "cancelled"}`` —
+    the swap operation completed with cancellation as its terminal state, the
+    pre-swap snapshot has been restored, and training continues on the OLD
+    dataset. From the caller's perspective the request was handled cleanly;
+    distinguishing it from a generic 5xx prevents the canopy "Live Switch
+    failed" toast from firing on a user-initiated cancel.
+    """
+
+
 class _PreSwapSnapshot:  # noqa: D101 - frozen container, not part of the public surface
     __slots__ = ("train_x", "train_y", "val_x", "val_y", "state_dict", "input_size", "output_size", "dataset_config")
 
@@ -1068,6 +1090,15 @@ class TrainingLifecycleManager:
         self._experimental_functions_enabled: bool = os.environ.get("CASCOR_EXPERIMENTAL_FUNCTIONS_ENABLED") == "1"
         self._current_dataset_config: Optional[Dict[str, Any]] = None
         self._swap_in_progress: bool = False
+        # P2-1b: ``_swap_cancel_requested`` is signalled by
+        # ``DELETE /v1/training/dataset/live`` and observed at safe checkpoints
+        # inside ``swap_dataset_live`` (post-fetch, pre-future-resubmit). Using
+        # an ``Event`` rather than a bool gives a memory-barriered read across
+        # the cancel-issuer thread and the swap-driver thread without needing
+        # to re-acquire ``_training_lock`` (which the swap holds for its full
+        # duration). Cleared in the swap's ``finally`` so a future swap doesn't
+        # observe a stale set from a prior aborted swap.
+        self._swap_cancel_requested: threading.Event = threading.Event()
 
         # CAN-015g (g-6): training-loop weight history recorder.
         # Lazily attached on first ``start_training`` call; persists
@@ -2253,8 +2284,49 @@ class TrainingLifecycleManager:
         self._experimental_functions_enabled = bool(enabled)
         return {"experimental_functions_enabled": self._experimental_functions_enabled}
 
+    def request_swap_cancel(self) -> Dict[str, Any]:
+        """Signal an in-flight ``swap_dataset_live`` to abort and roll back.
+
+        Backed by ``_swap_cancel_requested`` (a ``threading.Event``). The flag
+        is observed at the next checkpoint inside ``swap_dataset_live``
+        (post-fetch and pre-future-resubmit), which raises ``SwapCancelledError``
+        to trip the existing §3.8 rollback path.
+
+        Returns a small descriptor dict on success. Raises
+        ``NoSwapInProgressError`` (route → 404) if no swap is currently in
+        flight — important UX signal so the canopy "Cancel" button doesn't
+        falsely succeed against a swap that already finished racing the click.
+
+        The cancel is asynchronous: an in-flight ``_reload_dataset`` HTTP fetch
+        cannot be interrupted mid-syscall, so the swap may take up to one
+        full fetch RTT to observe the flag. The DELETE response means
+        "signal accepted", not "swap aborted by the time you read this".
+        """
+        # Snapshot the flag under the lock — the swap mutates it inside
+        # ``_training_lock`` so reading without the lock could see a stale
+        # False during the brief window between swap-start and the very first
+        # checkpoint. Holding the lock here also prevents a race where a swap
+        # finishes between our check and our set().
+        with self._training_lock:
+            if not self._swap_in_progress:
+                raise NoSwapInProgressError("no_swap_in_progress")
+            self._swap_cancel_requested.set()
+            return {"status": "cancel_requested"}
+
+    def _check_swap_cancel(self) -> None:
+        """Raise ``SwapCancelledError`` if a cancel has been signalled.
+
+        Called at safe checkpoints inside ``swap_dataset_live`` where state
+        is consistent enough that the standard §3.8 rollback path can restore
+        the pre-swap snapshot. The first checkpoint sits immediately after
+        ``_reload_dataset`` returns — the most likely point a user-initiated
+        cancel will land, since the fetch is the long pole of a swap.
+        """
+        if self._swap_cancel_requested.is_set():
+            raise SwapCancelledError("swap_cancelled_by_client")
+
     def swap_dataset_live(self, **cfg: Any) -> Dict[str, Any]:  # noqa: C901
-        """In-flight dataset swap (P2-1a equal-dim-only skeleton).
+        """In-flight dataset swap (P2-1a equal-dim skeleton + P2-1b polish).
 
         Phase 2 step-by-step flow per spec §3.2:
           1. Acquire ``_training_lock`` (entire swap held under the lock —
@@ -2263,30 +2335,40 @@ class TrainingLifecycleManager:
              and ``is_started()`` (raises ValueError → 422).
           3. Set ``_swap_in_progress`` flag (concurrent swap → 409 via the
              ``SwapInProgressError`` sentinel raised here).
-          4. Snapshot pre-swap state for rollback (§3.7 guardrail #1).
+          4. Snapshot pre-swap state for rollback (§3.7 guardrail #1) +
+             capture the in-flight candidate-pool depth so the response can
+             surface it (§3.5 — "Swap discarded N in-flight candidates").
           5/6. Signal stop on the training future; await its clean exit.
              Pre-P2-PRE-1 the training thread ignored ``_stop_requested``;
              the fix at ``f4453fa`` wires the signal into the training-loop
              callbacks via ``_check_for_interrupt`` so this actually works.
           7. ``_reload_dataset`` fetches the new dataset (juniper-data I/O).
+             P2-1b: a ``_check_swap_cancel`` checkpoint fires here — a
+             DELETE arriving during the fetch trips ``SwapCancelledError``
+             and the §3.8 rollback restores the pre-swap snapshot.
           8. P2-1a only — reject any input/output dim change with
              ``ValueError("dim_change_unsupported")`` (→ 422). P2-1c/1d will
              implement the architecture adapter for grow/shrink.
           10. Reset ``_auto_snap_best_metric`` so the stale ratchet from
               the old dataset doesn't suppress new auto-snaps.
           11. Candidate pool is implicitly abandoned by the future stopping
-              in step 6 — workers and in-flight candidates discarded.
+              in step 6 — workers and in-flight candidates discarded. The
+              count was captured pre-stop in step 4 (it is necessarily zero
+              after the future stops, so reading it later is wrong).
           12. Submit a new training future on the new tensors. ``network.fit``
-              naturally starts with output training, so the "output mode
-              first" semantic from §3.5 is implicit.
+              naturally starts with output training, so the §3.5 "output
+              training first" semantic is implicit (resolves §8 Q5).
           14. Force a topology rebroadcast (no-op equal-dim, but plumbs the
               WebSocket path for P2-1c/1d when dims actually change).
-          15-16. Clear the in-progress flag in ``finally``; return structured
-                 response per §3.3.
+          15-16. Clear the in-progress + cancel flags in ``finally``; return
+                 structured response per §3.3. Emit the §3.7 #5 structured
+                 INFO log line.
 
         On ANY failure between step 4 and step 14: restore the pre-swap
         snapshot, resume training on the OLD dataset (best-effort), clear
         the flag, raise the original exception (the route translates it).
+        A ``SwapCancelledError`` is a clean termination — same rollback,
+        but the route maps it to 200 with ``{"status": "cancelled"}``.
         """
         # Step 2: validate gate (before acquiring lock — fast-path 403)
         if not self._experimental_functions_enabled:
@@ -2301,6 +2383,11 @@ class TrainingLifecycleManager:
             if self._swap_in_progress:
                 raise SwapInProgressError("swap_already_in_progress")
             self._swap_in_progress = True
+            # P2-1b: clear any stale cancel signal so we start each swap with
+            # a fresh cancellation slate. A DELETE that arrived during the
+            # window between two consecutive swaps must not pre-cancel the
+            # next one — the flag is per-swap, not sticky.
+            self._swap_cancel_requested.clear()
 
             try:
                 # Step 4: snapshot pre-swap state.
@@ -2314,6 +2401,13 @@ class TrainingLifecycleManager:
                     output_size=getattr(self.network, "output_size", None),
                     dataset_config=dict(self._current_dataset_config) if self._current_dataset_config else None,
                 )
+
+                # P2-1b: capture the candidate-pool depth BEFORE we stop the
+                # future. Reading after the stop always sees zero (the pool
+                # has been drained by ``_stop_requested``). Only the
+                # CANDIDATE phase has an in-flight pool — output training
+                # has none, so reporting zero in those cases is correct.
+                abandoned_candidate_pool_size = self._snapshot_abandoned_candidate_pool_size()
 
                 # Step 5/6: signal stop, wait for training future to exit cleanly.
                 # P2-PRE-1 (f4453fa) makes _stop_requested actually interrupt
@@ -2339,6 +2433,11 @@ class TrainingLifecycleManager:
                 # Step 7: fetch new dataset. Failure here triggers rollback.
                 self._reload_dataset(**cfg)
 
+                # P2-1b: post-fetch cancel checkpoint. Most user-initiated
+                # cancels land here (the fetch is the long pole). The
+                # SwapCancelledError trips the §3.8 rollback below.
+                self._check_swap_cancel()
+
                 # Step 8: P2-1a dim-change guard.
                 new_input = self._train_x.shape[1]
                 new_output = self._train_y.shape[1]
@@ -2348,6 +2447,12 @@ class TrainingLifecycleManager:
                 # Step 10: reset auto-snap ratchet (§3.7 guardrail #6).
                 with self._auto_snap_lock:
                     self._auto_snap_best_metric = None
+
+                # P2-1b: second cancel checkpoint — last chance to abort
+                # before the new future starts. After ``submit()`` the new
+                # training run is live; cancelling then is the user's
+                # responsibility (pause/stop on the new run).
+                self._check_swap_cancel()
 
                 # Step 12: submit new training future. monitored_fit handles
                 # the FSM STOPPED → STARTED transition internally on the new
@@ -2369,11 +2474,17 @@ class TrainingLifecycleManager:
                 # is plumbed for P2-1c/1d when dims actually change).
                 self._broadcast_training_state(force=True)
 
-                # Step 16: structured response per §3.3.
+                # Step 16: structured INFO log per §3.7 guardrail #5, then
+                # structured response per §3.3.
+                hidden_preserved = len(self.network.hidden_units) if hasattr(self.network, "hidden_units") else 0
                 self.logger.info(
-                    "swap_dataset_live: equal-dim swap complete. before_cfg=%r after_cfg=%r mode=output_training_first",
-                    pre.dataset_config,
-                    self._current_dataset_config,
+                    "swap: input %d→%d, output %d→%d, hidden %d preserved, candidates %d abandoned, mode→output_training",
+                    pre.input_size if pre.input_size is not None else new_input,
+                    new_input,
+                    pre.output_size if pre.output_size is not None else new_output,
+                    new_output,
+                    hidden_preserved,
+                    abandoned_candidate_pool_size,
                 )
                 return {
                     "status": "swapped",
@@ -2382,18 +2493,21 @@ class TrainingLifecycleManager:
                     "arch_changes": {
                         "input_delta": 0,
                         "output_delta": 0,
-                        "hidden_preserved": len(self.network.hidden_units) if hasattr(self.network, "hidden_units") else 0,
-                        # P2-1a doesn't yet measure the in-flight pool depth —
-                        # it's implicitly drained by the future stopping. P2-1b
-                        # will surface this for the canopy "Swap discarded N
-                        # in-flight candidates" toast.
-                        "abandoned_candidate_pool_size": 0,
+                        "hidden_preserved": hidden_preserved,
+                        "abandoned_candidate_pool_size": abandoned_candidate_pool_size,
                         "appended_nodes": {"input": 0, "output": 0},
                         "prepended_layers": [],
                     },
                     "mode": "output_training_first",
                 }
 
+            except SwapCancelledError:
+                # Clean cancellation — rollback and re-raise. Route maps to
+                # HTTP 200 with cancelled status; this is NOT an error path
+                # from the user's perspective, just an abandoned-by-request
+                # terminal state with pre-swap data restored.
+                self._rollback_pre_swap_state(pre)
+                raise
             except ValueError:
                 # Validation-class failure (dim_change_unsupported etc.) — rollback
                 # and re-raise so the route can return 422. Note: the original
@@ -2407,8 +2521,31 @@ class TrainingLifecycleManager:
                 self._rollback_pre_swap_state(pre)
                 raise
             finally:
-                # Step 15: clear in-progress flag unconditionally (§3.7 #3).
+                # Step 15: clear in-progress flag + cancel signal unconditionally
+                # (§3.7 #3). Clearing the cancel flag here means a DELETE
+                # arriving exactly as we finish does not survive to bias the
+                # NEXT swap — see ``request_swap_cancel`` for the 404 path
+                # that fires when the DELETE arrives post-clear.
                 self._swap_in_progress = False
+                self._swap_cancel_requested.clear()
+
+    def _snapshot_abandoned_candidate_pool_size(self) -> int:
+        """Return the in-flight candidate-pool depth at swap time.
+
+        Only the CANDIDATE phase has live candidates; reading the network's
+        ``candidate_pool_size`` at any other phase returns the configured
+        pool capacity, not the count of work actually being abandoned.
+        Output / inference / idle / paused → 0. Resolves the §3.5 "Swap
+        discarded N in-flight candidates" UX requirement without overstating
+        the abandonment cost in non-candidate phases.
+        """
+        try:
+            phase = self.state_machine.phase
+        except Exception:
+            return 0
+        if phase != TrainingPhase.CANDIDATE:
+            return 0
+        return int(getattr(self.network, "candidate_pool_size", 0) or 0)
 
     def _rollback_pre_swap_state(self, pre: "_PreSwapSnapshot") -> None:
         """Restore the network + tensor refs from a pre-swap snapshot.
