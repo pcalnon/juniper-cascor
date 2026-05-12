@@ -20,6 +20,7 @@ from typing import Any, Callable, Dict, List, Optional
 import numpy as np
 import torch
 
+from api.lifecycle import architecture_adapter
 from api.lifecycle.monitor import TrainingMonitor, TrainingState
 from api.lifecycle.state_machine import Command, TrainingPhase, TrainingStateMachine
 from api.models.common import coerce_native_scalars as _common_coerce_native_scalars
@@ -2346,9 +2347,13 @@ class TrainingLifecycleManager:
              P2-1b: a ``_check_swap_cancel`` checkpoint fires here — a
              DELETE arriving during the fetch trips ``SwapCancelledError``
              and the §3.8 rollback restores the pre-swap snapshot.
-          8. P2-1a only — reject any input/output dim change with
-             ``ValueError("dim_change_unsupported")`` (→ 422). P2-1c/1d will
-             implement the architecture adapter for grow/shrink.
+          8. P2-1c architecture adapter: equal-dim is a no-op; grow-only
+             (input and/or output) expands the relevant weight tensors
+             in place with zero-init new connections (§3.6 zero-init
+             invariant); any shrink raises
+             ``ValueError("shrink_unsupported (P2-1c): ...")`` → 422.
+             P2-1d will lift the shrink restriction via prepended adapter
+             layers.
           10. Reset ``_auto_snap_best_metric`` so the stale ratchet from
               the old dataset doesn't suppress new auto-snaps.
           11. Candidate pool is implicitly abandoned by the future stopping
@@ -2438,11 +2443,20 @@ class TrainingLifecycleManager:
                 # SwapCancelledError trips the §3.8 rollback below.
                 self._check_swap_cancel()
 
-                # Step 8: P2-1a dim-change guard.
+                # Step 8 (P2-1c): architecture adapter. Equal-dim → no-op;
+                # grow-only → in-place expansion with zero-init new
+                # connections (§3.6 zero-init invariant: the post-swap
+                # network's output on the still-present input subset is
+                # mathematically identical to the pre-swap output);
+                # any shrink → ValueError("shrink_unsupported (P2-1c): ...")
+                # which the route translates to HTTP 422 (P2-1d will lift).
                 new_input = self._train_x.shape[1]
                 new_output = self._train_y.shape[1]
-                if new_input != pre.input_size or new_output != pre.output_size:
-                    raise ValueError(f"dim_change_unsupported (P2-1a): input {pre.input_size}→{new_input}, " f"output {pre.output_size}→{new_output}. " "P2-1c/1d will support dim changes via the architecture adapter (§3.6).")
+                arch_changes = architecture_adapter.adapt_for_dataset_swap(
+                    self.network,
+                    before=(pre.input_size, pre.output_size),
+                    after=(new_input, new_output),
+                )
 
                 # Step 10: reset auto-snap ratchet (§3.7 guardrail #6).
                 with self._auto_snap_lock:
@@ -2475,8 +2489,10 @@ class TrainingLifecycleManager:
                 self._broadcast_training_state(force=True)
 
                 # Step 16: structured INFO log per §3.7 guardrail #5, then
-                # structured response per §3.3.
-                hidden_preserved = len(self.network.hidden_units) if hasattr(self.network, "hidden_units") else 0
+                # structured response per §3.3. ``arch_changes`` carries the
+                # P2-1c-adapted dim deltas; pre-P2-1c this line always logged
+                # equal-dim because the adapter wasn't wired yet.
+                hidden_preserved = arch_changes.hidden_preserved
                 self.logger.info(
                     "swap: input %d→%d, output %d→%d, hidden %d preserved, candidates %d abandoned, mode→output_training",
                     pre.input_size if pre.input_size is not None else new_input,
@@ -2486,18 +2502,16 @@ class TrainingLifecycleManager:
                     hidden_preserved,
                     abandoned_candidate_pool_size,
                 )
+                response_arch = arch_changes.to_response_dict()
+                # ``abandoned_candidate_pool_size`` is a swap-runtime fact, not
+                # an architecture-adapter output; merge it onto the §3.3 shape
+                # rather than push it down into ``ArchChanges``.
+                response_arch["abandoned_candidate_pool_size"] = abandoned_candidate_pool_size
                 return {
                     "status": "swapped",
                     "before_cfg": pre.dataset_config,
                     "after_cfg": dict(self._current_dataset_config) if self._current_dataset_config else None,
-                    "arch_changes": {
-                        "input_delta": 0,
-                        "output_delta": 0,
-                        "hidden_preserved": hidden_preserved,
-                        "abandoned_candidate_pool_size": abandoned_candidate_pool_size,
-                        "appended_nodes": {"input": 0, "output": 0},
-                        "prepended_layers": [],
-                    },
+                    "arch_changes": response_arch,
                     "mode": "output_training_first",
                 }
 
