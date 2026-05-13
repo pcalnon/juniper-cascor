@@ -667,6 +667,16 @@ class CascadeCorrelationNetwork:
         # Initialize network architecture parameters
         self.input_size = self.config.input_size or _CASCADE_CORRELATION_NETWORK_INPUT_SIZE
         self.output_size = self.config.output_size or _CASCADE_CORRELATION_NETWORK_OUTPUT_SIZE
+        # P2-1d: loss-mask depth. Equals ``output_size`` by default — no
+        # masking, full-tensor training. Lower than ``output_size`` after a
+        # dataset shrink (the lifecycle's ``_pad_dataset_for_network`` sets
+        # it to the dataset's real output dim before submitting training).
+        # ``train_output_layer`` slices ``output[:, :active_output_dim]`` and
+        # ``y[:, :active_output_dim]`` before computing loss;
+        # ``calculate_residual_error`` zero-fills residual columns
+        # ``[active_output_dim:]`` so candidate correlation never picks up
+        # signal from zero-padded target columns.
+        self.active_output_dim = self.output_size
         self.candidate_pool_size = self.config.candidate_pool_size or _CASCADE_CORRELATION_NETWORK_CANDIDATE_POOL_SIZE
         # FRONTEND_ISSUES_PLAN_2026-05-09 §1.5 C2 / Issue #1 — candidate-pool selection
         # knobs. Defaults preserve current behavior (single top-correlation candidate
@@ -724,6 +734,156 @@ class CascadeCorrelationNetwork:
         # Snapshot directory
         self.cascade_correlation_network_snapshots_dir = self.config.cascade_correlation_network_snapshots_dir or _CASCADE_CORRELATION_NETWORK_HDF5_PROJECT_SNAPSHOTS_DIR
         self.logger.debug("CascadeCorrelationNetwork: _init_network_parameters: Network parameters initialized")
+
+    # ------------------------------------------------------------------
+    # P2-1d: live dataset-driven dim growth. See
+    # ``notes/PHASE_2_P2_1D_DESIGN_2026-05-13.md`` for the full contract.
+    #
+    # The network is monotonically non-decreasing — input/output dims only
+    # ever grow. Shrink is handled at the dataset layer (zero-padding the
+    # dataset tensors up to the network's current dims) and is implemented
+    # by ``TrainingLifecycleManager._pad_dataset_for_network``. Calling these
+    # methods with smaller dims raises ``ValueError`` rather than silently
+    # truncating, so an accidental shrink request surfaces loudly.
+    #
+    # New parameter values are random-init scaled by ``self.random_value_scale``
+    # to match the construction-time pattern at ``__init__``. Hidden-unit
+    # weights remain detached (cascade-correlation freezes them after
+    # promotion); ``output_weights`` and ``output_bias`` are re-enabled
+    # for grad tracking after every grow so the next ``train_output_layer``
+    # call can build an optimizer on the expanded tensors.
+    # ------------------------------------------------------------------
+
+    def _resize_network_for_dataset(self, input_size_new: int, output_size_new: int) -> Dict[str, int]:
+        """Grow ``self.input_size`` / ``self.output_size`` to fit a new dataset.
+
+        Returns ``{"input_delta", "output_delta", "hidden_preserved"}`` so the
+        lifecycle layer can surface the values in the §3.3 swap response.
+        Equal-dim is a no-op (returns zero deltas without touching tensors).
+
+        Raises ``ValueError`` if either new dim is smaller than the current —
+        the network never shrinks (see ``_pad_dataset_for_network``).
+
+        Tensor mutations: ``output_weights`` row-insertion at index
+        ``self.input_size`` (separates raw-input rows from hidden-unit rows
+        so the layout consumed by ``forward()`` stays aligned), column-append
+        for output dim; ``output_bias`` element-append for output dim; each
+        ``hidden_units[i]["weights"]`` mirrors the row-insertion at index
+        ``self.input_size``. Hidden-unit biases (scalars) are not touched.
+
+        Bookkeeping (``self.input_size``, ``self.output_size``) is updated
+        AFTER all tensor mutations succeed so a partial failure leaves the
+        network self-consistent for the lifecycle's rollback path.
+        """
+        if input_size_new < self.input_size:
+            raise ValueError(f"CascadeCorrelationNetwork: _resize_network_for_dataset: input_size cannot shrink ({self.input_size} → {input_size_new}); zero-pad the dataset to network dims instead")
+        if output_size_new < self.output_size:
+            raise ValueError(f"CascadeCorrelationNetwork: _resize_network_for_dataset: output_size cannot shrink ({self.output_size} → {output_size_new}); zero-pad the dataset targets to network dims instead")
+
+        input_delta = input_size_new - self.input_size
+        output_delta = output_size_new - self.output_size
+
+        if input_delta == 0 and output_delta == 0:
+            return {"input_delta": 0, "output_delta": 0, "hidden_preserved": len(self.hidden_units)}
+
+        # Mutate output layer first (cheapest to roll back if hidden-unit grow
+        # raises): all changes here are pure-additive on a single tensor.
+        self._grow_output_layer(input_delta=input_delta, output_delta=output_delta)
+        if input_delta > 0:
+            self._grow_hidden_units_for_input(input_delta=input_delta)
+
+        # Bookkeeping last — only flip the live size attributes once all
+        # tensor mutations completed successfully. Reset ``active_output_dim``
+        # to the new full output size: a grow always coincides with the
+        # arrival of a dataset whose output dim equals the new ``output_size``,
+        # so the active dim should match. The lifecycle then immediately
+        # overrides this if the new dataset's output is smaller than
+        # ``output_size_new`` (shouldn't happen post-resize, but defensive).
+        self.input_size = input_size_new
+        self.output_size = output_size_new
+        self.active_output_dim = output_size_new
+
+        self.logger.debug(f"CascadeCorrelationNetwork: _resize_network_for_dataset: grew network to input={input_size_new} output={output_size_new} (deltas: input={input_delta}, output={output_delta}, hidden={len(self.hidden_units)} preserved)")
+        return {
+            "input_delta": input_delta,
+            "output_delta": output_delta,
+            "hidden_preserved": len(self.hidden_units),
+        }
+
+    def _grow_output_layer(self, input_delta: int, output_delta: int) -> None:
+        """Expand ``output_weights`` (rows for input grow, cols for output grow)
+        and ``output_bias`` (elements for output grow). New entries random-init
+        × ``self.random_value_scale``.
+
+        ``output_weights`` shape is ``[input_size + n_hidden, output_size]``.
+        Rows ``0..input_size-1`` are raw-input → output contributions; rows
+        ``input_size..input_size+n_hidden-1`` are hidden-unit → output
+        contributions (see ``forward()`` line 1577). Input grow MUST insert at
+        index ``self.input_size`` so the hidden-row block shifts down and the
+        layout stays aligned with ``_compute_hidden_outputs`` (line 1539-1545).
+
+        Output grow is a plain column-append on ``output_weights`` plus an
+        element-append on ``output_bias`` — hidden units have no output-dim
+        coupling, so they're untouched here.
+        """
+        w = self.output_weights.detach()
+
+        if input_delta > 0:
+            new_rows = torch.randn(input_delta, w.size(1)) * self.random_value_scale
+            w = torch.cat(
+                [
+                    w[: self.input_size, :],  # preserve raw-input rows
+                    new_rows,  # random-init new raw-input rows
+                    w[self.input_size :, :],  # preserve hidden-unit rows (shifted down)
+                ],
+                dim=0,
+            )
+
+        if output_delta > 0:
+            new_cols = torch.randn(w.size(0), output_delta) * self.random_value_scale
+            w = torch.cat([w, new_cols], dim=1)
+
+        w.requires_grad_(True)
+        self.output_weights = w
+
+        if output_delta > 0:
+            b = self.output_bias.detach()
+            new_b = torch.randn(output_delta) * self.random_value_scale
+            b = torch.cat([b, new_b], dim=0)
+            b.requires_grad_(True)
+            self.output_bias = b
+
+    def _grow_hidden_units_for_input(self, input_delta: int) -> None:
+        """For each hidden unit, insert ``input_delta`` random-init entries
+        into its weight vector at index ``self.input_size``.
+
+        Hidden unit ``i`` has weight vector shape ``[self.input_size + i]`` with
+        layout ``[raw_input_0..raw_input_{I-1}, prior_hidden_0..prior_hidden_{i-1}]``.
+        The forward pass at line 1544 does ``torch.sum(unit_input * unit["weights"], dim=1)``
+        on ``buffer[:, :col]`` where ``buffer`` is ``[raw_inputs | prior_hiddens]`` —
+        so the weight vector must keep that ordering. Appending new entries
+        at the end would put them after the prior-hidden block, breaking the
+        positional alignment. Hence row-insertion at the boundary.
+
+        Hidden-unit biases (per-unit scalars) carry no input-dim coupling and
+        are not touched. Weights stay detached after the cat (cascade-correlation
+        freezes hidden parameters after promotion; output training updates
+        ``output_weights`` only).
+        """
+        for unit in self.hidden_units:
+            w = unit["weights"].detach()
+            new_entries = torch.randn(input_delta) * self.random_value_scale
+            w = torch.cat(
+                [
+                    w[: self.input_size],  # preserve raw-input slots
+                    new_entries,  # random-init new raw-input slots
+                    w[self.input_size :],  # preserve prior-hidden slots (shifted)
+                ],
+                dim=0,
+            )
+            # Stays detached — matches the cascade-correlation convention at
+            # ``_install_hidden_unit_helper`` (line ~3568: weights.clone().detach()).
+            unit["weights"] = w
 
     def _init_activation_function(self):
         """Initialize activation function components."""
@@ -1648,13 +1808,25 @@ class CascadeCorrelationNetwork:
         # forward passes through the hidden cascade.
         output_input = self._compute_hidden_outputs(x)
 
+        # P2-1d: when the live dataset has fewer output dims than the
+        # network (post-shrink-via-padding), ``self.active_output_dim``
+        # slices both the prediction and the target to only the meaningful
+        # columns before computing loss. The zero-padded tail columns of
+        # ``y`` carry no real signal and would otherwise train the network
+        # to predict zero on those dead dims (bleeding into the active dims
+        # via shared gradients). Defaults to ``self.output_size`` at
+        # construction (no masking); set by the lifecycle's padding helper
+        # when a dataset smaller than the network is installed.
+        active_o = int(getattr(self, "active_output_dim", self.output_size) or self.output_size)
+        active_o = min(active_o, self.output_size)
+
         # Output Layer Training loop
         for epoch in range(epochs):
             output = output_layer(output_input)
             self.logger.debug(f"CascadeCorrelationNetwork: train_output_layer: Output shape: {output.shape}, Output Input shape: {output_input.shape}")
             self.logger.debug(f"CascadeCorrelationNetwork: train_output_layer: Output: shape={output.shape}, dtype={output.dtype}")
             self.logger.debug(f"CascadeCorrelationNetwork: train_output_layer: Target shape: {y.shape}, dtype={y.dtype}")
-            loss = criterion(output, y)
+            loss = criterion(output[:, :active_o], y[:, :active_o])
 
             # Backward pass
             optimizer.zero_grad()
@@ -1680,7 +1852,7 @@ class CascadeCorrelationNetwork:
         with torch.no_grad():
             output = self.forward(x)
             self.logger.debug(f"CascadeCorrelationNetwork: train_output_layer: Final output shape: {output.shape}")
-            final_loss = criterion(output, y).item()
+            final_loss = criterion(output[:, :active_o], y[:, :active_o]).item()
             self.logger.info(f"CascadeCorrelationNetwork: train_output_layer: Final output layer training loss: {final_loss:.6f}")
         try:
             if (snapshot_path := self.create_snapshot()) is not None:
@@ -3472,7 +3644,13 @@ class CascadeCorrelationNetwork:
     def calculate_residual_error(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
         """
         Description:
-            Calculate the residual error of the network.
+            Calculate the residual error of the network. P2-1d: zeros out the
+            residual on output columns ``[self.active_output_dim:]`` when the
+            active dim is less than ``self.output_size`` (post-shrink-via-
+            padding) so downstream candidate training never correlates against
+            signal from the zero-padded target tail. Masking the residual at
+            source avoids threading ``active_output_dim`` through every
+            multiprocess candidate worker.
         Args:
             x: Input tensor
             y: Target tensor
@@ -3511,6 +3689,16 @@ class CascadeCorrelationNetwork:
             self.logger.verbose(f"CascadeCorrelationNetwork: calculate_residual_error: Validating residual error, shape: {residual.shape}")
             residual = (residual, torch.empty(0, self.output_size))[residual is None]
             self.logger.debug(f"CascadeCorrelationNetwork: calculate_residual_error: Calculated residual error, shape: {residual.shape}")
+        # P2-1d: zero out the inactive output dims so candidate correlation
+        # against the residual never picks up signal from zero-padded target
+        # columns. Mathematically equivalent to slicing residual + outputs
+        # at every consumer site, but avoids threading active_output_dim
+        # through the multiprocess candidate training pool.
+        active_o = int(getattr(self, "active_output_dim", self.output_size) or self.output_size)
+        if 0 <= active_o < residual.shape[1]:
+            residual = residual.clone()
+            residual[:, active_o:] = 0.0
+            self.logger.debug(f"CascadeCorrelationNetwork: calculate_residual_error: Masked residual to active_output_dim={active_o}; dims [{active_o}:{self.output_size}] zeroed")
         self.logger.verbose(f"CascadeCorrelationNetwork: calculate_residual_error: Returning residual error, shape: {residual.shape}")
         return residual
 
