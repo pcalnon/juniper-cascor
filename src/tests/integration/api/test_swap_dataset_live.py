@@ -127,70 +127,129 @@ def test_swap_dataset_live_409_when_swap_in_progress():
 
 
 # ---------------------------------------------------------------------------
-# swap_dataset_live: shrink rejection (P2-1c — grow allowed, shrink → P2-1d)
+# swap_dataset_live: shrink-via-padding (P2-1d — network monotonically grows;
+# shrink is handled by zero-padding the dataset up to network capacity)
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
-def test_swap_dataset_live_rejects_input_shrink():
-    """P2-1c's hard guard: new input dim must be >= current network input_size.
-    Shrink raises ValueError("shrink_unsupported (P2-1c)") → 422. Rollback
-    restores the original tensors so training can resume on the OLD dataset
-    (§3.8). Grow paths are exercised below via the dedicated P2-1c tests."""
+def test_swap_dataset_live_input_shrink_pads_dataset_tensors():
+    """Per the P2-1d contract, a swap that brings a smaller-input dataset
+    succeeds: the dataset tensors are zero-padded up to ``network.input_size``
+    (which never shrinks). The pre-pad active dim is captured on the
+    response but the live tensors stored on the manager reflect the padded
+    shape so subsequent ``forward()`` calls see consistent dims."""
     mgr = TrainingLifecycleManager()
     mgr.create_network(input_size=5, output_size=2)
     mgr.set_experimental_functions(True)
-    pre_train_x = torch.randn(8, 5)
-    pre_train_y = torch.zeros(8, 2)
-    pre_train_y[:, 0] = 1
-    mgr._train_x = pre_train_x
-    mgr._train_y = pre_train_y
+    mgr._train_x = torch.randn(8, 5)
+    mgr._train_y = torch.zeros(8, 2)
+    mgr._train_y[:, 0] = 1
+    mgr._current_dataset_config = {"dataset_type": "synthetic_5_2"}
     mgr.state_machine.handle_command(Command.START)
 
-    # Stub _reload_dataset to deliver tensors of a SMALLER input dim.
     def _fake_reload(**cfg):
         mgr._train_x = torch.randn(8, 2)  # input shrunk 5→2
         mgr._train_y = torch.zeros(8, 2)
+        mgr._train_y[:, 0] = 1
         mgr._val_x = None
         mgr._val_y = None
         mgr._current_dataset_config = {"dataset_type": "synthetic_2_2"}
 
-    with patch.object(mgr, "_reload_dataset", side_effect=_fake_reload):
-        with pytest.raises(ValueError, match="shrink_unsupported"):
-            mgr.swap_dataset_live(dataset_type="synthetic_2_2")
+    mgr._executor = MagicMock()
+    mgr._executor.submit.return_value = MagicMock()
 
-    # §3.8 rollback contract: original tensors are restored.
-    assert mgr._train_x is pre_train_x, "pre-swap _train_x not restored after shrink rejection"
-    assert mgr._train_y is pre_train_y
-    assert mgr._swap_in_progress is False, "_swap_in_progress not cleared in finally"
+    with patch.object(mgr, "_reload_dataset", side_effect=_fake_reload):
+        result = mgr.swap_dataset_live(dataset_type="synthetic_2_2")
+
+    # Network monotonically non-decreasing.
+    assert mgr.network.input_size == 5, "network.input_size must NOT shrink"
+    # Dataset tensors padded up to network dim.
+    assert mgr._train_x.shape == (8, 5), "input tensor padded to network input_size"
+    # The last 3 columns should be zeros (the pad).
+    assert torch.equal(mgr._train_x[:, 2:], torch.zeros(8, 3))
+    # Response reports the dataset-side delta (negative on shrink) but no
+    # network-side append (network didn't grow).
+    assert result["arch_changes"]["input_delta"] == -3, "input_delta is dataset-vs-pre-swap diff"
+    assert result["arch_changes"]["appended_nodes"] == {"input": 0, "output": 0}
+    assert result["arch_changes"]["active_output_dim"] == 2  # output dim unchanged
     mgr.shutdown()
 
 
 @pytest.mark.integration
-def test_swap_dataset_live_rejects_output_shrink():
-    """Same shrink guard, on the output dim. P2-1d will allow this via an
-    appended output-side adapter layer; P2-1c stays additive-only."""
+def test_swap_dataset_live_output_shrink_pads_targets_and_sets_active_output_dim():
+    """An output-shrink swap zero-pads ``_train_y`` and sets
+    ``network.active_output_dim`` so the next training run masks loss to
+    the real output slots (avoiding zero-target gradient drift)."""
     mgr = TrainingLifecycleManager()
     mgr.create_network(input_size=2, output_size=3)
     mgr.set_experimental_functions(True)
     mgr._train_x = torch.randn(8, 2)
     mgr._train_y = torch.zeros(8, 3)
     mgr._train_y[:, 0] = 1
+    mgr._current_dataset_config = {"dataset_type": "synthetic_2_3"}
     mgr.state_machine.handle_command(Command.START)
 
     def _fake_reload(**cfg):
         mgr._train_x = torch.randn(8, 2)
-        mgr._train_y = torch.zeros(8, 2)  # output shrunk 3→2
+        mgr._train_y = torch.zeros(8, 2)
         mgr._train_y[:, 0] = 1
         mgr._val_x = None
         mgr._val_y = None
         mgr._current_dataset_config = {"dataset_type": "synthetic_2_2"}
 
-    with patch.object(mgr, "_reload_dataset", side_effect=_fake_reload):
-        with pytest.raises(ValueError, match="shrink_unsupported"):
-            mgr.swap_dataset_live(dataset_type="synthetic_2_2")
+    mgr._executor = MagicMock()
+    mgr._executor.submit.return_value = MagicMock()
 
-    assert mgr._swap_in_progress is False
+    with patch.object(mgr, "_reload_dataset", side_effect=_fake_reload):
+        result = mgr.swap_dataset_live(dataset_type="synthetic_2_2")
+
+    assert mgr.network.output_size == 3, "network output dim never shrinks"
+    assert mgr._train_y.shape == (8, 3), "targets padded up to network output_size"
+    assert torch.equal(mgr._train_y[:, 2:], torch.zeros(8, 1))  # one zero column
+    assert mgr.network.active_output_dim == 2, "loss-mask depth = pre-pad dataset output dim"
+    assert result["arch_changes"]["output_delta"] == -1
+    assert result["arch_changes"]["active_output_dim"] == 2
+    mgr.shutdown()
+
+
+@pytest.mark.integration
+def test_swap_dataset_live_mixed_input_grow_output_shrink():
+    """Composes grow on one side with pad on the other: input dim grows on
+    the network; output dim is dataset-padded up to network."""
+    mgr = TrainingLifecycleManager()
+    mgr.create_network(input_size=2, output_size=3)
+    mgr.set_experimental_functions(True)
+    mgr._train_x = torch.randn(8, 2)
+    mgr._train_y = torch.zeros(8, 3)
+    mgr._train_y[:, 0] = 1
+    mgr._current_dataset_config = {"dataset_type": "synthetic_2_3"}
+    mgr.state_machine.handle_command(Command.START)
+
+    def _fake_reload(**cfg):
+        # Input grows 2→5, output shrinks 3→1.
+        mgr._train_x = torch.randn(8, 5)
+        mgr._train_y = torch.zeros(8, 1)
+        mgr._train_y[:, 0] = 1
+        mgr._val_x = None
+        mgr._val_y = None
+        mgr._current_dataset_config = {"dataset_type": "synthetic_5_1"}
+
+    mgr._executor = MagicMock()
+    mgr._executor.submit.return_value = MagicMock()
+
+    with patch.object(mgr, "_reload_dataset", side_effect=_fake_reload):
+        result = mgr.swap_dataset_live(dataset_type="synthetic_5_1")
+
+    # Network grew to (5, 3); dataset output padded back up to 3.
+    assert mgr.network.input_size == 5
+    assert mgr.network.output_size == 3
+    assert mgr._train_x.shape == (8, 5)
+    assert mgr._train_y.shape == (8, 3)
+    assert mgr.network.active_output_dim == 1
+    assert result["arch_changes"]["input_delta"] == 3  # 2 → 5
+    assert result["arch_changes"]["output_delta"] == -2  # 3 → 1
+    assert result["arch_changes"]["appended_nodes"] == {"input": 3, "output": 0}
     mgr.shutdown()
 
 

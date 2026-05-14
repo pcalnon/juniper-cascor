@@ -15,12 +15,11 @@ import time
 from concurrent.futures import Future, ThreadPoolExecutor
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import numpy as np
 import torch
 
-from api.lifecycle import architecture_adapter
 from api.lifecycle.monitor import TrainingMonitor, TrainingState
 from api.lifecycle.state_machine import Command, TrainingPhase, TrainingStateMachine
 from api.models.common import coerce_native_scalars as _common_coerce_native_scalars
@@ -118,9 +117,36 @@ class SwapCancelledError(RuntimeError):
 
 
 class _PreSwapSnapshot:  # noqa: D101 - frozen container, not part of the public surface
-    __slots__ = ("train_x", "train_y", "val_x", "val_y", "state_dict", "input_size", "output_size", "dataset_config")
+    __slots__ = (
+        "train_x",
+        "train_y",
+        "val_x",
+        "val_y",
+        "state_dict",
+        "input_size",
+        "output_size",
+        "dataset_config",
+        "active_output_dim",
+        "output_weights",
+        "output_bias",
+        "hidden_unit_weights",
+    )
 
-    def __init__(self, train_x, train_y, val_x, val_y, state_dict, input_size, output_size, dataset_config):
+    def __init__(
+        self,
+        train_x,
+        train_y,
+        val_x,
+        val_y,
+        state_dict,
+        input_size,
+        output_size,
+        dataset_config,
+        active_output_dim=None,
+        output_weights=None,
+        output_bias=None,
+        hidden_unit_weights=None,
+    ):
         # Plain container for the §3.7 guardrail-#1 pre-swap state. Tensor
         # references only — we don't .clone() since the swap path immediately
         # rebinds self._train_x to new tensors, so the old refs remain alive
@@ -135,6 +161,22 @@ class _PreSwapSnapshot:  # noqa: D101 - frozen container, not part of the public
         self.input_size = input_size
         self.output_size = output_size
         self.dataset_config = dataset_config
+        # P2-1d: the loss-mask dim must also rollback so an aborted shrink
+        # doesn't leave training masking against a stale shorter dim.
+        self.active_output_dim = active_output_dim
+        # P2-1d: the network's parameter tensors are mutated IN PLACE by
+        # ``_resize_network_for_dataset``. The CascadeCorrelationNetwork has
+        # no ``state_dict()`` (it doesn't inherit from nn.Module), so we
+        # capture tensor clones here and restore them on rollback. Each is
+        # a fresh clone (detached, separate storage) so the live training
+        # path can't accidentally mutate the rollback view.
+        self.output_weights = output_weights
+        self.output_bias = output_bias
+        # List of per-hidden-unit weight tensor clones, in the same order
+        # as ``network.hidden_units``. Hidden-unit biases are scalars and
+        # are not mutated by P2-1d (the resize path never touches them),
+        # so they don't need snapshotting.
+        self.hidden_unit_weights = hidden_unit_weights
 
 
 class TrainingInterrupted(Exception):
@@ -2052,6 +2094,28 @@ class TrainingLifecycleManager:
             if self._train_x is None or self._train_y is None:
                 raise ValueError("Training data not provided")
 
+            # P2-1d: cold-swap parity with swap_dataset_live. If the dataset
+            # is smaller than the network's input/output dims (e.g., after a
+            # snapshot-load left the network at a larger size than a new
+            # smaller dataset), zero-pad up to the network's dims and set
+            # the loss-mask depth so training doesn't pull gradients toward
+            # zero on the dead output slots. start_training does NOT grow
+            # the network — only swap_dataset_live owns the grow path; if
+            # the dataset exceeds network capacity here, the pad helper
+            # raises ValueError and the user must recreate the network or
+            # use the live-swap path.
+            if hasattr(self.network, "input_size") and hasattr(self.network, "output_size"):
+                (
+                    self._train_x,
+                    self._train_y,
+                    self._val_x,
+                    self._val_y,
+                    _active_input_dim,
+                    active_output_dim,
+                ) = self._pad_dataset_for_network(self._train_x, self._train_y, self._val_x, self._val_y)
+                if hasattr(self.network, "active_output_dim"):
+                    self.network.active_output_dim = active_output_dim
+
             self._stop_requested.clear()
             self._pause_event.set()
 
@@ -2395,7 +2459,13 @@ class TrainingLifecycleManager:
             self._swap_cancel_requested.clear()
 
             try:
-                # Step 4: snapshot pre-swap state.
+                # Step 4: snapshot pre-swap state. P2-1d expands the snapshot
+                # to cover the network's parameter tensors (output_weights,
+                # output_bias, each hidden unit's weights) because
+                # ``_resize_network_for_dataset`` mutates them in place; the
+                # CascadeCorrelationNetwork has no ``state_dict`` of its own,
+                # so we clone the tensors directly. Hidden-unit biases are
+                # scalars and untouched by P2-1d, so they aren't snapshotted.
                 pre = _PreSwapSnapshot(
                     train_x=self._train_x,
                     train_y=self._train_y,
@@ -2405,6 +2475,10 @@ class TrainingLifecycleManager:
                     input_size=getattr(self.network, "input_size", None),
                     output_size=getattr(self.network, "output_size", None),
                     dataset_config=dict(self._current_dataset_config) if self._current_dataset_config else None,
+                    active_output_dim=getattr(self.network, "active_output_dim", None),
+                    output_weights=(self.network.output_weights.detach().clone() if hasattr(self.network, "output_weights") and self.network.output_weights is not None else None),
+                    output_bias=(self.network.output_bias.detach().clone() if hasattr(self.network, "output_bias") and self.network.output_bias is not None else None),
+                    hidden_unit_weights=([u["weights"].detach().clone() for u in self.network.hidden_units] if hasattr(self.network, "hidden_units") else None),
                 )
 
                 # P2-1b: capture the candidate-pool depth BEFORE we stop the
@@ -2443,20 +2517,40 @@ class TrainingLifecycleManager:
                 # SwapCancelledError trips the §3.8 rollback below.
                 self._check_swap_cancel()
 
-                # Step 8 (P2-1c): architecture adapter. Equal-dim → no-op;
-                # grow-only → in-place expansion with zero-init new
-                # connections (§3.6 zero-init invariant: the post-swap
-                # network's output on the still-present input subset is
-                # mathematically identical to the pre-swap output);
-                # any shrink → ValueError("shrink_unsupported (P2-1c): ...")
-                # which the route translates to HTTP 422 (P2-1d will lift).
-                new_input = self._train_x.shape[1]
-                new_output = self._train_y.shape[1]
-                arch_changes = architecture_adapter.adapt_for_dataset_swap(
-                    self.network,
-                    before=(pre.input_size, pre.output_size),
-                    after=(new_input, new_output),
+                # Step 8 (P2-1d): align network capacity with the new dataset.
+                #   - GROW the network's input and/or output dim if the new
+                #     dataset is larger than the network on either side.
+                #   - PAD the dataset's tensors up to the network's dims if
+                #     the new dataset is smaller. The training methods read
+                #     ``self.network.active_output_dim`` to mask loss to the
+                #     real output slots (see ``train_output_layer`` and
+                #     ``calculate_residual_error`` in cascade_correlation.py).
+                #
+                # The network is monotonically non-decreasing: never shrinks.
+                # See ``notes/PHASE_2_P2_1D_DESIGN_2026-05-13.md`` for the
+                # full design — this is the design that replaces the §3.6
+                # prepend-adapter approach abandoned 2026-05-12.
+                dataset_input_dim = self._train_x.shape[1]
+                dataset_output_dim = self._train_y.shape[1]
+                target_input_dim = max(int(pre.input_size or 0), dataset_input_dim)
+                target_output_dim = max(int(pre.output_size or 0), dataset_output_dim)
+                resize_result = self.network._resize_network_for_dataset(
+                    input_size_new=target_input_dim,
+                    output_size_new=target_output_dim,
                 )
+                (
+                    self._train_x,
+                    self._train_y,
+                    self._val_x,
+                    self._val_y,
+                    active_input_dim,
+                    active_output_dim,
+                ) = self._pad_dataset_for_network(self._train_x, self._train_y, self._val_x, self._val_y)
+                # Set the loss-mask depth on the network. Same attribute that
+                # ``_resize_network_for_dataset`` reset to ``output_size_new``
+                # — overriding here when the dataset is smaller than the
+                # (possibly just-grown) network.
+                self.network.active_output_dim = active_output_dim
 
                 # Step 10: reset auto-snap ratchet (§3.7 guardrail #6).
                 with self._auto_snap_lock:
@@ -2489,24 +2583,40 @@ class TrainingLifecycleManager:
                 self._broadcast_training_state(force=True)
 
                 # Step 16: structured INFO log per §3.7 guardrail #5, then
-                # structured response per §3.3. ``arch_changes`` carries the
-                # P2-1c-adapted dim deltas; pre-P2-1c this line always logged
-                # equal-dim because the adapter wasn't wired yet.
-                hidden_preserved = arch_changes.hidden_preserved
+                # structured response per §3.3. The §3.3 log/response use
+                # the *dataset's* dims as the right-hand side of the arrow
+                # so the user sees what the dataset is, not the network's
+                # (possibly-larger, post-grow) capacity. The two are equal
+                # when grow fires; they differ when shrink-via-padding
+                # leaves the network larger than the dataset.
+                hidden_preserved = int(resize_result.get("hidden_preserved", 0))
                 self.logger.info(
                     "swap: input %d→%d, output %d→%d, hidden %d preserved, candidates %d abandoned, mode→output_training",
-                    pre.input_size if pre.input_size is not None else new_input,
-                    new_input,
-                    pre.output_size if pre.output_size is not None else new_output,
-                    new_output,
+                    pre.input_size if pre.input_size is not None else dataset_input_dim,
+                    dataset_input_dim,
+                    pre.output_size if pre.output_size is not None else dataset_output_dim,
+                    dataset_output_dim,
                     hidden_preserved,
                     abandoned_candidate_pool_size,
                 )
-                response_arch = arch_changes.to_response_dict()
-                # ``abandoned_candidate_pool_size`` is a swap-runtime fact, not
-                # an architecture-adapter output; merge it onto the §3.3 shape
-                # rather than push it down into ``ArchChanges``.
-                response_arch["abandoned_candidate_pool_size"] = abandoned_candidate_pool_size
+                # §3.3 arch_changes shape. Deltas are the dataset-vs-pre-swap
+                # diff so canopy can render a meaningful "what changed" toast
+                # regardless of grow vs shrink. ``appended_nodes`` is the
+                # network-side growth (zero when the dataset only shrunk).
+                # ``prepended_layers`` is a frozen empty list — the old §3.6
+                # adapter approach was abandoned; we never prepend layers.
+                response_arch = {
+                    "input_delta": dataset_input_dim - int(pre.input_size or 0),
+                    "output_delta": dataset_output_dim - int(pre.output_size or 0),
+                    "hidden_preserved": hidden_preserved,
+                    "appended_nodes": {
+                        "input": int(resize_result.get("input_delta", 0)),
+                        "output": int(resize_result.get("output_delta", 0)),
+                    },
+                    "prepended_layers": [],
+                    "abandoned_candidate_pool_size": abandoned_candidate_pool_size,
+                    "active_output_dim": active_output_dim,
+                }
                 return {
                     "status": "swapped",
                     "before_cfg": pre.dataset_config,
@@ -2561,15 +2671,69 @@ class TrainingLifecycleManager:
             return 0
         return int(getattr(self.network, "candidate_pool_size", 0) or 0)
 
-    def _rollback_pre_swap_state(self, pre: "_PreSwapSnapshot") -> None:
+    def _pad_dataset_for_network(
+        self,
+        x: torch.Tensor,
+        y: torch.Tensor,
+        val_x: Optional[torch.Tensor],
+        val_y: Optional[torch.Tensor],
+    ) -> Tuple[torch.Tensor, torch.Tensor, Optional[torch.Tensor], Optional[torch.Tensor], int, int]:
+        """Zero-pad dataset tensors up to the network's current input/output dims.
+
+        Returns ``(x, y, val_x, val_y, active_input_dim, active_output_dim)``
+        where ``active_*_dim`` is the dataset's pre-pad dim. The caller is
+        expected to update ``self.network.active_output_dim`` (the training
+        methods read it to mask the loss to real output slots — see
+        ``train_output_layer`` and ``calculate_residual_error``); this helper
+        does not mutate network state directly so it's safe to call from
+        contexts that don't yet own the live training network (e.g., a
+        snapshot-load-validation path).
+
+        Raises ``ValueError`` if the dataset exceeds network capacity — the
+        caller must invoke ``network._resize_network_for_dataset`` first.
+        This is an assertion against the contract, not a real-world error
+        path; ``swap_dataset_live`` always resizes before padding.
+
+        ``None`` validation tensors stay ``None`` (we don't fabricate a zero
+        validation set if the caller didn't supply one). Tensors that already
+        match the network dim pass through unchanged.
+        """
+        net_input = int(self.network.input_size)
+        net_output = int(self.network.output_size)
+        active_input_dim = int(x.shape[1])
+        active_output_dim = int(y.shape[1])
+
+        if active_input_dim > net_input or active_output_dim > net_output:
+            raise ValueError(f"_pad_dataset_for_network: dataset ({active_input_dim}, {active_output_dim}) exceeds network capacity ({net_input}, {net_output}); resize the network first")
+
+        if active_input_dim < net_input:
+            input_pad = net_input - active_input_dim
+            x = torch.cat([x, torch.zeros(x.shape[0], input_pad, dtype=x.dtype, device=x.device)], dim=1)
+            if val_x is not None:
+                val_x = torch.cat([val_x, torch.zeros(val_x.shape[0], input_pad, dtype=val_x.dtype, device=val_x.device)], dim=1)
+
+        if active_output_dim < net_output:
+            output_pad = net_output - active_output_dim
+            y = torch.cat([y, torch.zeros(y.shape[0], output_pad, dtype=y.dtype, device=y.device)], dim=1)
+            if val_y is not None:
+                val_y = torch.cat([val_y, torch.zeros(val_y.shape[0], output_pad, dtype=val_y.dtype, device=val_y.device)], dim=1)
+
+        return x, y, val_x, val_y, active_input_dim, active_output_dim
+
+    def _rollback_pre_swap_state(self, pre: "_PreSwapSnapshot") -> None:  # noqa: C901
         """Restore the network + tensor refs from a pre-swap snapshot.
 
-        Best-effort: tensor refs always restore; ``state_dict`` restore is
-        skipped if the snapshot didn't capture one (network has no
-        ``state_dict``). Logs the rollback so a post-mortem can see what
-        was reverted. Caller is responsible for re-submitting a training
-        future if continuity matters — for P2-1a we leave that to a
-        follow-up since the user explicitly chose to swap.
+        Restores dataset tensors, the loss-mask active dim, and (P2-1d) the
+        network's parameter tensors (``output_weights``, ``output_bias``,
+        each hidden unit's weights) plus the ``input_size`` / ``output_size``
+        bookkeeping. The cascade-correlation network has no ``state_dict``
+        (it doesn't inherit from ``nn.Module``), so we restore each tensor
+        directly from the snapshot's clones.
+
+        Best-effort: each restoration is wrapped so a partial failure (e.g.,
+        hidden-unit count mismatch from a logic bug) doesn't leave the
+        rollback half-done — the warning lands but training can still
+        attempt to resume.
         """
         self.logger.warning(
             "swap_dataset_live: rolling back to pre-swap state (input=%r output=%r cfg=%r)",
@@ -2581,6 +2745,48 @@ class TrainingLifecycleManager:
         self._train_y = pre.train_y
         self._val_x = pre.val_x
         self._val_y = pre.val_y
+        # P2-1d: restore the network's loss-mask depth so a half-completed
+        # shrink doesn't leave the next training run masking against a stale
+        # active dim. ``None`` snapshot means "wasn't set pre-swap, leave alone".
+        if pre.active_output_dim is not None and hasattr(self.network, "active_output_dim"):
+            self.network.active_output_dim = pre.active_output_dim
+        # Restore network parameter tensors. The CascadeCorrelationNetwork
+        # is plain-Python (no nn.Module), so we re-bind the attributes
+        # directly. Each snapshot tensor is a detached clone — re-enable
+        # requires_grad on output_weights/bias so the next train_output_layer
+        # builds a fresh optimizer on a leaf tensor (cascade convention).
+        if pre.output_weights is not None and hasattr(self.network, "output_weights"):
+            try:
+                w = pre.output_weights.clone()
+                w.requires_grad_(True)
+                self.network.output_weights = w
+            except Exception:
+                self.logger.exception("swap_dataset_live rollback: restoring output_weights failed; network may be inconsistent")
+        if pre.output_bias is not None and hasattr(self.network, "output_bias"):
+            try:
+                b = pre.output_bias.clone()
+                b.requires_grad_(True)
+                self.network.output_bias = b
+            except Exception:
+                self.logger.exception("swap_dataset_live rollback: restoring output_bias failed; network may be inconsistent")
+        if pre.hidden_unit_weights is not None and hasattr(self.network, "hidden_units"):
+            try:
+                for unit, restored_w in zip(self.network.hidden_units, pre.hidden_unit_weights):
+                    # Stay detached — cascade-correlation hidden weights are
+                    # frozen post-promotion (line ~3568 cascade_correlation.py).
+                    unit["weights"] = restored_w.clone()
+            except Exception:
+                self.logger.exception("swap_dataset_live rollback: restoring hidden_unit weights failed; network may be inconsistent")
+        # Re-bind the size attributes after the tensors are restored so any
+        # readers (e.g., ``forward`` validation at line 1561) see a
+        # self-consistent view.
+        if pre.input_size is not None and hasattr(self.network, "input_size"):
+            self.network.input_size = pre.input_size
+        if pre.output_size is not None and hasattr(self.network, "output_size"):
+            self.network.output_size = pre.output_size
+        # Legacy: state_dict path remains a no-op on the cascade-correlation
+        # class (no load_state_dict), but kept for any future nn.Module-style
+        # network the lifecycle might host.
         if pre.state_dict is not None and hasattr(self.network, "load_state_dict"):
             try:
                 self.network.load_state_dict(pre.state_dict)
