@@ -819,3 +819,136 @@ def test_swap_dataset_live_grow_input_log_line_reports_actual_deltas():
     rendered = fmt % tuple(args)
     assert rendered == "swap: input 2→5, output 2→3, hidden 0 preserved, candidates 0 abandoned, mode→output_training"
     mgr.shutdown()
+
+
+# ---------------------------------------------------------------------------
+# P2-2 (Issue #3): dataset_swap history-event recording from the lifecycle.
+# Pins the success-only contract — cancelled / failed swaps must NOT append
+# an event, so the history reflects only what canopy should render.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.integration
+def test_swap_dataset_live_records_history_event_on_success():
+    """Happy path: a successful swap appends exactly one event to
+    ``network.history["dataset_swaps"]`` whose payload mirrors the §3.3
+    response shape. This is the canopy P2-7 timeline-marker entrypoint."""
+    mgr = TrainingLifecycleManager()
+    mgr.create_network(input_size=2, output_size=2)
+    mgr.set_experimental_functions(True)
+    mgr._train_x, mgr._train_y = _make_dummy_tensors(2, 2)
+    mgr._current_dataset_config = {"dataset_type": "spirals"}
+    mgr.state_machine.handle_command(Command.START)
+
+    new_x, new_y = _make_dummy_tensors(4, 2)
+
+    def _fake_reload(**cfg):
+        mgr._train_x = new_x
+        mgr._train_y = new_y
+        mgr._current_dataset_config = {"dataset_type": "synthetic_4_2"}
+
+    mgr._executor = MagicMock()
+    mgr._executor.submit.return_value = MagicMock()
+
+    pre_count = len(mgr.network.history["dataset_swaps"])
+    with patch.object(mgr, "_reload_dataset", side_effect=_fake_reload):
+        result = mgr.swap_dataset_live(dataset_type="synthetic_4_2")
+
+    swaps = mgr.network.history["dataset_swaps"]
+    assert len(swaps) == pre_count + 1, "exactly one history event appended per successful swap"
+    event = swaps[-1]
+    # Schema present.
+    for key in ("timestamp", "before_cfg", "after_cfg", "arch_changes", "pre_swap_snapshot_id", "post_swap_snapshot_id"):
+        assert key in event, f"missing schema field {key!r}"
+    # Payload aligns with the §3.3 response (P2-2 records the SAME
+    # arch_changes dict that the route returns to canopy).
+    assert event["arch_changes"] == result["arch_changes"]
+    assert event["before_cfg"] == {"dataset_type": "spirals"}
+    assert event["after_cfg"] == {"dataset_type": "synthetic_4_2"}
+    # P2-3 placeholders default to None.
+    assert event["pre_swap_snapshot_id"] is None
+    assert event["post_swap_snapshot_id"] is None
+    mgr.shutdown()
+
+
+@pytest.mark.integration
+def test_swap_dataset_live_does_NOT_record_on_cancellation():
+    """A cancelled swap rolls back state and must NOT leave a stale
+    history event — canopy would render a swap that didn't happen."""
+    mgr = TrainingLifecycleManager()
+    mgr.create_network(input_size=2, output_size=2)
+    mgr.set_experimental_functions(True)
+    mgr._train_x, mgr._train_y = _make_dummy_tensors(2, 2)
+    mgr._current_dataset_config = {"dataset_type": "spirals"}
+    mgr.state_machine.handle_command(Command.START)
+
+    def _fake_reload_then_cancel(**cfg):
+        mgr._train_x, mgr._train_y = _make_dummy_tensors(2, 2)
+        mgr._current_dataset_config = {"dataset_type": "moons"}
+        mgr._swap_cancel_requested.set()
+
+    mgr._executor = MagicMock()
+    mgr._executor.submit.return_value = MagicMock()
+
+    pre_count = len(mgr.network.history["dataset_swaps"])
+    with patch.object(mgr, "_reload_dataset", side_effect=_fake_reload_then_cancel):
+        with pytest.raises(SwapCancelledError):
+            mgr.swap_dataset_live(dataset_type="moons")
+
+    assert len(mgr.network.history["dataset_swaps"]) == pre_count, "cancelled swap must not append an event"
+    mgr.shutdown()
+
+
+@pytest.mark.integration
+def test_swap_dataset_live_does_NOT_record_on_fetch_failure():
+    """``_reload_dataset`` raising before the network mutation → no event.
+    The rollback path returns the lifecycle to pre-swap state; the
+    history must reflect that nothing was committed."""
+    mgr = TrainingLifecycleManager()
+    mgr.create_network(input_size=2, output_size=2)
+    mgr.set_experimental_functions(True)
+    mgr._train_x, mgr._train_y = _make_dummy_tensors(2, 2)
+    mgr._current_dataset_config = {"dataset_type": "spirals"}
+    mgr.state_machine.handle_command(Command.START)
+
+    pre_count = len(mgr.network.history["dataset_swaps"])
+    with patch.object(mgr, "_reload_dataset", side_effect=RuntimeError("juniper-data unreachable")):
+        with pytest.raises(RuntimeError, match="juniper-data unreachable"):
+            mgr.swap_dataset_live(dataset_type="spirals")
+
+    assert len(mgr.network.history["dataset_swaps"]) == pre_count
+    mgr.shutdown()
+
+
+@pytest.mark.integration
+def test_swap_dataset_live_records_equal_dim_swap():
+    """Equal-dim swaps are still real user-initiated events (dataset
+    metadata changed; candidates may have been abandoned). The history
+    records them so canopy's timeline doesn't silently drop them."""
+    mgr = TrainingLifecycleManager()
+    mgr.create_network(input_size=2, output_size=2)
+    mgr.set_experimental_functions(True)
+    mgr._train_x, mgr._train_y = _make_dummy_tensors(2, 2)
+    mgr._current_dataset_config = {"dataset_type": "spirals", "n_spirals": 2}
+    mgr.state_machine.handle_command(Command.START)
+
+    new_x, new_y = _make_dummy_tensors(2, 2)
+
+    def _fake_reload(**cfg):
+        mgr._train_x = new_x
+        mgr._train_y = new_y
+        mgr._current_dataset_config = {"dataset_type": "moons", "noise": 0.2}
+
+    mgr._executor = MagicMock()
+    mgr._executor.submit.return_value = MagicMock()
+
+    with patch.object(mgr, "_reload_dataset", side_effect=_fake_reload):
+        mgr.swap_dataset_live(dataset_type="moons", noise=0.2)
+
+    swaps = mgr.network.history["dataset_swaps"]
+    assert len(swaps) == 1
+    assert swaps[0]["before_cfg"] == {"dataset_type": "spirals", "n_spirals": 2}
+    assert swaps[0]["after_cfg"] == {"dataset_type": "moons", "noise": 0.2}
+    assert swaps[0]["arch_changes"]["input_delta"] == 0
+    assert swaps[0]["arch_changes"]["output_delta"] == 0
+    mgr.shutdown()

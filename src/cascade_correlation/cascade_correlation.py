@@ -34,6 +34,7 @@
 #
 #####################################################################################################################################################################################################
 import atexit
+import copy
 import datetime
 import io
 
@@ -729,6 +730,11 @@ class CascadeCorrelationNetwork:
             "train_accuracy": [],
             "value_accuracy": [],
             "hidden_units_added": [],
+            # P2-2 (Issue #3): structured record of every successful
+            # ``swap_dataset_live`` event. One dict appended per swap; see
+            # ``record_dataset_swap_event`` for the payload schema. Sibling
+            # of ``hidden_units_added`` in the event-with-payload pattern.
+            "dataset_swaps": [],
         }
 
         # Snapshot directory
@@ -884,6 +890,67 @@ class CascadeCorrelationNetwork:
             # Stays detached — matches the cascade-correlation convention at
             # ``_install_hidden_unit_helper`` (line ~3568: weights.clone().detach()).
             unit["weights"] = w
+
+    # ------------------------------------------------------------------
+    # P2-2 (Issue #3): live dataset swap history persistence.
+    #
+    # ``record_dataset_swap_event`` is the sole writer for
+    # ``self.history["dataset_swaps"]``. Called from
+    # ``swap_dataset_live`` in the lifecycle layer at the end of the
+    # success path (post-broadcast, pre-return), so cancelled swaps and
+    # rolled-back failures never produce a stale event.
+    #
+    # The payload schema mirrors the §3.3 swap response shape so canopy's
+    # P2-7 timeline UI can render markers without joining against any
+    # other state. Snapshot ID fields are placeholders that P2-3 will
+    # populate once pre/post-swap auto-snapshots are wired.
+    # ------------------------------------------------------------------
+
+    def record_dataset_swap_event(
+        self,
+        *,
+        before_cfg: Optional[Dict[str, Any]],
+        after_cfg: Optional[Dict[str, Any]],
+        arch_changes: Dict[str, Any],
+        pre_swap_snapshot_id: Optional[str] = None,
+        post_swap_snapshot_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Append a structured ``dataset_swap`` event to ``self.history``.
+
+        Returns the event dict that was appended so the caller can use it
+        for logging or for forwarding to a future broadcast layer (see
+        ``notes/PHASE_2_P2_2_FOLLOWUPS_2026-05-14.md`` Follow-up A).
+
+        Each event has the schema:
+
+        ```
+        {
+            "timestamp":              ISO-8601 UTC string,
+            "before_cfg":             dict | None,
+            "after_cfg":              dict | None,
+            "arch_changes":           dict (the §3.3 response shape),
+            "pre_swap_snapshot_id":   str | None  (P2-3 backfills),
+            "post_swap_snapshot_id":  str | None  (P2-3 backfills),
+        }
+        ```
+
+        ``before_cfg`` / ``after_cfg`` are shallow-copied so a later mutation
+        of the caller's dataset_config dict can't ripple back into the
+        history. ``arch_changes`` is deep-copied for the same reason
+        (the nested ``appended_nodes`` / ``prepended_layers`` containers
+        would otherwise alias).
+        """
+        event = {
+            "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            "before_cfg": dict(before_cfg) if before_cfg is not None else None,
+            "after_cfg": dict(after_cfg) if after_cfg is not None else None,
+            "arch_changes": copy.deepcopy(arch_changes),
+            "pre_swap_snapshot_id": pre_swap_snapshot_id,
+            "post_swap_snapshot_id": post_swap_snapshot_id,
+        }
+        self.history.setdefault("dataset_swaps", []).append(event)
+        self.logger.debug(f"CascadeCorrelationNetwork: record_dataset_swap_event: recorded event #{len(self.history['dataset_swaps'])} timestamp={event['timestamp']}")
+        return event
 
     def _init_activation_function(self):
         """Initialize activation function components."""
