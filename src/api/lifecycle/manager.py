@@ -2488,6 +2488,25 @@ class TrainingLifecycleManager:
                 # has none, so reporting zero in those cases is correct.
                 abandoned_candidate_pool_size = self._snapshot_abandoned_candidate_pool_size()
 
+                # P2-3 (Issue #3): pre-swap auto-snap. Fires AFTER the
+                # in-memory rollback snapshot (step 4) but BEFORE any
+                # network mutation, so the on-disk snapshot captures the
+                # genuine pre-swap state. Kept on disk even when the swap
+                # is later cancelled / rolled back — the pre-swap moment
+                # is a valid checkpoint regardless of swap outcome, and
+                # cleanup would just add race conditions.
+                # Failure-tolerant: if the HDF5 write fails the swap
+                # continues without an ID; canopy P2-7 will render the
+                # event without a "Restore from pre-swap" affordance.
+                pre_swap_snapshot_id: Optional[str] = None
+                try:
+                    pre_dataset_name = (pre.dataset_config or {}).get("dataset_type") or "unknown"
+                    pre_snap = self.save_snapshot(description=f"pre-swap before dataset_swap (from {pre_dataset_name})")
+                    if pre_snap is not None:
+                        pre_swap_snapshot_id = pre_snap.get("id")
+                except Exception:
+                    self.logger.exception("swap_dataset_live: pre-swap snapshot failed; swap continues without pre_swap_snapshot_id")
+
                 # Step 5/6: signal stop, wait for training future to exit cleanly.
                 # P2-PRE-1 (f4453fa) makes _stop_requested actually interrupt
                 # the training-loop callbacks via TrainingInterrupted, caught
@@ -2582,6 +2601,22 @@ class TrainingLifecycleManager:
                 # is plumbed for P2-1c/1d when dims actually change).
                 self._broadcast_training_state(force=True)
 
+                # P2-3 (Issue #3): post-swap auto-snap. Captures the
+                # network state AFTER resize + new training future
+                # submission so canopy P2-7's "Restore from post-swap"
+                # affordance and the snapshot-orchestrated replay
+                # transition (see ``notes/PHASE_2_P2_3_FOLLOWUP_REPLAY_REWORK_2026-05-14.md``)
+                # have a concrete handle. Same failure tolerance as the
+                # pre-swap snap.
+                post_swap_snapshot_id: Optional[str] = None
+                try:
+                    post_dataset_name = (self._current_dataset_config or {}).get("dataset_type") or "unknown"
+                    post_snap = self.save_snapshot(description=f"post-swap after dataset_swap (to {post_dataset_name})")
+                    if post_snap is not None:
+                        post_swap_snapshot_id = post_snap.get("id")
+                except Exception:
+                    self.logger.exception("swap_dataset_live: post-swap snapshot failed; swap continues without post_swap_snapshot_id")
+
                 # Step 16: structured INFO log per §3.7 guardrail #5, then
                 # structured response per §3.3. The §3.3 log/response use
                 # the *dataset's* dims as the right-hand side of the arrow
@@ -2622,17 +2657,22 @@ class TrainingLifecycleManager:
                 # canopy P2-7's timeline UI. Only fires on the success branch
                 # — rollback / cancel raise before reaching this point.
                 # Snapshot ID fields are placeholders that P2-3 will populate
-                # once auto-snap-pre/post-swap is wired (see
-                # ``notes/PHASE_2_P2_2_FOLLOWUPS_2026-05-14.md``). Failure
-                # to record (e.g., missing helper on a non-cascade network)
-                # is logged at warning but does NOT abort the swap — the
-                # swap itself already succeeded.
+                # P2-3 (Issue #3): the snapshot IDs that P2-2 left as
+                # placeholders are now populated from the pre/post-swap
+                # auto-snaps above. Either may be ``None`` if the
+                # corresponding snapshot write failed — the event still
+                # records, just without that affordance for canopy P2-7.
+                # Failure to record (e.g., missing helper on a non-cascade
+                # network) is logged at warning but does NOT abort the
+                # swap — the swap itself already succeeded.
                 if hasattr(self.network, "record_dataset_swap_event"):
                     try:
                         self.network.record_dataset_swap_event(
                             before_cfg=pre.dataset_config,
                             after_cfg=dict(self._current_dataset_config) if self._current_dataset_config else None,
                             arch_changes=response_arch,
+                            pre_swap_snapshot_id=pre_swap_snapshot_id,
+                            post_swap_snapshot_id=post_swap_snapshot_id,
                         )
                     except Exception:
                         self.logger.exception("swap_dataset_live: record_dataset_swap_event failed; swap itself was successful")
@@ -3736,7 +3776,18 @@ class TrainingLifecycleManager:
         return snapshots_dir
 
     def save_snapshot(self, description: str = "") -> Optional[Dict[str, Any]]:
-        """Save current network state to an HDF5 snapshot."""
+        """Save current network state to an HDF5 snapshot.
+
+        P2-3 (Issue #3): the timestamp is second-resolution
+        (``YYYYMMDDTHHMMSSZ``) which used to silently overwrite when two
+        snapshots fired within the same second — exactly what happens on
+        ``swap_dataset_live`` where pre- and post-swap snapshots are taken
+        ≤1 s apart for a small network. We now check for an existing file
+        and append ``_2``, ``_3``, etc. to the ID until we find a free
+        slot. The no-collision path is byte-identical to the prior
+        behaviour, so the ``snapshot_YYYYMMDDTHHMMSSZ`` format remains the
+        common case for canopy / REST consumers that parse it.
+        """
         if self.network is None:
             return None
 
@@ -3744,8 +3795,20 @@ class TrainingLifecycleManager:
 
         serializer = CascadeHDF5Serializer()
         timestamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
-        snapshot_id = f"snapshot_{timestamp}"
-        filepath = self._get_snapshots_dir() / f"{snapshot_id}.h5"
+        base_snapshot_id = f"snapshot_{timestamp}"
+        snapshots_dir = self._get_snapshots_dir()
+        snapshot_id = base_snapshot_id
+        filepath = snapshots_dir / f"{snapshot_id}.h5"
+        # P2-3 collision suffix. Capped at 1000 so a misbehaving filesystem
+        # (e.g., directory not actually writable, every probe returning
+        # exists()=True) cannot wedge the lifecycle in a tight loop. If a
+        # thousand same-second snapshots really exist on disk, the caller
+        # has bigger problems and a hard failure is the right signal.
+        suffix = 2
+        while filepath.exists() and suffix <= 1000:
+            snapshot_id = f"{base_snapshot_id}_{suffix}"
+            filepath = snapshots_dir / f"{snapshot_id}.h5"
+            suffix += 1
 
         success = serializer.save_network(self.network, filepath, include_training_state=True)
         if not success:
