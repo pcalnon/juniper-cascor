@@ -613,7 +613,7 @@ class CascadeHDF5Serializer:
         # Save policy flags
         mp_group.attrs["autostart"] = True  # Default to autostart on restore
 
-    def _save_training_history(self, hdf5_file: h5py.File, network, compression: str, compression_opts: int) -> None:
+    def _save_training_history(self, hdf5_file: h5py.File, network, compression: str, compression_opts: int) -> None:  # noqa: C901
         """Save training history."""
         if not hasattr(network, "history") or not network.history:
             return
@@ -664,6 +664,35 @@ class CascadeHDF5Serializer:
                             compression,
                             compression_opts,
                         )
+
+        # P2-2 (Issue #3): persist live-dataset-swap events. Each event is
+        # a subgroup under ``history/dataset_swaps/`` named ``event_{i}``
+        # with the schema:
+        #   * ``timestamp``                (str attr, ISO-8601 UTC)
+        #   * ``before_cfg``               (JSON-encoded str attr; ``"null"`` for None)
+        #   * ``after_cfg``                (JSON-encoded str attr; ``"null"`` for None)
+        #   * ``arch_changes``             (JSON-encoded str attr)
+        #   * ``pre_swap_snapshot_id``     (str attr, optional — P2-3 backfill)
+        #   * ``post_swap_snapshot_id``    (str attr, optional — P2-3 backfill)
+        # Nested dicts go through JSON because HDF5 attrs are flat and the
+        # ``arch_changes`` block has variable shape (``appended_nodes`` is
+        # itself a dict). Missing snapshot-ID attrs decode back to None on
+        # load so the §3.9 schema is faithfully reproduced.
+        if "dataset_swaps" in network.history and network.history["dataset_swaps"]:
+            swaps_group = history_group.create_group("dataset_swaps")
+            for i, swap_event in enumerate(network.history["dataset_swaps"]):
+                if not isinstance(swap_event, dict):
+                    continue
+                ev_group = swaps_group.create_group(f"event_{i}")
+                if "timestamp" in swap_event and swap_event["timestamp"] is not None:
+                    ev_group.attrs["timestamp"] = str(swap_event["timestamp"])
+                ev_group.attrs["before_cfg"] = json.dumps(swap_event.get("before_cfg"))
+                ev_group.attrs["after_cfg"] = json.dumps(swap_event.get("after_cfg"))
+                ev_group.attrs["arch_changes"] = json.dumps(swap_event.get("arch_changes", {}))
+                if swap_event.get("pre_swap_snapshot_id") is not None:
+                    ev_group.attrs["pre_swap_snapshot_id"] = str(swap_event["pre_swap_snapshot_id"])
+                if swap_event.get("post_swap_snapshot_id") is not None:
+                    ev_group.attrs["post_swap_snapshot_id"] = str(swap_event["post_swap_snapshot_id"])
 
         # CAN-015g (Phase 6E follow-on, g-1): per-sample weight history
         # for Replay V2. Persisted only when the network exposes a
@@ -1118,20 +1147,24 @@ class CascadeHDF5Serializer:
         np.random.set_state(np_state)
         self.logger.debug("CascadeHDF5Serializer: Restored NumPy random state")
 
-    def _load_training_history(self, hdf5_file: h5py.File, network) -> None:
+    def _load_training_history(self, hdf5_file: h5py.File, network) -> None:  # noqa: C901
         """Load training history."""
         if "history" not in hdf5_file:
             return
 
         history_group = hdf5_file["history"]
 
-        # Initialize history with network's actual keys
+        # Initialize history with network's actual keys. ``dataset_swaps``
+        # is P2-2 (Issue #3) — empty list when loading a pre-P2-2 snapshot,
+        # so the network attribute stays consistent with construction-time
+        # defaults regardless of snapshot vintage.
         network.history = {
             "train_loss": [],
             "value_loss": [],  # Use value_* to match network.history
             "train_accuracy": [],
             "value_accuracy": [],  # Use value_* to match network.history
             "hidden_units_added": [],
+            "dataset_swaps": [],
         }
 
         # Load numeric arrays - handle both old (val_*) and new (value_*) key formats
@@ -1172,6 +1205,50 @@ class CascadeHDF5Serializer:
                     unit_data["bias"] = load_numpy_array(unit_group["bias"])
 
                 network.history["hidden_units_added"].append(unit_data)
+
+        # P2-2 (Issue #3): live dataset swap event history. Each
+        # ``event_{i}`` subgroup carries the same schema written by
+        # ``_save_training_history`` above. Sorted-by-name iteration yields
+        # chronological order because the writer uses zero-padded indices —
+        # but to be defensive we also sort on numeric index where possible.
+        if "dataset_swaps" in history_group:
+            swaps_group = history_group["dataset_swaps"]
+
+            def _event_sort_key(name: str) -> int:
+                # ``event_<N>`` — sort by N; fall back to name for safety.
+                try:
+                    return int(name.split("_", 1)[1])
+                except (IndexError, ValueError):
+                    return -1
+
+            for event_name in sorted(swaps_group.keys(), key=_event_sort_key):
+                ev_group = swaps_group[event_name]
+                event: Dict[str, Any] = {
+                    "timestamp": None,
+                    "before_cfg": None,
+                    "after_cfg": None,
+                    "arch_changes": {},
+                    "pre_swap_snapshot_id": None,
+                    "post_swap_snapshot_id": None,
+                }
+                if "timestamp" in ev_group.attrs:
+                    event["timestamp"] = read_str_attr(ev_group, "timestamp", None)
+                # JSON-encoded nested dicts. Catch decode errors so a
+                # malformed event in one snapshot doesn't kill the whole
+                # history load — log and substitute the schema default.
+                for json_key, default in (("before_cfg", None), ("after_cfg", None), ("arch_changes", {})):
+                    if json_key in ev_group.attrs:
+                        try:
+                            event[json_key] = json.loads(read_str_attr(ev_group, json_key, "null"))
+                        except (json.JSONDecodeError, ValueError) as exc:
+                            self.logger.warning(f"CascadeHDF5Serializer: failed to decode {json_key!r} for {event_name!r}: {exc}; using default {default!r}")
+                            event[json_key] = default
+                if "pre_swap_snapshot_id" in ev_group.attrs:
+                    event["pre_swap_snapshot_id"] = read_str_attr(ev_group, "pre_swap_snapshot_id", None)
+                if "post_swap_snapshot_id" in ev_group.attrs:
+                    event["post_swap_snapshot_id"] = read_str_attr(ev_group, "post_swap_snapshot_id", None)
+                network.history["dataset_swaps"].append(event)
+            self.logger.debug(f"CascadeHDF5Serializer: Loaded {len(network.history['dataset_swaps'])} dataset_swap event(s)")
 
         # CAN-015g (g-1): per-sample weight history. Loaded into a sibling
         # ``weight_history`` attribute on the network so g-2's

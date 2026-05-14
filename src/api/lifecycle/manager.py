@@ -2617,6 +2617,25 @@ class TrainingLifecycleManager:
                     "abandoned_candidate_pool_size": abandoned_candidate_pool_size,
                     "active_output_dim": active_output_dim,
                 }
+                # P2-2 (Issue #3): persist the swap into network history so it
+                # round-trips through snapshot save/load and is available to
+                # canopy P2-7's timeline UI. Only fires on the success branch
+                # — rollback / cancel raise before reaching this point.
+                # Snapshot ID fields are placeholders that P2-3 will populate
+                # once auto-snap-pre/post-swap is wired (see
+                # ``notes/PHASE_2_P2_2_FOLLOWUPS_2026-05-14.md``). Failure
+                # to record (e.g., missing helper on a non-cascade network)
+                # is logged at warning but does NOT abort the swap — the
+                # swap itself already succeeded.
+                if hasattr(self.network, "record_dataset_swap_event"):
+                    try:
+                        self.network.record_dataset_swap_event(
+                            before_cfg=pre.dataset_config,
+                            after_cfg=dict(self._current_dataset_config) if self._current_dataset_config else None,
+                            arch_changes=response_arch,
+                        )
+                    except Exception:
+                        self.logger.exception("swap_dataset_live: record_dataset_swap_event failed; swap itself was successful")
                 return {
                     "status": "swapped",
                     "before_cfg": pre.dataset_config,
