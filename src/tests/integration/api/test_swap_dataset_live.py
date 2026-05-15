@@ -1156,3 +1156,161 @@ def test_swap_dataset_live_pre_swap_snapshot_failure_does_not_abort_swap():
     assert swaps[0]["pre_swap_snapshot_id"] is None
     assert swaps[0]["post_swap_snapshot_id"] == "snap_post_ok"
     mgr.shutdown()
+
+
+# ---------------------------------------------------------------------------
+# P2-2 Follow-up A (Issue #3): WebSocket broadcast of dataset_swap events.
+# The broadcast envelope uses the generic ``create_event_message`` with
+# ``event="dataset_swap"`` as the discriminator — no new protocol-package
+# envelope type. See notes/PHASE_2_P2_2_FOLLOWUPS_2026-05-14.md (Follow-up A).
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.integration
+def test_swap_dataset_live_broadcasts_dataset_swap_event_on_success():
+    """A successful swap pushes one ``dataset_swap`` event over the
+    WebSocket so canopy can render a timeline marker in real time."""
+    mgr = TrainingLifecycleManager()
+    mgr.create_network(input_size=2, output_size=2)
+    mgr.set_experimental_functions(True)
+    mgr._train_x, mgr._train_y = _make_dummy_tensors(2, 2)
+    mgr._current_dataset_config = {"dataset_type": "spirals"}
+    mgr.state_machine.handle_command(Command.START)
+
+    new_x, new_y = _make_dummy_tensors(4, 2)
+
+    def _fake_reload(**cfg):
+        mgr._train_x = new_x
+        mgr._train_y = new_y
+        mgr._current_dataset_config = {"dataset_type": "moons"}
+
+    mgr._executor = MagicMock()
+    mgr._executor.submit.return_value = MagicMock()
+
+    # Plug in a mock WS manager so we can observe the broadcast.
+    ws_manager = MagicMock()
+    mgr._ws_manager = ws_manager
+
+    with patch.object(mgr, "_reload_dataset", side_effect=_fake_reload):
+        mgr.swap_dataset_live(dataset_type="moons")
+
+    # Exactly one dataset_swap broadcast. Other broadcasts (state, etc.)
+    # may have fired separately via _broadcast_training_state; filter by
+    # envelope discriminator to isolate the one we care about.
+    dataset_swap_calls = [c for c in ws_manager.broadcast_from_thread.call_args_list if c.args and isinstance(c.args[0], dict) and c.args[0].get("data", {}).get("event") == "dataset_swap"]
+    assert len(dataset_swap_calls) == 1, f"expected 1 dataset_swap broadcast, got {len(dataset_swap_calls)}"
+    payload = dataset_swap_calls[0].args[0]
+    # Envelope shape: top-level ``data`` dict with ``event`` discriminator
+    # and a ``swap`` sub-dict carrying the full event record. The
+    # full event is what was just recorded into history, so canopy
+    # gets the same view it would read from the GET /history/dataset_swaps
+    # route — just delivered as a push.
+    assert payload["data"]["event"] == "dataset_swap"
+    assert "swap" in payload["data"]
+    assert payload["data"]["swap"]["arch_changes"]["input_delta"] == 2
+    mgr.shutdown()
+
+
+@pytest.mark.integration
+def test_swap_dataset_live_does_NOT_broadcast_on_cancellation():
+    """Cancelled swap → no dataset_swap broadcast. Canopy must not render
+    a timeline marker for a swap that was aborted."""
+    mgr = TrainingLifecycleManager()
+    mgr.create_network(input_size=2, output_size=2)
+    mgr.set_experimental_functions(True)
+    mgr._train_x, mgr._train_y = _make_dummy_tensors(2, 2)
+    mgr._current_dataset_config = {"dataset_type": "spirals"}
+    mgr.state_machine.handle_command(Command.START)
+
+    def _fake_reload_then_cancel(**cfg):
+        mgr._train_x, mgr._train_y = _make_dummy_tensors(2, 2)
+        mgr._swap_cancel_requested.set()
+
+    mgr._executor = MagicMock()
+    mgr._executor.submit.return_value = MagicMock()
+    ws_manager = MagicMock()
+    mgr._ws_manager = ws_manager
+
+    with patch.object(mgr, "_reload_dataset", side_effect=_fake_reload_then_cancel):
+        with pytest.raises(SwapCancelledError):
+            mgr.swap_dataset_live(dataset_type="moons")
+
+    dataset_swap_calls = [c for c in ws_manager.broadcast_from_thread.call_args_list if c.args and isinstance(c.args[0], dict) and c.args[0].get("data", {}).get("event") == "dataset_swap"]
+    assert dataset_swap_calls == []
+    mgr.shutdown()
+
+
+@pytest.mark.integration
+def test_swap_dataset_live_no_op_broadcast_when_ws_manager_is_none():
+    """No WS clients connected → ``_ws_manager`` is None → the broadcast
+    branch no-ops without error. The swap still succeeds and the history
+    event still records (just no real-time push)."""
+    mgr = TrainingLifecycleManager()
+    mgr.create_network(input_size=2, output_size=2)
+    mgr.set_experimental_functions(True)
+    mgr._train_x, mgr._train_y = _make_dummy_tensors(2, 2)
+    mgr._current_dataset_config = {"dataset_type": "spirals"}
+    mgr.state_machine.handle_command(Command.START)
+
+    new_x, new_y = _make_dummy_tensors(2, 2)
+
+    def _fake_reload(**cfg):
+        mgr._train_x = new_x
+        mgr._train_y = new_y
+        mgr._current_dataset_config = {"dataset_type": "moons"}
+
+    mgr._executor = MagicMock()
+    mgr._executor.submit.return_value = MagicMock()
+    assert mgr._ws_manager is None  # default state
+
+    with patch.object(mgr, "_reload_dataset", side_effect=_fake_reload):
+        result = mgr.swap_dataset_live(dataset_type="moons")
+
+    assert result["status"] == "swapped"
+    assert len(mgr.network.history["dataset_swaps"]) == 1
+    mgr.shutdown()
+
+
+@pytest.mark.integration
+def test_swap_dataset_live_broadcast_failure_does_not_abort_swap():
+    """A WS broadcast error is logged but does NOT abort the swap. The
+    swap has already succeeded; observability failures shouldn't roll
+    back the user's data."""
+    mgr = TrainingLifecycleManager()
+    mgr.create_network(input_size=2, output_size=2)
+    mgr.set_experimental_functions(True)
+    mgr._train_x, mgr._train_y = _make_dummy_tensors(2, 2)
+    mgr._current_dataset_config = {"dataset_type": "spirals"}
+    mgr.state_machine.handle_command(Command.START)
+
+    new_x, new_y = _make_dummy_tensors(2, 2)
+
+    def _fake_reload(**cfg):
+        mgr._train_x = new_x
+        mgr._train_y = new_y
+        mgr._current_dataset_config = {"dataset_type": "moons"}
+
+    mgr._executor = MagicMock()
+    mgr._executor.submit.return_value = MagicMock()
+    ws_manager = MagicMock()
+
+    # Scope the failure to the dataset_swap envelope only. Other
+    # broadcasts (state, etc.) called earlier in swap_dataset_live by
+    # ``_broadcast_training_state`` succeed; only OUR push raises. This
+    # mirrors the production failure mode the test is meant to cover —
+    # the dataset_swap broadcast specifically blowing up after the swap
+    # has otherwise succeeded.
+    def _selective_broadcast_fail(payload, *args, **kwargs):
+        if isinstance(payload, dict) and payload.get("data", {}).get("event") == "dataset_swap":
+            raise RuntimeError("WS connection torn down")
+
+    ws_manager.broadcast_from_thread.side_effect = _selective_broadcast_fail
+    mgr._ws_manager = ws_manager
+
+    with patch.object(mgr, "_reload_dataset", side_effect=_fake_reload):
+        result = mgr.swap_dataset_live(dataset_type="moons")
+
+    assert result["status"] == "swapped"
+    # History event still recorded — broadcast failure is post-record.
+    assert len(mgr.network.history["dataset_swaps"]) == 1
+    mgr.shutdown()
