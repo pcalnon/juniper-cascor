@@ -2324,6 +2324,42 @@ class TrainingLifecycleManager:
         cfg = self._pending_dataset_config
         return dict(cfg) if cfg else None
 
+    # P2-2 Follow-up B (Issue #3): canopy P2-7 timeline UI reads dataset_swap
+    # events via this lifecycle method without pulling a full snapshot.
+    # The method is read-only and returns a fresh list copy so a caller
+    # iterating the result can't mutate persisted history through the
+    # reference. See notes/PHASE_2_P2_2_FOLLOWUPS_2026-05-14.md.
+
+    def get_dataset_swap_events(self, since: Optional[str] = None) -> List[Dict[str, Any]]:
+        """Return the network's ``dataset_swap`` history events.
+
+        Args:
+            since: Optional ISO-8601 timestamp. If supplied, only events whose
+                ``timestamp`` is STRICTLY greater than ``since`` are returned
+                (lexicographic compare on the ISO-8601 string is correct for
+                UTC timestamps in the canonical format the recorder uses).
+                Events with no timestamp (e.g. loaded from a malformed
+                snapshot) are excluded when ``since`` is set, included
+                otherwise.
+
+        Returns:
+            A list of event dicts in chronological order, copied so the
+            caller can iterate or mutate the result without affecting
+            persisted history. Returns ``[]`` when no network is loaded.
+        """
+        if self.network is None or not hasattr(self.network, "history"):
+            return []
+        events = list(self.network.history.get("dataset_swaps", []) or [])
+        # Deep-copy each event so callers iterating the result can mutate
+        # nested dicts (``arch_changes`` and ``appended_nodes``) without
+        # corrupting persisted history. Matches the recorder's own
+        # deep-copy guarantee (``record_dataset_swap_event``). Event
+        # payloads are small dicts, so the cost is negligible relative
+        # to the safety it provides.
+        if since is None:
+            return [copy.deepcopy(e) for e in events]
+        return [copy.deepcopy(e) for e in events if isinstance(e.get("timestamp"), str) and e["timestamp"] > since]
+
     # ------------------------------------------------------------------
     # Phase 2: experimental-functions gate + live dataset swap (P2-1a)
     # See ISSUE_3_PHASE_2_LIVE_DATASET_SWAP_2026-05-09.md §3.1/§3.2/§3.7/§3.8.
@@ -2665,9 +2701,10 @@ class TrainingLifecycleManager:
                 # Failure to record (e.g., missing helper on a non-cascade
                 # network) is logged at warning but does NOT abort the
                 # swap — the swap itself already succeeded.
+                recorded_event: Optional[Dict[str, Any]] = None
                 if hasattr(self.network, "record_dataset_swap_event"):
                     try:
-                        self.network.record_dataset_swap_event(
+                        recorded_event = self.network.record_dataset_swap_event(
                             before_cfg=pre.dataset_config,
                             after_cfg=dict(self._current_dataset_config) if self._current_dataset_config else None,
                             arch_changes=response_arch,
@@ -2676,6 +2713,23 @@ class TrainingLifecycleManager:
                         )
                     except Exception:
                         self.logger.exception("swap_dataset_live: record_dataset_swap_event failed; swap itself was successful")
+
+                # P2-2 Follow-up A (Issue #3): push the event over the
+                # WebSocket so canopy can render a timeline marker in
+                # real time without polling the history fetch route. The
+                # broadcast envelope uses the existing generic
+                # ``create_event_message`` with an ``event="dataset_swap"``
+                # discriminator — no new envelope type required (avoids a
+                # cross-repo bump of juniper_cascor_protocol). No-op when
+                # no WS clients are connected. Failure-tolerant: a
+                # broadcast error never aborts the swap.
+                if recorded_event is not None and self._ws_manager is not None:
+                    try:
+                        from api.websocket.messages import create_event_message as _create_event_message
+
+                        self._ws_manager.broadcast_from_thread(_create_event_message({"event": "dataset_swap", "swap": recorded_event}))
+                    except Exception:
+                        self.logger.exception("swap_dataset_live: dataset_swap WebSocket broadcast failed; swap itself was successful")
                 return {
                     "status": "swapped",
                     "before_cfg": pre.dataset_config,
