@@ -865,9 +865,14 @@ def test_swap_dataset_live_records_history_event_on_success():
     assert event["arch_changes"] == result["arch_changes"]
     assert event["before_cfg"] == {"dataset_type": "spirals"}
     assert event["after_cfg"] == {"dataset_type": "synthetic_4_2"}
-    # P2-3 placeholders default to None.
-    assert event["pre_swap_snapshot_id"] is None
-    assert event["post_swap_snapshot_id"] is None
+    # P2-3 snapshot IDs are populated by the pre/post-swap auto-snap.
+    # Both should be strings matching the ``snapshot_<TIMESTAMP>[_<n>]``
+    # format. The dedicated P2-3 tests below assert ordering and contents
+    # in detail; here we just confirm the threading is wired.
+    assert isinstance(event["pre_swap_snapshot_id"], str)
+    assert event["pre_swap_snapshot_id"].startswith("snapshot_")
+    assert isinstance(event["post_swap_snapshot_id"], str)
+    assert event["post_swap_snapshot_id"].startswith("snapshot_")
     mgr.shutdown()
 
 
@@ -951,4 +956,203 @@ def test_swap_dataset_live_records_equal_dim_swap():
     assert swaps[0]["after_cfg"] == {"dataset_type": "moons", "noise": 0.2}
     assert swaps[0]["arch_changes"]["input_delta"] == 0
     assert swaps[0]["arch_changes"]["output_delta"] == 0
+    mgr.shutdown()
+
+
+# ---------------------------------------------------------------------------
+# P2-3 (Issue #3): pre + post-swap auto-snapshot + ID threading into the
+# dataset_swap event. The replay-engine rework is deferred per
+# ``notes/PHASE_2_P2_3_FOLLOWUP_REPLAY_REWORK_2026-05-14.md`` — these tests
+# pin only the snapshot infrastructure that P2-3 actually ships.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.integration
+def test_swap_dataset_live_takes_pre_and_post_snapshots():
+    """Successful swap triggers exactly two ``save_snapshot`` calls — one
+    pre-swap (before resize), one post-swap (after the new training
+    future submits). Both IDs are threaded into the history event so
+    canopy P2-7 can drive a snapshot-orchestrated transition."""
+    mgr = TrainingLifecycleManager()
+    mgr.create_network(input_size=2, output_size=2)
+    mgr.set_experimental_functions(True)
+    mgr._train_x, mgr._train_y = _make_dummy_tensors(2, 2)
+    mgr._current_dataset_config = {"dataset_type": "spirals", "n_spirals": 2}
+    mgr.state_machine.handle_command(Command.START)
+
+    new_x, new_y = _make_dummy_tensors(4, 2)
+
+    def _fake_reload(**cfg):
+        mgr._train_x = new_x
+        mgr._train_y = new_y
+        mgr._current_dataset_config = {"dataset_type": "moons", "noise": 0.2}
+
+    mgr._executor = MagicMock()
+    mgr._executor.submit.return_value = MagicMock()
+
+    # Patch save_snapshot to return stable IDs without writing HDF5 to
+    # disk — the file-IO behaviour is covered by the unit tests.
+    saved_descriptions = []
+
+    def _fake_save(description=""):
+        saved_descriptions.append(description)
+        return {
+            "id": f"snapshot_test_{len(saved_descriptions):02d}",
+            "path": f"/tmp/{len(saved_descriptions):02d}.h5",
+            "timestamp": "20260514T000000Z",
+            "description": description,
+        }
+
+    with patch.object(mgr, "save_snapshot", side_effect=_fake_save):
+        with patch.object(mgr, "_reload_dataset", side_effect=_fake_reload):
+            result = mgr.swap_dataset_live(dataset_type="moons", noise=0.2)
+
+    # Two snapshots fired, in order.
+    assert len(saved_descriptions) == 2
+    assert "pre-swap" in saved_descriptions[0]
+    assert "post-swap" in saved_descriptions[1]
+    # Descriptions encode swap metadata (deliverable Q2 of the design).
+    assert "spirals" in saved_descriptions[0], f"pre-swap description should name the before dataset: {saved_descriptions[0]!r}"
+    assert "moons" in saved_descriptions[1], f"post-swap description should name the after dataset: {saved_descriptions[1]!r}"
+    # Event has both IDs threaded.
+    swaps = mgr.network.history["dataset_swaps"]
+    assert len(swaps) == 1
+    assert swaps[0]["pre_swap_snapshot_id"] == "snapshot_test_01"
+    assert swaps[0]["post_swap_snapshot_id"] == "snapshot_test_02"
+    # Swap itself succeeded (not just the snapshots).
+    assert result["status"] == "swapped"
+    mgr.shutdown()
+
+
+@pytest.mark.integration
+def test_swap_dataset_live_pre_swap_snapshot_taken_before_resize():
+    """Ordering invariant: the pre-swap snapshot must capture the network
+    BEFORE ``_resize_network_for_dataset`` mutates it. If the snapshot
+    fired after resize, ``pre_swap_snapshot_id`` would point at a
+    network with the post-swap dims, defeating the whole "Restore from
+    pre-swap" P2-7 affordance."""
+    mgr = TrainingLifecycleManager()
+    mgr.create_network(input_size=2, output_size=2)
+    mgr.set_experimental_functions(True)
+    mgr._train_x, mgr._train_y = _make_dummy_tensors(2, 2)
+    mgr._current_dataset_config = {"dataset_type": "spirals"}
+    mgr.state_machine.handle_command(Command.START)
+
+    new_x, new_y = _make_dummy_tensors(5, 3)
+
+    def _fake_reload(**cfg):
+        mgr._train_x = new_x
+        mgr._train_y = new_y
+        mgr._current_dataset_config = {"dataset_type": "moons"}
+
+    mgr._executor = MagicMock()
+    mgr._executor.submit.return_value = MagicMock()
+
+    observed_dims = []
+
+    def _fake_save(description=""):
+        # Capture the network's dims at the moment of each snapshot call.
+        observed_dims.append((description, mgr.network.input_size, mgr.network.output_size))
+        return {"id": f"snap_{len(observed_dims)}", "path": "/tmp/x", "timestamp": "T", "description": description}
+
+    with patch.object(mgr, "save_snapshot", side_effect=_fake_save):
+        with patch.object(mgr, "_reload_dataset", side_effect=_fake_reload):
+            mgr.swap_dataset_live(dataset_type="moons")
+
+    assert len(observed_dims) == 2
+    pre_desc, pre_in, pre_out = observed_dims[0]
+    post_desc, post_in, post_out = observed_dims[1]
+    assert "pre-swap" in pre_desc
+    # Pre-swap snapshot saw the OLD dims.
+    assert pre_in == 2 and pre_out == 2
+    assert "post-swap" in post_desc
+    # Post-swap snapshot saw the NEW dims (after grow).
+    assert post_in == 5 and post_out == 3
+    mgr.shutdown()
+
+
+@pytest.mark.integration
+def test_swap_dataset_live_pre_swap_snapshot_kept_on_cancel():
+    """Per the P2-3 design Q1 decision: a pre-swap snapshot taken before
+    the user cancels stays on disk as a valid checkpoint of the moment
+    the swap was attempted. The dataset_swap event itself does NOT
+    record (the cancel raises before record), so the snapshot exists
+    without a corresponding history event — that's intentional."""
+    mgr = TrainingLifecycleManager()
+    mgr.create_network(input_size=2, output_size=2)
+    mgr.set_experimental_functions(True)
+    mgr._train_x, mgr._train_y = _make_dummy_tensors(2, 2)
+    mgr._current_dataset_config = {"dataset_type": "spirals"}
+    mgr.state_machine.handle_command(Command.START)
+
+    def _fake_reload_then_cancel(**cfg):
+        mgr._train_x, mgr._train_y = _make_dummy_tensors(2, 2)
+        mgr._current_dataset_config = {"dataset_type": "moons"}
+        mgr._swap_cancel_requested.set()
+
+    mgr._executor = MagicMock()
+    mgr._executor.submit.return_value = MagicMock()
+
+    save_calls = []
+
+    def _fake_save(description=""):
+        save_calls.append(description)
+        return {"id": f"snap_{len(save_calls)}", "path": "/tmp/x", "timestamp": "T", "description": description}
+
+    with patch.object(mgr, "save_snapshot", side_effect=_fake_save):
+        with patch.object(mgr, "_reload_dataset", side_effect=_fake_reload_then_cancel):
+            with pytest.raises(SwapCancelledError):
+                mgr.swap_dataset_live(dataset_type="moons")
+
+    # Pre-swap snap fired; post-swap did NOT (the cancel checkpoint trips
+    # before we reach the post-swap snap call site).
+    assert len(save_calls) == 1
+    assert "pre-swap" in save_calls[0]
+    # Event NOT recorded (already covered by P2-2 tests but pinned here
+    # to make the snapshot-vs-event asymmetry explicit).
+    assert mgr.network.history["dataset_swaps"] == []
+    mgr.shutdown()
+
+
+@pytest.mark.integration
+def test_swap_dataset_live_pre_swap_snapshot_failure_does_not_abort_swap():
+    """Snapshot writes are observability, not core functionality. A
+    failed pre-swap snapshot logs and leaves ``pre_swap_snapshot_id`` as
+    None in the recorded event — the swap itself still succeeds."""
+    mgr = TrainingLifecycleManager()
+    mgr.create_network(input_size=2, output_size=2)
+    mgr.set_experimental_functions(True)
+    mgr._train_x, mgr._train_y = _make_dummy_tensors(2, 2)
+    mgr._current_dataset_config = {"dataset_type": "spirals"}
+    mgr.state_machine.handle_command(Command.START)
+
+    new_x, new_y = _make_dummy_tensors(2, 2)
+
+    def _fake_reload(**cfg):
+        mgr._train_x = new_x
+        mgr._train_y = new_y
+        mgr._current_dataset_config = {"dataset_type": "moons"}
+
+    mgr._executor = MagicMock()
+    mgr._executor.submit.return_value = MagicMock()
+
+    call_count = {"n": 0}
+
+    def _fake_save_pre_fails(description=""):
+        call_count["n"] += 1
+        # First call (pre-swap) raises; second (post-swap) succeeds.
+        if call_count["n"] == 1:
+            raise RuntimeError("disk full simulation")
+        return {"id": "snap_post_ok", "path": "/tmp/x", "timestamp": "T", "description": description}
+
+    with patch.object(mgr, "save_snapshot", side_effect=_fake_save_pre_fails):
+        with patch.object(mgr, "_reload_dataset", side_effect=_fake_reload):
+            result = mgr.swap_dataset_live(dataset_type="moons")
+
+    assert result["status"] == "swapped"
+    swaps = mgr.network.history["dataset_swaps"]
+    assert len(swaps) == 1
+    # Pre-swap failed → None; post-swap succeeded → populated.
+    assert swaps[0]["pre_swap_snapshot_id"] is None
+    assert swaps[0]["post_swap_snapshot_id"] == "snap_post_ok"
     mgr.shutdown()
