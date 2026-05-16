@@ -82,8 +82,7 @@ from candidate_unit.candidate_unit import CandidateTrainingResult, CandidateUnit
 # Server-owned queues (live in Manager server process)
 from cascade_correlation.cascade_correlation_config.cascade_correlation_config import CascadeCorrelationConfig
 from cascade_correlation.cascade_correlation_exceptions.cascade_correlation_exceptions import CandidateTrainingError, ConfigurationError, TrainingError, ValidationError  # CascadeCorrelationError,; NetworkInitializationError,
-from cascor_constants.constants import (  # TODO: Commented out for F401 compliance - may be needed for future activation function selection; _CASCADE_CORRELATION_NETWORK_ACTIVATION_FUNCTION_NN_RELU,; _CASCADE_CORRELATION_NETWORK_ACTIVATION_FUNCTION_NN_SIGMOID,; _CASCADE_CORRELATION_NETWORK_ACTIVATION_FUNCTION_NN_TANH,; _CASCADE_CORRELATION_NETWORK_ACTIVATION_FUNCTION_RELU,; _CASCADE_CORRELATION_NETWORK_ACTIVATION_FUNCTION_SIGMOID,; _CASCADE_CORRELATION_NETWORK_ACTIVATION_FUNCTION_TANH,
-    _CASCADE_CORRELATION_NETWORK_ACTIVATION_FUNCTION_DEFAULT,
+from cascor_constants.constants import (  # TODO: Commented out for F401 compliance - may be needed for future activation function selection; _CASCADE_CORRELATION_NETWORK_ACTIVATION_FUNCTION_NN_RELU,; _CASCADE_CORRELATION_NETWORK_ACTIVATION_FUNCTION_NN_SIGMOID,; _CASCADE_CORRELATION_NETWORK_ACTIVATION_FUNCTION_NN_TANH,; _CASCADE_CORRELATION_NETWORK_ACTIVATION_FUNCTION_RELU,; _CASCADE_CORRELATION_NETWORK_ACTIVATION_FUNCTION_SIGMOID,; _CASCADE_CORRELATION_NETWORK_ACTIVATION_FUNCTION_TANH,APPROVED
     _CASCADE_CORRELATION_NETWORK_ACTIVATION_FUNCTION_NAME,
     _CASCADE_CORRELATION_NETWORK_ACTIVATION_FUNCTIONS_DICT,
     _CASCADE_CORRELATION_NETWORK_CANDIDATE_CONVERGENCE_THRESHOLD,
@@ -489,8 +488,7 @@ class CandidateTrainingManager(BaseManager):
                     If provided, validates the method is supported on this platform.
             initializer: Optional initializer function for worker processes.
             initargs: Arguments for the initializer function.
-
-        Raises:
+      for tr in remote_results:
             ValueError: If an invalid start method is provided.
             NotImplementedError: If the start method is not supported on this platform.
 
@@ -659,7 +657,8 @@ class CascadeCorrelationNetwork:
         self.random_max_value = self.config.random_max_value or _CASCADE_CORRELATION_NETWORK_RANDOM_MAX_VALUE
         self.sequence_max_value = self.config.sequence_max_value or _CASCADE_CORRELATION_NETWORK_SEQUENCE_MAX_VALUE
         self._initialize_randomness(
-            seed=self.random_seed,
+            seed=self.random_seed,APPROVED
+    _CASCADE_CORRELATION_NETWORK_ACTIVATION_FUNCTION_NAME,
             sequence_max_value=self.sequence_max_value,
             random_max_value=self.random_max_value,
         )
@@ -711,8 +710,10 @@ class CascadeCorrelationNetwork:
         # Initialize network model parameters)
         self.hidden_units = []
         self._cached_candidate_input = None  # OPT-4: forward pass cache for candidate input reuse
+
         self.output_weights = torch.randn(self.config.input_size, self.config.output_size, requires_grad=True) * self.random_value_scale
         self.output_bias = torch.randn(self.config.output_size, requires_grad=True) * self.random_value_scale
+
         self.history = {
             "train_loss": [],
             "value_loss": [],
@@ -724,6 +725,80 @@ class CascadeCorrelationNetwork:
         # Snapshot directory
         self.cascade_correlation_network_snapshots_dir = self.config.cascade_correlation_network_snapshots_dir or _CASCADE_CORRELATION_NETWORK_HDF5_PROJECT_SNAPSHOTS_DIR
         self.logger.debug("CascadeCorrelationNetwork: _init_network_parameters: Network parameters initialized")
+
+
+    #################################################################################################################################################################################################
+    # Network Resizing Methods
+    #################################################################################################################################################################################################
+    def _resize_network_for_dataset(self, input_size_new: int = 0, output_size_new: int = 0) -> None:
+        """Resize the network for a new dataset."""
+        try:
+            self._resize_network_output_for_dataset(input_size_new=input_size_new, output_size_new=output_size_new)
+            self._resize_network_hidden_for_dataset(input_size_new=input_size_new, output_size_new=output_size_new)
+        except Exception as e:
+            self.logger.error(f"CascadeCorrelationNetwork: _resize_network_for_dataset: Error resizing network for outputs: {e}")
+            raise e
+
+    def _resize_network_output_for_dataset(self, input_size_new: int = 0, output_size_new: int = 0) -> None:
+        """Resize the network output layer for a new dataset."""
+        try:
+            self.output_weights, self.output_bias = self._grow_network_for_dataset(weights_tensor=self.output_weights, bias_tensor=self.output_bias, input_size_current=self.config.input_size, input_size_new=input_size_new, output_size_current=self.config.output_size, output_size_new=output_size_new, dims=(1, 0))
+        except Exception as e:
+            self.logger.error(f"CascadeCorrelationNetwork: _resize_network_output_for_dataset: Error growing network for outputs: {e}")
+            raise e
+
+    def _resize_network_hidden_for_dataset(self, input_size_new: int = 0, output_size_new: int = 0) -> None:
+        """Resize the network hidden layer for a new dataset."""
+        try:
+            for hidden_node_index, hidden_node in enumerate(self.hidden_units):
+                hidden_node["weights"], hidden_node["bias"] = self._grow_network_for_dataset(tensor=hidden_node["weights"], bias_tensor=hidden_node["bias"], dim0_size_current=self.config.input_size, dim0_size_new=input_size_new, dim1_size_current=self.config.output_size, dim1_size_new=output_size_new, dims=(1, 0))
+                self.hidden_units[hidden_node_index] = hidden_node
+        except Exception as e:
+            self.logger.error(f"CascadeCorrelationNetwork: _resize_network_hidden_for_dataset: Error resizing network hidden nodes for dataset change: {e}")
+            raise e
+
+    def _grow_network_for_dataset(self, weights_tensor: torch.Tensor, bias_tensor: torch.Tensor, input_size_current: int = 0, input_size_new: int = 0, output_size_current: int = 0, output_size_new: int = 0, dims: tuple[int, int] = (0, 0)) -> tuple[torch.Tensor, torch.Tensor]:
+        """Grow the network output weights layer for a new dataset with new output size."""
+        try:
+            # Grow the network output layer weights tensor
+            weights_tensor = self._grow_network_layer(tensor=weights_tensor, dim0_size_current=input_size_current, dim0_size_new=input_size_new, dim1_size_current=output_size_current, dim1_size_new=output_size_new, dims=(1, 0))
+            # Grow the network output layer bias tensor
+            bias_tensor = self._grow_network_layer(tensor=bias_tensor, dim0_size_current=input_size_new, dim0_size_new=input_size_new, dim1_size_current=output_size_current, dim1_size_new=output_size_new, dims=(1, 0))
+        except Exception as e:
+            self.logger.error(f"CascadeCorrelationNetwork: _grow_network_for_outputs: Error growing network for outputs: {e}")
+            raise e
+        return weights_tensor, bias_tensor
+
+    def _grow_network_layer(self, tensor: torch.Tensor, dim0_size_current: int = 0, dim0_size_new: int = 0, dim1_size_current: int = 0, dim1_size_new: int = 0, dims: tuple[int, int] = (0, 0)) -> torch.Tensor:
+        """Grow the network output weights layer for a new dataset with new input size and/or new output size."""
+        # New Dim 0 size should increase or be the same as Dim 0 size current
+        if dim0_size_new < dim0_size_current:
+            raise ValueError(f"CascadeCorrelationNetwork: _grow_network_output_layer: Dim 0 size new {dim0_size_new} is less than Dim 0 size current {dim0_size_current}")
+        # New Dim 1 size should increase or be the same as Dim 1 size current
+        if dim1_size_new < dim1_size_current:
+            raise ValueError(f"CascadeCorrelationNetwork: _grow_network_output_layer: Dim 1 size new {dim1_size_new} is less than Dim 1 size current {dim1_size_current}")
+        # Determine Size Increase for the dimension that is growing
+        padding_size = (dim0_size_current - dim0_size_new, dim1_size_current - dim1_size_new)
+        # Grow the output weights tensor
+        try:
+            tensor = self._grow_network_tensor(tensor=tensor, padding_size=padding_size, dims=dims, gradient_tracking=True, random_value_scale=self.random_value_scale)
+        except Exception as e:
+            self.logger.error(f"CascadeCorrelationNetwork: _grow_network_output_layer: Error growing network output layer: {e}")
+            raise e
+        return tensor
+
+    def _grow_network_tensor(self, tensor: torch.Tensor, padding_size: tuple[int, int] = (0, 0), dims: tuple[int, int] = (0, 0), gradient_tracking: bool = True, random_value_scale: float = 1.0) -> torch.Tensor:
+        """Grow the network tensor for a new dataset with new input size and/or new output size."""
+        if padding_size[0] > 0:
+            dim = dims[0]
+            tensor = torch.cat([ tensor, (torch.randn(padding_size[0], tensor.size(1)) * random_value_scale)], dim=dim)
+        if padding_size[1] > 0:
+            dim = dims[1]
+            tensor = torch.cat([ tensor, (torch.randn(tensor.size(0), padding_size[1]) * random_value_scale)], dim=dim)
+        tensor.requires_grad_(gradient_tracking)
+        return tensor
+    #################################################################################################################################################################################################
+
 
     def _init_activation_function(self):
         """Initialize activation function components."""
