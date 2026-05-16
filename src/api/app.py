@@ -17,7 +17,7 @@ from api.lifecycle.manager import TrainingLifecycleManager
 from api.middleware import RequestBodyLimitMiddleware, SecurityHeadersMiddleware, SecurityMiddleware
 from api.models.common import error_response
 from api.observability import PrometheusMiddleware, RequestIdMiddleware, configure_logging, configure_sentry, get_prometheus_app, set_build_info
-from api.routes import admin, dataset, decision_boundary, health, metrics, network, snapshots, training, workers
+from api.routes import admin, dataset, decision_boundary, health, history, metrics, network, snapshots, training, workers
 from api.secrets import get_secret
 from api.security import APIKeyAuth, RateLimiter
 from api.settings import Settings, get_settings
@@ -467,6 +467,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(snapshots.router, prefix="/v1")
     app.include_router(workers.router, prefix="/v1")
     app.include_router(admin.router, prefix="/v1")  # Phase 2 P2-1a — experimental-functions gate
+    app.include_router(history.router, prefix="/v1")  # Phase 2 P2-2 Follow-up B — dataset_swap event fetch
 
     # WebSocket Routes
     app.websocket("/ws/training")(training_stream_handler)

@@ -127,69 +127,129 @@ def test_swap_dataset_live_409_when_swap_in_progress():
 
 
 # ---------------------------------------------------------------------------
-# swap_dataset_live: dim-change rejection (P2-1a only allows equal-dim)
+# swap_dataset_live: shrink-via-padding (P2-1d — network monotonically grows;
+# shrink is handled by zero-padding the dataset up to network capacity)
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
-def test_swap_dataset_live_rejects_input_dim_change():
-    """P2-1a's hard guard: new input dim must equal current network input_size.
-    Raises ValueError("dim_change_unsupported") → 422. Rollback restores the
-    original tensors so training can resume on the OLD dataset (§3.8)."""
+def test_swap_dataset_live_input_shrink_pads_dataset_tensors():
+    """Per the P2-1d contract, a swap that brings a smaller-input dataset
+    succeeds: the dataset tensors are zero-padded up to ``network.input_size``
+    (which never shrinks). The pre-pad active dim is captured on the
+    response but the live tensors stored on the manager reflect the padded
+    shape so subsequent ``forward()`` calls see consistent dims."""
     mgr = TrainingLifecycleManager()
-    mgr.create_network(input_size=2, output_size=2)
+    mgr.create_network(input_size=5, output_size=2)
     mgr.set_experimental_functions(True)
-    pre_train_x = torch.randn(8, 2)
-    pre_train_y = torch.zeros(8, 2)
-    pre_train_y[:, 0] = 1
-    mgr._train_x = pre_train_x
-    mgr._train_y = pre_train_y
+    mgr._train_x = torch.randn(8, 5)
+    mgr._train_y = torch.zeros(8, 2)
+    mgr._train_y[:, 0] = 1
+    mgr._current_dataset_config = {"dataset_type": "synthetic_5_2"}
     mgr.state_machine.handle_command(Command.START)
 
-    # Stub _reload_dataset to deliver tensors of a DIFFERENT input dim.
     def _fake_reload(**cfg):
-        mgr._train_x = torch.randn(8, 5)  # input_size=5 != current 2
+        mgr._train_x = torch.randn(8, 2)  # input shrunk 5→2
         mgr._train_y = torch.zeros(8, 2)
+        mgr._train_y[:, 0] = 1
         mgr._val_x = None
         mgr._val_y = None
-        mgr._current_dataset_config = {"dataset_type": "synthetic_5_2"}
+        mgr._current_dataset_config = {"dataset_type": "synthetic_2_2"}
+
+    mgr._executor = MagicMock()
+    mgr._executor.submit.return_value = MagicMock()
 
     with patch.object(mgr, "_reload_dataset", side_effect=_fake_reload):
-        with pytest.raises(ValueError, match="dim_change_unsupported"):
-            mgr.swap_dataset_live(dataset_type="synthetic_5_2")
+        result = mgr.swap_dataset_live(dataset_type="synthetic_2_2")
 
-    # §3.8 rollback contract: original tensors are restored.
-    assert mgr._train_x is pre_train_x, "pre-swap _train_x not restored after dim-change rejection"
-    assert mgr._train_y is pre_train_y
-    assert mgr._swap_in_progress is False, "_swap_in_progress not cleared in finally"
+    # Network monotonically non-decreasing.
+    assert mgr.network.input_size == 5, "network.input_size must NOT shrink"
+    # Dataset tensors padded up to network dim.
+    assert mgr._train_x.shape == (8, 5), "input tensor padded to network input_size"
+    # The last 3 columns should be zeros (the pad).
+    assert torch.equal(mgr._train_x[:, 2:], torch.zeros(8, 3))
+    # Response reports the dataset-side delta (negative on shrink) but no
+    # network-side append (network didn't grow).
+    assert result["arch_changes"]["input_delta"] == -3, "input_delta is dataset-vs-pre-swap diff"
+    assert result["arch_changes"]["appended_nodes"] == {"input": 0, "output": 0}
+    assert result["arch_changes"]["active_output_dim"] == 2  # output dim unchanged
     mgr.shutdown()
 
 
 @pytest.mark.integration
-def test_swap_dataset_live_rejects_output_dim_change():
-    """Same guard, on the output dim. The error message names both deltas so
-    a UI can show "input 2→2, output 2→3 not supported"."""
+def test_swap_dataset_live_output_shrink_pads_targets_and_sets_active_output_dim():
+    """An output-shrink swap zero-pads ``_train_y`` and sets
+    ``network.active_output_dim`` so the next training run masks loss to
+    the real output slots (avoiding zero-target gradient drift)."""
     mgr = TrainingLifecycleManager()
-    mgr.create_network(input_size=2, output_size=2)
+    mgr.create_network(input_size=2, output_size=3)
     mgr.set_experimental_functions(True)
     mgr._train_x = torch.randn(8, 2)
-    mgr._train_y = torch.zeros(8, 2)
+    mgr._train_y = torch.zeros(8, 3)
     mgr._train_y[:, 0] = 1
+    mgr._current_dataset_config = {"dataset_type": "synthetic_2_3"}
     mgr.state_machine.handle_command(Command.START)
 
     def _fake_reload(**cfg):
         mgr._train_x = torch.randn(8, 2)
-        mgr._train_y = torch.zeros(8, 3)  # output 3 != current 2
+        mgr._train_y = torch.zeros(8, 2)
         mgr._train_y[:, 0] = 1
         mgr._val_x = None
         mgr._val_y = None
-        mgr._current_dataset_config = {"dataset_type": "synthetic_2_3"}
+        mgr._current_dataset_config = {"dataset_type": "synthetic_2_2"}
+
+    mgr._executor = MagicMock()
+    mgr._executor.submit.return_value = MagicMock()
 
     with patch.object(mgr, "_reload_dataset", side_effect=_fake_reload):
-        with pytest.raises(ValueError, match="dim_change_unsupported"):
-            mgr.swap_dataset_live(dataset_type="synthetic_2_3")
+        result = mgr.swap_dataset_live(dataset_type="synthetic_2_2")
 
-    assert mgr._swap_in_progress is False
+    assert mgr.network.output_size == 3, "network output dim never shrinks"
+    assert mgr._train_y.shape == (8, 3), "targets padded up to network output_size"
+    assert torch.equal(mgr._train_y[:, 2:], torch.zeros(8, 1))  # one zero column
+    assert mgr.network.active_output_dim == 2, "loss-mask depth = pre-pad dataset output dim"
+    assert result["arch_changes"]["output_delta"] == -1
+    assert result["arch_changes"]["active_output_dim"] == 2
+    mgr.shutdown()
+
+
+@pytest.mark.integration
+def test_swap_dataset_live_mixed_input_grow_output_shrink():
+    """Composes grow on one side with pad on the other: input dim grows on
+    the network; output dim is dataset-padded up to network."""
+    mgr = TrainingLifecycleManager()
+    mgr.create_network(input_size=2, output_size=3)
+    mgr.set_experimental_functions(True)
+    mgr._train_x = torch.randn(8, 2)
+    mgr._train_y = torch.zeros(8, 3)
+    mgr._train_y[:, 0] = 1
+    mgr._current_dataset_config = {"dataset_type": "synthetic_2_3"}
+    mgr.state_machine.handle_command(Command.START)
+
+    def _fake_reload(**cfg):
+        # Input grows 2→5, output shrinks 3→1.
+        mgr._train_x = torch.randn(8, 5)
+        mgr._train_y = torch.zeros(8, 1)
+        mgr._train_y[:, 0] = 1
+        mgr._val_x = None
+        mgr._val_y = None
+        mgr._current_dataset_config = {"dataset_type": "synthetic_5_1"}
+
+    mgr._executor = MagicMock()
+    mgr._executor.submit.return_value = MagicMock()
+
+    with patch.object(mgr, "_reload_dataset", side_effect=_fake_reload):
+        result = mgr.swap_dataset_live(dataset_type="synthetic_5_1")
+
+    # Network grew to (5, 3); dataset output padded back up to 3.
+    assert mgr.network.input_size == 5
+    assert mgr.network.output_size == 3
+    assert mgr._train_x.shape == (8, 5)
+    assert mgr._train_y.shape == (8, 3)
+    assert mgr.network.active_output_dim == 1
+    assert result["arch_changes"]["input_delta"] == 3  # 2 → 5
+    assert result["arch_changes"]["output_delta"] == -2  # 3 → 1
+    assert result["arch_changes"]["appended_nodes"] == {"input": 3, "output": 0}
     mgr.shutdown()
 
 
@@ -617,4 +677,640 @@ def test_swap_dataset_live_forces_topology_rebroadcast_on_completion():
     # event with metric ticks and lose its standalone framing.
     forced_calls = [c for c in broadcast_mock.call_args_list if c.kwargs.get("force") is True]
     assert len(forced_calls) >= 1, f"no force=True broadcast observed: {broadcast_mock.call_args_list}"
+    mgr.shutdown()
+
+
+# ---------------------------------------------------------------------------
+# P2-1c: grow-input / grow-output happy paths through swap_dataset_live
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.integration
+def test_swap_dataset_live_grow_input_success():
+    """Live swap from input_size=2 to input_size=4 succeeds. Response surfaces
+    ``input_delta=2`` + ``appended_nodes.input=2`` per §3.3. The architecture
+    adapter handles the weight-tensor expansion under the hood; this test
+    pins the response contract callers (canopy) rely on."""
+    mgr = TrainingLifecycleManager()
+    mgr.create_network(input_size=2, output_size=2)
+    mgr.set_experimental_functions(True)
+    mgr._train_x, mgr._train_y = _make_dummy_tensors(2, 2)
+    mgr._current_dataset_config = {"dataset_type": "spirals"}
+    mgr.state_machine.handle_command(Command.START)
+
+    new_x, new_y = _make_dummy_tensors(4, 2)
+
+    def _fake_reload(**cfg):
+        mgr._train_x = new_x
+        mgr._train_y = new_y
+        mgr._current_dataset_config = {"dataset_type": "synthetic_4_2"}
+
+    mgr._executor = MagicMock()
+    mgr._executor.submit.return_value = MagicMock()
+
+    with patch.object(mgr, "_reload_dataset", side_effect=_fake_reload):
+        result = mgr.swap_dataset_live(dataset_type="synthetic_4_2")
+
+    assert result["status"] == "swapped"
+    assert result["arch_changes"]["input_delta"] == 2
+    assert result["arch_changes"]["output_delta"] == 0
+    assert result["arch_changes"]["appended_nodes"] == {"input": 2, "output": 0}
+    assert result["arch_changes"]["prepended_layers"] == []
+    # Network input_size was actually updated in place.
+    assert mgr.network.input_size == 4
+    mgr.shutdown()
+
+
+@pytest.mark.integration
+def test_swap_dataset_live_grow_output_success():
+    """Live swap from output_size=2 to output_size=4 succeeds with
+    ``output_delta=2``. Bias + output_weights gain zero-init columns/elements."""
+    mgr = TrainingLifecycleManager()
+    mgr.create_network(input_size=2, output_size=2)
+    mgr.set_experimental_functions(True)
+    mgr._train_x, mgr._train_y = _make_dummy_tensors(2, 2)
+    mgr._current_dataset_config = {"dataset_type": "spirals"}
+    mgr.state_machine.handle_command(Command.START)
+
+    new_x, new_y = _make_dummy_tensors(2, 4)
+
+    def _fake_reload(**cfg):
+        mgr._train_x = new_x
+        mgr._train_y = new_y
+        mgr._current_dataset_config = {"dataset_type": "synthetic_2_4"}
+
+    mgr._executor = MagicMock()
+    mgr._executor.submit.return_value = MagicMock()
+
+    with patch.object(mgr, "_reload_dataset", side_effect=_fake_reload):
+        result = mgr.swap_dataset_live(dataset_type="synthetic_2_4")
+
+    assert result["arch_changes"]["input_delta"] == 0
+    assert result["arch_changes"]["output_delta"] == 2
+    assert result["arch_changes"]["appended_nodes"] == {"input": 0, "output": 2}
+    assert mgr.network.output_size == 4
+    assert mgr.network.output_weights.shape[1] == 4
+    assert mgr.network.output_bias.shape == torch.Size([4])
+    mgr.shutdown()
+
+
+@pytest.mark.integration
+def test_swap_dataset_live_grow_both_input_and_output():
+    """Mixed grow (input AND output expand) propagates both deltas in the
+    response. Pins that grow-input + grow-output compose without one
+    clobbering the other's tensor mutations."""
+    mgr = TrainingLifecycleManager()
+    mgr.create_network(input_size=2, output_size=2)
+    mgr.set_experimental_functions(True)
+    mgr._train_x, mgr._train_y = _make_dummy_tensors(2, 2)
+    mgr._current_dataset_config = {"dataset_type": "spirals"}
+    mgr.state_machine.handle_command(Command.START)
+
+    new_x, new_y = _make_dummy_tensors(5, 4)
+
+    def _fake_reload(**cfg):
+        mgr._train_x = new_x
+        mgr._train_y = new_y
+        mgr._current_dataset_config = {"dataset_type": "synthetic_5_4"}
+
+    mgr._executor = MagicMock()
+    mgr._executor.submit.return_value = MagicMock()
+
+    with patch.object(mgr, "_reload_dataset", side_effect=_fake_reload):
+        result = mgr.swap_dataset_live(dataset_type="synthetic_5_4")
+
+    assert result["arch_changes"]["input_delta"] == 3
+    assert result["arch_changes"]["output_delta"] == 2
+    assert result["arch_changes"]["appended_nodes"] == {"input": 3, "output": 2}
+    assert mgr.network.input_size == 5
+    assert mgr.network.output_size == 4
+    mgr.shutdown()
+
+
+@pytest.mark.integration
+def test_swap_dataset_live_grow_input_log_line_reports_actual_deltas():
+    """§3.7 #5 log line reflects the real dim deltas (pre-P2-1c it always
+    showed equal-dim because the adapter wasn't wired). Canopy log scraping
+    + human readability both depend on this format being accurate."""
+    mgr = TrainingLifecycleManager()
+    mgr.create_network(input_size=2, output_size=2)
+    mgr.set_experimental_functions(True)
+    mgr._train_x, mgr._train_y = _make_dummy_tensors(2, 2)
+    mgr._current_dataset_config = {"dataset_type": "spirals"}
+    mgr.state_machine.handle_command(Command.START)
+
+    new_x, new_y = _make_dummy_tensors(5, 3)
+
+    def _fake_reload(**cfg):
+        mgr._train_x = new_x
+        mgr._train_y = new_y
+        mgr._current_dataset_config = {"dataset_type": "synthetic_5_3"}
+
+    mgr._executor = MagicMock()
+    mgr._executor.submit.return_value = MagicMock()
+
+    with patch.object(mgr.logger, "info") as info_mock:
+        with patch.object(mgr, "_reload_dataset", side_effect=_fake_reload):
+            mgr.swap_dataset_live(dataset_type="synthetic_5_3")
+
+    matching = [c for c in info_mock.call_args_list if c.args and isinstance(c.args[0], str) and c.args[0].startswith("swap: input ")]
+    assert len(matching) == 1, f"expected 1 completion line, got {info_mock.call_args_list}"
+    fmt, *args = matching[0].args
+    rendered = fmt % tuple(args)
+    assert rendered == "swap: input 2→5, output 2→3, hidden 0 preserved, candidates 0 abandoned, mode→output_training"
+    mgr.shutdown()
+
+
+# ---------------------------------------------------------------------------
+# P2-2 (Issue #3): dataset_swap history-event recording from the lifecycle.
+# Pins the success-only contract — cancelled / failed swaps must NOT append
+# an event, so the history reflects only what canopy should render.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.integration
+def test_swap_dataset_live_records_history_event_on_success():
+    """Happy path: a successful swap appends exactly one event to
+    ``network.history["dataset_swaps"]`` whose payload mirrors the §3.3
+    response shape. This is the canopy P2-7 timeline-marker entrypoint."""
+    mgr = TrainingLifecycleManager()
+    mgr.create_network(input_size=2, output_size=2)
+    mgr.set_experimental_functions(True)
+    mgr._train_x, mgr._train_y = _make_dummy_tensors(2, 2)
+    mgr._current_dataset_config = {"dataset_type": "spirals"}
+    mgr.state_machine.handle_command(Command.START)
+
+    new_x, new_y = _make_dummy_tensors(4, 2)
+
+    def _fake_reload(**cfg):
+        mgr._train_x = new_x
+        mgr._train_y = new_y
+        mgr._current_dataset_config = {"dataset_type": "synthetic_4_2"}
+
+    mgr._executor = MagicMock()
+    mgr._executor.submit.return_value = MagicMock()
+
+    pre_count = len(mgr.network.history["dataset_swaps"])
+    with patch.object(mgr, "_reload_dataset", side_effect=_fake_reload):
+        result = mgr.swap_dataset_live(dataset_type="synthetic_4_2")
+
+    swaps = mgr.network.history["dataset_swaps"]
+    assert len(swaps) == pre_count + 1, "exactly one history event appended per successful swap"
+    event = swaps[-1]
+    # Schema present.
+    for key in ("timestamp", "before_cfg", "after_cfg", "arch_changes", "pre_swap_snapshot_id", "post_swap_snapshot_id"):
+        assert key in event, f"missing schema field {key!r}"
+    # Payload aligns with the §3.3 response (P2-2 records the SAME
+    # arch_changes dict that the route returns to canopy).
+    assert event["arch_changes"] == result["arch_changes"]
+    assert event["before_cfg"] == {"dataset_type": "spirals"}
+    assert event["after_cfg"] == {"dataset_type": "synthetic_4_2"}
+    # P2-3 snapshot IDs are populated by the pre/post-swap auto-snap.
+    # Both should be strings matching the ``snapshot_<TIMESTAMP>[_<n>]``
+    # format. The dedicated P2-3 tests below assert ordering and contents
+    # in detail; here we just confirm the threading is wired.
+    assert isinstance(event["pre_swap_snapshot_id"], str)
+    assert event["pre_swap_snapshot_id"].startswith("snapshot_")
+    assert isinstance(event["post_swap_snapshot_id"], str)
+    assert event["post_swap_snapshot_id"].startswith("snapshot_")
+    mgr.shutdown()
+
+
+@pytest.mark.integration
+def test_swap_dataset_live_does_NOT_record_on_cancellation():
+    """A cancelled swap rolls back state and must NOT leave a stale
+    history event — canopy would render a swap that didn't happen."""
+    mgr = TrainingLifecycleManager()
+    mgr.create_network(input_size=2, output_size=2)
+    mgr.set_experimental_functions(True)
+    mgr._train_x, mgr._train_y = _make_dummy_tensors(2, 2)
+    mgr._current_dataset_config = {"dataset_type": "spirals"}
+    mgr.state_machine.handle_command(Command.START)
+
+    def _fake_reload_then_cancel(**cfg):
+        mgr._train_x, mgr._train_y = _make_dummy_tensors(2, 2)
+        mgr._current_dataset_config = {"dataset_type": "moons"}
+        mgr._swap_cancel_requested.set()
+
+    mgr._executor = MagicMock()
+    mgr._executor.submit.return_value = MagicMock()
+
+    pre_count = len(mgr.network.history["dataset_swaps"])
+    with patch.object(mgr, "_reload_dataset", side_effect=_fake_reload_then_cancel):
+        with pytest.raises(SwapCancelledError):
+            mgr.swap_dataset_live(dataset_type="moons")
+
+    assert len(mgr.network.history["dataset_swaps"]) == pre_count, "cancelled swap must not append an event"
+    mgr.shutdown()
+
+
+@pytest.mark.integration
+def test_swap_dataset_live_does_NOT_record_on_fetch_failure():
+    """``_reload_dataset`` raising before the network mutation → no event.
+    The rollback path returns the lifecycle to pre-swap state; the
+    history must reflect that nothing was committed."""
+    mgr = TrainingLifecycleManager()
+    mgr.create_network(input_size=2, output_size=2)
+    mgr.set_experimental_functions(True)
+    mgr._train_x, mgr._train_y = _make_dummy_tensors(2, 2)
+    mgr._current_dataset_config = {"dataset_type": "spirals"}
+    mgr.state_machine.handle_command(Command.START)
+
+    pre_count = len(mgr.network.history["dataset_swaps"])
+    with patch.object(mgr, "_reload_dataset", side_effect=RuntimeError("juniper-data unreachable")):
+        with pytest.raises(RuntimeError, match="juniper-data unreachable"):
+            mgr.swap_dataset_live(dataset_type="spirals")
+
+    assert len(mgr.network.history["dataset_swaps"]) == pre_count
+    mgr.shutdown()
+
+
+@pytest.mark.integration
+def test_swap_dataset_live_records_equal_dim_swap():
+    """Equal-dim swaps are still real user-initiated events (dataset
+    metadata changed; candidates may have been abandoned). The history
+    records them so canopy's timeline doesn't silently drop them."""
+    mgr = TrainingLifecycleManager()
+    mgr.create_network(input_size=2, output_size=2)
+    mgr.set_experimental_functions(True)
+    mgr._train_x, mgr._train_y = _make_dummy_tensors(2, 2)
+    mgr._current_dataset_config = {"dataset_type": "spirals", "n_spirals": 2}
+    mgr.state_machine.handle_command(Command.START)
+
+    new_x, new_y = _make_dummy_tensors(2, 2)
+
+    def _fake_reload(**cfg):
+        mgr._train_x = new_x
+        mgr._train_y = new_y
+        mgr._current_dataset_config = {"dataset_type": "moons", "noise": 0.2}
+
+    mgr._executor = MagicMock()
+    mgr._executor.submit.return_value = MagicMock()
+
+    with patch.object(mgr, "_reload_dataset", side_effect=_fake_reload):
+        mgr.swap_dataset_live(dataset_type="moons", noise=0.2)
+
+    swaps = mgr.network.history["dataset_swaps"]
+    assert len(swaps) == 1
+    assert swaps[0]["before_cfg"] == {"dataset_type": "spirals", "n_spirals": 2}
+    assert swaps[0]["after_cfg"] == {"dataset_type": "moons", "noise": 0.2}
+    assert swaps[0]["arch_changes"]["input_delta"] == 0
+    assert swaps[0]["arch_changes"]["output_delta"] == 0
+    mgr.shutdown()
+
+
+# ---------------------------------------------------------------------------
+# P2-3 (Issue #3): pre + post-swap auto-snapshot + ID threading into the
+# dataset_swap event. The replay-engine rework is deferred per
+# ``notes/PHASE_2_P2_3_FOLLOWUP_REPLAY_REWORK_2026-05-14.md`` — these tests
+# pin only the snapshot infrastructure that P2-3 actually ships.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.integration
+def test_swap_dataset_live_takes_pre_and_post_snapshots():
+    """Successful swap triggers exactly two ``save_snapshot`` calls — one
+    pre-swap (before resize), one post-swap (after the new training
+    future submits). Both IDs are threaded into the history event so
+    canopy P2-7 can drive a snapshot-orchestrated transition."""
+    mgr = TrainingLifecycleManager()
+    mgr.create_network(input_size=2, output_size=2)
+    mgr.set_experimental_functions(True)
+    mgr._train_x, mgr._train_y = _make_dummy_tensors(2, 2)
+    mgr._current_dataset_config = {"dataset_type": "spirals", "n_spirals": 2}
+    mgr.state_machine.handle_command(Command.START)
+
+    new_x, new_y = _make_dummy_tensors(4, 2)
+
+    def _fake_reload(**cfg):
+        mgr._train_x = new_x
+        mgr._train_y = new_y
+        mgr._current_dataset_config = {"dataset_type": "moons", "noise": 0.2}
+
+    mgr._executor = MagicMock()
+    mgr._executor.submit.return_value = MagicMock()
+
+    # Patch save_snapshot to return stable IDs without writing HDF5 to
+    # disk — the file-IO behaviour is covered by the unit tests.
+    saved_descriptions = []
+
+    def _fake_save(description=""):
+        saved_descriptions.append(description)
+        return {
+            "id": f"snapshot_test_{len(saved_descriptions):02d}",
+            "path": f"/tmp/{len(saved_descriptions):02d}.h5",
+            "timestamp": "20260514T000000Z",
+            "description": description,
+        }
+
+    with patch.object(mgr, "save_snapshot", side_effect=_fake_save):
+        with patch.object(mgr, "_reload_dataset", side_effect=_fake_reload):
+            result = mgr.swap_dataset_live(dataset_type="moons", noise=0.2)
+
+    # Two snapshots fired, in order.
+    assert len(saved_descriptions) == 2
+    assert "pre-swap" in saved_descriptions[0]
+    assert "post-swap" in saved_descriptions[1]
+    # Descriptions encode swap metadata (deliverable Q2 of the design).
+    assert "spirals" in saved_descriptions[0], f"pre-swap description should name the before dataset: {saved_descriptions[0]!r}"
+    assert "moons" in saved_descriptions[1], f"post-swap description should name the after dataset: {saved_descriptions[1]!r}"
+    # Event has both IDs threaded.
+    swaps = mgr.network.history["dataset_swaps"]
+    assert len(swaps) == 1
+    assert swaps[0]["pre_swap_snapshot_id"] == "snapshot_test_01"
+    assert swaps[0]["post_swap_snapshot_id"] == "snapshot_test_02"
+    # Swap itself succeeded (not just the snapshots).
+    assert result["status"] == "swapped"
+    mgr.shutdown()
+
+
+@pytest.mark.integration
+def test_swap_dataset_live_pre_swap_snapshot_taken_before_resize():
+    """Ordering invariant: the pre-swap snapshot must capture the network
+    BEFORE ``_resize_network_for_dataset`` mutates it. If the snapshot
+    fired after resize, ``pre_swap_snapshot_id`` would point at a
+    network with the post-swap dims, defeating the whole "Restore from
+    pre-swap" P2-7 affordance."""
+    mgr = TrainingLifecycleManager()
+    mgr.create_network(input_size=2, output_size=2)
+    mgr.set_experimental_functions(True)
+    mgr._train_x, mgr._train_y = _make_dummy_tensors(2, 2)
+    mgr._current_dataset_config = {"dataset_type": "spirals"}
+    mgr.state_machine.handle_command(Command.START)
+
+    new_x, new_y = _make_dummy_tensors(5, 3)
+
+    def _fake_reload(**cfg):
+        mgr._train_x = new_x
+        mgr._train_y = new_y
+        mgr._current_dataset_config = {"dataset_type": "moons"}
+
+    mgr._executor = MagicMock()
+    mgr._executor.submit.return_value = MagicMock()
+
+    observed_dims = []
+
+    def _fake_save(description=""):
+        # Capture the network's dims at the moment of each snapshot call.
+        observed_dims.append((description, mgr.network.input_size, mgr.network.output_size))
+        return {"id": f"snap_{len(observed_dims)}", "path": "/tmp/x", "timestamp": "T", "description": description}
+
+    with patch.object(mgr, "save_snapshot", side_effect=_fake_save):
+        with patch.object(mgr, "_reload_dataset", side_effect=_fake_reload):
+            mgr.swap_dataset_live(dataset_type="moons")
+
+    assert len(observed_dims) == 2
+    pre_desc, pre_in, pre_out = observed_dims[0]
+    post_desc, post_in, post_out = observed_dims[1]
+    assert "pre-swap" in pre_desc
+    # Pre-swap snapshot saw the OLD dims.
+    assert pre_in == 2 and pre_out == 2
+    assert "post-swap" in post_desc
+    # Post-swap snapshot saw the NEW dims (after grow).
+    assert post_in == 5 and post_out == 3
+    mgr.shutdown()
+
+
+@pytest.mark.integration
+def test_swap_dataset_live_pre_swap_snapshot_kept_on_cancel():
+    """Per the P2-3 design Q1 decision: a pre-swap snapshot taken before
+    the user cancels stays on disk as a valid checkpoint of the moment
+    the swap was attempted. The dataset_swap event itself does NOT
+    record (the cancel raises before record), so the snapshot exists
+    without a corresponding history event — that's intentional."""
+    mgr = TrainingLifecycleManager()
+    mgr.create_network(input_size=2, output_size=2)
+    mgr.set_experimental_functions(True)
+    mgr._train_x, mgr._train_y = _make_dummy_tensors(2, 2)
+    mgr._current_dataset_config = {"dataset_type": "spirals"}
+    mgr.state_machine.handle_command(Command.START)
+
+    def _fake_reload_then_cancel(**cfg):
+        mgr._train_x, mgr._train_y = _make_dummy_tensors(2, 2)
+        mgr._current_dataset_config = {"dataset_type": "moons"}
+        mgr._swap_cancel_requested.set()
+
+    mgr._executor = MagicMock()
+    mgr._executor.submit.return_value = MagicMock()
+
+    save_calls = []
+
+    def _fake_save(description=""):
+        save_calls.append(description)
+        return {"id": f"snap_{len(save_calls)}", "path": "/tmp/x", "timestamp": "T", "description": description}
+
+    with patch.object(mgr, "save_snapshot", side_effect=_fake_save):
+        with patch.object(mgr, "_reload_dataset", side_effect=_fake_reload_then_cancel):
+            with pytest.raises(SwapCancelledError):
+                mgr.swap_dataset_live(dataset_type="moons")
+
+    # Pre-swap snap fired; post-swap did NOT (the cancel checkpoint trips
+    # before we reach the post-swap snap call site).
+    assert len(save_calls) == 1
+    assert "pre-swap" in save_calls[0]
+    # Event NOT recorded (already covered by P2-2 tests but pinned here
+    # to make the snapshot-vs-event asymmetry explicit).
+    assert mgr.network.history["dataset_swaps"] == []
+    mgr.shutdown()
+
+
+@pytest.mark.integration
+def test_swap_dataset_live_pre_swap_snapshot_failure_does_not_abort_swap():
+    """Snapshot writes are observability, not core functionality. A
+    failed pre-swap snapshot logs and leaves ``pre_swap_snapshot_id`` as
+    None in the recorded event — the swap itself still succeeds."""
+    mgr = TrainingLifecycleManager()
+    mgr.create_network(input_size=2, output_size=2)
+    mgr.set_experimental_functions(True)
+    mgr._train_x, mgr._train_y = _make_dummy_tensors(2, 2)
+    mgr._current_dataset_config = {"dataset_type": "spirals"}
+    mgr.state_machine.handle_command(Command.START)
+
+    new_x, new_y = _make_dummy_tensors(2, 2)
+
+    def _fake_reload(**cfg):
+        mgr._train_x = new_x
+        mgr._train_y = new_y
+        mgr._current_dataset_config = {"dataset_type": "moons"}
+
+    mgr._executor = MagicMock()
+    mgr._executor.submit.return_value = MagicMock()
+
+    call_count = {"n": 0}
+
+    def _fake_save_pre_fails(description=""):
+        call_count["n"] += 1
+        # First call (pre-swap) raises; second (post-swap) succeeds.
+        if call_count["n"] == 1:
+            raise RuntimeError("disk full simulation")
+        return {"id": "snap_post_ok", "path": "/tmp/x", "timestamp": "T", "description": description}
+
+    with patch.object(mgr, "save_snapshot", side_effect=_fake_save_pre_fails):
+        with patch.object(mgr, "_reload_dataset", side_effect=_fake_reload):
+            result = mgr.swap_dataset_live(dataset_type="moons")
+
+    assert result["status"] == "swapped"
+    swaps = mgr.network.history["dataset_swaps"]
+    assert len(swaps) == 1
+    # Pre-swap failed → None; post-swap succeeded → populated.
+    assert swaps[0]["pre_swap_snapshot_id"] is None
+    assert swaps[0]["post_swap_snapshot_id"] == "snap_post_ok"
+    mgr.shutdown()
+
+
+# ---------------------------------------------------------------------------
+# P2-2 Follow-up A (Issue #3): WebSocket broadcast of dataset_swap events.
+# The broadcast envelope uses the generic ``create_event_message`` with
+# ``event="dataset_swap"`` as the discriminator — no new protocol-package
+# envelope type. See notes/PHASE_2_P2_2_FOLLOWUPS_2026-05-14.md (Follow-up A).
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.integration
+def test_swap_dataset_live_broadcasts_dataset_swap_event_on_success():
+    """A successful swap pushes one ``dataset_swap`` event over the
+    WebSocket so canopy can render a timeline marker in real time."""
+    mgr = TrainingLifecycleManager()
+    mgr.create_network(input_size=2, output_size=2)
+    mgr.set_experimental_functions(True)
+    mgr._train_x, mgr._train_y = _make_dummy_tensors(2, 2)
+    mgr._current_dataset_config = {"dataset_type": "spirals"}
+    mgr.state_machine.handle_command(Command.START)
+
+    new_x, new_y = _make_dummy_tensors(4, 2)
+
+    def _fake_reload(**cfg):
+        mgr._train_x = new_x
+        mgr._train_y = new_y
+        mgr._current_dataset_config = {"dataset_type": "moons"}
+
+    mgr._executor = MagicMock()
+    mgr._executor.submit.return_value = MagicMock()
+
+    # Plug in a mock WS manager so we can observe the broadcast.
+    ws_manager = MagicMock()
+    mgr._ws_manager = ws_manager
+
+    with patch.object(mgr, "_reload_dataset", side_effect=_fake_reload):
+        mgr.swap_dataset_live(dataset_type="moons")
+
+    # Exactly one dataset_swap broadcast. Other broadcasts (state, etc.)
+    # may have fired separately via _broadcast_training_state; filter by
+    # envelope discriminator to isolate the one we care about.
+    dataset_swap_calls = [c for c in ws_manager.broadcast_from_thread.call_args_list if c.args and isinstance(c.args[0], dict) and c.args[0].get("data", {}).get("event") == "dataset_swap"]
+    assert len(dataset_swap_calls) == 1, f"expected 1 dataset_swap broadcast, got {len(dataset_swap_calls)}"
+    payload = dataset_swap_calls[0].args[0]
+    # Envelope shape: top-level ``data`` dict with ``event`` discriminator
+    # and a ``swap`` sub-dict carrying the full event record. The
+    # full event is what was just recorded into history, so canopy
+    # gets the same view it would read from the GET /history/dataset_swaps
+    # route — just delivered as a push.
+    assert payload["data"]["event"] == "dataset_swap"
+    assert "swap" in payload["data"]
+    assert payload["data"]["swap"]["arch_changes"]["input_delta"] == 2
+    mgr.shutdown()
+
+
+@pytest.mark.integration
+def test_swap_dataset_live_does_NOT_broadcast_on_cancellation():
+    """Cancelled swap → no dataset_swap broadcast. Canopy must not render
+    a timeline marker for a swap that was aborted."""
+    mgr = TrainingLifecycleManager()
+    mgr.create_network(input_size=2, output_size=2)
+    mgr.set_experimental_functions(True)
+    mgr._train_x, mgr._train_y = _make_dummy_tensors(2, 2)
+    mgr._current_dataset_config = {"dataset_type": "spirals"}
+    mgr.state_machine.handle_command(Command.START)
+
+    def _fake_reload_then_cancel(**cfg):
+        mgr._train_x, mgr._train_y = _make_dummy_tensors(2, 2)
+        mgr._swap_cancel_requested.set()
+
+    mgr._executor = MagicMock()
+    mgr._executor.submit.return_value = MagicMock()
+    ws_manager = MagicMock()
+    mgr._ws_manager = ws_manager
+
+    with patch.object(mgr, "_reload_dataset", side_effect=_fake_reload_then_cancel):
+        with pytest.raises(SwapCancelledError):
+            mgr.swap_dataset_live(dataset_type="moons")
+
+    dataset_swap_calls = [c for c in ws_manager.broadcast_from_thread.call_args_list if c.args and isinstance(c.args[0], dict) and c.args[0].get("data", {}).get("event") == "dataset_swap"]
+    assert dataset_swap_calls == []
+    mgr.shutdown()
+
+
+@pytest.mark.integration
+def test_swap_dataset_live_no_op_broadcast_when_ws_manager_is_none():
+    """No WS clients connected → ``_ws_manager`` is None → the broadcast
+    branch no-ops without error. The swap still succeeds and the history
+    event still records (just no real-time push)."""
+    mgr = TrainingLifecycleManager()
+    mgr.create_network(input_size=2, output_size=2)
+    mgr.set_experimental_functions(True)
+    mgr._train_x, mgr._train_y = _make_dummy_tensors(2, 2)
+    mgr._current_dataset_config = {"dataset_type": "spirals"}
+    mgr.state_machine.handle_command(Command.START)
+
+    new_x, new_y = _make_dummy_tensors(2, 2)
+
+    def _fake_reload(**cfg):
+        mgr._train_x = new_x
+        mgr._train_y = new_y
+        mgr._current_dataset_config = {"dataset_type": "moons"}
+
+    mgr._executor = MagicMock()
+    mgr._executor.submit.return_value = MagicMock()
+    assert mgr._ws_manager is None  # default state
+
+    with patch.object(mgr, "_reload_dataset", side_effect=_fake_reload):
+        result = mgr.swap_dataset_live(dataset_type="moons")
+
+    assert result["status"] == "swapped"
+    assert len(mgr.network.history["dataset_swaps"]) == 1
+    mgr.shutdown()
+
+
+@pytest.mark.integration
+def test_swap_dataset_live_broadcast_failure_does_not_abort_swap():
+    """A WS broadcast error is logged but does NOT abort the swap. The
+    swap has already succeeded; observability failures shouldn't roll
+    back the user's data."""
+    mgr = TrainingLifecycleManager()
+    mgr.create_network(input_size=2, output_size=2)
+    mgr.set_experimental_functions(True)
+    mgr._train_x, mgr._train_y = _make_dummy_tensors(2, 2)
+    mgr._current_dataset_config = {"dataset_type": "spirals"}
+    mgr.state_machine.handle_command(Command.START)
+
+    new_x, new_y = _make_dummy_tensors(2, 2)
+
+    def _fake_reload(**cfg):
+        mgr._train_x = new_x
+        mgr._train_y = new_y
+        mgr._current_dataset_config = {"dataset_type": "moons"}
+
+    mgr._executor = MagicMock()
+    mgr._executor.submit.return_value = MagicMock()
+    ws_manager = MagicMock()
+
+    # Scope the failure to the dataset_swap envelope only. Other
+    # broadcasts (state, etc.) called earlier in swap_dataset_live by
+    # ``_broadcast_training_state`` succeed; only OUR push raises. This
+    # mirrors the production failure mode the test is meant to cover —
+    # the dataset_swap broadcast specifically blowing up after the swap
+    # has otherwise succeeded.
+    def _selective_broadcast_fail(payload, *args, **kwargs):
+        if isinstance(payload, dict) and payload.get("data", {}).get("event") == "dataset_swap":
+            raise RuntimeError("WS connection torn down")
+
+    ws_manager.broadcast_from_thread.side_effect = _selective_broadcast_fail
+    mgr._ws_manager = ws_manager
+
+    with patch.object(mgr, "_reload_dataset", side_effect=_fake_reload):
+        result = mgr.swap_dataset_live(dataset_type="moons")
+
+    assert result["status"] == "swapped"
+    # History event still recorded — broadcast failure is post-record.
+    assert len(mgr.network.history["dataset_swaps"]) == 1
     mgr.shutdown()
