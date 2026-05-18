@@ -1408,7 +1408,7 @@ class CascadeHDF5Serializer:
     def _create_network_from_file(self, hdf5_file: h5py.File):
         """Create a network instance from HDF5 configuration."""
         try:
-            from cascade_correlation_config.cascade_correlation_config import CascadeCorrelationConfig
+            from cascade_correlation.cascade_correlation_config.cascade_correlation_config import CascadeCorrelationConfig
 
             from cascade_correlation.cascade_correlation import CascadeCorrelationNetwork
 
