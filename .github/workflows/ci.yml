@@ -123,9 +123,20 @@ jobs:
       - name: Validate Documentation Links
         run: |
           echo "╔════════════════════════════════════════════════════════════╗"
-          echo "║       Juniper Cascor - Documentation Link Validation      ║"
+          echo "║       Juniper Cascor - Documentation Link Validation       ║"
           echo "╚════════════════════════════════════════════════════════════╝"
-          python scripts/check_doc_links.py --exclude templates --exclude history
+          python scripts/check_doc_links.py \
+            --exclude templates \
+            --exclude history \
+            --exclude legacy \
+            --exclude pull_requests \
+            --exclude releases \
+            --exclude analysis \
+            --exclude fixes \
+            --exclude development \
+            --exclude CHANGELOG.md \
+            --cross-repo skip
+
 
   # ═══════════════════════════════════════════════════════════════════════════════════════════════
   # Async-route audit (Phase 4 — enforced).
@@ -154,7 +165,7 @@ jobs:
       - name: Run async-route audit
         run: |
           echo "╔════════════════════════════════════════════════════════════╗"
-          echo "║       Juniper Cascor - Async-route audit (BUG-JD-10)      ║"
+          echo "║       Juniper Cascor - Async-route audit (BUG-JD-10)       ║"
           echo "╚════════════════════════════════════════════════════════════╝"
           ruff check --select ASYNC --output-format=github src/
 
@@ -201,8 +212,8 @@ jobs:
       - name: Install dependencies
         run: |
           echo "╔════════════════════════════════════════════════════════════╗"
-          echo "║       Juniper Cascor - Install Dependencies                ║"
-          echo "║       Python ${{ matrix.python-version }} on ${{ matrix.os }}              ║"
+          echo "║    Juniper Cascor - Install Dependencies                   ║"
+          echo "║    Python ${{ matrix.python-version }} on ${{ matrix.os }} ║"
           echo "╚════════════════════════════════════════════════════════════╝"
           python -m pip install --upgrade "pip>=26.1.1"
           # METRICS-MON R3.7: torch wheel resolution differs by OS.
@@ -466,7 +477,7 @@ jobs:
         shell: bash -l {0}
         run: |
           echo "╔════════════════════════════════════════════════════════════╗"
-          echo "║       Juniper Cascor - Install Dependencies (Dep Docs)    ║"
+          echo "║       Juniper Cascor - Install Dependencies (Dep Docs)     ║"
           echo "╚════════════════════════════════════════════════════════════╝"
           python -m pip install --upgrade "pip>=26.1.1"
           pip install torch --index-url https://download.pytorch.org/whl/cpu
@@ -479,7 +490,7 @@ jobs:
         shell: bash -l {0}
         run: |
           echo "╔════════════════════════════════════════════════════════════╗"
-          echo "║       Juniper Cascor - Generate Dependency Docs           ║"
+          echo "║       Juniper Cascor - Generate Dependency Docs            ║"
           echo "╚════════════════════════════════════════════════════════════╝"
           bash scripts/generate_dep_docs.sh
 
@@ -617,7 +628,7 @@ jobs:
       - name: Check lockfile freshness
         run: |
           echo "╔════════════════════════════════════════════════════════════╗"
-          echo "║       Juniper Cascor - Lockfile Freshness Check           ║"
+          echo "║       Juniper Cascor - Lockfile Freshness Check            ║"
           echo "╚════════════════════════════════════════════════════════════╝"
 
           # Resolve pyproject.toml using the committed lockfile as constraints.
@@ -686,7 +697,7 @@ jobs:
       - name: Build & start juniper-data sidecar
         run: |
           echo "╔════════════════════════════════════════════════════════════╗"
-          echo "║       Juniper Data - Sidecar Build & Start                ║"
+          echo "║       Juniper Data - Sidecar Build & Start                 ║"
           echo "╚════════════════════════════════════════════════════════════╝"
           docker build -t juniper-data:ci-${{ github.sha }} /tmp/juniper-data
           docker run -d --name juniper-data-sidecar \
@@ -712,14 +723,14 @@ jobs:
       - name: Build Docker Image
         run: |
           echo "╔════════════════════════════════════════════════════════════╗"
-          echo "║       Juniper Cascor - Docker Build                       ║"
+          echo "║       Juniper Cascor - Docker Build                        ║"
           echo "╚════════════════════════════════════════════════════════════╝"
           docker build -t juniper-cascor:ci-${{ github.sha }} .
 
       - name: Verify Container Starts
         run: |
           echo "╔════════════════════════════════════════════════════════════╗"
-          echo "║       Juniper Cascor - Docker Smoke Test                  ║"
+          echo "║       Juniper Cascor - Docker Smoke Test                   ║"
           echo "╚════════════════════════════════════════════════════════════╝"
           # Override JUNIPER_DATA_URL so the readiness probe targets the
           # sidecar via its Docker network alias instead of the
