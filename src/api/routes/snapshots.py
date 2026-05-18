@@ -160,6 +160,32 @@ async def get_snapshot(request: Request, snapshot_id: str) -> dict:
     return success_response(result)
 
 
+@router.get("/{snapshot_id}/history/dataset_swaps")
+async def get_snapshot_dataset_swaps(request: Request, snapshot_id: str) -> dict:
+    """Read the ``dataset_swap`` events stored in a snapshot's HDF5 file.
+
+    P2-7 follow-up (Issue #3): canopy's Replay timeline renders swap
+    markers tied to the loaded snapshot's own history (parent spec §4.4
+    full flavor — deferred at P2-7 ship time). The route is intentionally
+    a sibling of ``GET /v1/snapshots/{id}`` rather than an inline field
+    on it: opening the HDF5 file is materially slower than the metadata
+    ``stat()`` ``get_snapshot`` does, and we want existing list/poll
+    callers to keep paying the cheap cost.
+
+    Returns 404 when the snapshot file is not on disk. Returns ``{"events": []}``
+    when the snapshot exists but carries no swap events — pre-P2-2
+    snapshots and training runs with no live swap both reach this branch.
+    """
+    _validate_snapshot_id(snapshot_id, client=request.client.host if request.client else None)
+    lifecycle = _get_lifecycle(request)
+    # HDF5 I/O is synchronous — run it off the event loop to keep the
+    # loop responsive under concurrent snapshot reads.
+    events = await asyncio.to_thread(lifecycle.get_snapshot_dataset_swaps, snapshot_id)
+    if events is None:
+        raise HTTPException(status_code=404, detail=f"Snapshot '{snapshot_id}' not found")
+    return success_response({"events": events})
+
+
 @router.post("/{snapshot_id}/restore")
 async def restore_snapshot(request: Request, snapshot_id: str) -> dict:
     """Restore a network from a snapshot for inspection and modification.

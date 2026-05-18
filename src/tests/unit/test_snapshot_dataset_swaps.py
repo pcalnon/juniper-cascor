@@ -177,3 +177,62 @@ class TestDatasetSwapsCorruptionTolerance:
         assert len(loaded.history["dataset_swaps"]) == 2
         assert loaded.history["dataset_swaps"][0]["arch_changes"] == {}
         assert loaded.history["dataset_swaps"][1]["arch_changes"]["input_delta"] == 1
+
+
+class TestReadDatasetSwapEvents:
+    """P2-7 follow-up: ``read_dataset_swap_events`` reader used by
+    ``GET /v1/snapshots/{id}/history/dataset_swaps``."""
+
+    def test_reads_persisted_events_without_full_load(self, serializer, simple_network, temp_file):
+        """The reader returns the same schema the full-network loader does,
+        without restoring the network. Verifies the route can skip the
+        expensive load path for marker rendering."""
+        simple_network.history["dataset_swaps"] = [_sample_event(0), _sample_event(1), _sample_event(2)]
+        serializer.save_network(simple_network, temp_file, include_training_state=True)
+        events = serializer.read_dataset_swap_events(temp_file)
+        assert len(events) == 3
+        assert [e["arch_changes"]["input_delta"] for e in events] == [0, 1, 2]
+        for e in events:
+            assert set(e.keys()) == {"timestamp", "before_cfg", "after_cfg", "arch_changes", "pre_swap_snapshot_id", "post_swap_snapshot_id"}
+
+    def test_empty_list_for_snapshot_with_no_swaps(self, serializer, simple_network, temp_file):
+        """A snapshot saved with no dataset_swaps (the writer skips empty
+        lists) returns ``[]`` rather than raising — pre-P2-2 snapshots
+        reach this branch too."""
+        simple_network.history["dataset_swaps"] = []
+        serializer.save_network(simple_network, temp_file, include_training_state=True)
+        events = serializer.read_dataset_swap_events(temp_file)
+        assert events == []
+
+    def test_empty_list_when_history_group_absent(self, serializer, simple_network, temp_file):
+        """A snapshot saved without training_state has no ``history``
+        group at all — must still return ``[]`` rather than raising
+        KeyError."""
+        serializer.save_network(simple_network, temp_file, include_training_state=False)
+        events = serializer.read_dataset_swap_events(temp_file)
+        assert events == []
+
+    def test_chronological_order_matches_loader(self, serializer, simple_network, temp_file):
+        """Reader sort key must match the full-network loader so canopy's
+        timeline draws markers in the same order the snapshot's network
+        history would surface them."""
+        simple_network.history["dataset_swaps"] = [_sample_event(0), _sample_event(1), _sample_event(2)]
+        serializer.save_network(simple_network, temp_file, include_training_state=True)
+        events = serializer.read_dataset_swap_events(temp_file)
+        loaded = serializer.load_network(temp_file)
+        assert loaded is not None
+        assert [e["timestamp"] for e in events] == [e["timestamp"] for e in loaded.history["dataset_swaps"]]
+
+    def test_corrupt_event_degrades_consistently_with_loader(self, serializer, simple_network, temp_file):
+        """Corruption tolerance must be identical between the reader and
+        the full-network loader so a snapshot rendering its own markers
+        doesn't disagree with a freshly-loaded network's history."""
+        simple_network.history["dataset_swaps"] = [_sample_event(0), _sample_event(1)]
+        serializer.save_network(simple_network, temp_file, include_training_state=True)
+        with h5py.File(temp_file, "a") as f:
+            f["history/dataset_swaps/event_0"].attrs["arch_changes"] = "{not valid json"
+        events = serializer.read_dataset_swap_events(temp_file)
+        loaded = serializer.load_network(temp_file)
+        assert loaded is not None
+        assert events[0]["arch_changes"] == loaded.history["dataset_swaps"][0]["arch_changes"] == {}
+        assert events[1]["arch_changes"]["input_delta"] == 1
