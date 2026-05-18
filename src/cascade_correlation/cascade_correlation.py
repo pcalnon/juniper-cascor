@@ -86,6 +86,7 @@ from cascade_correlation.cascade_correlation_exceptions.cascade_correlation_exce
 from cascor_constants.constants import (
 
 # TODO: Commented out for F401 compliance - may be needed for future activation function selection; _CASCADE_CORRELATION_NETWORK_ACTIVATION_FUNCTION_NN_RELU,; _CASCADE_CORRELATION_NETWORK_ACTIVATION_FUNCTION_NN_SIGMOID,; _CASCADE_CORRELATION_NETWORK_ACTIVATION_FUNCTION_NN_TANH,; _CASCADE_CORRELATION_NETWORK_ACTIVATION_FUNCTION_RELU,; _CASCADE_CORRELATION_NETWORK_ACTIVATION_FUNCTION_SIGMOID,; _CASCADE_CORRELATION_NETWORK_ACTIVATION_FUNCTION_TANH,APPROVED
+    _CASCADE_CORRELATION_NETWORK_ACTIVATION_FUNCTION_DEFAULT,
     _CASCADE_CORRELATION_NETWORK_ACTIVATION_FUNCTION_NAME,
     _CASCADE_CORRELATION_NETWORK_ACTIVATION_FUNCTIONS_DICT,
     _CASCADE_CORRELATION_NETWORK_CANDIDATE_CONVERGENCE_THRESHOLD,
@@ -2959,7 +2960,7 @@ class CascadeCorrelationNetwork:
         Returns:
             Configured optimizer instance
         """
-        from cascade_correlation_config.cascade_correlation_config import OptimizerConfig
+        from cascade_correlation.cascade_correlation_config.cascade_correlation_config import OptimizerConfig
 
         config = optimizer_config or getattr(self.config, "optimizer_config", OptimizerConfig())
         optimizer_map = {
