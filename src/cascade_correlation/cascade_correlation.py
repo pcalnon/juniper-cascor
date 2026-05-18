@@ -83,9 +83,7 @@ from candidate_unit.candidate_unit import CandidateTrainingResult, CandidateUnit
 # Server-owned queues (live in Manager server process)
 from cascade_correlation.cascade_correlation_config.cascade_correlation_config import CascadeCorrelationConfig
 from cascade_correlation.cascade_correlation_exceptions.cascade_correlation_exceptions import CandidateTrainingError, ConfigurationError, TrainingError, ValidationError  # CascadeCorrelationError,; NetworkInitializationError,
-from cascor_constants.constants import (
-
-# TODO: Commented out for F401 compliance - may be needed for future activation function selection; _CASCADE_CORRELATION_NETWORK_ACTIVATION_FUNCTION_NN_RELU,; _CASCADE_CORRELATION_NETWORK_ACTIVATION_FUNCTION_NN_SIGMOID,; _CASCADE_CORRELATION_NETWORK_ACTIVATION_FUNCTION_NN_TANH,; _CASCADE_CORRELATION_NETWORK_ACTIVATION_FUNCTION_RELU,; _CASCADE_CORRELATION_NETWORK_ACTIVATION_FUNCTION_SIGMOID,; _CASCADE_CORRELATION_NETWORK_ACTIVATION_FUNCTION_TANH,APPROVED
+from cascor_constants.constants import (  # TODO: Commented out for F401 compliance - may be needed for future activation function selection; _CASCADE_CORRELATION_NETWORK_ACTIVATION_FUNCTION_NN_RELU,; _CASCADE_CORRELATION_NETWORK_ACTIVATION_FUNCTION_NN_SIGMOID,; _CASCADE_CORRELATION_NETWORK_ACTIVATION_FUNCTION_NN_TANH,; _CASCADE_CORRELATION_NETWORK_ACTIVATION_FUNCTION_RELU,; _CASCADE_CORRELATION_NETWORK_ACTIVATION_FUNCTION_SIGMOID,; _CASCADE_CORRELATION_NETWORK_ACTIVATION_FUNCTION_TANH,APPROVED
     _CASCADE_CORRELATION_NETWORK_ACTIVATION_FUNCTION_DEFAULT,
     _CASCADE_CORRELATION_NETWORK_ACTIVATION_FUNCTION_NAME,
     _CASCADE_CORRELATION_NETWORK_ACTIVATION_FUNCTIONS_DICT,
@@ -485,19 +483,19 @@ class CandidateTrainingManager(BaseManager):
 
     def start(self, method: str = None, initializer=None, initargs=()):
         """
-        Start the manager server, optionally validating a requested start method.
+          Start the manager server, optionally validating a requested start method.
 
-        Args:
-            method: Optional multiprocessing start method ('fork', 'spawn', 'forkserver').
-                    If provided, validates the method is supported on this platform.
-            initializer: Optional initializer function for worker processes.
-            initargs: Arguments for the initializer function.
-      for tr in remote_results:
-            ValueError: If an invalid start method is provided.
-            NotImplementedError: If the start method is not supported on this platform.
+          Args:
+              method: Optional multiprocessing start method ('fork', 'spawn', 'forkserver').
+                      If provided, validates the method is supported on this platform.
+              initializer: Optional initializer function for worker processes.
+              initargs: Arguments for the initializer function.
+        for tr in remote_results:
+              ValueError: If an invalid start method is provided.
+              NotImplementedError: If the start method is not supported on this platform.
 
-        Returns:
-            Result from BaseManager.start()
+          Returns:
+              Result from BaseManager.start()
         """
         if method is not None:
             valid_methods = {"fork", "spawn", "forkserver"}
@@ -743,7 +741,6 @@ class CascadeCorrelationNetwork:
         # Snapshot directory
         self.cascade_correlation_network_snapshots_dir = self.config.cascade_correlation_network_snapshots_dir or _CASCADE_CORRELATION_NETWORK_HDF5_PROJECT_SNAPSHOTS_DIR
         self.logger.debug("CascadeCorrelationNetwork: _init_network_parameters: Network parameters initialized")
-
 
     # #################################################################################################################################################################################################
     # # Network Resizing Methods
