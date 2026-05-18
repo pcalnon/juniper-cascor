@@ -4265,6 +4265,29 @@ class TrainingLifecycleManager:
             "modified": datetime.fromtimestamp(filepath.stat().st_mtime, tz=UTC).isoformat(),
         }
 
+    def get_snapshot_dataset_swaps(self, snapshot_id: str) -> Optional[List[Dict[str, Any]]]:
+        """Read the ``dataset_swap`` events from a stored snapshot's HDF5 file.
+
+        P2-7 follow-up (Issue #3): canopy's Replay timeline uses this to
+        render swap markers tied to the *loaded snapshot's* own history
+        (parent spec §4.4), separate from the live event feed surfaced by
+        ``get_dataset_swap_events`` (P2-2 follow-up B).
+
+        Returns ``None`` when the snapshot file is not present (route maps
+        to 404). Returns ``[]`` when the snapshot exists but carries no
+        swap events — both a pre-P2-2 snapshot and a fresh training run
+        with no live swaps reach this branch.
+        """
+        snapshots_dir = self._get_snapshots_dir()
+        matches = [f for f in snapshots_dir.glob("*.h5") if f.stem == snapshot_id]
+        if not matches:
+            return None
+
+        from snapshots.snapshot_serializer import CascadeHDF5Serializer
+
+        serializer = CascadeHDF5Serializer()
+        return serializer.read_dataset_swap_events(matches[0])
+
     # ------------------------------------------------------------------
     # Shutdown
     # ------------------------------------------------------------------
