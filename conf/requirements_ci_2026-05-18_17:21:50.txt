@@ -137,7 +137,7 @@ requests==2.34.2
 responses==0.26.0
 rich==15.0.0
 sentry-sdk==2.60.0
-setuptools==81.0.0
+setuptools==82.0.1
 six==1.17.0
 sortedcontainers==2.4.0
 starlette==1.0.0
