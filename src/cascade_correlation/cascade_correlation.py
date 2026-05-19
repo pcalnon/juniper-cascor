@@ -1770,6 +1770,14 @@ class CascadeCorrelationNetwork:
         self.logger.trace("CascadeCorrelationNetwork: fit: Starting initial training of the output layer.")
         self.logger.info("CascadeCorrelationNetwork: fit: Initial training of output layer")
         max_epochs = (max_epochs, self.output_epochs)[max_epochs is None]
+        # BUG-CC-09: re-validate after the ``self.output_epochs`` fall-back —
+        # the earlier check only ran when ``max_epochs`` came in non-None,
+        # so a misconfigured ``self.output_epochs`` (0 or negative) would
+        # otherwise reach ``train_output_layer`` and silently no-op the
+        # training loop (``range(0)`` body never executes; weights stay at
+        # whatever the previous iteration left them; the returned
+        # ``final_loss`` reflects the unchanged forward pass).
+        self._validate_positive_integer(max_epochs, "max_epochs (resolved)")
         train_loss = self.train_output_layer(x_train, y_train, max_epochs)
         self.history["train_loss"].append(train_loss)
         if x_val is not None and y_val is not None:
