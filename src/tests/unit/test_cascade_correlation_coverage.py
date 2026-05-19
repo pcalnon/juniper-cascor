@@ -256,6 +256,39 @@ class TestFitMethod:
         assert hasattr(simple_network, "history")
         assert "train_loss" in simple_network.history or len(simple_network.history) > 0
 
+    # BUG-CC-09: ``fit()`` previously resolved ``max_epochs`` from
+    # ``self.output_epochs`` AFTER the only ``_validate_positive_integer``
+    # call, so a misconfigured ``self.output_epochs`` (0 or negative) would
+    # silently no-op the output-training loop and leave weights unchanged.
+    # The guard added in this PR re-validates the resolved value.
+
+    @pytest.mark.unit
+    @pytest.mark.timeout(10)
+    def test_fit_rejects_zero_output_epochs_misconfig(self, simple_network, simple_2d_data):
+        """BUG-CC-09: ``self.output_epochs=0`` must be rejected at fit-time,
+        not silently no-op the training loop. Without the resolved-value
+        re-validation, ``range(0)`` would skip training and ``final_loss``
+        would reflect the untrained forward pass."""
+        from cascade_correlation.cascade_correlation_exceptions.cascade_correlation_exceptions import ValidationError
+
+        set_deterministic_behavior()
+        x, y = simple_2d_data
+        simple_network.output_epochs = 0
+        with pytest.raises(ValidationError, match="max_epochs"):
+            simple_network.fit(x_train=x, y_train=y)
+
+    @pytest.mark.unit
+    @pytest.mark.timeout(10)
+    def test_fit_rejects_negative_output_epochs_misconfig(self, simple_network, simple_2d_data):
+        """BUG-CC-09: negative output_epochs caught alongside zero."""
+        from cascade_correlation.cascade_correlation_exceptions.cascade_correlation_exceptions import ValidationError
+
+        set_deterministic_behavior()
+        x, y = simple_2d_data
+        simple_network.output_epochs = -1
+        with pytest.raises(ValidationError, match="max_epochs"):
+            simple_network.fit(x_train=x, y_train=y)
+
 
 class TestAccuracyCalculation:
     """Tests for accuracy calculation."""
