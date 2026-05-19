@@ -1588,6 +1588,12 @@ class CascadeCorrelationNetwork:
     def _validate_positive_integer(self, value, param_name: str, allow_zero: bool = False) -> None:
         """
         Validate positive integer parameters.
+
+        Accepts both Python ``int`` and ``numpy.integer`` subclasses (``int64``,
+        ``int32``, etc.). h5py-restored snapshot attributes deserialize as
+        numpy scalars; rejecting them broke every snapshot-restore →
+        ``fit()`` path (BUG-CC-09 regression, 2026-05-19).
+
         Args:
             value: Value to validate
             param_name: Name of the parameter
@@ -1595,7 +1601,7 @@ class CascadeCorrelationNetwork:
         Raises:
             ValidationError: If value is invalid
         """
-        if not isinstance(value, int):
+        if not isinstance(value, (int, np.integer)) or isinstance(value, bool):
             # raise ValidationError(f"Parameter '{param_name}' must be an integer, got {type(value)}")
             raise ValidationError(f"Parameter {param_name!r} must be an integer, got {type(value)}")
         min_val = 0 if allow_zero else 1

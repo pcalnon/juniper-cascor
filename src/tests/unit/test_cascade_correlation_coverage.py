@@ -289,6 +289,35 @@ class TestFitMethod:
         with pytest.raises(ValidationError, match="max_epochs"):
             simple_network.fit(x_train=x, y_train=y)
 
+    # BUG-CC-09 regression-of-the-regression (2026-05-19): PR #270's added
+    # ``_validate_positive_integer(max_epochs, "max_epochs (resolved)")`` call
+    # broke snapshot-restore → fit() because the restored ``self.output_epochs``
+    # is a ``numpy.int64`` (h5py returns numpy scalars), and
+    # ``isinstance(np.int64(2), int)`` is False on the cp314 build. The
+    # validator now accepts ``np.integer`` subclasses.
+    @pytest.mark.unit
+    @pytest.mark.timeout(10)
+    def test_fit_accepts_numpy_int_output_epochs_after_snapshot_restore(self, simple_network, simple_2d_data):
+        """BUG-CC-09 fix: validator must accept numpy integers (snapshot-restored ints)."""
+        set_deterministic_behavior()
+        x, y = simple_2d_data
+        # Simulate what happens after snapshot restore: numpy int rather than python int.
+        simple_network.output_epochs = np.int64(2)
+        # Should NOT raise — the resolved-value validation must accept np.integer.
+        history = simple_network.fit(x_train=x, y_train=y)
+        assert "train_loss" in history, "fit() must complete and record train_loss"
+
+    @pytest.mark.unit
+    @pytest.mark.timeout(10)
+    def test_validate_positive_integer_rejects_bool(self, simple_network):
+        """Python booleans are int subclasses but must NOT count as valid integer params."""
+        from cascade_correlation.cascade_correlation_exceptions.cascade_correlation_exceptions import ValidationError
+
+        with pytest.raises(ValidationError, match="must be an integer"):
+            simple_network._validate_positive_integer(True, "test_param")
+        with pytest.raises(ValidationError, match="must be an integer"):
+            simple_network._validate_positive_integer(False, "test_param", allow_zero=True)
+
 
 class TestAccuracyCalculation:
     """Tests for accuracy calculation."""
