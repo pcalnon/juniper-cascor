@@ -247,3 +247,11 @@ results.xml
 
 # Claude Code session files
 __RESUME_CLAUDE_SESSION__
+
+# Backup snapshots from scripts/generate_dep_docs.sh (timestamped variants).
+# The canonical conf/conda_environment_ci.yaml / conf/requirements_ci.txt
+# stay tracked; only the colon-timestamped backups are noise.
+conf/conda_environment_ci_*.yaml
+!conf/conda_environment_ci.yaml
+conf/requirements_ci_*.txt
+!conf/requirements_ci.txt
