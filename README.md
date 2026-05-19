@@ -19,7 +19,7 @@ For full-stack Docker deployment and integration tests, see `juniper-deploy`.
 
 ## Architecture
 
-JuniperCascor is the **training service** of the Juniper ecosystem. It depends on JuniperData for datasets and is monitored by juniper-canopy in real-time.
+JuniperCascor is the **training service** of the Juniper ecosystem. It depends on JuniperData for datasets and is monitored in real time by juniper-canopy.
 
 ```text
 ┌─────────────────────┐     REST+WS      ┌──────────────────────┐
@@ -27,8 +27,8 @@ JuniperCascor is the **training service** of the Juniper ecosystem. It depends o
 │   Dashboard         │                  │  Training Svc        │
 │   Port 8050         │                  │  Port 8200  ◄── here │
 └──────────┬──────────┘                  └──────────┬───────────┘
-           │ REST                                    │ REST
-           ▼                                         ▼
+           │ REST                                   │ REST
+           ▼                                        ▼
 ┌──────────────────────────────────────────────────────────────┐
 │                      JuniperData                             │
 │                   Dataset Service  ·  Port 8100              │
@@ -172,7 +172,7 @@ loaded = CascadeCorrelationNetwork.load_from_hdf5("model.h5")
 
 ## Research Philosophy
 
-Juniper prioritizes **transparency over convenience** and **understanding over abstraction**. By implementing algorithms from first principles, the platform provides researchers with increased visibility into network behavior, enabling a more rigorous and more controlled investigation of learning dynamics and architectural innovations.
+Juniper prioritizes **transparency over convenience** and **understanding over abstraction**. By implementing algorithms from first principles, the platform provides researchers with greater visibility into network behavior, enabling more rigorous and controlled investigation of learning dynamics and architectural innovations.
 
 ## Important Notices
 
