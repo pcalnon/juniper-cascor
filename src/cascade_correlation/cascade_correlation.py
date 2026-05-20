@@ -61,15 +61,6 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 
-# import traceback
-
-
-#####################################################################################################################################################################################################
-# Add current and parent dir to Python path for imports
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-# sys.path.append(os.path.dirname(os.path.abspath(__file__)))
-
-
 from candidate_unit.candidate_unit import CandidateTrainingResult, CandidateUnit
 
 #####################################################################################################################################################################################################
@@ -140,6 +131,8 @@ from log_config.logger.logger import Logger
 from parallelism import rc4_ring_buffer as _rc4
 from parallelism.task_distributor import TaskDistributor
 from utils.utils import display_progress
+
+# import traceback
 
 
 #####################################################################################################################################################################################################
@@ -1253,9 +1246,6 @@ class CascadeCorrelationNetwork:
         # Initialize plotter
         self.plotter = CascadeCorrelationPlotter(logger=self.logger)
         self.logger.debug("CascadeCorrelationNetwork: _init_display_components: Display components initialized")
-
-        # Add current dir to Python path for imports
-        sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
     @classmethod
     def create_simple_network(
