@@ -75,7 +75,7 @@ async def start_training(request: Request, body: TrainingStartRequest = None) ->
         return success_response(result)
     except (RuntimeError, ValueError) as e:
         logger.debug("Start training failed: %s", e)
-        raise HTTPException(status_code=409, detail="Training cannot be started in the current state")
+        raise HTTPException(status_code=409, detail="Training cannot be started in the current state") from e
 
 
 @router.post("/stop")
@@ -95,7 +95,7 @@ async def pause_training(request: Request) -> dict:
         return success_response(result)
     except RuntimeError as e:
         logger.debug("Pause training failed: %s", e)
-        raise HTTPException(status_code=409, detail="Training cannot be paused in the current state")
+        raise HTTPException(status_code=409, detail="Training cannot be paused in the current state") from e
 
 
 @router.post("/resume")
@@ -107,7 +107,7 @@ async def resume_training(request: Request) -> dict:
         return success_response(result)
     except RuntimeError as e:
         logger.debug("Resume training failed: %s", e)
-        raise HTTPException(status_code=409, detail="Training cannot be resumed in the current state")
+        raise HTTPException(status_code=409, detail="Training cannot be resumed in the current state") from e
 
 
 @router.post("/reset")
@@ -159,9 +159,9 @@ async def update_training_params(request: Request, body: TrainingParamUpdateRequ
         # FRONTEND_ISSUES_PLAN_2026-05-09 §1.5 C2.1 — surface the violation
         # string in the JSON body so the canopy adapter can route it through
         # the same `mismatches`/`skipped` toast machinery from C3.
-        raise HTTPException(status_code=422, detail=str(e))
+        raise HTTPException(status_code=422, detail=str(e)) from e
     except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
+        raise HTTPException(status_code=404, detail=str(e)) from e
 
 
 # FRONTEND_ISSUES_PLAN_2026-05-09 §3.5.1 + §3.5.2 P1 — Issue #3 Phase 1 dataset

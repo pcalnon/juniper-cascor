@@ -28,7 +28,7 @@ async def create_network(request: Request, body: NetworkCreateRequest) -> dict:
         return success_response(info)
     except RuntimeError as e:
         logger.debug("Create network failed: %s", e)
-        raise HTTPException(status_code=409, detail="Network cannot be created in the current state")
+        raise HTTPException(status_code=409, detail="Network cannot be created in the current state") from e
 
 
 @router.get("")
@@ -49,7 +49,7 @@ async def delete_network(request: Request) -> dict:
         return success_response({"deleted": True})
     except RuntimeError as e:
         logger.debug("Delete network failed: %s", e)
-        raise HTTPException(status_code=409, detail="Network cannot be deleted in the current state")
+        raise HTTPException(status_code=409, detail="Network cannot be deleted in the current state") from e
 
 
 @router.get("/topology")
