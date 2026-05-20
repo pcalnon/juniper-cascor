@@ -247,17 +247,25 @@ def _init_content_list(validity_check: bool = False) -> list[str]:
     return [] if validity_check else None
 
 
-# TODO: This function is borked
 def check_object_pickleability(instance: object = None) -> bool:
     """
     Description:
         Check if the given object instance is pickleable.
+
+        Iterates the instance's ``__dict__`` and uses ``dill.pickles`` to
+        test each attribute. Requires the optional ``dill`` dependency
+        (``pip install juniper-cascor[debug]``).
     Args:
         instance: The object instance to check (default is None)
     Returns:
         bool: True if the object is pickleable, False otherwise
+    Raises:
+        ImportError: If ``dill`` is not installed.
     """
-    import dill  # trunk-ignore(bandit/B403)
+    try:
+        import dill  # trunk-ignore(bandit/B403)
+    except ImportError as e:
+        raise ImportError("check_object_pickleability requires the 'dill' package. Install with: pip install juniper-cascor[debug]") from e
 
     if instance is None or not hasattr(instance, "__dict__"):
         return False
