@@ -18,12 +18,6 @@
 #####################################################################################################################################################################################################
 
 import multiprocessing as mp
-import os
-import sys
-
-# Add parent directories to path for imports
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from log_config.logger.logger import Logger
 
