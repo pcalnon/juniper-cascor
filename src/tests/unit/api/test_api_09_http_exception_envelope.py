@@ -1,15 +1,20 @@
 #!/usr/bin/env python
 """
-Unit tests for API-09 PR 1: ``HTTPException`` handler in ``api/app.py``.
+Unit tests for API-09 (migration complete after PR 3):
+``HTTPException`` handler in ``api/app.py``.
 
 API-09 converges cascor's dual error response shapes (FastAPI's default
 ``{"detail": "..."}`` for ``HTTPException`` vs. the project's
 ``ResponseEnvelope`` for ``ValueError`` / ``Exception``) onto a single
-envelope shape. PR 1 ships the cascor-side handler emitting a
-**dual-shape envelope** — the new envelope plus a top-level ``"detail"``
-deprecation alias — so existing consumers (36 in-tree test assertions
-and ``juniper-cascor-client`` < the PR 2 release) keep working
-unchanged. The alias is removed in PR 3.
+envelope shape.
+
+  * PR 1 added the handler emitting a transitional dual-shape envelope
+    (envelope + top-level ``"detail"`` deprecation alias).
+  * PR 2 (juniper-cascor-client #59) added explicit regression coverage
+    for the dual-shape parser already shipped in cascor-client on
+    2026-02-21.
+  * **PR 3 (this commit)** dropped the alias after the soak window
+    completed; the envelope is now the only shape emitted.
 
 These tests pin the handler's contract across the canonical HTTP
 status codes raised by cascor's routes (400, 401, 403, 404, 409, 422,
@@ -17,7 +22,10 @@ status codes raised by cascor's routes (400, 401, 403, 404, 409, 422,
 
   * envelope contains ``status="error"`` + ``error.code="HTTP_NNN"`` +
     ``error.message=<exc.detail>`` + ``meta``
-  * top-level ``"detail"`` alias equals ``error.message``
+  * **no** top-level ``"detail"`` alias (PR 3 dropped it; wire-compat
+    snapshot at ``test_api_09_http_exception_wire_compat.py`` also
+    pins the alias-absent state explicitly via
+    ``TestLegacyDetailAliasAbsent``)
   * ``status_code`` in the HTTP response matches ``exc.status_code``
   * ``WWW-Authenticate`` (401), ``Retry-After`` (429), and arbitrary
     custom headers are preserved via ``exc.headers`` passthrough
@@ -109,7 +117,7 @@ class TestEnvelopeShapePerStatusCode:
 
     @pytest.mark.parametrize("status", CANONICAL_STATUS_CODES)
     def test_envelope_shape_at_each_status(self, client: TestClient, status: int):
-        """Envelope keys + error.code + error.message + detail alias."""
+        """Envelope keys + error.code + error.message + alias absent."""
         response = client.get(f"/_test/raise/{status}")
         assert response.status_code == status
         body = response.json()
@@ -124,9 +132,8 @@ class TestEnvelopeShapePerStatusCode:
         assert "timestamp" in body["meta"]
         assert "version" in body["meta"]
 
-        # Deprecation-alias contract (PR 1 — removed in PR 3)
-        assert body["detail"] == f"test-detail-for-{status}"
-        assert body["detail"] == body["error"]["message"]
+        # PR 3: top-level ``"detail"`` alias dropped.
+        assert "detail" not in body
 
     @pytest.mark.parametrize("status", CANONICAL_STATUS_CODES)
     def test_envelope_when_caller_omits_detail(self, client: TestClient, status: int):
@@ -145,7 +152,8 @@ class TestEnvelopeShapePerStatusCode:
         assert body["status"] == "error"
         assert body["error"]["code"] == f"HTTP_{status}"
         assert body["error"]["message"] == expected_message
-        assert body["detail"] == expected_message
+        # PR 3: top-level ``"detail"`` alias dropped.
+        assert "detail" not in body
 
 
 class TestHeaderPassthrough:
@@ -159,7 +167,8 @@ class TestHeaderPassthrough:
         body = response.json()
         assert body["error"]["code"] == "HTTP_401"
         assert body["error"]["message"] == "auth required"
-        assert body["detail"] == "auth required"
+        # PR 3: top-level ``"detail"`` alias dropped.
+        assert "detail" not in body
 
     def test_429_preserves_retry_after(self, client: TestClient):
         response = client.get("/_test/raise-429-with-retry-after")

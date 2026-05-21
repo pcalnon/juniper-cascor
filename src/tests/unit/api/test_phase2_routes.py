@@ -91,14 +91,14 @@ class TestSwapDatasetLiveRoute:
         first-line check; tests it without needing a running training session."""
         resp = client.post("/v1/training/dataset/live", json={"dataset_type": "spirals"})
         assert resp.status_code == 403
-        assert "experimental_functions_disabled" in resp.json()["detail"]
+        assert "experimental_functions_disabled" in resp.json()["error"]["message"]
 
     def test_422_when_training_not_running(self, client):
         """Gate open but no active training → ValueError → 422."""
         client.post("/v1/admin/experimental_functions", json={"enabled": True})
         resp = client.post("/v1/training/dataset/live", json={"dataset_type": "spirals"})
         assert resp.status_code == 422
-        assert "training_not_running" in resp.json()["detail"]
+        assert "training_not_running" in resp.json()["error"]["message"]
 
     def test_409_when_swap_in_progress(self, client):
         """SwapInProgressError → 409. Patches the lifecycle method to raise
@@ -111,7 +111,7 @@ class TestSwapDatasetLiveRoute:
         ):
             resp = client.post("/v1/training/dataset/live", json={"dataset_type": "spirals"})
         assert resp.status_code == 409
-        assert "swap_already_in_progress" in resp.json()["detail"]
+        assert "swap_already_in_progress" in resp.json()["error"]["message"]
 
     def test_502_on_juniper_data_fetch_failure(self, client):
         """RuntimeError (juniper-data unreachable etc.) → 502. Distinguished
@@ -124,7 +124,7 @@ class TestSwapDatasetLiveRoute:
         ):
             resp = client.post("/v1/training/dataset/live", json={"dataset_type": "spirals"})
         assert resp.status_code == 502
-        assert "juniper-data" in resp.json()["detail"]
+        assert "juniper-data" in resp.json()["error"]["message"]
 
     def test_504_on_pause_timeout(self, client):
         """TimeoutError (from future.result(timeout=10)) → 504 per §3.7 #2."""
@@ -136,7 +136,7 @@ class TestSwapDatasetLiveRoute:
         ):
             resp = client.post("/v1/training/dataset/live", json={"dataset_type": "spirals"})
         assert resp.status_code == 504
-        assert "pause_timeout" in resp.json()["detail"]
+        assert "pause_timeout" in resp.json()["error"]["message"]
 
     def test_success_response_envelope(self, client):
         """Happy-path response is wrapped in the success envelope. Patches the
@@ -191,7 +191,7 @@ class TestCancelSwapDatasetLiveRoute:
         that would distinguish "swap enabled but idle" from "swap disabled"."""
         resp = client.delete("/v1/training/dataset/live")
         assert resp.status_code == 403
-        assert "experimental_functions_disabled" in resp.json()["detail"]
+        assert "experimental_functions_disabled" in resp.json()["error"]["message"]
 
     def test_404_when_no_swap_in_progress(self, client):
         """``NoSwapInProgressError`` → 404. The "swap finished racing the
@@ -204,7 +204,7 @@ class TestCancelSwapDatasetLiveRoute:
         ):
             resp = client.delete("/v1/training/dataset/live")
         assert resp.status_code == 404
-        assert "no_swap_in_progress" in resp.json()["detail"]
+        assert "no_swap_in_progress" in resp.json()["error"]["message"]
 
     def test_200_when_swap_in_progress(self, client):
         """Happy path: returns the lifecycle's descriptor dict (cancel signal

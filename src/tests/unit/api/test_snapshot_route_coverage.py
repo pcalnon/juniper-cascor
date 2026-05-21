@@ -52,7 +52,7 @@ class TestSnapshotRouteLifecycle:
 
             response = c.get("/v1/snapshots")
             assert response.status_code == 503
-            assert "Lifecycle manager not initialized" in response.json()["detail"]
+            assert "Lifecycle manager not initialized" in response.json()["error"]["message"]
 
             # Restore to allow clean teardown
             c.app.state.lifecycle = lifecycle
@@ -97,14 +97,14 @@ class TestSaveSnapshot:
         with patch.object(client.app.state.lifecycle, "has_network", return_value=False):
             response = client.post("/v1/snapshots", json={"description": "no net"})
             assert response.status_code == 404
-            assert "No network created" in response.json()["detail"]
+            assert "No network created" in response.json()["error"]["message"]
 
     def test_save_snapshot_returns_none_gives_404(self, client):
         """save_snapshot should return 404 when save_snapshot returns None."""
         with patch.object(client.app.state.lifecycle, "has_network", return_value=True), patch.object(client.app.state.lifecycle, "save_snapshot", return_value=None):
             response = client.post("/v1/snapshots", json={"description": "will fail"})
             assert response.status_code == 404
-            assert "No network available to snapshot" in response.json()["detail"]
+            assert "No network available to snapshot" in response.json()["error"]["message"]
 
     def test_save_snapshot_runs_in_thread(self, client):
         """PERF-CC-01: save_snapshot must be invoked via asyncio.to_thread.
@@ -189,7 +189,7 @@ class TestGetSnapshot:
         with patch.object(client.app.state.lifecycle, "get_snapshot", return_value=None):
             response = client.get("/v1/snapshots/nonexistent")
             assert response.status_code == 404
-            assert "not found" in response.json()["detail"]
+            assert "not found" in response.json()["error"]["message"]
 
 
 # ---------------------------------------------------------------------------
@@ -256,14 +256,14 @@ class TestRestoreSnapshot:
         with patch.object(client.app.state.lifecycle, "load_snapshot", return_value=False):
             response = client.post("/v1/snapshots/nonexistent/restore")
             assert response.status_code == 404
-            assert "not found or failed to load" in response.json()["detail"]
+            assert "not found or failed to load" in response.json()["error"]["message"]
 
     def test_restore_snapshot_load_fails_returns_404(self, client):
         """restore_snapshot should return 404 when load_snapshot fails (returns False)."""
         with patch.object(client.app.state.lifecycle, "load_snapshot", return_value=False):
             response = client.post("/v1/snapshots/snap-bad/restore")
             assert response.status_code == 404
-            assert "not found or failed to load" in response.json()["detail"]
+            assert "not found or failed to load" in response.json()["error"]["message"]
 
     def test_restore_snapshot_runs_in_thread(self, client):
         """PERF-CC-01: load_snapshot must be invoked via asyncio.to_thread."""
@@ -337,7 +337,7 @@ class TestRetrainFromSnapshot:
         with patch.object(client.app.state.lifecycle, "restore_for_retrain", return_value=False):
             response = client.post("/v1/snapshots/nonexistent/retrain")
             assert response.status_code == 404
-            assert "not found or failed to load" in response.json()["detail"]
+            assert "not found or failed to load" in response.json()["error"]["message"]
 
     def test_retrain_snapshot_runs_in_thread(self, client):
         """PERF-CC-01: HDF5 I/O off the main event loop."""
@@ -428,7 +428,7 @@ class TestResumeSnapshot:
         with patch.object(client.app.state.lifecycle, "resume_from_snapshot", return_value=False):
             response = client.post("/v1/snapshots/nonexistent/resume")
             assert response.status_code == 404
-            assert "not found or failed to load" in response.json()["detail"]
+            assert "not found or failed to load" in response.json()["error"]["message"]
 
     def test_resume_snapshot_rejected_when_training_active(self, client):
         """The pre-flight FSM check returns 409 when training is Started."""
@@ -440,7 +440,7 @@ class TestResumeSnapshot:
         try:
             response = client.post("/v1/snapshots/snap-active/resume")
             assert response.status_code == 409
-            assert "Cannot resume" in response.json()["detail"]
+            assert "Cannot resume" in response.json()["error"]["message"]
         finally:
             # Clean up so other tests aren't affected.
             lifecycle.state_machine.handle_command(Command.RESET)
@@ -622,7 +622,7 @@ class TestUnifiedResponseShape:
         try:
             response = client.post("/v1/snapshots/snap-active/restore")
             assert response.status_code == 409
-            assert "Cannot restore" in response.json()["detail"]
+            assert "Cannot restore" in response.json()["error"]["message"]
         finally:
             lifecycle.state_machine.handle_command(Command.RESET)
 
@@ -703,7 +703,7 @@ class TestReplaySnapshot:
         try:
             response = client.post("/v1/snapshots/snap-active/replay")
             assert response.status_code == 409
-            assert "Cannot start replay" in response.json()["detail"]
+            assert "Cannot start replay" in response.json()["error"]["message"]
         finally:
             lifecycle.state_machine.handle_command(Command.RESET)
 
@@ -787,7 +787,7 @@ class TestReplaySnapshot:
     def test_replay_control_without_active_session_returns_409(self, client):
         response = client.post("/v1/snapshots/snap-none/replay/control", json={"action": "play"})
         assert response.status_code == 409
-        assert "No active replay session" in response.json()["detail"]
+        assert "No active replay session" in response.json()["error"]["message"]
 
     def test_replay_control_snapshot_id_mismatch_returns_409(self, client):
         lifecycle = client.app.state.lifecycle
@@ -795,7 +795,7 @@ class TestReplaySnapshot:
             self._install_replay_session(lifecycle, "snap-actual")
             response = client.post("/v1/snapshots/snap-different/replay/control", json={"action": "play"})
             assert response.status_code == 409
-            assert "snap-actual" in response.json()["detail"]
+            assert "snap-actual" in response.json()["error"]["message"]
         finally:
             self._teardown_replay_session(lifecycle)
 
@@ -805,7 +805,7 @@ class TestReplaySnapshot:
             self._install_replay_session(lifecycle, "snap-bad-action")
             response = client.post("/v1/snapshots/snap-bad-action/replay/control", json={"action": "teleport"})
             assert response.status_code == 400
-            assert "Unknown replay action" in response.json()["detail"]
+            assert "Unknown replay action" in response.json()["error"]["message"]
         finally:
             self._teardown_replay_session(lifecycle)
 
@@ -815,6 +815,6 @@ class TestReplaySnapshot:
             self._install_replay_session(lifecycle, "snap-missing-param")
             response = client.post("/v1/snapshots/snap-missing-param/replay/control", json={"action": "seek"})
             assert response.status_code == 400
-            assert "time_index" in response.json()["detail"]
+            assert "time_index" in response.json()["error"]["message"]
         finally:
             self._teardown_replay_session(lifecycle)

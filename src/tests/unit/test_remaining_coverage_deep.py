@@ -200,7 +200,7 @@ class TestDatasetRouteLifecycleNone:
             app.state.lifecycle = None
             response = client.get("/v1/dataset")
             assert response.status_code == 503
-            assert "Lifecycle manager not initialized" in response.json()["detail"]
+            assert "Lifecycle manager not initialized" in response.json()["error"]["message"]
 
 
 # ======================================================================
@@ -219,7 +219,7 @@ class TestDecisionBoundaryRouteUncovered:
             app.state.lifecycle = None
             response = client.get("/v1/decision-boundary")
             assert response.status_code == 503
-            assert "Lifecycle manager not initialized" in response.json()["detail"]
+            assert "Lifecycle manager not initialized" in response.json()["error"]["message"]
 
     def test_get_boundary_returns_500_when_computation_fails(self):
         """GET /v1/decision-boundary returns 500 when get_decision_boundary returns None (line 34)."""
@@ -238,7 +238,7 @@ class TestDecisionBoundaryRouteUncovered:
 
             response = client.get("/v1/decision-boundary?resolution=10")
             assert response.status_code == 500
-            assert "Failed to compute decision boundary" in response.json()["detail"]
+            assert "Failed to compute decision boundary" in response.json()["error"]["message"]
 
 
 # ======================================================================

@@ -60,7 +60,7 @@ class TestGetLifecycle:
 
             response = c.post("/v1/training/start")
             assert response.status_code == 503
-            assert "Lifecycle manager not initialized" in response.json()["detail"]
+            assert "Lifecycle manager not initialized" in response.json()["error"]["message"]
 
             # Restore lifecycle for clean shutdown
             c.app.state.lifecycle = lifecycle
@@ -168,7 +168,7 @@ class TestStartTraining:
         """start_training without body should fail with state error."""
         response = client_with_network.post("/v1/training/start")
         assert response.status_code == 409
-        assert "cannot be started" in response.json()["detail"].lower()
+        assert "cannot be started" in response.json()["error"]["message"].lower()
 
     def test_start_training_rejects_unknown_params(self, client_with_network):
         """SEC-07 regression (supersedes CR-023): unknown keys in ``params``
@@ -221,7 +221,7 @@ class TestPauseTraining:
         """Pause should return 409 when training is not active."""
         response = client.post("/v1/training/pause")
         assert response.status_code == 409
-        assert "cannot be paused" in response.json()["detail"].lower()
+        assert "cannot be paused" in response.json()["error"]["message"].lower()
 
 
 class TestResumeTraining:
@@ -231,7 +231,7 @@ class TestResumeTraining:
         """Resume should return 409 when training is not paused."""
         response = client.post("/v1/training/resume")
         assert response.status_code == 409
-        assert "cannot be resumed" in response.json()["detail"].lower()
+        assert "cannot be resumed" in response.json()["error"]["message"].lower()
 
 
 class TestGetParams:
@@ -241,7 +241,7 @@ class TestGetParams:
         """get_params should return 404 when no network created."""
         response = client.get("/v1/training/params")
         assert response.status_code == 404
-        assert "No network" in response.json()["detail"]
+        assert "No network" in response.json()["error"]["message"]
 
     def test_get_params_with_network(self, client_with_network):
         """get_params should return training parameters when network exists."""

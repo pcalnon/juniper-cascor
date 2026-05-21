@@ -1,23 +1,22 @@
 #!/usr/bin/env python
 """
-Wire-format snapshot for API-09 PR 1: ``HTTPException`` envelope shape.
+Wire-format snapshot for API-09 (migration complete after PR 3):
+``HTTPException`` envelope shape.
 
 This is the byte-for-byte contract that downstream consumers
 (``juniper-cascor-client``, browser dashboards, hand-rolled HTTP
-scripts) depend on during the API-09 deprecation window. It pins both
-halves of the dual-shape response:
+scripts) depend on after the API-09 migration completes. It pins the
+final single-shape response:
 
-  * the new ``ResponseEnvelope`` shape
+  * the ``ResponseEnvelope`` shape
     (``{"status":"error","error":{"code","message","detail"},"meta":{}}``)
-  * the legacy top-level ``"detail"`` deprecation alias
 
-PR 3 of the API-09 migration will:
-
-  * delete the ``test_legacy_detail_alias_*`` cases here, and
-  * add ``test_legacy_detail_alias_is_absent`` to assert the alias is
-    gone.
-
-Until then, **both** cases must pass.
+PR 1 of the migration emitted both this envelope **and** a top-level
+``"detail"`` deprecation alias of ``error.message``. PR 3 (this PR)
+dropped the alias after juniper-cascor-client #59 pinned the
+envelope-aware parser; the previous ``TestLegacyDetailAliasPresent``
+class has been **replaced** with ``TestLegacyDetailAliasAbsent`` which
+asserts the alias is now gone.
 
 The fluctuating ``meta.timestamp`` (epoch seconds) and
 ``meta.version`` fields are not pinned — only their presence and types
@@ -39,7 +38,8 @@ pytestmark = pytest.mark.unit
 
 
 # Top-level keys in the migrated response body — pinned exactly.
-EXPECTED_TOP_LEVEL_KEYS = {"status", "error", "meta", "detail"}
+# PR 3: dropped "detail" — the top-level alias is gone.
+EXPECTED_TOP_LEVEL_KEYS = {"status", "error", "meta"}
 
 # Keys inside the nested ``error`` object — pinned exactly.
 EXPECTED_ERROR_KEYS = {"code", "message", "detail"}
@@ -96,8 +96,6 @@ class TestEnvelopeValuesPinned:
         assert body["error"]["detail"] is None
         assert isinstance(body["meta"]["timestamp"], (int, float))
         assert isinstance(body["meta"]["version"], str)
-        # Deprecation-alias half of the dual shape
-        assert body["detail"] == "No network loaded"
 
     def test_503_envelope_snapshot(self, client: TestClient):
         response = client.get("/_wire/raise-503")
@@ -107,27 +105,27 @@ class TestEnvelopeValuesPinned:
         assert body["error"]["code"] == "HTTP_503"
         assert body["error"]["message"] == "Lifecycle manager not initialized"
         assert body["error"]["detail"] is None
-        # Deprecation-alias half of the dual shape
-        assert body["detail"] == "Lifecycle manager not initialized"
 
 
-class TestLegacyDetailAliasPresent:
-    """The top-level ``"detail"`` deprecation alias is REQUIRED during
-    the migration window (PR 1 through PR 3 of the API-09 plan).
+class TestLegacyDetailAliasAbsent:
+    """The top-level ``"detail"`` deprecation alias is GONE after PR 3.
 
-    PR 3 deletes this entire class and replaces it with
-    ``TestLegacyDetailAliasAbsent`` asserting the alias is gone. If
-    these tests start failing for the wrong reason during the
-    deprecation window, treat it as a regression — clients on the
-    pre-PR-2 cascor-client release still depend on the alias.
+    PR 1 added the alias as a transitional measure so pre-migration
+    consumers (notably ``juniper-cascor-client`` before commit
+    b0a636a3, 2026-02-21) kept working unchanged. PR 3 dropped it
+    after juniper-cascor-client #59 pinned the envelope-aware parser
+    and the soak window completed.
+
+    This class **replaces** the PR 1's ``TestLegacyDetailAliasPresent``.
+    If the alias accidentally comes back (e.g., via a botched revert),
+    these tests fail loudly so the migration regression is caught
+    before downstream consumers re-couple to the dead alias.
     """
 
-    def test_404_carries_top_level_detail(self, client: TestClient):
+    def test_404_does_not_carry_top_level_detail(self, client: TestClient):
         body = client.get("/_wire/raise-404").json()
-        assert "detail" in body
-        assert body["detail"] == body["error"]["message"]
+        assert "detail" not in body, "Top-level ``detail`` alias re-introduced — PR 3 of the " "API-09 migration dropped it. See " "notes/API_09_ERROR_ENVELOPE_MIGRATION_DESIGN_2026-05-21.md " "for the migration history."
 
-    def test_503_carries_top_level_detail(self, client: TestClient):
+    def test_503_does_not_carry_top_level_detail(self, client: TestClient):
         body = client.get("/_wire/raise-503").json()
-        assert "detail" in body
-        assert body["detail"] == body["error"]["message"]
+        assert "detail" not in body, "Top-level ``detail`` alias re-introduced — PR 3 of the " "API-09 migration dropped it. See " "notes/API_09_ERROR_ENVELOPE_MIGRATION_DESIGN_2026-05-21.md " "for the migration history."
