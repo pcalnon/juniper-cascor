@@ -117,27 +117,37 @@ if command -v conda &> /dev/null; then
     fi
 
     # Append conda dependencies with proper YAML indentation (two-space prefix).
-    # conda env export --no-builds produces valid YAML; extract only the
-    # dependency lines (between "dependencies:" and the next top-level key)
-    # to merge with our custom header which already contains "dependencies:".
-    #
-    # 2026-05-20 fix: switched from the previous `sed -n '/^dependencies:$/,
-    # /^[a-z]/{...}'` pipeline to awk because the sed range terminator was
-    # being emitted as a trailing top-level key (`prefix:`, `variables:`) in
-    # some setup-miniconda configurations, breaking YAML validation.
-    # The awk form is end-exclusive: when it sees the next top-level key
-    # (`/^[a-zA-Z]/`), it clears the flag BEFORE printing that line, so the
-    # terminator is reliably omitted.
+    # We parse `conda env export --no-builds` output as YAML in Python, extract
+    # the dependencies list, and re-emit it with consistent indentation. This
+    # is the third iteration of this block:
+    #   1. sed range with inner delete — leaked the range-terminator line
+    #      (e.g. `prefix:`) into the output under setup-miniconda's
+    #      auto-activate-base.
+    #   2. awk end-exclusive — fixed the leak case but still proved brittle
+    #      against other miniconda output shapes.
+    #   3. This version: parse with PyYAML, re-emit. Robust to any output
+    #      shape because we're not pattern-matching the raw text.
+    # PyYAML is installed by the workflow (see ci.yml dep-docs job) and is
+    # also declared in pyproject.toml [test] extras so local runs work too.
+    # This block is the canonical pattern shared with juniper-cascor-worker
+    # (PR #74), juniper-data, and juniper-canopy.
     conda env export --no-builds \
-        | awk '/^dependencies:$/{flag=1; next} flag && /^[a-zA-Z]/{flag=0} flag' \
-        >> "${CONDA_FILE}"
+        | python -c "
+import sys, textwrap, yaml
+data = yaml.safe_load(sys.stdin)
+deps = data.get('dependencies', [])
+print(textwrap.indent(yaml.dump(deps, default_flow_style=False), '  ').rstrip())
+" >> "${CONDA_FILE}"
 
-    # Validate generated YAML syntax
+    # Validate generated YAML syntax. We do NOT swallow stderr here: a missing
+    # PyYAML install previously surfaced as a misleading "invalid YAML syntax"
+    # message instead of the underlying ModuleNotFoundError (see worker PR #74
+    # for the multi-PR diagnostic detour that motivated this).
     if command -v python &> /dev/null; then
-        if python -c "import yaml; yaml.safe_load(open('${CONDA_FILE}'))" 2>/dev/null; then
+        if python -c "import yaml; yaml.safe_load(open('${CONDA_FILE}'))"; then
             echo "  Validated: ${CONDA_FILE} YAML syntax OK"
         else
-            echo "  ERROR: Generated ${CONDA_FILE} has invalid YAML syntax"
+            echo "  ERROR: ${CONDA_FILE} validation failed (see python error above)"
             exit 1
         fi
     fi
