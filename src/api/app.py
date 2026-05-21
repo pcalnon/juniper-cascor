@@ -9,7 +9,7 @@ from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
 import torch
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
@@ -485,6 +485,73 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return JSONResponse(
             status_code=400,
             content=error_response("VALIDATION_ERROR", "Invalid request parameters"),
+        )
+
+    @app.exception_handler(HTTPException)
+    async def http_exception_handler(request: Request, exc: HTTPException) -> JSONResponse:
+        """API-09 PR 1 (dual-shape envelope, deprecation period).
+
+        Wraps every ``raise HTTPException(...)`` in cascor's API
+        routes into the project's standard ``ResponseEnvelope`` /
+        ``ErrorResponse`` shape so clients no longer have to parse
+        two error formats (the FastAPI default ``{"detail": "..."}``
+        for ``HTTPException`` vs. the envelope shape for ``ValueError``
+        and ``Exception``). See
+        ``notes/API_09_ERROR_ENVELOPE_MIGRATION_DESIGN_2026-05-21.md``
+        for the full migration plan.
+
+        The response carries **both** the new envelope shape AND a
+        top-level ``"detail"`` deprecation alias for the duration of
+        the migration window. The alias keeps existing consumers
+        working unchanged:
+
+        * 36 in-tree cascor test assertions read
+          ``response.json()["detail"]`` and continue to pass.
+        * ``juniper-cascor-client`` < the version released in PR 2 of
+          this migration reads
+          ``body.get("detail", response.text)`` at
+          ``client.py:_request()`` and would otherwise silently
+          degrade to dumping the entire JSON blob as the error
+          message.
+
+        The alias is removed in PR 3 of the migration (after the
+        client release in PR 2 has had time to be adopted in
+        deployments).
+
+        Headers attached to the ``HTTPException`` (e.g.
+        ``WWW-Authenticate`` on 401, ``Retry-After`` on 429) are
+        preserved via ``headers=exc.headers`` to match FastAPI's
+        default-handler behavior; stripping them would be a
+        regression for downstream HTTP semantics.
+
+        ``error.code`` uses the string form ``"HTTP_NNN"`` rather
+        than the bare integer to (a) match the existing
+        ``ErrorDetail.code: str`` schema in
+        ``api/models/common.py`` (Pydantic v2 strict mode does not
+        coerce ``int -> str``), (b) match the existing in-use
+        semantic codes (``VALIDATION_ERROR``, ``INTERNAL_ERROR``),
+        and (c) preserve the future migration path to richer
+        semantic codes (``NETWORK_NOT_FOUND``, etc. — tracked as
+        API-09b in the design doc's out-of-scope section) without
+        any schema change.
+        """
+        # Starlette's ``HTTPException.__init__`` auto-fills ``detail``
+        # with ``HTTPStatus(status_code).phrase`` when the caller
+        # doesn't pass one, so ``exc.detail`` is always a string by
+        # the time we get here. ``str()`` defends against future
+        # subclasses that might return non-str detail objects.
+        message = str(exc.detail)
+        envelope = error_response(
+            code=f"HTTP_{exc.status_code}",
+            message=message,
+        )
+        # API-09 deprecation alias — top-level ``"detail"`` key for
+        # pre-migration clients. Removed in PR 3.
+        envelope["detail"] = message
+        return JSONResponse(
+            status_code=exc.status_code,
+            content=envelope,
+            headers=exc.headers,
         )
 
     @app.exception_handler(Exception)
