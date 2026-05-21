@@ -31,6 +31,19 @@ class TestHealthEndpoints:
         assert body["status"] == "ok"
         assert body["version"] == "0.4.0"
 
+    def test_health_includes_service_identifier(self, client):
+        """API-02: /v1/health includes the ``service`` field naming this service.
+
+        Part of the shared ``{status, version, service}`` base schema across
+        juniper-data, juniper-cascor, and juniper-canopy so cross-service
+        monitoring tools can tell health responses apart without parsing
+        the URL.
+        """
+        response = client.get("/v1/health")
+        assert response.status_code == 200
+        body = response.json()
+        assert body["service"] == "juniper-cascor"
+
     def test_liveness_probe(self, client):
         """R1.2: GET /v1/health/live runs in-process tick + returns 200 with tick metadata."""
         response = client.get("/v1/health/live")
