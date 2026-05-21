@@ -489,7 +489,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.exception_handler(HTTPException)
     async def http_exception_handler(request: Request, exc: HTTPException) -> JSONResponse:
-        """API-09 PR 1 (dual-shape envelope, deprecation period).
+        """API-09 (migration complete after PR 3).
 
         Wraps every ``raise HTTPException(...)`` in cascor's API
         routes into the project's standard ``ResponseEnvelope`` /
@@ -498,25 +498,29 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         for ``HTTPException`` vs. the envelope shape for ``ValueError``
         and ``Exception``). See
         ``notes/API_09_ERROR_ENVELOPE_MIGRATION_DESIGN_2026-05-21.md``
-        for the full migration plan.
+        for the full migration history.
 
-        The response carries **both** the new envelope shape AND a
-        top-level ``"detail"`` deprecation alias for the duration of
-        the migration window. The alias keeps existing consumers
-        working unchanged:
+        Response shape (final, post-PR-3):
 
-        * 36 in-tree cascor test assertions read
-          ``response.json()["detail"]`` and continue to pass.
-        * ``juniper-cascor-client`` < the version released in PR 2 of
-          this migration reads
-          ``body.get("detail", response.text)`` at
-          ``client.py:_request()`` and would otherwise silently
-          degrade to dumping the entire JSON blob as the error
-          message.
+        .. code-block:: json
 
-        The alias is removed in PR 3 of the migration (after the
-        client release in PR 2 has had time to be adopted in
-        deployments).
+            {
+              "status": "error",
+              "error": {
+                "code": "HTTP_404",
+                "message": "No network loaded",
+                "detail": null
+              },
+              "meta": {"timestamp": ..., "version": ...}
+            }
+
+        The PR 1 → PR 3 deprecation window also emitted a top-level
+        ``"detail"`` alias of ``error.message`` so pre-migration
+        consumers (notably ``juniper-cascor-client`` before commit
+        b0a636a3, 2026-02-21) kept working unchanged. PR 3 dropped
+        the alias after juniper-cascor-client #59 pinned the
+        envelope-aware parser and the design-doc-mandated soak
+        window completed.
 
         Headers attached to the ``HTTPException`` (e.g.
         ``WWW-Authenticate`` on 401, ``Retry-After`` on 429) are
@@ -545,9 +549,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             code=f"HTTP_{exc.status_code}",
             message=message,
         )
-        # API-09 deprecation alias — top-level ``"detail"`` key for
-        # pre-migration clients. Removed in PR 3.
-        envelope["detail"] = message
         return JSONResponse(
             status_code=exc.status_code,
             content=envelope,

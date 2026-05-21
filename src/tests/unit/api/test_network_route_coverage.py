@@ -47,7 +47,7 @@ class TestNetworkRouteLifecycleErrors:
 
             response = c.get("/v1/network")
             assert response.status_code == 503
-            assert "Lifecycle manager not initialized" in response.json()["detail"]
+            assert "Lifecycle manager not initialized" in response.json()["error"]["message"]
 
             c.app.state.lifecycle = lifecycle
 
@@ -60,7 +60,7 @@ class TestCreateNetworkErrors:
         with patch.object(client.app.state.lifecycle, "create_network", side_effect=RuntimeError("Network already exists")):
             response = client.post("/v1/network", json={"input_size": 2, "output_size": 2})
             assert response.status_code == 409
-            assert "cannot be created" in response.json()["detail"]
+            assert "cannot be created" in response.json()["error"]["message"]
 
 
 class TestDeleteNetworkErrors:
@@ -71,7 +71,7 @@ class TestDeleteNetworkErrors:
         with patch.object(client.app.state.lifecycle, "delete_network", side_effect=RuntimeError("Cannot delete during training")):
             response = client.delete("/v1/network")
             assert response.status_code == 409
-            assert "cannot be deleted" in response.json()["detail"]
+            assert "cannot be deleted" in response.json()["error"]["message"]
 
 
 class TestGetTopologyErrors:
@@ -85,4 +85,4 @@ class TestGetTopologyErrors:
         with patch.object(client.app.state.lifecycle, "get_topology", return_value=None):
             response = client.get("/v1/network/topology")
             assert response.status_code == 500
-            assert "Failed to extract topology" in response.json()["detail"]
+            assert "Failed to extract topology" in response.json()["error"]["message"]

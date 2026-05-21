@@ -259,7 +259,10 @@ class TestGetWorker:
         response = client.get("/v1/workers/nonexistent-worker")
         assert response.status_code == 404
         body = response.json()
-        assert "nonexistent-worker" in body["detail"]
+        # API-09 PR 3 (2026-05-21): HTTPException error responses now
+        # come through the envelope handler — read ``error.message``
+        # instead of the FastAPI-default top-level ``detail`` field.
+        assert "nonexistent-worker" in body["error"]["message"]
 
     def test_get_worker_with_task_assigned(self, client, registry):
         """GET /v1/workers/{id} reflects assigned task state."""

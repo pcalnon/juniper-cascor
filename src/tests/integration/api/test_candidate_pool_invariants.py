@@ -93,8 +93,20 @@ class TestCandidatePoolInvariants:
         # we just need the invariant violation NOT to silently apply.
         assert resp.status_code in (400, 422), f"expected 4xx, got {resp.status_code}: {resp.text}"
         body = resp.json()
-        assert "detail" in body, body
-        assert fragment in str(body["detail"]), f"violation message {body['detail']!r} missing fragment {fragment!r}"
+        # API-09 PR 3 (2026-05-21): the two error paths return
+        # different shapes. 400 from ``raise HTTPException(...)``
+        # goes through the envelope handler and lands at
+        # ``body["error"]["message"]``. 422 from FastAPI's
+        # ``RequestValidationError`` handler (Pydantic field-level
+        # validation) is untouched by API-09 and still returns the
+        # legacy ``{"detail": [...]}`` shape. Extract the searchable
+        # message from whichever shape applies.
+        if "error" in body and isinstance(body.get("error"), dict):
+            haystack = body["error"]["message"]
+        else:
+            haystack = body.get("detail")
+        assert haystack is not None, body
+        assert fragment in str(haystack), f"violation message {haystack!r} missing fragment {fragment!r}"
 
     def test_atomic_multi_key_patch_accepted_in_one_shot(self, client):
         """A PATCH that's only valid as a unit must not 422 on the first key.
