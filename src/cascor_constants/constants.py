@@ -573,12 +573,75 @@ _PROJECT_LOG_LEVEL_CUSTOM_NAMES_LIST = [
 # _PROJECT_LOG_LEVEL_NAME_DEFAULT = _PROJECT_LOG_LEVEL_NAME_DEBUG #       NOTE: This must be set to an existing predefined logging level
 
 #####################################################################################################################################################################################################
-# CASCOR-P2-003: Environment variable override for log level
-# Supports: CASCOR_LOG_LEVEL environment variable to override log level at runtime
+# CASCOR-P2-003 / CFG-03 / CFG-05: Environment variable override for log level
+# Supports: JUNIPER_CASCOR_LOG_LEVEL (preferred — matches the ecosystem
+# ``JUNIPER_CASCOR_*`` env-prefix convention used by the pydantic
+# ``Settings`` class in ``src/api/settings.py``) and the legacy
+# unprefixed ``CASCOR_LOG_LEVEL`` (deprecated, accepted with a
+# ``DeprecationWarning`` so existing deployments are not broken; will
+# be removed in a future release).
 # Valid values: TRACE, VERBOSE, DEBUG, INFO, WARNING, ERROR, CRITICAL, FATAL
-# Example: export CASCOR_LOG_LEVEL=WARNING (for quieter production/benchmarking mode)
-# Example: export CASCOR_LOG_LEVEL=DEBUG (for verbose debugging)
-_CASCOR_LOG_LEVEL_ENV = os.environ.get("CASCOR_LOG_LEVEL", "").upper()
+# Example: export JUNIPER_CASCOR_LOG_LEVEL=WARNING (for quieter production/benchmarking mode)
+# Example: export JUNIPER_CASCOR_LOG_LEVEL=DEBUG (for verbose debugging)
+
+
+def _resolve_log_level_env() -> str:
+    """CFG-05: pick the log-level env var, preferring the prefixed name.
+
+    Historically the bootstrap log-level override read the standalone
+    ``CASCOR_LOG_LEVEL`` env var, while ``Settings.log_level`` (the
+    pydantic-validated runtime config) reads the prefixed
+    ``JUNIPER_CASCOR_LOG_LEVEL`` via
+    ``env_prefix='JUNIPER_CASCOR_'``. Two env vars for the same
+    feature is operator-hostile — converge on the prefixed name (the
+    ecosystem convention) and keep ``CASCOR_LOG_LEVEL`` accepted with
+    a ``DeprecationWarning`` so existing deployments are not broken
+    by this change. The next major release should drop the legacy
+    name.
+
+    Returns:
+        The uppercase log-level string (e.g. ``"DEBUG"``), or the
+        empty string if neither env var is set (the downstream
+        validation block then falls back to ``INFO``).
+
+    Precedence:
+        1. ``JUNIPER_CASCOR_LOG_LEVEL`` — preferred; matches the
+           ecosystem env-prefix convention and the pydantic Settings
+           field.
+        2. ``CASCOR_LOG_LEVEL`` — legacy; accepted with a
+           ``DeprecationWarning``.
+
+    When both are set:
+        - Same value (case-insensitive) -> no warning, prefixed name
+          wins (no-op).
+        - Different values -> stderr line warning of split-config
+          drift; prefixed name wins.
+    """
+    prefixed = os.environ.get("JUNIPER_CASCOR_LOG_LEVEL", "").upper()
+    legacy = os.environ.get("CASCOR_LOG_LEVEL", "").upper()
+    if not prefixed and legacy:
+        import warnings as _cfg_05_warnings
+
+        _cfg_05_warnings.warn(
+            "CASCOR_LOG_LEVEL is deprecated; set JUNIPER_CASCOR_LOG_LEVEL " "instead. CASCOR_LOG_LEVEL will be removed in a future release. " "Until then, the legacy variable continues to work but the " "prefixed form takes precedence whenever both are set.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return legacy
+    if prefixed and legacy and prefixed != legacy:
+        # Both set with different values — the prefixed one wins.
+        # Tell the operator on stderr so split-config drift is
+        # visible at startup.
+        import sys as _cfg_05_sys
+
+        print(
+            "[juniper-cascor] CFG-05 WARNING: both JUNIPER_CASCOR_LOG_LEVEL " "and CASCOR_LOG_LEVEL are set to different values; " "JUNIPER_CASCOR_LOG_LEVEL takes precedence. " "Unset CASCOR_LOG_LEVEL to silence this message.",
+            file=_cfg_05_sys.stderr,
+        )
+    return prefixed
+
+
+_CASCOR_LOG_LEVEL_ENV = _resolve_log_level_env()
 
 # Validate and apply environment variable override if set
 if _CASCOR_LOG_LEVEL_ENV and _CASCOR_LOG_LEVEL_ENV in _PROJECT_LOG_LEVEL_NUMBERS_DICT:
