@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Deprecated
+
+- **CFG-03**: `SENTRY_SDK_DSN` is now deprecated in favor of the prefixed `JUNIPER_CASCOR_SENTRY_DSN` env var (which already backs the pydantic `Settings.sentry_dsn` field via `env_prefix='JUNIPER_CASCOR_'` consumed by `configure_sentry()` in `src/api/app.py`). Historically the bootstrap Sentry init at the top of `src/main.py` read a second, unprefixed `SENTRY_SDK_DSN` — two env vars for the same feature is operator-hostile. A new `_resolve_sentry_dsn() -> str | None` helper in `src/main.py` consolidates the lookup with the following precedence: (1) `JUNIPER_CASCOR_SENTRY_DSN` wins when set; (2) `SENTRY_SDK_DSN` is still honored when only the legacy name is set, but emits a `DeprecationWarning` (`warnings.warn(..., DeprecationWarning, stacklevel=2)`); (3) when both are set to **different** values, the prefixed form wins and a `[juniper-cascor] CFG-03 WARNING:` line is emitted on stderr so split-config drift is visible at startup; (4) when both are set to the **same** value, the prefixed form wins silently (no-op for migration-in-progress deployments). `SENTRY_SDK_DSN` will be **removed in a future release** — update deployment manifests, secrets, and `.env` files to the prefixed name. Pinned by 5-case regression suite at `src/tests/unit/test_cfg_03_sentry_dsn_resolution.py` (prefixed-only, legacy-only, both-same, both-different, neither-set). Tracks CFG-03 in the v7 outstanding-development roadmap.
+
 ### Added
 
 - **METRICS-MON R3.7 (soak complete)**: macOS leg of the unit-tests CI matrix flipped from `experimental: true` → `experimental: false`, making the `macos-latest` (Python 3.12) leg **required**. Failures on macOS now block the job. The `continue-on-error: ${{ matrix.experimental == true }}` job-level guard is preserved as a future-proof escape hatch for future experimental matrix entries; with `experimental: false` it evaluates to `false`. Soak window 2026-05-01 → 2026-05-15 confirmed clean (per user direction). Closes the post-soak follow-up of the R3.7 fan-out.
