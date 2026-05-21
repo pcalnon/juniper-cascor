@@ -212,6 +212,33 @@ class Settings(BaseSettings):
     sentry_dsn: str | None = _JUNIPER_CASCOR_API_SENTRY_DSN_DEFAULT
     metrics_enabled: bool = _JUNIPER_CASCOR_API_METRICS_ENABLED_DEFAULT
 
+    # CFG-04: JuniperData service URL. Canonical cross-service env var
+    # is ``JUNIPER_DATA_URL`` (unprefixed) — shared by juniper-data,
+    # juniper-canopy, and juniper-cascor — so we expose it via
+    # ``AliasChoices`` rather than the default ``env_prefix='JUNIPER_CASCOR_'``
+    # lookup (which would force operators to write the awkward
+    # ``JUNIPER_CASCOR_JUNIPER_DATA_URL``). ``AliasChoices`` replaces
+    # the prefix-derived lookup entirely, so the prefixed form is
+    # additionally listed for parity with the other ``Settings`` fields
+    # and to keep the ``JUNIPER_CASCOR_`` prefix viable for operators
+    # who want a per-service override. Default is ``None`` — callers
+    # that want the legacy ``http://localhost:8100`` fallback should
+    # apply it explicitly via
+    # ``settings.juniper_data_url or _PROJECT_API_JUNIPER_DATA_URL_DEFAULT``;
+    # callers where the URL is required (e.g., ``main.py`` pre-flight,
+    # ``SpiralProblem``) check for ``None`` and fail loudly. This field
+    # consolidates the 8 raw ``os.environ.get('JUNIPER_DATA_URL')`` call
+    # sites that drifted across ``src/api/app.py``, ``src/main.py``,
+    # ``src/api/routes/health.py``, ``src/api/lifecycle/manager.py``,
+    # ``src/spiral_problem/spiral_problem.py``, and
+    # ``src/spiral_problem/data_provider.py`` into a single validated
+    # config surface.
+    juniper_data_url: str | None = Field(
+        default=None,
+        description=("JuniperData service URL (e.g., 'http://localhost:8100'). " "Canonical env var: JUNIPER_DATA_URL (unprefixed, ecosystem-wide). " "Per-service override: JUNIPER_CASCOR_JUNIPER_DATA_URL."),
+        validation_alias=AliasChoices("juniper_data_url", "JUNIPER_DATA_URL", "JUNIPER_CASCOR_JUNIPER_DATA_URL"),
+    )
+
     auto_start: bool = _JUNIPER_CASCOR_API_AUTO_START_DEFAULT
     auto_start_data_service: bool = _JUNIPER_CASCOR_API_AUTO_START_DATA_SERVICE_DEFAULT
     auto_start_data_service_command: str = _JUNIPER_CASCOR_API_AUTO_START_DATA_SERVICE_COMMAND_DEFAULT

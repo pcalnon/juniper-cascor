@@ -504,7 +504,15 @@ class SpiralProblem(object):
                 - (x_test, y_test): Test set features and targets.
                 - (x_full, y_full): Full dataset features and targets.
         """
-        juniper_data_url = os.environ.get("JUNIPER_DATA_URL")
+        # CFG-04: Settings field consolidates the JUNIPER_DATA_URL env-var
+        # lookup. Required (no fallback) — fail loudly with the same
+        # ConfigurationError as before so deployment manifests catch
+        # misconfiguration immediately. Fresh ``Settings()`` (not the
+        # cached ``get_settings()``) so tests that ``patch.dict(os.environ,
+        # {...})`` between calls pick up the change without cache plumbing.
+        from api.settings import Settings as _CfgSettings
+
+        juniper_data_url = _CfgSettings().juniper_data_url
         if not juniper_data_url:
             from cascade_correlation.cascade_correlation_exceptions.cascade_correlation_exceptions import ConfigurationError
 

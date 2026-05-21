@@ -231,11 +231,23 @@ class TestAutoStartTraining:
 
     @pytest.mark.asyncio
     async def test_auto_start_uses_environment_variables(self):
-        """Test auto-start reads JUNIPER_DATA_URL and JUNIPER_DATA_API_KEY from env (lines 89-90)."""
+        """Test auto-start reads JUNIPER_DATA_URL and JUNIPER_DATA_API_KEY from env (lines 89-90).
+
+        CFG-04: ``_auto_start_training`` now reads ``settings.juniper_data_url``
+        (consolidated pydantic field) instead of ``os.environ.get(...)``
+        at call time. The field is populated from the canonical
+        ``JUNIPER_DATA_URL`` env var at ``Settings(...)`` construction
+        time, so the env patch must be in scope **when Settings is
+        instantiated**, not just when ``_auto_start_training`` is
+        called. Equivalent test design: pass ``juniper_data_url``
+        directly to ``Settings(...)`` which exercises the same code
+        path and stays decoupled from ambient process env.
+        """
         settings = Settings(
             auto_start=True,
             auto_dataset_params="{}",
             auto_network='{"input_size": 2, "output_size": 2}',
+            juniper_data_url="http://test-data:9999",
         )
 
         mock_client_class = MagicMock()
@@ -255,7 +267,7 @@ class TestAutoStartTraining:
         app.state.lifecycle = mock_lifecycle
 
         with (
-            patch.dict(os.environ, {"JUNIPER_DATA_URL": "http://test-data:9999", "JUNIPER_DATA_API_KEY": "secret-key"}),
+            patch.dict(os.environ, {"JUNIPER_DATA_API_KEY": "secret-key"}),
             patch.dict("sys.modules", {"juniper_data_client": MagicMock(JuniperDataClient=mock_client_class)}),
         ):
             await _auto_start_training(app, settings)

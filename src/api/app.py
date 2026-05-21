@@ -4,7 +4,6 @@ import asyncio
 import importlib.metadata
 import json
 import logging
-import os
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
@@ -214,7 +213,11 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     if settings.auto_start_data_service:
         from api.service_launcher import start_service
 
-        data_url = os.environ.get("JUNIPER_DATA_URL", _PROJECT_API_JUNIPER_DATA_URL_DEFAULT)
+        # CFG-04: Settings field consolidates the JUNIPER_DATA_URL env-var
+        # lookup; ``or DEFAULT`` preserves the legacy localhost:8100
+        # fallback when neither the canonical nor the prefixed env var
+        # is set.
+        data_url = settings.juniper_data_url or _PROJECT_API_JUNIPER_DATA_URL_DEFAULT
         logger.info("Auto-start juniper-data service is ENABLED")
         svc = await start_service(
             name="juniper-data",
@@ -306,7 +309,10 @@ async def _auto_start_training(app: FastAPI, settings: Settings) -> None:
     try:
         from juniper_data_client import JuniperDataClient
 
-        data_url = os.environ.get("JUNIPER_DATA_URL", _PROJECT_API_JUNIPER_DATA_URL_DEFAULT)
+        # CFG-04: Settings field consolidates the JUNIPER_DATA_URL env-var
+        # lookup; ``or DEFAULT`` preserves the legacy localhost:8100
+        # fallback.
+        data_url = settings.juniper_data_url or _PROJECT_API_JUNIPER_DATA_URL_DEFAULT
         api_key = get_secret("JUNIPER_DATA_API_KEY")
 
         client = JuniperDataClient(base_url=data_url, api_key=api_key)
@@ -374,7 +380,12 @@ async def _auto_start_canopy(
             logger.error(f"Auto-start canopy: cascor did not become healthy in {_PROJECT_API_CANOPY_STARTUP_WAIT_TIMEOUT}s, aborting")
             return
 
-        data_url = os.environ.get("JUNIPER_DATA_URL", _PROJECT_API_JUNIPER_DATA_URL_DEFAULT)
+        # CFG-04: Settings field consolidates the JUNIPER_DATA_URL env-var
+        # lookup; the resolved value is forwarded to the canopy subprocess
+        # via ``JUNIPER_CANOPY_JUNIPER_DATA_URL`` (canopy's prefixed env
+        # var). ``or DEFAULT`` preserves the legacy localhost:8100
+        # fallback.
+        data_url = settings.juniper_data_url or _PROJECT_API_JUNIPER_DATA_URL_DEFAULT
         canopy_env = {
             "JUNIPER_CANOPY_DEMO_MODE": _PROJECT_API_CANOPY_DEMO_MODE_DISABLED,
             "JUNIPER_CANOPY_CASCOR_SERVICE_URL": f"http://localhost:{settings.port}",
