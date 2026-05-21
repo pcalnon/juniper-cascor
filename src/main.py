@@ -118,8 +118,60 @@ from spiral_problem.spiral_problem import SpiralProblem
 # from inspect import currentframe, getframeinfo
 
 
+def _resolve_sentry_dsn() -> str | None:
+    """CFG-03: pick the Sentry DSN env var, preferring the prefixed name.
+
+    Historically the bootstrap Sentry init at module-import time read the
+    standalone ``SENTRY_SDK_DSN`` env var, while ``Settings.sentry_dsn``
+    (used by ``configure_sentry`` in ``src/api/app.py``) reads the
+    prefixed ``JUNIPER_CASCOR_SENTRY_DSN`` (via
+    ``env_prefix='JUNIPER_CASCOR_'`` on the pydantic ``Settings`` class).
+    Two env vars for the same feature is operator-hostile — converge on
+    the prefixed name (the ecosystem convention) and keep
+    ``SENTRY_SDK_DSN`` accepted with a ``DeprecationWarning`` so existing
+    deployments are not broken by this PR. The next major release should
+    drop the legacy name.
+
+    Returns:
+        The DSN string to pass to ``sentry_sdk.init``, or ``None`` if
+        neither env var is set (Sentry stays disabled).
+
+    Precedence:
+        1. ``JUNIPER_CASCOR_SENTRY_DSN`` — preferred; matches the
+           ecosystem env-prefix convention and the pydantic Settings
+           field.
+        2. ``SENTRY_SDK_DSN`` — legacy; accepted with a
+           ``DeprecationWarning``.
+
+    When both are set:
+        - Same value -> no warning, prefixed name wins (no-op).
+        - Different values -> stderr line warning of split-config drift;
+          prefixed name wins.
+    """
+    prefixed = os.getenv("JUNIPER_CASCOR_SENTRY_DSN")
+    legacy = os.getenv("SENTRY_SDK_DSN")
+    if not prefixed and legacy:
+        import warnings as _cfg_03_warnings
+
+        _cfg_03_warnings.warn(
+            "SENTRY_SDK_DSN is deprecated; set JUNIPER_CASCOR_SENTRY_DSN instead. " "SENTRY_SDK_DSN will be removed in a future release. Until then, the " "legacy variable continues to work but the prefixed form takes " "precedence whenever both are set.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return legacy
+    if prefixed and legacy and prefixed != legacy:
+        # Both set with different values — the prefixed one wins. Tell
+        # the operator on stderr so split-config drift is visible at
+        # startup.
+        print(
+            "[juniper-cascor] CFG-03 WARNING: both JUNIPER_CASCOR_SENTRY_DSN and SENTRY_SDK_DSN are set " "to different values; JUNIPER_CASCOR_SENTRY_DSN takes precedence. " "Unset SENTRY_SDK_DSN to silence this message.",
+            file=sys.stderr,
+        )
+    return prefixed
+
+
 load_dotenv()
-_sentry_dsn = os.getenv("SENTRY_SDK_DSN")
+_sentry_dsn = _resolve_sentry_dsn()
 if _sentry_dsn:
     # Match configure_sentry()'s behavior at the application-bootstrap
     # site as well: default PII off (SEC-15) and scrub any residual
