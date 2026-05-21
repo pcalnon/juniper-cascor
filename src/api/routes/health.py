@@ -20,7 +20,6 @@ in juniper-ml for the cross-repo contract this implements (R1.2 / seed-02
 and seed-03).
 """
 
-import os
 import time
 
 from fastapi import APIRouter, Request, Response
@@ -31,6 +30,7 @@ from fastapi import APIRouter, Request, Response
 from juniper_observability import LIVENESS_STALENESS_SECONDS, LIVENESS_TICK_BUDGET_MS, READINESS_HEADER
 
 from api.models.health import DependencyStatus, ReadinessResponse, probe_dependency
+from api.settings import Settings
 
 _API_VERSION: str = "0.4.0"
 
@@ -147,7 +147,13 @@ async def readiness_probe(request: Request, response: Response) -> ReadinessResp
 
     # Required-when-configured dep: JuniperData. URL unset → dep skipped
     # entirely (collapses to ready); URL set + unhealthy → not_ready.
-    data_url = os.getenv("JUNIPER_DATA_URL")
+    # CFG-04: Settings field consolidates the env-var lookup. Fresh
+    # ``Settings()`` per request (not the cached ``get_settings()``) so
+    # tests that patch ``JUNIPER_DATA_URL`` per-test pick up the change
+    # without needing ``get_settings.cache_clear()`` plumbing — pydantic
+    # construction is sub-millisecond and this route is rarely on a hot
+    # path.
+    data_url = Settings().juniper_data_url
     if data_url:
         dependencies["juniper_data"] = probe_dependency("JuniperData Service", f"{data_url.rstrip('/')}/v1/health/live")
 

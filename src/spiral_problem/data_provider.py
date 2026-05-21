@@ -18,7 +18,6 @@
 #####################################################################################################################################################################################################
 
 import logging
-import os
 from typing import Dict, Optional, Tuple
 
 import numpy as np
@@ -59,7 +58,16 @@ class SpiralDataProvider:
         if juniper_data_url is not None:
             self._juniper_data_url = juniper_data_url.strip()
         else:
-            self._juniper_data_url = os.environ.get("JUNIPER_DATA_URL")
+            # CFG-04: Settings field consolidates the JUNIPER_DATA_URL
+            # env-var lookup. Fresh ``Settings()`` (not the cached
+            # ``get_settings()``) so tests that ``patch.dict(os.environ,
+            # {...})`` between provider instantiations pick up the
+            # change without cache plumbing. Constructed lazily here so
+            # importing ``data_provider`` doesn't drag in the full API
+            # settings graph at module load time.
+            from api.settings import Settings as _CfgSettings
+
+            self._juniper_data_url = _CfgSettings().juniper_data_url
         self._api_key = api_key
         self._client: Optional[JuniperDataClient] = None
 

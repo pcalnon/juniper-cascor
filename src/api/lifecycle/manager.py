@@ -2931,8 +2931,7 @@ class TrainingLifecycleManager:
         if not dataset_type:
             raise RuntimeError("Pending dataset config missing required 'dataset_type'")
 
-        import os as _os
-
+        from api.settings import Settings
         from cascor_constants.constants_api import _PROJECT_API_JUNIPER_DATA_URL_DEFAULT
 
         try:
@@ -2940,7 +2939,13 @@ class TrainingLifecycleManager:
         except ImportError:
             get_secret = lambda _key: None  # noqa: E731
 
-        data_url = _os.environ.get("JUNIPER_DATA_URL", _PROJECT_API_JUNIPER_DATA_URL_DEFAULT)
+        # CFG-04: Settings field consolidates the JUNIPER_DATA_URL env-var
+        # lookup; ``or DEFAULT`` preserves the legacy localhost:8100
+        # fallback when neither the canonical nor the prefixed env var
+        # is set. Fresh ``Settings()`` (not ``get_settings()``) so this
+        # runtime path picks up env changes between pending-dataset
+        # reloads, matching the pre-migration ``os.environ.get`` behavior.
+        data_url = Settings().juniper_data_url or _PROJECT_API_JUNIPER_DATA_URL_DEFAULT
         api_key = get_secret("JUNIPER_DATA_API_KEY")
         client = JuniperDataClient(base_url=data_url, api_key=api_key)
 

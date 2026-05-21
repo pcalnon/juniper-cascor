@@ -294,7 +294,13 @@ def main():
     # #####################################################################################################################################################################################################
 
     # Pre-flight check: Validate JuniperData service connectivity before expensive initialization
-    juniper_data_url = os.environ.get("JUNIPER_DATA_URL")
+    # CFG-04: Settings field consolidates the JUNIPER_DATA_URL env-var
+    # lookup. Required at startup (no fallback) — fail loudly with the
+    # same exit code as before so deployment manifests catch
+    # misconfiguration immediately.
+    from api.settings import Settings as _CfgSettings  # local import: keep startup import graph minimal
+
+    juniper_data_url = _CfgSettings().juniper_data_url
     if not juniper_data_url:
         logger.error("Cascor: main: JUNIPER_DATA_URL environment variable is not set. " "Set it to the JuniperData service URL (e.g., 'http://localhost:8100'). " "See AGENTS.md for configuration details.")
         sys.exit(3)
