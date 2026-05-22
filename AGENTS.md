@@ -1,10 +1,11 @@
 # AGENTS.md - Juniper Cascor Project Guide
 
 **Project**: Juniper Cascade Correlation Neural Network
-**Version**: 0.4.0
-**License**: MIT License
+**Repository**: pcalnon/juniper-cascor
 **Author**: Paul Calnon
-**Last Updated**: 2026-04-02
+**License**: MIT License
+**Version**: 0.4.0
+**Last Updated**: 2026-05-22
 
 ---
 
