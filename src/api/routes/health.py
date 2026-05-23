@@ -32,7 +32,7 @@ from juniper_observability import LIVENESS_STALENESS_SECONDS, LIVENESS_TICK_BUDG
 from api.models.health import DependencyStatus, ReadinessResponse, probe_dependency
 from api.settings import Settings
 
-_API_VERSION: str = "0.4.0"
+_API_VERSION: str = "0.5.0"
 
 router = APIRouter(tags=["health"])
 
