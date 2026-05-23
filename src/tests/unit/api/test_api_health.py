@@ -29,7 +29,7 @@ class TestHealthEndpoints:
         assert response.status_code == 200
         body = response.json()
         assert body["status"] == "ok"
-        assert body["version"] == "0.4.0"
+        assert body["version"] == "0.5.0"
 
     def test_health_includes_service_identifier(self, client):
         """API-02: /v1/health includes the ``service`` field naming this service.
@@ -92,7 +92,7 @@ class TestHealthEndpoints:
         assert response.headers.get("X-Juniper-Readiness") == "ready"
         body = response.json()
         assert body["status"] == "ready"
-        assert body["version"] == "0.4.0"
+        assert body["version"] == "0.5.0"
         assert body["service"] == "juniper-cascor"
         assert "timestamp" in body
         assert body["details"]["network_loaded"] is False
@@ -207,7 +207,7 @@ class TestHealthModels:
         dep = DependencyStatus(name="Data", status="healthy", latency_ms=1.0, message="ok")
         resp = ReadinessResponse(
             status="ready",
-            version="0.4.0",
+            version="0.5.0",
             service="juniper-cascor",
             dependencies={"juniper_data": dep},
             details={"network_loaded": True},
