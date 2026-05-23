@@ -182,11 +182,7 @@ if _sentry_dsn:
         import sentry_sdk
     except ImportError:
         print(
-            "[juniper-cascor] CFG-02 WARNING: JUNIPER_CASCOR_SENTRY_DSN "
-            "(or legacy SENTRY_SDK_DSN) is set but the ``sentry-sdk`` package "
-            "is not installed. Bootstrap-time Sentry init skipped. Install "
-            "with ``pip install juniper-cascor[observability]`` (or "
-            "``pip install sentry-sdk``) to enable error reporting.",
+            "[juniper-cascor] CFG-02 WARNING: JUNIPER_CASCOR_SENTRY_DSN " "(or legacy SENTRY_SDK_DSN) is set but the ``sentry-sdk`` package " "is not installed. Bootstrap-time Sentry init skipped. Install " "with ``pip install juniper-cascor[observability]`` (or " "``pip install sentry-sdk``) to enable error reporting.",
             file=sys.stderr,
         )
     else:

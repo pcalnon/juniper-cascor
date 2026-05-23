@@ -75,10 +75,7 @@ def test_main_py_has_no_top_level_sentry_import():
     """
     src = _MAIN_PY.read_text()
     top_level_pattern = re.compile(r"^import sentry_sdk\b", re.MULTILINE)
-    assert not top_level_pattern.search(src), (
-        "src/main.py still has a top-level ``import sentry_sdk`` (CFG-02 regression). "
-        "It must be lazy-imported inside the ``if _sentry_dsn:`` block."
-    )
+    assert not top_level_pattern.search(src), "src/main.py still has a top-level ``import sentry_sdk`` (CFG-02 regression). " "It must be lazy-imported inside the ``if _sentry_dsn:`` block."
 
 
 def test_main_py_lazy_imports_sentry_sdk_with_guard():
@@ -89,12 +86,5 @@ def test_main_py_lazy_imports_sentry_sdk_with_guard():
     deployment emits a clear stderr warning rather than crashing.
     """
     src = _MAIN_PY.read_text()
-    assert "import sentry_sdk" in src, (
-        "src/main.py no longer references sentry_sdk at all (CFG-02 over-correction). "
-        "The lazy import inside the ``if _sentry_dsn:`` block must still be present."
-    )
-    assert "except ImportError" in src, (
-        "src/main.py must wrap the lazy ``import sentry_sdk`` in ``try/except ImportError`` "
-        "(CFG-02 guardrail) so ``pip install juniper-cascor`` (no [observability] extra) "
-        "still works when no DSN is configured, and emits a clear warning when a DSN is set."
-    )
+    assert "import sentry_sdk" in src, "src/main.py no longer references sentry_sdk at all (CFG-02 over-correction). " "The lazy import inside the ``if _sentry_dsn:`` block must still be present."
+    assert "except ImportError" in src, "src/main.py must wrap the lazy ``import sentry_sdk`` in ``try/except ImportError`` " "(CFG-02 guardrail) so ``pip install juniper-cascor`` (no [observability] extra) " "still works when no DSN is configured, and emits a clear warning when a DSN is set."
