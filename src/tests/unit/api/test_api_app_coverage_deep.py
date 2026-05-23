@@ -38,7 +38,7 @@ class TestLifespanMetricsEnabled:
         with patch("api.app.set_build_info") as mock_build_info, patch("api.app.get_prometheus_app", return_value=MagicMock()):
             app = create_app(settings)
             with TestClient(app):
-                mock_build_info.assert_called_once_with("juniper_cascor", "0.4.0")
+                mock_build_info.assert_called_once_with("juniper_cascor", "0.5.0")
 
     def test_metrics_not_called_when_disabled(self):
         """When metrics_enabled=False (default), set_build_info is NOT called."""
