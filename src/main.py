@@ -49,7 +49,6 @@ os.environ.setdefault("OMP_NUM_THREADS", "2")
 os.environ.setdefault("MKL_NUM_THREADS", "2")
 os.environ.setdefault("OPENBLAS_NUM_THREADS", "2")
 
-import sentry_sdk
 from dotenv import load_dotenv
 
 # TODO: F401 - unused imports, may be needed for future use
@@ -173,23 +172,41 @@ def _resolve_sentry_dsn() -> str | None:
 load_dotenv()
 _sentry_dsn = _resolve_sentry_dsn()
 if _sentry_dsn:
-    # Match configure_sentry()'s behavior at the application-bootstrap
-    # site as well: default PII off (SEC-15) and scrub any residual
-    # sensitive headers via before_send.
-    from api.observability import _strip_sensitive_headers as _sentry_strip_sensitive_headers
+    # CFG-02 (v7 roadmap §13524): ``sentry-sdk`` is now an optional dep
+    # declared in the ``[observability]`` extra. Lazy-import here so that
+    # ``pip install juniper-cascor`` (no extras) still loads when no
+    # DSN is configured. If the operator set a DSN but did not install
+    # the extra, emit a clear stderr warning and skip init rather than
+    # crashing — bootstrap-time Sentry is opportunistic.
+    try:
+        import sentry_sdk
+    except ImportError:
+        print(
+            "[juniper-cascor] CFG-02 WARNING: JUNIPER_CASCOR_SENTRY_DSN "
+            "(or legacy SENTRY_SDK_DSN) is set but the ``sentry-sdk`` package "
+            "is not installed. Bootstrap-time Sentry init skipped. Install "
+            "with ``pip install juniper-cascor[observability]`` (or "
+            "``pip install sentry-sdk``) to enable error reporting.",
+            file=sys.stderr,
+        )
+    else:
+        # Match configure_sentry()'s behavior at the application-bootstrap
+        # site as well: default PII off (SEC-15) and scrub any residual
+        # sensitive headers via before_send.
+        from api.observability import _strip_sensitive_headers as _sentry_strip_sensitive_headers
 
-    sentry_sdk.init(
-        dsn=_sentry_dsn,
-        # SEC-15: do not upload default PII (request headers, IP addresses,
-        # user identifiers). The before_send hook strips any sensitive
-        # headers that other integrations may still attach to events.
-        send_default_pii=False,
-        enable_logs=True,
-        traces_sample_rate=1.0,
-        profile_session_sample_rate=1.0,
-        profile_lifecycle="trace",
-        before_send=_sentry_strip_sensitive_headers,
-    )
+        sentry_sdk.init(
+            dsn=_sentry_dsn,
+            # SEC-15: do not upload default PII (request headers, IP addresses,
+            # user identifiers). The before_send hook strips any sensitive
+            # headers that other integrations may still attach to events.
+            send_default_pii=False,
+            enable_logs=True,
+            traces_sample_rate=1.0,
+            profile_session_sample_rate=1.0,
+            profile_lifecycle="trace",
+            before_send=_sentry_strip_sensitive_headers,
+        )
 # app = FastAPI()
 
 

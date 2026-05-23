@@ -41,7 +41,16 @@ requires-python = ">=3.12"
 dependencies = [
     "numpy>=1.24.0",
     "pydantic>=2.0.0",
-    "sentry-sdk>=2.0.0",
+    # CFG-02 (v7 roadmap §13524): ``sentry-sdk`` was previously a core
+    # dependency here. It is now declared in the [observability]
+    # optional-dependencies extra (mirrors juniper-canopy's pattern
+    # and juniper-observability's own [sentry] extra). Bootstrap init
+    # at ``src/main.py`` lazy-imports the SDK only when
+    # ``JUNIPER_CASCOR_SENTRY_DSN`` (or the deprecated ``SENTRY_SDK_DSN``)
+    # is set, with try/except ImportError so non-observability installs
+    # don't crash. The shared ``juniper_observability.configure_sentry``
+    # (called from ``src/api/app.py``) already imports sentry_sdk lazily
+    # inside the function and is a no-op when DSN is empty.
     "python-dotenv>=1.0.0",
     # METRICS-MON R2.1.4 / seed-06: shared observability primitives
     # (DependencyStatus, ReadinessResponse, probe_dependency,
@@ -77,6 +86,12 @@ api = [
 ]
 observability = [
     "prometheus-client>=0.20.0",
+    # CFG-02 (v7 roadmap §13524): moved here from [project] dependencies.
+    # Bare ``sentry-sdk>=2.0.0`` (no [fastapi] extra) matches the canopy
+    # precedent. The shared ``juniper-observability[sentry]`` extra pins
+    # ``sentry-sdk[fastapi]>=2.0.0``; aligning with that floor is a
+    # deferred follow-up — CFG-02 is scoped strictly to moving the dep.
+    "sentry-sdk>=2.0.0",
 ]
 test = [
     "pytest>=6.0",
