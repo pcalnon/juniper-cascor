@@ -95,7 +95,17 @@ jobs:
           echo "║       Juniper Cascor - Slow Unit Tests                     ║"
           echo "╚════════════════════════════════════════════════════════════╝"
 
-          # Run unit tests marked as slow
+          # Run unit tests marked as slow.
+          #
+          # Intentionally no ``--cov=src``: only ~10 tests carry the ``slow``
+          # marker, covering ~34% of src/. pyproject.toml configures
+          # ``[tool.coverage.report] fail_under = 80`` which then causes
+          # coverage to exit 1 ("Required test coverage of 80.0% not reached.
+          # Total coverage: 33.75%") and fails the entire scheduled run even
+          # though all 10 tests pass. The full-suite coverage gate already
+          # runs in ci.yml's ``unit-tests`` job over the proper test set; the
+          # slow tests' value is correctness, not coverage. Enforced by
+          # ``src/tests/unit/test_workflow_coverage_gate.py``.
           python -m pytest \
             -m "unit and slow" \
             src/tests/unit \
@@ -103,10 +113,7 @@ jobs:
             --verbose \
             --timeout=300 \
             --maxfail=5 \
-            --junitxml=reports/junit/junit-slow-unit.xml \
-            --cov=src \
-            --cov-report=term-missing \
-            --cov-report=xml:reports/coverage-slow.xml
+            --junitxml=reports/junit/junit-slow-unit.xml
 
       - name: Upload Test Results
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
@@ -115,7 +122,6 @@ jobs:
           name: slow-unit-test-results
           path: |
             reports/junit/
-            reports/coverage-slow.xml
           retention-days: 30
 
   # ═══════════════════════════════════════════════════════════════════════════════════════════════
