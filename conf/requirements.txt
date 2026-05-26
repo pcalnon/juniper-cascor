@@ -60,7 +60,7 @@ mpmath==1.4.1
 multiprocess @ git+https://github.com/uqfoundation/multiprocess.git@02ea4bd36cac5013d70847815c92e1a736ef4a05
 munkres==1.1.4
 networkx==3.6.1
-numpy==2.4.5
+numpy==2.4.6
 nvidia-cublas-cu12==12.9.2.10
 nvidia-cuda-cupti-cu12==12.9.79
 nvidia-cuda-nvrtc-cu12==12.9.86
