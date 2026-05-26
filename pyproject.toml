@@ -81,6 +81,11 @@ juniper-data = [
 ]
 api = [
     "fastapi>=0.100.0",
+    # CVE-2026-48710 (GHSA-86qp-5c8j-p5mr): Host-header poisoning of
+    # request.url.path bypasses path-based security checks in starlette
+    # <=1.0.0. Floor at 1.0.1 (the patched version) so transitive
+    # resolution can never select a vulnerable starlette via fastapi.
+    "starlette>=1.0.1",
     "uvicorn[standard]>=0.20.0",
     "pydantic-settings>=2.0.0",
 ]

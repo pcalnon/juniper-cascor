@@ -38,7 +38,7 @@ h11==0.16.0
     # via uvicorn
 h5py==3.16.0
     # via juniper-cascor (pyproject.toml)
-httptools==0.7.1
+httptools==0.8.0
     # via uvicorn
 idna==3.16
     # via
@@ -156,6 +156,7 @@ six==1.17.0
     # via python-dateutil
 starlette==1.1.0
     # via
+    #   juniper-cascor (pyproject.toml)
     #   fastapi
     #   juniper-observability
 sympy==1.14.0
@@ -179,7 +180,7 @@ urllib3==2.7.0
     #   juniper-data-client
     #   requests
     #   sentry-sdk
-uvicorn==0.47.0
+uvicorn==0.48.0
     # via juniper-cascor (pyproject.toml)
 uvloop==0.22.1
     # via uvicorn
