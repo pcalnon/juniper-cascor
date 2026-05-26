@@ -208,6 +208,16 @@ results.xml
 **/reports/
 **/reports/**
 
+# Test Performance Baseline
+src/tests/performance/baselines/baseline_*.json
+src/tests/performance/baselines/*_*.json
+**/tests/performance/baselines/baseline_*.json
+**/tests/performance/baselines/*_*.json
+**/baselines/baseline_*.json
+**/baselines/*_*.json
+**/baseline_*.json
+baseline_*.json
+
 # SERENA Memory Dirs
 .serena
 .serena/
