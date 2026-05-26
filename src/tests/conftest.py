@@ -272,6 +272,51 @@ def _inject_ws_origin_header():
 
 
 # ===================================================================
+# SETTINGS .env FILE ISOLATION
+# ===================================================================
+# pydantic-settings' ``Settings`` class is declared with
+# ``env_file=".env"``, which makes every ``Settings()`` constructor call
+# read the developer's local ``.env`` (gitignored, present only on dev
+# machines that have run ``cp .env.example .env``). Tests that assume
+# "no env var set → field default" then silently fail when the local
+# ``.env`` defines values like ``JUNIPER_DATA_URL=http://127.0.0.1:8100``:
+# pydantic-settings layers .env *under* os.environ, so a
+# ``monkeypatch.delenv("JUNIPER_DATA_URL")`` removes the OS-level
+# value but leaves the .env value in effect.
+#
+# CI never sees this because runner checkouts have no ``.env``. The
+# failure mode is local-only and the diagnostic (``Settings(juniper_data_url='http://127.0.0.1:8100')``
+# where the test expected ``None``) routinely catches developers off
+# guard. Disable env-file loading globally for the test session so
+# tests rely exclusively on monkeypatched OS env vars + class defaults.
+#
+# Counterpart regression test:
+# ``src/tests/unit/test_env_file_isolation.py``.
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _disable_settings_env_file_for_tests():
+    """Stop pydantic-settings from reading a developer's local .env in tests."""
+    # Import lazily so this doesn't influence pytest's own plugin autoload.
+    from api.settings import Settings, get_settings
+
+    original_env_file = Settings.model_config.get("env_file")
+    Settings.model_config["env_file"] = None
+    # Drop any cached Settings instance that may have been built from .env
+    # before this fixture fired (e.g. via an early import side-effect).
+    try:
+        get_settings.cache_clear()
+    except AttributeError:  # nosec B110 - cache attribute is the documented lru_cache API; absence is unexpected but recoverable
+        pass
+    yield
+    Settings.model_config["env_file"] = original_env_file
+    try:
+        get_settings.cache_clear()
+    except AttributeError:  # nosec B110
+        pass
+
+
+# ===================================================================
 # FAST-SLOW MODE CONFIGURATION
 # ===================================================================
 
