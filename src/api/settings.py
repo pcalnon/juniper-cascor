@@ -200,10 +200,32 @@ class Settings(BaseSettings):
 
     @field_validator("api_keys", mode="before")
     @classmethod
-    def _empty_string_to_none(cls, v: Any) -> list[str] | None:
-        if isinstance(v, str) and v.strip() == "":
+    def _parse_api_keys(cls, v: Any) -> list[str] | None:
+        """Normalise ``api_keys`` to ``list[str] | None``.
+
+        Accepts (in order of likelihood):
+
+        * ``None`` or empty string → ``None`` (auth disabled).
+        * Plain string ``"key1,key2"`` → ``["key1", "key2"]`` (the format
+          a single-string Docker secret file naturally produces; matches
+          the juniper-data parser).
+        * Already a list (including JSON-deserialised lists from
+          ``pydantic-settings``) → returned as-is.
+
+        Without this validator the bare string read from a Docker secrets
+        file (e.g. ``CHANGE_BEFORE_PRODUCTION_USE`` from
+        ``secrets.example/juniper_cascor_api_keys.txt``) would hit
+        pydantic's ``list[str]`` coercion and fail with
+        ``ValidationError: api_keys ... Input should be a valid list``,
+        putting the ``juniper-cascor`` container into a restart loop on
+        any default ``docker compose up``. Mirrors the
+        ``_parse_api_keys`` validator on ``juniper-data``'s ``Settings``.
+        """
+        if v is None or v == "":
             return None
-        return v
+        if isinstance(v, str):
+            return [k.strip() for k in v.split(",") if k.strip()]
+        return v  # type: ignore[return-value]
 
     rate_limit_enabled: bool = _JUNIPER_CASCOR_API_RATELIMIT_DISABLED
     rate_limit_requests_per_minute: int = _JUNIPER_CASCOR_API_RATELIMIT_DEFAULT
