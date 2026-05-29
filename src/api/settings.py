@@ -3,8 +3,10 @@
 from functools import lru_cache
 from typing import Any
 
+from typing import Annotated
+
 from pydantic import AliasChoices, Field, field_validator, model_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 from api.secrets import get_secret
 
@@ -198,6 +200,46 @@ class Settings(BaseSettings):
                 data["api_keys"] = secret_value
         return data
 
+    @field_validator("ws_control_allowed_origins", mode="before")
+    @classmethod
+    def _parse_ws_control_allowed_origins(cls, v: Any) -> list[str]:
+        """Normalise ``ws_control_allowed_origins`` to ``list[str]``.
+
+        Accepts:
+
+        * ``None`` → empty list (caller has explicitly removed all origins).
+          Most operators want to keep the *default* list; the default is
+          materialised via the ``Field(default=...)`` mechanism and never
+          reaches this validator when the env var is unset.
+        * Plain string ``"http://x:1,http://y:2"`` → ``["http://x:1", "http://y:2"]``
+          (CSV form, mirrors ``_parse_api_keys``).
+        * Plain string ``'["http://x:1","http://y:2"]'`` → list (JSON-array
+          form, the default pydantic-settings env-coercion shape).
+        * Already-list input → returned as-is (covers the programmatic
+          ``Settings(ws_control_allowed_origins=[...])`` callsite used by
+          tests + the ``Field(default=...)`` path when the env var is unset).
+        """
+        if v is None:
+            return []
+        if isinstance(v, str):
+            s = v.strip()
+            if not s:
+                return []
+            # Try JSON-array first to preserve compatibility with the
+            # pydantic-settings auto-coercion for ``list[str]`` env vars.
+            if s.startswith("[") and s.endswith("]"):
+                import json as _json
+
+                try:
+                    parsed = _json.loads(s)
+                except (_json.JSONDecodeError, ValueError):
+                    parsed = None
+                if isinstance(parsed, list):
+                    return [str(item).strip() for item in parsed if str(item).strip()]
+            # Fall back to comma-CSV.
+            return [item.strip() for item in s.split(",") if item.strip()]
+        return list(v)
+
     @field_validator("api_keys", mode="before")
     @classmethod
     def _parse_api_keys(cls, v: Any) -> list[str] | None:
@@ -288,12 +330,43 @@ class Settings(BaseSettings):
     worker_metrics_enabled: bool = _JUNIPER_CASCOR_API_WORKER_METRICS_ENABLED_DEFAULT
 
     # Phase B-pre-b: Control-path security (§S8)
-    ws_control_allowed_origins: list[str] = [
-        "http://localhost:8050",
-        "http://127.0.0.1:8050",
-        "https://localhost:8050",
-        "https://127.0.0.1:8050",
-    ]
+    #
+    # Env binding: ``JUNIPER_CASCOR_WS_CONTROL_ALLOWED_ORIGINS`` (resolved
+    # automatically via the ``env_prefix="JUNIPER_CASCOR_"`` model config).
+    # Two input shapes are accepted:
+    #
+    # 1. JSON-array string: ``'["http://x:1","http://y:2"]'``
+    #    (the form ``pydantic-settings`` produces by default for
+    #    ``list[str]`` env vars).
+    # 2. Comma-CSV string: ``'http://x:1,http://y:2'``
+    #    (the more operator-friendly form; matches the ``_parse_api_keys``
+    #    convention for ``JUNIPER_CASCOR_API_KEYS``).
+    #
+    # The CSV path closes the regression class where juniper-canopy
+    # (running inside docker compose) connects to ``/ws/control`` from
+    # the container hostname → the Origin is ``http://juniper-canopy:8050``
+    # which is **not** in the default allowlist. juniper-deploy E.2 PR-2-D
+    # sets the env var to ``http://juniper-canopy:8050,http://localhost:8050,…``
+    # in compose; without the CSV parser the operator would have to
+    # JSON-escape the list, which is brittle for env-file authoring.
+    #
+    # See juniper-ml ``notes/STACK_REGRESSION_CORRECTIONS_2026-05-27.md``
+    # §E.2 PR-2-B for the regression + remediation context.
+    # ``Annotated[..., NoDecode]`` tells pydantic-settings to *skip* its
+    # default JSON decoding for this env var (which would raise
+    # ``SettingsError`` on CSV-form input before our ``mode='before'``
+    # validator gets a chance to run).  The validator below then handles
+    # both JSON-array and comma-CSV forms uniformly.
+    ws_control_allowed_origins: Annotated[list[str], NoDecode] = Field(
+        default=[
+            "http://localhost:8050",
+            "http://127.0.0.1:8050",
+            "https://localhost:8050",
+            "https://127.0.0.1:8050",
+        ],
+        description=("WebSocket /ws/control Origin allowlist. " "Env var: JUNIPER_CASCOR_WS_CONTROL_ALLOWED_ORIGINS. " "Accepts JSON-array (default ``pydantic-settings`` form) or comma-CSV. " "Empty string disables the allowlist (use only when explicitly opting out)."),
+        validation_alias=AliasChoices("ws_control_allowed_origins", "JUNIPER_CASCOR_WS_CONTROL_ALLOWED_ORIGINS"),
+    )
     ws_control_rate_limit_per_sec: int = 10  # leaky bucket: 10 tokens, 10/s refill
     ws_control_idle_timeout_sec: int = 120  # bidirectional idle timeout
     ws_control_cooldown_rejections: int = 10  # rejections in cooldown window before IP block

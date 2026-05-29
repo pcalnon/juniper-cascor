@@ -150,3 +150,92 @@ class TestApiKeysParser:
 
         settings = Settings()
         assert settings.api_keys == ["CHANGE_BEFORE_PRODUCTION_USE"]
+
+
+@pytest.mark.unit
+class TestWsControlAllowedOriginsParser:
+    """E.2 PR-2-B regression: ``ws_control_allowed_origins`` accepts the
+    juniper-deploy compose env-var form (comma-CSV) as well as the
+    JSON-array form that pydantic-settings auto-emits for ``list[str]``
+    fields. See juniper-ml notes/STACK_REGRESSION_CORRECTIONS_2026-05-27.md
+    §E.2.
+
+    The default allowlist is preserved (``localhost:8050`` /
+    ``127.0.0.1:8050``); when the operator sets
+    ``JUNIPER_CASCOR_WS_CONTROL_ALLOWED_ORIGINS`` to
+    ``"http://juniper-canopy:8050,http://localhost:8050"``, the parser
+    splits on commas — without this PR, that input raised
+    ``SettingsError: error parsing value for field
+    "ws_control_allowed_origins" from source "EnvSettingsSource"`` and
+    blocked the canopy reconnection unblock.
+    """
+
+    def test_default_allowlist_kept_when_env_unset(self, monkeypatch):
+        monkeypatch.delenv("JUNIPER_CASCOR_WS_CONTROL_ALLOWED_ORIGINS", raising=False)
+        from api.settings import Settings
+
+        settings = Settings()
+        assert settings.ws_control_allowed_origins == [
+            "http://localhost:8050",
+            "http://127.0.0.1:8050",
+            "https://localhost:8050",
+            "https://127.0.0.1:8050",
+        ]
+
+    def test_csv_env_var_parsed_into_list(self, monkeypatch):
+        monkeypatch.setenv(
+            "JUNIPER_CASCOR_WS_CONTROL_ALLOWED_ORIGINS",
+            "http://juniper-canopy:8050,http://localhost:8050,http://127.0.0.1:8050",
+        )
+        from api.settings import Settings
+
+        settings = Settings()
+        assert settings.ws_control_allowed_origins == [
+            "http://juniper-canopy:8050",
+            "http://localhost:8050",
+            "http://127.0.0.1:8050",
+        ]
+
+    def test_json_array_env_var_parsed_into_list(self, monkeypatch):
+        """JSON-array form (the default pydantic-settings shape for
+        ``list[str]`` env vars) must still work after the ``NoDecode``
+        annotation defers parsing to the validator.
+        """
+        monkeypatch.setenv(
+            "JUNIPER_CASCOR_WS_CONTROL_ALLOWED_ORIGINS",
+            '["http://x:1","http://y:2"]',
+        )
+        from api.settings import Settings
+
+        settings = Settings()
+        assert settings.ws_control_allowed_origins == ["http://x:1", "http://y:2"]
+
+    def test_csv_whitespace_trimmed(self, monkeypatch):
+        monkeypatch.setenv(
+            "JUNIPER_CASCOR_WS_CONTROL_ALLOWED_ORIGINS",
+            "  http://a:1 ,   http://b:2 ,  ",
+        )
+        from api.settings import Settings
+
+        settings = Settings()
+        assert settings.ws_control_allowed_origins == ["http://a:1", "http://b:2"]
+
+    def test_empty_env_var_yields_empty_list(self, monkeypatch):
+        """Operator opting out of all origins (``X=`` in env-file).
+        Distinct from "env-var unset" (default applies).
+        """
+        monkeypatch.setenv("JUNIPER_CASCOR_WS_CONTROL_ALLOWED_ORIGINS", "")
+        from api.settings import Settings
+
+        settings = Settings()
+        assert settings.ws_control_allowed_origins == []
+
+    def test_programmatic_list_passthrough(self, monkeypatch):
+        """Tests that construct ``Settings(ws_control_allowed_origins=[…])``
+        directly still receive the list unchanged.
+        """
+        monkeypatch.delenv("JUNIPER_CASCOR_WS_CONTROL_ALLOWED_ORIGINS", raising=False)
+        from api.settings import Settings
+
+        settings = Settings(ws_control_allowed_origins=["http://prog:1", "http://prog:2"])
+        assert settings.ws_control_allowed_origins == ["http://prog:1", "http://prog:2"]
