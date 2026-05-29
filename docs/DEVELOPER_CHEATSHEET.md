@@ -108,6 +108,7 @@ Metrics nuance:
 | `JUNIPER_CASCOR_LOG_FORMAT`      | --                      | Set to `json` for JSON logging         |
 | `JUNIPER_CASCOR_SENTRY_DSN`      | --                      | Sentry DSN                             |
 | `JUNIPER_CASCOR_METRICS_ENABLED` | `false`                 | Enable Prometheus metrics              |
+| `JUNIPER_CASCOR_WS_CONTROL_ALLOWED_ORIGINS` | `http://localhost:8050,http://127.0.0.1:8050,https://localhost:8050,https://127.0.0.1:8050` | `/ws/control` Origin allowlist. Accepts JSON-array or comma-CSV. Empty string disables (opt-out). For docker compose, add `http://juniper-canopy:8050` so canopy's `ControlStreamSupervisor` can connect. |
 
 ---
 
