@@ -1,9 +1,7 @@
 """API configuration settings using pydantic-settings."""
 
 from functools import lru_cache
-from typing import Any
-
-from typing import Annotated
+from typing import Annotated, Any
 
 from pydantic import AliasChoices, Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
@@ -275,6 +273,31 @@ class Settings(BaseSettings):
     log_format: str = _JUNIPER_CASCOR_API_LOG_FORMAT_DEFAULT
     sentry_dsn: str | None = _JUNIPER_CASCOR_API_SENTRY_DSN_DEFAULT
     metrics_enabled: bool = _JUNIPER_CASCOR_API_METRICS_ENABLED_DEFAULT
+
+    # SEC-16 parity with juniper-data: loopback-only by default. Set
+    # ``JUNIPER_CASCOR_METRICS_TRUSTED_IPS='["10.0.0.5","172.18.0.0/16"]'``
+    # (JSON list) or a comma-separated string. Accepts bare IP literals and
+    # CIDR ranges; the in-process ``MetricsAuthMiddleware`` normalises IPv6
+    # zone-ids and IPv4-mapped IPv6 client addresses before membership check,
+    # so a Docker container appearing as ``::ffff:172.18.0.5`` matches an
+    # IPv4 ``172.18.0.0/16`` allowlist entry. Mirrors
+    # ``juniper-data.api.settings.metrics_trusted_ips`` (SEC-16, POC §3.1).
+    metrics_trusted_ips: list[str] = ["127.0.0.1", "::1"]
+
+    @field_validator("metrics_trusted_ips")
+    @classmethod
+    def _validate_metrics_trusted_ips(cls, v: list[str]) -> list[str]:
+        """Fail loud at startup if any allowlist entry is unparseable.
+
+        Without this guard a typo like ``172.18.0.0/164`` would silently
+        compile to a working-but-empty allowlist that 403s every scrape.
+        Lazy-imports the parser to avoid a settings → observability →
+        settings cycle.
+        """
+        from api.observability import _parse_trusted_networks
+
+        _parse_trusted_networks(v)
+        return v
 
     # CFG-04: JuniperData service URL. Canonical cross-service env var
     # is ``JUNIPER_DATA_URL`` (unprefixed) — shared by juniper-data,

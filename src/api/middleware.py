@@ -16,6 +16,13 @@ EXEMPT_PATHS = {
     "/docs",
     "/openapi.json",
     "/redoc",
+    # SEC-16 / POC §3.1: ``/metrics`` is gated by the parallel
+    # ``MetricsAuthMiddleware`` IP allowlist (cascor mirror of
+    # ``juniper-data``'s middleware) instead of SecurityMiddleware's
+    # API-key check. Both literal forms cover the FastAPI auto-redirect
+    # from missing/extra trailing slash.
+    "/metrics",
+    "/metrics/",
 }
 
 # Default Content-Security-Policy for API-only services.
