@@ -790,7 +790,10 @@ class MetricsAuthMiddleware:
                     addr = _normalize_client_ip(client_ip)
                     allowed = any(addr in net for net in self.networks)
                 except ValueError:
-                    pass
+                    logging.getLogger(__name__).warning(
+                        "Denying /metrics request due to unparseable client IP: %r",
+                        client_ip,
+                    )
             if not allowed:
                 await send(
                     {
