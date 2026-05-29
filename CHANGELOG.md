@@ -7,6 +7,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **SEC-16 / POC remediation §3.1**: cascor now has parity with
+  juniper-data's `MetricsAuthMiddleware` — `/metrics` is exempt from
+  `SecurityMiddleware` (so prometheus doesn't 401 ahead of the IP
+  allowlist) AND gated by a parallel in-process IP allowlist with full
+  CIDR + IPv6 normalization. Mirrors the juniper-data implementation
+  verbatim (validator A's "duplicate inline" recommendation in
+  [`POC_REMEDIATION_PLAN_2026-05-27.md` §3.1](https://github.com/pcalnon/juniper-deploy/blob/main/notes/poc/POC_REMEDIATION_PLAN_2026-05-27.md));
+  promotion to `juniper-observability` is a roadmap §R5 follow-up.
+  Concrete changes: `src/api/middleware.py` adds `/metrics` and
+  `/metrics/` to `EXEMPT_PATHS`; `src/api/observability.py` adds
+  `MetricsAuthMiddleware` plus `_parse_trusted_networks` (CIDR
+  fail-loud parser) and `_normalize_client_ip` (zone-id strip,
+  IPv4-mapped IPv6 unwrap); `src/api/settings.py` adds
+  `Settings.metrics_trusted_ips: list[str] = ["127.0.0.1", "::1"]`
+  with a `_validate_metrics_trusted_ips` field validator that
+  surfaces unparseable entries at `Settings()` construction;
+  `src/api/app.py` replaces the bare
+  `app.mount("/metrics", get_prometheus_app())` with
+  `app.mount("/metrics", MetricsAuthMiddleware(get_prometheus_app(), settings.metrics_trusted_ips))`.
+  Why this is needed even with `/metrics` exempt: a misconfigured
+  deployment (port 8200 published directly, or running outside
+  compose / K8s) would expose `/metrics` with zero auth. Regression
+  coverage: new `src/tests/unit/api/test_metrics_auth_middleware.py`
+  (12 tests) pins the `EXEMPT_PATHS` invariant, CIDR v4 allow + miss,
+  mixed CIDR + literal, CIDR v6 allow, IPv4-mapped IPv6 vs IPv4 CIDR
+  (the docker-bridge regression), IPv6 zone-id strip, default
+  loopback works, malformed / missing client address falls through
+  to 403, invalid CIDR raises at `Settings()`, and middleware-init
+  fail-loud as defense in depth. Tests drive the middleware via raw
+  ASGI scopes (not `TestClient` + `create_app`) because the cascor
+  lifespan does not tear down cleanly in unit-test context — same
+  contract either way.
+
 ### Changed
 
 - **CFG-02** (v7 roadmap §13524): `sentry-sdk>=2.0.0` moved from `[project] dependencies` into the `[project.optional-dependencies] observability` extra. The roadmap's recommended Approach A is "optional features should use optional dependencies": Sentry is only initialized when `JUNIPER_CASCOR_SENTRY_DSN` (or the deprecated `SENTRY_SDK_DSN`, see CFG-03) is set, so users running cascor without Sentry no longer pay the install footprint. Matches the canopy `[observability]` precedent. **BREAKING for Sentry users**: deployments that previously relied on `pip install juniper-cascor` pulling sentry-sdk transitively must now use `pip install juniper-cascor[observability]` (or `pip install juniper-cascor[all]` — the `[all]` aggregator already includes `[observability]`). The shared `juniper-observability[sentry]` extra remains an equally-valid alternative. The bootstrap Sentry init at the top of `src/main.py` (previously `import sentry_sdk` unconditionally at line 52 + `sentry_sdk.init(...)` inside `if _sentry_dsn:`) now lazy-imports `sentry_sdk` inside the `if _sentry_dsn:` block, wrapped in `try/except ImportError` that emits a clear stderr warning when a DSN is set but the SDK is not installed (`[juniper-cascor] CFG-02 WARNING: ... install with pip install juniper-cascor[observability]`). The application-bootstrap Sentry path in `src/api/app.py` is unchanged: it already delegates to `juniper_observability.configure_sentry`, which does its own lazy `import sentry_sdk` inside the function and is a no-op when DSN is empty. Pinned by a new 4-case source-level regression suite at `src/tests/unit/test_cfg_02_sentry_sdk_optional.py` (sentry-sdk absent from core deps, present in `[observability]`, no top-level import in `main.py`, lazy import + `except ImportError` guard present). Aligning the `[observability]` extra to `sentry-sdk[fastapi]>=2.0.0` (to match `juniper-observability[sentry]`) is a deferred follow-up — CFG-02 is scoped strictly to moving the dep. Tracks CFG-02 in the v7 outstanding-development roadmap §20.

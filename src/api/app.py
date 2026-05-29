@@ -15,7 +15,7 @@ from fastapi.responses import JSONResponse
 from api.lifecycle.manager import TrainingLifecycleManager
 from api.middleware import RequestBodyLimitMiddleware, SecurityHeadersMiddleware, SecurityMiddleware
 from api.models.common import error_response
-from api.observability import PrometheusMiddleware, RequestIdMiddleware, configure_logging, configure_sentry, get_prometheus_app, set_build_info
+from api.observability import MetricsAuthMiddleware, PrometheusMiddleware, RequestIdMiddleware, configure_logging, configure_sentry, get_prometheus_app, set_build_info
 from api.routes import admin, dataset, decision_boundary, health, history, metrics, network, snapshots, training, workers
 from api.secrets import get_secret
 from api.security import APIKeyAuth, RateLimiter
@@ -485,9 +485,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.websocket("/ws/control")(control_stream_handler)
     app.websocket("/ws/v1/workers")(worker_stream_handler)
 
-    # Mount Prometheus metrics endpoint
+    # Mount Prometheus metrics endpoint (SEC-16 / POC §3.1: wrap with
+    # trusted-IP auth because ASGI sub-app mounts bypass SecurityMiddleware
+    # — and ``/metrics`` is now in EXEMPT_PATHS specifically so it can be).
     if settings.metrics_enabled:
-        app.mount("/metrics", get_prometheus_app())
+        app.mount(
+            "/metrics",
+            MetricsAuthMiddleware(get_prometheus_app(), settings.metrics_trusted_ips),
+        )
 
     # Exception handlers
     @app.exception_handler(ValueError)
