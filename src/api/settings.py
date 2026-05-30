@@ -291,12 +291,13 @@ class Settings(BaseSettings):
 
         Without this guard a typo like ``172.18.0.0/164`` would silently
         compile to a working-but-empty allowlist that 403s every scrape.
-        Lazy-imports the parser to avoid a settings → observability →
-        settings cycle.
+        Uses the shared ``parse_trusted_networks`` from
+        ``juniper-observability`` so cascor's fail-loud message stays in
+        lockstep with juniper-data and any future consumer.
         """
-        from api.observability import _parse_trusted_networks
+        from juniper_observability import parse_trusted_networks
 
-        _parse_trusted_networks(v)
+        parse_trusted_networks(v)
         return v
 
     # CFG-04: JuniperData service URL. Canonical cross-service env var
