@@ -56,9 +56,14 @@ dependencies = [
     # (DependencyStatus, ReadinessResponse, probe_dependency,
     # JuniperJsonFormatter, RequestIdMiddleware, PrometheusMiddleware,
     # configure_sentry, get_prometheus_app, set_build_info, and the
-    # R1.1/R1.2/R1.3 contract constants). Pinned at the first stable
-    # release; consumers should never resolve back to the alpha line.
-    "juniper-observability>=0.2.0",
+    # R1.1/R1.2/R1.3 contract constants). 0.3.0 added
+    # ``MetricsAuthMiddleware`` + ``parse_trusted_networks`` +
+    # ``normalize_client_ip`` + ``METRICS_DEFAULT_TRUSTED_IPS`` +
+    # ``TrustedNetwork`` so this module can drop its inline copy.
+    # 0.3.1 added the ``logging.warning`` on unparseable client IP
+    # that cascor had been carrying inline since #313 — pin >=0.3.1
+    # so the warning is preserved post-migration.
+    "juniper-observability>=0.3.1",
     # METRICS-MON R2.2.2 / seed-05: WebSocket frame schemas (envelope
     # Pydantic models for /ws/training and /ws/control + WorkerMessageType
     # StrEnum + BinaryFrame numpy codec for /ws/v1/workers). The cascor
