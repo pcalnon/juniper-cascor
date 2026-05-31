@@ -191,6 +191,17 @@ class ValidateTrainingResults:
 # Maximum queue size to prevent unbounded memory growth (DoS vector)
 _QUEUE_MAXSIZE = 1024
 
+# DUAL-PATH/TIMEOUT FIX (2026-05-30): default *inactivity* timeout for candidate
+# result collection. ``_collect_training_results`` historically used a fixed 60s
+# TOTAL deadline, which was shorter than multi-minute candidate rounds (a
+# 40-candidate pool can take >2 min), so the collector returned ~0 results while
+# the persistent workers were still training — yielding best_candidate=None and
+# 0 hidden units grown. The value below is the maximum gap BETWEEN consecutive
+# results (the deadline is reset on each result), backstopped by a worker-liveness
+# early-exit, so a slow-but-progressing round is never abandoned while a genuinely
+# stalled or dead pool still bails out promptly.
+_CASCADE_CORRELATION_NETWORK_RESULT_COLLECTION_INACTIVITY_TIMEOUT = 300.0
+
 
 # Server-owned queues (live in Manager server process)--created in the manager server process
 _task_queue = None
@@ -2400,7 +2411,7 @@ class CascadeCorrelationNetwork:
 
         # Collect results, NOTE: results is of type list of data class: [candidate_training_result, ...]
         self.logger.debug("CascadeCorrelationNetwork: _collect_worker_results: Collecting results from workers")
-        results = self._collect_training_results(result_queue, len(tasks), round_id=round_id)
+        results = self._collect_training_results(result_queue, len(tasks), round_id=round_id, workers=workers)
         self.logger.debug(f"CascadeCorrelationNetwork: _collect_worker_results: Collected {len(results)} results")
         # ``sleepytime`` is now only consumed by callers that pass it
         # explicitly. Suppress the unused-arg warning at call sites.
@@ -2591,10 +2602,13 @@ class CascadeCorrelationNetwork:
         self,
         result_queue: Queue,
         num_tasks: int,
-        # TODO: Make these into proper constants
-        queue_timeout: float = 60.0,
+        # DUAL-PATH/TIMEOUT FIX (2026-05-30): ``queue_timeout`` is now the maximum
+        # *inactivity* gap (seconds with no new result), reset on each result —
+        # NOT a fixed total deadline. See the module constant for the rationale.
+        queue_timeout: float = _CASCADE_CORRELATION_NETWORK_RESULT_COLLECTION_INACTIVITY_TIMEOUT,
         request_timeout: float = 1.0,
         round_id: Optional[str] = None,
+        workers: Optional[list] = None,
     ) -> list:
         """
         Description:
@@ -2621,10 +2635,30 @@ class CascadeCorrelationNetwork:
         self.logger.debug(f"CascadeCorrelationNetwork: _collect_training_results: Collecting {num_tasks} results (round_id={round_id})")
         self.logger.debug(f"CascadeCorrelationNetwork: _collect_training_results: Timeout set to {queue_timeout} seconds")
         self.logger.debug(f"CascadeCorrelationNetwork: _collect_training_results: Result Queue: Length: {result_queue.qsize()}, Contents: {list(result_queue.queue) if hasattr(result_queue, 'queue') else 'N/A'}")
-        deadline = time.time() + queue_timeout
+        # DUAL-PATH/TIMEOUT FIX (2026-05-30): wait on an *inactivity* deadline that
+        # is reset whenever a result is collected, plus a worker-liveness
+        # early-exit, instead of a fixed total wall-clock deadline. Persistent
+        # workers (RC-4) stay alive for the whole round, so a multi-minute round
+        # streams results in over time; the previous fixed total deadline
+        # (default 60s) abandoned collection mid-round — returning ~0 results and
+        # producing best_candidate=None / 0 hidden units grown. We keep waiting as
+        # long as results keep arriving (or a worker is alive and could still
+        # deliver one), and stop only after ``queue_timeout`` seconds with NO new
+        # result, once every worker has exited with the queue drained, or on error.
+        inactivity_deadline = time.time() + queue_timeout
         get_attempts = 0
         empty_count = 0
-        while collected_results < num_tasks and time.time() < deadline:
+        while collected_results < num_tasks:
+            # Early-exit: no live worker remains to deliver the outstanding
+            # results and the queue is already drained — waiting is pointless.
+            if workers is not None and not any(w.is_alive() for w in workers) and result_queue.empty():
+                self.logger.warning(f"CascadeCorrelationNetwork: _collect_training_results: All workers exited with " f"{collected_results}/{num_tasks} results collected and the result queue drained; stopping.")
+                break
+            # Inactivity guard: give up only after a full ``queue_timeout`` gap
+            # with no new result (a genuinely stalled or hung pool).
+            if time.time() > inactivity_deadline:
+                self.logger.warning(f"CascadeCorrelationNetwork: _collect_training_results: No new result for {queue_timeout:.0f}s " f"(inactivity timeout) with {collected_results}/{num_tasks} collected; stopping.")
+                break
             try:
                 get_attempts += 1
                 result = result_queue.get(timeout=request_timeout)
@@ -2642,11 +2676,13 @@ class CascadeCorrelationNetwork:
                     continue
                 results.append(result)
                 collected_results += 1
+                # Progress — extend the inactivity window past this result.
+                inactivity_deadline = time.time() + queue_timeout
                 _rc4.emit("parent.collect.got", candidate_id=getattr(result, "candidate_id", None), n=collected_results, expected=num_tasks)
                 self.logger.verbose(f"CascadeCorrelationNetwork: _collect_training_results: Collected {collected_results}/{num_tasks}")
             except Empty as empty_e:
                 empty_count += 1
-                _rc4.emit("parent.collect.empty", attempt=get_attempts, empty_count=empty_count, deadline_remaining=max(0.0, deadline - time.time()))
+                _rc4.emit("parent.collect.empty", attempt=get_attempts, empty_count=empty_count, deadline_remaining=max(0.0, inactivity_deadline - time.time()))
                 self.logger.warning(f"CascadeCorrelationNetwork: _collect_training_results: Result queue empty, continuing: {empty_e}")
                 continue
             except Exception as e:
@@ -3450,7 +3486,17 @@ class CascadeCorrelationNetwork:
         """
         # Check if existing pool is valid (right size, all workers alive)
         alive_count = sum(1 for w in self._persistent_workers if w.is_alive()) if self._persistent_workers else 0
-        pool_valid = self._persistent_workers and self._persistent_task_queue is not None and self._persistent_result_queue is not None and alive_count == self._persistent_pool_size and self._persistent_pool_size == num_workers
+        # DUAL-PATH FIX (2026-05-30): reuse a healthy persistent pool whenever it
+        # already has at least as many live workers as requested. A larger pool
+        # serves a smaller request (e.g. a remote-fallback retry batch of 2 tasks)
+        # — surplus workers simply idle on the empty task queue. The previous
+        # exact-size check (``_persistent_pool_size == num_workers``) tore the pool
+        # down to resize it, which SIGKILLed in-flight workers and orphaned their
+        # result queue mid-round — the root cause of "expected N, got 2" /
+        # 0 hidden units grown under dual-path dispatch. Only rebuild when no
+        # healthy pool exists or MORE workers are needed.
+        pool_healthy = bool(self._persistent_workers) and self._persistent_task_queue is not None and self._persistent_result_queue is not None and alive_count == self._persistent_pool_size
+        pool_valid = pool_healthy and num_workers <= self._persistent_pool_size
 
         if pool_valid:
             self.logger.debug(f"CascadeCorrelationNetwork: _ensure_worker_pool: Reusing existing pool of {alive_count} workers")

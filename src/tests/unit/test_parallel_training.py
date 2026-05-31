@@ -153,7 +153,7 @@ class TestCollectWorkerResults:
         # since the real implementation does validation we don't need here.
         results_out = [FakeResult(candidate_id=0), FakeResult(candidate_id=1)]
 
-        def fake_collect(rq, num_tasks, round_id=None):
+        def fake_collect(rq, num_tasks, round_id=None, workers=None):
             return results_out
 
         net._collect_training_results = fake_collect
@@ -192,7 +192,7 @@ class TestCollectWorkerResults:
 
         results_out = [FakeResult(candidate_id=0), FakeResult(candidate_id=1)]
 
-        def fake_collect(rq, num_tasks, round_id=None):
+        def fake_collect(rq, num_tasks, round_id=None, workers=None):
             return results_out
 
         net._collect_training_results = fake_collect
