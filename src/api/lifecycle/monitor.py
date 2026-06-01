@@ -229,6 +229,14 @@ class TrainingMonitor:
 
         with self._lock:
             self.current_epoch = epoch
+            # Track the live hidden-unit count from the per-epoch metric stream.
+            # The caller passes ``hidden_units=len(network.hidden_units)``
+            # (manager.py output-training callback). ``current_hidden_units``
+            # previously updated ONLY in ``on_cascade_add`` — which has no
+            # production caller — so the status field (and canopy's status bar,
+            # which reads it) sat at 0 even as the cascade grew units. Sourcing
+            # it here keeps it correct without relying on the unwired callback.
+            self.current_hidden_units = hidden_units
             self.metrics_buffer.append(metrics)
 
         self._trigger_callbacks("epoch_end", metrics=metrics, epoch=epoch, loss=loss, accuracy=accuracy)

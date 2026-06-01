@@ -221,6 +221,21 @@ class TestTrainingMonitor:
         monitor.on_cascade_add(hidden_unit_index=1, correlation=0.7)
         assert monitor.get_current_state()["current_hidden_units"] == 2
 
+    def test_on_epoch_end_updates_current_hidden_units(self):
+        """current_hidden_units must track the live count carried by the
+        per-epoch metric stream (manager passes len(network.hidden_units)).
+
+        Regression: it previously updated ONLY in on_cascade_add — which has no
+        production caller — so the status field (and canopy's status bar, which
+        reads it) stayed at 0 even as the cascade grew units.
+        """
+        monitor = TrainingMonitor()
+        assert monitor.get_current_state()["current_hidden_units"] == 0
+        monitor.on_epoch_end(epoch=10, loss=0.3, accuracy=0.8, learning_rate=0.01, hidden_units=2)
+        assert monitor.get_current_state()["current_hidden_units"] == 2
+        monitor.on_epoch_end(epoch=20, loss=0.2, accuracy=0.85, learning_rate=0.01, hidden_units=3)
+        assert monitor.get_current_state()["current_hidden_units"] == 3
+
     def test_register_callback(self):
         """Registered callbacks are called on events."""
         monitor = TrainingMonitor()
