@@ -2253,6 +2253,12 @@ class TrainingLifecycleManager:
             # the canopy "Dataset change pending — restart training to apply"
             # banner without canopy having to poll a separate route.
             "pending_dataset": self.get_pending_dataset_config(),
+            # Issue #3 diagnosability follow-up: which grow_network exit fired on
+            # the last growth run (residual_collapsed / no_candidate /
+            # below_threshold / early_stopped / max_iterations), or None before
+            # any training. Lets canopy distinguish a genuine convergence from a
+            # 0-unit stall instead of both showing a bare "Completed".
+            "completion_reason": getattr(self.network, "_completion_reason", None),
         }
 
     def get_metrics(self) -> Dict[str, Any]:
