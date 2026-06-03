@@ -23,6 +23,13 @@ from api.workers.registry import WorkerRegistry
 logger = logging.getLogger("juniper_cascor.api.workers.coordinator")
 
 
+# ISSUE-319 (defect #3): poll cadence for collect_results. The wait is sliced into
+# intervals of this length so the worker-liveness early-exit can fire promptly when all
+# workers disconnect mid-round, rather than blocking for the full (training-scaled)
+# collection budget. Small enough to be responsive, large enough to be cheap.
+_RESULT_COLLECTION_POLL_INTERVAL = 1.0
+
+
 @dataclass
 class PendingTask:
     """A task that has been dispatched but not yet completed."""
@@ -55,6 +62,13 @@ class TaskResult:
     best_corr_idx: int
     tensors: dict[str, np.ndarray]
     error_message: str | None = None
+    # ISSUE-319 (defect #4): authoritative training-round id, attached server-side in
+    # submit_result from the dispatching PendingTask. Lets the dual-path consumer
+    # (_dispatch_to_remote_workers) round-isolate remote results the way RC-5 already
+    # does for the local pool, so a late result for a stale pending task cannot leak into
+    # a later round's collection. Optional/defaulted for back-compat with any TaskResult
+    # constructed without it.
+    round_id: str | None = None
 
 
 class WorkerCoordinator:
@@ -308,6 +322,7 @@ class WorkerCoordinator:
                 best_corr_idx=msg.get("best_corr_idx", -1),
                 tensors=tensors,
                 error_message=msg.get("error_message"),
+                round_id=task.round_id,
             )
 
             self._results[task_id] = result
@@ -333,16 +348,47 @@ class WorkerCoordinator:
     def collect_results(self, timeout: float = 120.0) -> list[TaskResult]:
         """Wait for all results from the current round.
 
-        Called by the training thread. Blocks until all results are received
-        or timeout expires.
+        Called by the training thread. Blocks until all results are received,
+        the timeout expires, or — ISSUE-319 (defect #3 safety) — no workers remain
+        connected to finish the in-flight tasks.
+
+        The last condition bounds the wait now that the collection budget is scaled up
+        to the candidate-training workload (see
+        ``CascadeCorrelationNetwork._remote_result_collection_timeout``): if every remote
+        worker disconnects mid-round the round can never complete, so we stop waiting
+        promptly and let the caller fall back to local retry instead of blocking for the
+        full (now much larger) budget. The wait still returns the instant all results
+        arrive, so a healthy round is unaffected.
 
         Args:
             timeout: Maximum time to wait in seconds.
 
         Returns:
-            List of TaskResults received (may be fewer than submitted if timeout).
+            List of TaskResults received (may be fewer than submitted if the wait ended
+            early on timeout or loss of all workers).
         """
-        self._results_ready.wait(timeout=timeout)
+        deadline = time.monotonic() + max(0.0, timeout)
+        while True:
+            with self._lock:
+                complete = len(self._results) >= self._current_round_task_count
+            if complete:
+                break  # all results in (or the round was cancelled to count 0)
+            # Worker-liveness early-exit: with no registered workers the remaining remote
+            # tasks can never be completed or reassigned, so there is nothing left to wait
+            # for — return what we have and let the caller fall back to local retry.
+            if self._registry.worker_count == 0:
+                logger.warning(
+                    "collect_results: no remote workers connected — abandoning wait for round %s after %d/%d results",
+                    self._current_round_id,
+                    len(self._results),
+                    self._current_round_task_count,
+                )
+                break
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                break
+            # Wait in a slice so the loop re-evaluates liveness/completion periodically.
+            self._results_ready.wait(timeout=min(_RESULT_COLLECTION_POLL_INTERVAL, remaining))
 
         with self._lock:
             results = list(self._results.values())

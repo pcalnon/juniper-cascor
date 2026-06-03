@@ -265,6 +265,68 @@ class TestTryDispatchTask:
 
 
 @pytest.mark.unit
+class TestHeartbeatDispatch:
+    """ISSUE-319 (defect #5 — the dual-path unlock): an idle worker must pick up tasks
+    submitted AFTER it connected. _try_dispatch_task otherwise runs only at connect and
+    after a task result, so candidate tasks submitted mid-session sit unassigned until the
+    remote collection budget expires and the round falls back to local retry — the stall."""
+
+    @pytest.mark.asyncio
+    async def test_heartbeat_delivers_task_submitted_after_connect(self, registry, coordinator):
+        """The exact #319 scenario: worker connects idle with no work; a candidate task is
+        submitted afterwards; the worker's next heartbeat must deliver it."""
+        registry.register("w1", {})
+        hb = json.dumps({"type": "heartbeat", "worker_id": "w1"})
+        tensors = {
+            "candidate_input": np.zeros((10, 4), dtype=np.float32),
+            "y": np.zeros((10, 1), dtype=np.float32),
+            "residual_error": np.zeros((10, 1), dtype=np.float32),
+        }
+        calls = {"n": 0}
+
+        def receive_seq(*args, **kwargs):
+            calls["n"] += 1
+            if calls["n"] == 1:
+                # Submit only NOW — after the connect-time dispatch has already run against
+                # an empty queue — so ONLY the heartbeat path can deliver this task.
+                coordinator.submit_tasks(
+                    "r1",
+                    [{"candidate_index": 7, "candidate_data": {}, "training_params": {}}],
+                    tensors,
+                )
+                return {"text": hb}
+            raise WebSocketDisconnect()
+
+        ws = AsyncMock()
+        ws.receive = AsyncMock(side_effect=receive_seq)
+
+        with pytest.raises(WebSocketDisconnect):
+            await _message_loop(ws, "w1", registry, coordinator)
+
+        # The heartbeat pulled the task off the unassigned queue and sent it to the worker.
+        assert coordinator.has_pending_tasks() is False
+        assert not registry.get("w1").idle, "worker should be marked busy after assignment"
+
+    @pytest.mark.asyncio
+    async def test_heartbeat_skips_dispatch_for_busy_worker(self, registry, coordinator):
+        """Guard: a heartbeat arriving mid-task must not pull a second task onto a busy
+        worker (get_next_assignment does not itself refuse a busy worker)."""
+        registry.register("w1", {})
+        assert registry.assign_task("w1", "t-active")  # mark the worker busy
+        assert not registry.get("w1").idle
+        hb = json.dumps({"type": "heartbeat", "worker_id": "w1"})
+
+        ws = AsyncMock()
+        ws.receive = AsyncMock(side_effect=[{"text": hb}, WebSocketDisconnect()])
+
+        with patch("api.websocket.worker_stream._try_dispatch_task", new=AsyncMock()) as dispatch:
+            with pytest.raises(WebSocketDisconnect):
+                await _message_loop(ws, "w1", registry, coordinator)
+            # connect-time dispatch fires once; the heartbeat must skip dispatch (busy worker).
+            assert dispatch.await_count == 1
+
+
+@pytest.mark.unit
 class TestWorkerStreamHandlerFullFlow:
     """Test the full worker_stream_handler flow covering try/except/finally."""
 

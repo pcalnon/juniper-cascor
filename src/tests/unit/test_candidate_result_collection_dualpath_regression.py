@@ -27,6 +27,7 @@ regression in either fix is caught.
 import queue
 import threading
 import time
+import uuid
 from unittest import mock
 
 import pytest
@@ -244,7 +245,7 @@ class TestRemoteDispatchCandidateIdMapping:
         return tasks
 
     @staticmethod
-    def _make_result(candidate_id):
+    def _make_result(candidate_id, round_id=None):
         from api.workers.coordinator import TaskResult
 
         return TaskResult(
@@ -261,6 +262,7 @@ class TestRemoteDispatchCandidateIdMapping:
             best_corr_idx=0,
             tensors={},  # no weights/bias/norm_* → conversion uses None for those
             error_message=None,
+            round_id=round_id,
         )
 
     @pytest.mark.unit
@@ -308,3 +310,52 @@ class TestRemoteDispatchCandidateIdMapping:
         results = net._dispatch_to_remote_workers(tasks, ci, y, err)
 
         assert [r.candidate_id for r in results] == [16], "unknown candidate_id must be skipped, not crash or mis-bind"
+
+    @pytest.mark.unit
+    def test_remote_collect_timeout_scales_to_training_not_shutdown(self):
+        """ISSUE-319 (defect #3): the remote-collection budget must track candidate
+        training, not the ~10s candidate_training_shutdown_timeout that always expired
+        before a remote round could finish — the original stall trigger."""
+        from cascor_constants.constants import (
+            _CASCADE_CORRELATION_NETWORK_REMOTE_COLLECT_MAX_TIMEOUT,
+            _CASCADE_CORRELATION_NETWORK_REMOTE_COLLECT_MIN_TIMEOUT,
+        )
+
+        # Small epoch counts floor at MIN — far above the ~10s shutdown budget.
+        net = _make_network(candidate_epochs=3)
+        small = net._remote_result_collection_timeout()
+        assert small == _CASCADE_CORRELATION_NETWORK_REMOTE_COLLECT_MIN_TIMEOUT
+        assert small > net.candidate_training_shutdown_timeout, "budget must exceed the shutdown timeout that caused the stall"
+
+        # Large epoch counts scale up but never exceed the hard ceiling (the hang bound).
+        big = _make_network(candidate_epochs=100_000)._remote_result_collection_timeout()
+        assert big == _CASCADE_CORRELATION_NETWORK_REMOTE_COLLECT_MAX_TIMEOUT
+
+        # A mid-range count lands strictly between the bounds.
+        mid_epochs = int((_CASCADE_CORRELATION_NETWORK_REMOTE_COLLECT_MIN_TIMEOUT + _CASCADE_CORRELATION_NETWORK_REMOTE_COLLECT_MAX_TIMEOUT) / 2)
+        mid = _make_network(candidate_epochs=mid_epochs)._remote_result_collection_timeout()
+        assert _CASCADE_CORRELATION_NETWORK_REMOTE_COLLECT_MIN_TIMEOUT < mid < _CASCADE_CORRELATION_NETWORK_REMOTE_COLLECT_MAX_TIMEOUT
+
+    @pytest.mark.unit
+    def test_stale_round_remote_result_is_discarded(self):
+        """ISSUE-319 (defect #4): a result tagged with a different round_id is dropped
+        even when its candidate_id matches a dispatched task — round isolation for the
+        remote leg, mirroring RC-5 on the local path."""
+        import torch
+
+        net = _make_network()
+        tasks = self._make_tasks([15, 16])
+        coord = mock.MagicMock()
+        fixed = uuid.UUID(int=0x319)
+        current_round = str(fixed)
+        coord.collect_results.return_value = [
+            self._make_result(15, round_id=current_round),  # this round → kept
+            self._make_result(16, round_id="stale-round-deadbeef"),  # other round → dropped
+        ]
+        net._worker_coordinator = coord
+
+        ci, y, err = torch.zeros((4, 2)), torch.zeros((4, 2)), torch.zeros((4, 2))
+        with mock.patch("cascade_correlation.cascade_correlation.uuid.uuid4", return_value=fixed):
+            results = net._dispatch_to_remote_workers(tasks, ci, y, err)
+
+        assert [r.candidate_id for r in results] == [15], "stale-round result (16) must be discarded despite a valid candidate_id"
