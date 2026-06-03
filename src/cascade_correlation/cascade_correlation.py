@@ -724,6 +724,12 @@ class CascadeCorrelationNetwork:
 
         # Initialize network model parameters)
         self.hidden_units = []
+        # Diagnosability (Issue #3 follow-up): which grow_network exit fired on
+        # the most recent growth run. Surfaced via manager.get_status() as
+        # "completion_reason" so canopy can distinguish a genuine convergence
+        # from a stall instead of both showing a bare "Completed". None until
+        # training runs.
+        self._completion_reason: Optional[str] = None
         self._cached_candidate_input = None  # OPT-4: forward pass cache for candidate input reuse
 
         self.output_weights = torch.randn(self.config.input_size, self.config.output_size, requires_grad=True) * self.random_value_scale
@@ -4280,6 +4286,9 @@ class CascadeCorrelationNetwork:
         self.logger.trace("CascadeCorrelationNetwork: grow_network: Starting to grow the network by adding hidden units.")
 
         validate_training_results: Optional[ValidateTrainingResults] = None
+        # Reset the completion-reason diagnostic for this growth run; set at
+        # each loop exit below (and "max_iterations" via the for/else clause).
+        self._completion_reason = None
         # epochs_completed = 0
         # for growth_iteration in range(max_epochs):
         iterations_completed = 0
@@ -4289,6 +4298,7 @@ class CascadeCorrelationNetwork:
             residual_error = self._calculate_residual_error_safe(x_train=x_train, y_train=y_train)
             if residual_error is None:
                 self.logger.warning("CascadeCorrelationNetwork: grow_network: Residual error is None, stopping growth of the network.")
+                self._completion_reason = "residual_collapsed"
                 break
             # self.logger.debug(f"CascadeCorrelationNetwork: grow_network: Growth Iteration {growth_iteration}, Residual Error: {residual_error.mean().item():.6f}")
             self.logger.debug(f"CascadeCorrelationNetwork: grow_network: Iteration {iteration}, Residual Error: {residual_error.mean().item():.6f}")
@@ -4296,6 +4306,7 @@ class CascadeCorrelationNetwork:
             # Train candidate units
             if not (training_results := self._get_training_results(x_train=x_train, y_train=y_train, residual_error=residual_error)) or not training_results.best_candidate:
                 self.logger.warning("CascadeCorrelationNetwork: grow_network: Training results are None or best candidate is None, stopping growth of the network.")
+                self._completion_reason = "no_candidate"
                 break
 
             # Check if best candidate meets correlation threshold (adaptive)
@@ -4313,6 +4324,7 @@ class CascadeCorrelationNetwork:
             self._emit_candidate_correlation(best_correlation)
             if best_correlation < adaptive_threshold:
                 self.logger.info(f"CascadeCorrelationNetwork: grow_network: No candidate met adaptive correlation threshold: {adaptive_threshold:.6f} (static: {self.correlation_threshold}, residual_mag: {residual_magnitude:.6f}), Best Correlation Achieved: {best_correlation:.6f}")
+                self._completion_reason = "below_threshold"
                 break
             self.logger.info(f"CascadeCorrelationNetwork: grow_network: Best Candidate: {best_correlation if training_results.best_candidate else None}, Met adaptive correlation threshold: {adaptive_threshold:.6f} (static: {self.correlation_threshold})")
 
@@ -4356,6 +4368,7 @@ class CascadeCorrelationNetwork:
                     self.logger.info(f"CascadeCorrelationNetwork: grow_network: Added {len(selected_candidates)} candidates as layer (strategy={getattr(self, 'candidate_selection', 'top')!r})")
                 else:
                     self.logger.warning("CascadeCorrelationNetwork: grow_network: No candidates met selection criteria")
+                    self._completion_reason = "no_candidate"
                     break
             else:
 
@@ -4407,9 +4420,14 @@ class CascadeCorrelationNetwork:
                 self.logger.debug(f"CascadeCorrelationNetwork: grow_network: Iteration {iteration}, Early Stop: {validate_training_results.early_stop}, Patience Counter: {validate_training_results.patience_counter}, Best Value Loss: {validate_training_results.best_value_loss:.6f}, Value Output: {validate_training_results.value_output} Value Loss: {validate_training_results.value_loss:.6f}, Value Accuracy: {validate_training_results.value_accuracy:.4f}")
             if validate_training_results.early_stop:
                 self.logger.info(f"CascadeCorrelationNetwork: grow_network: Early stopping triggered at iteration {iteration}.")
+                self._completion_reason = "early_stopped"
                 break
             self.logger.info(f"CascadeCorrelationNetwork: grow_network: Iteration {iteration} - Train Loss: {train_loss:.6f}, Train Accuracy: {train_accuracy:.4f}, Early stop: {validate_training_results.early_stop}")
             iterations_completed = iteration + 1
+        else:
+            # The for-loop ran every iteration without breaking → we hit the
+            # iteration cap rather than converging or stalling.
+            self._completion_reason = "max_iterations"
         if not validate_training_results:
             self.logger.warning(f"CascadeCorrelationNetwork: grow_network: No validation was performed (training loop exited early or did not execute). Iterations completed: {iterations_completed}/{max_iterations}.")
             validate_training_results = ValidateTrainingResults(
@@ -4420,7 +4438,7 @@ class CascadeCorrelationNetwork:
                 value_loss=float("inf"),
                 value_accuracy=0.0,
             )
-        self.logger.info(f"CascadeCorrelationNetwork: grow_network: Finished training after {iterations_completed} iterations. Total hidden units: {len(self.hidden_units)}")
+        self.logger.info(f"CascadeCorrelationNetwork: grow_network: Finished training after {iterations_completed} iterations. Total hidden units: {len(self.hidden_units)}. Completion reason: {self._completion_reason}")
         self.logger.debug(f"CascadeCorrelationNetwork: grow_network: Final history: {len(self.history.get('train_loss', []))} epochs recorded")
         self.logger.trace("CascadeCorrelationNetwork: grow_network: Completed training of the network.")
         return validate_training_results

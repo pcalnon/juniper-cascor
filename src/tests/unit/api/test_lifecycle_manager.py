@@ -361,6 +361,10 @@ class TestLifecycleManagerStatus:
         assert "training_active" in status
         assert status["network_loaded"] is False
         assert status["training_active"] is False
+        # Issue #3 diagnosability follow-up: the key is present even with no
+        # network loaded (getattr on a None network falls back to None).
+        assert "completion_reason" in status
+        assert status["completion_reason"] is None
 
     def test_get_status_with_network(self):
         """Get status reflects network presence."""
@@ -368,6 +372,16 @@ class TestLifecycleManagerStatus:
         mgr.create_network(input_size=2, output_size=2)
         status = mgr.get_status()
         assert status["network_loaded"] is True
+
+    def test_get_status_surfaces_completion_reason(self):
+        """get_status surfaces the network's grow_network completion reason."""
+        mgr = TrainingLifecycleManager()
+        mgr.create_network(input_size=2, output_size=2)
+        # Fresh network: no growth run has set a reason yet.
+        assert mgr.get_status()["completion_reason"] is None
+        # Simulate a terminal grow_network exit and confirm it surfaces.
+        mgr.network._completion_reason = "max_iterations"
+        assert mgr.get_status()["completion_reason"] == "max_iterations"
 
     def test_get_metrics_no_network(self):
         """Get metrics returns empty dict without network."""
