@@ -263,6 +263,22 @@ async def _message_loop(
                 )
                 await websocket.send_json(WorkerProtocol.build_heartbeat(worker_id))
 
+                # ISSUE-319 (defect #5 — the dual-path unlock): deliver tasks that were
+                # submitted AFTER this worker connected. _try_dispatch_task otherwise runs
+                # only at connect (above) and after a task result (below), so an idle,
+                # already-connected worker has no trigger to pick up candidate tasks
+                # submitted mid-session. Those tasks then sit unassigned until the remote
+                # collection budget expires and the round falls back to local retry — so the
+                # remote tier never contributes and the cascade stalls. A heartbeat arrives
+                # well within the registry heartbeat timeout, bounding dispatch latency to
+                # roughly one heartbeat interval. Guard on idle state: a heartbeat can arrive
+                # mid-task, and get_next_assignment does not itself refuse a busy worker
+                # (registry.assign_task would silently reject, but the task would already be
+                # popped and sent), so only pull work for a genuinely idle worker.
+                reg = registry.get(worker_id)
+                if reg is not None and reg.idle:
+                    await _try_dispatch_task(websocket, worker_id, coordinator)
+
             elif msg_type == MessageType.TASK_RESULT:
                 await _handle_task_result(websocket, worker_id, msg, coordinator)
                 # After completing a task, try to dispatch the next one
