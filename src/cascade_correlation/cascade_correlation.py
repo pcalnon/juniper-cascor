@@ -114,6 +114,9 @@ from cascor_constants.constants import (  # TODO: Commented out for F401 complia
     _CASCADE_CORRELATION_NETWORK_RANDOM_MAX_VALUE,
     _CASCADE_CORRELATION_NETWORK_RANDOM_SEED,
     _CASCADE_CORRELATION_NETWORK_RANDOM_VALUE_SCALE,
+    _CASCADE_CORRELATION_NETWORK_REMOTE_COLLECT_MAX_TIMEOUT,
+    _CASCADE_CORRELATION_NETWORK_REMOTE_COLLECT_MIN_TIMEOUT,
+    _CASCADE_CORRELATION_NETWORK_REMOTE_COLLECT_SECONDS_PER_EPOCH,
     _CASCADE_CORRELATION_NETWORK_SEQUENCE_MAX_VALUE,
     _CASCADE_CORRELATION_NETWORK_SHUTDOWN_TIMEOUT,
     _CASCADE_CORRELATION_NETWORK_STATUS_DISPLAY_FREQUENCY,
@@ -1132,6 +1135,30 @@ class CascadeCorrelationNetwork:
         self._task_distributor.set_coordinator(coordinator)
         self.logger.info("CascadeCorrelationNetwork: Remote worker coordinator set — dual-path dispatch enabled")
 
+    def _remote_result_collection_timeout(self) -> float:
+        """Seconds to wait for remote candidate-training results in a dual-path round.
+
+        ISSUE-319 (defect #3): the remote leg previously reused
+        ``candidate_training_shutdown_timeout`` (~10s — a *process teardown* budget) to
+        wait for a *full candidate-training round* (tens of seconds for the default
+        ``candidate_epochs``). The wait therefore expired on every cascade growth, the
+        remote results were discarded as "late", and the tasks were retried on the
+        already-saturated local pool — starving the network at a single hidden unit.
+
+        Scale the budget to the training workload (``candidate_epochs``) with a floor and
+        a hard ceiling. The ceiling, paired with the worker-liveness early-exit in
+        ``WorkerCoordinator.collect_results``, bounds the worst case (all remote workers
+        die mid-round): the round falls back to local retry promptly instead of blocking
+        for the full budget. The wait returns as soon as all results arrive, so a healthy
+        round is unaffected — the budget is only an upper bound.
+        """
+        epochs = int(getattr(self, "candidate_epochs", 0) or 0)
+        estimate = epochs * _CASCADE_CORRELATION_NETWORK_REMOTE_COLLECT_SECONDS_PER_EPOCH
+        return max(
+            _CASCADE_CORRELATION_NETWORK_REMOTE_COLLECT_MIN_TIMEOUT,
+            min(estimate, _CASCADE_CORRELATION_NETWORK_REMOTE_COLLECT_MAX_TIMEOUT),
+        )
+
     def _dispatch_to_remote_workers(
         self,
         tasks: list,
@@ -1204,8 +1231,11 @@ class CascadeCorrelationNetwork:
         # Submit to coordinator
         self._worker_coordinator.submit_tasks(round_id, task_specs, tensors)
 
-        # Block until results arrive
-        timeout = getattr(self, "candidate_training_shutdown_timeout", 120.0)
+        # Block until results arrive. ISSUE-319 (defect #3): budget the wait to the
+        # candidate-training workload, NOT candidate_training_shutdown_timeout (~10s, a
+        # process-teardown budget) which always expired before a remote round could
+        # finish and forced a starving local-retry fallback on every cascade growth.
+        timeout = self._remote_result_collection_timeout()
         remote_results = self._worker_coordinator.collect_results(timeout=timeout)
 
         # ISSUE-319 FIX: ``task_specs`` holds only the remote subset of this round's
@@ -1223,9 +1253,25 @@ class CascadeCorrelationNetwork:
         # Convert TaskResults back to CandidateTrainingResult
         results = []
         for tr in remote_results:
-            # A result whose candidate_id is not part of THIS dispatch is stale/leaked
-            # (remote ``TaskResult`` carries no round_id — see #319 follow-up) or a
-            # protocol mismatch. Skip it rather than crash or mis-bind ``input_size``.
+            # ISSUE-319 (defect #4): drop results from any round other than this one.
+            # ``submit_tasks`` clears ``_results`` per round, but a late result for a
+            # still-tracked stale ``_pending_tasks`` entry can be accepted into a later
+            # round; the authoritative ``round_id`` (attached server-side in
+            # ``submit_result`` from the dispatching ``PendingTask``) lets us round-isolate
+            # the remote leg exactly as RC-5 does for local results in
+            # ``_collect_training_results``. ``getattr`` keeps this safe for any
+            # ``TaskResult`` constructed without the field.
+            tr_round_id = getattr(tr, "round_id", None)
+            if tr_round_id is not None and tr_round_id != round_id:
+                self.logger.warning(
+                    "CascadeCorrelationNetwork: _dispatch_to_remote_workers: " "Discarding remote result for candidate_id=%s from stale round %s (current round %s)",
+                    tr.candidate_id,
+                    tr_round_id,
+                    round_id,
+                )
+                continue
+            # A result whose candidate_id is not part of THIS dispatch is stale/leaked or
+            # a protocol mismatch. Skip it rather than crash or mis-bind ``input_size``.
             spec = spec_by_candidate_id.get(tr.candidate_id)
             if spec is None:
                 self.logger.warning(

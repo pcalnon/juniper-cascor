@@ -947,6 +947,21 @@ _CASCADE_CORRELATION_NETWORK_CANDIDATE_TRAINING_CONTEXT = _PROJECT_CANDIDATE_TRA
 # PARALLEL-FIX (RC-1): Worker thread count constant for PyTorch thread pinning
 _CASCADE_CORRELATION_NETWORK_WORKER_THREAD_COUNT = _PROJECT_MODEL_WORKER_THREAD_COUNT
 
+# ISSUE-319 (defect #3): Remote candidate-result collection budget. The dual-path remote
+# leg previously reused _CASCADE_CORRELATION_NETWORK_SHUTDOWN_TIMEOUT (~10s — a process
+# *teardown* budget) to wait for a full candidate-training round (tens of seconds), so
+# collect_results always timed out, every remote result was discarded as "late", the
+# tasks were retried on the saturated local pool, and the network stalled at one hidden
+# unit. These scale the collection wait to the training workload (candidate_epochs) with
+# a floor and a hard ceiling. The ceiling, paired with the worker-liveness early-exit in
+# WorkerCoordinator.collect_results, bounds the worst case (all remote workers die
+# mid-round) so the round falls back to local retry promptly instead of blocking for the
+# full budget. The wait returns as soon as all results arrive, so healthy rounds are
+# unaffected — the budget is only an upper bound.
+_CASCADE_CORRELATION_NETWORK_REMOTE_COLLECT_SECONDS_PER_EPOCH = 1.0
+_CASCADE_CORRELATION_NETWORK_REMOTE_COLLECT_MIN_TIMEOUT = 120.0
+_CASCADE_CORRELATION_NETWORK_REMOTE_COLLECT_MAX_TIMEOUT = 900.0
+
 
 #####################################################################################################################################################################################################
 # Define constants for the CascadeCorrelationNetwork class, logging Configuration

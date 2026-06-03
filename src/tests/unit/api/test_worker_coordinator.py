@@ -222,6 +222,36 @@ class TestCollectResults:
         results = coordinator.collect_results(timeout=0.1)
         assert len(results) == 1
 
+    def test_collect_results_attaches_round_id(self, coordinator, registry):
+        """ISSUE-319 (defect #4): the accepted TaskResult carries the round_id of the
+        dispatching round so the dual-path consumer can round-isolate remote results."""
+        registry.register("w1", {})
+        task_ids = coordinator.submit_tasks("round-xyz", _make_task_specs(1), _make_tensors())
+        coordinator.get_next_assignment("w1")
+        coordinator.submit_result("w1", _make_result_msg(task_ids[0], candidate_id=0), _make_result_tensors())
+
+        results = coordinator.collect_results(timeout=5.0)
+        assert len(results) == 1
+        assert results[0].round_id == "round-xyz"
+
+    def test_collect_results_early_exit_when_all_workers_gone(self, coordinator, registry):
+        """ISSUE-319 (defect #3 safety): collect_results stops waiting promptly when no
+        workers remain connected, instead of blocking for the full (training-scaled)
+        budget. Without the liveness early-exit this would wait out the whole timeout."""
+        registry.register("w1", {})
+        task_ids = coordinator.submit_tasks("round-1", _make_task_specs(2), _make_tensors())
+        coordinator.get_next_assignment("w1")
+        coordinator.submit_result("w1", _make_result_msg(task_ids[0], candidate_id=0), _make_result_tensors())
+
+        # Worker disconnects with 1 of 2 results outstanding.
+        registry.deregister("w1")
+        start = time.monotonic()
+        results = coordinator.collect_results(timeout=30.0)
+        elapsed = time.monotonic() - start
+
+        assert len(results) == 1, "returns the partial result collected before the worker left"
+        assert elapsed < 5.0, f"must early-exit on loss of all workers, not wait out the 30s budget (took {elapsed:.1f}s)"
+
 
 @pytest.mark.unit
 class TestCancelRound:
