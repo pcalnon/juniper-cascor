@@ -1172,7 +1172,14 @@ class CascadeCorrelationNetwork:
 
         # Convert internal task tuples to wire protocol task specs
         task_specs = []
-        for _task_idx, candidate_data_tuple, training_inputs in tasks:
+        # ISSUE-319 FIX (the actual stall trigger): source the per-round candidate
+        # training params from the network config, NOT from positional indexing into
+        # ``training_inputs``. Under the OPT-5 SharedMemory path ``training_inputs`` is a
+        # *dict* (shm metadata), so ``training_inputs[1]`` raised ``KeyError(1)`` (masked
+        # as the bare "(1)") on every dual-path round, forcing the remote dispatch into a
+        # starving local-retry fallback. These are per-round constants — the OPT-5 dict
+        # itself is populated from these same ``self.candidate_*`` attributes.
+        for _task_idx, candidate_data_tuple, _training_inputs in tasks:
             candidate_index, input_size, activation_name, random_value_scale, candidate_uuid, candidate_seed, random_max_value, sequence_max_value = candidate_data_tuple
             task_specs.append(
                 {
@@ -1187,9 +1194,9 @@ class CascadeCorrelationNetwork:
                         "sequence_max_value": float(sequence_max_value),
                     },
                     "training_params": {
-                        "epochs": int(training_inputs[1]),
-                        "learning_rate": float(training_inputs[4]),
-                        "display_frequency": int(training_inputs[5]),
+                        "epochs": int(self.candidate_epochs),
+                        "learning_rate": float(self.candidate_learning_rate),
+                        "display_frequency": int(self.candidate_display_frequency),
                     },
                 }
             )
@@ -1201,9 +1208,33 @@ class CascadeCorrelationNetwork:
         timeout = getattr(self, "candidate_training_shutdown_timeout", 120.0)
         remote_results = self._worker_coordinator.collect_results(timeout=timeout)
 
+        # ISSUE-319 FIX: ``task_specs`` holds only the remote subset of this round's
+        # candidates, but ``tr.candidate_id`` is the GLOBAL pool index (0..pool_size-1,
+        # assigned in ``_generate_candidate_tasks``). The previous code did
+        # ``task_specs[tr.candidate_id]`` — indexing the local subset list by a global
+        # id — which raised for any remote candidate whose global id exceeded the remote
+        # slice length (the common case: e.g. ids 15,16 in a 40-pool split 38-local /
+        # 2-remote). That exception was swallowed by
+        # ``TaskDistributor._execute_remote_with_fallback`` and forced a local-retry
+        # fallback every cascade round, which then starved — pinning the network at one
+        # hidden unit. Map results by ``candidate_index`` so the lookup is by identity.
+        spec_by_candidate_id = {spec["candidate_index"]: spec for spec in task_specs}
+
         # Convert TaskResults back to CandidateTrainingResult
         results = []
         for tr in remote_results:
+            # A result whose candidate_id is not part of THIS dispatch is stale/leaked
+            # (remote ``TaskResult`` carries no round_id — see #319 follow-up) or a
+            # protocol mismatch. Skip it rather than crash or mis-bind ``input_size``.
+            spec = spec_by_candidate_id.get(tr.candidate_id)
+            if spec is None:
+                self.logger.warning(
+                    "CascadeCorrelationNetwork: _dispatch_to_remote_workers: " "Discarding remote result with unknown candidate_id=%s " "(not among this round's %d dispatched task(s))",
+                    tr.candidate_id,
+                    len(task_specs),
+                )
+                continue
+
             # Reconstruct tensors as torch tensors
             weights = torch.tensor(tr.tensors.get("weights", np.array([])), dtype=torch.float32) if "weights" in tr.tensors else None
             bias = torch.tensor(tr.tensors.get("bias", np.array([])), dtype=torch.float32) if "bias" in tr.tensors else None
@@ -1212,7 +1243,7 @@ class CascadeCorrelationNetwork:
 
             # Create a CandidateUnit from the result data
             candidate = CandidateUnit(
-                CandidateUnit__input_size=task_specs[tr.candidate_id]["candidate_data"]["input_size"],
+                CandidateUnit__input_size=spec["candidate_data"]["input_size"],
                 CandidateUnit__activation_function_name=tr.activation_name,
             )
             if weights is not None:
