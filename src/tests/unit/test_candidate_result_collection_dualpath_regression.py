@@ -197,3 +197,114 @@ class TestEnsureWorkerPoolReentrancy:
             net._ensure_worker_pool(3)
 
         shut.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# ISSUE-319 — remote-dispatch result conversion maps by GLOBAL candidate_id
+# ---------------------------------------------------------------------------
+class TestRemoteDispatchCandidateIdMapping:
+    """``_dispatch_to_remote_workers`` must bind each remote result to its
+    originating task by the *global* ``candidate_id`` (the pool index), NOT by
+    list position into the remote subset.
+
+    Regression (cascor#319): the old ``task_specs[tr.candidate_id]`` indexed the
+    local 2-task subset by a global id (e.g. 15) → IndexError on every dual-path
+    round. That exception was swallowed by ``TaskDistributor`` into an infinite
+    local-retry fallback that starved, pinning the network at one hidden unit.
+    These tests drive the REAL method with a mocked coordinator (no workers).
+    """
+
+    @staticmethod
+    def _make_tasks(global_ids, input_size=2):
+        """Build internal task tuples: (task_idx, candidate_data_tuple, training_inputs)."""
+        tasks = []
+        for gid in global_ids:
+            candidate_data_tuple = (
+                gid,  # candidate_index — the GLOBAL pool index
+                input_size,
+                "Tanh",  # activation_name
+                1.0,  # random_value_scale
+                f"uuid-{gid}",  # candidate_uuid
+                gid,  # candidate_seed
+                1.0,  # random_max_value
+                1.0,  # sequence_max_value
+            )
+            # ISSUE-319: production passes the OPT-5 SharedMemory *dict* here (string
+            # keys), NOT a positional tuple. The pre-fix ``training_inputs[1]`` indexed
+            # this dict and raised ``KeyError(1)`` (masked as "(1)") on every round. The
+            # fix sources params from ``self.candidate_*`` so the dict is never indexed;
+            # using the real (dict) shape is what makes this a regression guard.
+            training_inputs = {
+                "candidate_epochs": 3,
+                "candidate_learning_rate": 0.01,
+                "candidate_display_frequency": 10,
+                "shm_name": f"shm-{gid}",
+            }
+            tasks.append((gid, candidate_data_tuple, training_inputs))
+        return tasks
+
+    @staticmethod
+    def _make_result(candidate_id):
+        from api.workers.coordinator import TaskResult
+
+        return TaskResult(
+            task_id=f"task-{candidate_id}",
+            candidate_id=candidate_id,  # worker echoes the GLOBAL index
+            candidate_uuid=f"uuid-{candidate_id}",
+            correlation=0.5,
+            success=True,
+            epochs_completed=3,
+            activation_name="Tanh",
+            all_correlations=[0.5],
+            numerator=1.0,
+            denominator=2.0,
+            best_corr_idx=0,
+            tensors={},  # no weights/bias/norm_* → conversion uses None for those
+            error_message=None,
+        )
+
+    @pytest.mark.unit
+    def test_global_candidate_ids_do_not_crash_conversion(self):
+        """Remote results whose global id >= len(task_specs) must convert cleanly.
+
+        This is the core #319 regression: ids 15 & 16 are the 2-remote overflow
+        slice of a 40-candidate pool (38 local / 2 remote). The pre-fix code did
+        ``task_specs[15]`` on a 2-element list → IndexError."""
+        import torch
+
+        net = _make_network()
+        tasks = self._make_tasks([15, 16])
+        coord = mock.MagicMock()
+        coord.collect_results.return_value = [self._make_result(15), self._make_result(16)]
+        net._worker_coordinator = coord
+
+        ci, y, err = torch.zeros((4, 2)), torch.zeros((4, 2)), torch.zeros((4, 2))
+        # Pre-fix this raised KeyError(1) when building task_specs (dict-indexed
+        # training_inputs) AND would IndexError in the conversion (global candidate_id).
+        results = net._dispatch_to_remote_workers(tasks, ci, y, err)
+
+        assert len(results) == 2, "both remote results must convert (was IndexError pre-#319)"
+        assert {r.candidate_id for r in results} == {15, 16}
+        # The dispatched specs must carry the network's candidate config, sourced from
+        # self.candidate_* — NOT positional-indexed from the OPT-5 dict (the KeyError(1)).
+        _round_id, sent_specs, _tensors = coord.submit_tasks.call_args.args
+        assert sent_specs, "tasks must have been submitted to the coordinator"
+        assert all(s["training_params"]["epochs"] == net.candidate_epochs for s in sent_specs), "training params must come from self.candidate_* config, not the training_inputs dict"
+
+    @pytest.mark.unit
+    def test_unknown_candidate_id_is_skipped_not_crash(self):
+        """A leaked/stale result whose candidate_id isn't in this dispatch is
+        dropped — remote ``TaskResult`` has no round_id, so this guards the
+        cross-round contamination gap noted in #319."""
+        import torch
+
+        net = _make_network()
+        tasks = self._make_tasks([15, 16])
+        coord = mock.MagicMock()
+        coord.collect_results.return_value = [self._make_result(16), self._make_result(99)]
+        net._worker_coordinator = coord
+
+        ci, y, err = torch.zeros((4, 2)), torch.zeros((4, 2)), torch.zeros((4, 2))
+        results = net._dispatch_to_remote_workers(tasks, ci, y, err)
+
+        assert [r.candidate_id for r in results] == [16], "unknown candidate_id must be skipped, not crash or mis-bind"

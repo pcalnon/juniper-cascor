@@ -9,6 +9,7 @@ This module is the Phase 3 component of the CasCor Concurrency Architecture.
 
 import logging
 import time
+import traceback
 from typing import Any, Callable
 
 logger = logging.getLogger("juniper_cascor.parallelism.task_distributor")
@@ -166,10 +167,15 @@ class TaskDistributor:
         try:
             remote_results = remote_fn(tasks)
         except Exception as e:
+            # ISSUE-319: log repr + traceback, not bare str(e). A list/index bug in the
+            # remote result conversion previously surfaced here only as "(1)", masking
+            # the exception type and origin and making the dual-path stall (whose visible
+            # symptom was a downstream local-retry starvation) very hard to diagnose.
             self._logger.warning(
-                "TaskDistributor: Remote execution failed (%s) — retrying %d tasks locally",
+                "TaskDistributor: Remote execution failed (%r) — retrying %d tasks locally\n%s",
                 e,
                 len(tasks),
+                traceback.format_exc(),
             )
             return retry_fn(tasks, local_capacity)
 
