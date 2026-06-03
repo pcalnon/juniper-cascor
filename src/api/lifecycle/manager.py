@@ -2937,6 +2937,16 @@ class TrainingLifecycleManager:
         if not dataset_type:
             raise RuntimeError("Pending dataset config missing required 'dataset_type'")
 
+        # Merge the generic ``params`` dict (StageDatasetRequest.params — for
+        # generators whose inputs are not covered by the typed convenience
+        # fields, e.g. ``equities``) with the remaining top-level typed fields
+        # (n_samples/noise/… for the legacy generators). Generic params win on
+        # key conflict. The legacy path is unchanged: spiral/xor/… bodies carry
+        # no ``params`` key, so ``generic_params`` is empty and ``cfg`` is the
+        # typed fields exactly as before.
+        generic_params = cfg.pop("params", None) or {}
+        cfg = {**cfg, **generic_params}
+
         from api.settings import Settings
         from cascor_constants.constants_api import _PROJECT_API_JUNIPER_DATA_URL_DEFAULT
 

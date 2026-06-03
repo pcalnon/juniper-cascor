@@ -208,3 +208,54 @@ def test_start_training_without_pending_does_not_invoke_juniper_data(client, fak
     )
     mock_cls.assert_not_called()
     mock_instance.create_dataset.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# Equities (generic-params) staging — native support for juniper-data
+# generators beyond the legacy spiral-shaped typed fields.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.integration
+def test_equities_staging_accepts_and_echoes_generic_params(client):
+    """``equities`` is a valid dataset_type and its inputs ride in the generic
+    ``params`` dict (not covered by the spiral-shaped typed fields)."""
+    _create_network(client)
+    cfg = {"dataset_type": "equities", "params": {"max_symbols": 5, "start_date": "2018-01-01", "normalize_features": True}}
+    resp = client.post("/v1/training/dataset", json=cfg)
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["data"]["status"] == "staged"
+    assert client.get("/v1/training/dataset/pending").json()["data"]["pending"] == cfg
+
+
+@pytest.mark.integration
+def test_equities_reload_forwards_generic_params_flattened(client, fake_juniper_data_client):
+    """Staging equities forwards the generic ``params`` to ``create_dataset``
+    flattened (no nested ``params`` key, no ``dataset_type``) and merged with
+    any typed fields — the native path for non-spiral juniper-data generators."""
+    _, mock_instance = fake_juniper_data_client
+    _create_network(client)
+    cfg = {"dataset_type": "equities", "params": {"max_symbols": 5, "start_date": "2018-01-01", "normalize_features": True}}
+    client.post("/v1/training/dataset", json=cfg)
+
+    client.post("/v1/training/start", json={"inline_data": {"train_x": [[0.0, 0.0]], "train_y": [[1.0, 0.0]]}})
+
+    mock_instance.create_dataset.assert_called_once()
+    call_kwargs = mock_instance.create_dataset.call_args.kwargs
+    assert call_kwargs["generator"] == "equities"
+    assert call_kwargs["params"] == {"max_symbols": 5, "start_date": "2018-01-01", "normalize_features": True}
+
+
+@pytest.mark.integration
+def test_spirals_typed_fields_still_forward_unchanged(client, fake_juniper_data_client):
+    """Regression guard: the legacy spiral path (typed fields, no ``params``
+    key) is unchanged by the generic-params merge."""
+    _, mock_instance = fake_juniper_data_client
+    _create_network(client)
+    client.post("/v1/training/dataset", json={"dataset_type": "spirals", "n_samples": 4, "noise": 0.05})
+
+    client.post("/v1/training/start", json={"inline_data": {"train_x": [[0.0, 0.0]], "train_y": [[1.0, 0.0]]}})
+
+    call_kwargs = mock_instance.create_dataset.call_args.kwargs
+    assert call_kwargs["generator"] == "spirals"
+    assert call_kwargs["params"] == {"n_samples": 4, "noise": 0.05}
