@@ -157,11 +157,19 @@ class StageDatasetRequest(BaseModel):
     clears any prior staging (idempotent with DELETE for that case).
     """
 
-    dataset_type: Optional[Literal["spirals", "xor", "mnist", "circles", "moons"]] = Field(None, description="Generator name forwarded to juniper-data")
+    dataset_type: Optional[Literal["spirals", "xor", "mnist", "circles", "moons", "equities"]] = Field(None, description="Generator name forwarded to juniper-data")
     n_samples: Optional[int] = Field(None, ge=1, le=_PROJECT_API_MAX_DATASET_SAMPLES, description="Total dataset size")
     noise: Optional[float] = Field(None, ge=0.0, le=1.0, description="Generator noise factor (0–1)")
     rotations: Optional[float] = Field(None, ge=0.0, le=10.0, description="Spiral rotations (spirals generator only)")
     n_spirals: Optional[int] = Field(None, ge=2, le=10, description="Number of spirals (spirals generator only)")
+    # Generic generator params for juniper-data generators whose inputs are not
+    # covered by the typed convenience fields above (e.g. the ``equities``
+    # generator: symbols, start_date, end_date, normalize_features, max_symbols).
+    # Merged with the typed fields in ``_reload_dataset`` before forwarding to
+    # ``create_dataset``; generic keys win on conflict. Keeps the legacy
+    # spiral/xor/… bodies unchanged (no ``params`` key) while letting new
+    # generators pass arbitrary params without per-generator typed fields.
+    params: Optional[Dict[str, Any]] = Field(None, description="Generic generator params forwarded verbatim to juniper-data (e.g. equities: symbols, start_date, normalize_features)")
 
 
 class SwapDatasetLiveRequest(StageDatasetRequest):
