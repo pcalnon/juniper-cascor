@@ -82,9 +82,18 @@ class ActivationWithDerivative:
 
         Args:
             activation_fn: A PyTorch activation function (e.g., torch.tanh, torch.nn.Tanh())
+                or the legacy (activation, derivative) tuple returned by juniper-cascor-worker.
         """
-        self.activation_fn = activation_fn
+        self.activation_fn = self._normalize_activation_fn(activation_fn)
         self._activation_name = self._get_activation_name(activation_fn)
+
+    def _normalize_activation_fn(self, activation_fn):
+        """Accept the worker's legacy (activation, derivative) tuple without keeping lambdas."""
+        if isinstance(activation_fn, tuple):
+            if not activation_fn or not callable(activation_fn[0]):
+                raise TypeError("activation tuple must start with a callable activation function")
+            return activation_fn[0]
+        return activation_fn
 
     def _get_activation_name(self, activation_fn) -> str:
         """
@@ -96,6 +105,7 @@ class ActivationWithDerivative:
         Returns:
             String name of the activation function
         """
+        activation_fn = self._normalize_activation_fn(activation_fn)
         if hasattr(activation_fn, "__name__"):
             return activation_fn.__name__
         elif hasattr(activation_fn, "__class__"):

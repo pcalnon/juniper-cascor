@@ -292,6 +292,14 @@ class TestRemoteDispatchCandidateIdMapping:
         _round_id, sent_specs, _tensors = coord.submit_tasks.call_args.args
         assert sent_specs, "tasks must have been submitted to the coordinator"
         assert all(s["training_params"]["epochs"] == net.candidate_epochs for s in sent_specs), "training params must come from self.candidate_* config, not the training_inputs dict"
+        # ISSUE-319 dispatch coercion: int-valued candidate bounds must stay int on
+        # the JSON wire. _make_tasks feeds them as float (1.0); a prior float() here
+        # made the remote worker raise "'float' object cannot be interpreted as an
+        # integer" inside random.randint()/range(). Guard the int() fix.
+        for s in sent_specs:
+            cd = s["candidate_data"]
+            assert type(cd["random_max_value"]) is int, f"random_max_value must be int on the wire, got {type(cd['random_max_value']).__name__}"
+            assert type(cd["sequence_max_value"]) is int, f"sequence_max_value must be int on the wire, got {type(cd['sequence_max_value']).__name__}"
 
     @pytest.mark.unit
     def test_unknown_candidate_id_is_skipped_not_crash(self):

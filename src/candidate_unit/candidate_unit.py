@@ -44,6 +44,7 @@ import random
 import sys
 import uuid
 from dataclasses import dataclass, field
+from numbers import Integral, Real
 
 # from typing import Optional
 from typing import Any, Callable, Optional
@@ -141,6 +142,16 @@ from utils.activation import ActivationWithDerivative  # noqa: F401, E402
 
 #####################################################################################################################################################################################################
 class CandidateUnit:
+    @staticmethod
+    def _coerce_int_like(value: Any, field_name: str) -> int:
+        """Normalize JSON-decoded numeric payload fields used by seed/range APIs."""
+        if isinstance(value, bool):
+            raise TypeError(f"{field_name} must be an integer, not bool")
+        if isinstance(value, Integral):
+            return int(value)
+        if isinstance(value, Real) and float(value).is_integer():
+            return int(value)
+        raise ValueError(f"{field_name} must be an integer-valued number, got {value!r}")
 
     #################################################################################################################################################################################################
     # Initialize a candidate unit.
@@ -178,15 +189,19 @@ class CandidateUnit:
         self.logger.info("CandidateUnit: __init__: Initializing Candidate Unit with Logger class.")
 
         # Initialize candidate index for unique seeding
-        self.candidate_index = CandidateUnit__candidate_index
+        candidate_index = CandidateUnit__candidate_index if CandidateUnit__candidate_index is not None else 0
+        self.candidate_index = self._coerce_int_like(candidate_index, "CandidateUnit__candidate_index")
         self.logger.verbose(f"CandidateUnit: __init__: Candidate index: {self.candidate_index}")
 
         # Initialize CandidateUnit class attributes for randomness
-        self.random_seed = CandidateUnit__random_seed
+        random_seed = CandidateUnit__random_seed if CandidateUnit__random_seed is not None else _CANDIDATE_UNIT_RANDOM_SEED
+        self.random_seed = self._coerce_int_like(random_seed, "CandidateUnit__random_seed")
         self.logger.verbose(f"CandidateUnit: __init__: Random seed: {self.random_seed}")
-        self.random_max_value = CandidateUnit__random_max_value
+        random_max_value = CandidateUnit__random_max_value if CandidateUnit__random_max_value is not None else _CANDIDATE_UNIT_RANDOM_MAX_VALUE
+        self.random_max_value = self._coerce_int_like(random_max_value, "CandidateUnit__random_max_value")
         self.logger.verbose(f"CandidateUnit: __init__: Random max value: {self.random_max_value}")
-        self.sequence_max_value = CandidateUnit__sequence_max_value
+        sequence_max_value = CandidateUnit__sequence_max_value if CandidateUnit__sequence_max_value is not None else _CANDIDATE_UNIT_SEQUENCE_MAX_VALUE
+        self.sequence_max_value = self._coerce_int_like(sequence_max_value, "CandidateUnit__sequence_max_value")
         self.logger.verbose(f"CandidateUnit: __init__: Random sequence max value: {self.sequence_max_value}")
         # Use unique seed per candidate to ensure different initializations
         unique_seed = self.random_seed + self.candidate_index if self.random_seed else self.candidate_index
@@ -198,11 +213,11 @@ class CandidateUnit:
         self.logger.verbose(f"CandidateUnit: __init__: Input size: {self.input_size}")
         self.output_size = CandidateUnit__output_size
         self.logger.verbose(f"CandidateUnit: __init__: Output size: {self.output_size}")
-        self.activation_fn_base = CandidateUnit__activation_function
-        self.logger.verbose(f"CandidateUnit: __init__: Base Activation function: {self.activation_fn_base}")
 
         # Cache activation function wrapper to avoid recreating on every forward pass (P2 optimization)
-        self.activation_fn = self._init_activation_with_derivative(self.activation_fn_base)
+        self.activation_fn = self._init_activation_with_derivative(CandidateUnit__activation_function)
+        self.activation_fn_base = self.activation_fn.activation_fn
+        self.logger.verbose(f"CandidateUnit: __init__: Base Activation function: {self.activation_fn_base}")
         self.logger.debug("CandidateUnit: __init__: Cached activation function wrapper")
 
         # Initialize CandidateUnit class attributes for training epochs
@@ -268,11 +283,15 @@ class CandidateUnit:
         state.pop("logger", None)
         state.pop("_candidate_display_progress", None)
         state.pop("_candidate_display_status", None)
+        if "activation_fn" in state:
+            state["activation_fn_base"] = state["activation_fn"]
         return state
 
     def __setstate__(self, state):
         """Restore instance from serialized state."""
         self.__dict__.update(state)
+        if "activation_fn_base" not in state and hasattr(self, "activation_fn"):
+            self.activation_fn_base = self.activation_fn
         # Recreate logger
         self.logger = Logger
         self.logger.set_level(self.log_level_name)
@@ -289,11 +308,11 @@ class CandidateUnit:
             max_value: Optional maximum value for random number generation
         """
         self.logger.trace("CandidateUnit: _initialize_randomness: Initializing randomness for the candidate unit")
-        seed = seed or _CANDIDATE_UNIT_RANDOM_SEED
+        seed = self._coerce_int_like(seed or _CANDIDATE_UNIT_RANDOM_SEED, "seed")
         self.logger.verbose(f"CandidateUnit: _initialize_randomness: Random seed set to: {seed}")
         # max_value = max_value or _CANDIDATE_UNIT_RANDOM_MAX_VALUE
         # max_value = 10000
-        max_value = max_value or _PROJECT_MODEL_CANDIDATE_RANDOM_MAX_VALUE  # Using a small max value to limit the number of random calls needed to roll to the desired sequence
+        max_value = self._coerce_int_like(max_value or _PROJECT_MODEL_CANDIDATE_RANDOM_MAX_VALUE, "max_value")  # Using a small max value to limit the number of random calls needed to roll to the desired sequence
         self.logger.verbose(f"CandidateUnit: _initialize_randomness: Random max value set to: {max_value}")
         self._seed_random_generator(seed=seed, max_value=max_value, seeder=np.random.seed, generator=np.random.randint)
         self.logger.trace("CandidateUnit: _initialize_randomness: Completed initialization of numpy random generator with seed and sequence for the candidate unit")
@@ -1073,7 +1092,9 @@ class CandidateUnit:
         self.logger.trace("CandidateUnit: _validate_correlation_params: Starting validation of correlation parameters")
 
         # Check if output and residual error are not None
-        self.logger.debug(f"CandidateUnit: _validate_correlation_params: Output shape: {output.shape if output is not None else 'None'}, Residual error shape: {residual_error.shape if residual_error is not None else 'None'}")
+        # NOTE: shapes are logged after the type check below (line ~1107); logging
+        # output.shape here would AttributeError on non-tensor input before the
+        # TypeError can be raised. Entry-time type detail is logged after the None check.
         self.logger.trace("CandidateUnit: _validate_correlation_params: Validating output and residual error are not None")
         if output is None or residual_error is None:
             raise ValueError("CandidateUnit: _validate_correlation_params: Output and residual error must not be None.")
@@ -1227,7 +1248,8 @@ class CandidateUnit:
         Args:
             activation_fn_base: Base activation function
         """
-        self.activation_fn_base = activation_fn_base
+        self.activation_fn = self._init_activation_with_derivative(activation_fn_base)
+        self.activation_fn_base = self.activation_fn.activation_fn
 
     def set_bias(self, bias: torch.Tensor) -> None:
         """
