@@ -1217,8 +1217,12 @@ class CascadeCorrelationNetwork:
                         "random_value_scale": float(random_value_scale),
                         "candidate_uuid": candidate_uuid,
                         "candidate_seed": candidate_seed,
-                        "random_max_value": float(random_max_value),
-                        "sequence_max_value": float(sequence_max_value),
+                        # Remote candidate bounds are int-valued and feed random.randint()/
+                        # range() in CandidateUnit (which reject floats). Send them as int so
+                        # the JSON wire preserves integer-ness — float() here made the remote
+                        # worker raise "'float' object cannot be interpreted as an integer".
+                        "random_max_value": int(random_max_value),
+                        "sequence_max_value": int(sequence_max_value),
                     },
                     "training_params": {
                         "epochs": int(self.candidate_epochs),
