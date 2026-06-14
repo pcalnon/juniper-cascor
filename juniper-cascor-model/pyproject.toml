@@ -1,0 +1,74 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "juniper-cascor-model"
+version = "0.1.0"
+description = "Shared CasCor candidate-training core (CandidateUnit + activation registry + utils + logging + candidate constants) for the Juniper ML platform — the importable model code the distributed worker needs, decoupled from the cascor server stack."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "Paul Calnon" }]
+keywords = ["juniper", "cascor", "cascade-correlation", "candidate-unit", "neural-network", "distributed-training"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+dependencies = [
+    "numpy>=1.24",
+    "torch>=2.0",
+    "PyYAML>=6.0",
+]
+
+[project.optional-dependencies]
+# Optional, lazily-imported helpers used only by dev/debug utilities in utils.py
+# (check_object_pickleability -> dill; display_object_attributes -> columnar).
+full = [
+    "dill>=0.3.7",
+    "columnar>=1.4.0",
+]
+test = [
+    "pytest>=8.0",
+    "pytest-cov>=5.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/pcalnon/juniper-cascor"
+Repository = "https://github.com/pcalnon/juniper-cascor"
+Issues = "https://github.com/pcalnon/juniper-cascor/issues"
+
+# Namespace decision (CW-05 plan §3.1, option (i)): the candidate core is shipped as the
+# same top-level package names cascor uses (candidate_unit / utils / log_config /
+# cascor_constants), so consumers' existing imports resolve verbatim from the package with
+# no rewrites. The thin `juniper_cascor_model` package carries the version + docs.
+[tool.setuptools]
+license-files = []
+
+[tool.setuptools.packages.find]
+include = [
+    "juniper_cascor_model*",
+    "candidate_unit*",
+    "utils*",
+    "log_config*",
+    "cascor_constants*",
+]
+exclude = ["tests*", "images*"]
+
+[tool.pytest.ini_options]
+minversion = "8.0"
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = [
+    "-ra",
+    "--strict-markers",
+]

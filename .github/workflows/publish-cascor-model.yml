@@ -1,0 +1,132 @@
+---
+#####################################################################################################################################################################################################
+# Project:       Juniper
+# Application:   juniper-cascor-model (subdirectory of juniper-cascor)
+# File Name:     publish-cascor-core.yml
+# Author:        Paul Calnon
+#
+# Date Created:  2026-06-04
+#
+# License:       MIT License
+# Copyright:     Copyright (c) 2024-2026 Paul Calnon
+#
+# Description:
+#    GitHub Actions publish pipeline for the juniper-cascor-model package
+#    (Wave 0 of the CW-05 candidate-core extraction -- see
+#    notes/JUNIPER_CASCOR_CORE_PYPI_MIGRATION_PLAN_2026-06-03.md).
+#    Triggered by tags matching ``juniper-cascor-model-v*`` so it stays
+#    decoupled from the juniper-ml meta-package's own ``v*`` release tags.
+#    Publishes to TestPyPI first (with a lightweight install verification),
+#    then PyPI, via OIDC trusted publishing. Mirrors publish-protocol.yml.
+#
+#    The TestPyPI verify uses ``--no-deps`` on purpose: ``import
+#    juniper_cascor_model`` is intentionally torch-free (it only exposes the
+#    version), so the check validates the published artifact installs and is
+#    importable without pulling the multi-GB torch stack into CI. The full
+#    candidate-core import (which needs torch) is covered by the package's
+#    own smoke tests in the build stage.
+#
+#####################################################################################################################################################################################################
+
+name: Publish juniper-cascor-model to PyPI
+
+on:
+  push:
+    tags:
+      - "juniper-cascor-model-v*"
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  build:
+    name: Build and Validate
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: juniper-cascor-model
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6.2.0
+        with:
+          python-version: "3.12"
+
+      - name: Install build tools
+        run: pip install --upgrade build twine
+
+      - name: Build sdist + wheel
+        run: python -m build --sdist --wheel
+
+      - name: Validate distribution metadata
+        run: twine check dist/*
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: juniper-cascor-model-dist
+          path: juniper-cascor-model/dist/
+          if-no-files-found: error
+          retention-days: 7
+
+  publish-testpypi:
+    name: Publish to TestPyPI
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: testpypi
+      url: https://test.pypi.org/p/juniper-cascor-model
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
+        with:
+          name: juniper-cascor-model-dist
+          path: dist/
+
+      - name: Publish to TestPyPI
+        uses: pypa/gh-action-pypi-publish@cef221092ed1bacb1cc03d23a2d87d1d172e277b  # v1.14.0
+        with:
+          repository-url: https://test.pypi.org/legacy/
+          packages-dir: dist/
+          verbose: true
+
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          sparse-checkout: |
+            juniper-cascor-model/pyproject.toml
+
+      - name: Verify install from TestPyPI (no-deps, version-only import)
+        run: |
+          set -euo pipefail
+          version=$(grep '^version' juniper-cascor-model/pyproject.toml | head -1 | sed -E 's/version = "(.+)"/\1/')
+          for attempt in 1 2 3 4 5; do
+            if pip install \
+              --no-deps \
+              --index-url https://test.pypi.org/simple/ \
+              "juniper-cascor-model==${version}"; then
+              break
+            fi
+            echo "TestPyPI index lag — retrying in 10s (attempt ${attempt}/5)"
+            sleep 10
+          done
+          python -c "import juniper_cascor_model; print('TestPyPI install OK', juniper_cascor_model.__version__)"
+
+  publish-pypi:
+    name: Publish to PyPI
+    needs: publish-testpypi
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/p/juniper-cascor-model
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
+        with:
+          name: juniper-cascor-model-dist
+          path: dist/
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@cef221092ed1bacb1cc03d23a2d87d1d172e277b  # v1.14.0
+        with:
+          packages-dir: dist/
+          verbose: true
