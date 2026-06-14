@@ -198,6 +198,36 @@ def test_reload_failure_keeps_pending_for_retry(client, fake_juniper_data_client
 
 
 @pytest.mark.integration
+def test_reload_dataset_resolves_juniper_data_api_key_from_secret_file(client, fake_juniper_data_client, monkeypatch, tmp_path):
+    """Regression: ``_reload_dataset`` must send the juniper-data API key.
+
+    The dataset-reload path resolves the outbound key via ``api.secrets.get_secret``
+    (which honors the ``JUNIPER_DATA_API_KEY_FILE`` Docker-secret indirection) and pass
+    it to ``JuniperDataClient(api_key=...)``. A prior bug imported a nonexistent
+    ``secrets_util`` module whose ``except ImportError`` branch silently substituted a
+    ``None``-returning lambda, so every live dataset swap went out with no ``X-API-Key``
+    and juniper-data answered 401 -> cascor 502. This asserts the resolved key (from the
+    ``_FILE`` secret) actually reaches the client constructor, not ``None``.
+    """
+    mock_client_cls, _ = fake_juniper_data_client
+    secret_file = tmp_path / "juniper_data_api_key"
+    secret_file.write_text("super-secret-key-123\n")
+    monkeypatch.setenv("JUNIPER_DATA_API_KEY_FILE", str(secret_file))
+    monkeypatch.delenv("JUNIPER_DATA_API_KEY", raising=False)
+
+    _create_network(client)
+    client.post("/v1/training/dataset", json={"dataset_type": "spirals", "n_samples": 4})
+    client.post(
+        "/v1/training/start",
+        json={"inline_data": {"train_x": [[0.0, 0.0]], "train_y": [[1.0, 0.0]]}},
+    )
+
+    mock_client_cls.assert_called_once()
+    ctor_kwargs = mock_client_cls.call_args.kwargs
+    assert ctor_kwargs.get("api_key") == "super-secret-key-123", f"expected resolved JUNIPER_DATA_API_KEY_FILE value, got {ctor_kwargs.get('api_key')!r} " "(regression: secrets_util mis-import -> None key -> juniper-data 401)"
+
+
+@pytest.mark.integration
 def test_start_training_without_pending_does_not_invoke_juniper_data(client, fake_juniper_data_client):
     mock_cls, mock_instance = fake_juniper_data_client
     _create_network(client)
