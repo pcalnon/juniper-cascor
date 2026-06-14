@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- **Raised the `torch` floor to `>=2.10.0`** (was `>=2.0`) — the minimal pin that clears
+  every *fixable* torch CVE affecting `>=2.0`, up to and including
+  [CVE-2025-3001](https://github.com/advisories/GHSA-qfhq-4f3w-5fph) (`lstm_cell` memory
+  corruption, fixed in torch 2.10.0). Verified against OSV + GHSA on 2026-06-14. Four torch
+  CVEs remain unfixed upstream at every version (CVE-2025-2148, CVE-2025-2149, CVE-2025-2998,
+  CVE-2025-3000) and cannot be addressed by any version pin. The deployed `JuniperCascor1`
+  runtime already runs torch 2.11.0, which satisfies the new floor.
+
 ## [0.1.0] - 2026-06-04
 
 ### Added
