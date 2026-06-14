@@ -2947,13 +2947,19 @@ class TrainingLifecycleManager:
         generic_params = cfg.pop("params", None) or {}
         cfg = {**cfg, **generic_params}
 
+        # Resolve the juniper-data API key the same way inbound auth (settings.py)
+        # and the auto-start path (app.py) do: ``api.secrets.get_secret`` honors the
+        # ``JUNIPER_DATA_API_KEY_FILE`` Docker-secret indirection, falling back to the
+        # plain ``JUNIPER_DATA_API_KEY`` env var. The previous ``from secrets_util
+        # import get_secret`` referenced a module that never existed in this repo, so
+        # the ``except ImportError`` branch silently substituted a ``None``-returning
+        # lambda -> the JuniperDataClient sent no ``X-API-Key`` -> juniper-data 401 ->
+        # cascor 502 on every live dataset swap. Both linters that would have caught it
+        # were suppressed (``# type: ignore`` + ``# noqa``). See
+        # notes/CASCOR_STARTUP_SECRET_INDIRECTION_INVESTIGATION_2026-06-14.md.
+        from api.secrets import get_secret
         from api.settings import Settings
         from cascor_constants.constants_api import _PROJECT_API_JUNIPER_DATA_URL_DEFAULT
-
-        try:
-            from secrets_util import get_secret  # type: ignore[import-not-found]
-        except ImportError:
-            get_secret = lambda _key: None  # noqa: E731
 
         # CFG-04: Settings field consolidates the JUNIPER_DATA_URL env-var
         # lookup; ``or DEFAULT`` preserves the legacy localhost:8100
