@@ -24,7 +24,10 @@ classifiers = [
 ]
 dependencies = [
     "numpy>=1.24",
-    "torch>=2.0",
+    # Security floor: minimal pin that clears every *fixable* torch CVE affecting >=2.0,
+    # up to CVE-2025-3001 (lstm_cell memory corruption, fixed in 2.10.0). Verified against
+    # OSV/GHSA 2026-06-14. Do not relax below 2.10.0. See CHANGELOG [Unreleased] / Security.
+    "torch>=2.10.0",
     "PyYAML>=6.0",
 ]
 
