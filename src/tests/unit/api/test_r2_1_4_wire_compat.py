@@ -38,8 +38,11 @@ def healthy_client(monkeypatch):
 
 
 # Snapshot captured pre-R2.1.4 (cascor main @ f14cd906). The shared lib
-# migration must preserve every entry below.
-EXPECTED_TOP_LEVEL_KEYS = {"dependencies", "details", "service", "status", "timestamp", "version"}
+# migration must preserve every entry below. ``git_sha`` / ``build_date`` were
+# added additively by the build-provenance effort (obs 0.4.0 / juniper-ml
+# notes/BUILD_PROVENANCE_DESIGN_2026-06-14.md) — optional, default ``None``, so
+# the extension stays wire-compatible with pre-0.4.0 consumers.
+EXPECTED_TOP_LEVEL_KEYS = {"build_date", "dependencies", "details", "git_sha", "service", "status", "timestamp", "version"}
 EXPECTED_DEP_KEYS = {"lifecycle"}
 EXPECTED_DETAILS_KEYS = {"network_loaded", "training_state"}
 
@@ -57,7 +60,8 @@ class TestReadinessWireCompat:
         assert response.headers.get("X-Juniper-Readiness") == "ready"
 
     def test_top_level_keys_unchanged(self, healthy_client):
-        """No keys added or removed from the standard ReadinessResponse shape."""
+        """The standard ReadinessResponse shape, plus the additive
+        build-provenance ``git_sha`` / ``build_date`` keys (obs 0.4.0)."""
         response = healthy_client.get("/v1/health/ready")
         body = response.json()
         assert set(body.keys()) == EXPECTED_TOP_LEVEL_KEYS

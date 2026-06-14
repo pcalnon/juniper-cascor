@@ -12,6 +12,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+from api import provenance
 from api.lifecycle.manager import TrainingLifecycleManager
 from api.middleware import RequestBodyLimitMiddleware, SecurityHeadersMiddleware, SecurityMiddleware
 from api.models.common import error_response
@@ -161,7 +162,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     configure_logging(settings.log_level, settings.log_format, "juniper-cascor")
     configure_sentry(settings.sentry_dsn, "juniper-cascor", _API_VERSION)
     if settings.metrics_enabled:
-        set_build_info("juniper_cascor", _API_VERSION)
+        set_build_info("juniper_cascor", _API_VERSION, git_sha=provenance.git_sha(), build_date=provenance.build_date())
 
     logger.info(f"JuniperCascor API v{_API_VERSION} starting")
     logger.info(f"Listening on {settings.host}:{settings.port}")
