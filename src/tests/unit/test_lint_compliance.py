@@ -97,3 +97,25 @@ class TestNoSetFromGenerator:
                 violations.append(node.lineno)
 
         assert not violations, f"set(generator) found at lines {violations} in {filepath.name} — use set comprehension instead"
+
+
+@pytest.mark.unit
+class TestNoSuppressedImportNotFound:
+    """Forbid inline ``# type: ignore[import-not-found]`` — it masks an unresolvable import.
+
+    cascor#331: ``from secrets_util import get_secret  # type: ignore[import-not-found]``
+    referenced a module that never existed; the ``except ImportError`` substituted a
+    ``None``-returning stub, so cascor sent no juniper-data API key (401 -> 502) on every
+    live dataset swap. mypy DID flag the import — the inline suppression hid it. If a module
+    cannot be imported, fix the import; a genuinely-optional third-party dependency belongs
+    in mypy's ``ignore_missing_imports`` config (or behind a typed shim), not silenced
+    inline on a first-party import.
+    """
+
+    _SUPPRESSION = re.compile(r"#\s*type:\s*ignore\[import-not-found\]")
+
+    @pytest.mark.parametrize("filepath", _python_files(SOURCE_DIRS), ids=lambda p: str(p.relative_to(SRC_DIR)))
+    def test_no_inline_import_not_found_suppression(self, filepath: Path):
+        """No source file may silence mypy's import-not-found inline (see class docstring)."""
+        offenders = [i for i, line in enumerate(filepath.read_text(encoding="utf-8").splitlines(), 1) if self._SUPPRESSION.search(line)]
+        assert not offenders, f"{filepath.relative_to(SRC_DIR)} silences mypy import-not-found inline at line(s) " f"{offenders} — this masks an unresolvable import (see cascor#331). Fix the import, " "or add the optional dependency to mypy's ignore_missing_imports config."
