@@ -74,8 +74,14 @@ async def start_training(request: Request, body: TrainingStartRequest = None) ->
         result = lifecycle.start_training(x=x, y=y, x_val=x_val, y_val=y_val, **kwargs)
         return success_response(result)
     except (RuntimeError, ValueError) as e:
+        # Surface the specific reason (no network created / training already in progress /
+        # no dataset staged ("Training data not provided") / juniper-data fetch failed /
+        # investigating|replaying a snapshot) rather than a generic message, so API and
+        # Canopy callers can tell *why* the start was rejected and act on it. The generic
+        # string previously masked a juniper-data fetch failure as a bogus "state" error.
+        # See notes/CASCOR_STARTUP_SECRET_INDIRECTION_INVESTIGATION_2026-06-14.md (3.4).
         logger.debug("Start training failed: %s", e)
-        raise HTTPException(status_code=409, detail="Training cannot be started in the current state") from e
+        raise HTTPException(status_code=409, detail=f"Training cannot be started: {e}") from e
 
 
 @router.post("/stop")
