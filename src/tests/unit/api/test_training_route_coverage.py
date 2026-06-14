@@ -170,6 +170,16 @@ class TestStartTraining:
         assert response.status_code == 409
         assert "cannot be started" in response.json()["error"]["message"].lower()
 
+    def test_start_training_409_surfaces_specific_reason(self, client_with_network):
+        """The 409 detail must name *why* the start was rejected (here: no dataset
+        loaded), not a generic 'current state' string. The generic message previously
+        masked real causes — e.g. a juniper-data fetch failure surfaced as a bogus state
+        error. See notes/CASCOR_STARTUP_SECRET_INDIRECTION_INVESTIGATION_2026-06-14.md (3.4)."""
+        response = client_with_network.post("/v1/training/start")
+        assert response.status_code == 409
+        msg = response.json()["error"]["message"]
+        assert "Training data not provided" in msg, msg
+
     def test_start_training_rejects_unknown_params(self, client_with_network):
         """SEC-07 regression (supersedes CR-023): unknown keys in ``params``
         are now rejected by Pydantic at the request boundary (422) instead

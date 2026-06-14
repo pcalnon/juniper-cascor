@@ -74,6 +74,15 @@ class TestLifespanAutoStart:
             with TestClient(app):
                 mock_auto.assert_not_called()
 
+    def test_auto_start_default_is_off(self, monkeypatch):
+        """The ``auto_start`` default must be OFF: a fresh cascor must not auto-train on
+        boot. Auto-start trains onto a default (empty) network and violates the
+        clean-STOPPED initial state every API / Canopy / automation caller assumes; the
+        deploy demo opts in explicitly via ``JUNIPER_CASCOR_AUTO_START=true``. See
+        notes/CASCOR_STARTUP_SECRET_INDIRECTION_INVESTIGATION_2026-06-14.md (3.3)."""
+        monkeypatch.delenv("JUNIPER_CASCOR_AUTO_START", raising=False)
+        assert Settings().auto_start is False
+
 
 # ------------------------------------------------------------------
 # Lifespan: Shutdown branches (lines 64-75)

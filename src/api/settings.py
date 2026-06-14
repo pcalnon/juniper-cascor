@@ -66,7 +66,13 @@ _JUNIPER_CASCOR_API_METRICS_ENABLED_DEFAULT: bool = _JUNIPER_CASCOR_API_METRICS_
 
 _JUNIPER_CASCOR_API_AUTO_START_DISABLED: bool = False
 _JUNIPER_CASCOR_API_AUTO_START_ENABLED: bool = True
-_JUNIPER_CASCOR_API_AUTO_START_DEFAULT: bool = _JUNIPER_CASCOR_API_AUTO_START_ENABLED
+# Default OFF. Auto-start trains on boot onto a default (empty) network, which violates
+# the clean-STOPPED initial-state assumption every API / Canopy / automation caller makes
+# (it left the #319 probe staring at epoch 7576 / 0 hidden units on a fresh stack). It is
+# a demo/dev convenience only; juniper-deploy's demo opts in explicitly via
+# JUNIPER_CASCOR_AUTO_START=true, so flipping the default does NOT change the demo stack.
+# See notes/CASCOR_STARTUP_SECRET_INDIRECTION_INVESTIGATION_2026-06-14.md (3.3).
+_JUNIPER_CASCOR_API_AUTO_START_DEFAULT: bool = _JUNIPER_CASCOR_API_AUTO_START_DISABLED
 
 _JUNIPER_CASCOR_API_AUTO_START_DATA_SERVICE_DEFAULT: bool = False
 _JUNIPER_CASCOR_API_AUTO_START_DATA_SERVICE_COMMAND_DEFAULT: str = "python -m juniper_data"
