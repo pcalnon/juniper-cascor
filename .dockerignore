@@ -1,0 +1,34 @@
+# =============================================================================
+# JuniperCascor — Docker build context exclusions
+# =============================================================================
+# Keep build artifacts and VCS metadata out of the image. The nested ``**/``
+# egg-info / dist-info forms matter specifically because the Dockerfile does
+# ``COPY src/ ./src/`` and runs with ``ENV PYTHONPATH=/app/src`` — a stale
+# build artifact under src/ would otherwise land on the import path ahead of
+# site-packages and shadow the installed package's metadata version. That is
+# the class of bug fixed for juniper-canopy in #362 (see juniper-ml
+# notes/BUILD_PROVENANCE_DESIGN_2026-06-14.md). A root-only ``*.egg-info/`` is
+# insufficient — it does not match a nested ``src/*.egg-info``. cascor is not
+# vulnerable today (its egg-info sits at the repo root, which ``COPY src/`` does
+# not pick up), so this is preventive hardening + general context hygiene.
+
+# Version control
+.git/
+.gitignore
+
+# Python build artifacts
+__pycache__/
+**/__pycache__/
+*.py[cod]
+*.egg-info/
+**/*.egg-info/
+**/*.dist-info/
+build/
+dist/
+
+# Test / type-check caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+coverage.xml
