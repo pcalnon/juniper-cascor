@@ -148,7 +148,7 @@ pytest-xdist==3.8.0
 python-dateutil==2.9.0.post0
 python-dotenv==1.2.2
 PyYAML==6.0.3
-readme_renderer==44.0
+readme_renderer==45.0
 requests==2.34.2
 requests-toolbelt==1.0.0
 responses==0.26.1
