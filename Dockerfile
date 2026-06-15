@@ -33,11 +33,24 @@ RUN pip install --no-cache-dir --no-deps .
 # -----------------------------------------------------------------------------
 FROM python:3.14-slim AS runtime
 
+# Build provenance (juniper-ml notes/BUILD_PROVENANCE_DESIGN_2026-06-14.md):
+# the deploy Makefile passes this repo's own git SHA, an ISO-8601 build
+# timestamp, and the package version at build time. They are stamped as OCI
+# labels and exported as env vars (below) so the running service reports them
+# on /v1/health and `make doctor` can detect stale-image drift. Default empty
+# when the image is built bare (read back as None by the app).
+ARG GIT_SHA=""
+ARG BUILD_DATE=""
+ARG APP_VERSION=""
+
 LABEL org.opencontainers.image.title="JuniperCascor"
 LABEL org.opencontainers.image.description="Cascade Correlation Neural Network training service"
 LABEL org.opencontainers.image.authors="Paul Calnon"
 LABEL org.opencontainers.image.licenses="MIT"
 LABEL org.opencontainers.image.source="https://github.com/pcalnon/juniper-cascor"
+LABEL org.opencontainers.image.revision="${GIT_SHA}"
+LABEL org.opencontainers.image.created="${BUILD_DATE}"
+LABEL org.opencontainers.image.version="${APP_VERSION}"
 
 # Create non-root user
 RUN groupadd --gid 1000 juniper && \
@@ -65,6 +78,12 @@ ENV JUNIPER_CASCOR_HOST=0.0.0.0
 ENV JUNIPER_CASCOR_PORT=8200
 ENV JUNIPER_CASCOR_LOG_LEVEL=INFO
 ENV JUNIPER_DATA_URL=http://localhost:8100
+
+# Build provenance (see the ARG block in the runtime stage above): exported so
+# the app process can read its own source revision / build date and report them
+# on /v1/health. Empty when built bare (read back as None).
+ENV JUNIPER_CASCOR_GIT_SHA=${GIT_SHA}
+ENV JUNIPER_CASCOR_BUILD_DATE=${BUILD_DATE}
 
 EXPOSE 8200
 

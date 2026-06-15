@@ -62,8 +62,11 @@ dependencies = [
     # ``TrustedNetwork`` so this module can drop its inline copy.
     # 0.3.1 added the ``logging.warning`` on unparseable client IP
     # that cascor had been carrying inline since #313 — pin >=0.3.1
-    # so the warning is preserved post-migration.
-    "juniper-observability>=0.3.1",
+    # so the warning is preserved post-migration. 0.4.0 added optional
+    # ``git_sha`` / ``build_date`` passthrough on ``set_build_info`` +
+    # the shared ``ReadinessResponse`` model for build provenance
+    # (juniper-ml notes/BUILD_PROVENANCE_DESIGN_2026-06-14.md).
+    "juniper-observability>=0.4.0",
     # METRICS-MON R2.2.2 / seed-05: WebSocket frame schemas (envelope
     # Pydantic models for /ws/training and /ws/control + WorkerMessageType
     # StrEnum + BinaryFrame numpy codec for /ws/v1/workers). The cascor

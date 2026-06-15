@@ -20,6 +20,7 @@ in juniper-ml for the cross-repo contract this implements (R1.2 / seed-02
 and seed-03).
 """
 
+import importlib.metadata
 import time
 
 from fastapi import APIRouter, Request, Response
@@ -29,10 +30,18 @@ from fastapi import APIRouter, Request, Response
 # drift from the R1.2 cross-service contract.
 from juniper_observability import LIVENESS_STALENESS_SECONDS, LIVENESS_TICK_BUDGET_MS, READINESS_HEADER
 
+from api import provenance
 from api.models.health import DependencyStatus, ReadinessResponse, probe_dependency
 from api.settings import Settings
 
-_API_VERSION: str = "0.5.0"
+# Single source of truth: the installed distribution's metadata (OQ-1 of the
+# build-provenance effort — juniper-ml notes/BUILD_PROVENANCE_DESIGN_2026-06-14.md).
+# Falls back to the literal only in a bare source checkout where the package is
+# not installed, so this constant can no longer drift from pyproject's version.
+try:
+    _API_VERSION: str = importlib.metadata.version("juniper-cascor")
+except importlib.metadata.PackageNotFoundError:  # pragma: no cover - source checkout
+    _API_VERSION = "0.5.0"
 
 router = APIRouter(tags=["health"])
 
@@ -67,7 +76,16 @@ async def health_check() -> dict:
       shared by juniper-data and juniper-canopy so monitoring tools can
       tell health responses apart without inspecting the URL.
     """
-    return {"status": "ok", "version": _API_VERSION, "service": "juniper-cascor"}
+    return {
+        "status": "ok",
+        "version": _API_VERSION,
+        "service": "juniper-cascor",
+        # Build provenance (juniper-ml notes/BUILD_PROVENANCE_DESIGN_2026-06-14.md):
+        # source git SHA + ISO-8601 build date baked into the image. ``None``
+        # outside a provenance-stamped image; lets ``make doctor`` detect drift.
+        "git_sha": provenance.git_sha(),
+        "build_date": provenance.build_date(),
+    }
 
 
 @router.get("/health/live")
@@ -173,6 +191,8 @@ async def readiness_probe(request: Request, response: Response) -> ReadinessResp
         status=overall,
         version=_API_VERSION,
         service="juniper-cascor",
+        git_sha=provenance.git_sha(),
+        build_date=provenance.build_date(),
         dependencies=dependencies,
         details={"network_loaded": network_loaded, "training_state": training_state},
     )
