@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`.dockerignore` added — excludes build artifacts (incl. nested `**/*.egg-info/`) from the image.** cascor had no `.dockerignore`, so the full build context was sent and any build artifact under `src/` could be `COPY src/`'d into the image. Because cascor runs from `/app/src` (`ENV PYTHONPATH=/app/src`), a stale `src/*.egg-info` would land ahead of site-packages and shadow `importlib.metadata.version("juniper-cascor")` — the class of bug fixed for juniper-canopy in [canopy #362](https://github.com/pcalnon/juniper-canopy/pull/362) (surfaced by the build-provenance `make doctor` work). cascor is **not** vulnerable today (its egg-info is at the repo root, which `COPY src/` does not pick up), so this is preventive hardening + general context hygiene (the file also excludes `.git/`, `__pycache__/`, `*.py[cod]`, `build/`, `dist/`, and test/type-check caches). The nested `**/*.egg-info/` + `**/*.dist-info/` forms are required because a root-only `*.egg-info/` does not match `src/*.egg-info`. Regression test: `src/tests/unit/test_dockerignore_egg_info.py`.
+
 - **Build provenance on `/v1/health` + `/v1/health/ready`.** The service now
   reports the source `git_sha` and ISO-8601 `build_date` baked into its image
   at build time. New `GIT_SHA` / `BUILD_DATE` / `APP_VERSION` Dockerfile
