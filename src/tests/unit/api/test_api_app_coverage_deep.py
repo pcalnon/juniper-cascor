@@ -24,6 +24,30 @@ from api.settings import Settings
 pytestmark = pytest.mark.unit
 
 
+def _collect_route_paths(routes, prefix=""):
+    """Collect all route paths (REST + WebSocket), descending into routers.
+
+    fastapi >=0.137 wraps ``app.include_router(...)`` results in
+    ``_IncludedRouter`` objects that have no ``.path``; their sub-routes live
+    under ``.include_context.included_router.routes``. WebSocket routes are also
+    absent from the OpenAPI schema, so this manual walk is the robust way to
+    assert WS registration across fastapi versions.
+    """
+    found: set[str] = set()
+    for route in routes:
+        ctx = getattr(route, "include_context", None)
+        if ctx is not None:  # fastapi >=0.137 _IncludedRouter wrapper
+            found |= _collect_route_paths(ctx.included_router.routes, prefix + (getattr(ctx, "prefix", "") or ""))
+            continue
+        path = getattr(route, "path", None)
+        if path is not None:
+            found.add(prefix + path)
+        sub = getattr(route, "routes", None)  # nested router (older fastapi / mounts)
+        if sub:
+            found |= _collect_route_paths(sub, prefix)
+    return found
+
+
 # ------------------------------------------------------------------
 # Lifespan: metrics_enabled=True → set_build_info (line 39)
 # ------------------------------------------------------------------
@@ -434,14 +458,16 @@ class TestAppFactoryConfigurations:
     def test_websocket_routes_registered(self):
         """WebSocket routes /ws/training and /ws/control are registered."""
         app = create_app(Settings(auto_start=False))
-        route_paths = [r.path for r in app.routes]
+        route_paths = _collect_route_paths(app.routes)
         assert "/ws/training" in route_paths
         assert "/ws/control" in route_paths
 
     def test_rest_routes_registered(self):
         """All REST route prefixes are registered."""
         app = create_app(Settings(auto_start=False))
-        route_paths = [r.path for r in app.routes if hasattr(r, "path")]
+        # fastapi >=0.137 wraps included routers in ``_IncludedRouter`` (no
+        # ``.path``); the OpenAPI schema lists registered REST paths robustly.
+        route_paths = list(app.openapi()["paths"])
         # Check key route prefixes exist
         assert any("/v1/health" in p for p in route_paths)
         assert any("/v1/network" in p for p in route_paths)
