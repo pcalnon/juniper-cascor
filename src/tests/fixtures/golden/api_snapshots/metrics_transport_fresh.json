@@ -1,0 +1,16 @@
+{
+  "data": {
+    "active_connections": 0,
+    "bytes_sent_by_type": {},
+    "chunk_payload_size_bytes": 32000,
+    "current_seq": 0,
+    "max_message_size_bytes": 60000,
+    "messages_sent_by_type": {},
+    "pending_connections": 0,
+    "replay_buffer_capacity": 1024,
+    "replay_buffer_size": 0,
+    "send_failures": 0
+  },
+  "meta": {},
+  "status": "success"
+}

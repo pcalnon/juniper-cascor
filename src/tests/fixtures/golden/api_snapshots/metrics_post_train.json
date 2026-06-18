@@ -1,0 +1,12 @@
+{
+  "data": {
+    "epoch": 3,
+    "hidden_units": 2,
+    "train_accuracy": 0.48333333333333334,
+    "train_loss": 0.40217360854148865,
+    "val_accuracy": null,
+    "val_loss": null
+  },
+  "meta": {},
+  "status": "success"
+}

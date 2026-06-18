@@ -1,0 +1,50 @@
+{
+  "data": {
+    "completion_reason": null,
+    "monitor": {
+      "current_epoch": 0,
+      "current_hidden_units": 0,
+      "current_phase": "output",
+      "is_training": false,
+      "total_metrics": 0
+    },
+    "network_loaded": false,
+    "pending_dataset": null,
+    "state_machine": {
+      "has_candidate_state": false,
+      "paused_phase": null,
+      "phase": "IDLE",
+      "status": "STOPPED"
+    },
+    "training_active": false,
+    "training_state": {
+      "all_correlations": [],
+      "best_candidate_id": -1,
+      "best_candidate_uuid": "",
+      "best_correlation": 0.0,
+      "candidate_epoch": 0,
+      "candidate_total_epochs": 0,
+      "candidates_trained": 0,
+      "current_epoch": 0,
+      "current_step": 0,
+      "dataset_name": "",
+      "grow_iteration": 0,
+      "grow_max": 0,
+      "learning_rate": 0.0,
+      "max_epochs": 200,
+      "max_hidden_units": 0,
+      "max_iterations": 1000,
+      "network_name": "",
+      "optimizer_name": "",
+      "phase": "Idle",
+      "phase_detail": "",
+      "phase_started_at": "",
+      "second_candidate_correlation": 0.0,
+      "second_candidate_id": null,
+      "status": "Stopped",
+      "threshold_function": ""
+    }
+  },
+  "meta": {},
+  "status": "success"
+}

@@ -1,0 +1,19 @@
+{
+  "net_config": {
+    "candidate_epochs": 3,
+    "candidate_pool_size": 2,
+    "epochs_max": 5,
+    "max_hidden_units": 3,
+    "max_iterations": 3,
+    "output_epochs": 3,
+    "random_seed": 42
+  },
+  "numpy": "2.4.4",
+  "python": "3.13.13",
+  "tolerances": {
+    "atol": 0.0001,
+    "predict_roundtrip_atol": 1e-06,
+    "rtol": 0.001
+  },
+  "torch": "2.11.0+cu130"
+}

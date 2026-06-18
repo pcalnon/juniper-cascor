@@ -1,0 +1,58 @@
+{
+  "completion_reason": "max_iterations",
+  "dataset_swaps": [],
+  "growth_count": 3,
+  "hidden_units_added": [
+    {
+      "correlation": 0.257680536228609,
+      "unit_index": 0,
+      "weight_shape": [
+        2
+      ]
+    },
+    {
+      "correlation": 0.16490318235657495,
+      "unit_index": 1,
+      "weight_shape": [
+        3
+      ]
+    },
+    {
+      "correlation": 0.04275244530453615,
+      "unit_index": 2,
+      "weight_shape": [
+        4
+      ]
+    },
+    {
+      "correlation": 0.0,
+      "unit_index": -1,
+      "weight_shape": []
+    }
+  ],
+  "num_hidden_units": 3,
+  "train_accuracy": [
+    0.5333333333333333,
+    0.55,
+    0.5333333333333333,
+    0.55
+  ],
+  "train_loss": [
+    0.3373406231403351,
+    0.26334986090660095,
+    0.24035511910915375,
+    0.24062992632389069
+  ],
+  "value_accuracy": [
+    0.5333333333333333,
+    0.55,
+    0.5333333333333333,
+    0.55
+  ],
+  "value_loss": [
+    0.3373406231403351,
+    0.26334986090660095,
+    0.24035511910915375,
+    0.24062992632389069
+  ]
+}
