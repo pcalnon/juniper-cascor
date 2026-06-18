@@ -26,7 +26,7 @@ cuda-toolkit==13.0.2
     # via torch
 cycler==0.12.1
     # via matplotlib
-fastapi==0.137.1
+fastapi==0.137.2
     # via juniper-cascor (pyproject.toml)
 filelock==3.29.4
     # via torch
@@ -50,7 +50,7 @@ juniper-cascor-protocol==0.1.0
     # via juniper-cascor (pyproject.toml)
 juniper-data==0.6.0
     # via juniper-cascor (pyproject.toml)
-juniper-data-client==0.4.1
+juniper-data-client==0.4.2
     # via juniper-cascor (pyproject.toml)
 juniper-observability==0.4.0
     # via juniper-cascor (pyproject.toml)
