@@ -10,6 +10,9 @@ permissions:
 jobs:
   testpypi:
     name: Publish to TestPyPI
+    # Release-convention guard: publish juniper-cascor only for the main `v*` release, NOT for a
+    # sub-package `juniper-cascor-<pkg>-v*` release (which also fires this release-triggered workflow).
+    if: startsWith(github.event.release.tag_name, 'v')
     runs-on: ubuntu-latest
     environment: testpypi
     steps:
