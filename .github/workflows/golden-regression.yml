@@ -1,0 +1,130 @@
+---
+#####################################################################################################################################################################################################
+# Project:       Juniper
+# Sub-Project:   JuniperCascor
+# Application:   juniper_cascor
+# File Name:     golden-regression.yml
+# Author:        Paul Calnon
+# Version:       0.1.0
+#
+# Date Created:  2026-06-17
+# Last Modified: 2026-06-17
+#
+# License:       MIT License
+# Copyright:     Copyright (c) 2024-2026 Paul Calnon
+#
+# Description:
+#    Dedicated serial lane for the golden / snapshot regression suite (roadmap
+#    OUT-12; the WS-6 pre-refactor safety gate). Captures the cascade-correlation
+#    training trajectory, the trained predict-after-load round-trip, and the API
+#    response shapes against checked-in goldens.
+#
+#    Determinism contract (see notes/ build plan in juniper-ml):
+#      - Runs SERIALLY — never under pytest-xdist (parallel candidate reduction
+#        is not bit-stable).
+#      - CASCOR_NUM_PROCESSES=1 forces the sequential candidate path.
+#      - BLAS/numeric stacks pinned to a single thread (job-level env, set before
+#        the interpreter starts so they are honored at native-library load time).
+#      - Python and torch are pinned to the calibration environment (3.13 /
+#        2.11.0) so the tolerance-compared float series are not perturbed by
+#        interpreter or kernel drift. The CPU torch build's CPU kernels match the
+#        +cu build of the same version.
+#      - Runs on the GIL interpreter; conftest aborts under Py_GIL_DISABLED.
+#
+# References:
+#    - OUT-12 / JUNIPER_PLATFORM_ENVIRONMENT_STATE_AND_ROADMAP_2026-06-17.md
+#    - JUNIPER_CASCOR_GOLDEN_REGRESSION_SUITE_BUILD_PLAN_2026-06-17.md (juniper-ml)
+#####################################################################################################################################################################################################
+
+name: Golden Regression (WS-6 Gate)
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+      - develop
+  workflow_dispatch:
+
+concurrency:
+  group: golden-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  # Pin to the calibration environment so the deterministic float goldens stay
+  # within tolerance run-to-run and across the WS-6 pre/post-refactor compare.
+  PYTHON_GOLDEN_VERSION: "3.13"
+  TORCH_GOLDEN_VERSION: "2.11.0"
+  # Single-thread the numeric stacks for determinism. Set at job level so the
+  # values are present BEFORE Python / native libraries load (the serial golden
+  # lane never runs under xdist, so conftest's xdist-gated pin does not apply).
+  OMP_NUM_THREADS: "1"
+  MKL_NUM_THREADS: "1"
+  OPENBLAS_NUM_THREADS: "1"
+  VECLIB_MAXIMUM_THREADS: "1"
+  NUMEXPR_NUM_THREADS: "1"
+  CASCOR_NUM_PROCESSES: "1"
+  JUNIPER_CASCOR_LOG_LEVEL: "ERROR"
+
+jobs:
+  golden-regression:
+    name: Golden / Snapshot Regression
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          fetch-depth: 1
+
+      - name: Set up Python ${{ env.PYTHON_GOLDEN_VERSION }}
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6.2.0
+        with:
+          python-version: ${{ env.PYTHON_GOLDEN_VERSION }}
+          cache: pip
+
+      - name: Install dependencies (pinned torch for determinism)
+        run: |
+          echo "╔════════════════════════════════════════════════════════════╗"
+          echo "║       Juniper Cascor - Golden Regression: Install          ║"
+          echo "╚════════════════════════════════════════════════════════════╝"
+          python -m pip install --upgrade "pip>=26.1.1"
+          # CPU-only torch, pinned to the calibration version. Installed first so
+          # the editable install below sees the constraint already satisfied and
+          # does not upgrade it.
+          pip install "torch==${TORCH_GOLDEN_VERSION}" --index-url https://download.pytorch.org/whl/cpu
+          # Editable install keeps source-tree path resolution intact (constants
+          # resolve config paths via __file__).
+          pip install -e ".[all]"
+
+      - name: Create required directories
+        run: mkdir -p logs src/logs reports/junit
+
+      - name: Run Golden Regression Suite (serial, never xdist)
+        run: |
+          echo "╔════════════════════════════════════════════════════════════╗"
+          echo "║       Juniper Cascor - Golden / Snapshot Regression        ║"
+          echo "╚════════════════════════════════════════════════════════════╝"
+          # Serial only — do NOT add -n/-p xdist. No --cov (dedicated lane, not
+          # the coverage-gated unit set). --golden --slow --integration disable
+          # the three collection gates the golden tests carry.
+          python -m pytest \
+            -m golden \
+            --golden --slow --integration \
+            src/tests/integration \
+            --verbose \
+            --timeout=300 \
+            --junitxml=reports/junit/junit-golden.xml
+
+      - name: Upload Golden Test Results
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        if: always()
+        with:
+          name: golden-regression-results
+          path: reports/junit/
+          retention-days: 30

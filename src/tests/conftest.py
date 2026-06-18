@@ -205,6 +205,7 @@ def pytest_addoption(parser):
     parser.addoption("--fast-slow", action="store_true", default=False, help="Run slow tests with reduced training parameters for faster execution")
     parser.addoption("--run-long", action="store_true", default=False, help="Run long-running correctness tests (e.g., deterministic training resume)")
     parser.addoption("--run-performance", action="store_true", default=False, help="Run performance benchmark tests (requires CASCOR_BENCHMARK_MODE=1 or this flag)")
+    parser.addoption("--golden", action="store_true", default=False, help="Run golden/snapshot regression tests (OUT-12 / WS-6 gate; deterministic baseline, serial-only lane)")
 
 
 def pytest_collection_modifyitems(config, items):
@@ -233,6 +234,16 @@ def pytest_collection_modifyitems(config, items):
         for item in items:
             if "long" in item.keywords:
                 item.add_marker(skip_long)
+
+    # OUT-12 / WS-6 gate: golden snapshot regression tests run ONLY in their
+    # dedicated serial lane (never xdist). Skip unless --golden is passed, so
+    # they never leak into the unit / integration / scheduled-slow lanes even
+    # though they also carry the `integration` and `slow` markers.
+    if not config.getoption("--golden"):
+        skip_golden = pytest.mark.skip(reason="need --golden option to run golden/snapshot regression tests")
+        for item in items:
+            if "golden" in item.keywords:
+                item.add_marker(skip_golden)
 
     # Performance benchmarks: require --run-performance or CASCOR_BENCHMARK_MODE=1
     run_perf = config.getoption("--run-performance") or os.environ.get("CASCOR_BENCHMARK_MODE") == "1"

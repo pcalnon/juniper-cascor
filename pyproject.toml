@@ -214,6 +214,7 @@ markers = [
     "early_stopping: Tests for early stopping logic",
     "requires_juniper_data: Tests that require the juniper-data package to be installed",
     "critical: Tests covering business-critical paths (used as a tag, not a selector)",
+    "golden: Golden/snapshot regression tests pinning deterministic training trajectories, serialization round-trips, and API response shapes (OUT-12 / WS-6 pre-refactor gate; --golden, serial-only)",
 ]
 timeout = 60
 # Thread-based timeout avoids SIGALRM interference with forkserver IPC

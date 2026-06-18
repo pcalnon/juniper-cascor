@@ -1,0 +1,11 @@
+{
+  "data": {
+    "hidden_units": 2,
+    "input_size": 2,
+    "learning_rate": 0.01,
+    "max_hidden_units": 2,
+    "output_size": 2
+  },
+  "meta": {},
+  "status": "success"
+}
