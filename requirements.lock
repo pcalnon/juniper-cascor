@@ -54,6 +54,8 @@ juniper-data==0.7.1
     # via juniper-cascor (pyproject.toml)
 juniper-data-client==0.4.2
     # via juniper-cascor (pyproject.toml)
+juniper-model-core==0.2.0
+    # via juniper-cascor (pyproject.toml)
 juniper-observability==0.4.0
     # via juniper-cascor (pyproject.toml)
 kiwisolver==1.5.0
