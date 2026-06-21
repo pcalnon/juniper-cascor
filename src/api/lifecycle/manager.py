@@ -2066,18 +2066,19 @@ class TrainingLifecycleManager:
 
     def start_training(
         self,
-        x: Optional[torch.Tensor] = None,
+        X: Optional[torch.Tensor] = None,
         y: Optional[torch.Tensor] = None,
-        x_val: Optional[torch.Tensor] = None,
+        *,
+        X_val: Optional[torch.Tensor] = None,
         y_val: Optional[torch.Tensor] = None,
         **kwargs,
     ) -> Dict[str, Any]:
         """Start training asynchronously.
 
         Args:
-            x: Training features tensor
+            X: Training features tensor
             y: Training targets tensor
-            x_val: Validation features
+            X_val: Validation features
             y_val: Validation targets
             **kwargs: TrainingParams body. Fields in ``_FIT_KWARGS`` are
                 forwarded to ``network.fit``; everything else is applied
@@ -2110,11 +2111,11 @@ class TrainingLifecycleManager:
             if self.state_machine.is_replaying():
                 raise RuntimeError("Cannot start training while replaying a snapshot — invoke /v1/snapshots/{id}/replay/control with action='stop' first")
 
-            if x is not None:
-                self._train_x = x
+            if X is not None:
+                self._train_x = X
                 self._train_y = y
-            if x_val is not None:
-                self._val_x = x_val
+            if X_val is not None:
+                self._val_x = X_val
                 self._val_y = y_val
 
             # FRONTEND_ISSUES_PLAN_2026-05-09 §3.5.1 / Issue #3 Phase 1 — if
@@ -3983,7 +3984,20 @@ class TrainingLifecycleManager:
             self.network.set_worker_coordinator(self._worker_coordinator)
         return True
 
-    def load_snapshot(self, snapshot_id: str) -> bool:
+    def _snapshot_result(self, *, loaded: bool, snapshot_id: str, operation: str, reason: Optional[str] = None) -> Dict[str, Any]:
+        """Status dict for the snapshot load/restore/resume verbs (WS-6 B2b return
+        convergence toward the ServiceLifecycleManager seam). Internal contract: the
+        snapshot routes build their own HTTP payload via ``_build_unified_payload`` and
+        consume only ``loaded`` for error-mapping."""
+        return {
+            "loaded": loaded,
+            "snapshot_id": snapshot_id,
+            "operation": operation,
+            "fsm_state": self.state_machine.status.name,
+            "reason": reason,
+        }
+
+    def load_snapshot(self, snapshot_id: str) -> Dict[str, Any]:
         """Load a network snapshot by ID (Restore semantics).
 
         Preserves the full snapshotted state — weights, topology, training
@@ -4006,11 +4020,11 @@ class TrainingLifecycleManager:
         # out from under an active replay thread.
         if self.state_machine.is_started() or self.state_machine.is_paused() or self.state_machine.is_replaying():
             self.logger.warning(f"load_snapshot rejected: lifecycle is {self.state_machine.status.name}")
-            return False
+            return self._snapshot_result(loaded=False, snapshot_id=snapshot_id, operation="restore", reason=f"rejected: lifecycle is {self.state_machine.status.name}")
 
         ok = self._load_snapshot_to_network(snapshot_id)
         if not ok:
-            return False
+            return self._snapshot_result(loaded=False, snapshot_id=snapshot_id, operation="restore", reason="snapshot not found or failed to load")
 
         # CAN-015d (B-4): transition to Investigating and clear any
         # state from prior snapshot operations. The user explicitly
@@ -4022,9 +4036,9 @@ class TrainingLifecycleManager:
         self.training_state.update_state(status="Stopped", phase="Idle")
         self._broadcast_training_state(force=True)
         self.logger.info(f"Snapshot restored: {snapshot_id} (FSM=Investigating)")
-        return True
+        return self._snapshot_result(loaded=True, snapshot_id=snapshot_id, operation="restore")
 
-    def restore_for_retrain(self, snapshot_id: str) -> bool:
+    def restore_for_retrain(self, snapshot_id: str) -> Dict[str, Any]:
         """Load a snapshot and reset training history for a fresh run (CAN-015a).
 
         Phase 6E Sprint B B-1. Loads the snapshot identically to
@@ -4051,10 +4065,10 @@ class TrainingLifecycleManager:
         """
         if self.state_machine.is_started() or self.state_machine.is_paused() or self.state_machine.is_replaying():
             self.logger.warning(f"restore_for_retrain rejected: lifecycle is {self.state_machine.status.name}")
-            return False
+            return self._snapshot_result(loaded=False, snapshot_id=snapshot_id, operation="retrain", reason=f"rejected: lifecycle is {self.state_machine.status.name}")
         ok = self._load_snapshot_to_network(snapshot_id)
         if not ok:
-            return False
+            return self._snapshot_result(loaded=False, snapshot_id=snapshot_id, operation="retrain", reason="snapshot not found or failed to load")
 
         # Clear history arrays on the network. ``getattr`` rather than direct
         # attribute access so a network that doesn't expose ``history`` yet
@@ -4095,9 +4109,9 @@ class TrainingLifecycleManager:
         self._broadcast_training_state(force=True)
 
         self.logger.info(f"Snapshot restored for retrain: {snapshot_id}")
-        return True
+        return self._snapshot_result(loaded=True, snapshot_id=snapshot_id, operation="retrain")
 
-    def resume_from_snapshot(self, snapshot_id: str) -> bool:
+    def resume_from_snapshot(self, snapshot_id: str) -> Dict[str, Any]:
         """Load a snapshot and prepare to continue training (CAN-015b).
 
         Phase 6E Sprint B B-2. Loads the snapshot identically to
@@ -4126,11 +4140,11 @@ class TrainingLifecycleManager:
         """
         if self.state_machine.is_started() or self.state_machine.is_paused() or self.state_machine.is_replaying():
             self.logger.warning(f"resume_from_snapshot rejected: lifecycle is {self.state_machine.status.name}")
-            return False
+            return self._snapshot_result(loaded=False, snapshot_id=snapshot_id, operation="resume", reason=f"rejected: lifecycle is {self.state_machine.status.name}")
 
         ok = self._load_snapshot_to_network(snapshot_id)
         if not ok:
-            return False
+            return self._snapshot_result(loaded=False, snapshot_id=snapshot_id, operation="resume", reason="snapshot not found or failed to load")
 
         # Compute the resume-point epoch from the loaded network's
         # history. Use the longest array's length so a snapshot that's
@@ -4165,7 +4179,7 @@ class TrainingLifecycleManager:
         self._broadcast_training_state(force=True)
 
         self.logger.info(f"Snapshot restored for resume: {snapshot_id} (resume_point_epoch={resume_point})")
-        return True
+        return self._snapshot_result(loaded=True, snapshot_id=snapshot_id, operation="resume")
 
     def start_replay(self, snapshot_id: str) -> bool:
         """Load a snapshot and start a replay session (CAN-015c).

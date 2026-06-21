@@ -202,7 +202,7 @@ class TestRestoreSnapshot:
 
     def test_restore_snapshot_success(self, client):
         """restore_snapshot should return success with restored status."""
-        with patch.object(client.app.state.lifecycle, "load_snapshot", return_value=True):
+        with patch.object(client.app.state.lifecycle, "load_snapshot", return_value={"loaded": True}):
             response = client.post("/v1/snapshots/snap-001/restore")
             assert response.status_code == 200
             body = response.json()
@@ -230,7 +230,7 @@ class TestRestoreSnapshot:
             "optimizer_type": "AdamW",
             "activation_function_name": "ReLU",
         }
-        with patch.object(client.app.state.lifecycle, "load_snapshot", return_value=True), patch.object(client.app.state.lifecycle, "get_training_params", return_value=fake_params):
+        with patch.object(client.app.state.lifecycle, "load_snapshot", return_value={"loaded": True}), patch.object(client.app.state.lifecycle, "get_training_params", return_value=fake_params):
             response = client.post("/v1/snapshots/snap-with-params/restore")
             assert response.status_code == 200
             body = response.json()
@@ -241,7 +241,7 @@ class TestRestoreSnapshot:
         """If ``get_training_params`` raises after a successful restore
         the route still returns 200 with the minimal payload — surfacing
         params is best-effort and must not undo a successful load."""
-        with patch.object(client.app.state.lifecycle, "load_snapshot", return_value=True), patch.object(client.app.state.lifecycle, "get_training_params", side_effect=RuntimeError("boom")):
+        with patch.object(client.app.state.lifecycle, "load_snapshot", return_value={"loaded": True}), patch.object(client.app.state.lifecycle, "get_training_params", side_effect=RuntimeError("boom")):
             response = client.post("/v1/snapshots/snap-fallback/restore")
             assert response.status_code == 200
             body = response.json()
@@ -253,14 +253,14 @@ class TestRestoreSnapshot:
 
     def test_restore_snapshot_not_found_returns_404(self, client):
         """restore_snapshot should return 404 when snapshot is not found."""
-        with patch.object(client.app.state.lifecycle, "load_snapshot", return_value=False):
+        with patch.object(client.app.state.lifecycle, "load_snapshot", return_value={"loaded": False}):
             response = client.post("/v1/snapshots/nonexistent/restore")
             assert response.status_code == 404
             assert "not found or failed to load" in response.json()["error"]["message"]
 
     def test_restore_snapshot_load_fails_returns_404(self, client):
         """restore_snapshot should return 404 when load_snapshot fails (returns False)."""
-        with patch.object(client.app.state.lifecycle, "load_snapshot", return_value=False):
+        with patch.object(client.app.state.lifecycle, "load_snapshot", return_value={"loaded": False}):
             response = client.post("/v1/snapshots/snap-bad/restore")
             assert response.status_code == 404
             assert "not found or failed to load" in response.json()["error"]["message"]
@@ -273,7 +273,7 @@ class TestRestoreSnapshot:
             import threading
 
             captured["thread"] = threading.current_thread().name
-            return True
+            return {"loaded": True}
 
         with patch.object(client.app.state.lifecycle, "load_snapshot", side_effect=fake_load_snapshot):
             response = client.post("/v1/snapshots/snap-thread/restore")
@@ -293,7 +293,7 @@ class TestRetrainFromSnapshot:
 
     def test_retrain_snapshot_success(self, client):
         """retrain route returns success with ``operation: retrain`` and ``status: ready``."""
-        with patch.object(client.app.state.lifecycle, "restore_for_retrain", return_value=True):
+        with patch.object(client.app.state.lifecycle, "restore_for_retrain", return_value={"loaded": True}):
             response = client.post("/v1/snapshots/snap-001/retrain")
             assert response.status_code == 200
             body = response.json()
@@ -311,7 +311,7 @@ class TestRetrainFromSnapshot:
             "optimizer_type": "AdamW",
             "activation_function_name": "ReLU",
         }
-        with patch.object(client.app.state.lifecycle, "restore_for_retrain", return_value=True), patch.object(client.app.state.lifecycle, "get_training_params", return_value=fake_params):
+        with patch.object(client.app.state.lifecycle, "restore_for_retrain", return_value={"loaded": True}), patch.object(client.app.state.lifecycle, "get_training_params", return_value=fake_params):
             response = client.post("/v1/snapshots/snap-with-params/retrain")
             assert response.status_code == 200
             body = response.json()
@@ -322,7 +322,7 @@ class TestRetrainFromSnapshot:
         """A failing ``get_training_params`` after a successful restore_for_retrain
         must NOT make the route appear failed — return 200 with the
         minimal payload, same defensive pattern as /restore."""
-        with patch.object(client.app.state.lifecycle, "restore_for_retrain", return_value=True), patch.object(client.app.state.lifecycle, "get_training_params", side_effect=RuntimeError("boom")):
+        with patch.object(client.app.state.lifecycle, "restore_for_retrain", return_value={"loaded": True}), patch.object(client.app.state.lifecycle, "get_training_params", side_effect=RuntimeError("boom")):
             response = client.post("/v1/snapshots/snap-fallback/retrain")
             assert response.status_code == 200
             body = response.json()
@@ -334,7 +334,7 @@ class TestRetrainFromSnapshot:
     def test_retrain_snapshot_not_found_returns_404(self, client):
         """When restore_for_retrain returns False (missing snapshot or
         deserializer failure) the route maps to 404, identical to /restore."""
-        with patch.object(client.app.state.lifecycle, "restore_for_retrain", return_value=False):
+        with patch.object(client.app.state.lifecycle, "restore_for_retrain", return_value={"loaded": False}):
             response = client.post("/v1/snapshots/nonexistent/retrain")
             assert response.status_code == 404
             assert "not found or failed to load" in response.json()["error"]["message"]
@@ -347,7 +347,7 @@ class TestRetrainFromSnapshot:
             import threading
 
             captured["thread"] = threading.current_thread().name
-            return True
+            return {"loaded": True}
 
         with patch.object(client.app.state.lifecycle, "restore_for_retrain", side_effect=fake_restore_for_retrain):
             response = client.post("/v1/snapshots/snap-thread/retrain")
@@ -383,7 +383,7 @@ class TestResumeSnapshot:
         lifecycle = client.app.state.lifecycle
         lifecycle._resume_point_epoch = 42
 
-        with patch.object(lifecycle, "resume_from_snapshot", return_value=True):
+        with patch.object(lifecycle, "resume_from_snapshot", return_value={"loaded": True}):
             response = client.post("/v1/snapshots/snap-001/resume")
             assert response.status_code == 200
             body = response.json()
@@ -402,7 +402,7 @@ class TestResumeSnapshot:
         }
         lifecycle = client.app.state.lifecycle
         lifecycle._resume_point_epoch = 7
-        with patch.object(lifecycle, "resume_from_snapshot", return_value=True), patch.object(lifecycle, "get_training_params", return_value=fake_params):
+        with patch.object(lifecycle, "resume_from_snapshot", return_value={"loaded": True}), patch.object(lifecycle, "get_training_params", return_value=fake_params):
             response = client.post("/v1/snapshots/snap-with-params/resume")
             assert response.status_code == 200
             body = response.json()
@@ -414,7 +414,7 @@ class TestResumeSnapshot:
         NOT make the route appear failed — same defensive pattern as /restore."""
         lifecycle = client.app.state.lifecycle
         lifecycle._resume_point_epoch = 0
-        with patch.object(lifecycle, "resume_from_snapshot", return_value=True), patch.object(lifecycle, "get_training_params", side_effect=RuntimeError("boom")):
+        with patch.object(lifecycle, "resume_from_snapshot", return_value={"loaded": True}), patch.object(lifecycle, "get_training_params", side_effect=RuntimeError("boom")):
             response = client.post("/v1/snapshots/snap-fallback/resume")
             assert response.status_code == 200
             body = response.json()
@@ -425,7 +425,7 @@ class TestResumeSnapshot:
     def test_resume_snapshot_not_found_returns_404(self, client):
         """When resume_from_snapshot returns False (missing snapshot or
         deserializer failure), the route maps to 404."""
-        with patch.object(client.app.state.lifecycle, "resume_from_snapshot", return_value=False):
+        with patch.object(client.app.state.lifecycle, "resume_from_snapshot", return_value={"loaded": False}):
             response = client.post("/v1/snapshots/nonexistent/resume")
             assert response.status_code == 404
             assert "not found or failed to load" in response.json()["error"]["message"]
@@ -466,7 +466,7 @@ class TestResumeSnapshot:
             import threading
 
             captured["thread"] = threading.current_thread().name
-            return True
+            return {"loaded": True}
 
         client.app.state.lifecycle._resume_point_epoch = 0
         with patch.object(client.app.state.lifecycle, "resume_from_snapshot", side_effect=fake_resume):
@@ -519,13 +519,13 @@ class TestUnifiedResponseShape:
         ``target_marker`` is one of "investigating", "stopped", "resume_ready".
         """
         if target_marker == "investigating":
-            return lambda *args, **kwargs: (lifecycle.state_machine.mark_investigating(), True)[1]
+            return lambda *args, **kwargs: (lifecycle.state_machine.mark_investigating(), {"loaded": True})[1]
         if target_marker == "resume_ready":
-            return lambda *args, **kwargs: (lifecycle.state_machine.mark_resume_ready(), True)[1]
+            return lambda *args, **kwargs: (lifecycle.state_machine.mark_resume_ready(), {"loaded": True})[1]
         if target_marker == "stopped":
             from api.lifecycle.state_machine import Command
 
-            return lambda *args, **kwargs: (lifecycle.state_machine.handle_command(Command.RESET), True)[1]
+            return lambda *args, **kwargs: (lifecycle.state_machine.handle_command(Command.RESET), {"loaded": True})[1]
         raise ValueError(f"unknown target_marker {target_marker!r}")
 
     def test_restore_response_includes_unified_fields(self, client):
@@ -572,7 +572,7 @@ class TestUnifiedResponseShape:
         def side_effect(snapshot_id):
             lifecycle.state_machine.mark_resume_ready()
             lifecycle._resume_point_epoch = 42
-            return True
+            return {"loaded": True}
 
         with patch.object(lifecycle, "resume_from_snapshot", side_effect=side_effect):
             response = client.post("/v1/snapshots/snap-003/resume")

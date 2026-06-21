@@ -205,7 +205,7 @@ class TestLifecycleManagerTrainingControl:
         """Start fails without network."""
         mgr = TrainingLifecycleManager()
         with pytest.raises(RuntimeError, match="No network created"):
-            mgr.start_training(x=torch.randn(10, 2), y=torch.randn(10, 2))
+            mgr.start_training(X=torch.randn(10, 2), y=torch.randn(10, 2))
 
     def test_start_training_without_data(self):
         """Start fails without training data."""
@@ -226,7 +226,7 @@ class TestLifecycleManagerTrainingControl:
         y[10:, 1] = 1
         # Mock the network's fit() to avoid actual training overhead (~4s)
         with patch.object(mgr.network, "fit", return_value={"train_loss": [0.5]}):
-            result = mgr.start_training(x=x, y=y)
+            result = mgr.start_training(X=x, y=y)
             assert result["status"] == "training_started"
             assert "timestamp" in result
             # Wait for background training to actually complete before shutdown
@@ -264,7 +264,7 @@ class TestLifecycleManagerTrainingControl:
         y[10:, 1] = 1
 
         with patch.object(mgr.network, "fit", return_value={"train_loss": [0.5]}) as mock_fit:
-            mgr.start_training(x=x, y=y, learning_rate=0.005, max_iterations=3)
+            mgr.start_training(X=x, y=y, learning_rate=0.005, max_iterations=3)
             if mgr._training_future is not None:
                 mgr._training_future.result(timeout=10)
 
@@ -295,7 +295,7 @@ class TestLifecycleManagerTrainingControl:
         # int budget, Literal-validated string, and a fit-shaped kwarg.
         with patch.object(mgr.network, "fit", return_value={"train_loss": [0.5]}) as mock_fit:
             mgr.start_training(
-                x=x,
+                X=x,
                 y=y,
                 learning_rate=0.003,
                 output_epochs=7,
@@ -698,7 +698,7 @@ class TestRestoreForRetrain:
         mgr = TrainingLifecycleManager()
         # Empty snapshots dir — no matching file.
         with patch.object(mgr, "_get_snapshots_dir", return_value=tmp_path):
-            assert mgr.restore_for_retrain("nonexistent-snapshot") is False
+            assert mgr.restore_for_retrain("nonexistent-snapshot")["loaded"] is False
         # No network was created — verify the call didn't accidentally make one.
         assert mgr.network is None
         mgr.shutdown()
@@ -713,7 +713,7 @@ class TestRestoreForRetrain:
         fake_file = tmp_path / "broken.h5"
         fake_file.write_bytes(b"not actually an hdf5 file")
         with patch.object(mgr, "_get_snapshots_dir", return_value=tmp_path), patch("snapshots.snapshot_serializer.CascadeHDF5Serializer.load_network", return_value=None):
-            assert mgr.restore_for_retrain("broken") is False
+            assert mgr.restore_for_retrain("broken")["loaded"] is False
         # Original network is still installed — failed retrain doesn't
         # leave the lifecycle in a half-replaced state.
         assert mgr.network is original_network
@@ -735,7 +735,7 @@ class TestRestoreForRetrain:
         fake_file = tmp_path / "snap.h5"
         fake_file.write_bytes(b"")
         with patch.object(mgr, "_get_snapshots_dir", return_value=tmp_path), patch("snapshots.snapshot_serializer.CascadeHDF5Serializer.load_network", return_value=loaded), patch.object(mgr, "_restore_original_methods"), patch.object(mgr, "_install_monitoring_hooks"):
-            assert mgr.restore_for_retrain("snap") is True
+            assert mgr.restore_for_retrain("snap")["loaded"] is True
 
         for key in ("train_loss", "value_loss", "train_accuracy", "value_accuracy"):
             assert loaded.history[key] == [], f"history[{key!r}] not cleared by retrain"
@@ -832,7 +832,7 @@ class TestRestoreForRetrain:
         fake_file = tmp_path / "snap.h5"
         fake_file.write_bytes(b"")
         with patch.object(mgr, "_get_snapshots_dir", return_value=tmp_path), patch("snapshots.snapshot_serializer.CascadeHDF5Serializer.load_network", return_value=loaded), patch.object(mgr, "_restore_original_methods"), patch.object(mgr, "_install_monitoring_hooks"):
-            assert mgr.restore_for_retrain("snap") is True
+            assert mgr.restore_for_retrain("snap")["loaded"] is True
         mgr.shutdown()
 
     def test_tolerates_non_dict_history(self, tmp_path):
@@ -852,7 +852,7 @@ class TestRestoreForRetrain:
         fake_file = tmp_path / "snap.h5"
         fake_file.write_bytes(b"")
         with patch.object(mgr, "_get_snapshots_dir", return_value=tmp_path), patch("snapshots.snapshot_serializer.CascadeHDF5Serializer.load_network", return_value=loaded), patch.object(mgr, "_restore_original_methods"), patch.object(mgr, "_install_monitoring_hooks"):
-            assert mgr.restore_for_retrain("snap") is True
+            assert mgr.restore_for_retrain("snap")["loaded"] is True
         mgr.shutdown()
 
     def test_load_snapshot_preserves_history_and_counters(self, tmp_path):
@@ -870,7 +870,7 @@ class TestRestoreForRetrain:
         fake_file = tmp_path / "snap.h5"
         fake_file.write_bytes(b"")
         with patch.object(mgr, "_get_snapshots_dir", return_value=tmp_path), patch("snapshots.snapshot_serializer.CascadeHDF5Serializer.load_network", return_value=loaded), patch.object(mgr, "_restore_original_methods"), patch.object(mgr, "_install_monitoring_hooks"):
-            assert mgr.load_snapshot("snap") is True
+            assert mgr.load_snapshot("snap")["loaded"] is True
 
         # History on the loaded network is preserved — Restore is a load,
         # not a reset.
@@ -903,7 +903,7 @@ class TestResumeFromSnapshot:
 
         mgr = TrainingLifecycleManager()
         with patch.object(mgr, "_get_snapshots_dir", return_value=tmp_path):
-            assert mgr.resume_from_snapshot("nonexistent") is False
+            assert mgr.resume_from_snapshot("nonexistent")["loaded"] is False
         assert mgr.state_machine.is_stopped()
         assert not mgr.state_machine.is_resume_ready()
         mgr.shutdown()
@@ -917,7 +917,7 @@ class TestResumeFromSnapshot:
         mgr.state_machine.handle_command(Command.START)
         assert mgr.state_machine.is_started()
         with patch.object(mgr, "_get_snapshots_dir", return_value=tmp_path):
-            assert mgr.resume_from_snapshot("anything") is False
+            assert mgr.resume_from_snapshot("anything")["loaded"] is False
         assert mgr.state_machine.is_started()
         assert not mgr.state_machine.is_resume_ready()
         mgr.shutdown()
@@ -938,7 +938,7 @@ class TestResumeFromSnapshot:
         fake_file = tmp_path / "snap.h5"
         fake_file.write_bytes(b"")
         with patch.object(mgr, "_get_snapshots_dir", return_value=tmp_path), patch("snapshots.snapshot_serializer.CascadeHDF5Serializer.load_network", return_value=loaded), patch.object(mgr, "_restore_original_methods"), patch.object(mgr, "_install_monitoring_hooks"):
-            assert mgr.resume_from_snapshot("snap") is True
+            assert mgr.resume_from_snapshot("snap")["loaded"] is True
 
         assert loaded.history["train_loss"] == [0.5, 0.4, 0.3]
         assert loaded.history["value_loss"] == [0.6, 0.5, 0.4]
@@ -1013,7 +1013,7 @@ class TestResumeFromSnapshot:
         fake_file = tmp_path / "snap.h5"
         fake_file.write_bytes(b"")
         with patch.object(mgr, "_get_snapshots_dir", return_value=tmp_path), patch("snapshots.snapshot_serializer.CascadeHDF5Serializer.load_network", return_value=loaded), patch.object(mgr, "_restore_original_methods"), patch.object(mgr, "_install_monitoring_hooks"):
-            assert mgr.resume_from_snapshot("snap") is True
+            assert mgr.resume_from_snapshot("snap")["loaded"] is True
 
         assert mgr._resume_point_epoch == 0
         mgr.shutdown()
@@ -1033,7 +1033,7 @@ class TestResumeFromSnapshot:
         fake_file = tmp_path / "snap.h5"
         fake_file.write_bytes(b"")
         with patch.object(mgr, "_get_snapshots_dir", return_value=tmp_path), patch("snapshots.snapshot_serializer.CascadeHDF5Serializer.load_network", return_value=loaded), patch.object(mgr, "_restore_original_methods"), patch.object(mgr, "_install_monitoring_hooks"):
-            assert mgr.resume_from_snapshot("snap") is True
+            assert mgr.resume_from_snapshot("snap")["loaded"] is True
 
         assert mgr._resume_point_epoch == 0
         mgr.shutdown()
@@ -1088,7 +1088,7 @@ class TestResumeFromSnapshot:
         y[:10, 0] = 1
         y[10:, 1] = 1
         with patch.object(mgr.network, "fit", return_value={"train_loss": [0.3]}):
-            mgr.start_training(x=x, y=y)
+            mgr.start_training(X=x, y=y)
             if mgr._training_future is not None:
                 mgr._training_future.result(timeout=10)
 
@@ -1116,7 +1116,7 @@ class TestResumeFromSnapshot:
         y[:10, 0] = 1
         y[10:, 1] = 1
         with patch.object(mgr.network, "fit", return_value={"train_loss": [0.3]}):
-            mgr.start_training(x=x, y=y)
+            mgr.start_training(X=x, y=y)
             if mgr._training_future is not None:
                 mgr._training_future.result(timeout=10)
 
@@ -1142,7 +1142,7 @@ class TestLoadSnapshotInvestigating:
         mgr.create_network(input_size=2, output_size=2)
         mgr.state_machine.handle_command(Command.START)
         with patch.object(mgr, "_get_snapshots_dir", return_value=tmp_path):
-            assert mgr.load_snapshot("anything") is False
+            assert mgr.load_snapshot("anything")["loaded"] is False
         # FSM still in Started — Restore didn't sneak through.
         assert mgr.state_machine.is_started()
         mgr.shutdown()
@@ -1158,7 +1158,7 @@ class TestLoadSnapshotInvestigating:
         fake_file = tmp_path / "snap.h5"
         fake_file.write_bytes(b"")
         with patch.object(mgr, "_get_snapshots_dir", return_value=tmp_path), patch("snapshots.snapshot_serializer.CascadeHDF5Serializer.load_network", return_value=loaded), patch.object(mgr, "_restore_original_methods"), patch.object(mgr, "_install_monitoring_hooks"):
-            assert mgr.load_snapshot("snap") is True
+            assert mgr.load_snapshot("snap")["loaded"] is True
 
         assert mgr.state_machine.is_investigating()
         mgr.shutdown()
@@ -1199,7 +1199,7 @@ class TestLoadSnapshotInvestigating:
         x = torch.randn(20, 2)
         y = torch.zeros(20, 2)
         with pytest.raises(RuntimeError, match="Investigating"):
-            mgr.start_training(x=x, y=y)
+            mgr.start_training(X=x, y=y)
         # FSM unchanged — failed start didn't accidentally transition.
         assert mgr.state_machine.is_investigating()
         mgr.shutdown()
@@ -1554,7 +1554,7 @@ class TestReplayLifecycleIntegration:
                 x = torch.randn(20, 2)
                 y = torch.zeros(20, 2)
                 with pytest.raises(RuntimeError, match="replay"):
-                    mgr.start_training(x=x, y=y)
+                    mgr.start_training(X=x, y=y)
             finally:
                 mgr.stop_replay()
         mgr.shutdown()
@@ -1566,7 +1566,7 @@ class TestReplayLifecycleIntegration:
         with ctxs[0], ctxs[1], ctxs[2], ctxs[3]:
             try:
                 mgr.start_replay("snap")
-                assert mgr.load_snapshot("snap") is False
+                assert mgr.load_snapshot("snap")["loaded"] is False
             finally:
                 mgr.stop_replay()
         mgr.shutdown()

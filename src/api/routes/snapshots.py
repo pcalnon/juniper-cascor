@@ -221,8 +221,8 @@ async def restore_snapshot(request: Request, snapshot_id: str) -> dict:
     # PERF-CC-01: serializer.load_network is synchronous HDF5 I/O. Run it
     # off the event loop so concurrent requests aren't blocked while the
     # snapshot is being read.
-    success = await asyncio.to_thread(lifecycle.load_snapshot, snapshot_id)
-    if not success:
+    result = await asyncio.to_thread(lifecycle.load_snapshot, snapshot_id)
+    if not result["loaded"]:
         raise HTTPException(status_code=404, detail=f"Snapshot '{snapshot_id}' not found or failed to load")
     payload = _build_unified_payload(
         lifecycle,
@@ -264,8 +264,8 @@ async def retrain_from_snapshot(request: Request, snapshot_id: str) -> dict:
     # PERF-CC-01: HDF5 I/O off the event loop, same as the other
     # snapshot routes. The reset side-effects (FSM, monitor, training_state)
     # are quick attribute writes — no need to fan out further.
-    success = await asyncio.to_thread(lifecycle.restore_for_retrain, snapshot_id)
-    if not success:
+    result = await asyncio.to_thread(lifecycle.restore_for_retrain, snapshot_id)
+    if not result["loaded"]:
         raise HTTPException(status_code=404, detail=f"Snapshot '{snapshot_id}' not found or failed to load")
     payload = _build_unified_payload(
         lifecycle,
@@ -310,8 +310,8 @@ async def resume_snapshot(request: Request, snapshot_id: str) -> dict:
     if lifecycle.state_machine.is_started() or lifecycle.state_machine.is_paused():
         raise HTTPException(status_code=409, detail=f"Cannot resume from snapshot while training is {lifecycle.state_machine.status.name}")
     # PERF-CC-01: HDF5 I/O off the event loop, same as the other snapshot routes.
-    success = await asyncio.to_thread(lifecycle.resume_from_snapshot, snapshot_id)
-    if not success:
+    result = await asyncio.to_thread(lifecycle.resume_from_snapshot, snapshot_id)
+    if not result["loaded"]:
         raise HTTPException(status_code=404, detail=f"Snapshot '{snapshot_id}' not found or failed to load")
     payload = _build_unified_payload(
         lifecycle,

@@ -361,11 +361,11 @@ class TestStartTrainingEdgeCases:
             y[:5, 0] = 1
             y[5:, 1] = 1
 
-            mgr.start_training(x=x, y=y)
+            mgr.start_training(X=x, y=y)
             started.wait(timeout=5)
 
             with pytest.raises(RuntimeError, match="already in progress"):
-                mgr.start_training(x=x, y=y)
+                mgr.start_training(X=x, y=y)
         finally:
             barrier.set()
             CascadeCorrelationNetwork.fit = original_class_fit
@@ -415,7 +415,7 @@ class TestShutdown:
         y[5:, 1] = 1
 
         with patch.object(mgr.network, "fit", return_value={"train_loss": [0.5]}):
-            mgr.start_training(x=x, y=y)
+            mgr.start_training(X=x, y=y)
             if mgr._training_future is not None:
                 mgr._training_future.result(timeout=10)
 
