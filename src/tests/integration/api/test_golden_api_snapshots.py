@@ -46,7 +46,7 @@ def _shutdown_client(app, tc):
     """Tear down the TestClient without hanging on the anyio portal join."""
     lifecycle = getattr(app.state, "lifecycle", None)
     if lifecycle:
-        stop = getattr(lifecycle, "_stop_requested", None)
+        stop = getattr(lifecycle, "_stop_event", None)
         if stop is not None:
             stop.set()
         executor = getattr(lifecycle, "_executor", None)

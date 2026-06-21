@@ -29,7 +29,7 @@ async def get_decision_boundary(
     Computation is offloaded to a thread to avoid blocking the event loop.
     """
     lifecycle = _get_lifecycle(request)
-    if not lifecycle.has_network():
+    if not lifecycle.has_model():
         raise HTTPException(status_code=_PROJECT_API_HTTP_404_NOT_FOUND, detail="No network created")
     if not lifecycle.has_training_data():
         raise HTTPException(status_code=_PROJECT_API_HTTP_404_NOT_FOUND, detail="No training data loaded")

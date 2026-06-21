@@ -127,7 +127,7 @@ class TestExtractAndRecordMetricsRace:
             with emit_lock:
                 emit_calls.append(epoch)
 
-        monkeypatch.setattr(mgr.training_monitor, "on_epoch_end", slow_on_epoch_end)
+        monkeypatch.setattr(mgr.monitor, "on_epoch_end", slow_on_epoch_end)
         mgr.training_state = MagicMock()
 
         n_threads = 8
@@ -161,7 +161,7 @@ class TestExtractAndRecordMetricsRace:
         mgr.network = fake_network
 
         calls: list = []
-        monkeypatch.setattr(mgr.training_monitor, "on_epoch_end", lambda epoch, **kw: calls.append(epoch))
+        monkeypatch.setattr(mgr.monitor, "on_epoch_end", lambda epoch, **kw: calls.append(epoch))
         mgr.training_state = MagicMock()
 
         mgr._extract_and_record_metrics()

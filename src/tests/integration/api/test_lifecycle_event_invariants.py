@@ -1,6 +1,6 @@
 """Regression tests for BUG-CC-#5: control-event normalisation in reset().
 
-Before the fix, ``reset()`` set ``_stop_requested`` but did not re-set
+Before the fix, ``reset()`` set ``_stop_event`` but did not re-set
 ``_pause_event``.  If the user paused before stopping, the next
 ``start_training()`` call would inherit a stale ``_pause_event.clear()``
 and the training loop would synthetically pause after a single iteration.
@@ -23,7 +23,7 @@ def mgr():
     """Fresh lifecycle manager (no network, no executor, no training thread).
 
     Sufficient for testing the event-state contract because ``reset()`` and
-    ``_reset_event_state()`` touch only ``_pause_event``, ``_stop_requested``,
+    ``_reset_event_state()`` touch only ``_pause_event``, ``_stop_event``,
     the FSM, the training-state object, and the broadcast hook — all of which
     are live after ``__init__``.
     """
@@ -44,14 +44,14 @@ def test_reset_event_state_normalises_from_any_prior_state(mgr, pause_set, stop_
     else:
         mgr._pause_event.clear()
     if stop_set:
-        mgr._stop_requested.set()
+        mgr._stop_event.set()
     else:
-        mgr._stop_requested.clear()
+        mgr._stop_event.clear()
 
     mgr._reset_event_state()
 
     assert mgr._pause_event.is_set(), "post: _pause_event must be set"
-    assert mgr._stop_requested.is_set(), "post: _stop_requested must be set"
+    assert mgr._stop_event.is_set(), "post: _stop_event must be set"
 
 
 # ---------------------------------------------------------------------------
@@ -67,7 +67,7 @@ def test_reset_after_pause_leaves_pause_event_set(mgr):
     needing a real training thread / network for the test to be meaningful.
     """
     # Mirror the start path's event manipulations + advance FSM.
-    mgr._stop_requested.clear()
+    mgr._stop_event.clear()
     mgr._pause_event.set()
     assert mgr.state_machine.handle_command(Command.START)
 
@@ -75,7 +75,7 @@ def test_reset_after_pause_leaves_pause_event_set(mgr):
     mgr.pause_training()
     assert not mgr._pause_event.is_set(), "guard: pause must clear _pause_event"
 
-    # User stops — stop_training() sets _stop_requested but does not touch pause.
+    # User stops — stop_training() sets _stop_event but does not touch pause.
     mgr.stop_training()
     assert not mgr._pause_event.is_set(), "guard: stop must not re-set _pause_event"
 
@@ -83,7 +83,7 @@ def test_reset_after_pause_leaves_pause_event_set(mgr):
     mgr.reset()
 
     assert mgr._pause_event.is_set(), "BUG-CC-#5 regression: reset() must normalise _pause_event so the next " "start_training() does not inherit a stale clear()"
-    assert mgr._stop_requested.is_set()
+    assert mgr._stop_event.is_set()
 
 
 # ---------------------------------------------------------------------------
@@ -120,7 +120,7 @@ def test_after_reset_pause_event_is_set(mgr, seq):
     Pre-stages the FSM into STARTED so pause/resume are not all rejected at the
     front door; mirrors what start_training() does to the event pair.
     """
-    mgr._stop_requested.clear()
+    mgr._stop_event.clear()
     mgr._pause_event.set()
     assert mgr.state_machine.handle_command(Command.START)
 
@@ -128,4 +128,4 @@ def test_after_reset_pause_event_is_set(mgr, seq):
         _apply(mgr, cmd)
 
     assert mgr._pause_event.is_set(), f"_pause_event left cleared after sequence {seq}"
-    assert mgr._stop_requested.is_set(), f"_stop_requested left cleared after sequence {seq}"
+    assert mgr._stop_event.is_set(), f"_stop_event left cleared after sequence {seq}"

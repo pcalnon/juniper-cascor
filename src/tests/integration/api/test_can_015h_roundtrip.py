@@ -76,7 +76,7 @@ def client():
 
     lifecycle = getattr(app.state, "lifecycle", None)
     if lifecycle:
-        lifecycle._stop_requested.set()
+        lifecycle._stop_event.set()
         if getattr(lifecycle, "_executor", None):
             lifecycle._executor.shutdown(wait=False, cancel_futures=True)
 

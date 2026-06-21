@@ -144,7 +144,7 @@ async def readiness_probe(request: Request, response: Response) -> ReadinessResp
     Sets ``X-Juniper-Readiness`` header to mirror body status.
     """
     lifecycle = getattr(request.app.state, "lifecycle", None)
-    network_loaded = lifecycle.has_network() if lifecycle else False
+    network_loaded = lifecycle.has_model() if lifecycle else False
 
     training_state = "unknown"
     if lifecycle is not None:

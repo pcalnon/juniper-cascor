@@ -219,7 +219,7 @@ class TestSetWsManager:
         mock_ws = MagicMock()
         mgr._ws_manager = mock_ws
 
-        with patch.object(mgr.training_monitor, "register_callback") as mock_register:
+        with patch.object(mgr.monitor, "register_callback") as mock_register:
             mgr._register_ws_callbacks()
 
             assert mock_register.call_count == 5
@@ -296,7 +296,7 @@ class TestMonitoringHooks:
         y[:4, 0] = 1
         y[4:, 1] = 1
 
-        mgr._stop_requested.clear()
+        mgr._stop_event.clear()
         mgr.network.fit(x, y)
 
         # Regression assertion: without auto-reset, state machine stayed FAILED.
@@ -325,7 +325,7 @@ class TestMonitoringHooks:
         y[4:, 1] = 1
 
         # Exercise monitored_fit stop-event branch after terminal-state restart.
-        mgr._stop_requested.set()
+        mgr._stop_event.set()
         mgr.network.fit(x, y)
 
         # Regression assertion: without auto-reset, STOP was invalid from COMPLETED.

@@ -18,7 +18,7 @@ def _get_lifecycle(request: Request):
 async def get_metrics(request: Request) -> dict:
     """Get current training metrics snapshot."""
     lifecycle = _get_lifecycle(request)
-    if not lifecycle.has_network():
+    if not lifecycle.has_model():
         raise HTTPException(status_code=404, detail="No network created")
     return success_response(lifecycle.get_metrics())
 

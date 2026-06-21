@@ -66,11 +66,11 @@ class TestMonitoringHooks:
 
         assert manager._ws_manager is ws_mgr
         # Verify callbacks were registered
-        assert len(manager.training_monitor.callbacks["epoch_end"]) > 0
-        assert len(manager.training_monitor.callbacks["cascade_add"]) > 0
-        assert len(manager.training_monitor.callbacks["training_start"]) > 0
-        assert len(manager.training_monitor.callbacks["training_end"]) > 0
-        assert len(manager.training_monitor.callbacks["candidate_progress"]) > 0
+        assert len(manager.monitor.callbacks["epoch_end"]) > 0
+        assert len(manager.monitor.callbacks["cascade_add"]) > 0
+        assert len(manager.monitor.callbacks["training_start"]) > 0
+        assert len(manager.monitor.callbacks["training_end"]) > 0
+        assert len(manager.monitor.callbacks["candidate_progress"]) > 0
 
     def test_ws_callbacks_broadcast_on_epoch_end(self):
         """Epoch end callback broadcasts metrics via WebSocket."""
@@ -79,7 +79,7 @@ class TestMonitoringHooks:
         manager.set_ws_manager(ws_mgr)
 
         # Trigger epoch_end callback
-        manager.training_monitor.on_epoch_end(epoch=1, loss=0.5, accuracy=0.8, learning_rate=0.01)
+        manager.monitor.on_epoch_end(epoch=1, loss=0.5, accuracy=0.8, learning_rate=0.01)
 
         ws_mgr.broadcast_from_thread.assert_called()
         call_args = ws_mgr.broadcast_from_thread.call_args[0][0]
@@ -91,7 +91,7 @@ class TestMonitoringHooks:
         ws_mgr = MagicMock()
         manager.set_ws_manager(ws_mgr)
 
-        manager.training_monitor.on_training_start()
+        manager.monitor.on_training_start()
 
         ws_mgr.broadcast_from_thread.assert_called()
         call_args = ws_mgr.broadcast_from_thread.call_args[0][0]
@@ -103,7 +103,7 @@ class TestMonitoringHooks:
         ws_mgr = MagicMock()
         manager.set_ws_manager(ws_mgr)
 
-        manager.training_monitor.on_training_end()
+        manager.monitor.on_training_end()
 
         ws_mgr.broadcast_from_thread.assert_called()
         call_args = ws_mgr.broadcast_from_thread.call_args[0][0]
@@ -115,7 +115,7 @@ class TestMonitoringHooks:
         ws_mgr = MagicMock()
         manager.set_ws_manager(ws_mgr)
 
-        manager.training_monitor.on_cascade_add(hidden_unit_index=0, correlation=0.95)
+        manager.monitor.on_cascade_add(hidden_unit_index=0, correlation=0.95)
 
         ws_mgr.broadcast_from_thread.assert_called()
         call_args = ws_mgr.broadcast_from_thread.call_args[0][0]
@@ -196,7 +196,7 @@ class TestMonitoringHooks:
             "total_epochs": 200,
             "correlation": 0.51,
         }
-        manager.training_monitor.on_candidate_progress(progress)
+        manager.monitor.on_candidate_progress(progress)
 
         ws_mgr.broadcast_from_thread.assert_called()
         call_args = ws_mgr.broadcast_from_thread.call_args[0][0]
@@ -236,7 +236,7 @@ class TestMonitoringHooks:
         # No history data — should be a no-op
         manager._extract_and_record_metrics()
         assert manager._last_emitted_history_len == 0
-        assert manager.training_monitor.get_current_state()["total_metrics"] == 0
+        assert manager.monitor.get_current_state()["total_metrics"] == 0
 
     def test_extract_metrics_emits_new_entries(self):
         """_extract_and_record_metrics emits only new history entries."""
@@ -249,12 +249,12 @@ class TestMonitoringHooks:
 
         manager._extract_and_record_metrics()
         assert manager._last_emitted_history_len == 1
-        assert manager.training_monitor.get_current_state()["total_metrics"] == 1
+        assert manager.monitor.get_current_state()["total_metrics"] == 1
 
         # Call again — should be no-op (no new data)
         manager._extract_and_record_metrics()
         assert manager._last_emitted_history_len == 1
-        assert manager.training_monitor.get_current_state()["total_metrics"] == 1
+        assert manager.monitor.get_current_state()["total_metrics"] == 1
 
         # Add another entry
         manager.network.history["train_loss"].append(0.3)
@@ -262,7 +262,7 @@ class TestMonitoringHooks:
 
         manager._extract_and_record_metrics()
         assert manager._last_emitted_history_len == 2
-        assert manager.training_monitor.get_current_state()["total_metrics"] == 2
+        assert manager.monitor.get_current_state()["total_metrics"] == 2
 
     def test_extract_metrics_missing_accuracy_emits_none(self):
         """Missing train_accuracy should emit metrics with accuracy=None."""
@@ -274,7 +274,7 @@ class TestMonitoringHooks:
 
         manager._extract_and_record_metrics()
 
-        metrics = manager.training_monitor.get_recent_metrics(1)
+        metrics = manager.monitor.get_recent_metrics(1)
         assert len(metrics) == 1
         assert metrics[0]["loss"] == 0.42
         assert metrics[0]["accuracy"] is None
@@ -300,7 +300,7 @@ class TestMonitoringHooks:
             manager.network.fit(x, y)
 
             state = manager.training_state.get_state()
-            metrics = manager.training_monitor.get_recent_metrics(1)
+            metrics = manager.monitor.get_recent_metrics(1)
             assert state["status"] == "Completed"
             assert state["phase"] == "Idle"
             assert state["current_epoch"] == 3
@@ -361,8 +361,8 @@ class TestMonitoringHooks:
             assert state["second_candidate_id"] == 7
             assert state["second_candidate_correlation"] == 0.65
             assert state["all_correlations"] == [0.77, 0.65, 0.42]
-            assert manager.training_monitor.current_phase == "output"
-            assert manager.training_monitor.get_current_state()["current_hidden_units"] == 1
+            assert manager.monitor.current_phase == "output"
+            assert manager.monitor.get_current_state()["current_hidden_units"] == 1
             assert sm_state["phase"] == "OUTPUT"
         finally:
             CascadeCorrelationNetwork.grow_network = original_grow
@@ -413,7 +413,7 @@ class TestMonitoringHooks:
             # Queue starts as None — drain thread must discover it dynamically
             manager.network._persistent_progress_queue = None
             progress_events = []
-            manager.training_monitor.register_callback("candidate_progress", lambda **kw: progress_events.append(kw["progress"]))
+            manager.monitor.register_callback("candidate_progress", lambda **kw: progress_events.append(kw["progress"]))
 
             x = torch.randn(8, 2)
             y = torch.randn(8, 2)

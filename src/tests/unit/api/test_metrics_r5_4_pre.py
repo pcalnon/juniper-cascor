@@ -342,7 +342,7 @@ class TestLifecycleManagerTerminalCounterIntegration:
                 raise RuntimeError("synthetic training failure")
             if fit_outcome == "cancelled":
                 # Simulate stop_training() landing mid-fit.
-                mgr._stop_requested.set()
+                mgr._stop_event.set()
             return None
 
         # Splice the fake into the slot where monitored_fit() captured

@@ -47,7 +47,15 @@ def test_fresh_manager_holds_no_model():
     mgr = TrainingLifecycleManager()
     assert mgr.model is None
     assert mgr.network is None  # property returns None when there is no model
-    assert mgr.has_network() is False
+    assert mgr.has_model() is False
+
+
+def test_has_network_is_deprecated_alias_for_has_model():
+    """WS-6 B2a: has_network() is kept as a thin back-compat alias for has_model()."""
+    mgr = TrainingLifecycleManager()
+    assert mgr.has_network() is mgr.has_model() is False
+    mgr.network = _make_ccn()
+    assert mgr.has_network() is mgr.has_model() is True
 
 
 # ----- assignment site 2: create_network ------------------------------------------
@@ -58,7 +66,7 @@ def test_create_network_wraps_ccn_in_cascor_model():
     # The property exposes the *underlying* CCN (identity), not the wrapper.
     assert mgr.network is mgr.model.network
     assert type(mgr.network).__name__ == "CascadeCorrelationNetwork"
-    assert mgr.has_network() is True
+    assert mgr.has_model() is True
 
 
 # ----- assignment site 3: delete_network ------------------------------------------
@@ -68,7 +76,7 @@ def test_delete_network_clears_the_model():
     mgr.delete_network()
     assert mgr.model is None
     assert mgr.network is None
-    assert mgr.has_network() is False
+    assert mgr.has_model() is False
 
 
 # ----- assignment site 4: _load_snapshot_to_network (HDF5 re-wrap, H1) ------------

@@ -75,7 +75,7 @@ class TestActiveSessionsGaugeInLifecycleManager:
             if fit_outcome == "failure":
                 raise RuntimeError("synthetic training failure")
             if fit_outcome == "cancelled":
-                mgr._stop_requested.set()
+                mgr._stop_event.set()
             return None
 
         mgr._restore_original_methods()

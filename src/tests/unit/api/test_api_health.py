@@ -117,7 +117,7 @@ class TestHealthEndpoints:
         """Test GET /v1/health/ready details surface mock lifecycle state."""
 
         class MockLifecycle:
-            def has_network(self):
+            def has_model(self):
                 return True
 
             def get_status(self):
