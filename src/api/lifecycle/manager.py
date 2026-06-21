@@ -22,6 +22,7 @@ import torch
 
 from api.lifecycle.monitor import TrainingMonitor, TrainingState
 from api.lifecycle.state_machine import Command, TrainingPhase, TrainingStateMachine
+from api.models.cascor_model import CascorModel
 from api.models.common import coerce_native_scalars as _common_coerce_native_scalars
 from api.observability import TRAINING_SESSION_STATUS_CANCELLED, TRAINING_SESSION_STATUS_FAILURE, TRAINING_SESSION_STATUS_SUCCESS, dec_training_sessions, inc_training_session_completed, inc_training_sessions, observe_training_step_duration, record_training_epoch, set_hidden_units, set_training_accuracy, set_training_loss
 from cascor_constants.constants_api import _PROJECT_API_DRAIN_THREAD_JOIN_TIMEOUT, _PROJECT_API_LIFECYCLE_DEFAULT_CANDIDATE_PATIENCE, _PROJECT_API_LIFECYCLE_DEFAULT_EPOCHS_MAX, _PROJECT_API_LIFECYCLE_DEFAULT_MAX_HIDDEN_UNITS, _PROJECT_API_LIFECYCLE_DEFAULT_MAX_ITERATIONS, _PROJECT_API_NETWORK_INPUT_SIZE_DEFAULT, _PROJECT_API_NETWORK_LEARNING_RATE_DEFAULT, _PROJECT_API_NETWORK_OUTPUT_SIZE_DEFAULT, _PROJECT_API_PROGRESS_QUEUE_GET_TIMEOUT, _PROJECT_API_PROGRESS_QUEUE_WAIT_TIMEOUT
@@ -1077,7 +1078,11 @@ class TrainingLifecycleManager:
         self.logger = logging.getLogger(__name__)
 
         # Core components
-        self.network = None
+        # WS-6 B-phase (native model-core adoption): the manager holds a
+        # model-core ``CascorModel`` (wrapping the ``CascadeCorrelationNetwork``).
+        # ``self.network`` is a back-compat property over ``self.model`` (defined
+        # below) so the cascor-specific reaches keep resolving to the CCN.
+        self.model: Optional[CascorModel] = None
         self.state_machine = TrainingStateMachine()
         self.training_state = TrainingState()
         self.training_monitor = TrainingMonitor()
@@ -1422,7 +1427,8 @@ class TrainingLifecycleManager:
 
             self._network_params = kwargs.copy()
             config = CascadeCorrelationConfig.create_simple_config(**kwargs)
-            self.network = CascadeCorrelationNetwork(config=config)
+            # WS-6 B-phase: wrap the freshly built CCN in the model-core CascorModel.
+            self.model = CascorModel(network=CascadeCorrelationNetwork(config=config))
             self._install_monitoring_hooks()
 
             # Inject worker coordinator for remote dispatch if available
@@ -1449,7 +1455,7 @@ class TrainingLifecycleManager:
             if self.state_machine.is_started():
                 raise RuntimeError("Cannot delete network while training is active")
             self._restore_original_methods()
-            self.network = None
+            self.model = None
             self._network_params = None
             self.state_machine.handle_command(Command.RESET)
             self.training_state.update_state(status="Stopped", phase="Idle")
@@ -1457,6 +1463,31 @@ class TrainingLifecycleManager:
 
     def has_network(self) -> bool:
         return self.network is not None
+
+    @property
+    def network(self):
+        """The wrapped ``CascadeCorrelationNetwork`` (or ``None``).
+
+        WS-6 B-phase: the manager now holds a model-core :class:`CascorModel` in
+        :attr:`model`; ``network`` is a back-compat property so the cascor-specific
+        reaches (``self.network.<attr>`` reads, monkey-patch write-through,
+        HDF5/live-swap surgery, decision-boundary ``forward``) keep resolving to the
+        underlying CCN. Reads delegate to ``self.model.network``.
+        """
+        return self.model.network if self.model is not None else None
+
+    @network.setter
+    def network(self, value):
+        """Back-compat setter: accept a bare ``CascadeCorrelationNetwork`` (wrap it),
+        a ready :class:`CascorModel`, or ``None`` — storing into :attr:`model`. The
+        internal assignment sites set ``self.model`` directly; this keeps any
+        external ``manager.network = <ccn>`` caller working."""
+        if value is None:
+            self.model = None
+        elif isinstance(value, CascorModel):
+            self.model = value
+        else:
+            self.model = CascorModel(network=value)
 
     def get_network_info(self) -> Dict[str, Any]:
         """Get network information."""
@@ -3938,7 +3969,10 @@ class TrainingLifecycleManager:
             return False
 
         self._restore_original_methods()
-        self.network = network
+        # WS-6 B-phase: the HDF5 deserializer yields a *bare* CCN — re-wrap it so the
+        # manager keeps holding a CascorModel (a getter-only property would leave
+        # self.model stale here; see plan §4.3 H1).
+        self.model = CascorModel(network=network)
         self._install_monitoring_hooks()
         if self._worker_coordinator is not None and hasattr(self.network, "set_worker_coordinator"):
             self.network.set_worker_coordinator(self._worker_coordinator)
