@@ -164,6 +164,7 @@ default_section = "THIRDPARTY"
 
 [tool.pytest.ini_options]
 minversion = "6.0"
+asyncio_mode = "auto"
 testpaths = ["src/tests"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
