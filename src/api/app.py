@@ -353,7 +353,7 @@ async def _auto_start_training(app: FastAPI, settings: Settings) -> None:
         logger.info(f"Auto-start: network created — {network_info['input_size']}x{network_info['output_size']}")
 
         # Start training
-        train_result = lifecycle.start_training(x=x_train, y=y_train)
+        train_result = lifecycle.start_training(X=x_train, y=y_train)
         logger.info(f"Auto-start: training initiated — {train_result}")
 
     except Exception:

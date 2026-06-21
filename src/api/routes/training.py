@@ -71,7 +71,7 @@ async def start_training(request: Request, body: TrainingStartRequest = None) ->
             kwargs["max_epochs"] = body.epochs
 
     try:
-        result = lifecycle.start_training(x=x, y=y, x_val=x_val, y_val=y_val, **kwargs)
+        result = lifecycle.start_training(X=x, y=y, X_val=x_val, y_val=y_val, **kwargs)
         return success_response(result)
     except (RuntimeError, ValueError) as e:
         # Surface the specific reason (no network created / training already in progress /

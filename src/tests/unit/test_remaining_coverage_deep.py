@@ -632,7 +632,7 @@ class TestStartTrainingEdgeCasesDeep:
         y_val[2:, 1] = 1
 
         with patch.object(mgr.network, "fit", return_value={"train_loss": [0.5]}):
-            result = mgr.start_training(x=x, y=y, x_val=x_val, y_val=y_val)
+            result = mgr.start_training(X=x, y=y, X_val=x_val, y_val=y_val)
             assert result["status"] == "training_started"
             assert mgr._val_x is x_val
             assert mgr._val_y is y_val
@@ -654,7 +654,7 @@ class TestStartTrainingEdgeCasesDeep:
         y[5:, 1] = 1
 
         with patch.object(mgr.network, "fit", return_value={"train_loss": [0.5]}):
-            mgr.start_training(x=x, y=y)
+            mgr.start_training(X=x, y=y)
             assert mgr._executor is not None
 
             if mgr._training_future is not None:
@@ -688,7 +688,7 @@ class TestLifecycleManagerShutdownDeep:
         y[5:, 1] = 1
 
         with patch.object(mgr.network, "fit", return_value={"train_loss": [0.5]}):
-            mgr.start_training(x=x, y=y)
+            mgr.start_training(X=x, y=y)
             if mgr._training_future is not None:
                 mgr._training_future.result(timeout=10)
 
