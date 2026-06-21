@@ -766,6 +766,17 @@ src/tests/
 - XML Coverage: `src/tests/reports/coverage.xml`
 - JUnit XML: `src/tests/reports/junit.xml`
 
+### Coverage
+
+Reproduce the CI coverage gate locally (full suite):
+
+```bash
+make coverage                 # convenience wrapper
+bash util/run_coverage.bash   # source of truth (mirrors .github/workflows/ci.yml)
+```
+
+Gate: 80% aggregate (override with `COVERAGE_FAIL_UNDER=<n>`). Coverage runs in parallel mode with a custom data_file (see pyproject `[tool.coverage.run]`); the script reproduces the CI sequence exactly. Full suite by design; for a narrower run use plain `pytest`.
+
 ---
 
 ## CI/CD Pipelines
