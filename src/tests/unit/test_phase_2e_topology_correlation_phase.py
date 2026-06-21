@@ -78,7 +78,7 @@ class TestBugCC01TopologyBroadcast:
         if new_hidden > prev_hidden:
             for i in range(prev_hidden, new_hidden):
                 actual = float(getattr(mgr.network.hidden_units[i], "best_correlation", 0.0) or 0.0)
-                mgr.training_monitor.on_cascade_add(hidden_unit_index=i, correlation=actual)
+                mgr.monitor.on_cascade_add(hidden_unit_index=i, correlation=actual)
             topology_data = {
                 "hidden_units": new_hidden,
                 "input_size": mgr.network.input_size,
@@ -241,16 +241,15 @@ class TestBugCC07PhaseTracking:
         assert started is True
 
         # Install only the phase tracker (no network needed).
-        mgr._install_phase_tracker(mgr.training_monitor, mgr.state_machine)
+        mgr._install_phase_tracker(mgr.monitor, mgr.state_machine)
 
         mgr.state_machine.set_phase(TrainingPhase.CANDIDATE)
-        assert mgr.training_monitor.current_phase == "candidate"
+        assert mgr.monitor.current_phase == "candidate"
         mgr.state_machine.set_phase(TrainingPhase.OUTPUT)
-        assert mgr.training_monitor.current_phase == "output"
+        assert mgr.monitor.current_phase == "output"
 
     def test_manager_no_longer_assigns_current_phase_directly(self):
         """No manual `monitor.current_phase = "..."` assignments in manager.py."""
         manager_src = (Path(__file__).resolve().parents[2] / "api" / "lifecycle" / "manager.py").read_text()
         # Permit the on_phase_change call but forbid the dotted assignment.
         assert "monitor.current_phase =" not in manager_src
-        assert "training_monitor.current_phase =" not in manager_src

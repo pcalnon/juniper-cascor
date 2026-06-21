@@ -75,7 +75,7 @@ class TestSaveSnapshot:
     def test_save_snapshot_success(self, client):
         """save_snapshot should return success with snapshot data."""
         snapshot_data = {"snapshot_id": "snap-001", "description": "test snapshot", "created_at": "2026-04-01T00:00:00Z"}
-        with patch.object(client.app.state.lifecycle, "has_network", return_value=True), patch.object(client.app.state.lifecycle, "save_snapshot", return_value=snapshot_data):
+        with patch.object(client.app.state.lifecycle, "has_model", return_value=True), patch.object(client.app.state.lifecycle, "save_snapshot", return_value=snapshot_data):
             response = client.post("/v1/snapshots", json={"description": "test snapshot"})
             assert response.status_code == 200
             body = response.json()
@@ -86,7 +86,7 @@ class TestSaveSnapshot:
     def test_save_snapshot_success_no_body(self, client):
         """save_snapshot should work with no request body (default description)."""
         snapshot_data = {"snapshot_id": "snap-002", "description": "", "created_at": "2026-04-01T00:00:00Z"}
-        with patch.object(client.app.state.lifecycle, "has_network", return_value=True), patch.object(client.app.state.lifecycle, "save_snapshot", return_value=snapshot_data):
+        with patch.object(client.app.state.lifecycle, "has_model", return_value=True), patch.object(client.app.state.lifecycle, "save_snapshot", return_value=snapshot_data):
             response = client.post("/v1/snapshots")
             assert response.status_code == 200
             body = response.json()
@@ -94,14 +94,14 @@ class TestSaveSnapshot:
 
     def test_save_snapshot_no_network_returns_404(self, client):
         """save_snapshot should return 404 when no network exists."""
-        with patch.object(client.app.state.lifecycle, "has_network", return_value=False):
+        with patch.object(client.app.state.lifecycle, "has_model", return_value=False):
             response = client.post("/v1/snapshots", json={"description": "no net"})
             assert response.status_code == 404
             assert "No network created" in response.json()["error"]["message"]
 
     def test_save_snapshot_returns_none_gives_404(self, client):
         """save_snapshot should return 404 when save_snapshot returns None."""
-        with patch.object(client.app.state.lifecycle, "has_network", return_value=True), patch.object(client.app.state.lifecycle, "save_snapshot", return_value=None):
+        with patch.object(client.app.state.lifecycle, "has_model", return_value=True), patch.object(client.app.state.lifecycle, "save_snapshot", return_value=None):
             response = client.post("/v1/snapshots", json={"description": "will fail"})
             assert response.status_code == 404
             assert "No network available to snapshot" in response.json()["error"]["message"]
@@ -126,7 +126,7 @@ class TestSaveSnapshot:
             captured["thread"] = threading.current_thread().name
             return snapshot_data
 
-        with patch.object(client.app.state.lifecycle, "has_network", return_value=True), patch.object(client.app.state.lifecycle, "save_snapshot", side_effect=fake_save_snapshot):
+        with patch.object(client.app.state.lifecycle, "has_model", return_value=True), patch.object(client.app.state.lifecycle, "save_snapshot", side_effect=fake_save_snapshot):
             response = client.post("/v1/snapshots", json={"description": "thread check"})
             assert response.status_code == 200
             assert "thread" in captured, "save_snapshot was not invoked"
@@ -655,7 +655,7 @@ class TestReplaySnapshot:
             "train_accuracy": [],
             "value_accuracy": [],
         }
-        session = _ReplaySession(snapshot_id, history, lifecycle.training_monitor)
+        session = _ReplaySession(snapshot_id, history, lifecycle.monitor)
         lifecycle._replay_session = session
         lifecycle.state_machine.mark_replaying()
         return session

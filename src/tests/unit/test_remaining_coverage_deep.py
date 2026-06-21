@@ -305,7 +305,7 @@ class TestMonitoredFitStopEvent:
         assert original_fit is not None
 
         # Set the stop event before calling fit
-        mgr._stop_requested.set()
+        mgr._stop_event.set()
 
         # Mock the original fit to return immediately
         with patch.dict(mgr._original_methods, {"fit": MagicMock(return_value={"train_loss": [0.1]})}):
@@ -317,7 +317,7 @@ class TestMonitoredFitStopEvent:
             mgr._install_monitoring_hooks()
 
             # Set stop event
-            mgr._stop_requested.set()
+            mgr._stop_event.set()
 
             # Call the monitored fit
             mgr.network.fit(x, y)
@@ -345,7 +345,7 @@ class TestMonitoredFitStopEvent:
         mgr._install_monitoring_hooks()
 
         # Ensure stop event is NOT set
-        mgr._stop_requested.clear()
+        mgr._stop_event.clear()
 
         # Call the monitored fit
         mgr.network.fit(x, y)
@@ -675,7 +675,7 @@ class TestLifecycleManagerShutdownDeep:
         mgr = TrainingLifecycleManager()
         assert mgr._executor is None
         mgr.shutdown()
-        assert mgr._stop_requested.is_set()
+        assert mgr._stop_event.is_set()
 
     def test_shutdown_with_executor(self):
         """Shutdown with active executor cleans it up."""

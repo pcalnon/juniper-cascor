@@ -2,19 +2,19 @@
 """Regression tests for P2-PRE-1: pause/stop actually interrupt training.
 
 Pre-fix (HEAD 2069930), ``pause_training`` and ``stop_training`` REST endpoints
-set ``_pause_event`` / ``_stop_requested`` and transitioned the FSM, but the
+set ``_pause_event`` / ``_stop_event`` and transitioned the FSM, but the
 flags were never observed inside ``cascade_correlation.fit()`` or any inner
 training loop — there are zero references to ``Event``/``wait``/``pause``/
 ``threading`` in ``cascade_correlation.py``. The two callbacks wired into the
 training loop (``_output_training_callback``, ``_grow_iteration_callback``)
-were pure metric-emission sinks. ``_stop_requested.is_set()`` was checked only
+were pure metric-emission sinks. ``_stop_event.is_set()`` was checked only
 *after* ``original_fit()`` returned naturally — by which point fit had already
 run to completion. **Result**: pause and stop were observably no-ops at the
 training-loop level; training ran to natural completion regardless.
 
 The fix wires ``_check_for_interrupt()`` into both callbacks. It raises
-``TrainingInterrupted`` when ``_stop_requested`` is set, and blocks on
-``_pause_event.wait(timeout=0.5)`` when paused (re-checking ``_stop_requested``
+``TrainingInterrupted`` when ``_stop_event`` is set, and blocks on
+``_pause_event.wait(timeout=0.5)`` when paused (re-checking ``_stop_event``
 every 0.5 s so a Stop-during-Pause is observed promptly). ``monitored_fit``
 catches ``TrainingInterrupted`` as a clean cancellation: same FSM/state/gauge
 transitions as the post-fit stop-event path, no exception propagated.
@@ -64,9 +64,9 @@ def mgr_with_hooks():
 
 @pytest.mark.integration
 def test_output_callback_raises_on_stop_signal(mgr_with_hooks):
-    """When _stop_requested is set, the output callback raises TrainingInterrupted."""
+    """When _stop_event is set, the output callback raises TrainingInterrupted."""
     mgr = mgr_with_hooks
-    mgr._stop_requested.set()
+    mgr._stop_event.set()
     with pytest.raises(TrainingInterrupted, match="stop_requested"):
         mgr.network._output_epoch_callback(epoch=1, epochs=10, loss=0.5)
 
@@ -75,9 +75,9 @@ def test_output_callback_raises_on_stop_signal(mgr_with_hooks):
 def test_output_callback_returns_normally_when_not_paused_or_stopped(mgr_with_hooks):
     """Default state (pause set, stop clear) — callback returns without raising."""
     mgr = mgr_with_hooks
-    # __init__ sets _pause_event and clears _stop_requested; double-check.
+    # __init__ sets _pause_event and clears _stop_event; double-check.
     assert mgr._pause_event.is_set()
-    assert not mgr._stop_requested.is_set()
+    assert not mgr._stop_event.is_set()
     # Should not raise; just emit metrics + return None.
     result = mgr.network._output_epoch_callback(epoch=1, epochs=10, loss=0.5)
     assert result is None
@@ -108,7 +108,7 @@ def test_output_callback_blocks_on_pause_then_resumes(mgr_with_hooks):
 
 @pytest.mark.integration
 def test_output_callback_raises_on_stop_during_pause(mgr_with_hooks):
-    """Paused; setting _stop_requested wakes the wait loop and raises TrainingInterrupted.
+    """Paused; setting _stop_event wakes the wait loop and raises TrainingInterrupted.
 
     Critical: pre-fix this scenario was impossible (callbacks ignored signals).
     Post-fix the wait loop's 0.5s timeout ensures a stop after pause is observed
@@ -132,7 +132,7 @@ def test_output_callback_raises_on_stop_during_pause(mgr_with_hooks):
     t.start()
     time.sleep(0.1)  # let the callback enter the wait loop
 
-    mgr._stop_requested.set()
+    mgr._stop_event.set()
     assert callback_done.wait(timeout=2.0), "callback did not exit within 2s of stop"
     t.join(timeout=1.0)
     assert len(raised) == 1, f"expected exactly one exception, got {raised!r}"
@@ -152,7 +152,7 @@ def test_grow_callback_raises_on_stop_signal(mgr_with_hooks):
     multiprocessing-aware signal threading); the iteration boundary is the
     natural pause point for the cascade-growth loop."""
     mgr = mgr_with_hooks
-    mgr._stop_requested.set()
+    mgr._stop_event.set()
     with pytest.raises(TrainingInterrupted, match="stop_requested"):
         mgr.network._grow_iteration_callback(
             iteration=1,
@@ -167,7 +167,7 @@ def test_grow_callback_raises_on_stop_signal(mgr_with_hooks):
 @pytest.mark.integration
 def test_grow_callback_returns_normally_when_not_stopped(mgr_with_hooks):
     mgr = mgr_with_hooks
-    assert not mgr._stop_requested.is_set()
+    assert not mgr._stop_event.is_set()
     # Returns None; updates state. No exception.
     mgr.network._grow_iteration_callback(
         iteration=1,
@@ -209,7 +209,7 @@ def _mgr_with_mocked_fit(side_effect):
     mgr._monitoring_active = False
     mgr._install_monitoring_hooks()
     # Drive FSM to Started so Command.STOP is a valid transition.
-    mgr._stop_requested.clear()
+    mgr._stop_event.clear()
     assert mgr.state_machine.handle_command(Command.START)
     return mgr, mock_fit
 

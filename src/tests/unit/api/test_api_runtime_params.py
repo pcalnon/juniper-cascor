@@ -367,7 +367,7 @@ class TestAutoSnapBestCallback:
 
     The route-level tests above cover the wiring (PATCH lands the flag,
     GET surfaces it, validation rejects bad values). These tests cover
-    the actual behavior: when ``training_monitor.on_epoch_end`` fires,
+    the actual behavior: when ``monitor.on_epoch_end`` fires,
     does the lifecycle save a snapshot at the right moments and skip
     the wrong ones?
     """
@@ -481,7 +481,7 @@ class TestAutoSnapBestCallback:
         mgr.shutdown()
 
     def test_callback_subscribed_to_epoch_end_event(self):
-        """The callback is registered on ``training_monitor.epoch_end`` at __init__."""
+        """The callback is registered on ``monitor.epoch_end`` at __init__."""
         from unittest.mock import MagicMock
 
         from api.lifecycle.manager import TrainingLifecycleManager
@@ -495,6 +495,6 @@ class TestAutoSnapBestCallback:
             mgr._auto_snap_min_epochs = 0
         # Trigger the public monitor event — the lifecycle's callback
         # registration must wire through.
-        mgr.training_monitor.on_epoch_end(epoch=10, loss=0.2, accuracy=0.8, learning_rate=0.01, validation_accuracy=0.85)
+        mgr.monitor.on_epoch_end(epoch=10, loss=0.2, accuracy=0.8, learning_rate=0.01, validation_accuracy=0.85)
         assert mgr.save_snapshot.call_count == 1
         mgr.shutdown()

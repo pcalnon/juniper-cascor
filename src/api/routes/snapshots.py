@@ -130,7 +130,7 @@ def _build_unified_payload(
 async def save_snapshot(request: Request, body: SnapshotCreateRequest = None) -> dict:
     """Save a snapshot of the current network state."""
     lifecycle = _get_lifecycle(request)
-    if not lifecycle.has_network():
+    if not lifecycle.has_model():
         raise HTTPException(status_code=404, detail="No network created")
     description = body.description if body else ""
     # PERF-CC-01: serializer.save_network is synchronous HDF5 I/O. Run it

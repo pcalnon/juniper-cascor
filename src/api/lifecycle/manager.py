@@ -184,11 +184,11 @@ class TrainingInterrupted(Exception):
     """Sentinel raised from training-loop callbacks when the user requests stop.
 
     Pre-2026-05-10 the ``pause_training`` and ``stop_training`` REST endpoints
-    set ``_pause_event`` / ``_stop_requested`` and transitioned the FSM, but the
+    set ``_pause_event`` / ``_stop_event`` and transitioned the FSM, but the
     flags were never observed inside ``cascade_correlation.fit()`` — training
     ran to natural completion regardless. The fix wires signal checks into the
     ``_output_training_callback`` and ``_grow_iteration_callback`` hook points;
-    when ``_stop_requested`` is set, the callback raises this sentinel which
+    when ``_stop_event`` is set, the callback raises this sentinel which
     ``monitored_fit`` catches as a clean cancellation (FSM → STOP, status
     Stopped, cancelled-counter incremented; not a failure).
 
@@ -237,12 +237,12 @@ class _WeightHistoryRecorder:
 
     Three trigger points:
       1. **Every Nth epoch** — registered as a callback on
-         ``training_monitor.on_epoch_end``. ``N`` = network's
+         ``monitor.on_epoch_end``. ``N`` = network's
          ``config.weight_history_sampling_interval`` (default 50;
          set to 1 for every-epoch capture; set to 0 to disable the
          periodic trigger and rely on cascade-add only).
       2. **Cascade-grow events** — registered as a callback on
-         ``training_monitor.on_cascade_add``. Always captures
+         ``monitor.on_cascade_add``. Always captures
          regardless of the periodic interval since these are the
          narrative anchors per the parent design.
       3. **Terminal capture** — call ``capture_terminal()`` from the
@@ -1085,10 +1085,10 @@ class TrainingLifecycleManager:
         self.model: Optional[CascorModel] = None
         self.state_machine = TrainingStateMachine()
         self.training_state = TrainingState()
-        self.training_monitor = TrainingMonitor()
+        self.monitor = TrainingMonitor()
 
         # Threading
-        self._training_lock = threading.Lock()
+        self._lock = threading.Lock()
         self._metrics_lock = threading.Lock()
         self._topology_lock = threading.Lock()
         # CONC-02 / BUG-CC-16 (Phase 3B): guard the broadcast throttle so two
@@ -1100,7 +1100,7 @@ class TrainingLifecycleManager:
         self._last_state_broadcast_time: float = 0.0
         self._executor: Optional[ThreadPoolExecutor] = None
         self._training_future: Optional[Future] = None
-        self._stop_requested = threading.Event()
+        self._stop_event = threading.Event()
         self._pause_event = threading.Event()
         self._pause_event.set()  # Not paused initially
         self._last_emitted_history_len = 0
@@ -1116,7 +1116,7 @@ class TrainingLifecycleManager:
         self._val_y: Optional[torch.Tensor] = None
 
         # Network creation params (for reset)
-        self._network_params: Optional[Dict[str, Any]] = None
+        self._params: Optional[Dict[str, Any]] = None
 
         # FRONTEND_ISSUES_PLAN_2026-05-09 §3.5.1 / Issue #3 Phase 1 — staged
         # dataset config. Set by ``stage_dataset_config`` (POST /v1/training/
@@ -1143,7 +1143,7 @@ class TrainingLifecycleManager:
         # inside ``swap_dataset_live`` (post-fetch, pre-future-resubmit). Using
         # an ``Event`` rather than a bool gives a memory-barriered read across
         # the cancel-issuer thread and the swap-driver thread without needing
-        # to re-acquire ``_training_lock`` (which the swap holds for its full
+        # to re-acquire ``_lock`` (which the swap holds for its full
         # duration). Cleared in the swap's ``finally`` so a future swap doesn't
         # observe a stale set from a prior aborted swap.
         self._swap_cancel_requested: threading.Event = threading.Event()
@@ -1174,7 +1174,7 @@ class TrainingLifecycleManager:
         self._register_liveness_monitor_callbacks()
 
         # CAS-006 (Phase 6E Sprint A-4): auto-snap-best.
-        # Hooks ``training_monitor.epoch_end`` and saves a snapshot every
+        # Hooks ``monitor.epoch_end`` and saves a snapshot every
         # time (validation) accuracy beats the best-seen-so-far for the
         # current run. Defaults: feature off, 50-epoch warmup. Both are
         # exposed via TrainingParams + TrainingParamUpdateRequest and
@@ -1200,7 +1200,7 @@ class TrainingLifecycleManager:
         # (so a subsequent run from the same snapshot doesn't mistakenly
         # carry over the marker).
         self._resume_point_epoch: Optional[int] = None
-        self.training_monitor.register_callback("epoch_end", self._maybe_auto_snap_callback)
+        self.monitor.register_callback("epoch_end", self._maybe_auto_snap_callback)
 
         self.logger.info("TrainingLifecycleManager initialized")
 
@@ -1248,7 +1248,7 @@ class TrainingLifecycleManager:
         """
         bump = lambda **_kw: self.bump_liveness()  # noqa: E731 — concise wrapper
         for event in ("epoch_start", "epoch_end", "cascade_add", "training_start", "training_end", "topology_change", "candidate_progress", "phase_change"):
-            self.training_monitor.register_callback(event, bump)
+            self.monitor.register_callback(event, bump)
 
     def bump_liveness(self) -> None:
         """Record that the lifecycle is making forward progress.
@@ -1330,23 +1330,23 @@ class TrainingLifecycleManager:
 
         ws = self._ws_manager
 
-        self.training_monitor.register_callback(
+        self.monitor.register_callback(
             "epoch_end",
             lambda metrics, **kw: ws.broadcast_from_thread(create_metrics_message(metrics)),
         )
-        self.training_monitor.register_callback(
+        self.monitor.register_callback(
             "cascade_add",
             lambda event, **kw: ws.broadcast_from_thread(create_cascade_add_message(event)),
         )
-        self.training_monitor.register_callback(
+        self.monitor.register_callback(
             "training_start",
             lambda **kw: self._broadcast_training_state(force=True),
         )
-        self.training_monitor.register_callback(
+        self.monitor.register_callback(
             "training_end",
             lambda **kw: ws.broadcast_from_thread(create_event_message({"event": "training_complete"})),
         )
-        self.training_monitor.register_callback(
+        self.monitor.register_callback(
             "candidate_progress",
             lambda progress, **kw: ws.broadcast_from_thread(create_candidate_progress_message(progress)),
         )
@@ -1421,11 +1421,11 @@ class TrainingLifecycleManager:
         from cascade_correlation.cascade_correlation import CascadeCorrelationNetwork
         from cascade_correlation.cascade_correlation_config.cascade_correlation_config import CascadeCorrelationConfig
 
-        with self._training_lock:
+        with self._lock:
             if self.state_machine.is_started():
                 raise RuntimeError("Cannot create network while training is active")
 
-            self._network_params = kwargs.copy()
+            self._params = kwargs.copy()
             config = CascadeCorrelationConfig.create_simple_config(**kwargs)
             # WS-6 B-phase: wrap the freshly built CCN in the model-core CascorModel.
             self.model = CascorModel(network=CascadeCorrelationNetwork(config=config))
@@ -1451,18 +1451,23 @@ class TrainingLifecycleManager:
 
     def delete_network(self) -> None:
         """Delete the current network."""
-        with self._training_lock:
+        with self._lock:
             if self.state_machine.is_started():
                 raise RuntimeError("Cannot delete network while training is active")
             self._restore_original_methods()
             self.model = None
-            self._network_params = None
+            self._params = None
             self.state_machine.handle_command(Command.RESET)
             self.training_state.update_state(status="Stopped", phase="Idle")
             self.logger.info("Network deleted")
 
+    def has_model(self) -> bool:
+        return self.model is not None
+
     def has_network(self) -> bool:
-        return self.network is not None
+        """Deprecated alias for :meth:`has_model` (WS-6 B2a seam name-align). Kept
+        for any external caller; all in-repo call sites use ``has_model``."""
+        return self.has_model()
 
     @property
     def network(self):
@@ -1516,7 +1521,7 @@ class TrainingLifecycleManager:
         but the loop never observed the events. This method is the missing hook.
 
         The pause wait uses a 0.5 s timeout so a stop request received WHILE
-        paused is observed promptly (the loop re-checks ``_stop_requested`` on
+        paused is observed promptly (the loop re-checks ``_stop_event`` on
         each wakeup). Without the timeout, a stop after pause would block forever
         since ``_pause_event`` would still be cleared.
 
@@ -1525,11 +1530,11 @@ class TrainingLifecycleManager:
         ``_install_grow_network_hook`` (which lives in a separate method scope)
         and so tests can invoke it directly via ``mgr._check_for_interrupt()``.
         """
-        if self._stop_requested.is_set():
+        if self._stop_event.is_set():
             raise TrainingInterrupted("stop_requested")
         while not self._pause_event.is_set():
             self._pause_event.wait(timeout=0.5)
-            if self._stop_requested.is_set():
+            if self._stop_event.is_set():
                 raise TrainingInterrupted("stop_requested_during_pause")
 
     def _install_monitoring_hooks(self) -> None:  # noqa: C901
@@ -1546,9 +1551,9 @@ class TrainingLifecycleManager:
         original_fit = self.network.fit
         self._original_methods["fit"] = original_fit
 
-        monitor = self.training_monitor
+        monitor = self.monitor
         state = self.training_state
-        stop_event = self._stop_requested
+        stop_event = self._stop_event
         sm = self.state_machine
         manager_ref = self
 
@@ -1680,7 +1685,7 @@ class TrainingLifecycleManager:
             except TrainingInterrupted:
                 # P2-PRE-1 (2026-05-10): clean cancellation path. Raised by
                 # _check_for_interrupt() in the training-loop callbacks when
-                # _stop_requested is set. Treated as a successful stop, NOT a
+                # _stop_event is set. Treated as a successful stop, NOT a
                 # failure: same FSM/state transitions and gauge increments as
                 # the post-fit stop_event path above (lines 1500–1506), so a
                 # mid-fit stop and a post-fit stop produce the same observable
@@ -1960,7 +1965,7 @@ class TrainingLifecycleManager:
             # Emit all new entries
             for i in range(last_emitted, current_len):
                 epoch = i + 1
-                self.training_monitor.on_epoch_end(
+                self.monitor.on_epoch_end(
                     epoch=epoch,
                     loss=train_loss_list[i],
                     accuracy=train_accuracy_list[i] if i < len(train_accuracy_list) else None,
@@ -2047,11 +2052,11 @@ class TrainingLifecycleManager:
         affects subsequent samples (changes mid-run land at the next
         ``register`` call when re-attached).
         """
-        if self.network is None or self.training_monitor is None:
+        if self.network is None or self.monitor is None:
             return
         existing = self._weight_history_recorder
         if existing is None or existing.network is not self.network:
-            self._weight_history_recorder = _WeightHistoryRecorder(self.network, self.training_monitor)
+            self._weight_history_recorder = _WeightHistoryRecorder(self.network, self.monitor)
         else:
             # Re-init in case config tunables changed since last training run.
             existing.sampling_interval = int(getattr(self.network.config, "weight_history_sampling_interval", existing.sampling_interval))
@@ -2088,7 +2093,7 @@ class TrainingLifecycleManager:
         if self.network is None:
             raise RuntimeError("No network created")
 
-        with self._training_lock:
+        with self._lock:
             if self.state_machine.is_started():
                 raise RuntimeError("Training already in progress")
             # CAN-015d (B-4): Investigating is the inspection / modification
@@ -2147,7 +2152,7 @@ class TrainingLifecycleManager:
                 if hasattr(self.network, "active_output_dim"):
                     self.network.active_output_dim = active_output_dim
 
-            self._stop_requested.clear()
+            self._stop_event.clear()
             self._pause_event.set()
 
             # CAS-006 (A-4) + CAN-015b (B-2): each training run normally
@@ -2175,7 +2180,7 @@ class TrainingLifecycleManager:
             # training future so the next fit pass observes the new values.
             # ``_apply_params_unlocked`` shares the same whitelist + atomic-
             # rollback path as ``update_params``; calling it here while we
-            # hold ``_training_lock`` avoids re-entering the non-reentrant
+            # hold ``_lock`` avoids re-entering the non-reentrant
             # lock and avoids the race where the background thread could
             # start fit() before update_params lands.
             if network_kwargs:
@@ -2204,7 +2209,7 @@ class TrainingLifecycleManager:
 
     def stop_training(self) -> Dict[str, Any]:
         """Request training stop."""
-        self._stop_requested.set()
+        self._stop_event.set()
         self.state_machine.handle_command(Command.STOP)
         self.training_state.update_state(status="Stopped", phase="Idle")
         self._broadcast_training_state(force=True)
@@ -2240,7 +2245,7 @@ class TrainingLifecycleManager:
         self._reset_event_state()
         self._last_emitted_history_len = 0
         self.state_machine.handle_command(Command.RESET)
-        self.training_monitor.clear_metrics()
+        self.monitor.clear_metrics()
         self.training_state.update_state(
             status="Stopped",
             phase="Idle",
@@ -2253,11 +2258,11 @@ class TrainingLifecycleManager:
     def _reset_event_state(self) -> None:
         """Single source of truth for control-event normalisation.
 
-        Post-condition: ``_stop_requested`` is set (signals any in-flight
+        Post-condition: ``_stop_event`` is set (signals any in-flight
         training thread to stop) and ``_pause_event`` is set (no synthetic
         pause inherited by the next ``start_training`` call).
         """
-        self._stop_requested.set()
+        self._stop_event.set()
         self._pause_event.set()
 
     # ------------------------------------------------------------------
@@ -2267,7 +2272,7 @@ class TrainingLifecycleManager:
     def get_status(self) -> Dict[str, Any]:
         """Get current training status."""
         state_summary = self.state_machine.get_state_summary()
-        monitor_state = self.training_monitor.get_current_state()
+        monitor_state = self.monitor.get_current_state()
         training_state = self.training_state.get_state()
 
         if self.network is not None:
@@ -2320,8 +2325,8 @@ class TrainingLifecycleManager:
     def get_metrics_history(self, count: Optional[int] = None) -> list:
         """Get metrics history."""
         if count:
-            return self.training_monitor.get_recent_metrics(count)
-        return self.training_monitor.get_all_metrics()
+            return self.monitor.get_recent_metrics(count)
+        return self.monitor.get_all_metrics()
 
     def has_training_data(self) -> bool:
         """Check if training data is loaded."""
@@ -2342,7 +2347,7 @@ class TrainingLifecycleManager:
         ``clear_pending_dataset_config``) so the route can use ``cfg or {}``
         without separate validation.
         """
-        with self._training_lock:
+        with self._lock:
             if not cfg:
                 self._pending_dataset_config = None
                 return {"status": "cleared", "config": None}
@@ -2351,7 +2356,7 @@ class TrainingLifecycleManager:
 
     def clear_pending_dataset_config(self) -> Dict[str, Any]:
         """Discard any staged dataset change so the next start uses current data."""
-        with self._training_lock:
+        with self._lock:
             prior = self._pending_dataset_config
             self._pending_dataset_config = None
         return {"status": "cleared", "discarded": dict(prior) if prior else None}
@@ -2441,11 +2446,11 @@ class TrainingLifecycleManager:
         "signal accepted", not "swap aborted by the time you read this".
         """
         # Snapshot the flag under the lock — the swap mutates it inside
-        # ``_training_lock`` so reading without the lock could see a stale
+        # ``_lock`` so reading without the lock could see a stale
         # False during the brief window between swap-start and the very first
         # checkpoint. Holding the lock here also prevents a race where a swap
         # finishes between our check and our set().
-        with self._training_lock:
+        with self._lock:
             if not self._swap_in_progress:
                 raise NoSwapInProgressError("no_swap_in_progress")
             self._swap_cancel_requested.set()
@@ -2467,7 +2472,7 @@ class TrainingLifecycleManager:
         """In-flight dataset swap (P2-1a equal-dim skeleton + P2-1b polish).
 
         Phase 2 step-by-step flow per spec §3.2:
-          1. Acquire ``_training_lock`` (entire swap held under the lock —
+          1. Acquire ``_lock`` (entire swap held under the lock —
              Audit #2 in §3.4 confirmed read-side routes don't contend).
           2. Validate experimental-functions gate (raises PermissionError → 403)
              and ``is_started()`` (raises ValueError → 422).
@@ -2477,7 +2482,7 @@ class TrainingLifecycleManager:
              capture the in-flight candidate-pool depth so the response can
              surface it (§3.5 — "Swap discarded N in-flight candidates").
           5/6. Signal stop on the training future; await its clean exit.
-             Pre-P2-PRE-1 the training thread ignored ``_stop_requested``;
+             Pre-P2-PRE-1 the training thread ignored ``_stop_event``;
              the fix at ``f4453fa`` wires the signal into the training-loop
              callbacks via ``_check_for_interrupt`` so this actually works.
           7. ``_reload_dataset`` fetches the new dataset (juniper-data I/O).
@@ -2516,7 +2521,7 @@ class TrainingLifecycleManager:
         if not self._experimental_functions_enabled:
             raise PermissionError("experimental_functions_disabled")
 
-        with self._training_lock:
+        with self._lock:
             # Step 2 cont: validate training is running.
             if not self.state_machine.is_started():
                 raise ValueError("training_not_running — use POST /v1/training/dataset (cold swap) instead")
@@ -2556,7 +2561,7 @@ class TrainingLifecycleManager:
 
                 # P2-1b: capture the candidate-pool depth BEFORE we stop the
                 # future. Reading after the stop always sees zero (the pool
-                # has been drained by ``_stop_requested``). Only the
+                # has been drained by ``_stop_event``). Only the
                 # CANDIDATE phase has an in-flight pool — output training
                 # has none, so reporting zero in those cases is correct.
                 abandoned_candidate_pool_size = self._snapshot_abandoned_candidate_pool_size()
@@ -2581,11 +2586,11 @@ class TrainingLifecycleManager:
                     self.logger.exception("swap_dataset_live: pre-swap snapshot failed; swap continues without pre_swap_snapshot_id")
 
                 # Step 5/6: signal stop, wait for training future to exit cleanly.
-                # P2-PRE-1 (f4453fa) makes _stop_requested actually interrupt
+                # P2-PRE-1 (f4453fa) makes _stop_event actually interrupt
                 # the training-loop callbacks via TrainingInterrupted, caught
                 # by monitored_fit as clean cancellation. Pre-fix this would
                 # have blocked until natural fit completion (minutes).
-                self._stop_requested.set()
+                self._stop_event.set()
                 self._pause_event.set()  # ensure pause wait loop wakes to observe stop
                 future = self._training_future
                 if future is not None:
@@ -2658,7 +2663,7 @@ class TrainingLifecycleManager:
                 # the FSM STOPPED → STARTED transition internally on the new
                 # invocation; we just need the underlying tensors to be the
                 # new ones (which they are, post-_reload_dataset).
-                self._stop_requested.clear()
+                self._stop_event.clear()
                 self._pause_event.set()
                 if self._executor is None:
                     self._executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="cascor-train")
@@ -2953,7 +2958,7 @@ class TrainingLifecycleManager:
         ``torch.float32`` tensors, swap ``_train_x/_train_y`` (and val if
         the artifact carries them).
 
-        Held under ``_training_lock`` by the caller (``start_training``);
+        Held under ``_lock`` by the caller (``start_training``);
         any I/O failure surfaces as ``RuntimeError`` so the caller can leave
         ``_pending_dataset_config`` in place for the user to retry.
         """
@@ -3124,7 +3129,7 @@ class TrainingLifecycleManager:
         GAP-WS-28: applies all updates atomically. If any setattr raises,
         every previously-applied key is reverted to its pre-call value
         before re-raising, so the network is never left in a half-updated
-        state. The ``_training_lock`` already prevents the race itself; this
+        state. The ``_lock`` already prevents the race itself; this
         adds the all-or-nothing semantics for the case where a property
         setter rejects a value (currently no setters do, but adding a
         defensive guard now means future validation can be wired in
@@ -3141,7 +3146,7 @@ class TrainingLifecycleManager:
             Exception: Re-raises whatever setattr raised, after rolling back
                 any partially-applied updates.
         """
-        with self._training_lock:
+        with self._lock:
 
             ########################################################################################
             # Do NOT remove this commented out code block until explicit approval has been granted
@@ -3220,12 +3225,12 @@ class TrainingLifecycleManager:
             return self._apply_params_unlocked(params)
 
     def _apply_params_unlocked(self, params: Dict[str, Any]) -> Dict[str, Any]:  # noqa: C901
-        """Apply runtime params assuming the caller already holds ``_training_lock``.
+        """Apply runtime params assuming the caller already holds ``_lock``.
 
         Internal helper extracted from ``update_params`` so that
         ``start_training`` can route TrainingParams body fields through the
         same whitelist + atomic-rollback path without re-entering the
-        non-reentrant ``_training_lock`` (see CASCOR_FIT_KWARGS_LATENT_BUG.md
+        non-reentrant ``_lock`` (see CASCOR_FIT_KWARGS_LATENT_BUG.md
         for the full rationale of the split).
 
         Three storage flavors are supported:
@@ -4038,7 +4043,7 @@ class TrainingLifecycleManager:
           we do it here too so a ``GET /v1/training/params`` between
           retrain and start_training already shows the cleared value)
         - FSM — Stopped / Idle (via ``Command.RESET``)
-        - ``training_monitor.metrics_buffer`` — cleared
+        - ``monitor.metrics_buffer`` — cleared
         - ``_last_emitted_history_len`` — 0
 
         CAN-015c (B-3): rejected when a replay session is active (would
@@ -4069,12 +4074,12 @@ class TrainingLifecycleManager:
                         history[key] = []
 
         # Reset lifecycle-level training state. Mirrors ``reset()`` (line ~840)
-        # but without the ``_stop_requested.set()`` since no training is
+        # but without the ``_stop_event.set()`` since no training is
         # currently running — Retrain is invoked from a stopped state and
         # ``start_training`` will clear the event itself.
         self._last_emitted_history_len = 0
         self.state_machine.handle_command(Command.RESET)
-        self.training_monitor.clear_metrics()
+        self.monitor.clear_metrics()
         self.training_state.update_state(
             status="Stopped",
             phase="Idle",
@@ -4207,7 +4212,7 @@ class TrainingLifecycleManager:
         # no such attribute (or it's None) — the cache then advertises
         # weights_available=false to canopy via state_summary.
         weight_history = getattr(self.network, "weight_history", None)
-        session = _ReplaySession(snapshot_id, history_dict, self.training_monitor, weight_history=weight_history)
+        session = _ReplaySession(snapshot_id, history_dict, self.monitor, weight_history=weight_history)
         self._replay_session = session
         # Marker fields used by Resume / Restore are not relevant here.
         self._resume_point_epoch = None
@@ -4355,7 +4360,7 @@ class TrainingLifecycleManager:
 
     def shutdown(self) -> None:
         """Clean up resources."""
-        self._stop_requested.set()
+        self._stop_event.set()
         self.stop_liveness_heartbeat()
         self._restore_original_methods()
         # CAN-015c (B-3): drain any active replay session so the

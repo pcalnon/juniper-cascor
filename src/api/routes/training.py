@@ -143,7 +143,7 @@ async def get_status(request: Request) -> dict:
 async def get_params(request: Request) -> dict:
     """Get current training parameters."""
     lifecycle = _get_lifecycle(request)
-    if not lifecycle.has_network():
+    if not lifecycle.has_model():
         raise HTTPException(status_code=404, detail="No network created")
     return success_response(lifecycle.get_training_params())
 
@@ -156,7 +156,7 @@ async def update_training_params(request: Request, body: TrainingParamUpdateRequ
     All fields are optional — only provided fields are updated (PATCH semantics).
     """
     lifecycle = _get_lifecycle(request)
-    if not lifecycle.has_network():
+    if not lifecycle.has_model():
         raise HTTPException(status_code=404, detail="No network created")
     try:
         updated = lifecycle.update_params(body.model_dump(exclude_none=True))

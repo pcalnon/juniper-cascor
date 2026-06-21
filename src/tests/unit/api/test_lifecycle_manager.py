@@ -16,14 +16,14 @@ class TestLifecycleManagerNetwork:
     def test_initial_state(self):
         """Manager starts with no network."""
         mgr = TrainingLifecycleManager()
-        assert not mgr.has_network()
+        assert not mgr.has_model()
         assert mgr.get_network_info() == {}
 
     def test_create_network(self):
         """Create network returns info dict."""
         mgr = TrainingLifecycleManager()
         info = mgr.create_network(input_size=2, output_size=2)
-        assert mgr.has_network()
+        assert mgr.has_model()
         assert info["input_size"] == 2
         assert info["output_size"] == 2
         assert info["hidden_units"] == 0
@@ -34,7 +34,7 @@ class TestLifecycleManagerNetwork:
         mgr = TrainingLifecycleManager()
         mgr.create_network(input_size=2, output_size=2)
         mgr.delete_network()
-        assert not mgr.has_network()
+        assert not mgr.has_model()
 
     def test_get_network_info(self):
         """Get network info returns expected fields."""
@@ -181,7 +181,7 @@ class TestLifecycleHeartbeat:
         try:
             mgr.stop_liveness_heartbeat()
             before = mgr._liveness_counter
-            mgr.training_monitor.on_phase_change("output")
+            mgr.monitor.on_phase_change("output")
             assert mgr._liveness_counter > before
         finally:
             mgr.stop_liveness_heartbeat()
@@ -397,14 +397,14 @@ class TestLifecycleManagerStatus:
         """Metrics history respects count param."""
         mgr = TrainingLifecycleManager()
         # Directly add to monitor
-        mgr.training_monitor.on_epoch_end(
+        mgr.monitor.on_epoch_end(
             epoch=1,
             loss=0.5,
             accuracy=0.75,
             learning_rate=0.01,
             hidden_units=0,
         )
-        mgr.training_monitor.on_epoch_end(
+        mgr.monitor.on_epoch_end(
             epoch=2,
             loss=0.4,
             accuracy=0.80,
@@ -577,7 +577,7 @@ class TestLifecycleWorkerCoordinator:
 class TestUpdateParamsAtomicity:
     """GAP-WS-28: update_params applies all keys or none — never half.
 
-    The race itself is closed by ``_training_lock`` (one writer at a time);
+    The race itself is closed by ``_lock`` (one writer at a time);
     these tests cover the all-or-nothing semantics for the case where a
     property setter rejects a value mid-loop. No setter currently raises,
     so we drive the path with a fake network that raises on a chosen key.
@@ -801,7 +801,7 @@ class TestRestoreForRetrain:
         mgr.shutdown()
 
     def test_clears_training_monitor_metrics(self, tmp_path):
-        """The training_monitor's metrics buffer is cleared."""
+        """The monitor's metrics buffer is cleared."""
         from unittest.mock import MagicMock, patch
 
         mgr = TrainingLifecycleManager()
@@ -810,7 +810,7 @@ class TestRestoreForRetrain:
         loaded.history = {}
         fake_file = tmp_path / "snap.h5"
         fake_file.write_bytes(b"")
-        with patch.object(mgr, "_get_snapshots_dir", return_value=tmp_path), patch("snapshots.snapshot_serializer.CascadeHDF5Serializer.load_network", return_value=loaded), patch.object(mgr, "_restore_original_methods"), patch.object(mgr, "_install_monitoring_hooks"), patch.object(mgr.training_monitor, "clear_metrics") as mock_clear:
+        with patch.object(mgr, "_get_snapshots_dir", return_value=tmp_path), patch("snapshots.snapshot_serializer.CascadeHDF5Serializer.load_network", return_value=loaded), patch.object(mgr, "_restore_original_methods"), patch.object(mgr, "_install_monitoring_hooks"), patch.object(mgr.monitor, "clear_metrics") as mock_clear:
             mgr.restore_for_retrain("snap")
             mock_clear.assert_called_once()
         mgr.shutdown()
