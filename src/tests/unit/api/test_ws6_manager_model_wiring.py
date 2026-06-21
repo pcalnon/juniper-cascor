@@ -126,4 +126,6 @@ def test_network_property_is_stable_write_through_reference():
     mgr.network.ws6_write_through_probe = sentinel  # write through the property
     assert mgr.network.ws6_write_through_probe is sentinel  # read back
     assert mgr.model.network.ws6_write_through_probe is sentinel
-    assert mgr.network is mgr.network  # stable identity across accesses
+    first_ref = mgr.network
+    second_ref = mgr.network
+    assert first_ref is second_ref  # stable identity across accesses
