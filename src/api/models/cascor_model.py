@@ -25,6 +25,7 @@ crosses the interface boundary (D2).
 
 from __future__ import annotations
 
+import itertools
 from typing import TYPE_CHECKING, Any, Callable
 
 import numpy as np
@@ -56,19 +57,48 @@ class CascorModel(GrowableModel):
 
     # ----- TrainableModel ------------------------------------------------------------
     def fit(self, X, y, *, X_val=None, y_val=None, on_event=None, **kw) -> TrainResult:
-        """Train the wrapped network in place. Does NOT construct or re-seed (plan §4.2)."""
+        """Train the wrapped network in place, streaming ``TrainingEvent``s **live** during fit.
+
+        WS-6 PR-B3.2: events are emitted as training progresses (not reconstructed post-hoc) by wiring
+        CCN's *synchronous* native callback hooks to ``on_event`` for the duration of ``net.fit``:
+
+        * ``training_start`` — before the wrapped ``net.fit``;
+        * ``epoch_end`` — per output-training epoch (CCN ``on_epoch_callback`` / ``_output_epoch_callback``);
+        * ``phase_change`` — per cascade grow-iteration (CCN ``on_grow_iteration_callback`` /
+          ``_grow_iteration_callback``). The cascor-specific per-iteration candidate-pool detail is
+          carried verbatim under ``payload["detail"]`` — plan §3.3 "extend the event payload": the lossy
+          ``candidate_progress -> phase_change`` collapse is **not** used here, and the async 50 Hz
+          per-candidate stream is preserved separately by the manager's retained drain side-channel (PR-B3.3);
+        * ``unit_added`` — per installed hidden unit, reconstructed from ``history`` after ``net.fit``
+          (CCN exposes no per-unit hook — the grow-iteration hook fires *before* the unit is installed);
+        * ``training_end`` — after a clean ``net.fit``.
+
+        The five types are model-core's closed vocabulary (``events.py``); ``seq`` is per-run monotonic.
+        Does NOT construct or re-seed the network (plan §4.2). Native hooks are saved and restored in
+        ``finally`` so a partial fit (e.g. an ``on_event`` sink that raises to interrupt, PR-B3.3) leaves
+        no stale binding on the wrapped network.
+        """
         x = torch.as_tensor(np.asarray(X), dtype=torch.float32)
         y_t = torch.as_tensor(np.asarray(y), dtype=torch.float32)
         early_stopping = kw.pop("early_stopping", False)
-        if X_val is not None and y_val is not None:
-            x_val = torch.as_tensor(np.asarray(X_val), dtype=torch.float32)
-            y_val_t = torch.as_tensor(np.asarray(y_val), dtype=torch.float32)
-            self._network.fit(x, y_t, x_val=x_val, y_val=y_val_t, early_stopping=early_stopping, **kw)
-        else:
-            self._network.fit(x, y_t, early_stopping=early_stopping, **kw)
 
-        if on_event is not None:
-            self._emit_events(on_event, int(x.shape[0]))
+        emit = self._make_event_sink(on_event) if on_event is not None else None
+        restore_hooks = self._bind_live_event_hooks(emit) if emit is not None else None
+        try:
+            if emit is not None:
+                emit("training_start", {"n_samples": int(x.shape[0])})
+            if X_val is not None and y_val is not None:
+                x_val = torch.as_tensor(np.asarray(X_val), dtype=torch.float32)
+                y_val_t = torch.as_tensor(np.asarray(y_val), dtype=torch.float32)
+                self._network.fit(x, y_t, x_val=x_val, y_val=y_val_t, early_stopping=early_stopping, **kw)
+            else:
+                self._network.fit(x, y_t, early_stopping=early_stopping, **kw)
+            if emit is not None:
+                self._emit_units_added(emit)
+                emit("training_end", {"metrics": self.metrics()})
+        finally:
+            if restore_hooks is not None:
+                restore_hooks()
 
         history = self._network.history
         per_epoch = [{"loss": float(loss), "accuracy": float(acc)} for loss, acc in zip(history.get("train_loss", []), history.get("train_accuracy", []))]
@@ -79,31 +109,81 @@ class CascorModel(GrowableModel):
             stopped_reason=getattr(self._network, "_completion_reason", None),
         )
 
-    def _emit_events(self, on_event: Callable[[TrainingEvent], None], n_samples: int) -> None:
-        """Reconstruct a legal training-event sequence post-hoc from network history.
+    @staticmethod
+    def _make_event_sink(on_event: Callable[[TrainingEvent], None]) -> Callable[[str, dict[str, Any]], None]:
+        """Return an ``emit(type, payload)`` that stamps a per-run monotonic ``seq`` and forwards a
+        :class:`TrainingEvent` to ``on_event``. One counter per fit keeps ``seq`` non-decreasing across
+        the live (during-fit) and post-hoc (unit_added / training_end) emissions."""
+        counter = itertools.count()
 
-        The conformance kit checks event *order* (``training_start`` first, ``training_end`` last, ``seq``
-        non-decreasing), not timing. NOTE (WS-6 plan H4): this coarse reconstruction discards
-        per-candidate-iteration detail; the production on_event migration (PR-B3) must preserve the
-        ``/ws/training`` live-progress granularity separately — this event stream is the conformance
-        surface, not the live-progress surface.
+        def emit(event_type: str, payload: dict[str, Any]) -> None:
+            on_event(TrainingEvent(event_type, payload, next(counter)))
+
+        return emit
+
+    def _bind_live_event_hooks(self, emit: Callable[[str, dict[str, Any]], None]) -> Callable[[], None]:
+        """Bind CCN's native callback hooks to ``emit`` for the duration of a fit; return a restore fn.
+
+        ``on_epoch_callback`` -> ``epoch_end``; ``on_grow_iteration_callback`` -> ``phase_change`` (the
+        full per-iteration candidate-pool detail preserved under ``payload["detail"]``, plan §3.3). The
+        prior callback values are saved and restored so this is reentrancy-safe and leaves no binding
+        behind once a fit completes (PR-B3.3 routes everything through ``fit(on_event=...)`` — the manager
+        no longer binds these directly).
         """
-        seq = 0
-        on_event(TrainingEvent("training_start", {"n_samples": n_samples}, seq))
+        net = self._network
+        prev_epoch_cb = getattr(net, "_output_epoch_callback", None)
+        prev_grow_cb = getattr(net, "_grow_iteration_callback", None)
+
+        def _on_epoch(epoch, epochs, loss) -> None:
+            emit("epoch_end", {"epoch": int(epoch), "epochs": int(epochs), "metrics": {"loss": float(loss)}})
+
+        def _on_grow_iteration(iteration, max_iterations, best_correlation, candidates_trained, candidates_total, phase_detail, **detail) -> None:
+            emit(
+                "phase_change",
+                {
+                    "phase": "candidate",
+                    "detail": {
+                        "grow_iteration": int(iteration),
+                        "max_iterations": int(max_iterations),
+                        "best_correlation": float(best_correlation),
+                        "candidates_trained": int(candidates_trained),
+                        "candidates_total": int(candidates_total),
+                        "phase_detail": phase_detail,
+                        "best_candidate_id": detail.get("best_candidate_id", -1),
+                        "best_candidate_uuid": detail.get("best_candidate_uuid", ""),
+                        "second_candidate_id": detail.get("second_candidate_id"),
+                        "second_candidate_correlation": detail.get("second_candidate_correlation", 0.0),
+                        "all_correlations": list(detail.get("all_correlations", [])),
+                    },
+                },
+            )
+
+        net._output_epoch_callback = _on_epoch
+        net._grow_iteration_callback = _on_grow_iteration
+
+        def restore() -> None:
+            net._output_epoch_callback = prev_epoch_cb
+            net._grow_iteration_callback = prev_grow_cb
+
+        return restore
+
+    def _emit_units_added(self, emit: Callable[[str, dict[str, Any]], None]) -> None:
+        """Emit one ``unit_added`` per installed hidden unit, reconstructed from network history.
+
+        CCN installs units *inside* ``grow_network`` and exposes no per-unit hook (the grow-iteration
+        hook fires *before* the unit is installed), so unit_added is reconstructed from
+        ``history["hidden_units_added"]`` after ``net.fit`` returns. The conformance kit checks event
+        *order* (``training_start`` first, ``training_end`` last, ``seq`` non-decreasing), so emitting
+        these between the last grow ``phase_change`` and ``training_end`` is legal.
+        """
         for entry in self._network.history.get("hidden_units_added", []):
             unit_index = entry.get("unit_index", -1)
             if unit_index < 0:  # skip the fit() sentinel {corr:0.0, shape:(), idx:-1}
                 continue
-            seq += 1
-            on_event(
-                TrainingEvent(
-                    "unit_added",
-                    {"n_units": unit_index + 1, "unit_id": f"h{unit_index}", "score": float(entry.get("correlation", 0.0))},
-                    seq,
-                )
+            emit(
+                "unit_added",
+                {"n_units": unit_index + 1, "unit_id": f"h{unit_index}", "score": float(entry.get("correlation", 0.0))},
             )
-        seq += 1
-        on_event(TrainingEvent("training_end", {"metrics": self.metrics()}, seq))
 
     def predict(self, X, **kw) -> np.ndarray:
         """Raw class scores — never argmax (RK-6); numpy at the boundary (D2)."""

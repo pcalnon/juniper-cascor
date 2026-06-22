@@ -142,3 +142,82 @@ def test_n_units_reflects_grown_units():
     X, y, X_val, y_val = _toy_dataset()
     model.fit(X, y, X_val=X_val, y_val=y_val)
     assert model.n_units == len(net.hidden_units)
+
+
+# ----- PR-B3.2: live on_event streaming during fit --------------------------------------
+
+
+def _collect_events(model, X, y, X_val, y_val):
+    events = []
+    model.fit(X, y, X_val=X_val, y_val=y_val, on_event=events.append)
+    return events
+
+
+def test_fit_streams_live_epoch_and_phase_events():
+    """fit emits ``epoch_end`` (output epochs) and ``phase_change`` (grow iterations) DURING fit, with
+    cascor's per-iteration candidate-pool detail preserved under ``payload['detail']`` (plan §3.3
+    extend-the-payload), not collapsed away."""
+    net = _make_network()
+    model = CascorModel(net)
+    X, y, X_val, y_val = _toy_dataset()
+    events = _collect_events(model, X, y, X_val, y_val)
+
+    by_type: dict[str, list] = {}
+    for e in events:
+        by_type.setdefault(e.type, []).append(e)
+
+    # Only model-core's closed vocabulary is emitted.
+    assert set(by_type) <= {"training_start", "epoch_end", "phase_change", "unit_added", "training_end"}
+
+    # Live output-epoch events carry loss under the documented metrics dict.
+    assert by_type.get("epoch_end"), "expected >=1 live epoch_end event during output training"
+    assert "loss" in by_type["epoch_end"][0].payload["metrics"]
+
+    # Live grow-iteration events map to phase_change with the FULL candidate-pool detail retained.
+    assert by_type.get("phase_change"), "expected >=1 live phase_change event during cascade growth"
+    detail = by_type["phase_change"][0].payload["detail"]
+    for key in ("grow_iteration", "candidates_trained", "candidates_total", "best_correlation", "all_correlations"):
+        assert key in detail, f"phase_change detail dropped {key!r}: {detail}"
+
+
+def test_fit_unit_added_one_event_per_grown_unit():
+    """One ``unit_added`` per installed hidden unit (fit sentinel skipped), each carrying the documented
+    ``{n_units, unit_id, score}`` payload."""
+    net = _make_network()
+    model = CascorModel(net)
+    X, y, X_val, y_val = _toy_dataset()
+    events = _collect_events(model, X, y, X_val, y_val)
+
+    unit_added = [e for e in events if e.type == "unit_added"]
+    assert len(unit_added) == model.n_units == len(net.hidden_units)
+    for e in unit_added:
+        assert set(e.payload) == {"n_units", "unit_id", "score"}
+
+
+def test_fit_event_stream_is_monotonic_with_start_first_end_last():
+    """Even with the richer live stream, the conformance ordering invariant holds: training_start first,
+    training_end last, seq non-decreasing across live + post-hoc emissions."""
+    model = CascorModel(_make_network())
+    X, y, X_val, y_val = _toy_dataset()
+    events = _collect_events(model, X, y, X_val, y_val)
+    assert events[0].type == "training_start"
+    assert events[-1].type == "training_end"
+    assert [e.seq for e in events] == sorted(e.seq for e in events)
+
+
+def test_fit_binds_native_hooks_only_with_on_event_and_restores_them():
+    """The native epoch/grow hooks are bound only for the duration of an ``on_event`` fit and restored
+    afterwards; a fit without ``on_event`` never binds them (no stale callback left on the network)."""
+    net = _make_network()
+    model = CascorModel(net)
+    X, y, X_val, y_val = _toy_dataset()
+
+    # No on_event -> hooks never bound.
+    model.fit(X, y, X_val=X_val, y_val=y_val)
+    assert getattr(net, "_output_epoch_callback", None) is None
+    assert getattr(net, "_grow_iteration_callback", None) is None
+
+    # With on_event -> restored to the prior value (None here) after fit returns.
+    model.fit(X, y, X_val=X_val, y_val=y_val, on_event=lambda e: None)
+    assert getattr(net, "_output_epoch_callback", None) is None
+    assert getattr(net, "_grow_iteration_callback", None) is None
