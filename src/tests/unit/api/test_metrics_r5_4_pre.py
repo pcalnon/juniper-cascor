@@ -297,13 +297,13 @@ class TestWorkerRegistryCollector:
 
 @pytest.mark.unit
 class TestLifecycleManagerTerminalCounterIntegration:
-    """End-to-end: monitored_fit() bumps the counter at each terminal transition.
+    """End-to-end: ``_run_training`` bumps the terminal counter at each terminal transition.
 
-    These tests drive synthetic terminal transitions through the
-    monkey-patched ``network.fit`` wrapper rather than running real
-    cascor training (which would require a torch-capable test
-    environment — see the prior R5.1b PR's note about the JuniperCascor
-    conda env's torch ImportError under Py3.14 free-threading).
+    WS-6 PR-B3.3: the counter increments live in ``_run_training`` around
+    ``self.model.fit`` (not in a network monkey-patch). These tests drive synthetic
+    terminal transitions through a ``model.fit`` stub rather than running real cascor
+    training (which would require a torch-capable test environment — see the prior R5.1b
+    PR's note about the JuniperCascor conda env's torch ImportError under Py3.14).
     """
 
     def setup_method(self):
@@ -316,28 +316,24 @@ class TestLifecycleManagerTerminalCounterIntegration:
         m = _ensure_training_metrics()["sessions_completed_total"]
         return m.labels(status=status)._value.get()
 
-    def _build_manager_with_fake_network(self, fit_outcome: str):
-        """Return a manager whose ``network.fit`` synthesizes a terminal outcome.
+    def _build_manager_with_fake_model(self, fit_outcome: str):
+        """Return a manager whose ``model.fit`` synthesizes a terminal outcome.
 
         ``fit_outcome`` is one of:
           - ``"success"`` — fit returns normally and stop_event stays clear.
-          - ``"cancelled"`` — fit returns normally but stop_event is set
-            before the wrapper checks (simulating a stop_training()
-            arriving mid-flight).
+          - ``"cancelled"`` — fit returns normally but stop_event is set before
+            ``_run_training`` checks (simulating a stop_training() arriving mid-flight).
           - ``"failure"`` — fit raises ``RuntimeError``.
+
+        WS-6 PR-B3.3: ``_run_training`` drives ``self.model.fit`` and owns the terminal
+        counter increments, so the synthetic outcome is produced by stubbing ``model.fit``.
         """
         from api.lifecycle.manager import TrainingLifecycleManager
 
         mgr = TrainingLifecycleManager()
         mgr.create_network(input_size=2, output_size=2)
 
-        # _install_monitoring_hooks ran inside create_network; the
-        # monkey-patched network.fit is now ``monitored_fit``. Replace
-        # the captured ``original_fit`` so it produces our synthetic
-        # outcome WITHOUT running the real cascor training path.
-        original_fit_marker = mgr._original_methods["fit"]
-
-        def _fake_fit(x, y, x_val=None, y_val=None, **kwargs):
+        def _fake_fit(x, y, *, X_val=None, y_val=None, on_event=None, **kwargs):
             if fit_outcome == "failure":
                 raise RuntimeError("synthetic training failure")
             if fit_outcome == "cancelled":
@@ -345,60 +341,41 @@ class TestLifecycleManagerTerminalCounterIntegration:
                 mgr._stop_event.set()
             return None
 
-        # Splice the fake into the slot where monitored_fit() captured
-        # the original. monitored_fit holds ``original_fit`` via
-        # closure, so we have to rebuild the closure: easiest is to
-        # reinstall hooks against a network whose .fit IS the fake.
-        mgr._restore_original_methods()
-        mgr._monitoring_active = False
-
-        # Replace network.fit with the fake, then re-install hooks so
-        # monitored_fit wraps the fake as the new "original_fit".
-        mgr.network.fit = _fake_fit
-        mgr._install_monitoring_hooks()
-
-        # Mark unused for type checkers — the marker is incidental.
-        del original_fit_marker
+        mgr.model.fit = _fake_fit
         return mgr
 
     def test_success_bumps_success_counter(self):
         import torch
 
-        mgr = self._build_manager_with_fake_network("success")
+        mgr = self._build_manager_with_fake_model("success")
         before = self._counter_value(TRAINING_SESSION_STATUS_SUCCESS)
-        x = torch.zeros(2, 2)
-        y = torch.zeros(2, 2)
-        mgr.network.fit(x, y)
+        mgr._run_training(torch.zeros(2, 2), torch.zeros(2, 2), None, None)
         after = self._counter_value(TRAINING_SESSION_STATUS_SUCCESS)
         assert after - before == pytest.approx(1.0)
 
     def test_failure_bumps_failure_counter(self):
         import torch
 
-        mgr = self._build_manager_with_fake_network("failure")
+        mgr = self._build_manager_with_fake_model("failure")
         before = self._counter_value(TRAINING_SESSION_STATUS_FAILURE)
-        x = torch.zeros(2, 2)
-        y = torch.zeros(2, 2)
         with pytest.raises(RuntimeError, match="synthetic training failure"):
-            mgr.network.fit(x, y)
+            mgr._run_training(torch.zeros(2, 2), torch.zeros(2, 2), None, None)
         after = self._counter_value(TRAINING_SESSION_STATUS_FAILURE)
         assert after - before == pytest.approx(1.0)
 
     def test_cancelled_bumps_cancelled_counter(self):
         import torch
 
-        mgr = self._build_manager_with_fake_network("cancelled")
+        mgr = self._build_manager_with_fake_model("cancelled")
         before = self._counter_value(TRAINING_SESSION_STATUS_CANCELLED)
-        x = torch.zeros(2, 2)
-        y = torch.zeros(2, 2)
-        mgr.network.fit(x, y)
+        mgr._run_training(torch.zeros(2, 2), torch.zeros(2, 2), None, None)
         after = self._counter_value(TRAINING_SESSION_STATUS_CANCELLED)
         assert after - before == pytest.approx(1.0)
 
 
 @pytest.mark.unit
 class TestLifecycleStepDurationCallback:
-    """The output-phase epoch callback emits a histogram sample on the second invocation."""
+    """``_handle_event`` emits a step-duration histogram sample on the second epoch_end."""
 
     def setup_method(self):
         _reset_training_metrics()
@@ -406,35 +383,21 @@ class TestLifecycleStepDurationCallback:
     def teardown_method(self):
         _reset_training_metrics()
 
-    def test_two_back_to_back_callbacks_observe_one_sample(self):
-        """First callback seeds the timer; second emits the delta as a sample."""
+    def test_two_back_to_back_epoch_events_observe_one_sample(self):
+        """First epoch_end seeds the per-run timer; the second emits the delta as one sample."""
+        from juniper_model_core.events import TrainingEvent
+
         from api.lifecycle.manager import TrainingLifecycleManager
 
         mgr = TrainingLifecycleManager()
         mgr.create_network(input_size=2, output_size=2)
+        mgr._step_timer_prev = None
 
-        # Pull the injected callback out of the network attribute set
-        # by monitored_fit. monitored_fit hasn't been called yet — but
-        # the callback only flows through fit's setup. Instead, drive
-        # the fit() wrapper with a fake that runs the callback twice
-        # then returns successfully.
-        def _fake_fit(x, y, x_val=None, y_val=None, **kwargs):
-            cb = mgr.network._output_epoch_callback
-            cb(epoch=1, epochs=2, loss=0.5)
-            time.sleep(0.06)  # land in the (0.05, 0.1] bucket
-            cb(epoch=2, epochs=2, loss=0.4)
-            return None
-
-        # Re-install hooks around our fake fit (matches the
-        # terminal-counter integration tests above).
-        mgr._restore_original_methods()
-        mgr._monitoring_active = False
-        mgr.network.fit = _fake_fit
-        mgr._install_monitoring_hooks()
-
-        import torch
-
-        mgr.network.fit(torch.zeros(2, 2), torch.zeros(2, 2))
+        # WS-6 PR-B3.3: the step-duration histogram lives in _handle_event's epoch_end
+        # branch (was _output_training_callback). Drive two epoch_end events directly.
+        mgr._handle_event(TrainingEvent("epoch_end", {"epoch": 1, "metrics": {"loss": 0.5}}, 0))
+        time.sleep(0.06)  # land in the (0.05, 0.1] bucket
+        mgr._handle_event(TrainingEvent("epoch_end", {"epoch": 2, "metrics": {"loss": 0.4}}, 1))
 
         hist = _ensure_training_metrics()["step_duration_seconds"]
         # OBS-WIRE-01 (A.6): the histogram is unlabelled — observations

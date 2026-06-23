@@ -283,101 +283,6 @@ class TestLifecycleManagerCreateDeleteDuringTraining:
 
 
 # ======================================================================
-# api/lifecycle/manager.py — monitored_fit stop_event handling (lines 205-207)
-# ======================================================================
-
-
-class TestMonitoredFitStopEvent:
-    """Test monitored_fit when stop_event is set (lines 205-207)."""
-
-    def test_monitored_fit_with_stop_event_transitions_to_stopped(self):
-        """When stop_event is set during training, state transitions to Stopped."""
-        mgr = TrainingLifecycleManager()
-        mgr.create_network(input_size=2, output_size=2)
-
-        x = torch.randn(10, 2)
-        y = torch.zeros(10, 2)
-        y[:5, 0] = 1
-        y[5:, 1] = 1
-
-        # Get reference to the original fit before hooks
-        original_fit = mgr._original_methods.get("fit")
-        assert original_fit is not None
-
-        # Set the stop event before calling fit
-        mgr._stop_event.set()
-
-        # Mock the original fit to return immediately
-        with patch.dict(mgr._original_methods, {"fit": MagicMock(return_value={"train_loss": [0.1]})}):
-            # Replace the original_fit reference inside the closure by re-installing hooks
-            mgr._monitoring_active = False
-            mgr._original_methods.clear()
-            mock_fit = MagicMock(return_value={"train_loss": [0.1]})
-            mgr.network.fit = mock_fit
-            mgr._install_monitoring_hooks()
-
-            # Set stop event
-            mgr._stop_event.set()
-
-            # Call the monitored fit
-            mgr.network.fit(x, y)
-
-            # Should transition to Stopped (line 206-207)
-            state = mgr.training_state.get_state()
-            assert state["status"] == "Stopped"
-            assert state["phase"] == "Idle"
-
-    def test_monitored_fit_without_stop_event_transitions_to_completed(self):
-        """When stop_event is NOT set, state transitions to Completed (lines 209-210)."""
-        mgr = TrainingLifecycleManager()
-        mgr.create_network(input_size=2, output_size=2)
-
-        x = torch.randn(10, 2)
-        y = torch.zeros(10, 2)
-        y[:5, 0] = 1
-        y[5:, 1] = 1
-
-        # Re-install hooks with mocked original fit
-        mgr._monitoring_active = False
-        mgr._original_methods.clear()
-        mock_fit = MagicMock(return_value={"train_loss": [0.1]})
-        mgr.network.fit = mock_fit
-        mgr._install_monitoring_hooks()
-
-        # Ensure stop event is NOT set
-        mgr._stop_event.clear()
-
-        # Call the monitored fit
-        mgr.network.fit(x, y)
-
-        # Should transition to Completed
-        state = mgr.training_state.get_state()
-        assert state["status"] == "Completed"
-        assert state["phase"] == "Idle"
-
-    def test_monitored_fit_exception_transitions_to_failed(self):
-        """When fit raises an exception, state transitions to Failed (lines 213-216)."""
-        mgr = TrainingLifecycleManager()
-        mgr.create_network(input_size=2, output_size=2)
-
-        x = torch.randn(10, 2)
-        y = torch.zeros(10, 2)
-
-        # Re-install hooks with a failing fit
-        mgr._monitoring_active = False
-        mgr._original_methods.clear()
-        mgr.network.fit = MagicMock(side_effect=RuntimeError("Training exploded"))
-        mgr._install_monitoring_hooks()
-
-        with pytest.raises(RuntimeError, match="Training exploded"):
-            mgr.network.fit(x, y)
-
-        state = mgr.training_state.get_state()
-        assert state["status"] == "Failed"
-        assert state["phase"] == "Idle"
-
-
-# ======================================================================
 # api/lifecycle/manager.py — pause/resume state checks (lines 366-380)
 # ======================================================================
 
@@ -589,27 +494,6 @@ class TestLifecycleManagerGetStatisticsException:
 
 
 # ======================================================================
-# api/lifecycle/manager.py — _restore_original_methods edge cases
-# ======================================================================
-
-
-class TestRestoreOriginalMethods:
-    """Test _restore_original_methods edge cases."""
-
-    def test_restore_when_no_original_methods(self):
-        """_restore_original_methods with empty dict does nothing."""
-        mgr = TrainingLifecycleManager()
-        mgr._restore_original_methods()  # Should not raise
-        assert mgr._monitoring_active is False
-
-    def test_restore_when_no_network(self):
-        """_restore_original_methods with no network does nothing."""
-        mgr = TrainingLifecycleManager()
-        mgr._original_methods = {"fit": MagicMock()}
-        mgr._restore_original_methods()  # Should not raise because network is None
-
-
-# ======================================================================
 # api/lifecycle/manager.py — start_training edge cases
 # ======================================================================
 
@@ -696,17 +580,6 @@ class TestLifecycleManagerShutdownDeep:
         mgr.shutdown()
         assert mgr._executor is None
 
-    def test_shutdown_restores_original_methods(self):
-        """Shutdown restores original network methods."""
-        mgr = TrainingLifecycleManager()
-        mgr.create_network(input_size=2, output_size=2)
-        assert mgr._monitoring_active is True
-        assert len(mgr._original_methods) > 0
-
-        mgr.shutdown()
-        assert mgr._monitoring_active is False
-        assert len(mgr._original_methods) == 0
-
 
 # ======================================================================
 # api/lifecycle/manager.py — _run_training exception path
@@ -717,7 +590,7 @@ class TestRunTrainingExceptionPath:
     """Test _run_training error handling."""
 
     def test_run_training_propagates_exception(self):
-        """_run_training lets exceptions propagate — error handling is in monitored_fit (CR-007)."""
+        """_run_training catches the exception, marks the FSM Failed, and re-raises it."""
         mgr = TrainingLifecycleManager()
         mgr.create_network(input_size=2, output_size=2)
 
@@ -726,9 +599,11 @@ class TestRunTrainingExceptionPath:
         y[:5, 0] = 1
         y[5:, 1] = 1
 
-        # Make fit raise an exception
+        # Make fit raise an exception (self.model.fit delegates to self._network.fit).
         mgr.network.fit = MagicMock(side_effect=ValueError("bad data"))
 
-        # _run_training no longer catches exceptions — monitored_fit handles them
+        # _run_training catches the exception, transitions the FSM to Failed, and
+        # re-raises so the training future surfaces it to the caller.
         with pytest.raises(ValueError, match="bad data"):
             mgr._run_training(x, y, None, None)
+        assert mgr.training_state.get_state()["status"] == "Failed"

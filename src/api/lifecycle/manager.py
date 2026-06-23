@@ -15,7 +15,7 @@ import time
 from concurrent.futures import Future, ThreadPoolExecutor
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 import torch
@@ -186,11 +186,12 @@ class TrainingInterrupted(Exception):
     Pre-2026-05-10 the ``pause_training`` and ``stop_training`` REST endpoints
     set ``_pause_event`` / ``_stop_event`` and transitioned the FSM, but the
     flags were never observed inside ``cascade_correlation.fit()`` — training
-    ran to natural completion regardless. The fix wires signal checks into the
-    ``_output_training_callback`` and ``_grow_iteration_callback`` hook points;
-    when ``_stop_event`` is set, the callback raises this sentinel which
-    ``monitored_fit`` catches as a clean cancellation (FSM → STOP, status
-    Stopped, cancelled-counter incremented; not a failure).
+    ran to natural completion regardless. The fix wires ``_check_for_interrupt``
+    into ``_handle_event``, dispatched on every ``epoch_end`` / ``phase_change`` event
+    ``CascorModel.fit`` emits (the output-epoch and grow-iteration boundaries); when
+    ``_stop_event`` is set it raises this sentinel which ``_run_training`` catches as a
+    clean cancellation (FSM → STOP, status Stopped, cancelled-counter incremented; not
+    a failure).
 
     See ``ISSUE_3_PHASE_2_LIVE_DATASET_SWAP_2026-05-09.md`` §3.4 audit findings
     for the original defect documentation; this fix is P2-PRE-1 of that plan.
@@ -1105,9 +1106,12 @@ class TrainingLifecycleManager:
         self._pause_event.set()  # Not paused initially
         self._last_emitted_history_len = 0
 
-        # Monkey-patched originals
-        self._original_methods: Dict[str, Callable] = {}
-        self._monitoring_active = False
+        # WS-6 PR-B3.3: live monitoring is driven by CascorModel.fit's on_event sink
+        # (_handle_event) rather than monkey-patching network.fit/grow_network. These
+        # per-run bookkeeping fields are reset at the top of _run_training.
+        self._step_timer_prev: Optional[float] = None
+        self._grow_phase_entered: bool = False
+        self._cascade_emitted_count: int = 0
 
         # Training data
         self._train_x: Optional[torch.Tensor] = None
@@ -1428,8 +1432,9 @@ class TrainingLifecycleManager:
             self._params = kwargs.copy()
             config = CascadeCorrelationConfig.create_simple_config(**kwargs)
             # WS-6 B-phase: wrap the freshly built CCN in the model-core CascorModel.
+            # PR-B3.3: no monitoring hooks to install — live monitoring rides
+            # CascorModel.fit's on_event sink (_handle_event), wired per-fit in _run_training.
             self.model = CascorModel(network=CascadeCorrelationNetwork(config=config))
-            self._install_monitoring_hooks()
 
             # Inject worker coordinator for remote dispatch if available
             if self._worker_coordinator is not None and hasattr(self.network, "set_worker_coordinator"):
@@ -1454,7 +1459,6 @@ class TrainingLifecycleManager:
         with self._lock:
             if self.state_machine.is_started():
                 raise RuntimeError("Cannot delete network while training is active")
-            self._restore_original_methods()
             self.model = None
             self._params = None
             self.state_machine.handle_command(Command.RESET)
@@ -1514,21 +1518,23 @@ class TrainingLifecycleManager:
     def _check_for_interrupt(self) -> None:
         """Raise ``TrainingInterrupted`` on stop request; block on pause.
 
-        Called from the training-loop callbacks installed by
-        ``_install_monitoring_hooks`` (output-epoch + grow-iteration boundaries).
-        Pre-2026-05-10 the ``pause_training`` and ``stop_training`` REST endpoints
-        were observably no-ops at the training-loop level — they updated the FSM
-        but the loop never observed the events. This method is the missing hook.
+        Called from ``_handle_event`` on every ``epoch_end`` / ``phase_change``
+        event ``CascorModel.fit`` emits during training (the output-epoch and
+        grow-iteration boundaries). Pre-2026-05-10 the ``pause_training`` and
+        ``stop_training`` REST endpoints were observably no-ops at the
+        training-loop level — they updated the FSM but the loop never observed
+        the events. This method is the missing hook.
 
         The pause wait uses a 0.5 s timeout so a stop request received WHILE
         paused is observed promptly (the loop re-checks ``_stop_event`` on
         each wakeup). Without the timeout, a stop after pause would block forever
         since ``_pause_event`` would still be cleared.
 
-        Defined as an instance method (rather than a closure inside
-        ``_install_monitoring_hooks``) so it's reachable from
-        ``_install_grow_network_hook`` (which lives in a separate method scope)
-        and so tests can invoke it directly via ``mgr._check_for_interrupt()``.
+        Runs synchronously on the training thread (``_handle_event`` is dispatched
+        from CCN's bare callback sites, which don't catch), so raising here
+        propagates straight out of ``fit`` — this is how stop/pause rides CCN's
+        native hooks (WS-6 PR-B3.3) now that the fit/grow monkey-patches are gone.
+        Kept an instance method so tests can invoke ``mgr._check_for_interrupt()``.
         """
         if self._stop_event.is_set():
             raise TrainingInterrupted("stop_requested")
@@ -1537,234 +1543,119 @@ class TrainingLifecycleManager:
             if self._stop_event.is_set():
                 raise TrainingInterrupted("stop_requested_during_pause")
 
-    def _install_monitoring_hooks(self) -> None:  # noqa: C901
-        """Install monitoring hooks on the network via monkey-patching.
+    def _handle_event(self, event) -> None:
+        """``on_event`` sink for :meth:`CascorModel.fit` (WS-6 PR-B3.3).
 
-        Hooks:
-        - fit(): Wraps the top-level training call with start/end tracking
-        - validate_training(): Wraps per-iteration validation for metrics emission
-        - grow_network(): Wraps cascade growth for cascade_add events and phase tracking
+        Translates the model-core coarse events the model emits *live* during fit
+        (``training_start`` -> ``epoch_end`` / ``phase_change`` -> ``unit_added`` ->
+        ``training_end``) into the ``TrainingMonitor`` / ``TrainingState`` updates the read
+        routes serialize — replacing the per-epoch / per-iteration projection the removed
+        ``monitored_fit`` / ``monitored_grow`` / ``monitored_validate`` monkey-patches used to
+        perform. Session-lifecycle bookkeeping (FSM start/terminal transitions, the active-
+        session gauge pair, ``on_training_start`` / ``on_training_end``) is owned by
+        :meth:`_run_training`, which drives the fit.
+
+        Runs synchronously on the training thread (``on_event`` is dispatched from CCN's bare
+        callback sites), so raising ``TrainingInterrupted`` here aborts ``fit`` cleanly — this
+        is how stop/pause continues to ride CCN's native hooks now that the fit/grow wrappers
+        are gone. The event-type vocabulary is CascorModel.fit's contract (WS-6 PR-B3.2).
         """
-        if self.network is None or self._monitoring_active:
-            return
+        etype = getattr(event, "type", None)
+        payload = getattr(event, "payload", None) or {}
 
-        original_fit = self.network.fit
-        self._original_methods["fit"] = original_fit
-
-        monitor = self.monitor
-        state = self.training_state
-        stop_event = self._stop_event
-        sm = self.state_machine
-        manager_ref = self
-
-        # P2-PRE-1 (2026-05-10): _check_for_interrupt is an instance method (see
-        # ``TrainingLifecycleManager._check_for_interrupt`` below). It's called
-        # from both _output_training_callback (this module) and _grow_iteration_callback
-        # (which lives in _install_grow_network_hook, a different method) — making
-        # it an instance method instead of a closure puts it in a single shared
-        # scope and lets tests invoke it directly via ``mgr._check_for_interrupt()``.
-
-        # METRICS-MON R5.4-pre: per-fit closure box that holds the
-        # ``time.perf_counter()`` of the most recent epoch boundary so
-        # ``_output_training_callback`` can compute the train-step
-        # duration as a delta between successive callback invocations.
-        # The box is reset by ``monitored_fit`` on each new fit() entry
-        # so observations from the previous run never leak into the next
-        # one. ``None`` means "no prior boundary recorded yet" — the
-        # first callback of a fit() seeds the timer instead of emitting
-        # a bogus first-epoch sample.
-        _step_timer: dict[str, float | None] = {"prev": None}
-
-        def _output_training_callback(epoch, epochs, loss):
-            # P2-PRE-1 (2026-05-10): check pause/stop signals BEFORE emitting metrics.
-            # Raises TrainingInterrupted on stop; blocks here while paused. Called
-            # every 25 output epochs (or last epoch) per train_output_layer's
-            # callback contract — that's the natural pause boundary.
-            manager_ref._check_for_interrupt()
-            monitor.on_epoch_end(
+        if etype == "epoch_end":
+            # Was _output_training_callback (bound to network._output_epoch_callback).
+            self._check_for_interrupt()
+            metrics = payload.get("metrics", {}) or {}
+            epoch = int(payload.get("epoch", 0))
+            self.monitor.on_epoch_end(
                 epoch=epoch,
-                loss=loss,
+                loss=metrics.get("loss"),
                 accuracy=None,
-                learning_rate=getattr(manager_ref.network, "learning_rate", 0.0),
-                hidden_units=len(manager_ref.network.hidden_units),
+                learning_rate=getattr(self.network, "learning_rate", 0.0),
+                hidden_units=len(self.network.hidden_units),
             )
-            state.update_state(
-                current_epoch=epoch,
-                phase_detail="training_output",
-            )
-            # METRICS-MON R5.4-pre: train-step duration histogram. One
-            # output-phase epoch == one forward+backward+update cycle
-            # over the training batch (see HISTOGRAM_BUCKETS_RATIONALE
-            # §6 for the boundary discussion). Measured as the delta
-            # between successive callback invocations using
-            # ``time.perf_counter`` so the sample reflects actual
-            # compute time and is robust to wall-clock adjustments. The
-            # first callback of a fit() seeds the timer and emits no
-            # sample; subsequent callbacks emit the time-since-prior.
+            self.training_state.update_state(current_epoch=epoch, phase_detail="training_output")
+            # METRICS-MON R5.4-pre: train-step duration histogram — delta between successive
+            # output-epoch events (perf_counter; robust to wall-clock). The first event of a
+            # run seeds the timer and emits no sample.
             now = time.perf_counter()
-            prev = _step_timer["prev"]
+            prev = self._step_timer_prev
             if prev is not None:
                 try:
-                    # OBS-WIRE-01 (A.6): the ``phase`` label was dropped
-                    # from the histogram — it was effectively a constant
-                    # ``"output"`` and the SLI regex never matched the
-                    # other two values. See observability.py for the
-                    # metric-definition comment.
                     observe_training_step_duration(now - prev)
                 except Exception:
-                    # Defensive: never let metrics emission break the
-                    # train loop. The metric is best-effort by design.
-                    manager_ref.logger.debug("training_step_duration emission failed", exc_info=True)
-            _step_timer["prev"] = now
-
-        def monitored_fit(x, y, x_val=None, y_val=None, **kwargs):
-            manager_ref._last_emitted_history_len = 0
-            # METRICS-MON R5.4-pre: reset the per-fit step timer so
-            # observations from a previous fit() can't leak into this
-            # one (e.g. across retrain or resume_from_snapshot).
-            _step_timer["prev"] = None
-            monitor.on_training_start()
-            # BUG-CC-07: phase is updated via state-machine wrapper, not manually.
-            sm.handle_command(Command.START)
-            monitor.on_phase_change(sm.phase.name.lower())
-            state.update_state(status="Started", phase="Output", phase_started_at=datetime.now().isoformat())
-            manager_ref._broadcast_training_state(force=True)
-
-            # P2-PRE-1 (2026-05-10): the _output_epoch_callback / _grow_iteration_callback
-            # bindings on the network were moved from here (and from monitored_grow)
-            # down to install-time (after the closure definitions, before the network.fit
-            # replacement). Binding at install time removes a subtle race window where
-            # the callbacks were absent between create_network and the first fit() call,
-            # and lets tests drive _check_for_interrupt via the bound callbacks without
-            # having to first start a real fit.
-
-            # OBS-WIRE-01 (A.1): mark the session active. Paired with
-            # the ``dec_training_sessions`` call in the ``finally``
-            # block below so the gauge stays balanced across normal,
-            # cancelled, and exception-failure terminal paths. The
-            # gauge gates three SLO alerts (TrainingStalled,
-            # TrainingLossNotDecreasing, LowCandidateCorrelation) which
-            # silently never fired pre-OBS-WIRE-01 because the gauge
-            # was perpetually zero.
-            try:
-                inc_training_sessions()
-            except Exception:
-                manager_ref.logger.debug("inc_training_sessions emission failed", exc_info=True)
-
-            try:
-                result = original_fit(x, y, x_val=x_val, y_val=y_val, **kwargs)
-
-                # Extract any remaining metrics after fit completes
-                manager_ref._extract_and_record_metrics()
-
-                # CAN-015g (g-6): capture the truly-final weights so
-                # the last sample reflects training's terminal state
-                # even when fit() exited mid-interval (e.g. early
-                # stopping mid-N). Wraps both the cancelled and
-                # completed paths because both are valid terminal
-                # states the user can replay against.
-                if manager_ref._weight_history_recorder is not None:
-                    manager_ref._weight_history_recorder.capture_terminal()
-
-                if stop_event.is_set():
-                    sm.handle_command(Command.STOP)
-                    state.update_state(status="Stopped", phase="Idle")
-                    manager_ref._broadcast_training_state(force=True)
-                    # METRICS-MON R5.4-pre: terminal transition —
-                    # session was cancelled by an explicit stop request.
-                    inc_training_session_completed(TRAINING_SESSION_STATUS_CANCELLED)
-                else:
-                    sm.mark_completed()
-                    state.update_state(status="Completed", phase="Idle")
-                    manager_ref._broadcast_training_state(force=True)
-                    # METRICS-MON R5.4-pre: terminal transition —
-                    # session reached convergence / max-iterations cleanly.
-                    inc_training_session_completed(TRAINING_SESSION_STATUS_SUCCESS)
-
-                return result
-            except TrainingInterrupted:
-                # P2-PRE-1 (2026-05-10): clean cancellation path. Raised by
-                # _check_for_interrupt() in the training-loop callbacks when
-                # _stop_event is set. Treated as a successful stop, NOT a
-                # failure: same FSM/state transitions and gauge increments as
-                # the post-fit stop_event path above (lines 1500–1506), so a
-                # mid-fit stop and a post-fit stop produce the same observable
-                # state. Don't re-raise — the user requested this; it's not an
-                # error from the API perspective.
-                sm.handle_command(Command.STOP)
-                state.update_state(status="Stopped", phase="Idle")
-                manager_ref._broadcast_training_state(force=True)
-                inc_training_session_completed(TRAINING_SESSION_STATUS_CANCELLED)
-                return None
-            except Exception as e:
-                sm.mark_failed(str(e))
-                state.update_state(status="Failed", phase="Idle")
-                manager_ref._broadcast_training_state(force=True)
-                # METRICS-MON R5.4-pre: terminal transition — session
-                # ended with an unhandled exception.
-                inc_training_session_completed(TRAINING_SESSION_STATUS_FAILURE)
-                raise
-            finally:
-                # OBS-WIRE-01 (A.1): always decrement, even on the
-                # exception path, so the active-sessions gauge stays
-                # balanced and the alerts that gate on
-                # ``... > 0`` (TrainingStalled etc.) actually drop
-                # back to zero when no training is in flight.
-                try:
-                    dec_training_sessions()
-                except Exception:
-                    manager_ref.logger.debug("dec_training_sessions emission failed", exc_info=True)
-                monitor.on_training_end()
-
-        # P2-PRE-1 (2026-05-10): bind the output-epoch callback at install time
-        # (was previously bound inside monitored_fit on first invocation, leaving
-        # a window where the attribute was absent between create_network and
-        # the first fit() call). Bind-at-install also lets the new
-        # test_pause_stop_actually_interrupts.py tests drive the callback
-        # directly without first having to start a real fit.
-        self.network._output_epoch_callback = _output_training_callback
-
-        self.network.fit = monitored_fit
-
-        # Hook validate_training for per-iteration metrics emission.
-        # validate_training is called at the end of each grow_network iteration,
-        # AFTER _retrain_output_layer appends train_loss, _calculate_train_accuracy
-        # appends train_accuracy, and validate_training itself appends value_loss
-        # and value_accuracy. This is the correct point to extract metrics.
-        if hasattr(self.network, "validate_training"):
-            original_validate = self.network.validate_training
-            self._original_methods["validate_training"] = original_validate
-
-            def monitored_validate(*args, **kwargs):
-                result = original_validate(*args, **kwargs)
-                manager_ref._extract_and_record_metrics()
-                return result
-
-            self.network.validate_training = monitored_validate
-
-        # Hook grow_network for cascade_add events and phase tracking
-        self._install_grow_network_hook(monitor, state, sm, manager_ref)
-
-        # BUG-CC-07: wrap state machine set_phase to notify monitor
-        self._install_phase_tracker(monitor, sm)
-
-        self._monitoring_active = True
-        self.logger.info("Monitoring hooks installed")
-
-    def _install_phase_tracker(self, monitor, sm) -> None:
-        """Wrap TrainingStateMachine.set_phase to notify the monitor (BUG-CC-07)."""
-        # Avoid re-wrapping on reinstall.
-        if getattr(self, "_original_set_phase", None) is not None:
+                    self.logger.debug("training_step_duration emission failed", exc_info=True)
+            self._step_timer_prev = now
+            self._extract_and_record_metrics()
             return
-        original_set_phase = sm.set_phase
-        self._original_set_phase = original_set_phase
 
-        def tracked_set_phase(phase):
-            original_set_phase(phase)
-            phase_name = phase.name.lower() if hasattr(phase, "name") else str(phase)
-            monitor.on_phase_change(phase_name)
+        if etype == "phase_change":
+            # Was _grow_iteration_callback (bound to network._grow_iteration_callback): per
+            # grow-iteration live candidate-pool state. The ``detail`` dict carries the fields
+            # CCN's coarse event types would otherwise drop (plan §3.3 — extend the payload).
+            self._check_for_interrupt()
+            detail = payload.get("detail", {}) or {}
+            if not self._grow_phase_entered:
+                # First grow iteration: enter the Candidate phase once (monitored_grow set
+                # this at grow_network entry).
+                self._grow_phase_entered = True
+                self.state_machine.set_phase(TrainingPhase.CANDIDATE)
+                self.monitor.on_phase_change(self.state_machine.phase.name.lower())
+                self.training_state.update_state(phase="Candidate", phase_started_at=datetime.now().isoformat())
+                self._broadcast_training_state(force=True)
+            self.training_state.update_state(
+                grow_iteration=int(detail.get("grow_iteration", 0)),
+                grow_max=int(detail.get("max_iterations", 0)),
+                best_correlation=detail.get("best_correlation", 0.0),
+                candidates_trained=int(detail.get("candidates_trained", 0)),
+                candidates_total=int(detail.get("candidates_total", 0)),
+                phase_detail=detail.get("phase_detail", "adding_candidate"),
+                best_candidate_id=detail.get("best_candidate_id", -1),
+                best_candidate_uuid=detail.get("best_candidate_uuid", ""),
+                second_candidate_id=detail.get("second_candidate_id"),
+                second_candidate_correlation=detail.get("second_candidate_correlation", 0.0),
+                all_correlations=detail.get("all_correlations", []),
+            )
+            self._broadcast_training_state()
+            self._extract_and_record_metrics()
+            return
 
-        sm.set_phase = tracked_set_phase
+        if etype == "unit_added":
+            # Was monitored_grow's post-grow_network cascade_add loop. CascorModel emits one
+            # unit_added per installed unit (post-hoc, after net.fit), so advancing a cursor
+            # through hidden_units reproduces the legacy "all cascade adds batched after
+            # growth" timing and stays correct on retrain (baseline = units present at run
+            # start). The unit's authoritative correlation is read from the network, matching
+            # monitored_grow, rather than from the payload.
+            hidden = self.network.hidden_units
+            idx = self._cascade_emitted_count
+            if 0 <= idx < len(hidden):
+                unit = hidden[idx]
+                actual_correlation = float(getattr(unit, "best_correlation", 0.0) or 0.0)
+                self.monitor.on_cascade_add(hidden_unit_index=idx, correlation=actual_correlation)
+                self._cascade_emitted_count = idx + 1
+            return
+
+        if etype == "training_end":
+            # Was monitored_grow's tail: a single full-topology broadcast after growth, then
+            # back to the Output phase. (cascade_add already fired per unit_added above.)
+            if self._grow_phase_entered:
+                if self._ws_manager is not None:
+                    from api.websocket.messages import create_topology_message
+
+                    full_topology = self.get_topology()
+                    if full_topology is not None:
+                        self._ws_manager.broadcast_from_thread(create_topology_message(full_topology))
+                self.state_machine.set_phase(TrainingPhase.OUTPUT)
+                self.monitor.on_phase_change(self.state_machine.phase.name.lower())
+                self.training_state.update_state(phase="Output", phase_detail="", candidate_epoch=0, candidate_total_epochs=0)
+                self._broadcast_training_state(force=True)
+            self._extract_and_record_metrics()
+            return
+
+        # training_start: session setup is owned by _run_training; nothing per-event to
+        # project here (training_start is required first by the model-core event contract).
 
     @staticmethod
     def _drain_progress_queue(network_ref, stop_event, state, monitor, manager_ref):
@@ -1802,129 +1693,6 @@ class TrainingLifecycleManager:
             )
             monitor.on_candidate_progress(progress)
             manager_ref._broadcast_training_state()
-
-    def _install_grow_network_hook(self, monitor, state, sm, manager_ref) -> None:
-        """Install monitoring hook on grow_network for cascade_add events and phase tracking."""
-        if not hasattr(self.network, "grow_network"):
-            return
-
-        original_grow = self.network.grow_network
-        self._original_methods["grow_network"] = original_grow
-
-        def _grow_iteration_callback(iteration, max_iterations, best_correlation, candidates_trained, candidates_total, phase_detail, **kwargs):
-            # P2-PRE-1 (2026-05-10): pause/stop check at the cascade-iteration boundary.
-            # Pause inside the multiprocessing candidate-training pool is intentionally
-            # out of scope for this fix — the iteration boundary is the natural pause
-            # point for the cascade-growth loop. (Tighter granularity within candidate
-            # training would require multiprocessing-aware signal threading.)
-            manager_ref._check_for_interrupt()
-            state.update_state(
-                grow_iteration=iteration,
-                grow_max=max_iterations,
-                best_correlation=best_correlation,
-                candidates_trained=candidates_trained,
-                candidates_total=candidates_total,
-                phase_detail=phase_detail,
-                best_candidate_id=kwargs.get("best_candidate_id", -1),
-                best_candidate_uuid=kwargs.get("best_candidate_uuid", ""),
-                second_candidate_id=kwargs.get("second_candidate_id"),
-                second_candidate_correlation=kwargs.get("second_candidate_correlation", 0.0),
-                all_correlations=kwargs.get("all_correlations", []),
-            )
-            manager_ref._broadcast_training_state()
-
-        def monitored_grow(*args, **kwargs):
-            # Pre-call: capture initial output training metrics
-            # (appended by fit() between train_output_layer() and grow_network())
-            manager_ref._extract_and_record_metrics()
-
-            prev_hidden = len(manager_ref.network.hidden_units)
-            # BUG-CC-07: phase is updated via state-machine wrapper, not manually.
-            sm.set_phase(TrainingPhase.CANDIDATE)
-            state.update_state(phase="Candidate", phase_started_at=datetime.now().isoformat())
-            manager_ref._broadcast_training_state(force=True)
-
-            # P2-PRE-1 (2026-05-10): _grow_iteration_callback binding moved to
-            # install time (see corresponding comment in monitored_fit above).
-
-            # Start drain thread for candidate progress from worker pool.
-            # Always started unconditionally — uses deferred queue discovery
-            # because _persistent_progress_queue is created lazily inside
-            # grow_network() → _ensure_worker_pool().
-            _drain_stop = threading.Event()
-            _drain_thread = threading.Thread(
-                target=TrainingLifecycleManager._drain_progress_queue,
-                args=(manager_ref.network, _drain_stop, state, monitor, manager_ref),
-                daemon=True,
-                name="candidate-progress-drain",
-            )
-            _drain_thread.start()
-
-            try:
-                result = original_grow(*args, **kwargs)
-            finally:
-                # Stop drain thread
-                _drain_stop.set()
-                _drain_thread.join(timeout=_PROJECT_API_DRAIN_THREAD_JOIN_TIMEOUT)
-
-            new_hidden = len(manager_ref.network.hidden_units)
-
-            if new_hidden > prev_hidden:
-                # BUG-CC-01: Wire create_topology_message into lifecycle events
-                # BUG-CC-02: Extract actual correlation from each installed hidden unit
-                from api.websocket.messages import create_topology_message
-
-                for i in range(prev_hidden, new_hidden):
-                    unit = manager_ref.network.hidden_units[i]
-                    actual_correlation = float(getattr(unit, "best_correlation", 0.0) or 0.0)
-                    monitor.on_cascade_add(
-                        hidden_unit_index=i,
-                        correlation=actual_correlation,
-                    )
-                if manager_ref._ws_manager is not None:
-                    # The cascade_add ``topology`` broadcast must carry the
-                    # full serialized network — hidden_units as a list of
-                    # per-unit dicts (weights/bias/activation) plus
-                    # output_weights/output_bias — so canopy's
-                    # _transform_topology can render the new hidden node and
-                    # its cascade connections. A count-only stub here
-                    # previously caused canopy to render 0 hidden units after
-                    # every cascade growth (the WS frame overrode REST and
-                    # `len(int)` raised inside the transform's isinstance
-                    # check, collapsing the topology to inputs+outputs only).
-                    full_topology = manager_ref.get_topology()
-                    if full_topology is not None:
-                        manager_ref._ws_manager.broadcast_from_thread(create_topology_message(full_topology))
-
-            # Post-call: return to output phase after grow completes
-            sm.set_phase(TrainingPhase.OUTPUT)
-            state.update_state(phase="Output", phase_detail="", candidate_epoch=0, candidate_total_epochs=0)
-            manager_ref._broadcast_training_state(force=True)
-            # Catch-all for any remaining metrics
-            manager_ref._extract_and_record_metrics()
-            return result
-
-        # P2-PRE-1 (2026-05-10): bind the grow-iteration callback at install time
-        # (see corresponding comment in _install_monitoring_hooks above).
-        self.network._grow_iteration_callback = _grow_iteration_callback
-
-        self.network.grow_network = monitored_grow
-
-    def _restore_original_methods(self) -> None:
-        """Restore original network methods."""
-        # BUG-CC-07: restore unwrapped state-machine set_phase if installed.
-        original_set_phase = getattr(self, "_original_set_phase", None)
-        if original_set_phase is not None:
-            self.state_machine.set_phase = original_set_phase
-            self._original_set_phase = None
-        if not self._original_methods or self.network is None:
-            self._monitoring_active = False
-            return
-        for method_name, original in self._original_methods.items():
-            setattr(self.network, method_name, original)
-        self._original_methods.clear()
-        self._monitoring_active = False
-        self.logger.info("Original methods restored")
 
     def _extract_and_record_metrics(self) -> None:
         """Extract NEW metrics from network history and record them.
@@ -2103,7 +1871,7 @@ class TrainingLifecycleManager:
             # transition out of Investigating before starting training.
             # Failing fast at the API boundary is much clearer than
             # letting the future submit and the FSM transition fail
-            # silently inside monitored_fit.
+            # silently on the background training thread.
             if self.state_machine.is_investigating():
                 raise RuntimeError("Cannot start training while Investigating a snapshot — invoke /v1/snapshots/{id}/retrain or /resume to transition out of Investigating first")
             # CAN-015c (B-3): Replaying is read-only playback. Same
@@ -2200,13 +1968,110 @@ class TrainingLifecycleManager:
         return {"status": "training_started", "timestamp": time.time()}
 
     def _run_training(self, x, y, x_val, y_val, **kwargs) -> None:
-        """Execute training in background thread.
+        """Execute training in the background thread (submitted by ``start_training``).
 
-        Note: Exception handling (state transitions, status updates, broadcasts)
-        is performed by monitored_fit() which wraps network.fit(). This method
-        intentionally does not duplicate that handling (CR-007 Option C).
+        WS-6 PR-B3.3: drives the model-core ``CascorModel.fit`` with the ``on_event`` sink
+        (:meth:`_handle_event`) and owns the session lifecycle the removed ``monitored_fit``
+        monkey-patch used to wrap — FSM start/terminal transitions, the active-session gauge
+        pair (OBS-WIRE-01), ``on_training_start`` / ``on_training_end``, and the candidate-
+        progress drain thread (the async 50 Hz ``/ws/training`` side-channel that cannot ride
+        the synchronous ``on_event`` — plan H4). Per-epoch / per-iteration projection is done
+        by ``_handle_event``.
+
+        Exceptions propagate to the training future: a clean stop raises
+        ``TrainingInterrupted`` (swallowed here as a successful cancellation, returning None);
+        any other error transitions to Failed and re-raises so ``future.result()`` surfaces it.
         """
-        self.network.fit(x, y, x_val=x_val, y_val=y_val, **kwargs)
+        monitor = self.monitor
+        state = self.training_state
+        sm = self.state_machine
+        stop_event = self._stop_event
+
+        # Reset per-run bookkeeping (was monitored_fit's per-fit reset + the _step_timer box).
+        # _cascade_emitted_count baselines at the units already present so a retrain only emits
+        # cascade_add for units grown this run.
+        self._last_emitted_history_len = 0
+        self._step_timer_prev = None
+        self._grow_phase_entered = False
+        self._cascade_emitted_count = len(self.network.hidden_units)
+
+        # Session start (was monitored_fit's pre-fit block).
+        monitor.on_training_start()
+        # BUG-CC-07: phase via the state-machine command, then notify the monitor.
+        sm.handle_command(Command.START)
+        monitor.on_phase_change(sm.phase.name.lower())
+        state.update_state(status="Started", phase="Output", phase_started_at=datetime.now().isoformat())
+        self._broadcast_training_state(force=True)
+        # OBS-WIRE-01 (A.1): mark the session active; balanced by dec in the finally so the
+        # gauge (which gates TrainingStalled / TrainingLossNotDecreasing / LowCandidateCorrelation
+        # alerts) returns to zero across normal, cancelled, and failure terminal paths.
+        try:
+            inc_training_sessions()
+        except Exception:
+            self.logger.debug("inc_training_sessions emission failed", exc_info=True)
+
+        # Candidate-progress drain (retained side-channel; deferred queue discovery — the
+        # persistent progress queue is created lazily inside grow_network). Started once around
+        # the whole fit rather than per grow_network call (monitored_grow's old home); the drain
+        # polls until the queue appears, so starting it before grow is safe.
+        drain_stop = threading.Event()
+        drain_thread = threading.Thread(
+            target=TrainingLifecycleManager._drain_progress_queue,
+            args=(self.network, drain_stop, state, monitor, self),
+            daemon=True,
+            name="candidate-progress-drain",
+        )
+        drain_thread.start()
+
+        try:
+            # CCN.fit defaults early_stopping=True; the removed monkey-patch path
+            # (self.network.fit(**fit_kwargs)) inherited that default whenever the API body
+            # omitted it. CascorModel.fit (WS-6 PR-B3.2) defaults early_stopping to False, so
+            # set CCN's default explicitly here to keep training — and the golden post-train
+            # topology — behavior-identical. An explicit early_stopping in the body is honored.
+            # (Seam note: the A-phase's generic ``self.model.fit(...)`` call should likewise
+            # pass early_stopping, or CascorModel.fit's default be aligned to CCN's, so the
+            # generic manager inherits this behavior.)
+            kwargs.setdefault("early_stopping", True)
+            self.model.fit(x, y, X_val=x_val, y_val=y_val, on_event=self._handle_event, **kwargs)
+
+            # Catch any remaining metrics + capture terminal weights (was monitored_fit's
+            # post-original_fit block).
+            self._extract_and_record_metrics()
+            if self._weight_history_recorder is not None:
+                self._weight_history_recorder.capture_terminal()
+
+            if stop_event.is_set():
+                sm.handle_command(Command.STOP)
+                state.update_state(status="Stopped", phase="Idle")
+                self._broadcast_training_state(force=True)
+                inc_training_session_completed(TRAINING_SESSION_STATUS_CANCELLED)
+            else:
+                sm.mark_completed()
+                state.update_state(status="Completed", phase="Idle")
+                self._broadcast_training_state(force=True)
+                inc_training_session_completed(TRAINING_SESSION_STATUS_SUCCESS)
+        except TrainingInterrupted:
+            # Clean cancellation: _handle_event raised on a stop request from inside a CCN
+            # callback. Same terminal transitions as the post-fit stop path; not an error.
+            sm.handle_command(Command.STOP)
+            state.update_state(status="Stopped", phase="Idle")
+            self._broadcast_training_state(force=True)
+            inc_training_session_completed(TRAINING_SESSION_STATUS_CANCELLED)
+        except Exception as e:
+            sm.mark_failed(str(e))
+            state.update_state(status="Failed", phase="Idle")
+            self._broadcast_training_state(force=True)
+            inc_training_session_completed(TRAINING_SESSION_STATUS_FAILURE)
+            raise
+        finally:
+            drain_stop.set()
+            drain_thread.join(timeout=_PROJECT_API_DRAIN_THREAD_JOIN_TIMEOUT)
+            try:
+                dec_training_sessions()
+            except Exception:
+                self.logger.debug("dec_training_sessions emission failed", exc_info=True)
+            monitor.on_training_end()
 
     def stop_training(self) -> Dict[str, Any]:
         """Request training stop."""
@@ -2589,7 +2454,7 @@ class TrainingLifecycleManager:
                 # Step 5/6: signal stop, wait for training future to exit cleanly.
                 # P2-PRE-1 (f4453fa) makes _stop_event actually interrupt
                 # the training-loop callbacks via TrainingInterrupted, caught
-                # by monitored_fit as clean cancellation. Pre-fix this would
+                # by _run_training as clean cancellation. Pre-fix this would
                 # have blocked until natural fit completion (minutes).
                 self._stop_event.set()
                 self._pause_event.set()  # ensure pause wait loop wakes to observe stop
@@ -2599,7 +2464,7 @@ class TrainingLifecycleManager:
                         future.result(timeout=10)
                     except Exception as exc:
                         # Future may raise; we don't care about the value, only
-                        # that the worker has finished. ``monitored_fit``'s
+                        # that the worker has finished. ``_run_training``'s
                         # clean-cancellation handler swallows TrainingInterrupted,
                         # but other exceptions still propagate out of ``future.result``.
                         # Log at debug since we're intentionally discarding them —
@@ -2660,8 +2525,8 @@ class TrainingLifecycleManager:
                 # responsibility (pause/stop on the new run).
                 self._check_swap_cancel()
 
-                # Step 12: submit new training future. monitored_fit handles
-                # the FSM STOPPED → STARTED transition internally on the new
+                # Step 12: submit new training future. _run_training performs
+                # the FSM STOPPED → STARTED transition at the start of the new
                 # invocation; we just need the underlying tensors to be the
                 # new ones (which they are, post-_reload_dataset).
                 self._stop_event.clear()
@@ -3974,12 +3839,12 @@ class TrainingLifecycleManager:
             self.logger.error(f"Failed to load snapshot: {snapshot_id}")
             return False
 
-        self._restore_original_methods()
         # WS-6 B-phase: the HDF5 deserializer yields a *bare* CCN — re-wrap it so the
         # manager keeps holding a CascorModel (a getter-only property would leave
-        # self.model stale here; see plan §4.3 H1).
+        # self.model stale here; see plan §4.3 H1). PR-B3.3: no monitoring hooks to
+        # install/restore — live monitoring rides CascorModel.fit's on_event sink, wired
+        # per-fit in _run_training, so a re-wrapped network needs no hook bookkeeping here.
         self.model = CascorModel(network=network)
-        self._install_monitoring_hooks()
         if self._worker_coordinator is not None and hasattr(self.network, "set_worker_coordinator"):
             self.network.set_worker_coordinator(self._worker_coordinator)
         return True
@@ -4376,7 +4241,6 @@ class TrainingLifecycleManager:
         """Clean up resources."""
         self._stop_event.set()
         self.stop_liveness_heartbeat()
-        self._restore_original_methods()
         # CAN-015c (B-3): drain any active replay session so the
         # background driver thread doesn't outlive the lifecycle.
         if self._replay_session is not None:

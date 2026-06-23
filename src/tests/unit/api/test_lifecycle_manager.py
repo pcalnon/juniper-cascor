@@ -517,23 +517,30 @@ class TestLifecycleManagerStatus:
 
 
 @pytest.mark.unit
-class TestLifecycleManagerMonitoringHooks:
-    """Test monitoring hook installation."""
+class TestLifecycleManagerMonitoring:
+    """WS-6 PR-B3.3: live monitoring is driven by CascorModel.fit's on_event sink
+    (wired per-fit), not by monkey-patching the network — so create/delete no longer
+    install/restore hooks."""
 
-    def test_hooks_installed_on_create(self):
-        """Monitoring hooks are installed when network is created."""
+    def test_create_network_builds_cascor_model_without_monkey_patching(self):
+        """create_network wraps the CCN in a CascorModel and leaves the network unpatched
+        (no monitoring callbacks bound at create time — they are set only during a fit)."""
+        from api.models.cascor_model import CascorModel
+
         mgr = TrainingLifecycleManager()
         mgr.create_network(input_size=2, output_size=2)
-        assert mgr._monitoring_active is True
-        assert "fit" in mgr._original_methods
+        assert isinstance(mgr.model, CascorModel)
+        assert mgr.has_model() is True
+        assert getattr(mgr.network, "_output_epoch_callback", None) is None
+        assert getattr(mgr.network, "_grow_iteration_callback", None) is None
 
-    def test_hooks_restored_on_delete(self):
-        """Monitoring hooks are restored when network is deleted."""
+    def test_delete_network_clears_model(self):
+        """delete_network drops the model (no hook restoration needed)."""
         mgr = TrainingLifecycleManager()
         mgr.create_network(input_size=2, output_size=2)
         mgr.delete_network()
-        assert mgr._monitoring_active is False
-        assert len(mgr._original_methods) == 0
+        assert mgr.model is None
+        assert mgr.has_model() is False
 
 
 @pytest.mark.unit
@@ -734,7 +741,7 @@ class TestRestoreForRetrain:
         }
         fake_file = tmp_path / "snap.h5"
         fake_file.write_bytes(b"")
-        with patch.object(mgr, "_get_snapshots_dir", return_value=tmp_path), patch("snapshots.snapshot_serializer.CascadeHDF5Serializer.load_network", return_value=loaded), patch.object(mgr, "_restore_original_methods"), patch.object(mgr, "_install_monitoring_hooks"):
+        with patch.object(mgr, "_get_snapshots_dir", return_value=tmp_path), patch("snapshots.snapshot_serializer.CascadeHDF5Serializer.load_network", return_value=loaded):
             assert mgr.restore_for_retrain("snap")["loaded"] is True
 
         for key in ("train_loss", "value_loss", "train_accuracy", "value_accuracy"):
@@ -752,7 +759,7 @@ class TestRestoreForRetrain:
         loaded.history = {}
         fake_file = tmp_path / "snap.h5"
         fake_file.write_bytes(b"")
-        with patch.object(mgr, "_get_snapshots_dir", return_value=tmp_path), patch("snapshots.snapshot_serializer.CascadeHDF5Serializer.load_network", return_value=loaded), patch.object(mgr, "_restore_original_methods"), patch.object(mgr, "_install_monitoring_hooks"):
+        with patch.object(mgr, "_get_snapshots_dir", return_value=tmp_path), patch("snapshots.snapshot_serializer.CascadeHDF5Serializer.load_network", return_value=loaded):
             mgr.restore_for_retrain("snap")
 
         state = mgr.training_state.get_state()
@@ -775,7 +782,7 @@ class TestRestoreForRetrain:
         loaded.history = {}
         fake_file = tmp_path / "snap.h5"
         fake_file.write_bytes(b"")
-        with patch.object(mgr, "_get_snapshots_dir", return_value=tmp_path), patch("snapshots.snapshot_serializer.CascadeHDF5Serializer.load_network", return_value=loaded), patch.object(mgr, "_restore_original_methods"), patch.object(mgr, "_install_monitoring_hooks"):
+        with patch.object(mgr, "_get_snapshots_dir", return_value=tmp_path), patch("snapshots.snapshot_serializer.CascadeHDF5Serializer.load_network", return_value=loaded):
             mgr.restore_for_retrain("snap")
 
         assert mgr._auto_snap_best_metric is None
@@ -794,7 +801,7 @@ class TestRestoreForRetrain:
         loaded.history = {}
         fake_file = tmp_path / "snap.h5"
         fake_file.write_bytes(b"")
-        with patch.object(mgr, "_get_snapshots_dir", return_value=tmp_path), patch("snapshots.snapshot_serializer.CascadeHDF5Serializer.load_network", return_value=loaded), patch.object(mgr, "_restore_original_methods"), patch.object(mgr, "_install_monitoring_hooks"):
+        with patch.object(mgr, "_get_snapshots_dir", return_value=tmp_path), patch("snapshots.snapshot_serializer.CascadeHDF5Serializer.load_network", return_value=loaded):
             mgr.restore_for_retrain("snap")
 
         assert mgr._last_emitted_history_len == 0
@@ -810,7 +817,7 @@ class TestRestoreForRetrain:
         loaded.history = {}
         fake_file = tmp_path / "snap.h5"
         fake_file.write_bytes(b"")
-        with patch.object(mgr, "_get_snapshots_dir", return_value=tmp_path), patch("snapshots.snapshot_serializer.CascadeHDF5Serializer.load_network", return_value=loaded), patch.object(mgr, "_restore_original_methods"), patch.object(mgr, "_install_monitoring_hooks"), patch.object(mgr.monitor, "clear_metrics") as mock_clear:
+        with patch.object(mgr, "_get_snapshots_dir", return_value=tmp_path), patch("snapshots.snapshot_serializer.CascadeHDF5Serializer.load_network", return_value=loaded), patch.object(mgr.monitor, "clear_metrics") as mock_clear:
             mgr.restore_for_retrain("snap")
             mock_clear.assert_called_once()
         mgr.shutdown()
@@ -831,7 +838,7 @@ class TestRestoreForRetrain:
         loaded = NetworkWithoutHistory()
         fake_file = tmp_path / "snap.h5"
         fake_file.write_bytes(b"")
-        with patch.object(mgr, "_get_snapshots_dir", return_value=tmp_path), patch("snapshots.snapshot_serializer.CascadeHDF5Serializer.load_network", return_value=loaded), patch.object(mgr, "_restore_original_methods"), patch.object(mgr, "_install_monitoring_hooks"):
+        with patch.object(mgr, "_get_snapshots_dir", return_value=tmp_path), patch("snapshots.snapshot_serializer.CascadeHDF5Serializer.load_network", return_value=loaded):
             assert mgr.restore_for_retrain("snap")["loaded"] is True
         mgr.shutdown()
 
@@ -851,7 +858,7 @@ class TestRestoreForRetrain:
         loaded = NetworkWithNoneHistory()
         fake_file = tmp_path / "snap.h5"
         fake_file.write_bytes(b"")
-        with patch.object(mgr, "_get_snapshots_dir", return_value=tmp_path), patch("snapshots.snapshot_serializer.CascadeHDF5Serializer.load_network", return_value=loaded), patch.object(mgr, "_restore_original_methods"), patch.object(mgr, "_install_monitoring_hooks"):
+        with patch.object(mgr, "_get_snapshots_dir", return_value=tmp_path), patch("snapshots.snapshot_serializer.CascadeHDF5Serializer.load_network", return_value=loaded):
             assert mgr.restore_for_retrain("snap")["loaded"] is True
         mgr.shutdown()
 
@@ -869,7 +876,7 @@ class TestRestoreForRetrain:
         loaded.history = {"train_loss": [0.1, 0.2], "value_loss": [], "train_accuracy": [], "value_accuracy": []}
         fake_file = tmp_path / "snap.h5"
         fake_file.write_bytes(b"")
-        with patch.object(mgr, "_get_snapshots_dir", return_value=tmp_path), patch("snapshots.snapshot_serializer.CascadeHDF5Serializer.load_network", return_value=loaded), patch.object(mgr, "_restore_original_methods"), patch.object(mgr, "_install_monitoring_hooks"):
+        with patch.object(mgr, "_get_snapshots_dir", return_value=tmp_path), patch("snapshots.snapshot_serializer.CascadeHDF5Serializer.load_network", return_value=loaded):
             assert mgr.load_snapshot("snap")["loaded"] is True
 
         # History on the loaded network is preserved — Restore is a load,
@@ -937,7 +944,7 @@ class TestResumeFromSnapshot:
         }
         fake_file = tmp_path / "snap.h5"
         fake_file.write_bytes(b"")
-        with patch.object(mgr, "_get_snapshots_dir", return_value=tmp_path), patch("snapshots.snapshot_serializer.CascadeHDF5Serializer.load_network", return_value=loaded), patch.object(mgr, "_restore_original_methods"), patch.object(mgr, "_install_monitoring_hooks"):
+        with patch.object(mgr, "_get_snapshots_dir", return_value=tmp_path), patch("snapshots.snapshot_serializer.CascadeHDF5Serializer.load_network", return_value=loaded):
             assert mgr.resume_from_snapshot("snap")["loaded"] is True
 
         assert loaded.history["train_loss"] == [0.5, 0.4, 0.3]
@@ -958,7 +965,7 @@ class TestResumeFromSnapshot:
         loaded.history = {"train_loss": [], "value_loss": [], "train_accuracy": [], "value_accuracy": []}
         fake_file = tmp_path / "snap.h5"
         fake_file.write_bytes(b"")
-        with patch.object(mgr, "_get_snapshots_dir", return_value=tmp_path), patch("snapshots.snapshot_serializer.CascadeHDF5Serializer.load_network", return_value=loaded), patch.object(mgr, "_restore_original_methods"), patch.object(mgr, "_install_monitoring_hooks"):
+        with patch.object(mgr, "_get_snapshots_dir", return_value=tmp_path), patch("snapshots.snapshot_serializer.CascadeHDF5Serializer.load_network", return_value=loaded):
             mgr.resume_from_snapshot("snap")
 
         assert mgr._auto_snap_best_metric == 0.95
@@ -974,7 +981,7 @@ class TestResumeFromSnapshot:
         loaded.history = {"train_loss": [0.1], "value_loss": [], "train_accuracy": [], "value_accuracy": []}
         fake_file = tmp_path / "snap.h5"
         fake_file.write_bytes(b"")
-        with patch.object(mgr, "_get_snapshots_dir", return_value=tmp_path), patch("snapshots.snapshot_serializer.CascadeHDF5Serializer.load_network", return_value=loaded), patch.object(mgr, "_restore_original_methods"), patch.object(mgr, "_install_monitoring_hooks"):
+        with patch.object(mgr, "_get_snapshots_dir", return_value=tmp_path), patch("snapshots.snapshot_serializer.CascadeHDF5Serializer.load_network", return_value=loaded):
             mgr.resume_from_snapshot("snap")
 
         assert mgr.state_machine.is_resume_ready()
@@ -995,7 +1002,7 @@ class TestResumeFromSnapshot:
         }
         fake_file = tmp_path / "snap.h5"
         fake_file.write_bytes(b"")
-        with patch.object(mgr, "_get_snapshots_dir", return_value=tmp_path), patch("snapshots.snapshot_serializer.CascadeHDF5Serializer.load_network", return_value=loaded), patch.object(mgr, "_restore_original_methods"), patch.object(mgr, "_install_monitoring_hooks"):
+        with patch.object(mgr, "_get_snapshots_dir", return_value=tmp_path), patch("snapshots.snapshot_serializer.CascadeHDF5Serializer.load_network", return_value=loaded):
             mgr.resume_from_snapshot("snap")
 
         # Longest array (train_loss) = 5.
@@ -1012,7 +1019,7 @@ class TestResumeFromSnapshot:
         loaded.history = {}
         fake_file = tmp_path / "snap.h5"
         fake_file.write_bytes(b"")
-        with patch.object(mgr, "_get_snapshots_dir", return_value=tmp_path), patch("snapshots.snapshot_serializer.CascadeHDF5Serializer.load_network", return_value=loaded), patch.object(mgr, "_restore_original_methods"), patch.object(mgr, "_install_monitoring_hooks"):
+        with patch.object(mgr, "_get_snapshots_dir", return_value=tmp_path), patch("snapshots.snapshot_serializer.CascadeHDF5Serializer.load_network", return_value=loaded):
             assert mgr.resume_from_snapshot("snap")["loaded"] is True
 
         assert mgr._resume_point_epoch == 0
@@ -1032,7 +1039,7 @@ class TestResumeFromSnapshot:
         loaded = NetworkWithoutHistory()
         fake_file = tmp_path / "snap.h5"
         fake_file.write_bytes(b"")
-        with patch.object(mgr, "_get_snapshots_dir", return_value=tmp_path), patch("snapshots.snapshot_serializer.CascadeHDF5Serializer.load_network", return_value=loaded), patch.object(mgr, "_restore_original_methods"), patch.object(mgr, "_install_monitoring_hooks"):
+        with patch.object(mgr, "_get_snapshots_dir", return_value=tmp_path), patch("snapshots.snapshot_serializer.CascadeHDF5Serializer.load_network", return_value=loaded):
             assert mgr.resume_from_snapshot("snap")["loaded"] is True
 
         assert mgr._resume_point_epoch == 0
@@ -1048,7 +1055,7 @@ class TestResumeFromSnapshot:
         loaded.history = {"train_loss": [0.1, 0.2, 0.3], "value_loss": [], "train_accuracy": [], "value_accuracy": []}
         fake_file = tmp_path / "snap.h5"
         fake_file.write_bytes(b"")
-        with patch.object(mgr, "_get_snapshots_dir", return_value=tmp_path), patch("snapshots.snapshot_serializer.CascadeHDF5Serializer.load_network", return_value=loaded), patch.object(mgr, "_restore_original_methods"), patch.object(mgr, "_install_monitoring_hooks"):
+        with patch.object(mgr, "_get_snapshots_dir", return_value=tmp_path), patch("snapshots.snapshot_serializer.CascadeHDF5Serializer.load_network", return_value=loaded):
             mgr.resume_from_snapshot("snap")
             assert mgr._resume_point_epoch == 3
             mgr.restore_for_retrain("snap")
@@ -1074,7 +1081,7 @@ class TestResumeFromSnapshot:
 
         fake_file = tmp_path / "snap.h5"
         fake_file.write_bytes(b"")
-        with patch.object(mgr, "_get_snapshots_dir", return_value=tmp_path), patch("snapshots.snapshot_serializer.CascadeHDF5Serializer.load_network", return_value=loaded), patch.object(mgr, "_restore_original_methods"), patch.object(mgr, "_install_monitoring_hooks"):
+        with patch.object(mgr, "_get_snapshots_dir", return_value=tmp_path), patch("snapshots.snapshot_serializer.CascadeHDF5Serializer.load_network", return_value=loaded):
             mgr.resume_from_snapshot("snap")
 
         # Set ratchet to a known value AFTER resume to isolate this test.
@@ -1157,7 +1164,7 @@ class TestLoadSnapshotInvestigating:
         loaded.history = {"train_loss": [0.1, 0.2], "value_loss": [], "train_accuracy": [], "value_accuracy": []}
         fake_file = tmp_path / "snap.h5"
         fake_file.write_bytes(b"")
-        with patch.object(mgr, "_get_snapshots_dir", return_value=tmp_path), patch("snapshots.snapshot_serializer.CascadeHDF5Serializer.load_network", return_value=loaded), patch.object(mgr, "_restore_original_methods"), patch.object(mgr, "_install_monitoring_hooks"):
+        with patch.object(mgr, "_get_snapshots_dir", return_value=tmp_path), patch("snapshots.snapshot_serializer.CascadeHDF5Serializer.load_network", return_value=loaded):
             assert mgr.load_snapshot("snap")["loaded"] is True
 
         assert mgr.state_machine.is_investigating()
@@ -1176,7 +1183,7 @@ class TestLoadSnapshotInvestigating:
         loaded.history = {"train_loss": [], "value_loss": [], "train_accuracy": [], "value_accuracy": []}
         fake_file = tmp_path / "snap.h5"
         fake_file.write_bytes(b"")
-        with patch.object(mgr, "_get_snapshots_dir", return_value=tmp_path), patch("snapshots.snapshot_serializer.CascadeHDF5Serializer.load_network", return_value=loaded), patch.object(mgr, "_restore_original_methods"), patch.object(mgr, "_install_monitoring_hooks"):
+        with patch.object(mgr, "_get_snapshots_dir", return_value=tmp_path), patch("snapshots.snapshot_serializer.CascadeHDF5Serializer.load_network", return_value=loaded):
             mgr.load_snapshot("snap")
 
         assert mgr._resume_point_epoch is None
@@ -1215,7 +1222,7 @@ class TestLoadSnapshotInvestigating:
         loaded.history = {"train_loss": [0.1], "value_loss": [], "train_accuracy": [], "value_accuracy": []}
         fake_file = tmp_path / "snap.h5"
         fake_file.write_bytes(b"")
-        with patch.object(mgr, "_get_snapshots_dir", return_value=tmp_path), patch("snapshots.snapshot_serializer.CascadeHDF5Serializer.load_network", return_value=loaded), patch.object(mgr, "_restore_original_methods"), patch.object(mgr, "_install_monitoring_hooks"):
+        with patch.object(mgr, "_get_snapshots_dir", return_value=tmp_path), patch("snapshots.snapshot_serializer.CascadeHDF5Serializer.load_network", return_value=loaded):
             mgr.load_snapshot("snap")
             assert mgr.state_machine.is_investigating()
             mgr.restore_for_retrain("snap")
@@ -1234,7 +1241,7 @@ class TestLoadSnapshotInvestigating:
         loaded.history = {"train_loss": [0.1, 0.2, 0.3], "value_loss": [], "train_accuracy": [], "value_accuracy": []}
         fake_file = tmp_path / "snap.h5"
         fake_file.write_bytes(b"")
-        with patch.object(mgr, "_get_snapshots_dir", return_value=tmp_path), patch("snapshots.snapshot_serializer.CascadeHDF5Serializer.load_network", return_value=loaded), patch.object(mgr, "_restore_original_methods"), patch.object(mgr, "_install_monitoring_hooks"):
+        with patch.object(mgr, "_get_snapshots_dir", return_value=tmp_path), patch("snapshots.snapshot_serializer.CascadeHDF5Serializer.load_network", return_value=loaded):
             mgr.load_snapshot("snap")
             assert mgr.state_machine.is_investigating()
             mgr.resume_from_snapshot("snap")
@@ -1386,7 +1393,7 @@ class TestReplayLifecycleIntegration:
         loaded = MagicMock()
         loaded.history = history
         (tmp_path / "snap.h5").write_bytes(b"")
-        return patch.object(mgr, "_get_snapshots_dir", return_value=tmp_path), patch("snapshots.snapshot_serializer.CascadeHDF5Serializer.load_network", return_value=loaded), patch.object(mgr, "_restore_original_methods"), patch.object(mgr, "_install_monitoring_hooks")
+        return patch.object(mgr, "_get_snapshots_dir", return_value=tmp_path), patch("snapshots.snapshot_serializer.CascadeHDF5Serializer.load_network", return_value=loaded)
 
     def test_start_replay_returns_false_when_training_active(self, tmp_path):
         from unittest.mock import patch
@@ -1413,7 +1420,7 @@ class TestReplayLifecycleIntegration:
         mgr = TrainingLifecycleManager()
         mgr.create_network(input_size=2, output_size=2)
         ctxs = self._stub_load(mgr, tmp_path, {"train_loss": [0.1, 0.2, 0.3], "value_loss": [], "train_accuracy": [], "value_accuracy": []})
-        with ctxs[0], ctxs[1], ctxs[2], ctxs[3]:
+        with ctxs[0], ctxs[1]:
             try:
                 assert mgr.start_replay("snap") is True
                 assert mgr.state_machine.is_replaying()
@@ -1435,7 +1442,7 @@ class TestReplayLifecycleIntegration:
         loaded_b.history = {"train_loss": [0.5, 0.4, 0.3], "value_loss": [], "train_accuracy": [], "value_accuracy": []}
         (tmp_path / "snap-a.h5").write_bytes(b"")
         (tmp_path / "snap-b.h5").write_bytes(b"")
-        with patch.object(mgr, "_get_snapshots_dir", return_value=tmp_path), patch.object(mgr, "_restore_original_methods"), patch.object(mgr, "_install_monitoring_hooks"):
+        with patch.object(mgr, "_get_snapshots_dir", return_value=tmp_path):
             try:
                 with patch("snapshots.snapshot_serializer.CascadeHDF5Serializer.load_network", return_value=loaded_a):
                     mgr.start_replay("snap-a")
@@ -1455,7 +1462,7 @@ class TestReplayLifecycleIntegration:
         mgr = TrainingLifecycleManager()
         mgr.create_network(input_size=2, output_size=2)
         ctxs = self._stub_load(mgr, tmp_path, {"train_loss": [0.1, 0.2, 0.3], "value_loss": [], "train_accuracy": [], "value_accuracy": []})
-        with ctxs[0], ctxs[1], ctxs[2], ctxs[3]:
+        with ctxs[0], ctxs[1]:
             try:
                 mgr.start_replay("snap")
                 state = mgr.replay_control("play")
@@ -1470,7 +1477,7 @@ class TestReplayLifecycleIntegration:
         mgr = TrainingLifecycleManager()
         mgr.create_network(input_size=2, output_size=2)
         ctxs = self._stub_load(mgr, tmp_path, {"train_loss": [0.1, 0.2, 0.3, 0.4, 0.5], "value_loss": [], "train_accuracy": [], "value_accuracy": []})
-        with ctxs[0], ctxs[1], ctxs[2], ctxs[3]:
+        with ctxs[0], ctxs[1]:
             try:
                 mgr.start_replay("snap")
                 state = mgr.replay_control("seek", time_index=3)
@@ -1495,7 +1502,7 @@ class TestReplayLifecycleIntegration:
         mgr = TrainingLifecycleManager()
         mgr.create_network(input_size=2, output_size=2)
         ctxs = self._stub_load(mgr, tmp_path, {"train_loss": [0.1], "value_loss": [], "train_accuracy": [], "value_accuracy": []})
-        with ctxs[0], ctxs[1], ctxs[2], ctxs[3]:
+        with ctxs[0], ctxs[1]:
             mgr.start_replay("snap")
             assert mgr.state_machine.is_replaying()
             result = mgr.replay_control("stop")
@@ -1508,7 +1515,7 @@ class TestReplayLifecycleIntegration:
         mgr = TrainingLifecycleManager()
         mgr.create_network(input_size=2, output_size=2)
         ctxs = self._stub_load(mgr, tmp_path, {"train_loss": [0.1], "value_loss": [], "train_accuracy": [], "value_accuracy": []})
-        with ctxs[0], ctxs[1], ctxs[2], ctxs[3]:
+        with ctxs[0], ctxs[1]:
             try:
                 mgr.start_replay("snap")
                 with pytest.raises(ValueError, match="time_index"):
@@ -1521,7 +1528,7 @@ class TestReplayLifecycleIntegration:
         mgr = TrainingLifecycleManager()
         mgr.create_network(input_size=2, output_size=2)
         ctxs = self._stub_load(mgr, tmp_path, {"train_loss": [0.1], "value_loss": [], "train_accuracy": [], "value_accuracy": []})
-        with ctxs[0], ctxs[1], ctxs[2], ctxs[3]:
+        with ctxs[0], ctxs[1]:
             try:
                 mgr.start_replay("snap")
                 with pytest.raises(ValueError, match="Unknown replay action"):
@@ -1548,7 +1555,7 @@ class TestReplayLifecycleIntegration:
         mgr = TrainingLifecycleManager()
         mgr.create_network(input_size=2, output_size=2)
         ctxs = self._stub_load(mgr, tmp_path, {"train_loss": [0.1], "value_loss": [], "train_accuracy": [], "value_accuracy": []})
-        with ctxs[0], ctxs[1], ctxs[2], ctxs[3]:
+        with ctxs[0], ctxs[1]:
             try:
                 mgr.start_replay("snap")
                 x = torch.randn(20, 2)
@@ -1563,7 +1570,7 @@ class TestReplayLifecycleIntegration:
         mgr = TrainingLifecycleManager()
         mgr.create_network(input_size=2, output_size=2)
         ctxs = self._stub_load(mgr, tmp_path, {"train_loss": [0.1], "value_loss": [], "train_accuracy": [], "value_accuracy": []})
-        with ctxs[0], ctxs[1], ctxs[2], ctxs[3]:
+        with ctxs[0], ctxs[1]:
             try:
                 mgr.start_replay("snap")
                 assert mgr.load_snapshot("snap")["loaded"] is False
