@@ -1,7 +1,8 @@
-"""OUT-13 — cascor ↔ juniper-model-core interface conformance (WS-6 gate, half 2).
+"""OUT-13 / WS-6 PR-B4 — cascor ↔ juniper-model-core interface conformance (WS-6 gate, half 2).
 
-Runs the real ``CascadeCorrelationNetwork`` (via the test-only adapter) through the
-``juniper_model_core.conformance`` GrowableModel kit. Together with the OUT-12 golden suite
+Runs the **production** ``CascorModel`` (wrapping a real ``CascadeCorrelationNetwork``) through
+the ``juniper_model_core.conformance`` GrowableModel kit — "native conformance" (PR-B4 retired
+the test-only adapter). Together with the OUT-12 golden suite
 this forms the WS-6 trigger-gate: cascor may refactor onto the shared packages only if both
 stay green. Plan:
 ``juniper-ml/notes/JUNIPER_CASCOR_MODEL_CORE_CONFORMANCE_WIRING_PLAN_2026-06-18.md``.
@@ -14,22 +15,26 @@ Run (serial, GIL env):
 """
 
 import pytest
-from conformance.cascor_model_core_adapter import CascorModelCoreAdapter, two_spiral_classification_dataset
+from conformance.cascor_model_core_adapter import make_cascor_conformance_model, two_spiral_classification_dataset
 from juniper_model_core.conformance import GrowableModelConformance
+
+from api.models.cascor_model import CascorModel
 
 
 @pytest.mark.integration
 @pytest.mark.slow
 @pytest.mark.conformance
 class TestCascorConformance(GrowableModelConformance):
-    """CascadeCorrelationNetwork satisfies the model-core GrowableModel contract.
+    """The production ``CascorModel`` satisfies the model-core GrowableModel contract.
 
     Inherits ~13 contract assertions from ``GrowableModelConformance``; supplies the three
     factory hooks. The base class is not named ``Test*`` so pytest collects only this subclass.
+    PR-B4: ``make_model`` returns the production ``CascorModel`` (native conformance), not the
+    retired test-only adapter.
     """
 
-    def make_model(self) -> CascorModelCoreAdapter:
-        return CascorModelCoreAdapter()
+    def make_model(self) -> CascorModel:
+        return make_cascor_conformance_model()
 
     def make_dataset(self):
         return two_spiral_classification_dataset()
