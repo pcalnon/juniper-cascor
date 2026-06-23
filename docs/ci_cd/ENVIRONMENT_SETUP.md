@@ -195,6 +195,8 @@ Required secrets would be configured in:
 
 To reproduce the CI environment locally:
 
+> **Note:** CI and Docker use an **ephemeral** environment named `JuniperCascor` (created fresh from `conf/conda_environment.yaml` on each run, matching the workflow's `ENV_NAME`). That is intentional and separate from your **persistent local dev environment**, which is versioned (`JuniperCascor1`, …) — see [`../install/ENVIRONMENT_SETUP.md`](../install/ENVIRONMENT_SETUP.md). The throwaway name below is fine for one-off CI reproduction.
+
 ```bash
 # 1. Install Miniforge (provides mamba)
 # Linux/macOS:

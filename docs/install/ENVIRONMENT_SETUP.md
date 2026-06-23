@@ -37,6 +37,30 @@ This guide covers setting up the development environment for the Juniper Cascor 
 
 ## Conda Environment Setup (Recommended)
 
+> **⚠️ Conda environment naming — read this first.**
+>
+> Juniper conda environments are **versioned across rebuilds**. This project's
+> live environment is currently **`JuniperCascor1`**; each full rebuild (per the
+> Juniper ecosystem conda-env rebuild procedure,
+> `juniper-ml/notes/JUNIPER_CONDA_ENV_REBUILD_PROCEDURE.md`) creates a new
+> suffixed environment (`JuniperCascor1` → `JuniperCascor2` → …) and renames the
+> previous one to `*-DEPRECATED`. A `*-DEPRECATED` environment has a broken or
+> partial toolchain (e.g. a broken `torch` import) — **never activate one**.
+>
+> Discover your live environment and substitute its name wherever this guide
+> writes `JuniperCascor1`:
+>
+> ```bash
+> conda env list | grep JuniperCascor
+> # Use the entry WITHOUT a "-DEPRECATED" suffix (e.g. JuniperCascor1).
+> ```
+>
+> The `conda env create -n <name> …` steps below name the environment
+> explicitly: `conf/conda_environment.yaml` intentionally has **no** `name:`
+> field, so the name always comes from `-n` / `--name` and stays consistent with
+> this convention. (CI and Docker use a separate *ephemeral* `JuniperCascor`
+> environment — see `docs/ci_cd/ENVIRONMENT_SETUP.md`.)
+
 ### Prerequisites
 
 Install [Miniconda](https://docs.conda.io/en/latest/miniconda.html) or [Anaconda](https://www.anaconda.com/download).
@@ -48,9 +72,9 @@ Install [Miniconda](https://docs.conda.io/en/latest/miniconda.html) or [Anaconda
 cd juniper-cascor
 
 # Create environment from yaml file
-conda env create -f conf/conda_environment.yaml --name JuniperCascor
+conda env create -f conf/conda_environment.yaml --name JuniperCascor1
 
-# Alternatively, create with explicit name
+# Alternatively, use a custom env name of your choice (then activate that name)
 conda env create -f conf/conda_environment.yaml -n cascor
 ```
 
@@ -58,11 +82,11 @@ conda env create -f conf/conda_environment.yaml -n cascor
 
 ```bash
 # Activate the environment
-conda activate JuniperCascor
+conda activate JuniperCascor1
 
 # Verify activation
 which python
-# Should show: /path/to/conda/envs/JuniperCascor/bin/python
+# Should show: /path/to/conda/envs/JuniperCascor1/bin/python
 ```
 
 ### Verifying Installation
@@ -89,8 +113,8 @@ conda env update -f conf/conda_environment.yaml --prune
 
 # Or recreate from scratch
 conda deactivate
-conda env remove -n JuniperCascor
-conda env create -f conf/conda_environment.yaml --name JuniperCascor
+conda env remove -n JuniperCascor1
+conda env create -f conf/conda_environment.yaml --name JuniperCascor1
 ```
 
 ---

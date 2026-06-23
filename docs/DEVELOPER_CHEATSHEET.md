@@ -9,8 +9,10 @@
 **The following commands launch a full set of Juniper Project services: start services in the order listed below:**
 
 - juniper-data: cd /home/pcalnon/Development/python/Juniper/juniper-data && conda activate JuniperData && pip install -e ".[all]" && PYTHON_GIL=0 uvicorn juniper_data.api.app:app --host 0.0.0.0 --port 8100
-- juniper-cascor: cd /home/pcalnon/Development/python/Juniper/juniper-cascor/src && conda activate JuniperCascor && JUNIPER_CASCOR_PORT=8201 python server.py
-- juniper-canopy: cd /home/pcalnon/Development/python/Juniper/juniper-canopy/src && conda activate JuniperCanopy && CASCOR_SERVICE_URL="<http://localhost:8201>" uvicorn main:app --host 0.0.0.0 --port 8050
+- juniper-cascor: cd /home/pcalnon/Development/python/Juniper/juniper-cascor/src && conda activate JuniperCascor1 && JUNIPER_CASCOR_PORT=8201 python server.py
+- juniper-canopy: cd /home/pcalnon/Development/python/Juniper/juniper-canopy/src && conda activate JuniperCanopy1 && CASCOR_SERVICE_URL="<http://localhost:8201>" uvicorn main:app --host 0.0.0.0 --port 8050
+
+> **Conda env naming:** the live envs are **versioned** — `JuniperCascor1`, `JuniperCanopy1` (the bare `JuniperCascor` / `JuniperCanopy` are now `*-DEPRECATED` with a broken toolchain; `JuniperData` is unversioned). Discover yours with `conda env list | grep Juniper<App>` and use that name; rebuilds increment the suffix.
 
 **General list of useful Commands:**
 
@@ -38,7 +40,7 @@
 ## Service Operations
 
 ```bash
-conda activate JuniperCascor && cd juniper-cascor && pip install -e ".[all]"
+conda activate JuniperCascor1 && cd juniper-cascor && pip install -e ".[all]"
 cd src && python main.py                                       # native start
 curl -s http://localhost:8200/v1/health | python -m json.tool  # health
 docker compose --profile full up -d                            # Docker start
@@ -205,7 +207,7 @@ Levels: TRACE(5) -> VERBOSE(7) -> DEBUG(10) -> INFO(20) -> WARNING(30) -> ERROR(
 # Add dep: edit pyproject.toml, then regenerate lockfile
 uv pip compile pyproject.toml -o requirements.txt
 # Conda env
-conda create --name JuniperCascor --file conf/conda_environment.yaml
+conda create --name JuniperCascor1 --file conf/conda_environment.yaml
 ```
 
 Core: `torch`, `numpy`, `h5py`, `matplotlib`, `PyYAML`, `requests`

@@ -5,7 +5,7 @@
 **Author**: Paul Calnon
 **License**: MIT License
 **Version**: 0.5.0
-**Last Updated**: 2026-06-21
+**Last Updated**: 2026-06-23
 
 ---
 
@@ -13,10 +13,10 @@
 
 ### Conda Environment
 
-> **Required:** Activate the `JuniperCascor` conda environment before running any commands.
+> **Required:** Activate the live `JuniperCascor1` conda environment before running any commands. The env name is **versioned** — rebuilds increment the suffix and rename the old env `*-DEPRECATED` (never activate those). Discover yours with `conda env list | grep JuniperCascor`.
 
 ```bash
-conda activate JuniperCascor
+conda activate JuniperCascor1   # live env; see the note above
 ```
 
 ### Essential Commands
