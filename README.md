@@ -137,7 +137,7 @@ PyTorch is excluded from the lockfile and installed separately in the Dockerfile
 ### Prerequisites
 
 - Python ≥ 3.12 (Docker image uses 3.14)
-- Conda environment `JuniperCascor`
+- Conda environment `JuniperCascor1` — the live env is **versioned** (rebuilds increment the suffix and rename the old env `*-DEPRECATED`; never activate those). Discover yours with `conda env list | grep JuniperCascor`.
 - A running `juniper-data` instance reachable at `JUNIPER_DATA_URL` (typically `http://localhost:8100`)
 
 ### Installation
@@ -145,8 +145,8 @@ PyTorch is excluded from the lockfile and installed separately in the Dockerfile
 ```bash
 git clone https://github.com/pcalnon/juniper-cascor.git
 cd juniper-cascor
-conda env create -f conf/conda_environment.yaml
-conda activate JuniperCascor
+conda env create -n JuniperCascor1 -f conf/conda_environment.yaml   # -n required: the YAML has no name: field
+conda activate JuniperCascor1
 pip install -e ".[ml,api,observability,test]"
 ```
 
