@@ -5,7 +5,7 @@
 **Author**: Paul Calnon
 **License**: MIT License
 **Version**: 0.5.0
-**Last Updated**: 2026-05-23
+**Last Updated**: 2026-06-23
 
 ---
 
@@ -13,10 +13,10 @@
 
 ### Conda Environment
 
-> **Required:** Activate the `JuniperCascor` conda environment before running any commands.
+> **Required:** Activate the live `JuniperCascor1` conda environment before running any commands. The env name is **versioned** — rebuilds increment the suffix and rename the old env `*-DEPRECATED` (never activate those). Discover yours with `conda env list | grep JuniperCascor`.
 
 ```bash
-conda activate JuniperCascor
+conda activate JuniperCascor1   # live env; see the note above
 ```
 
 ### Essential Commands
@@ -765,6 +765,17 @@ src/tests/
 - HTML Coverage: `src/tests/reports/htmlcov/index.html`
 - XML Coverage: `src/tests/reports/coverage.xml`
 - JUnit XML: `src/tests/reports/junit.xml`
+
+### Coverage
+
+Reproduce the CI coverage gate locally (full suite):
+
+```bash
+make coverage                 # convenience wrapper
+bash util/run_coverage.bash   # source of truth (mirrors .github/workflows/ci.yml)
+```
+
+Gate: 80% aggregate (override with `COVERAGE_FAIL_UNDER=<n>`). Coverage runs in parallel mode with a custom data_file (see pyproject `[tool.coverage.run]`); the script reproduces the CI sequence exactly. Full suite by design; for a narrower run use plain `pytest`.
 
 ---
 

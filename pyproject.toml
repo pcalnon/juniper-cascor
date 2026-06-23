@@ -74,6 +74,12 @@ dependencies = [
     # source of truth lives in juniper-cascor-protocol and the server
     # imports it. Promotion to >=0.1.0 stable follows the alpha soak.
     "juniper-cascor-protocol>=0.1.0a0",
+    # WS-6 B-phase (native model-core adoption): the production CascorModel
+    # wrapper (src/api/models/cascor_model.py) imports juniper_model_core at
+    # module load, so the abstract model interface is now a runtime dependency
+    # of the cascor service (not test-only). Pin matches the [test] conformance
+    # kit (OQ-B2, plan §9): >=0.2.0,<0.3.0; model-core has zero deps / no torch.
+    "juniper-model-core>=0.2.0,<0.4.0",
 ]
 
 [project.optional-dependencies]
@@ -118,6 +124,10 @@ test = [
     "responses>=0.23.0",
     "httpx>=0.24.0",
     "psutil>=5.9.0",
+    # OUT-13 (WS-6 gate, half 2): the model-core conformance kit. Test-only —
+    # CascadeCorrelationNetwork is run through juniper_model_core.conformance
+    # via a test adapter (src/tests/conformance/). Pulls numpy (already present).
+    "juniper-model-core[conformance]>=0.2.0,<0.4.0",
 ]
 # CLN-CC-10: dill is required by utils.check_object_pickleability, a
 # debugging helper for diagnosing multiprocessing pickle failures. It is
@@ -160,6 +170,7 @@ default_section = "THIRDPARTY"
 
 [tool.pytest.ini_options]
 minversion = "6.0"
+asyncio_mode = "auto"
 testpaths = ["src/tests"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
@@ -215,6 +226,7 @@ markers = [
     "requires_juniper_data: Tests that require the juniper-data package to be installed",
     "critical: Tests covering business-critical paths (used as a tag, not a selector)",
     "golden: Golden/snapshot regression tests pinning deterministic training trajectories, serialization round-trips, and API response shapes (OUT-12 / WS-6 pre-refactor gate; --golden, serial-only)",
+    "conformance: model-core interface-conformance tests running CascadeCorrelationNetwork through the juniper-model-core conformance kit (OUT-13 / WS-6 gate half 2; --conformance, serial-only)",
 ]
 timeout = 60
 # Thread-based timeout avoids SIGALRM interference with forkserver IPC

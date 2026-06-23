@@ -7,7 +7,6 @@ Covers:
 - get_decision_boundary: with/without network, with/without training data
 - get_dataset: metadata retrieval
 - set_ws_manager / _register_ws_callbacks: WebSocket integration
-- _install_monitoring_hooks: monitored_fit, monitored_train_output, monitored_grow
 - start_training: already in progress, reuse stored data
 - shutdown: with/without executor
 """
@@ -219,7 +218,7 @@ class TestSetWsManager:
         mock_ws = MagicMock()
         mgr._ws_manager = mock_ws
 
-        with patch.object(mgr.training_monitor, "register_callback") as mock_register:
+        with patch.object(mgr.monitor, "register_callback") as mock_register:
             mgr._register_ws_callbacks()
 
             assert mock_register.call_count == 5
@@ -229,108 +228,6 @@ class TestSetWsManager:
             assert "training_start" in event_names
             assert "training_end" in event_names
             assert "candidate_progress" in event_names
-
-
-class TestMonitoringHooks:
-    """Tests for _install_monitoring_hooks behavior."""
-
-    def test_hooks_not_installed_without_network(self):
-        """_install_monitoring_hooks should return early when no network."""
-        mgr = TrainingLifecycleManager()
-        mgr._install_monitoring_hooks()
-        assert mgr._monitoring_active is False
-
-    def test_hooks_not_reinstalled_if_already_active(self):
-        """_install_monitoring_hooks should not reinstall if already active."""
-        mgr = TrainingLifecycleManager()
-        mgr.create_network(input_size=2, output_size=2)
-        assert mgr._monitoring_active is True
-
-        original_fit = mgr.network.fit
-        mgr._install_monitoring_hooks()
-        # fit should still be the same wrapped version (hooks not reinstalled)
-        assert mgr.network.fit is original_fit
-
-    def test_monitored_fit_records_metrics(self):
-        """Monitored fit should call _extract_and_record_metrics."""
-        mgr = TrainingLifecycleManager()
-
-        # Temporarily patch CascadeCorrelationNetwork.fit to avoid real training
-        from cascade_correlation.cascade_correlation import CascadeCorrelationNetwork
-
-        original_class_fit = CascadeCorrelationNetwork.fit
-
-        CascadeCorrelationNetwork.fit = MagicMock(return_value={"train_loss": [0.5]})
-        try:
-            mgr.create_network(input_size=2, output_size=2)
-
-            x = torch.randn(10, 2)
-            y = torch.zeros(10, 2)
-            y[:5, 0] = 1
-            y[5:, 1] = 1
-
-            with patch.object(mgr, "_extract_and_record_metrics") as mock_extract:
-                mgr.network.fit(x, y)
-                assert mock_extract.called
-        finally:
-            CascadeCorrelationNetwork.fit = original_class_fit
-
-    def test_monitored_fit_auto_resets_failed_state_before_restart(self):
-        """Wrapped fit auto-resets FAILED state so restart can complete."""
-        mgr = TrainingLifecycleManager()
-        mgr.create_network(input_size=2, output_size=2)
-
-        # Put state machine in terminal FAILED state from a prior run.
-        mgr.state_machine.handle_command(Command.START)
-        mgr.state_machine.mark_failed("prior failure")
-        assert mgr.state_machine.is_failed()
-
-        # Reinstall hooks around a mocked fit to keep this deterministic/fast.
-        mgr._monitoring_active = False
-        mgr._original_methods.clear()
-        mgr.network.fit = MagicMock(return_value={"train_loss": [0.1]})
-        mgr._install_monitoring_hooks()
-
-        x = torch.randn(8, 2)
-        y = torch.zeros(8, 2)
-        y[:4, 0] = 1
-        y[4:, 1] = 1
-
-        mgr._stop_requested.clear()
-        mgr.network.fit(x, y)
-
-        # Regression assertion: without auto-reset, state machine stayed FAILED.
-        assert mgr.state_machine.is_completed()
-        assert mgr.training_state.get_state()["status"] == "Completed"
-
-    def test_monitored_fit_auto_resets_completed_state_before_stop_path(self):
-        """Wrapped fit auto-resets COMPLETED state so stop path can transition."""
-        mgr = TrainingLifecycleManager()
-        mgr.create_network(input_size=2, output_size=2)
-
-        # Put state machine in terminal COMPLETED state from a prior run.
-        mgr.state_machine.handle_command(Command.START)
-        mgr.state_machine.mark_completed()
-        assert mgr.state_machine.is_completed()
-
-        # Reinstall hooks around a mocked fit to keep this deterministic/fast.
-        mgr._monitoring_active = False
-        mgr._original_methods.clear()
-        mgr.network.fit = MagicMock(return_value={"train_loss": [0.1]})
-        mgr._install_monitoring_hooks()
-
-        x = torch.randn(8, 2)
-        y = torch.zeros(8, 2)
-        y[:4, 0] = 1
-        y[4:, 1] = 1
-
-        # Exercise monitored_fit stop-event branch after terminal-state restart.
-        mgr._stop_requested.set()
-        mgr.network.fit(x, y)
-
-        # Regression assertion: without auto-reset, STOP was invalid from COMPLETED.
-        assert mgr.state_machine.is_stopped()
-        assert mgr.training_state.get_state()["status"] == "Stopped"
 
 
 class TestStartTrainingEdgeCases:
@@ -361,11 +258,11 @@ class TestStartTrainingEdgeCases:
             y[:5, 0] = 1
             y[5:, 1] = 1
 
-            mgr.start_training(x=x, y=y)
+            mgr.start_training(X=x, y=y)
             started.wait(timeout=5)
 
             with pytest.raises(RuntimeError, match="already in progress"):
-                mgr.start_training(x=x, y=y)
+                mgr.start_training(X=x, y=y)
         finally:
             barrier.set()
             CascadeCorrelationNetwork.fit = original_class_fit
@@ -415,7 +312,7 @@ class TestShutdown:
         y[5:, 1] = 1
 
         with patch.object(mgr.network, "fit", return_value={"train_loss": [0.5]}):
-            mgr.start_training(x=x, y=y)
+            mgr.start_training(X=x, y=y)
             if mgr._training_future is not None:
                 mgr._training_future.result(timeout=10)
 

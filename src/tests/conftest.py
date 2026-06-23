@@ -206,6 +206,7 @@ def pytest_addoption(parser):
     parser.addoption("--run-long", action="store_true", default=False, help="Run long-running correctness tests (e.g., deterministic training resume)")
     parser.addoption("--run-performance", action="store_true", default=False, help="Run performance benchmark tests (requires CASCOR_BENCHMARK_MODE=1 or this flag)")
     parser.addoption("--golden", action="store_true", default=False, help="Run golden/snapshot regression tests (OUT-12 / WS-6 gate; deterministic baseline, serial-only lane)")
+    parser.addoption("--conformance", action="store_true", default=False, help="Run model-core conformance tests (OUT-13 / WS-6 gate half 2; serial-only lane)")
 
 
 def pytest_collection_modifyitems(config, items):
@@ -244,6 +245,16 @@ def pytest_collection_modifyitems(config, items):
         for item in items:
             if "golden" in item.keywords:
                 item.add_marker(skip_golden)
+
+    # OUT-13 / WS-6 gate (half 2): model-core conformance tests run ONLY in
+    # their dedicated serial lane. Skip unless --conformance is passed, so they
+    # never leak into the unit / integration / scheduled-slow lanes even though
+    # they also carry the `integration` and `slow` markers.
+    if not config.getoption("--conformance"):
+        skip_conformance = pytest.mark.skip(reason="need --conformance option to run model-core conformance tests")
+        for item in items:
+            if "conformance" in item.keywords:
+                item.add_marker(skip_conformance)
 
     # Performance benchmarks: require --run-performance or CASCOR_BENCHMARK_MODE=1
     run_perf = config.getoption("--run-performance") or os.environ.get("CASCOR_BENCHMARK_MODE") == "1"

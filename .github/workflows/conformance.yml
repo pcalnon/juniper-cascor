@@ -1,0 +1,123 @@
+---
+#####################################################################################################################################################################################################
+# Project:       Juniper
+# Sub-Project:   JuniperCascor
+# Application:   juniper_cascor
+# File Name:     conformance.yml
+# Author:        Paul Calnon
+# Version:       0.1.0
+#
+# Date Created:  2026-06-18
+# Last Modified: 2026-06-18
+#
+# License:       MIT License
+# Copyright:     Copyright (c) 2024-2026 Paul Calnon
+#
+# Description:
+#    Dedicated serial lane for the model-core interface-conformance suite (roadmap OUT-13;
+#    the second half of the WS-6 trigger-gate, alongside golden-regression.yml). Runs the real
+#    CascadeCorrelationNetwork through the juniper-model-core GrowableModel conformance kit via
+#    a test-only adapter.
+#
+#    Determinism contract (mirrors golden-regression.yml):
+#      - Runs SERIALLY — never under pytest-xdist.
+#      - CASCOR_NUM_PROCESSES=1 forces the sequential candidate path.
+#      - BLAS/numeric stacks pinned to a single thread (job-level env).
+#      - Python and torch pinned to the calibration environment (3.13 / 2.11.0).
+#      - Runs on the GIL interpreter; conftest aborts under Py_GIL_DISABLED.
+#
+#    Unlike the golden lane, conformance asserts the *interface* (shapes / keys / event order),
+#    not float values — so it carries no cross-build tolerance risk.
+#
+# References:
+#    - OUT-13 / JUNIPER_CASCOR_MODEL_CORE_CONFORMANCE_WIRING_PLAN_2026-06-18.md (juniper-ml)
+#    - Pairs with golden-regression.yml (OUT-12) as the two halves of the WS-6 gate.
+#####################################################################################################################################################################################################
+
+name: Conformance (WS-6 Gate)
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+      - develop
+  workflow_dispatch:
+
+concurrency:
+  group: conformance-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  # Pin to the calibration environment for parity with the golden lane and the
+  # WS-6 pre/post-refactor compare.
+  PYTHON_CONFORMANCE_VERSION: "3.13"
+  TORCH_CONFORMANCE_VERSION: "2.11.0"
+  # Single-thread the numeric stacks (set at job level, before Python loads).
+  OMP_NUM_THREADS: "1"
+  MKL_NUM_THREADS: "1"
+  OPENBLAS_NUM_THREADS: "1"
+  VECLIB_MAXIMUM_THREADS: "1"
+  NUMEXPR_NUM_THREADS: "1"
+  CASCOR_NUM_PROCESSES: "1"
+  JUNIPER_CASCOR_LOG_LEVEL: "ERROR"
+
+jobs:
+  conformance:
+    name: model-core Conformance
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        with:
+          fetch-depth: 1
+
+      - name: Set up Python ${{ env.PYTHON_CONFORMANCE_VERSION }}
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6.2.0
+        with:
+          python-version: ${{ env.PYTHON_CONFORMANCE_VERSION }}
+          cache: pip
+
+      - name: Install dependencies (pinned torch)
+        run: |
+          echo "╔════════════════════════════════════════════════════════════╗"
+          echo "║       Juniper Cascor - Conformance: Install                ║"
+          echo "╚════════════════════════════════════════════════════════════╝"
+          python -m pip install --upgrade "pip>=26.1.1"
+          # CPU-only torch, pinned; installed first so the editable install does
+          # not upgrade it. The juniper-model-core[conformance] kit comes in via
+          # the [all] -> [test] extra.
+          pip install "torch==${TORCH_CONFORMANCE_VERSION}" --index-url https://download.pytorch.org/whl/cpu
+          pip install -e ".[all]"
+
+      - name: Create required directories
+        run: mkdir -p logs src/logs reports/junit
+
+      - name: Run model-core Conformance Suite (serial, never xdist)
+        run: |
+          echo "╔════════════════════════════════════════════════════════════╗"
+          echo "║       Juniper Cascor - model-core Conformance              ║"
+          echo "╚════════════════════════════════════════════════════════════╝"
+          # Serial only. --conformance --slow --integration disable the three
+          # collection gates the conformance tests carry.
+          python -m pytest \
+            -m conformance \
+            --conformance --slow --integration \
+            src/tests/conformance \
+            --verbose \
+            --timeout=300 \
+            --junitxml=reports/junit/junit-conformance.xml
+
+      - name: Upload Conformance Test Results
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        if: always()
+        with:
+          name: conformance-results
+          path: reports/junit/
+          retention-days: 30

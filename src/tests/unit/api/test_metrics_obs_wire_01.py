@@ -64,32 +64,31 @@ class TestActiveSessionsGaugeInLifecycleManager:
     def _gauge_value(self) -> float:
         return obs._ensure_training_metrics()["sessions_active"]._value.get()
 
-    def _build_manager_with_fake_network(self, fit_outcome: str):
-        """Replica of the helper in ``test_metrics_r5_4_pre.py``."""
+    def _build_manager_with_fake_model(self, fit_outcome: str):
+        """A manager whose ``model.fit`` is a synthetic stub (WS-6 PR-B3.3: the gauge
+        inc/dec pair lives in ``_run_training`` around ``self.model.fit``, not in a
+        network monkey-patch). Replica of the helper in ``test_metrics_r5_4_pre.py``."""
         from api.lifecycle.manager import TrainingLifecycleManager
 
         mgr = TrainingLifecycleManager()
         mgr.create_network(input_size=2, output_size=2)
 
-        def _fake_fit(x, y, x_val=None, y_val=None, **kwargs):
+        def _fake_fit(x, y, *, X_val=None, y_val=None, on_event=None, **kwargs):
             if fit_outcome == "failure":
                 raise RuntimeError("synthetic training failure")
             if fit_outcome == "cancelled":
-                mgr._stop_requested.set()
+                mgr._stop_event.set()
             return None
 
-        mgr._restore_original_methods()
-        mgr._monitoring_active = False
-        mgr.network.fit = _fake_fit
-        mgr._install_monitoring_hooks()
+        mgr.model.fit = _fake_fit
         return mgr
 
     def test_success_path_increments_then_decrements(self):
         import torch
 
-        mgr = self._build_manager_with_fake_network("success")
+        mgr = self._build_manager_with_fake_model("success")
         before = self._gauge_value()
-        mgr.network.fit(torch.zeros(2, 2), torch.zeros(2, 2))
+        mgr._run_training(torch.zeros(2, 2), torch.zeros(2, 2), None, None)
         after = self._gauge_value()
         # Inc(+1) then Dec(-1) → net zero.
         assert after == pytest.approx(before)
@@ -97,9 +96,9 @@ class TestActiveSessionsGaugeInLifecycleManager:
     def test_cancelled_path_decrements(self):
         import torch
 
-        mgr = self._build_manager_with_fake_network("cancelled")
+        mgr = self._build_manager_with_fake_model("cancelled")
         before = self._gauge_value()
-        mgr.network.fit(torch.zeros(2, 2), torch.zeros(2, 2))
+        mgr._run_training(torch.zeros(2, 2), torch.zeros(2, 2), None, None)
         after = self._gauge_value()
         assert after == pytest.approx(before)
 
@@ -107,10 +106,10 @@ class TestActiveSessionsGaugeInLifecycleManager:
         """The try/finally invariant — failure must not leak the gauge."""
         import torch
 
-        mgr = self._build_manager_with_fake_network("failure")
+        mgr = self._build_manager_with_fake_model("failure")
         before = self._gauge_value()
         with pytest.raises(RuntimeError, match="synthetic training failure"):
-            mgr.network.fit(torch.zeros(2, 2), torch.zeros(2, 2))
+            mgr._run_training(torch.zeros(2, 2), torch.zeros(2, 2), None, None)
         after = self._gauge_value()
         # Most important assertion of this test: gauge balanced even on
         # the exception path.

@@ -37,8 +37,8 @@ def _make_lifecycle_manager_with_mock_network(prev_hidden: int, new_hidden_units
     """Construct a TrainingLifecycleManager wired to a mock network with a
     hidden_units list containing ``new_hidden_units``.
 
-    The function mimics the state observed inside ``monitored_grow`` after
-    ``original_grow`` has installed new hidden units.
+    The function mimics the state observed after the network has grown and
+    installed new hidden units.
     """
     from api.lifecycle.manager import TrainingLifecycleManager
 
@@ -73,12 +73,12 @@ class TestBugCC01TopologyBroadcast:
             ws_manager=ws,
         )
 
-        # Re-execute the broadcast block from monitored_grow inline.
+        # Re-execute the cascade_add topology-broadcast block inline.
         new_hidden = len(mgr.network.hidden_units)
         if new_hidden > prev_hidden:
             for i in range(prev_hidden, new_hidden):
                 actual = float(getattr(mgr.network.hidden_units[i], "best_correlation", 0.0) or 0.0)
-                mgr.training_monitor.on_cascade_add(hidden_unit_index=i, correlation=actual)
+                mgr.monitor.on_cascade_add(hidden_unit_index=i, correlation=actual)
             topology_data = {
                 "hidden_units": new_hidden,
                 "input_size": mgr.network.input_size,
@@ -131,7 +131,7 @@ class TestBugCC02CorrelationPropagation:
         unit = MagicMock()
         unit.best_correlation = 0.875
 
-        # Mirror the production loop body in manager._install_grow_network_hook.
+        # Mirror the production cascade_add correlation-propagation loop body.
         actual_correlation = float(getattr(unit, "best_correlation", 0.0) or 0.0)
         monitor.on_cascade_add(hidden_unit_index=0, correlation=actual_correlation)
 
@@ -230,27 +230,8 @@ class TestBugCC07PhaseTracking:
         monitor.on_phase_change("candidate")
         assert seen == ["candidate"]
 
-    def test_state_machine_set_phase_updates_monitor_via_wrapper(self):
-        """When the state machine is wrapped, set_phase notifies the monitor."""
-        from api.lifecycle.manager import TrainingLifecycleManager
-        from api.lifecycle.state_machine import Command, TrainingPhase
-
-        mgr = TrainingLifecycleManager()
-        # Move state machine to STARTED so set_phase is honored.
-        started = mgr.state_machine.handle_command(Command.START)
-        assert started is True
-
-        # Install only the phase tracker (no network needed).
-        mgr._install_phase_tracker(mgr.training_monitor, mgr.state_machine)
-
-        mgr.state_machine.set_phase(TrainingPhase.CANDIDATE)
-        assert mgr.training_monitor.current_phase == "candidate"
-        mgr.state_machine.set_phase(TrainingPhase.OUTPUT)
-        assert mgr.training_monitor.current_phase == "output"
-
     def test_manager_no_longer_assigns_current_phase_directly(self):
         """No manual `monitor.current_phase = "..."` assignments in manager.py."""
         manager_src = (Path(__file__).resolve().parents[2] / "api" / "lifecycle" / "manager.py").read_text()
         # Permit the on_phase_change call but forbid the dotted assignment.
         assert "monitor.current_phase =" not in manager_src
-        assert "training_monitor.current_phase =" not in manager_src

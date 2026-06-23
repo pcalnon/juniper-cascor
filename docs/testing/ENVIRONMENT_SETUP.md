@@ -29,11 +29,11 @@ pip install pytest pytest-cov pytest-timeout pytest-xdist
 conda install pytest pytest-cov pytest-timeout pytest-xdist -c conda-forge
 ```
 
-**From the project environment:**
+**From the project environment** (the live env is **versioned** — currently `JuniperCascor1`; discover yours with `conda env list | grep JuniperCascor`, and never activate a `*-DEPRECATED` env):
 
 ```bash
-conda env create -f conf/conda_environment.yaml
-conda activate JuniperCascor
+conda env create -n JuniperCascor1 -f conf/conda_environment.yaml   # -n required: the YAML has no name: field
+conda activate JuniperCascor1
 ```
 
 ### Additional Dependencies

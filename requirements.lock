@@ -8,6 +8,8 @@ anyio==4.14.0
     # via
     #   starlette
     #   watchfiles
+cachetools==7.1.4
+    # via juniper-data
 certifi==2026.6.17
     # via
     #   requests
@@ -26,7 +28,7 @@ cuda-toolkit==13.0.2
     # via torch
 cycler==0.12.1
     # via matplotlib
-fastapi==0.137.1
+fastapi==0.138.0
     # via juniper-cascor (pyproject.toml)
 filelock==3.29.4
     # via torch
@@ -48,9 +50,11 @@ jinja2==3.1.6
     # via torch
 juniper-cascor-protocol==0.1.0
     # via juniper-cascor (pyproject.toml)
-juniper-data==0.6.0
+juniper-data==0.8.0
     # via juniper-cascor (pyproject.toml)
-juniper-data-client==0.4.1
+juniper-data-client==0.4.2
+    # via juniper-cascor (pyproject.toml)
+juniper-model-core==0.2.0
     # via juniper-cascor (pyproject.toml)
 juniper-observability==0.4.0
     # via juniper-cascor (pyproject.toml)
@@ -130,7 +134,7 @@ pydantic==2.13.4
     #   pydantic-settings
 pydantic-core==2.46.4
     # via pydantic
-pydantic-settings==2.14.1
+pydantic-settings==2.14.2
     # via juniper-cascor (pyproject.toml)
 pyparsing==3.3.2
     # via matplotlib

@@ -20,8 +20,10 @@ cd juniper-cascor
 
 ### 2. Create the Conda Environment
 
+> **Conda env naming:** the live env is **versioned** (currently `JuniperCascor1`); rebuilds increment the suffix and rename the old env `*-DEPRECATED` (never activate those). Discover yours with `conda env list | grep JuniperCascor`.
+
 ```bash
-conda env create -f conf/conda_environment.yaml
+conda env create -n JuniperCascor1 -f conf/conda_environment.yaml   # -n required: the YAML has no name: field
 ```
 
 This installs all dependencies including PyTorch, NumPy, pytest, and other required packages.
@@ -29,7 +31,7 @@ This installs all dependencies including PyTorch, NumPy, pytest, and other requi
 ### 3. Activate the Environment
 
 ```bash
-conda activate JuniperCascor
+conda activate JuniperCascor1
 ```
 
 ### 4. Start JuniperData Service

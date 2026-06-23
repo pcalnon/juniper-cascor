@@ -35,7 +35,7 @@ async def create_network(request: Request, body: NetworkCreateRequest) -> dict:
 async def get_network(request: Request) -> dict:
     """Get current network info."""
     lifecycle = _get_lifecycle(request)
-    if not lifecycle.has_network():
+    if not lifecycle.has_model():
         raise HTTPException(status_code=404, detail="No network created")
     return success_response(lifecycle.get_network_info())
 
@@ -56,7 +56,7 @@ async def delete_network(request: Request) -> dict:
 async def get_topology(request: Request) -> dict:
     """Get network topology for visualization."""
     lifecycle = _get_lifecycle(request)
-    if not lifecycle.has_network():
+    if not lifecycle.has_model():
         raise HTTPException(status_code=404, detail="No network created")
     topology = lifecycle.get_topology()
     if topology is None:
@@ -68,7 +68,7 @@ async def get_topology(request: Request) -> dict:
 async def get_stats(request: Request) -> dict:
     """Get network weight statistics."""
     lifecycle = _get_lifecycle(request)
-    if not lifecycle.has_network():
+    if not lifecycle.has_model():
         raise HTTPException(status_code=404, detail="No network created")
     return success_response(lifecycle.get_statistics())
 
