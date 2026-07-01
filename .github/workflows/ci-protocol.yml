@@ -60,7 +60,12 @@ jobs:
 
       - name: Run unit tests with coverage
         run: |
-          python -m pytest --cov=juniper_cascor_protocol --cov-report=term-missing --cov-fail-under=95
+          python -m pytest --cov=juniper_cascor_protocol --cov-report=term-missing --cov-report=json:coverage.json --cov-fail-under=95
+
+      - name: Enforce per-file coverage gate (blocking)
+        run: |
+          pip install "juniper-ci-tools>=0.6.0,<0.7.0"
+          juniper-coverage-gap-map --coverage-json coverage.json --enforce
 
   build:
     name: Build distribution
