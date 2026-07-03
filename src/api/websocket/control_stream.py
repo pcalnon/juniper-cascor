@@ -31,7 +31,9 @@ import logging
 import time
 
 from fastapi import WebSocket, WebSocketDisconnect
+from pydantic import ValidationError
 
+from api.models.training import TrainingParamUpdateRequest
 from api.settings import get_settings
 from api.websocket.control_security import HandshakeCooldown, LeakyBucket, validate_control_origin
 from api.websocket.manager import ws_authenticate
@@ -207,6 +209,16 @@ async def _handle_command_message(websocket: WebSocket, lifecycle, msg: dict, bu
         logger.error("Command '%s' timed out after %ss", command, timeout)
         await websocket.send_json(create_control_ack_message(command, "error", error=f"Command timed out after {timeout}s", command_id=command_id))
         _emit_response(command, "error")
+    except ValidationError as exc:
+        # SEC-F10 (HO-5): a ``set_params`` payload that violates the shared
+        # ``TrainingParamUpdateRequest`` bounds (negative / over-ceiling) is a
+        # client error, not an execution failure — surface a clean, specific
+        # error ack (the WS analogue of the REST PATCH 422) and keep the
+        # connection open. Logged at INFO because it is expected client input.
+        handler_duration = time.perf_counter() - handler_start
+        logger.info("Command '%s' rejected — invalid params: %s", command, exc)
+        await websocket.send_json(create_control_ack_message(command, "error", error="Invalid parameters", command_id=command_id, code="invalid_params"))
+        _emit_response(command, "error")
     except Exception as e:
         handler_duration = time.perf_counter() - handler_start
         logger.error("Command '%s' failed: %s", command, e)
@@ -373,6 +385,15 @@ def _execute_command(lifecycle, command: str, params: dict = None) -> dict:
     elif command == "set_params":
         if not params:
             raise ValueError("set_params requires a 'params' dict")
-        return lifecycle.update_params(params)
+        # SEC-F10 (HO-5): validate the raw JSON ``params`` through the same
+        # Pydantic model the REST ``PATCH /v1/training/params`` route uses, so
+        # the WebSocket runtime-update path enforces identical numeric bounds.
+        # Without this, an out-of-range value (e.g. ``max_hidden_units=999999999``)
+        # reached ``update_params`` unchecked — the downstream key-whitelist +
+        # candidate-pool guard never range-checks scalar fields. A
+        # ``ValidationError`` propagates to ``_handle_command_message``, which
+        # returns a clean error ack (the WS analogue of the REST 422) without crashing.
+        validated = TrainingParamUpdateRequest(**params)
+        return lifecycle.update_params(validated.model_dump(exclude_none=True))
     else:
         raise ValueError(f"Unhandled command: {command}")

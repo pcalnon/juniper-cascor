@@ -436,3 +436,68 @@ class TestWsControlSetParams:
         assert response["type"] == "command_response"
         assert "seq" not in response
         assert "emitted_at_monotonic" not in response
+
+    # ------------------------------------------------------------------
+    # 15. SEC-F10 (HO-5): out-of-range set_params rejected, not applied
+    # ------------------------------------------------------------------
+
+    def test_set_params_over_ceiling_rejected_not_applied(self, client_with_network):
+        """SEC-F10: a set_params value above the shared TrainingParamUpdateRequest
+        ceiling is rejected with a clean error ack and is NOT setattr-applied to
+        the live network — closing the WS half of HO-5 (the PATCH route already
+        validated; the WS path bypassed pydantic validation entirely).
+        """
+        net = client_with_network.app.state.lifecycle.network
+        original = net.max_hidden_units
+
+        with client_with_network.websocket_connect("/ws/control") as ws:
+            _drain_established(ws)
+            response = _send_command(
+                ws,
+                "set_params",
+                params={"max_hidden_units": 999_999_999},  # le=10_000
+                command_id="sec-f10-ws",
+            )
+
+        assert response["type"] == "command_response"
+        assert response["data"]["command"] == "set_params"
+        assert response["data"]["status"] == "error"
+        # The dedicated SEC-F10 validation arm fired (not the generic handler).
+        assert response["data"].get("code") == "invalid_params"
+        assert response["data"].get("command_id") == "sec-f10-ws"
+        # The live network must NOT have been mutated to the rejected value.
+        assert net.max_hidden_units == original
+        assert net.max_hidden_units != 999_999_999
+
+    def test_set_params_negative_value_rejected_not_applied(self, client_with_network):
+        """SEC-F10: a scalar violating the lower bound (gt=0) is likewise
+        rejected via the shared model rather than silently applied."""
+        net = client_with_network.app.state.lifecycle.network
+        original_lr = net.learning_rate
+
+        with client_with_network.websocket_connect("/ws/control") as ws:
+            _drain_established(ws)
+            response = _send_command(
+                ws,
+                "set_params",
+                params={"learning_rate": -1.0},  # gt=0
+            )
+
+        assert response["data"]["status"] == "error"
+        assert response["data"].get("code") == "invalid_params"
+        assert net.learning_rate == pytest.approx(original_lr)
+
+    def test_set_params_in_range_still_applied(self, client_with_network):
+        """SEC-F10 regression guard: adding validation must not break the happy
+        path — an in-range set_params is still applied end-to-end."""
+        with client_with_network.websocket_connect("/ws/control") as ws:
+            _drain_established(ws)
+            response = _send_command(
+                ws,
+                "set_params",
+                params={"max_hidden_units": 500},  # within le=10_000
+            )
+
+        assert response["data"]["status"] == "success"
+        net = client_with_network.app.state.lifecycle.network
+        assert net.max_hidden_units == 500
