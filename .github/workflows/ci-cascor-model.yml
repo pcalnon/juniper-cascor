@@ -57,14 +57,24 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
-      - name: Install CPU torch + package + test extras
+      - name: Install CPU torch + package + test/full extras
         run: |
           pip install --upgrade "pip>=26.1.1"
           pip install --index-url https://download.pytorch.org/whl/cpu torch
-          pip install -e ".[test]"
+          pip install -e ".[test,full]"
 
-      - name: Run unit tests (incl. src drift-guard)
-        run: python -m pytest -v
+      - name: Run unit tests with coverage (incl. src drift-guard)
+        run: |
+          python -m pytest -v --cov=juniper_cascor_model --cov=candidate_unit --cov=utils --cov=log_config --cov=cascor_constants --cov-report=term-missing --cov-report=json:coverage.json
+
+      - name: Enforce per-file coverage gate (blocking)
+        # Per-file coverage rollout C-5 (juniper-ml
+        # notes/JUNIPER_ECOSYSTEM_PER_FILE_COVERAGE_ROLLOUT_SCOPING_2026-06-30.md):
+        # exit 1 if any source file's statement coverage < 90 OR a
+        # sub-module's pooled (statement-weighted) coverage < 95.
+        run: |
+          pip install "juniper-ci-tools>=0.6.0,<0.7.0"
+          juniper-coverage-gap-map --coverage-json coverage.json --enforce
 
   build:
     name: Build distribution
