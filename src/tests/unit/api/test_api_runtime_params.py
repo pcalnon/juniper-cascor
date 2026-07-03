@@ -1,10 +1,12 @@
 """Tests for PATCH /v1/training/params endpoint."""
 
+import annotated_types
 import pytest
 from fastapi.testclient import TestClient
 
 from api.app import create_app
 from api.lifecycle.manager import TrainingLifecycleManager
+from api.models.training import TrainingParams, TrainingParamUpdateRequest
 from api.settings import Settings
 
 pytestmark = pytest.mark.unit
@@ -360,6 +362,74 @@ class TestUpdateTrainingParams:
         assert lifecycle._auto_snap_best is True
         assert lifecycle._auto_snap_best_metric is None
 
+    # SEC-F10 (HO-5): the runtime PATCH model must enforce the SAME upper
+    # ceilings as the start-of-training TrainingParams model. Before SEC-F10,
+    # TrainingParamUpdateRequest carried only lower bounds, so an out-of-range
+    # runtime value (e.g. max_hidden_units=999999999) was accepted against a
+    # live network. These cases pin both ends of every mirrored bound.
+    @pytest.mark.parametrize(
+        "field, value",
+        [
+            ("learning_rate", 10.5),  # le=10.0
+            ("candidate_learning_rate", 25.0),  # le=10.0
+            ("candidate_pool_size", 257),  # le=256
+            ("max_hidden_units", 999_999_999),  # le=10_000 (the HO-5 live-confirmed payload)
+            ("epochs_max", 1_000_001),  # le=1_000_000
+            ("patience", 100_001),  # le=100_000
+            ("candidate_patience", 100_001),  # le=100_000
+            ("candidate_epochs", 1_000_001),  # le=1_000_000
+            ("output_epochs", 1_000_001),  # le=1_000_000
+            ("selected_candidates", 257),  # le=256
+            ("top_candidates", 257),  # le=256
+            ("random_candidates", 257),  # le=256
+        ],
+    )
+    def test_update_params_rejects_over_ceiling(self, test_client_with_network, field, value):
+        """PATCH with a value above the mirrored TrainingParams ceiling → 422."""
+        response = test_client_with_network.patch("/v1/training/params", json={field: value})
+        assert response.status_code == 422, f"{field}={value} should exceed its ceiling: {response.text}"
+
+    @pytest.mark.parametrize(
+        "field, value",
+        [
+            ("learning_rate", -0.1),  # gt=0
+            ("candidate_learning_rate", 0),  # gt=0
+            ("candidate_pool_size", 0),  # ge=1
+            ("max_hidden_units", 0),  # ge=1
+            ("epochs_max", 0),  # ge=1
+            ("patience", 0),  # ge=1
+            ("candidate_patience", -5),  # ge=1
+            ("candidate_epochs", 0),  # ge=1
+            ("output_epochs", 0),  # ge=1
+            ("selected_candidates", 0),  # ge=1
+            ("top_candidates", -1),  # ge=0
+            ("random_candidates", -1),  # ge=0
+        ],
+    )
+    def test_update_params_rejects_below_floor(self, test_client_with_network, field, value):
+        """PATCH with a value below the field floor (negative / non-positive) → 422."""
+        response = test_client_with_network.patch("/v1/training/params", json={field: value})
+        assert response.status_code == 422, f"{field}={value} should violate its floor: {response.text}"
+
+    @pytest.mark.parametrize(
+        "field, value",
+        [
+            ("learning_rate", 10.0),  # exactly le
+            ("candidate_learning_rate", 0.01),
+            ("candidate_pool_size", 256),  # exactly le
+            ("max_hidden_units", 10_000),  # exactly le
+            ("epochs_max", 1_000_000),  # exactly le
+            ("patience", 100_000),  # exactly le
+            ("candidate_patience", 50),
+            ("candidate_epochs", 500),
+            ("output_epochs", 250),
+        ],
+    )
+    def test_update_params_accepts_in_range_boundary(self, test_client_with_network, field, value):
+        """PATCH with an in-range value (including the exact ceiling) → 200."""
+        response = test_client_with_network.patch("/v1/training/params", json={field: value})
+        assert response.status_code == 200, f"{field}={value} should be in range: {response.text}"
+
 
 @pytest.mark.unit
 class TestAutoSnapBestCallback:
@@ -498,3 +568,67 @@ class TestAutoSnapBestCallback:
         mgr.monitor.on_epoch_end(epoch=10, loss=0.2, accuracy=0.8, learning_rate=0.01, validation_accuracy=0.85)
         assert mgr.save_snapshot.call_count == 1
         mgr.shutdown()
+
+
+def _numeric_bounds(field_info) -> dict:
+    """Extract the ge/gt/le/lt numeric constraints from a Pydantic v2 FieldInfo.
+
+    Pydantic v2 stores ``Field(ge=..., le=...)`` constraints as
+    ``annotated_types`` marker objects in ``FieldInfo.metadata``. This
+    normalises them into a plain comparable dict so two models' fields can
+    be checked for identical bounds.
+    """
+    bounds: dict = {}
+    for meta in field_info.metadata:
+        if isinstance(meta, annotated_types.Ge):
+            bounds["ge"] = meta.ge
+        elif isinstance(meta, annotated_types.Gt):
+            bounds["gt"] = meta.gt
+        elif isinstance(meta, annotated_types.Le):
+            bounds["le"] = meta.le
+        elif isinstance(meta, annotated_types.Lt):
+            bounds["lt"] = meta.lt
+    return bounds
+
+
+@pytest.mark.unit
+class TestParamModelBoundsParity:
+    """SEC-F10 (HO-5): the runtime PATCH model must not diverge from the
+    start-of-training model on any shared field's numeric bounds.
+
+    ``TrainingParams`` (POST /v1/training/start) always carried upper
+    ceilings; ``TrainingParamUpdateRequest`` (PATCH /v1/training/params and
+    the WS ``set_params`` command) historically carried only lower bounds,
+    letting a runtime update smuggle an out-of-range value past the start
+    ceilings. This pins the two models in lock-step so the gap cannot
+    silently reopen.
+    """
+
+    def test_shared_fields_have_identical_numeric_bounds(self):
+        start_fields = TrainingParams.model_fields
+        update_fields = TrainingParamUpdateRequest.model_fields
+        shared = set(start_fields) & set(update_fields)
+        assert shared, "expected overlapping fields between the two models"
+        mismatches = {}
+        for name in sorted(shared):
+            start_bounds = _numeric_bounds(start_fields[name])
+            update_bounds = _numeric_bounds(update_fields[name])
+            if start_bounds != update_bounds:
+                mismatches[name] = {"start": start_bounds, "update": update_bounds}
+        assert not mismatches, f"runtime/start numeric-bound divergence (SEC-F10): {mismatches}"
+
+    def test_update_model_defines_restored_ceilings(self):
+        """Anchor the specific ceilings SEC-F10 restored (regression guard)."""
+        fields = TrainingParamUpdateRequest.model_fields
+        assert _numeric_bounds(fields["max_hidden_units"]).get("le") == 10_000
+        assert _numeric_bounds(fields["learning_rate"]).get("le") == 10.0
+        assert _numeric_bounds(fields["candidate_learning_rate"]).get("le") == 10.0
+        assert _numeric_bounds(fields["candidate_pool_size"]).get("le") == 256
+        assert _numeric_bounds(fields["epochs_max"]).get("le") == 1_000_000
+        assert _numeric_bounds(fields["patience"]).get("le") == 100_000
+        assert _numeric_bounds(fields["candidate_patience"]).get("le") == 100_000
+        assert _numeric_bounds(fields["candidate_epochs"]).get("le") == 1_000_000
+        assert _numeric_bounds(fields["output_epochs"]).get("le") == 1_000_000
+        assert _numeric_bounds(fields["selected_candidates"]).get("le") == 256
+        assert _numeric_bounds(fields["top_candidates"]).get("le") == 256
+        assert _numeric_bounds(fields["random_candidates"]).get("le") == 256

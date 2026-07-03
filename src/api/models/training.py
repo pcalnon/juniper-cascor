@@ -198,22 +198,32 @@ class ExperimentalFunctionsToggleRequest(BaseModel):
 
 
 class TrainingParamUpdateRequest(BaseModel):
-    """Runtime-modifiable training parameters (PATCH semantics — all fields optional)."""
+    """Runtime-modifiable training parameters (PATCH semantics — all fields optional).
 
-    learning_rate: Optional[float] = Field(None, gt=0, description="Output layer learning rate")
-    candidate_learning_rate: Optional[float] = Field(None, gt=0, description="Candidate training learning rate")
+    SEC-F10 (HO-5): every field mirrors the *same* lower- and upper-bound
+    constraints as the corresponding :class:`TrainingParams` (start-of-training)
+    field, so a runtime ``PATCH /v1/training/params`` — and the ``set_params``
+    WebSocket command that routes through this model — cannot smuggle an
+    out-of-range value (e.g. ``max_hidden_units=999999999``) past the start-path
+    ceilings. Pydantic rejects any violation with 422 at the request boundary.
+    The parity is guarded by ``TestParamModelBoundsParity`` in
+    ``tests/unit/api/test_api_runtime_params.py``.
+    """
+
+    learning_rate: Optional[float] = Field(None, gt=0, le=10.0, description="Output layer learning rate")
+    candidate_learning_rate: Optional[float] = Field(None, gt=0, le=10.0, description="Candidate training learning rate")
     correlation_threshold: Optional[float] = Field(None, gt=0, le=1.0, description="Minimum correlation to accept candidate")
-    candidate_pool_size: Optional[int] = Field(None, ge=1, description="Number of candidate units per round")
-    max_hidden_units: Optional[int] = Field(None, ge=1, description="Maximum hidden units (takes effect on next cascade)")
-    epochs_max: Optional[int] = Field(None, ge=1, description="Global maximum training epochs")
+    candidate_pool_size: Optional[int] = Field(None, ge=1, le=256, description="Number of candidate units per round")
+    max_hidden_units: Optional[int] = Field(None, ge=1, le=10_000, description="Maximum hidden units (takes effect on next cascade)")
+    epochs_max: Optional[int] = Field(None, ge=1, le=1_000_000, description="Global maximum training epochs")
     max_iterations: Optional[int] = Field(None, ge=1, description="Maximum cascade growth iterations")
-    patience: Optional[int] = Field(None, ge=1, description="Early stopping patience epochs")
+    patience: Optional[int] = Field(None, ge=1, le=100_000, description="Early stopping patience epochs")
     convergence_threshold: Optional[float] = Field(None, gt=0, description="Minimum loss improvement to reset patience counter")
     candidate_convergence_threshold: Optional[float] = Field(None, gt=0, description="Minimum loss improvement for candidate training patience")
-    candidate_patience: Optional[int] = Field(None, ge=1, description="Candidate training early stopping patience epochs")
-    candidate_epochs: Optional[int] = Field(None, ge=1, description="Number of epochs for candidate training")
+    candidate_patience: Optional[int] = Field(None, ge=1, le=100_000, description="Candidate training early stopping patience epochs")
+    candidate_epochs: Optional[int] = Field(None, ge=1, le=1_000_000, description="Number of epochs for candidate training")
     # CAS-002 (Phase 6E Sprint A-1): runtime-patchable counterpart to TrainingParams.output_epochs.
-    output_epochs: Optional[int] = Field(None, ge=1, description="Per-output-training-phase epoch budget (separate from epochs_max)")
+    output_epochs: Optional[int] = Field(None, ge=1, le=1_000_000, description="Per-output-training-phase epoch budget (separate from epochs_max)")
     init_output_weights: Optional[Literal["zero", "random"]] = Field(None, description="Initialization mode for new hidden unit output weights")
     # CAN-010 / ENH-006 (A-2): runtime-patchable counterpart.
     optimizer_type: Optional[
@@ -263,6 +273,6 @@ class TrainingParamUpdateRequest(BaseModel):
     # cascade_correlation.py selection-logic wiring lands in PR-4b.
     multi_candidate: Optional[bool] = Field(None, description="If True, promote multiple candidates per growth iteration (PR-4b will wire this into selection)")
     candidate_selection: Optional[Literal["top", "random", "mixed"]] = Field(None, description="Strategy for choosing which trained candidates to promote: top correlation, random, or a mix")
-    selected_candidates: Optional[int] = Field(None, ge=1, description="Total candidates promoted per growth iteration (S in the C2.1 invariant triple); must be in [1, candidate_pool_size]")
-    top_candidates: Optional[int] = Field(None, ge=0, description="Top-correlation slice of the promoted set (T in the C2.1 invariant triple)")
-    random_candidates: Optional[int] = Field(None, ge=0, description="Random slice of the promoted set (R in the C2.1 invariant triple)")
+    selected_candidates: Optional[int] = Field(None, ge=1, le=256, description="Total candidates promoted per growth iteration (S in the C2.1 invariant triple); must be in [1, candidate_pool_size]")
+    top_candidates: Optional[int] = Field(None, ge=0, le=256, description="Top-correlation slice of the promoted set (T in the C2.1 invariant triple)")
+    random_candidates: Optional[int] = Field(None, ge=0, le=256, description="Random slice of the promoted set (R in the C2.1 invariant triple)")
