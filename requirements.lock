@@ -4,7 +4,7 @@ annotated-doc==0.0.4
     # via fastapi
 annotated-types==0.7.0
     # via pydantic
-anyio==4.14.0
+anyio==4.14.1
     # via
     #   starlette
     #   watchfiles
@@ -16,21 +16,21 @@ certifi==2026.6.17
     #   sentry-sdk
 charset-normalizer==3.4.7
     # via requests
-click==8.4.1
+click==8.4.2
     # via uvicorn
 contourpy==1.3.3
     # via matplotlib
 cuda-bindings==13.3.1
     # via torch
-cuda-pathfinder==1.5.5
+cuda-pathfinder==1.5.6
     # via cuda-bindings
 cuda-toolkit==13.0.2
     # via torch
 cycler==0.12.1
     # via matplotlib
-fastapi==0.138.0
+fastapi==0.139.0
     # via juniper-cascor (pyproject.toml)
-filelock==3.29.4
+filelock==3.29.5
     # via torch
 fonttools==4.63.0
     # via matplotlib
@@ -50,11 +50,11 @@ jinja2==3.1.6
     # via torch
 juniper-cascor-protocol==0.1.0
     # via juniper-cascor (pyproject.toml)
-juniper-data==0.8.0
+juniper-data==0.9.0
     # via juniper-cascor (pyproject.toml)
 juniper-data-client==0.4.2
     # via juniper-cascor (pyproject.toml)
-juniper-model-core==0.2.0
+juniper-model-core==0.3.0
     # via juniper-cascor (pyproject.toml)
 juniper-observability==0.4.0
     # via juniper-cascor (pyproject.toml)
@@ -68,7 +68,7 @@ mpmath==1.3.0
     # via sympy
 networkx==3.6.1
     # via torch
-numpy==2.4.6
+numpy==2.5.0
     # via
     #   juniper-cascor (pyproject.toml)
     #   contourpy
@@ -120,7 +120,7 @@ nvidia-nvtx==13.0.85
     # via cuda-toolkit
 packaging==26.2
     # via matplotlib
-pillow==12.2.0
+pillow==12.3.0
     # via matplotlib
 prometheus-client==0.25.0
     # via juniper-cascor (pyproject.toml)
@@ -152,7 +152,7 @@ pyyaml==6.0.3
     #   uvicorn
 requests==2.34.2
     # via juniper-data-client
-sentry-sdk==2.63.0
+sentry-sdk==2.64.0
     # via juniper-cascor (pyproject.toml)
 setuptools==81.0.0
     # via torch
@@ -167,7 +167,7 @@ sympy==1.14.0
     # via torch
 triton==3.7.1
     # via torch
-typing-extensions==4.15.0
+typing-extensions==4.16.0
     # via
     #   fastapi
     #   pydantic
