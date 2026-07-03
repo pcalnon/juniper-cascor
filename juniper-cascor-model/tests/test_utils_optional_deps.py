@@ -55,7 +55,7 @@ class TestCheckObjectPickleabilityDillGuard:
     """check_object_pickleability must raise a clear ImportError when dill is unavailable."""
 
     def test_missing_dill_raises_actionable_import_error(self):
-        from utils.utils import check_object_pickleability
+        import utils.utils as utils_module
 
         class _Holder:
             def __init__(self):
@@ -64,7 +64,7 @@ class TestCheckObjectPickleabilityDillGuard:
         # Masking ``dill`` in sys.modules makes the in-function ``import dill`` fail.
         with patch.dict(sys.modules, {"dill": None}):
             with pytest.raises(ImportError, match="requires the 'dill' package"):
-                check_object_pickleability(_Holder())
+                utils_module.check_object_pickleability(_Holder())
 
 
 class TestSoftmaxScalarGuard:
