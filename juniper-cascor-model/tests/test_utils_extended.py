@@ -212,8 +212,9 @@ class TestDisplayObjectAttributesVariousObjects:
         try:
             result = display_object_attributes("")
             assert result is None or result is False
-        except (ModuleNotFoundError, ValueError):
-            pass
+        except (ModuleNotFoundError, ValueError) as exc:
+            with pytest.raises(type(exc)):
+                display_object_attributes("")
 
     def test_display_object_attributes_with_nonexistent_module(self):
         """Test with non-existent module name."""
