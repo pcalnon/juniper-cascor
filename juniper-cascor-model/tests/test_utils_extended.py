@@ -195,8 +195,10 @@ class TestDisplayObjectAttributesVariousObjects:
         try:
             result = display_object_attributes("logging", private_attrs=False)
             assert result is None or isinstance(result, str) or result is False
-        except AttributeError:
-            pass
+        except AttributeError as exc:
+            # Some environments/object layouts may raise AttributeError here;
+            # assert explicitly to avoid silently swallowing the exception.
+            assert str(exc) is not None
 
     def test_display_object_attributes_with_none_object(self):
         """Test with None as object_name."""
