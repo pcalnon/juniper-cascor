@@ -234,7 +234,8 @@ class TestDisplayObjectAttributesVariousObjects:
             result = display_object_attributes("os", private_attrs=True)
             assert result is None or isinstance(result, str) or result is False
         except AttributeError:
-            pass
+            with pytest.raises(AttributeError):
+                display_object_attributes("os", private_attrs=True)
 
     def test_display_object_attributes_private_attrs_false(self):
         """Test with private_attrs=False."""
