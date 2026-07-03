@@ -245,7 +245,8 @@ class TestDisplayObjectAttributesVariousObjects:
             result = display_object_attributes("os", private_attrs=False)
             assert result is None or isinstance(result, str) or result is False
         except AttributeError:
-            pass
+            with pytest.raises(AttributeError):
+                display_object_attributes("os", private_attrs=False)
 
 
 class TestObjectAttributesToTableColumnarPath:
