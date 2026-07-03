@@ -223,7 +223,8 @@ class TestDisplayObjectAttributesVariousObjects:
             result = display_object_attributes("nonexistent_module_xyz_123")
             assert result is None
         except ModuleNotFoundError:
-            pass
+            with pytest.raises(ModuleNotFoundError):
+                display_object_attributes("nonexistent_module_xyz_123")
 
     def test_display_object_attributes_private_attrs_true(self):
         """Test with private_attrs=True."""
