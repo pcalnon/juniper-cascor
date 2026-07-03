@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **First CI coverage gate (per-file coverage rollout C-5).** `ci-cascor-model.yml` now
+  measures statement coverage across all five shipped packages (`juniper_cascor_model`,
+  `candidate_unit`, `utils`, `log_config`, `cascor_constants`) and runs the blocking
+  `juniper-coverage-gap-map --enforce` step — failing the build when any source file is
+  below 90% statement coverage or any sub-module's pooled (statement-weighted) coverage is
+  below 95%. Previously the package ran a bare `pytest -v` with no coverage gate (the
+  ecosystem's last no-gate outlier). See juniper-ml
+  `notes/JUNIPER_ECOSYSTEM_PER_FILE_COVERAGE_ROLLOUT_SCOPING_2026-06-30.md`.
+
+### Tests
+
+- **Lifted the package to the ratified coverage bars** (overall 72% → 99%). Added
+  real-instantiation coverage for the `Logger`/`LogConfig` bootstrap paths (custom-level
+  registration, YAML `dictConfig` success + best-effort fallback, the already-configured
+  short-circuit), TRACE-level candidate-training tests that exercise the level-gated
+  diagnostic branches, `dill`/`columnar` optional-dependency import guards, and ported the
+  drift-identical `candidate_unit` / `logger` / `utils` coverage suites from
+  `juniper-cascor/src`. The CI test job now installs the `[full]` extra so the `utils`
+  debug-helper paths are measured. No source files changed; existing tests untouched.
+
 ### Security
 
 - **Raised the `torch` floor to `>=2.10.0`** (was `>=2.0`) — the minimal pin that clears
