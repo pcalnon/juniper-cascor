@@ -59,7 +59,7 @@ The workflow does not currently have `workflow_dispatch` enabled. To trigger man
 | 🟡 Yellow dot | Workflow in progress |
 | ⚪ Gray circle | Job skipped or cancelled |
 
-**Note**: Lint jobs use `continue-on-error: true`, so lint failures appear as warnings but don't fail the pipeline. Test failures will fail the quality gate.
+**Note**: Pre-commit, unit-test, integration-test, and security jobs are enforced by their dedicated workflow steps. Treat any failed required status check as blocking until the underlying job is fixed.
 
 ### Viewing Artifacts
 
@@ -101,20 +101,22 @@ python -m mypy cascade_correlation/ candidate_unit/ --ignore-missing-imports
 ### Tests
 
 ```bash
-cd src/tests
+# Run from the repository root
 
 # Run unit tests (same as CI - excludes slow tests)
-python -m pytest unit/ -v -m "unit and not slow" --timeout=60
+python -m pytest src/tests/unit -v -m "unit and not slow" --timeout=60
 
 # Run with coverage
-python -m pytest unit/ -v \
+python -m pytest \
     -m "unit and not slow" \
-    --cov=../cascade_correlation \
-    --cov=../candidate_unit \
+    src/tests/unit \
+    --verbose \
+    --timeout=60 \
+    --cov=src \
     --cov-report=term-missing
 
 # Run integration tests (PR behavior)
-python -m pytest integration/ -v -m "integration and not slow" --timeout=120
+python -m pytest src/tests/integration -v -m "integration and not slow" --timeout=120
 ```
 
 ### Full Local CI Simulation
@@ -197,12 +199,11 @@ If a test times out:
 
 ### Coverage Below Threshold
 
-The pipeline warns (soft fail) if coverage drops below 50%:
+The unit-tests job fails if aggregate coverage drops below the configured 80% gate:
 
 ```bash
-# Check coverage locally
-cd src/tests
-python -m coverage report --fail-under=50
+# Check coverage locally from the repository root
+bash util/run_coverage.bash
 ```
 
 ## Environment Details
@@ -212,5 +213,5 @@ python -m coverage report --fail-under=50
 | Python Version | 3.14 |
 | Package Manager | mamba (via conda-incubator/setup-miniconda@v3) |
 | Environment File | `conf/conda_environment.yaml` |
-| Coverage Threshold | 50% (soft fail) |
+| Coverage Threshold | 80% aggregate (hard fail) |
 | Test Timeout | 60s (unit), 120s (integration) |

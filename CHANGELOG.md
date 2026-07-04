@@ -94,7 +94,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   | `src/api/websocket/control_stream.py` | 161/193 = 83.42% | 193/193 = **100.00%** |
   | `src/api/websocket/manager.py` | 275/308 = 89.29% | 308/308 = **100.00%** |
 
-  The `src/api/websocket` sub-module clears the ratified ≥95% pooled bar: **88.17% → 99.37%** (842/955 → 949/955, statement-weighted). Overall cascor coverage 90.20% → 91.03%. New fast unit tests (40 across `test_training_stream_coverage.py` [new], `test_control_stream_coverage.py`, and `test_websocket_manager.py`) drive the resume-handshake + replay arms (`training_stream._await_resume_frame` / `_handle_resume`), the control-path handshake gates / leaky-bucket rate-limit / invalid-params / heartbeat / idle-timeout branches (`control_stream`), and the manager's per-endpoint bookkeeping, per-IP accounting, pending-connection rejection, and defensive metric-emission guards (`manager`) — all via `AsyncMock` seams (no live sockets). Measured on the CI `unit and not slow` subset (the gate basis) with `juniper-coverage-gap-map` (`juniper-ci-tools 0.6.0`, advisory). The blocking `--enforce` gate lands in the final PR of the split once every sub-module clears.
+  The `src/api/websocket` sub-module clears the ratified ≥95% pooled bar: **88.17% → 99.37%** (842/955 → 949/955, statement-weighted).
+  
+  - Overall cascor coverage 90.20% → 91.03%.
+  - New fast unit tests (40 across `test_training_stream_coverage.py` [new], `test_control_stream_coverage.py`, and `test_websocket_manager.py`) drive the resume-handshake + replay arms (`training_stream._await_resume_frame` / `_handle_resume`), the control-path handshake gates / leaky-bucket rate-limit / invalid-params / heartbeat / idle-timeout branches (`control_stream`), and the manager's per-endpoint bookkeeping, per-IP accounting, pending-connection rejection, and defensive metric-emission guards (`manager`) — all via `AsyncMock` seams (no live sockets).
+  - Measured on the CI `unit and not slow` subset (the gate basis) with `juniper-coverage-gap-map` (`juniper-ci-tools 0.6.0`, advisory).
+  - The blocking `--enforce` gate lands in the final PR of the split once every sub-module clears.
+
+- **Per-file coverage rollout (Phase C-5) — worst-first lift, part 1 of a
+  multi-PR sequence.** Lifts the two lowest-coverage source files to full
+  statement coverage, clearing the two sub-modules they dominate. No source
+  files changed; no gate flipped yet (the `juniper-coverage-gap-map --enforce`
+  CI step lands in the final gate PR once every sub-module clears). Measured on
+  the CI `unit and not slow` subset (`--cov=src`), the gate basis.
+  - `parallelism/rc4_ring_buffer.py`: **30.16% → 100%** statement — the
+    RC-4 instrumentation ring buffer is disabled-by-default (its `ENABLED`
+    flag reads `CASCOR_RC4_RING_BUFFER` at import), so a normal run
+    short-circuits every body; the new `src/tests/unit/test_rc4_ring_buffer_coverage.py`
+    drives the enabled paths by monkeypatching the module flag (never the
+    environment, so the conftest RC-4 fixtures stay inert) with per-test
+    global isolation. This clears the ecosystem's **worst** cascor
+    sub-module, `parallelism` (**69.01% → 100%** pooled).
+  - `api/routes/network.py`: **51.38% → 100%** statement — the three CAN-015h
+    handlers (`patch_weights` / `add_hidden_unit` / `delete_hidden_unit`) were
+    uncovered status→HTTP-code dispatch; `src/tests/unit/api/test_network_route_coverage.py`
+    gains a case per branch (including the defensive unmapped-sentinel 500),
+    each driven by mocking the lifecycle method to return a crafted status
+    dict (sentinels resolved off the real lifecycle instance to stay
+    drift-proof). This clears the `api/routes` sub-module
+    (**86.90% → 95.69%** pooled).
+  - Overall cascor statement coverage **90.20% → 91.12%**; files below the
+    90% floor 8 → 6, sub-modules below the 95% pooled bar 9 → 7. See juniper-ml
+    [`notes/JUNIPER_ECOSYSTEM_PER_FILE_COVERAGE_ROLLOUT_SCOPING_2026-06-30.md`](https://github.com/pcalnon/juniper-ml/blob/main/notes/JUNIPER_ECOSYSTEM_PER_FILE_COVERAGE_ROLLOUT_SCOPING_2026-06-30.md).
 
 ## [0.5.0] - 2026-05-22
 
