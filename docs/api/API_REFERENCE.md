@@ -816,6 +816,19 @@ log_if_enabled(logger, "debug", f"Expensive: {expensive_computation()}")
 **Location**: `src/api/`
 **Stability**: Stable (service interface), semi-stable (field additions possible)
 
+### Service Startup Guardrails
+
+The server binds to `JUNIPER_CASCOR_HOST` / `JUNIPER_CASCOR_PORT` (`127.0.0.1:8200` by default). During FastAPI lifespan startup, `enforce_fronting_auth_bind_guard()` refuses to start when the host is non-loopback (for example `0.0.0.0`, `::`, or a non-local hostname) unless `JUNIPER_CASCOR_FRONTING_AUTH_ATTESTED=true`.
+
+Use loopback for local development:
+
+```bash
+cd src
+JUNIPER_CASCOR_HOST=127.0.0.1 JUNIPER_CASCOR_PORT=8200 python server.py
+```
+
+Set `JUNIPER_CASCOR_FRONTING_AUTH_ATTESTED=true` only when an authenticating reverse proxy or loopback host-publish fronts the exposed port. Without that attestation, startup raises `NonLoopbackBindError` before background training or WebSocket services begin accepting traffic.
+
 All REST responses use the standard response envelope:
 
 ```python
@@ -932,6 +945,18 @@ Message envelope:
 ```
 
 `/ws/training` is read-only for clients; updates are broadcast from the lifecycle manager/monitor.
+
+### WebSocket Admission Caps
+
+WebSocket connection caps are admission controls for availability and fairness; they are not authentication. Over-cap handshakes close with code `1013`.
+
+| Setting | Default | Applies to | Notes |
+|---------|---------|------------|-------|
+| `JUNIPER_CASCOR_WS_MAX_CONNECTIONS_GLOBAL` | `200` | `/ws/training`, `/ws/control`, `/ws/v1/workers` combined | Stack-absolute cap that survives Docker NAT and should exceed expected clients plus worker fleet size. |
+| `JUNIPER_CASCOR_WS_MAX_CONNECTIONS_PER_IDENTITY` | `5` | `/ws/control` | Keyed on a non-reversible per-process HMAC of the presented `X-API-Key`; anonymous callers rely on global and per-IP caps. |
+| `JUNIPER_CASCOR_WS_MAX_CONNECTIONS_PER_IP` | `5` | Manager-routed sockets, including `/ws/training` | DoS dampening only. Behind Docker NAT all clients can share the bridge-gateway IP, so this can become one shared bucket. |
+
+`/ws/v1/workers` is global-cap-only for this layer: worker fleets may share a machine token, and the server-assigned `worker_id` is not available until after the admission point. Worker capacity is still bounded by the global cap and by worker-registry limits.
 
 ### Lifecycle Failure Handling Path
 

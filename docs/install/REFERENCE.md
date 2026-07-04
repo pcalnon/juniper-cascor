@@ -53,6 +53,39 @@ CASCOR_LOG_LEVEL=WARNING python main.py
 - Invalid values are ignored and the default `INFO` level is used
 - The test suite sets `CASCOR_LOG_LEVEL=WARNING` by default to reduce output noise
 
+### API Server Bind and WebSocket Guardrails
+
+The FastAPI service reads these settings through `api.settings.Settings` with the `JUNIPER_CASCOR_` prefix. They apply to `src/server.py` and to `uvicorn api.app:create_app --factory ...` deployments.
+
+| Variable | Type | Default | Purpose |
+|----------|------|---------|---------|
+| `JUNIPER_CASCOR_HOST` | String | `127.0.0.1` | Interface the API server binds. Loopback hosts (`127.0.0.0/8`, `::1`, `localhost`) always start. |
+| `JUNIPER_CASCOR_PORT` | Integer | `8200` | API server listen port. |
+| `JUNIPER_CASCOR_FRONTING_AUTH_ATTESTED` | Boolean | `false` | Required when `JUNIPER_CASCOR_HOST` is non-loopback, such as `0.0.0.0`. Setting it to `true` is an operator attestation that a reverse proxy or loopback host-publish fronts the port. |
+| `JUNIPER_CASCOR_API_KEYS` | CSV / JSON list | unset | API keys accepted in `X-API-Key`. When unset, API-key auth is disabled for development. |
+| `JUNIPER_CASCOR_WS_MAX_CONNECTIONS_GLOBAL` | Integer | `200` | Stack-absolute WebSocket admission cap across `/ws/training`, `/ws/control`, and `/ws/v1/workers`. |
+| `JUNIPER_CASCOR_WS_MAX_CONNECTIONS_PER_IDENTITY` | Integer | `5` | Per API-key identity admission cap for `/ws/control`. |
+| `JUNIPER_CASCOR_WS_MAX_CONNECTIONS_PER_IP` | Integer | `5` | Per-source-IP cap for manager-routed sockets; useful as DoS dampening, but not an identity control behind Docker NAT. |
+| `JUNIPER_CASCOR_WS_HEARTBEAT_INTERVAL_SEC` | Integer | `30` | Server heartbeat interval for WebSocket channels. |
+
+**Startup bind guard:** `create_app()` enforces the bind guard during lifespan startup before background training starts. A non-loopback bind without `JUNIPER_CASCOR_FRONTING_AUTH_ATTESTED=true` raises `NonLoopbackBindError` and logs a CRITICAL refusal. Prefer loopback for local development:
+
+```bash
+cd src
+JUNIPER_CASCOR_HOST=127.0.0.1 JUNIPER_CASCOR_PORT=8200 python server.py
+```
+
+Use a non-loopback bind only when the port is fronted:
+
+```bash
+cd src
+JUNIPER_CASCOR_HOST=0.0.0.0 \
+JUNIPER_CASCOR_FRONTING_AUTH_ATTESTED=true \
+python server.py
+```
+
+**WebSocket cap behavior:** over-cap WebSocket handshakes are closed with code `1013`. The global cap is the backstop that still works when Docker NAT collapses many callers to one bridge-gateway IP. The per-identity cap applies to `/ws/control`; worker sockets are global-cap-only because a worker fleet can share one machine token and the worker id is assigned after admission.
+
 ## CLI Arguments
 
 ### Main Application (`src/main.py`)
