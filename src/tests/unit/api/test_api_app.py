@@ -43,6 +43,24 @@ class TestAppFactory:
         middleware_classes = [m.cls.__name__ for m in app.user_middleware]
         assert "CORSMiddleware" in middleware_classes
 
+    def test_lifespan_wires_ws_connection_cap_settings(self):
+        """WebSocket cap env/settings values must reach the live manager."""
+        settings = Settings(
+            auto_start=False,
+            ws_max_connections=17,
+            ws_max_connections_global=23,
+            ws_max_connections_per_identity=3,
+            ws_max_connections_per_ip=4,
+        )
+        app = create_app(settings)
+
+        with TestClient(app):
+            manager = app.state.ws_manager
+            assert manager._max_connections == 17
+            assert manager._max_connections_global == 23
+            assert manager._max_connections_per_identity == 3
+            assert manager._max_connections_per_ip == 4
+
     def test_value_error_handler(self):
         """Test that ValueError returns 400."""
         app = create_app(Settings(auto_start=False))
