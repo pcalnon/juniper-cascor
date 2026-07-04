@@ -83,7 +83,13 @@ Optional. Controlled by the application settings:
 - REST: `X-API-Key` header validated by `APIKeyAuth` middleware (`src/api/security.py`). When `settings.api_keys` is empty, auth is disabled (dev mode).
 - WebSocket: same `X-API-Key` header, validated in `ws_authenticate()` (`src/api/websocket/manager.py`). On failure the socket is closed with code `4001`.
 
-Rate limiting is also optional; per-IP REST limiter defaults to 100 req/min, and the worker WebSocket has its own per-IP connection rate limiter.
+Rate limiting is also optional; per-IP REST limiter defaults to 100 req/min, and the worker WebSocket has its own per-IP connection rate limiter. WebSocket admission also has a stack-global cap across all WS endpoints (`JUNIPER_CASCOR_WS_MAX_CONNECTIONS_GLOBAL`, default 200). `/ws/control` adds a per-identity cap (`JUNIPER_CASCOR_WS_MAX_CONNECTIONS_PER_IDENTITY`, default 5) keyed on a non-reversible digest of the presented `X-API-Key`.
+
+### Startup bind guard
+
+The service fails closed at startup when `JUNIPER_CASCOR_HOST` is a non-loopback bind target (for example `0.0.0.0`) unless `JUNIPER_CASCOR_FRONTING_AUTH_ATTESTED=true`. Loopback binds (`127.0.0.0/8`, `::1`, `localhost`, IPv4-mapped IPv6 loopback) always start. The guard runs from the FastAPI lifespan before the server begins accepting connections and raises `NonLoopbackBindError` on unsafe non-loopback startup.
+
+Use the attestation only when a loopback host-publish or an authenticating reverse proxy fronts the port. Container runs normally bind `0.0.0.0` inside the container and publish the host port on loopback.
 
 ### Response envelope
 
@@ -137,6 +143,7 @@ The global handlers in `src/api/app.py:480-494` produce:
 |------|-------------------------------------------------------------|
 | 1000 | Normal closure                                              |
 | 1006 | Abnormal closure — heartbeat timeout, message size exceeded |
+| 1013 | WebSocket admission cap exceeded                            |
 | 4001 | Authentication required / `X-API-Key` invalid               |
 | 4003 | Origin header not permitted (control + worker streams)      |
 | 4004 | Worker subsystem not initialized                            |
@@ -1194,6 +1201,8 @@ curl -s http://localhost:8201/v1/workers/worker-abc123
 All three sockets share these properties:
 
 - `X-API-Key` authenticated via `ws_authenticate()` (`src/api/websocket/manager.py`); failures close with `4001`.
+- Admission caps: every WebSocket reserves from the stack-global cap (default 200); `/ws/control` also reserves from the per-identity cap (default 5, keyed on the API-key digest). Over-cap attempts close with `1013`.
+- The legacy per-peer-IP cap remains DoS-dampening only. Behind Docker NAT, every client may present as the bridge gateway and therefore share one IP bucket; use the global and per-identity caps for limits that survive NAT.
 - Application-layer heartbeat: server sends `{"type":"ping","ts":<float>}` every 30s; client must reply `{"type":"pong"}` within 10s or the connection is closed.
 - All payloads are JSON unless explicitly noted as binary.
 
@@ -1204,7 +1213,7 @@ All three sockets share these properties:
 **Detailed description** — Optionally accepts a `resume` handshake within a configurable timeout to replay buffered events from a sequence number.
 On a fresh connect, the server sends `connection_established` followed by `initial_status`, `state`, and `initial_metrics` (configurable burst size, default 100).
 During training it broadcasts `epoch_end`, `state`, and `topology_update` events.
-Replay buffer default 10,000 messages, with per-IP and global connection limits (defaults: 100 total, 10 per IP), max message size 16 MB, chunk payload size 1 MB, send timeout 10 s, state coalescing 50 ms.
+Replay buffer default 10,000 messages, with manager, stack-global, and per-IP admission limits (defaults: 50 manager-active sockets, 200 stack-global sockets across all WS endpoints, 5 per peer IP), max message size 16 MB, chunk payload size 1 MB, send timeout 10 s, state coalescing 50 ms.
 Handler at `src/api/websocket/training_stream.py`.
 
 **Connect** — `ws://localhost:8201/ws/training` (mounted in `src/api/app.py:471`).
@@ -1241,6 +1250,7 @@ websocat -H "X-API-Key: $API_KEY" ws://localhost:8201/ws/training
 
 | Code | Trigger                                   |
 |------|-------------------------------------------|
+| 1013 | Manager, stack-global, or per-IP cap hit  |
 | 4001 | Auth failure                              |
 | 1006 | Heartbeat pong timeout, message too large |
 | 1000 | Normal close                              |
@@ -1251,7 +1261,7 @@ websocat -H "X-API-Key: $API_KEY" ws://localhost:8201/ws/training
 
 **Summary** — Authenticated command channel for training lifecycle control.
 
-**Detailed description** — Origin header is rejected with `4003` if present (Phase B-pre-b: machine-to-machine only). Per-connection leaky-bucket rate limit (default 10 cmd/s). Bidirectional 120 s idle timeout. Per-origin handshake cooldown. Phase D execution timeouts: `start` 10 s; `stop`/`pause`/`resume`/`reset` 2 s; `set_params` 1 s. Phase D §S10.7 lazily registers Prometheus counter `cascor_ws_control_command_received_total{command}` via `register_or_reuse`. Handler at `src/api/websocket/control_stream.py`.
+**Detailed description** — Origin header is rejected with `4003` if present (Phase B-pre-b: machine-to-machine only). Before accepting, the handler reserves a stack-global WebSocket slot and a per-identity slot keyed on the `X-API-Key` digest; over-cap attempts close with `1013`. Per-connection leaky-bucket rate limit (default 10 cmd/s). Bidirectional 120 s idle timeout. Per-origin handshake cooldown. Phase D execution timeouts: `start` 10 s; `stop`/`pause`/`resume`/`reset` 2 s; `set_params` 1 s. Phase D §S10.7 lazily registers Prometheus counter `cascor_ws_control_command_received_total{command}` via `register_or_reuse`. Handler at `src/api/websocket/control_stream.py`.
 
 **Connect** — `ws://localhost:8201/ws/control` (mounted in `src/api/app.py:472`).
 
@@ -1296,6 +1306,7 @@ websocat -H "X-API-Key: $API_KEY" ws://localhost:8201/ws/control \
 
 | Code | Trigger                          |
 |------|----------------------------------|
+| 1013 | Stack-global or per-identity cap hit |
 | 4001 | Auth failure                     |
 | 4003 | Origin header present (B2B-only) |
 | 1008 | Rate limit exceeded              |
@@ -1309,7 +1320,7 @@ Per-command failures arrive in-band as `{"status":"error", "error": "..."}` rath
 
 **Summary** — Worker registration and task dispatch socket (juniper-cascor-worker).
 
-**Detailed description** — Origin header is rejected with `4003` if present (Section 12.3 — machine-to-machine only). Optional Phase 4 protections: per-source-IP connection rate limiter (default 10 conn/min, burst 2), anomaly detector (perfect-correlation and training-time deviation guards), audit logging, and worker performance metrics. Handler at `src/api/websocket/worker_stream.py`.
+**Detailed description** — Origin header is rejected with `4003` if present (Section 12.3 — machine-to-machine only). Before accepting, the handler reserves from the stack-global WebSocket cap; worker sockets intentionally do not use the per-identity cap because a worker fleet can share one token and `worker_id` is only known after registration. Optional Phase 4 protections: per-source-IP connection rate limiter (default 10 conn/min, burst 2), anomaly detector (perfect-correlation and training-time deviation guards), audit logging, and worker performance metrics. Handler at `src/api/websocket/worker_stream.py`.
 
 **Connect** — `ws://localhost:8201/ws/v1/workers` (mounted in `src/api/app.py:473`).
 
@@ -1341,6 +1352,7 @@ Per-command failures arrive in-band as `{"status":"error", "error": "..."}` rath
 
 | Code | Trigger                              |
 |------|--------------------------------------|
+| 1013 | Stack-global WebSocket cap hit       |
 | 4001 | Auth failure                         |
 | 4003 | Origin header present                |
 | 4004 | Worker subsystem not initialized     |

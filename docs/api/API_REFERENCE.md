@@ -829,6 +829,14 @@ All REST responses use the standard response envelope:
 }
 ```
 
+### Service Startup and WebSocket Admission
+
+- REST and WebSocket authentication use the `X-API-Key` header when `JUNIPER_CASCOR_API_KEYS` is configured. Auth is disabled when no API keys are configured.
+- `JUNIPER_CASCOR_HOST` defaults to `127.0.0.1`. If it is set to a non-loopback address such as `0.0.0.0`, startup fails with `NonLoopbackBindError` unless `JUNIPER_CASCOR_FRONTING_AUTH_ATTESTED=true`.
+- Set `JUNIPER_CASCOR_FRONTING_AUTH_ATTESTED=true` only when a loopback host-publish or authenticating reverse proxy fronts the service. This guard runs before the server accepts connections.
+- WebSocket admission uses `JUNIPER_CASCOR_WS_MAX_CONNECTIONS_GLOBAL` (default 200) across `/ws/training`, `/ws/control`, and `/ws/v1/workers`. `/ws/control` also uses `JUNIPER_CASCOR_WS_MAX_CONNECTIONS_PER_IDENTITY` (default 5), keyed on a non-reversible digest of the `X-API-Key`.
+- Over-cap WebSocket attempts close with `1013`. The peer-IP cap remains DoS-dampening only; behind Docker NAT, clients can share one bridge-gateway IP bucket.
+
 ### Training Lifecycle Endpoints
 
 | Endpoint | Method | Description |

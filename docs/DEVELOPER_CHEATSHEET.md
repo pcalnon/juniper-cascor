@@ -54,7 +54,7 @@ docker compose --profile full up -d                            # Docker start
 
 **Add an endpoint:** Create route under `/v1`, register in `app.py`, add client method in `juniper-cascor-client`.
 
-**WebSocket:** `/ws/training` (metrics), `/ws/control` (commands). Update `ws_client.py` and canopy when adding.
+**WebSocket:** `/ws/training` (metrics), `/ws/control` (commands), `/ws/v1/workers` (remote workers). All draw from the stack-global WS admission cap; `/ws/control` also uses the per-identity cap keyed on the `X-API-Key` token digest. Update `ws_client.py`, worker clients, and canopy when adding or changing sockets.
 
 ### Training Lifecycle Quick Paths
 
@@ -103,13 +103,17 @@ Metrics nuance:
 | `CASCOR_LOG_LEVEL`               | `INFO`                  | Log level override (set before import) |
 | `JUNIPER_DATA_URL`               | `http://localhost:8100` | JuniperData service URL                |
 | `JUNIPER_DATA_API_KEY`           | --                      | API key for JuniperData                |
-| `JUNIPER_CASCOR_HOST`            | `0.0.0.0`               | Bind host for the service              |
+| `JUNIPER_CASCOR_HOST`            | `127.0.0.1`             | Bind host for the service. Non-loopback values such as `0.0.0.0` require `JUNIPER_CASCOR_FRONTING_AUTH_ATTESTED=true`. |
 | `JUNIPER_CASCOR_PORT`            | `8200`                  | Bind port for the service              |
+| `JUNIPER_CASCOR_FRONTING_AUTH_ATTESTED` | `false`          | Startup bind-guard attestation for non-loopback binds. Use only when a loopback host-publish or authenticating proxy fronts the port. |
 | `JUNIPER_CASCOR_CORS_ORIGINS`    | `[]`                    | Allowed CORS origins                   |
 | `JUNIPER_CASCOR_API_KEYS`        | --                      | API keys for authentication            |
 | `JUNIPER_CASCOR_LOG_FORMAT`      | --                      | Set to `json` for JSON logging         |
 | `JUNIPER_CASCOR_SENTRY_DSN`      | --                      | Sentry DSN                             |
 | `JUNIPER_CASCOR_METRICS_ENABLED` | `false`                 | Enable Prometheus metrics              |
+| `JUNIPER_CASCOR_WS_MAX_CONNECTIONS_GLOBAL` | `200`        | Stack-global WebSocket cap across `/ws/training`, `/ws/control`, and `/ws/v1/workers`; over-cap closes with `1013`. |
+| `JUNIPER_CASCOR_WS_MAX_CONNECTIONS_PER_IDENTITY` | `5`    | `/ws/control` cap per authenticated API-key identity. |
+| `JUNIPER_CASCOR_WS_MAX_CONNECTIONS_PER_IP` | `5`          | Per-peer-IP cap. DoS-dampening only; behind Docker NAT all clients share the bridge-gateway bucket. |
 | `JUNIPER_CASCOR_WS_CONTROL_ALLOWED_ORIGINS` | `http://localhost:8050,http://127.0.0.1:8050,https://localhost:8050,https://127.0.0.1:8050` | `/ws/control` Origin allowlist. Accepts JSON-array or comma-CSV. Empty string disables (opt-out). For docker compose, add `http://juniper-canopy:8050` so canopy's `ControlStreamSupervisor` can connect. |
 
 ---
