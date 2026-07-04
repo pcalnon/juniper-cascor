@@ -63,39 +63,6 @@ async def worker_stream_handler(websocket: WebSocket) -> None:
         await websocket.close(code=4004, reason="Worker system not initialized")
         return
 
-    # SEC-F19 D4: reserve a stack-absolute GLOBAL admission slot before
-    # accepting. Per-identity keying is intentionally GLOBAL-only here
-    # (identity=None): a worker fleet shares one token, so keying on it would
-    # cap horizontal scaling, and the unique server-assigned worker_id is only
-    # known post-registration — meaningful worker per-identity keying is not
-    # cleanly available, so the global cap is the worker minimum (design §8
-    # OQ-2; a documented follow-up). On over-cap try_admit closes with 1013.
-    ws_manager = getattr(websocket.app.state, "ws_manager", None)
-    if ws_manager is not None and not await ws_manager.try_admit(websocket, endpoint="workers", identity=None):
-        return
-
-    try:
-        await _run_worker_session(websocket, coordinator, registry, ws_manager)
-    finally:
-        # SEC-F19 D4: release the admission slot on every disconnect path
-        # (including an exception in accept/session), exactly once per admit.
-        if ws_manager is not None:
-            await ws_manager.release_admission(identity=None)
-
-
-async def _run_worker_session(
-    websocket: WebSocket,
-    coordinator: WorkerCoordinator,
-    registry: WorkerRegistry,
-    ws_manager,
-) -> None:
-    """Accept an already-admitted /ws/v1/workers connection and run its session.
-
-    Split out of :func:`worker_stream_handler` so the SEC-F19 D4 admission
-    reserve/release wraps the whole session (including ``accept``) in a single
-    outer try/finally, while keeping each function within the flake8 C901
-    complexity budget.
-    """
     await websocket.accept()
     await websocket.send_json(
         {
@@ -109,6 +76,7 @@ async def _run_worker_session(
     # reflects broadcast-eligible connections; the matching unregister
     # in ``finally`` re-emits on every disconnect path including
     # exceptions.
+    ws_manager = getattr(websocket.app.state, "ws_manager", None)
     if ws_manager is not None:
         ws_manager.register_endpoint_connection(websocket, "workers")
 

@@ -36,7 +36,7 @@ from pydantic import ValidationError
 from api.models.training import TrainingParamUpdateRequest
 from api.settings import get_settings
 from api.websocket.control_security import HandshakeCooldown, LeakyBucket, validate_control_origin
-from api.websocket.manager import ws_authenticate, ws_identity_key
+from api.websocket.manager import ws_authenticate
 from api.websocket.messages import create_control_ack_message
 
 logger = logging.getLogger("juniper_cascor.api.websocket.control")
@@ -302,9 +302,8 @@ async def control_stream_handler(websocket: WebSocket) -> None:
     2. Per-origin handshake cooldown (IP block)
     3. API key authentication
     4. Origin header validation
-    5. SEC-F19 D4 admission: stack-global + per-identity connection caps
-    6. Per-connection leaky bucket rate limiting on commands
-    7. Bidirectional idle timeout
+    5. Per-connection leaky bucket rate limiting on commands
+    6. Bidirectional idle timeout
     """
     settings = get_settings()
     client_ip = _get_client_ip(websocket)
@@ -312,34 +311,8 @@ async def control_stream_handler(websocket: WebSocket) -> None:
     if not await _check_handshake_gates(websocket, settings, client_ip):
         return
 
-    ws_manager = getattr(websocket.app.state, "ws_manager", None)
-
-    # SEC-F19 D4: reserve a stack-global + per-identity admission slot before
-    # accepting. /ws/control accepts directly (it is not broadcast-eligible via
-    # the manager's active set) so it does not pass through ``connect*`` —
-    # ``try_admit`` is its admission gate, keyed per-identity on the API-key
-    # token hash. On over-cap the socket is closed with 1013 by try_admit.
-    control_identity = ws_identity_key(websocket)
-    if ws_manager is not None and not await ws_manager.try_admit(websocket, endpoint="control", identity=control_identity):
-        return
-
-    try:
-        await _run_control_session(websocket, settings, ws_manager, client_ip)
-    finally:
-        # SEC-F19 D4: release the admission slot on every disconnect path
-        # (including an exception in accept/session), exactly once per admit.
-        if ws_manager is not None:
-            await ws_manager.release_admission(identity=control_identity)
-
-
-async def _run_control_session(websocket: WebSocket, settings, ws_manager, client_ip: str) -> None:
-    """Accept an already-admitted /ws/control connection and run its session.
-
-    Split out of :func:`control_stream_handler` so the admission reserve/release
-    (SEC-F19 D4) wraps the whole session in a single outer try/finally while
-    keeping each function's cyclomatic complexity within budget.
-    """
     lifecycle = getattr(websocket.app.state, "lifecycle", None)
+    ws_manager = getattr(websocket.app.state, "ws_manager", None)
 
     await websocket.accept()
     await websocket.send_json(
