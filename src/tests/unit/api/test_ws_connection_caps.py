@@ -233,13 +233,14 @@ class TestHandlerAdmissionCaps:
     """Handlers must reserve/release caps exactly around accepted sessions."""
 
     @pytest.mark.asyncio
-    async def test_control_handler_releases_same_identity_on_session_disconnect(self):
+    async def test_control_handler_releases_same_identity_on_session_exception(self):
         ws = _make_handler_ws(api_key="principal-key")
         expected_identity = ws_identity_key(ws)
 
         with patch("api.websocket.control_stream._check_handshake_gates", new=AsyncMock(return_value=True)):
             with patch("api.websocket.control_stream._run_control_session", new=AsyncMock(side_effect=WebSocketDisconnect())):
-                await control_stream_handler(ws)
+                with pytest.raises(WebSocketDisconnect):
+                    await control_stream_handler(ws)
 
         ws.app.state.ws_manager.try_admit.assert_awaited_once_with(ws, endpoint="control", identity=expected_identity)
         ws.app.state.ws_manager.release_admission.assert_awaited_once_with(identity=expected_identity)
