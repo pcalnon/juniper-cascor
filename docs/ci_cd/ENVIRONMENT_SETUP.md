@@ -216,14 +216,20 @@ pip install pytest pytest-cov pytest-timeout pytest-xdist
 mkdir -p logs src/logs reports/junit src/tests/reports
 
 # 6. Run tests exactly as CI does
-cd src/tests
-python -m pytest unit/ \
+python -m pytest \
+    -m "unit and not slow" \
+    src/tests/unit \
     --verbose \
     --timeout=60 \
-    --cov=../cascade_correlation \
-    --cov=../candidate_unit \
+    --maxfail=5 \
+    --junitxml=reports/junit/junit-unit.xml \
+    --cov=src \
     --cov-report=term-missing \
-    -m "unit and not slow"
+    --cov-report=xml:reports/coverage.xml \
+    --cov-report=html:reports/htmlcov
+
+# 7. Enforce the aggregate gate
+python -m coverage report --fail-under="${COVERAGE_FAIL_UNDER:-80}"
 ```
 
 ### Running Linting Checks Locally
@@ -364,14 +370,13 @@ Solution: Tests marked with `@pytest.mark.slow` are excluded by default. The CI 
 **2. Coverage Below Threshold**
 
 ```
-::warning::Coverage below 50% threshold
+Coverage failure: total is below the configured COVERAGE_FAIL_UNDER threshold.
 ```
 
-This is currently a soft warning. To make it strict, modify CI:
+The aggregate gate is a hard failure in the unit-tests job. Reproduce it locally from the repository root:
 
-```yaml
-python -m coverage report --fail-under=50
-# Remove `|| true` to fail the job
+```bash
+bash util/run_coverage.bash
 ```
 
 **3. Environment Creation Failures**
@@ -468,7 +473,9 @@ Solutions:
 
 | Metric | Current Threshold | Target |
 |--------|-------------------|--------|
-| Overall | 50% (soft) | 80% |
+| Overall aggregate | 80% (hard) | 90%+ |
+| Source file statement | >=90% (advisory until final per-file gate PR) | >=90% |
+| Packaged sub-module pooled statement | >=95% (advisory until final per-file gate PR) | >=95% |
 | Branch | Not enforced | 70% |
 
 ### Artifacts Retention
