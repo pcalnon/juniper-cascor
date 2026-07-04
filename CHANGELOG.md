@@ -86,6 +86,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Tests
 
+- **Per-file coverage lift 2 (C-5) — WebSocket layer (`src/api/websocket/`).** Tests-only; no source changed, no CI gate flipped. Part 2 of the split under the ecosystem per-file coverage rollout (juniper-ml [`notes/JUNIPER_ECOSYSTEM_PER_FILE_COVERAGE_ROLLOUT_SCOPING_2026-06-30.md`](https://github.com/pcalnon/juniper-ml/blob/main/notes/JUNIPER_ECOSYSTEM_PER_FILE_COVERAGE_ROLLOUT_SCOPING_2026-06-30.md)); lifts the three lowest-coverage WebSocket source files — the sub-module recommended next after PR-1 ([#368](https://github.com/pcalnon/juniper-cascor/pull/368)) — to full statement coverage of their previously-uncovered branches:
+
+  | File | Before (stmt) | After (stmt) |
+  |------|---------------|--------------|
+  | `src/api/websocket/training_stream.py` | 114/156 = 73.08% | 156/156 = **100.00%** |
+  | `src/api/websocket/control_stream.py` | 161/193 = 83.42% | 193/193 = **100.00%** |
+  | `src/api/websocket/manager.py` | 275/308 = 89.29% | 308/308 = **100.00%** |
+
+  The `src/api/websocket` sub-module clears the ratified ≥95% pooled bar: **88.17% → 99.37%** (842/955 → 949/955, statement-weighted).
+  
+  - Overall cascor coverage 90.20% → 91.03%.
+  - New fast unit tests (40 across `test_training_stream_coverage.py` [new], `test_control_stream_coverage.py`, and `test_websocket_manager.py`) drive the resume-handshake + replay arms (`training_stream._await_resume_frame` / `_handle_resume`), the control-path handshake gates / leaky-bucket rate-limit / invalid-params / heartbeat / idle-timeout branches (`control_stream`), and the manager's per-endpoint bookkeeping, per-IP accounting, pending-connection rejection, and defensive metric-emission guards (`manager`) — all via `AsyncMock` seams (no live sockets).
+  - Measured on the CI `unit and not slow` subset (the gate basis) with `juniper-coverage-gap-map` (`juniper-ci-tools 0.6.0`, advisory).
+  - The blocking `--enforce` gate lands in the final PR of the split once every sub-module clears.
+
 - **Per-file coverage rollout (Phase C-5) — worst-first lift, part 1 of a
   multi-PR sequence.** Lifts the two lowest-coverage source files to full
   statement coverage, clearing the two sub-modules they dominate. No source
