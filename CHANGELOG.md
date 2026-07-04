@@ -95,7 +95,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   | `src/api/websocket/manager.py` | 275/308 = 89.29% | 308/308 = **100.00%** |
 
   The `src/api/websocket` sub-module clears the ratified ≥95% pooled bar: **88.17% → 99.37%** (842/955 → 949/955, statement-weighted).
-  
+
   - Overall cascor coverage 90.20% → 91.03%.
   - New fast unit tests (40 across `test_training_stream_coverage.py` [new], `test_control_stream_coverage.py`, and `test_websocket_manager.py`) drive the resume-handshake + replay arms (`training_stream._await_resume_frame` / `_handle_resume`), the control-path handshake gates / leaky-bucket rate-limit / invalid-params / heartbeat / idle-timeout branches (`control_stream`), and the manager's per-endpoint bookkeeping, per-IP accounting, pending-connection rejection, and defensive metric-emission guards (`manager`) — all via `AsyncMock` seams (no live sockets).
   - Measured on the CI `unit and not slow` subset (the gate basis) with `juniper-coverage-gap-map` (`juniper-ci-tools 0.6.0`, advisory).
@@ -126,6 +126,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Overall cascor statement coverage **90.20% → 91.12%**; files below the
     90% floor 8 → 6, sub-modules below the 95% pooled bar 9 → 7. See juniper-ml
     [`notes/JUNIPER_ECOSYSTEM_PER_FILE_COVERAGE_ROLLOUT_SCOPING_2026-06-30.md`](https://github.com/pcalnon/juniper-ml/blob/main/notes/JUNIPER_ECOSYSTEM_PER_FILE_COVERAGE_ROLLOUT_SCOPING_2026-06-30.md).
+
+- **Per-file coverage lift 3 (C-5) — API application factory (`src/api/app.py`).** Tests-only; no source changed, no CI gate flipped. Part 3 of the split under the ecosystem per-file coverage rollout (juniper-ml [`notes/JUNIPER_ECOSYSTEM_PER_FILE_COVERAGE_ROLLOUT_SCOPING_2026-06-30.md`](https://github.com/pcalnon/juniper-ml/blob/main/notes/JUNIPER_ECOSYSTEM_PER_FILE_COVERAGE_ROLLOUT_SCOPING_2026-06-30.md)); lifts the last sub-95 file in the `src/api` sub-module so the sub-module clears the ratified ≥95% pooled bar:
+
+  | File | Before (stmt) | After (stmt) |
+  |------|---------------|--------------|
+  | `src/api/app.py` | 208/245 = 84.90% | 243/245 = **99.18%** |
+
+  The `src/api` sub-module clears the ratified ≥95% pooled bar: **94.74% → 98.83%** (810/855 → 845/855, statement-weighted). Overall cascor statement coverage 93.42% → 93.70% (on the current base, which already includes #371's WebSocket lift). Eight new fast unit tests (extending `src/tests/unit/api/test_api_app_coverage_deep.py`) drive the previously-uncovered lifespan companion-service arms — the `auto_start_data_service` launch plus the reverse-order managed-service shutdown drain, and the `auto_start_canopy` task wiring plus its shutdown in-flight cancellation — the `_auto_start_canopy` background task (cascor-healthy / cascor-not-ready / launch-failure / exception paths), and the best-effort `_unregister_worker_metrics_collector` REGISTRY-exception arm — all via `AsyncMock` seams (no live subprocess or health poll). The two statements left uncovered are the import-time `importlib.metadata.PackageNotFoundError` version-fallback (reachable only by reimporting the module with the package uninstalled) — left as-is, no pragma. Measured on the CI `unit and not slow` subset (the gate basis) with `juniper-coverage-gap-map` (`juniper-ci-tools 0.6.0`, advisory). The blocking `--enforce` gate lands in the final PR of the split once every sub-module clears.
 
 ## [0.5.0] - 2026-05-22
 

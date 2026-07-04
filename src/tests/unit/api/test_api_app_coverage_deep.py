@@ -18,7 +18,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from fastapi.testclient import TestClient
 
-from api.app import _auto_start_training, create_app
+from api.app import _auto_start_canopy, _auto_start_training, _unregister_worker_metrics_collector, create_app
 from api.settings import Settings
 
 pytestmark = pytest.mark.unit
@@ -471,3 +471,162 @@ class TestAppFactoryConfigurations:
         # Check key route prefixes exist
         assert any("/v1/health" in p for p in route_paths)
         assert any("/v1/network" in p for p in route_paths)
+
+
+# ------------------------------------------------------------------
+# _unregister_worker_metrics_collector — best-effort exception arm
+# (lines 118-119)
+# ------------------------------------------------------------------
+
+
+class TestUnregisterWorkerMetricsCollector:
+    """The shutdown-time collector unregister must swallow REGISTRY errors."""
+
+    def test_unregister_swallows_registry_exception(self):
+        """A ``REGISTRY.unregister`` failure is caught and logged, never raised (lines 118-119)."""
+        app = MagicMock()
+        # A non-None collector on app.state takes the function past the early return.
+        app.state.worker_metrics_collector = MagicMock(name="worker_metrics_collector")
+
+        with patch("prometheus_client.REGISTRY.unregister", side_effect=RuntimeError("registry down")) as mock_unregister:
+            # Best-effort contract: the RuntimeError is swallowed, not propagated.
+            _unregister_worker_metrics_collector(app)
+
+        mock_unregister.assert_called_once_with(app.state.worker_metrics_collector)
+
+
+# ------------------------------------------------------------------
+# Lifespan: auto_start_data_service block (lines 215, 221-232) plus the
+# managed-services shutdown drain (lines 295, 297)
+# ------------------------------------------------------------------
+
+
+class TestLifespanAutoStartDataService:
+    """Lifespan launches the juniper-data companion service when configured."""
+
+    def test_data_service_started_and_terminated(self):
+        """A successful start is tracked and terminated on shutdown (lines 215, 221-230, 295, 297)."""
+        settings = Settings(auto_start_data_service=True, auto_start=False, auto_start_canopy=False, metrics_enabled=False)
+        mock_svc = MagicMock(name="managed_data_service")
+
+        with patch("api.service_launcher.start_service", new=AsyncMock(return_value=mock_svc)) as mock_start:
+            app = create_app(settings)
+            with TestClient(app):
+                # Startup appended the launched service to managed_services.
+                assert mock_svc in app.state.managed_services
+
+        mock_start.assert_awaited_once()
+        # Shutdown drains managed_services in reverse start order (line 295) and logs (line 297).
+        mock_svc.terminate.assert_called_once_with()
+
+    def test_data_service_start_failure_logged(self):
+        """When start_service returns None the failure is logged and nothing is tracked (line 232)."""
+        settings = Settings(auto_start_data_service=True, auto_start=False, auto_start_canopy=False, metrics_enabled=False)
+
+        with patch("api.service_launcher.start_service", new=AsyncMock(return_value=None)) as mock_start:
+            app = create_app(settings)
+            with TestClient(app):
+                assert app.state.managed_services == []
+
+        mock_start.assert_awaited_once()
+
+
+# ------------------------------------------------------------------
+# Lifespan: auto_start_canopy task wiring + in-flight cancel at shutdown
+# (lines 253-256, 267-270)
+# ------------------------------------------------------------------
+
+
+class TestLifespanAutoStartCanopyWiring:
+    """Lifespan schedules the canopy auto-start task and cancels it if still running at shutdown."""
+
+    def test_canopy_task_created_and_cancelled_at_shutdown(self):
+        """auto_start_canopy schedules a tracked task; a still-pending task is cancelled on shutdown (lines 253-256, 267-270)."""
+        settings = Settings(auto_start_canopy=True, auto_start=False, auto_start_data_service=False, metrics_enabled=False)
+
+        async def _never_finishes(*args, **kwargs):
+            # Stay pending through the yield so the shutdown in-flight-cancellation branch runs.
+            await asyncio.sleep(30)
+
+        with patch("api.app._auto_start_canopy", new=_never_finishes):
+            app = create_app(settings)
+            with TestClient(app):
+                # The canopy coroutine is scheduled and tracked on app.state.startup_tasks (lines 253-256).
+                assert len(app.state.startup_tasks) == 1
+                assert app.state.startup_tasks[0].get_name() == "auto_start_canopy"
+            # Exiting TestClient runs shutdown, which cancels the still-pending task (lines 267-270).
+            assert app.state.startup_tasks[0].cancelled()
+
+
+# ------------------------------------------------------------------
+# _auto_start_canopy background task (lines 374-408)
+# ------------------------------------------------------------------
+
+
+class TestAutoStartCanopy:
+    """Direct-call coverage of the _auto_start_canopy background task.
+
+    Mirrors the ``_auto_start_training`` tests above: the handler is driven
+    directly with ``AsyncMock`` seams over ``api.service_launcher`` so no real
+    health poll or subprocess is launched. The ``app`` argument is unused by
+    the function body (it reads only ``settings`` + ``managed_services``), so a
+    bare ``MagicMock`` stands in for it.
+    """
+
+    @pytest.mark.asyncio
+    async def test_canopy_full_success_path(self):
+        """Cascor healthy → canopy launched and tracked (lines 374-379, 389-396, 402-403)."""
+        settings = Settings(auto_start_canopy=True, auto_start=False)
+        managed_services: list = []
+        mock_svc = MagicMock(name="canopy_service")
+
+        with (
+            patch("api.service_launcher.wait_for_health", new=AsyncMock(return_value=True)) as mock_wait,
+            patch("api.service_launcher.start_service", new=AsyncMock(return_value=mock_svc)) as mock_start,
+        ):
+            await _auto_start_canopy(MagicMock(), settings, managed_services)
+
+        mock_wait.assert_awaited_once()
+        mock_start.assert_awaited_once()
+        assert managed_services == [mock_svc]
+
+    @pytest.mark.asyncio
+    async def test_canopy_aborts_when_cascor_not_healthy(self):
+        """Cascor never becomes healthy → early return, canopy not launched (lines 380-382)."""
+        settings = Settings(auto_start_canopy=True, auto_start=False)
+        managed_services: list = []
+
+        with (
+            patch("api.service_launcher.wait_for_health", new=AsyncMock(return_value=False)),
+            patch("api.service_launcher.start_service", new=AsyncMock()) as mock_start,
+        ):
+            await _auto_start_canopy(MagicMock(), settings, managed_services)
+
+        mock_start.assert_not_awaited()
+        assert managed_services == []
+
+    @pytest.mark.asyncio
+    async def test_canopy_start_failure_logged(self):
+        """start_service returns None → failure logged, nothing tracked (line 405)."""
+        settings = Settings(auto_start_canopy=True, auto_start=False)
+        managed_services: list = []
+
+        with (
+            patch("api.service_launcher.wait_for_health", new=AsyncMock(return_value=True)),
+            patch("api.service_launcher.start_service", new=AsyncMock(return_value=None)),
+        ):
+            await _auto_start_canopy(MagicMock(), settings, managed_services)
+
+        assert managed_services == []
+
+    @pytest.mark.asyncio
+    async def test_canopy_exception_is_swallowed(self):
+        """An exception inside the task body is caught and logged, never propagated (lines 407-408)."""
+        settings = Settings(auto_start_canopy=True, auto_start=False)
+        managed_services: list = []
+
+        with patch("api.service_launcher.wait_for_health", new=AsyncMock(side_effect=RuntimeError("health probe blew up"))):
+            # Must not raise — the broad except in _auto_start_canopy swallows it.
+            await _auto_start_canopy(MagicMock(), settings, managed_services)
+
+        assert managed_services == []
