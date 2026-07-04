@@ -195,6 +195,19 @@ class TestWebSocketManager:
         assert mgr._connection_endpoint == {}
 
     @pytest.mark.asyncio
+    async def test_close_all_closes_endpoint_only_connections(self):
+        """close_all closes sockets that are tracked only by endpoint buckets."""
+        mgr = WebSocketManager()
+        ws = AsyncMock()
+        mgr.register_endpoint_connection(ws, "control")
+
+        await mgr.close_all()
+
+        ws.close.assert_awaited_once_with(code=1001, reason="Server shutting down")
+        assert mgr._endpoint_connections["control"] == set()
+        assert mgr._connection_endpoint == {}
+
+    @pytest.mark.asyncio
     async def test_close_all_holds_lock_during_snapshot(self):
         """close_all acquires the manager lock before snapshotting and
         clearing the connection set (CR-025). This prevents a connect/
