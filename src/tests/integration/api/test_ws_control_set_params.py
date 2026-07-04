@@ -487,6 +487,38 @@ class TestWsControlSetParams:
         assert response["data"].get("code") == "invalid_params"
         assert net.learning_rate == pytest.approx(original_lr)
 
+    @pytest.mark.parametrize(
+        "field, value",
+        [
+            ("correlation_threshold", 1.01),  # le=1.0
+            ("convergence_threshold", 0),  # gt=0
+            ("candidate_convergence_threshold", -0.001),  # gt=0
+        ],
+    )
+    def test_set_params_threshold_bounds_rejected_not_applied(self, client_with_network, field, value):
+        """SEC-F10: threshold-like scalar bounds are enforced on the WS path too.
+
+        These fields directly influence candidate acceptance and stopping
+        behavior, so the raw WebSocket command path must reject invalid values
+        before they mutate the live network.
+        """
+        net = client_with_network.app.state.lifecycle.network
+        original = getattr(net, field)
+
+        with client_with_network.websocket_connect("/ws/control") as ws:
+            _drain_established(ws)
+            response = _send_command(
+                ws,
+                "set_params",
+                params={field: value},
+                command_id=f"sec-f10-ws-{field}",
+            )
+
+        assert response["data"]["status"] == "error"
+        assert response["data"].get("code") == "invalid_params"
+        assert response["data"].get("command_id") == f"sec-f10-ws-{field}"
+        assert getattr(net, field) == pytest.approx(original)
+
     def test_set_params_in_range_still_applied(self, client_with_network):
         """SEC-F10 regression guard: adding validation must not break the happy
         path — an in-range set_params is still applied end-to-end."""
