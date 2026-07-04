@@ -78,6 +78,11 @@ class TestControlStreamMessageSize:
         app_state = MagicMock()
         app_state.api_key_auth = None
         app_state.lifecycle = MagicMock()
+        # SEC-F19 D4: handler reserves an admission slot via ws_manager before
+        # accepting; provide awaitable doubles so the mock-based test passes
+        # through the admission path.
+        app_state.ws_manager.try_admit = AsyncMock(return_value=True)
+        app_state.ws_manager.release_admission = AsyncMock()
         ws.app.state = app_state
 
         # First call returns oversized message, second raises disconnect
@@ -112,6 +117,11 @@ class TestControlStreamLifecycleUnavailable:
         app_state = MagicMock()
         app_state.api_key_auth = None
         app_state.lifecycle = None
+        # SEC-F19 D4: handler reserves an admission slot via ws_manager before
+        # accepting; provide awaitable doubles so the mock-based test passes
+        # through the admission path.
+        app_state.ws_manager.try_admit = AsyncMock(return_value=True)
+        app_state.ws_manager.release_admission = AsyncMock()
         ws.app.state = app_state
 
         ws.receive_text.side_effect = [
