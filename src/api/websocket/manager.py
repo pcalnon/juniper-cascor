@@ -709,7 +709,11 @@ class WebSocketManager:
         exception paths.
         """
         async with self._lock:
-            snapshot = list(self._active_connections) + list(self._pending_connections)
+            snapshot_set = set(self._active_connections)
+            snapshot_set.update(self._pending_connections)
+            for bucket in self._endpoint_connections.values():
+                snapshot_set.update(bucket)
+            snapshot = list(snapshot_set)
             self._active_connections.clear()
             self._pending_connections.clear()
             self._connection_meta.clear()
