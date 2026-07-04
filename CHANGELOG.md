@@ -86,6 +86,70 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Tests
 
+- **Per-file coverage lift 5 (C-5) — core CasCor engine
+  (`src/cascade_correlation/cascade_correlation.py`).** Tests-only; no source
+  changed, no CI gate flipped (the `juniper-coverage-gap-map --enforce` step
+  lands in the final gate PR of the split once every sub-module clears). Part 5
+  of the split under the ecosystem per-file coverage rollout (juniper-ml
+  [`notes/JUNIPER_ECOSYSTEM_PER_FILE_COVERAGE_ROLLOUT_SCOPING_2026-06-30.md`](https://github.com/pcalnon/juniper-ml/blob/main/notes/JUNIPER_ECOSYSTEM_PER_FILE_COVERAGE_ROLLOUT_SCOPING_2026-06-30.md));
+  lifts the single largest and lowest-coverage cascor source file — the
+  5905-line `CascadeCorrelationNetwork` training engine — clearing the
+  `src/cascade_correlation` sub-module. Its scope is disjoint from the
+  concurrent app-factory ([#382](https://github.com/pcalnon/juniper-cascor/pull/382))
+  and lifecycle ([#383](https://github.com/pcalnon/juniper-cascor/pull/383))
+  lifts. Measured on the CI `unit and not slow` subset (`--cov=src`, statement
+  basis — the gate basis).
+
+  | Scope | Before (stmt) | After (stmt) |
+  |-------|---------------|--------------|
+  | `src/cascade_correlation/cascade_correlation.py` (file) | 1991/2232 = 89.20% | 2173/2232 = **97.36%** |
+  | `src/cascade_correlation` (sub-module, pooled) | 1991/2232 = 89.20% | 2173/2232 = **97.36%** |
+
+  The `src/cascade_correlation` sub-module clears the ratified ≥95% pooled bar
+  (its only statement-bearing file dominates the pool; the package
+  `__init__.py` is a zero-statement re-export). Overall cascor statement
+  coverage **91.95% → 93.52%** (measured on the post-#371 base; the remaining
+  sub-95 siblings `src/api/app.py` and `src/api/lifecycle/` are #382 / #383's
+  scope, not touched here).
+  - 47 new fast unit tests across five files in
+    `src/tests/unit/cascade_correlation/` (`test_worker_pool_teardown_coverage.py`,
+    `test_candidate_results_coverage.py`, `test_worker_execution_coverage.py`,
+    `test_serialization_error_paths_coverage.py`,
+    `test_accuracy_residual_growth_coverage.py`) drive the previously-uncovered
+    branch families: the persistent worker-pool teardown / SIGKILL escalation +
+    active/pending SharedMemory cleanup (`_shutdown_worker_pool` and its
+    callees), the `SharedTrainingMemory` reconstruct/close/unlink edges and
+    `CandidateTrainingManager.start` validation, the candidate result
+    validation / stale-round + invalid-result discard / sequential-fallback
+    arms, the static worker helpers (`_worker_loop` instrumentation branches,
+    `_process_worker_task`, `_publish_failure_result`, `train_candidate_worker`,
+    `_build_candidate_inputs`, `_train_candidate_unit`), the HDF5
+    save/load/verify error handlers + `save_object`, and the accuracy /
+    residual-masking / network-growth validation + debug-gated arms — all via
+    fakes / `unittest.mock` seams (no worker processes, no live training, no
+    real h5py I/O; a single deterministic /dev/shm round-trip).
+  - Measured with `juniper-coverage-gap-map` (`juniper-ci-tools 0.6.0`,
+    advisory).
+  - **Findings flagged, not fixed** (a tests-only PR does not touch the core
+    engine; all ~59 residual lines leave both bars cleared with margin): (1)
+    `restore_snapshot` (line 4756) is a `@classmethod` that calls
+    `cls.__dict__.update(...)` on a read-only `mappingproxy`, so it always
+    raises and returns `False` — the success path (4757–4758) is unreachable;
+    (2) `list_hdf5_snapshots` (line 5014) calls `HDF5Utils.list_hdf5_files`,
+    which is not defined anywhere in the codebase, so every existing-directory
+    call raises `AttributeError` and returns `[]` — the success path
+    (5015–5016) is unreachable; (3) `calculate_accuracy`'s `if x is None or y
+    is None:` guard (5381–5384) is dead code (the None-defaulting at 5375–5376
+    makes `x` / `y` never `None`); (4) `_init_logging_system` (632–658) is
+    bypassed suite-wide by the autouse `_cache_logging_system` conftest fixture,
+    so its real body is not reachable from the unit subset. The rest (the
+    TaskDistributor local/remote nested dispatch in `_execute_candidate_training`,
+    the `_execute_parallel_training` finally-close, the `grow_network`
+    validate-except + debug logs, and a handful of one-line defensive
+    `except` / log arms) are all fast-unit-reachable — left un-chased only
+    because both the ≥90% file bar and the ≥95% pooled bar clear with a
+    ~2.3-point margin.
+
 - **Per-file coverage lift 2 (C-5) — WebSocket layer (`src/api/websocket/`).** Tests-only; no source changed, no CI gate flipped. Part 2 of the split under the ecosystem per-file coverage rollout (juniper-ml [`notes/JUNIPER_ECOSYSTEM_PER_FILE_COVERAGE_ROLLOUT_SCOPING_2026-06-30.md`](https://github.com/pcalnon/juniper-ml/blob/main/notes/JUNIPER_ECOSYSTEM_PER_FILE_COVERAGE_ROLLOUT_SCOPING_2026-06-30.md)); lifts the three lowest-coverage WebSocket source files — the sub-module recommended next after PR-1 ([#368](https://github.com/pcalnon/juniper-cascor/pull/368)) — to full statement coverage of their previously-uncovered branches:
 
   | File | Before (stmt) | After (stmt) |
@@ -95,7 +159,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   | `src/api/websocket/manager.py` | 275/308 = 89.29% | 308/308 = **100.00%** |
 
   The `src/api/websocket` sub-module clears the ratified ≥95% pooled bar: **88.17% → 99.37%** (842/955 → 949/955, statement-weighted).
-  
+
   - Overall cascor coverage 90.20% → 91.03%.
   - New fast unit tests (40 across `test_training_stream_coverage.py` [new], `test_control_stream_coverage.py`, and `test_websocket_manager.py`) drive the resume-handshake + replay arms (`training_stream._await_resume_frame` / `_handle_resume`), the control-path handshake gates / leaky-bucket rate-limit / invalid-params / heartbeat / idle-timeout branches (`control_stream`), and the manager's per-endpoint bookkeeping, per-IP accounting, pending-connection rejection, and defensive metric-emission guards (`manager`) — all via `AsyncMock` seams (no live sockets).
   - Measured on the CI `unit and not slow` subset (the gate basis) with `juniper-coverage-gap-map` (`juniper-ci-tools 0.6.0`, advisory).
