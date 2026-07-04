@@ -713,6 +713,13 @@ class WebSocketManager:
             self._active_connections.clear()
             self._pending_connections.clear()
             self._connection_meta.clear()
+            self._per_ip_counts.clear()
+            self._connection_endpoint.clear()
+            for bucket in self._endpoint_connections.values():
+                bucket.clear()
+
+        for endpoint in self._endpoint_connections:
+            self._emit_endpoint_gauge(endpoint)
 
         for ws in snapshot:
             with contextlib.suppress(Exception):
