@@ -676,7 +676,7 @@ python -m snapshots.snapshot_cli list ./snapshots/
 - `register_info_or_update(name, description, **labels)` — sugar for the `Info` two-step register-then-`.info({...})` pattern.
 - `lazy_register_or_reuse(...)` — for the lazy-init-with-`None`-sentinel pattern.
 
-Tests touching these collectors should use `juniper_observability.testing.reset_prometheus_registry`. Existing examples: `src/api/observability.py:_ensure_training_metrics` / `_ensure_ws_metrics` (22+ call sites via the `_register_or_reuse` alias) and `src/api/websocket/control_stream.py:_get_command_counter`. See [the design doc in juniper-ml](https://github.com/pcalnon/juniper-ml/blob/main/notes/observability/REGISTER_OR_REUSE_HELPER_DESIGN_2026-05-05.md) for the rationale.
+Tests touching these collectors should use `juniper_observability.testing.reset_prometheus_registry`. Existing examples: `src/api/observability.py:_ensure_training_metrics` / `_ensure_ws_metrics` (22+ call sites via the `_register_or_reuse` alias) and `src/api/websocket/control_stream.py:_get_command_counter`. See [the design doc in juniper-ml](https://github.com/pcalnon/juniper-ml/blob/main/notes/observability/JUNIPER_2026-05-05_JUNIPER-ML_REGISTER-OR-REUSE-HELPER-DESIGN.md) for the rationale.
 
 ---
 

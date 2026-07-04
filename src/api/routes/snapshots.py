@@ -210,7 +210,7 @@ async def restore_snapshot(request: Request, snapshot_id: str) -> dict:
     "restored"`` field is retained as a strict superset so existing
     canopy clients keying off it keep working.
 
-    See ``juniper-ml/notes/PHASE_6E_SPRINT_B_DESIGN.md`` §2.1, §3.
+    See ``juniper-ml/notes/JUNIPER_2026-05-01_JUNIPER-ECOSYSTEM_PHASE-6E-SPRINT-B-DESIGN.md`` §2.1, §3.
     """
     _validate_snapshot_id(snapshot_id, client=request.client.host if request.client else None)
     lifecycle = _get_lifecycle(request)
@@ -249,7 +249,7 @@ async def retrain_from_snapshot(request: Request, snapshot_id: str) -> dict:
     training as a starting point but the new run is judged on its own
     merits.
 
-    See ``juniper-ml/notes/PHASE_6E_SPRINT_B_DESIGN.md`` §2.4 for the
+    See ``juniper-ml/notes/JUNIPER_2026-05-01_JUNIPER-ECOSYSTEM_PHASE-6E-SPRINT-B-DESIGN.md`` §2.4 for the
     full reset scope and §9 for the field-by-field table.
 
     Response shape mirrors ``/restore`` (snapshot_id + training_params),
@@ -300,7 +300,7 @@ async def resume_snapshot(request: Request, snapshot_id: str) -> dict:
     Rejected with 409 if training is currently active (Started /
     Paused) — the user must stop training before resuming.
 
-    See ``juniper-ml/notes/PHASE_6E_SPRINT_B_DESIGN.md`` §2.3.
+    See ``juniper-ml/notes/JUNIPER_2026-05-01_JUNIPER-ECOSYSTEM_PHASE-6E-SPRINT-B-DESIGN.md`` §2.3.
     """
     _validate_snapshot_id(snapshot_id, client=request.client.host if request.client else None)
     lifecycle = _get_lifecycle(request)
@@ -359,7 +359,7 @@ async def start_replay_endpoint(request: Request, snapshot_id: str) -> dict:
     one replay session with another is permitted (the old session is
     torn down first).
 
-    See ``juniper-ml/notes/PHASE_6E_SPRINT_B_DESIGN.md`` §2.2.
+    See ``juniper-ml/notes/JUNIPER_2026-05-01_JUNIPER-ECOSYSTEM_PHASE-6E-SPRINT-B-DESIGN.md`` §2.2.
     """
     _validate_snapshot_id(snapshot_id, client=request.client.host if request.client else None)
     lifecycle = _get_lifecycle(request)

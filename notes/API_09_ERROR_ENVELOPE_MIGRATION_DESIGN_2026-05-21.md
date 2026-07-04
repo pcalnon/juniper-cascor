@@ -2,7 +2,7 @@
 
 **Date**: 2026-05-21
 **Status**: Design (pre-implementation)
-**Tracks**: API-09 in the v7 outstanding-development roadmap (juniper-ml/notes/JUNIPER_OUTSTANDING_DEVELOPMENT_ITEMS_V7_IMPLEMENTATION_ROADMAP.md §21)
+**Tracks**: API-09 in the v7 outstanding-development roadmap (juniper-ml/notes/JUNIPER_2026-05-25_JUNIPER-ECOSYSTEM_OUTSTANDING-DEVELOPMENT-ITEMS-V7-IMPLEMENTATION-ROADMAP.md §21)
 **Author**: Claude Code (session 2026-05-21)
 **Predecessor**: CFG-03 (#287), CFG-05 (#289) — both shipped in this session
 
@@ -333,7 +333,7 @@ PR 3 only ships after enough deployment cycles have passed that PR 2's cascor-cl
 
 ## 7. References
 
-- v7 roadmap §21 API-09 (juniper-ml/notes/JUNIPER_OUTSTANDING_DEVELOPMENT_ITEMS_V7_IMPLEMENTATION_ROADMAP.md)
+- v7 roadmap §21 API-09 (juniper-ml/notes/JUNIPER_2026-05-25_JUNIPER-ECOSYSTEM_OUTSTANDING-DEVELOPMENT-ITEMS-V7-IMPLEMENTATION-ROADMAP.md)
 - CFG-03 (#287, juniper-cascor) — sibling migration: `SENTRY_SDK_DSN` → `JUNIPER_CASCOR_SENTRY_DSN`, established the deprecation-with-stderr-drift pattern this design follows.
 - CFG-05 (#289, juniper-cascor) — sibling migration: `CASCOR_LOG_LEVEL` → `JUNIPER_CASCOR_LOG_LEVEL`, same pattern.
 - `src/api/app.py:399-498` `create_app()` — handler-registration site.
