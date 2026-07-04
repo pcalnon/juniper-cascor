@@ -87,12 +87,17 @@ Settings load from the `JUNIPER_CASCOR_` environment namespace. Common knobs (fu
 
 ```bash
 docker build -t juniper-cascor:latest .
-docker run --rm -p 8200:8200 \
-  -e JUNIPER_CASCOR_HOST=0.0.0.0 -e JUNIPER_DATA_URL=http://host.docker.internal:8100 \
+docker run --rm -p 127.0.0.1:8200:8200 \
+  -e JUNIPER_CASCOR_HOST=0.0.0.0 \
+  -e JUNIPER_CASCOR_FRONTING_AUTH_ATTESTED=true \
+  -e JUNIPER_CASCOR_API_KEYS=replace-with-a-strong-key \
+  -e JUNIPER_DATA_URL=http://host.docker.internal:8100 \
   juniper-cascor:latest
 ```
 
-Health is probed at `/v1/health/ready`. For the full stack, see
+The host-side publish is loopback-only; `JUNIPER_CASCOR_FRONTING_AUTH_ATTESTED=true`
+attests that boundary so the startup bind guard allows the container's internal
+`0.0.0.0` bind. Health is probed at `/v1/health/ready`. For the full stack, see
 [`juniper-deploy`](https://github.com/pcalnon/juniper-deploy).
 
 ## Status
