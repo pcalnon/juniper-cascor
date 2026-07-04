@@ -14,7 +14,7 @@ from unittest import mock
 
 import pytest
 
-from api.app import NonLoopbackBindError, _is_loopback_host, create_app, enforce_fronting_auth_bind_guard, lifespan
+from api.app import NonLoopbackBindError, _is_loopback_host, _settings_with_uvicorn_cli_bind, create_app, enforce_fronting_auth_bind_guard, lifespan
 from api.settings import Settings
 
 pytestmark = pytest.mark.unit
@@ -92,6 +92,23 @@ class TestBindGuardFunction:
 
         assert mock_critical.called
         assert "REFUSING TO START" in mock_critical.call_args[0][0]
+
+    @pytest.mark.parametrize(
+        "argv",
+        [
+            ["uvicorn", "api.app:create_app", "--factory", "--host", "0.0.0.0", "--port", "8200"],
+            ["uvicorn", "api.app:create_app", "--factory", "--host=0.0.0.0", "--port=8200"],
+        ],
+    )
+    def test_uvicorn_cli_bind_args_feed_guard_settings(self, argv):
+        # The documented production entry point passes the bind host to uvicorn,
+        # not through JUNIPER_CASCOR_HOST. The guard must still see it.
+        settings = _settings_with_uvicorn_cli_bind(Settings(), argv)
+
+        assert settings.host == "0.0.0.0"
+        assert settings.port == 8200
+        with pytest.raises(NonLoopbackBindError):
+            enforce_fronting_auth_bind_guard(settings)
 
 
 class TestBindGuardLifespanWiring:

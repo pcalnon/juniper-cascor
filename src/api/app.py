@@ -5,6 +5,7 @@ import importlib.metadata
 import ipaddress
 import json
 import logging
+import sys
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
@@ -79,6 +80,48 @@ def _is_loopback_host(host: str) -> bool:
     if ip.version == 6 and ip.ipv4_mapped is not None:
         ip = ip.ipv4_mapped
     return ip.is_loopback
+
+
+def _cli_option_value(argv: list[str], option: str) -> str | None:
+    """Return a CLI option value from ``--name value`` or ``--name=value``."""
+    prefix = f"{option}="
+    for index, arg in enumerate(argv):
+        if arg.startswith(prefix):
+            return arg[len(prefix) :]
+        if arg == option and index + 1 < len(argv):
+            return argv[index + 1]
+    return None
+
+
+def _settings_with_uvicorn_cli_bind(settings: Settings, argv: list[str] | None = None) -> Settings:
+    """Overlay uvicorn CLI bind args onto settings for startup guard parity.
+
+    ``uvicorn api.app:create_app --factory --host 0.0.0.0`` is a documented
+    operational entry point. Uvicorn consumes ``--host`` itself and does not set
+    ``JUNIPER_CASCOR_HOST``, so a guard that only checks ``Settings.host`` would
+    see the default loopback host while uvicorn binds a public socket. When the
+    factory is invoked from the uvicorn CLI, mirror the CLI bind host/port into a
+    transient Settings copy before the lifespan guard runs.
+    """
+    args = list(sys.argv if argv is None else argv)
+    if not any("uvicorn" in arg for arg in args[:2]) and "api.app:create_app" not in args:
+        return settings
+
+    updates: dict[str, object] = {}
+    host = _cli_option_value(args, "--host")
+    if host:
+        updates["host"] = host
+
+    port = _cli_option_value(args, "--port")
+    if port:
+        try:
+            updates["port"] = int(port)
+        except ValueError:
+            logger.warning("Ignoring non-integer uvicorn --port value for bind guard parity: %r", port)
+
+    if not updates:
+        return settings
+    return settings.model_copy(update=updates)
 
 
 def enforce_fronting_auth_bind_guard(settings: Settings) -> None:
@@ -513,7 +556,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         Configured FastAPI application instance.
     """
     if settings is None:
-        settings = get_settings()
+        settings = _settings_with_uvicorn_cli_bind(get_settings())
 
     # Disable interactive API docs when authentication is enabled (production).
     docs_enabled = not settings.api_keys
