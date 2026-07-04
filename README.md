@@ -78,6 +78,7 @@ Settings load from the `JUNIPER_CASCOR_` environment namespace. Common knobs (fu
 | Variable | Default | Purpose |
 |----------|---------|---------|
 | `JUNIPER_CASCOR_HOST` / `JUNIPER_CASCOR_PORT` | `127.0.0.1` / `8200` | Bind address / port (`0.0.0.0` under Docker). |
+| `JUNIPER_CASCOR_FRONTING_AUTH_ATTESTED` | `false` | Required when binding a non-loopback interface; asserts a loopback host-publish or fronting auth layer protects the port. |
 | `JUNIPER_DATA_URL` | `http://localhost:8100` | Upstream juniper-data service. |
 | `JUNIPER_CASCOR_API_KEYS` | _(unset)_ | CSV `X-API-Key` values; auth disabled when unset. |
 | `JUNIPER_CASCOR_LOG_LEVEL` / `_LOG_FORMAT` | `INFO` / `text` | Verbosity / `text` or `json`. |
@@ -87,8 +88,10 @@ Settings load from the `JUNIPER_CASCOR_` environment namespace. Common knobs (fu
 
 ```bash
 docker build -t juniper-cascor:latest .
-docker run --rm -p 8200:8200 \
-  -e JUNIPER_CASCOR_HOST=0.0.0.0 -e JUNIPER_DATA_URL=http://host.docker.internal:8100 \
+docker run --rm -p 127.0.0.1:8200:8200 \
+  -e JUNIPER_CASCOR_HOST=0.0.0.0 \
+  -e JUNIPER_CASCOR_FRONTING_AUTH_ATTESTED=true \
+  -e JUNIPER_DATA_URL=http://host.docker.internal:8100 \
   juniper-cascor:latest
 ```
 

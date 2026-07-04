@@ -399,7 +399,12 @@ class WebSocketManager:
                 )
                 return False
 
-            await websocket.accept()
+            try:
+                await websocket.accept()
+            except (Exception, asyncio.CancelledError):
+                self._release_per_ip_slot(source_ip)
+                self._release_global_slot()
+                raise
             self._active_connections.add(websocket)
             self._connection_meta[websocket] = {"connected_at": time.time(), "source_ip": source_ip}
             logger.info("WebSocket connected (%d active)", self.connection_count)
@@ -441,7 +446,12 @@ class WebSocketManager:
                 )
                 return False
 
-            await websocket.accept()
+            try:
+                await websocket.accept()
+            except (Exception, asyncio.CancelledError):
+                self._release_per_ip_slot(source_ip)
+                self._release_global_slot()
+                raise
             self._pending_connections.add(websocket)
             self._connection_meta[websocket] = {"connected_at": time.time(), "pending": True, "source_ip": source_ip}
             logger.info("WebSocket connected as pending (%d pending)", len(self._pending_connections))

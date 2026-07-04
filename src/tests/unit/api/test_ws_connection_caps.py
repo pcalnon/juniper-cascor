@@ -114,6 +114,39 @@ class TestGlobalCap:
         assert await mgr.try_admit(ws_ctrl2, endpoint="control", identity=None) is True
 
     @pytest.mark.asyncio
+    async def test_training_connect_accept_failure_rolls_back_slots(self):
+        # If accept() fails after reservation but before connection metadata is
+        # recorded, the cap slots must still be released. Otherwise repeated
+        # cancelled handshakes can exhaust the global/per-IP caps until restart.
+        mgr = WebSocketManager(max_connections=100, max_connections_global=1, max_connections_per_ip=1)
+        failed_ws = AsyncMock()
+        failed_ws.client = ("203.0.113.10", 12345)
+        failed_ws.accept.side_effect = RuntimeError("accept failed")
+
+        with pytest.raises(RuntimeError, match="accept failed"):
+            await mgr.connect(failed_ws)
+
+        next_ws = AsyncMock()
+        next_ws.client = ("203.0.113.10", 12346)
+        assert await mgr.connect(next_ws) is True
+
+    @pytest.mark.asyncio
+    async def test_training_pending_accept_failure_rolls_back_slots(self):
+        # Same rollback requirement for the resume/pending path used by
+        # /ws/training before promotion to broadcast-active.
+        mgr = WebSocketManager(max_connections=100, max_connections_global=1, max_connections_per_ip=1)
+        failed_ws = AsyncMock()
+        failed_ws.client = ("203.0.113.20", 12345)
+        failed_ws.accept.side_effect = RuntimeError("accept failed")
+
+        with pytest.raises(RuntimeError, match="accept failed"):
+            await mgr.connect_pending(failed_ws)
+
+        next_ws = AsyncMock()
+        next_ws.client = ("203.0.113.20", 12346)
+        assert await mgr.connect_pending(next_ws) is True
+
+    @pytest.mark.asyncio
     async def test_release_never_underflows(self):
         # Over-release must not drive the counter negative (it would let the cap
         # be exceeded later). Release with nothing reserved, then admit fully.
