@@ -11,15 +11,14 @@ Design of record: juniper-ml
 §5 Option B / §8 D4.
 """
 
-import pytest
-
-from api.websocket.manager import WebSocketManager, ws_identity_key
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
 from fastapi import WebSocketDisconnect
 
 from api.settings import Settings
 from api.websocket.control_stream import control_stream_handler
+from api.websocket.manager import WebSocketManager, ws_identity_key
 from api.websocket.worker_stream import worker_stream_handler
 
 pytestmark = pytest.mark.unit
