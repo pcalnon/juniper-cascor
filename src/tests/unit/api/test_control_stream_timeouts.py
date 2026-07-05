@@ -25,6 +25,12 @@ def _make_ws(lifecycle=None):
     app_state.api_key_auth = None
     app_state.lifecycle = lifecycle if lifecycle is not None else MagicMock()
     app_state.settings = None
+    # SEC-F19 D4: the handler reserves a stack-global + per-identity admission
+    # slot via ws_manager.try_admit before accepting and releases it on
+    # teardown; provide awaitable doubles so the mock-based tests pass through
+    # the admission path (the sync gauge methods stay MagicMock no-ops).
+    app_state.ws_manager.try_admit = AsyncMock(return_value=True)
+    app_state.ws_manager.release_admission = AsyncMock()
     ws.app.state = app_state
     return ws
 
