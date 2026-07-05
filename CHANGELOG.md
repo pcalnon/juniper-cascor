@@ -153,6 +153,52 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
   The `src/api/websocket` sub-module clears the ratified ≥95% pooled bar: **88.17% → 99.37%** (842/955 → 949/955, statement-weighted). Overall cascor coverage 90.20% → 91.03%. New fast unit tests (40 across `test_training_stream_coverage.py` [new], `test_control_stream_coverage.py`, and `test_websocket_manager.py`) drive the resume-handshake + replay arms (`training_stream._await_resume_frame` / `_handle_resume`), the control-path handshake gates / leaky-bucket rate-limit / invalid-params / heartbeat / idle-timeout branches (`control_stream`), and the manager's per-endpoint bookkeeping, per-IP accounting, pending-connection rejection, and defensive metric-emission guards (`manager`) — all via `AsyncMock` seams (no live sockets). Measured on the CI `unit and not slow` subset (the gate basis) with `juniper-coverage-gap-map` (`juniper-ci-tools 0.6.0`, advisory). The blocking `--enforce` gate lands in the final PR of the split once every sub-module clears.
 
+- **Per-file coverage rollout (Phase C-5) — cascor lift 4: `api/lifecycle/manager.py`.**
+  Tests-only; no source changed, no CI gate flipped (the
+  `juniper-coverage-gap-map --enforce` step lands in the final gate PR of the
+  split once every sub-module clears). Lifts the single largest cascor source
+  file — the `TrainingLifecycleManager` orchestrator (1632 statements) — to near-
+  full statement coverage of its previously-uncovered branches, clearing the
+  `api/lifecycle` sub-module. Part 4 of the split (after
+  [#368](https://github.com/pcalnon/juniper-cascor/pull/368) and
+  [#371](https://github.com/pcalnon/juniper-cascor/pull/371)); its scope is
+  disjoint from the concurrent websocket/app lifts. Measured on the CI
+  `unit and not slow` subset (`--cov=src`, statement basis — the gate basis).
+  - `src/api/lifecycle/manager.py`: **80.45% → 98.96%** statement
+    (1313/1632 → 1615/1632). New fast unit tests drive the module-level helper
+    classes (`_WeightHistoryRecorder` trigger/dedupe/decimation arms,
+    `_ReplaySession` + `_WeightCache` internals incl. the threaded `_run` driver,
+    `_PreSwapSnapshot`), the live dataset-swap surface (`swap_dataset_live` happy
+    path + cancel/validation/generic-error rollback arms, `_reload_dataset` via a
+    stubbed `juniper_data_client`, `_rollback_pre_swap_state`,
+    `_snapshot_abandoned_candidate_pool_size`), and the scattered manager branches
+    (network-active guards, the GAP-WS-21 broadcast-throttle + metric-emission
+    guards, interrupt-during-pause, candidate-progress drain break arms,
+    param-update triple-validation + atomic rollback, optimizer-state zeroing,
+    manual hidden-unit validation, snapshot save/load/list, restore/retrain/resume
+    edges, replay control validation, and shutdown teardown) — all via fakes /
+    `unittest.mock` seams (no training, no live sockets, no juniper-data I/O).
+  - The `src/api/lifecycle` sub-module clears the ratified ≥95% pooled bar:
+    **83.42% → 98.92%** (1625/1948 → 1927/1948, statement-weighted). Overall
+    cascor statement coverage **93.42% → 95.85%** (measured on the post-#371
+    base). The ~17 residual manager lines
+    are low-value defensive `except` arms + nested param-rollback branches, all
+    reachable by fast unit tests (none blocked by an excluded slow/integration
+    suite) — left un-chased since both the ≥90% file bar and the ≥95% pooled bar
+    clear with margin. New test files:
+    `src/tests/unit/api/test_lifecycle_weight_recorder.py`,
+    `test_lifecycle_replay_internals.py`, `test_lifecycle_manager_swap.py`,
+    `test_lifecycle_manager_coverage_ext.py`. See juniper-ml
+    [`notes/JUNIPER_ECOSYSTEM_PER_FILE_COVERAGE_ROLLOUT_SCOPING_2026-06-30.md`](https://github.com/pcalnon/juniper-ml/blob/main/notes/JUNIPER_ECOSYSTEM_PER_FILE_COVERAGE_ROLLOUT_SCOPING_2026-06-30.md).
+
+- **Per-file coverage lift 3 (C-5) — API application factory (`src/api/app.py`).** Tests-only; no source changed, no CI gate flipped. Part 3 of the split under the ecosystem per-file coverage rollout (juniper-ml [`notes/JUNIPER_ECOSYSTEM_PER_FILE_COVERAGE_ROLLOUT_SCOPING_2026-06-30.md`](https://github.com/pcalnon/juniper-ml/blob/main/notes/JUNIPER_ECOSYSTEM_PER_FILE_COVERAGE_ROLLOUT_SCOPING_2026-06-30.md)); lifts the last sub-95 file in the `src/api` sub-module so the sub-module clears the ratified ≥95% pooled bar:
+
+  | File | Before (stmt) | After (stmt) |
+  |------|---------------|--------------|
+  | `src/api/app.py` | 208/245 = 84.90% | 243/245 = **99.18%** |
+
+  The `src/api` sub-module clears the ratified ≥95% pooled bar: **94.74% → 98.83%** (810/855 → 845/855, statement-weighted). Overall cascor statement coverage 93.42% → 93.70% (on the current base, which already includes #371's WebSocket lift). Eight new fast unit tests (extending `src/tests/unit/api/test_api_app_coverage_deep.py`) drive the previously-uncovered lifespan companion-service arms — the `auto_start_data_service` launch plus the reverse-order managed-service shutdown drain, and the `auto_start_canopy` task wiring plus its shutdown in-flight cancellation — the `_auto_start_canopy` background task (cascor-healthy / cascor-not-ready / launch-failure / exception paths), and the best-effort `_unregister_worker_metrics_collector` REGISTRY-exception arm — all via `AsyncMock` seams (no live subprocess or health poll). The two statements left uncovered are the import-time `importlib.metadata.PackageNotFoundError` version-fallback (reachable only by reimporting the module with the package uninstalled) — left as-is, no pragma. Measured on the CI `unit and not slow` subset (the gate basis) with `juniper-coverage-gap-map` (`juniper-ci-tools 0.6.0`, advisory). The blocking `--enforce` gate lands in the final PR of the split once every sub-module clears.
+
 ## [0.5.0] - 2026-05-22
 
 **Note on version history**: `pyproject.toml` was bumped 0.3.17 → 0.4.0 on 2026-03-03 in preparation for a 0.4.0 release that was never cut to PyPI (the `[0.4.0]` section below documents the work that *would have* shipped). This 0.5.0 release rolls up both that work and the subsequent ~2.5 months of changes (469 commits since `v0.3.17`) into a single PyPI release. Subsequent entries in this section list the additional work landed since 2026-03-03.
