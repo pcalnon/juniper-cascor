@@ -68,7 +68,9 @@ REST routes (prefix `/v1`; responses wrapped in a `{status, data, meta}` envelop
 | `/training/dataset` | POST / GET / DELETE | Stage / inspect / clear the training dataset |
 
 WebSocket streams: `/ws/training` (live metrics + topology, resumable), `/ws/control` (control +
-heartbeat), `/ws/v1/workers` (the distributed worker pool).
+heartbeat), `/ws/v1/workers` (the distributed worker pool). WebSocket admission is capped globally
+across all three sockets, with an additional per-identity cap on `/ws/control`; over-cap clients are
+closed with code `1013`.
 
 ## Configuration
 
@@ -78,8 +80,11 @@ Settings load from the `JUNIPER_CASCOR_` environment namespace. Common knobs (fu
 | Variable | Default | Purpose |
 |----------|---------|---------|
 | `JUNIPER_CASCOR_HOST` / `JUNIPER_CASCOR_PORT` | `127.0.0.1` / `8200` | Bind address / port (`0.0.0.0` under Docker). |
+| `JUNIPER_CASCOR_FRONTING_AUTH_ATTESTED` | `false` | Required when binding a non-loopback interface; asserts a loopback host-publish or fronting auth layer protects the port. |
 | `JUNIPER_DATA_URL` | `http://localhost:8100` | Upstream juniper-data service. |
 | `JUNIPER_CASCOR_API_KEYS` | _(unset)_ | CSV `X-API-Key` values; auth disabled when unset. |
+| `JUNIPER_CASCOR_WS_MAX_CONNECTIONS_GLOBAL` | `200` | Stack-wide WebSocket cap across training, control, and worker sockets. |
+| `JUNIPER_CASCOR_WS_MAX_CONNECTIONS_PER_IDENTITY` | `5` | `/ws/control` cap per API-key identity. |
 | `JUNIPER_CASCOR_LOG_LEVEL` / `_LOG_FORMAT` | `INFO` / `text` | Verbosity / `text` or `json`. |
 | `JUNIPER_CASCOR_METRICS_ENABLED` | `false` | Expose `/v1/metrics` for Prometheus. |
 

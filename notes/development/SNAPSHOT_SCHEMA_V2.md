@@ -26,7 +26,7 @@ consumers will reasonably ask:
 
 For the implementation roadmap and design rationale see the parent
 plan at
-[`juniper-ml/notes/PHASE_6E_DEFERRED_CAN-015GH_DESIGN.md`](https://github.com/pcalnon/juniper-ml/blob/main/notes/PHASE_6E_DEFERRED_CAN-015GH_DESIGN.md).
+[`juniper-ml/notes/JUNIPER_2026-05-04_JUNIPER-ECOSYSTEM_PHASE-6E-DEFERRED-CAN-015GH-DESIGN.md`](https://github.com/pcalnon/juniper-ml/blob/main/notes/JUNIPER_2026-05-04_JUNIPER-ECOSYSTEM_PHASE-6E-DEFERRED-CAN-015GH-DESIGN.md).
 
 ---
 

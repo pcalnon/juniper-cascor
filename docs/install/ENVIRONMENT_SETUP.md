@@ -42,7 +42,7 @@ This guide covers setting up the development environment for the Juniper Cascor 
 > Juniper conda environments are **versioned across rebuilds**. This project's
 > live environment is currently **`JuniperCascor1`**; each full rebuild (per the
 > Juniper ecosystem conda-env rebuild procedure,
-> `juniper-ml/notes/JUNIPER_CONDA_ENV_REBUILD_PROCEDURE.md`) creates a new
+> `juniper-ml/notes/JUNIPER_2026-05-03_JUNIPER-ECOSYSTEM_CONDA-ENV-REBUILD-PROCEDURE.md`) creates a new
 > suffixed environment (`JuniperCascor1` → `JuniperCascor2` → …) and renames the
 > previous one to `*-DEPRECATED`. A `*-DEPRECATED` environment has a broken or
 > partial toolchain (e.g. a broken `torch` import) — **never activate one**.
