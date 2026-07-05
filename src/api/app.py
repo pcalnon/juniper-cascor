@@ -82,23 +82,46 @@ def _is_loopback_host(host: str) -> bool:
     return ip.is_loopback
 
 
-def _cli_bind_host_override(default_host: str) -> str:
-    """Return an explicit ASGI-server ``--host`` CLI override when present.
-
-    Direct uvicorn launches can bind a different socket host than
-    ``Settings.host`` (for example the documented ``uvicorn ... --host
-    0.0.0.0`` production form). The bind guard must evaluate the actual CLI
-    bind target in that path, otherwise the default loopback setting masks a
-    public bind. Programmatic ``server.py`` startup already passes
-    ``settings.host`` to uvicorn and therefore has no override.
-    """
-    argv = sys.argv[1:]
+def _cli_option_value(argv: list[str], option: str) -> str | None:
+    """Return a CLI option value from ``--name value`` or ``--name=value``."""
+    prefix = f"{option}="
     for index, arg in enumerate(argv):
-        if arg == "--host" and index + 1 < len(argv):
+        if arg.startswith(prefix):
+            return arg[len(prefix) :]
+        if arg == option and index + 1 < len(argv):
             return argv[index + 1]
-        if arg.startswith("--host="):
-            return arg.split("=", 1)[1]
-    return default_host
+    return None
+
+
+def _settings_with_uvicorn_cli_bind(settings: Settings, argv: list[str] | None = None) -> Settings:
+    """Overlay uvicorn CLI bind args onto settings for startup guard parity.
+
+    ``uvicorn api.app:create_app --factory --host 0.0.0.0`` is a documented
+    operational entry point. Uvicorn consumes ``--host`` itself and does not set
+    ``JUNIPER_CASCOR_HOST``, so a guard that only checks ``Settings.host`` would
+    see the default loopback host while uvicorn binds a public socket. When the
+    factory is invoked from the uvicorn CLI, mirror the CLI bind host/port into a
+    transient Settings copy before the lifespan guard runs.
+    """
+    args = list(sys.argv if argv is None else argv)
+    if not any("uvicorn" in arg for arg in args[:2]) and "api.app:create_app" not in args:
+        return settings
+
+    updates: dict[str, object] = {}
+    host = _cli_option_value(args, "--host")
+    if host:
+        updates["host"] = host
+
+    port = _cli_option_value(args, "--port")
+    if port:
+        try:
+            updates["port"] = int(port)
+        except ValueError:
+            logger.warning("Ignoring non-integer uvicorn --port value for bind guard parity: %r", port)
+
+    if not updates:
+        return settings
+    return settings.model_copy(update=updates)
 
 
 def enforce_fronting_auth_bind_guard(settings: Settings) -> None:
@@ -126,7 +149,7 @@ def enforce_fronting_auth_bind_guard(settings: Settings) -> None:
     ``JUNIPER_CASCOR_FRONTING_AUTH_ATTESTED=true`` there — a Phase-1 deploy
     change the platform owner approves separately (design §7 Phase 1).
     """
-    host = _cli_bind_host_override(settings.host)
+    host = settings.host
     if _is_loopback_host(host):
         return
     if settings.fronting_auth_attested:
@@ -533,7 +556,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         Configured FastAPI application instance.
     """
     if settings is None:
-        settings = get_settings()
+        settings = _settings_with_uvicorn_cli_bind(get_settings())
 
     # Disable interactive API docs when authentication is enabled (production).
     docs_enabled = not settings.api_keys

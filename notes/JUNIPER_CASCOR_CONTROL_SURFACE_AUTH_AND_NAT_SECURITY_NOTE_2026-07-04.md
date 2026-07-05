@@ -46,6 +46,11 @@ authenticating layer.
   `JUNIPER_CASCOR_HOST`; port `JUNIPER_CASCOR_PORT=8200`), matching the runtime
   path: the container runs `python src/server.py` with `JUNIPER_CASCOR_HOST` set,
   so `settings.host` genuinely carries the bind host.
+- The documented uvicorn factory entry point
+  (`uvicorn api.app:create_app --factory --host ...`) passes the bind host to
+  uvicorn rather than `JUNIPER_CASCOR_HOST`. `create_app()` mirrors those CLI
+  `--host` / `--port` values into a transient settings copy before the lifespan
+  guard runs so this path is covered by the same invariant.
 
 This converts the auth design's load-bearing precondition ("do not ship the
 un-fronted control surface on a public interface") from prose into an enforced
@@ -116,4 +121,4 @@ also out of scope for this cascor code change.
   digest; global-cap saturation across training + admission and its release on
   disconnect; per-identity rejection and cross-principal fairness under a shared
   peer IP; the anonymous-exempt path; and no global-slot leak on a per-identity
-  rejection.
+  rejection or failed `/ws/training` accept.

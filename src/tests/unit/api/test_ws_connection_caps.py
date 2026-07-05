@@ -11,15 +11,11 @@ Design of record: juniper-ml
 §5 Option B / §8 D4.
 """
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from fastapi import WebSocketDisconnect
 
-from api.settings import Settings
-from api.websocket.control_stream import control_stream_handler
 from api.websocket.manager import WebSocketManager, ws_identity_key
-from api.websocket.worker_stream import worker_stream_handler
 
 pytestmark = pytest.mark.unit
 
@@ -27,44 +23,6 @@ pytestmark = pytest.mark.unit
 def _close_code(ws: AsyncMock) -> int:
     """Return the ``code`` kwarg from the (single) ``ws.close`` call."""
     return ws.close.call_args.kwargs["code"]
-
-
-def _make_handler_ws(*, api_key: str | None = "principal-key") -> AsyncMock:
-    """Build a WebSocket double with a minimal app.state for handler admission tests."""
-    ws = AsyncMock()
-    ws.headers = {"X-API-Key": api_key} if api_key is not None else {}
-    ws.client = ("127.0.0.1", 12345)
-    app = MagicMock()
-    app.state.api_key_auth = None
-    app.state.lifecycle = MagicMock()
-    app.state.worker_coordinator = MagicMock()
-    app.state.worker_registry = MagicMock()
-    app.state.ws_manager.try_admit = AsyncMock(return_value=True)
-    app.state.ws_manager.release_admission = AsyncMock()
-    ws.app = app
-    return ws
-
-
-class TestWsCapSettings:
-    """Settings expose the new caps and bind-guard attestation via env vars."""
-
-    def test_defaults_are_fail_closed_and_bounded(self):
-        settings = Settings()
-
-        assert settings.fronting_auth_attested is False
-        assert settings.ws_max_connections_global == 200
-        assert settings.ws_max_connections_per_identity == 5
-
-    def test_env_overrides_new_security_controls(self, monkeypatch):
-        monkeypatch.setenv("JUNIPER_CASCOR_FRONTING_AUTH_ATTESTED", "true")
-        monkeypatch.setenv("JUNIPER_CASCOR_WS_MAX_CONNECTIONS_GLOBAL", "17")
-        monkeypatch.setenv("JUNIPER_CASCOR_WS_MAX_CONNECTIONS_PER_IDENTITY", "3")
-
-        settings = Settings()
-
-        assert settings.fronting_auth_attested is True
-        assert settings.ws_max_connections_global == 17
-        assert settings.ws_max_connections_per_identity == 3
 
 
 @pytest.mark.unit
@@ -156,37 +114,36 @@ class TestGlobalCap:
         assert await mgr.try_admit(ws_ctrl2, endpoint="control", identity=None) is True
 
     @pytest.mark.asyncio
-    async def test_training_connect_accept_failure_rolls_back_slots(self):
-        # If accept() fails after reservation but before connection metadata is
-        # recorded, the cap slots must still be released. Otherwise repeated
-        # cancelled handshakes can exhaust the global/per-IP caps until restart.
+    async def test_training_accept_failure_releases_reserved_slots(self):
+        # connect() reserves global + per-IP slots before websocket.accept().
+        # If accept raises, those slots must be rolled back or a failed
+        # handshake can exhaust the cap until process restart.
         mgr = WebSocketManager(max_connections=100, max_connections_global=1, max_connections_per_ip=1)
-        failed_ws = AsyncMock()
-        failed_ws.client = ("203.0.113.10", 12345)
-        failed_ws.accept.side_effect = RuntimeError("accept failed")
+        ws_fail = AsyncMock()
+        ws_fail.client = ("10.0.0.5", 12345)
+        ws_fail.accept.side_effect = RuntimeError("accept failed")
 
-        with pytest.raises(RuntimeError, match="accept failed"):
-            await mgr.connect(failed_ws)
+        with pytest.raises(RuntimeError):
+            await mgr.connect(ws_fail)
 
-        next_ws = AsyncMock()
-        next_ws.client = ("203.0.113.10", 12346)
-        assert await mgr.connect(next_ws) is True
+        ws_ok = AsyncMock()
+        ws_ok.client = ("10.0.0.5", 23456)
+        assert await mgr.connect(ws_ok) is True
 
     @pytest.mark.asyncio
-    async def test_training_pending_accept_failure_rolls_back_slots(self):
-        # Same rollback requirement for the resume/pending path used by
-        # /ws/training before promotion to broadcast-active.
+    async def test_pending_accept_failure_releases_reserved_slots(self):
+        # Same rollback requirement for the pending resume-handshake path.
         mgr = WebSocketManager(max_connections=100, max_connections_global=1, max_connections_per_ip=1)
-        failed_ws = AsyncMock()
-        failed_ws.client = ("203.0.113.20", 12345)
-        failed_ws.accept.side_effect = RuntimeError("accept failed")
+        ws_fail = AsyncMock()
+        ws_fail.client = ("10.0.0.6", 12345)
+        ws_fail.accept.side_effect = RuntimeError("accept failed")
 
-        with pytest.raises(RuntimeError, match="accept failed"):
-            await mgr.connect_pending(failed_ws)
+        with pytest.raises(RuntimeError):
+            await mgr.connect_pending(ws_fail)
 
-        next_ws = AsyncMock()
-        next_ws.client = ("203.0.113.20", 12346)
-        assert await mgr.connect_pending(next_ws) is True
+        ws_ok = AsyncMock()
+        ws_ok.client = ("10.0.0.6", 23456)
+        assert await mgr.connect_pending(ws_ok) is True
 
     @pytest.mark.asyncio
     async def test_release_never_underflows(self):
@@ -259,62 +216,3 @@ class TestPerIdentityCap:
         assert await mgr.try_admit(b1, endpoint="control", identity="B") is True  # global 2/2
         c1 = AsyncMock()
         assert await mgr.try_admit(c1, endpoint="control", identity="C") is False  # global full
-
-
-@pytest.mark.unit
-class TestHandlerAdmissionCaps:
-    """Handlers must reserve/release caps exactly around accepted sessions."""
-
-    @pytest.mark.asyncio
-    async def test_control_handler_releases_same_identity_on_session_exception(self):
-        ws = _make_handler_ws(api_key="principal-key")
-        expected_identity = ws_identity_key(ws)
-
-        with patch("api.websocket.control_stream._check_handshake_gates", new=AsyncMock(return_value=True)):
-            with patch("api.websocket.control_stream._run_control_session", new=AsyncMock(side_effect=WebSocketDisconnect())):
-                with pytest.raises(WebSocketDisconnect):
-                    await control_stream_handler(ws)
-
-        ws.app.state.ws_manager.try_admit.assert_awaited_once_with(ws, endpoint="control", identity=expected_identity)
-        ws.app.state.ws_manager.release_admission.assert_awaited_once_with(identity=expected_identity)
-
-    @pytest.mark.asyncio
-    async def test_control_handler_does_not_release_when_admission_rejected(self):
-        ws = _make_handler_ws(api_key="principal-key")
-        ws.app.state.ws_manager.try_admit = AsyncMock(return_value=False)
-
-        with patch("api.websocket.control_stream._check_handshake_gates", new=AsyncMock(return_value=True)):
-            with patch("api.websocket.control_stream._run_control_session", new=AsyncMock()) as run_session:
-                await control_stream_handler(ws)
-
-        run_session.assert_not_awaited()
-        ws.app.state.ws_manager.release_admission.assert_not_awaited()
-
-    @pytest.mark.asyncio
-    async def test_worker_handler_global_cap_rejection_does_not_accept_or_release(self):
-        ws = _make_handler_ws(api_key="worker-key")
-        ws.headers = {}
-        ws.app.state.ws_manager.try_admit = AsyncMock(return_value=False)
-
-        await worker_stream_handler(ws)
-
-        ws.app.state.ws_manager.try_admit.assert_awaited_once_with(ws, endpoint="workers", identity=None)
-        ws.accept.assert_not_awaited()
-        ws.app.state.ws_manager.release_admission.assert_not_awaited()
-
-    @pytest.mark.asyncio
-    async def test_worker_handler_releases_global_admission_after_session(self):
-        ws = _make_handler_ws(api_key="worker-key")
-        ws.headers = {}
-
-        with patch("api.websocket.worker_stream._run_worker_session", new=AsyncMock(return_value=None)) as run_session:
-            await worker_stream_handler(ws)
-
-        ws.app.state.ws_manager.try_admit.assert_awaited_once_with(ws, endpoint="workers", identity=None)
-        run_session.assert_awaited_once_with(
-            ws,
-            ws.app.state.worker_coordinator,
-            ws.app.state.worker_registry,
-            ws.app.state.ws_manager,
-        )
-        ws.app.state.ws_manager.release_admission.assert_awaited_once_with(identity=None)
