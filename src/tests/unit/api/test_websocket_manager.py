@@ -166,6 +166,48 @@ class TestWebSocketManager:
         ws2.close.assert_awaited_once()
 
     @pytest.mark.asyncio
+    async def test_close_all_releases_per_ip_slots(self):
+        """close_all releases per-IP reservations so reconnects are not rejected."""
+        mgr = WebSocketManager(max_connections_per_ip=1)
+        ws1 = AsyncMock()
+        ws1.client = ("10.0.0.5", 1111)
+        assert await mgr.connect_pending(ws1) is True
+
+        await mgr.close_all()
+
+        ws2 = AsyncMock()
+        ws2.client = ("10.0.0.5", 2222)
+        assert await mgr.connect_pending(ws2) is True
+        ws2.close.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_close_all_clears_endpoint_bookkeeping(self):
+        """close_all removes endpoint-bucket entries for closed sockets."""
+        mgr = WebSocketManager()
+        ws = AsyncMock()
+        await mgr.connect(ws)
+        mgr.register_endpoint_connection(ws, "training")
+        assert ws in mgr._endpoint_connections["training"]
+
+        await mgr.close_all()
+
+        assert mgr._endpoint_connections["training"] == set()
+        assert mgr._connection_endpoint == {}
+
+    @pytest.mark.asyncio
+    async def test_close_all_closes_endpoint_only_connections(self):
+        """close_all closes sockets that are tracked only by endpoint buckets."""
+        mgr = WebSocketManager()
+        ws = AsyncMock()
+        mgr.register_endpoint_connection(ws, "control")
+
+        await mgr.close_all()
+
+        ws.close.assert_awaited_once_with(code=1001, reason="Server shutting down")
+        assert mgr._endpoint_connections["control"] == set()
+        assert mgr._connection_endpoint == {}
+
+    @pytest.mark.asyncio
     async def test_close_all_holds_lock_during_snapshot(self):
         """close_all acquires the manager lock before snapshotting and
         clearing the connection set (CR-025). This prevents a connect/
