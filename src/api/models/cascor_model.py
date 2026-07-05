@@ -6,7 +6,7 @@ against the abstract ``juniper_model_core.GrowableModel`` interface instead of n
 ``CascadeCorrelationNetwork`` directly.
 
 Two ways it deliberately differs from the test adapter (load-bearing — see
-``juniper-ml/notes/JUNIPER_CASCOR_WS6_BPHASE_MODEL_CORE_ADOPTION_BUILD_PLAN_2026-06-19.md`` §4.2):
+``juniper-ml/notes/JUNIPER_2026-06-19_JUNIPER-CASCOR_WS6-BPHASE-MODEL-CORE-ADOPTION-BUILD-PLAN.md`` §4.2):
 
 * It **wraps a pre-built network** — the lifecycle manager constructs the ``CascadeCorrelationNetwork``
   in ``create_network`` and hands it here. This wrapper never constructs one.
