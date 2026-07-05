@@ -5,7 +5,7 @@ the ``juniper_model_core.conformance`` GrowableModel kit — "native conformance
 the test-only adapter). Together with the OUT-12 golden suite
 this forms the WS-6 trigger-gate: cascor may refactor onto the shared packages only if both
 stay green. Plan:
-``juniper-ml/notes/JUNIPER_CASCOR_MODEL_CORE_CONFORMANCE_WIRING_PLAN_2026-06-18.md``.
+``juniper-ml/notes/JUNIPER_2026-06-18_JUNIPER-CASCOR_MODEL-CORE-CONFORMANCE-WIRING-PLAN.md``.
 
 Run (serial, GIL env):
     OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 \

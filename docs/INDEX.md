@@ -32,8 +32,9 @@ This documentation serves two audiences:
 
 | Document | Description |
 |----------|-------------|
-| [API Reference](api/API_REFERENCE.md) | Complete API documentation with examples |
-| [API Schemas](api/API_SCHEMAS.md) | HDF5 schemas and data structures |
+| [REST and WebSocket API Reference](api/JUNIPER_CASCOR_API_REFERENCE.md) | Maintained service API documentation with REST endpoints, WebSocket protocols, close codes, and operational constraints |
+| [Python API Reference](api/API_REFERENCE.md) | In-process Python API documentation with examples |
+| [API Schemas](api/API_SCHEMAS.md) | HDF5, lifecycle, WebSocket, and data structure schemas |
 
 ### Configuration
 

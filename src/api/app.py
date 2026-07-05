@@ -5,6 +5,7 @@ import importlib.metadata
 import ipaddress
 import json
 import logging
+import sys
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 

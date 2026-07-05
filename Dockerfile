@@ -3,7 +3,7 @@
 # Multi-stage Dockerfile for production deployment
 # =============================================================================
 # Build: docker build -t juniper-cascor:latest .
-# Run:   docker run -p 8200:8200 -e JUNIPER_DATA_URL=http://localhost:8100 juniper-cascor:latest
+# Run:   docker run -p 127.0.0.1:8200:8200 -e JUNIPER_CASCOR_FRONTING_AUTH_ATTESTED=true -e JUNIPER_DATA_URL=http://localhost:8100 juniper-cascor:latest
 # =============================================================================
 
 # -----------------------------------------------------------------------------

@@ -42,7 +42,7 @@ jobs:
         # pre-commit hook with a wider skip-list (B104/B108/B110/B404/
         # B614 added) — those cases stay out of the CI standalone
         # invocation deliberately. See V20 in
-        # juniper-ml/notes/CI_VALIDATION_FINDINGS_2026-04-29.md.
+        # juniper-ml/notes/JUNIPER_2026-04-29_JUNIPER-ECOSYSTEM_CI-VALIDATION-FINDINGS.md.
         run: |
           bandit -r src --exclude src/tests --skip B101,B301,B311,B403 -f sarif -o reports/security/bandit.sarif --exit-zero
           bandit -r src --exclude src/tests --skip B101,B301,B311,B403 --confidence-level medium --severity-level medium
