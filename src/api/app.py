@@ -515,7 +515,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         Configured FastAPI application instance.
     """
     if settings is None:
-        settings = get_settings()
+        settings = _settings_with_uvicorn_cli_bind(get_settings())
 
     # Disable interactive API docs when authentication is enabled (production).
     docs_enabled = not settings.api_keys

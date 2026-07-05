@@ -95,16 +95,14 @@ docker build -t juniper-cascor:latest .
 docker run --rm -p 127.0.0.1:8200:8200 \
   -e JUNIPER_CASCOR_HOST=0.0.0.0 \
   -e JUNIPER_CASCOR_FRONTING_AUTH_ATTESTED=true \
+  -e JUNIPER_CASCOR_API_KEYS=replace-with-a-strong-key \
   -e JUNIPER_DATA_URL=http://host.docker.internal:8100 \
   juniper-cascor:latest
 ```
 
-The container must bind `0.0.0.0` internally so Docker can forward traffic, but the example publishes
-only on host loopback and sets the attestation required by the startup bind guard. Do not set
-`JUNIPER_CASCOR_FRONTING_AUTH_ATTESTED=true` for a public host bind unless an authenticating reverse
-proxy fronts the service.
-
-Health is probed at `/v1/health/ready`. For the full stack, see
+The host-side publish is loopback-only; `JUNIPER_CASCOR_FRONTING_AUTH_ATTESTED=true`
+attests that boundary so the startup bind guard allows the container's internal
+`0.0.0.0` bind. Health is probed at `/v1/health/ready`. For the full stack, see
 [`juniper-deploy`](https://github.com/pcalnon/juniper-deploy).
 
 ## Status

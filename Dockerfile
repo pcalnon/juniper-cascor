@@ -3,7 +3,7 @@
 # Multi-stage Dockerfile for production deployment
 # =============================================================================
 # Build: docker build -t juniper-cascor:latest .
-# Run:   docker run -p 127.0.0.1:8200:8200 -e JUNIPER_CASCOR_FRONTING_AUTH_ATTESTED=true -e JUNIPER_DATA_URL=http://localhost:8100 juniper-cascor:latest
+# Run:   docker run -p 127.0.0.1:8200:8200 -e JUNIPER_CASCOR_HOST=0.0.0.0 -e JUNIPER_CASCOR_FRONTING_AUTH_ATTESTED=true -e JUNIPER_DATA_URL=http://localhost:8100 juniper-cascor:latest
 # =============================================================================
 
 # -----------------------------------------------------------------------------
@@ -74,7 +74,11 @@ USER juniper
 ENV PYTHONPATH=/app/src
 
 # Service configuration
-ENV JUNIPER_CASCOR_HOST=0.0.0.0
+# Safe image default: bind loopback so the SEC-F22 bind guard does not crash a
+# bare container. Published-container deployments must opt in explicitly with
+# JUNIPER_CASCOR_HOST=0.0.0.0 plus JUNIPER_CASCOR_FRONTING_AUTH_ATTESTED=true
+# after constraining the host-side publish/proxy.
+ENV JUNIPER_CASCOR_HOST=127.0.0.1
 ENV JUNIPER_CASCOR_PORT=8200
 ENV JUNIPER_CASCOR_LOG_LEVEL=INFO
 ENV JUNIPER_DATA_URL=http://localhost:8100
