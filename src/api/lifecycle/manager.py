@@ -1806,7 +1806,7 @@ class TrainingLifecycleManager:
     # broader (covers every runtime-tunable param), so start_training has
     # to split the request body into "fit-shaped" and "network-attribute"
     # kwargs and route them through different paths. See
-    # juniper-ml/notes/CASCOR_FIT_KWARGS_LATENT_BUG.md for the full trace
+    # juniper-ml/notes/JUNIPER_2026-04-30_JUNIPER-CASCOR_FIT-KWARGS-LATENT-BUG.md for the full trace
     # and rationale (Option 1 — filter at the start_training boundary).
     _FIT_KWARGS: frozenset = frozenset({"max_epochs", "epochs", "max_iterations", "early_stopping"})
 

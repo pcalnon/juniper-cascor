@@ -83,6 +83,8 @@ Metrics nuance:
 - `/v1/metrics/history` and `/ws/training` include callback-driven output-phase points (epoch 1, every 25 epochs, final epoch).
 - `accuracy` can be `null` for those output-phase callback emissions.
 - `/ws/training` can also emit `candidate_progress` messages (epoch 1, every 50 epochs, final epoch per candidate).
+- Fresh `/ws/training` connects receive `initial_status`, `state`, and `initial_metrics`; resume requests use `{"type":"resume","data":{"last_seq":...,"server_instance_id":...}}` and replay only buffered broadcasts with higher `seq`.
+- `/ws/control` rate limiting returns an in-band `command_response` with `status:"rate_limited"` and keeps the socket open; it does not close on normal command throttling.
 
 **Middleware** (outermost first): CORS -> Security -> Prometheus -> RequestId. **Models:** Pydantic (API), dataclasses (config).
 
@@ -115,6 +117,14 @@ Metrics nuance:
 | `JUNIPER_CASCOR_WS_MAX_CONNECTIONS_PER_IDENTITY` | `5`    | `/ws/control` cap per authenticated API-key identity. |
 | `JUNIPER_CASCOR_WS_MAX_CONNECTIONS_PER_IP` | `5`          | Per-peer-IP cap. DoS-dampening only; behind Docker NAT all clients share the bridge-gateway bucket. |
 | `JUNIPER_CASCOR_WS_CONTROL_ALLOWED_ORIGINS` | `http://localhost:8050,http://127.0.0.1:8050,https://localhost:8050,https://127.0.0.1:8050` | `/ws/control` Origin allowlist. Accepts JSON-array or comma-CSV. Empty string disables (opt-out). For docker compose, add `http://juniper-canopy:8050` so canopy's `ControlStreamSupervisor` can connect. |
+| `JUNIPER_WS_REPLAY_BUFFER_SIZE` | `1024` | `/ws/training` broadcast replay buffer size. `0` disables resume replay. |
+| `JUNIPER_WS_INITIAL_METRICS_COUNT` | `100` | Recent metrics sent as `initial_metrics` on fresh `/ws/training` connect. `0` disables the automatic burst; clients can still send `subscribe_metrics`. |
+| `JUNIPER_WS_SEND_TIMEOUT_SECONDS` | `0.5` | Per-client WebSocket send timeout before a slow consumer is dropped from fan-out. |
+| `JUNIPER_WS_MAX_MESSAGE_SIZE_BYTES` | `60000` | Serialized JSON threshold for `chunked_message` envelopes. `0` disables chunking (tests only; oversized frames may be dropped by intermediaries). |
+| `JUNIPER_WS_CHUNK_PAYLOAD_SIZE_BYTES` | `32000` | Payload slice size for each `chunked_message`. |
+| `JUNIPER_CASCOR_WS_MAX_CONNECTIONS` | `50` | Global WebSocket connection cap, including pending `/ws/training` resume handshakes. |
+| `JUNIPER_CASCOR_WS_HEARTBEAT_INTERVAL_SEC` | `30` | Training/control heartbeat ping interval. |
+| `JUNIPER_CASCOR_WS_HEARTBEAT_PONG_TIMEOUT_SEC` | `10` | Training/control pong timeout before heartbeat close. |
 
 ---
 

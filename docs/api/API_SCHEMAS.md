@@ -387,6 +387,148 @@ Behavior constraints:
 - Messages are best-effort under queue pressure (`put_nowait` drop-on-full behavior in worker loop).
 - `training_state.candidate_epoch` and `training_state.candidate_total_epochs` are updated from this stream.
 
+### WebSocket Connection and Replay Schemas
+
+`WS /ws/training` uses personal messages during connection setup and resume.
+These messages are sent directly to the connecting client and therefore do not
+carry broadcast `seq` fields.
+
+**`connection_established`**:
+
+```python
+{
+    "type": "connection_established",
+    "timestamp": float,
+    "data": {
+        "connections": int,
+        "server_instance_id": str,
+        "server_start_time": float,       # monotonic timestamp
+        "replay_buffer_capacity": int,
+    },
+}
+```
+
+**Client resume request**:
+
+```python
+{
+    "type": "resume",
+    "data": {
+        "last_seq": int,
+        "server_instance_id": str,
+    },
+}
+```
+
+**Resume outcomes**:
+
+```python
+{
+    "type": "resume_ok",
+    "timestamp": float,
+    "data": {"replayed_count": int},
+}
+```
+
+```python
+{
+    "type": "resume_failed",
+    "timestamp": float,
+    "data": {"reason": "malformed_resume" | "server_restarted" | "out_of_range"},
+}
+```
+
+The server replays buffered broadcast messages with `seq > last_seq` only after
+`resume_ok`. A failed or absent resume falls back to the fresh-connect flow.
+
+### WebSocket Metrics Back-fill Schema
+
+Fresh `WS /ws/training` connects receive an `initial_metrics` burst after the
+initial state. Clients can request another burst later with
+`{"type": "subscribe_metrics", "data": {"max_count": N}}`.
+
+```python
+{
+    "type": "initial_metrics",
+    "timestamp": float,
+    "data": {
+        "metrics": [dict],
+        "count": int,
+        "current_seq": int,
+    },
+}
+```
+
+Constraints:
+
+- `current_seq` is the latest broadcast sequence number at send time; the
+  `initial_metrics` envelope itself has no `seq`.
+- `max_count` is clamped to the server cap (`ws_initial_metrics_count` when
+  nonzero, otherwise `100`; default `100`). Setting `ws_initial_metrics_count=0`
+  disables only the automatic fresh-connect burst.
+- If metrics history is unavailable, the server sends an empty `metrics` list.
+
+### WebSocket Chunked Message Schema
+
+Broadcast and personal messages whose serialized JSON exceeds
+`ws_max_message_size_bytes` (default `60_000`) are split into
+`chunked_message` envelopes before send. Broadcast chunks receive normal `seq`
+and replay-buffer entries; personal chunks do not.
+
+```python
+{
+    "type": "chunked_message",
+    "timestamp": float,
+    "seq": int,                         # broadcast chunks only
+    "emitted_at_monotonic": float,      # broadcast chunks only
+    "data": {
+        "chunk_id": str,
+        "chunk_index": int,             # zero-based
+        "total_chunks": int,
+        "original_type": str,
+        "payload": str,                 # JSON slice of the original envelope
+    },
+}
+```
+
+Clients reconstruct a logical message by grouping chunks by `chunk_id`, sorting
+by `chunk_index`, concatenating `payload`, and parsing the resulting JSON.
+
+### WebSocket Control Response Schema
+
+`WS /ws/control` responses intentionally have no `seq`; the control channel has
+no replay buffer.
+
+Normal success/error acknowledgments use the standard envelope:
+
+```python
+{
+    "type": "command_response",
+    "timestamp": float,
+    "data": {
+        "command": "start" | "stop" | "pause" | "resume" | "reset" | "set_params" | str,
+        "status": "success" | "error",
+        "command_id": str,              # optional echo
+        "result": dict,                 # success only, optional
+        "error": str,                   # error only, optional
+        "code": str,                    # error only, e.g. "unknown_command" or "invalid_params"
+    },
+}
+```
+
+The per-connection leaky-bucket limiter returns a legacy flat response and
+keeps the socket open:
+
+```python
+{
+    "type": "command_response",
+    "command": str,
+    "status": "rate_limited",
+    "retry_after": float,
+    "command_id": str,                  # optional echo
+}
+```
+
 ---
 
 ## Configuration Schema

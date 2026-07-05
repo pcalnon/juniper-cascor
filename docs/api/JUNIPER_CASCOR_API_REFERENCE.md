@@ -468,6 +468,7 @@ curl -s -X PATCH http://localhost:8201/v1/network/weights \
 | 404  | No network or `hidden_unit_index` out of range |
 | 409  | FSM not in `Investigating`                     |
 | 422  | NaN/Inf in `values`, unknown dtype             |
+| 500  | Defensive fallback for an unmapped lifecycle status sentinel |
 | 503  | Lifecycle unbound                              |
 
 ---
@@ -514,6 +515,7 @@ curl -s -X POST http://localhost:8201/v1/network/hidden-units \
 | 404  | No network                                                  |
 | 409  | FSM not in `Investigating` or already at `max_hidden_units` |
 | 422  | NaN/Inf, unknown activation                                 |
+| 500  | Defensive fallback for an unmapped lifecycle status sentinel |
 | 503  | Lifecycle unbound                                           |
 
 ---
@@ -546,6 +548,7 @@ curl -s -X DELETE http://localhost:8201/v1/network/hidden-units/3
 |------|----------------------------------|
 | 404  | No network or `idx` out of range |
 | 409  | FSM not in `Investigating`       |
+| 500  | Defensive fallback for an unmapped lifecycle status sentinel |
 | 503  | Lifecycle unbound                |
 
 ---
@@ -1206,6 +1209,13 @@ All three sockets share these properties:
 - Application-layer heartbeat: server sends `{"type":"ping","ts":<float>}` every 30s; client must reply `{"type":"pong"}` within 10s or the connection is closed.
 - All payloads are JSON unless explicitly noted as binary.
 
+`/ws/training` and `/ws/control` also use an application-layer heartbeat:
+server sends `{"type":"ping","ts":<float>}` every
+`ws_heartbeat_interval_sec` seconds (default `30`), and the client must
+reply with `{"type":"pong"}` within `ws_heartbeat_pong_timeout_sec`
+seconds (default `10`) or the handler closes the connection with a heartbeat
+timeout.
+
 ### WS `/ws/training`
 
 **Summary** — Streaming training events for dashboards (juniper-canopy).
@@ -1221,10 +1231,40 @@ Handler at `src/api/websocket/training_stream.py`.
 **Resume handshake (optional, client → server within timeout)**:
 
 ```json
-{ "type": "resume", "seq": 12345 }
+{
+  "type": "resume",
+  "data": {
+    "last_seq": 12345,
+    "server_instance_id": "server-uuid-from-connection_established"
+  }
+}
 ```
 
-**Other client→server messages** — `{"type":"pong"}`, optional `{"type":"subscribe_metrics", ...}`.
+Resume responses:
+
+| Type | Data | Meaning |
+|------|------|---------|
+| `resume_ok` | `{"replayed_count": <int>}` | Replay succeeded; buffered events follow as personal messages. |
+| `resume_failed` | `{"reason": "malformed_resume"}` | Frame omitted `data.last_seq` or `data.server_instance_id`. |
+| `resume_failed` | `{"reason": "server_restarted"}` | Client's `server_instance_id` did not match this process. |
+| `resume_failed` | `{"reason": "out_of_range"}` | `last_seq` is older than the retained replay buffer or replay is disabled. |
+
+If no resume frame arrives within the handshake timeout, or a non-resume/non-JSON
+frame arrives during that window, the connection proceeds as a fresh connect.
+
+**Other client→server messages**:
+
+```json
+{ "type": "pong" }
+```
+
+```json
+{ "type": "subscribe_metrics", "data": { "max_count": 50 } }
+```
+
+`subscribe_metrics` replies with an `initial_metrics` personal message. The
+requested count is clamped to `[1, ws_initial_metrics_count]` (or `100` when the
+initial burst is disabled).
 
 **Server→client message types**:
 
@@ -1234,9 +1274,42 @@ Handler at `src/api/websocket/training_stream.py`.
 | `initial_status`         | Fresh connect                             |
 | `state`                  | FSM transitions / coalesced state updates |
 | `initial_metrics`        | Fresh connect (back-fill)                 |
+| `resume_ok`              | Successful resume handshake               |
+| `resume_failed`          | Failed resume handshake                   |
 | `epoch_end`              | Each epoch completion                     |
-| `topology_update`        | When the network grows / mutates          |
-| `heartbeat_ping`         | Every 30 s                                |
+| `candidate_progress`     | Candidate worker progress                 |
+| `cascade_add`            | New hidden unit added                     |
+| `topology`               | When the network grows / mutates          |
+| `chunked_message`        | Fragment of an oversized JSON envelope    |
+| `event`                  | Generic lifecycle event                   |
+| `ping`                   | Heartbeat ping every 30 s by default      |
+
+Broadcast messages get a monotonic `seq` and `emitted_at_monotonic` before
+fan-out and replay buffering. Personal messages (`connection_established`,
+`initial_status`, `initial_metrics`, `resume_ok`, `resume_failed`) do not get a
+`seq`; `initial_metrics.data.current_seq` tells the client which broadcast
+sequence is current at the time of the back-fill.
+
+Oversized JSON envelopes are sent as one or more `chunked_message` envelopes:
+
+```json
+{
+  "type": "chunked_message",
+  "timestamp": 1714000000.123,
+  "seq": 42,
+  "data": {
+    "chunk_id": "uuid",
+    "chunk_index": 0,
+    "total_chunks": 3,
+    "original_type": "topology",
+    "payload": "{\"type\":\"topology\",..."
+  }
+}
+```
+
+Clients reconstruct by grouping on `chunk_id`, sorting by `chunk_index`, joining
+`payload`, and parsing the resulting JSON. Each chunk receives its own `seq` and
+replay-buffer slot.
 
 **Example call**:
 
@@ -1252,7 +1325,9 @@ websocat -H "X-API-Key: $API_KEY" ws://localhost:8201/ws/training
 |------|-------------------------------------------|
 | 1013 | Manager, stack-global, or per-IP cap hit  |
 | 4001 | Auth failure                              |
-| 1006 | Heartbeat pong timeout, message too large |
+| 1011 | WebSocket manager missing                 |
+| 1013 | Global or per-IP connection limit reached |
+| 1006 | Heartbeat pong timeout                    |
 | 1000 | Normal close                              |
 
 ---
@@ -1261,7 +1336,22 @@ websocat -H "X-API-Key: $API_KEY" ws://localhost:8201/ws/training
 
 **Summary** — Authenticated command channel for training lifecycle control.
 
-**Detailed description** — Origin header is rejected with `4003` if present (Phase B-pre-b: machine-to-machine only). Before accepting, the handler reserves a stack-global WebSocket slot and a per-identity slot keyed on the `X-API-Key` digest; over-cap attempts close with `1013`. Per-connection leaky-bucket rate limit (default 10 cmd/s). Bidirectional 120 s idle timeout. Per-origin handshake cooldown. Phase D execution timeouts: `start` 10 s; `stop`/`pause`/`resume`/`reset` 2 s; `set_params` 1 s. Phase D §S10.7 lazily registers Prometheus counter `cascor_ws_control_command_received_total{command}` via `register_or_reuse`. Handler at `src/api/websocket/control_stream.py`.
+**Detailed description** — Browser origins are allowed only when the `Origin`
+header matches `ws_control_allowed_origins`; when the allowlist is non-empty,
+missing or unlisted origins close with `4003`. The default allowlist covers
+loopback canopy origins (`localhost` / `127.0.0.1` on port `8050`); set
+`JUNIPER_CASCOR_WS_CONTROL_ALLOWED_ORIGINS` to a JSON array or comma-separated
+list for deployments, or to an empty string only when explicitly opting out.
+
+Handshake gates run in this order: emergency kill switch, IP cooldown block,
+API key authentication, Origin allowlist. Accepted connections receive
+`{"type":"connection_established","data":{"channel":"control"}}`.
+Commands are limited by a per-connection leaky bucket (default 10 cmd/s) and a
+bidirectional idle timeout (default 120s). Phase D execution timeouts: `start`
+10 s; `stop`/`pause`/`resume`/`reset` 2 s; `set_params` 1 s. Phase D §S10.7
+lazily registers Prometheus counter
+`cascor_ws_control_command_received_total{command}` via `register_or_reuse`.
+Handler at `src/api/websocket/control_stream.py`.
 
 **Connect** — `ws://localhost:8201/ws/control` (mounted in `src/api/app.py:472`).
 
@@ -1285,11 +1375,29 @@ Valid commands: `start`, `stop`, `pause`, `resume`, `reset`, `set_params`. The s
 ```json
 {
   "type": "command_response",
-  "command": "start",
+  "timestamp": 1714000000.123,
+  "data": {
+    "command": "start",
+    "command_id": "uuid",
+    "status": "success",
+    "result": { "...": "..." }
+  }
+}
+```
+
+Validation and command failures keep the socket open and return the same
+envelope with `data.status: "error"` plus `data.error` and, when available,
+`data.code` (for example `unknown_command` or `invalid_params`).
+The rate-limited response is the legacy flat shape emitted directly by the
+handler and also has no `seq`:
+
+```json
+{
+  "type": "command_response",
+  "command": "pause",
   "command_id": "uuid",
-  "status": "success",
-  "result": { "...": "..." },
-  "error": null
+  "status": "rate_limited",
+  "retry_after": 0.1
 }
 ```
 
@@ -1308,11 +1416,16 @@ websocat -H "X-API-Key: $API_KEY" ws://localhost:8201/ws/control \
 |------|----------------------------------|
 | 1013 | Stack-global or per-identity cap hit |
 | 4001 | Auth failure                     |
-| 4003 | Origin header present (B2B-only) |
-| 1008 | Rate limit exceeded              |
-| 1006 | Heartbeat timeout, idle timeout  |
+| 4003 | Origin missing or not allowlisted |
+| 4029 | IP blocked by handshake cooldown |
+| 1013 | Control endpoint disabled        |
+| 1000 | Idle timeout                     |
+| 1006 | Heartbeat pong timeout           |
 
-Per-command failures arrive in-band as `{"status":"error", "error": "..."}` rather than closing the socket.
+Rate limiting and per-command failures arrive in-band as `command_response`
+messages rather than closing the socket. Oversized command messages (over 64 KB)
+also receive an error response and the connection stays open. Malformed JSON
+receives an error response and then closes with `1003`.
 
 ---
 

@@ -27,7 +27,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   also passed into `set_build_info(...)` (Prometheus `juniper_cascor_build`
   Info metric) and the shared `ReadinessResponse`. Foundation for the ecosystem
   stale-image-detection effort — see juniper-ml
-  [`notes/BUILD_PROVENANCE_DESIGN_2026-06-14.md`](https://github.com/pcalnon/juniper-ml/blob/main/notes/BUILD_PROVENANCE_DESIGN_2026-06-14.md).
+  [`notes/BUILD_PROVENANCE_DESIGN_2026-06-14.md`](https://github.com/pcalnon/juniper-ml/blob/main/notes/JUNIPER_2026-06-14_JUNIPER-ECOSYSTEM_BUILD-PROVENANCE-DESIGN.md).
   Requires `juniper-observability>=0.4.0`.
 
 - **Native `equities` (and generic-params) dataset staging**: `POST /v1/training/dataset` and the live-swap `POST /v1/training/dataset/live` now accept `dataset_type: "equities"` plus a generic `params: dict` carrying arbitrary juniper-data generator inputs (e.g. `symbols`, `start_date`, `end_date`, `normalize_features`, `max_symbols`) that the spiral-shaped typed fields (`n_samples`/`noise`/`rotations`/`n_spirals`) don't cover. `StageDatasetRequest` (`src/api/models/training.py`) gains `"equities"` in the `dataset_type` `Literal` and a `params: Optional[Dict[str, Any]]` field (`SwapDatasetLiveRequest` inherits it); `_reload_dataset` (`src/api/lifecycle/manager.py`) pops and **merges** the generic `params` with the remaining typed fields before forwarding to `JuniperDataClient.create_dataset` (generic keys win on conflict). The legacy spiral/xor/circles/moons/mnist path is unchanged — those bodies carry no `params` key, so the merge is a strict no-op (`{**cfg, **{}}`) and `_current_dataset_config` keeps its prior shape. This lets cascor natively fetch + train on the juniper-data `equities` time-series dataset (S&P 500 daily OHLCV + SEC EDGAR fundamentals, 2000→present) — `stage → start_training → create_dataset("equities", {…}) → download_artifact_npz` — instead of requiring callers to pre-fetch and `inline_data` the arrays. No route or canopy-adapter change (the typed fields are preserved; `model_dump` carries the new `params`). Regression coverage in `src/tests/integration/api/test_pending_dataset.py`: `test_equities_staging_accepts_and_echoes_generic_params`, `test_equities_reload_forwards_generic_params_flattened` (asserts `create_dataset` receives `generator="equities"` and the flattened params), and `test_spirals_typed_fields_still_forward_unchanged` (legacy-path guard).
@@ -88,7 +88,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
-- **SEC-F10 (HO-5) — runtime training-parameter bounds are now enforced on the `PATCH` *and* WebSocket update paths.** `TrainingParams` (the `POST /v1/training/start` model) always carried both floors and ceilings (e.g. `learning_rate` `le=10.0`, `candidate_pool_size` `le=256`, `max_hidden_units` `le=10_000`, `patience` `le=100_000`, `epochs_max`/`candidate_epochs`/`output_epochs` `le=1_000_000`), but the two *runtime*-update paths did not: `TrainingParamUpdateRequest` (`PATCH /v1/training/params`) declared only lower bounds, and the `set_params` WebSocket command (`/ws/control`) routed the raw JSON dict straight to `TrainingLifecycleManager.update_params` with no Pydantic model at all — only a downstream key-whitelist + candidate-pool check, neither of which range-checks scalar fields. A runtime update could therefore push an out-of-range value (live-confirmed: `max_hidden_units=999999999`) onto a running network. **Fix**: (1) `src/api/models/training.py` mirrors every `le=` ceiling from `TrainingParams` onto the corresponding `TrainingParamUpdateRequest` field (12 fields; fields stay `Optional` for partial-update semantics), so an out-of-range PATCH is rejected with 422 at the request boundary; (2) `src/api/websocket/control_stream.py` validates the incoming `set_params` payload through `TrainingParamUpdateRequest(**params)` before `update_params` and, on failure, returns a clean `command_response{status:"error", code:"invalid_params"}` ack (the WS analogue of the REST 422) without dropping the connection. A new `TestParamModelBoundsParity` guard pins the two models' shared-field numeric bounds in lock-step so the divergence cannot silently reopen. Regression coverage: `src/tests/unit/api/test_api_runtime_params.py` (over-ceiling + below-floor → 422, in-range/exact-ceiling → 200, model-bounds parity) and `src/tests/integration/api/test_ws_control_set_params.py` (WS over-ceiling / negative rejected and **not** applied to the live network; in-range still applied). Ref: juniper-ml [`notes/JUNIPER_STACK_SECURITY_AUDIT_PLAN_2026-07-02.md`](https://github.com/pcalnon/juniper-ml/blob/main/notes/JUNIPER_STACK_SECURITY_AUDIT_PLAN_2026-07-02.md) §4.3 / §5.2.
+- **SEC-F10 (HO-5) — runtime training-parameter bounds are now enforced on the `PATCH` *and* WebSocket update paths.** `TrainingParams` (the `POST /v1/training/start` model) always carried both floors and ceilings (e.g. `learning_rate` `le=10.0`, `candidate_pool_size` `le=256`, `max_hidden_units` `le=10_000`, `patience` `le=100_000`, `epochs_max`/`candidate_epochs`/`output_epochs` `le=1_000_000`), but the two *runtime*-update paths did not: `TrainingParamUpdateRequest` (`PATCH /v1/training/params`) declared only lower bounds, and the `set_params` WebSocket command (`/ws/control`) routed the raw JSON dict straight to `TrainingLifecycleManager.update_params` with no Pydantic model at all — only a downstream key-whitelist + candidate-pool check, neither of which range-checks scalar fields. A runtime update could therefore push an out-of-range value (live-confirmed: `max_hidden_units=999999999`) onto a running network. **Fix**: (1) `src/api/models/training.py` mirrors every `le=` ceiling from `TrainingParams` onto the corresponding `TrainingParamUpdateRequest` field (12 fields; fields stay `Optional` for partial-update semantics), so an out-of-range PATCH is rejected with 422 at the request boundary; (2) `src/api/websocket/control_stream.py` validates the incoming `set_params` payload through `TrainingParamUpdateRequest(**params)` before `update_params` and, on failure, returns a clean `command_response{status:"error", code:"invalid_params"}` ack (the WS analogue of the REST 422) without dropping the connection. A new `TestParamModelBoundsParity` guard pins the two models' shared-field numeric bounds in lock-step so the divergence cannot silently reopen. Regression coverage: `src/tests/unit/api/test_api_runtime_params.py` (over-ceiling + below-floor → 422, in-range/exact-ceiling → 200, model-bounds parity) and `src/tests/integration/api/test_ws_control_set_params.py` (WS over-ceiling / negative rejected and **not** applied to the live network; in-range still applied). Ref: juniper-ml [`notes/JUNIPER_STACK_SECURITY_AUDIT_PLAN_2026-07-02.md`](https://github.com/pcalnon/juniper-ml/blob/main/notes/JUNIPER_2026-07-02_JUNIPER-ECOSYSTEM_STACK-SECURITY-AUDIT-PLAN.md) §4.3 / §5.2.
+
+### Tests
+
+- **Per-file coverage lift 2 (C-5) — WebSocket layer (`src/api/websocket/`).** Tests-only; no source changed, no CI gate flipped. Part 2 of the split under the ecosystem per-file coverage rollout (juniper-ml [`notes/JUNIPER_ECOSYSTEM_PER_FILE_COVERAGE_ROLLOUT_SCOPING_2026-06-30.md`](https://github.com/pcalnon/juniper-ml/blob/main/notes/JUNIPER_ECOSYSTEM_PER_FILE_COVERAGE_ROLLOUT_SCOPING_2026-06-30.md)); lifts the three lowest-coverage WebSocket source files — the sub-module recommended next after PR-1 ([#368](https://github.com/pcalnon/juniper-cascor/pull/368)) — to full statement coverage of their previously-uncovered branches:
+
+  | File | Before (stmt) | After (stmt) |
+  |------|---------------|--------------|
+  | `src/api/websocket/training_stream.py` | 114/156 = 73.08% | 156/156 = **100.00%** |
+  | `src/api/websocket/control_stream.py` | 161/193 = 83.42% | 193/193 = **100.00%** |
+  | `src/api/websocket/manager.py` | 275/308 = 89.29% | 308/308 = **100.00%** |
+
+  The `src/api/websocket` sub-module clears the ratified ≥95% pooled bar: **88.17% → 99.37%** (842/955 → 949/955, statement-weighted).
+
+  - Overall cascor coverage 90.20% → 91.03%.
+  - New fast unit tests (40 across `test_training_stream_coverage.py` [new], `test_control_stream_coverage.py`, and `test_websocket_manager.py`) drive the resume-handshake + replay arms (`training_stream._await_resume_frame` / `_handle_resume`), the control-path handshake gates / leaky-bucket rate-limit / invalid-params / heartbeat / idle-timeout branches (`control_stream`), and the manager's per-endpoint bookkeeping, per-IP accounting, pending-connection rejection, and defensive metric-emission guards (`manager`) — all via `AsyncMock` seams (no live sockets).
+  - Measured on the CI `unit and not slow` subset (the gate basis) with `juniper-coverage-gap-map` (`juniper-ci-tools 0.6.0`, advisory).
+  - The blocking `--enforce` gate lands in the final PR of the split once every sub-module clears.
+
+- **Per-file coverage rollout (Phase C-5) — worst-first lift, part 1 of a
+  multi-PR sequence.** Lifts the two lowest-coverage source files to full
+  statement coverage, clearing the two sub-modules they dominate. No source
+  files changed; no gate flipped yet (the `juniper-coverage-gap-map --enforce`
+  CI step lands in the final gate PR once every sub-module clears). Measured on
+  the CI `unit and not slow` subset (`--cov=src`), the gate basis.
+  - `parallelism/rc4_ring_buffer.py`: **30.16% → 100%** statement — the
+    RC-4 instrumentation ring buffer is disabled-by-default (its `ENABLED`
+    flag reads `CASCOR_RC4_RING_BUFFER` at import), so a normal run
+    short-circuits every body; the new `src/tests/unit/test_rc4_ring_buffer_coverage.py`
+    drives the enabled paths by monkeypatching the module flag (never the
+    environment, so the conftest RC-4 fixtures stay inert) with per-test
+    global isolation. This clears the ecosystem's **worst** cascor
+    sub-module, `parallelism` (**69.01% → 100%** pooled).
+  - `api/routes/network.py`: **51.38% → 100%** statement — the three CAN-015h
+    handlers (`patch_weights` / `add_hidden_unit` / `delete_hidden_unit`) were
+    uncovered status→HTTP-code dispatch; `src/tests/unit/api/test_network_route_coverage.py`
+    gains a case per branch (including the defensive unmapped-sentinel 500),
+    each driven by mocking the lifecycle method to return a crafted status
+    dict (sentinels resolved off the real lifecycle instance to stay
+    drift-proof). This clears the `api/routes` sub-module
+    (**86.90% → 95.69%** pooled).
+  - Overall cascor statement coverage **90.20% → 91.12%**; files below the
+    90% floor 8 → 6, sub-modules below the 95% pooled bar 9 → 7. See juniper-ml
+    [`notes/JUNIPER_ECOSYSTEM_PER_FILE_COVERAGE_ROLLOUT_SCOPING_2026-06-30.md`](https://github.com/pcalnon/juniper-ml/blob/main/notes/JUNIPER_2026-06-30_JUNIPER-ECOSYSTEM_PER-FILE-COVERAGE-ROLLOUT-SCOPING.md).
 
 ## [0.5.0] - 2026-05-22
 

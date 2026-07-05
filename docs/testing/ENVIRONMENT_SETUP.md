@@ -254,11 +254,11 @@ This ensures consistent CPU-based test behavior unless GPU testing is explicitly
 
 ### pytest-cov Setup
 
-Coverage is configured in `pyproject.toml`:
+Repository-wide coverage is configured in `pyproject.toml` and is used by the CI gate and `util/run_coverage.bash`:
 
 ```toml
 [tool.coverage.run]
-source = ["src/cascade_correlation", "src/candidate_unit", "src/snapshots"]
+source = ["src"]
 omit = [
     "*/tests/*",
     "*/__pycache__/*",
@@ -266,8 +266,11 @@ omit = [
     "*/logs/*",
 ]
 branch = true
+data_file = "src/tests/reports/.coverage"
+parallel = true
 
 [tool.coverage.report]
+fail_under = 80
 exclude_lines = [
     "pragma: no cover",
     "def __repr__",
@@ -282,11 +285,14 @@ precision = 2
 
 ### Coverage Source Modules
 
-Coverage is collected for:
+Coverage is collected for all importable source under `src/`, including:
 
 - `cascade_correlation/` - Core network implementation
 - `candidate_unit/` - Candidate unit implementation
 - `snapshots/` - Serialization system
+- `api/` - REST/WebSocket service layer
+- `parallelism/` - Local and remote task scheduling helpers
+- `utils/`, `profiling/`, `remote_client/`, and other packaged support modules
 
 ### Report Formats
 
@@ -299,15 +305,54 @@ Coverage is collected for:
 ### Running with Coverage
 
 ```bash
-# Default (coverage enabled)
+# Quick local runner (coverage enabled by default, useful during development)
 cd src/tests && bash scripts/run_tests.bash
 
-# Explicit coverage
-cd src/tests && bash scripts/run_tests.bash -c
+# CI-parity aggregate gate from the repository root
+bash util/run_coverage.bash
+
+# Equivalent explicit pytest command used by CI
+python -m pytest \
+    -m "unit and not slow" \
+    src/tests/unit \
+    --verbose \
+    --timeout=60 \
+    --maxfail=5 \
+    --cov=src \
+    --cov-report=term-missing
 
 # Disable coverage for faster runs
 cd src/tests && bash scripts/run_tests.bash --no-coverage
 ```
+
+`util/run_coverage.bash` creates `src/tests/reports/` before pytest runs. That directory is required because coverage writes parallel data to `src/tests/reports/.coverage.*`; without the parent directory the follow-up `coverage report` step can fail with "No data to report".
+
+### Per-file and Sub-module Coverage Checks
+
+The aggregate 80% gate is enforced today. The ecosystem coverage rollout also tracks advisory per-file and pooled sub-module bars before the final blocking gate is enabled:
+
+| Scope | Advisory bar | Notes |
+|-------|--------------|-------|
+| Source file | >= 90% statement coverage | Measured from the same `unit and not slow` subset used by CI |
+| Packaged sub-module | >= 95% pooled statement coverage | Pooled by covered/statements, not by averaging file percentages |
+
+To produce the JSON input used by `juniper-coverage-gap-map`:
+
+```bash
+python -m pytest \
+    -m "unit and not slow" \
+    src/tests/unit \
+    --cov=src \
+    --cov-report=json:src/tests/reports/coverage.json
+
+juniper-coverage-gap-map --coverage-json src/tests/reports/coverage.json
+```
+
+Use `--enforce` only in the final coverage-gate PR after every source file and sub-module clears the bars.
+
+### Disabled-by-default Instrumentation
+
+Some diagnostic modules are intentionally gated by environment variables. For example, `src/parallelism/rc4_ring_buffer.py` reads `CASCOR_RC4_RING_BUFFER` once at import time into the module-level `ENABLED` flag. Normal test runs exercise the disabled fast path. Tests that need enabled-path coverage should patch the module attribute and reset the module globals (`_BUFFER`, `_INSTRUMENTATION_QUEUE`, `ENABLED`) per test rather than mutating the environment after import; this keeps conftest fixtures that key off the environment inert and keeps tests order-independent.
 
 ### Viewing Coverage Reports
 
