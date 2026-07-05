@@ -372,6 +372,7 @@ class TestUpdateTrainingParams:
         [
             ("learning_rate", 10.5),  # le=10.0
             ("candidate_learning_rate", 25.0),  # le=10.0
+            ("correlation_threshold", 1.01),  # le=1.0
             ("candidate_pool_size", 257),  # le=256
             ("max_hidden_units", 999_999_999),  # le=10_000 (the HO-5 live-confirmed payload)
             ("epochs_max", 1_000_001),  # le=1_000_000
@@ -394,10 +395,13 @@ class TestUpdateTrainingParams:
         [
             ("learning_rate", -0.1),  # gt=0
             ("candidate_learning_rate", 0),  # gt=0
+            ("correlation_threshold", 0),  # gt=0
             ("candidate_pool_size", 0),  # ge=1
             ("max_hidden_units", 0),  # ge=1
             ("epochs_max", 0),  # ge=1
             ("patience", 0),  # ge=1
+            ("convergence_threshold", 0),  # gt=0
+            ("candidate_convergence_threshold", -0.001),  # gt=0
             ("candidate_patience", -5),  # ge=1
             ("candidate_epochs", 0),  # ge=1
             ("output_epochs", 0),  # ge=1
@@ -416,10 +420,13 @@ class TestUpdateTrainingParams:
         [
             ("learning_rate", 10.0),  # exactly le
             ("candidate_learning_rate", 0.01),
+            ("correlation_threshold", 1.0),  # exactly le
             ("candidate_pool_size", 256),  # exactly le
             ("max_hidden_units", 10_000),  # exactly le
             ("epochs_max", 1_000_000),  # exactly le
             ("patience", 100_000),  # exactly le
+            ("convergence_threshold", 0.0001),
+            ("candidate_convergence_threshold", 0.0001),
             ("candidate_patience", 50),
             ("candidate_epochs", 500),
             ("output_epochs", 250),

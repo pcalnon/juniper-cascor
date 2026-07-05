@@ -13,8 +13,10 @@ import asyncio
 import bisect
 import contextlib
 import hashlib
+import hmac
 import json
 import logging
+import secrets
 import threading
 import time
 import uuid
@@ -25,6 +27,13 @@ from typing import Any, Dict, List, Optional, Set
 from fastapi import WebSocket
 
 logger = logging.getLogger("juniper_cascor.api.websocket")
+
+# SEC-F19 / D4b: per-process random key for the identity-cap HMAC (see
+# ``ws_identity_key``). The per-identity WS cap only needs a stable,
+# non-reversible bucket key WITHIN one process run, so a keyed HMAC with an
+# ephemeral per-process secret is used instead of a bare token hash: the digest
+# is unforgeable / not brute-forceable without this key and is never persisted.
+_IDENTITY_HMAC_KEY = secrets.token_bytes(32)
 
 
 class ReplayOutOfRange(Exception):
@@ -56,8 +65,8 @@ def ws_identity_key(websocket: WebSocket) -> Optional[str]:
 
     SEC-F19 / D4b: the authenticated principal on the control channel is the
     presented ``X-API-Key`` machine token. The per-identity WebSocket
-    connection cap keys on a truncated SHA-256 digest of that token so raw
-    keys never enter the cap bookkeeping or logs. Returns ``None`` when no key
+    connection cap keys on a truncated per-process HMAC-SHA256 of that token so
+    raw keys never enter the cap bookkeeping or logs. Returns ``None`` when no key
     is presented (auth disabled / anonymous) — the caller then relies on the
     stack-global + per-IP caps, which is the documented inert-behind-NAT
     posture.
@@ -65,7 +74,7 @@ def ws_identity_key(websocket: WebSocket) -> Optional[str]:
     api_key = websocket.headers.get("X-API-Key")
     if not api_key:
         return None
-    return hashlib.sha256(api_key.encode("utf-8")).hexdigest()[:16]
+    return hmac.new(_IDENTITY_HMAC_KEY, api_key.encode("utf-8"), hashlib.sha256).hexdigest()[:16]
 
 
 class WebSocketManager:

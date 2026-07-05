@@ -90,6 +90,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **SEC-F10 (HO-5) — runtime training-parameter bounds are now enforced on the `PATCH` *and* WebSocket update paths.** `TrainingParams` (the `POST /v1/training/start` model) always carried both floors and ceilings (e.g. `learning_rate` `le=10.0`, `candidate_pool_size` `le=256`, `max_hidden_units` `le=10_000`, `patience` `le=100_000`, `epochs_max`/`candidate_epochs`/`output_epochs` `le=1_000_000`), but the two *runtime*-update paths did not: `TrainingParamUpdateRequest` (`PATCH /v1/training/params`) declared only lower bounds, and the `set_params` WebSocket command (`/ws/control`) routed the raw JSON dict straight to `TrainingLifecycleManager.update_params` with no Pydantic model at all — only a downstream key-whitelist + candidate-pool check, neither of which range-checks scalar fields. A runtime update could therefore push an out-of-range value (live-confirmed: `max_hidden_units=999999999`) onto a running network. **Fix**: (1) `src/api/models/training.py` mirrors every `le=` ceiling from `TrainingParams` onto the corresponding `TrainingParamUpdateRequest` field (12 fields; fields stay `Optional` for partial-update semantics), so an out-of-range PATCH is rejected with 422 at the request boundary; (2) `src/api/websocket/control_stream.py` validates the incoming `set_params` payload through `TrainingParamUpdateRequest(**params)` before `update_params` and, on failure, returns a clean `command_response{status:"error", code:"invalid_params"}` ack (the WS analogue of the REST 422) without dropping the connection. A new `TestParamModelBoundsParity` guard pins the two models' shared-field numeric bounds in lock-step so the divergence cannot silently reopen. Regression coverage: `src/tests/unit/api/test_api_runtime_params.py` (over-ceiling + below-floor → 422, in-range/exact-ceiling → 200, model-bounds parity) and `src/tests/integration/api/test_ws_control_set_params.py` (WS over-ceiling / negative rejected and **not** applied to the live network; in-range still applied). Ref: juniper-ml [`notes/JUNIPER_STACK_SECURITY_AUDIT_PLAN_2026-07-02.md`](https://github.com/pcalnon/juniper-ml/blob/main/notes/JUNIPER_STACK_SECURITY_AUDIT_PLAN_2026-07-02.md) §4.3 / §5.2.
 
+### Tests
+
+- **Per-file coverage lift 2 (C-5) — WebSocket layer (`src/api/websocket/`).** Tests-only; no source changed, no CI gate flipped. Part 2 of the split under the ecosystem per-file coverage rollout (juniper-ml [`notes/JUNIPER_ECOSYSTEM_PER_FILE_COVERAGE_ROLLOUT_SCOPING_2026-06-30.md`](https://github.com/pcalnon/juniper-ml/blob/main/notes/JUNIPER_ECOSYSTEM_PER_FILE_COVERAGE_ROLLOUT_SCOPING_2026-06-30.md)); lifts the three lowest-coverage WebSocket source files — the sub-module recommended next after PR-1 ([#368](https://github.com/pcalnon/juniper-cascor/pull/368)) — to full statement coverage of their previously-uncovered branches:
+
+  | File | Before (stmt) | After (stmt) |
+  |------|---------------|--------------|
+  | `src/api/websocket/training_stream.py` | 114/156 = 73.08% | 156/156 = **100.00%** |
+  | `src/api/websocket/control_stream.py` | 161/193 = 83.42% | 193/193 = **100.00%** |
+  | `src/api/websocket/manager.py` | 275/308 = 89.29% | 308/308 = **100.00%** |
+
+  The `src/api/websocket` sub-module clears the ratified ≥95% pooled bar: **88.17% → 99.37%** (842/955 → 949/955, statement-weighted).
+  
+  - Overall cascor coverage 90.20% → 91.03%.
+  - New fast unit tests (40 across `test_training_stream_coverage.py` [new], `test_control_stream_coverage.py`, and `test_websocket_manager.py`) drive the resume-handshake + replay arms (`training_stream._await_resume_frame` / `_handle_resume`), the control-path handshake gates / leaky-bucket rate-limit / invalid-params / heartbeat / idle-timeout branches (`control_stream`), and the manager's per-endpoint bookkeeping, per-IP accounting, pending-connection rejection, and defensive metric-emission guards (`manager`) — all via `AsyncMock` seams (no live sockets).
+  - Measured on the CI `unit and not slow` subset (the gate basis) with `juniper-coverage-gap-map` (`juniper-ci-tools 0.6.0`, advisory).
+  - The blocking `--enforce` gate lands in the final PR of the split once every sub-module clears.
+
+- **Per-file coverage rollout (Phase C-5) — worst-first lift, part 1 of a
+  multi-PR sequence.** Lifts the two lowest-coverage source files to full
+  statement coverage, clearing the two sub-modules they dominate. No source
+  files changed; no gate flipped yet (the `juniper-coverage-gap-map --enforce`
+  CI step lands in the final gate PR once every sub-module clears). Measured on
+  the CI `unit and not slow` subset (`--cov=src`), the gate basis.
+  - `parallelism/rc4_ring_buffer.py`: **30.16% → 100%** statement — the
+    RC-4 instrumentation ring buffer is disabled-by-default (its `ENABLED`
+    flag reads `CASCOR_RC4_RING_BUFFER` at import), so a normal run
+    short-circuits every body; the new `src/tests/unit/test_rc4_ring_buffer_coverage.py`
+    drives the enabled paths by monkeypatching the module flag (never the
+    environment, so the conftest RC-4 fixtures stay inert) with per-test
+    global isolation. This clears the ecosystem's **worst** cascor
+    sub-module, `parallelism` (**69.01% → 100%** pooled).
+  - `api/routes/network.py`: **51.38% → 100%** statement — the three CAN-015h
+    handlers (`patch_weights` / `add_hidden_unit` / `delete_hidden_unit`) were
+    uncovered status→HTTP-code dispatch; `src/tests/unit/api/test_network_route_coverage.py`
+    gains a case per branch (including the defensive unmapped-sentinel 500),
+    each driven by mocking the lifecycle method to return a crafted status
+    dict (sentinels resolved off the real lifecycle instance to stay
+    drift-proof). This clears the `api/routes` sub-module
+    (**86.90% → 95.69%** pooled).
+  - Overall cascor statement coverage **90.20% → 91.12%**; files below the
+    90% floor 8 → 6, sub-modules below the 95% pooled bar 9 → 7. See juniper-ml
+    [`notes/JUNIPER_ECOSYSTEM_PER_FILE_COVERAGE_ROLLOUT_SCOPING_2026-06-30.md`](https://github.com/pcalnon/juniper-ml/blob/main/notes/JUNIPER_ECOSYSTEM_PER_FILE_COVERAGE_ROLLOUT_SCOPING_2026-06-30.md).
+
 ## [0.5.0] - 2026-05-22
 
 **Note on version history**: `pyproject.toml` was bumped 0.3.17 → 0.4.0 on 2026-03-03 in preparation for a 0.4.0 release that was never cut to PyPI (the `[0.4.0]` section below documents the work that *would have* shipped). This 0.5.0 release rolls up both that work and the subsequent ~2.5 months of changes (469 commits since `v0.3.17`) into a single PyPI release. Subsequent entries in this section list the additional work landed since 2026-03-03.
