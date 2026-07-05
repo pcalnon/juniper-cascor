@@ -53,6 +53,51 @@ CASCOR_LOG_LEVEL=WARNING python main.py
 - Invalid values are ignored and the default `INFO` level is used
 - The test suite sets `CASCOR_LOG_LEVEL=WARNING` by default to reduce output noise
 
+### Service API environment variables
+
+The FastAPI service reads `JUNIPER_CASCOR_*` settings from the environment (and `.env`) via `src/api/settings.py`. The settings below are the operational controls most likely to affect startup, WebSocket admission, or deployment safety.
+
+| Variable | Type | Default | Purpose |
+|----------|------|---------|---------|
+| `JUNIPER_CASCOR_HOST` | string | `127.0.0.1` | Interface the API server binds. Loopback binds always start. Non-loopback binds, including `0.0.0.0`, are blocked by the startup bind guard unless attested. |
+| `JUNIPER_CASCOR_PORT` | integer | `8200` | API listen port. |
+| `JUNIPER_CASCOR_FRONTING_AUTH_ATTESTED` | boolean | `false` | Required when `JUNIPER_CASCOR_HOST` is non-loopback. Setting this asserts that a loopback host-publish or authenticating reverse proxy fronts the service. |
+| `JUNIPER_CASCOR_API_KEYS` | CSV or JSON list | unset | Valid `X-API-Key` values for REST and WebSocket auth. Auth is disabled when unset. |
+| `JUNIPER_CASCOR_WS_MAX_CONNECTIONS` | integer | `50` | Legacy manager active-connection ceiling for broadcast-managed sockets. |
+| `JUNIPER_CASCOR_WS_MAX_CONNECTIONS_GLOBAL` | integer | `200` | Stack-global WebSocket admission cap across `/ws/training`, `/ws/control`, and `/ws/v1/workers`. |
+| `JUNIPER_CASCOR_WS_MAX_CONNECTIONS_PER_IDENTITY` | integer | `5` | `/ws/control` cap per authenticated API-key identity. |
+| `JUNIPER_CASCOR_WS_MAX_CONNECTIONS_PER_IP` | integer | `5` | Per-peer-IP WebSocket cap. This is DoS-dampening only; behind Docker NAT all clients share the bridge-gateway IP bucket. |
+
+#### Bind-guard examples
+
+Local development can use the default loopback bind with no attestation:
+
+```bash
+cd src
+python server.py
+```
+
+Containerized runs bind `0.0.0.0` inside the container so Docker can forward traffic. Publish the host port on loopback and set the attestation explicitly:
+
+```bash
+docker run --rm -p 127.0.0.1:8200:8200 \
+  -e JUNIPER_CASCOR_HOST=0.0.0.0 \
+  -e JUNIPER_CASCOR_FRONTING_AUTH_ATTESTED=true \
+  juniper-cascor:latest
+```
+
+Do **not** set `JUNIPER_CASCOR_FRONTING_AUTH_ATTESTED=true` for a public host bind unless an authenticating proxy fronts the service. Without that attestation, startup raises `NonLoopbackBindError` before the socket begins accepting connections.
+
+#### WebSocket cap tuning
+
+Size `JUNIPER_CASCOR_WS_MAX_CONNECTIONS_GLOBAL` above the expected legitimate total:
+
+```text
+training dashboards + control clients + worker fleet <= global cap
+```
+
+The per-identity cap applies to `/ws/control` only and keys on a non-reversible digest of the presented `X-API-Key`. It is not enforced on `/ws/v1/workers` because a worker fleet commonly shares one token and the server-assigned `worker_id` is only known after registration. Over-cap WebSocket attempts close with code `1013`.
+
 ## CLI Arguments
 
 ### Main Application (`src/main.py`)

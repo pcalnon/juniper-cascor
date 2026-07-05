@@ -639,7 +639,7 @@ jobs:
           #   --skip:  B101,B301,B311,B403
           # Tests stay in the separate pre-commit "Bandit (relaxed)"
           # hook with a wider skip-list. See V20 in
-          # juniper-ml/notes/CI_VALIDATION_FINDINGS_2026-04-29.md.
+          # juniper-ml/notes/JUNIPER_2026-04-29_JUNIPER-ECOSYSTEM_CI-VALIDATION-FINDINGS.md.
           # Generate SARIF report (always succeeds for upload)
           bandit -r src --exclude src/tests --skip B101,B301,B311,B403 -f sarif -o reports/security/bandit.sarif --exit-zero
           # Blocking check - fail on medium or higher severity

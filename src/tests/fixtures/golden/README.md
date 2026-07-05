@@ -5,7 +5,7 @@ cascade-correlation network's observable behavior **before** the WS-6 refactor
 (repointing cascor onto `juniper-service-core` / `juniper-model-core`), so any
 behavior change introduced by that refactor is caught.
 
-Build plan: `juniper-ml/notes/JUNIPER_CASCOR_GOLDEN_REGRESSION_SUITE_BUILD_PLAN_2026-06-17.md`
+Build plan: `juniper-ml/notes/JUNIPER_2026-06-17_JUNIPER-CASCOR_GOLDEN-REGRESSION-SUITE-BUILD-PLAN.md`
 (roadmap **OUT-12**). Comparison strategy resolved by evidence (OQ-13):
 **tolerance for floats, exact for discrete/structural signals.**
 

@@ -84,7 +84,7 @@ _PROJECT_API_MAX_DATASET_TARGETS: int = 100000
 # Lifecycle training-limit caps are intentionally large so the user (or the
 # canopy UI), not the API default, chooses when to stop. Aligned with the
 # canopy / requirements-spec values per
-# juniper-ml/notes/code-review/CANOPY_CASCOR_INTERFACE_ROADMAP_2026-04-08.md
+# juniper-ml/notes/code-review/JUNIPER_2026-04-08_JUNIPER-ECOSYSTEM_CANOPY-CASCOR-INTERFACE-ROADMAP.md
 # §3.5 (PR #122 raised these from 1e3/1e3/1e3; rolled back to small values
 # during the Waves 1-6 hardcoded-values cleanup #123 — V35d re-aligns).
 _PROJECT_API_LIFECYCLE_DEFAULT_MAX_HIDDEN_UNITS: int = 10_000
