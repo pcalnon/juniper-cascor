@@ -101,7 +101,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   | `src/api/websocket/manager.py` | 275/308 = 89.29% | 308/308 = **100.00%** |
 
   The `src/api/websocket` sub-module clears the ratified ≥95% pooled bar: **88.17% → 99.37%** (842/955 → 949/955, statement-weighted).
-  
+
   - Overall cascor coverage 90.20% → 91.03%.
   - New fast unit tests (40 across `test_training_stream_coverage.py` [new], `test_control_stream_coverage.py`, and `test_websocket_manager.py`) drive the resume-handshake + replay arms (`training_stream._await_resume_frame` / `_handle_resume`), the control-path handshake gates / leaky-bucket rate-limit / invalid-params / heartbeat / idle-timeout branches (`control_stream`), and the manager's per-endpoint bookkeeping, per-IP accounting, pending-connection rejection, and defensive metric-emission guards (`manager`) — all via `AsyncMock` seams (no live sockets).
   - Measured on the CI `unit and not slow` subset (the gate basis) with `juniper-coverage-gap-map` (`juniper-ci-tools 0.6.0`, advisory).

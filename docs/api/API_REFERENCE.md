@@ -914,12 +914,17 @@ Current behavior note:
 
 ### WebSocket Training Stream
 
-`/ws/training` pushes server-to-client updates. Typical sequence on connect:
+`/ws/training` pushes real-time training updates. The maintained wire-protocol
+details live in [JUNIPER_CASCOR_API_REFERENCE.md](JUNIPER_CASCOR_API_REFERENCE.md#ws-wstraining);
+this section is a compact in-process API summary.
+
+Typical fresh-connect sequence:
 
 1. `connection_established`
 2. `initial_status`
 3. `state`
-4. ongoing broadcast messages (`metrics`, `cascade_add`, `candidate_progress`, `event`)
+4. `initial_metrics`
+5. ongoing broadcast messages (`metrics`, `cascade_add`, `candidate_progress`, `event`)
 
 Message envelope:
 
@@ -931,7 +936,9 @@ Message envelope:
 }
 ```
 
-`/ws/training` is read-only for clients; updates are broadcast from the lifecycle manager/monitor.
+Broadcast messages include replay metadata (`seq`, `emitted_at_monotonic`).
+Clients can send `pong`, `subscribe_metrics`, or a connect-time `resume`
+request; training control commands belong on `/ws/control`.
 
 ### Lifecycle Failure Handling Path
 
