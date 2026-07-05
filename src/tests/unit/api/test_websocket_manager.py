@@ -1,6 +1,7 @@
 """Tests for WebSocket connection manager."""
 
 import asyncio
+from concurrent.futures import CancelledError
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -163,6 +164,48 @@ class TestWebSocketManager:
         assert mgr.connection_count == 0
         ws1.close.assert_awaited_once()
         ws2.close.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_close_all_releases_per_ip_slots(self):
+        """close_all releases per-IP reservations so reconnects are not rejected."""
+        mgr = WebSocketManager(max_connections_per_ip=1)
+        ws1 = AsyncMock()
+        ws1.client = ("10.0.0.5", 1111)
+        assert await mgr.connect_pending(ws1) is True
+
+        await mgr.close_all()
+
+        ws2 = AsyncMock()
+        ws2.client = ("10.0.0.5", 2222)
+        assert await mgr.connect_pending(ws2) is True
+        ws2.close.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_close_all_clears_endpoint_bookkeeping(self):
+        """close_all removes endpoint-bucket entries for closed sockets."""
+        mgr = WebSocketManager()
+        ws = AsyncMock()
+        await mgr.connect(ws)
+        mgr.register_endpoint_connection(ws, "training")
+        assert ws in mgr._endpoint_connections["training"]
+
+        await mgr.close_all()
+
+        assert mgr._endpoint_connections["training"] == set()
+        assert mgr._connection_endpoint == {}
+
+    @pytest.mark.asyncio
+    async def test_close_all_closes_endpoint_only_connections(self):
+        """close_all closes sockets that are tracked only by endpoint buckets."""
+        mgr = WebSocketManager()
+        ws = AsyncMock()
+        mgr.register_endpoint_connection(ws, "control")
+
+        await mgr.close_all()
+
+        ws.close.assert_awaited_once_with(code=1001, reason="Server shutting down")
+        assert mgr._endpoint_connections["control"] == set()
+        assert mgr._connection_endpoint == {}
 
     @pytest.mark.asyncio
     async def test_close_all_holds_lock_during_snapshot(self):
@@ -385,3 +428,207 @@ class TestSizeGuardAndChunking:
         assert result is True
         # Multiple sends → multiple chunks
         assert ws.send_json.await_count >= 2
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Phase C-5 (per-file coverage rollout, PR-2 — websocket layer): remaining
+# uncovered manager branches — per-endpoint bookkeeping, per-IP accounting,
+# pending-connection rejection, and the defensive metric-emission guards.
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+@pytest.mark.unit
+class TestManagerConstructionGuards:
+    """Defensive metric-emission guard in ``__init__``."""
+
+    def test_replay_capacity_emit_failure_swallowed(self):
+        """A failing ``ws_set_replay_buffer_capacity`` never blocks construction (lines 157-158)."""
+        with patch("api.observability.ws_set_replay_buffer_capacity", side_effect=RuntimeError("emit down")):
+            mgr = WebSocketManager(max_replay_buffer_size=256)
+        assert mgr._replay_buffer_max_size == 256
+
+
+@pytest.mark.unit
+class TestEndpointGauge:
+    """``_emit_endpoint_gauge`` unknown-endpoint short-circuit + emission guard."""
+
+    def test_unknown_endpoint_is_noop(self):
+        """An unregistered endpoint returns before emitting (line 193)."""
+        mgr = WebSocketManager()
+        # No bucket for this endpoint → early return, no exception.
+        mgr._emit_endpoint_gauge("does-not-exist")
+
+    def test_emit_failure_swallowed(self):
+        """A failing ``ws_set_connections_active`` is swallowed (lines 198-199)."""
+        mgr = WebSocketManager()
+        with patch("api.observability.ws_set_connections_active", side_effect=RuntimeError("emit down")):
+            mgr._emit_endpoint_gauge("training")
+
+
+@pytest.mark.unit
+class TestSourceIpAndPerIpAccounting:
+    """``_source_ip`` fallbacks and ``_release_per_ip_slot`` branches."""
+
+    def test_source_ip_subscript_error_returns_unknown(self):
+        """A non-subscriptable ``client`` yields the unknown sentinel (lines 260-261)."""
+        mgr = WebSocketManager()
+        ws = MagicMock()
+        ws.client = 12345  # int → client[0] raises TypeError
+        assert mgr._source_ip(ws) == "unknown"
+
+    def test_source_ip_none_client_returns_unknown(self):
+        """A ``None`` client yields the unknown sentinel (line 262)."""
+        mgr = WebSocketManager()
+        ws = MagicMock()
+        ws.client = None
+        assert mgr._source_ip(ws) == "unknown"
+
+    def test_release_per_ip_slot_empty_is_noop(self):
+        """Releasing a falsy source-IP is a no-op (line 279)."""
+        mgr = WebSocketManager()
+        mgr._release_per_ip_slot(None)
+        mgr._release_per_ip_slot("")
+
+    def test_release_per_ip_slot_decrements_when_multiple(self):
+        """Releasing an IP with count > 1 decrements rather than popping (line 284)."""
+        mgr = WebSocketManager()
+        mgr._per_ip_counts["10.0.0.5"] = 3
+        mgr._release_per_ip_slot("10.0.0.5")
+        assert mgr._per_ip_counts["10.0.0.5"] == 2
+
+
+@pytest.mark.unit
+class TestConnectPendingRejection:
+    """``connect_pending`` connection-limit rejection paths."""
+
+    @pytest.mark.asyncio
+    async def test_rejected_when_max_connections_reached(self):
+        """A pending connect past the global cap is rejected (lines 333-335)."""
+        mgr = WebSocketManager(max_connections=1)
+        ws1 = AsyncMock()
+        await mgr.connect(ws1)  # fills the single active slot
+
+        ws2 = AsyncMock()
+        result = await mgr.connect_pending(ws2)
+
+        assert result is False
+        ws2.close.assert_awaited_once_with(code=1013, reason="Maximum connections reached")
+
+    @pytest.mark.asyncio
+    async def test_rejected_when_per_ip_limit_reached(self):
+        """A pending connect past the per-IP cap is rejected (lines 339-340, 345)."""
+        mgr = WebSocketManager(max_connections=50, max_connections_per_ip=1)
+        ws1 = AsyncMock()
+        ws1.client = ("10.0.0.5", 1111)
+        assert await mgr.connect_pending(ws1) is True  # reserves the only per-IP slot
+
+        ws2 = AsyncMock()
+        ws2.client = ("10.0.0.5", 2222)  # same IP
+        result = await mgr.connect_pending(ws2)
+
+        assert result is False
+        ws2.close.assert_awaited_once_with(code=1013, reason="Per-IP connection limit reached")
+
+
+@pytest.mark.unit
+class TestAssignSeqEmissionGuard:
+    """``_assign_seq_and_buffer`` defensive emission guard."""
+
+    def test_emit_failure_swallowed(self):
+        """A failing seq/occupancy emission never blocks assignment (lines 419-420)."""
+        mgr = WebSocketManager()
+        with patch("api.observability.ws_set_seq_current", side_effect=RuntimeError("emit down")):
+            enriched = mgr._assign_seq_and_buffer({"type": "metrics", "data": {}})
+        assert enriched["seq"] == 1
+        assert "emitted_at_monotonic" in enriched
+
+
+@pytest.mark.unit
+class TestChunkSerializationGuard:
+    """``_maybe_chunk_message`` unserializable-message fallback."""
+
+    def test_unserializable_message_returns_original(self):
+        """A message that cannot be serialized is returned unchunked (lines 477, 479)."""
+        mgr = WebSocketManager(max_message_size_bytes=60_000)
+        msg = {"type": "topology"}
+        msg["self"] = msg  # circular reference → json.dumps raises ValueError
+
+        result = mgr._maybe_chunk_message(msg)
+
+        assert len(result) == 1
+        assert result[0] is msg
+
+
+@pytest.mark.unit
+class TestBroadcastFromThreadGuards:
+    """``broadcast_from_thread`` submit-failure + ``_log_broadcast_exception`` arms."""
+
+    def test_submit_failure_closes_coroutine(self):
+        """A failing run_coroutine_threadsafe closes the coroutine and logs (lines 548-550)."""
+        mgr = WebSocketManager()
+        loop = MagicMock()
+        loop.is_closed.return_value = False
+        mgr.set_event_loop(loop)
+
+        with patch("api.websocket.manager.asyncio.run_coroutine_threadsafe", side_effect=RuntimeError("submit failed")):
+            # Must not raise; the orphaned coroutine is closed to avoid a warning.
+            mgr.broadcast_from_thread({"type": "test"})
+
+    def test_log_broadcast_exception_cancelled_is_ignored(self):
+        """A cancelled broadcast future is ignored (lines 563-564)."""
+        future = MagicMock()
+        future.exception.side_effect = CancelledError()
+        # Static method — no manager instance needed.
+        WebSocketManager._log_broadcast_exception(future)
+
+    def test_log_broadcast_exception_emit_failure_swallowed(self):
+        """A failing error-counter emission is swallowed (lines 571-572)."""
+        future = MagicMock()
+        future.exception.return_value = RuntimeError("broadcast failed")
+        with patch("api.observability.ws_inc_broadcast_from_thread_errors", side_effect=RuntimeError("emit down")):
+            WebSocketManager._log_broadcast_exception(future)
+
+
+@pytest.mark.unit
+class TestSendJsonEmissionGuards:
+    """``_send_json`` defensive emission + accounting guards."""
+
+    @pytest.mark.asyncio
+    async def test_timeout_broadcast_timeout_emit_failure_swallowed(self):
+        """A failing broadcast-timeout counter emission is swallowed on timeout (lines 626-627)."""
+        mgr = WebSocketManager(send_timeout_seconds=0.5)
+        ws = AsyncMock()
+        ws.send_json = AsyncMock(side_effect=asyncio.TimeoutError())
+
+        with patch("api.observability.ws_inc_broadcast_timeout", side_effect=RuntimeError("emit down")):
+            result = await mgr._send_json(ws, {"type": "metrics", "data": {}})
+
+        assert result is False
+        assert mgr.transport_stats()["send_failures"] >= 1
+
+    @pytest.mark.asyncio
+    async def test_broadcast_duration_emit_failure_swallowed(self):
+        """A failing broadcast-send-duration emission is swallowed (lines 643-644)."""
+        mgr = WebSocketManager()
+        ws = AsyncMock()
+        ws.send_json = AsyncMock(return_value=None)
+
+        with patch("api.observability._ensure_ws_metrics", side_effect=RuntimeError("emit down")):
+            result = await mgr._send_json(ws, {"type": "metrics", "data": {}})
+
+        assert result is True
+
+    @pytest.mark.asyncio
+    async def test_accounting_serialize_failure_uses_zero_bytes(self):
+        """An unserializable message accounts as zero bytes, not a failure (lines 652-653)."""
+        mgr = WebSocketManager()
+        ws = AsyncMock()
+        ws.send_json = AsyncMock(return_value=None)
+        msg = {"type": "metrics"}
+        msg["self"] = msg  # circular reference → accounting json.dumps raises
+
+        result = await mgr._send_json(ws, msg)
+
+        assert result is True
+        # The message still counts even though its byte size could not be computed.
+        assert mgr.transport_stats()["messages_sent_total"] == 1

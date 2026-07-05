@@ -99,20 +99,24 @@ In GitHub repository settings → Branches → Add rule:
 
 ## Coverage Enforcement
 
-Coverage is enforced in CI with `pytest --cov-fail-under`:
+Coverage is enforced in CI by the `unit-tests` job. Pytest collects repository-wide coverage with `--cov=src`, then a standalone coverage step enforces the aggregate threshold:
 
 | Threshold | Current | Target  | Enforcement      |
 | --------- | ------- | ------- | ---------------- |
-| Overall   | 50%     | 90%     | Hard fail in CI  |
+| Overall aggregate | 80% | 90%+ | Hard fail in CI |
+| Per source file | >=90% | >=90% | Advisory until the final per-file gate PR |
+| Per packaged sub-module | >=95% pooled | >=95% pooled | Advisory until the final per-file gate PR |
 
 ### Increasing Coverage Thresholds
 
-As coverage improves, update the threshold in `.github/workflows/ci.yml`:
+As aggregate coverage improves, update the threshold in `.github/workflows/ci.yml`:
 
 ```yaml
 env:
-  COVERAGE_FAIL_UNDER: "50"  # Increase to 60, 70, 80, 90 over time
+  COVERAGE_FAIL_UNDER: "80"  # Increase deliberately as coverage improves
 ```
+
+The per-file rollout is tracked with `juniper-coverage-gap-map` from coverage JSON. Add the blocking `--enforce` step only after every source file and packaged sub-module clears the bars.
 
 ---
 

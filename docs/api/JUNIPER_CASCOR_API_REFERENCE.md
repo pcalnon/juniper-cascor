@@ -89,7 +89,13 @@ Optional. Controlled by the application settings:
 - REST: `X-API-Key` header validated by `APIKeyAuth` middleware (`src/api/security.py`). When `settings.api_keys` is empty, auth is disabled (dev mode).
 - WebSocket: same `X-API-Key` header, validated in `ws_authenticate()` (`src/api/websocket/manager.py`). On failure the socket is closed with code `4001`.
 
-Rate limiting is also optional; per-IP REST limiter defaults to 100 req/min, and the worker WebSocket has its own per-IP connection rate limiter.
+Rate limiting is also optional; per-IP REST limiter defaults to 100 req/min, and the worker WebSocket has its own per-IP connection rate limiter. WebSocket admission also has a stack-global cap across all WS endpoints (`JUNIPER_CASCOR_WS_MAX_CONNECTIONS_GLOBAL`, default 200). `/ws/control` adds a per-identity cap (`JUNIPER_CASCOR_WS_MAX_CONNECTIONS_PER_IDENTITY`, default 5) keyed on a non-reversible digest of the presented `X-API-Key`.
+
+### Startup bind guard
+
+The service fails closed at startup when `JUNIPER_CASCOR_HOST` is a non-loopback bind target (for example `0.0.0.0`) unless `JUNIPER_CASCOR_FRONTING_AUTH_ATTESTED=true`. Loopback binds (`127.0.0.0/8`, `::1`, `localhost`, IPv4-mapped IPv6 loopback) always start. The guard runs from the FastAPI lifespan before the server begins accepting connections and raises `NonLoopbackBindError` on unsafe non-loopback startup.
+
+Use the attestation only when a loopback host-publish or an authenticating reverse proxy fronts the port. Container runs normally bind `0.0.0.0` inside the container and publish the host port on loopback.
 
 ### Response envelope
 
@@ -143,6 +149,7 @@ The global handlers in `src/api/app.py:480-494` produce:
 |------|-------------------------------------------------------------|
 | 1000 | Normal closure                                              |
 | 1006 | Abnormal closure — heartbeat timeout, message size exceeded |
+| 1013 | WebSocket admission cap exceeded                            |
 | 4001 | Authentication required / `X-API-Key` invalid               |
 | 4003 | Origin header not permitted (control + worker streams)      |
 | 4004 | Worker subsystem not initialized                            |
@@ -468,6 +475,7 @@ curl -s -X PATCH http://localhost:8201/v1/network/weights \
 | 404  | No network or `hidden_unit_index` out of range |
 | 409  | FSM not in `Investigating`                     |
 | 422  | NaN/Inf in `values`, unknown dtype             |
+| 500  | Defensive fallback for an unmapped lifecycle status sentinel |
 | 503  | Lifecycle unbound                              |
 
 ---
@@ -514,6 +522,7 @@ curl -s -X POST http://localhost:8201/v1/network/hidden-units \
 | 404  | No network                                                  |
 | 409  | FSM not in `Investigating` or already at `max_hidden_units` |
 | 422  | NaN/Inf, unknown activation                                 |
+| 500  | Defensive fallback for an unmapped lifecycle status sentinel |
 | 503  | Lifecycle unbound                                           |
 
 ---
@@ -546,6 +555,7 @@ curl -s -X DELETE http://localhost:8201/v1/network/hidden-units/3
 |------|----------------------------------|
 | 404  | No network or `idx` out of range |
 | 409  | FSM not in `Investigating`       |
+| 500  | Defensive fallback for an unmapped lifecycle status sentinel |
 | 503  | Lifecycle unbound                |
 
 ---
@@ -1201,9 +1211,18 @@ curl -s http://localhost:8201/v1/workers/worker-abc123
 All three sockets share these properties:
 
 - `X-API-Key` authenticated via `ws_authenticate()` (`src/api/websocket/manager.py`); failures close with `4001`.
+- Admission caps: every WebSocket reserves from the stack-global cap (default 200); `/ws/control` also reserves from the per-identity cap (default 5, keyed on the API-key digest). Over-cap attempts close with `1013`.
+- The legacy per-peer-IP cap remains DoS-dampening only. Behind Docker NAT, every client may present as the bridge gateway and therefore share one IP bucket; use the global and per-identity caps for limits that survive NAT.
 - Application-layer heartbeat: server sends `{"type":"ping","ts":<float>}` every 30s; client must reply `{"type":"pong"}` within 10s or the connection is closed.
 - All payloads are JSON unless explicitly noted as binary.
 - Over-cap handshakes close with `1013`. `JUNIPER_CASCOR_WS_MAX_CONNECTIONS_GLOBAL` (default 200) spans all WebSocket endpoints; `JUNIPER_CASCOR_WS_MAX_CONNECTIONS_PER_IDENTITY` (default 5) applies to `/ws/control`; `JUNIPER_CASCOR_WS_MAX_CONNECTIONS_PER_IP` (default 5) is DoS dampening and can collapse to one shared bucket behind Docker NAT.
+
+`/ws/training` and `/ws/control` also use an application-layer heartbeat:
+server sends `{"type":"ping","ts":<float>}` every
+`ws_heartbeat_interval_sec` seconds (default `30`), and the client must
+reply with `{"type":"pong"}` within `ws_heartbeat_pong_timeout_sec`
+seconds (default `10`) or the handler closes the connection with a heartbeat
+timeout.
 
 ### WS `/ws/training`
 
@@ -1220,10 +1239,40 @@ Handler at `src/api/websocket/training_stream.py`.
 **Resume handshake (optional, client → server within timeout)**:
 
 ```json
-{ "type": "resume", "seq": 12345 }
+{
+  "type": "resume",
+  "data": {
+    "last_seq": 12345,
+    "server_instance_id": "server-uuid-from-connection_established"
+  }
+}
 ```
 
-**Other client→server messages** — `{"type":"pong"}`, optional `{"type":"subscribe_metrics", ...}`.
+Resume responses:
+
+| Type | Data | Meaning |
+|------|------|---------|
+| `resume_ok` | `{"replayed_count": <int>}` | Replay succeeded; buffered events follow as personal messages. |
+| `resume_failed` | `{"reason": "malformed_resume"}` | Frame omitted `data.last_seq` or `data.server_instance_id`. |
+| `resume_failed` | `{"reason": "server_restarted"}` | Client's `server_instance_id` did not match this process. |
+| `resume_failed` | `{"reason": "out_of_range"}` | `last_seq` is older than the retained replay buffer or replay is disabled. |
+
+If no resume frame arrives within the handshake timeout, or a non-resume/non-JSON
+frame arrives during that window, the connection proceeds as a fresh connect.
+
+**Other client→server messages**:
+
+```json
+{ "type": "pong" }
+```
+
+```json
+{ "type": "subscribe_metrics", "data": { "max_count": 50 } }
+```
+
+`subscribe_metrics` replies with an `initial_metrics` personal message. The
+requested count is clamped to `[1, ws_initial_metrics_count]` (or `100` when the
+initial burst is disabled).
 
 **Server→client message types**:
 
@@ -1233,9 +1282,42 @@ Handler at `src/api/websocket/training_stream.py`.
 | `initial_status`         | Fresh connect                             |
 | `state`                  | FSM transitions / coalesced state updates |
 | `initial_metrics`        | Fresh connect (back-fill)                 |
+| `resume_ok`              | Successful resume handshake               |
+| `resume_failed`          | Failed resume handshake                   |
 | `epoch_end`              | Each epoch completion                     |
-| `topology_update`        | When the network grows / mutates          |
-| `heartbeat_ping`         | Every 30 s                                |
+| `candidate_progress`     | Candidate worker progress                 |
+| `cascade_add`            | New hidden unit added                     |
+| `topology`               | When the network grows / mutates          |
+| `chunked_message`        | Fragment of an oversized JSON envelope    |
+| `event`                  | Generic lifecycle event                   |
+| `ping`                   | Heartbeat ping every 30 s by default      |
+
+Broadcast messages get a monotonic `seq` and `emitted_at_monotonic` before
+fan-out and replay buffering. Personal messages (`connection_established`,
+`initial_status`, `initial_metrics`, `resume_ok`, `resume_failed`) do not get a
+`seq`; `initial_metrics.data.current_seq` tells the client which broadcast
+sequence is current at the time of the back-fill.
+
+Oversized JSON envelopes are sent as one or more `chunked_message` envelopes:
+
+```json
+{
+  "type": "chunked_message",
+  "timestamp": 1714000000.123,
+  "seq": 42,
+  "data": {
+    "chunk_id": "uuid",
+    "chunk_index": 0,
+    "total_chunks": 3,
+    "original_type": "topology",
+    "payload": "{\"type\":\"topology\",..."
+  }
+}
+```
+
+Clients reconstruct by grouping on `chunk_id`, sorting by `chunk_index`, joining
+`payload`, and parsing the resulting JSON. Each chunk receives its own `seq` and
+replay-buffer slot.
 
 **Example call**:
 
@@ -1249,6 +1331,7 @@ websocat -H "X-API-Key: $API_KEY" ws://localhost:8201/ws/training
 
 | Code | Trigger                                   |
 |------|-------------------------------------------|
+| 1013 | Manager, stack-global, or per-IP cap hit  |
 | 4001 | Auth failure                              |
 | 1013 | Global or per-IP connection cap reached  |
 | 1006 | Heartbeat pong timeout, message too large |
@@ -1284,11 +1367,29 @@ Valid commands: `start`, `stop`, `pause`, `resume`, `reset`, `set_params`. The s
 ```json
 {
   "type": "command_response",
-  "command": "start",
+  "timestamp": 1714000000.123,
+  "data": {
+    "command": "start",
+    "command_id": "uuid",
+    "status": "success",
+    "result": { "...": "..." }
+  }
+}
+```
+
+Validation and command failures keep the socket open and return the same
+envelope with `data.status: "error"` plus `data.error` and, when available,
+`data.code` (for example `unknown_command` or `invalid_params`).
+The rate-limited response is the legacy flat shape emitted directly by the
+handler and also has no `seq`:
+
+```json
+{
+  "type": "command_response",
+  "command": "pause",
   "command_id": "uuid",
-  "status": "success",
-  "result": { "...": "..." },
-  "error": null
+  "status": "rate_limited",
+  "retry_after": 0.1
 }
 ```
 
@@ -1305,13 +1406,17 @@ websocat -H "X-API-Key: $API_KEY" ws://localhost:8201/ws/control \
 
 | Code | Trigger                          |
 |------|----------------------------------|
+| 1013 | Stack-global or per-identity cap hit |
 | 4001 | Auth failure                     |
 | 4003 | Origin header present (B2B-only) |
 | 1013 | Global or per-identity connection cap reached |
 | 1008 | Rate limit exceeded              |
 | 1006 | Heartbeat timeout, idle timeout  |
 
-Per-command failures arrive in-band as `{"status":"error", "error": "..."}` rather than closing the socket.
+Rate limiting and per-command failures arrive in-band as `command_response`
+messages rather than closing the socket. Oversized command messages (over 64 KB)
+also receive an error response and the connection stays open. Malformed JSON
+receives an error response and then closes with `1003`.
 
 ---
 
@@ -1351,6 +1456,7 @@ Per-command failures arrive in-band as `{"status":"error", "error": "..."}` rath
 
 | Code | Trigger                              |
 |------|--------------------------------------|
+| 1013 | Stack-global WebSocket cap hit       |
 | 4001 | Auth failure                         |
 | 4003 | Origin header present                |
 | 4004 | Worker subsystem not initialized     |

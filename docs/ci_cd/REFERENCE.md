@@ -32,10 +32,10 @@
 1. **Checkout Code** - Shallow clone (`fetch-depth: 1`)
 2. **Set up Python** - Python 3.14
 3. **Install Linting Tools** - black, isort, mypy, flake8 with plugins
-4. **Run Black** - Format check (soft fail)
-5. **Run isort** - Import sort check (soft fail)
-6. **Run Flake8** - Linting with `--exit-zero` (soft fail)
-7. **Run MyPy** - Type checking (soft fail)
+4. **Run Black** - Format check
+5. **Run isort** - Import sort check
+6. **Run Flake8** - Linting
+7. **Run MyPy** - Type checking
 
 #### Test Job
 
@@ -48,7 +48,7 @@
 7. **Run Unit Tests** - Fast tests only (`-m "unit and not slow"`)
 8. **Upload Coverage Report** - XML and HTML artifacts
 9. **Upload Test Results** - JUnit XML artifact
-10. **Check Coverage Thresholds** - 50% minimum (soft fail)
+10. **Enforce Coverage Gate** - 80% aggregate minimum (hard fail)
 11. **Test Summary** - Report generation status
 
 #### Integration Job
@@ -68,51 +68,44 @@
 
 | Setting | Value |
 |---------|-------|
-| **Threshold** | 50% |
-| **Enforcement** | Soft fail (warning only) |
-| **Command** | `python -m coverage report --fail-under=50` |
+| **Aggregate threshold** | 80% |
+| **Enforcement** | Hard fail in the `unit-tests` job |
+| **Command** | `python -m coverage report --fail-under=${COVERAGE_FAIL_UNDER}` |
 
-### Soft Fail Behavior
+### Failure Behavior
 
-When coverage falls below the threshold:
+When aggregate coverage falls below the threshold:
 
-- A GitHub Actions warning is emitted: `::warning::Coverage below 50% threshold`
-- The step continues (`continue-on-error: true`)
-- The quality gate does **not** fail the build
-- Message: "Coverage gate: SOFT FAIL (warning only during initial phase)"
+- The standalone coverage report step fails.
+- The `unit-tests` job fails and blocks merge when it is a required status check.
+- Coverage artifacts are still uploaded with `if: always()` for inspection.
 
 ### How to Increase Thresholds
 
 1. Edit `.github/workflows/ci.yml`
-2. Locate the "Check Coverage Thresholds" step
-3. Modify `--fail-under=50` to the desired value:
+2. Locate the top-level `COVERAGE_FAIL_UNDER` value
+3. Modify it to the desired aggregate threshold:
 
 ```yaml
-python -m coverage report --fail-under=80
+env:
+  COVERAGE_FAIL_UNDER: "85"
 ```
-
-4. To enforce hard failures, remove `continue-on-error: true`
 
 ### Recommended Threshold Progression
 
 | Phase | Threshold | Notes |
 |-------|-----------|-------|
-| Initial | 50% | Current setting |
-| Stabilization | 70% | After core modules covered |
-| Mature | 80% | Production-ready target |
+| Current aggregate gate | 80% | Enforced by `.github/workflows/ci.yml` |
 | Comprehensive | 90%+ | Research codebase goal |
 
 ### Per-Module Thresholds
 
-Per-module thresholds are not currently configured in CI. To add them, use a `.coveragerc` file:
+Per-source-file and pooled packaged-sub-module bars are tracked with `juniper-coverage-gap-map` during the rollout. They are advisory in `juniper-cascor` until the final gate PR adds the blocking `--enforce` step.
 
-```ini
-[coverage:report]
-fail_under = 80
-
-[coverage:run]
-source = cascade_correlation,candidate_unit
-```
+| Scope | Advisory bar | Measurement |
+|-------|--------------|-------------|
+| Source file | >=90% statement | Coverage JSON from `pytest -m "unit and not slow" src/tests/unit --cov=src` |
+| Packaged sub-module | >=95% pooled statement | Covered statements divided by total statements for the sub-module |
 
 Or configure in `pyproject.toml`:
 

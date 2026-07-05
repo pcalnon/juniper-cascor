@@ -168,30 +168,39 @@ bash run_tests.bash -m "spiral"     # Spiral problem tests
 ### Coverage Commands
 
 ```bash
-# Run with coverage collection
-python -m pytest --cov=../cascade_correlation --cov=../candidate_unit
+# Run the CI-parity aggregate gate from the repository root
+bash util/run_coverage.bash
+
+# Run with repository-wide coverage collection
+python -m pytest -m "unit and not slow" src/tests/unit --cov=src
 
 # Generate HTML report
-python -m pytest --cov-report=html:reports/htmlcov
+python -m pytest -m "unit and not slow" src/tests/unit --cov=src --cov-report=html:src/tests/reports/htmlcov
 
 # Generate XML report (for CI)
-python -m pytest --cov-report=xml:reports/coverage.xml
+python -m pytest -m "unit and not slow" src/tests/unit --cov=src --cov-report=xml:src/tests/reports/coverage.xml
 
 # Show missing lines in terminal
-python -m pytest --cov-report=term-missing
+python -m pytest -m "unit and not slow" src/tests/unit --cov=src --cov-report=term-missing
 
 # Multiple report formats
 python -m pytest \
-    --cov=../cascade_correlation \
+    -m "unit and not slow" \
+    src/tests/unit \
+    --cov=src \
     --cov-report=term-missing \
-    --cov-report=html:reports/htmlcov \
-    --cov-report=xml:reports/coverage.xml
+    --cov-report=html:src/tests/reports/htmlcov \
+    --cov-report=xml:src/tests/reports/coverage.xml
 
 # Check coverage threshold
-python -m coverage report --fail-under=50
+python -m coverage report --fail-under=80
 
 # View coverage for specific file
 python -m coverage report --include="*/cascade_correlation.py"
+
+# Produce per-file/sub-module gap-map input
+python -m pytest -m "unit and not slow" src/tests/unit --cov=src --cov-report=json:src/tests/reports/coverage.json
+juniper-coverage-gap-map --coverage-json src/tests/reports/coverage.json
 ```
 
 ---
@@ -227,17 +236,17 @@ test ──────┤
 ### CI Test Command (Unit Tests)
 
 ```bash
-python -m pytest unit/ \
+python -m pytest \
+    -m "unit and not slow" \
+    src/tests/unit \
     --verbose \
     --timeout=60 \
-    --cov=../cascade_correlation \
-    --cov=../candidate_unit \
+    --maxfail=5 \
+    --junitxml=reports/junit/junit-unit.xml \
+    --cov=src \
     --cov-report=term-missing \
     --cov-report=xml:reports/coverage.xml \
-    --cov-report=html:reports/htmlcov \
-    --junitxml=reports/junit.xml \
-    -m "unit and not slow" \
-    --maxfail=10
+    --cov-report=html:reports/htmlcov
 ```
 
 ### CI Test Command (Integration Tests)
@@ -252,10 +261,11 @@ python -m pytest integration/ \
 
 ### Coverage Thresholds
 
-| Threshold | Status        | Action on Failure                    |
-|-----------|---------------|--------------------------------------|
-| 50%       | Soft fail     | Warning only (initial phase)         |
-| Future    | Hard fail     | Block merge when threshold increases |
+| Threshold | Status | Action on Failure |
+|-----------|--------|-------------------|
+| 80% aggregate | Hard fail | `python -m coverage report --fail-under=${COVERAGE_FAIL_UNDER}` blocks the unit-tests job |
+| >=90% per source file | Advisory until final gate PR | Measured with `juniper-coverage-gap-map` from coverage JSON |
+| >=95% pooled per packaged sub-module | Advisory until final gate PR | Statement-weighted pooled coverage, not mean-of-files |
 
 ---
 
@@ -375,9 +385,11 @@ python -m pytest -m "unit and not slow" -v   # Fast unit tests
 python -m pytest -k "accuracy" -v            # Tests matching "accuracy"
 python -m pytest --lf                        # Last failed only
 
-# Coverage
-python -m pytest --cov-report=term-missing   # Show missing lines
-python -m coverage report --fail-under=50    # Check threshold
+# Coverage from repository root
+cd ../..
+bash util/run_coverage.bash                 # CI-parity aggregate gate
+python -m pytest src/tests/unit --cov=src --cov-report=term-missing
+python -m coverage report --fail-under=80   # Current aggregate threshold
 ```
 
 ---

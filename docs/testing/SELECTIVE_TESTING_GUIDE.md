@@ -178,9 +178,9 @@ cd src/tests && bash scripts/run_tests.bash --no-coverage
 ### Specific Module Coverage
 
 ```bash
-cd src/tests && python -m pytest \
-    --cov=../cascade_correlation \
-    --cov=../candidate_unit \
+python -m pytest \
+    src/tests/unit/test_cascade_correlation_coverage_extended.py \
+    --cov=src/cascade_correlation \
     --cov-report=term-missing \
     -v
 ```
@@ -188,11 +188,37 @@ cd src/tests && python -m pytest \
 ### Coverage for a Subset of Tests
 
 ```bash
-cd src/tests && python -m pytest unit/test_forward_pass.py \
-    --cov=../cascade_correlation \
-    --cov-report=html:reports/htmlcov \
+python -m pytest src/tests/unit/test_forward_pass.py \
+    --cov=src \
+    --cov-report=html:src/tests/reports/htmlcov \
     -v
 ```
+
+### CI-Parity Coverage Gate
+
+For a result that matches the GitHub Actions unit-test gate, run from the repository root:
+
+```bash
+bash util/run_coverage.bash
+```
+
+This runs `src/tests/unit` with `-m "unit and not slow"`, collects coverage with `--cov=src`, and then enforces the current aggregate threshold with `python -m coverage report --fail-under=${COVERAGE_FAIL_UNDER:-80}`.
+
+### Per-file Gap Map
+
+During the per-file coverage rollout, generate JSON from the same fast unit subset and inspect it with `juniper-coverage-gap-map`:
+
+```bash
+python -m pytest \
+    -m "unit and not slow" \
+    src/tests/unit \
+    --cov=src \
+    --cov-report=json:src/tests/reports/coverage.json
+
+juniper-coverage-gap-map --coverage-json src/tests/reports/coverage.json
+```
+
+The advisory bars are >=90% statement coverage per source file and >=95% pooled statement coverage per packaged sub-module. The final gate PR adds `--enforce` after all modules clear those bars.
 
 ### Viewing Coverage Reports
 
@@ -233,9 +259,9 @@ cd src/tests && python -m pytest -n 4 -v
 Coverage works with parallel execution but requires `pytest-cov` to aggregate results:
 
 ```bash
-cd src/tests && python -m pytest -n auto \
-    --cov=../cascade_correlation \
-    --cov-report=html:reports/htmlcov \
+python -m pytest src/tests/unit -n auto \
+    --cov=src \
+    --cov-report=html:src/tests/reports/htmlcov \
     -v
 ```
 
