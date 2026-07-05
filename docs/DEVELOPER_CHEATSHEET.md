@@ -10,6 +10,7 @@
 
 - juniper-data: cd /home/pcalnon/Development/python/Juniper/juniper-data && conda activate JuniperData && pip install -e ".[all]" && PYTHON_GIL=0 uvicorn juniper_data.api.app:app --host 0.0.0.0 --port 8100
 - juniper-cascor: cd /home/pcalnon/Development/python/Juniper/juniper-cascor/src && conda activate JuniperCascor1 && JUNIPER_CASCOR_PORT=8201 python server.py
+- Public/container bind only when fronted: if `JUNIPER_CASCOR_HOST` is non-loopback (for example `0.0.0.0`), also set `JUNIPER_CASCOR_FRONTING_AUTH_ATTESTED=true` after verifying a reverse proxy or loopback host-publish fronts the port.
 - juniper-canopy: cd /home/pcalnon/Development/python/Juniper/juniper-canopy/src && conda activate JuniperCanopy1 && CASCOR_SERVICE_URL="<http://localhost:8201>" uvicorn main:app --host 0.0.0.0 --port 8050
 
 > **Conda env naming:** the live envs are **versioned** — `JuniperCascor1`, `JuniperCanopy1` (the bare `JuniperCascor` / `JuniperCanopy` are now `*-DEPRECATED` with a broken toolchain; `JuniperData` is unversioned). Discover yours with `conda env list | grep Juniper<App>` and use that name; rebuilds increment the suffix.
@@ -54,7 +55,7 @@ docker compose --profile full up -d                            # Docker start
 
 **Add an endpoint:** Create route under `/v1`, register in `app.py`, add client method in `juniper-cascor-client`.
 
-**WebSocket:** `/ws/training` (metrics), `/ws/control` (commands), `/ws/v1/workers` (remote workers). All draw from the stack-global WS admission cap; `/ws/control` also uses the per-identity cap keyed on the `X-API-Key` token digest. Update `ws_client.py`, worker clients, and canopy when adding or changing sockets.
+**WebSocket:** `/ws/training` (metrics), `/ws/control` (commands), `/ws/v1/workers` (remote workers). Over-cap connections close with `1013`; update `ws_client.py`, canopy, and worker clients when adding or changing channels.
 
 ### Training Lifecycle Quick Paths
 
@@ -105,17 +106,17 @@ Metrics nuance:
 | `CASCOR_LOG_LEVEL`               | `INFO`                  | Log level override (set before import) |
 | `JUNIPER_DATA_URL`               | `http://localhost:8100` | JuniperData service URL                |
 | `JUNIPER_DATA_API_KEY`           | --                      | API key for JuniperData                |
-| `JUNIPER_CASCOR_HOST`            | `127.0.0.1`             | Bind host for the service. Non-loopback values such as `0.0.0.0` require `JUNIPER_CASCOR_FRONTING_AUTH_ATTESTED=true`. |
+| `JUNIPER_CASCOR_HOST`            | `127.0.0.1`             | Bind host for the service; non-loopback requires `JUNIPER_CASCOR_FRONTING_AUTH_ATTESTED=true` |
 | `JUNIPER_CASCOR_PORT`            | `8200`                  | Bind port for the service              |
-| `JUNIPER_CASCOR_FRONTING_AUTH_ATTESTED` | `false`          | Startup bind-guard attestation for non-loopback binds. Use only when a loopback host-publish or authenticating proxy fronts the port. |
+| `JUNIPER_CASCOR_FRONTING_AUTH_ATTESTED` | `false`          | Required startup attestation for non-loopback binds; asserts a fronting auth layer or loopback host-publish protects the port |
 | `JUNIPER_CASCOR_CORS_ORIGINS`    | `[]`                    | Allowed CORS origins                   |
 | `JUNIPER_CASCOR_API_KEYS`        | --                      | API keys for authentication            |
 | `JUNIPER_CASCOR_LOG_FORMAT`      | --                      | Set to `json` for JSON logging         |
 | `JUNIPER_CASCOR_SENTRY_DSN`      | --                      | Sentry DSN                             |
 | `JUNIPER_CASCOR_METRICS_ENABLED` | `false`                 | Enable Prometheus metrics              |
-| `JUNIPER_CASCOR_WS_MAX_CONNECTIONS_GLOBAL` | `200`        | Stack-global WebSocket cap across `/ws/training`, `/ws/control`, and `/ws/v1/workers`; over-cap closes with `1013`. |
-| `JUNIPER_CASCOR_WS_MAX_CONNECTIONS_PER_IDENTITY` | `5`    | `/ws/control` cap per authenticated API-key identity. |
-| `JUNIPER_CASCOR_WS_MAX_CONNECTIONS_PER_IP` | `5`          | Per-peer-IP cap. DoS-dampening only; behind Docker NAT all clients share the bridge-gateway bucket. |
+| `JUNIPER_CASCOR_WS_MAX_CONNECTIONS_GLOBAL` | `200`        | Stack-wide WebSocket cap across training, control, and worker sockets |
+| `JUNIPER_CASCOR_WS_MAX_CONNECTIONS_PER_IDENTITY` | `5`     | `/ws/control` cap per API-key identity |
+| `JUNIPER_CASCOR_WS_MAX_CONNECTIONS_PER_IP` | `5`          | Per-source-IP cap; DoS dampening only and shared behind Docker NAT |
 | `JUNIPER_CASCOR_WS_CONTROL_ALLOWED_ORIGINS` | `http://localhost:8050,http://127.0.0.1:8050,https://localhost:8050,https://127.0.0.1:8050` | `/ws/control` Origin allowlist. Accepts JSON-array or comma-CSV. Empty string disables (opt-out). For docker compose, add `http://juniper-canopy:8050` so canopy's `ControlStreamSupervisor` can connect. |
 | `JUNIPER_WS_REPLAY_BUFFER_SIZE` | `1024` | `/ws/training` broadcast replay buffer size. `0` disables resume replay. |
 | `JUNIPER_WS_INITIAL_METRICS_COUNT` | `100` | Recent metrics sent as `initial_metrics` on fresh `/ws/training` connect. `0` disables the automatic burst; clients can still send `subscribe_metrics`. |
@@ -246,6 +247,8 @@ Core: `torch`, `numpy`, `h5py`, `matplotlib`, `PyYAML`, `requests`
 | Long tests skipped                                                    | Flag not passed                                             | `pytest --run-long`                                                                                       |
 | HDF5 load fails                                                       | Corrupted or version mismatch                               | `python -m snapshots.snapshot_cli verify snapshot.h5`                                                     |
 | NaN in training                                                       | LR too high or bad data                                     | Reduce `learning_rate`, check tensors                                                                     |
+| Server refuses to start with `NonLoopbackBindError`                   | `JUNIPER_CASCOR_HOST` is non-loopback without fronting-auth attestation | Bind `127.0.0.1` for local/dev, or set `JUNIPER_CASCOR_FRONTING_AUTH_ATTESTED=true` only after verifying a fronting auth layer or loopback host-publish |
+| WebSocket closes during connect with `1013`                           | Global, per-IP, or `/ws/control` per-identity cap reached   | Raise the relevant `JUNIPER_CASCOR_WS_MAX_CONNECTIONS_*` cap only after checking expected clients and worker fleet size |
 
 ---
 
