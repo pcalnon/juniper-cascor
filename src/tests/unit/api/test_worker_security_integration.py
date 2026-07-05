@@ -40,6 +40,11 @@ def _make_websocket(headers=None, app_state=None):
     state.worker_rate_limiter = None
     state.audit_logger = None
     state.worker_metrics = None
+    # SEC-F19 D4: the handler reserves a stack-global admission slot via
+    # ws_manager.try_admit before accepting and releases it on teardown;
+    # provide awaitable doubles so the mock-based tests pass through it.
+    state.ws_manager.try_admit = AsyncMock(return_value=True)
+    state.ws_manager.release_admission = AsyncMock()
     if app_state:
         for key, val in app_state.items():
             setattr(state, key, val)

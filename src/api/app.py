@@ -2,6 +2,7 @@
 
 import asyncio
 import importlib.metadata
+import ipaddress
 import json
 import logging
 from collections.abc import AsyncGenerator
@@ -36,6 +37,91 @@ except importlib.metadata.PackageNotFoundError:
     _API_VERSION = "0.0.0-dev"
 
 logger = logging.getLogger("juniper_cascor.api")
+
+
+class NonLoopbackBindError(RuntimeError):
+    """Raised at startup when cascor is configured to bind a non-loopback
+    interface without attesting a fronting authenticating layer.
+
+    SEC-F22 / D2 (juniper-ml
+    ``notes/JUNIPER_CANOPY_CONTROL_SURFACE_AUTH_AND_NAT_DESIGN_2026-07-03.md``
+    §4 Option A / §8 D2). Fail-closed: the process refuses to start rather
+    than silently exposing the un-fronted control surface on a public
+    interface.
+    """
+
+
+def _is_loopback_host(host: str) -> bool:
+    """Return True when ``host`` names a loopback bind target.
+
+    Treats the literal hostname ``localhost`` and every loopback IP literal
+    (127.0.0.0/8, ::1, and IPv4-mapped IPv6 forms such as ``::ffff:127.0.0.1``)
+    as loopback. A non-IP hostname other than ``localhost`` is treated
+    conservatively as NON-loopback (fail-closed) because it may resolve to a
+    routable address. The unspecified addresses ``0.0.0.0`` / ``::`` (bind-all)
+    are — correctly — NOT loopback.
+    """
+    h = (host or "").strip().lower()
+    if not h:
+        # An empty host is bind-all in most servers — treat as non-loopback.
+        return False
+    if h in {"localhost", "localhost.localdomain"}:
+        return True
+    # Strip IPv6 brackets and any zone-id before parsing.
+    h = h.strip("[]")
+    if "%" in h:
+        h = h.split("%", 1)[0]
+    try:
+        ip = ipaddress.ip_address(h)
+    except ValueError:
+        # Not an IP literal (a hostname); conservatively non-loopback.
+        return False
+    if ip.version == 6 and ip.ipv4_mapped is not None:
+        ip = ip.ipv4_mapped
+    return ip.is_loopback
+
+
+def enforce_fronting_auth_bind_guard(settings: Settings) -> None:
+    """Refuse to start on a non-loopback bind without a fronting-auth attestation.
+
+    SEC-F22 / D2 — the symmetric counterpart to the canopy bind-guard. The
+    only effective control protecting cascor's un-authenticated control/worker
+    WebSocket surface in the containerized stack is the network boundary
+    (the compose-level loopback host-publish). This guard converts that
+    load-bearing precondition into an enforced invariant:
+
+    * Loopback ``host`` (127.0.0.0/8, ::1, localhost) -> always start.
+    * Non-loopback ``host`` (e.g. ``0.0.0.0``) + ``fronting_auth_attested``
+      True -> start (operator asserts a fronting authenticating layer fronts
+      the port), logging a WARNING so the attestation is auditable.
+    * Non-loopback ``host`` + attestation False (the default) -> raise
+      :class:`NonLoopbackBindError` after a CRITICAL log (fail-closed, loud).
+
+    Called from the application ``lifespan`` startup, before uvicorn binds the
+    socket, so a mis-configured bring-up never begins accepting connections.
+
+    Note (deploy roll-out is owner-gated): the container binds
+    ``JUNIPER_CASCOR_HOST=0.0.0.0`` behind a loopback host-publish, so enabling
+    this guard in the deploy requires setting
+    ``JUNIPER_CASCOR_FRONTING_AUTH_ATTESTED=true`` there — a Phase-1 deploy
+    change the platform owner approves separately (design §7 Phase 1).
+    """
+    host = settings.host
+    if _is_loopback_host(host):
+        return
+    if settings.fronting_auth_attested:
+        logger.warning(
+            "cascor is binding a NON-loopback interface (%s:%s) with " "JUNIPER_CASCOR_FRONTING_AUTH_ATTESTED=true — the operator asserts a " "fronting authenticating layer fronts this port. The control/worker " "WebSocket surface has no app-layer auth of its own; if no proxy is " "present this exposes it to the whole reachable network (SEC-F22).",
+            host,
+            settings.port,
+        )
+        return
+    logger.critical(
+        "REFUSING TO START: cascor is configured to bind a NON-loopback " "interface (%s:%s) without JUNIPER_CASCOR_FRONTING_AUTH_ATTESTED=true. " "The control/worker WebSocket surface has no app-layer authentication " "of its own — its only effective control is the loopback network " "boundary (SEC-F22). Bind 127.0.0.1 (recommended for local/dev), or, " "only if a fronting authenticating proxy really fronts this port, set " "JUNIPER_CASCOR_FRONTING_AUTH_ATTESTED=true to attest it.",
+        host,
+        settings.port,
+    )
+    raise NonLoopbackBindError(f"Refusing to bind non-loopback host {host!r} without " "JUNIPER_CASCOR_FRONTING_AUTH_ATTESTED=true (SEC-F22 bind-guard).")
 
 
 def _log_startup_task_exception(task: asyncio.Task) -> None:
@@ -160,6 +246,12 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     settings: Settings = app.state.settings
 
     configure_logging(settings.log_level, settings.log_format, "juniper-cascor")
+
+    # SEC-F22 / D2 — refuse to start on a non-loopback bind without a
+    # fronting-auth attestation, before uvicorn binds the socket or any
+    # background thread is spawned. Fail-closed and loud.
+    enforce_fronting_auth_bind_guard(settings)
+
     configure_sentry(settings.sentry_dsn, "juniper-cascor", _API_VERSION)
     if settings.metrics_enabled:
         set_build_info("juniper_cascor", _API_VERSION, git_sha=provenance.git_sha(), build_date=provenance.build_date())
@@ -173,6 +265,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         max_replay_buffer_size=settings.ws_replay_buffer_size,
         send_timeout_seconds=settings.ws_send_timeout_seconds,
         max_connections_per_ip=settings.ws_max_connections_per_ip,  # SEC-03
+        max_connections_global=settings.ws_max_connections_global,  # SEC-F19 D4a
+        max_connections_per_identity=settings.ws_max_connections_per_identity,  # SEC-F19 D4b
         max_message_size_bytes=settings.ws_max_message_size_bytes,  # GAP-WS-18
         chunk_payload_size_bytes=settings.ws_chunk_payload_size_bytes,  # GAP-WS-18
     )
