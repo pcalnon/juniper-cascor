@@ -852,7 +852,8 @@ jobs:
           docker run -d --name juniper-cascor-test \
             --network juniper-smoke \
             -e JUNIPER_DATA_URL=http://juniper-data:8100 \
-            -p 8200:8200 \
+            -e JUNIPER_CASCOR_FRONTING_AUTH_ATTESTED=true \
+            -p 127.0.0.1:8200:8200 \
             juniper-cascor:ci-${{ github.sha }}
 
           echo "Waiting for juniper-cascor to become healthy..."

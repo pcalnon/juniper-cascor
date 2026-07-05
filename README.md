@@ -79,8 +79,8 @@ Settings load from the `JUNIPER_CASCOR_` environment namespace. Common knobs (fu
 
 | Variable | Default | Purpose |
 |----------|---------|---------|
-| `JUNIPER_CASCOR_HOST` / `JUNIPER_CASCOR_PORT` | `127.0.0.1` / `8200` | Bind address / port (`0.0.0.0` inside Docker). |
-| `JUNIPER_CASCOR_FRONTING_AUTH_ATTESTED` | `false` | Required for non-loopback binds; set only when a loopback host-publish or authenticating proxy fronts the port. |
+| `JUNIPER_CASCOR_HOST` / `JUNIPER_CASCOR_PORT` | `127.0.0.1` / `8200` | Bind address / port (`0.0.0.0` under Docker). |
+| `JUNIPER_CASCOR_FRONTING_AUTH_ATTESTED` | `false` | Required when binding a non-loopback interface; asserts a loopback host-publish or fronting auth layer protects the port. |
 | `JUNIPER_DATA_URL` | `http://localhost:8100` | Upstream juniper-data service. |
 | `JUNIPER_CASCOR_API_KEYS` | _(unset)_ | CSV `X-API-Key` values; auth disabled when unset. |
 | `JUNIPER_CASCOR_WS_MAX_CONNECTIONS_GLOBAL` | `200` | Stack-wide WebSocket cap across training, control, and worker sockets. |

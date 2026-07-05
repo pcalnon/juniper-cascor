@@ -76,6 +76,29 @@ class TestBindGuardFunction:
         # fronts the port; the guard then allows the non-loopback bind.
         enforce_fronting_auth_bind_guard(Settings(host=host, fronting_auth_attested=True))
 
+    def test_direct_uvicorn_host_override_is_guarded(self, monkeypatch):
+        # Direct uvicorn startup can bind a public socket even when Settings.host
+        # remains at its loopback default. The guard must inspect the explicit
+        # CLI --host override so the documented production command cannot bypass
+        # SEC-F22 by accident.
+        monkeypatch.setattr(
+            "sys.argv",
+            [
+                "uvicorn",
+                "api.app:create_app",
+                "--factory",
+                "--host",
+                "0.0.0.0",
+                "--port",
+                "8200",
+            ],
+        )
+
+        with pytest.raises(NonLoopbackBindError):
+            enforce_fronting_auth_bind_guard(Settings(host="127.0.0.1", fronting_auth_attested=False))
+
+        enforce_fronting_auth_bind_guard(Settings(host="127.0.0.1", fronting_auth_attested=True))
+
     def test_default_settings_start(self):
         # The class default host (127.0.0.1) must never trip the guard.
         enforce_fronting_auth_bind_guard(Settings())

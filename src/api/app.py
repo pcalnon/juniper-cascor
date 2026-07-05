@@ -5,6 +5,7 @@ import importlib.metadata
 import ipaddress
 import json
 import logging
+import sys
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
@@ -81,6 +82,25 @@ def _is_loopback_host(host: str) -> bool:
     return ip.is_loopback
 
 
+def _cli_bind_host_override(default_host: str) -> str:
+    """Return an explicit ASGI-server ``--host`` CLI override when present.
+
+    Direct uvicorn launches can bind a different socket host than
+    ``Settings.host`` (for example the documented ``uvicorn ... --host
+    0.0.0.0`` production form). The bind guard must evaluate the actual CLI
+    bind target in that path, otherwise the default loopback setting masks a
+    public bind. Programmatic ``server.py`` startup already passes
+    ``settings.host`` to uvicorn and therefore has no override.
+    """
+    argv = sys.argv[1:]
+    for index, arg in enumerate(argv):
+        if arg == "--host" and index + 1 < len(argv):
+            return argv[index + 1]
+        if arg.startswith("--host="):
+            return arg.split("=", 1)[1]
+    return default_host
+
+
 def enforce_fronting_auth_bind_guard(settings: Settings) -> None:
     """Refuse to start on a non-loopback bind without a fronting-auth attestation.
 
@@ -106,7 +126,7 @@ def enforce_fronting_auth_bind_guard(settings: Settings) -> None:
     ``JUNIPER_CASCOR_FRONTING_AUTH_ATTESTED=true`` there — a Phase-1 deploy
     change the platform owner approves separately (design §7 Phase 1).
     """
-    host = settings.host
+    host = _cli_bind_host_override(settings.host)
     if _is_loopback_host(host):
         return
     if settings.fronting_auth_attested:
