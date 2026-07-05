@@ -128,14 +128,60 @@ class Settings(BaseSettings):
 
     host: str = _JUNIPER_CASCOR_API_HOST_DEFAULT
     port: int = _JUNIPER_CASCOR_API_PORT_DEFAULT
+
+    # SEC-F22 / D2 — startup bind-guard attestation (env
+    # ``JUNIPER_CASCOR_FRONTING_AUTH_ATTESTED``). Default False (fail-closed).
+    # When the service is configured to bind a NON-loopback interface
+    # (``host`` not 127.0.0.0/8, ::1, or localhost), ``create_app`` refuses to
+    # start unless this flag is True — the operator asserting that a fronting
+    # authenticating layer (a reverse proxy, or the compose-level loopback
+    # host-publish) fronts the port. Loopback binds always start. This turns
+    # the load-bearing "loopback is the trust boundary" precondition into an
+    # enforced invariant and closes the silent ``JUNIPER_CASCOR_HOST=0.0.0.0``
+    # footgun. See juniper-ml
+    # ``notes/JUNIPER_CANOPY_CONTROL_SURFACE_AUTH_AND_NAT_DESIGN_2026-07-03.md``
+    # §4 Option A / §8 D2 and this repo's
+    # ``notes/JUNIPER_CASCOR_CONTROL_SURFACE_AUTH_AND_NAT_SECURITY_NOTE_2026-07-04.md``.
+    fronting_auth_attested: bool = False
+
     log_level: str = _JUNIPER_CASCOR_API_LOGLEVEL_DEFAULT
     cors_origins: list[str] = _JUNIPER_CASCOR_API_CORS_ORIGINS_DEFAULT
 
     ws_max_connections: int = _JUNIPER_CASCOR_API_WS_MAX_CONNECTIONS_DEFAULT
-    # SEC-03: per-IP cap on concurrent WebSocket connections. Mirrors the
-    # canopy ``max_connections_per_ip`` pattern so a single hostile client
-    # cannot monopolize the global ``ws_max_connections`` pool. Applies to
-    # every endpoint routed through ``WebSocketManager.connect*``.
+    # SEC-F19 / D4a — stack-absolute GLOBAL WebSocket connection cap across
+    # ALL WS endpoints (/ws/training, /ws/control, /ws/v1/workers combined),
+    # env ``JUNIPER_CASCOR_WS_MAX_CONNECTIONS_GLOBAL``. Bounds total socket
+    # resource regardless of source IP or identity — the availability /
+    # DoS-dampening backstop that keeps working when the per-IP cap collapses
+    # behind Docker NAT (every client presents as the bridge gateway). Must
+    # exceed the expected legitimate total (training clients + control +
+    # the worker fleet). Best-effort, NOT authentication.
+    ws_max_connections_global: int = 200
+    # SEC-F19 / D4b — per-identity WebSocket connection cap, keyed on the
+    # authenticated principal (the presented ``X-API-Key`` token hash) where
+    # one exists, env ``JUNIPER_CASCOR_WS_MAX_CONNECTIONS_PER_IDENTITY``.
+    # Enforced on /ws/control (a small-cardinality principal — canopy/browser)
+    # alongside the global cap. NOT enforced on /ws/v1/workers: a worker fleet
+    # shares one token so keying on it would cap horizontal scaling, and the
+    # unique server-assigned worker_id is only known post-registration — so
+    # meaningful worker per-identity keying is not cleanly available and the
+    # global cap is the worker minimum (design §8 OQ-2; a follow-up).
+    # Best-effort fairness, NOT authentication.
+    ws_max_connections_per_identity: int = 5
+    # SEC-03 / SEC-F19 — per-IP cap on concurrent WebSocket connections.
+    # Mirrors the canopy ``max_connections_per_ip`` pattern so a single
+    # hostile client cannot monopolize the global ``ws_max_connections`` pool.
+    # Applies to every endpoint routed through ``WebSocketManager.connect*``
+    # (today: /ws/training).
+    #
+    # NOTE (inert-behind-NAT): keyed on the raw socket peer
+    # (``websocket.client[0]``), this cap is DoS-dampening only, NOT
+    # authentication. Behind Docker NAT every client collapses to the bridge
+    # gateway IP, so the cap becomes a single shared bucket (one client's 5
+    # sockets exhaust it for everyone — the HO-3 self-DoS). The stack-absolute
+    # ``ws_max_connections_global`` + per-identity caps are the controls that
+    # survive NAT; genuine per-client identity requires the deferred
+    # fronting-proxy + trusted-XFF milestone (design §5, D6).
     ws_max_connections_per_ip: int = 5
     ws_heartbeat_interval_sec: int = _JUNIPER_CASCOR_API_WS_HEARTBEAT_INTERVAL_SEC_DEFAULT
     ws_heartbeat_pong_timeout_sec: int = _JUNIPER_CASCOR_API_WS_HEARTBEAT_PONG_TIMEOUT_SEC_DEFAULT

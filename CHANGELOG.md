@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- **SEC-F22 / D2 — startup bind-guard (`enforce_fronting_auth_bind_guard`).** At application startup (in the `lifespan`, before uvicorn binds the socket or any background thread is spawned), cascor now **refuses to start** — fail-closed, with a CRITICAL log — when `JUNIPER_CASCOR_HOST` names a **non-loopback** interface (e.g. `0.0.0.0`) unless the new boolean setting `fronting_auth_attested` (env `JUNIPER_CASCOR_FRONTING_AUTH_ATTESTED`, default **false**) is true. Loopback binds (`127.0.0.0/8`, `::1`, `localhost`, IPv4-mapped-IPv6 loopback) always start. cascor's control/worker WebSocket surface has **no app-layer authentication of its own** — its only effective control in the containerized stack is the loopback network boundary — so this turns that load-bearing precondition into an enforced invariant and closes the silent `JUNIPER_CASCOR_HOST=0.0.0.0` footgun. The symmetric counterpart to the canopy bind-guard. **Deploy roll-out is owner-gated (Phase 1):** the container binds `0.0.0.0` behind a loopback host-publish, so enabling this in `juniper-deploy` requires setting `JUNIPER_CASCOR_FRONTING_AUTH_ATTESTED=true` there. Design of record: juniper-ml [`notes/JUNIPER_CANOPY_CONTROL_SURFACE_AUTH_AND_NAT_DESIGN_2026-07-03.md`](https://github.com/pcalnon/juniper-ml/blob/main/notes/JUNIPER_CANOPY_CONTROL_SURFACE_AUTH_AND_NAT_DESIGN_2026-07-03.md) §4 Option A / §8 D2; local note `notes/JUNIPER_CASCOR_CONTROL_SURFACE_AUTH_AND_NAT_SECURITY_NOTE_2026-07-04.md`. Tests: `src/tests/unit/api/test_bind_guard.py`.
+
+- **SEC-F19 / D4 — WebSocket connection caps (stack-global + per-identity).** The `WebSocketManager` gains a stack-absolute **GLOBAL** connection cap (`ws_max_connections_global`, env `JUNIPER_CASCOR_WS_MAX_CONNECTIONS_GLOBAL`, default 200) spanning **all** WS endpoints — `/ws/training` (via `connect`/`connect_pending`) and `/ws/control` + `/ws/v1/workers` (via the new `try_admit`/`release_admission` admission gate) draw from one counter — plus a **per-identity** cap (`ws_max_connections_per_identity`, env `JUNIPER_CASCOR_WS_MAX_CONNECTIONS_PER_IDENTITY`, default 5) enforced on `/ws/control`, keyed on a non-reversible SHA-256 digest of the caller's `X-API-Key` token (`ws_identity_key`). Over-cap connections are rejected/closed with the existing `1013` close code. These are the DoS-dampening controls that **survive Docker NAT**, where the existing per-IP cap (`ws_max_connections_per_ip`, unchanged) collapses to one shared bridge-gateway bucket (HO-3 self-DoS); the per-IP cap is now documented **inert-behind-NAT** (DoS-dampening, not authentication). Per-identity keying on `/ws/v1/workers` is intentionally **global-only** (a worker fleet shares one token and the unique worker_id is only known post-registration — design §8 OQ-2; a documented follow-up). Design of record §5 Option B / §8 D4. Tests: `src/tests/unit/api/test_ws_connection_caps.py`.
+
 ### Added
 
 - **`.dockerignore` added — excludes build artifacts (incl. nested `**/*.egg-info/`) from the image.** cascor had no `.dockerignore`, so the full build context was sent and any build artifact under `src/` could be `COPY src/`'d into the image. Because cascor runs from `/app/src` (`ENV PYTHONPATH=/app/src`), a stale `src/*.egg-info` would land ahead of site-packages and shadow `importlib.metadata.version("juniper-cascor")` — the class of bug fixed for juniper-canopy in [canopy #362](https://github.com/pcalnon/juniper-canopy/pull/362) (surfaced by the build-provenance `make doctor` work). cascor is **not** vulnerable today (its egg-info is at the repo root, which `COPY src/` does not pick up), so this is preventive hardening + general context hygiene (the file also excludes `.git/`, `__pycache__/`, `*.py[cod]`, `build/`, `dist/`, and test/type-check caches). The nested `**/*.egg-info/` + `**/*.dist-info/` forms are required because a root-only `*.egg-info/` does not match `src/*.egg-info`. Regression test: `src/tests/unit/test_dockerignore_egg_info.py`.
@@ -94,7 +100,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   | `src/api/websocket/control_stream.py` | 161/193 = 83.42% | 193/193 = **100.00%** |
   | `src/api/websocket/manager.py` | 275/308 = 89.29% | 308/308 = **100.00%** |
 
-  The `src/api/websocket` sub-module clears the ratified ≥95% pooled bar: **88.17% → 99.37%** (842/955 → 949/955, statement-weighted). Overall cascor coverage 90.20% → 91.03%. New fast unit tests (40 across `test_training_stream_coverage.py` [new], `test_control_stream_coverage.py`, and `test_websocket_manager.py`) drive the resume-handshake + replay arms (`training_stream._await_resume_frame` / `_handle_resume`), the control-path handshake gates / leaky-bucket rate-limit / invalid-params / heartbeat / idle-timeout branches (`control_stream`), and the manager's per-endpoint bookkeeping, per-IP accounting, pending-connection rejection, and defensive metric-emission guards (`manager`) — all via `AsyncMock` seams (no live sockets). Measured on the CI `unit and not slow` subset (the gate basis) with `juniper-coverage-gap-map` (`juniper-ci-tools 0.6.0`, advisory). The blocking `--enforce` gate lands in the final PR of the split once every sub-module clears.
+  The `src/api/websocket` sub-module clears the ratified ≥95% pooled bar: **88.17% → 99.37%** (842/955 → 949/955, statement-weighted).
+  
+  - Overall cascor coverage 90.20% → 91.03%.
+  - New fast unit tests (40 across `test_training_stream_coverage.py` [new], `test_control_stream_coverage.py`, and `test_websocket_manager.py`) drive the resume-handshake + replay arms (`training_stream._await_resume_frame` / `_handle_resume`), the control-path handshake gates / leaky-bucket rate-limit / invalid-params / heartbeat / idle-timeout branches (`control_stream`), and the manager's per-endpoint bookkeeping, per-IP accounting, pending-connection rejection, and defensive metric-emission guards (`manager`) — all via `AsyncMock` seams (no live sockets).
+  - Measured on the CI `unit and not slow` subset (the gate basis) with `juniper-coverage-gap-map` (`juniper-ci-tools 0.6.0`, advisory).
+  - The blocking `--enforce` gate lands in the final PR of the split once every sub-module clears.
+
+- **Per-file coverage rollout (Phase C-5) — worst-first lift, part 1 of a
+  multi-PR sequence.** Lifts the two lowest-coverage source files to full
+  statement coverage, clearing the two sub-modules they dominate. No source
+  files changed; no gate flipped yet (the `juniper-coverage-gap-map --enforce`
+  CI step lands in the final gate PR once every sub-module clears). Measured on
+  the CI `unit and not slow` subset (`--cov=src`), the gate basis.
+  - `parallelism/rc4_ring_buffer.py`: **30.16% → 100%** statement — the
+    RC-4 instrumentation ring buffer is disabled-by-default (its `ENABLED`
+    flag reads `CASCOR_RC4_RING_BUFFER` at import), so a normal run
+    short-circuits every body; the new `src/tests/unit/test_rc4_ring_buffer_coverage.py`
+    drives the enabled paths by monkeypatching the module flag (never the
+    environment, so the conftest RC-4 fixtures stay inert) with per-test
+    global isolation. This clears the ecosystem's **worst** cascor
+    sub-module, `parallelism` (**69.01% → 100%** pooled).
+  - `api/routes/network.py`: **51.38% → 100%** statement — the three CAN-015h
+    handlers (`patch_weights` / `add_hidden_unit` / `delete_hidden_unit`) were
+    uncovered status→HTTP-code dispatch; `src/tests/unit/api/test_network_route_coverage.py`
+    gains a case per branch (including the defensive unmapped-sentinel 500),
+    each driven by mocking the lifecycle method to return a crafted status
+    dict (sentinels resolved off the real lifecycle instance to stay
+    drift-proof). This clears the `api/routes` sub-module
+    (**86.90% → 95.69%** pooled).
+  - Overall cascor statement coverage **90.20% → 91.12%**; files below the
+    90% floor 8 → 6, sub-modules below the 95% pooled bar 9 → 7. See juniper-ml
+    [`notes/JUNIPER_ECOSYSTEM_PER_FILE_COVERAGE_ROLLOUT_SCOPING_2026-06-30.md`](https://github.com/pcalnon/juniper-ml/blob/main/notes/JUNIPER_ECOSYSTEM_PER_FILE_COVERAGE_ROLLOUT_SCOPING_2026-06-30.md).
 
 ## [0.5.0] - 2026-05-22
 

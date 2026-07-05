@@ -463,6 +463,7 @@ curl -s -X PATCH http://localhost:8201/v1/network/weights \
 | 404  | No network or `hidden_unit_index` out of range |
 | 409  | FSM not in `Investigating`                     |
 | 422  | NaN/Inf in `values`, unknown dtype             |
+| 500  | Defensive fallback for an unmapped lifecycle status sentinel |
 | 503  | Lifecycle unbound                              |
 
 ---
@@ -509,6 +510,7 @@ curl -s -X POST http://localhost:8201/v1/network/hidden-units \
 | 404  | No network                                                  |
 | 409  | FSM not in `Investigating` or already at `max_hidden_units` |
 | 422  | NaN/Inf, unknown activation                                 |
+| 500  | Defensive fallback for an unmapped lifecycle status sentinel |
 | 503  | Lifecycle unbound                                           |
 
 ---
@@ -541,6 +543,7 @@ curl -s -X DELETE http://localhost:8201/v1/network/hidden-units/3
 |------|----------------------------------|
 | 404  | No network or `idx` out of range |
 | 409  | FSM not in `Investigating`       |
+| 500  | Defensive fallback for an unmapped lifecycle status sentinel |
 | 503  | Lifecycle unbound                |
 
 ---

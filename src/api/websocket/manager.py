@@ -12,8 +12,11 @@ Thread-safe manager that handles:
 import asyncio
 import bisect
 import contextlib
+import hashlib
+import hmac
 import json
 import logging
+import secrets
 import threading
 import time
 import uuid
@@ -24,6 +27,13 @@ from typing import Any, Dict, List, Optional, Set
 from fastapi import WebSocket
 
 logger = logging.getLogger("juniper_cascor.api.websocket")
+
+# SEC-F19 / D4b: per-process random key for the identity-cap HMAC (see
+# ``ws_identity_key``). The per-identity WS cap only needs a stable,
+# non-reversible bucket key WITHIN one process run, so a keyed HMAC with an
+# ephemeral per-process secret is used instead of a bare token hash: the digest
+# is unforgeable / not brute-forceable without this key and is never persisted.
+_IDENTITY_HMAC_KEY = secrets.token_bytes(32)
 
 
 class ReplayOutOfRange(Exception):
@@ -50,6 +60,23 @@ async def ws_authenticate(websocket: WebSocket) -> bool:
     return True
 
 
+def ws_identity_key(websocket: WebSocket) -> Optional[str]:
+    """Return a stable, non-reversible per-principal key for the per-identity cap.
+
+    SEC-F19 / D4b: the authenticated principal on the control channel is the
+    presented ``X-API-Key`` machine token. The per-identity WebSocket
+    connection cap keys on a truncated per-process HMAC-SHA256 of that token so
+    raw keys never enter the cap bookkeeping or logs. Returns ``None`` when no key
+    is presented (auth disabled / anonymous) — the caller then relies on the
+    stack-global + per-IP caps, which is the documented inert-behind-NAT
+    posture.
+    """
+    api_key = websocket.headers.get("X-API-Key")
+    if not api_key:
+        return None
+    return hmac.new(_IDENTITY_HMAC_KEY, api_key.encode("utf-8"), hashlib.sha256).hexdigest()[:16]
+
+
 class WebSocketManager:
     """Manages WebSocket connections and message broadcasting.
 
@@ -65,6 +92,8 @@ class WebSocketManager:
         max_replay_buffer_size: int = 1024,
         send_timeout_seconds: float = 0.5,
         max_connections_per_ip: int = 5,
+        max_connections_global: int = 200,
+        max_connections_per_identity: int = 5,
         max_message_size_bytes: int = 60_000,
         chunk_payload_size_bytes: int = 32_000,
     ):
@@ -98,6 +127,20 @@ class WebSocketManager:
         # address we cannot distinguish attackers anyway.
         self._max_connections_per_ip = max_connections_per_ip
         self._per_ip_counts: Dict[str, int] = {}
+        # SEC-F19 D4a: stack-absolute GLOBAL admission counter spanning ALL WS
+        # endpoints (/ws/training via connect*/, /ws/control + /ws/v1/workers
+        # via try_admit). A single integer guarded by ``self._lock`` — the
+        # availability / DoS-dampening backstop that survives Docker NAT, where
+        # every client collapses to the bridge gateway and the per-IP cap
+        # degrades to one shared bucket.
+        self._max_connections_global = max_connections_global
+        self._global_ws_count = 0
+        # SEC-F19 D4b: per-identity admission counter keyed on the
+        # authenticated-principal token hash (see ``ws_identity_key``).
+        # Enforced on /ws/control; ``None`` (anonymous) identities are exempt
+        # and rely on the global + per-IP caps.
+        self._max_connections_per_identity = max_connections_per_identity
+        self._per_identity_counts: Dict[str, int] = {}
         self._event_loop: Optional[asyncio.AbstractEventLoop] = None
         self._connection_meta: Dict[WebSocket, Dict[str, Any]] = {}
         self._lock = asyncio.Lock()
@@ -283,6 +326,53 @@ class WebSocketManager:
         else:
             self._per_ip_counts[source_ip] = current - 1
 
+    def _check_and_reserve_global_slot(self) -> bool:
+        """Reserve a stack-global admission slot; False if the global cap is hit.
+
+        SEC-F19 D4a. Must be called with ``self._lock`` held. On success the
+        caller is responsible for a matching ``_release_global_slot`` on
+        disconnect.
+        """
+        if self._global_ws_count >= self._max_connections_global:
+            return False
+        self._global_ws_count += 1
+        return True
+
+    def _release_global_slot(self) -> None:
+        """Release a stack-global slot. Must be called with ``self._lock`` held.
+
+        Guards against underflow so a stray release can never drive the
+        counter negative (it would still be a bug to over-release, but it must
+        not corrupt the cap).
+        """
+        if self._global_ws_count > 0:
+            self._global_ws_count -= 1
+
+    def _check_and_reserve_identity_slot(self, identity: Optional[str]) -> bool:
+        """Reserve a per-identity slot; True (no-op) when ``identity`` is None.
+
+        SEC-F19 D4b. Must be called with ``self._lock`` held. Anonymous callers
+        (``identity is None``) are exempt — they rely on the global + per-IP
+        caps.
+        """
+        if identity is None:
+            return True
+        current = self._per_identity_counts.get(identity, 0)
+        if current >= self._max_connections_per_identity:
+            return False
+        self._per_identity_counts[identity] = current + 1
+        return True
+
+    def _release_identity_slot(self, identity: Optional[str]) -> None:
+        """Release a per-identity slot. Must be called with ``self._lock`` held."""
+        if not identity:
+            return
+        current = self._per_identity_counts.get(identity, 0)
+        if current <= 1:
+            self._per_identity_counts.pop(identity, None)
+        else:
+            self._per_identity_counts[identity] = current - 1
+
     async def connect(self, websocket: WebSocket) -> bool:
         """Accept and register a WebSocket connection as immediately active.
 
@@ -296,11 +386,20 @@ class WebSocketManager:
                 logger.warning("Connection rejected: limit of %d reached", self._max_connections)
                 return False
 
+            # SEC-F19 D4a: stack-absolute global cap (counts this /ws/training
+            # socket alongside control + worker admissions).
+            if not self._check_and_reserve_global_slot():
+                await websocket.close(code=1013, reason="Maximum connections reached")
+                logger.warning("Connection rejected: stack-global limit of %d reached", self._max_connections_global)
+                return False
+
             source_ip = self._source_ip(websocket)
             if not self._check_and_reserve_per_ip_slot(source_ip):
-                # SEC-03: per-IP cap exceeded. Close with the same 1013
-                # used for the global cap so clients see a single "too
-                # many connections" signal.
+                # SEC-03: per-IP cap exceeded. Release the global slot we just
+                # reserved so a per-IP rejection does not leak it. Close with
+                # the same 1013 used for the global cap so clients see a single
+                # "too many connections" signal.
+                self._release_global_slot()
                 await websocket.close(code=1013, reason="Per-IP connection limit reached")
                 logger.warning(
                     "Connection rejected: per-IP limit of %d reached for %s",
@@ -334,8 +433,15 @@ class WebSocketManager:
                 logger.warning("Connection rejected: limit of %d reached", self._max_connections)
                 return False
 
+            # SEC-F19 D4a: stack-absolute global cap (see connect()).
+            if not self._check_and_reserve_global_slot():
+                await websocket.close(code=1013, reason="Maximum connections reached")
+                logger.warning("Pending connection rejected: stack-global limit of %d reached", self._max_connections_global)
+                return False
+
             source_ip = self._source_ip(websocket)
             if not self._check_and_reserve_per_ip_slot(source_ip):
+                self._release_global_slot()
                 await websocket.close(code=1013, reason="Per-IP connection limit reached")
                 logger.warning(
                     "Pending connection rejected: per-IP limit of %d reached for %s",
@@ -374,16 +480,76 @@ class WebSocketManager:
             self._active_connections.discard(websocket)
             self._pending_connections.discard(websocket)
             meta = self._connection_meta.pop(websocket, None)
-            # SEC-03: release the per-IP slot reserved at connect time so
-            # a client who reconnects cleanly does not accrue phantom
-            # counts against the cap.
+            # SEC-03 / SEC-F19: release the per-IP and stack-global slots
+            # reserved at connect time so a client who reconnects cleanly does
+            # not accrue phantom counts against the caps. ``meta is None`` means
+            # this ws never went through connect*/ (e.g. a ws manually added to
+            # the active set by a test), so it holds no reservation to release.
             if meta is not None:
                 self._release_per_ip_slot(meta.get("source_ip"))
+                self._release_global_slot()
             logger.info(
                 "WebSocket disconnected (%d active, %d pending)",
                 self.connection_count,
                 len(self._pending_connections),
             )
+
+    # ------------------------------------------------------------------
+    # Admission control for externally-accepted endpoints (SEC-F19 D4)
+    # ------------------------------------------------------------------
+
+    async def try_admit(self, websocket: WebSocket, *, endpoint: str, identity: Optional[str] = None) -> bool:
+        """Reserve a stack-global (+ optional per-identity) admission slot.
+
+        SEC-F19 D4: admission control for the /ws/control and /ws/v1/workers
+        endpoints, which manage their own ``accept()`` / ``close()`` and are
+        NOT broadcast-eligible via the manager's active set (so they do not use
+        :meth:`connect` / :meth:`connect_pending`). Enforces:
+
+        * the stack-absolute GLOBAL cap (D4a — every endpoint), and
+        * when ``identity`` is not None, the per-identity cap (D4b — used by
+          /ws/control keyed on the API-key token hash from
+          :func:`ws_identity_key`).
+
+        On rejection the socket is CLOSED with 1013 (mirroring the manager's
+        existing cap-reject path) and ``False`` is returned; the caller must
+        then return without accepting. On success (``True``) the caller
+        proceeds to ``accept()`` and MUST call :meth:`release_admission` with
+        the SAME ``identity`` exactly once on every disconnect path.
+        """
+        async with self._lock:
+            if not self._check_and_reserve_global_slot():
+                await websocket.close(code=1013, reason="Maximum connections reached")
+                logger.warning(
+                    "WS %s connection rejected: stack-global limit of %d reached",
+                    endpoint,
+                    self._max_connections_global,
+                )
+                return False
+            if not self._check_and_reserve_identity_slot(identity):
+                # Release the global slot so a per-identity rejection does not leak it.
+                self._release_global_slot()
+                await websocket.close(code=1013, reason="Per-identity connection limit reached")
+                logger.warning(
+                    "WS %s connection rejected: per-identity limit of %d reached",
+                    endpoint,
+                    self._max_connections_per_identity,
+                )
+                return False
+        return True
+
+    async def release_admission(self, *, identity: Optional[str] = None) -> None:
+        """Release a slot reserved by :meth:`try_admit`.
+
+        SEC-F19 D4: call exactly once per SUCCESSFUL :meth:`try_admit`, on every
+        disconnect path (including exceptions), with the same ``identity``. The
+        underlying counters guard against underflow, but callers must still
+        gate this on a successful admit to avoid releasing another connection's
+        slot.
+        """
+        async with self._lock:
+            self._release_global_slot()
+            self._release_identity_slot(identity)
 
     # ------------------------------------------------------------------
     # Sequencing and replay

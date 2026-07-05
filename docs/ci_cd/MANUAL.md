@@ -144,9 +144,13 @@ Outputs build status including workflow name, branch, commit SHA, and actor.
 Coverage is generated during the test job:
 
 ```bash
-python -m pytest unit/ \
-  --cov=../cascade_correlation \
-  --cov=../candidate_unit \
+python -m pytest \
+  -m "unit and not slow" \
+  src/tests/unit \
+  --verbose \
+  --timeout=60 \
+  --maxfail=5 \
+  --cov=src \
   --cov-report=term-missing \
   --cov-report=xml:reports/coverage.xml \
   --cov-report=html:reports/htmlcov
@@ -171,16 +175,16 @@ Artifacts are uploaded via `actions/upload-artifact@v4` and are available even i
 
 ### Coverage Threshold
 
-**Threshold**: 50% (soft fail)  
+**Threshold**: 80% aggregate (hard fail)  
 **Reference**: P2-NEW-002
 
 ```bash
-python -m coverage report --fail-under=50
+python -m coverage report --fail-under="${COVERAGE_FAIL_UNDER:-80}"
 ```
 
-- If coverage falls below 50%, a warning is emitted
-- Pipeline continues (soft fail during initial phase)
-- Threshold to be increased as coverage improves
+- If aggregate coverage falls below the threshold, the unit-tests job fails.
+- Per-file >=90% and pooled sub-module >=95% statement bars are measured during the rollout with `juniper-coverage-gap-map`; the blocking `--enforce` step lands after all modules clear.
+- Increase `COVERAGE_FAIL_UNDER` deliberately as aggregate coverage improves.
 
 ---
 
@@ -310,35 +314,29 @@ test:
   timeout-minutes: 30  # Default is 360 minutes
 ```
 
-### Adding Coverage Thresholds
+### Adjusting Coverage Thresholds
 
-**Increase threshold** (in coverage check step):
+**Increase the aggregate threshold** in `.github/workflows/ci.yml`:
 
 ```yaml
-# Change from 50% to 70%
-python -m coverage report --fail-under=70
+env:
+  COVERAGE_FAIL_UNDER: "85"
 ```
 
-**Make threshold enforcement strict**:
+The gate is already strict. Reproduce the same sequence locally from the repository root:
 
-```yaml
-- name: Check Coverage Thresholds
-  shell: bash -el {0}
-  run: |
-    cd src/tests
-    python -m coverage report --fail-under=70 || {
-      echo "::error::Coverage below 70% threshold"
-      exit 1  # Hard fail instead of warning
-    }
-  # Remove: continue-on-error: true
+```bash
+bash util/run_coverage.bash
 ```
 
 **Add branch coverage requirement**:
 
 ```yaml
-python -m pytest unit/ \
+python -m pytest src/tests/unit \
+  -m "unit and not slow" \
+  --cov=src \
   --cov-branch \
-  --cov-fail-under=70
+  --cov-report=term-missing
 ```
 
 ---
