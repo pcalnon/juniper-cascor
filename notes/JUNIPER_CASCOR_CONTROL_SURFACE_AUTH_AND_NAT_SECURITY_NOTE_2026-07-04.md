@@ -30,18 +30,29 @@ harden that reality without pretending the IP is an identity.
 ## D2 — startup bind-guard (SEC-F22)
 
 **Invariant:** cascor refuses to start when it is configured to bind a
-**non-loopback** interface unless the operator has attested a fronting
-authenticating layer.
+**non-loopback** interface unless the operator has provided at least one bind
+attestation. The scheme is a **two-flag** attestation (identical across canopy /
+cascor / juniper-deploy), each naming a distinct reason a non-loopback bind is
+safe:
 
-- Setting: `fronting_auth_attested: bool = False`
-  (env `JUNIPER_CASCOR_FRONTING_AUTH_ATTESTED`), `src/api/settings.py`.
-- Enforcement: `enforce_fronting_auth_bind_guard(settings)` in `src/api/app.py`,
+- Settings (both `bool = False`, `src/api/settings.py`):
+  - `loopback_publish_attested`
+    (env `JUNIPER_CASCOR_LOOPBACK_PUBLISH_ATTESTED`) — the port is reachable
+    **only** via a loopback-only host publish (the containerized default:
+    `127.0.0.1:8200:8200` in compose; verifiable by the juniper-deploy
+    preflight).
+  - `auth_proxy_attested`
+    (env `JUNIPER_CASCOR_AUTH_PROXY_ATTESTED`) — a fronting authenticating
+    reverse proxy terminates access before the port (Phase-4; attestation only,
+    no in-process verification).
+- Enforcement: `enforce_bind_attestation_guard(settings)` in `src/api/app.py`,
   called at the top of the `lifespan` startup — **before** uvicorn binds the
   socket or any background thread is spawned. Fail-closed and **loud** (CRITICAL
   log), raising `NonLoopbackBindError`.
 - Loopback (`127.0.0.0/8`, `::1`, `localhost`, IPv4-mapped-IPv6 loopback) →
-  always start. Non-loopback + attest false → refuse. Non-loopback + attest true
-  → start, with a WARNING recording the attestation.
+  always start. Non-loopback + **neither** attestation → refuse (hard-fail;
+  **no warning-only mode**). Non-loopback + **either** attestation (or both) →
+  start, with a WARNING that names which attestation permitted the bind.
 - Host is read from cascor's own settings (`settings.host`, from
   `JUNIPER_CASCOR_HOST`; port `JUNIPER_CASCOR_PORT=8200`), matching the runtime
   path: the container runs `python src/server.py` with `JUNIPER_CASCOR_HOST` set,
@@ -60,10 +71,11 @@ invariant, and closes the silent `JUNIPER_CASCOR_HOST=0.0.0.0` footgun.
 binds `JUNIPER_CASCOR_HOST=0.0.0.0` behind a **loopback host-publish**
 (`${BIND_HOST:-127.0.0.1}:…:8200`). Because the guard keys on `settings.host`
 (`0.0.0.0`), enabling it in the deploy requires setting
-`JUNIPER_CASCOR_FRONTING_AUTH_ATTESTED=true` there — the operator attesting that
-the loopback host-publish (today) or a fronting proxy (later) fronts the port.
-That env/deploy change is approved separately by the platform owner and is **not**
-part of the code PR that adds the guard.
+`JUNIPER_CASCOR_LOOPBACK_PUBLISH_ATTESTED=true` there — the operator attesting
+that the loopback host-publish fronts the port (a fronting proxy later would
+instead attest `JUNIPER_CASCOR_AUTH_PROXY_ATTESTED=true`). That env/deploy change
+is approved separately by the platform owner and is **not** part of the code PR
+that adds the guard.
 
 ## D4 — WebSocket connection caps (SEC-F19)
 

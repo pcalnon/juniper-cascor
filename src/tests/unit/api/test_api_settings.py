@@ -21,14 +21,16 @@ class TestSettings:
         assert settings.ws_max_connections_per_identity == 5
         assert settings.ws_max_connections_per_ip == 5
         assert settings.ws_heartbeat_interval_sec == 30
-        assert settings.fronting_auth_attested is False
+        assert settings.loopback_publish_attested is False
+        assert settings.auth_proxy_attested is False
 
     def test_settings_env_override(self, monkeypatch):
         """Test settings override via environment variables."""
         monkeypatch.setenv("JUNIPER_CASCOR_HOST", "0.0.0.0")
         monkeypatch.setenv("JUNIPER_CASCOR_PORT", "9999")
         monkeypatch.setenv("JUNIPER_CASCOR_LOG_LEVEL", "DEBUG")
-        monkeypatch.setenv("JUNIPER_CASCOR_FRONTING_AUTH_ATTESTED", "true")
+        monkeypatch.setenv("JUNIPER_CASCOR_LOOPBACK_PUBLISH_ATTESTED", "true")
+        monkeypatch.setenv("JUNIPER_CASCOR_AUTH_PROXY_ATTESTED", "true")
         monkeypatch.setenv("JUNIPER_CASCOR_WS_MAX_CONNECTIONS_GLOBAL", "123")
         monkeypatch.setenv("JUNIPER_CASCOR_WS_MAX_CONNECTIONS_PER_IDENTITY", "7")
         monkeypatch.setenv("JUNIPER_CASCOR_WS_MAX_CONNECTIONS_PER_IP", "9")
@@ -39,7 +41,8 @@ class TestSettings:
         assert settings.host == "0.0.0.0"
         assert settings.port == 9999
         assert settings.log_level == "DEBUG"
-        assert settings.fronting_auth_attested is True
+        assert settings.loopback_publish_attested is True
+        assert settings.auth_proxy_attested is True
         assert settings.ws_max_connections_global == 123
         assert settings.ws_max_connections_per_identity == 7
         assert settings.ws_max_connections_per_ip == 9

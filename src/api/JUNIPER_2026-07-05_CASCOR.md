@@ -22,7 +22,7 @@
 
 ```bash
 $ grep -rnI \"_settings_with_uvicorn_cli_bind\"
-./src/tests/unit/api/test_bind_guard.py:17:from api.app import NonLoopbackBindError, _is_loopback_host, _settings_with_uvicorn_cli_bind, create_app, enforce_fronting_auth_bind_guard, lifespan
+./src/tests/unit/api/test_bind_guard.py:17:from api.app import NonLoopbackBindError, _is_loopback_host, _settings_with_uvicorn_cli_bind, create_app, enforce_bind_attestation_guard, lifespan
 ./src/tests/unit/api/test_bind_guard.py:106:        settings = _settings_with_uvicorn_cli_bind(Settings(), argv)
 ./src/api/app.py:518:        settings = _settings_with_uvicorn_cli_bind(get_settings())
 ```

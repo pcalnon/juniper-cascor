@@ -818,7 +818,7 @@ log_if_enabled(logger, "debug", f"Expensive: {expensive_computation()}")
 
 ### Service Startup Guardrails
 
-The server binds to `JUNIPER_CASCOR_HOST` / `JUNIPER_CASCOR_PORT` (`127.0.0.1:8200` by default). During FastAPI lifespan startup, `enforce_fronting_auth_bind_guard()` refuses to start when the host is non-loopback (for example `0.0.0.0`, `::`, or a non-local hostname) unless `JUNIPER_CASCOR_FRONTING_AUTH_ATTESTED=true`.
+The server binds to `JUNIPER_CASCOR_HOST` / `JUNIPER_CASCOR_PORT` (`127.0.0.1:8200` by default). During FastAPI lifespan startup, `enforce_bind_attestation_guard()` refuses to start when the host is non-loopback (for example `0.0.0.0`, `::`, or a non-local hostname) unless at least one bind attestation is set — `JUNIPER_CASCOR_LOOPBACK_PUBLISH_ATTESTED=true` (the port is reachable only via a loopback-only host publish) or `JUNIPER_CASCOR_AUTH_PROXY_ATTESTED=true` (a fronting authenticating reverse proxy terminates access).
 
 Use loopback for local development:
 
@@ -827,7 +827,7 @@ cd src
 JUNIPER_CASCOR_HOST=127.0.0.1 JUNIPER_CASCOR_PORT=8200 python server.py
 ```
 
-Set `JUNIPER_CASCOR_FRONTING_AUTH_ATTESTED=true` only when an authenticating reverse proxy or loopback host-publish fronts the exposed port. Without that attestation, startup raises `NonLoopbackBindError` before background training or WebSocket services begin accepting traffic.
+Set `JUNIPER_CASCOR_LOOPBACK_PUBLISH_ATTESTED=true` when the port is published on loopback only, or `JUNIPER_CASCOR_AUTH_PROXY_ATTESTED=true` when an authenticating reverse proxy fronts the exposed port. Without at least one attestation, startup raises `NonLoopbackBindError` before background training or WebSocket services begin accepting traffic. There is no warning-only mode.
 
 All REST responses use the standard response envelope:
 
@@ -845,8 +845,8 @@ All REST responses use the standard response envelope:
 ### Service Startup and WebSocket Admission
 
 - REST and WebSocket authentication use the `X-API-Key` header when `JUNIPER_CASCOR_API_KEYS` is configured. Auth is disabled when no API keys are configured.
-- `JUNIPER_CASCOR_HOST` defaults to `127.0.0.1`. If it is set to a non-loopback address such as `0.0.0.0`, startup fails with `NonLoopbackBindError` unless `JUNIPER_CASCOR_FRONTING_AUTH_ATTESTED=true`.
-- Set `JUNIPER_CASCOR_FRONTING_AUTH_ATTESTED=true` only when a loopback host-publish or authenticating reverse proxy fronts the service. This guard runs before the server accepts connections.
+- `JUNIPER_CASCOR_HOST` defaults to `127.0.0.1`. If it is set to a non-loopback address such as `0.0.0.0`, startup fails with `NonLoopbackBindError` unless `JUNIPER_CASCOR_LOOPBACK_PUBLISH_ATTESTED=true` or `JUNIPER_CASCOR_AUTH_PROXY_ATTESTED=true`.
+- Set `JUNIPER_CASCOR_LOOPBACK_PUBLISH_ATTESTED=true` when a loopback-only host-publish fronts the service, or `JUNIPER_CASCOR_AUTH_PROXY_ATTESTED=true` when an authenticating reverse proxy does. This guard runs before the server accepts connections.
 - WebSocket admission uses `JUNIPER_CASCOR_WS_MAX_CONNECTIONS_GLOBAL` (default 200) across `/ws/training`, `/ws/control`, and `/ws/v1/workers`. `/ws/control` also uses `JUNIPER_CASCOR_WS_MAX_CONNECTIONS_PER_IDENTITY` (default 5), keyed on a non-reversible digest of the `X-API-Key`.
 - Over-cap WebSocket attempts close with `1013`. The peer-IP cap remains DoS-dampening only; behind Docker NAT, clients can share one bridge-gateway IP bucket.
 

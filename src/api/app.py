@@ -42,7 +42,8 @@ logger = logging.getLogger("juniper_cascor.api")
 
 class NonLoopbackBindError(RuntimeError):
     """Raised at startup when cascor is configured to bind a non-loopback
-    interface without attesting a fronting authenticating layer.
+    interface without a bind attestation (neither a loopback-only host
+    publish nor a fronting authenticating proxy attested).
 
     SEC-F22 / D2 (juniper-ml
     ``notes/JUNIPER_CANOPY_CONTROL_SURFACE_AUTH_AND_NAT_DESIGN_2026-07-03.md``
@@ -124,21 +125,29 @@ def _settings_with_uvicorn_cli_bind(settings: Settings, argv: list[str] | None =
     return settings.model_copy(update=updates)
 
 
-def enforce_fronting_auth_bind_guard(settings: Settings) -> None:
-    """Refuse to start on a non-loopback bind without a fronting-auth attestation.
+def enforce_bind_attestation_guard(settings: Settings) -> None:
+    """Refuse to start on a non-loopback bind without a bind attestation.
 
     SEC-F22 / D2 — the symmetric counterpart to the canopy bind-guard. The
     only effective control protecting cascor's un-authenticated control/worker
-    WebSocket surface in the containerized stack is the network boundary
-    (the compose-level loopback host-publish). This guard converts that
-    load-bearing precondition into an enforced invariant:
+    WebSocket surface in the containerized stack is the network boundary. This
+    guard converts that load-bearing precondition into an enforced invariant
+    using the two-flag attestation scheme (identical across canopy / cascor /
+    juniper-deploy):
 
-    * Loopback ``host`` (127.0.0.0/8, ::1, localhost) -> always start.
-    * Non-loopback ``host`` (e.g. ``0.0.0.0``) + ``fronting_auth_attested``
-      True -> start (operator asserts a fronting authenticating layer fronts
-      the port), logging a WARNING so the attestation is auditable.
-    * Non-loopback ``host`` + attestation False (the default) -> raise
+    * Loopback ``host`` (127.0.0.0/8, ::1, localhost, IPv4-mapped loopback)
+      -> always start.
+    * Non-loopback ``host`` (e.g. ``0.0.0.0``) with EITHER
+      ``loopback_publish_attested`` (env
+      ``JUNIPER_CASCOR_LOOPBACK_PUBLISH_ATTESTED`` — the port is reachable only
+      via a loopback-only host publish) OR ``auth_proxy_attested`` (env
+      ``JUNIPER_CASCOR_AUTH_PROXY_ATTESTED`` — a fronting authenticating reverse
+      proxy terminates access) -> start, logging a WARNING that names which
+      attestation permitted the bind so it is auditable.
+    * Non-loopback ``host`` with NEITHER attestation (the default) -> raise
       :class:`NonLoopbackBindError` after a CRITICAL log (fail-closed, loud).
+      There is no warning-only mode: an un-attested non-loopback bind always
+      hard-fails.
 
     Called from the application ``lifespan`` startup, before uvicorn binds the
     socket, so a mis-configured bring-up never begins accepting connections.
@@ -146,25 +155,33 @@ def enforce_fronting_auth_bind_guard(settings: Settings) -> None:
     Note (deploy roll-out is owner-gated): the container binds
     ``JUNIPER_CASCOR_HOST=0.0.0.0`` behind a loopback host-publish, so enabling
     this guard in the deploy requires setting
-    ``JUNIPER_CASCOR_FRONTING_AUTH_ATTESTED=true`` there — a Phase-1 deploy
+    ``JUNIPER_CASCOR_LOOPBACK_PUBLISH_ATTESTED=true`` there — a Phase-1 deploy
     change the platform owner approves separately (design §7 Phase 1).
     """
     host = settings.host
     if _is_loopback_host(host):
         return
-    if settings.fronting_auth_attested:
+    if settings.loopback_publish_attested or settings.auth_proxy_attested:
+        if settings.loopback_publish_attested and settings.auth_proxy_attested:
+            permitted_by = "JUNIPER_CASCOR_LOOPBACK_PUBLISH_ATTESTED and JUNIPER_CASCOR_AUTH_PROXY_ATTESTED"
+        elif settings.loopback_publish_attested:
+            permitted_by = "JUNIPER_CASCOR_LOOPBACK_PUBLISH_ATTESTED"
+        else:
+            permitted_by = "JUNIPER_CASCOR_AUTH_PROXY_ATTESTED"
         logger.warning(
-            "cascor is binding a NON-loopback interface (%s:%s) with " "JUNIPER_CASCOR_FRONTING_AUTH_ATTESTED=true — the operator asserts a " "fronting authenticating layer fronts this port. The control/worker " "WebSocket surface has no app-layer auth of its own; if no proxy is " "present this exposes it to the whole reachable network (SEC-F22).",
+            "cascor is binding a NON-loopback interface (%s:%s) — permitted by %s. The control/worker WebSocket surface has no app-layer auth of its own; this bind is safe only while that attestation holds (a loopback-only host publish and/or a fronting authenticating reverse proxy actually fronts this port). If neither is true it exposes the surface to the whole reachable network (SEC-F22).",
             host,
             settings.port,
+            permitted_by,
         )
         return
     logger.critical(
-        "REFUSING TO START: cascor is configured to bind a NON-loopback " "interface (%s:%s) without JUNIPER_CASCOR_FRONTING_AUTH_ATTESTED=true. " "The control/worker WebSocket surface has no app-layer authentication " "of its own — its only effective control is the loopback network " "boundary (SEC-F22). Bind 127.0.0.1 (recommended for local/dev), or, " "only if a fronting authenticating proxy really fronts this port, set " "JUNIPER_CASCOR_FRONTING_AUTH_ATTESTED=true to attest it.",
+        "REFUSING TO START: cascor is configured to bind a NON-loopback interface (%s:%s) without a bind attestation. The control/worker WebSocket surface has no app-layer authentication of its own — its only effective control is the loopback network boundary (SEC-F22). "
+        "Bind 127.0.0.1 (recommended for local/dev), or attest the control that actually protects the port: set JUNIPER_CASCOR_LOOPBACK_PUBLISH_ATTESTED=true when the port is reachable only via a loopback-only host publish, or JUNIPER_CASCOR_AUTH_PROXY_ATTESTED=true when a fronting authenticating reverse proxy terminates access.",
         host,
         settings.port,
     )
-    raise NonLoopbackBindError(f"Refusing to bind non-loopback host {host!r} without " "JUNIPER_CASCOR_FRONTING_AUTH_ATTESTED=true (SEC-F22 bind-guard).")
+    raise NonLoopbackBindError(f"Refusing to bind non-loopback host {host!r} without a bind attestation (set JUNIPER_CASCOR_LOOPBACK_PUBLISH_ATTESTED=true or JUNIPER_CASCOR_AUTH_PROXY_ATTESTED=true) — SEC-F22 bind-guard.")
 
 
 def _log_startup_task_exception(task: asyncio.Task) -> None:
@@ -290,10 +307,11 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
     configure_logging(settings.log_level, settings.log_format, "juniper-cascor")
 
-    # SEC-F22 / D2 — refuse to start on a non-loopback bind without a
-    # fronting-auth attestation, before uvicorn binds the socket or any
-    # background thread is spawned. Fail-closed and loud.
-    enforce_fronting_auth_bind_guard(settings)
+    # SEC-F22 / D2 — refuse to start on a non-loopback bind without a bind
+    # attestation (loopback-only host publish OR fronting authenticating
+    # proxy), before uvicorn binds the socket or any background thread is
+    # spawned. Fail-closed and loud.
+    enforce_bind_attestation_guard(settings)
 
     configure_sentry(settings.sentry_dsn, "juniper-cascor", _API_VERSION)
     if settings.metrics_enabled:

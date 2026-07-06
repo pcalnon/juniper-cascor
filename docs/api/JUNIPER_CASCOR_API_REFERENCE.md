@@ -78,9 +78,9 @@ The FastAPI app is defined at `src/api/app.py:399`. All REST routers are mounted
 
 ### Startup bind guard
 
-The service defaults to a loopback bind (`JUNIPER_CASCOR_HOST=127.0.0.1`, `JUNIPER_CASCOR_PORT=8200`). During lifespan startup, `enforce_fronting_auth_bind_guard()` refuses non-loopback binds such as `0.0.0.0`, `::`, or non-local hostnames unless `JUNIPER_CASCOR_FRONTING_AUTH_ATTESTED=true`.
+The service defaults to a loopback bind (`JUNIPER_CASCOR_HOST=127.0.0.1`, `JUNIPER_CASCOR_PORT=8200`). During lifespan startup, `enforce_bind_attestation_guard()` refuses non-loopback binds such as `0.0.0.0`, `::`, or non-local hostnames unless at least one bind attestation is set: `JUNIPER_CASCOR_LOOPBACK_PUBLISH_ATTESTED=true` or `JUNIPER_CASCOR_AUTH_PROXY_ATTESTED=true`.
 
-Treat `JUNIPER_CASCOR_FRONTING_AUTH_ATTESTED=true` as an operational attestation: an authenticating reverse proxy or loopback host-publish must already front the port. Without that attestation, startup raises `NonLoopbackBindError` before the server begins accepting REST or WebSocket traffic.
+Treat each flag as an operational attestation: `JUNIPER_CASCOR_LOOPBACK_PUBLISH_ATTESTED=true` asserts the port is reachable only via a loopback-only host publish; `JUNIPER_CASCOR_AUTH_PROXY_ATTESTED=true` asserts a fronting authenticating reverse proxy terminates access. Without at least one, startup raises `NonLoopbackBindError` before the server begins accepting REST or WebSocket traffic.
 
 ### Authentication
 
@@ -93,9 +93,9 @@ Rate limiting is also optional; per-IP REST limiter defaults to 100 req/min, and
 
 ### Startup bind guard
 
-The service fails closed at startup when `JUNIPER_CASCOR_HOST` is a non-loopback bind target (for example `0.0.0.0`) unless `JUNIPER_CASCOR_FRONTING_AUTH_ATTESTED=true`. Loopback binds (`127.0.0.0/8`, `::1`, `localhost`, IPv4-mapped IPv6 loopback) always start. The guard runs from the FastAPI lifespan before the server begins accepting connections and raises `NonLoopbackBindError` on unsafe non-loopback startup.
+The service fails closed at startup when `JUNIPER_CASCOR_HOST` is a non-loopback bind target (for example `0.0.0.0`) unless `JUNIPER_CASCOR_LOOPBACK_PUBLISH_ATTESTED=true` or `JUNIPER_CASCOR_AUTH_PROXY_ATTESTED=true`. Loopback binds (`127.0.0.0/8`, `::1`, `localhost`, IPv4-mapped IPv6 loopback) always start. The guard runs from the FastAPI lifespan before the server begins accepting connections and raises `NonLoopbackBindError` on unsafe non-loopback startup (no warning-only mode).
 
-Use the attestation only when a loopback host-publish or an authenticating reverse proxy fronts the port. Container runs normally bind `0.0.0.0` inside the container and publish the host port on loopback.
+Use `JUNIPER_CASCOR_LOOPBACK_PUBLISH_ATTESTED=true` when a loopback host-publish fronts the port, or `JUNIPER_CASCOR_AUTH_PROXY_ATTESTED=true` when an authenticating reverse proxy does. Container runs normally bind `0.0.0.0` inside the container and publish the host port on loopback (so they attest the loopback-publish flag).
 
 ### Response envelope
 
