@@ -17,13 +17,21 @@ class TestSettings:
         assert settings.log_level == "INFO"
         assert settings.cors_origins == []
         assert settings.ws_max_connections == 50
+        assert settings.ws_max_connections_global == 200
+        assert settings.ws_max_connections_per_identity == 5
+        assert settings.ws_max_connections_per_ip == 5
         assert settings.ws_heartbeat_interval_sec == 30
+        assert settings.fronting_auth_attested is False
 
     def test_settings_env_override(self, monkeypatch):
         """Test settings override via environment variables."""
         monkeypatch.setenv("JUNIPER_CASCOR_HOST", "0.0.0.0")
         monkeypatch.setenv("JUNIPER_CASCOR_PORT", "9999")
         monkeypatch.setenv("JUNIPER_CASCOR_LOG_LEVEL", "DEBUG")
+        monkeypatch.setenv("JUNIPER_CASCOR_FRONTING_AUTH_ATTESTED", "true")
+        monkeypatch.setenv("JUNIPER_CASCOR_WS_MAX_CONNECTIONS_GLOBAL", "123")
+        monkeypatch.setenv("JUNIPER_CASCOR_WS_MAX_CONNECTIONS_PER_IDENTITY", "7")
+        monkeypatch.setenv("JUNIPER_CASCOR_WS_MAX_CONNECTIONS_PER_IP", "9")
 
         from api.settings import Settings
 
@@ -31,6 +39,10 @@ class TestSettings:
         assert settings.host == "0.0.0.0"
         assert settings.port == 9999
         assert settings.log_level == "DEBUG"
+        assert settings.fronting_auth_attested is True
+        assert settings.ws_max_connections_global == 123
+        assert settings.ws_max_connections_per_identity == 7
+        assert settings.ws_max_connections_per_ip == 9
 
     def test_worker_settings_defaults(self):
         """Test default worker settings for remote WebSocket workers."""
