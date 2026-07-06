@@ -810,6 +810,22 @@ def _fast_init_logging_system(self):
     self.logger = _noop_logger
 
 
+_REAL_INIT_LOGGING_SYSTEM = None  # the genuine method, captured by _cache_logging_system before it patches the class
+
+
+@pytest.fixture
+def real_init_logging_system():
+    """Hand tests the genuine (un-patched) CascadeCorrelationNetwork._init_logging_system.
+
+    The autouse session fixture _cache_logging_system replaces the method
+    suite-wide for speed, which previously left the real body unexercised by
+    any unit test (regressions in it were invisible). Tests that need the real
+    body request this fixture and invoke it explicitly on a constructed network.
+    """
+    assert _REAL_INIT_LOGGING_SYSTEM is not None, "_cache_logging_system must capture the original method before tests run"
+    return _REAL_INIT_LOGGING_SYSTEM
+
+
 @pytest.fixture(autouse=True, scope="session")
 def _warmup_torch():
     """Trigger lazy initialization of torch internals during collection.
@@ -844,7 +860,9 @@ def _cache_logging_system():
     """
     from log_config.logger.logger import Logger
 
+    global _REAL_INIT_LOGGING_SYSTEM
     original_init = CascadeCorrelationNetwork._init_logging_system
+    _REAL_INIT_LOGGING_SYSTEM = original_init
     CascadeCorrelationNetwork._init_logging_system = _fast_init_logging_system
 
     # Patch CandidateUnit to use no-op logger (it normally sets self.logger = Logger,

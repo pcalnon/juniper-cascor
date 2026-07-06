@@ -13,13 +13,11 @@ HDF5 helpers via a serializer seam that raises:
 
 All fast unit tests: the serializer is patched, so no real h5py I/O runs.
 
-Note (finding, not covered here): ``list_hdf5_snapshots``'s success path
-(the ``self.logger.info(...); return hdf5_files`` after the directory check) is
-unreachable — it calls ``HDF5Utils.list_hdf5_files``, which is not defined
-anywhere in the codebase, so every existing-directory call raises
-``AttributeError`` and falls through to the ``except`` -> ``return []``. Left
-un-chased (reported upstream) rather than covered by mocking in a fictional
-helper.
+Note: ``list_hdf5_snapshots``'s success path used to be unreachable —
+``HDF5Utils.list_hdf5_files`` was undefined, so every existing-directory call
+raised ``AttributeError`` and fell through to the ``except`` -> ``return []``.
+The helper now exists (``snapshots/snapshot_utils.py``) and the success path
+is pinned by ``tests/unit/test_latent_defect_repairs.py``.
 """
 
 from unittest.mock import patch
