@@ -61,14 +61,15 @@ The FastAPI service reads these settings through `api.settings.Settings` with th
 |----------|------|---------|---------|
 | `JUNIPER_CASCOR_HOST` | String | `127.0.0.1` | Interface the API server binds. Loopback hosts (`127.0.0.0/8`, `::1`, `localhost`) always start. |
 | `JUNIPER_CASCOR_PORT` | Integer | `8200` | API server listen port. |
-| `JUNIPER_CASCOR_FRONTING_AUTH_ATTESTED` | Boolean | `false` | Required when `JUNIPER_CASCOR_HOST` is non-loopback, such as `0.0.0.0`. Setting it to `true` is an operator attestation that a reverse proxy or loopback host-publish fronts the port. |
+| `JUNIPER_CASCOR_LOOPBACK_PUBLISH_ATTESTED` | Boolean | `false` | One of the two bind attestations required when `JUNIPER_CASCOR_HOST` is non-loopback, such as `0.0.0.0`. Setting it to `true` attests the port is reachable only via a loopback-only host publish. |
+| `JUNIPER_CASCOR_AUTH_PROXY_ATTESTED` | Boolean | `false` | One of the two bind attestations required when `JUNIPER_CASCOR_HOST` is non-loopback. Setting it to `true` attests a fronting authenticating reverse proxy terminates access before the port. |
 | `JUNIPER_CASCOR_API_KEYS` | CSV / JSON list | unset | API keys accepted in `X-API-Key`. When unset, API-key auth is disabled for development. |
 | `JUNIPER_CASCOR_WS_MAX_CONNECTIONS_GLOBAL` | Integer | `200` | Stack-absolute WebSocket admission cap across `/ws/training`, `/ws/control`, and `/ws/v1/workers`. |
 | `JUNIPER_CASCOR_WS_MAX_CONNECTIONS_PER_IDENTITY` | Integer | `5` | Per API-key identity admission cap for `/ws/control`. |
 | `JUNIPER_CASCOR_WS_MAX_CONNECTIONS_PER_IP` | Integer | `5` | Per-source-IP cap for manager-routed sockets; useful as DoS dampening, but not an identity control behind Docker NAT. |
 | `JUNIPER_CASCOR_WS_HEARTBEAT_INTERVAL_SEC` | Integer | `30` | Server heartbeat interval for WebSocket channels. |
 
-**Startup bind guard:** `create_app()` enforces the bind guard during lifespan startup before background training starts. A non-loopback bind without `JUNIPER_CASCOR_FRONTING_AUTH_ATTESTED=true` raises `NonLoopbackBindError` and logs a CRITICAL refusal. Prefer loopback for local development:
+**Startup bind guard:** `create_app()` enforces the bind guard during lifespan startup before background training starts. A non-loopback bind with neither `JUNIPER_CASCOR_LOOPBACK_PUBLISH_ATTESTED=true` nor `JUNIPER_CASCOR_AUTH_PROXY_ATTESTED=true` raises `NonLoopbackBindError` and logs a CRITICAL refusal (no warning-only mode). Prefer loopback for local development:
 
 ```bash
 cd src
@@ -80,7 +81,7 @@ Use a non-loopback bind only when the port is fronted:
 ```bash
 cd src
 JUNIPER_CASCOR_HOST=0.0.0.0 \
-JUNIPER_CASCOR_FRONTING_AUTH_ATTESTED=true \
+JUNIPER_CASCOR_LOOPBACK_PUBLISH_ATTESTED=true \
 python server.py
 ```
 

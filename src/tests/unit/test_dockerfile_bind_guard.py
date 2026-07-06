@@ -36,6 +36,11 @@ def _dockerfile_env() -> dict[str, str]:
 def test_dockerfile_default_host_does_not_trip_bind_guard() -> None:
     """The image default must start without requiring baked-in attestation."""
     env = _dockerfile_env()
+    truthy = {"1", "true", "yes", "on"}
 
     assert env.get("JUNIPER_CASCOR_HOST") == "127.0.0.1"
-    assert env.get("JUNIPER_CASCOR_FRONTING_AUTH_ATTESTED", "").lower() not in {"1", "true", "yes", "on"}
+    # Neither two-flag attestation may be baked truthy into the image: the bare
+    # container binds loopback and must not silently pre-attest a non-loopback
+    # exposure. Published-container deploys opt in explicitly at run time.
+    assert env.get("JUNIPER_CASCOR_LOOPBACK_PUBLISH_ATTESTED", "").lower() not in truthy
+    assert env.get("JUNIPER_CASCOR_AUTH_PROXY_ATTESTED", "").lower() not in truthy

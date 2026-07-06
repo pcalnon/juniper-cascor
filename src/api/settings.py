@@ -129,20 +129,32 @@ class Settings(BaseSettings):
     host: str = _JUNIPER_CASCOR_API_HOST_DEFAULT
     port: int = _JUNIPER_CASCOR_API_PORT_DEFAULT
 
-    # SEC-F22 / D2 — startup bind-guard attestation (env
-    # ``JUNIPER_CASCOR_FRONTING_AUTH_ATTESTED``). Default False (fail-closed).
-    # When the service is configured to bind a NON-loopback interface
-    # (``host`` not 127.0.0.0/8, ::1, or localhost), ``create_app`` refuses to
-    # start unless this flag is True — the operator asserting that a fronting
-    # authenticating layer (a reverse proxy, or the compose-level loopback
-    # host-publish) fronts the port. Loopback binds always start. This turns
-    # the load-bearing "loopback is the trust boundary" precondition into an
-    # enforced invariant and closes the silent ``JUNIPER_CASCOR_HOST=0.0.0.0``
-    # footgun. See juniper-ml
+    # SEC-F22 / D2 — startup bind-guard attestation (two-flag scheme, identical
+    # across canopy / cascor / juniper-deploy). Both default False
+    # (fail-closed). When the service is configured to bind a NON-loopback
+    # interface (``host`` not 127.0.0.0/8, ::1, localhost, or an IPv4-mapped
+    # loopback), the startup bind-guard refuses to start unless AT LEAST ONE of
+    # these attestations is True. Each names a *distinct* reason a non-loopback
+    # bind is safe, so operators attest the control that actually applies
+    # instead of one conflated flag:
+    #
+    # * ``loopback_publish_attested`` (env
+    #   ``JUNIPER_CASCOR_LOOPBACK_PUBLISH_ATTESTED``) — the port is reachable
+    #   ONLY via a loopback-only host publish (the containerized default:
+    #   ``127.0.0.1:8200:8200`` in compose; verifiable by the juniper-deploy
+    #   preflight).
+    # * ``auth_proxy_attested`` (env ``JUNIPER_CASCOR_AUTH_PROXY_ATTESTED``) — a
+    #   fronting authenticating reverse proxy terminates access before the port
+    #   (Phase-4; attestation only, no in-process verification).
+    #
+    # Loopback binds always start. This turns the load-bearing "loopback is the
+    # trust boundary" precondition into an enforced invariant and closes the
+    # silent ``JUNIPER_CASCOR_HOST=0.0.0.0`` footgun. See juniper-ml
     # ``notes/JUNIPER_CANOPY_CONTROL_SURFACE_AUTH_AND_NAT_DESIGN_2026-07-03.md``
     # §4 Option A / §8 D2 and this repo's
     # ``notes/JUNIPER_CASCOR_CONTROL_SURFACE_AUTH_AND_NAT_SECURITY_NOTE_2026-07-04.md``.
-    fronting_auth_attested: bool = False
+    loopback_publish_attested: bool = False
+    auth_proxy_attested: bool = False
 
     log_level: str = _JUNIPER_CASCOR_API_LOGLEVEL_DEFAULT
     cors_origins: list[str] = _JUNIPER_CASCOR_API_CORS_ORIGINS_DEFAULT

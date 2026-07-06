@@ -80,7 +80,8 @@ Settings load from the `JUNIPER_CASCOR_` environment namespace. Common knobs (fu
 | Variable | Default | Purpose |
 |----------|---------|---------|
 | `JUNIPER_CASCOR_HOST` / `JUNIPER_CASCOR_PORT` | `127.0.0.1` / `8200` | Bind address / port (`0.0.0.0` under Docker). |
-| `JUNIPER_CASCOR_FRONTING_AUTH_ATTESTED` | `false` | Required when binding a non-loopback interface; asserts a loopback host-publish or fronting auth layer protects the port. |
+| `JUNIPER_CASCOR_LOOPBACK_PUBLISH_ATTESTED` | `false` | Bind attestation for a non-loopback interface: the port is reachable only via a loopback-only host publish. |
+| `JUNIPER_CASCOR_AUTH_PROXY_ATTESTED` | `false` | Bind attestation for a non-loopback interface: a fronting authenticating reverse proxy terminates access. |
 | `JUNIPER_DATA_URL` | `http://localhost:8100` | Upstream juniper-data service. |
 | `JUNIPER_CASCOR_API_KEYS` | _(unset)_ | CSV `X-API-Key` values; auth disabled when unset. |
 | `JUNIPER_CASCOR_WS_MAX_CONNECTIONS_GLOBAL` | `200` | Stack-wide WebSocket cap across training, control, and worker sockets. |
@@ -94,15 +95,16 @@ Settings load from the `JUNIPER_CASCOR_` environment namespace. Common knobs (fu
 docker build -t juniper-cascor:latest .
 docker run --rm -p 127.0.0.1:8200:8200 \
   -e JUNIPER_CASCOR_HOST=0.0.0.0 \
-  -e JUNIPER_CASCOR_FRONTING_AUTH_ATTESTED=true \
+  -e JUNIPER_CASCOR_LOOPBACK_PUBLISH_ATTESTED=true \
   -e JUNIPER_CASCOR_API_KEYS=replace-with-a-strong-key \
   -e JUNIPER_DATA_URL=http://host.docker.internal:8100 \
   juniper-cascor:latest
 ```
 
-The host-side publish is loopback-only; `JUNIPER_CASCOR_FRONTING_AUTH_ATTESTED=true`
+The host-side publish is loopback-only; `JUNIPER_CASCOR_LOOPBACK_PUBLISH_ATTESTED=true`
 attests that boundary so the startup bind guard allows the container's internal
-`0.0.0.0` bind. Health is probed at `/v1/health/ready`. For the full stack, see
+`0.0.0.0` bind. (Behind a fronting authenticating reverse proxy instead, attest
+`JUNIPER_CASCOR_AUTH_PROXY_ATTESTED=true`.) Health is probed at `/v1/health/ready`. For the full stack, see
 [`juniper-deploy`](https://github.com/pcalnon/juniper-deploy).
 
 ## Status

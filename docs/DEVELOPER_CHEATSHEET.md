@@ -10,7 +10,7 @@
 
 - juniper-data: cd /home/pcalnon/Development/python/Juniper/juniper-data && conda activate JuniperData && pip install -e ".[all]" && PYTHON_GIL=0 uvicorn juniper_data.api.app:app --host 0.0.0.0 --port 8100
 - juniper-cascor: cd /home/pcalnon/Development/python/Juniper/juniper-cascor/src && conda activate JuniperCascor1 && JUNIPER_CASCOR_PORT=8201 python server.py
-- Public/container bind only when fronted: if `JUNIPER_CASCOR_HOST` is non-loopback (for example `0.0.0.0`), also set `JUNIPER_CASCOR_FRONTING_AUTH_ATTESTED=true` after verifying a reverse proxy or loopback host-publish fronts the port.
+- Public/container bind only when fronted: if `JUNIPER_CASCOR_HOST` is non-loopback (for example `0.0.0.0`), also set a bind attestation — `JUNIPER_CASCOR_LOOPBACK_PUBLISH_ATTESTED=true` after verifying a loopback-only host-publish, or `JUNIPER_CASCOR_AUTH_PROXY_ATTESTED=true` after verifying a fronting authenticating reverse proxy fronts the port.
 - juniper-canopy: cd /home/pcalnon/Development/python/Juniper/juniper-canopy/src && conda activate JuniperCanopy1 && CASCOR_SERVICE_URL="<http://localhost:8201>" uvicorn main:app --host 0.0.0.0 --port 8050
 
 > **Conda env naming:** the live envs are **versioned** — `JuniperCascor1`, `JuniperCanopy1` (the bare `JuniperCascor` / `JuniperCanopy` are now `*-DEPRECATED` with a broken toolchain; `JuniperData` is unversioned). Discover yours with `conda env list | grep Juniper<App>` and use that name; rebuilds increment the suffix.
@@ -106,9 +106,10 @@ Metrics nuance:
 | `CASCOR_LOG_LEVEL`               | `INFO`                  | Log level override (set before import) |
 | `JUNIPER_DATA_URL`               | `http://localhost:8100` | JuniperData service URL                |
 | `JUNIPER_DATA_API_KEY`           | --                      | API key for JuniperData                |
-| `JUNIPER_CASCOR_HOST`            | `127.0.0.1`             | Bind host for the service; non-loopback requires `JUNIPER_CASCOR_FRONTING_AUTH_ATTESTED=true` |
+| `JUNIPER_CASCOR_HOST`            | `127.0.0.1`             | Bind host for the service; non-loopback requires a bind attestation (see the two flags below) |
 | `JUNIPER_CASCOR_PORT`            | `8200`                  | Bind port for the service              |
-| `JUNIPER_CASCOR_FRONTING_AUTH_ATTESTED` | `false`          | Required startup attestation for non-loopback binds; asserts a fronting auth layer or loopback host-publish protects the port |
+| `JUNIPER_CASCOR_LOOPBACK_PUBLISH_ATTESTED` | `false`       | Bind attestation for non-loopback binds: port reachable only via a loopback-only host publish |
+| `JUNIPER_CASCOR_AUTH_PROXY_ATTESTED` | `false`             | Bind attestation for non-loopback binds: a fronting authenticating reverse proxy terminates access |
 | `JUNIPER_CASCOR_CORS_ORIGINS`    | `[]`                    | Allowed CORS origins                   |
 | `JUNIPER_CASCOR_API_KEYS`        | --                      | API keys for authentication            |
 | `JUNIPER_CASCOR_LOG_FORMAT`      | --                      | Set to `json` for JSON logging         |
@@ -247,7 +248,7 @@ Core: `torch`, `numpy`, `h5py`, `matplotlib`, `PyYAML`, `requests`
 | Long tests skipped                                                    | Flag not passed                                             | `pytest --run-long`                                                                                       |
 | HDF5 load fails                                                       | Corrupted or version mismatch                               | `python -m snapshots.snapshot_cli verify snapshot.h5`                                                     |
 | NaN in training                                                       | LR too high or bad data                                     | Reduce `learning_rate`, check tensors                                                                     |
-| Server refuses to start with `NonLoopbackBindError`                   | `JUNIPER_CASCOR_HOST` is non-loopback without fronting-auth attestation | Bind `127.0.0.1` for local/dev, or set `JUNIPER_CASCOR_FRONTING_AUTH_ATTESTED=true` only after verifying a fronting auth layer or loopback host-publish |
+| Server refuses to start with `NonLoopbackBindError`                   | `JUNIPER_CASCOR_HOST` is non-loopback without a bind attestation | Bind `127.0.0.1` for local/dev, or set `JUNIPER_CASCOR_LOOPBACK_PUBLISH_ATTESTED=true` (loopback-only host publish) or `JUNIPER_CASCOR_AUTH_PROXY_ATTESTED=true` (fronting authenticating proxy) after verifying it |
 | WebSocket closes during connect with `1013`                           | Global, per-IP, or `/ws/control` per-identity cap reached   | Raise the relevant `JUNIPER_CASCOR_WS_MAX_CONNECTIONS_*` cap only after checking expected clients and worker fleet size |
 
 ---

@@ -853,12 +853,13 @@ jobs:
           # default under the SEC-F22 bind guard), so the smoke must opt in
           # to the documented published-container contract: bind 0.0.0.0
           # inside the container (Docker NAT needs it to forward the
-          # published port) plus the fronting-auth attestation.
+          # published port) plus the loopback-publish bind attestation — the
+          # host port is published on loopback (127.0.0.1:8200:8200 below).
           docker run -d --name juniper-cascor-test \
             --network juniper-smoke \
             -e JUNIPER_DATA_URL=http://juniper-data:8100 \
             -e JUNIPER_CASCOR_HOST=0.0.0.0 \
-            -e JUNIPER_CASCOR_FRONTING_AUTH_ATTESTED=true \
+            -e JUNIPER_CASCOR_LOOPBACK_PUBLISH_ATTESTED=true \
             -p 127.0.0.1:8200:8200 \
             juniper-cascor:ci-${{ github.sha }}
 
