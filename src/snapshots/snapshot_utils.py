@@ -8,7 +8,7 @@ import datetime
 import os
 import shutil
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 
 import h5py
 
@@ -61,6 +61,21 @@ class HDF5Utils:
 
         Logger.info(f"HDF5Utils: Created backup at {backup_path}")
         return backup_path
+
+    @staticmethod
+    def list_hdf5_files(directory: Union[str, Path]) -> List[Path]:
+        """
+        List all HDF5 files (.h5 / .hdf5) in a directory.
+
+        Args:
+            directory: Directory to search
+
+        Returns:
+            Sorted list of HDF5 file paths (empty if the directory does not exist)
+        """
+        if not os.path.isdir(directory):
+            return []
+        return sorted(Path(directory, filename) for filename in os.listdir(directory) if filename.endswith((".h5", ".hdf5")))
 
     @staticmethod
     def list_networks_in_directory(directory: str) -> List[Dict[str, Any]]:

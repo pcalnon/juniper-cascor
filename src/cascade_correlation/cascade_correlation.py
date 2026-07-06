@@ -4725,14 +4725,14 @@ class CascadeCorrelationNetwork:
         cls,
         snapshot_path: Union[str, pl.Path] = None,
         restore_multiprocessing: bool = True,
-    ) -> bool:
+    ) -> Union["CascadeCorrelationNetwork", bool]:
         """
-        Restore the network state from a snapshot file.
+        Restore a network from a snapshot file.
         Args:
             snapshot_path: Path to the snapshot file
             restore_multiprocessing: Whether to restore multiprocessing state
         Returns:
-            bool: Success status
+            The restored CascadeCorrelationNetwork on success; False on failure
         """
         logger = Logger
         try:
@@ -4752,10 +4752,8 @@ class CascadeCorrelationNetwork:
                 logger.error(f"CascadeCorrelationNetwork: restore_snapshot: Failed to load network from snapshot: {snapshot_path}")
                 return False
 
-            # Copy loaded network state into current instance
-            cls.__dict__.update(loaded_network.__dict__)
             logger.info(f"CascadeCorrelationNetwork: restore_snapshot: Restored snapshot from {snapshot_path}")
-            return True
+            return loaded_network
         except Exception as e:
             logger.error(f"CascadeCorrelationNetwork: restore_snapshot: Error restoring snapshot: {e}")
             import traceback
@@ -5377,12 +5375,6 @@ class CascadeCorrelationNetwork:
         accuracy = 0.0
 
         # Validate input tensors
-        if x is None or y is None:
-            self.logger.error("CascadeCorrelationNetwork: calculate_accuracy: Missing required tensors for accuracy calculation, using safe defaults.")
-            self.logger.debug(f"CascadeCorrelationNetwork: calculate_accuracy: input size: {self.input_size}, output size: {self.output_size}")
-            x = torch.empty(0, self.input_size)
-            y = torch.empty(0, self.output_size)
-            # raise ValueError("CascadeCorrelationNetwork: calculate_accuracy: Missing required tensors for accuracy calculation.")
         if not (isinstance(x, torch.Tensor) and isinstance(y, torch.Tensor)):
             self.logger.error(f"CascadeCorrelationNetwork: calculate_accuracy: Input and target tensors must be of type torch.Tensor. Input (x): {type(x)}, Target (y): {type(y)}")
             raise ValueError("CascadeCorrelationNetwork: calculate_accuracy: Input and target tensors must be of type torch.Tensor.")
