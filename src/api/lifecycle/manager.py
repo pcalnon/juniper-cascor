@@ -1422,37 +1422,47 @@ class TrainingLifecycleManager:
         Returns:
             Network info dictionary
         """
+        with self._lock:
+            return self._create_network_locked(**kwargs)
+
+    def _create_network_locked(self, **kwargs) -> Dict[str, Any]:
+        """``create_network`` body for callers that already hold ``self._lock``.
+
+        ``self._lock`` is a non-reentrant ``threading.Lock``, so ``start_training``'s
+        create-on-start path (training-start diagnosis 2026-07-09 PR-B) cannot call
+        the public ``create_network`` from inside its locked section — it calls this
+        instead. Behavior is identical to the public method.
+        """
         from cascade_correlation.cascade_correlation import CascadeCorrelationNetwork
         from cascade_correlation.cascade_correlation_config.cascade_correlation_config import CascadeCorrelationConfig
 
-        with self._lock:
-            if self.state_machine.is_started():
-                raise RuntimeError("Cannot create network while training is active")
+        if self.state_machine.is_started():
+            raise RuntimeError("Cannot create network while training is active")
 
-            self._params = kwargs.copy()
-            config = CascadeCorrelationConfig.create_simple_config(**kwargs)
-            # WS-6 B-phase: wrap the freshly built CCN in the model-core CascorModel.
-            # PR-B3.3: no monitoring hooks to install — live monitoring rides
-            # CascorModel.fit's on_event sink (_handle_event), wired per-fit in _run_training.
-            self.model = CascorModel(network=CascadeCorrelationNetwork(config=config))
+        self._params = kwargs.copy()
+        config = CascadeCorrelationConfig.create_simple_config(**kwargs)
+        # WS-6 B-phase: wrap the freshly built CCN in the model-core CascorModel.
+        # PR-B3.3: no monitoring hooks to install — live monitoring rides
+        # CascorModel.fit's on_event sink (_handle_event), wired per-fit in _run_training.
+        self.model = CascorModel(network=CascadeCorrelationNetwork(config=config))
 
-            # Inject worker coordinator for remote dispatch if available
-            if self._worker_coordinator is not None and hasattr(self.network, "set_worker_coordinator"):
-                self.network.set_worker_coordinator(self._worker_coordinator)
+        # Inject worker coordinator for remote dispatch if available
+        if self._worker_coordinator is not None and hasattr(self.network, "set_worker_coordinator"):
+            self.network.set_worker_coordinator(self._worker_coordinator)
 
-            self.training_state.update_state(
-                status="Stopped",
-                phase="Idle",
-                learning_rate=kwargs.get("learning_rate", _PROJECT_API_NETWORK_LEARNING_RATE_DEFAULT),
-                max_hidden_units=kwargs.get("max_hidden_units", _PROJECT_API_LIFECYCLE_DEFAULT_MAX_HIDDEN_UNITS),
-                max_epochs=kwargs.get("epochs_max", _PROJECT_API_LIFECYCLE_DEFAULT_EPOCHS_MAX),
-                max_iterations=kwargs.get("max_iterations", _PROJECT_API_LIFECYCLE_DEFAULT_MAX_ITERATIONS),
-                network_name=f"CasCor-{kwargs.get('input_size', _PROJECT_API_NETWORK_INPUT_SIZE_DEFAULT)}x{kwargs.get('output_size', _PROJECT_API_NETWORK_OUTPUT_SIZE_DEFAULT)}",
-            )
+        self.training_state.update_state(
+            status="Stopped",
+            phase="Idle",
+            learning_rate=kwargs.get("learning_rate", _PROJECT_API_NETWORK_LEARNING_RATE_DEFAULT),
+            max_hidden_units=kwargs.get("max_hidden_units", _PROJECT_API_LIFECYCLE_DEFAULT_MAX_HIDDEN_UNITS),
+            max_epochs=kwargs.get("epochs_max", _PROJECT_API_LIFECYCLE_DEFAULT_EPOCHS_MAX),
+            max_iterations=kwargs.get("max_iterations", _PROJECT_API_LIFECYCLE_DEFAULT_MAX_ITERATIONS),
+            network_name=f"CasCor-{kwargs.get('input_size', _PROJECT_API_NETWORK_INPUT_SIZE_DEFAULT)}x{kwargs.get('output_size', _PROJECT_API_NETWORK_OUTPUT_SIZE_DEFAULT)}",
+        )
 
-            info = self.get_network_info()
-            self.logger.info(f"Network created: {info['input_size']}x{info['output_size']}")
-            return info
+        info = self.get_network_info()
+        self.logger.info(f"Network created: {info['input_size']}x{info['output_size']}")
+        return info
 
     def delete_network(self) -> None:
         """Delete the current network."""
@@ -1859,9 +1869,6 @@ class TrainingLifecycleManager:
         Returns:
             Status dictionary
         """
-        if self.network is None:
-            raise RuntimeError("No network created")
-
         with self._lock:
             if self.state_machine.is_started():
                 raise RuntimeError("Training already in progress")
@@ -1898,6 +1905,27 @@ class TrainingLifecycleManager:
 
             if self._train_x is None or self._train_y is None:
                 raise ValueError("Training data not provided")
+
+            # Training-start diagnosis 2026-07-09 (PR-B): with ``auto_start``
+            # defaulting off, nothing creates a network before the first
+            # user-initiated start — every UI start on a fresh cascor died on
+            # the old pre-lock "No network created" guard. Mirror
+            # ``_auto_start_training``'s inference instead: size the network
+            # from the actual training arrays (the staged/pending dataset was
+            # consumed above, so the dims are authoritative). A bare start with
+            # neither data nor a staged dataset still fails loud on the
+            # "Training data not provided" check above.
+            if self.network is None:
+                create_cfg = {
+                    "input_size": self._train_x.shape[1],
+                    "output_size": self._train_y.shape[1] if self._train_y.dim() > 1 else 1,
+                }
+                self.logger.info(
+                    "start_training: no network — creating %sx%s from dataset dims",
+                    create_cfg["input_size"],
+                    create_cfg["output_size"],
+                )
+                self._create_network_locked(**create_cfg)
 
             # P2-1d: cold-swap parity with swap_dataset_live. If the dataset
             # is smaller than the network's input/output dims (e.g., after a
@@ -2815,6 +2843,53 @@ class TrainingLifecycleManager:
                 self.logger.exception("swap_dataset_live rollback: load_state_dict failed; weights may be inconsistent")
         self._current_dataset_config = dict(pre.dataset_config) if pre.dataset_config else None
 
+    # Canopy-facing staged ``dataset_type`` values (``StageDatasetRequest``'s
+    # Literal) → juniper-data ``GENERATOR_REGISTRY`` keys. Types not listed pass
+    # through unchanged (their registry key already matches).
+    _STAGED_GENERATOR_ALIASES: Dict[str, str] = {"spirals": "spiral", "moons": "moon"}
+
+    @staticmethod
+    def _translate_staged_config(dataset_type: str, cfg: Dict[str, Any]) -> "tuple[str, Dict[str, Any]]":
+        """Translate a canopy-facing staged dataset config into juniper-data's schema.
+
+        ``StageDatasetRequest`` speaks canopy's dialect — ``dataset_type``
+        ``"spirals"``/``"moons"``, a *total* ``n_samples``, ``rotations`` — while
+        juniper-data's registry keys are ``"spiral"``/``"moon"`` and its spiral/xor
+        generators take per-arm / per-quadrant counts (``n_points_per_spiral``,
+        ``n_points_per_quadrant``) and ``n_rotations``. Nothing translated between
+        the two dialects before this helper, so every canopy-staged reload died
+        with "Unknown generator 'spirals'" at juniper-data (training-start
+        diagnosis 2026-07-09 — the unit stubs exercised this path with
+        juniper-data names directly, masking the seam).
+
+        Returns ``(generator, params)`` ready for ``create_dataset``. Translated
+        keys are written with ``setdefault`` so caller-supplied generic ``params``
+        (which won their merge upstream) keep winning on conflict.
+        """
+        generator = TrainingLifecycleManager._STAGED_GENERATOR_ALIASES.get(dataset_type, dataset_type)
+        params = dict(cfg)
+        if generator == "spiral":
+            n_spirals = int(params.get("n_spirals") or 2)  # juniper-data SPIRAL_DEFAULT_N_SPIRALS
+            n_samples = params.pop("n_samples", None)
+            if n_samples is not None:
+                params.setdefault("n_points_per_spiral", max(1, int(n_samples) // max(1, n_spirals)))
+            rotations = params.pop("rotations", None)
+            if rotations is not None:
+                params.setdefault("n_rotations", rotations)
+        elif generator == "xor":
+            n_samples = params.pop("n_samples", None)
+            if n_samples is not None:
+                params.setdefault("n_points_per_quadrant", max(1, int(n_samples) // 4))
+            params.pop("rotations", None)
+            params.pop("n_spirals", None)
+        else:
+            # circles / moon / mnist / gaussian take ``n_samples`` directly; drop
+            # the spiral-only typed fields so they never reach generators that do
+            # not declare them.
+            params.pop("rotations", None)
+            params.pop("n_spirals", None)
+        return generator, params
+
     def _reload_dataset(self, **cfg: Any) -> None:
         """Fetch a fresh dataset from juniper-data and replace the live tensors.
 
@@ -2823,6 +2898,11 @@ class TrainingLifecycleManager:
         staged generator + params, ``download_artifact_npz``, convert to
         ``torch.float32`` tensors, swap ``_train_x/_train_y`` (and val if
         the artifact carries them).
+
+        The staged config is kept in canopy's dialect everywhere it is stored
+        (``_pending_dataset_config`` / ``_current_dataset_config``); it is
+        translated to juniper-data's generator key + params schema via
+        ``_translate_staged_config`` at the fetch boundary only.
 
         Held under ``_lock`` by the caller (``start_training``);
         any I/O failure surfaces as ``RuntimeError`` so the caller can leave
@@ -2873,8 +2953,9 @@ class TrainingLifecycleManager:
         api_key = get_secret("JUNIPER_DATA_API_KEY")
         client = JuniperDataClient(base_url=data_url, api_key=api_key)
 
+        generator, jd_params = self._translate_staged_config(dataset_type, cfg)
         try:
-            result = client.create_dataset(generator=dataset_type, params=cfg, persist=True)
+            result = client.create_dataset(generator=generator, params=jd_params, persist=True)
             dataset_id = result["dataset_id"]
             arrays = client.download_artifact_npz(dataset_id)
         except Exception as exc:

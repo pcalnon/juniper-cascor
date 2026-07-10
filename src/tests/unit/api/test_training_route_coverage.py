@@ -151,18 +151,28 @@ class TestStartTraining:
         )
         assert response.status_code == 200
 
-    def test_start_training_without_network_returns_error(self, client):
-        """start_training should return 409 when no network exists."""
+    def test_start_training_without_network_creates_it_from_inline_data(self, client):
+        """PR-B (training-start diagnosis 2026-07-09): a start with data but no
+        network creates the network from the data dims (``_auto_start_training``
+        parity) instead of returning 409 'No network created'."""
         response = client.post(
             "/v1/training/start",
             json={
                 "inline_data": {
-                    "train_x": [[0.1, 0.2]],
-                    "train_y": [[1.0, 0.0]],
-                }
+                    "train_x": [[0.1, 0.2], [0.3, 0.4]],
+                    "train_y": [[1.0, 0.0], [0.0, 1.0]],
+                },
+                "epochs": 2,
             },
         )
-        assert response.status_code == 409
+        assert response.status_code == 200
+        net = client.get("/v1/network")
+        assert net.status_code == 200
+        info = net.json()["data"]
+        assert info["input_size"] == 2
+        assert info["output_size"] == 2
+        # Stop the background run before client teardown triggers lifespan shutdown.
+        client.post("/v1/training/stop")
 
     def test_start_training_no_body(self, client_with_network):
         """start_training without body should fail with state error."""

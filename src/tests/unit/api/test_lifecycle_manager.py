@@ -201,11 +201,40 @@ class TestLifecycleHeartbeat:
 class TestLifecycleManagerTrainingControl:
     """Test training start/stop/pause/resume/reset."""
 
-    def test_start_training_without_network(self):
-        """Start fails without network."""
+    def test_start_training_without_network_creates_from_data(self):
+        """PR-B (training-start diagnosis 2026-07-09): a start with data but no
+        network creates the network from the training-array dims instead of
+        raising 'No network created' (``_auto_start_training`` parity — with
+        ``auto_start`` defaulting off, the first user-initiated start owns
+        network creation)."""
+        from unittest.mock import patch
+
         mgr = TrainingLifecycleManager()
-        with pytest.raises(RuntimeError, match="No network created"):
-            mgr.start_training(X=torch.randn(10, 2), y=torch.randn(10, 2))
+        with patch.object(mgr, "_run_training"):
+            result = mgr.start_training(X=torch.randn(10, 2), y=torch.randn(10, 2))
+            assert result["status"] == "training_started"
+            if mgr._training_future is not None:
+                mgr._training_future.result(timeout=10)
+        assert mgr.network is not None
+        assert mgr.network.input_size == 2
+        assert mgr.network.output_size == 2
+        mgr.shutdown()
+
+    def test_start_training_without_network_infers_single_column_target_width(self):
+        """Single-column targets infer ``output_size=1`` (the ``y.shape[1]`` arm of
+        ``_auto_start_training``'s inference; truly 1-D ``y`` is unsupported further
+        down in ``_pad_dataset_for_network`` regardless of network creation)."""
+        from unittest.mock import patch
+
+        mgr = TrainingLifecycleManager()
+        with patch.object(mgr, "_run_training"):
+            mgr.start_training(X=torch.randn(10, 3), y=torch.randn(10, 1))
+            if mgr._training_future is not None:
+                mgr._training_future.result(timeout=10)
+        assert mgr.network is not None
+        assert mgr.network.input_size == 3
+        assert mgr.network.output_size == 1
+        mgr.shutdown()
 
     def test_start_training_without_data(self):
         """Start fails without training data."""
