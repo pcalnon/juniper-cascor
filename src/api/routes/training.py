@@ -35,6 +35,12 @@ async def start_training(request: Request, body: TrainingStartRequest = None) ->
     - dataset: Dataset source specification (juniper-data or generator)
     - params: Training parameter overrides
     - epochs: Max epochs override (shorthand)
+
+    If no network exists yet, one is created automatically from the training
+    data's dims (inline/staged/pending dataset) — ``_auto_start_training``
+    parity, so the first user-initiated start works on a fresh service
+    (training-start diagnosis 2026-07-09, PR-B). A start with neither data nor
+    a staged dataset still 409s with "Training data not provided".
     """
     lifecycle = _get_lifecycle(request)
 
@@ -74,12 +80,14 @@ async def start_training(request: Request, body: TrainingStartRequest = None) ->
         result = lifecycle.start_training(X=x, y=y, X_val=x_val, y_val=y_val, **kwargs)
         return success_response(result)
     except (RuntimeError, ValueError) as e:
-        # Surface the specific reason (no network created / training already in progress /
-        # no dataset staged ("Training data not provided") / juniper-data fetch failed /
+        # Surface the specific reason (training already in progress / no dataset
+        # staged ("Training data not provided") / juniper-data fetch failed /
         # investigating|replaying a snapshot) rather than a generic message, so API and
         # Canopy callers can tell *why* the start was rejected and act on it. The generic
         # string previously masked a juniper-data fetch failure as a bogus "state" error.
         # See notes/CASCOR_STARTUP_SECRET_INDIRECTION_INVESTIGATION_2026-06-14.md (3.4).
+        # ("No network created" left this list in PR-B — start now creates the
+        # network from the dataset dims when one is missing.)
         logger.debug("Start training failed: %s", e)
         raise HTTPException(status_code=409, detail=f"Training cannot be started: {e}") from e
 

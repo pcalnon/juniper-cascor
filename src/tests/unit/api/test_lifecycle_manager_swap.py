@@ -222,6 +222,60 @@ class TestReloadDataset:
             with pytest.raises(RuntimeError, match="artifact missing required key"):
                 mgr._reload_dataset(dataset_type="spiral")
 
+    def test_canopy_staged_spirals_config_is_translated(self, mgr):
+        """The canopy-facing staged dialect (``dataset_type='spirals'``, total
+        ``n_samples``, ``rotations``) is translated to juniper-data's registry
+        key + spiral params at the fetch boundary; the stored config keeps the
+        canopy dialect (PR-B, training-start diagnosis 2026-07-09 — previously
+        this reload died at juniper-data with "Unknown generator 'spirals'")."""
+        mod, client = _fake_data_client_module()
+        with patch.dict(sys.modules, {"juniper_data_client": mod}), patch("api.secrets.get_secret", return_value=None), patch("api.settings.Settings"):
+            mgr._reload_dataset(dataset_type="spirals", n_samples=1000, noise=0.1, rotations=1.5, n_spirals=2)
+        _, kwargs = client.create_dataset.call_args
+        assert kwargs["generator"] == "spiral"
+        assert kwargs["params"] == {"n_points_per_spiral": 500, "n_rotations": 1.5, "noise": 0.1, "n_spirals": 2}
+        assert mgr._current_dataset_config["dataset_type"] == "spirals"
+        assert mgr._current_dataset_config["n_samples"] == 1000
+
+    def test_canopy_staged_xor_config_is_translated(self, mgr):
+        """XOR: total ``n_samples`` becomes per-quadrant; spiral-only typed
+        fields are dropped rather than leaking to a generator that never
+        declared them."""
+        mod, client = _fake_data_client_module()
+        with patch.dict(sys.modules, {"juniper_data_client": mod}), patch("api.secrets.get_secret", return_value=None), patch("api.settings.Settings"):
+            mgr._reload_dataset(dataset_type="xor", n_samples=1000, noise=0.2, rotations=1.5, n_spirals=2)
+        _, kwargs = client.create_dataset.call_args
+        assert kwargs["generator"] == "xor"
+        assert kwargs["params"] == {"n_points_per_quadrant": 250, "noise": 0.2}
+
+    def test_generic_params_win_over_translated_typed_fields(self, mgr):
+        """Caller-supplied generic ``params`` keep winning over the translated
+        typed fields (the pre-existing merge contract, preserved via setdefault)."""
+        mod, client = _fake_data_client_module()
+        with patch.dict(sys.modules, {"juniper_data_client": mod}), patch("api.secrets.get_secret", return_value=None), patch("api.settings.Settings"):
+            mgr._reload_dataset(dataset_type="spirals", n_samples=1000, params={"n_points_per_spiral": 7})
+        _, kwargs = client.create_dataset.call_args
+        assert kwargs["params"]["n_points_per_spiral"] == 7
+
+    def test_start_training_consumes_pending_and_creates_network(self, mgr):
+        """End-to-end through ``start_training``: a pending canopy-staged dataset
+        is consumed and the network is created from the fetched array dims
+        (PR-B create-on-start; the fresh-boot UI flow)."""
+        mod, client = _fake_data_client_module()
+        mgr._pending_dataset_config = {"dataset_type": "spirals", "n_samples": 6, "n_spirals": 2}
+        with patch.dict(sys.modules, {"juniper_data_client": mod}), patch("api.secrets.get_secret", return_value=None), patch("api.settings.Settings"), patch.object(mgr, "_run_training"):
+            result = mgr.start_training()
+            assert result["status"] == "training_started"
+            if mgr._training_future is not None:
+                mgr._training_future.result(timeout=10)
+        assert mgr._pending_dataset_config is None
+        assert mgr.network is not None
+        assert mgr.network.input_size == 2
+        assert mgr.network.output_size == 2
+        _, kwargs = client.create_dataset.call_args
+        assert kwargs["generator"] == "spiral"
+        assert kwargs["params"]["n_points_per_spiral"] == 3
+
 
 class TestSwapConcurrencyAndCancel:
     """``swap_dataset_live`` concurrent guard + cancel signalling."""
