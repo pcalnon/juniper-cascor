@@ -375,7 +375,8 @@ class TestUpdateTrainingParams:
             ("correlation_threshold", 1.01),  # le=1.0
             ("candidate_pool_size", 257),  # le=256
             ("max_hidden_units", 999_999_999),  # le=10_000 (the HO-5 live-confirmed payload)
-            ("epochs_max", 1_000_001),  # le=1_000_000
+            # ("epochs_max", ...) removed in C2b (Q1): the field is deprecated input —
+            # floor-only, accepted-and-skip-reported; see TestEpochsMaxDeprecatedInput.
             ("patience", 100_001),  # le=100_000
             ("candidate_patience", 100_001),  # le=100_000
             ("candidate_epochs", 1_000_001),  # le=1_000_000
@@ -423,7 +424,7 @@ class TestUpdateTrainingParams:
             ("correlation_threshold", 1.0),  # exactly le
             ("candidate_pool_size", 256),  # exactly le
             ("max_hidden_units", 10_000),  # exactly le
-            ("epochs_max", 1_000_000),  # exactly le
+            ("epochs_max", 1_000_000),  # C2b: accepted (deprecated input; skip-reported, no ceiling)
             ("patience", 100_000),  # exactly le
             ("convergence_threshold", 0.0001),
             ("candidate_convergence_threshold", 0.0001),
@@ -496,12 +497,13 @@ class TestAppliedSkippedReporting:
     def test_bound_violation_remains_atomic_422(self, test_client_with_network):
         """A single out-of-bound key still rejects the WHOLE body at request-model
         validation (deliberate — C2a adds reporting, not partial apply): the
-        in-range sibling key must NOT land."""
+        in-range sibling key must NOT land. (C2b: the violating key switched from
+        ``epochs_max`` — now a floor-only deprecated input — to ``output_epochs``.)"""
         lifecycle = test_client_with_network.app.state.lifecycle
         before = lifecycle.network.learning_rate
         response = test_client_with_network.patch(
             "/v1/training/params",
-            json={"learning_rate": 0.008, "epochs_max": 1_000_001},  # epochs_max le=1_000_000
+            json={"learning_rate": 0.008, "output_epochs": 1_000_001},  # output_epochs le=1_000_000
         )
         assert response.status_code == 422
         assert lifecycle.network.learning_rate == pytest.approx(before)
@@ -694,13 +696,17 @@ class TestParamModelBoundsParity:
         assert not mismatches, f"runtime/start numeric-bound divergence (SEC-F10): {mismatches}"
 
     def test_update_model_defines_restored_ceilings(self):
-        """Anchor the specific ceilings SEC-F10 restored (regression guard)."""
+        """Anchor the specific ceilings SEC-F10 restored (regression guard).
+
+        C2b (Q1): ``epochs_max`` left this list — it is a deprecated, floor-only
+        input now (derived read-only; ceiling deliberately dropped so clients
+        echoing the derived value back are not 422-rejected). Its absence-of-
+        ceiling is pinned by ``TestEpochsMaxDeprecatedInput``."""
         fields = TrainingParamUpdateRequest.model_fields
         assert _numeric_bounds(fields["max_hidden_units"]).get("le") == 10_000
         assert _numeric_bounds(fields["learning_rate"]).get("le") == 10.0
         assert _numeric_bounds(fields["candidate_learning_rate"]).get("le") == 10.0
         assert _numeric_bounds(fields["candidate_pool_size"]).get("le") == 256
-        assert _numeric_bounds(fields["epochs_max"]).get("le") == 1_000_000
         assert _numeric_bounds(fields["patience"]).get("le") == 100_000
         assert _numeric_bounds(fields["candidate_patience"]).get("le") == 100_000
         assert _numeric_bounds(fields["candidate_epochs"]).get("le") == 1_000_000

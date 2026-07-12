@@ -425,6 +425,12 @@ class Settings(BaseSettings):
     auto_dataset: str = _JUNIPER_CASCOR_API_AUTO_DATASET_DEFAULT
     auto_dataset_params: str = _JUNIPER_CASCOR_API_AUTO_DATASET_PARAMS_DEFAULT
     auto_network: str = _JUNIPER_CASCOR_API_AUTO_NETWORK_DEFAULT
+    # DEPRECATED (C2b / Q1): previously seeded the network's ``epochs_max``
+    # attribute on the auto-start path — an attribute the training loop never
+    # read (the granular limits gate training; ``epochs_max`` is now derived
+    # from them, see TrainingLifecycleManager.derive_epochs_cap). Retained as
+    # a no-op so existing JUNIPER_CASCOR_AUTO_TRAIN_EPOCHS env vars do not
+    # break Settings construction; slated for removal.
     auto_train_epochs: int = _JUNIPER_CASCOR_API_AUTO_TRAIN_EPOCHS_DEFAULT
 
     # Remote WebSocket worker configuration

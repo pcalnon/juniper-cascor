@@ -545,7 +545,7 @@ keeps the socket open:
 | `candidate_epochs`        | `int`             | `100`        | Epochs per candidate                                                          |
 | `init_output_weights`     | `str`             | `"zero"`     | Output-weight init mode for newly added hidden units (`"zero"` or `"random"`) |
 | `output_epochs`           | `int`             | `100`        | Epochs for output layer training                                              |
-| `epochs_max`              | `int`             | `1000`       | Maximum total epochs                                                          |
+| `epochs_max`              | `int`             | `1000`       | Legacy no-op: stored on the network but never read by the training loop (C2b/Q1 — the API reports a value derived from the granular limits) |
 | `max_iterations`          | `int`             | `1000`       | Maximum cascade growth iterations                                             |
 | `max_hidden_units`        | `int`             | `50`         | Maximum network growth                                                        |
 | `correlation_threshold`   | `float`           | `0.001`      | Minimum correlation for selection                                             |

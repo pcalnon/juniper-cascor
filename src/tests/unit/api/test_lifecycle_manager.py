@@ -54,37 +54,47 @@ class TestLifecycleManagerNetwork:
         assert state["learning_rate"] == 0.02
         assert "CasCor" in state["network_name"]
 
-    def test_create_network_keeps_max_epochs_and_max_iterations_separate(self):
-        """Creating a network keeps epoch and growth limits independent."""
+    def test_create_network_max_epochs_is_derived_from_granular_limits(self):
+        """C2b / Q1 outcome (c): ``training_state.max_epochs`` is no longer an
+        independent input — it is DERIVED from the granular limits
+        (``output_epochs + min(max_iterations, max_hidden_units) *
+        (candidate_epochs + output_epochs)``), so it can never contradict or
+        shadow them. ``max_iterations`` remains an independent input.
+        (Supersedes the pre-C2b test that asserted a create-time ``epochs_max``
+        kwarg flowed into ``max_epochs`` — that flow was the I-4 root defect.)"""
         mgr = TrainingLifecycleManager()
         mgr.create_network(
             input_size=2,
             output_size=2,
-            epochs_max=11,
             max_iterations=4,
+            max_hidden_units=10,
+            output_epochs=100,
+            candidate_epochs=50,
         )
         state = mgr.training_state.get_state()
-        assert state["max_epochs"] == 11
         assert state["max_iterations"] == 4
+        # min(4, 10) = 4 effective iterations: 100 + 4 * (50 + 100) = 700.
+        assert state["max_epochs"] == 700
+        assert state["max_epochs"] == mgr.derive_epochs_cap(mgr.network)
 
-    def test_create_network_training_limit_defaults_aligned_with_canopy(self):
-        """Phase 1 deferred item (revised 2026-04-10): training-limit defaults
-        must match the canopy / requirements-spec values:
+    def test_create_network_training_state_mirrors_live_network(self):
+        """C2b (I-4 root / I-1c): the ``/v1/training/status`` projection must
+        report the LIVE network's effective values, not a second default layer.
 
-        - epochs_max          = 100,000,000,000  (1e11, raised from 1e6)
-        - max_iterations      =       1,000,000  (1e6, raised from 1e3)
-        - max_hidden_units    =          10,000  (1e4, raised from 1e3)
-
-        These caps are intentionally large so the user, not the API model,
-        chooses when to stop. See juniper-ml/notes/code-review/
-        CANOPY_CASCOR_INTERFACE_ROADMAP_2026-04-08.md §3.5.
-        """
+        Supersedes the pre-C2b "defaults aligned with canopy" test, which pinned
+        the lifecycle-seed literals (1e11 / 1e6 / 1e4): those seeds were pure
+        display values — the live evidence showed ``/v1/network`` reporting
+        ``max_hidden_units`` from the engine while ``/v1/training/status``
+        reported 10000 from the seed layer (training-runtime-defects plan §4
+        I-4 / I-1). The surfaces now agree by construction."""
         mgr = TrainingLifecycleManager()
         mgr.create_network(input_size=2, output_size=2)
         state = mgr.training_state.get_state()
-        assert state["max_epochs"] == 100000000000, f"epochs_max default should be 1e11; got {state['max_epochs']}"
-        assert state["max_iterations"] == 1000000, f"max_iterations default should be 1e6; got {state['max_iterations']}"
-        assert state["max_hidden_units"] == 10000, f"max_hidden_units default should be 1e4; got {state['max_hidden_units']}"
+        info = mgr.get_network_info()
+        assert state["max_hidden_units"] == info["max_hidden_units"] == getattr(mgr.network, "max_hidden_units")
+        assert state["learning_rate"] == info["learning_rate"] == getattr(mgr.network, "learning_rate")
+        assert state["max_iterations"] == getattr(mgr.network, "max_iterations")
+        assert state["max_epochs"] == mgr.derive_epochs_cap(mgr.network)
 
     def test_get_training_params_no_network(self):
         """Training params returns empty dict without network."""

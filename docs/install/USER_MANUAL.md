@@ -150,7 +150,7 @@ predicted_classes = torch.argmax(predictions, dim=1)
 | `candidate_epochs` | int | 100 | Epochs to train each candidate |
 | `init_output_weights` | str | "zero" | Output-weight init mode when hidden units are added: `"zero"` or `"random"` |
 | `output_epochs` | int | 100 | Epochs to train output layer |
-| `epochs_max` | int | 1000 | Maximum total training epochs |
+| `epochs_max` | int | 1000 | Legacy no-op: stored but never read by the training loop (C2b/Q1 — the REST API reports an `epochs_max` derived from the granular limits instead) |
 | `max_iterations` | int | 1000 | Maximum cascade growth iterations (`grow_network` loop bound) |
 | `patience` | int | 15 | Early stopping patience (epochs without improvement) |
 
@@ -867,12 +867,14 @@ If results differ between runs with same seed:
 
 ### Training appears to stop "too early" or runs longer than expected
 
-If run length does not match expectations, check both training limits:
+If run length does not match expectations, check the granular training limits:
 
-- `epochs_max` controls output-layer epoch budget.
+- `output_epochs` controls the per-pass output-layer epoch budget.
+- `candidate_epochs` controls the per-pass candidate-training epoch budget.
 - `max_iterations` controls how many cascade growth cycles can run.
+- `max_hidden_units` caps cascade growth (the effective iteration count is `min(max_iterations, max_hidden_units)`).
 
-These limits are independent, so adjusting only one may not change the behavior you expect.
+These limits are independent, so adjusting only one may not change the behavior you expect. (`epochs_max` is not a control: the training loop never reads it — since C2b/Q1 the API reports it as a value derived from the four limits above.)
 
 ### JuniperData connection errors
 
