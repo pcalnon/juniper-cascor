@@ -96,6 +96,7 @@ class WebSocketManager:
         max_connections_per_identity: int = 5,
         max_message_size_bytes: int = 60_000,
         chunk_payload_size_bytes: int = 32_000,
+        emission_summary_interval_sec: float = 60.0,
     ):
         # Connection tracking
         self._active_connections: Set[WebSocket] = set()
@@ -181,6 +182,16 @@ class WebSocketManager:
         self._chunk_payload_size_bytes = chunk_payload_size_bytes
         self._messages_chunked_total: int = 0
         self._chunks_emitted_total: int = 0
+
+        # C3 / T5: periodic emission summary. Every ``emission_summary_interval_sec``
+        # seconds (checked on each accounted send, including heartbeat pings via
+        # ``record_out_of_band_send``) an INFO line reports the per-type frame
+        # counts emitted since the previous summary — so "relay connected but
+        # nothing flowing" (the 2026-07-10 incident) is diagnosable from the
+        # server log alone. <= 0 disables the summary.
+        self._emission_summary_interval_sec = emission_summary_interval_sec
+        self._emission_summary_baseline: Dict[str, int] = {}
+        self._last_emission_summary_monotonic: float = time.monotonic()
 
         logger.info(
             "WebSocketManager initialized (max_connections=%d, replay_buffer=%d, send_timeout=%.1fs)",
@@ -837,13 +848,76 @@ class WebSocketManager:
         return True
 
     def _account_send(self, message: dict, byte_size: int) -> None:
-        """GAP-WS-16: record a successful WS send for bandwidth telemetry."""
+        """GAP-WS-16: record a successful WS send for bandwidth telemetry.
+
+        C3 / T5: also drives the periodic emission summary — the check runs on
+        every accounted send so the summary appears as long as ANY frame
+        (including heartbeat pings) is flowing.
+        """
         msg_type = str(message.get("type") or "unknown")
         with self._seq_lock:
             self._bytes_sent_total += byte_size
             self._messages_sent_total += 1
             self._messages_sent_by_type[msg_type] = self._messages_sent_by_type.get(msg_type, 0) + 1
             self._bytes_sent_by_type[msg_type] = self._bytes_sent_by_type.get(msg_type, 0) + byte_size
+        self.maybe_log_emission_summary()
+
+    def record_out_of_band_send(self, message: dict) -> None:
+        """C3 / T5: account a frame sent outside the manager's send paths.
+
+        The per-connection heartbeat ping loops (``training_stream`` /
+        ``control_stream``) write directly to their WebSocket rather than
+        through :meth:`broadcast` / :meth:`send_personal_message`, so their
+        frames were invisible to the GAP-WS-16 transport counters. Routing
+        them through this helper makes the emission summary self-proving:
+        a summary line reading ``ping=2`` with no ``metrics`` entries proves
+        the socket was writable while no training frames were emitted — the
+        exact question the 2026-07-10 incident could not answer.
+
+        Args:
+            message: The frame that was already sent (only ``type`` and its
+                serialized size are recorded).
+        """
+        try:
+            byte_size = len(json.dumps(message, default=str))
+        except (TypeError, ValueError):
+            byte_size = 0
+        self._account_send(message, byte_size)
+
+    def maybe_log_emission_summary(self, *, force: bool = False) -> Optional[Dict[str, int]]:
+        """C3 / T5: log the per-type frames emitted since the last summary.
+
+        Emission-driven: called from :meth:`_account_send` on every accounted
+        send and rate-limited to one INFO line per
+        ``emission_summary_interval_sec``. With ``force=True`` the summary is
+        emitted regardless of the interval (used by tests and diagnostics).
+        A configured interval <= 0 disables the summary except under
+        ``force``.
+
+        Returns:
+            The per-type delta dict when a summary was emitted, else ``None``.
+        """
+        if self._emission_summary_interval_sec <= 0 and not force:
+            return None
+        now = time.monotonic()
+        with self._seq_lock:
+            elapsed = now - self._last_emission_summary_monotonic
+            if not force and elapsed < self._emission_summary_interval_sec:
+                return None
+            deltas: Dict[str, int] = {}
+            for msg_type, count in self._messages_sent_by_type.items():
+                delta = count - self._emission_summary_baseline.get(msg_type, 0)
+                if delta > 0:
+                    deltas[msg_type] = delta
+            self._emission_summary_baseline = dict(self._messages_sent_by_type)
+            self._last_emission_summary_monotonic = now
+            active = len(self._active_connections)
+        if deltas:
+            summary = ", ".join(f"{msg_type}={deltas[msg_type]}" for msg_type in sorted(deltas))
+        else:
+            summary = "no frames emitted"
+        logger.info("WS emission summary (last %.0fs): %s (%d active connections)", elapsed, summary, active)
+        return deltas
 
     def transport_stats(self) -> Dict[str, Any]:
         """GAP-WS-16: snapshot of cumulative WS transport counters.

@@ -145,16 +145,17 @@ The global handlers in `src/api/app.py:480-494` produce:
 
 ### Common WebSocket close codes
 
-| Code | Meaning                                                     |
-|------|-------------------------------------------------------------|
-| 1000 | Normal closure                                              |
-| 1006 | Abnormal closure — heartbeat timeout, message size exceeded |
-| 1013 | WebSocket admission cap exceeded                            |
-| 4001 | Authentication required / `X-API-Key` invalid               |
-| 4003 | Origin header not permitted (control + worker streams)      |
-| 4004 | Worker subsystem not initialized                            |
-| 1013 | WebSocket connection cap reached                            |
-| 4029 | Connection rate limited (worker stream)                     |
+| Code | Meaning                                                                                                                                                                                             |
+|------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| 1000 | Normal closure                                                                                                                                                                                      |
+| 1011 | Heartbeat timeout — the client sent no pong (nor any other frame) within the pong window. Reason text: `Heartbeat timeout: no pong or traffic within <N>s`                                          |
+| 1006 | Abnormal closure — reported client-side only when the connection dies without a close frame (RFC 6455 §7.4.1 forbids sending 1006 on the wire; pre-C3 heartbeat closes attempted it and never delivered a close frame) |
+| 1013 | WebSocket admission cap exceeded                                                                                                                                                                    |
+| 4001 | Authentication required / `X-API-Key` invalid                                                                                                                                                       |
+| 4003 | Origin header not permitted (control + worker streams)                                                                                                                                             |
+| 4004 | Worker subsystem not initialized                                                                                                                                                                    |
+| 1013 | WebSocket connection cap reached                                                                                                                                                                    |
+| 4029 | Connection rate limited (worker stream)                                                                                                                                                             |
 
 ### Middleware stack
 
@@ -1213,16 +1214,17 @@ All three sockets share these properties:
 - `X-API-Key` authenticated via `ws_authenticate()` (`src/api/websocket/manager.py`); failures close with `4001`.
 - Admission caps: every WebSocket reserves from the stack-global cap (default 200); `/ws/control` also reserves from the per-identity cap (default 5, keyed on the API-key digest). Over-cap attempts close with `1013`.
 - The legacy per-peer-IP cap remains DoS-dampening only. Behind Docker NAT, every client may present as the bridge gateway and therefore share one IP bucket; use the global and per-identity caps for limits that survive NAT.
-- Application-layer heartbeat: server sends `{"type":"ping","ts":<float>}` every 30s; client must reply `{"type":"pong"}` within 10s or the connection is closed.
+- Application-layer heartbeat: server sends `{"type":"ping","ts":<float>}` every 30s; the client must send a `{"type":"pong"}` (or any other frame — C3 tolerance) within 10s or the connection is closed with `1011`.
 - All payloads are JSON unless explicitly noted as binary.
 - Over-cap handshakes close with `1013`. `JUNIPER_CASCOR_WS_MAX_CONNECTIONS_GLOBAL` (default 200) spans all WebSocket endpoints; `JUNIPER_CASCOR_WS_MAX_CONNECTIONS_PER_IDENTITY` (default 5) applies to `/ws/control`; `JUNIPER_CASCOR_WS_MAX_CONNECTIONS_PER_IP` (default 5) is DoS dampening and can collapse to one shared bucket behind Docker NAT.
 
-`/ws/training` and `/ws/control` also use an application-layer heartbeat:
-server sends `{"type":"ping","ts":<float>}` every
-`ws_heartbeat_interval_sec` seconds (default `30`), and the client must
-reply with `{"type":"pong"}` within `ws_heartbeat_pong_timeout_sec`
-seconds (default `10`) or the handler closes the connection with a heartbeat
-timeout.
+`/ws/training` and `/ws/control` also use an application-layer heartbeat — the explicit contract (C3):
+
+- The server sends `{"type":"ping","ts":<float>}` every `ws_heartbeat_interval_sec` seconds (default `30`; env `JUNIPER_WS_HEARTBEAT_INTERVAL_SEC`). A value `<= 0` disables the heartbeat entirely (escape hatch for legacy clients; the `/ws/control` bidirectional idle timeout, `ws_control_idle_timeout_sec` default `120`, still applies).
+- The client SHOULD reply `{"type":"pong"}`. Any well-formed inbound frame received within `ws_heartbeat_pong_timeout_sec` seconds (default `10`; env `JUNIPER_WS_HEARTBEAT_PONG_TIMEOUT_SEC`) of a ping also counts as proof of liveness — the heartbeat performs dead-peer detection, not frame-type compliance, so an actively-sending client is never reaped.
+- A client that sends nothing within the pong window is closed with code `1011`, reason `Heartbeat timeout: no pong or traffic within <N>s`, and a server-side WARNING log line. (Pre-C3 the close used `1006`, which RFC 6455 §7.4.1 forbids on the wire — the `websockets` server implementation rejects it, so the close frame never reached the peer and clients were left holding a silent half-open socket.)
+- `juniper-cascor-client >= 0.7.0` answers pings automatically on both streams (CL1) and exposes `is_alive(window)` / `last_frame_at` liveness surfaces for supervisors.
+- T5 observability: every heartbeat ping is recorded in the transport counters (`GET /v1/metrics/transport`, `messages_sent_by_type.ping`), and the WS manager logs a periodic INFO emission summary (`WS emission summary (last <N>s): metrics=…, ping=… (<K> active connections)`, interval `ws_emission_summary_interval_sec`, default `60`, env `JUNIPER_WS_EMISSION_SUMMARY_INTERVAL_SEC`, `<= 0` disables) so "connected but nothing flowing" is diagnosable server-side.
 
 ### WS `/ws/training`
 
@@ -1230,7 +1232,7 @@ timeout.
 
 **Detailed description** — Optionally accepts a `resume` handshake within a configurable timeout to replay buffered events from a sequence number.
 On a fresh connect, the server sends `connection_established` followed by `initial_status`, `state`, and `initial_metrics` (configurable burst size, default 100).
-During training it broadcasts `epoch_end`, `state`, and `topology_update` events.
+During training it broadcasts `metrics`, `state`, `topology`, `cascade_add`, `candidate_progress`, and `event` frames (builders in `src/api/websocket/messages.py`; emission call sites registered in `src/api/lifecycle/manager.py:1333-1355`).
 Replay buffer default 10,000 messages, with stack-global and per-IP admission limits (defaults: 200 global across all WebSocket endpoints, 5 per IP), max message size 16 MB, chunk payload size 1 MB, send timeout 10 s, state coalescing 50 ms.
 Handler at `src/api/websocket/training_stream.py`.
 
