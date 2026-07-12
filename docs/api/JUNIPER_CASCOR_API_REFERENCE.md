@@ -303,7 +303,6 @@ Content-Type: application/json
   "patience": 20,
   "candidate_epochs": 50,
   "output_epochs": 10,
-  "epochs_max": 500,
   "max_iterations": 100,
   "init_output_weights": "zero",
   "optimizer_type": "Adam",
@@ -709,6 +708,22 @@ curl -s http://localhost:8201/v1/training/status
 
 **Returns** — Envelope with: `training_state`, `training_active`, `network_loaded`, `state_machine`, `monitor`, `snapshot_seq`, `server_instance_id`.
 
+**Counter semantics (C2b — the contract UI consumers should render):**
+
+| Field | Block | Meaning |
+|-------|-------|---------|
+| `current_epoch` / `current_step` | `training_state` | Completed **training steps** — entries in the engine's per-pass history: one initial output-training pass plus one per cascade growth iteration. NOT inner output-training epochs. Single writer (the metrics drain); the two fields are aliases today. |
+| `max_epochs` | `training_state` | The **derived** total-epoch cap implied by the granular limits: `output_epochs + min(max_iterations, max_hidden_units) * (candidate_epochs + output_epochs)`. A display budget (the natural `Epoch: X / Y` denominator), not an enforced abort — the granular limits do the gating. Refreshed at network create / param apply / snapshot load. |
+| `output_epoch` / `output_total_epochs` | `training_state` | Live progress **within the current output-training pass** (inner epoch vs. that pass's budget, sampled ~every 25th epoch). Zeroed at run start, growth-phase exit, and run end. Output-phase sibling of the `candidate_epoch` pair. |
+| `candidate_epoch` / `candidate_total_epochs` | `training_state` | Live progress within the current candidate-pool training pass (from the worker progress stream). |
+| `grow_iteration` / `grow_max` | `training_state` | Cascade growth iteration counter vs. its `max_iterations` limit. |
+| `learning_rate`, `max_hidden_units`, `max_iterations` | `training_state` | Projections of the live network's effective values (synced at create / apply / snapshot-load) — the same values `/v1/network` and `GET /v1/training/params` report. |
+| `current_epoch` | `monitor` | Completed training steps (same unit as `training_state.current_epoch`). E.g. `20` after 14 hidden units = 20 completed passes, not 20 inner epochs. |
+| `current_hidden_units` | `monitor` | Installed cascade unit count as of the latest metrics row. |
+| `total_metrics` | `monitor` | Buffered metrics ROW count across both row kinds (per-step rows + throttled within-pass samples) — not comparable to `current_epoch`. |
+
+Rows returned by `GET /v1/metrics/history` carry a `kind` discriminator: `"training_step"` rows use step numbering in `epoch`; `"output_epoch"` rows use within-pass inner-epoch numbering.
+
 **Error handling** — `503` if lifecycle unbound.
 
 ---
@@ -727,7 +742,7 @@ curl -s http://localhost:8201/v1/training/params
 
 **State changes** — None.
 
-**Returns** — Envelope with the live params dict.
+**Returns** — Envelope with the live params dict. `epochs_max` is **derived read-only** (C2b / Q1): `output_epochs + min(max_iterations, max_hidden_units) * (candidate_epochs + output_epochs)` — it can never contradict the granular limits, and it is always admissible if echoed back to `PATCH` (pre-C2b the echoed construction-time default `1e11` exceeded the PATCH ceiling `1e6`, wholesale-rejecting seeded full-form applies with 422).
 
 **Error handling** — `404` if no network; `503` if lifecycle unbound.
 
@@ -764,7 +779,7 @@ curl -s -X PATCH http://localhost:8201/v1/training/params \
 
 **State changes** — Mutates lifecycle params; takes effect on the next epoch / candidate phase.
 
-**Returns** — Envelope with the merged params dict.
+**Returns** — Envelope with the merged params dict plus the C2a accounting fields `applied` (keys that landed) and `skipped` (`{"key", "reason"}` rows). `epochs_max` is **deprecated as an input** (C2b / Q1): submitted values are accepted at the request boundary (floor `ge=1` only) but never applied — they are reported as `skipped(not-updatable)`, since the value is derived from the granular limits (see `GET /v1/training/params`).
 
 **Error handling** — `404` if no network; `422` for unknown keys / out-of-range values; `503` if lifecycle unbound.
 

@@ -499,9 +499,15 @@ async def _auto_start_training(app: FastAPI, settings: Settings) -> None:
         y_train = torch.tensor(arrays["y_train"], dtype=torch.float32)
         logger.info(f"Auto-start: training data loaded — {x_train.shape[0]} samples, {x_train.shape[1]} features")
 
-        # Create network — infer input/output sizes from training data
+        # Create network — infer input/output sizes from training data.
+        # C2b / Q1 outcome (c): the ``epochs_max`` seed (``settings.auto_train_epochs``)
+        # is gone — the engine never read the attribute (the granular limits do the
+        # gating), and ``epochs_max`` is now derived per run from those limits
+        # (TrainingLifecycleManager.derive_epochs_cap). The seed's only observable
+        # effect was an incoherent ``max_epochs`` on the status surface.
+        # ``auto_train_epochs`` remains in Settings as a deprecated no-op for
+        # env-var compatibility (see settings.py).
         network_config = json.loads(settings.auto_network)
-        network_config.setdefault("epochs_max", settings.auto_train_epochs)
         network_config.setdefault("input_size", x_train.shape[1])
         network_config.setdefault("output_size", y_train.shape[1] if y_train.dim() > 1 else 1)
         lifecycle: TrainingLifecycleManager = app.state.lifecycle

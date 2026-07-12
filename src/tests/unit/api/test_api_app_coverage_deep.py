@@ -312,8 +312,13 @@ class TestAutoStartTraining:
         mock_client_class.assert_called_once_with(base_url="http://test-data:9999", api_key="secret-key")
 
     @pytest.mark.asyncio
-    async def test_auto_start_network_config_applies_epochs_max(self):
-        """Test auto-start applies auto_train_epochs as epochs_max default (line 121)."""
+    async def test_auto_start_network_config_does_not_seed_epochs_max(self):
+        """C2b / Q1: auto-start must NOT seed the retired ``epochs_max`` meta-param.
+
+        Pre-C2b, ``_auto_start_training`` injected ``settings.auto_train_epochs``
+        as ``network_config["epochs_max"]`` — an attribute the training loop never
+        read, whose only observable effect was an incoherent ``max_epochs`` on the
+        status surface. ``auto_train_epochs`` is now a deprecated no-op setting."""
         settings = Settings(
             auto_start=True,
             auto_network='{"input_size": 2, "output_size": 2}',
@@ -339,9 +344,11 @@ class TestAutoStartTraining:
         with patch.dict("sys.modules", {"juniper_data_client": MagicMock(JuniperDataClient=MagicMock(return_value=mock_client_instance))}):
             await _auto_start_training(app, settings)
 
-        # Verify epochs_max was set as the default
+        # C2b / Q1: the retired meta-param is NOT injected; sizes still are.
         call_kwargs = mock_lifecycle.create_network.call_args[1]
-        assert call_kwargs["epochs_max"] == 75
+        assert "epochs_max" not in call_kwargs
+        assert call_kwargs["input_size"] == 2
+        assert call_kwargs["output_size"] == 2
 
 
 # ------------------------------------------------------------------
