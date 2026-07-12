@@ -256,3 +256,92 @@ class TestCheckStaleWorkersBehaviour:
             assert not orphans, f"CONC-10 race: tasks assigned to deregistered workers: {orphans!r}"
         finally:
             coord.shutdown()
+
+
+@pytest.mark.unit
+class TestBusyWorkerAssignmentRefused:
+    """`get_next_assignment` must honor the registry's one-active-task-per-worker contract.
+
+    The pre-fix flow popped a task, marked the PendingTask assigned, and ignored
+    `registry.assign_task(...)`'s False for a busy worker — so a busy worker
+    accumulated coordinator-level assignments the registry never tracked, and
+    `_check_stale_workers` (which requeues only the registry's `active_task_id`)
+    orphaned the extras on deregistration until `_task_reassignment_timeout`.
+    This is the deterministic core of the `test_concurrent_assignment_and_dereg_no_orphan`
+    failures observed once fix C4 re-enabled coordinator/registry logging (the
+    logging had been disabled suite-wide by the logging-init defect, which kept
+    the reaper fast enough to win the race window). worker_stream's heartbeat
+    path already guarded this with its own `reg.idle` check (ISSUE-319).
+    """
+
+    def _make_coord(self, coordinator_module):
+        from api.workers.registry import WorkerRegistry
+
+        registry = WorkerRegistry(heartbeat_timeout=60.0)
+        coord = coordinator_module.WorkerCoordinator(registry=registry, task_reassignment_timeout=60.0, health_check_interval=60.0)
+        return registry, coord
+
+    def _submit_tasks(self, coord, count=3):
+        import numpy as np
+
+        specs = [{"candidate_index": i, "candidate_data": {"input_size": 4, "activation_name": "sigmoid"}, "training_params": {"epochs": 1, "learning_rate": 0.01}} for i in range(count)]
+        tensors = {"candidate_input": np.zeros((4, 4), dtype=np.float32), "y": np.zeros((4, 1), dtype=np.float32), "residual_error": np.zeros((4, 1), dtype=np.float32)}
+        coord.submit_tasks("round-busy", specs, tensors)
+
+    def test_busy_worker_gets_no_second_task(self, _coord_module):
+        """A second get_next_assignment for a still-busy worker returns None and leaves the queue intact."""
+        coordinator_module, _ = _coord_module
+        registry, coord = self._make_coord(coordinator_module)
+        try:
+            registry.register("w-busy", {})
+            self._submit_tasks(coord, count=3)
+
+            first = coord.get_next_assignment("w-busy")
+            assert first is not None
+
+            second = coord.get_next_assignment("w-busy")  # worker never completed the first task
+            assert second is None, "a busy worker was handed a second task (registry refusal ignored — the orphan source)"
+
+            # Exactly one coordinator-level assignment, matching the registry's single active slot.
+            assigned = [(tid, t.assigned_worker_id) for tid, t in coord._pending_tasks.items() if t.assigned_worker_id is not None]
+            assert len(assigned) == 1
+            assert assigned[0][1] == "w-busy"
+            assert registry.get("w-busy").active_task_id == assigned[0][0]
+
+            # The refused pop went back to the FRONT of the queue (order preserved).
+            assert len(coord._unassigned_tasks) == 2
+        finally:
+            coord.shutdown()
+
+    def test_unregistered_worker_refusal_leaves_queue_intact(self, _coord_module):
+        """The CONC-10 registry check refuses an unknown worker without consuming a task."""
+        coordinator_module, _ = _coord_module
+        registry, coord = self._make_coord(coordinator_module)
+        try:
+            self._submit_tasks(coord, count=2)
+
+            assert coord.get_next_assignment("w-ghost") is None
+            assert len(coord._unassigned_tasks) == 2
+            assert all(t.assigned_worker_id is None for t in coord._pending_tasks.values())
+        finally:
+            coord.shutdown()
+
+    def test_worker_completing_task_can_take_the_next(self, _coord_module):
+        """Completion clears the registry slot, so the next get_next_assignment assigns again (healthy flow preserved)."""
+        coordinator_module, _ = _coord_module
+        registry, coord = self._make_coord(coordinator_module)
+        try:
+            registry.register("w-flow", {})
+            self._submit_tasks(coord, count=2)
+
+            first = coord.get_next_assignment("w-flow")
+            assert first is not None
+            first_task_id = first[0]["task_id"]
+            registry.complete_task("w-flow", success=True)
+            coord._pending_tasks[first_task_id].completed = True
+
+            second = coord.get_next_assignment("w-flow")
+            assert second is not None, "an idle worker must receive the next task after completing one"
+            assert second[0]["task_id"] != first_task_id
+        finally:
+            coord.shutdown()

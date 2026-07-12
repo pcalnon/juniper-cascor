@@ -221,10 +221,23 @@ class WorkerCoordinator:
             if task is None:
                 return None
 
-            # Assign to worker
+            # Assign to worker — confirm with the registry FIRST. The registry
+            # enforces one active task per worker (assign_task returns False for
+            # a busy or unknown worker); the pre-fix flow ignored that refusal,
+            # marked the PendingTask assigned, and sent it anyway, so a busy
+            # worker accumulated coordinator-level assignments the registry never
+            # tracked. `_check_stale_workers` requeues only the registry's
+            # `active_task_id` on deregistration, orphaning the extras until
+            # `_task_reassignment_timeout` (the worker_stream heartbeat path
+            # already guarded this with its own `reg.idle` check — ISSUE-319).
+            # Exposed by fix C4: re-enabled coordinator/registry logging widened
+            # the assign/dereg race window the CONC-10 suite hammers.
+            if not self._registry.assign_task(worker_id, task_id):
+                self._unassigned_tasks.insert(0, task_id)
+                logger.debug("Refusing assignment of task %s to worker %s (busy or unregistered)", task_id, worker_id)
+                return None
             task.assigned_worker_id = worker_id
             task.dispatched_at = time.time()
-            self._registry.assign_task(worker_id, task_id)
 
             # Build assignment message
             tensor_manifest = {}
