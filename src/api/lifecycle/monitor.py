@@ -20,6 +20,34 @@ class TrainingState:
     """Thread-safe single source of truth for all training state.
 
     Provides atomic state updates and serialization for REST/WebSocket broadcasting.
+
+    Counter semantics (C2b, I-1c / S12 — the contract canopy's header/tiles consume;
+    see also ``docs/api/JUNIPER_CASCOR_API_REFERENCE.md`` §"Counter semantics"):
+
+    - ``current_epoch`` / ``current_step`` — completed **training steps**: entries in
+      the engine's per-pass ``history`` arrays, i.e. one initial output-training pass
+      plus one per cascade growth iteration. NOT inner output-training epochs. Single
+      writer: the manager's history drain (``_extract_and_record_metrics``); the two
+      fields are currently written in lock-step and are aliases of each other.
+    - ``max_epochs`` — the Q1 **derived** total-epoch cap implied by the granular
+      limits (``TrainingLifecycleManager.derive_epochs_cap``): ``output_epochs +
+      min(max_iterations, max_hidden_units) * (candidate_epochs + output_epochs)``.
+      A reporting/display budget (the ``Epoch: X / Y`` denominator), not an enforced
+      abort — enforcement stays with the granular limits themselves. Refreshed at
+      network create / param apply / snapshot load. Pre-C2b this was an independently
+      seeded value (default 1e11) the training loop never read.
+    - ``output_epoch`` / ``output_total_epochs`` — live within-pass progress of the
+      CURRENT output-training pass (inner epoch / pass budget, throttled to ~every
+      25th epoch by the engine callback). The output-phase sibling of the
+      ``candidate_epoch`` pair; zeroed at run start, growth-phase exit, and run end.
+    - ``candidate_epoch`` / ``candidate_total_epochs`` — live within-pass progress of
+      the current candidate-pool training pass (from the worker progress queue).
+    - ``grow_iteration`` / ``grow_max`` — cascade growth iteration counter vs its
+      ``max_iterations`` limit.
+    - ``learning_rate`` / ``max_hidden_units`` / ``max_iterations`` — projections of
+      the live network's effective values (synced by the manager's
+      ``_sync_training_state_from_network`` at create / apply / snapshot-load), NOT
+      an independent default layer.
     """
 
     _STATE_FIELDS = {
@@ -45,6 +73,8 @@ class TrainingState:
         "phase_started_at",
         "candidate_epoch",
         "candidate_total_epochs",
+        "output_epoch",
+        "output_total_epochs",
         "best_candidate_id",
         "best_candidate_uuid",
         "second_candidate_id",
@@ -57,9 +87,13 @@ class TrainingState:
         self._status: str = "Stopped"
         self._phase: str = "Idle"
         self._learning_rate: float = 0.0
+        # C2b: pre-network defaults are 0 ("no network / unknown") — the old
+        # literals (200 / 1000) were a third default layer that reported
+        # limits no network was actually configured with. The manager's
+        # _sync_training_state_from_network overwrites these at create time.
         self._max_hidden_units: int = 0
-        self._max_epochs: int = 200
-        self._max_iterations: int = 1000
+        self._max_epochs: int = 0
+        self._max_iterations: int = 0
         self._current_epoch: int = 0
         self._current_step: int = 0
         self._network_name: str = ""
@@ -76,6 +110,8 @@ class TrainingState:
         self._phase_started_at: str = ""
         self._candidate_epoch: int = 0
         self._candidate_total_epochs: int = 0
+        self._output_epoch: int = 0
+        self._output_total_epochs: int = 0
         self._best_candidate_id: int = -1
         self._best_candidate_uuid: str = ""
         self._second_candidate_id: Optional[int] = None
@@ -108,6 +144,8 @@ class TrainingState:
                 "phase_started_at": self._phase_started_at,
                 "candidate_epoch": self._candidate_epoch,
                 "candidate_total_epochs": self._candidate_total_epochs,
+                "output_epoch": self._output_epoch,
+                "output_total_epochs": self._output_total_epochs,
                 "best_candidate_id": self._best_candidate_id,
                 "best_candidate_uuid": self._best_candidate_uuid,
                 "second_candidate_id": self._second_candidate_id,
