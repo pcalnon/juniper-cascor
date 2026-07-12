@@ -162,6 +162,13 @@ async def update_training_params(request: Request, body: TrainingParamUpdateRequ
 
     Modifies parameters on the running network without requiring a restart.
     All fields are optional — only provided fields are updated (PATCH semantics).
+
+    C2a (I-4 / T3): the success ``data`` accounts for every requested key — the
+    full params echo plus additive ``applied: [key, ...]`` and
+    ``skipped: [{"key", "reason"}, ...]`` fields, so a whitelisted key the live
+    network object lacks is reported (``no-such-attribute``) instead of being
+    silently dropped. Bound violations remain atomic 422 rejections at
+    request-model validation (no partial apply).
     """
     lifecycle = _get_lifecycle(request)
     if not lifecycle.has_model():

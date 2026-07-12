@@ -439,6 +439,75 @@ class TestUpdateTrainingParams:
 
 
 @pytest.mark.unit
+class TestAppliedSkippedReporting:
+    """C2a (I-4 / T3): PATCH /v1/training/params accounts for EVERY requested key.
+
+    The success ``data`` carries the full params echo plus additive
+    ``applied: [key, ...]`` and ``skipped: [{"key", "reason"}, ...]`` fields.
+    Before C2a, ``_apply_params_unlocked`` silently dropped whitelisted keys
+    failing ``hasattr(self.network, k)`` while returning 200 — the latent
+    generator behind canopy's applied-yet-error verification divergence
+    (training-runtime-defects plan §4 I-4).
+    """
+
+    def test_all_valid_keys_reported_applied(self, test_client_with_network):
+        """Every valid requested key lands in ``applied``; ``skipped`` is empty; the full params echo is intact."""
+        response = test_client_with_network.patch(
+            "/v1/training/params",
+            json={"learning_rate": 0.004, "patience": 12},
+        )
+        assert response.status_code == 200
+        data = response.json()["data"]
+        assert set(data["applied"]) == {"learning_rate", "patience"}
+        assert data["skipped"] == []
+        # The pre-C2a params echo is unchanged (additive contract): the PATCHed
+        # values round-trip and untouched surface keys are still present.
+        assert data["learning_rate"] == pytest.approx(0.004)
+        assert data["patience"] == 12
+        assert "epochs_max" in data
+        assert "optimizer_type" in data
+
+    def test_whitelisted_but_absent_attribute_reported_skipped(self, test_client_with_network):
+        """A whitelisted key the live network object lacks is reported as
+        ``skipped(no-such-attribute)`` while the rest of the PATCH applies with
+        200 semantics — the exact silent-drop case C2a kills."""
+        lifecycle = test_client_with_network.app.state.lifecycle
+        delattr(lifecycle.network, "multi_candidate")
+        response = test_client_with_network.patch(
+            "/v1/training/params",
+            json={"multi_candidate": True, "learning_rate": 0.006},
+        )
+        assert response.status_code == 200
+        data = response.json()["data"]
+        assert data["applied"] == ["learning_rate"]
+        assert data["skipped"] == [{"key": "multi_candidate", "reason": "no-such-attribute"}]
+        assert lifecycle.network.learning_rate == pytest.approx(0.006)
+        # The absent attribute was never materialized by the PATCH.
+        assert not hasattr(lifecycle.network, "multi_candidate")
+
+    def test_empty_body_reports_empty_applied_and_skipped(self, test_client_with_network):
+        """PATCH {} — nothing requested, nothing applied, nothing skipped."""
+        response = test_client_with_network.patch("/v1/training/params", json={})
+        assert response.status_code == 200
+        data = response.json()["data"]
+        assert data["applied"] == []
+        assert data["skipped"] == []
+
+    def test_bound_violation_remains_atomic_422(self, test_client_with_network):
+        """A single out-of-bound key still rejects the WHOLE body at request-model
+        validation (deliberate — C2a adds reporting, not partial apply): the
+        in-range sibling key must NOT land."""
+        lifecycle = test_client_with_network.app.state.lifecycle
+        before = lifecycle.network.learning_rate
+        response = test_client_with_network.patch(
+            "/v1/training/params",
+            json={"learning_rate": 0.008, "epochs_max": 1_000_001},  # epochs_max le=1_000_000
+        )
+        assert response.status_code == 422
+        assert lifecycle.network.learning_rate == pytest.approx(before)
+
+
+@pytest.mark.unit
 class TestAutoSnapBestCallback:
     """Functional tests for the CAS-006 epoch_end callback.
 

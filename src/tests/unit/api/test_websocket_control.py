@@ -138,6 +138,30 @@ class TestControlStreamHandler:
         assert lifecycle.network.learning_rate == pytest.approx(0.007)
         assert lifecycle.network.max_iterations == 23
 
+    def test_set_params_ack_result_carries_applied_skipped(self, client_with_network):
+        """C2a (I-4 / T3): the WS ``set_params`` success ack's ``result`` carries
+        the additive ``applied``/``skipped`` per-key reporting fields (the same
+        dict the REST PATCH returns) without changing the ack schema."""
+        with client_with_network.websocket_connect("/ws/control") as ws:
+            ws.receive_json()  # connection_established
+            ws.send_text(
+                json.dumps(
+                    {
+                        "command": "set_params",
+                        "params": {"learning_rate": 0.009},
+                    }
+                )
+            )
+            response = ws.receive_json()
+            assert response["type"] == "command_response"
+            assert response["data"]["command"] == "set_params"
+            assert response["data"]["status"] == "success"
+            result = response["data"]["result"]
+            assert result["applied"] == ["learning_rate"]
+            assert result["skipped"] == []
+            # The params echo rides alongside the report, unchanged.
+            assert result["learning_rate"] == pytest.approx(0.009)
+
     def test_set_params_without_params_dict_errors(self, client_with_network):
         """set_params without a 'params' dict returns error."""
         with client_with_network.websocket_connect("/ws/control") as ws:

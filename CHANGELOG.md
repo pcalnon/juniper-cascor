@@ -15,6 +15,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **C2a (I-4 / T3) — parameter apply reports `applied`/`skipped` per key; the silent `hasattr` drop is gone.**
+  `_apply_params_unlocked` (`src/api/lifecycle/manager.py`) silently dropped requested keys that failed `hasattr(self.network, k)` — and non-whitelisted keys — while returning 200 with the full params echo,
+  the latent generator behind canopy's applied-yet-error verification divergence (juniper-ml [`notes/JUNIPER_2026-07-11_JUNIPER-CANOPY_TRAINING-RUNTIME-DEFECTS-PLAN.md`](https://github.com/pcalnon/juniper-ml/blob/main/notes/JUNIPER_2026-07-11_JUNIPER-CANOPY_TRAINING-RUNTIME-DEFECTS-PLAN.md) §4 I-4 / §7 C2a).
+  The success response now accounts for EVERY requested key with two additive fields alongside the unchanged params echo: `applied: [key, ...]` (keys that landed, in application order) and `skipped: [{"key", "reason"}, ...]`
+  with reasons `not-updatable` (outside the whitelist), `no-such-attribute` (whitelisted but absent on the live network object — the silent-drop case), and `null-value` (None nested/lifecycle value from an internal caller; the REST/WS boundaries strip None via `exclude_none=True`).
+  Carried additively through `PATCH /v1/training/params` (`data`) and the WS `set_params` ack (`result`) — no schema change; existing consumers (canopy adapter, cascor-client pass-through) are unaffected, and `FakeCascorClient` parity lands in roadmap unit CL2.
+  Pydantic request-model validation is untouched: a bound violation still rejects the whole body 422 atomically (deliberate — reporting, not partial apply), and the GAP-WS-28 atomic-rollback contract is unchanged.
+  Tests: `TestAppliedSkippedReporting` (`src/tests/unit/api/test_api_runtime_params.py`), `TestUpdateParamsAtomicity` additions (`src/tests/unit/api/test_lifecycle_manager.py`), `test_set_params_ack_result_carries_applied_skipped` (`src/tests/unit/api/test_websocket_control.py`).
+
 - **Docker image default now stays compatible with the SEC-F22 bind guard.** The runtime image no longer bakes in `JUNIPER_CASCOR_HOST=0.0.0.0` without a bind attestation (`JUNIPER_CASCOR_LOOPBACK_PUBLISH_ATTESTED=true`), which would make a bare image crash-loop at lifespan startup. Published-container examples now show the explicit loopback host-publish plus attestation opt-in.
 
 - **SEC-F22 bind guard now covers the documented uvicorn factory bind path.** `uvicorn api.app:create_app --factory --host 0.0.0.0` passes the public bind host to uvicorn rather than `Settings.host`; the app factory now mirrors those CLI bind args into the transient settings copy before lifespan startup so the guard cannot be bypassed by that documented production command.

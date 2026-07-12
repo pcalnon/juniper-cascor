@@ -662,13 +662,51 @@ class TestUpdateParamsAtomicity:
         assert net.correlation_threshold == pytest.approx(0.2)
         assert net.patience == 10
 
-    def test_unrecognized_keys_silently_skipped(self):
-        """Unknown keys don't raise and don't change state."""
+    def test_unrecognized_keys_skipped_and_reported(self):
+        """Unknown keys don't raise and don't change state — and since C2a (I-4)
+        they are reported as ``skipped(not-updatable)`` instead of vanishing."""
         net = self._FakeNetwork()
         mgr = self._mgr_with_network(net)
         before = net.learning_rate
-        mgr.update_params({"this_is_not_a_real_key": 99, "learning_rate": before + 0.1})
+        result = mgr.update_params({"this_is_not_a_real_key": 99, "learning_rate": before + 0.1})
         assert net.learning_rate == pytest.approx(before + 0.1)
+        assert {"key": "this_is_not_a_real_key", "reason": "not-updatable"} in result["skipped"]
+        assert "learning_rate" in result["applied"]
+
+    def test_whitelisted_but_absent_attribute_reported_not_dropped(self):
+        """C2a (I-4): a whitelisted key the network object lacks used to be
+        silently dropped by the ``hasattr`` filter in ``_apply_params_unlocked``
+        while the call returned success — the response now accounts for it as
+        ``skipped(no-such-attribute)`` and never materializes the attribute."""
+        net = self._FakeNetwork()  # deliberately has no ``output_epochs`` attribute
+        assert not hasattr(net, "output_epochs")
+        mgr = self._mgr_with_network(net)
+        result = mgr.update_params({"output_epochs": 250, "learning_rate": 0.004})
+        assert result["applied"] == ["learning_rate"]
+        assert result["skipped"] == [{"key": "output_epochs", "reason": "no-such-attribute"}]
+        assert net.learning_rate == pytest.approx(0.004)
+        assert not hasattr(net, "output_epochs")
+
+    def test_null_nested_value_reported_skipped(self):
+        """Internal callers may pass raw dicts (the REST/WS boundaries strip None
+        via ``exclude_none=True``): a None nested-setter value is not applied and
+        is reported as ``skipped(null-value)``."""
+        net = self._FakeNetwork()
+        mgr = self._mgr_with_network(net)
+        result = mgr.update_params({"optimizer_type": None})
+        assert result["applied"] == []
+        assert result["skipped"] == [{"key": "optimizer_type", "reason": "null-value"}]
+
+    def test_report_partitions_every_requested_key(self):
+        """C2a contract: ``applied`` and ``skipped`` exactly partition the
+        requested key set — no silent drops, no double counting."""
+        net = self._FakeNetwork()
+        mgr = self._mgr_with_network(net)
+        requested = {"learning_rate": 0.005, "patience": 7, "output_epochs": 9, "bogus": 1}
+        result = mgr.update_params(requested)
+        skipped_keys = {row["key"] for row in result["skipped"]}
+        assert set(result["applied"]) | skipped_keys == set(requested)
+        assert set(result["applied"]).isdisjoint(skipped_keys)
 
     def test_setter_failure_rolls_back_earlier_keys(self):
         """If patience setter raises, learning_rate and correlation_threshold
