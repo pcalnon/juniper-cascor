@@ -91,9 +91,9 @@ class TestLifecycleManagerNetwork:
         mgr.create_network(input_size=2, output_size=2)
         state = mgr.training_state.get_state()
         info = mgr.get_network_info()
-        assert state["max_hidden_units"] == info["max_hidden_units"] == getattr(mgr.network, "max_hidden_units")
-        assert state["learning_rate"] == info["learning_rate"] == getattr(mgr.network, "learning_rate")
-        assert state["max_iterations"] == getattr(mgr.network, "max_iterations")
+        assert state["max_hidden_units"] == info["max_hidden_units"] == mgr.network.max_hidden_units
+        assert state["learning_rate"] == info["learning_rate"] == mgr.network.learning_rate
+        assert state["max_iterations"] == mgr.network.max_iterations
         assert state["max_epochs"] == mgr.derive_epochs_cap(mgr.network)
 
     def test_get_training_params_no_network(self):

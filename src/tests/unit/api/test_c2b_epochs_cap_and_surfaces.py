@@ -19,6 +19,7 @@ Training-runtime-defects plan (juniper-ml
 
 import pytest
 from fastapi.testclient import TestClient
+from pydantic import ValidationError
 
 from api.app import create_app
 from api.lifecycle.manager import TrainingLifecycleManager
@@ -47,6 +48,8 @@ def test_client_with_network(test_client):
 
 class _StubNetwork:
     """Minimal attribute bag for derive_epochs_cap unit tests."""
+
+    __slots__ = ("output_epochs", "candidate_epochs", "max_iterations", "max_hidden_units")
 
     def __init__(self, output_epochs=0, candidate_epochs=0, max_iterations=0, max_hidden_units=0):
         self.output_epochs = output_epochs
@@ -183,13 +186,13 @@ class TestStartVsPatchValidationCoherence:
         """``TrainingParams.max_epochs`` (the initial output-pass budget forwarded to fit)
         now carries the same 1e6 ceiling as ``output_epochs`` — the start path can no
         longer smuggle an unbounded budget past the PATCH-surface ceilings."""
-        with pytest.raises(Exception):
+        with pytest.raises(ValidationError):
             TrainingParams(max_epochs=1_000_001)
         assert TrainingParams(max_epochs=1_000_000).max_epochs == 1_000_000
 
     def test_start_shorthand_epochs_ceiling(self):
         """``TrainingStartRequest.epochs`` (shorthand for params.max_epochs) carries the same ceiling."""
-        with pytest.raises(Exception):
+        with pytest.raises(ValidationError):
             TrainingStartRequest(epochs=1_000_001)
         assert TrainingStartRequest(epochs=1_000_000).epochs == 1_000_000
 

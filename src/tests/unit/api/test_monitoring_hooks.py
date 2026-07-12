@@ -201,7 +201,12 @@ class TestHandleEvent:
     TrainingMonitor + TrainingState the read routes serialize."""
 
     def test_epoch_end_updates_state_and_records_metrics(self):
-        """epoch_end records the output-epoch on the monitor and updates the live state."""
+        """epoch_end records the within-pass output-epoch on the monitor and updates the live state.
+
+        C2b (I-1c): the inner output-epoch no longer writes ``current_epoch`` (that
+        field is the training-step counter, owned by the history drain) — it lands
+        in the dedicated ``output_epoch`` / ``output_total_epochs`` pair, and the
+        buffered row is tagged ``kind="output_epoch"``."""
         mgr = TrainingLifecycleManager()
         mgr.create_network(input_size=2, output_size=2)
         mgr._step_timer_prev = None
@@ -209,10 +214,13 @@ class TestHandleEvent:
         mgr._handle_event(_event("epoch_end", {"epoch": 3, "metrics": {"loss": 0.123}, "epochs": 10}))
 
         state = mgr.training_state.get_state()
-        assert state["current_epoch"] == 3
+        assert state["output_epoch"] == 3
+        assert state["output_total_epochs"] == 10
+        assert state["current_epoch"] == 0, "inner output-epoch must not clobber the training-step counter"
         assert state["phase_detail"] == "training_output"
         metrics = mgr.monitor.get_recent_metrics(1)
         assert metrics[0]["epoch"] == 3
+        assert metrics[0]["kind"] == "output_epoch"
         assert metrics[0]["loss"] == 0.123
         assert metrics[0]["accuracy"] is None
 
