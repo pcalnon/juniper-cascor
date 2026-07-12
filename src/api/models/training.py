@@ -43,7 +43,12 @@ class TrainingParams(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    max_epochs: Optional[int] = Field(None, ge=1, description="Max epochs override")
+    # C2b (I-4): ``max_epochs`` is forwarded to ``fit()`` as the INITIAL
+    # output-training pass budget (CCN resolves a missing value from
+    # ``self.output_epochs``) — it is not the retired global cap. The ceiling
+    # matches ``output_epochs``' so the start path cannot smuggle a budget the
+    # PATCH surface would reject (start-vs-PATCH validation coherence).
+    max_epochs: Optional[int] = Field(None, ge=1, le=1_000_000, description="Initial output-training pass epoch budget override (forwarded to fit; defaults to output_epochs)")
     max_iterations: Optional[int] = Field(None, ge=1, description="Maximum cascade growth iterations")
     early_stopping: Optional[bool] = Field(None, description="Whether early stopping is enabled")
     learning_rate: Optional[float] = Field(None, gt=0, le=10.0, description="Output layer learning rate")
@@ -51,17 +56,26 @@ class TrainingParams(BaseModel):
     correlation_threshold: Optional[float] = Field(None, gt=0, le=1.0, description="Minimum correlation to accept candidate")
     candidate_pool_size: Optional[int] = Field(None, ge=1, le=256, description="Number of candidate units per round")
     max_hidden_units: Optional[int] = Field(None, ge=1, le=10_000, description="Maximum hidden units")
-    epochs_max: Optional[int] = Field(None, ge=1, le=1_000_000, description="Global maximum training epochs")
+    # C2b / Q1 outcome (c): ``epochs_max`` is DEPRECATED as an input — the value is
+    # now derived per run from the granular limits (output_epochs, candidate_epochs,
+    # max_iterations, max_hidden_units; see TrainingLifecycleManager.derive_epochs_cap)
+    # and echoed read-only by GET /v1/training/params. The field is retained (floor
+    # only, ceiling dropped) so clients that echo the derived value back — e.g. a
+    # pre-N5 canopy full-form apply seeded from the GET — are not wholesale-rejected
+    # 422; the lifecycle reports every submitted value as skipped(not-updatable)
+    # via the C2a applied/skipped accounting instead of applying it.
+    epochs_max: Optional[int] = Field(None, ge=1, description="DEPRECATED (C2b/Q1): derived read-only; submitted values are accepted but reported skipped(not-updatable), never applied")
     patience: Optional[int] = Field(None, ge=1, le=100_000, description="Early stopping patience epochs")
     convergence_threshold: Optional[float] = Field(None, gt=0, description="Minimum loss improvement to reset patience counter")
     candidate_convergence_threshold: Optional[float] = Field(None, gt=0, description="Minimum loss improvement for candidate training patience")
     candidate_patience: Optional[int] = Field(None, ge=1, le=100_000, description="Candidate training patience epochs")
     candidate_epochs: Optional[int] = Field(None, ge=1, le=1_000_000, description="Number of epochs for candidate training")
-    # CAS-002 (Phase 6E Sprint A-1): per-output-training-phase epoch budget,
-    # distinct from the global ``epochs_max``. The network already exposes
-    # ``self.output_epochs`` and consumes ``self.config.output_epochs`` at
-    # construction; this surfaces it on the start-of-training override surface.
-    output_epochs: Optional[int] = Field(None, ge=1, le=1_000_000, description="Per-output-training-phase epoch budget (separate from epochs_max)")
+    # CAS-002 (Phase 6E Sprint A-1): per-output-training-phase epoch budget —
+    # one of the granular limits the C2b derived ``epochs_max`` is computed
+    # from. The network already exposes ``self.output_epochs`` and consumes
+    # ``self.config.output_epochs`` at construction; this surfaces it on the
+    # start-of-training override surface.
+    output_epochs: Optional[int] = Field(None, ge=1, le=1_000_000, description="Per-output-training-phase epoch budget (a granular limit feeding the derived epochs_max)")
     init_output_weights: Optional[Literal["zero", "random"]] = Field(None, description="Initialization mode for new hidden unit output weights")
     # CAN-010 / ENH-006 (Phase 6E Sprint A-2): output-layer optimizer override.
     # Honored at the next output-training pass — the network's
@@ -133,7 +147,10 @@ class TrainingParams(BaseModel):
 class TrainingStartRequest(BaseModel):
     """Request to start training."""
 
-    epochs: Optional[int] = Field(None, ge=1, description="Max epochs override")
+    # C2b: shorthand for ``params.max_epochs`` (the route maps it to the fit
+    # ``max_epochs`` kwarg — the initial output-training pass budget). Ceiling
+    # mirrors TrainingParams.max_epochs so the shorthand cannot bypass it.
+    epochs: Optional[int] = Field(None, ge=1, le=1_000_000, description="Initial output-training pass epoch budget override (shorthand for params.max_epochs)")
     dataset: Optional[DatasetSource] = Field(None, description="Dataset source specification")
     inline_data: Optional[InlineDataset] = Field(None, description="Inline dataset")
     params: Optional[TrainingParams] = Field(None, description="Training params (learning_rate, patience, etc.)")
@@ -215,7 +232,10 @@ class TrainingParamUpdateRequest(BaseModel):
     correlation_threshold: Optional[float] = Field(None, gt=0, le=1.0, description="Minimum correlation to accept candidate")
     candidate_pool_size: Optional[int] = Field(None, ge=1, le=256, description="Number of candidate units per round")
     max_hidden_units: Optional[int] = Field(None, ge=1, le=10_000, description="Maximum hidden units (takes effect on next cascade)")
-    epochs_max: Optional[int] = Field(None, ge=1, le=1_000_000, description="Global maximum training epochs")
+    # C2b / Q1 outcome (c): mirrors TrainingParams.epochs_max — deprecated input,
+    # retained floor-only so echo-back clients are not 422-rejected; the lifecycle
+    # skip-reports it (see the TrainingParams field comment for the full rationale).
+    epochs_max: Optional[int] = Field(None, ge=1, description="DEPRECATED (C2b/Q1): derived read-only; submitted values are accepted but reported skipped(not-updatable), never applied")
     max_iterations: Optional[int] = Field(None, ge=1, description="Maximum cascade growth iterations")
     patience: Optional[int] = Field(None, ge=1, le=100_000, description="Early stopping patience epochs")
     convergence_threshold: Optional[float] = Field(None, gt=0, description="Minimum loss improvement to reset patience counter")
@@ -223,7 +243,7 @@ class TrainingParamUpdateRequest(BaseModel):
     candidate_patience: Optional[int] = Field(None, ge=1, le=100_000, description="Candidate training early stopping patience epochs")
     candidate_epochs: Optional[int] = Field(None, ge=1, le=1_000_000, description="Number of epochs for candidate training")
     # CAS-002 (Phase 6E Sprint A-1): runtime-patchable counterpart to TrainingParams.output_epochs.
-    output_epochs: Optional[int] = Field(None, ge=1, le=1_000_000, description="Per-output-training-phase epoch budget (separate from epochs_max)")
+    output_epochs: Optional[int] = Field(None, ge=1, le=1_000_000, description="Per-output-training-phase epoch budget (a granular limit feeding the derived epochs_max)")
     init_output_weights: Optional[Literal["zero", "random"]] = Field(None, description="Initialization mode for new hidden unit output weights")
     # CAN-010 / ENH-006 (A-2): runtime-patchable counterpart.
     optimizer_type: Optional[
