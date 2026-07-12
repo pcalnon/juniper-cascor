@@ -252,7 +252,28 @@ class TrainingMonitor:
         hidden_units: int = 0,
         validation_loss: Optional[float] = None,
         validation_accuracy: Optional[float] = None,
+        kind: str = "training_step",
     ) -> None:
+        """Record one metrics row and (for training-step rows) advance ``current_epoch``.
+
+        C2b counter semantics (I-1c): two producers feed this method with two
+        DIFFERENT epoch numberings, so every buffered row now carries an explicit
+        ``kind`` discriminator instead of leaving ``epoch`` ambiguous:
+
+        - ``kind="training_step"`` (default; emitted by the manager's history drain)
+          — ``epoch`` is the 1-based **training-step** index: the row corresponds to
+          a completed output-training pass in the engine's ``history`` arrays (one
+          initial pass + one per growth iteration). Only these rows advance
+          ``current_epoch``, so ``get_current_state()["current_epoch"]`` always
+          means "completed training steps" — consistent with
+          ``get_metrics()["epoch"]`` and the history length.
+        - ``kind="output_epoch"`` (emitted live from the engine's throttled
+          output-training callback via the manager's ``epoch_end`` event handler) —
+          ``epoch`` is the 1-based **inner epoch within the current output-training
+          pass** (up to ``output_epochs``, sampled ~every 25th epoch). These rows
+          give within-pass chart liveness; they do NOT advance ``current_epoch``
+          (pre-C2b they did, making the field flip-flop between e.g. 10000 and 12).
+        """
         metrics = {
             "epoch": epoch,
             "timestamp": datetime.now().isoformat(),
@@ -263,10 +284,14 @@ class TrainingMonitor:
             "phase": self.current_phase,
             "validation_loss": validation_loss,
             "validation_accuracy": validation_accuracy,
+            # C2b: row discriminator — see the docstring. Additive; consumers
+            # that predate it can ignore the key.
+            "kind": kind,
         }
 
         with self._lock:
-            self.current_epoch = epoch
+            if kind == "training_step":
+                self.current_epoch = epoch
             # Track the live hidden-unit count from the per-epoch metric stream.
             # The caller passes ``hidden_units=len(network.hidden_units)``
             # (manager.py output-training callback). ``current_hidden_units``
@@ -306,6 +331,17 @@ class TrainingMonitor:
             return list(self.metrics_buffer)
 
     def get_current_state(self) -> Dict[str, Any]:
+        """Monitor-level counters for the ``/v1/training/status`` ``monitor`` block.
+
+        C2b counter semantics: ``current_epoch`` counts completed **training steps**
+        (see :meth:`on_epoch_end` — only ``kind="training_step"`` rows advance it),
+        so e.g. ``current_epoch: 20`` after 14 hidden units means 20 completed
+        output-training passes (1 initial + one per growth iteration + resumed-run
+        carry-over), not 20 inner epochs. ``total_metrics`` is the buffered ROW
+        count across BOTH row kinds (steps + throttled within-pass samples), so it
+        is not comparable to ``current_epoch``. ``current_hidden_units`` is the
+        installed cascade unit count as of the latest metrics row.
+        """
         with self._lock:
             return {
                 "is_training": self.is_training,
