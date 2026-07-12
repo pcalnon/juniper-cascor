@@ -333,9 +333,36 @@ class TestWsHeartbeatToleranceC3:
     def test_heartbeat_interval_zero_disables_pings_on_control(self):
         """``ws_heartbeat_interval_sec=0`` disables the heartbeat entirely.
 
-        With the heartbeat off and a 2s idle timeout, the connection is
-        closed by the idle timeout (code 1000) and no ping frame is ever
-        sent — the operator escape hatch for legacy clients.
+        The client idles past two would-be ping intervals, then sends a
+        command; the FIRST frame received back must be the command_response.
+        Had the heartbeat been running (1s interval), two pings would have
+        been queued ahead of it — the operator escape hatch for legacy
+        clients that cannot answer pings.
+        """
+        settings = Settings(
+            auto_start=False,
+            ws_heartbeat_interval_sec=0,
+            ws_heartbeat_pong_timeout_sec=1,
+            ws_control_idle_timeout_sec=10,
+        )
+        app = create_app(settings)
+        with TestClient(app) as tc:
+            with tc.websocket_connect("/ws/control") as ws:
+                first = ws.receive_json()
+                assert first["type"] == "connection_established"
+
+                time.sleep(2.5)  # two would-be 1s ping intervals pass silently
+                ws.send_text(json.dumps({"command": "stop"}))
+                frame = ws.receive_json()
+                assert frame["type"] == "command_response", f"expected command_response first (no queued pings), got {frame}"
+
+    def test_idle_timeout_applies_with_heartbeat_disabled(self):
+        """With the heartbeat off, the bidirectional idle timeout still reaps.
+
+        Also regression-guards the C3 idle-timeout sourcing fix: the handler
+        previously read ``ws_control_idle_timeout_sec`` only from the
+        lru-cached ``get_settings()``, so per-app Settings never reached it
+        (this close would have taken 120s, not 2s).
         """
         settings = Settings(
             auto_start=False,
@@ -344,16 +371,18 @@ class TestWsHeartbeatToleranceC3:
             ws_control_idle_timeout_sec=2,
         )
         app = create_app(settings)
-        frames = []
         with TestClient(app) as tc:
             with pytest.raises(WebSocketDisconnect) as exc_info:
                 with tc.websocket_connect("/ws/control") as ws:
-                    ws.receive_json()  # connection_established
-                    # Nothing else should arrive until the idle-timeout close.
-                    while True:
-                        frames.append(ws.receive_json())
+                    first = ws.receive_json()
+                    assert first["type"] == "connection_established"
+                    # Next frame must be the idle-timeout close, never a ping
+                    # (pytest-timeout bounds this receive if the sourcing fix
+                    # regresses to the 120s global default).
+                    frame = ws.receive_json()
+                    raise AssertionError(f"expected idle-timeout close, got frame: {frame}")
         assert exc_info.value.code == 1000
-        assert all(f.get("type") != "ping" for f in frames), f"unexpected ping despite disabled heartbeat: {frames}"
+        assert "Idle timeout" in (exc_info.value.reason or "")
 
     def test_heartbeat_interval_zero_disables_pings_on_training(self):
         """/ws/training with the heartbeat disabled sends no pings and stays open.

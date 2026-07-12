@@ -406,12 +406,18 @@ async def _run_control_session(websocket: WebSocket, settings, ws_manager, clien
         refill_rate=float(settings.ws_control_rate_limit_per_sec),
     )
 
-    idle_timeout = settings.ws_control_idle_timeout_sec
-
     # Phase F: heartbeat settings from app.state.settings (testable)
     app_settings = getattr(websocket.app.state, "settings", None)
     hb_interval = getattr(app_settings, "ws_heartbeat_interval_sec", 30) if app_settings else 30
     hb_timeout = getattr(app_settings, "ws_heartbeat_pong_timeout_sec", 10) if app_settings else 10
+    # C3: source the idle timeout from app.state.settings too (falling back to
+    # the process-global settings). It previously read only the lru-cached
+    # ``get_settings()``, so per-app Settings (create_app(settings) in tests)
+    # silently never reached it — the heartbeat knobs and the idle knob now
+    # honor the same configuration surface.
+    idle_timeout = getattr(app_settings, "ws_control_idle_timeout_sec", None) if app_settings else None
+    if idle_timeout is None:
+        idle_timeout = settings.ws_control_idle_timeout_sec
 
     pong_received = asyncio.Event()
     pong_received.set()  # No outstanding ping at start
