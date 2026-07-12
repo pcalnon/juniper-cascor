@@ -10,7 +10,6 @@ from cascor_constants.constants_api import (
     _PROJECT_API_NETWORK_CANDIDATE_LEARNING_RATE_DEFAULT,
     _PROJECT_API_NETWORK_CANDIDATE_POOL_SIZE_DEFAULT,
     _PROJECT_API_NETWORK_CORRELATION_THRESHOLD_DEFAULT,
-    _PROJECT_API_NETWORK_EPOCHS_MAX_DEFAULT,
     _PROJECT_API_NETWORK_INIT_OUTPUT_WEIGHTS_DEFAULT,
     _PROJECT_API_NETWORK_INPUT_SIZE_DEFAULT,
     _PROJECT_API_NETWORK_LEARNING_RATE_DEFAULT,
@@ -35,7 +34,11 @@ class NetworkCreateRequest(BaseModel):
     patience: int = Field(_PROJECT_API_NETWORK_PATIENCE_DEFAULT, ge=1)
     candidate_epochs: int = Field(_PROJECT_API_NETWORK_CANDIDATE_EPOCHS_DEFAULT, ge=1)
     output_epochs: int = Field(_PROJECT_API_NETWORK_OUTPUT_EPOCHS_DEFAULT, ge=1)
-    epochs_max: int = Field(_PROJECT_API_NETWORK_EPOCHS_MAX_DEFAULT, ge=1)
+    # C2b / Q1 outcome (c): ``epochs_max`` left the create surface — the engine
+    # never read the attribute (it gated nothing), and the value is now derived
+    # per run from the granular limits (see TrainingLifecycleManager.derive_epochs_cap).
+    # Bodies that still send the key are ignored by pydantic's default
+    # extra-handling; the schema no longer advertises it.
     max_iterations: int = Field(_PROJECT_API_NETWORK_MAX_ITERATIONS_DEFAULT, ge=1, description="Maximum cascade growth iterations")
     init_output_weights: Literal["zero", "random"] = Field(_PROJECT_API_NETWORK_INIT_OUTPUT_WEIGHTS_DEFAULT, description="Initialization mode for new hidden unit output weights")
     # CAN-010 / ENH-006 (Phase 6E Sprint A-2): output-layer optimizer.
