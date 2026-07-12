@@ -25,7 +25,7 @@ from api.lifecycle.state_machine import Command, TrainingPhase, TrainingStateMac
 from api.models.cascor_model import CascorModel
 from api.models.common import coerce_native_scalars as _common_coerce_native_scalars
 from api.observability import TRAINING_SESSION_STATUS_CANCELLED, TRAINING_SESSION_STATUS_FAILURE, TRAINING_SESSION_STATUS_SUCCESS, dec_training_sessions, inc_training_session_completed, inc_training_sessions, observe_training_step_duration, record_training_epoch, set_hidden_units, set_training_accuracy, set_training_loss
-from cascor_constants.constants_api import _PROJECT_API_DRAIN_THREAD_JOIN_TIMEOUT, _PROJECT_API_LIFECYCLE_DEFAULT_CANDIDATE_PATIENCE, _PROJECT_API_LIFECYCLE_DEFAULT_EPOCHS_MAX, _PROJECT_API_LIFECYCLE_DEFAULT_MAX_HIDDEN_UNITS, _PROJECT_API_LIFECYCLE_DEFAULT_MAX_ITERATIONS, _PROJECT_API_NETWORK_INPUT_SIZE_DEFAULT, _PROJECT_API_NETWORK_LEARNING_RATE_DEFAULT, _PROJECT_API_NETWORK_OUTPUT_SIZE_DEFAULT, _PROJECT_API_PROGRESS_QUEUE_GET_TIMEOUT, _PROJECT_API_PROGRESS_QUEUE_WAIT_TIMEOUT
+from cascor_constants.constants_api import _PROJECT_API_DRAIN_THREAD_JOIN_TIMEOUT, _PROJECT_API_LIFECYCLE_DEFAULT_CANDIDATE_PATIENCE, _PROJECT_API_NETWORK_INPUT_SIZE_DEFAULT, _PROJECT_API_NETWORK_OUTPUT_SIZE_DEFAULT, _PROJECT_API_PROGRESS_QUEUE_GET_TIMEOUT, _PROJECT_API_PROGRESS_QUEUE_WAIT_TIMEOUT
 
 
 def _read_optimizer_type(network: Any) -> str:
@@ -1886,6 +1886,13 @@ class TrainingLifecycleManager:
             # the second half of the formerly-split section.
             self._last_emitted_history_len = current_len
 
+        # C2b counter semantics: ``current_epoch`` / ``current_step`` count
+        # completed TRAINING STEPS — entries in the engine's ``history``
+        # arrays, i.e. one initial output-training pass plus one per cascade
+        # growth iteration — NOT inner output-training epochs. This drain is
+        # the single writer for both fields (the ``epoch_end`` handler exposes
+        # within-pass progress under ``output_epoch``/``output_total_epochs``
+        # instead of racing on ``current_epoch`` — see ``_handle_event``).
         self.training_state.update_state(
             current_epoch=current_len,
             current_step=current_len,
@@ -3099,6 +3106,15 @@ class TrainingLifecycleManager:
         clients reconciling UI state after a reconnect observe the live network
         values rather than falling back to stale defaults.
 
+        ``epochs_max`` is the exception (C2b / Q1): it is no longer a settable
+        parameter — the echoed value is the per-run cap DERIVED from the granular
+        limits (see :meth:`derive_epochs_cap`), so the value a client reads here can
+        never contradict the limits that actually gate training. Before C2b this
+        echoed the network's construction-time attribute (default 1e11), which
+        exceeded the PATCH model's own ceiling (le=1e6) — canopy seeded its form
+        from this echo and every full-form apply was wholesale-rejected 422
+        (training-runtime-defects plan §4 I-4 root cause 1).
+
         Numpy scalars are coerced to Python natives via ``.item()`` so the
         result round-trips through pydantic-core's JSON serializer. After a
         snapshot restore the network's scalar attributes come back from
@@ -3114,7 +3130,9 @@ class TrainingLifecycleManager:
                 "learning_rate": getattr(self.network, "learning_rate", 0.0),
                 "candidate_learning_rate": getattr(self.network, "candidate_learning_rate", 0.0),
                 "max_hidden_units": getattr(self.network, "max_hidden_units", 0),
-                "epochs_max": getattr(self.network, "epochs_max", 0),
+                # C2b / Q1 outcome (c): derived read-only cap, NOT the (dead)
+                # construction-time network attribute. See derive_epochs_cap.
+                "epochs_max": self.derive_epochs_cap(self.network),
                 "max_iterations": getattr(self.network, "max_iterations", 0),
                 "patience": getattr(self.network, "patience", 0),
                 "candidate_pool_size": getattr(self.network, "candidate_pool_size", 0),
@@ -3123,8 +3141,8 @@ class TrainingLifecycleManager:
                 "candidate_patience": getattr(self.network, "candidate_patience", _PROJECT_API_LIFECYCLE_DEFAULT_CANDIDATE_PATIENCE),
                 "candidate_convergence_threshold": getattr(self.network, "candidate_convergence_threshold", 0.001),
                 "candidate_epochs": getattr(self.network, "candidate_epochs", 0),
-                # CAS-002 (Phase 6E Sprint A-1): per-output-training-phase budget,
-                # distinct from ``epochs_max`` (the global cap).
+                # CAS-002 (Phase 6E Sprint A-1): per-output-training-phase budget
+                # (one of the granular limits the C2b derived cap is computed from).
                 "output_epochs": getattr(self.network, "output_epochs", 0),
                 "init_output_weights": getattr(self.network, "init_output_weights", "zero"),
                 # CAN-010 / ENH-006 (Phase 6E Sprint A-2): output-layer optimizer.
@@ -3156,8 +3174,12 @@ class TrainingLifecycleManager:
         Modifies the live network's attributes directly. Parameters that are
         safe to update while training is running: learning_rate,
         candidate_learning_rate, correlation_threshold, candidate_pool_size.
-        Parameters effective at next cascade/epoch: max_hidden_units, epochs_max,
-        patience.
+        Parameters effective at next cascade/epoch: max_hidden_units, patience.
+
+        ``epochs_max`` left the whitelist in C2b (Q1 outcome (c)): it is a derived
+        read-only value now — a submitted ``epochs_max`` is accepted at the request
+        boundary (so pre-N5 canopy full-form applies keep succeeding) and reported
+        as ``skipped(not-updatable)`` by the C2a accounting instead of being applied.
 
         GAP-WS-28: applies all updates atomically. If any setattr raises,
         every previously-applied key is reverted to its pre-call value
@@ -3306,7 +3328,8 @@ class TrainingLifecycleManager:
             "correlation_threshold",
             "candidate_pool_size",
             "max_hidden_units",
-            "epochs_max",
+            # "epochs_max" removed in C2b (Q1 outcome (c)): derived read-only —
+            # submitted values are reported skipped(not-updatable), never applied.
             "max_iterations",
             "patience",
             "convergence_threshold",
@@ -3424,6 +3447,14 @@ class TrainingLifecycleManager:
                     # back the rest — best-effort consistency.
                     self.logger.exception("update_params rollback: revert of %s failed", key)
             raise
+        # C2b (I-4 root / I-1c): a successful apply may have changed values the
+        # ``/v1/training/status`` projection reports (learning_rate,
+        # max_hidden_units, max_iterations — and any granular limit moves the
+        # derived ``max_epochs``). Re-project so the status surface stays
+        # coherent with the network object after every PATCH, not only at
+        # create time. Runs only on the success path (the rollback above
+        # restored the pre-call values, so the projection is already correct).
+        self._sync_training_state_from_network()
         # C2a: additive per-key reporting — the params-echo keys are unchanged;
         # ``applied``/``skipped`` ride alongside them in the same dict (the REST
         # route's ``data`` and the WS ack's ``result`` carry them through untouched).
@@ -4067,6 +4098,12 @@ class TrainingLifecycleManager:
         self.model = CascorModel(network=network)
         if self._worker_coordinator is not None and hasattr(self.network, "set_worker_coordinator"):
             self.network.set_worker_coordinator(self._worker_coordinator)
+        # C2b (I-4 root / I-1c): the loaded network's tunables (restored by
+        # ``_load_config_to_network``) may differ from whatever the projection
+        # last showed — re-project so ``/v1/training/status`` agrees with
+        # ``/v1/network`` and ``GET /v1/training/params`` after every
+        # Restore / Replay / Resume / Retrain load.
+        self._sync_training_state_from_network()
         return True
 
     def _snapshot_result(self, *, loaded: bool, snapshot_id: str, operation: str, reason: Optional[str] = None) -> Dict[str, Any]:
