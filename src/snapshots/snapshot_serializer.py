@@ -91,6 +91,7 @@ from log_config.logger.logger import Logger
 from utils.activation import ActivationWithDerivative
 
 from .snapshot_common import calculate_tensor_checksum, load_numpy_array, load_tensor, read_str_attr, read_str_dataset, save_numpy_array, save_tensor, verify_tensor_checksum, write_str_attr, write_str_dataset
+from .snapshot_errors import SnapshotSaveError
 
 
 class CascadeHDF5Serializer:
@@ -135,7 +136,14 @@ class CascadeHDF5Serializer:
             compression_opts: Compression level (0-9)
 
         Returns:
-            bool: Success status
+            bool: True on success.
+
+        Raises:
+            SnapshotSaveError: when the write fails, chaining the underlying
+                exception so callers can surface the real reason (C1 / I-3 —
+                pre-C1 every failure was swallowed into ``False`` and a failed
+                save was indistinguishable from a missing network at the API
+                route). Callers that want bool semantics catch it.
         """
         try:
             self.logger.info(f"CascadeHDF5Serializer: Saving network to {filepath}")
@@ -157,7 +165,11 @@ class CascadeHDF5Serializer:
             return True
 
         except Exception as e:
-            return self._log_exception_stacktrace("CascadeHDF5Serializer: Error saving network: ", e, False)
+            # C1 (I-3): keep the ERROR + stacktrace logging, then raise a typed
+            # error carrying the reason instead of collapsing to ``False`` — a
+            # failed save must not be indistinguishable from "no network".
+            self._log_exception_stacktrace("CascadeHDF5Serializer: Error saving network: ", e, False)
+            raise SnapshotSaveError(f"{type(e).__name__}: {e}") from e
 
     def save_object(
         self,
@@ -613,9 +625,41 @@ class CascadeHDF5Serializer:
         # Save policy flags
         mp_group.attrs["autostart"] = True  # Default to autostart on restore
 
+    @staticmethod
+    def _snapshot_history_view(network) -> Dict[str, Any]:
+        """Return a shallow, point-in-time copy of the network's history dict.
+
+        C1 (I-3 write-isolation hardening): ``save_network`` can run
+        concurrently with the training thread, which appends per-epoch
+        entries to the history lists (``cascade_correlation.py`` — no lock is
+        shared with the serializer, so no manager-side lock can exclude those
+        appends). The HDF5 writes below are slow; iterating the live lists
+        risks mid-iteration mutation. Copying the top-level dict and each
+        list value is a handful of GIL-atomic operations taken up front,
+        giving every subsequent write a stable iteration target. Per-element
+        objects (floats, unit-metadata dicts, swap events) are appended
+        fully built and at most attr-backfilled afterwards, so a shallow
+        copy is sufficient to prevent crashes; deep consistency of element
+        internals is not claimed.
+        """
+        history = getattr(network, "history", None)
+        if not history:
+            return {}
+        view: Dict[str, Any] = {}
+        for key in list(history.keys()):
+            value = history.get(key)
+            view[key] = list(value) if isinstance(value, list) else value
+        return view
+
     def _save_training_history(self, hdf5_file: h5py.File, network, compression: str, compression_opts: int) -> None:  # noqa: C901
-        """Save training history."""
-        if not hasattr(network, "history") or not network.history:
+        """Save training history.
+
+        C1 (I-3): serializes from ``_snapshot_history_view``'s point-in-time
+        copy rather than the live history dict, so a mid-training snapshot
+        cannot crash on concurrent list mutation by the training thread.
+        """
+        history = self._snapshot_history_view(network)
+        if not history:
             return
 
         history_group = hdf5_file.create_group("history")
@@ -623,21 +667,21 @@ class CascadeHDF5Serializer:
         # Save numeric arrays - use network's actual keys (value_* not val_*)
         key_mapping = {
             "train_loss": "train_loss",
-            "value_loss": "value_loss",  # Match network.history keys
+            "value_loss": "value_loss",  # Match network history keys
             "train_accuracy": "train_accuracy",
-            "value_accuracy": "value_accuracy",  # Match network.history keys
+            "value_accuracy": "value_accuracy",  # Match network history keys
         }
 
         for network_key, save_key in key_mapping.items():
-            if network_key in network.history and network.history[network_key]:
-                data = np.array(network.history[network_key])
+            if network_key in history and history[network_key]:
+                data = np.array(history[network_key])
                 save_numpy_array(history_group, save_key, data, compression, compression_opts)
 
         # Save hidden units added history (metadata-only since CR-063;
         # legacy weight/bias arrays are still handled for backward compat)
-        if "hidden_units_added" in network.history:
+        if "hidden_units_added" in history:
             units_group = history_group.create_group("hidden_units_added")
-            for i, unit_data in enumerate(network.history["hidden_units_added"]):
+            for i, unit_data in enumerate(history["hidden_units_added"]):
                 unit_group = units_group.create_group(f"unit_{i}")
                 if isinstance(unit_data, dict):
                     if "correlation" in unit_data:
@@ -678,9 +722,9 @@ class CascadeHDF5Serializer:
         # ``arch_changes`` block has variable shape (``appended_nodes`` is
         # itself a dict). Missing snapshot-ID attrs decode back to None on
         # load so the §3.9 schema is faithfully reproduced.
-        if "dataset_swaps" in network.history and network.history["dataset_swaps"]:
+        if "dataset_swaps" in history and history["dataset_swaps"]:
             swaps_group = history_group.create_group("dataset_swaps")
-            for i, swap_event in enumerate(network.history["dataset_swaps"]):
+            for i, swap_event in enumerate(history["dataset_swaps"]):
                 if not isinstance(swap_event, dict):
                     continue
                 ev_group = swaps_group.create_group(f"event_{i}")

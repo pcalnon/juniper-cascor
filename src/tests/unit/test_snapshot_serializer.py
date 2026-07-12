@@ -184,9 +184,15 @@ class TestEdgeCases:
     """Tests for edge cases and error handling."""
 
     def test_save_to_invalid_path(self, serializer, simple_network):
-        """Test saving to an invalid path returns False."""
-        result = serializer.save_network(simple_network, "/nonexistent/readonly/path.h5")
-        assert result is False
+        """Saving to an invalid path raises SnapshotSaveError (C1 / I-3).
+
+        Pre-C1 the failure was swallowed into ``False`` and a failed save was
+        indistinguishable from a missing network at the API route."""
+        from snapshots.snapshot_errors import SnapshotSaveError
+
+        with pytest.raises(SnapshotSaveError) as excinfo:
+            serializer.save_network(simple_network, "/nonexistent/readonly/path.h5")
+        assert excinfo.value.__cause__ is not None
 
     def test_load_from_invalid_path(self, serializer):
         """Test loading from invalid path returns None."""

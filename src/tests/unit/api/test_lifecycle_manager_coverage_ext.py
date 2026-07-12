@@ -290,12 +290,18 @@ class TestSnapshotSaveLoad:
     def test_save_snapshot_no_network_returns_none(self, mgr):
         assert mgr.save_snapshot() is None
 
-    def test_save_snapshot_serializer_failure_returns_none(self, mgr, tmp_path):
+    def test_save_snapshot_serializer_failure_raises(self, mgr, tmp_path):
+        """C1 (I-3): a falsy serializer result raises SnapshotSaveError instead
+        of collapsing to ``None`` — pre-C1 the API route mapped that ``None``
+        to the same 404 as a missing network."""
+        from snapshots.snapshot_errors import SnapshotSaveError
+
         mgr.create_network(input_size=2, output_size=2)
         fake_serializer = MagicMock()
         fake_serializer.save_network.return_value = False
         with patch.object(mgr, "_get_snapshots_dir", return_value=tmp_path), patch("snapshots.snapshot_serializer.CascadeHDF5Serializer", return_value=fake_serializer):
-            assert mgr.save_snapshot(description="x") is None
+            with pytest.raises(SnapshotSaveError):
+                mgr.save_snapshot(description="x")
 
     def test_load_snapshot_injects_worker_coordinator(self, mgr, tmp_path):
         (tmp_path / "snap_wc.h5").write_bytes(b"stub")

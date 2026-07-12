@@ -3851,10 +3851,18 @@ class TrainingLifecycleManager:
         slot. The no-collision path is byte-identical to the prior
         behaviour, so the ``snapshot_YYYYMMDDTHHMMSSZ`` format remains the
         common case for canopy / REST consumers that parse it.
+
+        C1 (I-3): ``None`` is returned only for the no-network case. A
+        failed write raises ``SnapshotSaveError`` carrying the serializer's
+        reason — pre-C1 both collapsed to ``None`` and the API route mapped
+        a disk/HDF5 failure to the same 404 as a missing network. The
+        failure-tolerant callers (``auto_snap_best``, the swap pre/post
+        snaps) already wrap this call in ``try/except Exception``.
         """
         if self.network is None:
             return None
 
+        from snapshots.snapshot_errors import SnapshotSaveError
         from snapshots.snapshot_serializer import CascadeHDF5Serializer
 
         serializer = CascadeHDF5Serializer()
@@ -3874,10 +3882,17 @@ class TrainingLifecycleManager:
             filepath = snapshots_dir / f"{snapshot_id}.h5"
             suffix += 1
 
-        success = serializer.save_network(self.network, filepath, include_training_state=True)
+        try:
+            success = serializer.save_network(self.network, filepath, include_training_state=True)
+        except SnapshotSaveError as exc:
+            self.logger.error(f"Failed to save snapshot to {filepath}: {exc}")
+            raise
         if not success:
+            # Defensive: ``save_network``'s contract is raise-on-failure, but a
+            # stubbed / legacy serializer returning falsy must not turn into a
+            # phantom "no network" 404 downstream (C1 / I-3).
             self.logger.error(f"Failed to save snapshot to {filepath}")
-            return None
+            raise SnapshotSaveError(f"Snapshot save to {filepath} failed (serializer returned {success!r})")
 
         self.logger.info(f"Snapshot saved: {snapshot_id}")
         return {
