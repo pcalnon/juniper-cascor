@@ -637,6 +637,23 @@ class Logger(logging.getLoggerClass()):
                         os.makedirs(self.log_file_path, exist_ok=True)
                         Logger.debug(f"Logger: __init__: Overriding handler filename to absolute path: {abs_log_file}")
                         handler_cfg["filename"] = abs_log_file
+                # Fix C4 (training-runtime defects plan 2026-07-11, §5 T5): logging.config.dictConfig defaults
+                # disable_existing_loggers to True when the key is absent from the config dict, which disabled every
+                # logger created before the engine's first logging init — uvicorn.access / uvicorn.error / uvicorn and
+                # juniper_cascor.api — the moment start_training constructed the first network inside the uvicorn
+                # process (access log permanently silent, incident 2026-07-10 18:19:56). Default it to False here so
+                # every loaded YAML is safe by default; a config may still opt in explicitly.
+                self.logger_configs.setdefault("disable_existing_loggers", False)
+                # Fix C4 (root-clobber guard): when a host application already owns the root logger (uvicorn plus
+                # api.observability.configure_logging attach root handlers at API-server startup), applying the YAML's
+                # `root:` section would strip those handlers and impose the YAML root level on the whole process. The
+                # engine's own logging is fully carried by the named `juniper` logger (dedicated handlers,
+                # propagate: False), so scope the engine config to its named loggers and leave the host's root alone.
+                # Standalone runs (main.py / spiral_problem) reach this first init with a bare root logger — the
+                # Logger classmethod path is print-based and attaches no root handlers — and still get the YAML root.
+                if logging.getLogger().handlers:
+                    Logger.debug("Logger: __init__: Root logger already has handlers (host application owns root) — skipping the YAML root section")
+                    self.logger_configs.pop("root", None)
                 Logger.debug(f"Logger: __init__: Applying dictConfig with loaded configuration: {self.logger_configs}")
                 self.config.dictConfig(self.logger_configs)  # Load the config Dict into Logging Object
                 # Logger.info(f"Logger: __init__: Successfully applied dictConfig: {self.config}")

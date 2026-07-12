@@ -311,6 +311,92 @@ class TestTransportStats:
 
 
 @pytest.mark.unit
+class TestEmissionSummary:
+    """C3 / T5: per-frame-type emission counters + periodic INFO summary.
+
+    The summary is the server-side diagnostic for "relay connected but
+    nothing flowing" — a line reading ``ping=N`` with no ``metrics``
+    entries proves the socket was writable while no training frames were
+    emitted.
+    """
+
+    def test_record_out_of_band_send_accounts_frame(self):
+        """Heartbeat pings sent outside the manager's send paths are counted."""
+        mgr = WebSocketManager()
+        mgr.record_out_of_band_send({"type": "ping"})
+        mgr.record_out_of_band_send({"type": "ping"})
+
+        stats = mgr.transport_stats()
+        assert stats["messages_sent_by_type"]["ping"] == 2
+        assert stats["bytes_sent_by_type"]["ping"] > 0
+        assert stats["messages_sent_total"] == 2
+
+    def test_summary_rate_limited_by_interval(self, caplog):
+        """With the default 60s interval, an immediate send logs no summary."""
+        import logging
+
+        mgr = WebSocketManager()
+        with caplog.at_level(logging.INFO, logger="juniper_cascor.api.websocket"):
+            mgr.record_out_of_band_send({"type": "ping"})
+        assert not any("WS emission summary" in rec.message for rec in caplog.records)
+
+    def test_forced_summary_reports_deltas_and_resets_baseline(self, caplog):
+        """force=True emits per-type deltas since the last summary, then resets."""
+        import logging
+
+        mgr = WebSocketManager()
+        mgr.record_out_of_band_send({"type": "ping"})
+        mgr.record_out_of_band_send({"type": "ping"})
+        mgr._account_send({"type": "metrics", "data": {}}, 128)
+
+        with caplog.at_level(logging.INFO, logger="juniper_cascor.api.websocket"):
+            deltas = mgr.maybe_log_emission_summary(force=True)
+        assert deltas == {"ping": 2, "metrics": 1}
+        summary_lines = [rec.message for rec in caplog.records if "WS emission summary" in rec.message]
+        assert len(summary_lines) == 1
+        assert "metrics=1" in summary_lines[0]
+        assert "ping=2" in summary_lines[0]
+
+        # Baseline reset: a second forced summary reports nothing new.
+        caplog.clear()
+        with caplog.at_level(logging.INFO, logger="juniper_cascor.api.websocket"):
+            deltas2 = mgr.maybe_log_emission_summary(force=True)
+        assert deltas2 == {}
+        assert any("no frames emitted" in rec.message for rec in caplog.records)
+
+    def test_summary_emits_automatically_after_interval(self, caplog):
+        """Once the interval elapses, the next accounted send logs the summary."""
+        import logging
+        import time as _time
+
+        mgr = WebSocketManager(emission_summary_interval_sec=0.05)
+        mgr.record_out_of_band_send({"type": "ping"})  # within interval: no summary
+        _time.sleep(0.06)
+        with caplog.at_level(logging.INFO, logger="juniper_cascor.api.websocket"):
+            mgr.record_out_of_band_send({"type": "ping"})
+        summary_lines = [rec.message for rec in caplog.records if "WS emission summary" in rec.message]
+        assert len(summary_lines) == 1
+        assert "ping=2" in summary_lines[0]
+
+    def test_summary_interval_zero_disables_unless_forced(self, caplog):
+        """<= 0 disables the periodic summary; force=True still works."""
+        import logging
+        import time as _time
+
+        mgr = WebSocketManager(emission_summary_interval_sec=0)
+        mgr.record_out_of_band_send({"type": "ping"})
+        _time.sleep(0.01)
+        with caplog.at_level(logging.INFO, logger="juniper_cascor.api.websocket"):
+            assert mgr.maybe_log_emission_summary() is None
+            mgr.record_out_of_band_send({"type": "ping"})
+        assert not any("WS emission summary" in rec.message for rec in caplog.records)
+
+        with caplog.at_level(logging.INFO, logger="juniper_cascor.api.websocket"):
+            deltas = mgr.maybe_log_emission_summary(force=True)
+        assert deltas == {"ping": 2}
+
+
+@pytest.mark.unit
 class TestSizeGuardAndChunking:
     """GAP-WS-18: oversized broadcasts split into chunked_message envelopes
     so we never push a single frame past the 64 KB intermediary limit."""

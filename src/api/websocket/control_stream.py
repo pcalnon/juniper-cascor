@@ -19,10 +19,29 @@ are dispatched to the thread pool (``asyncio.to_thread``) to avoid blocking
 the event loop, then bounded: start=10s, stop/pause/resume=2s, set_params=1s,
 reset=2s. Timeout → ``command_response{status:"error", error:"...timed out..."}``.
 
-Phase F: Application-level heartbeat. Server sends ``{"type":"ping","ts":<float>}``
-every ``ws_heartbeat_interval_sec`` (30s). Client must reply
-``{"type":"pong"}`` within ``ws_heartbeat_pong_timeout_sec`` (10s) or
-connection is closed with 1006. Pong receipt resets the idle timeout timer.
+Phase F / C3: Application-level heartbeat — the explicit contract:
+
+* The server sends ``{"type": "ping", "ts": <float>}`` every
+  ``ws_heartbeat_interval_sec`` seconds (default 30; a value <= 0 disables the
+  heartbeat entirely, the operator escape hatch for legacy clients).
+* The client SHOULD reply ``{"type": "pong"}``. As a C3 tolerance, ANY
+  well-formed inbound frame received within ``ws_heartbeat_pong_timeout_sec``
+  seconds (default 10) of a ping also counts as proof of liveness — the
+  heartbeat exists for dead-peer detection, not frame-type compliance, so an
+  actively-commanding client is never reaped mid-burst.
+* A client that sends nothing within the pong window is closed with close
+  code 1011 and reason ``"Heartbeat timeout: no pong or traffic within <N>s"``.
+  Pre-C3 this used close code 1006, which RFC 6455 §7.4.1 forbids on the wire;
+  the ``websockets`` server implementation used by uvicorn raises
+  ``ProtocolError: invalid status code`` when asked to serialize it, so the
+  close frame never reached the peer and clients were left holding a silent
+  half-open socket (the 2026-07-10 incident: canopy's control WS died 40 s
+  after connect and its supervisor never noticed for 12+ hours).
+* The heartbeat coexists with the bidirectional idle timeout
+  (``ws_control_idle_timeout_sec``, default 120 s): a fully silent client is
+  closed by whichever limit fires first, so long-lived /ws/control callers
+  MUST answer pings (or keep sending traffic). juniper-cascor-client >= 0.7.0
+  answers pings automatically (CL1); pong receipt also resets the idle timer.
 """
 
 import asyncio
@@ -236,8 +255,18 @@ async def _handle_command_message(websocket: WebSocket, lifecycle, msg: dict, bu
         logger.debug("ws_observe_command_handler emission failed", exc_info=True)
 
 
-async def _control_ping_loop(websocket: WebSocket, client_ip: str, hb_interval: float, hb_timeout: float, pong_received: asyncio.Event) -> None:
-    """Application-level ping/pong loop closing the connection on pong timeout."""
+async def _control_ping_loop(websocket: WebSocket, client_ip: str, hb_interval: float, hb_timeout: float, pong_received: asyncio.Event, ws_manager=None) -> None:
+    """Application-level ping/pong loop closing the connection on liveness timeout.
+
+    C3: the wait is satisfied by a ``pong`` OR any other well-formed inbound
+    frame (see :func:`_control_recv_loop`) — the loop detects dead peers, it
+    does not police frame types. The close uses code 1011: RFC 6455 §7.4.1
+    forbids sending 1006 on the wire, and the ``websockets`` server
+    implementation raises ``ProtocolError`` for it, so the pre-C3
+    ``close(code=1006)`` never actually delivered a close frame (the swallowed
+    failure left clients holding a half-open socket). Each ping sent is
+    recorded in the WS manager's transport counters (T5) when available.
+    """
     while True:
         await asyncio.sleep(hb_interval)
         pong_received.clear()
@@ -245,12 +274,19 @@ async def _control_ping_loop(websocket: WebSocket, client_ip: str, hb_interval: 
             await websocket.send_json({"type": "ping", "ts": time.time()})
         except Exception:
             return
+        if ws_manager is not None:
+            ws_manager.record_out_of_band_send({"type": "ping"})
         try:
             await asyncio.wait_for(pong_received.wait(), timeout=hb_timeout)
         except asyncio.TimeoutError:
-            logger.info("Control WS: heartbeat timeout, closing: %s", client_ip)
+            logger.warning(
+                "Control WS: heartbeat timeout, closing %s — no pong or traffic within %.0fs of ping (interval=%.0fs); clients must answer {'type':'ping'} with {'type':'pong'} (juniper-cascor-client >= 0.7.0 does this automatically)",
+                client_ip,
+                hb_timeout,
+                hb_interval,
+            )
             try:
-                await websocket.close(code=1006, reason="Heartbeat timeout")
+                await websocket.close(code=1011, reason=f"Heartbeat timeout: no pong or traffic within {hb_timeout:.0f}s")
             except Exception:
                 logger.debug("Control WS: close after heartbeat timeout failed for %s", client_ip, exc_info=True)
             return
@@ -264,7 +300,13 @@ async def _control_recv_loop(
     idle_timeout: float,
     client_ip: str,
 ) -> None:
-    """Receive loop: enforce idle timeout, dispatch commands, route pong frames."""
+    """Receive loop: enforce idle timeout, dispatch commands, route pong frames.
+
+    C3 liveness tolerance: EVERY received frame sets ``pong_received`` (before
+    parsing) — inbound traffic of any shape proves the peer is alive, so the
+    heartbeat loop only reaps genuinely silent peers, never a client that is
+    actively sending commands but does not implement the pong reply.
+    """
     while True:
         try:
             if idle_timeout and idle_timeout > 0:
@@ -275,6 +317,9 @@ async def _control_recv_loop(
             logger.info("Control WS: idle timeout (%ds), closing: %s", idle_timeout, client_ip)
             await websocket.close(code=1000, reason="Idle timeout")
             return
+
+        # C3: any inbound frame is proof of liveness for the heartbeat loop.
+        pong_received.set()
 
         if len(raw) > _MAX_MESSAGE_SIZE:
             await websocket.send_json(create_control_ack_message("unknown", "error", error="Message too large"))
@@ -371,18 +416,24 @@ async def _run_control_session(websocket: WebSocket, settings, ws_manager, clien
     pong_received = asyncio.Event()
     pong_received.set()  # No outstanding ping at start
 
-    ping_task = asyncio.create_task(_control_ping_loop(websocket, client_ip, hb_interval, hb_timeout, pong_received))
+    # C3: an interval <= 0 disables the heartbeat entirely (operator escape
+    # hatch for legacy clients that cannot answer pings; the idle timeout
+    # still applies).
+    ping_task = None
+    if hb_interval and hb_interval > 0:
+        ping_task = asyncio.create_task(_control_ping_loop(websocket, client_ip, hb_interval, hb_timeout, pong_received, ws_manager=ws_manager))
 
     try:
         await _control_recv_loop(websocket, lifecycle, bucket, pong_received, idle_timeout, client_ip)
     except WebSocketDisconnect:
         pass
     finally:
-        ping_task.cancel()
-        try:
-            await ping_task
-        except asyncio.CancelledError:
-            pass
+        if ping_task is not None:
+            ping_task.cancel()
+            try:
+                await ping_task
+            except asyncio.CancelledError:
+                pass
         # OBS-WIRE-02 (Q3): always re-emit the gauge on disconnect.
         if ws_manager is not None:
             ws_manager.unregister_endpoint_connection(websocket)

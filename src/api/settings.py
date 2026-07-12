@@ -33,6 +33,9 @@ _JUNIPER_CASCOR_API_WS_HEARTBEAT_INTERVAL_SEC_DEFAULT: int = _JUNIPER_CASCOR_API
 _JUNIPER_CASCOR_API_WS_HEARTBEAT_PONG_TIMEOUT_SEC: int = 10
 _JUNIPER_CASCOR_API_WS_HEARTBEAT_PONG_TIMEOUT_SEC_DEFAULT: int = _JUNIPER_CASCOR_API_WS_HEARTBEAT_PONG_TIMEOUT_SEC
 
+_JUNIPER_CASCOR_API_WS_EMISSION_SUMMARY_INTERVAL_SEC: float = 60.0
+_JUNIPER_CASCOR_API_WS_EMISSION_SUMMARY_INTERVAL_SEC_DEFAULT: float = _JUNIPER_CASCOR_API_WS_EMISSION_SUMMARY_INTERVAL_SEC
+
 # Phase 0-cascor: WebSocket sequencing, replay, and resume settings
 # Env vars match canonical plan kill switch names (JUNIPER_WS_* prefix)
 _JUNIPER_CASCOR_API_WS_REPLAY_BUFFER_SIZE: int = 1024
@@ -195,8 +198,31 @@ class Settings(BaseSettings):
     # survive NAT; genuine per-client identity requires the deferred
     # fronting-proxy + trusted-XFF milestone (design §5, D6).
     ws_max_connections_per_ip: int = 5
-    ws_heartbeat_interval_sec: int = _JUNIPER_CASCOR_API_WS_HEARTBEAT_INTERVAL_SEC_DEFAULT
-    ws_heartbeat_pong_timeout_sec: int = _JUNIPER_CASCOR_API_WS_HEARTBEAT_PONG_TIMEOUT_SEC_DEFAULT
+    # Phase F / C3 — the application-level WebSocket heartbeat contract:
+    # /ws/training and /ws/control send ``{"type":"ping","ts":<float>}`` every
+    # ``ws_heartbeat_interval_sec`` seconds; a client that sends NOTHING (a
+    # ``{"type":"pong"}`` reply, or any other well-formed frame — C3 counts
+    # any inbound traffic as liveness) within ``ws_heartbeat_pong_timeout_sec``
+    # seconds of a ping is closed with 1011 ("Heartbeat timeout"). Set the
+    # interval <= 0 to disable the heartbeat entirely (escape hatch for legacy
+    # clients that cannot answer pings; the control-channel idle timeout still
+    # applies). juniper-cascor-client >= 0.7.0 answers pings automatically.
+    ws_heartbeat_interval_sec: int = Field(
+        default=_JUNIPER_CASCOR_API_WS_HEARTBEAT_INTERVAL_SEC_DEFAULT,
+        description="Seconds between application-level WS heartbeat pings on /ws/training and /ws/control (<= 0 disables the heartbeat)",
+        validation_alias=AliasChoices("ws_heartbeat_interval_sec", "JUNIPER_WS_HEARTBEAT_INTERVAL_SEC"),
+    )
+    ws_heartbeat_pong_timeout_sec: int = Field(
+        default=_JUNIPER_CASCOR_API_WS_HEARTBEAT_PONG_TIMEOUT_SEC_DEFAULT,
+        description="Seconds after a heartbeat ping within which the client must send a pong (or any frame — C3 tolerance) before the connection is closed with 1011",
+        gt=0,
+        validation_alias=AliasChoices("ws_heartbeat_pong_timeout_sec", "JUNIPER_WS_HEARTBEAT_PONG_TIMEOUT_SEC"),
+    )
+    ws_emission_summary_interval_sec: float = Field(
+        default=_JUNIPER_CASCOR_API_WS_EMISSION_SUMMARY_INTERVAL_SEC_DEFAULT,
+        description="C3/T5: minimum seconds between periodic INFO summaries of WS frames emitted by type (checked on each send, incl. heartbeat pings); <= 0 disables the summary",
+        validation_alias=AliasChoices("ws_emission_summary_interval_sec", "JUNIPER_WS_EMISSION_SUMMARY_INTERVAL_SEC"),
+    )
 
     # Phase 0-cascor: WebSocket sequencing, replay, and resume
     # Kill-switch env vars use JUNIPER_WS_* prefix per canonical plan §3.1

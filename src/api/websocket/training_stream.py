@@ -7,10 +7,28 @@ Server-to-client streaming endpoint with optional resume support. On connect:
 4. If fresh connect: initial_status + state + promote to active
 5. Ongoing metrics/state/topology broadcasts during training
 
-After promotion, the server sends application-level ``{"type":"ping","ts":<float>}``
-heartbeats every ``ws_heartbeat_interval_sec`` (default 30s). Client must reply
-with ``{"type":"pong"}`` within ``ws_heartbeat_pong_timeout_sec`` (default 10s)
-or the connection is closed with 1006 (heartbeat timeout).
+Phase F / C3: Application-level heartbeat — the explicit contract:
+
+* After promotion, the server sends ``{"type": "ping", "ts": <float>}`` every
+  ``ws_heartbeat_interval_sec`` seconds (default 30; a value <= 0 disables the
+  heartbeat entirely, the operator escape hatch for legacy clients).
+* The client SHOULD reply ``{"type": "pong"}``. As a C3 tolerance, ANY
+  well-formed inbound frame received within ``ws_heartbeat_pong_timeout_sec``
+  seconds (default 10) of a ping also counts as proof of liveness (dead-peer
+  detection, not frame-type compliance).
+* A silent client is closed with close code 1011 and reason
+  ``"Heartbeat timeout: no pong or traffic within <N>s"``. Pre-C3 this used
+  1006, which RFC 6455 §7.4.1 forbids on the wire — the ``websockets`` server
+  implementation raises ``ProtocolError`` for it, so the close frame never
+  reached the peer (clients saw a half-open socket, not a close).
+* juniper-cascor-client >= 0.7.0 answers pings automatically (CL1); older
+  consumers must reply themselves (juniper-canopy's relay does).
+
+T5 instrumentation: every heartbeat ping is recorded in the WS manager's
+transport counters (``record_out_of_band_send``), and the manager emits a
+periodic INFO emission summary (frames emitted by type since the last
+summary) so "relay connected but nothing flowing" is diagnosable from the
+server log alone.
 """
 
 import asyncio
@@ -92,8 +110,17 @@ async def _send_metrics_burst(websocket: WebSocket, ws_manager, lifecycle, count
     )
 
 
-async def _heartbeat_ping_loop(websocket: WebSocket, hb_interval: float, hb_timeout: float, pong_received: asyncio.Event) -> None:
-    """Application-level ping/pong loop closing the connection on pong timeout."""
+async def _heartbeat_ping_loop(websocket: WebSocket, hb_interval: float, hb_timeout: float, pong_received: asyncio.Event, ws_manager=None) -> None:
+    """Application-level ping/pong loop closing the connection on liveness timeout.
+
+    C3: the wait is satisfied by a ``pong`` OR any other well-formed inbound
+    frame (see :func:`_recv_pong_loop`) — dead-peer detection, not frame-type
+    policing. The close uses code 1011: RFC 6455 §7.4.1 forbids sending 1006
+    on the wire, and the ``websockets`` server implementation raises
+    ``ProtocolError`` for it, so the pre-C3 ``close(code=1006)`` never actually
+    delivered a close frame. Each ping sent is recorded in the WS manager's
+    transport counters (T5) when available.
+    """
     while True:
         await asyncio.sleep(hb_interval)
         pong_received.clear()
@@ -101,12 +128,18 @@ async def _heartbeat_ping_loop(websocket: WebSocket, hb_interval: float, hb_time
             await websocket.send_json({"type": "ping", "ts": time.time()})
         except Exception:
             return  # Connection already closed
+        if ws_manager is not None:
+            ws_manager.record_out_of_band_send({"type": "ping"})
         try:
             await asyncio.wait_for(pong_received.wait(), timeout=hb_timeout)
         except asyncio.TimeoutError:
-            logger.info("Training WS: heartbeat timeout, closing connection")
+            logger.warning(
+                "Training WS: heartbeat timeout, closing connection — no pong or traffic within %.0fs of ping (interval=%.0fs); clients must answer {'type':'ping'} with {'type':'pong'} (juniper-cascor-client >= 0.7.0 does this automatically)",
+                hb_timeout,
+                hb_interval,
+            )
             try:
-                await websocket.close(code=1006, reason="Heartbeat timeout")
+                await websocket.close(code=1011, reason=f"Heartbeat timeout: no pong or traffic within {hb_timeout:.0f}s")
             except Exception:
                 logger.debug("Training WS: close after heartbeat timeout failed", exc_info=True)
             return
@@ -125,17 +158,23 @@ async def _recv_pong_loop(
     GAP-WS-16 ``subscribe_metrics`` requests by replying with an
     ``initial_metrics`` envelope. All other frame types are ignored
     (clients may send keep-alives the server does not need to act on).
+
+    C3 liveness tolerance: EVERY received frame sets ``pong_received`` (before
+    parsing) — inbound traffic of any shape proves the peer is alive, so the
+    heartbeat loop only reaps genuinely silent peers.
     """
     try:
         while True:
             raw = await websocket.receive_text()
+            # C3: any inbound frame is proof of liveness for the heartbeat loop.
+            pong_received.set()
             try:
                 msg = json.loads(raw)
             except (json.JSONDecodeError, AttributeError):
                 continue  # Non-JSON keep-alive frames are fine
             mtype = msg.get("type") if isinstance(msg, dict) else None
             if mtype == "pong":
-                pong_received.set()
+                pass  # Already counted as liveness above; nothing else to do.
             elif mtype == "subscribe_metrics" and ws_manager is not None and lifecycle is not None:
                 await _handle_subscribe_metrics(websocket, ws_manager, lifecycle, msg, subscribe_metrics_max_count)
     except WebSocketDisconnect:
@@ -222,7 +261,11 @@ async def training_stream_handler(websocket: WebSocket) -> None:
         pong_received = asyncio.Event()
         pong_received.set()  # No outstanding ping at start
 
-        ping_task = asyncio.create_task(_heartbeat_ping_loop(websocket, hb_interval, hb_timeout, pong_received))
+        # C3: an interval <= 0 disables the heartbeat entirely (operator
+        # escape hatch for legacy clients that cannot answer pings).
+        ping_task = None
+        if hb_interval and hb_interval > 0:
+            ping_task = asyncio.create_task(_heartbeat_ping_loop(websocket, hb_interval, hb_timeout, pong_received, ws_manager=ws_manager))
         try:
             await _recv_pong_loop(
                 websocket,
@@ -232,11 +275,12 @@ async def training_stream_handler(websocket: WebSocket) -> None:
                 subscribe_metrics_max_count=initial_metrics_count or 100,
             )
         finally:
-            ping_task.cancel()
-            try:
-                await ping_task
-            except asyncio.CancelledError:
-                pass
+            if ping_task is not None:
+                ping_task.cancel()
+                try:
+                    await ping_task
+                except asyncio.CancelledError:
+                    pass
     finally:
         # OBS-WIRE-02 (Q3): re-emit the per-endpoint gauge before the
         # outer disconnect (which only mutates the unlabeled active /
