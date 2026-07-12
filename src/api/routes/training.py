@@ -88,7 +88,7 @@ async def start_training(request: Request, body: TrainingStartRequest = None) ->
         # See notes/CASCOR_STARTUP_SECRET_INDIRECTION_INVESTIGATION_2026-06-14.md (3.4).
         # ("No network created" left this list in PR-B — start now creates the
         # network from the dataset dims when one is missing.)
-        logger.debug("Start training failed: %s", e)
+        logger.warning("Start training failed: %s", e)
         raise HTTPException(status_code=409, detail=f"Training cannot be started: {e}") from e
 
 

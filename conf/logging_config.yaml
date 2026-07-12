@@ -35,6 +35,10 @@
 #
 #####################################################################################################################################################################################################
 version: 1
+# Fix C4 (2026-07-11): keep loggers created before this config is applied (uvicorn.access / uvicorn.error /
+# uvicorn / juniper_cascor.api) alive. dictConfig defaults this key to True when absent, which disabled the
+# API server's access + api loggers the moment training start triggered the engine's first logging init.
+disable_existing_loggers: False
 formatters:
   formatter_console:
     format: "[%(filename)s:%(lineno)d] (%(asctime)s) [%(levelname)s] %(message)s"
