@@ -1450,15 +1450,21 @@ class TrainingLifecycleManager:
         if self._worker_coordinator is not None and hasattr(self.network, "set_worker_coordinator"):
             self.network.set_worker_coordinator(self._worker_coordinator)
 
+        # C2b (I-4 root / I-1c): seed TrainingState from the network that was
+        # ACTUALLY created, not from ``kwargs.get(..., lifecycle-default)``.
+        # The old seeding used a second, independent default layer
+        # (``_PROJECT_API_LIFECYCLE_DEFAULT_*``) whenever a kwarg was omitted
+        # — e.g. the create-on-start path passes only input/output sizes, so
+        # ``/v1/training/status`` reported ``max_hidden_units: 10000,
+        # learning_rate: 0.01`` while ``/v1/network`` reported the engine's
+        # effective values. The live network object is now the single source
+        # of truth for both surfaces (training-runtime-defects plan §4 I-4).
         self.training_state.update_state(
             status="Stopped",
             phase="Idle",
-            learning_rate=kwargs.get("learning_rate", _PROJECT_API_NETWORK_LEARNING_RATE_DEFAULT),
-            max_hidden_units=kwargs.get("max_hidden_units", _PROJECT_API_LIFECYCLE_DEFAULT_MAX_HIDDEN_UNITS),
-            max_epochs=kwargs.get("epochs_max", _PROJECT_API_LIFECYCLE_DEFAULT_EPOCHS_MAX),
-            max_iterations=kwargs.get("max_iterations", _PROJECT_API_LIFECYCLE_DEFAULT_MAX_ITERATIONS),
             network_name=f"CasCor-{kwargs.get('input_size', _PROJECT_API_NETWORK_INPUT_SIZE_DEFAULT)}x{kwargs.get('output_size', _PROJECT_API_NETWORK_OUTPUT_SIZE_DEFAULT)}",
         )
+        self._sync_training_state_from_network()
 
         info = self.get_network_info()
         self.logger.info(f"Network created: {info['input_size']}x{info['output_size']}")
@@ -1521,6 +1527,68 @@ class TrainingLifecycleManager:
             "uuid": str(getattr(self.network, "uuid", "")),
         }
 
+    @staticmethod
+    def derive_epochs_cap(network) -> int:
+        """C2b / Q1 outcome (c): per-run derived total-epoch cap implied by the granular limits.
+
+        ``epochs_max`` outlived its original role (a hard stop for a simple, plateau-prone
+        early model): the engine stores the attribute at construction but **never reads it**
+        (``cascade_correlation.py`` sets ``self.epochs_max`` in ``_init_network_parameters``
+        and no code path consults it), while the limits that actually gate training are the
+        granular meta-parameters — ``output_epochs`` (per output-training pass),
+        ``candidate_epochs`` (per candidate-pool pass), ``max_iterations`` (cascade growth
+        iterations) and ``max_hidden_units`` (growth capacity). Per the owner decision
+        (training-runtime-defects plan §12 Q1), ``epochs_max`` is now DERIVED from those
+        limits instead of being an independently settable value that can contradict or
+        shadow them:
+
+            effective_iterations = min(max_iterations, max_hidden_units)
+            epochs_max = output_epochs + effective_iterations * (candidate_epochs + output_epochs)
+
+        i.e. one initial output-training pass, plus — for every growth iteration the limits
+        admit — one candidate-pool pass and one output retraining pass. Candidates within a
+        pool train concurrently, so the pool contributes ``candidate_epochs`` sequential
+        epochs per iteration (pool size multiplies work, not sequential epochs). The value
+        is a *reporting/display budget* (the ``Epoch: X / Y`` denominator canopy's N6
+        consumes), not an enforced abort: enforcement stays with the granular limits
+        themselves, which is exactly the no-shadowing property Q1 requires. Early stopping
+        / patience can end a run well below the cap.
+
+        Stable and computable at start time (all four inputs are known at
+        ``start_training``); it changes only when a granular limit is PATCHed — the
+        ``_sync_training_state_from_network`` call sites keep ``training_state.max_epochs``
+        aligned at create / param-apply / snapshot-load. Robust to partial network
+        stand-ins (tests): every input is read with ``getattr(..., 0)``.
+        """
+        output_epochs = int(getattr(network, "output_epochs", 0) or 0)
+        candidate_epochs = int(getattr(network, "candidate_epochs", 0) or 0)
+        max_iterations = int(getattr(network, "max_iterations", 0) or 0)
+        max_hidden_units = int(getattr(network, "max_hidden_units", 0) or 0)
+        effective_iterations = max(0, min(max_iterations, max_hidden_units))
+        return output_epochs + effective_iterations * (candidate_epochs + output_epochs)
+
+    def _sync_training_state_from_network(self) -> None:
+        """C2b (I-4 root / I-1c): project the live network's effective parameter values into ``TrainingState``.
+
+        ``/v1/network`` (``get_network_info``) and ``GET /v1/training/params``
+        (``get_training_params``) read the network object directly, but
+        ``/v1/training/status``'s ``training_state`` block is a projected copy — before
+        C2b it was seeded once at create time from ``kwargs`` + a second default layer
+        and never refreshed, so the two REST surfaces could disagree for the whole life
+        of a network. This helper is the single projection point; call it whenever the
+        network's parameters may have changed (network create, ``update_params`` apply,
+        snapshot load). ``max_epochs`` is the Q1 derived cap (see ``derive_epochs_cap``).
+        No-op when no network exists.
+        """
+        if self.network is None:
+            return
+        self.training_state.update_state(
+            learning_rate=getattr(self.network, "learning_rate", 0.0),
+            max_hidden_units=getattr(self.network, "max_hidden_units", 0),
+            max_epochs=self.derive_epochs_cap(self.network),
+            max_iterations=getattr(self.network, "max_iterations", 0),
+        )
+
     # ------------------------------------------------------------------
     # Monitoring hooks (monkey-patch approach from CascorIntegration)
     # ------------------------------------------------------------------
@@ -1578,14 +1646,28 @@ class TrainingLifecycleManager:
             self._check_for_interrupt()
             metrics = payload.get("metrics", {}) or {}
             epoch = int(payload.get("epoch", 0))
+            # C2b counter semantics (I-1c / S12): ``epoch`` here is the INNER
+            # output-training epoch within the CURRENT pass (1-based, throttled
+            # to every 25th by CCN's ``train_output_layer`` callback; its budget
+            # rides in ``payload["epochs"]``). Before C2b this value was written
+            # into ``training_state.current_epoch``, racing with
+            # ``_extract_and_record_metrics``' training-step write — the same
+            # field flip-flopped between e.g. 10000 (inner epoch) and 12 (steps),
+            # which is exactly the live "Epoch: 10000 vs 12" header confusion.
+            # ``current_epoch`` now has a single writer (the history drain; it
+            # counts completed training steps) and the live within-pass progress
+            # is exposed under the dedicated ``output_epoch`` /
+            # ``output_total_epochs`` pair (the output-phase sibling of
+            # ``candidate_epoch`` / ``candidate_total_epochs``).
             self.monitor.on_epoch_end(
                 epoch=epoch,
                 loss=metrics.get("loss"),
                 accuracy=None,
                 learning_rate=getattr(self.network, "learning_rate", 0.0),
                 hidden_units=len(self.network.hidden_units),
+                kind="output_epoch",
             )
-            self.training_state.update_state(current_epoch=epoch, phase_detail="training_output")
+            self.training_state.update_state(output_epoch=epoch, output_total_epochs=int(payload.get("epochs", 0)), phase_detail="training_output")
             # METRICS-MON R5.4-pre: train-step duration histogram — delta between successive
             # output-epoch events (perf_counter; robust to wall-clock). The first event of a
             # run seeds the timer and emits no sample.
