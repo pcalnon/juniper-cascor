@@ -813,10 +813,20 @@ class TestSerializerEdgeCases:
 
     @pytest.mark.unit
     def test_save_network_exception_handling(self, serializer, simple_network):
-        """Lines 93-94: save_network exception returns False."""
+        """save_network raises SnapshotSaveError on write failure (C1 / I-3).
+
+        Pre-C1 this path swallowed the exception into ``False``, which the
+        lifecycle collapsed to ``None`` and the API route mapped to the same
+        404 as a missing network. The typed error carries the reason and
+        chains the underlying exception.
+        """
+        from snapshots.snapshot_errors import SnapshotSaveError
+
         # Try to save to an invalid path
-        result = serializer.save_network(simple_network, "/proc/impossible/path/file.h5")
-        assert result is False
+        with pytest.raises(SnapshotSaveError) as excinfo:
+            serializer.save_network(simple_network, "/proc/impossible/path/file.h5")
+        assert excinfo.value.__cause__ is not None
+        assert str(excinfo.value)
 
     @pytest.mark.unit
     def test_create_network_from_file_no_config(self, serializer, temp_hdf5_path):

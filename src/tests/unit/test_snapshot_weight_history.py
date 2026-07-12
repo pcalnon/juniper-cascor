@@ -224,19 +224,26 @@ class TestV1BackwardCompat:
 
 class TestWeightHistoryValidation:
     def test_length_mismatch_output_weights_rejected(self, serializer, simple_network, temp_file):
+        from snapshots.snapshot_errors import SnapshotSaveError
+
         wh = _make_weight_history(num_samples=3)
         wh["output_weights"] = wh["output_weights"][:2]  # mismatch with sample_indices length
         simple_network.history = {"train_loss": [], "value_loss": [], "train_accuracy": [], "value_accuracy": [], "hidden_units_added": []}
         simple_network.weight_history = wh
-        # save_network catches and logs but returns False; assert that.
-        assert serializer.save_network(simple_network, temp_file, include_training_state=True) is False
+        # C1 (I-3): save_network logs and raises SnapshotSaveError carrying the
+        # validation reason (pre-C1 it swallowed the ValueError into ``False``).
+        with pytest.raises(SnapshotSaveError, match="length mismatch"):
+            serializer.save_network(simple_network, temp_file, include_training_state=True)
 
     def test_length_mismatch_hidden_unit_rejected(self, serializer, simple_network, temp_file):
+        from snapshots.snapshot_errors import SnapshotSaveError
+
         wh = _make_weight_history(num_samples=4, num_hidden=2)
         wh["hidden_units"][0]["bias"] = wh["hidden_units"][0]["bias"][:1]
         simple_network.history = {"train_loss": [], "value_loss": [], "train_accuracy": [], "value_accuracy": [], "hidden_units_added": []}
         simple_network.weight_history = wh
-        assert serializer.save_network(simple_network, temp_file, include_training_state=True) is False
+        with pytest.raises(SnapshotSaveError, match="length mismatch"):
+            serializer.save_network(simple_network, temp_file, include_training_state=True)
 
     def test_unsupported_schema_version_degrades_gracefully(self, serializer, simple_network, temp_file):
         # Write a V1 snapshot, then synthesize a forward-incompatible

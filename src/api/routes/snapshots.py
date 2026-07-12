@@ -5,9 +5,10 @@ import logging
 import re
 
 from fastapi import APIRouter, HTTPException, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 from api.models.common import success_response
+from snapshots.snapshot_errors import SnapshotSaveError
 
 logger = logging.getLogger("juniper_cascor.api.routes.snapshots")
 
@@ -40,9 +41,23 @@ def _validate_snapshot_id(snapshot_id: str, client: str | None = None) -> None:
 
 
 class SnapshotCreateRequest(BaseModel):
-    """Request body for creating a snapshot."""
+    """Request body for creating a snapshot.
 
-    description: str = ""
+    C1 (I-3): ``description`` tolerates an explicit JSON ``null`` in
+    addition to omission and a plain string. Canopy's route seam posts
+    ``{"description": null}`` for a blank description (live incident
+    2026-07-11: the resulting 422 ``string_type`` rejection masqueraded
+    as a failed snapshot); a ``null`` is normalized to ``""`` so all
+    three shapes are equivalent downstream.
+    """
+
+    description: str | None = ""
+
+    @field_validator("description", mode="before")
+    @classmethod
+    def _null_description_is_empty(cls, value):
+        """Normalize an explicit ``null`` to the empty description."""
+        return "" if value is None else value
 
 
 def _get_lifecycle(request: Request):
@@ -136,7 +151,15 @@ async def save_snapshot(request: Request, body: SnapshotCreateRequest = None) ->
     # PERF-CC-01: serializer.save_network is synchronous HDF5 I/O. Run it
     # off the event loop so concurrent requests aren't blocked while the
     # snapshot is being written.
-    result = await asyncio.to_thread(lifecycle.save_snapshot, description=description)
+    #
+    # C1 (I-3): a FAILED WRITE surfaces as 500 with the serializer's reason
+    # in the detail, distinct from the 404 no-network case below — pre-C1
+    # both collapsed to the 404 and a disk/HDF5 failure masqueraded as a
+    # missing network.
+    try:
+        result = await asyncio.to_thread(lifecycle.save_snapshot, description=description)
+    except SnapshotSaveError as exc:
+        raise HTTPException(status_code=500, detail=f"Snapshot save failed: {exc}") from exc
     if result is None:
         raise HTTPException(status_code=404, detail="No network available to snapshot")
     return success_response(result)
