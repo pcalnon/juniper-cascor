@@ -2112,7 +2112,9 @@ class TrainingLifecycleManager:
         # BUG-CC-07: phase via the state-machine command, then notify the monitor.
         sm.handle_command(Command.START)
         monitor.on_phase_change(sm.phase.name.lower())
-        state.update_state(status="Started", phase="Output", phase_started_at=datetime.now().isoformat())
+        # C2b: reset the within-pass progress pairs at run start so a new run
+        # never displays the previous run's terminal inner-epoch values.
+        state.update_state(status="Started", phase="Output", phase_started_at=datetime.now().isoformat(), output_epoch=0, output_total_epochs=0, candidate_epoch=0, candidate_total_epochs=0)
         self._broadcast_training_state(force=True)
         # OBS-WIRE-01 (A.1): mark the session active; balanced by dec in the finally so the
         # gauge (which gates TrainingStalled / TrainingLossNotDecreasing / LowCandidateCorrelation
