@@ -127,6 +127,18 @@ def _get_client_ip(websocket: WebSocket) -> str:
     return "unknown"
 
 
+def _numeric_setting(obj, name: str, fallback):
+    """Read a numeric setting attribute defensively.
+
+    Returns ``getattr(obj, name)`` when it is a real number, else
+    ``fallback`` — so a missing ``app.state.settings`` or a non-Settings
+    double (whose attribute lookups return stub objects) can never leak a
+    non-numeric value into ``asyncio.sleep`` / ``asyncio.wait_for``.
+    """
+    value = getattr(obj, name, None) if obj is not None else None
+    return value if isinstance(value, (int, float)) else fallback
+
+
 async def _check_handshake_gates(websocket: WebSocket, settings, client_ip: str) -> bool:
     """Run pre-accept handshake gates. Returns True if the connection may proceed."""
     if settings.disable_ws_control_endpoint:
@@ -406,18 +418,18 @@ async def _run_control_session(websocket: WebSocket, settings, ws_manager, clien
         refill_rate=float(settings.ws_control_rate_limit_per_sec),
     )
 
-    # Phase F: heartbeat settings from app.state.settings (testable)
+    # Phase F: heartbeat settings from app.state.settings (testable). The
+    # numeric coercion guards against non-Settings doubles on app.state
+    # (mock objects return attribute stubs, not numbers).
     app_settings = getattr(websocket.app.state, "settings", None)
-    hb_interval = getattr(app_settings, "ws_heartbeat_interval_sec", 30) if app_settings else 30
-    hb_timeout = getattr(app_settings, "ws_heartbeat_pong_timeout_sec", 10) if app_settings else 10
+    hb_interval = _numeric_setting(app_settings, "ws_heartbeat_interval_sec", 30)
+    hb_timeout = _numeric_setting(app_settings, "ws_heartbeat_pong_timeout_sec", 10)
     # C3: source the idle timeout from app.state.settings too (falling back to
     # the process-global settings). It previously read only the lru-cached
     # ``get_settings()``, so per-app Settings (create_app(settings) in tests)
     # silently never reached it — the heartbeat knobs and the idle knob now
     # honor the same configuration surface.
-    idle_timeout = getattr(app_settings, "ws_control_idle_timeout_sec", None) if app_settings else None
-    if idle_timeout is None:
-        idle_timeout = settings.ws_control_idle_timeout_sec
+    idle_timeout = _numeric_setting(app_settings, "ws_control_idle_timeout_sec", settings.ws_control_idle_timeout_sec)
 
     pong_received = asyncio.Event()
     pong_received.set()  # No outstanding ping at start

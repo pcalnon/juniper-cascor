@@ -44,6 +44,18 @@ from api.websocket.messages import create_initial_metrics_message, create_state_
 logger = logging.getLogger("juniper_cascor.api.websocket.training")
 
 
+def _numeric_setting(obj, name: str, fallback):
+    """Read a numeric setting attribute defensively.
+
+    Returns ``getattr(obj, name)`` when it is a real number, else
+    ``fallback`` — so a missing ``app.state.settings`` or a non-Settings
+    double (whose attribute lookups return stub objects) can never leak a
+    non-numeric value into ``asyncio.sleep`` / ``asyncio.wait_for``.
+    """
+    value = getattr(obj, name, None) if obj is not None else None
+    return value if isinstance(value, (int, float)) else fallback
+
+
 async def _await_resume_frame(websocket: WebSocket, ws_manager, resume_timeout: float) -> tuple[bool, bool]:
     """Wait for an optional resume frame.
 
@@ -256,8 +268,8 @@ async def training_stream_handler(websocket: WebSocket) -> None:
         # via ws_manager.broadcast_from_thread(). The recv loop also
         # handles pong responses for dead-connection detection and
         # GAP-WS-16 subscribe_metrics requests.
-        hb_interval = getattr(settings, "ws_heartbeat_interval_sec", 30) if settings else 30
-        hb_timeout = getattr(settings, "ws_heartbeat_pong_timeout_sec", 10) if settings else 10
+        hb_interval = _numeric_setting(settings, "ws_heartbeat_interval_sec", 30)
+        hb_timeout = _numeric_setting(settings, "ws_heartbeat_pong_timeout_sec", 10)
         pong_received = asyncio.Event()
         pong_received.set()  # No outstanding ping at start
 

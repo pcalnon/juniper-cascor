@@ -155,7 +155,10 @@ class TestHeartbeatPingLoop:
             timeout=2.0,
         )
         websocket.close.assert_awaited_once()
-        assert websocket.close.await_args.kwargs["code"] == 1006
+        # C3: 1011, not 1006 — RFC 6455 §7.4.1 forbids sending 1006 on the
+        # wire (the websockets server impl rejects it, so the pre-C3 close
+        # frame never reached a real peer).
+        assert websocket.close.await_args.kwargs["code"] == 1011
 
 
 @pytest.mark.unit

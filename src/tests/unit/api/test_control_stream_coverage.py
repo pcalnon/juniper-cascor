@@ -338,7 +338,10 @@ class TestControlPingLoop:
             timeout=2.0,
         )
         ws.close.assert_awaited_once()
-        assert ws.close.await_args.kwargs["code"] == 1006
+        # C3: 1011, not 1006 — RFC 6455 §7.4.1 forbids sending 1006 on the
+        # wire (the websockets server impl rejects it, so the pre-C3 close
+        # frame never reached a real peer).
+        assert ws.close.await_args.kwargs["code"] == 1011
 
 
 @pytest.mark.unit
