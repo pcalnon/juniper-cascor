@@ -1741,7 +1741,9 @@ class TrainingLifecycleManager:
                         self._ws_manager.broadcast_from_thread(create_topology_message(full_topology))
                 self.state_machine.set_phase(TrainingPhase.OUTPUT)
                 self.monitor.on_phase_change(self.state_machine.phase.name.lower())
-                self.training_state.update_state(phase="Output", phase_detail="", candidate_epoch=0, candidate_total_epochs=0)
+                # C2b: clear the within-pass progress pairs (candidate AND output)
+                # at the growth-phase exit so neither lingers past its phase.
+                self.training_state.update_state(phase="Output", phase_detail="", candidate_epoch=0, candidate_total_epochs=0, output_epoch=0, output_total_epochs=0)
                 self._broadcast_training_state(force=True)
             self._extract_and_record_metrics()
             return
