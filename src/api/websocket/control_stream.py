@@ -421,6 +421,9 @@ def _execute_command(lifecycle, command: str, params: dict = None) -> dict:
         # ``ValidationError`` propagates to ``_handle_command_message``, which
         # returns a clean error ack (the WS analogue of the REST 422) without crashing.
         validated = TrainingParamUpdateRequest(**params)
+        # C2a (I-4 / T3): the returned dict carries additive ``applied``/``skipped``
+        # per-key reporting alongside the params echo; it rides the success ack's
+        # free-form ``result`` field untouched, so the ack schema is unchanged.
         return lifecycle.update_params(validated.model_dump(exclude_none=True))
     else:
         raise ValueError(f"Unhandled command: {command}")

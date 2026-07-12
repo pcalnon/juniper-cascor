@@ -3086,7 +3086,10 @@ class TrainingLifecycleManager:
             params: Dict of parameter names and new values (None values excluded).
 
         Returns:
-            Updated training parameters dict.
+            Updated training parameters dict, plus additive per-key reporting
+            (C2a / I-4): ``applied`` — the keys that landed — and ``skipped`` —
+            ``{"key", "reason"}`` rows for every requested key that did not.
+            See ``_apply_params_unlocked`` for the reason taxonomy.
 
         Raises:
             ValueError: If no network exists.
@@ -3196,6 +3199,18 @@ class TrainingLifecycleManager:
         All three flavors share the same GAP-WS-28 atomic-rollback contract:
         if any setter raises, every previously-applied key is reverted to
         its pre-call value before re-raising.
+
+        C2a (I-4 / T3): the success return is ``get_training_params()`` plus two
+        additive reporting keys that account for EVERY requested key:
+        ``applied`` (keys that landed, in application order) and ``skipped``
+        (``{"key", "reason"}`` rows for keys that did not). Reasons:
+        ``not-updatable`` (key outside ``updatable_keys``), ``no-such-attribute``
+        (whitelisted key the live network object lacks — previously a silent
+        drop), and ``null-value`` (None nested/lifecycle value from an internal
+        caller; boundary callers strip None via ``exclude_none=True``). Bound
+        violations never reach this path — pydantic request-model validation
+        rejects the whole body 422 upstream (deliberately atomic; no partial
+        apply on validation failure).
         """
         if self.network is None:
             raise ValueError("No network exists — create a network first")
@@ -3240,6 +3255,23 @@ class TrainingLifecycleManager:
             raise InvalidCandidatePoolError(triple_violation)
         applicable = {k: v for k, v in params.items() if k in simple_keys and hasattr(self.network, k)}
         old_values = {k: getattr(self.network, k) for k in applicable}
+
+        # C2a (I-4 / T3): account for every requested key. ``skipped`` pairs each
+        # non-landing key with a reason so the ``hasattr`` filter above can never
+        # again silently drop a whitelisted-but-absent attribute (the latent
+        # generator behind canopy's applied-yet-error verification divergence).
+        # Computed against the same pre-apply view of the network as ``applicable``.
+        skipped: list[dict[str, str]] = []
+        for key in params:
+            if key not in updatable_keys:
+                skipped.append({"key": key, "reason": "not-updatable"})
+            elif key in simple_keys and not hasattr(self.network, key):
+                skipped.append({"key": key, "reason": "no-such-attribute"})
+            elif key in nested_keys | lifecycle_keys and params[key] is None:
+                # Boundary callers strip None via ``exclude_none=True``; internal
+                # callers can pass raw dicts. A None nested/lifecycle value is
+                # deliberately not applied (the ``*_pending`` guards below).
+                skipped.append({"key": key, "reason": "null-value"})
 
         # CAN-010 / ENH-006 (A-2): ``optimizer_type`` lives at
         # ``self.network.config.optimizer_config.optimizer_type``.
@@ -3306,7 +3338,13 @@ class TrainingLifecycleManager:
                     # back the rest — best-effort consistency.
                     self.logger.exception("update_params rollback: revert of %s failed", key)
             raise
-        return self.get_training_params()
+        # C2a: additive per-key reporting — the params-echo keys are unchanged;
+        # ``applied``/``skipped`` ride alongside them in the same dict (the REST
+        # route's ``data`` and the WS ack's ``result`` carry them through untouched).
+        result = self.get_training_params()
+        result["applied"] = applied
+        result["skipped"] = skipped
+        return result
 
     def _validate_candidate_pool_post_merge(self, params: Dict[str, Any]) -> Optional[str]:
         """Validate the §1.5 C2.1 candidate-pool invariant against the *post-merge*
