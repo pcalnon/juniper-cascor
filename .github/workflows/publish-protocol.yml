@@ -138,17 +138,25 @@ jobs:
         run: |
           set -euo pipefail
           version=$(grep '^version' juniper-cascor-protocol/pyproject.toml | head -1 | sed -E 's/version = "(.+)"/\1/')
+          # Release-train Phase 0.2 (finding F-5, policy juniper-ml#384): install
+          # juniper-cascor-protocol from TestPyPI ONLY, with --no-deps and no
+          # `--extra-index-url https://pypi.org/simple/` fallback. Anti-target-squatting: under
+          # --no-deps pip fetches no dependencies, so a pypi.org fallback index could only serve
+          # to resolve a squatted same-name TARGET package.
           for attempt in 1 2 3 4 5; do
             if pip install \
+              --no-deps \
               --index-url https://test.pypi.org/simple/ \
-              --extra-index-url https://pypi.org/simple/ \
               "juniper-cascor-protocol==${version}"; then
               break
             fi
             echo "TestPyPI index lag — retrying in 10s (attempt ${attempt}/5)"
             sleep 10
           done
-          python -c "import juniper_cascor_protocol; print('TestPyPI install OK', juniper_cascor_protocol.__version__)"
+          # `import juniper_cascor_protocol` eagerly loads the numpy BinaryFrame codec (worker
+          # subpackage), which is absent under --no-deps; assert the installed distribution and
+          # version via importlib.metadata instead of importing the package.
+          python -c "import importlib.metadata as m; print('TestPyPI install OK', m.version('juniper-cascor-protocol'))"
 
   publish-pypi:
     name: Publish to PyPI

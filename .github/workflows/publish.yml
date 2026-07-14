@@ -41,8 +41,13 @@ jobs:
           VERSION="${{ github.event.release.tag_name }}"
           VERSION="${VERSION#v}"
           sleep 30
-          pip install torch --index-url https://download.pytorch.org/whl/cpu
-          pip install --index-url https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple/ juniper-cascor==${VERSION}
+          # Release-train Phase 0.2 (finding F-5, policy juniper-ml#384): install juniper-cascor from
+          # TestPyPI ONLY, with --no-deps and no `--extra-index-url https://pypi.org/simple/` fallback.
+          # Anti-target-squatting: under --no-deps pip fetches no dependencies, so a pypi.org fallback
+          # index could only serve to resolve a squatted same-name TARGET package. The top-level
+          # `juniper_cascor` package is torch-free (it only exposes __version__), so this validates that
+          # the published artifact installs and imports without pulling the multi-GB torch stack into CI.
+          pip install --no-deps --index-url https://test.pypi.org/simple/ juniper-cascor==${VERSION}
           python -c "from juniper_cascor import __version__; print(f'TestPyPI OK: v{__version__}')"
 
   pypi:
