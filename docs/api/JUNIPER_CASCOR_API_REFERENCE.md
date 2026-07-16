@@ -37,6 +37,8 @@
   - [POST `/v1/training/pause`](#post-v1trainingpause)
   - [POST `/v1/training/resume`](#post-v1trainingresume)
   - [POST `/v1/training/reset`](#post-v1trainingreset)
+  - [POST `/v1/training/metrics/clear`](#post-v1trainingmetricsclear)
+  - [POST `/v1/training/metrics/clear/undo`](#post-v1trainingmetricsclearundo)
   - [GET `/v1/training/status`](#get-v1trainingstatus)
   - [GET `/v1/training/params`](#get-v1trainingparams)
   - [PATCH `/v1/training/params`](#patch-v1trainingparams)
@@ -590,6 +592,13 @@ Content-Type: application/json
 
 **Body model** — `TrainingStartRequest` with sub-models `DatasetSource`, `InlineDataset` (≤100 train + ≤100 val samples, list-of-list-of-float), and `TrainingParams` (all fields optional). Either `inline_data` or `dataset` may be provided; if neither, the loaded dataset is reused.
 
+**`start_fresh` (C5 / Q4 use-case 2, default `false`)** — Retention posture for the run:
+
+- **`false` (default) — continue the current model.** The existing network AND its retained metrics/history are kept, so the run continues training the model as-is (the cross-dataset continual-training use case, Q4 use-case 1). Metrics/history are now RETAINED across run boundaries by default (pre-C5 every run start emptied the metrics buffer); a continuing run appends only its new rows.
+- **`true` — clean-launch start.** The current model and all retained metrics/history are DISCARDED before the run, and a vanilla, untrained network is rebuilt from the dataset dims — functionally identical to a fresh stack launch, **EXCEPT that on-disk snapshot artifacts are preserved** (nothing on this path deletes a snapshot). Independent of the snapshot-driven `POST /v1/snapshots/{id}/retrain` and the FSM-level `POST /v1/training/reset`.
+
+Backward compatible: pre-C5 callers omit `start_fresh` and get the retain (continue) path.
+
 **Example call**:
 
 ```bash
@@ -684,11 +693,51 @@ curl -s -X POST http://localhost:8201/v1/training/resume
 curl -s -X POST http://localhost:8201/v1/training/reset
 ```
 
-**State changes** — Clears training history arrays, epoch counters, auto-snap-best ratchet; transitions FSM to idle.
+**State changes** — Clears training history arrays, epoch counters, auto-snap-best ratchet; transitions FSM to idle. This is the heavy reset (FSM + counters + metrics). For clearing metrics/history ONLY — with an undo — use `POST /v1/training/metrics/clear` (C5).
 
 **Returns** — Envelope with reset result.
 
 **Error handling** — `503` if lifecycle unbound.
+
+---
+
+### POST `/v1/training/metrics/clear`
+
+**Summary** — Clear the retained training metrics/history, with undo (C5 / Q4 use-case 1).
+
+**Detailed description** — Metrics/history are now retained across run boundaries by default (C5 / Q4), so this is the explicit control that empties the metrics/history buffer between runs. The clear stashes an in-memory undo snapshot and is reversible via `POST /v1/training/metrics/clear/undo` at any point **until the next training run starts** (starting a run finalizes the clear and drops the snapshot). Unlike `POST /v1/training/reset`, this touches metrics/history only — it does not reset the FSM, counters, or the model. The undo snapshot is bounded by the metrics buffer size (10000 rows), so a pending undo costs at most one extra buffer's worth of memory. Implemented at `src/api/routes/training.py`.
+
+**Syntax / example**:
+
+```bash
+curl -s -X POST http://localhost:8201/v1/training/metrics/clear
+```
+
+**State changes** — Empties the metrics/history buffer; stashes the removed rows as the undo snapshot. `GET /v1/training/status` reports `metrics_clear_undo_available: true` afterwards.
+
+**Returns** — Envelope with `{"status": "cleared", "cleared_count": <int>, "undo_available": true}`.
+
+**Error handling** — `503` if lifecycle unbound.
+
+---
+
+### POST `/v1/training/metrics/clear/undo`
+
+**Summary** — Undo the most recent metrics/history clear (C5 / Q4 use-case 1 fallback).
+
+**Detailed description** — Restores the rows removed by the last `POST /v1/training/metrics/clear`. Valid only until the next training run starts; returns `409` when there is no clear to undo (nothing cleared, or a run has started since and finalized the clear). Implemented at `src/api/routes/training.py`.
+
+**Syntax / example**:
+
+```bash
+curl -s -X POST http://localhost:8201/v1/training/metrics/clear/undo
+```
+
+**State changes** — Repopulates the metrics/history buffer from the undo snapshot and drops the snapshot. `GET /v1/training/status` reports `metrics_clear_undo_available: false` afterwards.
+
+**Returns** — Envelope with `{"status": "restored", "restored_count": <int>, "undo_available": false}`.
+
+**Error handling** — `409` if there is no clear to undo; `503` if lifecycle unbound.
 
 ---
 
@@ -706,7 +755,7 @@ curl -s http://localhost:8201/v1/training/status
 
 **State changes** — None.
 
-**Returns** — Envelope with: `training_state`, `training_active`, `network_loaded`, `state_machine`, `monitor`, `snapshot_seq`, `server_instance_id`.
+**Returns** — Envelope with: `training_state`, `training_active`, `network_loaded`, `state_machine`, `monitor`, `completion_reason`, `metrics_clear_undo_available`, `snapshot_seq`, `server_instance_id`. `metrics_clear_undo_available` (C5, additive) is `true` while an explicit metrics clear (`POST /v1/training/metrics/clear`) can still be undone — i.e. no run has started since — so a UI can render the undo affordance across a page reload without a separate poll.
 
 **Counter semantics (C2b — the contract UI consumers should render):**
 
@@ -813,7 +862,7 @@ curl -s http://localhost:8201/v1/metrics
 
 **Summary** — Recent metric history.
 
-**Detailed description** — Returns the most recent `count` entries (or all if `count` is omitted). Used by canopy on initial load to backfill charts before subscribing to the WebSocket stream. Implemented at `src/api/routes/metrics.py:26-33`.
+**Detailed description** — Returns the most recent `count` entries (or all if `count` is omitted). Used by canopy on initial load to backfill charts before subscribing to the WebSocket stream. Implemented at `src/api/routes/metrics.py:26-33`. **Retention (C5 / Q4):** the history is now retained across training run boundaries by default, so this endpoint stays populated after a run completes and across a subsequent run (pre-C5 the buffer was emptied at each run start). Empty it explicitly — with undo — via `POST /v1/training/metrics/clear`, or start a run with `start_fresh: true` for a clean slate.
 
 **Syntax**:
 

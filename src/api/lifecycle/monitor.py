@@ -229,12 +229,24 @@ class TrainingMonitor:
             except Exception as e:
                 self.logger.error(f"Callback error for {event_type}: {e}")
 
-    def on_training_start(self) -> None:
+    def on_training_start(self, retain_metrics: bool = True) -> None:
+        """Begin a training run.
+
+        C5 (Q4/U-1 retention semantics): by DEFAULT the metrics/history buffer
+        is now RETAINED across run boundaries so a multi-dataset continual-
+        training session keeps a continuous metrics/history curve (Q4 use-case
+        1 — "continue training the current model, likely with new datasets").
+        Pass ``retain_metrics=False`` for the start-fresh / clean-launch reset
+        (Q4 use-case 2) — the pre-C5 behavior that emptied the buffer at every
+        run start. ``current_epoch`` is always zeroed (it is the live per-run
+        step counter, not part of the retained history).
+        """
         with self._lock:
             self.is_training = True
             self.current_epoch = 0
-            self.metrics_buffer.clear()
-        self.logger.info("Training started")
+            if not retain_metrics:
+                self.metrics_buffer.clear()
+        self.logger.info("Training started (retain_metrics=%s)", retain_metrics)
         self._trigger_callbacks("training_start")
 
     def on_training_end(self, final_metrics: Optional[Dict[str, Any]] = None) -> None:
@@ -355,3 +367,14 @@ class TrainingMonitor:
         with self._lock:
             self.metrics_buffer.clear()
         self.logger.info("Metrics buffer cleared")
+
+    def restore_metrics(self, rows: List[Dict[str, Any]]) -> None:
+        """C5 undo: repopulate the metrics buffer from a previously-cleared
+        snapshot (the undo side of
+        ``TrainingLifecycleManager.clear_metrics_with_undo``). Replaces the
+        current buffer contents; the deque ``maxlen`` still bounds the result
+        (the snapshot came from the same deque, so no rows are dropped)."""
+        with self._lock:
+            self.metrics_buffer.clear()
+            self.metrics_buffer.extend(rows)
+        self.logger.info("Metrics buffer restored (%d rows)", len(rows))

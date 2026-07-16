@@ -7,6 +7,7 @@ from fastapi import APIRouter, HTTPException, Request
 
 from api.lifecycle.manager import (
     InvalidCandidatePoolError,
+    NoMetricsUndoError,
     NoSwapInProgressError,
     SwapCancelledError,
     SwapInProgressError,
@@ -54,8 +55,14 @@ async def start_training(request: Request, body: TrainingStartRequest = None) ->
     y = None
     x_val = None
     y_val = None
+    # C5 (Q4 use-case 2 / U-1): start-fresh toggle (default off). Forwarded to
+    # the lifecycle, which discards the model + retained metrics/history before
+    # a fresh run (snapshots preserved). Omitted / False continues the current
+    # model with its retained metrics/history (Q4 use-case 1).
+    start_fresh = False
 
     if body is not None:
+        start_fresh = bool(body.start_fresh)
         # Handle inline dataset
         if body.inline_data is not None:
             x = torch.tensor(body.inline_data.train_x, dtype=torch.float32)
@@ -77,7 +84,7 @@ async def start_training(request: Request, body: TrainingStartRequest = None) ->
             kwargs["max_epochs"] = body.epochs
 
     try:
-        result = lifecycle.start_training(X=x, y=y, X_val=x_val, y_val=y_val, **kwargs)
+        result = lifecycle.start_training(X=x, y=y, X_val=x_val, y_val=y_val, start_fresh=start_fresh, **kwargs)
         return success_response(result)
     except (RuntimeError, ValueError) as e:
         # Surface the specific reason (training already in progress / no dataset
@@ -130,6 +137,43 @@ async def reset_training(request: Request) -> dict:
     lifecycle = _get_lifecycle(request)
     result = lifecycle.reset()
     return success_response(result)
+
+
+@router.post("/metrics/clear")
+async def clear_metrics(request: Request) -> dict:
+    """Clear the retained training metrics/history, with undo (C5 / Q4 use-case 1).
+
+    Retention is now the default across run boundaries (Q4/U-1), so this is the
+    explicit control that empties the metrics/history buffer between runs. The
+    clear is reversible via ``POST /v1/training/metrics/clear/undo`` at any
+    point until the next training run starts (starting a run finalizes the
+    clear and drops the undo snapshot). Unlike ``POST /v1/training/reset`` this
+    touches metrics/history only — it does not reset the FSM, counters, or the
+    model.
+
+    Returns ``{"status": "cleared", "cleared_count": <int>, "undo_available":
+    true}``.
+    """
+    lifecycle = _get_lifecycle(request)
+    return success_response(lifecycle.clear_metrics_with_undo())
+
+
+@router.post("/metrics/clear/undo")
+async def undo_clear_metrics(request: Request) -> dict:
+    """Undo the most recent metrics/history clear (C5 / Q4 use-case 1 fallback).
+
+    Restores the rows removed by the last ``POST /v1/training/metrics/clear``.
+    Valid only until the next training run starts; returns 409 when there is no
+    clear to undo (nothing cleared, or a run has started since).
+
+    Returns ``{"status": "restored", "restored_count": <int>, "undo_available":
+    false}``.
+    """
+    lifecycle = _get_lifecycle(request)
+    try:
+        return success_response(lifecycle.undo_clear_metrics())
+    except NoMetricsUndoError as e:
+        raise HTTPException(status_code=409, detail=str(e)) from e
 
 
 @router.get("/status")

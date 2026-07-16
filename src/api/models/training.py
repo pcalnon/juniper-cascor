@@ -154,6 +154,17 @@ class TrainingStartRequest(BaseModel):
     dataset: Optional[DatasetSource] = Field(None, description="Dataset source specification")
     inline_data: Optional[InlineDataset] = Field(None, description="Inline dataset")
     params: Optional[TrainingParams] = Field(None, description="Training params (learning_rate, patience, etc.)")
+    # C5 (Q4 use-case 2 / U-1): start-fresh toggle (default off). When True the
+    # current model AND all retained metrics/history are discarded before the
+    # run so training begins with a vanilla, untrained network created from the
+    # dataset dims — functionally a clean stack launch, EXCEPT on-disk snapshot
+    # artifacts are preserved. When False (default) the current model and its
+    # metrics/history are retained, so the run continues the existing model
+    # (cross-dataset continual training, Q4 use-case 1). Additive + backward-
+    # compatible: pre-C5 callers omit it and get the retain (continue) path;
+    # this field is independent of the pre-existing snapshot-driven Retrain
+    # (``POST /v1/snapshots/{id}/retrain``) and the FSM-level RESET.
+    start_fresh: bool = Field(False, description="Discard the model + retained metrics/history for a clean-launch start (snapshots preserved); default False continues the current model")
 
 
 class TrainingStatus(BaseModel):

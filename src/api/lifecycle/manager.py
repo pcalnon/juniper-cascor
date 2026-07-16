@@ -117,6 +117,19 @@ class SwapCancelledError(RuntimeError):
     """
 
 
+class NoMetricsUndoError(RuntimeError):
+    """Raised by ``undo_clear_metrics`` when there is no clear to undo.
+
+    C5 (Q4 use-case 1): an explicit ``clear_metrics_with_undo`` stashes the
+    cleared rows so the clear can be reversed until the next run starts.
+    Requesting an undo when nothing was cleared — or after a training run has
+    already started (which finalizes the clear and drops the snapshot) —
+    raises this, which the ``POST /v1/training/metrics/clear/undo`` route
+    promotes to HTTP 409 Conflict (the resource — a reversible clear — no
+    longer exists in a reversible state).
+    """
+
+
 class _PreSwapSnapshot:  # noqa: D101 - frozen container, not part of the public surface
     __slots__ = (
         "train_x",
@@ -1106,6 +1119,23 @@ class TrainingLifecycleManager:
         self._pause_event.set()  # Not paused initially
         self._last_emitted_history_len = 0
 
+        # C5 (Q4/U-1 retention semantics):
+        #   ``_retain_metrics_next_run`` — set by ``start_training`` and read by
+        #     ``_run_training`` to decide whether the upcoming run RETAINS the
+        #     metrics/history buffer (default; cross-dataset continuity) or
+        #     clears it (start-fresh / resume rebuild). Defaults to retain.
+        #   ``_metrics_undo_buffer`` — a snapshot of the rows removed by an
+        #     explicit ``clear_metrics_with_undo``; ``None`` when no undo is
+        #     available. Bounded by the deque ``maxlen``
+        #     (``_PROJECT_API_METRICS_BUFFER_SIZE`` = 10000 rows), so a pending
+        #     undo costs at most one extra buffer's worth of memory. Dropped
+        #     when a run starts (the clear is then finalized).
+        #   ``_metrics_undo_lock`` — guards the undo buffer independently of the
+        #     big ``_lock`` so clear/undo never contend with training control.
+        self._retain_metrics_next_run: bool = True
+        self._metrics_undo_buffer: Optional[List[Dict[str, Any]]] = None
+        self._metrics_undo_lock = threading.Lock()
+
         # WS-6 PR-B3.3: live monitoring is driven by CascorModel.fit's on_event sink
         # (_handle_event) rather than monkey-patching network.fit/grow_network. These
         # per-run bookkeeping fields are reset at the top of _run_training.
@@ -1940,6 +1970,7 @@ class TrainingLifecycleManager:
         *,
         X_val: Optional[torch.Tensor] = None,
         y_val: Optional[torch.Tensor] = None,
+        start_fresh: bool = False,
         **kwargs,
     ) -> Dict[str, Any]:
         """Start training asynchronously.
@@ -1949,6 +1980,15 @@ class TrainingLifecycleManager:
             y: Training targets tensor
             X_val: Validation features
             y_val: Validation targets
+            start_fresh: C5 (Q4 use-case 2 / U-1) — when True, DISCARD the
+                current model and all retained metrics/history before the run
+                (a clean-launch-equivalent reset via
+                :meth:`_start_fresh_reset_locked`) so training begins with a
+                vanilla, untrained network created from the dataset dims.
+                On-disk snapshot artifacts are never touched. When False
+                (default) the current model and its metrics/history are
+                RETAINED, so training continues the existing model — the
+                cross-dataset continual-training use case (Q4 use-case 1).
             **kwargs: TrainingParams body. Fields in ``_FIT_KWARGS`` are
                 forwarded to ``network.fit``; everything else is applied
                 in-place via ``update_params`` so the next fit pass sees
@@ -1996,6 +2036,16 @@ class TrainingLifecycleManager:
 
             if self._train_x is None or self._train_y is None:
                 raise ValueError("Training data not provided")
+
+            # C5 (Q4 use-case 2 / U-1): a start-fresh run discards the current
+            # model + all retained metrics/history HERE — after the data guard
+            # (so a dataless start doesn't throw the model away on a doomed
+            # start) and before the create-on-start block below, which then
+            # rebuilds a vanilla network from the (new) dataset dims. On-disk
+            # snapshots are preserved. Default (start_fresh=False) leaves the
+            # current model + metrics/history intact — continue-training.
+            if start_fresh:
+                self._start_fresh_reset_locked()
 
             # Training-start diagnosis 2026-07-09 (PR-B): with ``auto_start``
             # defaulting off, nothing creates a network before the first
@@ -2082,6 +2132,24 @@ class TrainingLifecycleManager:
             # in the recorder's snapshot of those values.
             self._attach_weight_history_recorder()
 
+            # C5 (Q4/U-1): decide this run's metrics/history retention posture
+            # (read by ``_run_training`` on the background thread):
+            #   * plain start (default): RETAIN — the buffer carries across the
+            #     run boundary and ``_run_training`` baselines the history
+            #     high-water-mark at the existing length so only THIS run's new
+            #     rows are appended (no re-emit/duplication).
+            #   * resume (RESUME_READY): rebuild the buffer from the full loaded
+            #     history — the pre-C5 clear + re-emit-from-zero path (unchanged
+            #     snapshot-resume semantics).
+            #   * start-fresh: the buffer was emptied above and the network is
+            #     vanilla (empty history), so this collapses to the same clear +
+            #     zero-baseline path.
+            self._retain_metrics_next_run = not resuming and not start_fresh
+            # Starting a run finalizes any pending explicit clear: drop the undo
+            # snapshot so ``undo_clear_metrics`` after this point is a 409.
+            with self._metrics_undo_lock:
+                self._metrics_undo_buffer = None
+
             self._training_future = self._executor.submit(self._run_training, self._train_x, self._train_y, self._val_x, self._val_y, **fit_kwargs)
 
         return {"status": "training_started", "timestamp": time.time()}
@@ -2109,13 +2177,18 @@ class TrainingLifecycleManager:
         # Reset per-run bookkeeping (was monitored_fit's per-fit reset + the _step_timer box).
         # _cascade_emitted_count baselines at the units already present so a retrain only emits
         # cascade_add for units grown this run.
-        self._last_emitted_history_len = 0
+        # C5 (Q4/U-1): on a metrics-RETAINING run, baseline the history high-water-mark at the
+        # rows already emitted into the (retained) buffer so this run EXTENDS it with only its
+        # new rows — re-emitting from 0 while retaining would duplicate the prior run's tail.
+        # Mirrors _cascade_emitted_count. A fresh / start-fresh / resume-rebuild run uses 0.
+        retain_metrics = self._retain_metrics_next_run
+        self._last_emitted_history_len = self._current_history_len() if retain_metrics else 0
         self._step_timer_prev = None
         self._grow_phase_entered = False
         self._cascade_emitted_count = len(self.network.hidden_units)
 
         # Session start (was monitored_fit's pre-fit block).
-        monitor.on_training_start()
+        monitor.on_training_start(retain_metrics=retain_metrics)
         # BUG-CC-07: phase via the state-machine command, then notify the monitor.
         sm.handle_command(Command.START)
         monitor.on_phase_change(sm.phase.name.lower())
@@ -2253,6 +2326,105 @@ class TrainingLifecycleManager:
         self._pause_event.set()
 
     # ------------------------------------------------------------------
+    # C5 (Q4/U-1) — metrics/history retention, explicit clear + undo,
+    # and start-fresh (clean-launch) reset.
+    # ------------------------------------------------------------------
+
+    def _current_history_len(self) -> int:
+        """Length of the live network's primary per-epoch series (``train_loss``).
+
+        The C5 retained-run high-water-mark baseline: a retaining run resumes
+        ``_last_emitted_history_len`` here so the buffer is EXTENDED with only
+        the new rows this run appends (mirrors ``_extract_and_record_metrics``'
+        ``train_loss`` indexing and the ``_cascade_emitted_count`` baseline).
+        Returns 0 when there is no network / no history (e.g. a fresh or
+        start-fresh-reset network), which reproduces the pre-C5 baseline.
+        """
+        net = self.network
+        if net is None or not hasattr(net, "history"):
+            return 0
+        try:
+            return len(net.history.get("train_loss", []))
+        except (AttributeError, TypeError):
+            return 0
+
+    def _metrics_undo_available(self) -> bool:
+        """True when an explicit metrics clear can still be undone (C5)."""
+        with self._metrics_undo_lock:
+            return self._metrics_undo_buffer is not None
+
+    def clear_metrics_with_undo(self) -> Dict[str, Any]:
+        """C5 (Q4 use-case 1): explicitly clear the retained metrics/history,
+        stashing the cleared rows so the clear can be reversed with
+        :meth:`undo_clear_metrics` at any point until the next run starts.
+
+        The undo snapshot holds at most ``_PROJECT_API_METRICS_BUFFER_SIZE``
+        (10000) rows — the same bound as the live buffer — so a pending undo
+        costs at most one extra buffer's worth of memory. Starting a training
+        run (:meth:`start_training`) finalizes the clear and drops the
+        snapshot. Distinct from :meth:`reset` (which also clears counters + the
+        FSM) — this touches metrics/history only.
+        """
+        with self._metrics_undo_lock:
+            cleared = list(self.monitor.get_all_metrics())
+            self.monitor.clear_metrics()
+            self._metrics_undo_buffer = cleared
+            count = len(cleared)
+        self.logger.info("Metrics cleared with undo (%d rows stashed)", count)
+        return {"status": "cleared", "cleared_count": count, "undo_available": True}
+
+    def undo_clear_metrics(self) -> Dict[str, Any]:
+        """C5 (Q4 use-case 1 fallback): restore the metrics/history removed by
+        the most recent :meth:`clear_metrics_with_undo`.
+
+        Valid until the next training run starts. Raises
+        :class:`NoMetricsUndoError` when no undo is available (nothing was
+        cleared, or a run has started since and finalized the clear).
+        """
+        with self._metrics_undo_lock:
+            if self._metrics_undo_buffer is None:
+                raise NoMetricsUndoError("No metrics clear to undo (nothing cleared, or a training run has started since)")
+            rows = self._metrics_undo_buffer
+            self.monitor.restore_metrics(rows)
+            self._metrics_undo_buffer = None
+            count = len(rows)
+        self.logger.info("Metrics clear undone (%d rows restored)", count)
+        return {"status": "restored", "restored_count": count, "undo_available": False}
+
+    def _start_fresh_reset_locked(self) -> None:
+        """C5 (Q4 use-case 2 / U-1): clean-launch reset for a start-fresh run.
+
+        Discards the in-memory model and every piece of retained training data
+        so the next ``start_training`` recreates a vanilla, untrained network
+        from the dataset dims — functionally identical to a fresh stack launch
+        EXCEPT for artifacts with a permanence expectation. **Snapshot files on
+        disk (``_get_snapshots_dir``) are NEVER touched by this path** — a
+        start-fresh discards the working model, not the operator's saved
+        snapshots.
+
+        Assumes ``self._lock`` is held (called inline from ``start_training``);
+        combines ``delete_network`` + ``reset`` + ``restore_for_retrain``'s
+        reset scope without re-entering the non-reentrant lock.
+        """
+        # Discard the working model (mirrors delete_network under the held lock).
+        self.model = None
+        self._params = None
+        # Clear retained metrics/history and drop any pending undo — a fresh
+        # start supersedes an in-flight explicit clear.
+        self.monitor.clear_metrics()
+        with self._metrics_undo_lock:
+            self._metrics_undo_buffer = None
+        self._last_emitted_history_len = 0
+        # Fresh auto-snap ratchet + no carried-over resume marker.
+        with self._auto_snap_lock:
+            self._auto_snap_best_metric = None
+        self._resume_point_epoch = None
+        # FSM + counters back to the clean-launch baseline.
+        self.state_machine.handle_command(Command.RESET)
+        self.training_state.update_state(status="Stopped", phase="Idle", current_epoch=0, current_step=0)
+        self.logger.info("start_fresh: discarded model + cleared retained metrics/history (snapshots on disk preserved)")
+
+    # ------------------------------------------------------------------
     # Status & metrics
     # ------------------------------------------------------------------
 
@@ -2282,6 +2454,11 @@ class TrainingLifecycleManager:
             # any training. Lets canopy distinguish a genuine convergence from a
             # 0-unit stall instead of both showing a bare "Completed".
             "completion_reason": getattr(self.network, "_completion_reason", None),
+            # C5 (Q4/U-1): additive — True while an explicit metrics clear
+            # (POST /v1/training/metrics/clear) can still be undone (i.e. no run
+            # has started since). Lets canopy render the undo affordance across
+            # a page reload without a separate poll. Additive field only.
+            "metrics_clear_undo_available": self._metrics_undo_available(),
         }
 
     def get_metrics(self) -> Dict[str, Any]:
