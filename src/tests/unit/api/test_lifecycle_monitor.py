@@ -355,8 +355,27 @@ class TestTrainingMonitor:
             )
         assert monitor.get_current_state()["total_metrics"] == 10000
 
-    def test_training_start_clears_buffer(self):
-        """Starting training clears existing metrics."""
+    def test_training_start_retains_buffer_by_default(self):
+        """C5 (Q4/U-1): on_training_start RETAINS metrics by default.
+
+        Pre-C5 every run start emptied the buffer; the ratified retention
+        posture keeps metrics/history across run boundaries (cross-dataset
+        continuity), zeroing only the live per-run ``current_epoch`` counter.
+        """
+        monitor = TrainingMonitor()
+        monitor.on_epoch_end(
+            epoch=7,
+            loss=0.5,
+            accuracy=0.5,
+            learning_rate=0.01,
+            hidden_units=0,
+        )
+        monitor.on_training_start()  # default retain_metrics=True
+        assert monitor.get_current_state()["total_metrics"] == 1
+        assert monitor.get_current_state()["current_epoch"] == 0
+
+    def test_training_start_fresh_clears_buffer(self):
+        """C5 (Q4 use-case 2): on_training_start(retain_metrics=False) clears."""
         monitor = TrainingMonitor()
         monitor.on_epoch_end(
             epoch=1,
@@ -365,8 +384,20 @@ class TestTrainingMonitor:
             learning_rate=0.01,
             hidden_units=0,
         )
-        monitor.on_training_start()
+        monitor.on_training_start(retain_metrics=False)
         assert monitor.get_current_state()["total_metrics"] == 0
+
+    def test_restore_metrics_repopulates_buffer(self):
+        """C5 undo: restore_metrics replaces the buffer with a snapshot."""
+        monitor = TrainingMonitor()
+        for i in range(3):
+            monitor.on_epoch_end(epoch=i, loss=0.5, accuracy=0.5, learning_rate=0.01, hidden_units=0)
+        snapshot = monitor.get_all_metrics()
+        monitor.clear_metrics()
+        assert monitor.get_current_state()["total_metrics"] == 0
+        monitor.restore_metrics(snapshot)
+        assert monitor.get_current_state()["total_metrics"] == 3
+        assert monitor.get_all_metrics() == snapshot
 
     def test_on_candidate_progress_triggers_callback(self):
         """Candidate progress events are delivered to registered callbacks."""
