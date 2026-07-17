@@ -162,11 +162,17 @@ def test_start_training_consumes_and_clears_staged_config(client, fake_juniper_d
         json={"inline_data": {"train_x": [[0.0, 0.0]], "train_y": [[1.0, 0.0]]}},
     )
 
-    # Reload must have called the JuniperDataClient with the staged params.
+    # Reload must have called the JuniperDataClient with the staged params,
+    # TRANSLATED to juniper-data's dialect (#396 `_translate_staged_config`):
+    # registry key "spiral" (canopy's dialect says "spirals") and per-arm
+    # counts — total n_samples=4 over the default 2 spirals →
+    # n_points_per_spiral=2. The pre-#396 assertions here pinned the
+    # untranslated forwarding that died at juniper-data with
+    # "Unknown generator 'spirals'" (training-start diagnosis 2026-07-09).
     mock_instance.create_dataset.assert_called_once()
     call_kwargs = mock_instance.create_dataset.call_args.kwargs
-    assert call_kwargs["generator"] == "spirals"
-    assert call_kwargs["params"] == {"n_samples": 4}
+    assert call_kwargs["generator"] == "spiral"
+    assert call_kwargs["params"] == {"n_points_per_spiral": 2}
 
     # And the pending config must have been cleared.
     resp = client.get("/v1/training/dataset/pending")
@@ -277,9 +283,14 @@ def test_equities_reload_forwards_generic_params_flattened(client, fake_juniper_
 
 
 @pytest.mark.integration
-def test_spirals_typed_fields_still_forward_unchanged(client, fake_juniper_data_client):
-    """Regression guard: the legacy spiral path (typed fields, no ``params``
-    key) is unchanged by the generic-params merge."""
+def test_spirals_typed_fields_translate_to_juniper_data_schema(client, fake_juniper_data_client):
+    """Regression guard: the spiral path (typed fields, no ``params`` key)
+    reaches juniper-data in ITS dialect (#396 `_translate_staged_config`):
+    registry key "spiral", total ``n_samples`` converted to per-arm
+    ``n_points_per_spiral``, pass-through ``noise`` untouched. (Formerly
+    ``test_spirals_typed_fields_still_forward_unchanged``, which pinned the
+    pre-#396 untranslated forwarding — the masked seam that died at real
+    juniper-data with "Unknown generator 'spirals'".)"""
     _, mock_instance = fake_juniper_data_client
     _create_network(client)
     client.post("/v1/training/dataset", json={"dataset_type": "spirals", "n_samples": 4, "noise": 0.05})
@@ -287,5 +298,5 @@ def test_spirals_typed_fields_still_forward_unchanged(client, fake_juniper_data_
     client.post("/v1/training/start", json={"inline_data": {"train_x": [[0.0, 0.0]], "train_y": [[1.0, 0.0]]}})
 
     call_kwargs = mock_instance.create_dataset.call_args.kwargs
-    assert call_kwargs["generator"] == "spirals"
-    assert call_kwargs["params"] == {"n_samples": 4, "noise": 0.05}
+    assert call_kwargs["generator"] == "spiral"
+    assert call_kwargs["params"] == {"noise": 0.05, "n_points_per_spiral": 2}
