@@ -66,7 +66,7 @@ class TestLifespanMetricsEnabled:
                 # set_build_info now also receives git_sha/build_date from the
                 # api.provenance accessor — both None outside a provenance-stamped
                 # image (no env vars in the unit-test context).
-                mock_build_info.assert_called_once_with("juniper_cascor", "0.5.0", git_sha=None, build_date=None)
+                mock_build_info.assert_called_once_with("juniper_cascor", "0.6.0", git_sha=None, build_date=None)
 
     def test_metrics_not_called_when_disabled(self):
         """When metrics_enabled=False (default), set_build_info is NOT called."""

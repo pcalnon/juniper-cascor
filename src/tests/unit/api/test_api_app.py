@@ -28,7 +28,7 @@ class TestAppFactory:
         """Test app metadata."""
         app = create_app(Settings(auto_start=False))
         assert app.title == "JuniperCascor API"
-        assert app.version == "0.5.0"
+        assert app.version == "0.6.0"
 
     def test_cors_middleware_skipped_with_empty_origins(self):
         """Test that CORS middleware is not applied when origins is empty."""

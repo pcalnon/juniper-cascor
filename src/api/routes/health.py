@@ -41,7 +41,7 @@ from api.settings import Settings
 try:
     _API_VERSION: str = importlib.metadata.version("juniper-cascor")
 except importlib.metadata.PackageNotFoundError:  # pragma: no cover - source checkout
-    _API_VERSION = "0.5.0"
+    _API_VERSION = "0.6.0"
 
 router = APIRouter(tags=["health"])
 
