@@ -307,11 +307,11 @@ class TestSetBuildInfo:
         with patch("prometheus_client.Info") as MockInfo:
             mock_info = MagicMock()
             MockInfo.return_value = mock_info
-            set_build_info("juniper_cascor", "0.5.0")
+            set_build_info("juniper_cascor", "0.6.0")
             MockInfo.assert_called_once_with("juniper_cascor_build", "Build information for juniper-cascor service")
             mock_info.info.assert_called_once()
             call_args = mock_info.info.call_args[0][0]
-            assert call_args["version"] == "0.5.0"
+            assert call_args["version"] == "0.6.0"
             assert "python_version" in call_args
 
 
@@ -558,6 +558,6 @@ class TestObservabilityReadinessTimestamp:
 
         from juniper_observability import ReadinessResponse
 
-        rr = ReadinessResponse(status="ready", version="0.5.0", service="juniper-cascor")
+        rr = ReadinessResponse(status="ready", version="0.6.0", service="juniper-cascor")
         # tz-aware UTC unix timestamp must be within 60s of "now".
         assert abs(time.time() - rr.timestamp) < 60.0

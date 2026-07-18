@@ -5,7 +5,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
-_API_VERSION: str = "0.5.0"
+_API_VERSION: str = "0.6.0"
 
 
 def coerce_native_scalars(value: Any) -> Any:
@@ -57,7 +57,7 @@ class ResponseEnvelope(BaseModel):
     {
         "status": "success" | "error",
         "data": { ... },
-        "meta": { "timestamp": ..., "version": "0.5.0" }
+        "meta": { "timestamp": ..., "version": "0.6.0" }
     }
     """
 
