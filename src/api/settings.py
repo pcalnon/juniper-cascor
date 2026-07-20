@@ -159,6 +159,14 @@ class Settings(BaseSettings):
     loopback_publish_attested: bool = False
     auth_proxy_attested: bool = False
 
+    # SEC-F01: the INTENDED auth posture, fed to enforce_auth_posture in the
+    # lifespan (env ``JUNIPER_CASCOR_REQUIRE_AUTH``). False (default) = an
+    # unset/blank JUNIPER_CASCOR_API_KEYS only WARNs at boot (service runs
+    # open — bare/dev profile); True = boot REFUSES (CRITICAL +
+    # AuthPostureError) when no real key is configured. Set true wherever
+    # secrets are provisioned (the composed juniper-deploy stack).
+    require_auth: bool = False
+
     log_level: str = _JUNIPER_CASCOR_API_LOGLEVEL_DEFAULT
     cors_origins: list[str] = _JUNIPER_CASCOR_API_CORS_ORIGINS_DEFAULT
 
