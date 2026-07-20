@@ -4,7 +4,7 @@ annotated-doc==0.0.4
     # via fastapi
 annotated-types==0.7.0
     # via pydantic
-anyio==4.14.1
+anyio==4.14.2
     # via
     #   starlette
     #   watchfiles
@@ -14,7 +14,7 @@ certifi==2026.6.17
     # via
     #   requests
     #   sentry-sdk
-charset-normalizer==3.4.7
+charset-normalizer==3.4.9
     # via requests
 click==8.4.2
     # via uvicorn
@@ -24,13 +24,15 @@ cuda-bindings==13.3.1
     # via torch
 cuda-pathfinder==1.5.6
     # via cuda-bindings
-cuda-toolkit==13.0.2
+cuda-toolkit==13.0.3.0
     # via torch
 cycler==0.12.1
     # via matplotlib
-fastapi==0.139.0
-    # via juniper-cascor (pyproject.toml)
-filelock==3.29.5
+fastapi==0.139.2
+    # via
+    #   juniper-cascor (pyproject.toml)
+    #   juniper-service-core
+filelock==3.31.1
     # via torch
 fonttools==4.63.0
     # via matplotlib
@@ -50,25 +52,29 @@ jinja2==3.1.6
     # via torch
 juniper-cascor-protocol==0.1.0
     # via juniper-cascor (pyproject.toml)
-juniper-data==0.9.0
+juniper-data==0.10.0
     # via juniper-cascor (pyproject.toml)
 juniper-data-client==0.4.2
     # via juniper-cascor (pyproject.toml)
 juniper-model-core==0.3.0
-    # via juniper-cascor (pyproject.toml)
+    # via
+    #   juniper-cascor (pyproject.toml)
+    #   juniper-service-core
 juniper-observability==0.4.0
+    # via juniper-cascor (pyproject.toml)
+juniper-service-core==0.5.0
     # via juniper-cascor (pyproject.toml)
 kiwisolver==1.5.0
     # via matplotlib
 markupsafe==3.0.3
     # via jinja2
-matplotlib==3.11.0
+matplotlib==3.11.1
     # via juniper-cascor (pyproject.toml)
 mpmath==1.3.0
     # via sympy
 networkx==3.6.1
     # via torch
-numpy==2.5.0
+numpy==2.5.1
     # via
     #   juniper-cascor (pyproject.toml)
     #   contourpy
@@ -76,12 +82,13 @@ numpy==2.5.0
     #   juniper-cascor-protocol
     #   juniper-data
     #   juniper-data-client
+    #   juniper-service-core
     #   matplotlib
 nvidia-cublas==13.1.1.3
     # via
+    #   cuda-toolkit
     #   nvidia-cudnn-cu13
     #   nvidia-cusolver
-    #   torch
 nvidia-cuda-cupti==13.0.85
     # via cuda-toolkit
 nvidia-cuda-nvrtc==13.0.88
@@ -108,7 +115,7 @@ nvidia-cusparselt-cu13==0.8.1
     # via torch
 nvidia-nccl-cu13==2.29.7
     # via torch
-nvidia-nvjitlink==13.0.88
+nvidia-nvjitlink==13.3.33
     # via
     #   cuda-toolkit
     #   nvidia-cufft
@@ -131,11 +138,14 @@ pydantic==2.13.4
     #   juniper-cascor-protocol
     #   juniper-data
     #   juniper-observability
+    #   juniper-service-core
     #   pydantic-settings
 pydantic-core==2.46.4
     # via pydantic
 pydantic-settings==2.14.2
-    # via juniper-cascor (pyproject.toml)
+    # via
+    #   juniper-cascor (pyproject.toml)
+    #   juniper-service-core
 pyparsing==3.3.2
     # via matplotlib
 python-dateutil==2.9.0.post0
@@ -152,9 +162,9 @@ pyyaml==6.0.3
     #   uvicorn
 requests==2.34.2
     # via juniper-data-client
-sentry-sdk==2.64.0
+sentry-sdk==2.66.0
     # via juniper-cascor (pyproject.toml)
-setuptools==81.0.0
+setuptools==83.0.0
     # via torch
 six==1.17.0
     # via python-dateutil
@@ -184,13 +194,13 @@ urllib3==2.7.0
     #   juniper-data-client
     #   requests
     #   sentry-sdk
-uvicorn==0.49.0
+uvicorn==0.51.0
     # via juniper-cascor (pyproject.toml)
 uvloop==0.22.1
     # via uvicorn
 watchfiles==1.2.0
     # via uvicorn
-websockets==16.0
+websockets==16.1.1
     # via uvicorn
 
 # The following packages were excluded from the output:
