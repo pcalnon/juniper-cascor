@@ -13,6 +13,7 @@ import torch
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from juniper_service_core import enforce_auth_posture
 
 from api import provenance
 from api.lifecycle.manager import TrainingLifecycleManager
@@ -312,6 +313,21 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # proxy), before uvicorn binds the socket or any background thread is
     # spawned. Fail-closed and loud.
     enforce_bind_attestation_guard(settings)
+
+    # SEC-F01 (HO-2): boot-time auth-posture self-check. An empty/placeholder
+    # JUNIPER_CASCOR_API_KEYS secret silently disables APIKeyAuth and cascor
+    # serves protected routes OPEN behind a healthy health check; make that
+    # posture loud here, before serving begins. require_auth=False because
+    # cascor has no require-auth flag today — flipping to fail-closed
+    # (CRITICAL + refuse to start) is the owner-approved
+    # JUNIPER_CASCOR_REQUIRE_AUTH follow-up. Bypass with
+    # JUNIPER_SKIP_AUTH_POSTURE_CHECK=1 (logged loudly).
+    enforce_auth_posture(
+        settings.api_keys,
+        require_auth=False,
+        service_name="juniper-cascor",
+        logger=logger,
+    )
 
     configure_sentry(settings.sentry_dsn, "juniper-cascor", _API_VERSION)
     if settings.metrics_enabled:
