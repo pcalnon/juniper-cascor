@@ -317,14 +317,15 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # SEC-F01 (HO-2): boot-time auth-posture self-check. An empty/placeholder
     # JUNIPER_CASCOR_API_KEYS secret silently disables APIKeyAuth and cascor
     # serves protected routes OPEN behind a healthy health check; make that
-    # posture loud here, before serving begins. require_auth=False because
-    # cascor has no require-auth flag today — flipping to fail-closed
-    # (CRITICAL + refuse to start) is the owner-approved
-    # JUNIPER_CASCOR_REQUIRE_AUTH follow-up. Bypass with
-    # JUNIPER_SKIP_AUTH_POSTURE_CHECK=1 (logged loudly).
+    # posture loud here, before serving begins. The intended posture comes
+    # from JUNIPER_CASCOR_REQUIRE_AUTH (settings.require_auth; default
+    # false): false = loud WARNING only (bare/dev profile), true = a
+    # missing/blank key is a boot FAILURE (CRITICAL + AuthPostureError) —
+    # set true wherever secrets are provisioned (the composed juniper-deploy
+    # stack). Bypass with JUNIPER_SKIP_AUTH_POSTURE_CHECK=1 (logged loudly).
     enforce_auth_posture(
         settings.api_keys,
-        require_auth=False,
+        require_auth=settings.require_auth,
         service_name="juniper-cascor",
         logger=logger,
     )
