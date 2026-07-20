@@ -80,6 +80,14 @@ dependencies = [
     # of the cascor service (not test-only). Pin matches the [test] conformance
     # kit (OQ-B2, plan §9): >=0.2.0,<0.3.0; model-core has zero deps / no torch.
     "juniper-model-core>=0.2.0,<0.4.0",
+    # SEC-F01 / HO-2 (per-service adoption wave): boot-time auth-posture
+    # self-check. The lifespan calls enforce_auth_posture with the resolved
+    # inbound api_keys right after the bind-attestation guard, so an
+    # empty/placeholder JUNIPER_CASCOR_API_KEYS secret (which silently
+    # disables APIKeyAuth and serves protected routes open behind a healthy
+    # health check) is loud at boot. Stdlib-only import surface; 0.5.0 is the
+    # release that ships the check. Pin mirrors the model-core floor+cap style.
+    "juniper-service-core>=0.5.0,<0.6.0",
 ]
 
 [project.optional-dependencies]
