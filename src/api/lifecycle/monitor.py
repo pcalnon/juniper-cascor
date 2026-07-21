@@ -265,8 +265,19 @@ class TrainingMonitor:
         validation_loss: Optional[float] = None,
         validation_accuracy: Optional[float] = None,
         kind: str = "training_step",
+        scalar_metrics: Optional[Dict[str, Any]] = None,
     ) -> None:
         """Record one metrics row and (for training-step rows) advance ``current_epoch``.
+
+        C7 (U-4) scalar evaluation metrics: every row additionally carries the
+        nullable flat fields ``f1`` / ``precision`` / ``recall`` / ``roc_auc``.
+        They are ``None`` on rows the manager did not compute them for — the
+        throttled within-pass ``kind="output_epoch"`` rows, and any row emitted
+        while the feature is disabled — and populated (from ``scalar_metrics``,
+        the manager's ``classification_metrics`` result over the evaluation
+        split) on the terminal ``kind="training_step"`` row of each metrics
+        drain. Additive and nullable: consumers that predate the fields ignore
+        them; the schema is stable (the keys are always present).
 
         C2b counter semantics (I-1c): two producers feed this method with two
         DIFFERENT epoch numberings, so every buffered row now carries an explicit
@@ -299,7 +310,17 @@ class TrainingMonitor:
             # C2b: row discriminator — see the docstring. Additive; consumers
             # that predate it can ignore the key.
             "kind": kind,
+            # C7 (U-4): scalar evaluation metrics. Always present (stable schema),
+            # nullable — populated only on the terminal training-step row of a
+            # drain when the manager computed them over the evaluation split.
+            "f1": None,
+            "precision": None,
+            "recall": None,
+            "roc_auc": None,
         }
+        if scalar_metrics:
+            for key in ("f1", "precision", "recall", "roc_auc"):
+                metrics[key] = scalar_metrics.get(key)
 
         with self._lock:
             if kind == "training_step":
