@@ -20,12 +20,23 @@ from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 import torch
 
+from api.lifecycle.classification_metrics import compute_scalar_classification_metrics
 from api.lifecycle.monitor import TrainingMonitor, TrainingState
 from api.lifecycle.state_machine import Command, TrainingPhase, TrainingStateMachine
 from api.models.cascor_model import CascorModel
 from api.models.common import coerce_native_scalars as _common_coerce_native_scalars
 from api.observability import TRAINING_SESSION_STATUS_CANCELLED, TRAINING_SESSION_STATUS_FAILURE, TRAINING_SESSION_STATUS_SUCCESS, dec_training_sessions, inc_training_session_completed, inc_training_sessions, observe_training_step_duration, record_training_epoch, set_hidden_units, set_training_accuracy, set_training_loss
 from cascor_constants.constants_api import _PROJECT_API_DRAIN_THREAD_JOIN_TIMEOUT, _PROJECT_API_LIFECYCLE_DEFAULT_CANDIDATE_PATIENCE, _PROJECT_API_NETWORK_INPUT_SIZE_DEFAULT, _PROJECT_API_NETWORK_OUTPUT_SIZE_DEFAULT, _PROJECT_API_PROGRESS_QUEUE_GET_TIMEOUT, _PROJECT_API_PROGRESS_QUEUE_WAIT_TIMEOUT
+
+
+def _env_flag(name: str, *, default: bool) -> bool:
+    """Parse a boolean environment variable (``1/0``, ``true/false``, ``yes/no``,
+    ``on/off``; case-insensitive). Returns ``default`` when ``name`` is unset or
+    blank. Used for the C7 ``JUNIPER_CASCOR_EVAL_METRICS_ENABLED`` toggle."""
+    raw = os.environ.get(name)
+    if raw is None or not raw.strip():
+        return default
+    return raw.strip().lower() in ("1", "true", "yes", "on")
 
 
 def _read_optimizer_type(network: Any) -> str:
@@ -1149,6 +1160,25 @@ class TrainingLifecycleManager:
         self._val_x: Optional[torch.Tensor] = None
         self._val_y: Optional[torch.Tensor] = None
 
+        # C7 (U-4): expanded scalar evaluation metrics — F1 / precision / recall
+        # / ROC-AUC computed over the evaluation split (the validation/test split
+        # ``_val_x``/``_val_y`` when present, else the training split). Computed
+        # in ``_extract_and_record_metrics`` once per metrics drain — i.e. once
+        # per completed TRAINING STEP (initial output pass + one per growth
+        # iteration), NOT per inner epoch — so the added cost is a single
+        # ``torch.no_grad()`` forward pass over the eval split per step
+        # (negligible for the 2-D research datasets; bounded for large sets since
+        # it is step-cadenced, not epoch-cadenced). The scalars ride the terminal
+        # training-step metrics row (see ``TrainingMonitor.on_epoch_end``) and the
+        # ``/v1/metrics`` snapshot (``get_metrics``). Enabled by default; set
+        # ``JUNIPER_CASCOR_EVAL_METRICS_ENABLED`` to ``0``/``false`` to disable
+        # (distinct from ``JUNIPER_CASCOR_METRICS_ENABLED``, which gates the
+        # Prometheus endpoint). ``_latest_scalar_metrics`` caches the newest
+        # computed result for the snapshot surface; reset at each run start.
+        self._eval_metrics_enabled: bool = _env_flag("JUNIPER_CASCOR_EVAL_METRICS_ENABLED", default=True)
+        self._eval_metrics_average: str = "macro"
+        self._latest_scalar_metrics: Optional[Dict[str, Any]] = None
+
         # Network creation params (for reset)
         self._params: Optional[Dict[str, Any]] = None
 
@@ -1818,15 +1848,74 @@ class TrainingLifecycleManager:
             monitor.on_candidate_progress(progress)
             manager_ref._broadcast_training_state()
 
+    def _eval_split(self) -> tuple:
+        """C7 (U-4): the evaluation split for the scalar metrics — the
+        validation/test tensors (``_val_x``/``_val_y``, sourced from the
+        dataset's ``X_test``/``y_test``) when present, else the training split.
+        Returns ``(None, None)`` when no data is loaded."""
+        if self._val_x is not None and self._val_y is not None:
+            return self._val_x, self._val_y
+        return self._train_x, self._train_y
+
+    def _compute_eval_scalar_metrics(self) -> Optional[Dict[str, Any]]:
+        """C7 (U-4): compute F1 / precision / recall / ROC-AUC over the
+        evaluation split via a single ``torch.no_grad()`` forward pass.
+
+        Best-effort: returns ``None`` (never raises) when the feature is
+        disabled, no network / eval data is available, or the forward pass /
+        computation fails — a degraded metric must never crash the drain or the
+        training thread. Called OUTSIDE ``_metrics_lock`` so the forward pass
+        does not extend that critical section (which ``get_metrics`` also takes)."""
+        if not self._eval_metrics_enabled:
+            return None
+        network = self.network
+        x, y = self._eval_split()
+        if network is None or x is None or y is None:
+            return None
+        try:
+            with torch.no_grad():
+                output = network.forward(x)
+            return compute_scalar_classification_metrics(output, y, average=self._eval_metrics_average)
+        except Exception:
+            self.logger.debug("C7: eval scalar-metrics computation failed", exc_info=True)
+            return None
+
+    def _drain_scalars_if_new(self) -> Optional[Dict[str, Any]]:
+        """C7 (U-4): cheap, lock-free pre-check gating the eval forward pass.
+
+        Returns the computed scalar metrics only when a new history row is
+        (racily) visible, so the frequent within-pass drains that add no row
+        skip the forward pass entirely. The read is racy but only gates optional
+        work — the authoritative new-row gate stays inside ``_metrics_lock`` in
+        :meth:`_extract_and_record_metrics`."""
+        try:
+            approx_len = len(self.network.history.get("train_loss", []))
+        except (RuntimeError, KeyError, AttributeError):
+            return None
+        if approx_len <= self._last_emitted_history_len:
+            return None
+        return self._compute_eval_scalar_metrics()
+
     def _extract_and_record_metrics(self) -> None:
         """Extract NEW metrics from network history and record them.
 
         Uses a high-water-mark (_last_emitted_history_len) to only emit
         history entries that haven't been emitted yet. Safe to call
         multiple times — idempotent when no new data exists.
+
+        C7 (U-4): when new training-step rows exist, the scalar evaluation
+        metrics are computed once (outside ``_metrics_lock``) and attached to the
+        TERMINAL new row only — older backfilled rows in the same slice carry
+        ``None`` because a single forward pass reflects the network's current
+        state, not each historical row. The result is also cached in
+        ``_latest_scalar_metrics`` for the ``/v1/metrics`` snapshot.
         """
         if self.network is None or not hasattr(self.network, "history"):
             return
+
+        # C7 (U-4): compute the scalar evaluation metrics only when a new history
+        # row is (racily) visible — the forward pass runs outside _metrics_lock.
+        scalar_metrics: Optional[Dict[str, Any]] = self._drain_scalars_if_new()
 
         # CONC-03 / BUG-CC-17 (Phase 3B): the previous implementation
         # released self._metrics_lock between the snapshot+high-water-mark read
@@ -1857,6 +1946,10 @@ class TrainingLifecycleManager:
             # Emit all new entries
             for i in range(last_emitted, current_len):
                 epoch = i + 1
+                # C7 (U-4): the scalars reflect one forward pass over the current
+                # network, so attach them to the TERMINAL new row only; earlier
+                # backfilled rows keep the nullable fields at None.
+                row_scalars = scalar_metrics if i == current_len - 1 else None
                 self.monitor.on_epoch_end(
                     epoch=epoch,
                     loss=train_loss_list[i],
@@ -1865,6 +1958,7 @@ class TrainingLifecycleManager:
                     hidden_units=hidden_units_count,
                     validation_loss=val_loss_list[i] if i < len(val_loss_list) else None,
                     validation_accuracy=val_accuracy_list[i] if i < len(val_accuracy_list) else None,
+                    scalar_metrics=row_scalars,
                 )
                 # OBS-WIRE-01 (A.2): bump the per-phase epoch counter
                 # exactly once per newly-emitted history row. Counters
@@ -1915,6 +2009,13 @@ class TrainingLifecycleManager:
             # Advance the high-water-mark before releasing the lock — this is
             # the second half of the formerly-split section.
             self._last_emitted_history_len = current_len
+
+            # C7 (U-4): cache the latest computed scalars for the /v1/metrics
+            # snapshot (``get_metrics``). Only overwrite when we actually
+            # computed a result this drain, so a transient computation failure
+            # leaves the previous snapshot value intact rather than blanking it.
+            if scalar_metrics is not None:
+                self._latest_scalar_metrics = scalar_metrics
 
         # C2b counter semantics: ``current_epoch`` / ``current_step`` count
         # completed TRAINING STEPS — entries in the engine's ``history``
@@ -2186,6 +2287,10 @@ class TrainingLifecycleManager:
         self._step_timer_prev = None
         self._grow_phase_entered = False
         self._cascade_emitted_count = len(self.network.hidden_units)
+        # C7 (U-4): drop the previous run's cached scalar snapshot so /v1/metrics
+        # reports None until this run's first drain recomputes it (the retained
+        # history rows keep their own already-computed scalars).
+        self._latest_scalar_metrics = None
 
         # Session start (was monitored_fit's pre-fit block).
         monitor.on_training_start(retain_metrics=retain_metrics)
@@ -2476,6 +2581,19 @@ class TrainingLifecycleManager:
             except (RuntimeError, KeyError):
                 return {}
 
+        # C7 (U-4): the latest scalar evaluation metrics computed over the
+        # evaluation split (see ``_extract_and_record_metrics``). Additive and
+        # nullable — the flat ``f1``/``precision``/``recall``/``roc_auc`` fields
+        # sit alongside loss/accuracy where consumers already read them, and a
+        # self-describing ``eval_metrics`` block records the averaging strategy,
+        # the split used, sample/class counts, whether the feature is enabled,
+        # and any per-metric undefined reasons. ``None`` before the first drain
+        # of a run and whenever computation is disabled/unavailable.
+        latest = self._latest_scalar_metrics
+        scalars = latest if isinstance(latest, dict) else {}
+        eval_x, _eval_y = self._eval_split()
+        eval_split = "validation" if (self._val_x is not None and self._val_y is not None) else ("training" if eval_x is not None else None)
+
         return {
             "epoch": len(train_loss),
             "train_loss": train_loss[-1] if train_loss else None,
@@ -2484,6 +2602,20 @@ class TrainingLifecycleManager:
             "val_accuracy": val_accuracy[-1] if val_accuracy else None,
             "hidden_units": hidden_units,
             "timestamp": datetime.now().isoformat(),
+            # C7 (U-4) flat scalar evaluation metrics (nullable).
+            "f1": scalars.get("f1"),
+            "precision": scalars.get("precision"),
+            "recall": scalars.get("recall"),
+            "roc_auc": scalars.get("roc_auc"),
+            # C7 (U-4) self-describing metadata for the scalar metrics.
+            "eval_metrics": {
+                "enabled": self._eval_metrics_enabled,
+                "average": scalars.get("average", self._eval_metrics_average),
+                "split": eval_split,
+                "n_samples": scalars.get("n_samples"),
+                "n_classes": scalars.get("n_classes"),
+                "undefined": scalars.get("undefined", {}),
+            },
         }
 
     def get_metrics_history(self, count: Optional[int] = None) -> list:

@@ -85,6 +85,7 @@ pre-commit install                                   # Install hooks
 | **Observability** | | |
 | `JUNIPER_CASCOR_SENTRY_DSN` | Sentry DSN for error tracking | `None` (disabled) |
 | `JUNIPER_CASCOR_METRICS_ENABLED` | Enable Prometheus metrics | `false` |
+| `JUNIPER_CASCOR_EVAL_METRICS_ENABLED` | Compute C7 scalar evaluation metrics (F1/precision/recall/ROC-AUC) per training step over the eval split; surfaced on `/v1/metrics`, `/v1/metrics/history`, and the WS `metrics` frames. Distinct from `JUNIPER_CASCOR_METRICS_ENABLED` (Prometheus). Set `0`/`false` to disable. | `true` |
 | **Auto-Start** | | |
 | `JUNIPER_CASCOR_AUTO_START` | Auto-start training on server startup | `true` |
 | `JUNIPER_CASCOR_AUTO_DATASET` | Default dataset generator | `spiral` |
