@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-07-28
+
 ### Added
 
 - **C7 (U-4) phase 1 — scalar evaluation metrics (F1 / precision / recall / ROC-AUC) on the metrics surfaces.**
