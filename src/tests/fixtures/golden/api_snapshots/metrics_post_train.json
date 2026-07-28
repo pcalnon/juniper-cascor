@@ -1,7 +1,19 @@
 {
   "data": {
     "epoch": 3,
+    "eval_metrics": {
+      "average": "macro",
+      "enabled": true,
+      "n_classes": 2,
+      "n_samples": 60,
+      "split": "training",
+      "undefined": {}
+    },
+    "f1": 0.42574868786662556,
     "hidden_units": 2,
+    "precision": 0.4721706864564007,
+    "recall": 0.48333333333333334,
+    "roc_auc": 0.43444444444444447,
     "train_accuracy": 0.48333333333333334,
     "train_loss": 0.40217360854148865,
     "val_accuracy": null,
