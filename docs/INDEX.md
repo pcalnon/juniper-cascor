@@ -56,10 +56,10 @@ This documentation serves two audiences:
 
 | Document | Description |
 |----------|-------------|
-| [CI/CD Quick Start](ci_cd/QUICK_START.md) | Understand the CI pipeline |
+| [CI/CD Quick Start](ci_cd/QUICK_START.md) | Understand the CI pipeline, WS-6 golden/conformance gates, and package CI |
 | [CI Environment](ci_cd/ENVIRONMENT_SETUP.md) | GitHub Actions environment |
-| [CI/CD Manual](ci_cd/MANUAL.md) | Pipeline architecture and jobs |
-| [CI/CD Reference](ci_cd/REFERENCE.md) | Configuration reference |
+| [CI/CD Manual](ci_cd/MANUAL.md) | Pipeline architecture, WS-6 runbook, and jobs |
+| [CI/CD Reference](ci_cd/REFERENCE.md) | Configuration reference (including WS-6 pins and package CI) |
 
 ### Source Code
 

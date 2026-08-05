@@ -1,6 +1,6 @@
 # Developer Cheatsheet — juniper-cascor
 
-**Version**: 1.0.0  |  **Date**: 2026-03-15  |  **Project**: juniper-cascor
+**Version**: 1.0.1  |  **Date**: 2026-08-05  |  **Project**: juniper-cascor
 
 ---
 
@@ -202,6 +202,9 @@ Compression: gzip level 4 (default). Performance: Save <2s, Load <3s, Verify <20
 | `long`            | Needs `--run-long`    | `validation`                  | Input validation           |
 | `gpu`             | Needs GPU/CUDA        | `accuracy` / `early_stopping` | Accuracy / stopping        |
 | `multiprocessing` | Multi-process tests   | `requires_juniper_data`       | Needs juniper-data service |
+| `golden`          | Needs `--golden`      | `conformance`                 | Needs `--conformance`      |
+
+**WS-6 tip:** Golden and conformance lanes are serial-only (no xdist), pin Python 3.13 + torch 2.11.0 in CI, and require `--golden` / `--conformance` plus `--slow --integration`. Reproduce with `CASCOR_NUM_PROCESSES=1` and single-thread BLAS. Regenerate goldens only with `GOLDEN_CAPTURE=1` after intentional behavior change — see `src/tests/fixtures/golden/README.md` and [CI Quick Start § WS-6](ci_cd/QUICK_START.md#ws-6-gates-golden--conformance).
 
 > See: [Testing Quick Start](testing/QUICK_START.md) | [Testing Reference](testing/REFERENCE.md)
 
@@ -230,7 +233,7 @@ Core: `torch`, `numpy`, `h5py`, `matplotlib`, `PyYAML`, `requests`
 
 **Pre-commit hooks:** black, isort, flake8, mypy, bandit, yamllint, shellcheck, markdownlint, pytest-unit (local), coverage-gate (local, 80%), no-unencrypted-env (SOPS guard). **Line length:** 512.
 
-**CI pipeline:** pre-commit -> unit-tests -> integration-tests -> build -> security -> required-checks
+**CI pipeline:** pre-commit -> unit-tests -> integration-tests -> build -> security -> required-checks. Separate serial gates: `golden-regression.yml` (OUT-12) and `conformance.yml` (OUT-13). Path-filtered package CI: `ci-protocol.yml`, `ci-cascor-model.yml`.
 
 > See: [CI Quick Start](ci_cd/QUICK_START.md) | [CI Reference](ci_cd/REFERENCE.md) | [Environment Setup](install/ENVIRONMENT_SETUP.md)
 
@@ -250,6 +253,8 @@ Core: `torch`, `numpy`, `h5py`, `matplotlib`, `PyYAML`, `requests`
 | NaN in training                                                       | LR too high or bad data                                     | Reduce `learning_rate`, check tensors                                                                     |
 | Server refuses to start with `NonLoopbackBindError`                   | `JUNIPER_CASCOR_HOST` is non-loopback without a bind attestation | Bind `127.0.0.1` for local/dev, or set `JUNIPER_CASCOR_LOOPBACK_PUBLISH_ATTESTED=true` (loopback-only host publish) or `JUNIPER_CASCOR_AUTH_PROXY_ATTESTED=true` (fronting authenticating proxy) after verifying it |
 | WebSocket closes during connect with `1013`                           | Global, per-IP, or `/ws/control` per-identity cap reached   | Raise the relevant `JUNIPER_CASCOR_WS_MAX_CONNECTIONS_*` cap only after checking expected clients and worker fleet size |
+| Golden / conformance tests collected but all skipped                  | Missing `--golden` / `--conformance` opt-in flags           | Pass the matching flag with `--slow --integration` (see `conftest.py`)                                                  |
+| Golden lane red locally after green unit CI                           | Wrong interpreter/torch or multi-thread / xdist             | Match CI pins (3.13 + torch 2.11.0, serial, `CASCOR_NUM_PROCESSES=1`, single-thread BLAS)                               |
 
 ---
 

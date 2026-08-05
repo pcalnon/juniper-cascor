@@ -68,6 +68,24 @@ cd src/tests && pytest -m slow --timeout=0
 cd src/tests && pytest --timeout=0
 ```
 
+### 8. Run WS-6 Gates (Golden + Conformance)
+
+These are **serial-only** and skipped unless you pass the opt-in flags. Prefer
+the GIL env (`JuniperCascor1`) with single-thread BLAS — see
+[CI/CD Quick Start § WS-6](../ci_cd/QUICK_START.md#ws-6-gates-golden--conformance).
+
+```bash
+# From repo root
+export OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1
+export VECLIB_MAXIMUM_THREADS=1 NUMEXPR_NUM_THREADS=1 CASCOR_NUM_PROCESSES=1
+
+python -m pytest -m golden --golden --slow --integration \
+  src/tests/integration --timeout=300
+
+python -m pytest -m conformance --conformance --slow --integration \
+  src/tests/conformance --timeout=300
+```
+
 ## Understanding Test Output
 
 ### Passing Tests

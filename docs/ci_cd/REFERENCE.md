@@ -1,8 +1,8 @@
 # CI/CD Reference
 
 **Project**: Juniper Cascor  
-**Workflow File**: `.github/workflows/ci.yml`  
-**Last Updated**: 2026-01-29
+**Workflow Files**: `.github/workflows/ci.yml`, `golden-regression.yml`, `conformance.yml`, `ci-protocol.yml`, `ci-cascor-model.yml`  
+**Last Updated**: 2026-08-05
 
 ---
 
@@ -24,6 +24,40 @@
 | `integration` | Integration tests | PRs only | `test` |
 | `quality-gate` | Aggregated pass/fail status | Always | `lint`, `test` |
 | `notify` | Build status notification | Always | `quality-gate` |
+
+---
+
+## WS-6 Gate Workflows
+
+Dedicated serial lanes (OUT-12 / OUT-13). Source of truth: the workflow YAML files.
+
+| Workflow | Marker / flags | Test path | Python | Torch | Concurrency group |
+|----------|----------------|-----------|--------|-------|-------------------|
+| `golden-regression.yml` | `-m golden --golden --slow --integration` | `src/tests/integration` | 3.13 | 2.11.0 CPU | `golden-${{ github.ref }}` |
+| `conformance.yml` | `-m conformance --conformance --slow --integration` | `src/tests/conformance` | 3.13 | 2.11.0 CPU | `conformance-${{ github.ref }}` |
+
+Shared env (job-level, before interpreter start): `OMP_NUM_THREADS=1`,
+`MKL_NUM_THREADS=1`, `OPENBLAS_NUM_THREADS=1`, `VECLIB_MAXIMUM_THREADS=1`,
+`NUMEXPR_NUM_THREADS=1`, `CASCOR_NUM_PROCESSES=1`, `JUNIPER_CASCOR_LOG_LEVEL=ERROR`.
+
+| Setting | Value |
+|---------|-------|
+| Triggers | `push` → `main`; `pull_request` → `main`/`develop`; `workflow_dispatch` |
+| `cancel-in-progress` | `true` |
+| `permissions.contents` | `read` |
+| pytest timeout | `300` |
+| Artifacts | `golden-regression-results` / `conformance-results` (JUnit, 30 days) |
+| Coverage | **Not** collected (dedicated lanes, not the 80% unit gate) |
+
+Collection gates live in `src/tests/conftest.py` (`--golden` / `--conformance`).
+Fixtures: `src/tests/fixtures/golden/`. Capture rewrite: `GOLDEN_CAPTURE=1`.
+
+### Package CI Workflows
+
+| Workflow | Paths filter | Python matrix | Coverage |
+|----------|--------------|---------------|----------|
+| `ci-protocol.yml` | `juniper-cascor-protocol/**` | 3.12, 3.13 | `--cov-fail-under=95` + `juniper-coverage-gap-map --enforce` |
+| `ci-cascor-model.yml` | `juniper-cascor-model/**` | 3.12 | package + candidate/utils/log_config/constants; per-file enforce |
 
 ### Step-by-Step Breakdown
 
@@ -302,6 +336,11 @@ The workflow includes disk space cleanup:
 | Coverage not generating | Wrong working directory | Run from `src/tests/` |
 | Conda env not found | Environment file path wrong | Check `conf/conda_environment.yaml` exists |
 | Artifacts missing | Step failed before upload | Check for earlier step failures |
+| Golden tests all skipped | Missing `--golden` (and/or `--slow --integration`) | Pass the three flags; marker alone is not enough |
+| Conformance tests all skipped | Missing `--conformance` | Same pattern as golden; see `conftest.py` collection gates |
+| Golden float mismatches locally | Wrong Python/torch or multi-thread BLAS / xdist | Use 3.13 + torch 2.11.0, single-thread env, serial pytest |
+| Conformance fails after model-core bump | Interface drift in `CascorModel` adapter hooks | Fix production `CascorModel` / factory hooks — do not weaken the kit |
+| Package CI did not run | Path filter missed the change | Edit under `juniper-cascor-protocol/` or `juniper-cascor-model/`, or use `workflow_dispatch` |
 
 ### Debugging Workflows
 
