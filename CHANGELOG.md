@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Snapshot restore/resume/retrain while REPLAYING (and retrain while STARTED/PAUSED) → HTTP 409.** Route preflights previously omitted `is_replaying()` (and `/retrain` had no FSM preflight at all), so lifecycle `loaded=False` rejections were misreported as 404 "snapshot not found". Aligns restore/resume/retrain with the same conflict contract. Tests in `test_snapshot_route_coverage.py`.
+
+- **`stop_training` while INVESTIGATING / REPLAYING no longer desyncs FSM vs `training_state`.** STOP was rejected by the state machine but `training_state` was still forced to Stopped and broadcast — Canopy could show Stopped while `start_training` remained blocked. Now raises `RuntimeError`; REST maps to HTTP 409. Tests in `test_lifecycle_manager.py` / `test_training_route_coverage.py`.
+
+- **`validate_task_result` rejects JSON bool for int/numeric fields.** `isinstance(True, int)` previously accepted `candidate_id` / `epochs_completed` / `correlation` as bool. Tests in `test_worker_protocol.py`.
+
 - Unit tests no longer pin the service version as a literal: the four `0.6.0` assertions in `test_api_app.py`, `test_api_app_coverage_deep.py`, and `test_api_health.py` (red on `main` since the v0.7.0 bump merged in #429 without CI running) now assert against `api.app._API_VERSION` — the BUG-CC-04 canonical runtime read — so a release version bump can no longer break the suite.
 
 ## [0.7.0] - 2026-07-28

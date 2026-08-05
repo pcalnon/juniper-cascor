@@ -229,6 +229,19 @@ class TestValidateTaskResult:
         msg["correlation"] = 1.0
         assert WorkerProtocol.validate_task_result(msg) == []
 
+    def test_bool_rejected_for_int_and_numeric_fields(self):
+        """JSON bool must not pass isinstance(..., int) / (int, float) checks.
+
+        Without an explicit bool reject, ``candidate_id: true``,
+        ``epochs_completed: false``, and ``correlation: true`` validate
+        as ints/floats because ``bool`` is an ``int`` subclass.
+        """
+        for field in ("candidate_id", "epochs_completed", "correlation"):
+            msg = self._valid_result()
+            msg[field] = True
+            errors = WorkerProtocol.validate_task_result(msg)
+            assert any(field in e for e in errors), f"expected type error for bool {field}, got {errors!r}"
+
 
 @pytest.mark.unit
 class TestValidateTensors:

@@ -339,6 +339,47 @@ class TestRetrainFromSnapshot:
             assert response.status_code == 404
             assert "not found or failed to load" in response.json()["error"]["message"]
 
+    def test_retrain_snapshot_rejected_when_training_active(self, client):
+        """STARTED must surface 409 at the route, not lifecycle 404."""
+        from api.lifecycle.state_machine import Command
+
+        lifecycle = client.app.state.lifecycle
+        lifecycle.state_machine.handle_command(Command.START)
+        try:
+            response = client.post("/v1/snapshots/snap-active/retrain")
+            assert response.status_code == 409
+            assert "Cannot retrain" in response.json()["error"]["message"]
+        finally:
+            lifecycle.state_machine.handle_command(Command.RESET)
+
+    def test_retrain_snapshot_rejected_when_paused(self, client):
+        """PAUSED must surface 409 at the route, not lifecycle 404."""
+        from api.lifecycle.state_machine import Command
+
+        lifecycle = client.app.state.lifecycle
+        lifecycle.state_machine.handle_command(Command.START)
+        lifecycle.state_machine.handle_command(Command.PAUSE)
+        try:
+            response = client.post("/v1/snapshots/snap-paused/retrain")
+            assert response.status_code == 409
+            assert "Cannot retrain" in response.json()["error"]["message"]
+        finally:
+            lifecycle.state_machine.handle_command(Command.RESET)
+
+    def test_retrain_snapshot_rejected_when_replaying(self, client):
+        """REPLAYING must surface 409 at the route, not lifecycle 404."""
+        from api.lifecycle.state_machine import Command
+
+        lifecycle = client.app.state.lifecycle
+        lifecycle.state_machine.mark_replaying()
+        try:
+            response = client.post("/v1/snapshots/snap-replaying/retrain")
+            assert response.status_code == 409
+            assert "Cannot retrain" in response.json()["error"]["message"]
+            assert "REPLAYING" in response.json()["error"]["message"]
+        finally:
+            lifecycle.state_machine.handle_command(Command.RESET)
+
     def test_retrain_snapshot_runs_in_thread(self, client):
         """PERF-CC-01: HDF5 I/O off the main event loop."""
         captured: dict = {}
@@ -455,6 +496,20 @@ class TestResumeSnapshot:
         try:
             response = client.post("/v1/snapshots/snap-paused/resume")
             assert response.status_code == 409
+        finally:
+            lifecycle.state_machine.handle_command(Command.RESET)
+
+    def test_resume_snapshot_rejected_when_replaying(self, client):
+        """REPLAYING must surface 409 at the route, not lifecycle 404."""
+        from api.lifecycle.state_machine import Command
+
+        lifecycle = client.app.state.lifecycle
+        lifecycle.state_machine.mark_replaying()
+        try:
+            response = client.post("/v1/snapshots/snap-replaying/resume")
+            assert response.status_code == 409
+            assert "Cannot resume" in response.json()["error"]["message"]
+            assert "REPLAYING" in response.json()["error"]["message"]
         finally:
             lifecycle.state_machine.handle_command(Command.RESET)
 
@@ -636,6 +691,24 @@ class TestUnifiedResponseShape:
         try:
             response = client.post("/v1/snapshots/snap-paused/restore")
             assert response.status_code == 409
+        finally:
+            lifecycle.state_machine.handle_command(Command.RESET)
+
+    def test_restore_rejected_when_replaying(self, client):
+        """REPLAYING must surface 409 at the route, not lifecycle 404.
+
+        Lifecycle ``load_snapshot`` rejects Replaying with loaded=False;
+        without a route preflight that maps to a misleading 404.
+        """
+        from api.lifecycle.state_machine import Command
+
+        lifecycle = client.app.state.lifecycle
+        lifecycle.state_machine.mark_replaying()
+        try:
+            response = client.post("/v1/snapshots/snap-replaying/restore")
+            assert response.status_code == 409
+            assert "Cannot restore" in response.json()["error"]["message"]
+            assert "REPLAYING" in response.json()["error"]["message"]
         finally:
             lifecycle.state_machine.handle_command(Command.RESET)
 

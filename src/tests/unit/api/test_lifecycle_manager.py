@@ -363,6 +363,31 @@ class TestLifecycleManagerTrainingControl:
         result = mgr.stop_training()
         assert result["status"] == "stop_requested"
 
+    def test_stop_training_while_investigating_preserves_fsm(self):
+        """STOP while Investigating must not desync training_state vs FSM.
+
+        Previously handle_command(STOP) was rejected (FSM stayed
+        Investigating) but training_state was forced to Stopped, so
+        Canopy could show Stopped while start_training remained blocked.
+        """
+        mgr = TrainingLifecycleManager()
+        mgr.state_machine.mark_investigating()
+        mgr.training_state.update_state(status="Stopped", phase="Idle")
+        with pytest.raises(RuntimeError, match="INVESTIGATING"):
+            mgr.stop_training()
+        assert mgr.state_machine.is_investigating()
+        assert mgr.training_state.get_state()["status"] == "Stopped"
+        mgr.shutdown()
+
+    def test_stop_training_while_replaying_preserves_fsm(self):
+        """STOP while Replaying must raise and leave FSM in REPLAYING."""
+        mgr = TrainingLifecycleManager()
+        mgr.state_machine.mark_replaying()
+        with pytest.raises(RuntimeError, match="REPLAYING"):
+            mgr.stop_training()
+        assert mgr.state_machine.is_replaying()
+        mgr.shutdown()
+
     def test_pause_training_not_active(self):
         """Pause fails when training not active."""
         mgr = TrainingLifecycleManager()

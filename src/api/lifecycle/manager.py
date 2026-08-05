@@ -2373,11 +2373,21 @@ class TrainingLifecycleManager:
             monitor.on_training_end()
 
     def stop_training(self) -> Dict[str, Any]:
-        """Request training stop."""
+        """Request training stop.
+
+        Idempotent when already Stopped / Completed / Failed (FSM reject
+        is ignored; callers still receive ``stop_requested``). Rejected
+        with ``RuntimeError`` while Investigating or Replaying so
+        ``training_state`` cannot report Stopped while the FSM still
+        blocks ``start_training``.
+        """
+        if self.state_machine.is_investigating() or self.state_machine.is_replaying():
+            raise RuntimeError(f"Cannot stop training while {self.state_machine.status.name}")
         self._stop_event.set()
-        self.state_machine.handle_command(Command.STOP)
-        self.training_state.update_state(status="Stopped", phase="Idle")
-        self._broadcast_training_state(force=True)
+        transitioned = self.state_machine.handle_command(Command.STOP)
+        if transitioned:
+            self.training_state.update_state(status="Stopped", phase="Idle")
+            self._broadcast_training_state(force=True)
         return {"status": "stop_requested", "timestamp": time.time()}
 
     def pause_training(self) -> Dict[str, Any]:
