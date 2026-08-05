@@ -254,3 +254,46 @@ class TestWsControlAllowedOriginsParser:
 
         settings = Settings(ws_control_allowed_origins=["http://prog:1", "http://prog:2"])
         assert settings.ws_control_allowed_origins == ["http://prog:1", "http://prog:2"]
+
+    def test_malformed_bracket_json_falls_back_to_csv(self, monkeypatch):
+        """A string that looks like a JSON array but fails to parse must
+        fail-soft to the comma-CSV splitter rather than raising at boot.
+
+        Operators occasionally hand-edit the env var into a half-JSON shape
+        (missing quotes / trailing commas). Boot must still start.
+        """
+        monkeypatch.setenv(
+            "JUNIPER_CASCOR_WS_CONTROL_ALLOWED_ORIGINS",
+            "[http://x:1,http://y:2]",
+        )
+        from api.settings import Settings
+
+        settings = Settings()
+        # Bracket-wrapped but not valid JSON → CSV path; brackets become part
+        # of the first/last tokens and are not stripped (documented fail-soft).
+        assert settings.ws_control_allowed_origins == ["[http://x:1", "http://y:2]"]
+
+    def test_invalid_json_array_with_non_list_payload_falls_back(self, monkeypatch):
+        """Valid JSON that is not a list (e.g. a JSON object) must fall through
+        to CSV rather than being accepted as an empty/wrong origins list.
+        """
+        monkeypatch.setenv(
+            "JUNIPER_CASCOR_WS_CONTROL_ALLOWED_ORIGINS",
+            '{"origin":"http://x:1"}',
+        )
+        from api.settings import Settings
+
+        settings = Settings()
+        # Object JSON is not a list → CSV split of the whole string yields one token.
+        assert settings.ws_control_allowed_origins == ['{"origin":"http://x:1"}']
+
+    def test_json_array_drops_empty_string_entries(self, monkeypatch):
+        """Empty / whitespace-only entries inside a JSON array are stripped."""
+        monkeypatch.setenv(
+            "JUNIPER_CASCOR_WS_CONTROL_ALLOWED_ORIGINS",
+            '["http://ok:1", "", "  ", "http://ok:2"]',
+        )
+        from api.settings import Settings
+
+        settings = Settings()
+        assert settings.ws_control_allowed_origins == ["http://ok:1", "http://ok:2"]
