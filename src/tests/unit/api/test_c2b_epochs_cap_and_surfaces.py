@@ -334,6 +334,7 @@ class TestProgressPairReset:
                 candidate_epoch=40,
                 candidate_total_epochs=50,
             )
+            seen = {"fit": False}
 
             def _assert_zeroed_before_fit(*_args, **_kwargs):
                 state = mgr.training_state.get_state()
@@ -341,9 +342,15 @@ class TestProgressPairReset:
                 assert state["output_total_epochs"] == 0
                 assert state["candidate_epoch"] == 0
                 assert state["candidate_total_epochs"] == 0
+                seen["fit"] = True
 
-            with patch.object(mgr.model, "fit", side_effect=_assert_zeroed_before_fit):
+            # Pin the pre-fit zeroing contract; post-fit terminal bookkeeping is
+            # outside this regression's scope (and may emit optional metrics).
+            with patch.object(mgr.model, "fit", side_effect=_assert_zeroed_before_fit), patch(
+                "api.lifecycle.manager.inc_training_session_completed"
+            ), patch("api.lifecycle.manager.dec_training_sessions"):
                 mgr._run_training(torch.randn(4, 2), torch.zeros(4, 2), None, None)
+            assert seen["fit"] is True
         finally:
             mgr.shutdown()
 
