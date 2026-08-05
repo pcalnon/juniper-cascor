@@ -154,6 +154,39 @@ class TestControlStreamLifecycleUnavailable:
         assert any("not available" in str(c) or "Lifecycle manager not available" in str(c) for c in calls)
 
 
+class TestControlStreamAdmissionReject:
+    """SEC-F19 D4: try_admit=False must fail closed before accept/release."""
+
+    @pytest.mark.unit
+    @pytest.mark.asyncio
+    async def test_try_admit_false_rejects_without_session(self):
+        """Over-cap admission returns early: no accept, no release_admission."""
+        ws = AsyncMock()
+        ws.headers = {"origin": "http://localhost:8050"}
+        ws.client = ("127.0.0.1", 12345)
+        app_state = MagicMock()
+        app_state.api_key_auth = None
+        app_state.lifecycle = MagicMock()
+
+        async def _reject_and_close(websocket, *, endpoint, identity=None):
+            await websocket.close(code=1013, reason="Maximum connections reached")
+            return False
+
+        app_state.ws_manager.try_admit = AsyncMock(side_effect=_reject_and_close)
+        app_state.ws_manager.release_admission = AsyncMock()
+        ws.app.state = app_state
+
+        with patch("api.websocket.control_stream._check_handshake_gates", new_callable=AsyncMock, return_value=True):
+            await control_stream_handler(ws)
+
+        app_state.ws_manager.try_admit.assert_awaited_once()
+        assert app_state.ws_manager.try_admit.await_args.kwargs["endpoint"] == "control"
+        ws.accept.assert_not_awaited()
+        app_state.ws_manager.release_admission.assert_not_awaited()
+        ws.close.assert_awaited_once()
+        assert ws.close.call_args[1]["code"] == 1013
+
+
 class TestExecuteCommandEdge:
 
     @pytest.mark.unit

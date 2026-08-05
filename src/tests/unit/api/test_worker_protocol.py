@@ -207,6 +207,22 @@ class TestValidateTaskResult:
         errors = WorkerProtocol.validate_task_result(msg)
         assert any("candidate_id" in e for e in errors)
 
+    def test_success_must_be_bool(self):
+        """JSON 0/1 integers must not be accepted as success (bool-only)."""
+        for bad in (0, 1, "true", None):
+            msg = self._valid_result()
+            msg["success"] = bad
+            errors = WorkerProtocol.validate_task_result(msg)
+            assert any("success must be bool" in e for e in errors), bad
+
+    def test_epochs_completed_must_be_int(self):
+        """epochs_completed rejects floats and non-numeric types."""
+        for bad in (12.5, "200", None, [200]):
+            msg = self._valid_result()
+            msg["epochs_completed"] = bad
+            errors = WorkerProtocol.validate_task_result(msg)
+            assert any("epochs_completed must be int" in e for e in errors), bad
+
     def test_correlation_out_of_bounds_high(self):
         """Correlation > 1.0 produces error."""
         msg = self._valid_result()
