@@ -9,7 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`WorkerCoordinator.cancel_round` frees registry `active_task_id`.** Cancelling a round previously cleared coordinator pending/unassigned tracking but left workers marked busy in `WorkerRegistry`. Subsequent `get_next_assignment` calls then permanently refused work (`assign_task` → False), and `_check_task_timeouts` could not reclaim capacity because pending tracking was already gone — stuck remote-worker capacity until reconnect. `cancel_round` now calls `complete_task(..., success=False)` for every worker that still held an in-flight assignment. Regression tests in `test_worker_coordinator.py`.
+
 - Unit tests no longer pin the service version as a literal: the four `0.6.0` assertions in `test_api_app.py`, `test_api_app_coverage_deep.py`, and `test_api_health.py` (red on `main` since the v0.7.0 bump merged in #429 without CI running) now assert against `api.app._API_VERSION` — the BUG-CC-04 canonical runtime read — so a release version bump can no longer break the suite.
+
+### Added
+
+- **C2b progress-pair reset regression tests** — pin that `_run_training` zeroes `output_epoch` / `candidate_epoch` pairs before `model.fit`, and that growth-phase `training_end` clears both pairs (bug-fix-only commits 0eb78d1 / 79e8ad7). Extends `test_c2b_epochs_cap_and_surfaces.py`.
+- **Training start while INVESTIGATING / REPLAYING → HTTP 409** — route-level pins that Canopy receives the specific RuntimeError reason string (not a generic 500). Extends `test_training_route_coverage.py`.
 
 ## [0.7.0] - 2026-07-28
 
