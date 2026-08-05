@@ -961,6 +961,12 @@ Broadcast messages include replay metadata (`seq`, `emitted_at_monotonic`).
 Clients can send `pong`, `subscribe_metrics`, or a connect-time `resume`
 request; training control commands belong on `/ws/control`.
 
+Heartbeat / idle knobs on `/ws/training` and `/ws/control` are read through
+`_numeric_setting` so a missing or non-numeric `app.state.settings` double
+never reaches `asyncio.sleep` / `asyncio.wait_for`. See
+[Defensive numeric settings](JUNIPER_CASCOR_API_REFERENCE.md#defensive-numeric-settings-_numeric_setting)
+for the attribute table and fallbacks.
+
 ### WebSocket Admission Caps
 
 WebSocket connection caps are admission controls for availability and fairness; they are not authentication. Over-cap handshakes close with code `1013`.

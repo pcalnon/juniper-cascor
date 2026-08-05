@@ -81,7 +81,8 @@ pre-commit install                                   # Install hooks
 | `JUNIPER_CASCOR_RATE_LIMIT_REQUESTS_PER_MINUTE` | Requests per minute per IP | `60` |
 | **WebSocket** | | |
 | `JUNIPER_CASCOR_WS_MAX_CONNECTIONS` | Maximum WebSocket connections | `50` |
-| `JUNIPER_CASCOR_WS_HEARTBEAT_INTERVAL_SEC` | WebSocket heartbeat interval | `30` |
+| `JUNIPER_WS_HEARTBEAT_INTERVAL_SEC` | WebSocket heartbeat interval (`Settings` `AliasChoices` kill-switch; not `JUNIPER_CASCOR_`-prefixed) | `30` |
+| `JUNIPER_WS_HEARTBEAT_PONG_TIMEOUT_SEC` | WebSocket heartbeat pong/liveness window | `10` |
 | **Observability** | | |
 | `JUNIPER_CASCOR_SENTRY_DSN` | Sentry DSN for error tracking | `None` (disabled) |
 | `JUNIPER_CASCOR_METRICS_ENABLED` | Enable Prometheus metrics | `false` |
@@ -417,6 +418,15 @@ Three WebSocket channels provide real-time communication.
 - Thread-safe broadcasting via `asyncio.run_coroutine_threadsafe()`
 - Connection lifecycle management with bounded limit (default: 50)
 - Automatic heartbeat/keepalive
+
+### Defensive numeric settings (`_numeric_setting`)
+
+`/ws/training` and `/ws/control` read heartbeat (and control idle) timeouts through `_numeric_setting(obj, name, fallback)` before `asyncio.sleep` / `asyncio.wait_for`.
+
+- Attributes: `ws_heartbeat_interval_sec`, `ws_heartbeat_pong_timeout_sec`, and (control only) `ws_control_idle_timeout_sec`.
+- Only real `int`/`float` values are accepted; `None`, missing attrs, strings, and MagicMock stubs fall back (`30` / `10` / process idle default).
+- Prevents non-numeric leaks from tearing down heartbeat/idle loops when tests stub `app.state.settings`.
+- Details: [API Reference — Defensive numeric settings](docs/api/JUNIPER_CASCOR_API_REFERENCE.md#defensive-numeric-settings-_numeric_setting).
 
 ---
 

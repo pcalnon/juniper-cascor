@@ -1,6 +1,6 @@
 # Developer Cheatsheet — juniper-cascor
 
-**Version**: 1.0.1  |  **Date**: 2026-08-05  |  **Project**: juniper-cascor
+**Version**: 1.0.2  |  **Date**: 2026-08-05  |  **Project**: juniper-cascor
 
 ---
 
@@ -55,7 +55,7 @@ docker compose --profile full up -d                            # Docker start
 
 **Add an endpoint:** Create route under `/v1`, register in `app.py`, add client method in `juniper-cascor-client`.
 
-**WebSocket:** `/ws/training` (metrics), `/ws/control` (commands), `/ws/v1/workers` (remote workers). Over-cap connections close with `1013`; update `ws_client.py`, canopy, and worker clients when adding or changing channels.
+**WebSocket:** `/ws/training` (metrics), `/ws/control` (commands), `/ws/v1/workers` (remote workers). Over-cap connections close with `1013`; update `ws_client.py`, canopy, and worker clients when adding or changing channels. Heartbeat/idle timeouts on training/control go through `_numeric_setting` (non-numeric / MagicMock stubs fall back — see [API Reference](api/JUNIPER_CASCOR_API_REFERENCE.md#defensive-numeric-settings-_numeric_setting)).
 
 ### Training Lifecycle Quick Paths
 
@@ -125,8 +125,8 @@ Metrics nuance:
 | `JUNIPER_WS_MAX_MESSAGE_SIZE_BYTES` | `60000` | Serialized JSON threshold for `chunked_message` envelopes. `0` disables chunking (tests only; oversized frames may be dropped by intermediaries). |
 | `JUNIPER_WS_CHUNK_PAYLOAD_SIZE_BYTES` | `32000` | Payload slice size for each `chunked_message`. |
 | `JUNIPER_CASCOR_WS_MAX_CONNECTIONS` | `50` | Global WebSocket connection cap, including pending `/ws/training` resume handshakes. |
-| `JUNIPER_CASCOR_WS_HEARTBEAT_INTERVAL_SEC` | `30` | Training/control heartbeat ping interval. |
-| `JUNIPER_CASCOR_WS_HEARTBEAT_PONG_TIMEOUT_SEC` | `10` | Training/control pong timeout before heartbeat close. |
+| `JUNIPER_WS_HEARTBEAT_INTERVAL_SEC` | `30` | Training/control heartbeat ping interval (`AliasChoices` kill-switch; not `JUNIPER_CASCOR_`-prefixed). |
+| `JUNIPER_WS_HEARTBEAT_PONG_TIMEOUT_SEC` | `10` | Training/control pong/liveness window before heartbeat close. |
 
 ---
 
@@ -252,6 +252,7 @@ Core: `torch`, `numpy`, `h5py`, `matplotlib`, `PyYAML`, `requests`
 | NaN in training                                                       | LR too high or bad data                                     | Reduce `learning_rate`, check tensors                                                                     |
 | Server refuses to start with `NonLoopbackBindError`                   | `JUNIPER_CASCOR_HOST` is non-loopback without a bind attestation | Bind `127.0.0.1` for local/dev, or set `JUNIPER_CASCOR_LOOPBACK_PUBLISH_ATTESTED=true` (loopback-only host publish) or `JUNIPER_CASCOR_AUTH_PROXY_ATTESTED=true` (fronting authenticating proxy) after verifying it |
 | WebSocket closes during connect with `1013`                           | Global, per-IP, or `/ws/control` per-identity cap reached   | Raise the relevant `JUNIPER_CASCOR_WS_MAX_CONNECTIONS_*` cap only after checking expected clients and worker fleet size |
+| WS heartbeat/idle test raises `TypeError` in `asyncio.sleep`/`wait_for`, or knobs ignored | Bare `MagicMock` / string on `app.state.settings` timing attrs; `_numeric_setting` falls back to defaults | Put a real `Settings` or numeric `SimpleNamespace` on `app.state.settings`; pin helper with `pytest … -k numeric_setting` |
 | Publish workflow skipped / wrong package                              | Release tag prefix does not match workflow guard            | Use `v*`, `juniper-cascor-protocol-v*`, or `juniper-cascor-model-v*` — see [PyPI Publishing](ci_cd/MANUAL.md#pypi-publishing) |
 | TestPyPI `400 File already exists` on publish                         | Dual trigger or concurrent upload of same version           | Publish via Release only (no `push: tags`); bump version to re-upload |
 

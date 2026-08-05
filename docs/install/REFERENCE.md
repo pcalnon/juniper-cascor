@@ -67,7 +67,10 @@ The FastAPI service reads these settings through `api.settings.Settings` with th
 | `JUNIPER_CASCOR_WS_MAX_CONNECTIONS_GLOBAL` | Integer | `200` | Stack-absolute WebSocket admission cap across `/ws/training`, `/ws/control`, and `/ws/v1/workers`. |
 | `JUNIPER_CASCOR_WS_MAX_CONNECTIONS_PER_IDENTITY` | Integer | `5` | Per API-key identity admission cap for `/ws/control`. |
 | `JUNIPER_CASCOR_WS_MAX_CONNECTIONS_PER_IP` | Integer | `5` | Per-source-IP cap for manager-routed sockets; useful as DoS dampening, but not an identity control behind Docker NAT. |
-| `JUNIPER_CASCOR_WS_HEARTBEAT_INTERVAL_SEC` | Integer | `30` | Server heartbeat interval for WebSocket channels. |
+| `JUNIPER_WS_HEARTBEAT_INTERVAL_SEC` | Integer | `30` | Training/control application heartbeat interval (`Settings.ws_heartbeat_interval_sec`). Bound via `AliasChoices` kill-switch name (not the default `JUNIPER_CASCOR_` prefix). `<= 0` disables the heartbeat. |
+| `JUNIPER_WS_HEARTBEAT_PONG_TIMEOUT_SEC` | Integer | `10` | Pong/liveness window after each ping (`Settings.ws_heartbeat_pong_timeout_sec`). Same `AliasChoices` binding. |
+
+Handlers load these knobs (and `/ws/control` `ws_control_idle_timeout_sec`, default `120`) through `_numeric_setting` so non-numeric stubs cannot reach asyncio timers — see [Defensive numeric settings](../api/JUNIPER_CASCOR_API_REFERENCE.md#defensive-numeric-settings-_numeric_setting).
 
 **Startup bind guard:** `create_app()` enforces the bind guard during lifespan startup before background training starts. A non-loopback bind with neither `JUNIPER_CASCOR_LOOPBACK_PUBLISH_ATTESTED=true` nor `JUNIPER_CASCOR_AUTH_PROXY_ATTESTED=true` raises `NonLoopbackBindError` and logs a CRITICAL refusal (no warning-only mode). Prefer loopback for local development:
 

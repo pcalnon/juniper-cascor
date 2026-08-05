@@ -46,6 +46,35 @@ Why this matters:
 - The no-validation path is used when `x_val`/`y_val` are omitted, which is common in lightweight training runs.
 - Regressions here can silently disable or destabilize early stopping behavior even if validation-based tests still pass.
 
+### WebSocket `_numeric_setting` Defensive Reads
+
+`/ws/training` and `/ws/control` load heartbeat (and control idle) timeouts via `_numeric_setting(obj, name, fallback)` before passing them into `asyncio.sleep` / `asyncio.wait_for`.
+
+**Why it exists:** `unittest.mock.MagicMock` (and similar doubles) invent attribute stubs for any name. Feeding those stubs into asyncio timing APIs raises `TypeError` and kills the heartbeat/idle loops even though production `Settings` would have been fine.
+
+**Contract under test:**
+
+| Input | Result |
+|-------|--------|
+| Real `int` / `float` on the object | Returned unchanged |
+| `obj is None`, missing attr, string value, or MagicMock stub | Hardcoded `fallback` |
+
+Fallbacks in handlers: heartbeat interval `30`, pong timeout `10`, control idle → `Settings.ws_control_idle_timeout_sec` (default `120`). Source: `src/api/websocket/control_stream.py` and `training_stream.py`.
+
+**Pitfall when writing API WS tests:**
+
+- Prefer a real `Settings(...)` (or `SimpleNamespace` with numeric fields) on `app.state.settings`.
+- Do not rely on bare `MagicMock()` for settings if the handler under test reaches the heartbeat/idle path — `_numeric_setting` will fall back, masking whether your override was applied.
+- To assert the helper itself, call `control_stream._numeric_setting` / `training_stream._numeric_setting` directly (see `TestNumericSetting`).
+
+```bash
+cd src
+python -m pytest \
+  tests/unit/api/test_control_stream_coverage.py \
+  tests/unit/api/test_training_stream_coverage.py \
+  -k numeric_setting -v
+```
+
 ### Marker Combinations
 
 ```bash

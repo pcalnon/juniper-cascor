@@ -1290,6 +1290,30 @@ All three sockets share these properties:
 - `juniper-cascor-client >= 0.7.0` answers pings automatically on both streams (CL1) and exposes `is_alive(window)` / `last_frame_at` liveness surfaces for supervisors.
 - T5 observability: every heartbeat ping is recorded in the transport counters (`GET /v1/metrics/transport`, `messages_sent_by_type.ping`), and the WS manager logs a periodic INFO emission summary (`WS emission summary (last <N>s): metrics=…, ping=… (<K> active connections)`, interval `ws_emission_summary_interval_sec`, default `60`, env `JUNIPER_WS_EMISSION_SUMMARY_INTERVAL_SEC`, `<= 0` disables) so "connected but nothing flowing" is diagnosable server-side.
 
+#### Defensive numeric settings (`_numeric_setting`)
+
+`/ws/training` and `/ws/control` read heartbeat (and control idle) timeouts through a shared helper `_numeric_setting(obj, name, fallback)` in `src/api/websocket/training_stream.py` and `src/api/websocket/control_stream.py`.
+
+| Attribute | Used on | Hardcoded fallback when missing / non-numeric |
+|-----------|---------|-----------------------------------------------|
+| `ws_heartbeat_interval_sec` | `/ws/training`, `/ws/control` | `30` |
+| `ws_heartbeat_pong_timeout_sec` | `/ws/training`, `/ws/control` | `10` |
+| `ws_control_idle_timeout_sec` | `/ws/control` only | process `Settings.ws_control_idle_timeout_sec` (default `120`) |
+
+**Contract (verified in source):**
+
+- Returns `getattr(obj, name)` only when the value is a real `int` or `float`.
+- Otherwise returns `fallback` — including when `obj` is `None`, the attribute is missing, the value is a string (even numeric-looking like `"120"`), or a non-Settings double (for example `unittest.mock.MagicMock`) invents a stub object.
+- Intent: never leak a non-numeric into `asyncio.sleep` / `asyncio.wait_for` (those raise `TypeError` and tear down the heartbeat/idle loops).
+
+**Operational notes:**
+
+- Production reads come from `app.state.settings` (control) or the handler's `Settings` instance (training). Per-app `create_app(settings=...)` overrides reach the same knobs.
+- Interval `<= 0` still disables the heartbeat after a successful numeric read; the control idle timeout continues to apply.
+- This helper is **not** a substitute for configuring real `Settings` in integration tests — it only prevents stub leakage from crashing the loops.
+
+Regression pin (coverage suite): `TestNumericSetting` in `src/tests/unit/api/test_control_stream_coverage.py` and `src/tests/unit/api/test_training_stream_coverage.py` — covers real ints/floats, `None` / missing attr, `MagicMock` stubs, and string values.
+
 ### WS `/ws/training`
 
 **Summary** — Streaming training events for dashboards (juniper-canopy).
