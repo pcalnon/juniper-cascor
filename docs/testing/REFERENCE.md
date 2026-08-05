@@ -24,6 +24,29 @@ Complete reference documentation for the Juniper Cascor test suite.
 | `accuracy`           | Accuracy calculation methods               | Classification accuracy, metrics                     | Runs with unit tests                          |
 | `early_stopping`     | Early stopping logic                       | Convergence detection, patience handling             | Runs with unit tests                          |
 
+### Security Headers, Worker ID Admission, and Staged Moons Translate (#442)
+
+Coverage PR #442 pins three operator-facing contracts that previously lacked unit regression:
+
+| Area | Source | Test pin |
+|------|--------|----------|
+| Always-on security headers + conditional HSTS | `api.middleware.SecurityHeadersMiddleware` | `tests/unit/api/test_api_middleware.py` — `TestSecurityHeadersMiddleware` |
+| Worker `register` ID regex + `TaskResultMessage.from_dict` | `api.workers.protocol` | `tests/unit/api/test_worker_protocol.py` — `TestValidateRegister`, `TestTaskResultMessageFromDict` |
+| Canopy→juniper-data dialect (`moons`/`spirals`, zero clamps, strip) | `TrainingLifecycleManager._translate_staged_config` | `tests/unit/api/test_lifecycle_manager_swap.py` — `TestTranslateStagedConfig` |
+
+```bash
+cd src && python -m pytest \
+  tests/unit/api/test_api_middleware.py \
+  tests/unit/api/test_worker_protocol.py \
+  tests/unit/api/test_lifecycle_manager_swap.py -v
+```
+
+Why this matters:
+
+- HSTS only fires on `X-Forwarded-Proto: https` — a misconfigured TLS terminator silently drops it.
+- Invalid worker IDs close with `4008` before registry insert; typed `task_result` parse rejects missing/out-of-bounds fields.
+- Without moons/spirals aliasing, every canopy-staged reload fails at juniper-data with an unknown-generator error.
+
 ### Early-Stopping Regression Coverage (No Validation Data Path)
 
 The no-validation branch in `CascadeCorrelationNetwork.validate_training()` is covered by targeted unit regressions in `src/tests/unit/test_cascade_correlation_coverage_extended.py`.

@@ -847,8 +847,11 @@ All REST responses use the standard response envelope:
 - REST and WebSocket authentication use the `X-API-Key` header when `JUNIPER_CASCOR_API_KEYS` is configured. Auth is disabled when no API keys are configured.
 - `JUNIPER_CASCOR_HOST` defaults to `127.0.0.1`. If it is set to a non-loopback address such as `0.0.0.0`, startup fails with `NonLoopbackBindError` unless `JUNIPER_CASCOR_LOOPBACK_PUBLISH_ATTESTED=true` or `JUNIPER_CASCOR_AUTH_PROXY_ATTESTED=true`.
 - Set `JUNIPER_CASCOR_LOOPBACK_PUBLISH_ATTESTED=true` when a loopback-only host-publish fronts the service, or `JUNIPER_CASCOR_AUTH_PROXY_ATTESTED=true` when an authenticating reverse proxy does. This guard runs before the server accepts connections.
+- `SecurityHeadersMiddleware` adds always-on `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy`, `Permissions-Policy`, and a restrictive CSP to every HTTP response. HSTS is added only when `X-Forwarded-Proto: https` is present (TLS-terminator footgun if that header is omitted).
 - WebSocket admission uses `JUNIPER_CASCOR_WS_MAX_CONNECTIONS_GLOBAL` (default 200) across `/ws/training`, `/ws/control`, and `/ws/v1/workers`. `/ws/control` also uses `JUNIPER_CASCOR_WS_MAX_CONNECTIONS_PER_IDENTITY` (default 5), keyed on a non-reversible digest of the `X-API-Key`.
 - Over-cap WebSocket attempts close with `1013`. The peer-IP cap remains DoS-dampening only; behind Docker NAT, clients can share one bridge-gateway IP bucket.
+- Worker `register` messages must present a `worker_id` matching `^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$`; failures close with `4008`. The string is stored as `client_name` only — the server assigns the registry id.
+- Canopy staged configs use plural generator names (`spirals`/`moons`); `_translate_staged_config` aliases them to juniper-data keys (`spiral`/`moon`) at fetch time. See [JUNIPER_CASCOR_API_REFERENCE — Staged dataset dialect](JUNIPER_CASCOR_API_REFERENCE.md#staged-dataset-dialect-canopy--juniper-data).
 
 ### Training Lifecycle Endpoints
 
@@ -862,6 +865,10 @@ All REST responses use the standard response envelope:
 | `/v1/training/status` | `GET` | Return state machine, monitor, and training-state snapshots |
 | `/v1/training/params` | `GET` | Get runtime training params |
 | `/v1/training/params` | `PATCH` | Update runtime-modifiable params |
+| `/v1/training/dataset` | `POST` | Stage canopy-dialect dataset config for next start |
+| `/v1/training/dataset` | `DELETE` | Cancel staged dataset config |
+| `/v1/training/dataset/pending` | `GET` | Read staged dataset config (or null) |
+| `/v1/training/dataset/live` | `POST` | In-flight live dataset swap (experimental gate) |
 
 ### Training Limit Semantics
 

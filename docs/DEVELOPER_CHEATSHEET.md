@@ -1,6 +1,6 @@
 # Developer Cheatsheet — juniper-cascor
 
-**Version**: 1.0.1  |  **Date**: 2026-08-05  |  **Project**: juniper-cascor
+**Version**: 1.0.11  |  **Date**: 2026-08-05  |  **Project**: juniper-cascor
 
 ---
 
@@ -87,9 +87,15 @@ Metrics nuance:
 - Fresh `/ws/training` connects receive `initial_status`, `state`, and `initial_metrics`; resume requests use `{"type":"resume","data":{"last_seq":...,"server_instance_id":...}}` and replay only buffered broadcasts with higher `seq`.
 - `/ws/control` rate limiting returns an in-band `command_response` with `status:"rate_limited"` and keeps the socket open; it does not close on normal command throttling.
 
-**Middleware** (outermost first): CORS -> Security -> Prometheus -> RequestId. **Models:** Pydantic (API), dataclasses (config).
+**Middleware** (outermost first): CORS -> RequestBodyLimit -> SecurityHeaders -> Security (auth/rate-limit) -> Prometheus -> RequestId. **Models:** Pydantic (API), dataclasses (config).
 
-> See: [API Reference](api/API_REFERENCE.md) | [API Schemas](api/API_SCHEMAS.md)
+**Tip — headers / workers / staged moons (coverage #442):**
+
+- `SecurityHeadersMiddleware` always sets nosniff / DENY / referrer / permissions / CSP; HSTS only when `X-Forwarded-Proto: https`.
+- Worker `register.worker_id` must match `^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$` or the socket closes `4008`; server still assigns the registry id (CR-026).
+- Canopy stages `spirals`/`moons`; `_translate_staged_config` aliases to juniper-data `spiral`/`moon` at fetch (zero clamps + spiral-field strip).
+
+> See: [API Reference](api/API_REFERENCE.md) | [Cascor API Reference — security headers / workers / staged dialect](api/JUNIPER_CASCOR_API_REFERENCE.md#security-headers-securityheadersmiddleware) | [API Schemas](api/API_SCHEMAS.md)
 
 ---
 
@@ -252,6 +258,9 @@ Core: `torch`, `numpy`, `h5py`, `matplotlib`, `PyYAML`, `requests`
 | NaN in training                                                       | LR too high or bad data                                     | Reduce `learning_rate`, check tensors                                                                     |
 | Server refuses to start with `NonLoopbackBindError`                   | `JUNIPER_CASCOR_HOST` is non-loopback without a bind attestation | Bind `127.0.0.1` for local/dev, or set `JUNIPER_CASCOR_LOOPBACK_PUBLISH_ATTESTED=true` (loopback-only host publish) or `JUNIPER_CASCOR_AUTH_PROXY_ATTESTED=true` (fronting authenticating proxy) after verifying it |
 | WebSocket closes during connect with `1013`                           | Global, per-IP, or `/ws/control` per-identity cap reached   | Raise the relevant `JUNIPER_CASCOR_WS_MAX_CONNECTIONS_*` cap only after checking expected clients and worker fleet size |
+| Responses missing `Strict-Transport-Security` behind HTTPS            | TLS terminator omitted `X-Forwarded-Proto: https`           | Forward `X-Forwarded-Proto: https` (HSTS is conditional on that header only) |
+| Worker handshake closes with `4008`                                   | `worker_id` failed `validate_register` regex/type checks    | Use 1–64 alphanumeric/`_`/`-` id starting with alphanumeric; treat as display name only |
+| Staged canopy start fails with unknown generator `spirals`/`moons`    | Config reached juniper-data without `_translate_staged_config` | Ensure reload/live-swap goes through lifecycle translate (`spirals`→`spiral`, `moons`→`moon`) |
 | Publish workflow skipped / wrong package                              | Release tag prefix does not match workflow guard            | Use `v*`, `juniper-cascor-protocol-v*`, or `juniper-cascor-model-v*` — see [PyPI Publishing](ci_cd/MANUAL.md#pypi-publishing) |
 | TestPyPI `400 File already exists` on publish                         | Dual trigger or concurrent upload of same version           | Publish via Release only (no `push: tags`); bump version to re-upload |
 

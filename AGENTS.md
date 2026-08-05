@@ -338,6 +338,10 @@ The juniper-cascor service exposes a versioned REST API at the `/v1/` prefix. Al
 | `GET` | `/v1/training/status` | Yes | Get current training status |
 | `GET` | `/v1/training/params` | Yes | Get training parameters |
 | `PATCH` | `/v1/training/params` | Yes | Update runtime parameters |
+| `POST` | `/v1/training/dataset` | Yes | Stage canopy-dialect dataset config for next start |
+| `DELETE` | `/v1/training/dataset` | Yes | Cancel staged dataset config |
+| `GET` | `/v1/training/dataset/pending` | Yes | Read staged dataset config (or null) |
+| `POST` | `/v1/training/dataset/live` | Yes | In-flight live dataset swap (experimental gate) |
 
 ### Dataset & Visualization
 
@@ -439,6 +443,9 @@ The lifecycle system coordinates network training through deterministic state tr
 
 The lifecycle manager wraps the network's training methods non-intrusively to emit events without modifying the core algorithm.
 
+**Staged dataset dialect** — Canopy stages `dataset_type` values such as `spirals` / `moons`.
+`TrainingLifecycleManager._translate_staged_config` aliases them to juniper-data keys (`spiral` / `moon`) only at the `_reload_dataset` / live-swap fetch boundary, clamps zero divisors, and strips spiral-only fields for non-spiral generators.
+
 ---
 
 ## Remote Worker System
@@ -456,12 +463,13 @@ Distributed candidate training via WebSocket workers.
 **Worker Lifecycle**:
 
 1. Worker connects via `/ws/v1/workers` with API key
-2. Worker registers with capabilities (CPU/GPU, pool size)
-3. Coordinator assigns candidate training tasks
-4. Worker returns results as binary numpy frames
-5. Heartbeat keepalive (default 30s timeout)
-6. Auto-deregistration on heartbeat timeout
-7. Task reassignment on worker failure (default 120s timeout)
+2. Worker sends `register` with `worker_id` + `capabilities` (CPU/GPU, pool size)
+3. Server validates `worker_id` via `^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$` (else close `4008`); stores it as `client_name` and assigns `worker-<12 hex>` as the registry id (CR-026)
+4. Coordinator assigns candidate training tasks
+5. Worker returns `task_result` envelopes (+ binary numpy frames); typed parse requires `task_id` / `candidate_id` / `correlation`∈[0,1] / `success` / `epochs_completed`
+6. Heartbeat keepalive (default 30s timeout)
+7. Auto-deregistration on heartbeat timeout
+8. Task reassignment on worker failure (default 120s timeout)
 
 ---
 
@@ -497,7 +505,16 @@ Middleware executes in LIFO order (last added = first executed):
 
 ### Security Headers
 
-CSP, HSTS, X-Frame-Options, X-Content-Type-Options, Referrer-Policy applied to all responses.
+`SecurityHeadersMiddleware` (`api.middleware`) injects on every HTTP response:
+
+- `X-Content-Type-Options: nosniff`
+- `X-Frame-Options: DENY`
+- `Referrer-Policy: strict-origin-when-cross-origin`
+- `Permissions-Policy: camera=(), microphone=(), geolocation=()`
+- `Content-Security-Policy: default-src 'none'; frame-ancestors 'none'` (constructor override supported)
+
+HSTS (`Strict-Transport-Security: max-age=31536000; includeSubDomains`) is added **only** when the request carries `X-Forwarded-Proto: https`.
+TLS terminators must forward that header or HSTS will be silently omitted on an otherwise-HTTPS public URL.
 
 ### TLS
 

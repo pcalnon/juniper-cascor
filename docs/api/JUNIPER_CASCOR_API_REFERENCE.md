@@ -42,6 +42,7 @@
   - [GET `/v1/training/status`](#get-v1trainingstatus)
   - [GET `/v1/training/params`](#get-v1trainingparams)
   - [PATCH `/v1/training/params`](#patch-v1trainingparams)
+  - [Staged dataset dialect (canopy → juniper-data)](#staged-dataset-dialect-canopy--juniper-data)
 - [Metrics](#metrics)
   - [GET `/v1/metrics`](#get-v1metrics)
   - [GET `/v1/metrics/history`](#get-v1metricshistory)
@@ -156,12 +157,14 @@ The global handlers in `src/api/app.py:480-494` produce:
 | 4001 | Authentication required / `X-API-Key` invalid                                                                                                                                                       |
 | 4003 | Origin header not permitted (control + worker streams)                                                                                                                                             |
 | 4004 | Worker subsystem not initialized                                                                                                                                                                    |
+| 4008 | Invalid worker registration (`validate_register` failed)                                                                                                                                            |
+| 4013 | Worker registry at capacity                                                                                                                                                                         |
 | 1013 | WebSocket connection cap reached                                                                                                                                                                    |
 | 4029 | Connection rate limited (worker stream)                                                                                                                                                             |
 
 ### Middleware stack
 
-Registered in `src/api/app.py:426-458` (LIFO execution order):
+Registered in `src/api/app.py` (LIFO execution order):
 
 1. CORS (only if origins are configured)
 2. `RequestBodyLimitMiddleware`
@@ -169,6 +172,24 @@ Registered in `src/api/app.py:426-458` (LIFO execution order):
 4. `SecurityMiddleware` (`APIKeyAuth` + `RateLimiter`)
 5. `PrometheusMiddleware` (only when `metrics_enabled`)
 6. `RequestIdMiddleware` (always adds `X-Request-Id`)
+
+#### Security headers (`SecurityHeadersMiddleware`)
+
+Always-on HTTP response headers from `src/api/middleware.py` (wired in `src/api/app.py` with the default CSP). Applied to every HTTP response, including health probes:
+
+| Header | Value |
+|--------|-------|
+| `X-Content-Type-Options` | `nosniff` |
+| `X-Frame-Options` | `DENY` |
+| `Referrer-Policy` | `strict-origin-when-cross-origin` |
+| `Permissions-Policy` | `camera=(), microphone=(), geolocation=()` |
+| `Content-Security-Policy` | `default-src 'none'; frame-ancestors 'none'` (constructor override supported) |
+
+**HSTS** (`Strict-Transport-Security: max-age=31536000; includeSubDomains`) is emitted only when the inbound request carries `X-Forwarded-Proto: https`.
+
+Plain `http` (or a missing forwarded-proto header) never receives HSTS — so a TLS terminator that forgets to set `X-Forwarded-Proto: https` will silently omit HSTS even though the public URL is HTTPS.
+
+Regression pin (coverage PR #442): `src/tests/unit/api/test_api_middleware.py` — `TestSecurityHeadersMiddleware`.
 
 ---
 
@@ -572,6 +593,8 @@ Router defined in `src/api/routes/training.py`, prefix `/v1/training`.
 
 **Detailed description** — Accepts inline data, a generator-based dataset (e.g., `spiral`), or relies on a pre-loaded dataset. Validates `params` against `TrainingParams` (SEC-07: unknown keys produce `422`). Coerces data to `torch.float32` tensors before invoking `lifecycle.start_training()` (`src/api/routes/training.py:68`). Implemented at `src/api/routes/training.py:23-73`.
 
+When a canopy-staged pending dataset config is present (`POST /v1/training/dataset`), start reloads via `_reload_dataset`, which translates canopy dialect → juniper-data schema at the fetch boundary only (see [Staged dataset dialect](#staged-dataset-dialect-canopy--juniper-data)).
+
 **Syntax**:
 
 ```http
@@ -831,6 +854,38 @@ curl -s -X PATCH http://localhost:8201/v1/training/params \
 **Returns** — Envelope with the merged params dict plus the C2a accounting fields `applied` (keys that landed) and `skipped` (`{"key", "reason"}` rows). `epochs_max` is **deprecated as an input** (C2b / Q1): submitted values are accepted at the request boundary (floor `ge=1` only) but never applied — they are reported as `skipped(not-updatable)`, since the value is derived from the granular limits (see `GET /v1/training/params`).
 
 **Error handling** — `404` if no network; `422` for unknown keys / out-of-range values; `503` if lifecycle unbound.
+
+---
+
+### Staged dataset dialect (canopy → juniper-data)
+
+**Summary** — Canopy stages dataset configs in its own dialect; cascor translates at the juniper-data fetch boundary.
+
+**Routes** (same training router, `src/api/routes/training.py`):
+
+| Method | Path | Effect |
+|--------|------|--------|
+| `POST` | `/v1/training/dataset` | Stage config for the next `start_training` (empty body clears) |
+| `DELETE` | `/v1/training/dataset` | Cancel staged config |
+| `GET` | `/v1/training/dataset/pending` | Return staged config (or `null`) for canopy banner |
+| `POST` | `/v1/training/dataset/live` | In-flight live swap (experimental-functions gate) |
+
+Stored configs keep canopy names (`StageDatasetRequest.dataset_type`: `spirals`, `moons`, `xor`, …).
+Translation happens only inside `TrainingLifecycleManager._translate_staged_config` when `_reload_dataset` / live-swap calls juniper-data `create_dataset`.
+
+| Canopy `dataset_type` | juniper-data generator | Param notes |
+|-----------------------|------------------------|-------------|
+| `spirals` | `spiral` | `n_samples` → `n_points_per_spiral` (`max(1, n_samples // max(1, n_spirals))`); `rotations` → `n_rotations` |
+| `moons` | `moon` | Spiral-only fields (`rotations`, `n_spirals`) stripped; `n_samples` forwarded |
+| `xor` | `xor` | `n_samples` → `n_points_per_quadrant` (`max(1, n_samples // 4)`); spiral fields stripped |
+| other / unknown | passthrough | Spiral-only fields stripped when not spiral/xor |
+
+`setdefault` preserves caller-supplied generic `params` on key conflict.
+Zero clamps (`n_samples=0`, `n_spirals=0`) avoid `ZeroDivisionError` on the helper path; the Pydantic stage body still requires `n_samples >= 1` / `n_spirals >= 2` at the HTTP boundary.
+
+Without this alias layer, canopy-staged `spirals`/`moons` fail at juniper-data with "Unknown generator …".
+
+Regression pin (coverage PR #442): `src/tests/unit/api/test_lifecycle_manager_swap.py` — `TestTranslateStagedConfig`.
 
 ---
 
@@ -1490,33 +1545,55 @@ receives an error response and then closes with `1003`.
 
 **Summary** — Worker registration and task dispatch socket (juniper-cascor-worker).
 
-**Detailed description** — Origin header is rejected with `4003` if present (Section 12.3 — machine-to-machine only). Admission reserves only a stack-global WebSocket slot: worker fleets may share one token, and the server-assigned `worker_id` is not known until after admission. Optional Phase 4 protections: per-source-IP connection rate limiter (default 10 conn/min, burst 2), anomaly detector (perfect-correlation and training-time deviation guards), audit logging, and worker performance metrics. Handler at `src/api/websocket/worker_stream.py`.
+**Detailed description** — Origin header is rejected with `4003` if present (Section 12.3 — machine-to-machine only). Admission reserves only a stack-global WebSocket slot: worker fleets may share one token.
+The client-supplied `worker_id` is an untrusted display name (`client_name`); the server assigns the authoritative registry id (`worker-<12 hex>`) after a valid `register` message (CR-026).
+Optional Phase 4 protections: per-source-IP connection rate limiter (default 10 conn/min, burst 2), anomaly detector (perfect-correlation and training-time deviation guards), audit logging, and worker performance metrics.
+Handler at `src/api/websocket/worker_stream.py`.
 
-**Connect** — `ws://localhost:8201/ws/v1/workers` (mounted in `src/api/app.py:473`).
+**Connect** — `ws://localhost:8201/ws/v1/workers` (mounted in `src/api/app.py`).
 
-**Wire protocol** — JSON envelope plus binary tensor frames. See `src/api/workers/protocol.py`.
+**Wire protocol** — JSON envelope plus binary tensor frames. See `src/api/workers/protocol.py` / `juniper_cascor_protocol.worker.WorkerMessageType`.
 
-| Message type   | Direction       | Payload                                            |
-|----------------|-----------------|----------------------------------------------------|
-| `REGISTRATION` | worker → server | `{type, worker_id, capabilities{frameworks, ...}}` |
-| `HEARTBEAT`    | worker → server | periodic                                           |
-| `TASK_ASSIGN`  | server → worker | task spec + binary tensor frames                   |
-| `TASK_RESULT`  | worker → server | result envelope + binary tensor frames             |
-| `WORKER_ERROR` | worker → server | error envelope                                     |
+| Message type (`type`) | Direction       | Payload                                            |
+|-----------------------|-----------------|----------------------------------------------------|
+| `register`            | worker → server | `{type, worker_id, capabilities{…}}`               |
+| `heartbeat`           | worker → server | periodic                                           |
+| `task_assign`         | server → worker | task spec + binary tensor frames                   |
+| `task_result`         | worker → server | result envelope + binary tensor frames             |
+| `error`               | either          | error envelope                                     |
 
 **Limits** — JSON ≤ 65 KB; binary ≤ 100 MB.
+
+#### Registration `worker_id` admission
+
+`WorkerProtocol.validate_register` (`src/api/workers/protocol.py`) requires:
+
+- `worker_id`: string matching `^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$` (1–64 chars; must start alphanumeric; hyphens/underscores allowed after)
+- `capabilities`: a dict
+
+Rejected shapes (non-string, empty, leading `-`/`_`, spaces, path-like, >64 chars) return an error frame and close with **`4008`** (`Invalid registration`).
+Valid `worker_id` becomes `client_name` only; it is never used as the registry primary key.
+
+#### `task_result` typed parse (`TaskResultMessage.from_dict`)
+
+Required fields: `task_id`, `candidate_id` (int), `correlation` (numeric in `[0.0, 1.0]`), `success` (bool), `epochs_completed` (int).
+Missing/out-of-bounds values raise `ValueError` via `WorkerProtocol.validate_task_result`.
+
+Optional defaults when absent: `candidate_uuid=""`, `activation_name=""`, `all_correlations=[]`, `numerator=0.0`, `denominator=1.0`, `best_corr_idx=-1`, `tensor_manifest={}`, `error_message=None`.
+
+Regression pin (coverage PR #442): `src/tests/unit/api/test_worker_protocol.py` — register ID edges + `TaskResultMessage.from_dict`.
 
 **Example registration**:
 
 ```json
 {
-  "type": "registration",
+  "type": "register",
   "worker_id": "worker-abc123",
   "capabilities": {"frameworks": ["torch"], "gpu": true}
 }
 ```
 
-**State changes** — On `REGISTRATION` the worker is added to the registry. `TASK_RESULT` updates the worker's task counters, health score, and recent durations. `WORKER_ERROR` increments failure counters and may quarantine the worker (Phase 4 anomaly detector).
+**State changes** — On valid `register` the worker is added to the registry under a server-generated id. `task_result` updates the worker's task counters, health score, and recent durations. Error frames may quarantine the worker (Phase 4 anomaly detector).
 
 **Error handling / close codes**:
 
@@ -1526,7 +1603,8 @@ receives an error response and then closes with `1003`.
 | 4001 | Auth failure                         |
 | 4003 | Origin header present                |
 | 4004 | Worker subsystem not initialized     |
-| 1013 | Stack-global WebSocket cap reached   |
+| 4008 | Invalid registration (`validate_register` failed) |
+| 4013 | Worker registry at capacity          |
 | 4029 | Connection rate limit exceeded       |
 | 1006 | Message too large, heartbeat timeout |
 
@@ -1556,7 +1634,7 @@ The endpoints below mutate application state. All others are read-only.
 | POST `/v1/snapshots/{id}/replay`                                      | `lifecycle.start_replay()` (offloaded)          | Spawns replay thread + FSM → `REPLAYING`              |
 | POST `/v1/snapshots/{id}/replay/control`                              | `lifecycle.replay_control()`                    | Mutates replay session, may FSM → idle                |
 | WS `/ws/control` `start`/`stop`/`pause`/`resume`/`reset`/`set_params` | Same lifecycle methods as the REST counterparts | Same state changes                                    |
-| WS `/ws/v1/workers` `REGISTRATION` / `TASK_RESULT` / `WORKER_ERROR`   | Worker registry mutations                       | Adds/updates worker, updates counters, may quarantine |
+| WS `/ws/v1/workers` `register` / `task_result` / `error`              | Worker registry mutations                       | Adds/updates worker, updates counters, may quarantine |
 
 ---
 
