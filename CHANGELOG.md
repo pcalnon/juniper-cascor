@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Worker mid-disconnect task requeue:** `WorkerCoordinator.handle_worker_disconnect` (wired from `/ws/v1/workers` session cleanup) immediately requeues any in-flight task when a worker socket closes — including mid-binary-frame result receive — instead of leaving the task orphaned until `_task_reassignment_timeout` (default 120s). Distinct from CONC-10 heartbeat-timeout reaping. Tests: `test_worker_coordinator.py` (`TestHandleWorkerDisconnect`) and `test_worker_stream.py` (`test_mid_binary_frame_disconnect_requeues_assigned_task`).
+
 - Unit tests no longer pin the service version as a literal: the four `0.6.0` assertions in `test_api_app.py`, `test_api_app_coverage_deep.py`, and `test_api_health.py` (red on `main` since the v0.7.0 bump merged in #429 without CI running) now assert against `api.app._API_VERSION` — the BUG-CC-04 canonical runtime read — so a release version bump can no longer break the suite.
 
 ## [0.7.0] - 2026-07-28

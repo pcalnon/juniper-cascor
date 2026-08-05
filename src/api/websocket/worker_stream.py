@@ -147,10 +147,11 @@ async def _run_worker_session(
         # OBS-WIRE-02 (Q3): always re-emit the gauge on disconnect.
         if ws_manager is not None:
             ws_manager.unregister_endpoint_connection(websocket)
-        # Cleanup on disconnect
+        # Cleanup on disconnect — requeue any in-flight task immediately so a
+        # mid-task / mid-binary-frame close does not wait for the reassignment
+        # timeout (see WorkerCoordinator.handle_worker_disconnect).
         if worker_id is not None:
-            coordinator.unregister_send_callback(worker_id)
-            registry.deregister(worker_id)
+            coordinator.handle_worker_disconnect(worker_id)
             if audit_logger:
                 from api.workers.audit import AuditEventType
 
