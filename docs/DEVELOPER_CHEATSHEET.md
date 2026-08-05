@@ -1,6 +1,6 @@
 # Developer Cheatsheet — juniper-cascor
 
-**Version**: 1.0.1  |  **Date**: 2026-08-05  |  **Project**: juniper-cascor
+**Version**: 1.0.13  |  **Date**: 2026-08-05  |  **Project**: juniper-cascor
 
 ---
 
@@ -86,10 +86,13 @@ Metrics nuance:
 - `/ws/training` can also emit `candidate_progress` messages (epoch 1, every 50 epochs, final epoch per candidate).
 - Fresh `/ws/training` connects receive `initial_status`, `state`, and `initial_metrics`; resume requests use `{"type":"resume","data":{"last_seq":...,"server_instance_id":...}}` and replay only buffered broadcasts with higher `seq`.
 - `/ws/control` rate limiting returns an in-band `command_response` with `status:"rate_limited"` and keeps the socket open; it does not close on normal command throttling.
+- `POST /v1/training/start` while FSM is `Investigating` or `Replaying` returns **HTTP 409** with the lifecycle `RuntimeError` reason (not a 500). Exit Investigating via `/v1/snapshots/{id}/retrain` or `/resume`; stop replay via `/v1/snapshots/{id}/replay/control` with `action=stop` before starting.
+- C2b progress pairs (`output_epoch`/`output_total_epochs` and `candidate_epoch`/`candidate_total_epochs`) are zeroed at run start and at growth-phase exit so UI bars never keep the previous pass's terminal values.
+- `WorkerCoordinator.cancel_round` must free registry `active_task_id` via `complete_task(..., success=False)` for every in-flight assignment. Clearing only coordinator pending/unassigned maps leaves workers marked busy — `get_next_assignment` then permanently refuses work until reconnect.
 
 **Middleware** (outermost first): CORS -> Security -> Prometheus -> RequestId. **Models:** Pydantic (API), dataclasses (config).
 
-> See: [API Reference](api/API_REFERENCE.md) | [API Schemas](api/API_SCHEMAS.md)
+> See: [API Reference](api/API_REFERENCE.md) | [API Schemas](api/API_SCHEMAS.md) | [API Reference — training start / workers](api/JUNIPER_CASCOR_API_REFERENCE.md#post-v1trainingstart)
 
 ---
 
@@ -127,6 +130,9 @@ Metrics nuance:
 | `JUNIPER_CASCOR_WS_MAX_CONNECTIONS` | `50` | Global WebSocket connection cap, including pending `/ws/training` resume handshakes. |
 | `JUNIPER_CASCOR_WS_HEARTBEAT_INTERVAL_SEC` | `30` | Training/control heartbeat ping interval. |
 | `JUNIPER_CASCOR_WS_HEARTBEAT_PONG_TIMEOUT_SEC` | `10` | Training/control pong timeout before heartbeat close. |
+| `JUNIPER_CASCOR_API_KEYS_FILE` | -- | Docker-secrets path for API keys (`api.secrets.get_secret`). Unreadable `_FILE` (`OSError`/`PermissionError`) falls through to the plain env var; an existing empty/whitespace file returns `""` with no env fallback. |
+
+**Secrets tip:** Prefer a readable non-empty `*_FILE` in compose. If the mount exists but is unreadable, boot continues with the plain env var (or open auth when neither is set) — fix file permissions rather than assuming the env var was ignored.
 
 ---
 
@@ -252,6 +258,10 @@ Core: `torch`, `numpy`, `h5py`, `matplotlib`, `PyYAML`, `requests`
 | NaN in training                                                       | LR too high or bad data                                     | Reduce `learning_rate`, check tensors                                                                     |
 | Server refuses to start with `NonLoopbackBindError`                   | `JUNIPER_CASCOR_HOST` is non-loopback without a bind attestation | Bind `127.0.0.1` for local/dev, or set `JUNIPER_CASCOR_LOOPBACK_PUBLISH_ATTESTED=true` (loopback-only host publish) or `JUNIPER_CASCOR_AUTH_PROXY_ATTESTED=true` (fronting authenticating proxy) after verifying it |
 | WebSocket closes during connect with `1013`                           | Global, per-IP, or `/ws/control` per-identity cap reached   | Raise the relevant `JUNIPER_CASCOR_WS_MAX_CONNECTIONS_*` cap only after checking expected clients and worker fleet size |
+| `POST /v1/training/start` → 409 mentioning Investigating / replaying  | FSM still in snapshot inspect or replay mode                | Retrain/resume out of Investigating, or `replay/control` `action=stop`, then start again |
+| Remote workers stay busy after a cancelled candidate round            | `cancel_round` cleared pending maps but left `active_task_id` | Ensure coordinator calls `complete_task(..., success=False)` per busy worker (fixed in worker coordinator) |
+| `PATCH /v1/training/params` → 404 on bad candidate-pool triple        | Typed `InvalidCandidatePoolError` collapsed into bare `ValueError` | Route must map that subclass to **HTTP 422** with the violation string (not 404) |
+| Auth open / keys missing despite a `_FILE` mount                      | Unreadable secret file fell through to unset env            | Fix mount permissions, or set the plain `JUNIPER_CASCOR_API_KEYS` env var as fallback |
 | Publish workflow skipped / wrong package                              | Release tag prefix does not match workflow guard            | Use `v*`, `juniper-cascor-protocol-v*`, or `juniper-cascor-model-v*` — see [PyPI Publishing](ci_cd/MANUAL.md#pypi-publishing) |
 | TestPyPI `400 File already exists` on publish                         | Dual trigger or concurrent upload of same version           | Publish via Release only (no `push: tags`); bump version to re-upload |
 

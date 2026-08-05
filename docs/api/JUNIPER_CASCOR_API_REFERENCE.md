@@ -90,6 +90,7 @@ Optional. Controlled by the application settings:
 
 - REST: `X-API-Key` header validated by `APIKeyAuth` middleware (`src/api/security.py`). When `settings.api_keys` is empty, auth is disabled (dev mode).
 - WebSocket: same `X-API-Key` header, validated in `ws_authenticate()` (`src/api/websocket/manager.py`). On failure the socket is closed with code `4001`.
+- Docker secrets: `api.secrets.get_secret()` prefers `*_FILE` when the path is an existing file. An **unreadable** file (`OSError` / `PermissionError`) fails soft — fall through to the plain env var (or `None`) so Settings resolution / boot does not crash. A **readable empty/whitespace** file still returns `""` with no env fallback (compose `_FILE`-only pitfall).
 
 Rate limiting is also optional; per-IP REST limiter defaults to 100 req/min, and the worker WebSocket has its own per-IP connection rate limiter. WebSocket admission also has a stack-global cap across all WS endpoints (`JUNIPER_CASCOR_WS_MAX_CONNECTIONS_GLOBAL`, default 200). `/ws/control` adds a per-identity cap (`JUNIPER_CASCOR_WS_MAX_CONNECTIONS_PER_IDENTITY`, default 5) keyed on a non-reversible digest of the presented `X-API-Key`.
 
@@ -615,9 +616,11 @@ curl -s -X POST http://localhost:8201/v1/training/start \
 
 | Code | Trigger                                                                  |
 |------|--------------------------------------------------------------------------|
-| 409  | Cannot start in current FSM state (e.g., already running, replay active) |
+| 409  | Cannot start in current FSM state. Route maps lifecycle `RuntimeError` / `ValueError` to `HTTPException(409, "Training cannot be started: {reason}")`. Common reasons: already running; **Investigating** a snapshot (exit via `/v1/snapshots/{id}/retrain` or `/resume`); **Replaying** a snapshot (stop via `/v1/snapshots/{id}/replay/control` with `action=stop`); missing training data |
 | 422  | Body validation, unknown `params` key, NaN/Inf in `inline_data`          |
 | 503  | Lifecycle unbound                                                        |
+
+Canopy and other clients should treat Investigating/Replaying 409 bodies as actionable control-surface guidance (specific reason strings), not as generic server faults.
 
 ---
 
@@ -763,8 +766,8 @@ curl -s http://localhost:8201/v1/training/status
 |-------|-------|---------|
 | `current_epoch` / `current_step` | `training_state` | Completed **training steps** — entries in the engine's per-pass history: one initial output-training pass plus one per cascade growth iteration. NOT inner output-training epochs. Single writer (the metrics drain); the two fields are aliases today. |
 | `max_epochs` | `training_state` | The **derived** total-epoch cap implied by the granular limits: `output_epochs + min(max_iterations, max_hidden_units) * (candidate_epochs + output_epochs)`. A display budget (the natural `Epoch: X / Y` denominator), not an enforced abort — the granular limits do the gating. Refreshed at network create / param apply / snapshot load. |
-| `output_epoch` / `output_total_epochs` | `training_state` | Live progress **within the current output-training pass** (inner epoch vs. that pass's budget, sampled ~every 25th epoch). Zeroed at run start, growth-phase exit, and run end. Output-phase sibling of the `candidate_epoch` pair. |
-| `candidate_epoch` / `candidate_total_epochs` | `training_state` | Live progress within the current candidate-pool training pass (from the worker progress stream). |
+| `output_epoch` / `output_total_epochs` | `training_state` | Live progress **within the current output-training pass** (inner epoch vs. that pass's budget, sampled ~every 25th epoch). Zeroed at run start (`_run_training`), growth-phase exit (`training_end` after grow), and run end. Output-phase sibling of the `candidate_epoch` pair — UI bars must not keep the previous pass's terminal values across those boundaries. |
+| `candidate_epoch` / `candidate_total_epochs` | `training_state` | Live progress within the current candidate-pool training pass (from the worker progress stream). Cleared with the output pair at the same C2b reset points. |
 | `grow_iteration` / `grow_max` | `training_state` | Cascade growth iteration counter vs. its `max_iterations` limit. |
 | `learning_rate`, `max_hidden_units`, `max_iterations` | `training_state` | Projections of the live network's effective values (synced at create / apply / snapshot-load) — the same values `/v1/network` and `GET /v1/training/params` report. |
 | `current_epoch` | `monitor` | Completed training steps (same unit as `training_state.current_epoch`). E.g. `20` after 14 hidden units = 20 completed passes, not 20 inner epochs. |
@@ -830,7 +833,13 @@ curl -s -X PATCH http://localhost:8201/v1/training/params \
 
 **Returns** — Envelope with the merged params dict plus the C2a accounting fields `applied` (keys that landed) and `skipped` (`{"key", "reason"}` rows). `epochs_max` is **deprecated as an input** (C2b / Q1): submitted values are accepted at the request boundary (floor `ge=1` only) but never applied — they are reported as `skipped(not-updatable)`, since the value is derived from the granular limits (see `GET /v1/training/params`).
 
-**Error handling** — `404` if no network; `422` for unknown keys / out-of-range values; `503` if lifecycle unbound.
+**Error handling**:
+
+| Code | Trigger |
+|------|---------|
+| 404  | No network loaded (`ValueError` that is **not** an `InvalidCandidatePoolError`) |
+| 422  | Unknown keys / out-of-range values; **or** typed C2.1 `InvalidCandidatePoolError` (subclass of `ValueError`) — the route must promote that subclass to 422 with the violation string so canopy can toast it; collapsing it into bare `ValueError` → 404 is a regression |
+| 503  | Lifecycle unbound |
 
 ---
 
@@ -1517,6 +1526,12 @@ receives an error response and then closes with `1003`.
 ```
 
 **State changes** — On `REGISTRATION` the worker is added to the registry. `TASK_RESULT` updates the worker's task counters, health score, and recent durations. `WORKER_ERROR` increments failure counters and may quarantine the worker (Phase 4 anomaly detector).
+
+**Round cancellation (`WorkerCoordinator.cancel_round`)** — When a candidate round is cancelled (stop/shutdown/early exit), the coordinator clears pending/unassigned/result tracking **and** must free every registry `active_task_id` left from in-flight assignments by calling `WorkerRegistry.complete_task(worker_id, success=False)`.
+
+If only the coordinator maps are cleared, `assign_task` keeps returning `False` (worker still busy), `get_next_assignment` permanently refuses work, and `_check_task_timeouts` cannot reclaim capacity because pending tracking is already gone — stuck remote capacity until the worker reconnects.
+
+Source: `src/api/workers/coordinator.py` (`cancel_round`), `src/api/workers/registry.py` (`complete_task` / `assign_task`).
 
 **Error handling / close codes**:
 

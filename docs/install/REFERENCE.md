@@ -64,6 +64,7 @@ The FastAPI service reads these settings through `api.settings.Settings` with th
 | `JUNIPER_CASCOR_LOOPBACK_PUBLISH_ATTESTED` | Boolean | `false` | One of the two bind attestations required when `JUNIPER_CASCOR_HOST` is non-loopback, such as `0.0.0.0`. Setting it to `true` attests the port is reachable only via a loopback-only host publish. |
 | `JUNIPER_CASCOR_AUTH_PROXY_ATTESTED` | Boolean | `false` | One of the two bind attestations required when `JUNIPER_CASCOR_HOST` is non-loopback. Setting it to `true` attests a fronting authenticating reverse proxy terminates access before the port. |
 | `JUNIPER_CASCOR_API_KEYS` | CSV / JSON list | unset | API keys accepted in `X-API-Key`. When unset, API-key auth is disabled for development. |
+| `JUNIPER_CASCOR_API_KEYS_FILE` | Path string | unset | Docker-secrets companion for `JUNIPER_CASCOR_API_KEYS`. Resolved by `api.secrets.get_secret()`. |
 | `JUNIPER_CASCOR_WS_MAX_CONNECTIONS_GLOBAL` | Integer | `200` | Stack-absolute WebSocket admission cap across `/ws/training`, `/ws/control`, and `/ws/v1/workers`. |
 | `JUNIPER_CASCOR_WS_MAX_CONNECTIONS_PER_IDENTITY` | Integer | `5` | Per API-key identity admission cap for `/ws/control`. |
 | `JUNIPER_CASCOR_WS_MAX_CONNECTIONS_PER_IP` | Integer | `5` | Per-source-IP cap for manager-routed sockets; useful as DoS dampening, but not an identity control behind Docker NAT. |
@@ -86,6 +87,13 @@ python server.py
 ```
 
 **WebSocket cap behavior:** over-cap WebSocket handshakes are closed with code `1013`. The global cap is the backstop that still works when Docker NAT collapses many callers to one bridge-gateway IP. The per-identity cap applies to `/ws/control`; worker sockets are global-cap-only because a worker fleet can share one machine token and the worker id is assigned after admission.
+
+**Docker secrets (`api.secrets.get_secret`):** When `JUNIPER_CASCOR_API_KEYS_FILE` (or another `*_FILE`) points at a path:
+
+- **Readable non-empty file** → file contents (stripped) win over the plain env var.
+- **Readable empty/whitespace file** → returns `""`; does **not** fall back to the plain env var (compose `_FILE`-only pitfall).
+- **Unreadable file** (`OSError` / `PermissionError` on read) → fail-soft: fall through to the plain env var (or `None`) so Settings resolution / boot does not crash. Fix mount permissions or set the plain env var.
+- **Missing path / not a file** → fall through to the plain env var (same fail-soft posture).
 
 ## CLI Arguments
 
