@@ -1518,6 +1518,13 @@ receives an error response and then closes with `1003`.
 
 **State changes** — On `REGISTRATION` the worker is added to the registry. `TASK_RESULT` updates the worker's task counters, health score, and recent durations. `WORKER_ERROR` increments failure counters and may quarantine the worker (Phase 4 anomaly detector).
 
+**Schema / tensor reject-requeue** (`WorkerCoordinator._reject_and_requeue_task`) — When `submit_result` rejects a result for schema (`validate_task_result`) or tensor-manifest (`validate_tensors`) errors, the coordinator:
+
+1. Marks the submitting worker's in-flight task complete as failure (`registry.complete_task(..., success=False)`).
+2. Clears `task.assigned_worker_id` and appends the `task_id` to `_unassigned_tasks` so another (or the same) worker can be dispatched immediately.
+
+Without this path, `complete_task` frees the worker but leaves the assignment set — the pending task sits orphaned until `_check_task_timeouts` fires after `JUNIPER_CASCOR_REMOTE_WORKERS_TASK_REASSIGNMENT_TIMEOUT` (default **120s**). Heartbeat / disconnect failures still use that timeout path; schema/tensor rejects do not. Wrong-worker ownership and fail-soft manifest validation are separate `submit_result` checks documented alongside this socket.
+
 **Error handling / close codes**:
 
 | Code | Trigger                              |

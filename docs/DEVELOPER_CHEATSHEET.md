@@ -1,6 +1,6 @@
 # Developer Cheatsheet — juniper-cascor
 
-**Version**: 1.0.1  |  **Date**: 2026-08-05  |  **Project**: juniper-cascor
+**Version**: 1.0.7  |  **Date**: 2026-08-05  |  **Project**: juniper-cascor
 
 ---
 
@@ -127,6 +127,8 @@ Metrics nuance:
 | `JUNIPER_CASCOR_WS_MAX_CONNECTIONS` | `50` | Global WebSocket connection cap, including pending `/ws/training` resume handshakes. |
 | `JUNIPER_CASCOR_WS_HEARTBEAT_INTERVAL_SEC` | `30` | Training/control heartbeat ping interval. |
 | `JUNIPER_CASCOR_WS_HEARTBEAT_PONG_TIMEOUT_SEC` | `10` | Training/control pong timeout before heartbeat close. |
+| `JUNIPER_CASCOR_REMOTE_WORKERS_TASK_REASSIGNMENT_TIMEOUT` | `120.0` | Reassign after worker failure / disconnect. Schema/tensor rejects requeue immediately — do not wait for this timeout. |
+| `JUNIPER_CASCOR_AUTO_START_DATA_SERVICE` / `_CANOPY` | `false` | Local companion auto-start; failed health / terminate must clear `_active_services` (see troubleshooting). |
 
 ---
 
@@ -252,6 +254,8 @@ Core: `torch`, `numpy`, `h5py`, `matplotlib`, `PyYAML`, `requests`
 | NaN in training                                                       | LR too high or bad data                                     | Reduce `learning_rate`, check tensors                                                                     |
 | Server refuses to start with `NonLoopbackBindError`                   | `JUNIPER_CASCOR_HOST` is non-loopback without a bind attestation | Bind `127.0.0.1` for local/dev, or set `JUNIPER_CASCOR_LOOPBACK_PUBLISH_ATTESTED=true` (loopback-only host publish) or `JUNIPER_CASCOR_AUTH_PROXY_ATTESTED=true` (fronting authenticating proxy) after verifying it |
 | WebSocket closes during connect with `1013`                           | Global, per-IP, or `/ws/control` per-identity cap reached   | Raise the relevant `JUNIPER_CASCOR_WS_MAX_CONNECTIONS_*` cap only after checking expected clients and worker fleet size |
+| Candidate round stalls ~120s after a bad worker `TASK_RESULT`         | Schema/tensor reject left the task assigned until reassignment timeout | With `_reject_and_requeue_task`, invalid results free the worker and requeue immediately — check worker logs for validation errors |
+| Companion auto-start leaves port conflict / atexit double-terminate   | Failed health left stale `_active_services` or open log FD  | Ensure `service_launcher` fail-closed cleanup (terminate + remove + `_close_log` in `finally`); restart cascor after a failed companion boot |
 | Publish workflow skipped / wrong package                              | Release tag prefix does not match workflow guard            | Use `v*`, `juniper-cascor-protocol-v*`, or `juniper-cascor-model-v*` — see [PyPI Publishing](ci_cd/MANUAL.md#pypi-publishing) |
 | TestPyPI `400 File already exists` on publish                         | Dual trigger or concurrent upload of same version           | Publish via Release only (no `push: tags`); bump version to re-upload |
 

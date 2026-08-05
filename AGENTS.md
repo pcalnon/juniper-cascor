@@ -461,7 +461,9 @@ Distributed candidate training via WebSocket workers.
 4. Worker returns results as binary numpy frames
 5. Heartbeat keepalive (default 30s timeout)
 6. Auto-deregistration on heartbeat timeout
-7. Task reassignment on worker failure (default 120s timeout)
+7. Task reassignment on worker failure / heartbeat timeout (default 120s timeout)
+
+**Schema / tensor reject-requeue** — Invalid `TASK_RESULT` payloads (schema or tensor-manifest validation failures) free the worker and **immediately requeue** the pending task via `_reject_and_requeue_task`. Do not wait for the 120s reassignment timeout on that path. Details: [`docs/api/JUNIPER_CASCOR_API_REFERENCE.md`](docs/api/JUNIPER_CASCOR_API_REFERENCE.md) § WS `/ws/v1/workers`.
 
 ---
 
@@ -849,12 +851,18 @@ cd ../juniper-deploy && make up
 
 ### Service Launcher
 
-When running outside containers, juniper-cascor can auto-start companion services:
+When running outside containers, juniper-cascor can auto-start companion services (`src/api/service_launcher.py`):
 
 - `JUNIPER_CASCOR_AUTO_START_DATA_SERVICE=true` -- Start juniper-data
 - `JUNIPER_CASCOR_AUTO_START_CANOPY=true` -- Start juniper-canopy
 
 The launcher probes health endpoints before declaring readiness.
+
+**Failed-start cleanup** (fail-closed registry / FD hygiene):
+
+- `ManagedService.terminate` always closes the companion log handle in a `finally` (even when wait/kill raises).
+- Health-probe exceptions are treated as unhealthy; the subprocess is terminated and removed from `_active_services`.
+- If `terminate()` itself raises after a failed health check, the launcher still drops the stale `_active_services` entry so atexit / shutdown cannot chase an orphaned companion or leave port conflicts.
 
 ---
 
