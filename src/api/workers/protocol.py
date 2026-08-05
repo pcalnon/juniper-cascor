@@ -51,6 +51,10 @@ __all__ = [
 _MAX_CORRELATION = 1.0
 _MIN_CORRELATION = 0.0
 _MAX_WEIGHT_MAGNITUDE = 100.0
+# Cap tensor_manifest cardinality so a malformed/hostile result cannot force
+# the worker handler into an unbounded binary-receive loop (string manifests
+# would otherwise iterate character-by-character; huge dicts wait for N frames).
+_MAX_TENSOR_MANIFEST_ENTRIES = 32
 
 
 class WorkerProtocol:
@@ -188,6 +192,16 @@ class WorkerProtocol:
         corr = msg["correlation"]
         if not (_MIN_CORRELATION <= corr <= _MAX_CORRELATION):
             errors.append(f"correlation out of bounds: {corr} (expected [{_MIN_CORRELATION}, {_MAX_CORRELATION}])")
+
+        # Optional tensor_manifest: when present must be a bounded dict.
+        # Absent is fine (defaults to {} at the receive site); present-but-
+        # wrong-type must fail before the handler iterates keys as frame names.
+        if "tensor_manifest" in msg:
+            manifest = msg["tensor_manifest"]
+            if not isinstance(manifest, dict):
+                errors.append(f"tensor_manifest must be dict, got {type(manifest).__name__}")
+            elif len(manifest) > _MAX_TENSOR_MANIFEST_ENTRIES:
+                errors.append(f"tensor_manifest has too many entries: {len(manifest)} > {_MAX_TENSOR_MANIFEST_ENTRIES}")
 
         return errors
 

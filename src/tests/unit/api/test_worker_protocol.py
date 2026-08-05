@@ -86,6 +86,17 @@ class TestBinaryFrame:
         with pytest.raises(ValueError, match="size mismatch"):
             BinaryFrame.decode(encoded[:-2])
 
+    def test_decode_non_utf8_dtype_raises_value_error(self):
+        """Non-UTF-8 dtype bytes raise ValueError (not UnicodeDecodeError).
+
+        worker_stream only catches ValueError around BinaryFrame.decode; a
+        raw UnicodeDecodeError would tear down the authenticated session.
+        """
+        # ndim=1, shape=(1,), dtype_len=2, dtype bytes = invalid UTF-8, + 4 bytes float32 data
+        payload = struct.pack("<I", 1) + struct.pack("<I", 1) + struct.pack("<I", 2) + b"\xff\xfe" + b"\x00\x00\x00\x00"
+        with pytest.raises(ValueError, match="not valid UTF-8"):
+            BinaryFrame.decode(payload)
+
     def test_c_contiguous_enforcement(self):
         """Non-contiguous input is made contiguous before encoding."""
         arr = np.array([[1.0, 2.0], [3.0, 4.0]], dtype=np.float32)
@@ -227,6 +238,39 @@ class TestValidateTaskResult:
         msg["correlation"] = 0.0
         assert WorkerProtocol.validate_task_result(msg) == []
         msg["correlation"] = 1.0
+        assert WorkerProtocol.validate_task_result(msg) == []
+
+    def test_tensor_manifest_non_dict_rejected(self):
+        """Present-but-non-dict tensor_manifest is a schema error."""
+        msg = self._valid_result()
+        msg["tensor_manifest"] = "weights"
+        errors = WorkerProtocol.validate_task_result(msg)
+        assert any("tensor_manifest must be dict" in e for e in errors)
+
+    def test_tensor_manifest_null_rejected(self):
+        """JSON null tensor_manifest (None) is a schema error."""
+        msg = self._valid_result()
+        msg["tensor_manifest"] = None
+        errors = WorkerProtocol.validate_task_result(msg)
+        assert any("tensor_manifest must be dict" in e for e in errors)
+
+    def test_tensor_manifest_too_many_entries_rejected(self):
+        """Oversized tensor_manifest is rejected before a binary receive DoS."""
+        msg = self._valid_result()
+        msg["tensor_manifest"] = {f"t{i}": {"shape": [1], "dtype": "float32"} for i in range(33)}
+        errors = WorkerProtocol.validate_task_result(msg)
+        assert any("too many entries" in e for e in errors)
+
+    def test_tensor_manifest_absent_ok(self):
+        """Absent tensor_manifest remains valid (receive site defaults to {})."""
+        msg = self._valid_result()
+        assert "tensor_manifest" not in msg
+        assert WorkerProtocol.validate_task_result(msg) == []
+
+    def test_tensor_manifest_valid_dict_ok(self):
+        """A bounded dict tensor_manifest does not add schema errors."""
+        msg = self._valid_result()
+        msg["tensor_manifest"] = {"weights": {"shape": [4], "dtype": "float32"}}
         assert WorkerProtocol.validate_task_result(msg) == []
 
 
