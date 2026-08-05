@@ -56,10 +56,10 @@ This documentation serves two audiences:
 
 | Document | Description |
 |----------|-------------|
-| [CI/CD Quick Start](ci_cd/QUICK_START.md) | Understand the CI pipeline |
+| [CI/CD Quick Start](ci_cd/QUICK_START.md) | Understand the CI pipeline and PyPI publish tags |
 | [CI Environment](ci_cd/ENVIRONMENT_SETUP.md) | GitHub Actions environment |
-| [CI/CD Manual](ci_cd/MANUAL.md) | Pipeline architecture and jobs |
-| [CI/CD Reference](ci_cd/REFERENCE.md) | Configuration reference |
+| [CI/CD Manual](ci_cd/MANUAL.md) | Pipeline architecture, jobs, and PyPI publishing |
+| [CI/CD Reference](ci_cd/REFERENCE.md) | CI + publish workflow configuration reference |
 
 ### Source Code
 
