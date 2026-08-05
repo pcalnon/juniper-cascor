@@ -131,6 +131,20 @@ class TestGetNextAssignment:
         coordinator.get_next_assignment("w1")
         assert registry.get("w1").idle is False
 
+    def test_get_next_assignment_skips_orphaned_unassigned_id(self, coordinator, registry):
+        """Stale queue ids without a pending entry must not block later tasks."""
+        registry.register("w1", {})
+        task_ids = coordinator.submit_tasks("round-1", _make_task_specs(1), _make_tensors())
+        # Plant an orphan ahead of the real task id.
+        coordinator._unassigned_tasks.insert(0, "orphaned-task-id")
+        assert coordinator._pending_tasks.get("orphaned-task-id") is None
+
+        result = coordinator.get_next_assignment("w1")
+        assert result is not None
+        msg, _frames = result
+        assert msg["task_id"] == task_ids[0]
+        assert "orphaned-task-id" not in coordinator._unassigned_tasks
+
 
 @pytest.mark.unit
 class TestSubmitResult:
@@ -189,6 +203,31 @@ class TestSubmitResult:
         bad_tensors["weights"] = np.array([float("nan")] * 4, dtype=np.float32)
         accepted = coordinator.submit_result("w1", msg, bad_tensors)
         assert accepted is False
+
+    def test_reject_unassigned_task_result(self, coordinator, registry):
+        """Results for pending-but-unassigned tasks (requeue window) are rejected."""
+        registry.register("w1", {})
+        task_ids = coordinator.submit_tasks("round-1", _make_task_specs(1), _make_tensors())
+        # Do not call get_next_assignment — task stays unassigned.
+        assert coordinator._pending_tasks[task_ids[0]].assigned_worker_id is None
+
+        accepted = coordinator.submit_result("w1", _make_result_msg(task_ids[0]), _make_result_tensors())
+        assert accepted is False
+        assert task_ids[0] not in coordinator._completed_task_ids
+
+    def test_reject_wrong_worker_result(self, coordinator, registry):
+        """Only the assigned worker may submit a task result."""
+        registry.register("w1", {})
+        registry.register("w2", {})
+        task_ids = coordinator.submit_tasks("round-1", _make_task_specs(1), _make_tensors())
+        coordinator.get_next_assignment("w1")
+
+        accepted = coordinator.submit_result("w2", _make_result_msg(task_ids[0]), _make_result_tensors())
+        assert accepted is False
+        assert task_ids[0] not in coordinator._completed_task_ids
+        # Assigned worker can still complete after the wrong-worker reject.
+        accepted = coordinator.submit_result("w1", _make_result_msg(task_ids[0]), _make_result_tensors())
+        assert accepted is True
 
 
 @pytest.mark.unit

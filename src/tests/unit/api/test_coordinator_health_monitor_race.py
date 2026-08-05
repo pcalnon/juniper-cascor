@@ -23,6 +23,7 @@ not gate them.
 from __future__ import annotations
 
 import threading
+import time
 from pathlib import Path
 
 import pytest
@@ -186,6 +187,50 @@ class TestCheckStaleWorkersBehaviour:
             assert registry.get("w-stale") is None
             assert "task-42" in coord._unassigned_tasks
             assert coord._pending_tasks["task-42"].assigned_worker_id is None
+        finally:
+            coord.shutdown()
+
+    def test_stale_snapshot_skips_deregister_when_heartbeat_recovers(self, _coord_module):
+        """TOCTOU recovery: heartbeat between stale snapshot and re-check must skip deregister."""
+        coordinator_module, _ = _coord_module
+        WorkerCoordinator = coordinator_module.WorkerCoordinator
+        from api.workers.registry import WorkerRegistry
+
+        registry = WorkerRegistry(heartbeat_timeout=30.0)
+        coord = WorkerCoordinator(registry=registry, task_reassignment_timeout=60.0, health_check_interval=60.0)
+        try:
+            registry.register("w-recover", {})
+            registry.assign_task("w-recover", "task-77")
+            coord._pending_tasks["task-77"] = coordinator_module.PendingTask(
+                task_id="task-77",
+                round_id="round-1",
+                candidate_index=0,
+                candidate_data={},
+                training_params={},
+                tensors={},
+                assigned_worker_id="w-recover",
+                dispatched_at=0.0,
+            )
+
+            worker = registry.get("w-recover")
+            assert worker is not None
+            # Force a fresh heartbeat so the re-check path sees is_alive() True.
+            worker.last_heartbeat = time.time()
+            original_get_stale = registry.get_stale_workers
+
+            def _snapshot_as_stale():
+                current = registry.get("w-recover")
+                return [current] if current is not None else []
+
+            registry.get_stale_workers = _snapshot_as_stale  # type: ignore[method-assign]
+            try:
+                coord._check_stale_workers()
+            finally:
+                registry.get_stale_workers = original_get_stale  # type: ignore[method-assign]
+
+            assert registry.get("w-recover") is not None
+            assert "task-77" not in coord._unassigned_tasks
+            assert coord._pending_tasks["task-77"].assigned_worker_id == "w-recover"
         finally:
             coord.shutdown()
 
