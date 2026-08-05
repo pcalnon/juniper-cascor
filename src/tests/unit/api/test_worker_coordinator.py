@@ -133,6 +133,65 @@ class TestGetNextAssignment:
 
 
 @pytest.mark.unit
+class TestAbortInFlightResult:
+    """Soft result-frame abort: free worker + immediate requeue (conn stays open)."""
+
+    def test_soft_abort_frees_worker_and_requeues(self, coordinator, registry):
+        """abort_in_flight_result clears busy state and puts the task back on the queue."""
+        registry.register("w1", {})
+        task_ids = coordinator.submit_tasks("round-1", _make_task_specs(1), _make_tensors())
+        assert coordinator.get_next_assignment("w1") is not None
+        assert registry.get("w1").idle is False
+
+        coordinator.abort_in_flight_result("w1", task_ids[0])
+
+        assert registry.get("w1").idle is True
+        pending = coordinator._pending_tasks[task_ids[0]]
+        assert pending.assigned_worker_id is None
+        assert task_ids[0] in coordinator._unassigned_tasks
+
+    def test_soft_abort_allows_immediate_peer_reassignment(self, coordinator, registry):
+        """After soft abort, a second idle worker can pick up the same task without waiting."""
+        registry.register("w1", {})
+        registry.register("w2", {})
+        task_ids = coordinator.submit_tasks("round-1", _make_task_specs(1), _make_tensors())
+        assert coordinator.get_next_assignment("w1") is not None
+
+        coordinator.abort_in_flight_result("w1", task_ids[0])
+
+        peer = coordinator.get_next_assignment("w2")
+        assert peer is not None
+        msg, _frames = peer
+        assert msg["task_id"] == task_ids[0]
+        assert registry.get("w2").idle is False
+        assert registry.get("w1").idle is True
+
+    def test_soft_abort_unknown_task_still_frees_worker(self, coordinator, registry):
+        """Unknown task_id still clears the worker's active assignment (fail-soft)."""
+        registry.register("w1", {})
+        task_ids = coordinator.submit_tasks("round-1", _make_task_specs(1), _make_tensors())
+        assert coordinator.get_next_assignment("w1") is not None
+
+        coordinator.abort_in_flight_result("w1", "not-a-real-task")
+
+        assert registry.get("w1").idle is True
+        # Original task remains assigned at coordinator level until timeout /
+        # disconnect path; soft abort with wrong id must not invent a requeue.
+        assert task_ids[0] not in coordinator._unassigned_tasks
+
+    def test_soft_abort_uses_registry_active_task_when_id_omitted(self, coordinator, registry):
+        """Omitting task_id falls back to the registry's active_task_id."""
+        registry.register("w1", {})
+        task_ids = coordinator.submit_tasks("round-1", _make_task_specs(1), _make_tensors())
+        assert coordinator.get_next_assignment("w1") is not None
+
+        coordinator.abort_in_flight_result("w1")
+
+        assert registry.get("w1").idle is True
+        assert task_ids[0] in coordinator._unassigned_tasks
+
+
+@pytest.mark.unit
 class TestSubmitResult:
     """Test result submission and validation."""
 

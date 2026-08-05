@@ -243,6 +243,64 @@ class TestHandshakeGates:
         cooldown.record_rejection.assert_called_once_with("10.0.0.9")
         ws.close.assert_awaited_once_with(code=4003, reason="Origin not allowed")
 
+    @pytest.mark.asyncio
+    async def test_auth_failure_records_rejection(self):
+        """Invalid API key closes 4001 and records a handshake rejection (parity with origin)."""
+        ws = AsyncMock()
+        auth = MagicMock()
+        auth.enabled = True
+        auth.validate.return_value = False
+        ws.app.state.api_key_auth = auth
+        ws.headers = {"X-API-Key": "bad-key"}
+
+        settings = MagicMock()
+        settings.disable_ws_control_endpoint = False
+        settings.ws_control_allowed_origins = []
+
+        cooldown = MagicMock()
+        cooldown.is_blocked.return_value = False
+
+        with patch("api.websocket.control_stream._get_cooldown", return_value=cooldown):
+            allowed = await _check_handshake_gates(ws, settings, "10.0.0.9")
+
+        assert allowed is False
+        cooldown.record_rejection.assert_called_once_with("10.0.0.9")
+        ws.close.assert_awaited_once_with(code=4001, reason="Authentication required")
+
+    @pytest.mark.asyncio
+    async def test_auth_failures_trip_real_handshake_cooldown(self):
+        """Repeated auth failures on a real HandshakeCooldown block the IP with 4029."""
+        from api.websocket.control_security import HandshakeCooldown
+
+        settings = MagicMock()
+        settings.disable_ws_control_endpoint = False
+        settings.ws_control_allowed_origins = []
+
+        cooldown = HandshakeCooldown(max_rejections=3, window_sec=60, block_sec=300)
+        client_ip = "203.0.113.50"
+
+        for _ in range(3):
+            ws = AsyncMock()
+            auth = MagicMock()
+            auth.enabled = True
+            auth.validate.return_value = False
+            ws.app.state.api_key_auth = auth
+            ws.headers = {"X-API-Key": "bad-key"}
+            with patch("api.websocket.control_stream._get_cooldown", return_value=cooldown):
+                allowed = await _check_handshake_gates(ws, settings, client_ip)
+            assert allowed is False
+            ws.close.assert_awaited_with(code=4001, reason="Authentication required")
+
+        assert cooldown.is_blocked(client_ip) is True
+
+        blocked_ws = AsyncMock()
+        blocked_ws.app.state.api_key_auth = None
+        with patch("api.websocket.control_stream._get_cooldown", return_value=cooldown):
+            allowed = await _check_handshake_gates(blocked_ws, settings, client_ip)
+
+        assert allowed is False
+        blocked_ws.close.assert_awaited_once_with(code=4029, reason="Too many rejected handshakes")
+
 
 @pytest.mark.unit
 class TestHandleCommandMessageBranches:
