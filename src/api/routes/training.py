@@ -67,7 +67,10 @@ async def start_training(request: Request, body: TrainingStartRequest = None) ->
         if body.inline_data is not None:
             x = torch.tensor(body.inline_data.train_x, dtype=torch.float32)
             y = torch.tensor(body.inline_data.train_y, dtype=torch.float32)
-            if body.inline_data.val_x is not None:
+            # InlineDataset's model_validator already rejects a half-specified
+            # validation split; require both here so a future model change cannot
+            # reintroduce ``torch.tensor(None)`` on a lone val_x/val_y.
+            if body.inline_data.val_x is not None and body.inline_data.val_y is not None:
                 x_val = torch.tensor(body.inline_data.val_x, dtype=torch.float32)
                 y_val = torch.tensor(body.inline_data.val_y, dtype=torch.float32)
 

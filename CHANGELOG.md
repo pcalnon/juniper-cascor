@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **InlineDataset + `_reload_dataset` — reject misaligned / half-specified splits at the boundary.**
+  `InlineDataset` now cross-validates `train_x`/`train_y` lengths and requires `val_x`/`val_y` as a pair (matching lengths), so `POST /v1/training/start` returns 422 instead of constructing tensors that fail mid-`fit`. `_reload_dataset` likewise rejects juniper-data artifacts with non-2-D train/val arrays, train or validation sample-count mismatches, a partial `X_test`/`y_test` pair, or non-numeric train payloads — leaving prior tensors untouched so staged swaps can retry. Tests: `src/tests/unit/api/test_inline_dataset_validation.py`, extended `TestReloadDataset` in `test_lifecycle_manager_swap.py`.
+
 - Unit tests no longer pin the service version as a literal: the four `0.6.0` assertions in `test_api_app.py`, `test_api_app_coverage_deep.py`, and `test_api_health.py` (red on `main` since the v0.7.0 bump merged in #429 without CI running) now assert against `api.app._API_VERSION` — the BUG-CC-04 canonical runtime read — so a release version bump can no longer break the suite.
 
 ## [0.7.0] - 2026-07-28

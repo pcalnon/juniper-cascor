@@ -3368,15 +3368,42 @@ class TrainingLifecycleManager:
             new_train_y = torch.tensor(arrays["y_train"], dtype=torch.float32)
         except KeyError as exc:
             raise RuntimeError(f"juniper-data artifact missing required key: {exc}") from exc
+        except (TypeError, ValueError, RuntimeError) as exc:
+            # Non-array / non-numeric payloads blow up at tensor construction;
+            # surface a stable RuntimeError so swap/start callers can leave
+            # pending staging intact and retry after fixing the upstream artifact.
+            raise RuntimeError(f"juniper-data artifact train arrays are malformed: {exc}") from exc
 
-        self._train_x = new_train_x
-        self._train_y = new_train_y
-        if "X_test" in arrays and "y_test" in arrays:
-            self._val_x = torch.tensor(arrays["X_test"], dtype=torch.float32)
-            self._val_y = torch.tensor(arrays["y_test"], dtype=torch.float32)
+        if new_train_x.ndim != 2 or new_train_y.ndim != 2:
+            raise RuntimeError(f"juniper-data artifact train arrays must be 2-D; got X_train.ndim={new_train_x.ndim}, y_train.ndim={new_train_y.ndim}")
+        if new_train_x.shape[0] != new_train_y.shape[0]:
+            raise RuntimeError(f"juniper-data artifact train sample count mismatch: X_train={new_train_x.shape[0]} y_train={new_train_y.shape[0]}")
+
+        has_x_test = "X_test" in arrays
+        has_y_test = "y_test" in arrays
+        if has_x_test != has_y_test:
+            present = "X_test" if has_x_test else "y_test"
+            missing = "y_test" if has_x_test else "X_test"
+            raise RuntimeError(f"juniper-data artifact has partial validation split ({present} without {missing})")
+
+        if has_x_test:
+            try:
+                new_val_x = torch.tensor(arrays["X_test"], dtype=torch.float32)
+                new_val_y = torch.tensor(arrays["y_test"], dtype=torch.float32)
+            except (TypeError, ValueError, RuntimeError) as exc:
+                raise RuntimeError(f"juniper-data artifact validation arrays are malformed: {exc}") from exc
+            if new_val_x.ndim != 2 or new_val_y.ndim != 2:
+                raise RuntimeError(f"juniper-data artifact validation arrays must be 2-D; got X_test.ndim={new_val_x.ndim}, y_test.ndim={new_val_y.ndim}")
+            if new_val_x.shape[0] != new_val_y.shape[0]:
+                raise RuntimeError(f"juniper-data artifact validation sample count mismatch: X_test={new_val_x.shape[0]} y_test={new_val_y.shape[0]}")
+            self._val_x = new_val_x
+            self._val_y = new_val_y
         else:
             self._val_x = None
             self._val_y = None
+
+        self._train_x = new_train_x
+        self._train_y = new_train_y
         # ISSUE_3_PHASE_2_LIVE_DATASET_SWAP §3.2 step 4d — track the canonical
         # cfg so ``swap_dataset_live`` can report it as ``before_cfg`` and so
         # the rollback path can restore it if a swap fails.
