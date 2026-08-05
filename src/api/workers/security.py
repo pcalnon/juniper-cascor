@@ -70,16 +70,20 @@ class TLSConfig:
             ctx.verify_mode = ssl.CERT_REQUIRED
             logger.warning("mTLS: require_client_cert=True but no CA file — using system trust store")
 
-        # Server certificate
-        if self.cert_file and self.key_file:
-            cert_path = Path(self.cert_file)
-            key_path = Path(self.key_file)
-            if not cert_path.exists():
-                raise FileNotFoundError(f"TLS cert not found: {self.cert_file}")
-            if not key_path.exists():
-                raise FileNotFoundError(f"TLS key not found: {self.key_file}")
-            ctx.load_cert_chain(certfile=str(cert_path), keyfile=str(key_path))
-            logger.info("Loaded server TLS certificate: %s", self.cert_file)
+        # Server certificate — fail closed on missing or half-configured paths.
+        # A TLS-enabled context without a loaded server cert would accept
+        # connections under incomplete deployment config (cert XOR key, or
+        # neither). Require both paths when TLS is enabled.
+        if not self.cert_file or not self.key_file:
+            raise ValueError(f"TLS enabled requires both cert_file and key_file (cert_file={self.cert_file!r}, key_file={self.key_file!r})")
+        cert_path = Path(self.cert_file)
+        key_path = Path(self.key_file)
+        if not cert_path.exists():
+            raise FileNotFoundError(f"TLS cert not found: {self.cert_file}")
+        if not key_path.exists():
+            raise FileNotFoundError(f"TLS key not found: {self.key_file}")
+        ctx.load_cert_chain(certfile=str(cert_path), keyfile=str(key_path))
+        logger.info("Loaded server TLS certificate: %s", self.cert_file)
 
         return ctx
 

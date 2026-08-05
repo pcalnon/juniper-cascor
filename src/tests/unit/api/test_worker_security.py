@@ -51,6 +51,35 @@ class TestTLSConfig:
         with pytest.raises(FileNotFoundError, match="CA cert not found"):
             cfg.build_ssl_context()
 
+    def test_half_config_cert_only_raises(self, tmp_path):
+        """TLS enabled with cert_file but no key_file must fail closed."""
+        cert = tmp_path / "server.crt"
+        cert.write_text("dummy")
+        cfg = TLSConfig(enabled=True, cert_file=str(cert), key_file=None)
+        with pytest.raises(ValueError, match="requires both cert_file and key_file"):
+            cfg.build_ssl_context()
+
+    def test_half_config_key_only_raises(self, tmp_path):
+        """TLS enabled with key_file but no cert_file must fail closed."""
+        key = tmp_path / "server.key"
+        key.write_text("dummy")
+        cfg = TLSConfig(enabled=True, cert_file=None, key_file=str(key))
+        with pytest.raises(ValueError, match="requires both cert_file and key_file"):
+            cfg.build_ssl_context()
+
+    def test_enabled_without_cert_or_key_raises(self):
+        """TLS enabled with neither cert nor key must fail closed (not return bare context)."""
+        cfg = TLSConfig(enabled=True, cert_file=None, key_file=None)
+        with pytest.raises(ValueError, match="requires both cert_file and key_file"):
+            cfg.build_ssl_context()
+
+    def test_disabled_ignores_partial_paths(self, tmp_path):
+        """TLS disabled must ignore half-configured paths and return None."""
+        cert = tmp_path / "server.crt"
+        cert.write_text("dummy")
+        cfg = TLSConfig(enabled=False, cert_file=str(cert), key_file=None)
+        assert cfg.build_ssl_context() is None
+
 
 # ---------------------------------------------------------------------------
 # Rate Limiter Tests
