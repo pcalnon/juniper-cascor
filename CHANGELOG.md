@@ -7,7 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- **Worker result ownership** — `WorkerCoordinator.submit_result` now rejects results whose submitting `worker_id` does not match the task's `assigned_worker_id`, so a peer worker cannot complete work it was never assigned. Tests: `test_worker_coordinator.py::TestSubmitResult::test_reject_wrong_worker_ownership`.
+
 ### Fixed
+
+- **`WorkerProtocol.validate_tensors`** — malformed tensor manifests (missing `shape`/`dtype`, non-dict entries) and empty `weights` arrays now return validation errors instead of raising `KeyError` / empty-reduction errors that could crash the coordinator result path. Tests: `test_worker_protocol.py::TestValidateTensors`.
 
 - Unit tests no longer pin the service version as a literal: the four `0.6.0` assertions in `test_api_app.py`, `test_api_app_coverage_deep.py`, and `test_api_health.py` (red on `main` since the v0.7.0 bump merged in #429 without CI running) now assert against `api.app._API_VERSION` — the BUG-CC-04 canonical runtime read — so a release version bump can no longer break the suite.
 
