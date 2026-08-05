@@ -570,7 +570,7 @@ Router defined in `src/api/routes/training.py`, prefix `/v1/training`.
 
 **Summary** — Kick off a training run.
 
-**Detailed description** — Accepts inline data, a generator-based dataset (e.g., `spiral`), or relies on a pre-loaded dataset. Validates `params` against `TrainingParams` (SEC-07: unknown keys produce `422`). Coerces data to `torch.float32` tensors before invoking `lifecycle.start_training()` (`src/api/routes/training.py:68`). Implemented at `src/api/routes/training.py:23-73`.
+**Detailed description** — Accepts inline data, a generator-based dataset (currently only `spiral` is materialized), or relies on a pre-loaded / staged dataset. Non-spiral `dataset.generator` values (for example `xor`) with no staged data fail with `409` and must not invoke the spiral generator. Validates `params` against `TrainingParams` (SEC-07: unknown keys produce `422`). Coerces data to `torch.float32` tensors before invoking `lifecycle.start_training()` (`src/api/routes/training.py`).
 
 **Syntax**:
 
@@ -615,7 +615,7 @@ curl -s -X POST http://localhost:8201/v1/training/start \
 
 | Code | Trigger                                                                  |
 |------|--------------------------------------------------------------------------|
-| 409  | Cannot start in current FSM state (e.g., already running, replay active) |
+| 409  | Cannot start in current FSM state (e.g., already running, replay active); unsupported `dataset.generator` with no staged data |
 | 422  | Body validation, unknown `params` key, NaN/Inf in `inline_data`          |
 | 503  | Lifecycle unbound                                                        |
 
@@ -1516,7 +1516,26 @@ receives an error response and then closes with `1003`.
 }
 ```
 
-**State changes** — On `REGISTRATION` the worker is added to the registry. `TASK_RESULT` updates the worker's task counters, health score, and recent durations. `WORKER_ERROR` increments failure counters and may quarantine the worker (Phase 4 anomaly detector).
+**State changes** — On `REGISTRATION` the worker is added to the registry. Accepted `TASK_RESULT` updates the worker's task counters, health score, and recent durations. `WORKER_ERROR` increments failure counters and may quarantine the worker (Phase 4 anomaly detector).
+
+**Result acceptance** (`WorkerCoordinator.submit_result` in `src/api/workers/coordinator.py`):
+
+| Check | Rejection behavior |
+|-------|--------------------|
+| Duplicate `task_id` already completed | Reject; log warning |
+| Unknown / missing pending task | Reject; log warning |
+| **Ownership** — `worker_id != task.assigned_worker_id` | Reject; mark *submitting* worker task-complete as failure; pending task stays assigned to the original owner |
+| Schema (`validate_task_result`) | Reject; mark submitter failure |
+| Tensors (`validate_tensors` vs `tensor_manifest`) | Reject; mark submitter failure |
+
+Ownership is a trust boundary: without it a peer, stale, or malicious worker can complete work it was never assigned and corrupt candidate selection. After a wrong-owner reject, the legitimate assignee can still submit successfully.
+
+**Tensor manifest validation** (`WorkerProtocol.validate_tensors`):
+
+- Each manifest entry must be a `dict` with required `shape` and `dtype` (missing fields / non-dict → validation error list, not `KeyError`).
+- Shape/dtype mismatches, NaN/Inf, and over-magnitude weights append errors.
+- Empty `weights` arrays return `"Tensor weights: empty array"` instead of crashing `np.max` on a zero-size reduction.
+- Handler path: validation failures reject the result and keep the worker WebSocket session alive (fail-soft).
 
 **Error handling / close codes**:
 

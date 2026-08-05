@@ -463,6 +463,13 @@ Distributed candidate training via WebSocket workers.
 6. Auto-deregistration on heartbeat timeout
 7. Task reassignment on worker failure (default 120s timeout)
 
+**Result ownership & tensor validation** (`WorkerCoordinator.submit_result` / `WorkerProtocol.validate_tensors`):
+
+- Only the worker recorded in `PendingTask.assigned_worker_id` may complete a task. A peer / stale / wrong `worker_id` is rejected (`False`); the task stays incomplete under the original assignee so the legitimate owner can still finish.
+- Wrong-owner submissions call `registry.complete_task(worker_id, success=False)` for the *submitting* worker (failure accounting) without completing the pending task.
+- `validate_tensors` returns validation errors (does not raise) for non-dict manifest entries, missing `shape` / `dtype`, empty `weights`, shape/dtype mismatches, and NaN/Inf / magnitude violations — keeps the WebSocket result path from crashing the coordinator session.
+- Regression tests: `test_worker_coordinator.py::TestSubmitResult::test_reject_wrong_worker_ownership`, `test_worker_protocol.py::TestValidateTensors`.
+
 ---
 
 ## Middleware Stack

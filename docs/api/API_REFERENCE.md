@@ -973,6 +973,8 @@ WebSocket connection caps are admission controls for availability and fairness; 
 
 `/ws/v1/workers` is global-cap-only for this layer: worker fleets may share a machine token, and the server-assigned `worker_id` is not available until after the admission point. Worker capacity is still bounded by the global cap and by worker-registry limits.
 
+After admission, `TASK_RESULT` acceptance is ownership-gated: `WorkerCoordinator.submit_result` rejects results when `worker_id != PendingTask.assigned_worker_id` (task stays pending for the assignee). Tensor manifests are validated fail-soft via `WorkerProtocol.validate_tensors` (missing `shape`/`dtype`, non-dict entries, empty `weights` → errors, not crashes). See [WS `/ws/v1/workers`](JUNIPER_CASCOR_API_REFERENCE.md#ws-wsv1workers).
+
 ### Lifecycle Failure Handling Path
 
 Training exceptions are handled at the monitored `fit()` wrapper layer in the lifecycle manager.
