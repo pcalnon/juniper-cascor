@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Control WS leaky-bucket `retry_after` no longer divides by zero when `refill_rate <= 0`.** Misconfiguration (or a future settings clamp that allows a zero rate) previously crashed the rate-limit ack path with `ZeroDivisionError` after `try_acquire` failed. `LeakyBucket.retry_after` now returns `0.0` (no finite wait estimate) when refill is non-positive. Tests: `src/tests/unit/api/test_control_security.py`.
+
 - Unit tests no longer pin the service version as a literal: the four `0.6.0` assertions in `test_api_app.py`, `test_api_app_coverage_deep.py`, and `test_api_health.py` (red on `main` since the v0.7.0 bump merged in #429 without CI running) now assert against `api.app._API_VERSION` — the BUG-CC-04 canonical runtime read — so a release version bump can no longer break the suite.
 
 ## [0.7.0] - 2026-07-28
