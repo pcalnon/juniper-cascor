@@ -212,54 +212,58 @@ class WorkerCoordinator:
             # picks it up.
             if self._registry.get(worker_id) is None:
                 return None
-            if not self._unassigned_tasks:
-                return None
 
-            # Find the next unassigned task
-            task_id = self._unassigned_tasks.pop(0)
-            task = self._pending_tasks.get(task_id)
-            if task is None:
-                return None
+            # Drain orphaned unassigned ids (pending entry gone after cancel /
+            # round clear) so one stale queue entry cannot block later tasks
+            # for this assignment call.
+            while self._unassigned_tasks:
+                task_id = self._unassigned_tasks.pop(0)
+                task = self._pending_tasks.get(task_id)
+                if task is None:
+                    logger.warning("Orphaned unassigned task id %s — skipping", task_id)
+                    continue
 
-            # Assign to worker — confirm with the registry FIRST. The registry
-            # enforces one active task per worker (assign_task returns False for
-            # a busy or unknown worker); the pre-fix flow ignored that refusal,
-            # marked the PendingTask assigned, and sent it anyway, so a busy
-            # worker accumulated coordinator-level assignments the registry never
-            # tracked. `_check_stale_workers` requeues only the registry's
-            # `active_task_id` on deregistration, orphaning the extras until
-            # `_task_reassignment_timeout` (the worker_stream heartbeat path
-            # already guarded this with its own `reg.idle` check — ISSUE-319).
-            # Exposed by fix C4: re-enabled coordinator/registry logging widened
-            # the assign/dereg race window the CONC-10 suite hammers.
-            if not self._registry.assign_task(worker_id, task_id):
-                self._unassigned_tasks.insert(0, task_id)
-                logger.debug("Refusing assignment of task %s to worker %s (busy or unregistered)", task_id, worker_id)
-                return None
-            task.assigned_worker_id = worker_id
-            task.dispatched_at = time.time()
+                # Assign to worker — confirm with the registry FIRST. The registry
+                # enforces one active task per worker (assign_task returns False for
+                # a busy or unknown worker); the pre-fix flow ignored that refusal,
+                # marked the PendingTask assigned, and sent it anyway, so a busy
+                # worker accumulated coordinator-level assignments the registry never
+                # tracked. `_check_stale_workers` requeues only the registry's
+                # `active_task_id` on deregistration, orphaning the extras until
+                # `_task_reassignment_timeout` (the worker_stream heartbeat path
+                # already guarded this with its own `reg.idle` check — ISSUE-319).
+                # Exposed by fix C4: re-enabled coordinator/registry logging widened
+                # the assign/dereg race window the CONC-10 suite hammers.
+                if not self._registry.assign_task(worker_id, task_id):
+                    self._unassigned_tasks.insert(0, task_id)
+                    logger.debug("Refusing assignment of task %s to worker %s (busy or unregistered)", task_id, worker_id)
+                    return None
+                task.assigned_worker_id = worker_id
+                task.dispatched_at = time.time()
 
-            # Build assignment message
-            tensor_manifest = {}
-            frames = []
-            for tensor_name, arr in task.tensors.items():
-                tensor_manifest[tensor_name] = {
-                    "shape": list(arr.shape),
-                    "dtype": str(arr.dtype),
-                }
-                frames.append(BinaryFrame.encode(arr))
+                # Build assignment message
+                tensor_manifest = {}
+                frames = []
+                for tensor_name, arr in task.tensors.items():
+                    tensor_manifest[tensor_name] = {
+                        "shape": list(arr.shape),
+                        "dtype": str(arr.dtype),
+                    }
+                    frames.append(BinaryFrame.encode(arr))
 
-            msg = WorkerProtocol.build_task_assign(
-                task_id=task_id,
-                round_id=task.round_id,
-                candidate_index=task.candidate_index,
-                candidate_data=task.candidate_data,
-                training_params=task.training_params,
-                tensor_manifest=tensor_manifest,
-            )
+                msg = WorkerProtocol.build_task_assign(
+                    task_id=task_id,
+                    round_id=task.round_id,
+                    candidate_index=task.candidate_index,
+                    candidate_data=task.candidate_data,
+                    training_params=task.training_params,
+                    tensor_manifest=tensor_manifest,
+                )
 
-            logger.debug("Assigned task %s to worker %s (candidate %d)", task_id, worker_id, task.candidate_index)
-            return msg, frames
+                logger.debug("Assigned task %s to worker %s (candidate %d)", task_id, worker_id, task.candidate_index)
+                return msg, frames
+
+            return None
 
     def submit_result(
         self,
@@ -291,6 +295,25 @@ class WorkerCoordinator:
             task = self._pending_tasks.get(task_id)
             if task is None:
                 logger.warning("Result for unknown task %s from worker %s — rejected", task_id, worker_id)
+                return False
+
+            # Ownership: only the currently assigned worker may submit.
+            # Reject the unassigned (pre-dispatch / post-requeue) window so a
+            # peer that merely knows ``task_id`` cannot complete work it was
+            # never given. Wrong-worker rejects also free the submitter's
+            # busy slot; unassigned rejects must not wipe an unrelated
+            # active assignment on the submitter.
+            if task.assigned_worker_id is None:
+                logger.warning("Result for unassigned task %s from worker %s — rejected", task_id, worker_id)
+                return False
+            if task.assigned_worker_id != worker_id:
+                logger.warning(
+                    "Result for task %s from worker %s rejected — assigned to %s",
+                    task_id,
+                    worker_id,
+                    task.assigned_worker_id,
+                )
+                self._registry.complete_task(worker_id, success=False)
                 return False
 
             # Validate against schema (Section 12.7 rules 1, 3)
