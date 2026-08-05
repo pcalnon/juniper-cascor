@@ -1,6 +1,6 @@
 # Developer Cheatsheet — juniper-cascor
 
-**Version**: 1.0.0  |  **Date**: 2026-03-15  |  **Project**: juniper-cascor
+**Version**: 1.0.1  |  **Date**: 2026-08-05  |  **Project**: juniper-cascor
 
 ---
 
@@ -232,7 +232,9 @@ Core: `torch`, `numpy`, `h5py`, `matplotlib`, `PyYAML`, `requests`
 
 **CI pipeline:** pre-commit -> unit-tests -> integration-tests -> build -> security -> required-checks
 
-> See: [CI Quick Start](ci_cd/QUICK_START.md) | [CI Reference](ci_cd/REFERENCE.md) | [Environment Setup](install/ENVIRONMENT_SETUP.md)
+**PyPI publish:** cut a GitHub Release (not a bare tag). Tags: `v*` → `publish.yml` (`juniper-cascor`); `juniper-cascor-protocol-v*` / `juniper-cascor-model-v*` → matching sub-package workflows. TestPyPI verify uses `--no-deps` and TestPyPI index only. Keep `pypa/gh-action-pypi-publish` SHA-pinned (Dependabot bumps all three workflows together).
+
+> See: [CI Quick Start](ci_cd/QUICK_START.md) | [CI Manual — PyPI Publishing](ci_cd/MANUAL.md#pypi-publishing) | [CI Reference](ci_cd/REFERENCE.md#publish-workflows) | [Environment Setup](install/ENVIRONMENT_SETUP.md)
 
 ---
 
@@ -250,6 +252,8 @@ Core: `torch`, `numpy`, `h5py`, `matplotlib`, `PyYAML`, `requests`
 | NaN in training                                                       | LR too high or bad data                                     | Reduce `learning_rate`, check tensors                                                                     |
 | Server refuses to start with `NonLoopbackBindError`                   | `JUNIPER_CASCOR_HOST` is non-loopback without a bind attestation | Bind `127.0.0.1` for local/dev, or set `JUNIPER_CASCOR_LOOPBACK_PUBLISH_ATTESTED=true` (loopback-only host publish) or `JUNIPER_CASCOR_AUTH_PROXY_ATTESTED=true` (fronting authenticating proxy) after verifying it |
 | WebSocket closes during connect with `1013`                           | Global, per-IP, or `/ws/control` per-identity cap reached   | Raise the relevant `JUNIPER_CASCOR_WS_MAX_CONNECTIONS_*` cap only after checking expected clients and worker fleet size |
+| Publish workflow skipped / wrong package                              | Release tag prefix does not match workflow guard            | Use `v*`, `juniper-cascor-protocol-v*`, or `juniper-cascor-model-v*` — see [PyPI Publishing](ci_cd/MANUAL.md#pypi-publishing) |
+| TestPyPI `400 File already exists` on publish                         | Dual trigger or concurrent upload of same version           | Publish via Release only (no `push: tags`); bump version to re-upload |
 
 ---
 
