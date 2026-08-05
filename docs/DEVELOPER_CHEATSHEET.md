@@ -1,6 +1,6 @@
 # Developer Cheatsheet — juniper-cascor
 
-**Version**: 1.0.0  |  **Date**: 2026-03-15  |  **Project**: juniper-cascor
+**Version**: 1.0.2  |  **Date**: 2026-08-05  |  **Project**: juniper-cascor
 
 ---
 
@@ -220,8 +220,11 @@ Levels: TRACE(5) -> VERBOSE(7) -> DEBUG(10) -> INFO(20) -> WARNING(30) -> ERROR(
 ## Dependencies and CI/CD
 
 ```bash
-# Add dep: edit pyproject.toml, then regenerate lockfile
-uv pip compile pyproject.toml -o requirements.txt
+# Add dep: edit pyproject.toml, then regenerate requirements.lock
+uv pip compile pyproject.toml \
+  --extra ml --extra api --extra observability --extra juniper-data \
+  --index-strategy unsafe-best-match --no-emit-package torch \
+  --upgrade -o requirements.lock
 # Conda env
 conda create --name JuniperCascor1 --file conf/conda_environment.yaml
 ```
@@ -230,9 +233,11 @@ Core: `torch`, `numpy`, `h5py`, `matplotlib`, `PyYAML`, `requests`
 
 **Pre-commit hooks:** black, isort, flake8, mypy, bandit, yamllint, shellcheck, markdownlint, pytest-unit (local), coverage-gate (local, 80%), no-unencrypted-env (SOPS guard). **Line length:** 512.
 
-**CI pipeline:** pre-commit -> unit-tests -> integration-tests -> build -> security -> required-checks
+**CI pipeline:** pre-commit -> unit-tests -> integration-tests -> build -> security -> lockfile-check -> required-checks
 
-> See: [CI Quick Start](ci_cd/QUICK_START.md) | [CI Reference](ci_cd/REFERENCE.md) | [Environment Setup](install/ENVIRONMENT_SETUP.md)
+**Dependabot lockfile:** `lockfile-update.yml` auto-regens when `CROSS_REPO_DISPATCH_TOKEN` is visible to the run. Dependabot uses a separate secret store — missing PAT there is a green no-op; **Lockfile Freshness** still blocks stale locks. Register the PAT under Dependabot secrets to restore auto-push.
+
+> See: [CI Quick Start](ci_cd/QUICK_START.md#dependabot-lockfile-updates) | [CI Manual — Lockfile](ci_cd/MANUAL.md#lockfile-update-workflow) | [Dependency Update Workflow](../notes/DEPENDENCY_UPDATE_WORKFLOW.md) | [Environment Setup](install/ENVIRONMENT_SETUP.md)
 
 ---
 
@@ -250,6 +255,8 @@ Core: `torch`, `numpy`, `h5py`, `matplotlib`, `PyYAML`, `requests`
 | NaN in training                                                       | LR too high or bad data                                     | Reduce `learning_rate`, check tensors                                                                     |
 | Server refuses to start with `NonLoopbackBindError`                   | `JUNIPER_CASCOR_HOST` is non-loopback without a bind attestation | Bind `127.0.0.1` for local/dev, or set `JUNIPER_CASCOR_LOOPBACK_PUBLISH_ATTESTED=true` (loopback-only host publish) or `JUNIPER_CASCOR_AUTH_PROXY_ATTESTED=true` (fronting authenticating proxy) after verifying it |
 | WebSocket closes during connect with `1013`                           | Global, per-IP, or `/ws/control` per-identity cap reached   | Raise the relevant `JUNIPER_CASCOR_WS_MAX_CONNECTIONS_*` cap only after checking expected clients and worker fleet size |
+| Lockfile Freshness red; Update Lockfile green with no `[dependabot skip]` commit | `CROSS_REPO_DISPATCH_TOKEN` empty in Dependabot secret store | Register PAT under Dependabot secrets, or push a local `uv pip compile ... -o requirements.lock` |
+| Update Lockfile hard-fails on a human `pyproject.toml` PR             | Actions PAT missing/expired                                 | Restore Actions `CROSS_REPO_DISPATCH_TOKEN` or commit the regen in the PR |
 
 ---
 

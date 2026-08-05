@@ -1,8 +1,8 @@
 # CI/CD Reference
 
 **Project**: Juniper Cascor  
-**Workflow File**: `.github/workflows/ci.yml`  
-**Last Updated**: 2026-01-29
+**Workflow Files**: `.github/workflows/ci.yml`, `lockfile-update.yml`  
+**Last Updated**: 2026-08-05
 
 ---
 
@@ -292,6 +292,44 @@ The workflow includes disk space cleanup:
 
 ---
 
+## Lockfile Update Workflow
+
+Source of truth: `.github/workflows/lockfile-update.yml`. Companion gate: `lockfile-check` ("Lockfile Freshness") in `ci.yml`.
+
+### Triggers
+
+| Event | Filter | Purpose |
+|-------|--------|---------|
+| `push` | `dependabot/pip/**` and `github.actor == dependabot[bot]` | Auto-regen after Dependabot bumps |
+| `pull_request` | paths include `pyproject.toml`, same-repo head only | Cover manual range edits; forks skipped |
+
+### PAT availability gate
+
+Checkout/push uses `secrets.CROSS_REPO_DISPATCH_TOKEN` (not `GITHUB_TOKEN`) so the lockfile commit re-triggers CI. Dependabot runs read the **Dependabot** secret store, so a PAT present only under Actions secrets is empty there.
+
+| Condition | Result |
+|-----------|--------|
+| PAT non-empty | Full regen + push (`[dependabot skip] Update requirements.lock`) |
+| PAT empty + Dependabot actor | Green no-op with `::notice::` — Lockfile Freshness still enforces |
+| PAT empty + other actor | Hard fail (`::error::`) — secret misconfiguration |
+
+Register the same PAT under **Settings → Secrets → Dependabot** to restore Dependabot auto-regen without editing the workflow (cascor #428; canopy #476).
+
+### Compile flags (regen and freshness)
+
+```bash
+uv pip compile pyproject.toml \
+  --extra ml --extra api --extra observability --extra juniper-data \
+  --index-strategy unsafe-best-match --no-emit-package torch \
+  --upgrade -o requirements.lock
+```
+
+Freshness recompiles with `--constraint requirements.lock` and diffs `pkg==version` pin lines (ignores uv header / `-c` annotations). Newer PyPI versions alone do not fail the gate.
+
+> Operator narrative: [Dependency Update Workflow](../../notes/DEPENDENCY_UPDATE_WORKFLOW.md)
+
+---
+
 ## Troubleshooting
 
 ### Common Issues
@@ -302,6 +340,8 @@ The workflow includes disk space cleanup:
 | Coverage not generating | Wrong working directory | Run from `src/tests/` |
 | Conda env not found | Environment file path wrong | Check `conf/conda_environment.yaml` exists |
 | Artifacts missing | Step failed before upload | Check for earlier step failures |
+| Lockfile Freshness red on Dependabot PR | PAT gate green no-op (Dependabot secret store) | Register `CROSS_REPO_DISPATCH_TOKEN` under Dependabot secrets, or commit a local regen |
+| Update Lockfile hard-fails on human PR | Actions PAT missing/expired | Restore Actions secret or commit lock manually |
 
 ### Debugging Workflows
 

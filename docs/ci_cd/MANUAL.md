@@ -341,6 +341,48 @@ python -m pytest src/tests/unit \
 
 ---
 
+## Lockfile Update Workflow
+
+**Workflow:** `.github/workflows/lockfile-update.yml`  
+**Enforcement:** `lockfile-check` / "Lockfile Freshness" in `ci.yml` (required by the quality gate)
+
+### Intent
+
+Keep Docker/CI pins (`requirements.lock`) aligned with `pyproject.toml` when Dependabot or a human bumps dependency ranges, without relying on `GITHUB_TOKEN` (which would not re-trigger CI on the lock commit).
+
+### When it runs
+
+1. **Push** to `dependabot/pip/**` by `dependabot[bot]`
+2. **Pull request** that changes `pyproject.toml` on a branch in this repository (forks skipped — they cannot push with the PAT)
+
+### PAT availability gate
+
+Secrets are not readable in job `if:` expressions, so the first step exports `HAVE_PAT` from `secrets.CROSS_REPO_DISPATCH_TOKEN != ''` and branches in shell:
+
+| Actor / secret | Outcome |
+|----------------|---------|
+| PAT present | Checkout with PAT → `uv pip compile` → commit/push if dirty |
+| Dependabot + empty PAT | `::notice::` + skip remaining steps (exit 0) |
+| Anyone else + empty PAT | `::error::` + exit 1 |
+
+**Why Dependabot sees an empty PAT:** Dependabot-triggered workflow runs use the Dependabot secret store. Registering the token only under Actions secrets leaves Dependabot runs empty (historical hard-fail on run 30346680261 / #426; fixed by #428). Optional: duplicate the PAT under Dependabot secrets to restore auto-regen.
+
+### Operator recovery when auto-regen no-ops
+
+```bash
+uv pip compile pyproject.toml \
+  --extra ml --extra api --extra observability --extra juniper-data \
+  --index-strategy unsafe-best-match --no-emit-package torch \
+  --upgrade -o requirements.lock
+git add requirements.lock
+git commit -m "[dependabot skip] Update requirements.lock"
+git push
+```
+
+> Narrative + troubleshooting matrix: [notes/DEPENDENCY_UPDATE_WORKFLOW.md](../../notes/DEPENDENCY_UPDATE_WORKFLOW.md)
+
+---
+
 ## Environment Setup
 
 ### Conda Environment
@@ -394,6 +436,14 @@ If environment setup fails:
 1. Verify `conf/conda_environment.yaml` syntax
 2. Check channel availability (conda-forge, pytorch, nvidia)
 3. Review disk space (pipeline includes cleanup step)
+
+### Lockfile Freshness / Update Lockfile
+
+| Symptom | Cause | Fix |
+|---------|-------|-----|
+| Lockfile Freshness red; Update Lockfile green with no commit | Dependabot PAT gate no-op | Register `CROSS_REPO_DISPATCH_TOKEN` under Dependabot secrets, or push a local regen |
+| Update Lockfile fails on a human `pyproject.toml` PR | Actions PAT missing | Restore Actions secret or commit the lock in the PR |
+| Freshness fails after a range bump | Lock cannot satisfy new mins | Regen with `--upgrade` (see compile command above) |
 
 ---
 

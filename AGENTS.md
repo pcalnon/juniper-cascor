@@ -789,8 +789,20 @@ Gate: 80% aggregate (override with `COVERAGE_FAIL_UNDER=<n>`). Coverage runs in 
 | CI/CD Pipeline | `.github/workflows/ci.yml` | Push (main, develop, feature/**, fix/**), PR, dispatch | Pre-commit, unit tests, integration tests, security scanning |
 | Scheduled Long Tests | `.github/workflows/scheduled-tests.yml` | Cron schedule (nightly), dispatch | Slow and long-running correctness tests |
 | Publish | `.github/workflows/publish.yml` | Release event | Package publishing |
-| Lockfile Update | `.github/workflows/lockfile-update.yml` | Push to dependabot/** branches | Dependency lockfile refresh |
+| Lockfile Update | `.github/workflows/lockfile-update.yml` | Push to `dependabot/pip/**`; same-repo PRs touching `pyproject.toml` | Regen `requirements.lock` (PAT-gated; see below) |
 | Security Scan | `.github/workflows/security-scan.yml` | Schedule/dispatch | Gitleaks, Bandit, pip-audit |
+
+### Lockfile Update PAT Gate
+
+`lockfile-update.yml` checks out and pushes with `CROSS_REPO_DISPATCH_TOKEN` so the lock commit re-triggers CI. Dependabot runs use the Dependabot secret store — a PAT registered only under Actions secrets is empty there.
+
+| Condition | Behavior |
+|-----------|----------|
+| PAT present | Auto-regen + `[dependabot skip]` push |
+| PAT absent + `dependabot[bot]` | Green no-op (`::notice::`); **Lockfile Freshness** in `ci.yml` still blocks stale locks |
+| PAT absent + other actor | Hard fail (secret misconfiguration) |
+
+Optional: register the same PAT under **Settings → Secrets → Dependabot** to restore Dependabot auto-regen. Operator narrative: [`notes/DEPENDENCY_UPDATE_WORKFLOW.md`](notes/DEPENDENCY_UPDATE_WORKFLOW.md).
 
 ### CI Pipeline Jobs (ci.yml)
 
@@ -798,6 +810,7 @@ Gate: 80% aggregate (override with `COVERAGE_FAIL_UNDER=<n>`). Coverage runs in 
 - Unit tests with coverage enforcement
 - Integration tests
 - Security scanning (Gitleaks, Bandit SARIF, pip-audit)
+- Lockfile Freshness (`lockfile-check`) — required quality-gate input
 - Dependency caching for performance
 - Concurrency: one pipeline per branch, cancel-in-progress
 
