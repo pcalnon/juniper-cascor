@@ -223,11 +223,16 @@ class WorkerProtocol:
             if np.any(np.isinf(arr)):
                 errors.append(f"Tensor {name}: contains Inf values")
 
-        # Check for weight magnitude (configurable)
+        # Check for weight magnitude (configurable). Empty arrays have no
+        # identity for np.max — report a validation error instead of raising.
         if "weights" in tensors:
-            max_weight = float(np.max(np.abs(tensors["weights"])))
-            if max_weight > _MAX_WEIGHT_MAGNITUDE:
-                errors.append(f"Weight magnitude too large: {max_weight:.2f} > {_MAX_WEIGHT_MAGNITUDE}")
+            weight_arr = tensors["weights"]
+            if getattr(weight_arr, "size", 0) == 0:
+                errors.append("Tensor weights: empty array")
+            else:
+                max_weight = float(np.max(np.abs(weight_arr)))
+                if max_weight > _MAX_WEIGHT_MAGNITUDE:
+                    errors.append(f"Weight magnitude too large: {max_weight:.2f} > {_MAX_WEIGHT_MAGNITUDE}")
 
         return errors
 

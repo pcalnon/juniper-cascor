@@ -332,20 +332,13 @@ class WorkerCoordinator:
                 self._registry.complete_task(worker_id, success=False)
                 return False
 
-            # Validate tensors (Section 12.7 rules 4, 5, 6, 7)
-            manifest = msg.get("tensor_manifest", {})
-            if manifest:
-                tensor_errors = WorkerProtocol.validate_tensors(tensors, manifest)
-                if tensor_errors:
-                    logger.warning("Tensor validation failed for task %s: %s", task_id, tensor_errors)
-                    self._registry.complete_task(worker_id, success=False)
-                    return False
-
             # Successful results must carry trained weights. An empty / missing
-            # ``tensor_manifest`` skips validate_tensors above, so without this
-            # guard a success=True payload with no weights is accepted and
-            # ``_dispatch_to_remote_workers`` reconstructs a CandidateUnit with
-            # random init weights — poisoning candidate selection.
+            # ``tensor_manifest`` would otherwise skip validate_tensors below,
+            # so a success=True payload with no weights was accepted and
+            # ``_dispatch_to_remote_workers`` reconstructed a CandidateUnit with
+            # random init weights — poisoning candidate selection. Checked
+            # before manifest validation so empty arrays fail closed here
+            # rather than raising inside the magnitude check.
             if msg.get("success") is True:
                 weights = tensors.get("weights") if tensors else None
                 if weights is None or getattr(weights, "size", 0) == 0:
@@ -354,6 +347,15 @@ class WorkerCoordinator:
                         task_id,
                         worker_id,
                     )
+                    self._registry.complete_task(worker_id, success=False)
+                    return False
+
+            # Validate tensors (Section 12.7 rules 4, 5, 6, 7)
+            manifest = msg.get("tensor_manifest", {})
+            if manifest:
+                tensor_errors = WorkerProtocol.validate_tensors(tensors, manifest)
+                if tensor_errors:
+                    logger.warning("Tensor validation failed for task %s: %s", task_id, tensor_errors)
                     self._registry.complete_task(worker_id, success=False)
                     return False
 

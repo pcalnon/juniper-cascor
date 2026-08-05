@@ -288,6 +288,12 @@ class TestValidateTensors:
         errors = WorkerProtocol.validate_tensors({"weights": arr}, manifest)
         assert any("magnitude" in e for e in errors)
 
+    def test_empty_weights_array_returns_error_not_raise(self):
+        """Empty weights must not raise inside np.max — return a validation error."""
+        manifest = {"weights": {"shape": [0], "dtype": "float32"}}
+        errors = WorkerProtocol.validate_tensors({"weights": np.array([], dtype=np.float32)}, manifest)
+        assert any("empty" in e.lower() for e in errors)
+
 
 @pytest.mark.unit
 class TestValidateRegister:
