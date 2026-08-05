@@ -243,6 +243,37 @@ class TestHandshakeGates:
         cooldown.record_rejection.assert_called_once_with("10.0.0.9")
         ws.close.assert_awaited_once_with(code=4003, reason="Origin not allowed")
 
+    @pytest.mark.asyncio
+    async def test_empty_origin_allowlist_skips_origin_gate(self):
+        """Empty ``ws_control_allowed_origins`` opts out of the CSWSH Origin check.
+
+        Settings document ``[]`` as an intentional opt-out. The handshake gate
+        skips ``validate_control_origin`` when the allowlist is empty — pin that
+        contract so a future "fail-closed by default" refactor cannot silently
+        change operator-facing behavior without a failing test. Note the helper
+        ``validate_control_origin([], …)`` itself is fail-closed; only the gate
+        skip path (not the helper) implements the opt-out.
+        """
+        ws = AsyncMock()
+        ws.app.state.api_key_auth = None  # auth disabled → ws_authenticate True
+        settings = MagicMock()
+        settings.disable_ws_control_endpoint = False
+        settings.ws_control_allowed_origins = []
+
+        cooldown = MagicMock()
+        cooldown.is_blocked.return_value = False
+
+        with (
+            patch("api.websocket.control_stream._get_cooldown", return_value=cooldown),
+            patch("api.websocket.control_stream.validate_control_origin") as validate_origin,
+        ):
+            allowed = await _check_handshake_gates(ws, settings, "10.0.0.9")
+
+        assert allowed is True
+        validate_origin.assert_not_called()
+        cooldown.record_rejection.assert_not_called()
+        ws.close.assert_not_awaited()
+
 
 @pytest.mark.unit
 class TestHandleCommandMessageBranches:

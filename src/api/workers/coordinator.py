@@ -169,6 +169,16 @@ class WorkerCoordinator:
             List of task_ids for the submitted tasks.
         """
         with self._lock:
+            # Round boundary: drop leftover pending/unassigned entries from any
+            # prior round. ``_results`` / ``_completed_task_ids`` were already
+            # cleared here, but stale ``_pending_tasks`` remained — a late
+            # ``submit_result`` for a previous-round task_id was re-accepted and
+            # could satisfy ``len(_results) >= _current_round_task_count``,
+            # early-unblocking ``collect_results`` before the new round's real
+            # work finished (ISSUE-319 class; cascade filters by round_id after
+            # collection, but the coordinator wait must not unblock early).
+            self._pending_tasks.clear()
+            self._unassigned_tasks.clear()
             self._current_round_id = round_id
             self._current_round_task_count = len(tasks)
             self._results_ready.clear()
@@ -291,6 +301,20 @@ class WorkerCoordinator:
             task = self._pending_tasks.get(task_id)
             if task is None:
                 logger.warning("Result for unknown task %s from worker %s — rejected", task_id, worker_id)
+                return False
+
+            # Stale-round defense: reject results whose PendingTask belongs to a
+            # prior round even if the entry somehow lingered in ``_pending_tasks``
+            # (e.g. races with a concurrent ``submit_tasks``). Complements the
+            # pending clear at round start above.
+            if self._current_round_id is not None and task.round_id != self._current_round_id:
+                logger.warning(
+                    "Result for stale-round task %s (task round %s, current %s) from worker %s — rejected",
+                    task_id,
+                    task.round_id,
+                    self._current_round_id,
+                    worker_id,
+                )
                 return False
 
             # Validate against schema (Section 12.7 rules 1, 3)

@@ -102,6 +102,28 @@ class TestSubmitTasks:
         coordinator.submit_tasks("round-1", _make_task_specs(), _make_tensors())
         assert coordinator.has_pending_tasks() is True
 
+    def test_submit_tasks_clears_prior_round_pending(self, coordinator, registry):
+        """A new round must drop leftover pending/unassigned from the prior round.
+
+        Without this clear, a late prior-round ``submit_result`` remains
+        acceptable (task_id still in ``_pending_tasks``) and can satisfy the new
+        round's completion count, early-unblocking ``collect_results``.
+        """
+        registry.register("w1", {})
+        old_ids = coordinator.submit_tasks("round-old", _make_task_specs(2), _make_tensors())
+        coordinator.get_next_assignment("w1")  # one assigned, one unassigned
+        assert len(coordinator._pending_tasks) == 2
+        assert len(coordinator._unassigned_tasks) == 1
+
+        new_ids = coordinator.submit_tasks("round-new", _make_task_specs(1), _make_tensors())
+
+        assert set(coordinator._pending_tasks) == set(new_ids)
+        assert old_ids[0] not in coordinator._pending_tasks
+        assert old_ids[1] not in coordinator._pending_tasks
+        assert coordinator._unassigned_tasks == new_ids
+        assert coordinator._current_round_id == "round-new"
+        assert coordinator._current_round_task_count == 1
+
 
 @pytest.mark.unit
 class TestGetNextAssignment:
@@ -189,6 +211,73 @@ class TestSubmitResult:
         bad_tensors["weights"] = np.array([float("nan")] * 4, dtype=np.float32)
         accepted = coordinator.submit_result("w1", msg, bad_tensors)
         assert accepted is False
+
+    def test_reject_stale_round_result_after_new_submit(self, coordinator, registry):
+        """Late prior-round results are rejected once a new round is submitted.
+
+        Pins the round-boundary clear in ``submit_tasks``: the old task_id must
+        no longer be in ``_pending_tasks``, so ``submit_result`` returns False
+        (unknown task) rather than accepting and early-unblocking collection.
+        """
+        registry.register("w1", {})
+        registry.register("w2", {})
+        old_ids = coordinator.submit_tasks("round-old", _make_task_specs(1), _make_tensors())
+        coordinator.get_next_assignment("w1")
+
+        new_ids = coordinator.submit_tasks("round-new", _make_task_specs(2), _make_tensors())
+        coordinator.get_next_assignment("w1")
+        coordinator.get_next_assignment("w2")
+
+        # Late arrival from the previous round — must not count toward round-new.
+        accepted_stale = coordinator.submit_result(
+            "w1", _make_result_msg(old_ids[0], candidate_id=0), _make_result_tensors()
+        )
+        assert accepted_stale is False
+        assert len(coordinator._results) == 0
+        assert not coordinator._results_ready.is_set()
+
+        # Current-round results still accepted.
+        assert coordinator.submit_result(
+            "w1", _make_result_msg(new_ids[0], candidate_id=0), _make_result_tensors()
+        )
+        assert coordinator.submit_result(
+            "w2", _make_result_msg(new_ids[1], candidate_id=1), _make_result_tensors()
+        )
+        assert coordinator._results_ready.is_set()
+        results = coordinator.collect_results(timeout=1.0)
+        assert {r.task_id for r in results} == set(new_ids)
+        assert all(r.round_id == "round-new" for r in results)
+
+    def test_reject_stale_round_id_defense(self, coordinator, registry):
+        """Defense-in-depth: reject when PendingTask.round_id != current round.
+
+        Simulates a linger by injecting a prior-round PendingTask after the new
+        round started — the round_id guard must still reject.
+        """
+        registry.register("w1", {})
+        new_ids = coordinator.submit_tasks("round-new", _make_task_specs(1), _make_tensors())
+        coordinator.get_next_assignment("w1")
+
+        stale_id = "stale-lingering-task"
+        coordinator._pending_tasks[stale_id] = PendingTask(
+            task_id=stale_id,
+            round_id="round-old",
+            candidate_index=99,
+            candidate_data={"input_size": 4, "activation_name": "sigmoid"},
+            training_params={"epochs": 10, "learning_rate": 0.01},
+            tensors=_make_tensors(),
+            assigned_worker_id="w1",
+        )
+
+        accepted = coordinator.submit_result(
+            "w1", _make_result_msg(stale_id, candidate_id=99), _make_result_tensors()
+        )
+        assert accepted is False
+        assert stale_id not in coordinator._results
+        # Current-round task still completable.
+        assert coordinator.submit_result(
+            "w1", _make_result_msg(new_ids[0], candidate_id=0), _make_result_tensors()
+        )
 
 
 @pytest.mark.unit

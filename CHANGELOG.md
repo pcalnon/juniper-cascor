@@ -9,7 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **WorkerCoordinator round boundary clears stale pending tasks.** `submit_tasks` now clears `_pending_tasks` / `_unassigned_tasks` at each new round (matching the existing `_results` / `_completed_task_ids` reset), and `submit_result` rejects results whose `PendingTask.round_id` does not match `_current_round_id`. Without the clear, a late prior-round result could still be accepted and satisfy `len(_results) >= _current_round_task_count`, early-unblocking `collect_results` before the new round finished (ISSUE-319 class; cascade already filters by `round_id` after collection). Regression coverage in `test_worker_coordinator.py`.
 - Unit tests no longer pin the service version as a literal: the four `0.6.0` assertions in `test_api_app.py`, `test_api_app_coverage_deep.py`, and `test_api_health.py` (red on `main` since the v0.7.0 bump merged in #429 without CI running) now assert against `api.app._API_VERSION` — the BUG-CC-04 canonical runtime read — so a release version bump can no longer break the suite.
+
+### Tests
+
+- Gate-level regression: empty `ws_control_allowed_origins` skips the control WebSocket Origin check (documented opt-out) in `test_control_stream_coverage.py`.
+- `get_secret` when `_FILE` points at a directory falls back to the plain env var (or `None`) without raising — `test_api_secrets.py`.
 
 ## [0.7.0] - 2026-07-28
 

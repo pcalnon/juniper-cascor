@@ -83,6 +83,35 @@ class TestGetSecret:
 
         assert get_secret("MY_SECRET") == "fallback-value"
 
+    def test_directory_file_path_falls_back_to_env_var(self, monkeypatch, tmp_path):
+        """When _FILE points to a directory (bad compose mount), fall back to env.
+
+        ``path.is_file()`` is false for directories, so ``get_secret`` must not
+        raise and must not treat the directory as a secret source — otherwise a
+        mis-mounted Docker secret silently breaks auth configuration.
+        """
+        secret_dir = tmp_path / "secrets_mount"
+        secret_dir.mkdir()
+
+        monkeypatch.setenv("MY_SECRET", "env-fallback")
+        monkeypatch.setenv("MY_SECRET_FILE", str(secret_dir))
+
+        from api.secrets import get_secret
+
+        assert get_secret("MY_SECRET") == "env-fallback"
+
+    def test_directory_file_path_returns_none_without_env(self, monkeypatch, tmp_path):
+        """Directory _FILE with no plain env var yields None (not a crash)."""
+        secret_dir = tmp_path / "empty_mount"
+        secret_dir.mkdir()
+
+        monkeypatch.delenv("MY_SECRET", raising=False)
+        monkeypatch.setenv("MY_SECRET_FILE", str(secret_dir))
+
+        from api.secrets import get_secret
+
+        assert get_secret("MY_SECRET") is None
+
     def test_strips_whitespace_from_file(self, monkeypatch, tmp_path):
         """Secret values read from files are stripped of surrounding whitespace."""
         secret_file = tmp_path / "secret.txt"
