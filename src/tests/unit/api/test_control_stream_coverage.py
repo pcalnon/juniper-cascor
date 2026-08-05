@@ -325,7 +325,7 @@ class TestHandleCommandMessageBranches:
         assert sent["type"] == "command_response"
         assert sent["data"]["status"] == "error"
         assert sent["data"]["error"] == "Command execution failed"
-        assert sent["command_id"] == "ex-1"
+        assert sent["data"]["command_id"] == "ex-1"
         # Keep-alive: generic execution failures must not close the control socket.
         ws.close.assert_not_awaited()
 
