@@ -3,7 +3,7 @@
 import pytest
 from fastapi.testclient import TestClient
 
-from api.app import create_app
+from api.app import _API_VERSION, create_app
 from api.settings import Settings
 
 
@@ -28,7 +28,9 @@ class TestAppFactory:
         """Test app metadata."""
         app = create_app(Settings(auto_start=False))
         assert app.title == "JuniperCascor API"
-        assert app.version == "0.6.0"
+        # Assert against the BUG-CC-04 canonical runtime read, never a pinned
+        # literal — a release version bump must not break this wiring test.
+        assert app.version == _API_VERSION
 
     def test_cors_middleware_skipped_with_empty_origins(self):
         """Test that CORS middleware is not applied when origins is empty."""
