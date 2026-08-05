@@ -44,6 +44,7 @@ class TLSConfig:
             SSLContext configured for TLS/mTLS, or None if TLS is disabled.
 
         Raises:
+            ValueError: If TLS is enabled without both cert_file and key_file.
             FileNotFoundError: If cert/key/CA files don't exist.
             ssl.SSLError: If cert/key are invalid.
         """
