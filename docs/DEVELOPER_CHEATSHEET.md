@@ -1,6 +1,6 @@
 # Developer Cheatsheet — juniper-cascor
 
-**Version**: 1.0.1  |  **Date**: 2026-08-05  |  **Project**: juniper-cascor
+**Version**: 1.0.9  |  **Date**: 2026-08-05  |  **Project**: juniper-cascor
 
 ---
 
@@ -86,6 +86,7 @@ Metrics nuance:
 - `/ws/training` can also emit `candidate_progress` messages (epoch 1, every 50 epochs, final epoch per candidate).
 - Fresh `/ws/training` connects receive `initial_status`, `state`, and `initial_metrics`; resume requests use `{"type":"resume","data":{"last_seq":...,"server_instance_id":...}}` and replay only buffered broadcasts with higher `seq`.
 - `/ws/control` rate limiting returns an in-band `command_response` with `status:"rate_limited"` and keeps the socket open; it does not close on normal command throttling.
+- REST `SecurityMiddleware`: auth before rate limit (401 does not burn budget); with auth on, budgets are per API key; with auth off + rate limit on, budgets are per IP; 429 keeps `Retry-After` / `X-RateLimit-*`; health/docs/`/metrics` are exempt.
 
 **Middleware** (outermost first): CORS -> Security -> Prometheus -> RequestId. **Models:** Pydantic (API), dataclasses (config).
 
@@ -111,7 +112,9 @@ Metrics nuance:
 | `JUNIPER_CASCOR_LOOPBACK_PUBLISH_ATTESTED` | `false`       | Bind attestation for non-loopback binds: port reachable only via a loopback-only host publish |
 | `JUNIPER_CASCOR_AUTH_PROXY_ATTESTED` | `false`             | Bind attestation for non-loopback binds: a fronting authenticating reverse proxy terminates access |
 | `JUNIPER_CASCOR_CORS_ORIGINS`    | `[]`                    | Allowed CORS origins                   |
-| `JUNIPER_CASCOR_API_KEYS`        | --                      | API keys for authentication            |
+| `JUNIPER_CASCOR_API_KEYS`        | --                      | API keys for authentication (`[]`/unset = open auth) |
+| `JUNIPER_CASCOR_RATE_LIMIT_ENABLED` | `false`              | Enable REST fixed-window rate limiting |
+| `JUNIPER_CASCOR_RATE_LIMIT_REQUESTS_PER_MINUTE` | `60`     | REST window size; per-key when auth on, per-IP when open |
 | `JUNIPER_CASCOR_LOG_FORMAT`      | --                      | Set to `json` for JSON logging         |
 | `JUNIPER_CASCOR_SENTRY_DSN`      | --                      | Sentry DSN                             |
 | `JUNIPER_CASCOR_METRICS_ENABLED` | `false`                 | Enable Prometheus metrics              |

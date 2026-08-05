@@ -491,9 +491,12 @@ Middleware executes in LIFO order (last added = first executed):
 
 ### Rate Limiting
 
-- Fixed-window per IP (thread-safe)
-- Default: 60 requests/minute when enabled
-- Exempt paths: health endpoints, metrics
+- Fixed-window (thread-safe); optional via `JUNIPER_CASCOR_RATE_LIMIT_ENABLED` (default off)
+- Default: 60 requests/minute when enabled (`JUNIPER_CASCOR_RATE_LIMIT_REQUESTS_PER_MINUTE`)
+- Keying: `key:<api_key>` when REST API-key auth succeeds; `ip:<client>` when auth is disabled (`API_KEYS` unset/`[]`)
+- Ordering: `SecurityMiddleware` authenticates before rate limiting — 401 never burns a budget slot
+- 429 responses include `Retry-After` and `X-RateLimit-Limit` / `Remaining` / `Reset`
+- Exempt paths: health endpoints, docs/OpenAPI/ReDoc, `/metrics`
 
 ### Security Headers
 

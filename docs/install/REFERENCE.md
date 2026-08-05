@@ -63,7 +63,9 @@ The FastAPI service reads these settings through `api.settings.Settings` with th
 | `JUNIPER_CASCOR_PORT` | Integer | `8200` | API server listen port. |
 | `JUNIPER_CASCOR_LOOPBACK_PUBLISH_ATTESTED` | Boolean | `false` | One of the two bind attestations required when `JUNIPER_CASCOR_HOST` is non-loopback, such as `0.0.0.0`. Setting it to `true` attests the port is reachable only via a loopback-only host publish. |
 | `JUNIPER_CASCOR_AUTH_PROXY_ATTESTED` | Boolean | `false` | One of the two bind attestations required when `JUNIPER_CASCOR_HOST` is non-loopback. Setting it to `true` attests a fronting authenticating reverse proxy terminates access before the port. |
-| `JUNIPER_CASCOR_API_KEYS` | CSV / JSON list | unset | API keys accepted in `X-API-Key`. When unset, API-key auth is disabled for development. |
+| `JUNIPER_CASCOR_API_KEYS` | CSV / JSON list | unset | API keys accepted in `X-API-Key`. When unset (or empty list), API-key auth is disabled for development. |
+| `JUNIPER_CASCOR_RATE_LIMIT_ENABLED` | Boolean | `false` | Enable REST fixed-window rate limiting in `SecurityMiddleware`. |
+| `JUNIPER_CASCOR_RATE_LIMIT_REQUESTS_PER_MINUTE` | Integer | `60` | REST requests per window when rate limiting is enabled. Keyed per API key when auth is on; per client IP when auth is off. |
 | `JUNIPER_CASCOR_WS_MAX_CONNECTIONS_GLOBAL` | Integer | `200` | Stack-absolute WebSocket admission cap across `/ws/training`, `/ws/control`, and `/ws/v1/workers`. |
 | `JUNIPER_CASCOR_WS_MAX_CONNECTIONS_PER_IDENTITY` | Integer | `5` | Per API-key identity admission cap for `/ws/control`. |
 | `JUNIPER_CASCOR_WS_MAX_CONNECTIONS_PER_IP` | Integer | `5` | Per-source-IP cap for manager-routed sockets; useful as DoS dampening, but not an identity control behind Docker NAT. |
@@ -86,6 +88,12 @@ python server.py
 ```
 
 **WebSocket cap behavior:** over-cap WebSocket handshakes are closed with code `1013`. The global cap is the backstop that still works when Docker NAT collapses many callers to one bridge-gateway IP. The per-identity cap applies to `/ws/control`; worker sockets are global-cap-only because a worker fleet can share one machine token and the worker id is assigned after admission.
+
+**REST auth ↔ rate-limit ordering:** `SecurityMiddleware` (`src/api/middleware.py`) validates `X-API-Key` before calling `RateLimiter`.
+Invalid/missing keys return 401 without consuming a rate-limit slot.
+When `JUNIPER_CASCOR_RATE_LIMIT_ENABLED=true` and auth is configured, each key has its own 60/min window by default; open-auth (`API_KEYS` unset/`[]`) keys by client IP instead.
+429 responses include `Retry-After` and `X-RateLimit-*`. Health/docs/`/metrics` paths are exempt so probes stay up after a saturated client.
+Details: [API Authentication](../api/JUNIPER_CASCOR_API_REFERENCE.md#authentication).
 
 ## CLI Arguments
 

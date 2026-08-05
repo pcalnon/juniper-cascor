@@ -88,10 +88,28 @@ Treat each flag as an operational attestation: `JUNIPER_CASCOR_LOOPBACK_PUBLISH_
 
 Optional. Controlled by the application settings:
 
-- REST: `X-API-Key` header validated by `APIKeyAuth` middleware (`src/api/security.py`). When `settings.api_keys` is empty, auth is disabled (dev mode).
-- WebSocket: same `X-API-Key` header, validated in `ws_authenticate()` (`src/api/websocket/manager.py`). On failure the socket is closed with code `4001`.
+- REST: `X-API-Key` header validated by `APIKeyAuth` middleware (`src/api/security.py`). When `settings.api_keys` is empty/`None`, auth is disabled (dev mode). `api_keys=[]` is the same open-access posture as `None`.
+- WebSocket: same `X-API-Key` header, validated in `ws_authenticate()` (`src/api/websocket/manager.py`). On failure the socket is closed with code `4001`. WebSocket upgrades are **not** processed by `SecurityMiddleware` (`BaseHTTPMiddleware`); WS auth/rate limits live in the stream handlers.
 
-Rate limiting is also optional; per-IP REST limiter defaults to 100 req/min, and the worker WebSocket has its own per-IP connection rate limiter. WebSocket admission also has a stack-global cap across all WS endpoints (`JUNIPER_CASCOR_WS_MAX_CONNECTIONS_GLOBAL`, default 200). `/ws/control` adds a per-identity cap (`JUNIPER_CASCOR_WS_MAX_CONNECTIONS_PER_IDENTITY`, default 5) keyed on a non-reversible digest of the presented `X-API-Key`.
+Rate limiting is also optional (`JUNIPER_CASCOR_RATE_LIMIT_ENABLED`, default off).
+The REST fixed-window limiter defaults to **60** req/min (`JUNIPER_CASCOR_RATE_LIMIT_REQUESTS_PER_MINUTE`).
+The worker WebSocket has its own per-IP connection rate limiter.
+WebSocket admission also has a stack-global cap across all WS endpoints (`JUNIPER_CASCOR_WS_MAX_CONNECTIONS_GLOBAL`, default 200).
+`/ws/control` adds a per-identity cap (`JUNIPER_CASCOR_WS_MAX_CONNECTIONS_PER_IDENTITY`, default 5) keyed on a non-reversible digest of the presented `X-API-Key`.
+
+#### REST auth ↔ rate-limit contract (`SecurityMiddleware`)
+
+`SecurityMiddleware.dispatch` (`src/api/middleware.py`) runs auth, then rate limiting, and rebuilds `HTTPException`s as `JSONResponse` while copying `exc.headers`. Operator-visible contracts:
+
+| Contract | Behavior |
+|----------|----------|
+| Auth-first | Missing/invalid `X-API-Key` returns **401** before `RateLimiter.check` runs — forged keys cannot burn IP/key budgets. |
+| Keying (auth on) | Successful auth keys the window as `key:<api_key>`; distinct keys have independent counters. |
+| Keying (auth off) | With `api_keys` unset/`[]`, rate limiting (when enabled) keys as `ip:<client_host>`. |
+| 429 headers | `RateLimiter` raises 429 with `Retry-After` plus `X-RateLimit-Limit` / `Remaining` / `Reset`; the middleware rebuild must preserve those headers on the wire. |
+| Exempt paths | `EXEMPT_PATHS` skip both checks: `/v1/health`, `/v1/health/live`, `/v1/health/ready`, `/docs`, `/openapi.json`, `/redoc`, `/metrics`, `/metrics/`. Health stays reachable after a saturated non-exempt 429. |
+
+Regression pin (coverage PR #459): `src/tests/unit/api/test_api_middleware.py` — `TestSecurityMiddlewareAuthRateLimitInterplay` (auth-first, per-key vs per-IP keying, 429 header preservation, exempt paths).
 
 ### Startup bind guard
 
@@ -141,7 +159,9 @@ The global handlers in `src/api/app.py:480-494` produce:
 | 400  | Bad request — invalid `snapshot_id` format, bad shape, invalid replay action params                                  |
 | 404  | Not found — no network created, snapshot/worker not found, hidden-unit index out of range, dataset not loaded        |
 | 409  | Conflict — invalid FSM state, training already active, network at `max_hidden_units`, stale replay session id in URL |
+| 401  | Unauthorized — missing/invalid `X-API-Key` when REST API-key auth is enabled                                         |
 | 422  | Unprocessable Entity — Pydantic validation failure on request body, NaN/Inf weights, unknown activation name         |
+| 429  | Too Many Requests — REST rate limit exceeded (`Retry-After` + `X-RateLimit-*` when rate limiting is enabled)         |
 | 500  | Internal server error — topology / decision-boundary extraction failed, unhandled exception                          |
 | 503  | Service unavailable — lifecycle / registry / WebSocket manager not bound (startup not complete or shutting down)     |
 

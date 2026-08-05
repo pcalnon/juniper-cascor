@@ -844,7 +844,11 @@ All REST responses use the standard response envelope:
 
 ### Service Startup and WebSocket Admission
 
-- REST and WebSocket authentication use the `X-API-Key` header when `JUNIPER_CASCOR_API_KEYS` is configured. Auth is disabled when no API keys are configured.
+- REST and WebSocket authentication use the `X-API-Key` header when `JUNIPER_CASCOR_API_KEYS` is configured. Auth is disabled when no API keys are configured (`None` or `[]`).
+- REST `SecurityMiddleware` authenticates **before** rate limiting: 401 on bad/missing keys never increments the fixed-window counter.
+  With auth enabled, budgets are per API key (`key:…`); with auth disabled and rate limiting on, budgets are per client IP (`ip:…`).
+  Default window is 60 req/min when `JUNIPER_CASCOR_RATE_LIMIT_ENABLED=true`. 429 responses must include `Retry-After` and `X-RateLimit-*`.
+  Exempt paths (health, docs, `/metrics`) skip both checks. See [Authentication](JUNIPER_CASCOR_API_REFERENCE.md#authentication).
 - `JUNIPER_CASCOR_HOST` defaults to `127.0.0.1`. If it is set to a non-loopback address such as `0.0.0.0`, startup fails with `NonLoopbackBindError` unless `JUNIPER_CASCOR_LOOPBACK_PUBLISH_ATTESTED=true` or `JUNIPER_CASCOR_AUTH_PROXY_ATTESTED=true`.
 - Set `JUNIPER_CASCOR_LOOPBACK_PUBLISH_ATTESTED=true` when a loopback-only host-publish fronts the service, or `JUNIPER_CASCOR_AUTH_PROXY_ATTESTED=true` when an authenticating reverse proxy does. This guard runs before the server accepts connections.
 - WebSocket admission uses `JUNIPER_CASCOR_WS_MAX_CONNECTIONS_GLOBAL` (default 200) across `/ws/training`, `/ws/control`, and `/ws/v1/workers`. `/ws/control` also uses `JUNIPER_CASCOR_WS_MAX_CONNECTIONS_PER_IDENTITY` (default 5), keyed on a non-reversible digest of the `X-API-Key`.

@@ -46,6 +46,24 @@ Why this matters:
 - The no-validation path is used when `x_val`/`y_val` are omitted, which is common in lightweight training runs.
 - Regressions here can silently disable or destabilize early stopping behavior even if validation-based tests still pass.
 
+### SecurityMiddleware auth ↔ rate-limit interplay
+
+REST auth-first / rate-limit keying contracts are pinned in `src/tests/unit/api/test_api_middleware.py` (coverage PR #459 — `TestSecurityMiddlewareAuthRateLimitInterplay`).
+
+Key scenarios:
+
+- Missing/invalid `X-API-Key` returns 401 **before** `RateLimiter.check` (forged keys cannot burn budgets).
+- Distinct authenticated keys have independent fixed-window counters; open-auth (`api_keys=None`/`[]`) keys as `ip:…`.
+- 429 responses preserve `Retry-After` and `X-RateLimit-*` after `SecurityMiddleware` rebuilds `JSONResponse`.
+- Exempt paths (health/docs/`/metrics`) remain reachable after a saturated non-exempt client.
+
+```bash
+cd src
+python -m pytest tests/unit/api/test_api_middleware.py -k "AuthRateLimit or failed_auth_does_not_increment or Retry_After or independent_budgets or keys_by_ip or exempt_path" -v
+```
+
+Operator details: [API Authentication](../api/JUNIPER_CASCOR_API_REFERENCE.md#authentication).
+
 ### Marker Combinations
 
 ```bash
