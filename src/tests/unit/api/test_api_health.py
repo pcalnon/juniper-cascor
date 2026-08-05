@@ -5,7 +5,7 @@ from unittest.mock import patch
 import pytest
 from fastapi.testclient import TestClient
 
-from api.app import create_app
+from api.app import _API_VERSION, create_app
 from api.models.health import DependencyStatus, ReadinessResponse, probe_dependency
 from api.settings import Settings
 
@@ -29,7 +29,7 @@ class TestHealthEndpoints:
         assert response.status_code == 200
         body = response.json()
         assert body["status"] == "ok"
-        assert body["version"] == "0.6.0"
+        assert body["version"] == _API_VERSION
 
     def test_health_includes_service_identifier(self, client):
         """API-02: /v1/health includes the ``service`` field naming this service.
@@ -92,7 +92,7 @@ class TestHealthEndpoints:
         assert response.headers.get("X-Juniper-Readiness") == "ready"
         body = response.json()
         assert body["status"] == "ready"
-        assert body["version"] == "0.6.0"
+        assert body["version"] == _API_VERSION
         assert body["service"] == "juniper-cascor"
         assert "timestamp" in body
         assert body["details"]["network_loaded"] is False
