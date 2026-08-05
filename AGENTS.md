@@ -320,9 +320,9 @@ The juniper-cascor service exposes a versioned REST API at the `/v1/` prefix. Al
 
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
-| `POST` | `/v1/network` | Yes | Create new network with configuration |
+| `POST` | `/v1/network` | Yes | Create new network with configuration (409 while STARTED / PAUSED / REPLAYING) |
 | `GET` | `/v1/network` | Yes | Get current network info |
-| `DELETE` | `/v1/network` | Yes | Delete current network |
+| `DELETE` | `/v1/network` | Yes | Delete current network (409 while STARTED / PAUSED / REPLAYING) |
 | `GET` | `/v1/network/topology` | Yes | Network topology for visualization |
 | `GET` | `/v1/network/stats` | Yes | Weight statistics |
 
@@ -393,7 +393,8 @@ Three WebSocket channels provide real-time communication.
 - **Direction**: Client to server
 - **Authentication**: X-API-Key header
 - **Purpose**: Send training commands (start, stop, pause, resume, reset)
-- **Message format**: JSON command messages
+- **Message format**: JSON command messages (must be a JSON **object**)
+- **Non-object JSON**: In-band `invalid_message` ack; connection stays open (parity with `/ws/training`). Malformed JSON still closes with `1003`.
 - **Handler**: `api.websocket.control_stream.control_stream_handler()`
 
 ### `/ws/training` -- Metrics Stream

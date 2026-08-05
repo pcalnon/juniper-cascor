@@ -849,6 +849,8 @@ All REST responses use the standard response envelope:
 - Set `JUNIPER_CASCOR_LOOPBACK_PUBLISH_ATTESTED=true` when a loopback-only host-publish fronts the service, or `JUNIPER_CASCOR_AUTH_PROXY_ATTESTED=true` when an authenticating reverse proxy does. This guard runs before the server accepts connections.
 - WebSocket admission uses `JUNIPER_CASCOR_WS_MAX_CONNECTIONS_GLOBAL` (default 200) across `/ws/training`, `/ws/control`, and `/ws/v1/workers`. `/ws/control` also uses `JUNIPER_CASCOR_WS_MAX_CONNECTIONS_PER_IDENTITY` (default 5), keyed on a non-reversible digest of the `X-API-Key`.
 - Over-cap WebSocket attempts close with `1013`. The peer-IP cap remains DoS-dampening only; behind Docker NAT, clients can share one bridge-gateway IP bucket.
+- `/ws/control` non-object JSON (`[]` / scalars / `null`) gets an in-band `invalid_message` ack and keeps the session open; only malformed JSON closes with `1003`. See [JUNIPER_CASCOR_API_REFERENCE.md](JUNIPER_CASCOR_API_REFERENCE.md#ws-wscontrol).
+- `POST` / `DELETE` `/v1/network` return **409** while FSM is STARTED, PAUSED, or REPLAYING (parked training / replay still own the model).
 
 ### Training Lifecycle Endpoints
 

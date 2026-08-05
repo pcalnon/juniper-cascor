@@ -1,6 +1,6 @@
 # Developer Cheatsheet — juniper-cascor
 
-**Version**: 1.0.1  |  **Date**: 2026-08-05  |  **Project**: juniper-cascor
+**Version**: 1.0.10  |  **Date**: 2026-08-05  |  **Project**: juniper-cascor
 
 ---
 
@@ -55,7 +55,7 @@ docker compose --profile full up -d                            # Docker start
 
 **Add an endpoint:** Create route under `/v1`, register in `app.py`, add client method in `juniper-cascor-client`.
 
-**WebSocket:** `/ws/training` (metrics), `/ws/control` (commands), `/ws/v1/workers` (remote workers). Over-cap connections close with `1013`; update `ws_client.py`, canopy, and worker clients when adding or changing channels.
+**WebSocket:** `/ws/training` (metrics), `/ws/control` (commands), `/ws/v1/workers` (remote workers). Over-cap connections close with `1013`; update `ws_client.py`, canopy, and worker clients when adding or changing channels. `/ws/control` non-object JSON keeps the socket open with `invalid_message` (only parse failures close `1003`).
 
 ### Training Lifecycle Quick Paths
 
@@ -252,6 +252,8 @@ Core: `torch`, `numpy`, `h5py`, `matplotlib`, `PyYAML`, `requests`
 | NaN in training                                                       | LR too high or bad data                                     | Reduce `learning_rate`, check tensors                                                                     |
 | Server refuses to start with `NonLoopbackBindError`                   | `JUNIPER_CASCOR_HOST` is non-loopback without a bind attestation | Bind `127.0.0.1` for local/dev, or set `JUNIPER_CASCOR_LOOPBACK_PUBLISH_ATTESTED=true` (loopback-only host publish) or `JUNIPER_CASCOR_AUTH_PROXY_ATTESTED=true` (fronting authenticating proxy) after verifying it |
 | WebSocket closes during connect with `1013`                           | Global, per-IP, or `/ws/control` per-identity cap reached   | Raise the relevant `JUNIPER_CASCOR_WS_MAX_CONNECTIONS_*` cap only after checking expected clients and worker fleet size |
+| `/ws/control` drops after sending `[]` / a bare string / `null`       | Non-object JSON hit `msg.get` and killed the recv loop      | With the dict guard, expect `invalid_message` and keep commanding — only malformed JSON closes `1003` |
+| `POST`/`DELETE` `/v1/network` returns 409 while paused or replaying   | Parked training thread or replay session still owns the model | `stop` training or end replay (`replay/control` `stop`) before create/delete |
 | Publish workflow skipped / wrong package                              | Release tag prefix does not match workflow guard            | Use `v*`, `juniper-cascor-protocol-v*`, or `juniper-cascor-model-v*` — see [PyPI Publishing](ci_cd/MANUAL.md#pypi-publishing) |
 | TestPyPI `400 File already exists` on publish                         | Dual trigger or concurrent upload of same version           | Publish via Release only (no `push: tags`); bump version to re-upload |
 

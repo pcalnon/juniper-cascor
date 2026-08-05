@@ -324,13 +324,23 @@ curl -s -X POST http://localhost:8201/v1/network \
 
 **State changes** — Allocates a new network on the lifecycle; replaces any pre-existing network (legacy data is discarded).
 
+**FSM guards** (`TrainingLifecycleManager.create_network`) — Rejects with `RuntimeError` (REST → **409**) while:
+
+| FSM state | Why |
+|-----------|-----|
+| STARTED | Active `fit` owns the model |
+| PAUSED | Parked training thread still references `self.model` |
+| REPLAYING | Replay session would be orphaned by model replace |
+
+REST maps these to `HTTPException(409, "Network cannot be created in the current state")`. Stop or end replay before recreate.
+
 **Returns** — `200` envelope with `data` containing `input_size`, `output_size`, `hidden_units`, `max_hidden_units`, `learning_rate`, `uuid`, plus the full hyperparameter snapshot.
 
 **Error handling**:
 
 | Code | Trigger                                                                           |
 |------|-----------------------------------------------------------------------------------|
-| 409  | Network already exists in an incompatible FSM state (`HTTPException(409, "...")`) |
+| 409  | FSM is STARTED, PAUSED, or REPLAYING (`HTTPException(409, "Network cannot be created in the current state")`) |
 | 422  | Pydantic validation (negative sizes, unknown optimizer/activation, etc.)          |
 | 503  | `lifecycle` not bound                                                             |
 
@@ -382,9 +392,11 @@ curl -s -X DELETE http://localhost:8201/v1/network
 
 **State changes** — Deallocates the network and resets associated lifecycle state.
 
+**FSM guards** — Same STARTED / PAUSED / REPLAYING rejection as `POST /v1/network` (`delete_network` mirrors `create_network`). Clearing the model under PAUSED leaves dangling training futures; under REPLAYING orphans the replay session. REST → **409** `"Network cannot be deleted in the current state"`.
+
 **Returns** — `200` envelope with `{"deleted": true}`.
 
-**Error handling** — `409` if the FSM is in a state where deletion is not allowed; `503` if lifecycle is unbound.
+**Error handling** — `409` if FSM is STARTED, PAUSED, or REPLAYING; `503` if lifecycle is unbound.
 
 ---
 
@@ -1446,6 +1458,9 @@ Valid commands: `start`, `stop`, `pause`, `resume`, `reset`, `set_params`. The s
 Validation and command failures keep the socket open and return the same
 envelope with `data.status: "error"` plus `data.error` and, when available,
 `data.code` (for example `unknown_command` or `invalid_params`).
+
+**Non-object JSON** — After a successful JSON parse, payloads that are not a JSON object (`[]`, `123`, `"pause"`, `null`, `true`) receive an in-band ack with `code: "invalid_message"` / `error: "Invalid JSON: expected object"` and the recv loop **continues**. The connection stays open so a later valid command still dispatches. This is parity with `/ws/training`'s `isinstance(msg, dict)` guard; previously `msg.get(...)` raised `AttributeError` and killed the session. Distinct from **malformed** JSON (parse failure), which still closes with `1003`.
+
 The rate-limited response is the legacy flat shape emitted directly by the
 handler and also has no `seq`:
 
@@ -1479,10 +1494,7 @@ websocat -H "X-API-Key: $API_KEY" ws://localhost:8201/ws/control \
 | 1008 | Rate limit exceeded              |
 | 1006 | Heartbeat timeout, idle timeout  |
 
-Rate limiting and per-command failures arrive in-band as `command_response`
-messages rather than closing the socket. Oversized command messages (over 64 KB)
-also receive an error response and the connection stays open. Malformed JSON
-receives an error response and then closes with `1003`.
+Rate limiting, per-command failures, and non-object JSON (`invalid_message`) arrive in-band as `command_response` / control-ack messages rather than closing the socket. Oversized command messages (over 64 KB) also receive an error response and the connection stays open. Malformed JSON (parse failure) receives an error response and then closes with `1003`.
 
 ---
 
