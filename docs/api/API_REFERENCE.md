@@ -926,12 +926,21 @@ Current behavior note:
     "phase": "output",
     "validation_loss": None,
     "validation_accuracy": None,
+    "kind": "output_epoch",
+    "f1": None,
+    "precision": None,
+    "recall": None,
+    "roc_auc": None,
 }
 ```
 
 ### Accuracy Nullability
 
 `accuracy` can be `null` (`None` in Python) for output-phase callback emissions where only loss is emitted.
+
+### C7 Scalar Evaluation Metrics
+
+`GET /v1/metrics`, `GET /v1/metrics/history`, and `WS /ws/training` carry additive nullable `f1` / `precision` / `recall` / `roc_auc` keys. The snapshot also includes an `eval_metrics` metadata block. Computed over the validation split when present (else training), once per completed training step, attached to the terminal `kind="training_step"` row of each drain. Toggle with `JUNIPER_CASCOR_EVAL_METRICS_ENABLED` (default on; distinct from Prometheus `JUNIPER_CASCOR_METRICS_ENABLED`). Full operator detail: [JUNIPER_CASCOR_API_REFERENCE.md — C7](JUNIPER_CASCOR_API_REFERENCE.md#c7-scalar-evaluation-metrics).
 
 ### WebSocket Training Stream
 

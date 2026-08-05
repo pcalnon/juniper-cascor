@@ -1,6 +1,6 @@
 # Developer Cheatsheet — juniper-cascor
 
-**Version**: 1.0.0  |  **Date**: 2026-03-15  |  **Project**: juniper-cascor
+**Version**: 1.0.1  |  **Date**: 2026-08-05  |  **Project**: juniper-cascor
 
 ---
 
@@ -83,6 +83,7 @@ Metrics nuance:
 
 - `/v1/metrics/history` and `/ws/training` include callback-driven output-phase points (epoch 1, every 25 epochs, final epoch).
 - `accuracy` can be `null` for those output-phase callback emissions.
+- **C7:** rows always include nullable `f1`/`precision`/`recall`/`roc_auc` (populated on the terminal `training_step` row per drain). `GET /v1/metrics` also returns an `eval_metrics` metadata block. Toggle with `JUNIPER_CASCOR_EVAL_METRICS_ENABLED` (default on; not Prometheus).
 - `/ws/training` can also emit `candidate_progress` messages (epoch 1, every 50 epochs, final epoch per candidate).
 - Fresh `/ws/training` connects receive `initial_status`, `state`, and `initial_metrics`; resume requests use `{"type":"resume","data":{"last_seq":...,"server_instance_id":...}}` and replay only buffered broadcasts with higher `seq`.
 - `/ws/control` rate limiting returns an in-band `command_response` with `status:"rate_limited"` and keeps the socket open; it does not close on normal command throttling.
@@ -115,6 +116,7 @@ Metrics nuance:
 | `JUNIPER_CASCOR_LOG_FORMAT`      | --                      | Set to `json` for JSON logging         |
 | `JUNIPER_CASCOR_SENTRY_DSN`      | --                      | Sentry DSN                             |
 | `JUNIPER_CASCOR_METRICS_ENABLED` | `false`                 | Enable Prometheus metrics              |
+| `JUNIPER_CASCOR_EVAL_METRICS_ENABLED` | `true`             | C7 F1/precision/recall/ROC-AUC on `/v1/metrics`, history, and WS `metrics` (not Prometheus) |
 | `JUNIPER_CASCOR_WS_MAX_CONNECTIONS_GLOBAL` | `200`        | Stack-wide WebSocket cap across training, control, and worker sockets |
 | `JUNIPER_CASCOR_WS_MAX_CONNECTIONS_PER_IDENTITY` | `5`     | `/ws/control` cap per API-key identity |
 | `JUNIPER_CASCOR_WS_MAX_CONNECTIONS_PER_IP` | `5`          | Per-source-IP cap; DoS dampening only and shared behind Docker NAT |
@@ -248,6 +250,8 @@ Core: `torch`, `numpy`, `h5py`, `matplotlib`, `PyYAML`, `requests`
 | Long tests skipped                                                    | Flag not passed                                             | `pytest --run-long`                                                                                       |
 | HDF5 load fails                                                       | Corrupted or version mismatch                               | `python -m snapshots.snapshot_cli verify snapshot.h5`                                                     |
 | NaN in training                                                       | LR too high or bad data                                     | Reduce `learning_rate`, check tensors                                                                     |
+| C7 `f1`/`roc_auc` always `null` on history rows                       | Within-pass `output_epoch` rows, or eval metrics disabled   | Read terminal `kind="training_step"` rows; ensure `JUNIPER_CASCOR_EVAL_METRICS_ENABLED` is not `0`/`false` |
+| C7 scalars `null` with `eval_metrics.undefined` set                   | `empty_batch` / `single_class` / `invalid_output` on eval split | Check labels have ≥2 classes and finite outputs; see [C7 API notes](api/JUNIPER_CASCOR_API_REFERENCE.md#c7-scalar-evaluation-metrics) |
 | Server refuses to start with `NonLoopbackBindError`                   | `JUNIPER_CASCOR_HOST` is non-loopback without a bind attestation | Bind `127.0.0.1` for local/dev, or set `JUNIPER_CASCOR_LOOPBACK_PUBLISH_ATTESTED=true` (loopback-only host publish) or `JUNIPER_CASCOR_AUTH_PROXY_ATTESTED=true` (fronting authenticating proxy) after verifying it |
 | WebSocket closes during connect with `1013`                           | Global, per-IP, or `/ws/control` per-identity cap reached   | Raise the relevant `JUNIPER_CASCOR_WS_MAX_CONNECTIONS_*` cap only after checking expected clients and worker fleet size |
 
