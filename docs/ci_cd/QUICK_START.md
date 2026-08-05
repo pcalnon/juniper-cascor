@@ -228,7 +228,9 @@ gh release create juniper-cascor-protocol-v0.2.0 --title "juniper-cascor-protoco
 
 Do **not** add a `push: tags` trigger alongside `release: published` — cutting a Release also pushes the tag and double-fires races the immutable TestPyPI upload (see juniper-ml#555). Keep `pypa/gh-action-pypi-publish` SHA-pinned; Dependabot bumps the pin (and the trailing version comment).
 
-> Full operator details: [CI/CD Manual — PyPI Publishing](MANUAL.md#pypi-publishing) | [CI/CD Reference — Publish Workflows](REFERENCE.md#publish-workflows)
+**Twine tips:** `conf/requirements_ci.txt` / `conf/conda_environment_ci.yaml` freeze Twine for the generated CI env only. Publish and package-CI jobs install Twine unpinned for `twine check`; the upload step uses the action-bundled Twine. A major freeze bump (e.g. 6.x → 7.0.0) mainly affects local/CI freeze parity — re-run `python -m build && twine check dist/*` under Twine ≥7 (Metadata 2.0 rejected; needs `packaging >= 26.1`).
+
+> Full operator details: [CI/CD Manual — PyPI Publishing](MANUAL.md#pypi-publishing) | [Twine Pin Surfaces](MANUAL.md#twine-pin-surfaces) | [CI/CD Reference — Publish Workflows](REFERENCE.md#publish-workflows)
 
 ## Environment Details
 

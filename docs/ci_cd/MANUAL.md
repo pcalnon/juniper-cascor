@@ -412,7 +412,31 @@ Release published (matching tag)
 2. **Match the tag prefix** to the package. A `v*` Release skips protocol/model builds; a `juniper-cascor-protocol-v*` Release skips `publish.yml`'s `startsWith('v')` jobs.
 3. **OIDC Trusted Publishing** must be configured on both TestPyPI and PyPI for each project (`permissions.id-token: write`; GitHub Environments `testpypi` / `pypi`).
 4. **Keep `pypa/gh-action-pypi-publish` SHA-pinned** (trailing `# vX.Y.Z` comment). Dependabot opens bumps across all three workflows together. Prefer staying current: the action bundles Twine/sigstore for the upload step, and older pins have hit short-lived GitHub OIDC token lifetimes (~5 minutes) on large multi-wheel publishes.
-5. **Local `twine check` ≠ upload Twine**. Workflows `pip install build twine` for metadata validation; the publish step uses the action's bundled Twine. Bumping the repo's `twine` dependency does not change the uploader inside the action.
+5. **Treat Twine as three independent surfaces** (see below). A Dependabot bump of `conf/requirements_ci.txt` does **not** pin publish-job `twine check` or the action's upload Twine.
+
+### Twine Pin Surfaces
+
+| Surface | Where | How Twine is selected | What a Dependabot Twine major bump changes |
+|---------|-------|----------------------|---------------------------------------------|
+| CI freeze (pip) | `conf/requirements_ci.txt` | Exact pin (e.g. `twine==7.0.0`) in the generated freeze | Yes — Dependabot pip ecosystem can open a major bump here |
+| CI freeze (conda) | `conf/conda_environment_ci.yaml` | Exact pin under `pip:` | Often lags the pip freeze until the next `juniper-generate-dep-docs` commit |
+| Publish / package CI `twine check` | `publish.yml`, `publish-protocol.yml`, `publish-cascor-model.yml`, `ci-protocol.yml`, `ci-cascor-model.yml` | Unpinned `pip install build twine` or `pip install --upgrade build twine` at job time | No — those jobs resolve whatever Twine is current on PyPI |
+| Upload Twine | `pypa/gh-action-pypi-publish` (SHA-pinned) | Bundled inside the action | No — only the action SHA bump changes the uploader |
+
+**Intent:** keep local/CI metadata validation honest without implying that freezing Twine in `requirements_ci.txt` controls release uploads.
+
+**Twine 7.0.0 operator notes** (verify against [twine changelog](https://github.com/pypa/twine/blob/main/docs/changelog.rst) before merging a major bump):
+
+- **Metadata 2.0 rejected.** Twine 7 drops the Metadata-Version 2.0 monkeypatch (never an official standard) while fixing Metadata 2.5 uploads. This repo's packages are PEP 621 + setuptools (`pyproject.toml` build backends) and emit modern metadata — still run `python -m build && twine check dist/*` under Twine ≥7 before the first post-bump Release.
+- **`packaging >= 26.1`.** Twine 7 raises its packaging floor. Prefer a current `packaging` in any env where you run local `twine check` (old parsers can also mis-read `license-file`).
+- **UTF-8 `.pypirc` reads / richer `--version` / non-standard HTTP status handling.** Relevant for manual uploads and verbose CI logs; Trusted Publishing paths do not use `.pypirc`.
+
+**Review checklist for a `twine` major Dependabot PR:**
+
+1. Confirm the diff is limited to the CI freeze (`conf/requirements_ci.txt`) and any lockfile collateral — Twine is not a runtime `pyproject.toml` dependency.
+2. Expect `conf/conda_environment_ci.yaml` to still show the previous pin until dependency docs are regenerated; do not treat that lag as a publish blocker.
+3. Smoke-check metadata under Twine 7 locally (or rely on the next `ci-protocol` / `ci-cascor-model` / publish build job, which already installs current Twine unpinned).
+4. Remember upload Twine still tracks the SHA-pinned `gh-action-pypi-publish` action, not this freeze.
 
 ### Re-firing a Failed Sub-Package Publish
 
@@ -462,6 +486,8 @@ If environment setup fails:
 | TestPyPI verify can't find the version | Index lag | Protocol/model retry 5× with 10s sleep; main package sleeps 30s once — re-run the verify step if lag exceeds that |
 | Protocol verify import fails under `--no-deps` | Expecting `import juniper_cascor_protocol` | Use `importlib.metadata` version check (workflow already does) |
 | Wrong package published / skipped | Tag prefix mismatch | Use `v*` for the app, `juniper-cascor-<pkg>-v*` for sub-packages |
+| `twine check` fails after merging a Twine major in `requirements_ci.txt` | Local/CI freeze Twine ≠ what you think publish uses; or Metadata-Version too old for Twine 7 | Rebuild with current setuptools; run `twine check` under Twine ≥7; do not expect the freeze pin to change action upload Twine |
+| `conda_environment_ci.yaml` still pins old Twine after a `requirements_ci.txt` bump | Generated freezes updated on different cadences | Regenerate via the CI dependency-docs job (`juniper-generate-dep-docs`); publish jobs ignore both freezes |
 
 ---
 
