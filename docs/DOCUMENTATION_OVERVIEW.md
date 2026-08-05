@@ -476,6 +476,7 @@ The juniper-cascor-client library provides a Python API for interacting with the
 - Checking results
 - Reproducing CI locally
 - Quick fixes for common failures
+- Publishing packages to PyPI (Release tags + Trusted Publishing)
 
 **When to Read:** First-time understanding CI, debugging CI failures
 
@@ -510,6 +511,7 @@ The juniper-cascor-client library provides a Python API for interacting with the
 - Coverage handling
 - Slow test handling (CASCOR-TIMEOUT-001)
 - Modifying the pipeline
+- PyPI publishing (OIDC Trusted Publishing, tag guards, TestPyPI verify)
 
 **When to Read:** Understanding CI deeply, making CI changes
 
@@ -523,7 +525,8 @@ The juniper-cascor-client library provides a Python API for interacting with the
 **Key Sections:**
 
 - Workflow configuration reference
-- Coverage gates (50% threshold)
+- Publish workflows (tag guards, OIDC, verify contract)
+- Coverage gates (80% aggregate)
 - Artifact reference
 - Test marker mapping
 - Timeout configuration
