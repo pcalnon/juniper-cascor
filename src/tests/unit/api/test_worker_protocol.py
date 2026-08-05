@@ -288,6 +288,38 @@ class TestValidateTensors:
         errors = WorkerProtocol.validate_tensors({"weights": arr}, manifest)
         assert any("magnitude" in e for e in errors)
 
+    def test_manifest_missing_shape_returns_error(self):
+        """Malformed manifest without shape must not raise KeyError."""
+        manifest = {"weights": {"dtype": "float32"}}
+        tensors = {"weights": np.zeros(4, dtype=np.float32)}
+        errors = WorkerProtocol.validate_tensors(tensors, manifest)
+        assert errors
+        assert any("shape" in e for e in errors)
+
+    def test_manifest_missing_dtype_returns_error(self):
+        """Malformed manifest without dtype must not raise KeyError."""
+        manifest = {"weights": {"shape": [4]}}
+        tensors = {"weights": np.zeros(4, dtype=np.float32)}
+        errors = WorkerProtocol.validate_tensors(tensors, manifest)
+        assert errors
+        assert any("dtype" in e for e in errors)
+
+    def test_manifest_non_dict_entry_returns_error(self):
+        """Non-dict manifest entries are rejected as validation errors."""
+        manifest = {"weights": "float32"}
+        tensors = {"weights": np.zeros(4, dtype=np.float32)}
+        errors = WorkerProtocol.validate_tensors(tensors, manifest)
+        assert errors
+        assert any("dict" in e for e in errors)
+
+    def test_empty_weights_returns_error(self):
+        """Empty weight arrays must not crash ``np.max``; return a validation error."""
+        manifest = {"weights": {"shape": [0], "dtype": "float32"}}
+        tensors = {"weights": np.array([], dtype=np.float32)}
+        errors = WorkerProtocol.validate_tensors(tensors, manifest)
+        assert errors
+        assert any("empty" in e.lower() for e in errors)
+
 
 @pytest.mark.unit
 class TestValidateRegister:
