@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Companion auto-start cleanup:** `ManagedService.terminate` now closes the subprocess log handle in a `finally` (even if post-SIGKILL `wait` raises), and `start_service` always removes a failed-health service from `_active_services` even when `terminate()` itself raises or the health probe throws — preventing orphaned juniper-data/canopy processes and leaked FDs on local auto-start.
+- **Remote worker reject-requeue:** `WorkerCoordinator.submit_result` now immediately requeues a task when schema or tensor validation rejects the worker's result (clearing `assigned_worker_id` and pushing `_unassigned_tasks`) instead of leaving the task orphaned until the full `_task_reassignment_timeout` (default 120s) fires.
 - Unit tests no longer pin the service version as a literal: the four `0.6.0` assertions in `test_api_app.py`, `test_api_app_coverage_deep.py`, and `test_api_health.py` (red on `main` since the v0.7.0 bump merged in #429 without CI running) now assert against `api.app._API_VERSION` — the BUG-CC-04 canonical runtime read — so a release version bump can no longer break the suite.
 
 ## [0.7.0] - 2026-07-28

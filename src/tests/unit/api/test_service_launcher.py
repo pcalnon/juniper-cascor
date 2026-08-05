@@ -100,6 +100,20 @@ class TestManagedService:
         handle.close.assert_called_once()
         assert svc._log_handle is None
 
+    def test_terminate_closes_log_when_kill_wait_raises(self):
+        """Log handle must close even if the post-SIGKILL wait raises."""
+        handle = MagicMock()
+        svc = self._make_service(poll_return=None, log_handle=handle)
+        svc.process.wait.side_effect = [
+            subprocess.TimeoutExpired("cmd", 10),
+            subprocess.TimeoutExpired("cmd", 5),
+        ]
+        with pytest.raises(subprocess.TimeoutExpired):
+            svc.terminate(timeout=10.0)
+        svc.process.kill.assert_called_once()
+        handle.close.assert_called_once()
+        assert svc._log_handle is None
+
 
 # ---------------------------------------------------------------------------
 # _cleanup_at_exit
@@ -412,6 +426,81 @@ class TestStartService:
 
             assert result is None
             assert len(service_launcher._active_services) == 0
+        finally:
+            service_launcher._active_services.clear()
+            service_launcher._active_services.extend(original)
+
+    @pytest.mark.asyncio
+    async def test_start_service_health_failed_terminate_raises_still_removes(self):
+        """Failed-health cleanup must drop the active-service entry even if terminate raises."""
+        from api import service_launcher
+        from api.service_launcher import start_service
+
+        mock_proc = MagicMock(spec=subprocess.Popen)
+        mock_proc.poll.return_value = None
+        mock_proc.pid = 4242
+        mock_proc.terminate.side_effect = RuntimeError("terminate failed")
+
+        mock_log_handle = MagicMock()
+        original = service_launcher._active_services[:]
+        service_launcher._active_services.clear()
+
+        try:
+            with (
+                patch("api.service_launcher.subprocess.Popen", return_value=mock_proc),
+                patch("api.service_launcher._resolve_log_dir", return_value=Path("/tmp/test_logs")),
+                patch("builtins.open", return_value=mock_log_handle),
+                patch("api.service_launcher.wait_for_health", return_value=False),
+                patch.object(Path, "mkdir"),
+            ):
+                result = await start_service(
+                    name="terminate-boom",
+                    command="python app.py",
+                    health_url="http://localhost:8100/v1/health",
+                    health_timeout=1.0,
+                )
+
+            assert result is None
+            assert service_launcher._active_services == []
+            # terminate() still closed the log via its finally before re-raising
+            mock_log_handle.close.assert_called()
+        finally:
+            service_launcher._active_services.clear()
+            service_launcher._active_services.extend(original)
+
+    @pytest.mark.asyncio
+    async def test_start_service_health_probe_raises_terminates_and_removes(self):
+        """Unexpected health-probe exceptions still tear down the subprocess registry entry."""
+        from api import service_launcher
+        from api.service_launcher import start_service
+
+        mock_proc = MagicMock(spec=subprocess.Popen)
+        mock_proc.poll.return_value = None
+        mock_proc.pid = 5151
+        mock_proc.wait.return_value = None
+
+        mock_log_handle = MagicMock()
+        original = service_launcher._active_services[:]
+        service_launcher._active_services.clear()
+
+        try:
+            with (
+                patch("api.service_launcher.subprocess.Popen", return_value=mock_proc),
+                patch("api.service_launcher._resolve_log_dir", return_value=Path("/tmp/test_logs")),
+                patch("builtins.open", return_value=mock_log_handle),
+                patch("api.service_launcher.wait_for_health", side_effect=RuntimeError("probe boom")),
+                patch.object(Path, "mkdir"),
+            ):
+                result = await start_service(
+                    name="probe-boom",
+                    command="python app.py",
+                    health_url="http://localhost:8100/v1/health",
+                )
+
+            assert result is None
+            assert service_launcher._active_services == []
+            mock_proc.terminate.assert_called_once()
+            mock_log_handle.close.assert_called()
         finally:
             service_launcher._active_services.clear()
             service_launcher._active_services.extend(original)
