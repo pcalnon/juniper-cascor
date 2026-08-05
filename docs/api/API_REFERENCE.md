@@ -847,8 +847,9 @@ All REST responses use the standard response envelope:
 - REST and WebSocket authentication use the `X-API-Key` header when `JUNIPER_CASCOR_API_KEYS` is configured. Auth is disabled when no API keys are configured.
 - `JUNIPER_CASCOR_HOST` defaults to `127.0.0.1`. If it is set to a non-loopback address such as `0.0.0.0`, startup fails with `NonLoopbackBindError` unless `JUNIPER_CASCOR_LOOPBACK_PUBLISH_ATTESTED=true` or `JUNIPER_CASCOR_AUTH_PROXY_ATTESTED=true`.
 - Set `JUNIPER_CASCOR_LOOPBACK_PUBLISH_ATTESTED=true` when a loopback-only host-publish fronts the service, or `JUNIPER_CASCOR_AUTH_PROXY_ATTESTED=true` when an authenticating reverse proxy does. This guard runs before the server accepts connections.
-- WebSocket admission uses `JUNIPER_CASCOR_WS_MAX_CONNECTIONS_GLOBAL` (default 200) across `/ws/training`, `/ws/control`, and `/ws/v1/workers`. `/ws/control` also uses `JUNIPER_CASCOR_WS_MAX_CONNECTIONS_PER_IDENTITY` (default 5), keyed on a non-reversible digest of the `X-API-Key`.
+- WebSocket admission uses `JUNIPER_CASCOR_WS_MAX_CONNECTIONS_GLOBAL` (default 200) across `/ws/training`, `/ws/control`, and `/ws/v1/workers`. `/ws/control` also uses `JUNIPER_CASCOR_WS_MAX_CONNECTIONS_PER_IDENTITY` (default 5), keyed on `ws_identity_key` (truncated per-process HMAC of the stripped `X-API-Key`). Missing / empty / whitespace-only keys are anonymous and do not consume a per-identity slot.
 - Over-cap WebSocket attempts close with `1013`. The peer-IP cap remains DoS-dampening only; behind Docker NAT, clients can share one bridge-gateway IP bucket.
+- Worker socket teardown clears `AnomalyDetector` per-worker history via `clear_worker` so reconnect churn cannot leak anomaly signals across recycled IDs.
 
 ### Training Lifecycle Endpoints
 
@@ -968,10 +969,10 @@ WebSocket connection caps are admission controls for availability and fairness; 
 | Setting | Default | Applies to | Notes |
 |---------|---------|------------|-------|
 | `JUNIPER_CASCOR_WS_MAX_CONNECTIONS_GLOBAL` | `200` | `/ws/training`, `/ws/control`, `/ws/v1/workers` combined | Stack-absolute cap that survives Docker NAT and should exceed expected clients plus worker fleet size. |
-| `JUNIPER_CASCOR_WS_MAX_CONNECTIONS_PER_IDENTITY` | `5` | `/ws/control` | Keyed on a non-reversible per-process HMAC of the presented `X-API-Key`; anonymous callers rely on global and per-IP caps. |
+| `JUNIPER_CASCOR_WS_MAX_CONNECTIONS_PER_IDENTITY` | `5` | `/ws/control` | Keyed on `ws_identity_key` (truncated per-process HMAC of the stripped `X-API-Key`). Blank / whitespace-only headers return `None` identity so they do not collapse onto one shared digest bucket. Anonymous callers rely on global and per-IP caps. |
 | `JUNIPER_CASCOR_WS_MAX_CONNECTIONS_PER_IP` | `5` | Manager-routed sockets, including `/ws/training` | DoS dampening only. Behind Docker NAT all clients can share the bridge-gateway IP, so this can become one shared bucket. |
 
-`/ws/v1/workers` is global-cap-only for this layer: worker fleets may share a machine token, and the server-assigned `worker_id` is not available until after the admission point. Worker capacity is still bounded by the global cap and by worker-registry limits.
+`/ws/v1/workers` is global-cap-only for this layer: worker fleets may share a machine token, and the server-assigned `worker_id` is not available until after the admission point. Worker capacity is still bounded by the global cap and by worker-registry limits. On deregister, `AnomalyDetector.clear_worker` drops that worker's anomaly history (idempotent; skip-safe when the detector is unbound).
 
 ### Lifecycle Failure Handling Path
 

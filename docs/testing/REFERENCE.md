@@ -24,6 +24,29 @@ Complete reference documentation for the Juniper Cascor test suite.
 | `accuracy`           | Accuracy calculation methods               | Classification accuracy, metrics                     | Runs with unit tests                          |
 | `early_stopping`     | Early stopping logic                       | Convergence detection, patience handling             | Runs with unit tests                          |
 
+### WebSocket Identity Key and Worker Anomaly Teardown
+
+High-risk admission and worker-security edges covered by:
+
+| Area | Tests | Contract |
+|------|-------|----------|
+| `ws_identity_key` blank/whitespace | `TestWsIdentityKey` in `src/tests/unit/api/test_ws_connection_caps.py` | Empty / whitespace-only `X-API-Key` → `None` (anonymous); real keys hash to a 16-char digest |
+| Anomaly history on deregister | `test_disconnect_clears_anomaly_history` / `test_disconnect_without_anomaly_detector_still_cleans_up` in `src/tests/unit/api/test_worker_security_integration.py` | Worker-stream `finally` calls `AnomalyDetector.clear_worker`; missing detector must not break cleanup |
+| Origins parser fail-soft | `TestWsControlAllowedOriginsParser` in `src/tests/unit/api/test_api_settings.py` | Malformed non-list JSON → CSV; empty entries stripped |
+
+```bash
+cd src
+python -m pytest \
+  tests/unit/api/test_ws_connection_caps.py::TestWsIdentityKey \
+  tests/unit/api/test_worker_security_integration.py -k "anomaly" \
+  tests/unit/api/test_api_settings.py -k "WsControlAllowedOrigins" -v
+```
+
+Why this matters:
+
+- Whitespace-only API-key headers are truthy strings; without strip they mint one shared per-identity digest and self-DoS under `JUNIPER_CASCOR_WS_MAX_CONNECTIONS_PER_IDENTITY`.
+- `AnomalyDetector.clear_worker` existed but was historically unwired from `/ws/v1/workers` teardown — history grew across churn and recycled IDs inherited stale signals.
+
 ### Early-Stopping Regression Coverage (No Validation Data Path)
 
 The no-validation branch in `CascadeCorrelationNetwork.validate_training()` is covered by targeted unit regressions in `src/tests/unit/test_cascade_correlation_coverage_extended.py`.

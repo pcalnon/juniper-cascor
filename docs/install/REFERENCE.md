@@ -65,8 +65,9 @@ The FastAPI service reads these settings through `api.settings.Settings` with th
 | `JUNIPER_CASCOR_AUTH_PROXY_ATTESTED` | Boolean | `false` | One of the two bind attestations required when `JUNIPER_CASCOR_HOST` is non-loopback. Setting it to `true` attests a fronting authenticating reverse proxy terminates access before the port. |
 | `JUNIPER_CASCOR_API_KEYS` | CSV / JSON list | unset | API keys accepted in `X-API-Key`. When unset, API-key auth is disabled for development. |
 | `JUNIPER_CASCOR_WS_MAX_CONNECTIONS_GLOBAL` | Integer | `200` | Stack-absolute WebSocket admission cap across `/ws/training`, `/ws/control`, and `/ws/v1/workers`. |
-| `JUNIPER_CASCOR_WS_MAX_CONNECTIONS_PER_IDENTITY` | Integer | `5` | Per API-key identity admission cap for `/ws/control`. |
+| `JUNIPER_CASCOR_WS_MAX_CONNECTIONS_PER_IDENTITY` | Integer | `5` | Per API-key identity admission cap for `/ws/control`. Keyed on `ws_identity_key` (stripped `X-API-Key`); blank/whitespace headers are anonymous. |
 | `JUNIPER_CASCOR_WS_MAX_CONNECTIONS_PER_IP` | Integer | `5` | Per-source-IP cap for manager-routed sockets; useful as DoS dampening, but not an identity control behind Docker NAT. |
+| `JUNIPER_CASCOR_WS_CONTROL_ALLOWED_ORIGINS` | JSON list / CSV | localhost canopy origins | `/ws/control` Origin allowlist. Accepts JSON-array or comma-CSV. Malformed JSON that is not a list fails soft to CSV splitting; empty entries are stripped. Empty string disables the allowlist (explicit opt-out). |
 | `JUNIPER_CASCOR_WS_HEARTBEAT_INTERVAL_SEC` | Integer | `30` | Server heartbeat interval for WebSocket channels. |
 
 **Startup bind guard:** `create_app()` enforces the bind guard during lifespan startup before background training starts. A non-loopback bind with neither `JUNIPER_CASCOR_LOOPBACK_PUBLISH_ATTESTED=true` nor `JUNIPER_CASCOR_AUTH_PROXY_ATTESTED=true` raises `NonLoopbackBindError` and logs a CRITICAL refusal (no warning-only mode). Prefer loopback for local development:
@@ -85,7 +86,9 @@ JUNIPER_CASCOR_LOOPBACK_PUBLISH_ATTESTED=true \
 python server.py
 ```
 
-**WebSocket cap behavior:** over-cap WebSocket handshakes are closed with code `1013`. The global cap is the backstop that still works when Docker NAT collapses many callers to one bridge-gateway IP. The per-identity cap applies to `/ws/control`; worker sockets are global-cap-only because a worker fleet can share one machine token and the worker id is assigned after admission.
+**WebSocket cap behavior:** over-cap WebSocket handshakes are closed with code `1013`. The global cap is the backstop that still works when Docker NAT collapses many callers to one bridge-gateway IP. The per-identity cap applies to `/ws/control` and is keyed on a non-reversible digest of the stripped `X-API-Key` (`ws_identity_key`). Missing, empty, or whitespace-only keys are treated as anonymous so blank headers cannot self-DoS by sharing one identity bucket. Worker sockets are global-cap-only because a worker fleet can share one machine token and the worker id is assigned after admission.
+
+**Worker anomaly history:** on `/ws/v1/workers` disconnect, session teardown clears that worker's `AnomalyDetector` history (`clear_worker`) so reconnect churn cannot grow `_worker_history` without bound or let a recycled `worker_id` inherit stale anomaly signals.
 
 ## CLI Arguments
 

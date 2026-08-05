@@ -417,6 +417,7 @@ Three WebSocket channels provide real-time communication.
 - Thread-safe broadcasting via `asyncio.run_coroutine_threadsafe()`
 - Connection lifecycle management with bounded limit (default: 50)
 - Automatic heartbeat/keepalive
+- `/ws/control` per-identity admission uses `ws_identity_key` (truncated HMAC of stripped `X-API-Key`); blank/whitespace keys are anonymous and do not share one SEC-F19 D4b identity bucket
 
 ---
 
@@ -462,6 +463,7 @@ Distributed candidate training via WebSocket workers.
 5. Heartbeat keepalive (default 30s timeout)
 6. Auto-deregistration on heartbeat timeout
 7. Task reassignment on worker failure (default 120s timeout)
+8. Session teardown clears `AnomalyDetector` history for that `worker_id` (`clear_worker`) so reconnect churn cannot leak anomaly signals across recycled IDs
 
 ---
 

@@ -91,7 +91,7 @@ Optional. Controlled by the application settings:
 - REST: `X-API-Key` header validated by `APIKeyAuth` middleware (`src/api/security.py`). When `settings.api_keys` is empty, auth is disabled (dev mode).
 - WebSocket: same `X-API-Key` header, validated in `ws_authenticate()` (`src/api/websocket/manager.py`). On failure the socket is closed with code `4001`.
 
-Rate limiting is also optional; per-IP REST limiter defaults to 100 req/min, and the worker WebSocket has its own per-IP connection rate limiter. WebSocket admission also has a stack-global cap across all WS endpoints (`JUNIPER_CASCOR_WS_MAX_CONNECTIONS_GLOBAL`, default 200). `/ws/control` adds a per-identity cap (`JUNIPER_CASCOR_WS_MAX_CONNECTIONS_PER_IDENTITY`, default 5) keyed on a non-reversible digest of the presented `X-API-Key`.
+Rate limiting is also optional; per-IP REST limiter defaults to 100 req/min, and the worker WebSocket has its own per-IP connection rate limiter. WebSocket admission also has a stack-global cap across all WS endpoints (`JUNIPER_CASCOR_WS_MAX_CONNECTIONS_GLOBAL`, default 200). `/ws/control` adds a per-identity cap (`JUNIPER_CASCOR_WS_MAX_CONNECTIONS_PER_IDENTITY`, default 5) keyed on a non-reversible digest of the presented `X-API-Key` (`ws_identity_key` in `src/api/websocket/manager.py`). Missing, empty, or whitespace-only `X-API-Key` values are treated as anonymous (`None` identity) so blank headers do not mint a shared per-identity digest under the SEC-F19 D4b cap.
 
 ### Startup bind guard
 
@@ -1276,7 +1276,8 @@ curl -s http://localhost:8201/v1/workers/worker-abc123
 All three sockets share these properties:
 
 - `X-API-Key` authenticated via `ws_authenticate()` (`src/api/websocket/manager.py`); failures close with `4001`.
-- Admission caps: every WebSocket reserves from the stack-global cap (default 200); `/ws/control` also reserves from the per-identity cap (default 5, keyed on the API-key digest). Over-cap attempts close with `1013`.
+- Admission caps: every WebSocket reserves from the stack-global cap (default 200); `/ws/control` also reserves from the per-identity cap (default 5, keyed on `ws_identity_key` — a truncated per-process HMAC of the stripped `X-API-Key`). Over-cap attempts close with `1013`.
+- Blank / whitespace-only `X-API-Key` headers do **not** share one per-identity bucket: `ws_identity_key` strips before the falsy check and returns `None`, so those callers use only the stack-global + per-IP caps (anonymous posture).
 - The legacy per-peer-IP cap remains DoS-dampening only. Behind Docker NAT, every client may present as the bridge gateway and therefore share one IP bucket; use the global and per-identity caps for limits that survive NAT.
 - Application-layer heartbeat: server sends `{"type":"ping","ts":<float>}` every 30s; the client must send a `{"type":"pong"}` (or any other frame — C3 tolerance) within 10s or the connection is closed with `1011`.
 - All payloads are JSON unless explicitly noted as binary.
@@ -1409,7 +1410,7 @@ websocat -H "X-API-Key: $API_KEY" ws://localhost:8201/ws/training
 
 **Summary** — Authenticated command channel for training lifecycle control.
 
-**Detailed description** — Origin header is rejected with `4003` if present (Phase B-pre-b: machine-to-machine only). Admission reserves a stack-global slot and a per-identity slot keyed on a non-reversible per-process HMAC of the presented `X-API-Key`; over-cap closes with `1013`. Per-connection leaky-bucket rate limit (default 10 cmd/s). Bidirectional 120 s idle timeout. Per-origin handshake cooldown. Phase D execution timeouts: `start` 10 s; `stop`/`pause`/`resume`/`reset` 2 s; `set_params` 1 s. Phase D §S10.7 lazily registers Prometheus counter `cascor_ws_control_command_received_total{command}` via `register_or_reuse`. Handler at `src/api/websocket/control_stream.py`.
+**Detailed description** — Origin header is rejected with `4003` if present (Phase B-pre-b: machine-to-machine only). Admission reserves a stack-global slot and a per-identity slot keyed on `ws_identity_key` (truncated per-process HMAC-SHA256 of the stripped `X-API-Key`); blank/whitespace keys are anonymous and skip the per-identity reserve. Over-cap closes with `1013`. Per-connection leaky-bucket rate limit (default 10 cmd/s). Bidirectional 120 s idle timeout. Per-origin handshake cooldown. Phase D execution timeouts: `start` 10 s; `stop`/`pause`/`resume`/`reset` 2 s; `set_params` 1 s. Phase D §S10.7 lazily registers Prometheus counter `cascor_ws_control_command_received_total{command}` via `register_or_reuse`. Handler at `src/api/websocket/control_stream.py`.
 
 **Connect** — `ws://localhost:8201/ws/control` (mounted in `src/api/app.py:472`).
 
@@ -1490,7 +1491,7 @@ receives an error response and then closes with `1003`.
 
 **Summary** — Worker registration and task dispatch socket (juniper-cascor-worker).
 
-**Detailed description** — Origin header is rejected with `4003` if present (Section 12.3 — machine-to-machine only). Admission reserves only a stack-global WebSocket slot: worker fleets may share one token, and the server-assigned `worker_id` is not known until after admission. Optional Phase 4 protections: per-source-IP connection rate limiter (default 10 conn/min, burst 2), anomaly detector (perfect-correlation and training-time deviation guards), audit logging, and worker performance metrics. Handler at `src/api/websocket/worker_stream.py`.
+**Detailed description** — Origin header is rejected with `4003` if present (Section 12.3 — machine-to-machine only). Admission reserves only a stack-global WebSocket slot: worker fleets may share one token, and the server-assigned `worker_id` is not known until after admission. Optional Phase 4 protections: per-source-IP connection rate limiter (default 10 conn/min, burst 2), anomaly detector (perfect-correlation / stale-correlation / duplicate-correlation / suspiciously-fast guards), audit logging, and worker performance metrics. Handler at `src/api/websocket/worker_stream.py`.
 
 **Connect** — `ws://localhost:8201/ws/v1/workers` (mounted in `src/api/app.py:473`).
 
@@ -1517,6 +1518,8 @@ receives an error response and then closes with `1003`.
 ```
 
 **State changes** — On `REGISTRATION` the worker is added to the registry. `TASK_RESULT` updates the worker's task counters, health score, and recent durations. `WORKER_ERROR` increments failure counters and may quarantine the worker (Phase 4 anomaly detector).
+
+**Anomaly history on deregister** — The worker-stream session `finally` path (alongside `registry.deregister`, audit `WORKER_DEREGISTER`, and metrics `on_deregister`) calls `AnomalyDetector.clear_worker(worker_id)` when `app.state.anomaly_detector` is bound. `clear_worker` is idempotent and pops that worker's `_worker_history` entry so that (a) history cannot grow without bound across reconnect churn and (b) a recycled `worker_id` cannot inherit stale `duplicate_correlations` / `perfect_correlation` signals from a prior occupant. Missing `anomaly_detector` must not break disconnect cleanup. Source: `src/api/websocket/worker_stream.py` (`_run_worker_session` finally), `src/api/workers/security.py` (`AnomalyDetector.clear_worker`).
 
 **Error handling / close codes**:
 
