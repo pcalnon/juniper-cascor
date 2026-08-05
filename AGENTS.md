@@ -77,6 +77,8 @@ pre-commit install                                   # Install hooks
 | `JUNIPER_CASCOR_CORS_ORIGINS` | CORS allowed origins (JSON list) | `[]` (none) |
 | **Authentication & Security** | | |
 | `JUNIPER_CASCOR_API_KEYS` | Comma-separated API keys for authentication | `None` (auth disabled) |
+| `JUNIPER_CASCOR_API_KEYS_FILE` | Docker-secrets path for API keys; an existing empty/whitespace file yields open auth in the compose `_FILE`-only pattern (`get_secret()` does not fall back to the plain env var) | `None` |
+| `JUNIPER_CASCOR_REQUIRE_AUTH` | SEC-F01 intended auth posture: `false` = WARN and run open when keys missing/blank; `true` = refuse boot with `AuthPostureError`. Set `true` wherever secrets are provisioned (composed juniper-deploy). Bypass with `JUNIPER_SKIP_AUTH_POSTURE_CHECK=1` (logged loudly). | `false` |
 | `JUNIPER_CASCOR_RATE_LIMIT_ENABLED` | Enable rate limiting | `false` |
 | `JUNIPER_CASCOR_RATE_LIMIT_REQUESTS_PER_MINUTE` | Requests per minute per IP | `60` |
 | **WebSocket** | | |
@@ -486,8 +488,15 @@ Middleware executes in LIFO order (last added = first executed):
 
 - Header: `X-API-Key`
 - Comparison: HMAC-based (timing-safe)
-- When `JUNIPER_CASCOR_API_KEYS` is unset, authentication is disabled
-- Docker secrets support: `JUNIPER_CASCOR_API_KEYS_FILE` for container deployments
+- When `JUNIPER_CASCOR_API_KEYS` is unset/blank, authentication is disabled
+- Docker secrets support: `JUNIPER_CASCOR_API_KEYS_FILE` for container deployments — `get_secret()` returns an existing file's stripped contents with no env fallback; an empty file leaves keys unset in the compose `_FILE`-only pattern
+
+### Boot-Time Auth Posture (SEC-F01)
+
+- Lifespan calls `juniper_service_core.enforce_auth_posture` after the bind guard, before serving (`src/api/app.py`)
+- `JUNIPER_CASCOR_REQUIRE_AUTH=false` (default): missing/blank keys → loud WARNING, service continues (bare/dev)
+- `JUNIPER_CASCOR_REQUIRE_AUTH=true`: missing/blank keys → CRITICAL + `AuthPostureError` (fail-closed for provisioned stacks)
+- Escape hatch: `JUNIPER_SKIP_AUTH_POSTURE_CHECK=1` (logged loudly)
 
 ### Rate Limiting
 
