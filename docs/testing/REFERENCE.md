@@ -46,6 +46,28 @@ Why this matters:
 - The no-validation path is used when `x_val`/`y_val` are omitted, which is common in lightweight training runs.
 - Regressions here can silently disable or destabilize early stopping behavior even if validation-based tests still pass.
 
+### Body-Limit Regression Coverage (CR-024)
+
+`RequestBodyLimitMiddleware` body-cap behavior is pinned in `src/tests/unit/api/test_api_middleware.py::TestRequestBodyLimitMiddleware`.
+
+Key scenarios covered:
+
+- Oversized declared `Content-Length` → early **413**
+- Invalid `Content-Length` → **400**
+- Chunked / streaming bodies over the cap → **413** with early abort (not full buffering)
+- Under-declared `Content-Length` (`N <= max`, stream larger than max) → **413** (CR-024; must not gate stream-read on `content_length is None`)
+- Truthful under-limit `Content-Length` → body cached on `request._body` for downstream handlers (BUG-CC-15)
+
+```bash
+cd src
+PYTHONPATH=. python -m pytest tests/unit/api/test_api_middleware.py::TestRequestBodyLimitMiddleware -v
+```
+
+Why this matters:
+
+- Body size enforcement is a DoS / memory-exhaustion control on every mutating HTTP request.
+- A present-header-only gate looks correct in happy-path tests but silently reopens the under-declared bypass.
+
 ### Marker Combinations
 
 ```bash

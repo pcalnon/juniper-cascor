@@ -1,6 +1,6 @@
 # Developer Cheatsheet — juniper-cascor
 
-**Version**: 1.0.1  |  **Date**: 2026-08-05  |  **Project**: juniper-cascor
+**Version**: 1.0.4  |  **Date**: 2026-08-05  |  **Project**: juniper-cascor
 
 ---
 
@@ -87,7 +87,9 @@ Metrics nuance:
 - Fresh `/ws/training` connects receive `initial_status`, `state`, and `initial_metrics`; resume requests use `{"type":"resume","data":{"last_seq":...,"server_instance_id":...}}` and replay only buffered broadcasts with higher `seq`.
 - `/ws/control` rate limiting returns an in-band `command_response` with `status:"rate_limited"` and keeps the socket open; it does not close on normal command throttling.
 
-**Middleware** (outermost first): CORS -> Security -> Prometheus -> RequestId. **Models:** Pydantic (API), dataclasses (config).
+**Middleware** (outer→inner when all enabled): RequestId → Prometheus → Security → SecurityHeaders → RequestBodyLimit → CORS. **Models:** Pydantic (API), dataclasses (config).
+
+**Body limit (CR-024):** mutating HTTP (`POST`/`PUT`/`PATCH`) is capped at 10 MiB (`_PROJECT_API_MAX_REQUEST_BODY_BYTES`). `Content-Length` is early-reject only — stream-read always enforces the cumulative cap (including under-declared headers). Details: [Request body limits (CR-024)](api/JUNIPER_CASCOR_API_REFERENCE.md#request-body-limits-cr-024).
 
 > See: [API Reference](api/API_REFERENCE.md) | [API Schemas](api/API_SCHEMAS.md)
 
@@ -254,6 +256,8 @@ Core: `torch`, `numpy`, `h5py`, `matplotlib`, `PyYAML`, `requests`
 | WebSocket closes during connect with `1013`                           | Global, per-IP, or `/ws/control` per-identity cap reached   | Raise the relevant `JUNIPER_CASCOR_WS_MAX_CONNECTIONS_*` cap only after checking expected clients and worker fleet size |
 | Publish workflow skipped / wrong package                              | Release tag prefix does not match workflow guard            | Use `v*`, `juniper-cascor-protocol-v*`, or `juniper-cascor-model-v*` — see [PyPI Publishing](ci_cd/MANUAL.md#pypi-publishing) |
 | TestPyPI `400 File already exists` on publish                         | Dual trigger or concurrent upload of same version           | Publish via Release only (no `push: tags`); bump version to re-upload |
+| Large `POST`/`PUT`/`PATCH` returns **413** `Request body too large`   | Body exceeded 10 MiB (`_PROJECT_API_MAX_REQUEST_BODY_BYTES`) | Shrink the JSON payload, use a dataset generator / staged data, or split the upload; do not raise the cap casually |
+| Body-limit middleware “passes” under-declared `Content-Length`        | Stream-read gated on `content_length is None` (CR-024 regression) | Always stream-read mutating methods after the oversized-declared early reject; pin with `TestRequestBodyLimitMiddleware` |
 
 ---
 

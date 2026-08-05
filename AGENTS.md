@@ -472,11 +472,13 @@ Middleware executes in LIFO order (last added = first executed):
 | Order | Middleware | Module | Purpose |
 |-------|-----------|--------|---------|
 | 1 | `SecurityHeadersMiddleware` | `api.middleware` | CSP, HSTS, X-Frame-Options, etc. |
-| 2 | `RequestBodyLimitMiddleware` | `api.middleware` | 10MB request body limit |
+| 2 | `RequestBodyLimitMiddleware` | `api.middleware` | 10 MiB request body limit (CR-024 stream cap) |
 | 3 | `SecurityMiddleware` | `api.middleware` | API key auth + rate limiting (exempt paths) |
 | 4 | `PrometheusMiddleware` | `api.observability` | Metrics (if enabled) |
 | 5 | `RequestIdMiddleware` | `api.observability` | X-Request-ID propagation |
 | 6 | `CORSMiddleware` | FastAPI/Starlette | CORS headers (if configured) |
+
+`RequestBodyLimitMiddleware` uses `Content-Length` only as an early-reject fast path. For `POST`/`PUT`/`PATCH` it must always stream-read with a cumulative byte cap so under-declared headers cannot bypass the limit (CR-024). Cap constant: `_PROJECT_API_MAX_REQUEST_BODY_BYTES`. Tests: `tests/unit/api/test_api_middleware.py::TestRequestBodyLimitMiddleware`.
 
 ---
 
@@ -498,6 +500,15 @@ Middleware executes in LIFO order (last added = first executed):
 ### Security Headers
 
 CSP, HSTS, X-Frame-Options, X-Content-Type-Options, Referrer-Policy applied to all responses.
+
+### Request Body Limits (CR-024)
+
+- Default cap: 10 MiB (`_PROJECT_API_MAX_REQUEST_BODY_BYTES`)
+- Mutating methods only (`POST` / `PUT` / `PATCH`)
+- Oversized declared `Content-Length` → HTTP 413; invalid header → HTTP 400
+- Stream path always enforces the cumulative cap (do not gate on absent `Content-Length`)
+- Under-limit bodies are cached on `request._body` for downstream handlers (BUG-CC-15)
+- WebSocket upgrades are not covered by this middleware (`BaseHTTPMiddleware` skip)
 
 ### TLS
 

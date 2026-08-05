@@ -18,6 +18,7 @@
   - [Common HTTP status codes](#common-http-status-codes)
   - [Common WebSocket close codes](#common-websocket-close-codes)
   - [Middleware stack](#middleware-stack)
+  - [Request body limits (CR-024)](#request-body-limits-cr-024)
 - [Health & readiness](#health--readiness)
   - [GET `/v1/health`](#get-v1health)
   - [GET `/v1/health/live`](#get-v1healthlive)
@@ -161,14 +162,40 @@ The global handlers in `src/api/app.py:480-494` produce:
 
 ### Middleware stack
 
-Registered in `src/api/app.py:426-458` (LIFO execution order):
+Registered in `src/api/app.py` via successive `app.add_middleware(...)` calls. Starlette/FastAPI middleware runs **LIFO** (last added = first executed on the request). Approximate outer-to-inner order when all layers are enabled:
 
-1. CORS (only if origins are configured)
-2. `RequestBodyLimitMiddleware`
-3. `SecurityHeadersMiddleware`
-4. `SecurityMiddleware` (`APIKeyAuth` + `RateLimiter`)
-5. `PrometheusMiddleware` (only when `metrics_enabled`)
-6. `RequestIdMiddleware` (always adds `X-Request-Id`)
+1. `RequestIdMiddleware` (always adds `X-Request-Id`)
+2. `PrometheusMiddleware` (only when `metrics_enabled`)
+3. `SecurityMiddleware` (`APIKeyAuth` + `RateLimiter`)
+4. `SecurityHeadersMiddleware`
+5. `RequestBodyLimitMiddleware`
+6. CORS (only if origins are configured)
+
+WebSocket upgrade requests are **not** intercepted by `BaseHTTPMiddleware`, so `/ws/*` paths skip body-limit / security-middleware HTTP paths (they use WebSocket auth and message validation instead).
+
+### Request body limits (CR-024)
+
+`RequestBodyLimitMiddleware` (`src/api/middleware.py`) is a DoS / memory-exhaustion control on every mutating HTTP request.
+
+| Item | Value |
+|------|-------|
+| Cap | `_PROJECT_API_MAX_REQUEST_BODY_BYTES` = `10 * 1024 * 1024` (10 MiB) in `cascor_constants.constants_api` |
+| Methods | `POST`, `PUT`, `PATCH` only — `GET`/`HEAD`/etc. are not stream-capped |
+| Oversized declared `Content-Length` | Immediate **413** `{"detail": "Request body too large"}` |
+| Invalid `Content-Length` | **400** `{"detail": "Invalid Content-Length header"}` |
+| Stream path | Cumulative byte cap while reading `request.stream()`; abort with **413** as soon as the cap is exceeded |
+| Downstream body | Full under-limit payload cached on `request._body` so FastAPI/`request.json()` / Pydantic parsing still work (BUG-CC-15) |
+
+**CR-024 contract:** `Content-Length` is an **early-reject fast path only**, never a trusted floor. Mutating methods must always stream-read with the cumulative cap — including when a client declares `Content-Length: N` with `N <= max` and then streams more than `max_bytes`. Gating the stream-read on `content_length is None` reopens that under-declared bypass (the classic contradiction between the middleware docstring and a present-header-only gate).
+
+**Operator / developer checks:**
+
+```bash
+# Focused regression suite (under-declared 413 + truthful CL body cache)
+cd src && PYTHONPATH=. python -m pytest tests/unit/api/test_api_middleware.py::TestRequestBodyLimitMiddleware -v
+```
+
+Clients uploading large inline training arrays or snapshots must stay under 10 MiB per request, or split/stream via supported dataset generators / snapshot restore paths instead of a single oversized JSON body.
 
 ---
 

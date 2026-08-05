@@ -296,6 +296,30 @@ client.stop_workers(timeout)
 client.disconnect()
 ```
 
+### api/middleware.py (request body limits)
+
+**Location**: `src/api/middleware.py`  
+**Purpose**: HTTP security middleware — body size cap, security headers, API-key / rate-limit gate
+
+```
+api/
+├── middleware.py            # RequestBodyLimitMiddleware, SecurityHeadersMiddleware, SecurityMiddleware
+├── security.py              # APIKeyAuth, RateLimiter
+└── app.py                   # Registers middleware (LIFO)
+```
+
+**RequestBodyLimitMiddleware (CR-024):**
+
+- Cap: `_PROJECT_API_MAX_REQUEST_BODY_BYTES` (10 MiB) from `cascor_constants.constants_api`
+- Applies to `POST` / `PUT` / `PATCH` only
+- Declared `Content-Length` > cap → immediate **413**; invalid header → **400**
+- Always stream-reads mutating bodies with a cumulative byte cap — do **not** gate on `content_length is None` (that reopens under-declared bypass)
+- Caches under-limit bodies on `request._body` for downstream handlers (BUG-CC-15)
+- WebSocket upgrades skip `BaseHTTPMiddleware` entirely
+
+Regression tests: `src/tests/unit/api/test_api_middleware.py::TestRequestBodyLimitMiddleware`.  
+Operator reference: [Request body limits (CR-024)](../api/JUNIPER_CASCOR_API_REFERENCE.md#request-body-limits-cr-024).
+
 ### utils/
 
 **Location**: `src/utils/`  
