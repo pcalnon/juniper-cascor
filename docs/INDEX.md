@@ -32,7 +32,7 @@ This documentation serves two audiences:
 
 | Document | Description |
 |----------|-------------|
-| [REST and WebSocket API Reference](api/JUNIPER_CASCOR_API_REFERENCE.md) | Maintained service API documentation with REST endpoints, WebSocket protocols, close codes, and operational constraints |
+| [REST and WebSocket API Reference](api/JUNIPER_CASCOR_API_REFERENCE.md) | Maintained service API documentation with REST endpoints, WebSocket protocols, InlineDataset alignment rules, close codes, and operational constraints |
 | [Python API Reference](api/API_REFERENCE.md) | In-process Python API documentation with examples |
 | [API Schemas](api/API_SCHEMAS.md) | HDF5, lifecycle, WebSocket, and data structure schemas |
 

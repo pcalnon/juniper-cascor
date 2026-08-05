@@ -592,6 +592,16 @@ Content-Type: application/json
 
 **Body model** — `TrainingStartRequest` with sub-models `DatasetSource`, `InlineDataset` (≤100 train + ≤100 val samples, list-of-list-of-float), and `TrainingParams` (all fields optional). Either `inline_data` or `dataset` may be provided; if neither, the loaded dataset is reused.
 
+**`InlineDataset` alignment** (`api.models.training.InlineDataset` `@model_validator`):
+
+| Rule | Reject when |
+|------|-------------|
+| Train lengths | `len(train_x) != len(train_y)` |
+| Val pair completeness | Only one of `val_x` / `val_y` is present |
+| Val lengths | Both present but `len(val_x) != len(val_y)` |
+
+Failures surface as request-boundary **`422`** before `torch.tensor` / `fit`. The route also requires both `val_x` and `val_y` before building validation tensors (defense in depth).
+
 **`start_fresh` (C5 / Q4 use-case 2, default `false`)** — Retention posture for the run:
 
 - **`false` (default) — continue the current model.** The existing network AND its retained metrics/history are kept, so the run continues training the model as-is (the cross-dataset continual-training use case, Q4 use-case 1). Metrics/history are now RETAINED across run boundaries by default (pre-C5 every run start emptied the metrics buffer); a continuing run appends only its new rows.
@@ -616,8 +626,14 @@ curl -s -X POST http://localhost:8201/v1/training/start \
 | Code | Trigger                                                                  |
 |------|--------------------------------------------------------------------------|
 | 409  | Cannot start in current FSM state (e.g., already running, replay active) |
-| 422  | Body validation, unknown `params` key, NaN/Inf in `inline_data`          |
+| 422  | Body validation, unknown `params` key, NaN/Inf in `inline_data`, or `InlineDataset` train/val alignment failures (length mismatch / half-specified val split) |
 | 503  | Lifecycle unbound                                                        |
+
+**Staged juniper-data reload** (`TrainingLifecycleManager._reload_dataset`) applies the same alignment ideas to artifact arrays before they replace staged train/val tensors:
+
+- Train `X_train` / `y_train` must construct as 2-D tensors with equal sample counts
+- Validation `X_test` / `y_test` must both be present or both absent; when present, 2-D + equal sample counts
+- Malformed / non-numeric payloads raise `RuntimeError` (swap/start callers keep pending staging intact for retry)
 
 ---
 

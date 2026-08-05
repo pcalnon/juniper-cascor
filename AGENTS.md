@@ -378,7 +378,7 @@ The juniper-cascor service exposes a versioned REST API at the `/v1/` prefix. Al
 | `ResponseEnvelope` | `api.models.common` | Standard response wrapper (status, data, error) |
 | `ErrorResponse` | `api.models.common` | Error detail model |
 | `NetworkCreateRequest` | `api.models.network` | Network creation parameters |
-| `TrainingStartRequest` | `api.models.training` | Training start parameters (data source, config) |
+| `TrainingStartRequest` | `api.models.training` | Training start parameters (data source, config); nested `InlineDataset` rejects train/val length mismatches and half-specified val splits at the request boundary (`422`) |
 | `TrainingParamUpdateRequest` | `api.models.training` | Runtime parameter update |
 | `ReadinessResponse` | `api.models.health` | Readiness with dependency status |
 

@@ -1,6 +1,6 @@
 # Developer Cheatsheet — juniper-cascor
 
-**Version**: 1.0.1  |  **Date**: 2026-08-05  |  **Project**: juniper-cascor
+**Version**: 1.0.8  |  **Date**: 2026-08-05  |  **Project**: juniper-cascor
 
 ---
 
@@ -61,7 +61,7 @@ docker compose --profile full up -d                            # Docker start
 
 | Endpoint                       | Method | Purpose                                          |
 |--------------------------------|--------|--------------------------------------------------|
-| `/v1/training/start`           | POST   | Start async training (inline or generated data)  |
+| `/v1/training/start`           | POST   | Start async training (inline or generated data); `InlineDataset` requires aligned train/val lengths |
 | `/v1/training/stop`            | POST   | Request stop                                     |
 | `/v1/training/pause`           | POST   | Pause active training                            |
 | `/v1/training/resume`          | POST   | Resume paused training                           |
@@ -252,6 +252,8 @@ Core: `torch`, `numpy`, `h5py`, `matplotlib`, `PyYAML`, `requests`
 | NaN in training                                                       | LR too high or bad data                                     | Reduce `learning_rate`, check tensors                                                                     |
 | Server refuses to start with `NonLoopbackBindError`                   | `JUNIPER_CASCOR_HOST` is non-loopback without a bind attestation | Bind `127.0.0.1` for local/dev, or set `JUNIPER_CASCOR_LOOPBACK_PUBLISH_ATTESTED=true` (loopback-only host publish) or `JUNIPER_CASCOR_AUTH_PROXY_ATTESTED=true` (fronting authenticating proxy) after verifying it |
 | WebSocket closes during connect with `1013`                           | Global, per-IP, or `/ws/control` per-identity cap reached   | Raise the relevant `JUNIPER_CASCOR_WS_MAX_CONNECTIONS_*` cap only after checking expected clients and worker fleet size |
+| `POST /v1/training/start` with `inline_data` returns `422` on lengths | `train_x`/`train_y` (or `val_*`) row counts differ, or only one of `val_x`/`val_y` | Align sample counts; send both val arrays or omit both — see [InlineDataset alignment](api/JUNIPER_CASCOR_API_REFERENCE.md#post-v1trainingstart) |
+| Live dataset swap / staged reload fails with train sample mismatch    | juniper-data artifact arrays not 2-D or X/y counts differ   | Fix upstream artifact; `_reload_dataset` rejects partial `X_test`/`y_test` and non-2-D trains |
 | Publish workflow skipped / wrong package                              | Release tag prefix does not match workflow guard            | Use `v*`, `juniper-cascor-protocol-v*`, or `juniper-cascor-model-v*` — see [PyPI Publishing](ci_cd/MANUAL.md#pypi-publishing) |
 | TestPyPI `400 File already exists` on publish                         | Dual trigger or concurrent upload of same version           | Publish via Release only (no `push: tags`); bump version to re-upload |
 

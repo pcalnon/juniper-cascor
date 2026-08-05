@@ -24,6 +24,22 @@ Complete reference documentation for the Juniper Cascor test suite.
 | `accuracy`           | Accuracy calculation methods               | Classification accuracy, metrics                     | Runs with unit tests                          |
 | `early_stopping`     | Early stopping logic                       | Convergence detection, patience handling             | Runs with unit tests                          |
 
+### Inline / Reload Dataset Alignment Coverage
+
+Request-boundary and staged-reload split alignment (pairs coverage #447) lives in:
+
+- `src/tests/unit/api/test_inline_dataset_validation.py` — `InlineDataset` length / half-specified val → model `ValueError` and HTTP `422`
+- `src/tests/unit/api/test_lifecycle_manager_swap.py` — `_reload_dataset` rejects non-2-D trains, sample-count mismatches, and partial `X_test`/`y_test`
+
+```bash
+cd src && PYTHONPATH=. python -m pytest \
+  tests/unit/api/test_inline_dataset_validation.py \
+  tests/unit/api/test_lifecycle_manager_swap.py -k "reload or mismatch or 2d or partial" \
+  -v
+```
+
+Operator contract: [POST `/v1/training/start`](../api/JUNIPER_CASCOR_API_REFERENCE.md#post-v1trainingstart) (`InlineDataset` alignment + staged reload notes).
+
 ### Early-Stopping Regression Coverage (No Validation Data Path)
 
 The no-validation branch in `CascadeCorrelationNetwork.validate_training()` is covered by targeted unit regressions in `src/tests/unit/test_cascade_correlation_coverage_extended.py`.
