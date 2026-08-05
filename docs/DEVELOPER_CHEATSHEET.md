@@ -235,7 +235,9 @@ Core: `torch`, `numpy`, `h5py`, `matplotlib`, `PyYAML`, `requests`
 
 **CI pipeline:** pre-commit -> unit-tests -> integration-tests -> build -> security -> required-checks
 
-> See: [CI Quick Start](ci_cd/QUICK_START.md) | [CI Reference](ci_cd/REFERENCE.md) | [Environment Setup](install/ENVIRONMENT_SETUP.md)
+**PyPI publish:** cut a GitHub Release (not a bare tag). Tags: `v*` → `publish.yml` (`juniper-cascor`); `juniper-cascor-protocol-v*` / `juniper-cascor-model-v*` → matching sub-package workflows. TestPyPI verify uses `--no-deps` and TestPyPI index only. Keep `pypa/gh-action-pypi-publish` SHA-pinned (Dependabot bumps all three workflows together).
+
+> See: [CI Quick Start](ci_cd/QUICK_START.md) | [CI Manual — PyPI Publishing](ci_cd/MANUAL.md#pypi-publishing) | [CI Reference](ci_cd/REFERENCE.md#publish-workflows) | [Environment Setup](install/ENVIRONMENT_SETUP.md)
 
 ---
 
@@ -255,6 +257,8 @@ Core: `torch`, `numpy`, `h5py`, `matplotlib`, `PyYAML`, `requests`
 | Server refuses to start with `AuthPostureError` / CRITICAL auth posture | `JUNIPER_CASCOR_REQUIRE_AUTH=true` and keys missing/blank (incl. empty `_FILE`) | Provision a real `JUNIPER_CASCOR_API_KEYS` / non-empty `*_FILE`, or set `REQUIRE_AUTH=false` only for bare/dev |
 | Protected routes open / boot WARNING "running OPEN" with compose secrets | Empty/whitespace `JUNIPER_CASCOR_API_KEYS_FILE` (compose `_FILE`-only); `get_secret()` returns `""` with no env fallback | Put a real key in the secret file; set `JUNIPER_CASCOR_REQUIRE_AUTH=true` so empty secrets fail boot |
 | WebSocket closes during connect with `1013`                           | Global, per-IP, or `/ws/control` per-identity cap reached   | Raise the relevant `JUNIPER_CASCOR_WS_MAX_CONNECTIONS_*` cap only after checking expected clients and worker fleet size |
+| Publish workflow skipped / wrong package                              | Release tag prefix does not match workflow guard            | Use `v*`, `juniper-cascor-protocol-v*`, or `juniper-cascor-model-v*` — see [PyPI Publishing](ci_cd/MANUAL.md#pypi-publishing) |
+| TestPyPI `400 File already exists` on publish                         | Dual trigger or concurrent upload of same version           | Publish via Release only (no `push: tags`); bump version to re-upload |
 
 ---
 

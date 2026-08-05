@@ -285,7 +285,9 @@ juniper-cascor/
 │   ├── workflows/
 │   │   ├── ci.yml                    #   Main CI pipeline
 │   │   ├── scheduled-tests.yml       #   Scheduled test runs
-│   │   ├── publish.yml               #   Package publishing
+│   │   ├── publish.yml               #   PyPI publish (juniper-cascor, tag v*)
+│   │   ├── publish-protocol.yml      #   PyPI publish (juniper-cascor-protocol)
+│   │   ├── publish-cascor-model.yml  #   PyPI publish (juniper-cascor-model)
 │   │   ├── lockfile-update.yml       #   Dependency lockfile updates
 │   │   └── security-scan.yml         #   Security scanning
 │   ├── CODEOWNERS                    #   Code ownership rules
@@ -797,7 +799,9 @@ Gate: 80% aggregate (override with `COVERAGE_FAIL_UNDER=<n>`). Coverage runs in 
 |----------|------|----------|---------|
 | CI/CD Pipeline | `.github/workflows/ci.yml` | Push (main, develop, feature/**, fix/**), PR, dispatch | Pre-commit, unit tests, integration tests, security scanning |
 | Scheduled Long Tests | `.github/workflows/scheduled-tests.yml` | Cron schedule (nightly), dispatch | Slow and long-running correctness tests |
-| Publish | `.github/workflows/publish.yml` | Release event | Package publishing |
+| Publish | `.github/workflows/publish.yml` | Release (`v*`) | PyPI publish for `juniper-cascor` (TestPyPI → verify → PyPI) |
+| Publish protocol | `.github/workflows/publish-protocol.yml` | Release (`juniper-cascor-protocol-v*`) + `workflow_dispatch` | PyPI publish for `juniper-cascor-protocol` |
+| Publish model | `.github/workflows/publish-cascor-model.yml` | Release (`juniper-cascor-model-v*`) + `workflow_dispatch` | PyPI publish for `juniper-cascor-model` |
 | Lockfile Update | `.github/workflows/lockfile-update.yml` | Push to dependabot/** branches | Dependency lockfile refresh |
 | Security Scan | `.github/workflows/security-scan.yml` | Schedule/dispatch | Gitleaks, Bandit, pip-audit |
 
