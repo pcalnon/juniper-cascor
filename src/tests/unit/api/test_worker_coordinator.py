@@ -190,6 +190,89 @@ class TestSubmitResult:
         accepted = coordinator.submit_result("w1", msg, bad_tensors)
         assert accepted is False
 
+    def test_reject_success_true_with_missing_weights(self, coordinator, registry):
+        """success=True with no weights tensor must not be accepted (poison-candidate guard)."""
+        registry.register("w1", {})
+        task_ids = coordinator.submit_tasks("round-1", _make_task_specs(1), _make_tensors())
+        coordinator.get_next_assignment("w1")
+
+        msg = _make_result_msg(task_ids[0])
+        msg["tensor_manifest"] = {}
+        accepted = coordinator.submit_result("w1", msg, {})
+        assert accepted is False
+        assert registry.get("w1").idle is True
+        assert task_ids[0] not in coordinator._results
+
+    def test_reject_success_true_with_empty_weights(self, coordinator, registry):
+        """success=True with an empty weights array is rejected."""
+        registry.register("w1", {})
+        task_ids = coordinator.submit_tasks("round-1", _make_task_specs(1), _make_tensors())
+        coordinator.get_next_assignment("w1")
+
+        msg = _make_result_msg(task_ids[0])
+        msg["tensor_manifest"] = {"weights": {"shape": [0], "dtype": "float32"}}
+        empty = {"weights": np.array([], dtype=np.float32)}
+        accepted = coordinator.submit_result("w1", msg, empty)
+        assert accepted is False
+        assert registry.get("w1").idle is True
+
+    def test_accept_success_false_without_weights(self, coordinator, registry):
+        """Failed results may omit weights — rejection is only for success=True."""
+        registry.register("w1", {})
+        task_ids = coordinator.submit_tasks("round-1", _make_task_specs(1), _make_tensors())
+        coordinator.get_next_assignment("w1")
+
+        msg = _make_result_msg(task_ids[0])
+        msg["success"] = False
+        msg["tensor_manifest"] = {}
+        accepted = coordinator.submit_result("w1", msg, {})
+        assert accepted is True
+        assert task_ids[0] in coordinator._results
+
+
+@pytest.mark.unit
+class TestRequeueAfterDispatchFailure:
+    """Send-side dispatch failure must free the worker and requeue immediately."""
+
+    def test_requeue_frees_worker_and_returns_task(self, coordinator, registry):
+        """requeue_after_dispatch_failure clears busy state and restores the queue."""
+        registry.register("w1", {})
+        task_ids = coordinator.submit_tasks("round-1", _make_task_specs(1), _make_tensors())
+        assert coordinator.get_next_assignment("w1") is not None
+        assert registry.get("w1").idle is False
+
+        coordinator.requeue_after_dispatch_failure("w1", task_ids[0])
+
+        assert registry.get("w1").idle is True
+        assert task_ids[0] in coordinator._unassigned_tasks
+        assert coordinator._pending_tasks[task_ids[0]].assigned_worker_id is None
+
+    def test_requeue_allows_peer_to_pick_up_immediately(self, coordinator, registry):
+        """After send-failure requeue, another idle worker can take the task without waiting."""
+        registry.register("w1", {})
+        registry.register("w2", {})
+        task_ids = coordinator.submit_tasks("round-1", _make_task_specs(1), _make_tensors())
+        assert coordinator.get_next_assignment("w1") is not None
+
+        coordinator.requeue_after_dispatch_failure("w1", task_ids[0])
+
+        peer = coordinator.get_next_assignment("w2")
+        assert peer is not None
+        assert peer[0]["task_id"] == task_ids[0]
+        assert registry.get("w2").idle is False
+        assert registry.get("w1").idle is True
+
+    def test_requeue_unknown_task_still_frees_worker(self, coordinator, registry):
+        """Unknown task_id still clears the worker's active assignment (fail-soft)."""
+        registry.register("w1", {})
+        task_ids = coordinator.submit_tasks("round-1", _make_task_specs(1), _make_tensors())
+        assert coordinator.get_next_assignment("w1") is not None
+
+        coordinator.requeue_after_dispatch_failure("w1", "not-a-real-task")
+
+        assert registry.get("w1").idle is True
+        assert task_ids[0] not in coordinator._unassigned_tasks
+
 
 @pytest.mark.unit
 class TestCollectResults:

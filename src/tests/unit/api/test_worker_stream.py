@@ -270,6 +270,60 @@ class TestTryDispatchTask:
         await _try_dispatch_task(ws, "w1", coordinator)
         ws.send_json.assert_not_awaited()
 
+    @pytest.mark.asyncio
+    async def test_send_json_failure_requeues_assigned_task(self, coordinator, registry):
+        """send_json failure after assignment frees the worker and requeues immediately."""
+        registry.register("w1", {})
+        registry.register("w2", {})
+        tensors = {
+            "candidate_input": np.zeros((10, 4), dtype=np.float32),
+            "y": np.zeros((10, 1), dtype=np.float32),
+            "residual_error": np.zeros((10, 1), dtype=np.float32),
+        }
+        task_ids = coordinator.submit_tasks(
+            "r1",
+            [{"candidate_index": 0, "candidate_data": {}, "training_params": {}}],
+            tensors,
+        )
+
+        ws = AsyncMock()
+        ws.send_json = AsyncMock(side_effect=RuntimeError("socket closed"))
+
+        await _try_dispatch_task(ws, "w1", coordinator)
+
+        assert registry.get("w1").idle is True
+        assert task_ids[0] in coordinator._unassigned_tasks
+        assert coordinator._pending_tasks[task_ids[0]].assigned_worker_id is None
+
+        peer = coordinator.get_next_assignment("w2")
+        assert peer is not None
+        assert peer[0]["task_id"] == task_ids[0]
+
+    @pytest.mark.asyncio
+    async def test_send_bytes_failure_requeues_after_partial_send(self, coordinator, registry):
+        """Failure mid binary-frame send also rolls back the assignment."""
+        registry.register("w1", {})
+        tensors = {
+            "candidate_input": np.zeros((10, 4), dtype=np.float32),
+            "y": np.zeros((10, 1), dtype=np.float32),
+            "residual_error": np.zeros((10, 1), dtype=np.float32),
+        }
+        task_ids = coordinator.submit_tasks(
+            "r1",
+            [{"candidate_index": 0, "candidate_data": {}, "training_params": {}}],
+            tensors,
+        )
+
+        ws = AsyncMock()
+        ws.send_json = AsyncMock()
+        ws.send_bytes = AsyncMock(side_effect=RuntimeError("frame write failed"))
+
+        await _try_dispatch_task(ws, "w1", coordinator)
+
+        assert registry.get("w1").idle is True
+        assert task_ids[0] in coordinator._unassigned_tasks
+        ws.send_json.assert_awaited_once()
+
 
 @pytest.mark.unit
 class TestHeartbeatDispatch:

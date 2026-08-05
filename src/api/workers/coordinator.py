@@ -150,6 +150,38 @@ class WorkerCoordinator:
         with self._lock:
             self._send_callbacks.pop(worker_id, None)
 
+    def requeue_after_dispatch_failure(self, worker_id: str, task_id: str | None) -> None:
+        """Free the worker and requeue a task after a failed WebSocket send.
+
+        Called from ``_try_dispatch_task`` when ``send_json`` / ``send_bytes``
+        raises after :meth:`get_next_assignment` has already marked the task
+        assigned and the worker busy. Without this rollback the worker stays
+        busy with an undelivered assignment until
+        ``_task_reassignment_timeout`` (default 120s) — and if the connection
+        keeps heartbeating, CONC-10 stale-worker reaping will not recover it.
+
+        Distinct from clean disconnect requeue and soft result-frame abort
+        paths used by sibling coverage PRs; this is the send-side mirror.
+        """
+        with self._lock:
+            self._registry.complete_task(worker_id, success=False)
+
+            if task_id is None:
+                return
+
+            task = self._pending_tasks.get(task_id)
+            if task is None or task.completed:
+                return
+            if task.task_id not in self._unassigned_tasks:
+                task.assigned_worker_id = None
+                task.dispatched_at = time.time()
+                self._unassigned_tasks.append(task.task_id)
+                logger.info(
+                    "Task %s requeued after dispatch send failure to worker %s",
+                    task.task_id,
+                    worker_id,
+                )
+
     def submit_tasks(
         self,
         round_id: str,
@@ -306,6 +338,22 @@ class WorkerCoordinator:
                 tensor_errors = WorkerProtocol.validate_tensors(tensors, manifest)
                 if tensor_errors:
                     logger.warning("Tensor validation failed for task %s: %s", task_id, tensor_errors)
+                    self._registry.complete_task(worker_id, success=False)
+                    return False
+
+            # Successful results must carry trained weights. An empty / missing
+            # ``tensor_manifest`` skips validate_tensors above, so without this
+            # guard a success=True payload with no weights is accepted and
+            # ``_dispatch_to_remote_workers`` reconstructs a CandidateUnit with
+            # random init weights — poisoning candidate selection.
+            if msg.get("success") is True:
+                weights = tensors.get("weights") if tensors else None
+                if weights is None or getattr(weights, "size", 0) == 0:
+                    logger.warning(
+                        "Result for task %s from worker %s claimed success without weights — rejected",
+                        task_id,
+                        worker_id,
+                    )
                     self._registry.complete_task(worker_id, success=False)
                     return False
 

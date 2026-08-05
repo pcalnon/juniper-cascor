@@ -389,15 +389,29 @@ async def _try_dispatch_task(
         return
 
     msg, frames = assignment
+    task_id = msg.get("task_id")
 
-    # Send JSON envelope
-    await websocket.send_json(msg)
+    try:
+        # Send JSON envelope
+        await websocket.send_json(msg)
 
-    # Send binary tensor frames
-    for frame in frames:
-        await websocket.send_bytes(frame)
+        # Send binary tensor frames
+        for frame in frames:
+            await websocket.send_bytes(frame)
+    except Exception:
+        # get_next_assignment already marked the worker busy and the task
+        # assigned — roll back immediately so a broken socket does not pin
+        # the assignment until _task_reassignment_timeout.
+        logger.warning(
+            "Dispatch send failed for task %s to worker %s — requeueing",
+            task_id,
+            worker_id,
+            exc_info=True,
+        )
+        coordinator.requeue_after_dispatch_failure(worker_id, task_id)
+        return
 
-    logger.debug("Dispatched task %s to worker %s", msg.get("task_id"), worker_id)
+    logger.debug("Dispatched task %s to worker %s", task_id, worker_id)
 
 
 def _make_send_callback(websocket: WebSocket):

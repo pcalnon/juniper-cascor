@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Worker result integrity — reject `success=True` without weights** (`src/api/workers/coordinator.py`): `submit_result` previously accepted a successful `task_result` when `tensor_manifest` was empty/missing (skipping `validate_tensors`), so a worker could claim success with no `weights` tensor. Downstream `_dispatch_to_remote_workers` then rebuilt a `CandidateUnit` with random init weights, poisoning candidate selection. Successful results now require a non-empty `weights` tensor; `success=False` may still omit weights. Covered by `test_worker_coordinator.py`.
+- **Worker dispatch send-failure rollback** (`src/api/websocket/worker_stream.py`, `src/api/workers/coordinator.py`): `_try_dispatch_task` called `get_next_assignment` (marking the worker busy) then bare `send_json`/`send_bytes` with no rollback, so a socket write failure orphaned the assignment until `_task_reassignment_timeout` (default 120s). Failures now call `requeue_after_dispatch_failure` to free the worker and return the task to the unassigned queue immediately. Covered by `test_worker_stream.py` / `test_worker_coordinator.py`.
 - Unit tests no longer pin the service version as a literal: the four `0.6.0` assertions in `test_api_app.py`, `test_api_app_coverage_deep.py`, and `test_api_health.py` (red on `main` since the v0.7.0 bump merged in #429 without CI running) now assert against `api.app._API_VERSION` — the BUG-CC-04 canonical runtime read — so a release version bump can no longer break the suite.
 
 ## [0.7.0] - 2026-07-28
