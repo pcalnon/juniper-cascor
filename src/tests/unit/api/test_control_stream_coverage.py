@@ -377,3 +377,51 @@ class TestControlRecvLoop:
             timeout=2.0,
         )
         ws.close.assert_awaited_once_with(code=1003, reason="Malformed JSON")
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("payload", ["[]", "123", '"pause"', "null", "true"])
+    async def test_non_dict_json_acks_error_and_keeps_session(self, payload):
+        """Non-object JSON must not AttributeError-kill the recv loop.
+
+        Pre-fix ``msg.get(...)`` assumed every successful ``json.loads``
+        returned a dict; arrays/scalars/null raised and aborted /ws/control.
+        Parity with /ws/training's ``isinstance(msg, dict)`` guard: ack the
+        client error and continue so a subsequent valid command still runs.
+        """
+        lifecycle = MagicMock()
+        lifecycle.pause_training.return_value = {"status": "Paused"}
+        ws = AsyncMock()
+        ws.receive_text = AsyncMock(
+            side_effect=[
+                payload,
+                json.dumps({"command": "pause"}),
+                WebSocketDisconnect(code=1000),
+            ]
+        )
+        bucket = LeakyBucket(capacity=10, refill_rate=10.0)
+        pong_received = asyncio.Event()
+
+        with pytest.raises(WebSocketDisconnect):
+            await asyncio.wait_for(
+                _control_recv_loop(ws, lifecycle, bucket, pong_received, idle_timeout=0, client_ip="127.0.0.1"),
+                timeout=2.0,
+            )
+
+        # Session stayed open: no close from the non-dict arm, and the later
+        # pause command still dispatched.
+        ws.close.assert_not_awaited()
+        lifecycle.pause_training.assert_called_once()
+        error_acks = [
+            c.args[0]
+            for c in ws.send_json.await_args_list
+            if isinstance(c.args[0], dict) and c.args[0].get("type") == "command_response" and c.args[0].get("data", {}).get("status") == "error"
+        ]
+        # Envelope wraps payload under data=; also accept flat shapes if the
+        # helper ever flattens in tests.
+        if not error_acks:
+            error_acks = [
+                c.args[0]
+                for c in ws.send_json.await_args_list
+                if "Invalid JSON: expected object" in str(c) or "invalid_message" in str(c)
+            ]
+        assert error_acks, f"expected non-dict error ack; got {ws.send_json.await_args_list}"

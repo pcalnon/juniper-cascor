@@ -41,7 +41,7 @@ def _attach_network(m, net) -> None:
 
 
 class TestNetworkGuards:
-    """create/delete network reject while training is active."""
+    """create/delete network reject while training/replay owns the model."""
 
     def test_create_network_rejected_while_started(self, mgr):
         with patch.object(mgr.state_machine, "is_started", return_value=True):
@@ -52,6 +52,43 @@ class TestNetworkGuards:
         with patch.object(mgr.state_machine, "is_started", return_value=True):
             with pytest.raises(RuntimeError, match="while training is active"):
                 mgr.delete_network()
+
+    def test_create_network_rejected_while_paused(self, mgr):
+        """PAUSED keeps a parked training thread that still owns the model."""
+        mgr.create_network(input_size=2, output_size=2)
+        assert mgr.state_machine.handle_command(Command.START)
+        assert mgr.state_machine.handle_command(Command.PAUSE)
+        with pytest.raises(RuntimeError, match="while training is active"):
+            mgr.create_network(input_size=3, output_size=2)
+        assert mgr.has_model()
+        assert mgr.state_machine.is_paused()
+
+    def test_delete_network_rejected_while_paused(self, mgr):
+        """Delete while PAUSED must not clear the model under a parked fit."""
+        mgr.create_network(input_size=2, output_size=2)
+        assert mgr.state_machine.handle_command(Command.START)
+        assert mgr.state_machine.handle_command(Command.PAUSE)
+        with pytest.raises(RuntimeError, match="while training is active"):
+            mgr.delete_network()
+        assert mgr.has_model()
+        assert mgr.state_machine.is_paused()
+
+    def test_create_network_rejected_while_replaying(self, mgr):
+        mgr.create_network(input_size=2, output_size=2)
+        assert mgr.state_machine.mark_replaying()
+        with pytest.raises(RuntimeError, match="while replay is active"):
+            mgr.create_network(input_size=3, output_size=2)
+        assert mgr.has_model()
+        assert mgr.state_machine.is_replaying()
+
+    def test_delete_network_rejected_while_replaying(self, mgr):
+        """Delete while REPLAYING must not orphan an active replay session."""
+        mgr.create_network(input_size=2, output_size=2)
+        assert mgr.state_machine.mark_replaying()
+        with pytest.raises(RuntimeError, match="while replay is active"):
+            mgr.delete_network()
+        assert mgr.has_model()
+        assert mgr.state_machine.is_replaying()
 
 
 class TestBroadcastThrottleGuard:
