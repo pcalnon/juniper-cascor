@@ -973,6 +973,8 @@ WebSocket connection caps are admission controls for availability and fairness; 
 
 `/ws/v1/workers` is global-cap-only for this layer: worker fleets may share a machine token, and the server-assigned `worker_id` is not available until after the admission point. Worker capacity is still bounded by the global cap and by worker-registry limits.
 
+In-flight candidate tasks recover immediately on clean worker disconnect (`handle_worker_disconnect`) and on soft `TASK_RESULT` binary-frame aborts (`abort_in_flight_result`). Those paths do not wait for `JUNIPER_CASCOR_REMOTE_WORKERS_TASK_REASSIGNMENT_TIMEOUT` (default 120s). Receive-site guards also reject non-object JSON and malformed/`>32`-entry `tensor_manifest` before binary receive. Operator detail: [JUNIPER_CASCOR_API_REFERENCE.md — WS `/ws/v1/workers`](JUNIPER_CASCOR_API_REFERENCE.md#ws-wsv1workers).
+
 ### Lifecycle Failure Handling Path
 
 Training exceptions are handled at the monitored `fit()` wrapper layer in the lifecycle manager.

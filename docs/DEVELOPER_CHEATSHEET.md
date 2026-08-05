@@ -1,6 +1,6 @@
 # Developer Cheatsheet — juniper-cascor
 
-**Version**: 1.0.1  |  **Date**: 2026-08-05  |  **Project**: juniper-cascor
+**Version**: 1.0.9  |  **Date**: 2026-08-05  |  **Project**: juniper-cascor
 
 ---
 
@@ -127,6 +127,10 @@ Metrics nuance:
 | `JUNIPER_CASCOR_WS_MAX_CONNECTIONS` | `50` | Global WebSocket connection cap, including pending `/ws/training` resume handshakes. |
 | `JUNIPER_CASCOR_WS_HEARTBEAT_INTERVAL_SEC` | `30` | Training/control heartbeat ping interval. |
 | `JUNIPER_CASCOR_WS_HEARTBEAT_PONG_TIMEOUT_SEC` | `10` | Training/control pong timeout before heartbeat close. |
+| `JUNIPER_CASCOR_REMOTE_WORKERS_HEARTBEAT_TIMEOUT` | `30.0` | Worker heartbeat stale timeout (CONC-10 reap). |
+| `JUNIPER_CASCOR_REMOTE_WORKERS_TASK_REASSIGNMENT_TIMEOUT` | `120.0` | Fallback reassignment for orphaned tasks. Clean disconnect and soft binary-frame aborts requeue immediately — do not wait for this timeout on those paths. |
+
+**Worker tip:** A candidate round that stalls with a still-connected worker after a bad binary `TASK_RESULT` is usually a soft-abort path (text/oversized/decode). With `abort_in_flight_result` the task requeues immediately; without it, heartbeats keep CONC-10 from firing and you wait ~120s. See [API Reference — WS `/ws/v1/workers`](api/JUNIPER_CASCOR_API_REFERENCE.md#ws-wsv1workers).
 
 ---
 
@@ -252,6 +256,9 @@ Core: `torch`, `numpy`, `h5py`, `matplotlib`, `PyYAML`, `requests`
 | NaN in training                                                       | LR too high or bad data                                     | Reduce `learning_rate`, check tensors                                                                     |
 | Server refuses to start with `NonLoopbackBindError`                   | `JUNIPER_CASCOR_HOST` is non-loopback without a bind attestation | Bind `127.0.0.1` for local/dev, or set `JUNIPER_CASCOR_LOOPBACK_PUBLISH_ATTESTED=true` (loopback-only host publish) or `JUNIPER_CASCOR_AUTH_PROXY_ATTESTED=true` (fronting authenticating proxy) after verifying it |
 | WebSocket closes during connect with `1013`                           | Global, per-IP, or `/ws/control` per-identity cap reached   | Raise the relevant `JUNIPER_CASCOR_WS_MAX_CONNECTIONS_*` cap only after checking expected clients and worker fleet size |
+| Candidate round stalls ~120s after worker socket drops mid-result     | In-flight task left assigned until reassignment timeout     | With `handle_worker_disconnect`, clean closes requeue immediately — check worker/process exit and registry deregister logs |
+| Candidate round stalls ~120s while worker still heartbeats after bad frame | Soft binary abort left worker busy (CONC-10 cannot reap) | With `abort_in_flight_result`, text/oversized/decode failures free + requeue immediately — inspect worker `error` JSON |
+| Worker registration closes with `4008`                                | Non-object registration JSON or invalid registration fields | Send a JSON object with `type: "registration"`; see close-code table in [API Reference](api/JUNIPER_CASCOR_API_REFERENCE.md#common-websocket-close-codes) |
 | Publish workflow skipped / wrong package                              | Release tag prefix does not match workflow guard            | Use `v*`, `juniper-cascor-protocol-v*`, or `juniper-cascor-model-v*` — see [PyPI Publishing](ci_cd/MANUAL.md#pypi-publishing) |
 | TestPyPI `400 File already exists` on publish                         | Dual trigger or concurrent upload of same version           | Publish via Release only (no `push: tags`); bump version to re-upload |
 

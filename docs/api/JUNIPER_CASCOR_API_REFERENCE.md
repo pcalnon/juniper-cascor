@@ -156,6 +156,9 @@ The global handlers in `src/api/app.py:480-494` produce:
 | 4001 | Authentication required / `X-API-Key` invalid                                                                                                                                                       |
 | 4003 | Origin header not permitted (control + worker streams)                                                                                                                                             |
 | 4004 | Worker subsystem not initialized                                                                                                                                                                    |
+| 4006 | Worker registration JSON parse failure                                                                                                                                                              |
+| 4007 | Worker first message was not `registration`                                                                                                                                                         |
+| 4008 | Invalid worker registration (non-object JSON, missing fields, etc.)                                                                                                                                |
 | 1013 | WebSocket connection cap reached                                                                                                                                                                    |
 | 4029 | Connection rate limited (worker stream)                                                                                                                                                             |
 
@@ -1518,6 +1521,23 @@ receives an error response and then closes with `1003`.
 
 **State changes** — On `REGISTRATION` the worker is added to the registry. `TASK_RESULT` updates the worker's task counters, health score, and recent durations. `WORKER_ERROR` increments failure counters and may quarantine the worker (Phase 4 anomaly detector).
 
+**In-flight task recovery** — Candidate rounds can stall when a worker dies or sends a broken `TASK_RESULT` while still marked busy. Recovery paths (distinct from schema/tensor reject-requeue inside `submit_result`):
+
+| Failure mode | Coordinator path | Socket fate | Requeue timing |
+|--------------|------------------|-------------|----------------|
+| Clean WebSocket close (incl. mid-binary-frame) | `handle_worker_disconnect` (session `finally`) | Closed | Immediate — clear assignment, append to `_unassigned_tasks`, then `registry.deregister` |
+| Soft binary-frame abort (text instead of bytes, frame > 100 MB, or `BinaryFrame.decode` `ValueError`) | `abort_in_flight_result` | Stays open; in-band `error` JSON | Immediate — `complete_task(..., success=False)` + requeue. Heartbeats alone cannot recover this path (CONC-10 will not fire). |
+| Heartbeat / stale worker (CONC-10) | `_check_stale_workers` | Closed by monitor | After `JUNIPER_CASCOR_REMOTE_WORKERS_HEARTBEAT_TIMEOUT` (default **30s**) |
+| Orphaned assignment fallback | `_check_task_timeouts` | n/a | After `JUNIPER_CASCOR_REMOTE_WORKERS_TASK_REASSIGNMENT_TIMEOUT` (default **120s**) |
+
+Intent: disconnect and soft-abort must not wait for the 120s reassignment timeout. Soft abort is especially important because the worker keeps heartbeating while remaining busy — without `abort_in_flight_result`, CONC-10 never reaps the task.
+
+**Receive-site protocol guards** (before coordinator schema checks):
+
+- Registration / loop JSON must be a JSON **object**. Non-objects (`null`, arrays, scalars) get an in-band error; registration closes with `4008` (loop messages stay open).
+- When `tensor_manifest` is present it must be a `dict` with ≤ **32** entries (`WorkerProtocol._MAX_TENSOR_MANIFEST_ENTRIES`, mirrored in `worker_stream`). Wrong type or oversize returns an in-band error and stops binary receive — it does **not** call `abort_in_flight_result`, so recovery still depends on disconnect requeue or the 120s timeout until a follow-up wires that path.
+- `BinaryFrame.decode` wraps non-UTF-8 dtype bytes as `ValueError` so soft-abort handling stays on a single exception type.
+
 **Error handling / close codes**:
 
 | Code | Trigger                              |
@@ -1526,6 +1546,9 @@ receives an error response and then closes with `1003`.
 | 4001 | Auth failure                         |
 | 4003 | Origin header present                |
 | 4004 | Worker subsystem not initialized     |
+| 4006 | Registration JSON parse failure      |
+| 4007 | First message was not registration   |
+| 4008 | Invalid registration (non-object / fields) |
 | 1013 | Stack-global WebSocket cap reached   |
 | 4029 | Connection rate limit exceeded       |
 | 1006 | Message too large, heartbeat timeout |

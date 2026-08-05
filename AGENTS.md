@@ -463,6 +463,13 @@ Distributed candidate training via WebSocket workers.
 6. Auto-deregistration on heartbeat timeout
 7. Task reassignment on worker failure (default 120s timeout)
 
+**In-flight task recovery** (do not assume every failure waits 120s):
+
+- Clean socket close → `WorkerCoordinator.handle_worker_disconnect` requeues immediately (including mid-binary-frame).
+- Soft `TASK_RESULT` binary-frame abort (wrong opcode / oversized / decode failure) → `abort_in_flight_result` frees the worker and requeues while the socket stays open; heartbeats alone cannot recover this.
+- Receive-site guards reject non-object JSON and malformed/`>32`-entry `tensor_manifest` before binary receive; early manifest rejects currently return an error without abort-requeue (disconnect or 120s timeout still apply).
+- Details: [`docs/api/JUNIPER_CASCOR_API_REFERENCE.md`](docs/api/JUNIPER_CASCOR_API_REFERENCE.md) § WS `/ws/v1/workers`.
+
 ---
 
 ## Middleware Stack

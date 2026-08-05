@@ -394,6 +394,25 @@ python -m coverage report --fail-under=80   # Current aggregate threshold
 
 ---
 
+## Worker In-Flight Recovery Regressions
+
+Coverage for clean-disconnect requeue, soft binary-frame abort requeue, and receive-site protocol guards lives in the API unit suite (landing with PRs that add `handle_worker_disconnect` / `abort_in_flight_result` / manifest guards):
+
+| Area | Files / focus |
+|------|----------------|
+| Disconnect requeue | `src/tests/unit/api/test_worker_coordinator.py` (`TestHandleWorkerDisconnect`); `test_worker_stream.py` mid-binary-frame disconnect |
+| Soft binary-frame abort | `test_worker_coordinator.py` / `test_worker_stream.py` — text/oversized/decode paths call `abort_in_flight_result` |
+| Non-object JSON + `tensor_manifest` | `test_worker_stream.py` / `test_worker_protocol.py` — object-only messages; manifest type + ≤32 entries; UTF-8 dtype `ValueError` |
+
+```bash
+cd src
+python -m pytest tests/unit/api/test_worker_coordinator.py tests/unit/api/test_worker_stream.py tests/unit/api/test_worker_protocol.py -k "disconnect or abort or manifest or non_object or soft" -v
+```
+
+Operator contracts: [JUNIPER_CASCOR_API_REFERENCE.md — WS `/ws/v1/workers`](../api/JUNIPER_CASCOR_API_REFERENCE.md#ws-wsv1workers).
+
+---
+
 ## Related Documentation
 
 - [Testing Quick Start](QUICK_START.md) - Getting started with testing
