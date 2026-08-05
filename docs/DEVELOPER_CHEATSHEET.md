@@ -1,6 +1,6 @@
 # Developer Cheatsheet — juniper-cascor
 
-**Version**: 1.0.0  |  **Date**: 2026-03-15  |  **Project**: juniper-cascor
+**Version**: 1.0.3  |  **Date**: 2026-08-05  |  **Project**: juniper-cascor
 
 ---
 
@@ -56,6 +56,8 @@ docker compose --profile full up -d                            # Docker start
 **Add an endpoint:** Create route under `/v1`, register in `app.py`, add client method in `juniper-cascor-client`.
 
 **WebSocket:** `/ws/training` (metrics), `/ws/control` (commands), `/ws/v1/workers` (remote workers). Over-cap connections close with `1013`; update `ws_client.py`, canopy, and worker clients when adding or changing channels.
+
+**ASGI transport:** handlers use FastAPI/Starlette only; `websockets` arrives via `uvicorn[standard]` (`requirements.lock` `# via uvicorn`). Major `websockets` bumps (for example 16 → 17) are transport-layer — keep Python ≥ 3.12, sync `conf/requirements-*.txt` with the lock, and smoke `tests/unit/api/test_websocket_*.py` + `test_ws_heartbeat.py` + `tests/integration/api/test_websocket_streaming.py`. Details: [ASGI WebSocket transport](api/JUNIPER_CASCOR_API_REFERENCE.md#asgi-websocket-transport).
 
 ### Training Lifecycle Quick Paths
 
@@ -250,6 +252,9 @@ Core: `torch`, `numpy`, `h5py`, `matplotlib`, `PyYAML`, `requests`
 | NaN in training                                                       | LR too high or bad data                                     | Reduce `learning_rate`, check tensors                                                                     |
 | Server refuses to start with `NonLoopbackBindError`                   | `JUNIPER_CASCOR_HOST` is non-loopback without a bind attestation | Bind `127.0.0.1` for local/dev, or set `JUNIPER_CASCOR_LOOPBACK_PUBLISH_ATTESTED=true` (loopback-only host publish) or `JUNIPER_CASCOR_AUTH_PROXY_ATTESTED=true` (fronting authenticating proxy) after verifying it |
 | WebSocket closes during connect with `1013`                           | Global, per-IP, or `/ws/control` per-identity cap reached   | Raise the relevant `JUNIPER_CASCOR_WS_MAX_CONNECTIONS_*` cap only after checking expected clients and worker fleet size |
+| Dependabot bumps `websockets` but app code never imports it           | Transitive pin from `uvicorn[standard]`                     | Review as transport-only; confirm lock `# via uvicorn`, sync `conf/requirements-pip.txt` / `conf/requirements_ci.txt`, run WebSocket suites |
+| After a `websockets` major bump, clients see half-open sockets        | App closed with reserved code `1006` (rejected on the wire) | Close with `1011` (or another allowed code); see C3 heartbeat contract in `training_stream.py` / `control_stream.py` |
+| Lock says `websockets==17.x` but `conf/requirements_*.txt` still `16.x` | Freeze files updated on separate Dependabot paths           | Align conf freeze pins with `requirements.lock` before merge; check `conf/conda_environment_ci.yaml` separately |
 
 ---
 

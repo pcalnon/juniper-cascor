@@ -87,6 +87,12 @@ python server.py
 
 **WebSocket cap behavior:** over-cap WebSocket handshakes are closed with code `1013`. The global cap is the backstop that still works when Docker NAT collapses many callers to one bridge-gateway IP. The per-identity cap applies to `/ws/control`; worker sockets are global-cap-only because a worker fleet can share one machine token and the worker id is assigned after admission.
 
+**ASGI transport dependency:** the service does not declare `websockets` in `pyproject.toml`. It comes in through `uvicorn[standard]` (API extra) and is pinned in `requirements.lock` as `# via uvicorn`. Application handlers speak FastAPI/Starlette WebSockets only (`src/api/websocket/`). When Dependabot bumps `websockets` (including major lines such as 16 → 17):
+
+- Confirm Python ≥ 3.12 still holds (websockets 17 requires ≥ 3.11; this repo is already stricter).
+- Confirm `conf/requirements-pip.txt`, `conf/requirements_ci.txt`, and `requirements.lock` land on the same pin; `conf/conda_environment_ci.yaml` is a separate freeze and may need a follow-up.
+- Treat the change as transport-only unless CI WebSocket suites fail — see [ASGI WebSocket transport](../api/JUNIPER_CASCOR_API_REFERENCE.md#asgi-websocket-transport).
+
 ## CLI Arguments
 
 ### Main Application (`src/main.py`)

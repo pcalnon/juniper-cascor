@@ -64,6 +64,7 @@
   - [GET `/v1/workers`](#get-v1workers)
   - [GET `/v1/workers/stats`](#get-v1workersstats)
   - [GET `/v1/workers/{worker_id}`](#get-v1workersworker_id)
+- [ASGI WebSocket transport](#asgi-websocket-transport)
 - [WebSocket endpoints](#websocket-endpoints)
   - [WS `/ws/training`](#ws-wstraining)
   - [WS `/ws/control`](#ws-wscontrol)
@@ -1268,6 +1269,34 @@ curl -s http://localhost:8201/v1/workers/worker-abc123
 **Returns** — Envelope with the worker's full status object.
 
 **Error handling** — `404` if not found; `503` if registry unbound.
+
+---
+
+## ASGI WebSocket transport
+
+juniper-cascor does **not** import the `websockets` package. Handlers use FastAPI/Starlette `WebSocket` objects under `src/api/websocket/`. The process entrypoint runs uvicorn (`src/server.py`); the `uvicorn[standard]` extra pulls in `websockets` as the production wire-protocol implementation (`requirements.lock` annotates it `# via uvicorn`).
+
+| Layer | Package / module | Role |
+|-------|------------------|------|
+| App handlers | `fastapi.WebSocket` / Starlette (`src/api/websocket/*.py`) | Auth, admission, heartbeats, JSON/binary framing |
+| ASGI server | `uvicorn[standard]` (`pyproject.toml` `[project.optional-dependencies].api`) | Process host for REST + WebSocket |
+| Wire transport | `websockets` (transitive via uvicorn) | RFC 6455 serialization in production |
+
+**Operator notes when reviewing `websockets` Dependabot bumps (for example 16.x → 17.x):**
+
+1. **Python floor.** `websockets` 17.x requires Python ≥ 3.11. This repo already requires Python ≥ 3.12 (`requires-python` in `pyproject.toml`), so the floor is already satisfied.
+2. **No direct API surface.** Application code must not call `websockets.*` APIs. A major bump is a transport-layer change unless uvicorn's integration itself regresses.
+3. **Close-code validation.** The `websockets` server rejects reserved close codes such as `1006` (`ProtocolError`). Heartbeat timeouts therefore close with `1011` (C3 contract in `training_stream.py` / `control_stream.py`); Starlette's TestClient can hide wire-serialization failures, so production close-code choices matter.
+4. **Pin-file sync.** Dependabot may edit `conf/requirements-pip.txt` / `conf/requirements_ci.txt` while `requirements.lock` (and sometimes `conf/conda_environment_ci.yaml`) lag or lead. After a major bump, confirm the lock `# via uvicorn` pin and the conf freeze files agree before merge.
+5. **Smoke after major bumps.** Prefer the WebSocket-focused suites:
+   ```bash
+   cd src && python -m pytest \
+     tests/unit/api/test_websocket_*.py \
+     tests/unit/api/test_ws_heartbeat.py \
+     tests/integration/api/test_websocket_streaming.py -v
+   ```
+
+Upstream changelog: [websockets changelog](https://websockets.readthedocs.io/en/stable/project/changelog.html).
 
 ---
 

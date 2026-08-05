@@ -130,3 +130,19 @@ git add requirements.lock
 git commit -m "[dependabot skip] Regenerate requirements.lock"
 git push
 ```
+
+## ASGI / WebSocket transport reviews (`websockets`, `uvicorn`)
+
+`websockets` is **not** a direct `pyproject.toml` dependency. It is installed by `uvicorn[standard]` (API extra) and appears in `requirements.lock` as `# via uvicorn`. Application handlers under `src/api/websocket/` use FastAPI/Starlette `WebSocket` only — there is no `import websockets` in `src/`.
+
+When Dependabot opens a PR that bumps `websockets` (including major lines such as 16.1.x → 17.x):
+
+| Check | Why |
+|-------|-----|
+| Python floor still ≥ 3.12 | `websockets` 17 requires ≥ 3.11; this repo is already stricter (`requires-python`) |
+| No new direct `websockets` imports in `src/` | Keep the transport boundary at uvicorn |
+| `requirements.lock` and `conf/requirements-pip.txt` / `conf/requirements_ci.txt` agree | Dependabot often edits conf freeze files separately from the lock |
+| `conf/conda_environment_ci.yaml` noted if it still pins an older line | Conda freeze is maintained separately and can lag |
+| WebSocket suites green | `tests/unit/api/test_websocket_*.py`, `test_ws_heartbeat.py`, `tests/integration/api/test_websocket_streaming.py` |
+
+Operator-facing detail: [ASGI WebSocket transport](../docs/api/JUNIPER_CASCOR_API_REFERENCE.md#asgi-websocket-transport).
