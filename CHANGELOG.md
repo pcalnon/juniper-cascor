@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Worker anomaly history cleared on deregister.** `AnomalyDetector.clear_worker` existed but was never called from the `/ws/v1/workers` session teardown path, so `_worker_history` grew without bound across worker churn and a recycled `worker_id` could inherit stale `duplicate_correlations` / `perfect_correlation` signals. The worker-stream `finally` now clears anomaly history alongside registry/audit/metrics cleanup. Tests: `src/tests/unit/api/test_worker_security_integration.py`.
+
+- **`ws_identity_key` treats blank / whitespace-only `X-API-Key` as anonymous.** Empty or whitespace-only headers previously hashed into a shared per-identity digest under the SEC-F19 D4b cap (self-DoS). The helper now strips before the falsy check so blank keys follow the anonymous (global/per-IP only) path. Tests: `src/tests/unit/api/test_ws_connection_caps.py`.
+
 - Unit tests no longer pin the service version as a literal: the four `0.6.0` assertions in `test_api_app.py`, `test_api_app_coverage_deep.py`, and `test_api_health.py` (red on `main` since the v0.7.0 bump merged in #429 without CI running) now assert against `api.app._API_VERSION` — the BUG-CC-04 canonical runtime read — so a release version bump can no longer break the suite.
 
 ## [0.7.0] - 2026-07-28
