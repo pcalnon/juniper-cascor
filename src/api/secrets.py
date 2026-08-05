@@ -31,6 +31,13 @@ def get_secret(env_var: str, file_env_var: str | None = None) -> str | None:
     if file_path:
         path = Path(file_path)
         if path.is_file():
-            return path.read_text().strip()
+            try:
+                return path.read_text().strip()
+            except OSError:
+                # Unreadable secret file (PermissionError, IOError, etc.):
+                # fall through to the plain env var rather than crashing boot /
+                # Settings resolution. Matches the nonexistent/directory path
+                # fail-soft posture.
+                pass
 
     return os.environ.get(env_var)
