@@ -229,6 +229,31 @@ class TestWorkerRegistry:
         reg = registry.get("w1")
         assert reg.capabilities["gpu"] is True
 
+    def test_register_replacement_while_busy_resets_to_idle(self):
+        """Re-registering a busy worker replaces with a fresh idle registration.
+
+        Pins the double-dispatch footgun: ``register`` builds a new
+        ``WorkerRegistration`` (``active_task_id=None``) even when the prior
+        entry held an in-flight task. Coordinators that still track the old
+        assignment can then ``get_next_assignment`` / ``assign_task`` again
+        because the registry reports the worker idle.
+        """
+        registry = WorkerRegistry()
+        registry.register("w1", {"cpu_cores": 4})
+        assert registry.assign_task("w1", "task-busy-1") is True
+        assert registry.get("w1").active_task_id == "task-busy-1"
+        assert registry.get("w1").idle is False
+
+        replaced = registry.register("w1", {"cpu_cores": 8})
+        assert replaced.worker_id == "w1"
+        assert replaced.capabilities["cpu_cores"] == 8
+        assert replaced.active_task_id is None
+        assert replaced.idle is True
+        assert registry.get("w1") is replaced
+        # Fresh idle entry accepts a second assignment under the same worker_id.
+        assert registry.assign_task("w1", "task-busy-2") is True
+        assert registry.get("w1").active_task_id == "task-busy-2"
+
     def test_get(self):
         """get returns the registration or None."""
         registry = WorkerRegistry()
