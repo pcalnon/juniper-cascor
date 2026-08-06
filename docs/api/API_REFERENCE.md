@@ -845,6 +845,7 @@ All REST responses use the standard response envelope:
 ### Service Startup and WebSocket Admission
 
 - REST and WebSocket authentication use the `X-API-Key` header when `JUNIPER_CASCOR_API_KEYS` is configured. Auth is disabled when no API keys are configured.
+- Boot-time SEC-F01: `JUNIPER_CASCOR_REQUIRE_AUTH=true` refuses startup with `AuthPostureError` when keys are missing/blank; the default (`false`) only WARNs and continues (bare/dev). An empty `JUNIPER_CASCOR_API_KEYS_FILE` does not fall back to the plain env var — see [Configuration Reference](../install/REFERENCE.md#api-server-bind-and-websocket-guardrails).
 - `JUNIPER_CASCOR_HOST` defaults to `127.0.0.1`. If it is set to a non-loopback address such as `0.0.0.0`, startup fails with `NonLoopbackBindError` unless `JUNIPER_CASCOR_LOOPBACK_PUBLISH_ATTESTED=true` or `JUNIPER_CASCOR_AUTH_PROXY_ATTESTED=true`.
 - Set `JUNIPER_CASCOR_LOOPBACK_PUBLISH_ATTESTED=true` when a loopback-only host-publish fronts the service, or `JUNIPER_CASCOR_AUTH_PROXY_ATTESTED=true` when an authenticating reverse proxy does. This guard runs before the server accepts connections.
 - WebSocket admission uses `JUNIPER_CASCOR_WS_MAX_CONNECTIONS_GLOBAL` (default 200) across `/ws/training`, `/ws/control`, and `/ws/v1/workers`. `/ws/control` also uses `JUNIPER_CASCOR_WS_MAX_CONNECTIONS_PER_IDENTITY` (default 5), keyed on a non-reversible digest of the `X-API-Key`.

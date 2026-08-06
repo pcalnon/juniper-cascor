@@ -87,10 +87,12 @@ Treat each flag as an operational attestation: `JUNIPER_CASCOR_LOOPBACK_PUBLISH_
 
 ### Authentication
 
-Optional. Controlled by the application settings:
+Optional at the request layer; loud at boot via SEC-F01.
 
-- REST: `X-API-Key` header validated by `APIKeyAuth` middleware (`src/api/security.py`). When `settings.api_keys` is empty, auth is disabled (dev mode).
+- REST: `X-API-Key` header validated by `APIKeyAuth` middleware (`src/api/security.py`). When `settings.api_keys` is empty/blank, auth is disabled (dev mode) and protected routes are served open.
 - WebSocket: same `X-API-Key` header, validated in `ws_authenticate()` (`src/api/websocket/manager.py`). On failure the socket is closed with code `4001`.
+- Boot posture: the lifespan calls `juniper_service_core.enforce_auth_posture(...)` immediately after the bind guard (`src/api/app.py`). `JUNIPER_CASCOR_REQUIRE_AUTH` (default `false`) selects WARNING-and-continue vs refuse-with-`AuthPostureError`. Deployments that provision secrets (composed juniper-deploy) should set it `true`. Bypass: `JUNIPER_SKIP_AUTH_POSTURE_CHECK=1` (logged loudly).
+- Docker secrets: `JUNIPER_CASCOR_API_KEYS_FILE` is read by `api.secrets.get_secret()`. An existing empty/whitespace-only file returns `""` with **no** fallback to the plain env var. In the usual compose `_FILE`-only pattern that leaves `settings.api_keys` unset (HO-2 empty-placeholder class) unless `REQUIRE_AUTH=true` fails the boot.
 
 Rate limiting is also optional; per-IP REST limiter defaults to 100 req/min, and the worker WebSocket has its own per-IP connection rate limiter. WebSocket admission also has a stack-global cap across all WS endpoints (`JUNIPER_CASCOR_WS_MAX_CONNECTIONS_GLOBAL`, default 200). `/ws/control` adds a per-identity cap (`JUNIPER_CASCOR_WS_MAX_CONNECTIONS_PER_IDENTITY`, default 5) keyed on a non-reversible digest of the presented `X-API-Key`.
 

@@ -63,7 +63,10 @@ The FastAPI service reads these settings through `api.settings.Settings` with th
 | `JUNIPER_CASCOR_PORT` | Integer | `8200` | API server listen port. |
 | `JUNIPER_CASCOR_LOOPBACK_PUBLISH_ATTESTED` | Boolean | `false` | One of the two bind attestations required when `JUNIPER_CASCOR_HOST` is non-loopback, such as `0.0.0.0`. Setting it to `true` attests the port is reachable only via a loopback-only host publish. |
 | `JUNIPER_CASCOR_AUTH_PROXY_ATTESTED` | Boolean | `false` | One of the two bind attestations required when `JUNIPER_CASCOR_HOST` is non-loopback. Setting it to `true` attests a fronting authenticating reverse proxy terminates access before the port. |
-| `JUNIPER_CASCOR_API_KEYS` | CSV / JSON list | unset | API keys accepted in `X-API-Key`. When unset, API-key auth is disabled for development. |
+| `JUNIPER_CASCOR_API_KEYS` | CSV / JSON list | unset | API keys accepted in `X-API-Key`. When unset/blank, API-key auth is disabled (dev mode). |
+| `JUNIPER_CASCOR_API_KEYS_FILE` | Path string | unset | Docker-secrets companion for `JUNIPER_CASCOR_API_KEYS`. `api.secrets.get_secret()` prefers an existing file over the plain env var and returns stripped contents — including `""` for empty/whitespace files (no env fallback). Settings injects that value only when `api_keys` is not already set; an empty file therefore leaves keys unset in the usual compose `_FILE`-only pattern. |
+| `JUNIPER_CASCOR_REQUIRE_AUTH` | Boolean | `false` | SEC-F01 intended auth posture. `false` = missing/blank keys WARN and the service runs open; `true` = missing/blank keys refuse boot with `AuthPostureError`. Set `true` wherever secrets are provisioned (composed juniper-deploy). |
+| `JUNIPER_SKIP_AUTH_POSTURE_CHECK` | `1` / unset | unset | Escape hatch that skips `enforce_auth_posture` (logged loudly). Not a `JUNIPER_CASCOR_` setting — shared across Juniper services. |
 | `JUNIPER_CASCOR_WS_MAX_CONNECTIONS_GLOBAL` | Integer | `200` | Stack-absolute WebSocket admission cap across `/ws/training`, `/ws/control`, and `/ws/v1/workers`. |
 | `JUNIPER_CASCOR_WS_MAX_CONNECTIONS_PER_IDENTITY` | Integer | `5` | Per API-key identity admission cap for `/ws/control`. |
 | `JUNIPER_CASCOR_WS_MAX_CONNECTIONS_PER_IP` | Integer | `5` | Per-source-IP cap for manager-routed sockets; useful as DoS dampening, but not an identity control behind Docker NAT. |
@@ -94,6 +97,28 @@ python server.py
 | `JUNIPER_CASCOR_EVAL_METRICS_ENABLED` | Boolean env flag | `true` | Compute F1 / precision / recall / ROC-AUC once per training step over the eval split. Surfaced on `GET /v1/metrics`, `GET /v1/metrics/history`, and WS `metrics` frames. |
 
 This flag is read by `TrainingLifecycleManager` via `_env_flag` (`src/api/lifecycle/manager.py`) — it is **not** a `api.settings.Settings` field. Accepted truthy values: `1`, `true`, `yes`, `on` (case-insensitive). Set `0` / `false` / `no` / `off` to disable. Distinct from `JUNIPER_CASCOR_METRICS_ENABLED` (Prometheus). Operator detail: [C7 scalar evaluation metrics](../api/JUNIPER_CASCOR_API_REFERENCE.md#c7-scalar-evaluation-metrics).
+
+**Boot-time auth posture (SEC-F01):** after the bind guard, the lifespan calls `juniper_service_core.enforce_auth_posture(settings.api_keys, require_auth=settings.require_auth, service_name="juniper-cascor")` before serving. Blank or whitespace-only keys count as unset (the empty Docker-secret footgun). Outcomes:
+
+| `JUNIPER_CASCOR_REQUIRE_AUTH` | Keys configured? | Boot result |
+|------------------------------|------------------|-------------|
+| `false` (default) | No / blank | WARNING that cascor is running OPEN; process continues (bare/dev) |
+| `false` (default) | Yes | Quiet pass |
+| `true` | No / blank | CRITICAL + `AuthPostureError` — uvicorn startup fails |
+| `true` | Yes | Quiet pass |
+
+```bash
+# Fail-closed deploy posture (secrets provisioned)
+cd src
+JUNIPER_CASCOR_REQUIRE_AUTH=true \
+JUNIPER_CASCOR_API_KEYS='["prod-key-here"]' \
+python server.py
+
+# Compose secret mount — ensure the file has a real key, not a placeholder
+# JUNIPER_CASCOR_API_KEYS_FILE=/run/secrets/juniper_cascor_api_keys
+```
+
+**Empty `_FILE` pitfall:** if `JUNIPER_CASCOR_API_KEYS_FILE` points at an existing but empty/whitespace-only file, `get_secret()` returns `""` and never reads `JUNIPER_CASCOR_API_KEYS`. Settings only injects a truthy secret, so compose stacks that set `_FILE` alone end up with unset keys. With `REQUIRE_AUTH=false` the service starts open behind a healthy `/v1/health`; with `REQUIRE_AUTH=true` boot fails. Fill the secret file (or unset `_FILE`).
 
 ## CLI Arguments
 
