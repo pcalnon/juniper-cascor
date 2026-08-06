@@ -1518,6 +1518,22 @@ receives an error response and then closes with `1003`.
 
 **State changes** — On `REGISTRATION` the worker is added to the registry. `TASK_RESULT` updates the worker's task counters, health score, and recent durations. `WORKER_ERROR` increments failure counters and may quarantine the worker (Phase 4 anomaly detector).
 
+**Round-boundary pending clear** (`WorkerCoordinator.submit_tasks` / `submit_result`, lands with open #471) —
+
+At the start of each candidate-training round, `submit_tasks(round_id, ...)` must drop leftover coordinator state from any prior round before accepting new work:
+
+| Action at round start | Why |
+|-----------------------|-----|
+| Clear `_pending_tasks` and `_unassigned_tasks` | Stale prior-round `task_id`s must not remain acceptable to `submit_result`. |
+| Clear `_results` / `_completed_task_ids` (already on `main`) | Fresh completion accounting for the new `_current_round_task_count`. |
+| Set `_current_round_id` / `_current_round_task_count` | New round identity for dispatch and collection. |
+
+**Defense-in-depth:** even if a prior-round `PendingTask` somehow lingered, `submit_result` rejects when `task.round_id != _current_round_id`.
+
+**Why it matters:** `collect_results` unblocks when `len(_results) >= _current_round_task_count`. On `main`, `submit_tasks` clears results but **not** pending/unassigned maps, so a late prior-round `TASK_RESULT` can still be accepted and satisfy the new round's count — early-unblocking collection before the new round's real work finishes (ISSUE-319 class). Cascade filters by `round_id` after collection, but the coordinator wait must not unblock early. Distinct from ownership / unassigned rejects (docs #455/#474), disconnect / soft-abort requeue (docs #464/#465), and success-without-weights / dispatch send rollback (docs #480 / open #477).
+
+**Pre-#471 gap (current `main`):** `submit_tasks` leaves `_pending_tasks` / `_unassigned_tasks` intact across round boundaries; there is no `round_id` mismatch reject in `submit_result`.
+
 **Error handling / close codes**:
 
 | Code | Trigger                              |

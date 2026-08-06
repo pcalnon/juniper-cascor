@@ -394,6 +394,20 @@ python -m coverage report --fail-under=80   # Current aggregate threshold
 
 ---
 
+## Worker Round-Boundary Pending Clear (#471)
+
+Regression coverage for the ISSUE-319-class early-unblock hole lands with open #471:
+
+| Contract | Tests |
+|----------|-------|
+| `submit_tasks` clears prior-round `_pending_tasks` / `_unassigned_tasks` | `src/tests/unit/api/test_worker_coordinator.py` (`test_submit_tasks_clears_prior_round_pending`) |
+| Late prior-round `submit_result` rejected after new round starts | `src/tests/unit/api/test_worker_coordinator.py` (`test_reject_stale_round_result_after_new_submit`) |
+| Defense-in-depth `round_id` mismatch reject | `src/tests/unit/api/test_worker_coordinator.py` (`test_reject_stale_round_id_defense`) |
+
+Operator contracts: [JUNIPER_CASCOR_API_REFERENCE.md — WS `/ws/v1/workers`](../api/JUNIPER_CASCOR_API_REFERENCE.md#ws-wsv1workers).
+
+---
+
 ## Related Documentation
 
 - [Testing Quick Start](QUICK_START.md) - Getting started with testing

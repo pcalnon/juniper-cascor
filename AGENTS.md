@@ -5,7 +5,7 @@
 **Author**: Paul Calnon
 **License**: MIT License
 **Version**: 0.7.0
-**Last Updated**: 2026-08-05
+**Last Updated**: 2026-08-06
 
 ---
 
@@ -462,6 +462,13 @@ Distributed candidate training via WebSocket workers.
 5. Heartbeat keepalive (default 30s timeout)
 6. Auto-deregistration on heartbeat timeout
 7. Task reassignment on worker failure (default 120s timeout)
+
+**Round-boundary pending clear** (open #471; ISSUE-319 class):
+
+- `submit_tasks` must clear `_pending_tasks` and `_unassigned_tasks` when starting a new round — clearing `_results` alone is not enough.
+- `submit_result` rejects when `task.round_id != _current_round_id` (defense-in-depth if a prior-round entry somehow lingered).
+- Otherwise a late prior-round `TASK_RESULT` can satisfy `len(_results) >= _current_round_task_count` and early-unblock `collect_results` before the new round finishes.
+- Distinct from ownership / unassigned rejects, disconnect / soft-abort requeue, and success-without-weights / dispatch send rollback. Details: [`docs/api/JUNIPER_CASCOR_API_REFERENCE.md`](docs/api/JUNIPER_CASCOR_API_REFERENCE.md) § WS `/ws/v1/workers`.
 
 ---
 

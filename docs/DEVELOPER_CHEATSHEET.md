@@ -1,6 +1,6 @@
 # Developer Cheatsheet — juniper-cascor
 
-**Version**: 1.0.1  |  **Date**: 2026-08-05  |  **Project**: juniper-cascor
+**Version**: 1.0.17  |  **Date**: 2026-08-06  |  **Project**: juniper-cascor
 
 ---
 
@@ -127,6 +127,10 @@ Metrics nuance:
 | `JUNIPER_CASCOR_WS_MAX_CONNECTIONS` | `50` | Global WebSocket connection cap, including pending `/ws/training` resume handshakes. |
 | `JUNIPER_CASCOR_WS_HEARTBEAT_INTERVAL_SEC` | `30` | Training/control heartbeat ping interval. |
 | `JUNIPER_CASCOR_WS_HEARTBEAT_PONG_TIMEOUT_SEC` | `10` | Training/control pong timeout before heartbeat close. |
+| `JUNIPER_CASCOR_REMOTE_WORKERS_HEARTBEAT_TIMEOUT` | `30.0` | Worker heartbeat stale timeout (CONC-10 reap). |
+| `JUNIPER_CASCOR_REMOTE_WORKERS_TASK_REASSIGNMENT_TIMEOUT` | `120.0` | Fallback reassignment for orphaned in-flight tasks. Round-boundary pending clear (#471) is independent — it drops stale prior-round queue entries at `submit_tasks`, not via this timeout. |
+
+**Worker tip:** A new candidate round must clear `_pending_tasks` / `_unassigned_tasks` in `WorkerCoordinator.submit_tasks` (#471). Otherwise a late prior-round `TASK_RESULT` can satisfy `len(_results) >= _current_round_task_count` and early-unblock `collect_results` (ISSUE-319). See [API Reference — WS `/ws/v1/workers`](api/JUNIPER_CASCOR_API_REFERENCE.md#ws-wsv1workers).
 
 ---
 
@@ -252,6 +256,7 @@ Core: `torch`, `numpy`, `h5py`, `matplotlib`, `PyYAML`, `requests`
 | NaN in training                                                       | LR too high or bad data                                     | Reduce `learning_rate`, check tensors                                                                     |
 | Server refuses to start with `NonLoopbackBindError`                   | `JUNIPER_CASCOR_HOST` is non-loopback without a bind attestation | Bind `127.0.0.1` for local/dev, or set `JUNIPER_CASCOR_LOOPBACK_PUBLISH_ATTESTED=true` (loopback-only host publish) or `JUNIPER_CASCOR_AUTH_PROXY_ATTESTED=true` (fronting authenticating proxy) after verifying it |
 | WebSocket closes during connect with `1013`                           | Global, per-IP, or `/ws/control` per-identity cap reached   | Raise the relevant `JUNIPER_CASCOR_WS_MAX_CONNECTIONS_*` cap only after checking expected clients and worker fleet size |
+| Candidate round finishes early / under-counts remote results          | Late prior-round `TASK_RESULT` accepted into new round's `_results` because `_pending_tasks` was not cleared at `submit_tasks` | With #471, round start clears pending/unassigned and rejects mismatched `round_id`; check coordinator "stale-round" reject logs |
 | Publish workflow skipped / wrong package                              | Release tag prefix does not match workflow guard            | Use `v*`, `juniper-cascor-protocol-v*`, or `juniper-cascor-model-v*` — see [PyPI Publishing](ci_cd/MANUAL.md#pypi-publishing) |
 | TestPyPI `400 File already exists` on publish                         | Dual trigger or concurrent upload of same version           | Publish via Release only (no `push: tags`); bump version to re-upload |
 
