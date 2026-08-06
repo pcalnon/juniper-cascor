@@ -1,10 +1,10 @@
-"""Unit tests for SecurityMiddleware and RequestBodyLimitMiddleware."""
+"""Unit tests for SecurityMiddleware, SecurityHeadersMiddleware, and RequestBodyLimitMiddleware."""
 
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from api.middleware import EXEMPT_PATHS, RequestBodyLimitMiddleware, SecurityMiddleware
+from api.middleware import EXEMPT_PATHS, RequestBodyLimitMiddleware, SecurityHeadersMiddleware, SecurityMiddleware
 from api.security import APIKeyAuth, RateLimiter
 
 
@@ -29,6 +29,62 @@ def app_with_middleware():
         return app
 
     return _create
+
+
+@pytest.fixture
+def headers_app():
+    """Minimal app with SecurityHeadersMiddleware only."""
+
+    def _create(content_security_policy=None):
+        app = FastAPI()
+        if content_security_policy is None:
+            app.add_middleware(SecurityHeadersMiddleware)
+        else:
+            app.add_middleware(SecurityHeadersMiddleware, content_security_policy=content_security_policy)
+
+        @app.get("/v1/health")
+        async def health():
+            return {"status": "ok"}
+
+        return app
+
+    return _create
+
+
+@pytest.mark.unit
+class TestSecurityHeadersMiddleware:
+    """Always-on response header contract (clickjacking / MIME / CSP / HSTS)."""
+
+    def test_baseline_security_headers_present(self, headers_app):
+        client = TestClient(headers_app())
+        response = client.get("/v1/health")
+        assert response.status_code == 200
+        assert response.headers["X-Content-Type-Options"] == "nosniff"
+        assert response.headers["X-Frame-Options"] == "DENY"
+        assert response.headers["Referrer-Policy"] == "strict-origin-when-cross-origin"
+        assert response.headers["Permissions-Policy"] == "camera=(), microphone=(), geolocation=()"
+        assert response.headers["Content-Security-Policy"] == "default-src 'none'; frame-ancestors 'none'"
+
+    def test_no_hsts_without_forwarded_proto(self, headers_app):
+        client = TestClient(headers_app())
+        response = client.get("/v1/health")
+        assert "Strict-Transport-Security" not in response.headers
+
+    def test_hsts_when_forwarded_proto_https(self, headers_app):
+        client = TestClient(headers_app())
+        response = client.get("/v1/health", headers={"X-Forwarded-Proto": "https"})
+        assert response.headers["Strict-Transport-Security"] == "max-age=31536000; includeSubDomains"
+
+    def test_no_hsts_when_forwarded_proto_http(self, headers_app):
+        client = TestClient(headers_app())
+        response = client.get("/v1/health", headers={"X-Forwarded-Proto": "http"})
+        assert "Strict-Transport-Security" not in response.headers
+
+    def test_custom_content_security_policy(self, headers_app):
+        custom = "default-src 'self'; frame-ancestors 'none'"
+        client = TestClient(headers_app(content_security_policy=custom))
+        response = client.get("/v1/health")
+        assert response.headers["Content-Security-Policy"] == custom
 
 
 @pytest.mark.unit

@@ -41,6 +41,28 @@ graph LR
 
 The workflow does not currently have `workflow_dispatch` enabled. To trigger manually, push a commit or open a PR to a monitored branch.
 
+## Dependabot Lockfile Updates
+
+`.github/workflows/lockfile-update.yml` regenerates `requirements.lock` on Dependabot `dependabot/pip/**` pushes (and on same-repo PRs that touch `pyproject.toml`).
+
+| PAT (`CROSS_REPO_DISPATCH_TOKEN`) | Behavior |
+|-----------------------------------|----------|
+| Available to the run | Auto-regen + push (`[dependabot skip]`) so CI re-triggers |
+| Missing on Dependabot runs | **Green no-op** — regenerate locally or register the PAT under **Settings → Secrets → Dependabot** |
+| Missing on non-Dependabot runs | Hard fail (secret misconfiguration) |
+
+CI job **Lockfile Freshness** still blocks merge when the lock no longer satisfies `pyproject.toml`, even if auto-regen no-ops.
+
+```bash
+# Local regen (same extras as the workflow)
+uv pip compile pyproject.toml \
+  --extra ml --extra api --extra observability --extra juniper-data \
+  --index-strategy unsafe-best-match --no-emit-package torch \
+  --upgrade -o requirements.lock
+```
+
+> Details: [CI Manual — Lockfile Update](MANUAL.md#lockfile-update-workflow) | [Dependency Update Workflow](../../notes/DEPENDENCY_UPDATE_WORKFLOW.md)
+
 ## Checking Results
 
 ### Finding Workflow Runs
@@ -205,6 +227,30 @@ The unit-tests job fails if aggregate coverage drops below the configured 80% ga
 # Check coverage locally from the repository root
 bash util/run_coverage.bash
 ```
+
+## Publishing Packages to PyPI
+
+Three Trusted Publishing (OIDC) workflows publish packages from this repo. Cut a **GitHub Release** (never a bare tag push) with the matching tag:
+
+| Package | Workflow | Release tag prefix |
+|---------|----------|--------------------|
+| `juniper-cascor` | `.github/workflows/publish.yml` | `v*` (e.g. `v0.7.0`) |
+| `juniper-cascor-protocol` | `.github/workflows/publish-protocol.yml` | `juniper-cascor-protocol-v*` |
+| `juniper-cascor-model` | `.github/workflows/publish-cascor-model.yml` | `juniper-cascor-model-v*` |
+
+Pipeline shape for every package: build/`twine check` → TestPyPI → install verify (`--no-deps`, TestPyPI index only) → PyPI.
+
+```bash
+# Example: publish the main package
+gh release create v0.7.1 --title "v0.7.1" --notes "..."
+
+# Example: publish a sub-package (protocol / model workflows also support workflow_dispatch)
+gh release create juniper-cascor-protocol-v0.2.0 --title "juniper-cascor-protocol v0.2.0" --notes "..."
+```
+
+Do **not** add a `push: tags` trigger alongside `release: published` — cutting a Release also pushes the tag and double-fires races the immutable TestPyPI upload (see juniper-ml#555). Keep `pypa/gh-action-pypi-publish` SHA-pinned; Dependabot bumps the pin (and the trailing version comment).
+
+> Full operator details: [CI/CD Manual — PyPI Publishing](MANUAL.md#pypi-publishing) | [CI/CD Reference — Publish Workflows](REFERENCE.md#publish-workflows)
 
 ## Environment Details
 
