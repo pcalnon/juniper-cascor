@@ -90,6 +90,14 @@ python server.py
 
 **WebSocket cap behavior:** over-cap WebSocket handshakes are closed with code `1013`. The global cap is the backstop that still works when Docker NAT collapses many callers to one bridge-gateway IP. The per-identity cap applies to `/ws/control`; worker sockets are global-cap-only because a worker fleet can share one machine token and the worker id is assigned after admission.
 
+### Lifecycle evaluation metrics (C7)
+
+| Variable | Type | Default | Purpose |
+|----------|------|---------|---------|
+| `JUNIPER_CASCOR_EVAL_METRICS_ENABLED` | Boolean env flag | `true` | Compute F1 / precision / recall / ROC-AUC once per training step over the eval split. Surfaced on `GET /v1/metrics`, `GET /v1/metrics/history`, and WS `metrics` frames. |
+
+This flag is read by `TrainingLifecycleManager` via `_env_flag` (`src/api/lifecycle/manager.py`) — it is **not** a `api.settings.Settings` field. Accepted truthy values: `1`, `true`, `yes`, `on` (case-insensitive). Set `0` / `false` / `no` / `off` to disable. Distinct from `JUNIPER_CASCOR_METRICS_ENABLED` (Prometheus). Operator detail: [C7 scalar evaluation metrics](../api/JUNIPER_CASCOR_API_REFERENCE.md#c7-scalar-evaluation-metrics).
+
 **Boot-time auth posture (SEC-F01):** after the bind guard, the lifespan calls `juniper_service_core.enforce_auth_posture(settings.api_keys, require_auth=settings.require_auth, service_name="juniper-cascor")` before serving. Blank or whitespace-only keys count as unset (the empty Docker-secret footgun). Outcomes:
 
 | `JUNIPER_CASCOR_REQUIRE_AUTH` | Keys configured? | Boot result |
