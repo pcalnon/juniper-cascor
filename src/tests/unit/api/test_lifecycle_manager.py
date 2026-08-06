@@ -1288,6 +1288,37 @@ class TestLoadSnapshotInvestigating:
         assert mgr.state_machine.is_investigating()
         mgr.shutdown()
 
+    def test_start_training_rejected_when_paused(self):
+        """``start_training`` must reject PAUSED — resume owns the unpause path.
+
+        Without this guard, start falls through to ``_pause_event.set()``
+        (unblocking the parked fit thread) and submits a second
+        ``_run_training`` on the single-worker executor while the FSM stays
+        PAUSED. Operators must ``/resume`` (or stop/reset) instead.
+        """
+        import torch
+
+        mgr = TrainingLifecycleManager()
+        mgr.create_network(input_size=2, output_size=2)
+        # Simulate a paused run without launching a real fit future.
+        mgr.state_machine.handle_command(Command.START)
+        mgr._pause_event.clear()
+        mgr.state_machine.handle_command(Command.PAUSE)
+        assert mgr.state_machine.is_paused()
+        assert not mgr._pause_event.is_set()
+
+        x = torch.randn(20, 2)
+        y = torch.zeros(20, 2)
+        with pytest.raises(RuntimeError, match="paused"):
+            mgr.start_training(X=x, y=y)
+
+        assert mgr.state_machine.is_paused()
+        # Critical: rejected start must not re-set the pause event (that would
+        # unblock a parked fit thread) and must not queue a new future.
+        assert not mgr._pause_event.is_set()
+        assert mgr._training_future is None
+        mgr.shutdown()
+
     def test_retrain_after_restore_clears_investigating(self, tmp_path):
         """Retrain after Restore transitions out of Investigating to
         Stopped — Retrain explicitly moves to a training-ready state."""
@@ -1641,6 +1672,30 @@ class TestReplayLifecycleIntegration:
                     mgr.start_training(X=x, y=y)
             finally:
                 mgr.stop_replay()
+        mgr.shutdown()
+
+    def test_reset_tears_down_active_replay_session(self, tmp_path):
+        """``reset()`` must stop/clear ``_replay_session`` (FSM RESET escape hatch).
+
+        Without teardown, RESET flips the FSM to STOPPED while the background
+        replay driver keeps emitting synthetic ``epoch_end`` frames — the
+        status-only escape hatch documented on the FSM was not real.
+        """
+        mgr = TrainingLifecycleManager()
+        mgr.create_network(input_size=2, output_size=2)
+        ctxs = self._stub_load(mgr, tmp_path, {"train_loss": [0.1, 0.2, 0.3], "value_loss": [], "train_accuracy": [], "value_accuracy": []})
+        with ctxs[0], ctxs[1]:
+            assert mgr.start_replay("snap") is True
+            session = mgr._replay_session
+            assert session is not None
+            assert mgr.state_machine.is_replaying()
+
+            result = mgr.reset()
+            assert result["status"] == "reset"
+            assert mgr._replay_session is None
+            assert mgr.state_machine.is_stopped()
+            # session.stop() signals the driver; join may drain before we assert.
+            assert session._stop_event.is_set()
         mgr.shutdown()
 
     def test_load_snapshot_rejected_while_replaying(self, tmp_path):

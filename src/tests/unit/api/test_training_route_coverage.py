@@ -233,6 +233,37 @@ class TestStartTraining:
         assert forwarded_kwargs.get("learning_rate") == 0.01
         assert forwarded_kwargs.get("patience") == 5
 
+    def test_start_training_while_paused_returns_409(self, client_with_network):
+        """PAUSED start must 409 with the resume guidance (not silent unpause).
+
+        Manager-level RuntimeError is unit-tested separately; this pins the
+        HTTP mapping so Canopy sees an actionable 409 rather than a half-
+        resumed run with a second training future.
+        """
+        from api.lifecycle.state_machine import Command
+
+        lifecycle = client_with_network.app.state.lifecycle
+        lifecycle.state_machine.handle_command(Command.START)
+        lifecycle._pause_event.clear()
+        lifecycle.state_machine.handle_command(Command.PAUSE)
+        assert lifecycle.state_machine.is_paused()
+
+        response = client_with_network.post(
+            "/v1/training/start",
+            json={
+                "inline_data": {
+                    "train_x": [[0.1, 0.2], [0.3, 0.4], [0.5, 0.6], [0.7, 0.8]],
+                    "train_y": [[1.0, 0.0], [0.0, 1.0], [1.0, 0.0], [0.0, 1.0]],
+                },
+            },
+        )
+        assert response.status_code == 409
+        msg = response.json()["error"]["message"]
+        assert "paused" in msg.lower()
+        assert "resume" in msg.lower()
+        assert lifecycle.state_machine.is_paused()
+        assert not lifecycle._pause_event.is_set()
+
 
 class TestPauseTraining:
     """Tests for POST /training/pause."""

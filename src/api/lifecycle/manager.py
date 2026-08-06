@@ -2104,6 +2104,13 @@ class TrainingLifecycleManager:
         with self._lock:
             if self.state_machine.is_started():
                 raise RuntimeError("Training already in progress")
+            # A PAUSED run already owns a fit future parked on ``_pause_event``.
+            # Falling through here would ``_pause_event.set()`` (unblocking that
+            # future) AND submit a second ``_run_training`` onto the single-worker
+            # executor — FSM can stay PAUSED while training runs again. Operators
+            # must ``/resume`` (or stop/reset) instead of posting ``/start``.
+            if self.state_machine.is_paused():
+                raise RuntimeError("Cannot start training while paused — invoke /v1/training/resume to continue the paused run")
             # CAN-015d (B-4): Investigating is the inspection / modification
             # mode loaded by ``/restore``. Training commands are explicitly
             # rejected — the user must invoke ``/retrain`` or ``/resume`` to
@@ -2406,7 +2413,21 @@ class TrainingLifecycleManager:
         Normalises the control-event pair via ``_reset_event_state`` so a
         subsequent ``start_training`` does not inherit a stale
         ``_pause_event.clear()`` from a prior pause (BUG-CC-#5).
+
+        CAN-015c: the FSM documents ``Command.RESET`` as the REPLAYING escape
+        hatch (alongside ``/replay/control`` stop). Tear down any active
+        ``_ReplaySession`` here so the background driver thread cannot keep
+        emitting synthetic ``epoch_end`` frames after the FSM returns to
+        STOPPED — matching ``stop_replay`` / ``shutdown``.
         """
+        # Drain replay before FSM RESET so the escape hatch is real, not a
+        # status-only transition that orphans the driver thread.
+        if self._replay_session is not None:
+            try:
+                self._replay_session.stop()
+            except Exception:
+                self.logger.exception("reset: failed to stop replay session")
+            self._replay_session = None
         self._reset_event_state()
         self._last_emitted_history_len = 0
         self.state_machine.handle_command(Command.RESET)

@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`start_training` while PAUSED now rejects with `RuntimeError` (REST → 409).** Previously only `STARTED` / `INVESTIGATING` / `REPLAYING` were guarded; a PAUSED run fell through to `_pause_event.set()` (unblocking the parked fit thread) and submitted a second `_run_training` on the single-worker executor, so the FSM could stay PAUSED while training ran again. Operators must `POST /v1/training/resume` (or stop/reset) instead of `/start`.
+- **`reset()` tears down an active `_ReplaySession`.** The FSM documents `Command.RESET` as the REPLAYING escape hatch, but `reset()` previously only flipped status — the background replay driver kept emitting synthetic `epoch_end` frames after STOPPED. Matches `stop_replay` / `shutdown` teardown.
 - Unit tests no longer pin the service version as a literal: the four `0.6.0` assertions in `test_api_app.py`, `test_api_app_coverage_deep.py`, and `test_api_health.py` (red on `main` since the v0.7.0 bump merged in #429 without CI running) now assert against `api.app._API_VERSION` — the BUG-CC-04 canonical runtime read — so a release version bump can no longer break the suite.
 
 ## [0.7.0] - 2026-07-28
