@@ -1,6 +1,6 @@
 # Developer Cheatsheet — juniper-cascor
 
-**Version**: 1.0.1  |  **Date**: 2026-08-05  |  **Project**: juniper-cascor
+**Version**: 1.0.2  |  **Date**: 2026-08-05  |  **Project**: juniper-cascor
 
 ---
 
@@ -225,8 +225,11 @@ Levels: TRACE(5) -> VERBOSE(7) -> DEBUG(10) -> INFO(20) -> WARNING(30) -> ERROR(
 ## Dependencies and CI/CD
 
 ```bash
-# Add dep: edit pyproject.toml, then regenerate lockfile
-uv pip compile pyproject.toml -o requirements.txt
+# Add dep: edit pyproject.toml, then regenerate requirements.lock
+uv pip compile pyproject.toml \
+  --extra ml --extra api --extra observability --extra juniper-data \
+  --index-strategy unsafe-best-match --no-emit-package torch \
+  --upgrade -o requirements.lock
 # Conda env
 conda create --name JuniperCascor1 --file conf/conda_environment.yaml
 ```
@@ -235,11 +238,13 @@ Core: `torch`, `numpy`, `h5py`, `matplotlib`, `PyYAML`, `requests`
 
 **Pre-commit hooks:** black, isort, flake8, mypy, bandit, yamllint, shellcheck, markdownlint, pytest-unit (local), coverage-gate (local, 80%), no-unencrypted-env (SOPS guard). **Line length:** 512.
 
-**CI pipeline:** pre-commit -> unit-tests -> integration-tests -> build -> security -> required-checks
+**CI pipeline:** pre-commit -> unit-tests -> integration-tests -> build -> security -> lockfile-check -> required-checks
+
+**Dependabot lockfile:** `lockfile-update.yml` auto-regens when `CROSS_REPO_DISPATCH_TOKEN` is visible to the run. Dependabot uses a separate secret store — missing PAT there is a green no-op; **Lockfile Freshness** still blocks stale locks. Register the PAT under Dependabot secrets to restore auto-push.
 
 **PyPI publish:** cut a GitHub Release (not a bare tag). Tags: `v*` → `publish.yml` (`juniper-cascor`); `juniper-cascor-protocol-v*` / `juniper-cascor-model-v*` → matching sub-package workflows. TestPyPI verify uses `--no-deps` and TestPyPI index only. Keep `pypa/gh-action-pypi-publish` SHA-pinned (Dependabot bumps all three workflows together).
 
-> See: [CI Quick Start](ci_cd/QUICK_START.md) | [CI Manual — PyPI Publishing](ci_cd/MANUAL.md#pypi-publishing) | [CI Reference](ci_cd/REFERENCE.md#publish-workflows) | [Environment Setup](install/ENVIRONMENT_SETUP.md)
+> See: [CI Quick Start](ci_cd/QUICK_START.md#dependabot-lockfile-updates) | [CI Manual — Lockfile](ci_cd/MANUAL.md#lockfile-update-workflow) | [CI Manual — PyPI Publishing](ci_cd/MANUAL.md#pypi-publishing) | [CI Reference](ci_cd/REFERENCE.md#publish-workflows) | [Dependency Update Workflow](../notes/DEPENDENCY_UPDATE_WORKFLOW.md) | [Environment Setup](install/ENVIRONMENT_SETUP.md)
 
 ---
 
@@ -260,6 +265,8 @@ Core: `torch`, `numpy`, `h5py`, `matplotlib`, `PyYAML`, `requests`
 | Server refuses to start with `AuthPostureError` / CRITICAL auth posture | `JUNIPER_CASCOR_REQUIRE_AUTH=true` and keys missing/blank (incl. empty `_FILE`) | Provision a real `JUNIPER_CASCOR_API_KEYS` / non-empty `*_FILE`, or set `REQUIRE_AUTH=false` only for bare/dev |
 | Protected routes open / boot WARNING "running OPEN" with compose secrets | Empty/whitespace `JUNIPER_CASCOR_API_KEYS_FILE` (compose `_FILE`-only); `get_secret()` returns `""` with no env fallback | Put a real key in the secret file; set `JUNIPER_CASCOR_REQUIRE_AUTH=true` so empty secrets fail boot |
 | WebSocket closes during connect with `1013`                           | Global, per-IP, or `/ws/control` per-identity cap reached   | Raise the relevant `JUNIPER_CASCOR_WS_MAX_CONNECTIONS_*` cap only after checking expected clients and worker fleet size |
+| Lockfile Freshness red; Update Lockfile green with no `[dependabot skip]` commit | `CROSS_REPO_DISPATCH_TOKEN` empty in Dependabot secret store | Register PAT under Dependabot secrets, or push a local `uv pip compile ... -o requirements.lock` |
+| Update Lockfile hard-fails on a human `pyproject.toml` PR             | Actions PAT missing/expired                                 | Restore Actions `CROSS_REPO_DISPATCH_TOKEN` or commit the regen in the PR |
 | Publish workflow skipped / wrong package                              | Release tag prefix does not match workflow guard            | Use `v*`, `juniper-cascor-protocol-v*`, or `juniper-cascor-model-v*` — see [PyPI Publishing](ci_cd/MANUAL.md#pypi-publishing) |
 | TestPyPI `400 File already exists` on publish                         | Dual trigger or concurrent upload of same version           | Publish via Release only (no `push: tags`); bump version to re-upload |
 
