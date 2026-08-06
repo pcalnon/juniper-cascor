@@ -1,6 +1,6 @@
 # Developer Cheatsheet — juniper-cascor
 
-**Version**: 1.0.0  |  **Date**: 2026-03-15  |  **Project**: juniper-cascor
+**Version**: 1.0.2  |  **Date**: 2026-08-05  |  **Project**: juniper-cascor
 
 ---
 
@@ -83,6 +83,7 @@ Metrics nuance:
 
 - `/v1/metrics/history` and `/ws/training` include callback-driven output-phase points (epoch 1, every 25 epochs, final epoch).
 - `accuracy` can be `null` for those output-phase callback emissions.
+- **C7:** rows always include nullable `f1`/`precision`/`recall`/`roc_auc` (populated on the terminal `training_step` row per drain). `GET /v1/metrics` also returns an `eval_metrics` metadata block. Toggle with `JUNIPER_CASCOR_EVAL_METRICS_ENABLED` (default on; not Prometheus).
 - `/ws/training` can also emit `candidate_progress` messages (epoch 1, every 50 epochs, final epoch per candidate).
 - Fresh `/ws/training` connects receive `initial_status`, `state`, and `initial_metrics`; resume requests use `{"type":"resume","data":{"last_seq":...,"server_instance_id":...}}` and replay only buffered broadcasts with higher `seq`.
 - `/ws/control` rate limiting returns an in-band `command_response` with `status:"rate_limited"` and keeps the socket open; it does not close on normal command throttling.
@@ -112,9 +113,13 @@ Metrics nuance:
 | `JUNIPER_CASCOR_AUTH_PROXY_ATTESTED` | `false`             | Bind attestation for non-loopback binds: a fronting authenticating reverse proxy terminates access |
 | `JUNIPER_CASCOR_CORS_ORIGINS`    | `[]`                    | Allowed CORS origins                   |
 | `JUNIPER_CASCOR_API_KEYS`        | --                      | API keys for authentication            |
+| `JUNIPER_CASCOR_API_KEYS_FILE`   | --                      | Docker-secrets path for keys; existing empty file → open auth (compose `_FILE`-only pattern) |
+| `JUNIPER_CASCOR_REQUIRE_AUTH`    | `false`                 | SEC-F01: `true` = refuse boot when keys missing/blank; default WARN-and-run-open |
+| `JUNIPER_SKIP_AUTH_POSTURE_CHECK` | unset                 | Escape hatch skipping the boot posture check (`1` to bypass; logged loudly) |
 | `JUNIPER_CASCOR_LOG_FORMAT`      | --                      | Set to `json` for JSON logging         |
 | `JUNIPER_CASCOR_SENTRY_DSN`      | --                      | Sentry DSN                             |
 | `JUNIPER_CASCOR_METRICS_ENABLED` | `false`                 | Enable Prometheus metrics              |
+| `JUNIPER_CASCOR_EVAL_METRICS_ENABLED` | `true`             | C7 F1/precision/recall/ROC-AUC on `/v1/metrics`, history, and WS `metrics` (not Prometheus) |
 | `JUNIPER_CASCOR_WS_MAX_CONNECTIONS_GLOBAL` | `200`        | Stack-wide WebSocket cap across training, control, and worker sockets |
 | `JUNIPER_CASCOR_WS_MAX_CONNECTIONS_PER_IDENTITY` | `5`     | `/ws/control` cap per API-key identity |
 | `JUNIPER_CASCOR_WS_MAX_CONNECTIONS_PER_IP` | `5`          | Per-source-IP cap; DoS dampening only and shared behind Docker NAT |
@@ -203,7 +208,9 @@ Compression: gzip level 4 (default). Performance: Save <2s, Load <3s, Verify <20
 | `gpu`             | Needs GPU/CUDA        | `accuracy` / `early_stopping` | Accuracy / stopping        |
 | `multiprocessing` | Multi-process tests   | `requires_juniper_data`       | Needs juniper-data service |
 
-> See: [Testing Quick Start](testing/QUICK_START.md) | [Testing Reference](testing/REFERENCE.md)
+**API version wiring (BUG-CC-04):** assert `app.version`, `/v1/health` `version`, and `set_build_info` against `api.app._API_VERSION` (`importlib.metadata.version("juniper-cascor")`) — never a pinned `"0.x.y"`. Fixture-only model construction may still use literals. `ResponseEnvelope.meta.version` currently uses `api.models.common._API_VERSION` (literal; may lag).
+
+> See: [Testing Quick Start](testing/QUICK_START.md) | [Testing Reference](testing/REFERENCE.md) | [API version assertions](testing/MANUAL.md#api-version-assertions-bug-cc-04)
 
 ---
 
@@ -220,8 +227,11 @@ Levels: TRACE(5) -> VERBOSE(7) -> DEBUG(10) -> INFO(20) -> WARNING(30) -> ERROR(
 ## Dependencies and CI/CD
 
 ```bash
-# Add dep: edit pyproject.toml, then regenerate lockfile
-uv pip compile pyproject.toml -o requirements.txt
+# Add dep: edit pyproject.toml, then regenerate requirements.lock
+uv pip compile pyproject.toml \
+  --extra ml --extra api --extra observability --extra juniper-data \
+  --index-strategy unsafe-best-match --no-emit-package torch \
+  --upgrade -o requirements.lock
 # Conda env
 conda create --name JuniperCascor1 --file conf/conda_environment.yaml
 ```
@@ -230,9 +240,13 @@ Core: `torch`, `numpy`, `h5py`, `matplotlib`, `PyYAML`, `requests`
 
 **Pre-commit hooks:** black, isort, flake8, mypy, bandit, yamllint, shellcheck, markdownlint, pytest-unit (local), coverage-gate (local, 80%), no-unencrypted-env (SOPS guard). **Line length:** 512.
 
-**CI pipeline:** pre-commit -> unit-tests -> integration-tests -> build -> security -> required-checks
+**CI pipeline:** pre-commit -> unit-tests -> integration-tests -> build -> security -> lockfile-check -> required-checks
 
-> See: [CI Quick Start](ci_cd/QUICK_START.md) | [CI Reference](ci_cd/REFERENCE.md) | [Environment Setup](install/ENVIRONMENT_SETUP.md)
+**Dependabot lockfile:** `lockfile-update.yml` auto-regens when `CROSS_REPO_DISPATCH_TOKEN` is visible to the run. Dependabot uses a separate secret store — missing PAT there is a green no-op; **Lockfile Freshness** still blocks stale locks. Register the PAT under Dependabot secrets to restore auto-push.
+
+**PyPI publish:** cut a GitHub Release (not a bare tag). Tags: `v*` → `publish.yml` (`juniper-cascor`); `juniper-cascor-protocol-v*` / `juniper-cascor-model-v*` → matching sub-package workflows. TestPyPI verify uses `--no-deps` and TestPyPI index only. Keep `pypa/gh-action-pypi-publish` SHA-pinned (Dependabot bumps all three workflows together).
+
+> See: [CI Quick Start](ci_cd/QUICK_START.md#dependabot-lockfile-updates) | [CI Manual — Lockfile](ci_cd/MANUAL.md#lockfile-update-workflow) | [CI Manual — PyPI Publishing](ci_cd/MANUAL.md#pypi-publishing) | [CI Reference](ci_cd/REFERENCE.md#publish-workflows) | [Dependency Update Workflow](../notes/DEPENDENCY_UPDATE_WORKFLOW.md) | [Environment Setup](install/ENVIRONMENT_SETUP.md)
 
 ---
 
@@ -240,6 +254,7 @@ Core: `torch`, `numpy`, `h5py`, `matplotlib`, `PyYAML`, `requests`
 
 | Symptom                                                               | Cause                                                       | Fix                                                                                                       |
 |-----------------------------------------------------------------------|-------------------------------------------------------------|-----------------------------------------------------------------------------------------------------------|
+| Unit tests fail with `assert '0.7.0' == '0.6.0'` (or similar SemVer)   | Wiring test pins a literal package version                  | Assert against `api.app._API_VERSION` (BUG-CC-04); do not hard-code SemVer in health/app/build-info tests |
 | `CASCOR_LOG_LEVEL` no effect                                          | Set after import                                            | Set env var before any `import`                                                                           |
 | Logger pickle error                                                   | Logger in `__getstate__`                                    | Exclude logger from pickle state                                                                          |
 | `Unrecognized activation function name during deserialization`        | Activation name missing from `ActivationWithDerivative` map | Add matching key to `src/utils/activation.py` `ACTIVATION_MAP` (function `__name__` or module class name) |
@@ -248,8 +263,16 @@ Core: `torch`, `numpy`, `h5py`, `matplotlib`, `PyYAML`, `requests`
 | Long tests skipped                                                    | Flag not passed                                             | `pytest --run-long`                                                                                       |
 | HDF5 load fails                                                       | Corrupted or version mismatch                               | `python -m snapshots.snapshot_cli verify snapshot.h5`                                                     |
 | NaN in training                                                       | LR too high or bad data                                     | Reduce `learning_rate`, check tensors                                                                     |
+| C7 `f1`/`roc_auc` always `null` on history rows                       | Within-pass `output_epoch` rows, or eval metrics disabled   | Read terminal `kind="training_step"` rows; ensure `JUNIPER_CASCOR_EVAL_METRICS_ENABLED` is not `0`/`false` |
+| C7 scalars `null` with `eval_metrics.undefined` set                   | `empty_batch` / `single_class` / `invalid_output` on eval split | Check labels have ≥2 classes and finite outputs; see [C7 API notes](api/JUNIPER_CASCOR_API_REFERENCE.md#c7-scalar-evaluation-metrics) |
 | Server refuses to start with `NonLoopbackBindError`                   | `JUNIPER_CASCOR_HOST` is non-loopback without a bind attestation | Bind `127.0.0.1` for local/dev, or set `JUNIPER_CASCOR_LOOPBACK_PUBLISH_ATTESTED=true` (loopback-only host publish) or `JUNIPER_CASCOR_AUTH_PROXY_ATTESTED=true` (fronting authenticating proxy) after verifying it |
+| Server refuses to start with `AuthPostureError` / CRITICAL auth posture | `JUNIPER_CASCOR_REQUIRE_AUTH=true` and keys missing/blank (incl. empty `_FILE`) | Provision a real `JUNIPER_CASCOR_API_KEYS` / non-empty `*_FILE`, or set `REQUIRE_AUTH=false` only for bare/dev |
+| Protected routes open / boot WARNING "running OPEN" with compose secrets | Empty/whitespace `JUNIPER_CASCOR_API_KEYS_FILE` (compose `_FILE`-only); `get_secret()` returns `""` with no env fallback | Put a real key in the secret file; set `JUNIPER_CASCOR_REQUIRE_AUTH=true` so empty secrets fail boot |
 | WebSocket closes during connect with `1013`                           | Global, per-IP, or `/ws/control` per-identity cap reached   | Raise the relevant `JUNIPER_CASCOR_WS_MAX_CONNECTIONS_*` cap only after checking expected clients and worker fleet size |
+| Lockfile Freshness red; Update Lockfile green with no `[dependabot skip]` commit | `CROSS_REPO_DISPATCH_TOKEN` empty in Dependabot secret store | Register PAT under Dependabot secrets, or push a local `uv pip compile ... -o requirements.lock` |
+| Update Lockfile hard-fails on a human `pyproject.toml` PR             | Actions PAT missing/expired                                 | Restore Actions `CROSS_REPO_DISPATCH_TOKEN` or commit the regen in the PR |
+| Publish workflow skipped / wrong package                              | Release tag prefix does not match workflow guard            | Use `v*`, `juniper-cascor-protocol-v*`, or `juniper-cascor-model-v*` — see [PyPI Publishing](ci_cd/MANUAL.md#pypi-publishing) |
+| TestPyPI `400 File already exists` on publish                         | Dual trigger or concurrent upload of same version           | Publish via Release only (no `push: tags`); bump version to re-upload |
 
 ---
 

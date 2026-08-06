@@ -85,7 +85,10 @@ class RequestBodyLimitMiddleware(BaseHTTPMiddleware):
 
     async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
         # Fast-path early reject on declared Content-Length. Still untrusted
-        # as a floor, so the stream-read below enforces the real limit.
+        # as a floor, so the stream-read below enforces the real limit —
+        # including the under-declared case (CR-024): a client that claims
+        # ``Content-Length: N`` (N <= max) and then streams more than
+        # ``max_bytes`` must still be aborted by the cumulative cap.
         content_length = request.headers.get("content-length")
         if content_length is not None:
             try:
@@ -94,8 +97,10 @@ class RequestBodyLimitMiddleware(BaseHTTPMiddleware):
                 return JSONResponse(status_code=_PROJECT_API_HTTP_400_BAD_REQUEST, content={"detail": "Invalid Content-Length header"})
             if declared_length > self._max_bytes:
                 return JSONResponse(status_code=_PROJECT_API_HTTP_413_PAYLOAD_TOO_LARGE, content={"detail": "Request body too large"})
-        if content_length is None and request.method in ("POST", "PUT", "PATCH"):
-            # BUG-CC-15: stream-read with early abort to avoid buffering full body before size check.
+        if request.method in ("POST", "PUT", "PATCH"):
+            # BUG-CC-15 / CR-024: always stream-read mutating methods with
+            # early abort. Do not gate on ``content_length is None`` — that
+            # would let an under-declared Content-Length bypass the cap.
             chunks: list[bytes] = []
             size = 0
             async for chunk in request.stream():

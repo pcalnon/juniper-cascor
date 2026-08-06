@@ -43,6 +43,7 @@
   - [GET `/v1/training/params`](#get-v1trainingparams)
   - [PATCH `/v1/training/params`](#patch-v1trainingparams)
 - [Metrics](#metrics)
+  - [C7 scalar evaluation metrics](#c7-scalar-evaluation-metrics)
   - [GET `/v1/metrics`](#get-v1metrics)
   - [GET `/v1/metrics/history`](#get-v1metricshistory)
   - [GET `/v1/metrics/transport`](#get-v1metricstransport)
@@ -86,10 +87,12 @@ Treat each flag as an operational attestation: `JUNIPER_CASCOR_LOOPBACK_PUBLISH_
 
 ### Authentication
 
-Optional. Controlled by the application settings:
+Optional at the request layer; loud at boot via SEC-F01.
 
-- REST: `X-API-Key` header validated by `APIKeyAuth` middleware (`src/api/security.py`). When `settings.api_keys` is empty, auth is disabled (dev mode).
+- REST: `X-API-Key` header validated by `APIKeyAuth` middleware (`src/api/security.py`). When `settings.api_keys` is empty/blank, auth is disabled (dev mode) and protected routes are served open.
 - WebSocket: same `X-API-Key` header, validated in `ws_authenticate()` (`src/api/websocket/manager.py`). On failure the socket is closed with code `4001`.
+- Boot posture: the lifespan calls `juniper_service_core.enforce_auth_posture(...)` immediately after the bind guard (`src/api/app.py`). `JUNIPER_CASCOR_REQUIRE_AUTH` (default `false`) selects WARNING-and-continue vs refuse-with-`AuthPostureError`. Deployments that provision secrets (composed juniper-deploy) should set it `true`. Bypass: `JUNIPER_SKIP_AUTH_POSTURE_CHECK=1` (logged loudly).
+- Docker secrets: `JUNIPER_CASCOR_API_KEYS_FILE` is read by `api.secrets.get_secret()`. An existing empty/whitespace-only file returns `""` with **no** fallback to the plain env var. In the usual compose `_FILE`-only pattern that leaves `settings.api_keys` unset (HO-2 empty-placeholder class) unless `REQUIRE_AUTH=true` fails the boot.
 
 Rate limiting is also optional; per-IP REST limiter defaults to 100 req/min, and the worker WebSocket has its own per-IP connection rate limiter. WebSocket admission also has a stack-global cap across all WS endpoints (`JUNIPER_CASCOR_WS_MAX_CONNECTIONS_GLOBAL`, default 200). `/ws/control` adds a per-identity cap (`JUNIPER_CASCOR_WS_MAX_CONNECTIONS_PER_IDENTITY`, default 5) keyed on a non-reversible digest of the presented `X-API-Key`.
 
@@ -838,11 +841,49 @@ curl -s -X PATCH http://localhost:8201/v1/training/params \
 
 Router in `src/api/routes/metrics.py`, prefix `/v1/metrics`.
 
+### C7 scalar evaluation metrics
+
+**Intent** — Phase 1 of C7 (U-4) attaches classification quality scalars (F1, precision, recall, ROC-AUC) to the existing metrics surfaces so canopy and clients can chart them without a new protocol package. Distinct from Prometheus (`JUNIPER_CASCOR_METRICS_ENABLED`).
+
+**Codepaths** — `TrainingLifecycleManager._compute_eval_scalar_metrics` / `_extract_and_record_metrics` (`src/api/lifecycle/manager.py`); row attachment in `TrainingMonitor.on_epoch_end` (`src/api/lifecycle/monitor.py`); math in `src/api/lifecycle/classification_metrics.py` (torch-native, no scikit-learn).
+
+**Cadence & split**
+
+- Computed once per completed **training step** (initial output pass + one per growth iteration), not per inner output epoch.
+- Eval split is validation (`_val_x`/`_val_y`) when present, otherwise training.
+- On each metrics drain, scalars attach to the **terminal** `kind="training_step"` row only; older backfilled rows and `kind="output_epoch"` rows keep `f1`/`precision`/`recall`/`roc_auc` as `null` (one forward pass reflects current network state).
+
+**Config** — `JUNIPER_CASCOR_EVAL_METRICS_ENABLED` (default on). Parsed by `_env_flag` in the lifecycle manager (not `api.settings.Settings`). Disable with `0` / `false` / `no` / `off`. Multi-class averaging is fixed to `macro` in the manager today (`_eval_metrics_average`).
+
+**Surfaces**
+
+| Surface | What you get |
+|---------|----------------|
+| `GET /v1/metrics` | Flat `f1`/`precision`/`recall`/`roc_auc` plus self-describing `eval_metrics` (`enabled`, `average`, `split`, `n_samples`, `n_classes`, `undefined`) |
+| `GET /v1/metrics/history` | Same flat keys on each history row (nullable; populated on terminal training-step rows) |
+| `WS /ws/training` `metrics` / `initial_metrics` | Same row dict as history (additive keys; protocol envelopes allow extras) |
+
+**Not on** `/v1/training/status` (per-epoch loss/accuracy live on the metrics surfaces only).
+
+**Decode & degradation** — Binary (single output column): threshold 0.5, positive-class scores, `average` reported as `"binary"`. Multi-class: argmax vs one-hot, macro-average by default. Whole-metric `null` with `undefined` reasons: `empty_batch`, `single_class`, `invalid_output`. Failures never raise into the training thread.
+
+**Disable example**:
+
+```bash
+JUNIPER_CASCOR_EVAL_METRICS_ENABLED=0 JUNIPER_CASCOR_PORT=8201 python server.py
+```
+
+**Pitfalls**
+
+- Do not confuse with `JUNIPER_CASCOR_METRICS_ENABLED` (Prometheus scrape endpoint).
+- Expect `null` scalars on within-pass `output_epoch` rows and before the first drain of a run.
+- No `juniper-cascor-protocol` bump required — additive nullable keys on existing envelopes.
+
 ### GET `/v1/metrics`
 
 **Summary** — Latest metrics snapshot.
 
-**Detailed description** — Same payload schema the `/ws/training` stream emits as `metrics_update`. Implemented at `src/api/routes/metrics.py:17-23`.
+**Detailed description** — Same payload schema the `/ws/training` stream emits as `metrics_update`. Implemented at `src/api/routes/metrics.py:17-23`. **C7:** includes flat `f1`/`precision`/`recall`/`roc_auc` and the `eval_metrics` metadata block (see [C7 scalar evaluation metrics](#c7-scalar-evaluation-metrics)).
 
 **Syntax / example**:
 
@@ -852,7 +893,7 @@ curl -s http://localhost:8201/v1/metrics
 
 **State changes** — None.
 
-**Returns** — Envelope with the most recent metrics object (epoch, loss, accuracy, candidate scores, etc.).
+**Returns** — Envelope with the most recent metrics object (epoch, loss/accuracy, C7 scalars + `eval_metrics`, etc.).
 
 **Error handling** — `404` if no network; `503` if lifecycle unbound.
 
@@ -862,7 +903,7 @@ curl -s http://localhost:8201/v1/metrics
 
 **Summary** — Recent metric history.
 
-**Detailed description** — Returns the most recent `count` entries (or all if `count` is omitted). Used by canopy on initial load to backfill charts before subscribing to the WebSocket stream. Implemented at `src/api/routes/metrics.py:26-33`. **Retention (C5 / Q4):** the history is now retained across training run boundaries by default, so this endpoint stays populated after a run completes and across a subsequent run (pre-C5 the buffer was emptied at each run start). Empty it explicitly — with undo — via `POST /v1/training/metrics/clear`, or start a run with `start_fresh: true` for a clean slate.
+**Detailed description** — Returns the most recent `count` entries (or all if `count` is omitted). Used by canopy on initial load to backfill charts before subscribing to the WebSocket stream. Implemented at `src/api/routes/metrics.py:26-33`. **Retention (C5 / Q4):** the history is now retained across training run boundaries by default, so this endpoint stays populated after a run completes and across a subsequent run (pre-C5 the buffer was emptied at each run start). Empty it explicitly — with undo — via `POST /v1/training/metrics/clear`, or start a run with `start_fresh: true` for a clean slate. **C7:** each row always carries nullable `f1`/`precision`/`recall`/`roc_auc` (populated on the terminal `training_step` row of each drain when eval metrics are enabled).
 
 **Syntax**:
 
