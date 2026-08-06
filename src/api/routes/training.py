@@ -225,6 +225,10 @@ async def update_training_params(request: Request, body: TrainingParamUpdateRequ
         # string in the JSON body so the canopy adapter can route it through
         # the same `mismatches`/`skipped` toast machinery from C3.
         raise HTTPException(status_code=422, detail=str(e)) from e
+    except RuntimeError as e:
+        # CAN-015c: update_params rejects REPLAYING — surface as 409 so
+        # Canopy can distinguish conflict from missing-network 404.
+        raise HTTPException(status_code=409, detail=str(e)) from e
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e)) from e
 

@@ -10,6 +10,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Unit tests no longer pin the service version as a literal: the four `0.6.0` assertions in `test_api_app.py`, `test_api_app_coverage_deep.py`, and `test_api_health.py` (red on `main` since the v0.7.0 bump merged in #429 without CI running) now assert against `api.app._API_VERSION` — the BUG-CC-04 canonical runtime read — so a release version bump can no longer break the suite.
+- **CAN-015c — `update_params` / `PATCH /v1/training/params` / WS `set_params` reject REPLAYING (HTTP 409).**
+  The FSM contract states that meta-param mutations are rejected while a snapshot replay session is active, but `TrainingLifecycleManager.update_params` never consulted `is_replaying()`. Live knobs could change mid-replay and desync the synthetic epoch stream. The manager now raises `RuntimeError`; the REST route maps it to **409** (WS inherits via the shared lifecycle call).
+- **`get_secret` fail-soft on unreadable / non-UTF-8 Docker `_FILE` mounts.**
+  `path.read_text()` previously propagated `OSError` / `UnicodeDecodeError` and could crash Settings resolution at boot. Both now fall through to the plain env var (same posture as a missing path).
 
 ## [0.7.0] - 2026-07-28
 
