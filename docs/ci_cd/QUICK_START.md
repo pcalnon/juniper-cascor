@@ -228,6 +228,48 @@ The unit-tests job fails if aggregate coverage drops below the configured 80% ga
 bash util/run_coverage.bash
 ```
 
+## WS-6 Gates (Golden + Conformance)
+
+Two dedicated serial workflows sit beside `ci.yml`. They are **not** part of the
+unit/integration coverage lane — collection requires explicit opt-in flags so
+they never leak into xdist or scheduled-slow runs.
+
+| Workflow | File | Asserts | Calibration pins |
+|----------|------|---------|------------------|
+| Golden Regression (WS-6 Gate) | `.github/workflows/golden-regression.yml` | Float/structure goldens (OUT-12) | Python **3.13**, torch **2.11.0** CPU |
+| Conformance (WS-6 Gate) | `.github/workflows/conformance.yml` | `GrowableModel` interface contract (OUT-13) | Same pins |
+
+Triggers: `push` to `main`, PRs to `main`/`develop`, and `workflow_dispatch`.
+
+### Reproduce locally (GIL env, serial only)
+
+```bash
+# From repo root on JuniperCascor1 (GIL). Never add -n / pytest-xdist.
+export OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1
+export VECLIB_MAXIMUM_THREADS=1 NUMEXPR_NUM_THREADS=1 CASCOR_NUM_PROCESSES=1
+
+# Golden / snapshot regression
+python -m pytest -m golden --golden --slow --integration \
+  src/tests/integration --timeout=300
+
+# model-core conformance
+python -m pytest -m conformance --conformance --slow --integration \
+  src/tests/conformance --timeout=300
+```
+
+Fixtures and regenerate rules: `src/tests/fixtures/golden/README.md`. Full
+operator runbook: [CI/CD Manual § WS-6 Gates](MANUAL.md#ws-6-gates-golden--conformance).
+
+## Package CI (path-filtered)
+
+| Workflow | Package dir | When it runs |
+|----------|-------------|--------------|
+| `ci-protocol.yml` | `juniper-cascor-protocol/` | Changes under that tree (or the workflow file) |
+| `ci-cascor-model.yml` | `juniper-cascor-model/` | Changes under that tree (or the workflow file) |
+
+These gate the extractable packages independently of the server `ci.yml` lane
+(build + `twine check` after tests). Touching only `src/` does not fire them.
+
 ## Publishing Packages to PyPI
 
 Three Trusted Publishing (OIDC) workflows publish packages from this repo. Cut a **GitHub Release** (never a bare tag push) with the matching tag:
@@ -256,8 +298,8 @@ Do **not** add a `push: tags` trigger alongside `release: published` — cutting
 
 | Setting | Value |
 |---------|-------|
-| Python Version | 3.14 |
+| Python Version | 3.14 (main `ci.yml`); **3.13** for WS-6 golden/conformance |
 | Package Manager | mamba (via conda-incubator/setup-miniconda@v3) |
 | Environment File | `conf/conda_environment.yaml` |
 | Coverage Threshold | 80% aggregate (hard fail) |
-| Test Timeout | 60s (unit), 120s (integration) |
+| Test Timeout | 60s (unit), 120s (integration), 300s (WS-6 lanes) |
