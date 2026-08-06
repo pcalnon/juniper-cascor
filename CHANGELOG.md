@@ -7,7 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- **Worker result ownership** — `WorkerCoordinator.submit_result` now rejects results whose submitting `worker_id` does not match the task's `assigned_worker_id`, so a peer worker cannot complete work it was never assigned. Tests: `test_worker_coordinator.py::TestSubmitResult::test_reject_wrong_worker_ownership`.
+
 ### Fixed
+
+- **`WorkerProtocol.validate_tensors`** — malformed tensor manifests (missing `shape`/`dtype`, non-dict entries) and empty `weights` arrays now return validation errors instead of raising `KeyError` / empty-reduction errors that could crash the coordinator result path. Tests: `test_worker_protocol.py::TestValidateTensors`.
 
 - **CR-024 — `RequestBodyLimitMiddleware` no longer trusts a present `Content-Length` as a floor.** Previously the stream-cap path only ran when `Content-Length` was absent, so a client that under-declared the header (`Content-Length: N` with `N <= max`) and then streamed more than `max_bytes` bypassed the body limit (docstring claimed CR-024 protection; the `content_length is None` gate contradicted it). Mutating methods (`POST`/`PUT`/`PATCH`) now always stream-read with the cumulative byte cap after the oversized-declared early reject. Tests: `TestRequestBodyLimitMiddleware` under-declared + truthful Content-Length cases in `src/tests/unit/api/test_api_middleware.py`.
 
