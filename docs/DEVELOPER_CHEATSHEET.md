@@ -1,6 +1,6 @@
 # Developer Cheatsheet — juniper-cascor
 
-**Version**: 1.0.1  |  **Date**: 2026-08-05  |  **Project**: juniper-cascor
+**Version**: 1.0.15  |  **Date**: 2026-08-06  |  **Project**: juniper-cascor
 
 ---
 
@@ -127,6 +127,12 @@ Metrics nuance:
 | `JUNIPER_CASCOR_WS_MAX_CONNECTIONS` | `50` | Global WebSocket connection cap, including pending `/ws/training` resume handshakes. |
 | `JUNIPER_CASCOR_WS_HEARTBEAT_INTERVAL_SEC` | `30` | Training/control heartbeat ping interval. |
 | `JUNIPER_CASCOR_WS_HEARTBEAT_PONG_TIMEOUT_SEC` | `10` | Training/control pong timeout before heartbeat close. |
+| `JUNIPER_CASCOR_REMOTE_WORKERS_HEARTBEAT_TIMEOUT` | `30.0` | Worker heartbeat stale timeout (CONC-10 reap). |
+| `JUNIPER_CASCOR_REMOTE_WORKERS_TASK_REASSIGNMENT_TIMEOUT` | `120.0` | Fallback reassignment for orphaned tasks. Dispatch send failures (with `requeue_after_dispatch_failure`, #477) requeue immediately — do not wait for this timeout on that path. |
+
+**Worker tip:** A `TASK_RESULT` with `success=true` and no `weights` tensor must be rejected (`submit_result`, #477) — otherwise `_dispatch_to_remote_workers` rebuilds a randomly initialized `CandidateUnit` that can win N-best selection.
+
+**Worker tip:** A stall after `TASK_ASSIGN` with a still-heartbeating worker can be an undelivered dispatch (`send_json`/`send_bytes` failed after `get_next_assignment`); with `requeue_after_dispatch_failure` (#477) the task returns to the queue immediately. See [API Reference — WS `/ws/v1/workers`](api/JUNIPER_CASCOR_API_REFERENCE.md#ws-wsv1workers).
 
 ---
 
@@ -252,6 +258,8 @@ Core: `torch`, `numpy`, `h5py`, `matplotlib`, `PyYAML`, `requests`
 | NaN in training                                                       | LR too high or bad data                                     | Reduce `learning_rate`, check tensors                                                                     |
 | Server refuses to start with `NonLoopbackBindError`                   | `JUNIPER_CASCOR_HOST` is non-loopback without a bind attestation | Bind `127.0.0.1` for local/dev, or set `JUNIPER_CASCOR_LOOPBACK_PUBLISH_ATTESTED=true` (loopback-only host publish) or `JUNIPER_CASCOR_AUTH_PROXY_ATTESTED=true` (fronting authenticating proxy) after verifying it |
 | WebSocket closes during connect with `1013`                           | Global, per-IP, or `/ws/control` per-identity cap reached   | Raise the relevant `JUNIPER_CASCOR_WS_MAX_CONNECTIONS_*` cap only after checking expected clients and worker fleet size |
+| Hidden-unit growth picks a near-random remote candidate               | `success=True` `TASK_RESULT` accepted with missing/empty `weights` | With #477, `submit_result` rejects success without weights; inspect worker result envelopes and coordinator reject logs |
+| Candidate round stalls ~120s after `TASK_ASSIGN` while worker still heartbeats | Dispatch `send_json`/`send_bytes` failed after assignment; worker left busy | With `requeue_after_dispatch_failure` (#477), send failures free + requeue immediately — check "Dispatch send failed" warnings |
 | Publish workflow skipped / wrong package                              | Release tag prefix does not match workflow guard            | Use `v*`, `juniper-cascor-protocol-v*`, or `juniper-cascor-model-v*` — see [PyPI Publishing](ci_cd/MANUAL.md#pypi-publishing) |
 | TestPyPI `400 File already exists` on publish                         | Dual trigger or concurrent upload of same version           | Publish via Release only (no `push: tags`); bump version to re-upload |
 

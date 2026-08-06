@@ -5,7 +5,7 @@
 **Author**: Paul Calnon
 **License**: MIT License
 **Version**: 0.7.0
-**Last Updated**: 2026-08-05
+**Last Updated**: 2026-08-06
 
 ---
 
@@ -462,6 +462,12 @@ Distributed candidate training via WebSocket workers.
 5. Heartbeat keepalive (default 30s timeout)
 6. Auto-deregistration on heartbeat timeout
 7. Task reassignment on worker failure (default 120s timeout)
+
+**Result integrity & dispatch rollback** (open #477; do not assume every failure waits 120s):
+
+- `submit_result` rejects `success=True` when `weights` is missing or empty — empty/missing `tensor_manifest` must not skip this guard. `success=False` may omit weights. Otherwise `_dispatch_to_remote_workers` rebuilds a randomly initialized `CandidateUnit` and can poison N-best selection.
+- `_try_dispatch_task` send failures (`send_json` / `send_bytes` after `get_next_assignment`) call `requeue_after_dispatch_failure` to free the worker and return the task to `_unassigned_tasks` immediately. Heartbeats alone cannot recover an undelivered busy assignment.
+- Distinct from clean-disconnect / soft binary-frame abort requeue and from schema/tensor reject-requeue. Details: [`docs/api/JUNIPER_CASCOR_API_REFERENCE.md`](docs/api/JUNIPER_CASCOR_API_REFERENCE.md) § WS `/ws/v1/workers`.
 
 ---
 

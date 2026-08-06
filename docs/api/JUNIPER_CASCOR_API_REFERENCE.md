@@ -1518,6 +1518,27 @@ receives an error response and then closes with `1003`.
 
 **State changes** — On `REGISTRATION` the worker is added to the registry. `TASK_RESULT` updates the worker's task counters, health score, and recent durations. `WORKER_ERROR` increments failure counters and may quarantine the worker (Phase 4 anomaly detector).
 
+**Result integrity — `success=True` requires weights** (`WorkerCoordinator.submit_result`, lands with open #477) —
+
+| Constraint | Behavior |
+|------------|----------|
+| `success=True` with missing / empty `weights` | Rejected: `registry.complete_task(..., success=False)` and `submit_result` returns `False`. Checked **before** `validate_tensors` so an empty/missing `tensor_manifest` cannot skip the guard. |
+| `success=False` without `weights` | Allowed — failed results may omit tensors. |
+| Empty `weights` inside `validate_tensors` | Reported as a validation error (`Tensor weights: empty array`) instead of raising inside `np.max` on a zero-size array. |
+
+**Why it matters:** `_dispatch_to_remote_workers` reconstructs a `CandidateUnit` from the result. When `weights` is absent it leaves the unit at random init parameters. Accepting `success=True` without weights therefore poisons N-best candidate selection with an untrained unit that still carries the worker's claimed correlation. This guard is distinct from schema/tensor reject-requeue (`_reject_and_requeue_task`, docs #457/#458) and from wrong-worker / unassigned ownership rejects (docs #455/#474).
+
+**Pre-#477 gap (current `main`):** empty/missing `tensor_manifest` skips `validate_tensors`, so a successful payload with no `weights` is accepted.
+
+**Dispatch send-failure rollback** (`WorkerCoordinator.requeue_after_dispatch_failure`, lands with open #477) — `_try_dispatch_task` calls `get_next_assignment` (marks the worker busy and the task assigned) then `send_json` / `send_bytes`. On main, a socket write failure after assignment leaves the undelivered task pinned until `JUNIPER_CASCOR_REMOTE_WORKERS_TASK_REASSIGNMENT_TIMEOUT` (default **120s**). If the connection keeps heartbeating, CONC-10 stale-worker reaping also will not recover it.
+
+With #477, send failures call `requeue_after_dispatch_failure(worker_id, task_id)` which:
+
+1. Frees the worker via `registry.complete_task(..., success=False)`.
+2. Clears `assigned_worker_id` and appends the `task_id` to `_unassigned_tasks` (when the pending task is still live).
+
+This is the **send-side** mirror of clean-disconnect / soft binary-frame abort requeue (docs #464/#465). It does not wait for the 120s timeout. `_make_send_callback` already fails soft for the alternate callback dispatch path; `#477` closes the same hole for connect-time / post-result `_try_dispatch_task`.
+
 **Error handling / close codes**:
 
 | Code | Trigger                              |

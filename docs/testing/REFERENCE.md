@@ -394,6 +394,21 @@ python -m coverage report --fail-under=80   # Current aggregate threshold
 
 ---
 
+## Worker Result Integrity & Dispatch Rollback (#477)
+
+Regression coverage for the poison-candidate and send-side dispatch holes lands with open #477:
+
+| Contract | Tests |
+|----------|-------|
+| Reject `success=True` with missing / empty `weights` | `src/tests/unit/api/test_worker_coordinator.py` (`test_reject_success_true_with_missing_weights`, `test_reject_success_true_with_empty_weights`, `test_accept_success_false_without_weights`) |
+| Empty `weights` is a `validate_tensors` error (no `np.max` raise) | `src/tests/unit/api/test_worker_protocol.py` (`test_empty_weights_array_returns_error_not_raise`) |
+| `requeue_after_dispatch_failure` frees busy worker + restores queue | `src/tests/unit/api/test_worker_coordinator.py` (`TestRequeueAfterDispatchFailure`) |
+| `_try_dispatch_task` `send_json` / `send_bytes` failure requeues | `src/tests/unit/api/test_worker_stream.py` (`test_send_json_failure_requeues_assigned_task`, `test_send_bytes_failure_requeues_after_partial_send`) |
+
+Operator contracts: [JUNIPER_CASCOR_API_REFERENCE.md — WS `/ws/v1/workers`](../api/JUNIPER_CASCOR_API_REFERENCE.md#ws-wsv1workers).
+
+---
+
 ## Related Documentation
 
 - [Testing Quick Start](QUICK_START.md) - Getting started with testing

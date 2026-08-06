@@ -849,6 +849,8 @@ All REST responses use the standard response envelope:
 - Set `JUNIPER_CASCOR_LOOPBACK_PUBLISH_ATTESTED=true` when a loopback-only host-publish fronts the service, or `JUNIPER_CASCOR_AUTH_PROXY_ATTESTED=true` when an authenticating reverse proxy does. This guard runs before the server accepts connections.
 - WebSocket admission uses `JUNIPER_CASCOR_WS_MAX_CONNECTIONS_GLOBAL` (default 200) across `/ws/training`, `/ws/control`, and `/ws/v1/workers`. `/ws/control` also uses `JUNIPER_CASCOR_WS_MAX_CONNECTIONS_PER_IDENTITY` (default 5), keyed on a non-reversible digest of the `X-API-Key`.
 - Over-cap WebSocket attempts close with `1013`. The peer-IP cap remains DoS-dampening only; behind Docker NAT, clients can share one bridge-gateway IP bucket.
+- Remote `TASK_RESULT` with `success=True` must include a non-empty `weights` tensor (`WorkerCoordinator.submit_result`, open #477); otherwise `_dispatch_to_remote_workers` can reconstruct a randomly initialized `CandidateUnit` and poison N-best selection.
+- Dispatch `send_json`/`send_bytes` failures after `get_next_assignment` requeue immediately via `requeue_after_dispatch_failure` (do not wait for the 120s reassignment timeout). Operator detail: [JUNIPER_CASCOR_API_REFERENCE.md — WS `/ws/v1/workers`](JUNIPER_CASCOR_API_REFERENCE.md#ws-wsv1workers).
 
 ### Training Lifecycle Endpoints
 
