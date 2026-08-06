@@ -1,7 +1,7 @@
 # Juniper Cascor - Testing Manual
 
-**Version**: 0.3.21  
-**Last Updated**: 2026-01-29  
+**Version**: 0.3.22  
+**Last Updated**: 2026-08-04  
 **Purpose**: Comprehensive guide for writing and running tests
 
 ---
@@ -16,6 +16,7 @@
 6. [Test Data](#test-data)
 7. [Testing with JuniperData](#testing-with-juniperdata)
 8. [Common Testing Patterns](#common-testing-patterns)
+9. [API Version Assertions (BUG-CC-04)](#api-version-assertions-bug-cc-04)
 
 ---
 
@@ -789,5 +790,91 @@ def test_different_optimizers(optimizer):
 
 ---
 
-**Document Version**: 0.3.21  
-**Last Updated**: 2026-01-29
+## API Version Assertions (BUG-CC-04)
+
+### Intent
+
+Package version is canonical in `pyproject.toml` and read at runtime via
+`importlib.metadata.version("juniper-cascor")`. Wiring tests that check the
+FastAPI app metadata, `/v1/health`, readiness, or Prometheus build-info must
+assert against that runtime value — never a pinned SemVer literal such as
+`"0.6.0"`. A release bump must not turn green wiring tests red.
+
+### Canonical source in the API process
+
+```python
+# src/api/app.py — BUG-CC-04
+try:
+    _API_VERSION: str = importlib.metadata.version("juniper-cascor")
+except importlib.metadata.PackageNotFoundError:
+    _API_VERSION = "0.0.0-dev"
+```
+
+`create_app()`, Sentry release tagging, and `set_build_info(...)` all consume
+`api.app._API_VERSION`. Health routes perform a parallel
+`importlib.metadata.version("juniper-cascor")` read in
+`src/api/routes/health.py` (fallback literal only when the package is not
+installed).
+
+### Correct wiring assertions
+
+```python
+from api.app import _API_VERSION, create_app
+from api.settings import Settings
+
+def test_app_title_and_version():
+    app = create_app(Settings(auto_start=False))
+    assert app.title == "JuniperCascor API"
+    assert app.version == _API_VERSION  # never a pinned "x.y.z"
+
+def test_health_check(client):
+    body = client.get("/v1/health").json()
+    assert body["version"] == _API_VERSION
+```
+
+These tests still catch real regressions: factory not passing the canonical
+version, endpoints dropping the field, or lifespan calling `set_build_info`
+with the wrong args.
+
+### What may still use a literal
+
+| Use | OK to pin? | Why |
+|-----|------------|-----|
+| Assert `app.version` / health `/version` / build-info | **No** | Must track installed package |
+| Construct a synthetic `ReadinessResponse(version=...)` in a unit fixture | Yes | Fixture data, not product wiring |
+| Assert only that `meta.version` is a `str` / key present | Yes | Shape/compat tests |
+
+### Remaining version sources (do not assume one constant)
+
+Not every `version` field currently shares `api.app._API_VERSION`:
+
+- `api.models.common._API_VERSION` is still a module-level literal used for
+  `ResponseEnvelope.meta.version`.
+- `juniper_cascor/__init__.py` `__version__` may lag `pyproject.toml` until
+  reconciled.
+- Example payloads in older API docs may show historic numbers (e.g. `0.4.0`);
+  treat those as illustrative, not as the live package version.
+
+When writing new envelope assertions, either assert type/presence only, or
+compare against the constant that the code path actually uses — do not mix
+`api.app._API_VERSION` with `api.models.common._API_VERSION` unless you are
+explicitly testing that they match.
+
+### Related suite coverage
+
+`src/tests/unit/test_phase_2e_topology_correlation_phase.py`
+(`TestBugCC04VersionSingleSource`) checks that the installed distribution
+version matches `pyproject.toml` and that production sources do not retain
+stale `# Version:` file headers.
+
+### Pitfall that bit `main` (v0.7.0)
+
+After the v0.7.0 bump, four unit tests still expected the literal `"0.6.0"`
+and failed every CI run (`assert '0.7.0' == '0.6.0'`). Prefer deriving
+expectations from `_API_VERSION` whenever you touch version wiring tests.
+See also [Testing Reference — API version](REFERENCE.md#api-version-assertions-bug-cc-04).
+
+---
+
+**Document Version**: 0.3.22  
+**Last Updated**: 2026-08-04

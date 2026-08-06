@@ -203,7 +203,9 @@ Compression: gzip level 4 (default). Performance: Save <2s, Load <3s, Verify <20
 | `gpu`             | Needs GPU/CUDA        | `accuracy` / `early_stopping` | Accuracy / stopping        |
 | `multiprocessing` | Multi-process tests   | `requires_juniper_data`       | Needs juniper-data service |
 
-> See: [Testing Quick Start](testing/QUICK_START.md) | [Testing Reference](testing/REFERENCE.md)
+**API version wiring (BUG-CC-04):** assert `app.version`, `/v1/health` `version`, and `set_build_info` against `api.app._API_VERSION` (`importlib.metadata.version("juniper-cascor")`) — never a pinned `"0.x.y"`. Fixture-only model construction may still use literals. `ResponseEnvelope.meta.version` currently uses `api.models.common._API_VERSION` (literal; may lag).
+
+> See: [Testing Quick Start](testing/QUICK_START.md) | [Testing Reference](testing/REFERENCE.md) | [API version assertions](testing/MANUAL.md#api-version-assertions-bug-cc-04)
 
 ---
 
@@ -242,6 +244,7 @@ Core: `torch`, `numpy`, `h5py`, `matplotlib`, `PyYAML`, `requests`
 
 | Symptom                                                               | Cause                                                       | Fix                                                                                                       |
 |-----------------------------------------------------------------------|-------------------------------------------------------------|-----------------------------------------------------------------------------------------------------------|
+| Unit tests fail with `assert '0.7.0' == '0.6.0'` (or similar SemVer)   | Wiring test pins a literal package version                  | Assert against `api.app._API_VERSION` (BUG-CC-04); do not hard-code SemVer in health/app/build-info tests |
 | `CASCOR_LOG_LEVEL` no effect                                          | Set after import                                            | Set env var before any `import`                                                                           |
 | Logger pickle error                                                   | Logger in `__getstate__`                                    | Exclude logger from pickle state                                                                          |
 | `Unrecognized activation function name during deserialization`        | Activation name missing from `ActivationWithDerivative` map | Add matching key to `src/utils/activation.py` `ACTIVATION_MAP` (function `__name__` or module class name) |
