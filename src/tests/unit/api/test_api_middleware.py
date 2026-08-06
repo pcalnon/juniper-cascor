@@ -270,6 +270,73 @@ class TestRequestBodyLimitMiddleware:
         # Streaming early-abort: should abort within a single chunk past the limit.
         assert bytes_yielded <= 1024 + 512, f"Streaming read consumed {bytes_yielded} bytes — should abort near the 1024 byte limit"
 
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("method", ["POST", "PUT", "PATCH"])
+    async def test_cr024_underdeclared_content_length_still_enforces_cap(self, method):
+        """CR-024: under-declared Content-Length must not bypass the stream cap.
+
+        A client that claims ``Content-Length`` under the limit and then
+        streams more than ``max_bytes`` must still receive 413. Gating the
+        stream-read on ``content_length is None`` would admit this bypass.
+        """
+        from unittest.mock import MagicMock
+
+        bytes_yielded = 0
+
+        async def stream_gen():
+            nonlocal bytes_yielded
+            for _ in range(20):
+                chunk = b"A" * 512
+                bytes_yielded += len(chunk)
+                yield chunk
+
+        request = MagicMock()
+        # Declared length is under the 1024-byte cap; actual stream is 10 KiB.
+        request.headers = {"content-length": "100"}
+        request.method = method
+        request.stream = stream_gen
+
+        async def call_next(_req):  # pragma: no cover — should not be reached.
+            raise AssertionError("call_next should not run after under-declared 413 abort")
+
+        middleware = RequestBodyLimitMiddleware(app=MagicMock(), max_bytes=1024)
+        response = await middleware.dispatch(request, call_next)
+
+        assert response.status_code == 413
+        assert bytes_yielded <= 1024 + 512, f"Under-declared stream consumed {bytes_yielded} bytes — should abort near the 1024 byte limit"
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("method", ["POST", "PUT", "PATCH"])
+    async def test_cr024_declared_content_length_under_limit_caches_body(self, method):
+        """Mutating requests with a truthful under-limit Content-Length still
+        stream-read and cache ``request._body`` for downstream handlers."""
+        from unittest.mock import MagicMock
+
+        payload = b'{"a":"b"}'
+
+        async def stream_gen():
+            yield payload
+
+        request = MagicMock()
+        request.headers = {"content-length": str(len(payload))}
+        request.method = method
+        request.stream = stream_gen
+        # MagicMock would invent ``_body``; start unset so the cache write is real.
+        del request._body
+
+        call_next_seen = []
+
+        async def call_next(req):
+            call_next_seen.append(req._body)
+            return MagicMock(status_code=200)
+
+        middleware = RequestBodyLimitMiddleware(app=MagicMock(), max_bytes=1024)
+        response = await middleware.dispatch(request, call_next)
+
+        assert response.status_code == 200
+        assert call_next_seen == [payload]
+        assert request._body == payload
+
     def test_bug_cc_15_body_cached_for_downstream_handlers(self, body_limit_app):
         """BUG-CC-15: after streaming read, body must remain readable by downstream handlers."""
         client = TestClient(body_limit_app)
