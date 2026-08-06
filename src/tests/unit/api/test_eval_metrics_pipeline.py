@@ -12,12 +12,14 @@ against a real network and asserts the additive surfaces:
 - and the existing loss / accuracy pipeline is unchanged (no-regression pins).
 """
 
+from unittest.mock import MagicMock
+
 import pytest
 import torch
 from fastapi.testclient import TestClient
 
 from api.app import create_app
-from api.lifecycle.manager import TrainingLifecycleManager
+from api.lifecycle.manager import TrainingLifecycleManager, _env_flag
 from api.lifecycle.monitor import TrainingMonitor
 from api.settings import Settings
 from api.websocket.messages import create_metrics_message
@@ -124,6 +126,82 @@ class TestDrainScalarSurface:
         _append_step(mgr)
         mgr._extract_and_record_metrics()
         assert mgr.get_metrics()["eval_metrics"]["split"] == "validation"
+
+    def test_forward_failure_degrades_without_crashing_drain(self):
+        """C7 contract: a failed eval forward must never abort the metrics drain.
+
+        Loss/accuracy still record; scalar fields stay None on the terminal row.
+        """
+        mgr = _manager_with_network_and_eval()
+        mgr.network.forward = MagicMock(side_effect=RuntimeError("boom"))
+        _append_step(mgr)
+        mgr._extract_and_record_metrics()  # must NOT raise
+        row = mgr.monitor.get_all_metrics()[-1]
+        assert row["loss"] == 0.25
+        assert row["accuracy"] == 0.75
+        assert all(row[field] is None for field in _SCALAR_FIELDS)
+        assert mgr._latest_scalar_metrics is None
+
+    def test_single_class_eval_surfaces_undefined_on_snapshot(self):
+        """Single-class eval y degrades to null scalars + single_class reasons."""
+        mgr = TrainingLifecycleManager()
+        mgr.create_network(input_size=2, output_size=2)
+        mgr._train_x = torch.tensor([[0.2, 0.8], [0.9, 0.1], [0.1, 0.7], [0.8, 0.2]], dtype=torch.float32)
+        mgr._train_y = torch.tensor([[1.0, 0.0], [1.0, 0.0], [1.0, 0.0], [1.0, 0.0]], dtype=torch.float32)
+        _append_step(mgr)
+        mgr._extract_and_record_metrics()
+        row = mgr.monitor.get_all_metrics()[-1]
+        assert all(row[field] is None for field in _SCALAR_FIELDS)
+        snap = mgr.get_metrics()
+        for field in _SCALAR_FIELDS:
+            assert snap[field] is None
+            assert snap["eval_metrics"]["undefined"][field] == "single_class"
+
+    def test_run_start_clears_stale_latest_scalar_metrics(self):
+        """Prior-run cached scalars must not linger on /v1/metrics across runs."""
+        mgr = _manager_with_network_and_eval()
+        mgr._latest_scalar_metrics = {
+            "f1": 0.9,
+            "precision": 0.9,
+            "recall": 0.9,
+            "roc_auc": 0.9,
+            "average": "macro",
+            "n_samples": 4,
+            "n_classes": 2,
+            "undefined": {},
+        }
+        cleared = {}
+
+        def fake_fit(x, y, *, X_val=None, y_val=None, on_event=None, **kw):
+            cleared["latest"] = mgr._latest_scalar_metrics
+
+        mgr.model.fit = fake_fit
+        x, y = _two_class_eval()
+        mgr._run_training(x, y, x, y)
+
+        assert cleared["latest"] is None
+        snap = mgr.get_metrics()
+        assert all(snap[field] is None for field in _SCALAR_FIELDS)
+
+
+@pytest.mark.unit
+class TestEnvFlag:
+    """``_env_flag`` truthy/falsy matrix for JUNIPER_CASCOR_EVAL_METRICS_ENABLED."""
+
+    @pytest.mark.parametrize("value", ["0", "false", "FALSE", "no", "off", " Off "])
+    def test_falsy_values_disable(self, monkeypatch, value):
+        monkeypatch.setenv("JUNIPER_CASCOR_EVAL_METRICS_ENABLED", value)
+        assert _env_flag("JUNIPER_CASCOR_EVAL_METRICS_ENABLED", default=True) is False
+
+    @pytest.mark.parametrize("value", ["1", "true", "YES", "on", " True "])
+    def test_truthy_values_enable(self, monkeypatch, value):
+        monkeypatch.setenv("JUNIPER_CASCOR_EVAL_METRICS_ENABLED", value)
+        assert _env_flag("JUNIPER_CASCOR_EVAL_METRICS_ENABLED", default=False) is True
+
+    def test_blank_uses_default(self, monkeypatch):
+        monkeypatch.setenv("JUNIPER_CASCOR_EVAL_METRICS_ENABLED", "   ")
+        assert _env_flag("JUNIPER_CASCOR_EVAL_METRICS_ENABLED", default=True) is True
+        assert _env_flag("JUNIPER_CASCOR_EVAL_METRICS_ENABLED", default=False) is False
 
 
 @pytest.mark.unit

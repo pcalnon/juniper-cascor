@@ -1,10 +1,10 @@
-"""Unit tests for SecurityMiddleware and RequestBodyLimitMiddleware."""
+"""Unit tests for SecurityMiddleware, SecurityHeadersMiddleware, and RequestBodyLimitMiddleware."""
 
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from api.middleware import EXEMPT_PATHS, RequestBodyLimitMiddleware, SecurityMiddleware
+from api.middleware import EXEMPT_PATHS, RequestBodyLimitMiddleware, SecurityHeadersMiddleware, SecurityMiddleware
 from api.security import APIKeyAuth, RateLimiter
 
 
@@ -29,6 +29,62 @@ def app_with_middleware():
         return app
 
     return _create
+
+
+@pytest.fixture
+def headers_app():
+    """Minimal app with SecurityHeadersMiddleware only."""
+
+    def _create(content_security_policy=None):
+        app = FastAPI()
+        if content_security_policy is None:
+            app.add_middleware(SecurityHeadersMiddleware)
+        else:
+            app.add_middleware(SecurityHeadersMiddleware, content_security_policy=content_security_policy)
+
+        @app.get("/v1/health")
+        async def health():
+            return {"status": "ok"}
+
+        return app
+
+    return _create
+
+
+@pytest.mark.unit
+class TestSecurityHeadersMiddleware:
+    """Always-on response header contract (clickjacking / MIME / CSP / HSTS)."""
+
+    def test_baseline_security_headers_present(self, headers_app):
+        client = TestClient(headers_app())
+        response = client.get("/v1/health")
+        assert response.status_code == 200
+        assert response.headers["X-Content-Type-Options"] == "nosniff"
+        assert response.headers["X-Frame-Options"] == "DENY"
+        assert response.headers["Referrer-Policy"] == "strict-origin-when-cross-origin"
+        assert response.headers["Permissions-Policy"] == "camera=(), microphone=(), geolocation=()"
+        assert response.headers["Content-Security-Policy"] == "default-src 'none'; frame-ancestors 'none'"
+
+    def test_no_hsts_without_forwarded_proto(self, headers_app):
+        client = TestClient(headers_app())
+        response = client.get("/v1/health")
+        assert "Strict-Transport-Security" not in response.headers
+
+    def test_hsts_when_forwarded_proto_https(self, headers_app):
+        client = TestClient(headers_app())
+        response = client.get("/v1/health", headers={"X-Forwarded-Proto": "https"})
+        assert response.headers["Strict-Transport-Security"] == "max-age=31536000; includeSubDomains"
+
+    def test_no_hsts_when_forwarded_proto_http(self, headers_app):
+        client = TestClient(headers_app())
+        response = client.get("/v1/health", headers={"X-Forwarded-Proto": "http"})
+        assert "Strict-Transport-Security" not in response.headers
+
+    def test_custom_content_security_policy(self, headers_app):
+        custom = "default-src 'self'; frame-ancestors 'none'"
+        client = TestClient(headers_app(content_security_policy=custom))
+        response = client.get("/v1/health")
+        assert response.headers["Content-Security-Policy"] == custom
 
 
 @pytest.mark.unit
@@ -213,6 +269,73 @@ class TestRequestBodyLimitMiddleware:
         assert response.status_code == 413
         # Streaming early-abort: should abort within a single chunk past the limit.
         assert bytes_yielded <= 1024 + 512, f"Streaming read consumed {bytes_yielded} bytes — should abort near the 1024 byte limit"
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("method", ["POST", "PUT", "PATCH"])
+    async def test_cr024_underdeclared_content_length_still_enforces_cap(self, method):
+        """CR-024: under-declared Content-Length must not bypass the stream cap.
+
+        A client that claims ``Content-Length`` under the limit and then
+        streams more than ``max_bytes`` must still receive 413. Gating the
+        stream-read on ``content_length is None`` would admit this bypass.
+        """
+        from unittest.mock import MagicMock
+
+        bytes_yielded = 0
+
+        async def stream_gen():
+            nonlocal bytes_yielded
+            for _ in range(20):
+                chunk = b"A" * 512
+                bytes_yielded += len(chunk)
+                yield chunk
+
+        request = MagicMock()
+        # Declared length is under the 1024-byte cap; actual stream is 10 KiB.
+        request.headers = {"content-length": "100"}
+        request.method = method
+        request.stream = stream_gen
+
+        async def call_next(_req):  # pragma: no cover — should not be reached.
+            raise AssertionError("call_next should not run after under-declared 413 abort")
+
+        middleware = RequestBodyLimitMiddleware(app=MagicMock(), max_bytes=1024)
+        response = await middleware.dispatch(request, call_next)
+
+        assert response.status_code == 413
+        assert bytes_yielded <= 1024 + 512, f"Under-declared stream consumed {bytes_yielded} bytes — should abort near the 1024 byte limit"
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("method", ["POST", "PUT", "PATCH"])
+    async def test_cr024_declared_content_length_under_limit_caches_body(self, method):
+        """Mutating requests with a truthful under-limit Content-Length still
+        stream-read and cache ``request._body`` for downstream handlers."""
+        from unittest.mock import MagicMock
+
+        payload = b'{"a":"b"}'
+
+        async def stream_gen():
+            yield payload
+
+        request = MagicMock()
+        request.headers = {"content-length": str(len(payload))}
+        request.method = method
+        request.stream = stream_gen
+        # MagicMock would invent ``_body``; start unset so the cache write is real.
+        del request._body
+
+        call_next_seen = []
+
+        async def call_next(req):
+            call_next_seen.append(req._body)
+            return MagicMock(status_code=200)
+
+        middleware = RequestBodyLimitMiddleware(app=MagicMock(), max_bytes=1024)
+        response = await middleware.dispatch(request, call_next)
+
+        assert response.status_code == 200
+        assert call_next_seen == [payload]
+        assert request._body == payload
 
     def test_bug_cc_15_body_cached_for_downstream_handlers(self, body_limit_app):
         """BUG-CC-15: after streaming read, body must remain readable by downstream handlers."""

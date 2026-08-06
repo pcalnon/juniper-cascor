@@ -155,6 +155,12 @@ cd src/tests && pytest ...
 
 Set a random seed for deterministic behavior using the `random_seed` config option.
 
+### Version Assertion Failures (`assert '0.7.0' == '0.6.0'`)?
+
+Wiring tests for `app.version`, `/v1/health`, or build-info must assert against
+`api.app._API_VERSION`, not a pinned SemVer literal. See
+[API Version Assertions](MANUAL.md#api-version-assertions-bug-cc-04).
+
 ## Available Test Markers
 
 | Marker | Description |
