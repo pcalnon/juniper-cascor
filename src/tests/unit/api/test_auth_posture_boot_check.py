@@ -83,6 +83,72 @@ class TestAuthPostureLifespanWiring:
         app = create_app(Settings(api_keys=None, auto_start=False))
         assert app.state.settings.api_keys is None
 
+    def test_empty_api_keys_file_with_require_auth_refuses_startup(self, monkeypatch, tmp_path):
+        """HO-2 end-to-end: empty Docker secret mount + require_auth must
+        fail closed at lifespan — Settings resolves ``None``, posture raises
+        before any background machinery starts."""
+        from juniper_service_core import AuthPostureError
+
+        secret_path = tmp_path / "juniper_cascor_api_keys"
+        secret_path.write_text("")
+        monkeypatch.setenv("JUNIPER_CASCOR_API_KEYS_FILE", str(secret_path))
+        monkeypatch.delenv("JUNIPER_CASCOR_API_KEYS", raising=False)
+        monkeypatch.delenv("JUNIPER_SKIP_AUTH_POSTURE_CHECK", raising=False)
+
+        settings = Settings(auto_start=False, require_auth=True)
+        assert settings.api_keys is None
+        app = create_app(settings)
+
+        async def _enter() -> None:
+            async with lifespan(app):
+                pass  # pragma: no cover — posture raises before yield
+
+        with pytest.raises(AuthPostureError):
+            asyncio.run(_enter())
+
+    def test_whitespace_api_keys_file_with_require_auth_refuses_startup(self, monkeypatch, tmp_path):
+        """Whitespace-only secret files strip to empty; require_auth must refuse."""
+        from juniper_service_core import AuthPostureError
+
+        secret_path = tmp_path / "juniper_cascor_api_keys"
+        secret_path.write_text("  \n\t  ")
+        monkeypatch.setenv("JUNIPER_CASCOR_API_KEYS_FILE", str(secret_path))
+        monkeypatch.delenv("JUNIPER_CASCOR_API_KEYS", raising=False)
+        monkeypatch.delenv("JUNIPER_SKIP_AUTH_POSTURE_CHECK", raising=False)
+
+        settings = Settings(auto_start=False, require_auth=True)
+        assert settings.api_keys is None
+        app = create_app(settings)
+
+        async def _enter() -> None:
+            async with lifespan(app):
+                pass  # pragma: no cover — posture raises before yield
+
+        with pytest.raises(AuthPostureError):
+            asyncio.run(_enter())
+
+    def test_commas_only_api_keys_file_with_require_auth_refuses_startup(self, monkeypatch, tmp_path):
+        """``, ,`` parses to ``[]`` (unconfigured); require_auth must refuse
+        the same way as ``None`` — not serve open behind a healthy probe."""
+        from juniper_service_core import AuthPostureError
+
+        secret_path = tmp_path / "juniper_cascor_api_keys"
+        secret_path.write_text(", ,")
+        monkeypatch.setenv("JUNIPER_CASCOR_API_KEYS_FILE", str(secret_path))
+        monkeypatch.delenv("JUNIPER_CASCOR_API_KEYS", raising=False)
+        monkeypatch.delenv("JUNIPER_SKIP_AUTH_POSTURE_CHECK", raising=False)
+
+        settings = Settings(auto_start=False, require_auth=True)
+        assert settings.api_keys == []
+        app = create_app(settings)
+
+        async def _enter() -> None:
+            async with lifespan(app):
+                pass  # pragma: no cover — posture raises before yield
+
+        with pytest.raises(AuthPostureError):
+            asyncio.run(_enter())
+
 
 class TestAuthPostureBehaviour:
     """The helper's three outcomes, exercised directly (hermetic)."""
