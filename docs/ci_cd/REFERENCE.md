@@ -1,7 +1,7 @@
 # CI/CD Reference
 
 **Project**: Juniper Cascor  
-**Workflow Files**: `.github/workflows/ci.yml`, `lockfile-update.yml`  
+**Workflow Files**: `.github/workflows/ci.yml`, `lockfile-update.yml`, `publish.yml`, `publish-protocol.yml`, `publish-cascor-model.yml`  
 **Last Updated**: 2026-08-05
 
 ---
@@ -24,6 +24,41 @@
 | `integration` | Integration tests | PRs only | `test` |
 | `quality-gate` | Aggregated pass/fail status | Always | `lint`, `test` |
 | `notify` | Build status notification | Always | `quality-gate` |
+
+---
+
+## Publish Workflows
+
+Trusted Publishing (OIDC) pipelines. Source of truth: the workflow YAML files under `.github/workflows/`.
+
+| Workflow | Package | Trigger | Tag guard | Environments | Publish action |
+|----------|---------|---------|-----------|--------------|----------------|
+| `publish.yml` | `juniper-cascor` | `release: published` | `startsWith(tag, 'v')` | `testpypi` → `pypi` | `pypa/gh-action-pypi-publish` (SHA-pinned) |
+| `publish-protocol.yml` | `juniper-cascor-protocol` | `release` + `workflow_dispatch` | `juniper-cascor-protocol-v*` | `testpypi` → `pypi` | same pin |
+| `publish-cascor-model.yml` | `juniper-cascor-model` | `release` + `workflow_dispatch` | `juniper-cascor-model-v*` | `testpypi` → `pypi` | same pin |
+
+### Permissions and Concurrency
+
+| Setting | Value | Why |
+|---------|-------|-----|
+| `permissions.id-token` | `write` | OIDC token for Trusted Publishing |
+| `permissions.contents` | `read` (protocol/model) | Checkout / sparse-checkout for version verify |
+| `concurrency.group` | `publish-<pkg>-${{ github.ref_name }}` (protocol/model) | Serialize re-fires against immutable TestPyPI |
+| `cancel-in-progress` | `false` | Never cancel a mid-upload publish |
+
+### TestPyPI Verify Contract
+
+| Package | Install flags | Success assertion |
+|---------|---------------|-------------------|
+| `juniper-cascor` | `--no-deps --index-url https://test.pypi.org/simple/` + 30s sleep | `from juniper_cascor import __version__` |
+| `juniper-cascor-model` | same + 5×10s retry | `import juniper_cascor_model` + `__version__` |
+| `juniper-cascor-protocol` | same + 5×10s retry | `importlib.metadata.version(...)` (no package import) |
+
+Constraints:
+
+- No `--extra-index-url https://pypi.org/simple/` on the verify step (anti-target-squatting; juniper-ml#384).
+- Do not add `push: tags` next to `release: published` (double-fire race; juniper-ml#555).
+- Dependabot bumps the `gh-action-pypi-publish` SHA and `# vX.Y.Z` comment in all three files together; keep them aligned.
 
 ### Step-by-Step Breakdown
 
@@ -342,6 +377,10 @@ Freshness recompiles with `--constraint requirements.lock` and diffs `pkg==versi
 | Artifacts missing | Step failed before upload | Check for earlier step failures |
 | Lockfile Freshness red on Dependabot PR | PAT gate green no-op (Dependabot secret store) | Register `CROSS_REPO_DISPATCH_TOKEN` under Dependabot secrets, or commit a local regen |
 | Update Lockfile hard-fails on human PR | Actions PAT missing/expired | Restore Actions secret or commit lock manually |
+| Publish skipped for wrong package | Tag prefix does not match workflow guard | Use `v*` / `juniper-cascor-protocol-v*` / `juniper-cascor-model-v*` |
+| TestPyPI 400 already exists | Concurrent publish or retry of same version | Bump version; avoid dual `release`+`push: tags` triggers |
+| OIDC publish auth failure | Trusted publisher not registered for workflow/env | Configure pending publisher on TestPyPI and PyPI |
+| Action pin drift across publish workflows | Partial Dependabot merge | Keep the same `gh-action-pypi-publish` SHA in all three YAML files |
 
 ### Debugging Workflows
 
