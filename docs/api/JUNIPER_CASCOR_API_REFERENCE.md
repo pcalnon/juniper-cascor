@@ -625,7 +625,7 @@ curl -s -X POST http://localhost:8201/v1/training/start \
 
 **Summary** — Halt the currently running training.
 
-**Detailed description** — Idempotent; calling on an idle FSM returns gracefully. Implemented at `src/api/routes/training.py:75-80`.
+**Detailed description** — Idempotent when already `Stopped` / `Completed` / `Failed` (FSM reject is ignored; callers still receive `stop_requested`). Rejected while `Investigating` or `Replaying` so `training_state` cannot report `Stopped` while the FSM still blocks `start_training` (open coverage #475). Implemented at `src/api/routes/training.py` → `lifecycle.stop_training()`.
 
 **Syntax / example**:
 
@@ -633,11 +633,16 @@ curl -s -X POST http://localhost:8201/v1/training/start \
 curl -s -X POST http://localhost:8201/v1/training/stop
 ```
 
-**State changes** — Transitions FSM out of `Training`/`Paused` to idle; cancels the training loop coroutine; flushes the WebSocket replay buffer's terminal `state` event.
+**State changes** — On a successful FSM transition: sets the stop event, moves out of `Training`/`Paused` toward idle, and force-broadcasts training state. When the FSM rejects the stop (Investigating / Replaying), no `training_state` mutation occurs.
 
-**Returns** — Envelope with `{"stopped": true, "epoch": <int>, ...}` from lifecycle.
+**Returns** — Envelope with `{"status": "stop_requested", "timestamp": <float>}` from lifecycle on success.
 
-**Error handling** — `503` if lifecycle unbound. (No `409`; stop is permissive.)
+**Error handling**:
+
+| Code | Trigger |
+|------|---------|
+| 409  | FSM is `Investigating` or `Replaying` (`detail`: `Training cannot be stopped in the current state`) — lands with #475; on current `main`, stop still force-updates status and can desync |
+| 503  | Lifecycle unbound |
 
 ---
 
@@ -1063,7 +1068,7 @@ curl -s http://localhost:8201/v1/snapshots/snap_20260508_120000
 
 **Summary** — Restore a snapshot for inspection / modification (CAN-015d).
 
-**Detailed description** — Loads weights into the live network and transitions the FSM to `Investigating`, where the manual network-mutation endpoints are unlocked. Implemented at `src/api/routes/snapshots.py:163-210`.
+**Detailed description** — Loads weights into the live network and transitions the FSM to `Investigating`, where the manual network-mutation endpoints are unlocked. Route-boundary FSM preflight must include `Replaying` so an active replay conflict is not misreported as HTTP 404 (`lifecycle` returns `loaded=False` when the load is rejected). Contract hardened in open coverage #475. Implemented at `src/api/routes/snapshots.py`.
 
 **Syntax / example**:
 
@@ -1077,12 +1082,12 @@ curl -s -X POST http://localhost:8201/v1/snapshots/snap_20260508_120000/restore
 
 **Error handling**:
 
-| Code | Trigger                                                    |
-|------|------------------------------------------------------------|
-| 400  | Invalid `snapshot_id` format                               |
-| 404  | Snapshot not found                                         |
-| 409  | FSM in `Started`/`Paused` (training must be stopped first) |
-| 503  | Lifecycle unbound                                          |
+| Code | Trigger |
+|------|---------|
+| 400  | Invalid `snapshot_id` format |
+| 404  | Snapshot not found / failed to load |
+| 409  | FSM in `Started` / `Paused` / `Replaying` (stop training or `replay/control` `action=stop` first). On current `main`, `Replaying` may still surface as 404 until #475 merges |
+| 503  | Lifecycle unbound |
 
 ---
 
@@ -1090,7 +1095,7 @@ curl -s -X POST http://localhost:8201/v1/snapshots/snap_20260508_120000/restore
 
 **Summary** — Restore a snapshot and reset training history so the next start begins at epoch 0 (CAN-015a).
 
-**Detailed description** — Restores weights, topology, and meta-params, but clears history, counters, FSM, and the auto-snap-best ratchet. Implemented at `src/api/routes/snapshots.py:213-253`.
+**Detailed description** — Restores weights, topology, and meta-params, but clears history, counters, FSM, and the auto-snap-best ratchet. Same route-boundary 409 preflight as restore/resume (`Started` / `Paused` / `Replaying`) — without it, lifecycle rejection collapses to HTTP 404. Contract added in open coverage #475. Implemented at `src/api/routes/snapshots.py`.
 
 **Syntax / example**:
 
@@ -1102,7 +1107,14 @@ curl -s -X POST http://localhost:8201/v1/snapshots/snap_20260508_120000/retrain
 
 **Returns** — Envelope with `snapshot_id`, `operation: "retrain"`, `fsm_state`, `time_index_default: 0`, post-restore `training_params`, `status: "ready"`.
 
-**Error handling** — `400` invalid id, `404` not found, `503` lifecycle unbound.
+**Error handling**:
+
+| Code | Trigger |
+|------|---------|
+| 400  | Invalid `snapshot_id` format |
+| 404  | Snapshot not found / failed to load |
+| 409  | FSM in `Started` / `Paused` / `Replaying` (lands with #475; absent on current `main`) |
+| 503  | Lifecycle unbound |
 
 ---
 
@@ -1110,7 +1122,7 @@ curl -s -X POST http://localhost:8201/v1/snapshots/snap_20260508_120000/retrain
 
 **Summary** — Restore a snapshot preserving training history so the next start continues epoch numbering (CAN-015b).
 
-**Detailed description** — Same as `restore` but keeps history arrays and transitions FSM to `RESUME_READY`. The next `start_training` extends history from the snapshot's terminal epoch. Implemented at `src/api/routes/snapshots.py:256-302`.
+**Detailed description** — Same as `restore` but keeps history arrays and transitions FSM to `RESUME_READY`. The next `start_training` extends history from the snapshot's terminal epoch. Route-boundary 409 preflight includes `Replaying` (open #475) so replay conflicts are not misreported as 404. Implemented at `src/api/routes/snapshots.py`.
 
 **Syntax / example**:
 
@@ -1124,12 +1136,12 @@ curl -s -X POST http://localhost:8201/v1/snapshots/snap_20260508_120000/resume
 
 **Error handling**:
 
-| Code | Trigger                   |
-|------|---------------------------|
-| 400  | Invalid id format         |
-| 404  | Snapshot not found        |
-| 409  | FSM in `Started`/`Paused` |
-| 503  | Lifecycle unbound         |
+| Code | Trigger |
+|------|---------|
+| 400  | Invalid id format |
+| 404  | Snapshot not found / failed to load |
+| 409  | FSM in `Started` / `Paused` / `Replaying` (stop training or replay first). On current `main`, `Replaying` may still surface as 404 until #475 merges |
+| 503  | Lifecycle unbound |
 
 ---
 
@@ -1503,6 +1515,8 @@ receives an error response and then closes with `1003`.
 | `TASK_ASSIGN`  | server → worker | task spec + binary tensor frames                   |
 | `TASK_RESULT`  | worker → server | result envelope + binary tensor frames             |
 | `WORKER_ERROR` | worker → server | error envelope                                     |
+
+**`TASK_RESULT` type integrity** — `WorkerProtocol` rejects JSON `true`/`false` for `candidate_id`, `epochs_completed`, and `correlation` even though `isinstance(True, int)` is true in Python (open coverage #475). Hostile or buggy workers must not pass bools as ints/floats.
 
 **Limits** — JSON ≤ 65 KB; binary ≤ 100 MB.
 

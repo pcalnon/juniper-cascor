@@ -1,6 +1,6 @@
 # Developer Cheatsheet — juniper-cascor
 
-**Version**: 1.0.1  |  **Date**: 2026-08-05  |  **Project**: juniper-cascor
+**Version**: 1.0.15  |  **Date**: 2026-08-06  |  **Project**: juniper-cascor
 
 ---
 
@@ -86,6 +86,9 @@ Metrics nuance:
 - `/ws/training` can also emit `candidate_progress` messages (epoch 1, every 50 epochs, final epoch per candidate).
 - Fresh `/ws/training` connects receive `initial_status`, `state`, and `initial_metrics`; resume requests use `{"type":"resume","data":{"last_seq":...,"server_instance_id":...}}` and replay only buffered broadcasts with higher `seq`.
 - `/ws/control` rate limiting returns an in-band `command_response` with `status:"rate_limited"` and keeps the socket open; it does not close on normal command throttling.
+- Snapshot `restore` / `retrain` / `resume` while FSM is `Started`, `Paused`, or `Replaying` must return **HTTP 409** at the route boundary. Without a `Replaying` preflight, lifecycle returns `loaded=False` and clients see a misleading **404** ("snapshot not found") during an active replay.
+- `POST /v1/training/stop` while `Investigating` or `Replaying` returns **HTTP 409**. Do not force `training_state` to `Stopped` when the FSM rejects the stop — that desync blocks a later `start` while status still looks idle.
+- Worker `TASK_RESULT` JSON must reject bools for `candidate_id`, `epochs_completed`, and `correlation` (`isinstance(True, int)` is true in Python). Coverage: open #475.
 
 **Middleware** (outermost first): CORS -> Security -> Prometheus -> RequestId. **Models:** Pydantic (API), dataclasses (config).
 
@@ -254,6 +257,8 @@ Core: `torch`, `numpy`, `h5py`, `matplotlib`, `PyYAML`, `requests`
 | WebSocket closes during connect with `1013`                           | Global, per-IP, or `/ws/control` per-identity cap reached   | Raise the relevant `JUNIPER_CASCOR_WS_MAX_CONNECTIONS_*` cap only after checking expected clients and worker fleet size |
 | Publish workflow skipped / wrong package                              | Release tag prefix does not match workflow guard            | Use `v*`, `juniper-cascor-protocol-v*`, or `juniper-cascor-model-v*` — see [PyPI Publishing](ci_cd/MANUAL.md#pypi-publishing) |
 | TestPyPI `400 File already exists` on publish                         | Dual trigger or concurrent upload of same version           | Publish via Release only (no `push: tags`); bump version to re-upload |
+| Snapshot restore/retrain/resume → 404 during replay                   | Route omitted `is_replaying()`; lifecycle maps reject to `loaded=False` | Expect **409** once #475 lands; stop replay via `replay/control` `action=stop` before restore/retrain/resume |
+| `POST /v1/training/stop` → 409 (or status says Stopped but start still fails) | Stop forced while `Investigating` / `Replaying`             | Exit Investigating via snapshot retrain/resume; stop replay first; do not treat stop as permissive in those states |
 
 ---
 
