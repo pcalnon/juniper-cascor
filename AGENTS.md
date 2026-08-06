@@ -284,6 +284,10 @@ juniper-cascor/
 ├── .github/                          # GitHub configuration
 │   ├── workflows/
 │   │   ├── ci.yml                    #   Main CI pipeline
+│   │   ├── golden-regression.yml     #   WS-6 OUT-12 golden / snapshot gate (serial)
+│   │   ├── conformance.yml           #   WS-6 OUT-13 model-core conformance gate (serial)
+│   │   ├── ci-protocol.yml           #   Path-filtered CI for juniper-cascor-protocol
+│   │   ├── ci-cascor-model.yml       #   Path-filtered CI for juniper-cascor-model
 │   │   ├── scheduled-tests.yml       #   Scheduled test runs
 │   │   ├── publish.yml               #   PyPI publish (juniper-cascor, tag v*)
 │   │   ├── publish-protocol.yml      #   PyPI publish (juniper-cascor-protocol)
@@ -715,6 +719,8 @@ Tests touching these collectors should use `juniper_observability.testing.reset_
 | `validation` | Input validation tests |
 | `accuracy` | Accuracy calculation tests |
 | `early_stopping` | Early stopping logic tests |
+| `golden` | Golden / snapshot regression (OUT-12; needs `--golden`, serial WS-6 lane) |
+| `conformance` | model-core GrowableModel conformance (OUT-13; needs `--conformance`, serial WS-6 lane) |
 | `requires_juniper_data` | Tests requiring juniper-data package |
 
 ### Test Directory Structure
@@ -726,6 +732,8 @@ src/tests/
 ├── scripts/
 │   ├── run_tests.bash           # Test runner
 │   └── run_benchmarks.bash      # Benchmark runner
+├── conformance/                 # WS-6 OUT-13 model-core conformance suite
+├── fixtures/golden/             # WS-6 OUT-12 checked-in golden artifacts
 ├── helpers/
 │   ├── assertions.py            # Custom assertion helpers
 │   └── utilities.py             # Test utility functions
@@ -798,6 +806,10 @@ Gate: 80% aggregate (override with `COVERAGE_FAIL_UNDER=<n>`). Coverage runs in 
 | Workflow | File | Triggers | Purpose |
 |----------|------|----------|---------|
 | CI/CD Pipeline | `.github/workflows/ci.yml` | Push (main, develop, feature/**, fix/**), PR, dispatch | Pre-commit, unit tests, integration tests, security scanning |
+| Golden Regression (WS-6) | `.github/workflows/golden-regression.yml` | Push `main`, PR `main`/`develop`, dispatch | Serial OUT-12 golden / snapshot regression (Python 3.13 + torch 2.11.0) |
+| Conformance (WS-6) | `.github/workflows/conformance.yml` | Push `main`, PR `main`/`develop`, dispatch | Serial OUT-13 model-core GrowableModel conformance |
+| CI — protocol | `.github/workflows/ci-protocol.yml` | Path-filtered on `juniper-cascor-protocol/**`, dispatch | Package tests + build/`twine check` |
+| CI — cascor-model | `.github/workflows/ci-cascor-model.yml` | Path-filtered on `juniper-cascor-model/**`, dispatch | Package tests (incl. drift-guard) + build/`twine check` |
 | Scheduled Long Tests | `.github/workflows/scheduled-tests.yml` | Cron schedule (nightly), dispatch | Slow and long-running correctness tests |
 | Publish | `.github/workflows/publish.yml` | Release (`v*`) | PyPI publish for `juniper-cascor` (TestPyPI → verify → PyPI) |
 | Publish protocol | `.github/workflows/publish-protocol.yml` | Release (`juniper-cascor-protocol-v*`) + `workflow_dispatch` | PyPI publish for `juniper-cascor-protocol` |

@@ -23,6 +23,14 @@ Complete reference documentation for the Juniper Cascor test suite.
 | `validation`         | Input validation functions                 | Parameter checking, type validation                  | Runs with unit tests                          |
 | `accuracy`           | Accuracy calculation methods               | Classification accuracy, metrics                     | Runs with unit tests                          |
 | `early_stopping`     | Early stopping logic                       | Convergence detection, patience handling             | Runs with unit tests                          |
+| `golden`             | Golden / snapshot regression (OUT-12)      | Trajectory, predict-after-load, API snapshot goldens | Dedicated `golden-regression.yml` only        |
+| `conformance`        | model-core GrowableModel contract (OUT-13) | Interface shapes / keys / event order                | Dedicated `conformance.yml` only              |
+
+**Opt-in flags (required):** `--golden` and `--conformance` are separate from
+markers. Without the matching flag, `pytest_collection_modifyitems` skips those
+tests even when `--slow` and `--integration` are set — so they never leak into
+the unit, integration, or scheduled-slow lanes. Both WS-6 workflows also pass
+`--slow --integration` because the tests carry those markers too.
 
 ### Early-Stopping Regression Coverage (No Validation Data Path)
 

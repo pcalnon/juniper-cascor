@@ -207,6 +207,9 @@ Compression: gzip level 4 (default). Performance: Save <2s, Load <3s, Verify <20
 | `long`            | Needs `--run-long`    | `validation`                  | Input validation           |
 | `gpu`             | Needs GPU/CUDA        | `accuracy` / `early_stopping` | Accuracy / stopping        |
 | `multiprocessing` | Multi-process tests   | `requires_juniper_data`       | Needs juniper-data service |
+| `golden`          | Needs `--golden`      | `conformance`                 | Needs `--conformance`      |
+
+**WS-6 tip:** Golden and conformance lanes are serial-only (no xdist), pin Python 3.13 + torch 2.11.0 in CI, and require `--golden` / `--conformance` plus `--slow --integration`. Reproduce with `CASCOR_NUM_PROCESSES=1` and single-thread BLAS. Regenerate goldens only with `GOLDEN_CAPTURE=1` after intentional behavior change — see `src/tests/fixtures/golden/README.md` and [CI Quick Start § WS-6](ci_cd/QUICK_START.md#ws-6-gates-golden--conformance).
 
 **API version wiring (BUG-CC-04):** assert `app.version`, `/v1/health` `version`, and `set_build_info` against `api.app._API_VERSION` (`importlib.metadata.version("juniper-cascor")`) — never a pinned `"0.x.y"`. Fixture-only model construction may still use literals. `ResponseEnvelope.meta.version` currently uses `api.models.common._API_VERSION` (literal; may lag).
 
@@ -240,7 +243,7 @@ Core: `torch`, `numpy`, `h5py`, `matplotlib`, `PyYAML`, `requests`
 
 **Pre-commit hooks:** black, isort, flake8, mypy, bandit, yamllint, shellcheck, markdownlint, pytest-unit (local), coverage-gate (local, 80%), no-unencrypted-env (SOPS guard). **Line length:** 512.
 
-**CI pipeline:** pre-commit -> unit-tests -> integration-tests -> build -> security -> lockfile-check -> required-checks
+**CI pipeline:** pre-commit -> unit-tests -> integration-tests -> build -> security -> lockfile-check -> required-checks. Separate serial gates: `golden-regression.yml` (OUT-12) and `conformance.yml` (OUT-13). Path-filtered package CI: `ci-protocol.yml`, `ci-cascor-model.yml`.
 
 **Dependabot lockfile:** `lockfile-update.yml` auto-regens when `CROSS_REPO_DISPATCH_TOKEN` is visible to the run. Dependabot uses a separate secret store — missing PAT there is a green no-op; **Lockfile Freshness** still blocks stale locks. Register the PAT under Dependabot secrets to restore auto-push.
 
@@ -269,6 +272,8 @@ Core: `torch`, `numpy`, `h5py`, `matplotlib`, `PyYAML`, `requests`
 | Server refuses to start with `AuthPostureError` / CRITICAL auth posture | `JUNIPER_CASCOR_REQUIRE_AUTH=true` and keys missing/blank (incl. empty `_FILE`) | Provision a real `JUNIPER_CASCOR_API_KEYS` / non-empty `*_FILE`, or set `REQUIRE_AUTH=false` only for bare/dev |
 | Protected routes open / boot WARNING "running OPEN" with compose secrets | Empty/whitespace `JUNIPER_CASCOR_API_KEYS_FILE` (compose `_FILE`-only); `get_secret()` returns `""` with no env fallback | Put a real key in the secret file; set `JUNIPER_CASCOR_REQUIRE_AUTH=true` so empty secrets fail boot |
 | WebSocket closes during connect with `1013`                           | Global, per-IP, or `/ws/control` per-identity cap reached   | Raise the relevant `JUNIPER_CASCOR_WS_MAX_CONNECTIONS_*` cap only after checking expected clients and worker fleet size |
+| Golden / conformance tests collected but all skipped                  | Missing `--golden` / `--conformance` opt-in flags           | Pass the matching flag with `--slow --integration` (see `conftest.py`)                                                  |
+| Golden lane red locally after green unit CI                           | Wrong interpreter/torch or multi-thread / xdist             | Match CI pins (3.13 + torch 2.11.0, serial, `CASCOR_NUM_PROCESSES=1`, single-thread BLAS)                               |
 | Lockfile Freshness red; Update Lockfile green with no `[dependabot skip]` commit | `CROSS_REPO_DISPATCH_TOKEN` empty in Dependabot secret store | Register PAT under Dependabot secrets, or push a local `uv pip compile ... -o requirements.lock` |
 | Update Lockfile hard-fails on a human `pyproject.toml` PR             | Actions PAT missing/expired                                 | Restore Actions `CROSS_REPO_DISPATCH_TOKEN` or commit the regen in the PR |
 | Publish workflow skipped / wrong package                              | Release tag prefix does not match workflow guard            | Use `v*`, `juniper-cascor-protocol-v*`, or `juniper-cascor-model-v*` — see [PyPI Publishing](ci_cd/MANUAL.md#pypi-publishing) |
