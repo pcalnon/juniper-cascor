@@ -207,6 +207,17 @@ class WorkerProtocol:
                 errors.append(f"Missing tensor: {name}")
                 continue
 
+            if not isinstance(spec, dict):
+                errors.append(f"Tensor {name}: manifest entry must be a dict with shape/dtype")
+                continue
+
+            if "shape" not in spec:
+                errors.append(f"Tensor {name}: manifest missing required field: shape")
+                continue
+            if "dtype" not in spec:
+                errors.append(f"Tensor {name}: manifest missing required field: dtype")
+                continue
+
             arr = tensors[name]
             expected_shape = tuple(spec["shape"])
             expected_dtype = spec["dtype"]
@@ -223,11 +234,17 @@ class WorkerProtocol:
             if np.any(np.isinf(arr)):
                 errors.append(f"Tensor {name}: contains Inf values")
 
-        # Check for weight magnitude (configurable)
+        # Check for weight magnitude (configurable). Empty arrays have no
+        # magnitude to evaluate — treat them as a validation error rather
+        # than letting ``np.max`` raise on a zero-size reduction.
         if "weights" in tensors:
-            max_weight = float(np.max(np.abs(tensors["weights"])))
-            if max_weight > _MAX_WEIGHT_MAGNITUDE:
-                errors.append(f"Weight magnitude too large: {max_weight:.2f} > {_MAX_WEIGHT_MAGNITUDE}")
+            weights = tensors["weights"]
+            if weights.size == 0:
+                errors.append("Tensor weights: empty array")
+            else:
+                max_weight = float(np.max(np.abs(weights)))
+                if max_weight > _MAX_WEIGHT_MAGNITUDE:
+                    errors.append(f"Weight magnitude too large: {max_weight:.2f} > {_MAX_WEIGHT_MAGNITUDE}")
 
         return errors
 
