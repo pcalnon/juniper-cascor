@@ -5,7 +5,7 @@
 **Author**: Paul Calnon
 **License**: MIT License
 **Version**: 0.7.0
-**Last Updated**: 2026-07-28
+**Last Updated**: 2026-08-06
 
 ---
 
@@ -77,6 +77,8 @@ pre-commit install                                   # Install hooks
 | `JUNIPER_CASCOR_CORS_ORIGINS` | CORS allowed origins (JSON list) | `[]` (none) |
 | **Authentication & Security** | | |
 | `JUNIPER_CASCOR_API_KEYS` | Comma-separated API keys for authentication | `None` (auth disabled) |
+| `JUNIPER_CASCOR_API_KEYS_FILE` | Docker-secrets path for API keys; an existing empty/whitespace file yields open auth in the compose `_FILE`-only pattern (`get_secret()` does not fall back to the plain env var) | `None` |
+| `JUNIPER_CASCOR_REQUIRE_AUTH` | SEC-F01 intended auth posture: `false` = WARN and run open when keys missing/blank; `true` = refuse boot with `AuthPostureError`. Set `true` wherever secrets are provisioned (composed juniper-deploy). Bypass with `JUNIPER_SKIP_AUTH_POSTURE_CHECK=1` (logged loudly). | `false` |
 | `JUNIPER_CASCOR_RATE_LIMIT_ENABLED` | Enable rate limiting | `false` |
 | `JUNIPER_CASCOR_RATE_LIMIT_REQUESTS_PER_MINUTE` | Requests per minute per IP | `60` |
 | **WebSocket** | | |
@@ -282,8 +284,14 @@ juniper-cascor/
 ├── .github/                          # GitHub configuration
 │   ├── workflows/
 │   │   ├── ci.yml                    #   Main CI pipeline
+│   │   ├── golden-regression.yml     #   WS-6 OUT-12 golden / snapshot gate (serial)
+│   │   ├── conformance.yml           #   WS-6 OUT-13 model-core conformance gate (serial)
+│   │   ├── ci-protocol.yml           #   Path-filtered CI for juniper-cascor-protocol
+│   │   ├── ci-cascor-model.yml       #   Path-filtered CI for juniper-cascor-model
 │   │   ├── scheduled-tests.yml       #   Scheduled test runs
-│   │   ├── publish.yml               #   Package publishing
+│   │   ├── publish.yml               #   PyPI publish (juniper-cascor, tag v*)
+│   │   ├── publish-protocol.yml      #   PyPI publish (juniper-cascor-protocol)
+│   │   ├── publish-cascor-model.yml  #   PyPI publish (juniper-cascor-model)
 │   │   ├── lockfile-update.yml       #   Dependency lockfile updates
 │   │   └── security-scan.yml         #   Security scanning
 │   ├── CODEOWNERS                    #   Code ownership rules
@@ -484,8 +492,15 @@ Middleware executes in LIFO order (last added = first executed):
 
 - Header: `X-API-Key`
 - Comparison: HMAC-based (timing-safe)
-- When `JUNIPER_CASCOR_API_KEYS` is unset, authentication is disabled
-- Docker secrets support: `JUNIPER_CASCOR_API_KEYS_FILE` for container deployments
+- When `JUNIPER_CASCOR_API_KEYS` is unset/blank, authentication is disabled
+- Docker secrets support: `JUNIPER_CASCOR_API_KEYS_FILE` for container deployments — `get_secret()` returns an existing file's stripped contents with no env fallback; an empty file leaves keys unset in the compose `_FILE`-only pattern
+
+### Boot-Time Auth Posture (SEC-F01)
+
+- Lifespan calls `juniper_service_core.enforce_auth_posture` after the bind guard, before serving (`src/api/app.py`)
+- `JUNIPER_CASCOR_REQUIRE_AUTH=false` (default): missing/blank keys → loud WARNING, service continues (bare/dev)
+- `JUNIPER_CASCOR_REQUIRE_AUTH=true`: missing/blank keys → CRITICAL + `AuthPostureError` (fail-closed for provisioned stacks)
+- Escape hatch: `JUNIPER_SKIP_AUTH_POSTURE_CHECK=1` (logged loudly)
 
 ### Rate Limiting
 
@@ -704,6 +719,8 @@ Tests touching these collectors should use `juniper_observability.testing.reset_
 | `validation` | Input validation tests |
 | `accuracy` | Accuracy calculation tests |
 | `early_stopping` | Early stopping logic tests |
+| `golden` | Golden / snapshot regression (OUT-12; needs `--golden`, serial WS-6 lane) |
+| `conformance` | model-core GrowableModel conformance (OUT-13; needs `--conformance`, serial WS-6 lane) |
 | `requires_juniper_data` | Tests requiring juniper-data package |
 
 ### Test Directory Structure
@@ -715,6 +732,8 @@ src/tests/
 ├── scripts/
 │   ├── run_tests.bash           # Test runner
 │   └── run_benchmarks.bash      # Benchmark runner
+├── conformance/                 # WS-6 OUT-13 model-core conformance suite
+├── fixtures/golden/             # WS-6 OUT-12 checked-in golden artifacts
 ├── helpers/
 │   ├── assertions.py            # Custom assertion helpers
 │   └── utilities.py             # Test utility functions
@@ -787,10 +806,28 @@ Gate: 80% aggregate (override with `COVERAGE_FAIL_UNDER=<n>`). Coverage runs in 
 | Workflow | File | Triggers | Purpose |
 |----------|------|----------|---------|
 | CI/CD Pipeline | `.github/workflows/ci.yml` | Push (main, develop, feature/**, fix/**), PR, dispatch | Pre-commit, unit tests, integration tests, security scanning |
+| Golden Regression (WS-6) | `.github/workflows/golden-regression.yml` | Push `main`, PR `main`/`develop`, dispatch | Serial OUT-12 golden / snapshot regression (Python 3.13 + torch 2.11.0) |
+| Conformance (WS-6) | `.github/workflows/conformance.yml` | Push `main`, PR `main`/`develop`, dispatch | Serial OUT-13 model-core GrowableModel conformance |
+| CI — protocol | `.github/workflows/ci-protocol.yml` | Path-filtered on `juniper-cascor-protocol/**`, dispatch | Package tests + build/`twine check` |
+| CI — cascor-model | `.github/workflows/ci-cascor-model.yml` | Path-filtered on `juniper-cascor-model/**`, dispatch | Package tests (incl. drift-guard) + build/`twine check` |
 | Scheduled Long Tests | `.github/workflows/scheduled-tests.yml` | Cron schedule (nightly), dispatch | Slow and long-running correctness tests |
-| Publish | `.github/workflows/publish.yml` | Release event | Package publishing |
+| Publish | `.github/workflows/publish.yml` | Release (`v*`) | PyPI publish for `juniper-cascor` (TestPyPI → verify → PyPI) |
+| Publish protocol | `.github/workflows/publish-protocol.yml` | Release (`juniper-cascor-protocol-v*`) + `workflow_dispatch` | PyPI publish for `juniper-cascor-protocol` |
+| Publish model | `.github/workflows/publish-cascor-model.yml` | Release (`juniper-cascor-model-v*`) + `workflow_dispatch` | PyPI publish for `juniper-cascor-model` |
 | Lockfile Update | `.github/workflows/lockfile-update.yml` | Push to dependabot/** branches | Dependency lockfile refresh |
 | Security Scan | `.github/workflows/security-scan.yml` | Schedule/dispatch | Gitleaks, Bandit, pip-audit |
+
+### Lockfile Update PAT Gate
+
+`lockfile-update.yml` checks out and pushes with `CROSS_REPO_DISPATCH_TOKEN` so the lock commit re-triggers CI. Dependabot runs use the Dependabot secret store — a PAT registered only under Actions secrets is empty there.
+
+| Condition | Behavior |
+|-----------|----------|
+| PAT present | Auto-regen + `[dependabot skip]` push |
+| PAT absent + `dependabot[bot]` | Green no-op (`::notice::`); **Lockfile Freshness** in `ci.yml` still blocks stale locks |
+| PAT absent + other actor | Hard fail (secret misconfiguration) |
+
+Optional: register the same PAT under **Settings → Secrets → Dependabot** to restore Dependabot auto-regen. Operator narrative: [`notes/DEPENDENCY_UPDATE_WORKFLOW.md`](notes/DEPENDENCY_UPDATE_WORKFLOW.md).
 
 ### CI Pipeline Jobs (ci.yml)
 
@@ -798,6 +835,7 @@ Gate: 80% aggregate (override with `COVERAGE_FAIL_UNDER=<n>`). Coverage runs in 
 - Unit tests with coverage enforcement
 - Integration tests
 - Security scanning (Gitleaks, Bandit SARIF, pip-audit)
+- Lockfile Freshness (`lockfile-check`) — required quality-gate input
 - Dependency caching for performance
 - Concurrency: one pipeline per branch, cancel-in-progress
 
