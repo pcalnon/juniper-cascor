@@ -277,6 +277,48 @@ class TestReloadDataset:
         assert kwargs["params"]["n_points_per_spiral"] == 3
 
 
+class TestTranslateStagedConfig:
+    """Direct unit coverage for canopy→juniper-data dialect translation.
+
+    Happy-path spirals/xor already exercise ``_reload_dataset``; these cases
+    pin moons aliasing, zero-clamp arithmetic, and non-spiral field stripping
+    without needing a juniper-data stub.
+    """
+
+    def test_moons_alias(self):
+        generator, params = TrainingLifecycleManager._translate_staged_config("moons", {"n_samples": 50, "noise": 0.1})
+        assert generator == "moon"
+        assert params == {"n_samples": 50, "noise": 0.1}
+
+    def test_spiral_clamps_zero_n_samples(self):
+        generator, params = TrainingLifecycleManager._translate_staged_config("spirals", {"n_samples": 0, "n_spirals": 2})
+        assert generator == "spiral"
+        assert params["n_points_per_spiral"] == 1
+        assert "n_samples" not in params
+
+    def test_spiral_clamps_zero_n_spirals_divisor(self):
+        """``n_spirals=0`` must not ZeroDivisionError; divisor clamps via max(1, …)."""
+        generator, params = TrainingLifecycleManager._translate_staged_config("spirals", {"n_samples": 10, "n_spirals": 0})
+        assert generator == "spiral"
+        assert params["n_points_per_spiral"] >= 1
+        assert params["n_spirals"] == 0
+
+    def test_non_spiral_strips_spiral_only_fields(self):
+        generator, params = TrainingLifecycleManager._translate_staged_config(
+            "circles",
+            {"n_samples": 50, "rotations": 1.5, "n_spirals": 2, "noise": 0.05},
+        )
+        assert generator == "circles"
+        assert params == {"n_samples": 50, "noise": 0.05}
+        assert "rotations" not in params
+        assert "n_spirals" not in params
+
+    def test_unknown_generator_passthrough(self):
+        generator, params = TrainingLifecycleManager._translate_staged_config("equities", {"max_symbols": 5, "rotations": 1.0})
+        assert generator == "equities"
+        assert params == {"max_symbols": 5}
+
+
 class TestSwapConcurrencyAndCancel:
     """``swap_dataset_live`` concurrent guard + cancel signalling."""
 

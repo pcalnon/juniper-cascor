@@ -304,6 +304,38 @@ class TestValidateTensors:
         errors = WorkerProtocol.validate_tensors({"weights": arr}, manifest)
         assert any("magnitude" in e for e in errors)
 
+    def test_manifest_missing_shape_returns_error(self):
+        """Malformed manifest without shape must not raise KeyError."""
+        manifest = {"weights": {"dtype": "float32"}}
+        tensors = {"weights": np.zeros(4, dtype=np.float32)}
+        errors = WorkerProtocol.validate_tensors(tensors, manifest)
+        assert errors
+        assert any("shape" in e for e in errors)
+
+    def test_manifest_missing_dtype_returns_error(self):
+        """Malformed manifest without dtype must not raise KeyError."""
+        manifest = {"weights": {"shape": [4]}}
+        tensors = {"weights": np.zeros(4, dtype=np.float32)}
+        errors = WorkerProtocol.validate_tensors(tensors, manifest)
+        assert errors
+        assert any("dtype" in e for e in errors)
+
+    def test_manifest_non_dict_entry_returns_error(self):
+        """Non-dict manifest entries are rejected as validation errors."""
+        manifest = {"weights": "float32"}
+        tensors = {"weights": np.zeros(4, dtype=np.float32)}
+        errors = WorkerProtocol.validate_tensors(tensors, manifest)
+        assert errors
+        assert any("dict" in e for e in errors)
+
+    def test_empty_weights_returns_error(self):
+        """Empty weight arrays must not crash ``np.max``; return a validation error."""
+        manifest = {"weights": {"shape": [0], "dtype": "float32"}}
+        tensors = {"weights": np.array([], dtype=np.float32)}
+        errors = WorkerProtocol.validate_tensors(tensors, manifest)
+        assert errors
+        assert any("empty" in e.lower() for e in errors)
+
 
 @pytest.mark.unit
 class TestValidateRegister:
@@ -331,6 +363,107 @@ class TestValidateRegister:
         msg = {"worker_id": "w1", "capabilities": "not a dict"}
         errors = WorkerProtocol.validate_register(msg)
         assert any("dict" in e for e in errors)
+
+    def test_worker_id_must_be_string(self):
+        """Numeric worker_id is rejected (wire IDs are strings)."""
+        errors = WorkerProtocol.validate_register({"worker_id": 123, "capabilities": {}})
+        assert any("must be a string" in e for e in errors)
+
+    @pytest.mark.parametrize(
+        "worker_id",
+        [
+            "",
+            "-bad",
+            "_bad",
+            "bad id",
+            "evil/../x",
+            "a" * 65,
+        ],
+    )
+    def test_worker_id_pattern_rejects_invalid(self, worker_id):
+        """IDs must be 1-64 alnum/hyphen/underscore chars starting alnum."""
+        errors = WorkerProtocol.validate_register({"worker_id": worker_id, "capabilities": {}})
+        assert any("1-64 characters" in e for e in errors)
+
+    @pytest.mark.parametrize(
+        "worker_id",
+        [
+            "a",
+            "A0_-",
+            "worker-1",
+            "a" + ("b" * 63),  # exactly 64 chars, alphanumeric start
+        ],
+    )
+    def test_worker_id_pattern_accepts_boundary(self, worker_id):
+        """Boundary-valid IDs are admitted."""
+        assert len(worker_id) <= 64
+        assert WorkerProtocol.validate_register({"worker_id": worker_id, "capabilities": {}}) == []
+
+
+@pytest.mark.unit
+class TestTaskResultMessageFromDict:
+    """Typed parse of task_result wire dicts (admission into the coordinator)."""
+
+    def _valid_result(self):
+        return {
+            "type": "task_result",
+            "task_id": "t1",
+            "candidate_id": 0,
+            "correlation": 0.85,
+            "success": True,
+            "epochs_completed": 200,
+        }
+
+    def test_happy_path_applies_optional_defaults(self):
+        parsed = TaskResultMessage.from_dict(self._valid_result())
+        assert parsed.task_id == "t1"
+        assert parsed.candidate_id == 0
+        assert parsed.correlation == 0.85
+        assert parsed.success is True
+        assert parsed.epochs_completed == 200
+        assert parsed.candidate_uuid == ""
+        assert parsed.activation_name == ""
+        assert parsed.all_correlations == []
+        assert parsed.numerator == 0.0
+        assert parsed.denominator == 1.0
+        assert parsed.best_corr_idx == -1
+        assert parsed.tensor_manifest == {}
+        assert parsed.error_message is None
+
+    def test_optional_fields_preserved(self):
+        msg = self._valid_result()
+        msg.update(
+            {
+                "candidate_uuid": "uuid-1",
+                "activation_name": "tanh",
+                "all_correlations": [0.1, 0.85],
+                "numerator": 1.5,
+                "denominator": 2.0,
+                "best_corr_idx": 1,
+                "tensor_manifest": {"weights": {"shape": [4]}},
+                "error_message": None,
+            }
+        )
+        parsed = TaskResultMessage.from_dict(msg)
+        assert parsed.candidate_uuid == "uuid-1"
+        assert parsed.activation_name == "tanh"
+        assert parsed.all_correlations == [0.1, 0.85]
+        assert parsed.numerator == 1.5
+        assert parsed.denominator == 2.0
+        assert parsed.best_corr_idx == 1
+        assert parsed.tensor_manifest == {"weights": {"shape": [4]}}
+
+    def test_missing_required_field_raises(self):
+        msg = self._valid_result()
+        del msg["task_id"]
+        with pytest.raises(ValueError, match="Invalid task_result message"):
+            TaskResultMessage.from_dict(msg)
+
+    def test_correlation_out_of_bounds_raises(self):
+        msg = self._valid_result()
+        msg["correlation"] = 1.5
+        with pytest.raises(ValueError, match="out of bounds"):
+            TaskResultMessage.from_dict(msg)
 
 
 @pytest.mark.unit
