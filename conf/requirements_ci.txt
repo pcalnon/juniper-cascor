@@ -65,8 +65,8 @@ defusedxml==0.7.1
 dill==0.4.1
 docutils==0.23
 execnet==2.1.2
-fastapi==0.140.13
-filelock==3.32.0
+fastapi==0.141.1
+filelock==3.32.2
 fonttools==4.63.0
 fsspec==2026.7.0
 h11==0.16.0
@@ -82,11 +82,11 @@ jaraco.context==6.1.2
 jaraco.functools==4.6.0
 jeepney==0.9.0
 Jinja2==3.1.6
-juniper-cascor==0.6.0
+juniper-cascor==0.7.0
 juniper-cascor-client==0.7.0
 juniper-cascor-protocol==0.1.0
 juniper-cascor-worker==0.5.0
-juniper-data==0.10.0
+juniper-data==0.11.0
 juniper-data-client==0.4.2
 juniper-doc-tools==0.1.1
 juniper-observability==0.4.0
@@ -103,7 +103,7 @@ msgpack==1.2.1
 networkx==3.6.1
 nh3==0.3.6
 numpy==2.5.1
-nvidia-cublas==13.6.0.2
+nvidia-cublas==13.6.1.10
 nvidia-cuda-cupti==13.3.75
 nvidia-cuda-nvrtc==13.3.33
 nvidia-cuda-runtime==13.3.29
@@ -121,7 +121,7 @@ nvidia-nvtx==13.3.29
 packageurl-python==0.17.6
 packaging==26.2
 pillow==12.3.0
-pip==26.1.2
+pip==26.2
 pip-api==0.0.34
 pip_audit==2.10.1
 pip-requirements-parser==32.0.1
@@ -166,11 +166,11 @@ tomli==2.4.1
 tomli_w==1.2.0
 torch==2.13.0
 triton==3.7.1
-twine==6.2.0
+twine==7.0.0
 typing_extensions==4.16.0
 typing-inspection==0.4.2
 urllib3==2.7.0
-uvicorn==0.51.0
+uvicorn==0.52.0
 uvloop==0.22.1
 watchfiles==1.2.0
-websockets==16.1.1
+websockets==17.0.1
