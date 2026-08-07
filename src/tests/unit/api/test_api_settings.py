@@ -166,6 +166,40 @@ class TestApiKeysParser:
         settings = Settings()
         assert settings.api_keys == ["CHANGE_BEFORE_PRODUCTION_USE"]
 
+    def test_empty_secret_file_alone_disables_auth(self, monkeypatch, tmp_path):
+        """Compose placeholder mounts often create a 0-byte secrets file.
+        With no plain env var, Settings must resolve to ``None`` (auth
+        disabled) rather than crash or treat ``""`` as a real key."""
+        secret_path = tmp_path / "juniper_cascor_api_keys"
+        secret_path.write_text("")
+        monkeypatch.setenv("JUNIPER_CASCOR_API_KEYS_FILE", str(secret_path))
+        monkeypatch.delenv("JUNIPER_CASCOR_API_KEYS", raising=False)
+        from api.settings import Settings
+
+        assert Settings().api_keys is None
+
+    def test_whitespace_only_secret_file_alone_disables_auth(self, monkeypatch, tmp_path):
+        """Whitespace-only secret files strip to empty and must disable auth."""
+        secret_path = tmp_path / "juniper_cascor_api_keys"
+        secret_path.write_text("  \n\t  ")
+        monkeypatch.setenv("JUNIPER_CASCOR_API_KEYS_FILE", str(secret_path))
+        monkeypatch.delenv("JUNIPER_CASCOR_API_KEYS", raising=False)
+        from api.settings import Settings
+
+        assert Settings().api_keys is None
+
+    def test_commas_only_secret_file_yields_empty_list(self, monkeypatch, tmp_path):
+        """``, ,`` is truthy at the get_secret layer so the model validator
+        injects it; ``_parse_api_keys`` must drop empties to ``[]`` (still
+        unconfigured for auth — not a crash, not a phantom key)."""
+        secret_path = tmp_path / "juniper_cascor_api_keys"
+        secret_path.write_text(", ,")
+        monkeypatch.setenv("JUNIPER_CASCOR_API_KEYS_FILE", str(secret_path))
+        monkeypatch.delenv("JUNIPER_CASCOR_API_KEYS", raising=False)
+        from api.settings import Settings
+
+        assert Settings().api_keys == []
+
 
 @pytest.mark.unit
 class TestWsControlAllowedOriginsParser:
