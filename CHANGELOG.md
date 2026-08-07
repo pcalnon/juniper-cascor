@@ -13,6 +13,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Worker anomaly history cleared on deregister.** `AnomalyDetector.clear_worker` existed but was never called from the `/ws/v1/workers` session teardown path, so `_worker_history` grew without bound across worker churn and a recycled `worker_id` could inherit stale `duplicate_correlations` / `perfect_correlation` signals. The worker-stream `finally` now clears anomaly history alongside registry/audit/metrics cleanup. Tests: `src/tests/unit/api/test_worker_security_integration.py`.
+
+- **`ws_identity_key` treats blank / whitespace-only `X-API-Key` as anonymous.** Empty or whitespace-only headers previously hashed into a shared per-identity digest under the SEC-F19 D4b cap (self-DoS). The helper now strips before the falsy check so blank keys follow the anonymous (global/per-IP only) path. Tests: `src/tests/unit/api/test_ws_connection_caps.py`.
+
 - **InlineDataset + `_reload_dataset` — reject misaligned / half-specified splits at the boundary.**
   `InlineDataset` now cross-validates `train_x`/`train_y` lengths and requires `val_x`/`val_y` as a pair (matching lengths), so `POST /v1/training/start` returns 422 instead of constructing tensors that fail mid-`fit`. `_reload_dataset` likewise rejects juniper-data artifacts with non-2-D train/val arrays, train or validation sample-count mismatches, a partial `X_test`/`y_test` pair, or non-numeric train payloads — leaving prior tensors untouched so staged swaps can retry. Tests: `src/tests/unit/api/test_inline_dataset_validation.py`, extended `TestReloadDataset` in `test_lifecycle_manager_swap.py`.
 
