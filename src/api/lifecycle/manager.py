@@ -3550,10 +3550,18 @@ class TrainingLifecycleManager:
 
         Raises:
             ValueError: If no network exists.
+            RuntimeError: If a snapshot replay session is active (CAN-015c /
+                REPLAYING rejects meta-param mutations).
             Exception: Re-raises whatever setattr raised, after rolling back
                 any partially-applied updates.
         """
         with self._lock:
+            # CAN-015c (B-3): REPLAYING rejects training commands AND
+            # meta-param mutations. Enforce here so REST PATCH and WS
+            # ``set_params`` share one fail-closed gate (FSM docstring
+            # alone is not enough — neither surface consulted it).
+            if self.state_machine.is_replaying():
+                raise RuntimeError("Cannot update training parameters while replaying a snapshot — invoke /v1/snapshots/{id}/replay/control with action='stop' first")
 
             ########################################################################################
             # Do NOT remove this commented out code block until explicit approval has been granted
