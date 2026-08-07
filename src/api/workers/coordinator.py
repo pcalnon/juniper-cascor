@@ -354,7 +354,7 @@ class WorkerCoordinator:
             schema_errors = WorkerProtocol.validate_task_result(msg)
             if schema_errors:
                 logger.warning("Result validation failed for task %s: %s", task_id, schema_errors)
-                self._registry.complete_task(worker_id, success=False)
+                self._reject_and_requeue_task(task, worker_id)
                 return False
 
             # Validate tensors (Section 12.7 rules 4, 5, 6, 7)
@@ -363,7 +363,7 @@ class WorkerCoordinator:
                 tensor_errors = WorkerProtocol.validate_tensors(tensors, manifest)
                 if tensor_errors:
                     logger.warning("Tensor validation failed for task %s: %s", task_id, tensor_errors)
-                    self._registry.complete_task(worker_id, success=False)
+                    self._reject_and_requeue_task(task, worker_id)
                     return False
 
             # Anomaly detection (Phase 4) — log warnings but do not reject
@@ -414,6 +414,28 @@ class WorkerCoordinator:
                 self._results_ready.set()
 
             return True
+
+    def _reject_and_requeue_task(self, task: PendingTask, worker_id: str) -> None:
+        """Free the worker and immediately requeue a rejected assigned task.
+
+        Called under ``self._lock`` from ``submit_result`` when schema or
+        tensor validation fails. Without this, ``complete_task`` frees the
+        worker but leaves ``task.assigned_worker_id`` set — so the task sits
+        orphaned until ``_check_task_timeouts`` fires after
+        ``_task_reassignment_timeout`` (default 120s).
+        """
+        self._registry.complete_task(worker_id, success=False)
+        if task.completed:
+            return
+        if task.task_id not in self._unassigned_tasks:
+            task.assigned_worker_id = None
+            task.dispatched_at = time.time()
+            self._unassigned_tasks.append(task.task_id)
+            logger.info(
+                "Task %s requeued after rejected result from worker %s",
+                task.task_id,
+                worker_id,
+            )
 
     def collect_results(self, timeout: float = 120.0) -> list[TaskResult]:
         """Wait for all results from the current round.

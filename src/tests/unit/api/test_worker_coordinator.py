@@ -263,6 +263,58 @@ class TestSubmitResult:
         accepted = coordinator.submit_result("w1", msg, bad_tensors)
         assert accepted is False
 
+    def test_rejected_schema_result_requeues_assigned_task(self, coordinator, registry):
+        """Schema rejection frees the worker and requeues immediately (no timeout wait)."""
+        registry.register("w1", {})
+        task_ids = coordinator.submit_tasks("round-1", _make_task_specs(1), _make_tensors())
+        task_id = task_ids[0]
+        coordinator.get_next_assignment("w1")
+
+        msg = _make_result_msg(task_id)
+        msg["correlation"] = 5.0  # Out of bounds → schema reject
+        assert coordinator.submit_result("w1", msg, _make_result_tensors()) is False
+
+        pending = coordinator._pending_tasks[task_id]
+        assert pending.completed is False
+        assert pending.assigned_worker_id is None
+        assert task_id in coordinator._unassigned_tasks
+        assert registry.get("w1").active_task_id is None
+        assert registry.get("w1").idle is True
+
+    def test_rejected_schema_result_can_be_reassigned_immediately(self, coordinator, registry):
+        """After a rejected result, a second worker can pick up the same task without waiting."""
+        registry.register("w1", {})
+        registry.register("w2", {})
+        task_ids = coordinator.submit_tasks("round-1", _make_task_specs(1), _make_tensors())
+        task_id = task_ids[0]
+        coordinator.get_next_assignment("w1")
+
+        msg = _make_result_msg(task_id)
+        msg["correlation"] = 5.0
+        assert coordinator.submit_result("w1", msg, _make_result_tensors()) is False
+
+        reassigned = coordinator.get_next_assignment("w2")
+        assert reassigned is not None
+        reassigned_msg, _frames = reassigned
+        assert reassigned_msg["task_id"] == task_id
+        assert coordinator._pending_tasks[task_id].assigned_worker_id == "w2"
+
+    def test_rejected_tensor_result_requeues_assigned_task(self, coordinator, registry):
+        """Tensor validation failure uses the same immediate-requeue contract."""
+        registry.register("w1", {})
+        task_ids = coordinator.submit_tasks("round-1", _make_task_specs(1), _make_tensors())
+        task_id = task_ids[0]
+        coordinator.get_next_assignment("w1")
+
+        msg = _make_result_msg(task_id)
+        bad_tensors = _make_result_tensors()
+        bad_tensors["weights"] = np.array([float("nan")] * 4, dtype=np.float32)
+        assert coordinator.submit_result("w1", msg, bad_tensors) is False
+
+        assert coordinator._pending_tasks[task_id].assigned_worker_id is None
+        assert task_id in coordinator._unassigned_tasks
+        assert registry.get("w1").idle is True
+
     def test_reject_unassigned_task_result(self, coordinator, registry):
         """Results for pending-but-unassigned tasks (requeue window) are rejected."""
         registry.register("w1", {})

@@ -106,8 +106,12 @@ async def start_training(request: Request, body: TrainingStartRequest = None) ->
 async def stop_training(request: Request) -> dict:
     """Stop network training."""
     lifecycle = _get_lifecycle(request)
-    result = lifecycle.stop_training()
-    return success_response(result)
+    try:
+        result = lifecycle.stop_training()
+        return success_response(result)
+    except RuntimeError as e:
+        logger.debug("Stop training failed: %s", e)
+        raise HTTPException(status_code=409, detail="Training cannot be stopped in the current state") from e
 
 
 @router.post("/pause")
