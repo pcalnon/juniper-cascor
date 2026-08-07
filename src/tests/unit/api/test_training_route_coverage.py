@@ -256,6 +256,47 @@ class TestStartTraining:
         assert forwarded_kwargs.get("learning_rate") == 0.01
         assert forwarded_kwargs.get("patience") == 5
 
+    def test_start_training_while_investigating_returns_409(self, client_with_network):
+        """CAN-015d: start while Investigating must 409 with the specific reason string.
+
+        Manager-level RuntimeError is covered in lifecycle unit tests; this pins the
+        HTTP mapping so Canopy sees a actionable 409 (not a generic 500).
+        Orthogonal to create_network-while-Investigating and network PAUSED/REPLAYING guards.
+        """
+        lifecycle = client_with_network.app.state.lifecycle
+        assert lifecycle.state_machine.mark_investigating()
+        response = client_with_network.post(
+            "/v1/training/start",
+            json={
+                "inline_data": {
+                    "train_x": [[0.1, 0.2], [0.3, 0.4], [0.5, 0.6], [0.7, 0.8]],
+                    "train_y": [[1.0, 0.0], [0.0, 1.0], [1.0, 0.0], [0.0, 1.0]],
+                },
+            },
+        )
+        assert response.status_code == 409
+        msg = response.json()["error"]["message"]
+        assert "Investigating" in msg
+        assert lifecycle.state_machine.is_investigating()
+
+    def test_start_training_while_replaying_returns_409(self, client_with_network):
+        """CAN-015c: start while Replaying must 409 telling the client to stop replay first."""
+        lifecycle = client_with_network.app.state.lifecycle
+        assert lifecycle.state_machine.mark_replaying()
+        response = client_with_network.post(
+            "/v1/training/start",
+            json={
+                "inline_data": {
+                    "train_x": [[0.1, 0.2], [0.3, 0.4], [0.5, 0.6], [0.7, 0.8]],
+                    "train_y": [[1.0, 0.0], [0.0, 1.0], [1.0, 0.0], [0.0, 1.0]],
+                },
+            },
+        )
+        assert response.status_code == 409
+        msg = response.json()["error"]["message"]
+        assert "replaying" in msg.lower()
+        assert lifecycle.state_machine.is_replaying()
+
 
 class TestStopTraining:
     """Tests for POST /training/stop."""

@@ -23,6 +23,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **`validate_task_result` rejects JSON bool for int/numeric fields.** `isinstance(True, int)` previously accepted `candidate_id` / `epochs_completed` / `correlation` as bool. Tests in `test_worker_protocol.py`.
 
+- **`WorkerCoordinator.cancel_round` frees registry `active_task_id`.** Cancelling a round previously cleared coordinator pending/unassigned tracking but left workers marked busy in `WorkerRegistry`. Subsequent `get_next_assignment` calls then permanently refused work (`assign_task` → False), and `_check_task_timeouts` could not reclaim capacity because pending tracking was already gone — stuck remote-worker capacity until reconnect. `cancel_round` now calls `complete_task(..., success=False)` for every worker that still held an in-flight assignment. Regression tests in `test_worker_coordinator.py`.
+
 - **InlineDataset + `_reload_dataset` — reject misaligned / half-specified splits at the boundary.**
   `InlineDataset` now cross-validates `train_x`/`train_y` lengths and requires `val_x`/`val_y` as a pair (matching lengths), so `POST /v1/training/start` returns 422 instead of constructing tensors that fail mid-`fit`. `_reload_dataset` likewise rejects juniper-data artifacts with non-2-D train/val arrays, train or validation sample-count mismatches, a partial `X_test`/`y_test` pair, or non-numeric train payloads — leaving prior tensors untouched so staged swaps can retry. Tests: `src/tests/unit/api/test_inline_dataset_validation.py`, extended `TestReloadDataset` in `test_lifecycle_manager_swap.py`.
 
@@ -39,11 +41,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Companion auto-start cleanup:** `ManagedService.terminate` now closes the subprocess log handle in a `finally` (even if post-SIGKILL `wait` raises), and `start_service` always removes a failed-health service from `_active_services` even when `terminate()` itself raises or the health probe throws — preventing orphaned juniper-data/canopy processes and leaked FDs on local auto-start.
 - **Remote worker reject-requeue:** `WorkerCoordinator.submit_result` now immediately requeues a task when schema or tensor validation rejects the worker's result (clearing `assigned_worker_id` and pushing `_unassigned_tasks`) instead of leaving the task orphaned until the full `_task_reassignment_timeout` (default 120s) fires.
+
+- **Worker mid-disconnect task requeue:** `WorkerCoordinator.handle_worker_disconnect` (wired from `/ws/v1/workers` session cleanup) immediately requeues any in-flight task when a worker socket closes — including mid-binary-frame result receive — instead of leaving the task orphaned until `_task_reassignment_timeout` (default 120s). Distinct from CONC-10 heartbeat-timeout reaping. Tests: `test_worker_coordinator.py` (`TestHandleWorkerDisconnect`) and `test_worker_stream.py` (`test_mid_binary_frame_disconnect_requeues_assigned_task`).
 - Unit tests no longer pin the service version as a literal: the four `0.6.0` assertions in `test_api_app.py`, `test_api_app_coverage_deep.py`, and `test_api_health.py` (red on `main` since the v0.7.0 bump merged in #429 without CI running) now assert against `api.app._API_VERSION` — the BUG-CC-04 canonical runtime read — so a release version bump can no longer break the suite.
 - **CAN-015c — `update_params` / `PATCH /v1/training/params` / WS `set_params` reject REPLAYING (HTTP 409).**
   The FSM contract states that meta-param mutations are rejected while a snapshot replay session is active, but `TrainingLifecycleManager.update_params` never consulted `is_replaying()`. Live knobs could change mid-replay and desync the synthetic epoch stream. The manager now raises `RuntimeError`; the REST route maps it to **409** (WS inherits via the shared lifecycle call).
 - **`get_secret` fail-soft on unreadable / non-UTF-8 Docker `_FILE` mounts.**
   `path.read_text()` previously propagated `OSError` / `UnicodeDecodeError` and could crash Settings resolution at boot. Both now fall through to the plain env var (same posture as a missing path).
+
+### Added
+
+- **C2b progress-pair reset regression tests** — pin that `_run_training` zeroes `output_epoch` / `candidate_epoch` pairs before `model.fit`, and that growth-phase `training_end` clears both pairs (bug-fix-only commits 0eb78d1 / 79e8ad7). Extends `test_c2b_epochs_cap_and_surfaces.py`.
+- **Training start while INVESTIGATING / REPLAYING → HTTP 409** — route-level pins that Canopy receives the specific RuntimeError reason string (not a generic 500). Extends `test_training_route_coverage.py`.
+- **`InvalidCandidatePoolError` → HTTP 422 route pin** — `PATCH /v1/training/params` must not collapse the typed C2.1 violation into bare `ValueError`→404. Extends `test_api_runtime_params.py`.
+- **C7 classification_metrics edges** — Inf-in-target degradation + weighted average with a never-true (zero-support) class. Extends `test_classification_metrics.py`.
 
 ## [0.7.0] - 2026-07-28
 

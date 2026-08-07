@@ -182,6 +182,40 @@ class WorkerCoordinator:
                     worker_id,
                 )
 
+    def handle_worker_disconnect(self, worker_id: str) -> None:
+        """Requeue any in-flight task and drop the worker on clean disconnect.
+
+        Called from the WebSocket handler ``finally`` when the socket closes
+        (including mid-binary-frame result receive). Distinct from
+        :meth:`_check_stale_workers` (heartbeat-timeout path) and from
+        schema/tensor reject-requeue in :meth:`submit_result`: without this,
+        a clean disconnect leaves ``assigned_worker_id`` set while
+        ``registry.deregister`` drops the worker, so the task sits orphaned
+        until ``_task_reassignment_timeout`` (default 120s).
+
+        Holds ``self._lock`` across requeue + deregister so a concurrent
+        :meth:`get_next_assignment` cannot land a new task on a worker that
+        is about to disappear (same lock discipline as CONC-10).
+        """
+        with self._lock:
+            current = self._registry.get(worker_id)
+            if current is not None:
+                active_task_id = current.active_task_id
+                if active_task_id is not None:
+                    task = self._pending_tasks.get(active_task_id)
+                    if task is not None and not task.completed:
+                        if active_task_id not in self._unassigned_tasks:
+                            task.assigned_worker_id = None
+                            task.dispatched_at = time.time()
+                            self._unassigned_tasks.append(active_task_id)
+                            logger.info(
+                                "Task %s requeued after worker %s disconnect",
+                                active_task_id,
+                                worker_id,
+                            )
+                self._registry.deregister(worker_id)
+        self.unregister_send_callback(worker_id)
+
     def abort_in_flight_result(self, worker_id: str, task_id: str | None = None) -> None:
         """Free the worker and immediately requeue after a soft result-frame abort.
 
@@ -562,8 +596,23 @@ class WorkerCoordinator:
             return len(self._pending_tasks)
 
     def cancel_round(self) -> None:
-        """Cancel the current round and clear all pending tasks."""
+        """Cancel the current round and clear all pending tasks.
+
+        Also frees any registry ``active_task_id`` left from assignments in
+        this round. Without that release, ``assign_task`` keeps returning
+        False for the worker (busy), ``get_next_assignment`` refuses new
+        work, and ``_check_task_timeouts`` cannot help because pending
+        tracking was already cleared — permanently stuck capacity until
+        the worker reconnects.
+        """
         with self._lock:
+            # Capture workers that still hold an in-flight assignment before
+            # dropping coordinator tracking so we can free the registry.
+            busy_worker_ids: list[str] = []
+            for task in self._pending_tasks.values():
+                if task.assigned_worker_id is not None and not task.completed:
+                    busy_worker_ids.append(task.assigned_worker_id)
+
             self._pending_tasks.clear()
             self._unassigned_tasks.clear()
             self._results.clear()
@@ -571,6 +620,11 @@ class WorkerCoordinator:
             self._current_round_id = None
             self._current_round_task_count = 0
             self._results_ready.set()  # Unblock any waiting thread
+
+            for worker_id in busy_worker_ids:
+                # success=False: the task was aborted, not completed.
+                self._registry.complete_task(worker_id, success=False)
+
             logger.info("Current round cancelled")
 
     def shutdown(self) -> None:

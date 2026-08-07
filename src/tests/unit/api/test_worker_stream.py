@@ -525,6 +525,75 @@ class TestWorkerStreamHandlerFullFlow:
 
         ws.accept.assert_awaited_once()
 
+    @pytest.mark.asyncio
+    async def test_mid_binary_frame_disconnect_requeues_assigned_task(self, registry, coordinator):
+        """Disconnect while awaiting result tensors requeues immediately for another worker.
+
+        Regression guard for websockets major bumps: a clean socket close mid
+        binary-frame sequence must not leave the task orphaned until
+        ``_task_reassignment_timeout`` (distinct from CONC-10 heartbeat reaping).
+        """
+        tensors = {
+            "candidate_input": np.zeros((10, 4), dtype=np.float32),
+            "y": np.zeros((10, 1), dtype=np.float32),
+            "residual_error": np.zeros((10, 1), dtype=np.float32),
+        }
+        task_ids = coordinator.submit_tasks(
+            "r1",
+            [{"candidate_index": 0, "candidate_data": {}, "training_params": {}}],
+            tensors,
+        )
+        registry.register("w2", {})
+
+        result_msg = json.dumps(
+            {
+                "type": "task_result",
+                "task_id": task_ids[0],
+                "candidate_id": 0,
+                "candidate_uuid": "uuid",
+                "correlation": 0.85,
+                "success": True,
+                "epochs_completed": 10,
+                "activation_name": "sigmoid",
+                "all_correlations": [0.85],
+                "numerator": 1.0,
+                "denominator": 2.0,
+                "best_corr_idx": 9,
+                "error_message": None,
+                "tensor_manifest": {
+                    "weights": {"shape": [4], "dtype": "float32"},
+                    "bias": {"shape": [1], "dtype": "float32"},
+                },
+            }
+        )
+
+        ws = _make_websocket(
+            app_state={
+                "worker_coordinator": coordinator,
+                "worker_registry": registry,
+            }
+        )
+        ws.receive_text = AsyncMock(return_value=json.dumps(WorkerProtocol.build_register("client-w1", {"cpu_cores": 4})))
+        # Connect-time dispatch assigns the pending task; the next receive is the
+        # task_result JSON, then the first expected binary frame disconnects.
+        ws.receive = AsyncMock(
+            side_effect=[
+                {"text": result_msg},
+                WebSocketDisconnect(),
+            ]
+        )
+
+        await worker_stream_handler(ws)
+
+        assert registry.get("w2") is not None
+        assert registry.worker_count == 1
+        assert task_ids[0] in coordinator._unassigned_tasks
+        assert coordinator._pending_tasks[task_ids[0]].assigned_worker_id is None
+
+        assignment = coordinator.get_next_assignment("w2")
+        assert assignment is not None
+        assert assignment[0]["task_id"] == task_ids[0]
+
 
 @pytest.mark.unit
 class TestHandleRegistrationExtraEdgeCases:
