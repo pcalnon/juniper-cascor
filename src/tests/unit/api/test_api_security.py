@@ -211,6 +211,42 @@ class TestRateLimiter:
         assert "Rate limit exceeded" in exc_info.value.detail
 
     @pytest.mark.asyncio
+    async def test_call_429_includes_rate_limit_headers(self) -> None:
+        """429 responses must carry X-RateLimit-* and Retry-After for client backoff."""
+        limiter = RateLimiter(requests_per_minute=2, window_seconds=60, enabled=True)
+        request = MagicMock()
+        request.client.host = "127.0.0.1"
+        request.state = MagicMock()
+
+        await limiter(request, api_key=None)
+        await limiter(request, api_key=None)
+
+        with pytest.raises(HTTPException) as exc_info:
+            await limiter(request, api_key=None)
+
+        headers = exc_info.value.headers or {}
+        assert headers["X-RateLimit-Limit"] == "2"
+        assert headers["X-RateLimit-Remaining"] == "0"
+        assert "X-RateLimit-Reset" in headers
+        assert headers["Retry-After"] == headers["X-RateLimit-Reset"]
+        assert int(headers["Retry-After"]) >= 0
+        assert int(headers["Retry-After"]) <= 60
+
+    @pytest.mark.asyncio
+    async def test_call_populates_request_state_on_allowed(self) -> None:
+        """Allowed calls must attach remaining/reset onto request.state for middleware."""
+        limiter = RateLimiter(requests_per_minute=5, window_seconds=60, enabled=True)
+        request = MagicMock()
+        request.client.host = "127.0.0.1"
+        request.state = MagicMock()
+
+        await limiter(request, api_key=None)
+
+        assert request.state.rate_limit_remaining == 4
+        assert isinstance(request.state.rate_limit_reset, int)
+        assert 0 < request.state.rate_limit_reset <= 60
+
+    @pytest.mark.asyncio
     async def test_call_uses_api_key_for_limiting(self) -> None:
         """Dependency should use API key for rate limiting when provided."""
         limiter = RateLimiter(requests_per_minute=5, enabled=True)
