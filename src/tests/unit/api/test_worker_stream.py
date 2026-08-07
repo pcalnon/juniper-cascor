@@ -177,21 +177,37 @@ class TestHandleRegistration:
 
     @pytest.mark.asyncio
     async def test_wrong_message_type(self, registry):
-        """Non-registration first message closes the connection."""
+        """Non-registration first message closes with structured error + code 4007."""
         ws = AsyncMock()
         ws.receive_text = AsyncMock(return_value=json.dumps({"type": "heartbeat", "worker_id": "w1"}))
 
         worker_id = await _handle_registration(ws, registry)
         assert worker_id is None
+        # Ops/workers distinguish "expected REGISTER" (4007) from 4005/4006/4008/4013.
+        ws.send_json.assert_awaited_once()
+        error_msg = ws.send_json.call_args[0][0]
+        assert error_msg["type"] == "error"
+        assert "registration" in error_msg["error"].lower()
+        ws.close.assert_awaited_once()
+        assert ws.close.call_args.kwargs["code"] == 4007
+        assert ws.close.call_args.kwargs["reason"] == "Expected registration"
 
     @pytest.mark.asyncio
     async def test_missing_fields(self, registry):
-        """Registration with missing fields closes the connection."""
+        """Registration with missing fields closes with structured error + code 4008."""
         ws = AsyncMock()
         ws.receive_text = AsyncMock(return_value=json.dumps({"type": "register"}))  # Missing worker_id and capabilities
 
         worker_id = await _handle_registration(ws, registry)
         assert worker_id is None
+        # Invalid-registration (4008) must stay distinct from registry-full (4013).
+        ws.send_json.assert_awaited_once()
+        error_msg = ws.send_json.call_args[0][0]
+        assert error_msg["type"] == "error"
+        assert "invalid registration" in error_msg["error"].lower()
+        ws.close.assert_awaited_once()
+        assert ws.close.call_args.kwargs["code"] == 4008
+        assert ws.close.call_args.kwargs["reason"] == "Invalid registration"
 
 
 @pytest.mark.unit
@@ -772,6 +788,26 @@ class TestMessageLoop:
             await _message_loop(ws, "w1", registry, coordinator)
 
 
+def _assign_single_task(coordinator, registry, worker_id="w1"):
+    """Register worker, submit one task, assign it; return (task_id, result msg shell)."""
+    registry.register(worker_id, {})
+    tensors = {
+        "candidate_input": np.random.randn(8, 2).astype(np.float32),
+        "y": np.random.randn(8, 1).astype(np.float32),
+        "residual_error": np.random.randn(8, 1).astype(np.float32),
+    }
+    task_specs = [
+        {
+            "candidate_index": 0,
+            "candidate_data": {"input_size": 2, "activation_name": "sigmoid"},
+            "training_params": {"epochs": 1, "learning_rate": 0.01},
+        }
+    ]
+    task_ids = coordinator.submit_tasks("round-soft-abort", task_specs, tensors)
+    assert coordinator.get_next_assignment(worker_id) is not None
+    return task_ids[0]
+
+
 @pytest.mark.unit
 class TestHandleTaskResultEdgeCases:
     """Test edge cases in _handle_task_result."""
@@ -798,6 +834,24 @@ class TestHandleTaskResultEdgeCases:
         error_msg = ws.send_json.call_args[0][0]
         assert error_msg["type"] == "error"
         assert "Expected binary frame" in error_msg["error"]
+
+    @pytest.mark.asyncio
+    async def test_missing_binary_frame_requeues_assigned_task(self, coordinator, registry):
+        """Soft text-for-bytes abort frees the busy worker and requeues immediately."""
+        task_id = _assign_single_task(coordinator, registry)
+        msg = {
+            "type": "task_result",
+            "task_id": task_id,
+            "tensor_manifest": {"weights": {"shape": [4], "dtype": "float32"}},
+        }
+        ws = AsyncMock()
+        ws.receive = AsyncMock(return_value={"text": "not-binary"})
+
+        await _handle_task_result(ws, "w1", msg, coordinator)
+
+        assert registry.get("w1").idle is True
+        assert task_id in coordinator._unassigned_tasks
+        assert coordinator._pending_tasks[task_id].assigned_worker_id is None
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize("bad_manifest", ["weights", None, ["weights"], 3])
@@ -895,6 +949,26 @@ class TestHandleTaskResultEdgeCases:
         assert "too large" in error_msg["error"].lower()
 
     @pytest.mark.asyncio
+    async def test_binary_frame_too_large_requeues_assigned_task(self, coordinator, registry):
+        """Oversized soft abort frees the worker and requeues for a peer."""
+        task_id = _assign_single_task(coordinator, registry)
+        registry.register("w2", {})
+        msg = {
+            "type": "task_result",
+            "task_id": task_id,
+            "tensor_manifest": {"weights": {"shape": [4], "dtype": "float32"}},
+        }
+        ws = AsyncMock()
+        ws.receive = AsyncMock(return_value={"bytes": b"\x00" * (100 * 1024 * 1024 + 1)})
+
+        await _handle_task_result(ws, "w1", msg, coordinator)
+
+        assert registry.get("w1").idle is True
+        peer = coordinator.get_next_assignment("w2")
+        assert peer is not None
+        assert peer[0]["task_id"] == task_id
+
+    @pytest.mark.asyncio
     async def test_invalid_binary_frame_encoding(self, coordinator, registry):
         """Malformed binary frames that fail decoding return an error."""
         registry.register("w1", {})
@@ -916,6 +990,23 @@ class TestHandleTaskResultEdgeCases:
         error_msg = ws.send_json.call_args[0][0]
         assert error_msg["type"] == "error"
         assert "Invalid binary frame" in error_msg["error"]
+
+    @pytest.mark.asyncio
+    async def test_invalid_binary_frame_requeues_assigned_task(self, coordinator, registry):
+        """Decode-failure soft abort frees the worker and requeues immediately."""
+        task_id = _assign_single_task(coordinator, registry)
+        msg = {
+            "type": "task_result",
+            "task_id": task_id,
+            "tensor_manifest": {"weights": {"shape": [4], "dtype": "float32"}},
+        }
+        ws = AsyncMock()
+        ws.receive = AsyncMock(return_value={"bytes": b"\x01"})
+
+        await _handle_task_result(ws, "w1", msg, coordinator)
+
+        assert registry.get("w1").idle is True
+        assert task_id in coordinator._unassigned_tasks
 
     @pytest.mark.asyncio
     async def test_result_rejected(self, coordinator, registry):

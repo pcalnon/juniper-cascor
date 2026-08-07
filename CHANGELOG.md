@@ -13,6 +13,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Worker anomaly history cleared on deregister.** `AnomalyDetector.clear_worker` existed but was never called from the `/ws/v1/workers` session teardown path, so `_worker_history` grew without bound across worker churn and a recycled `worker_id` could inherit stale `duplicate_correlations` / `perfect_correlation` signals. The worker-stream `finally` now clears anomaly history alongside registry/audit/metrics cleanup. Tests: `src/tests/unit/api/test_worker_security_integration.py`.
+
+- **`ws_identity_key` treats blank / whitespace-only `X-API-Key` as anonymous.** Empty or whitespace-only headers previously hashed into a shared per-identity digest under the SEC-F19 D4b cap (self-DoS). The helper now strips before the falsy check so blank keys follow the anonymous (global/per-IP only) path. Tests: `src/tests/unit/api/test_ws_connection_caps.py`.
+
 - **`WorkerCoordinator.cancel_round` frees registry `active_task_id`.** Cancelling a round previously cleared coordinator pending/unassigned tracking but left workers marked busy in `WorkerRegistry`. Subsequent `get_next_assignment` calls then permanently refused work (`assign_task` → False), and `_check_task_timeouts` could not reclaim capacity because pending tracking was already gone — stuck remote-worker capacity until reconnect. `cancel_round` now calls `complete_task(..., success=False)` for every worker that still held an in-flight assignment. Regression tests in `test_worker_coordinator.py`.
 
 - **InlineDataset + `_reload_dataset` — reject misaligned / half-specified splits at the boundary.**
@@ -22,6 +26,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **CR-024 — `RequestBodyLimitMiddleware` no longer trusts a present `Content-Length` as a floor.** Previously the stream-cap path only ran when `Content-Length` was absent, so a client that under-declared the header (`Content-Length: N` with `N <= max`) and then streamed more than `max_bytes` bypassed the body limit (docstring claimed CR-024 protection; the `content_length is None` gate contradicted it). Mutating methods (`POST`/`PUT`/`PATCH`) now always stream-read with the cumulative byte cap after the oversized-declared early reject. Tests: `TestRequestBodyLimitMiddleware` under-declared + truthful Content-Length cases in `src/tests/unit/api/test_api_middleware.py`.
 
+- **Control WS leaky-bucket `retry_after` no longer divides by zero when `refill_rate <= 0`.** Misconfiguration (or a future settings clamp that allows a zero rate) previously crashed the rate-limit ack path with `ZeroDivisionError` after `try_acquire` failed. `LeakyBucket.retry_after` now returns `0.0` (no finite wait estimate) when refill is non-positive. Tests: `src/tests/unit/api/test_control_security.py`.
+
+- Soft `/ws/v1/workers` `task_result` binary-frame aborts (text instead of bytes, oversized frame, or decode failure) now free the worker and immediately requeue the in-flight task via `WorkerCoordinator.abort_in_flight_result`. Previously the socket stayed open, the worker remained busy, and the task waited for `_task_reassignment_timeout` (default 120s) while heartbeats kept CONC-10 from recovering it.
 - Unit tests no longer pin the service version as a literal: the four `0.6.0` assertions in `test_api_app.py`, `test_api_app_coverage_deep.py`, and `test_api_health.py` (red on `main` since the v0.7.0 bump merged in #429 without CI running) now assert against `api.app._API_VERSION` — the BUG-CC-04 canonical runtime read — so a release version bump can no longer break the suite.
 - **CAN-015c — `update_params` / `PATCH /v1/training/params` / WS `set_params` reject REPLAYING (HTTP 409).**
   The FSM contract states that meta-param mutations are rejected while a snapshot replay session is active, but `TrainingLifecycleManager.update_params` never consulted `is_replaying()`. Live knobs could change mid-replay and desync the synthetic epoch stream. The manager now raises `RuntimeError`; the REST route maps it to **409** (WS inherits via the shared lifecycle call).
