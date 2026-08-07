@@ -844,12 +844,21 @@ All REST responses use the standard response envelope:
 
 ### Service Startup and WebSocket Admission
 
-- REST and WebSocket authentication use the `X-API-Key` header when `JUNIPER_CASCOR_API_KEYS` is configured. Auth is disabled when no API keys are configured.
+- REST and WebSocket authentication use the `X-API-Key` header when `JUNIPER_CASCOR_API_KEYS` is configured. Auth is disabled when no API keys are configured (`None` or `[]`).
+- REST `SecurityMiddleware` authenticates **before** rate limiting: a 401 on a bad/missing key never increments the fixed-window counter. With auth enabled, budgets are per API key (`key:…`); with auth disabled and rate limiting on, budgets are per client IP (`ip:…`). The default window is 60 req/min when `JUNIPER_CASCOR_RATE_LIMIT_ENABLED=true`, and 429 responses carry `Retry-After` plus `X-RateLimit-*`. Exempt paths (health, docs/OpenAPI/ReDoc, `/metrics`) skip both checks. See [Authentication](JUNIPER_CASCOR_API_REFERENCE.md#authentication).
 - Boot-time SEC-F01: `JUNIPER_CASCOR_REQUIRE_AUTH=true` refuses startup with `AuthPostureError` when keys are missing/blank; the default (`false`) only WARNs and continues (bare/dev). An empty `JUNIPER_CASCOR_API_KEYS_FILE` does not fall back to the plain env var — see [Configuration Reference](../install/REFERENCE.md#api-server-bind-and-websocket-guardrails).
 - `JUNIPER_CASCOR_HOST` defaults to `127.0.0.1`. If it is set to a non-loopback address such as `0.0.0.0`, startup fails with `NonLoopbackBindError` unless `JUNIPER_CASCOR_LOOPBACK_PUBLISH_ATTESTED=true` or `JUNIPER_CASCOR_AUTH_PROXY_ATTESTED=true`.
 - Set `JUNIPER_CASCOR_LOOPBACK_PUBLISH_ATTESTED=true` when a loopback-only host-publish fronts the service, or `JUNIPER_CASCOR_AUTH_PROXY_ATTESTED=true` when an authenticating reverse proxy does. This guard runs before the server accepts connections.
-- WebSocket admission uses `JUNIPER_CASCOR_WS_MAX_CONNECTIONS_GLOBAL` (default 200) across `/ws/training`, `/ws/control`, and `/ws/v1/workers`. `/ws/control` also uses `JUNIPER_CASCOR_WS_MAX_CONNECTIONS_PER_IDENTITY` (default 5), keyed on a non-reversible digest of the `X-API-Key`.
+- `SecurityHeadersMiddleware` adds always-on `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy`, `Permissions-Policy`, and a restrictive CSP to every HTTP response. HSTS is added only when `X-Forwarded-Proto: https` is present (a TLS-terminator footgun when that header is omitted).
+- Mutating HTTP requests are capped at 10 MiB by `RequestBodyLimitMiddleware`; `Content-Length` is an early-reject fast path only, and the stream-read enforces the real cumulative cap (CR-024). See [Request body limits (CR-024)](JUNIPER_CASCOR_API_REFERENCE.md#request-body-limits-cr-024).
+- WebSocket admission uses `JUNIPER_CASCOR_WS_MAX_CONNECTIONS_GLOBAL` (default 200) across `/ws/training`, `/ws/control`, and `/ws/v1/workers`. `/ws/control` also uses `JUNIPER_CASCOR_WS_MAX_CONNECTIONS_PER_IDENTITY` (default 5), keyed on `ws_identity_key` (a truncated per-process HMAC of the **stripped** `X-API-Key`). Missing / empty / whitespace-only keys are anonymous and do not consume a per-identity slot.
 - Over-cap WebSocket attempts close with `1013`. The peer-IP cap remains DoS-dampening only; behind Docker NAT, clients can share one bridge-gateway IP bucket.
+- `/ws/control` non-object JSON (`[]` / scalars / `null`) gets an in-band `invalid_message` ack and keeps the session open; only malformed JSON closes with `1003`. See [WS `/ws/control`](JUNIPER_CASCOR_API_REFERENCE.md#ws-wscontrol).
+- `POST` / `DELETE` `/v1/network` return **409** while the FSM is `STARTED`, `PAUSED`, `REPLAYING`, or `INVESTIGATING` (a parked training thread, replay session, or inspected snapshot still owns the model).
+- Worker `register` messages must present a `worker_id` matching `^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$`; failures close with `4008` and a full registry closes with `4013`. The string is stored as `client_name` only — the server assigns the `worker-<12 hex>` registry id (CR-026).
+- After admission, `task_result` acceptance is ownership-gated: `WorkerCoordinator.submit_result` rejects results when `worker_id != PendingTask.assigned_worker_id` (the task stays pending for the assignee). Tensor manifests are validated fail-soft via `WorkerProtocol.validate_tensors` (missing `shape`/`dtype`, non-dict entries, empty `weights` → errors, not crashes). Schema / tensor rejects are then requeued immediately via `_reject_and_requeue_task`, as are soft `task_result` binary-frame aborts via `abort_in_flight_result` — neither waits for `JUNIPER_CASCOR_REMOTE_WORKERS_TASK_REASSIGNMENT_TIMEOUT` (default 120s). Receive-site guards also reject non-object JSON and a malformed / over-32-entry `tensor_manifest` before binary receive. See [WS `/ws/v1/workers`](JUNIPER_CASCOR_API_REFERENCE.md#ws-wsv1workers).
+- Worker socket teardown clears `AnomalyDetector` per-worker history via `clear_worker`, so reconnect churn cannot leak anomaly signals across recycled IDs.
+- Canopy staged configs use plural generator names (`spirals`/`moons`); `_translate_staged_config` aliases them to juniper-data keys (`spiral`/`moon`) at fetch time. See [Staged dataset dialect](JUNIPER_CASCOR_API_REFERENCE.md#staged-dataset-dialect-canopy--juniper-data).
 
 ### Training Lifecycle Endpoints
 
@@ -863,6 +872,10 @@ All REST responses use the standard response envelope:
 | `/v1/training/status` | `GET` | Return state machine, monitor, and training-state snapshots |
 | `/v1/training/params` | `GET` | Get runtime training params |
 | `/v1/training/params` | `PATCH` | Update runtime-modifiable params |
+| `/v1/training/dataset` | `POST` | Stage canopy-dialect dataset config for the next start |
+| `/v1/training/dataset` | `DELETE` | Cancel the staged dataset config |
+| `/v1/training/dataset/pending` | `GET` | Read the staged dataset config (or `null`) |
+| `/v1/training/dataset/live` | `POST` | In-flight live dataset swap (experimental gate) |
 
 ### Training Limit Semantics
 
@@ -978,10 +991,12 @@ WebSocket connection caps are admission controls for availability and fairness; 
 | Setting | Default | Applies to | Notes |
 |---------|---------|------------|-------|
 | `JUNIPER_CASCOR_WS_MAX_CONNECTIONS_GLOBAL` | `200` | `/ws/training`, `/ws/control`, `/ws/v1/workers` combined | Stack-absolute cap that survives Docker NAT and should exceed expected clients plus worker fleet size. |
-| `JUNIPER_CASCOR_WS_MAX_CONNECTIONS_PER_IDENTITY` | `5` | `/ws/control` | Keyed on a non-reversible per-process HMAC of the presented `X-API-Key`; anonymous callers rely on global and per-IP caps. |
+| `JUNIPER_CASCOR_WS_MAX_CONNECTIONS_PER_IDENTITY` | `5` | `/ws/control` | Keyed on `ws_identity_key` (a truncated per-process HMAC of the **stripped** `X-API-Key`). Blank / whitespace-only headers return a `None` identity so they do not collapse onto one shared digest bucket. Anonymous callers rely on global and per-IP caps. |
 | `JUNIPER_CASCOR_WS_MAX_CONNECTIONS_PER_IP` | `5` | Manager-routed sockets, including `/ws/training` | DoS dampening only. Behind Docker NAT all clients can share the bridge-gateway IP, so this can become one shared bucket. |
 
-`/ws/v1/workers` is global-cap-only for this layer: worker fleets may share a machine token, and the server-assigned `worker_id` is not available until after the admission point. Worker capacity is still bounded by the global cap and by worker-registry limits.
+`/ws/v1/workers` is global-cap-only for this layer: worker fleets may share a machine token, and the server-assigned `worker_id` is not available until after the admission point. Worker capacity is still bounded by the global cap and by worker-registry limits. On deregister, `AnomalyDetector.clear_worker` drops that worker's anomaly history (idempotent; skip-safe when the detector is unbound).
+
+Heartbeat / idle knobs on `/ws/training` and `/ws/control` are read through `_numeric_setting`, so a missing or non-numeric `app.state.settings` double never reaches `asyncio.sleep` / `asyncio.wait_for`. See [Defensive numeric settings](JUNIPER_CASCOR_API_REFERENCE.md#defensive-numeric-settings-_numeric_setting) for the attribute table and fallbacks.
 
 ### Lifecycle Failure Handling Path
 

@@ -18,6 +18,8 @@
   - [Common HTTP status codes](#common-http-status-codes)
   - [Common WebSocket close codes](#common-websocket-close-codes)
   - [Middleware stack](#middleware-stack)
+  - [Security headers (`SecurityHeadersMiddleware`)](#security-headers-securityheadersmiddleware)
+  - [Request body limits (CR-024)](#request-body-limits-cr-024)
 - [Health & readiness](#health--readiness)
   - [GET `/v1/health`](#get-v1health)
   - [GET `/v1/health/live`](#get-v1healthlive)
@@ -42,6 +44,7 @@
   - [GET `/v1/training/status`](#get-v1trainingstatus)
   - [GET `/v1/training/params`](#get-v1trainingparams)
   - [PATCH `/v1/training/params`](#patch-v1trainingparams)
+  - [Staged dataset dialect (canopy → juniper-data)](#staged-dataset-dialect-canopy--juniper-data)
 - [Metrics](#metrics)
   - [C7 scalar evaluation metrics](#c7-scalar-evaluation-metrics)
   - [GET `/v1/metrics`](#get-v1metrics)
@@ -90,12 +93,26 @@ Treat each flag as an operational attestation: `JUNIPER_CASCOR_LOOPBACK_PUBLISH_
 
 Optional at the request layer; loud at boot via SEC-F01.
 
-- REST: `X-API-Key` header validated by `APIKeyAuth` middleware (`src/api/security.py`). When `settings.api_keys` is empty/blank, auth is disabled (dev mode) and protected routes are served open.
-- WebSocket: same `X-API-Key` header, validated in `ws_authenticate()` (`src/api/websocket/manager.py`). On failure the socket is closed with code `4001`.
+- REST: `X-API-Key` header validated by `APIKeyAuth` middleware (`src/api/security.py`). When `settings.api_keys` is empty/blank, auth is disabled (dev mode) and protected routes are served open — `api_keys=[]` is the same open-access posture as `None`.
+- WebSocket: same `X-API-Key` header, validated in `ws_authenticate()` (`src/api/websocket/manager.py`). On failure the socket is closed with code `4001`. WebSocket upgrades are **not** processed by `SecurityMiddleware` (`BaseHTTPMiddleware`); WS auth and rate limits live in the stream handlers.
 - Boot posture: the lifespan calls `juniper_service_core.enforce_auth_posture(...)` immediately after the bind guard (`src/api/app.py`). `JUNIPER_CASCOR_REQUIRE_AUTH` (default `false`) selects WARNING-and-continue vs refuse-with-`AuthPostureError`. Deployments that provision secrets (composed juniper-deploy) should set it `true`. Bypass: `JUNIPER_SKIP_AUTH_POSTURE_CHECK=1` (logged loudly).
-- Docker secrets: `JUNIPER_CASCOR_API_KEYS_FILE` is read by `api.secrets.get_secret()`. An existing empty/whitespace-only file returns `""` with **no** fallback to the plain env var. In the usual compose `_FILE`-only pattern that leaves `settings.api_keys` unset (HO-2 empty-placeholder class) unless `REQUIRE_AUTH=true` fails the boot.
+- Docker secrets: `JUNIPER_CASCOR_API_KEYS_FILE` is read by `api.secrets.get_secret()`. An existing empty/whitespace-only file returns `""` with **no** fallback to the plain env var. In the usual compose `_FILE`-only pattern that leaves `settings.api_keys` unset (HO-2 empty-placeholder class) unless `REQUIRE_AUTH=true` fails the boot. An **unreadable** file (`OSError` / `PermissionError` on read) instead fails soft: the resolver falls through to the plain env var (or `None`), so a bad mount degrades to the env-var posture rather than crashing Settings resolution / boot. A missing path or non-file has the same fail-soft fall-through.
 
-Rate limiting is also optional; per-IP REST limiter defaults to 100 req/min, and the worker WebSocket has its own per-IP connection rate limiter. WebSocket admission also has a stack-global cap across all WS endpoints (`JUNIPER_CASCOR_WS_MAX_CONNECTIONS_GLOBAL`, default 200). `/ws/control` adds a per-identity cap (`JUNIPER_CASCOR_WS_MAX_CONNECTIONS_PER_IDENTITY`, default 5) keyed on a non-reversible digest of the presented `X-API-Key`.
+Rate limiting is also optional (`JUNIPER_CASCOR_RATE_LIMIT_ENABLED`, default off); the REST fixed-window limiter defaults to **60** req/min (`JUNIPER_CASCOR_RATE_LIMIT_REQUESTS_PER_MINUTE`), and the worker WebSocket has its own per-IP connection rate limiter. WebSocket admission also has a stack-global cap across all WS endpoints (`JUNIPER_CASCOR_WS_MAX_CONNECTIONS_GLOBAL`, default 200). `/ws/control` adds a per-identity cap (`JUNIPER_CASCOR_WS_MAX_CONNECTIONS_PER_IDENTITY`, default 5) keyed on `ws_identity_key` in `src/api/websocket/manager.py` — a truncated (16-char) per-process HMAC-SHA256 of the presented `X-API-Key`. Missing, empty, or whitespace-only values are stripped before the falsy check and treated as anonymous (`None` identity), so blank headers do not mint a shared per-identity digest under the SEC-F19 D4b cap.
+
+#### REST auth ↔ rate-limit contract (`SecurityMiddleware`)
+
+`SecurityMiddleware.dispatch` (`src/api/middleware.py`) runs auth, then rate limiting, and rebuilds `HTTPException`s as `JSONResponse` while copying `exc.headers`. Operator-visible contracts:
+
+| Contract | Behavior |
+|----------|----------|
+| Auth-first | A missing/invalid `X-API-Key` returns **401** before `RateLimiter.check` runs — forged keys cannot burn IP/key budgets. |
+| Keying (auth on) | Successful auth keys the window as `key:<api_key>`; distinct keys have independent counters. |
+| Keying (auth off) | With `api_keys` unset/`[]`, rate limiting (when enabled) keys as `ip:<client_host>`. |
+| 429 headers | `RateLimiter` raises 429 with `Retry-After` plus `X-RateLimit-Limit` / `-Remaining` / `-Reset`; the middleware rebuild preserves those headers on the wire. |
+| Exempt paths | `EXEMPT_PATHS` skip both checks: `/v1/health`, `/v1/health/live`, `/v1/health/ready`, `/docs`, `/openapi.json`, `/redoc`, `/metrics`, `/metrics/`. Health stays reachable after a saturated non-exempt 429. |
+
+Regression pin: `src/tests/unit/api/test_api_middleware.py` — `TestSecurityMiddlewareAuthRateLimitInterplay`.
 
 ### Startup bind guard
 
@@ -143,9 +160,11 @@ The global handlers in `src/api/app.py:480-494` produce:
 |------|----------------------------------------------------------------------------------------------------------------------|
 | 200  | Success                                                                                                              |
 | 400  | Bad request — invalid `snapshot_id` format, bad shape, invalid replay action params                                  |
+| 401  | Unauthorized — missing/invalid `X-API-Key` when REST API-key auth is enabled                                         |
 | 404  | Not found — no network created, snapshot/worker not found, hidden-unit index out of range, dataset not loaded        |
 | 409  | Conflict — invalid FSM state, training already active, network at `max_hidden_units`, stale replay session id in URL |
 | 422  | Unprocessable Entity — Pydantic validation failure on request body, NaN/Inf weights, unknown activation name         |
+| 429  | Too Many Requests — REST rate limit exceeded (`Retry-After` + `X-RateLimit-*` when rate limiting is enabled)         |
 | 500  | Internal server error — topology / decision-boundary extraction failed, unhandled exception                          |
 | 503  | Service unavailable — lifecycle / registry / WebSocket manager not bound (startup not complete or shutting down)     |
 
@@ -160,19 +179,67 @@ The global handlers in `src/api/app.py:480-494` produce:
 | 4001 | Authentication required / `X-API-Key` invalid                                                                                                                                                       |
 | 4003 | Origin header not permitted (control + worker streams)                                                                                                                                             |
 | 4004 | Worker subsystem not initialized                                                                                                                                                                    |
+| 4006 | Worker registration JSON parse failure                                                                                                                                                              |
+| 4007 | Worker first message was not `register`                                                                                                                                                             |
+| 4008 | Invalid worker registration (`validate_register` failed — non-object JSON, bad `worker_id`, non-dict `capabilities`)                                                                                |
+| 4013 | Worker registry at capacity                                                                                                                                                                         |
 | 1013 | WebSocket connection cap reached                                                                                                                                                                    |
 | 4029 | Connection rate limited (worker stream)                                                                                                                                                             |
 
 ### Middleware stack
 
-Registered in `src/api/app.py:426-458` (LIFO execution order):
+Registered in `src/api/app.py` via successive `app.add_middleware(...)` calls. Starlette/FastAPI middleware runs **LIFO** (last added = first executed on the request), so the outer-to-inner order when all layers are enabled is:
 
-1. CORS (only if origins are configured)
-2. `RequestBodyLimitMiddleware`
-3. `SecurityHeadersMiddleware`
-4. `SecurityMiddleware` (`APIKeyAuth` + `RateLimiter`)
-5. `PrometheusMiddleware` (only when `metrics_enabled`)
-6. `RequestIdMiddleware` (always adds `X-Request-Id`)
+1. `RequestIdMiddleware` (always adds `X-Request-Id`)
+2. `PrometheusMiddleware` (only when `metrics_enabled`)
+3. `SecurityMiddleware` (`APIKeyAuth` + `RateLimiter`)
+4. `SecurityHeadersMiddleware`
+5. `RequestBodyLimitMiddleware`
+6. CORS (only if origins are configured)
+
+WebSocket upgrade requests are **not** intercepted by `BaseHTTPMiddleware`, so `/ws/*` paths skip the body-limit and security-middleware HTTP paths (they use WebSocket auth and message validation instead).
+
+### Security headers (`SecurityHeadersMiddleware`)
+
+Always-on HTTP response headers from `src/api/middleware.py` (wired in `src/api/app.py` with the default CSP). Applied to every HTTP response, including health probes:
+
+| Header | Value |
+|--------|-------|
+| `X-Content-Type-Options` | `nosniff` |
+| `X-Frame-Options` | `DENY` |
+| `Referrer-Policy` | `strict-origin-when-cross-origin` |
+| `Permissions-Policy` | `camera=(), microphone=(), geolocation=()` |
+| `Content-Security-Policy` | `default-src 'none'; frame-ancestors 'none'` (constructor override supported) |
+
+**HSTS** (`Strict-Transport-Security: max-age=31536000; includeSubDomains`) is emitted only when the inbound request carries `X-Forwarded-Proto: https`.
+
+Plain `http` — or a missing forwarded-proto header — never receives HSTS, so a TLS terminator that forgets to set `X-Forwarded-Proto: https` will silently omit HSTS even though the public URL is HTTPS.
+
+Regression pin: `src/tests/unit/api/test_api_middleware.py` — `TestSecurityHeadersMiddleware`.
+
+### Request body limits (CR-024)
+
+`RequestBodyLimitMiddleware` (`src/api/middleware.py`) is a DoS / memory-exhaustion control on every mutating HTTP request.
+
+| Item | Value |
+|------|-------|
+| Cap | `_PROJECT_API_MAX_REQUEST_BODY_BYTES` = `10 * 1024 * 1024` (10 MiB) in `cascor_constants.constants_api` |
+| Methods | `POST`, `PUT`, `PATCH` only — `GET`/`HEAD`/etc. are not stream-capped |
+| Oversized declared `Content-Length` | Immediate **413** `{"detail": "Request body too large"}` |
+| Invalid `Content-Length` | **400** `{"detail": "Invalid Content-Length header"}` |
+| Stream path | Cumulative byte cap while reading `request.stream()`; abort with **413** as soon as the cap is exceeded |
+| Downstream body | The full under-limit payload is cached on `request._body`, so FastAPI / `request.json()` / Pydantic body parsing still work (BUG-CC-15) |
+
+**CR-024 contract:** `Content-Length` is an **early-reject fast path only**, never a trusted floor. Mutating methods must always stream-read with the cumulative cap — including when a client declares `Content-Length: N` with `N <= max` and then streams more than `max_bytes`. Gating the stream-read on `content_length is None` reopens that under-declared bypass.
+
+**Operator / developer checks:**
+
+```bash
+# Focused regression suite (under-declared 413 + truthful CL body cache)
+cd src && PYTHONPATH=. python -m pytest tests/unit/api/test_api_middleware.py::TestRequestBodyLimitMiddleware -v
+```
+
+Clients uploading large inline training arrays or snapshots must stay under 10 MiB per request, or split / stream via the supported dataset generators or snapshot restore paths instead of one oversized JSON body.
 
 ---
 
@@ -328,13 +395,24 @@ curl -s -X POST http://localhost:8201/v1/network \
 
 **State changes** — Allocates a new network on the lifecycle; replaces any pre-existing network (legacy data is discarded).
 
+**FSM guards** (`TrainingLifecycleManager.create_network`) — rejects with `RuntimeError` (REST → **409**) while:
+
+| FSM state | Why |
+|-----------|-----|
+| STARTED | An active `fit` owns the model |
+| PAUSED | The parked training thread still references `self.model` |
+| REPLAYING | A replay session would be orphaned by a model replace |
+| INVESTIGATING | An inspected snapshot model is still bound for patch / retrain flows; replacing it strands the FSM against a brand-new network |
+
+REST maps these to `HTTPException(409, "Network cannot be created in the current state")`. Stop training, end the replay, or `/retrain` / `/reset` out of Investigating before recreating.
+
 **Returns** — `200` envelope with `data` containing `input_size`, `output_size`, `hidden_units`, `max_hidden_units`, `learning_rate`, `uuid`, plus the full hyperparameter snapshot.
 
 **Error handling**:
 
 | Code | Trigger                                                                           |
 |------|-----------------------------------------------------------------------------------|
-| 409  | Network already exists in an incompatible FSM state (`HTTPException(409, "...")`) |
+| 409  | FSM is STARTED, PAUSED, REPLAYING, or INVESTIGATING (`HTTPException(409, "Network cannot be created in the current state")`) |
 | 422  | Pydantic validation (negative sizes, unknown optimizer/activation, etc.)          |
 | 503  | `lifecycle` not bound                                                             |
 
@@ -386,9 +464,11 @@ curl -s -X DELETE http://localhost:8201/v1/network
 
 **State changes** — Deallocates the network and resets associated lifecycle state.
 
+**FSM guards** — the same STARTED / PAUSED / REPLAYING / INVESTIGATING rejection as `POST /v1/network` (`delete_network` mirrors `create_network`). Clearing the model under PAUSED leaves dangling training futures; under REPLAYING it orphans the replay session; under INVESTIGATING it strands the FSM with no model. REST → **409** `"Network cannot be deleted in the current state"`.
+
 **Returns** — `200` envelope with `{"deleted": true}`.
 
-**Error handling** — `409` if the FSM is in a state where deletion is not allowed; `503` if lifecycle is unbound.
+**Error handling** — `409` if the FSM is STARTED, PAUSED, REPLAYING, or INVESTIGATING; `503` if lifecycle is unbound.
 
 ---
 
@@ -574,7 +654,9 @@ Router defined in `src/api/routes/training.py`, prefix `/v1/training`.
 
 **Summary** — Kick off a training run.
 
-**Detailed description** — Accepts inline data, a generator-based dataset (e.g., `spiral`), or relies on a pre-loaded dataset. Validates `params` against `TrainingParams` (SEC-07: unknown keys produce `422`). Coerces data to `torch.float32` tensors before invoking `lifecycle.start_training()` (`src/api/routes/training.py:68`). Implemented at `src/api/routes/training.py:23-73`.
+**Detailed description** — Accepts inline data, a generator-based dataset (only `spiral` is materialized in-route today), or relies on a pre-loaded / staged dataset. A non-`spiral` `dataset.generator` (for example `xor`) is not expanded by the route, so with no staged data the start falls through to the lifecycle's "Training data not provided" rejection → **409**; it never silently invokes the spiral generator. Validates `params` against `TrainingParams` (SEC-07: unknown keys produce `422`). Coerces data to `torch.float32` tensors before invoking `lifecycle.start_training()`. Implemented in `src/api/routes/training.py`.
+
+When a canopy-staged pending dataset config is present (`POST /v1/training/dataset`), start reloads via `_reload_dataset`, which translates the canopy dialect to the juniper-data schema at the fetch boundary only (see [Staged dataset dialect](#staged-dataset-dialect-canopy--juniper-data)).
 
 **Syntax**:
 
@@ -595,6 +677,16 @@ Content-Type: application/json
 ```
 
 **Body model** — `TrainingStartRequest` with sub-models `DatasetSource`, `InlineDataset` (≤100 train + ≤100 val samples, list-of-list-of-float), and `TrainingParams` (all fields optional). Either `inline_data` or `dataset` may be provided; if neither, the loaded dataset is reused.
+
+**`InlineDataset` alignment** (`api.models.training.InlineDataset` `@model_validator(mode="after")`):
+
+| Rule | Reject when |
+|------|-------------|
+| Train lengths | `len(train_x) != len(train_y)` |
+| Val pair completeness | Only one of `val_x` / `val_y` is present |
+| Val lengths | Both present but `len(val_x) != len(val_y)` |
+
+Failures surface as request-boundary **`422`** before `torch.tensor` / `fit`. The route also requires both `val_x` and `val_y` before building validation tensors (defense in depth).
 
 **`start_fresh` (C5 / Q4 use-case 2, default `false`)** — Retention posture for the run:
 
@@ -619,9 +711,17 @@ curl -s -X POST http://localhost:8201/v1/training/start \
 
 | Code | Trigger                                                                  |
 |------|--------------------------------------------------------------------------|
-| 409  | Cannot start in current FSM state (e.g., already running, replay active) |
-| 422  | Body validation, unknown `params` key, NaN/Inf in `inline_data`          |
+| 409  | Cannot start in the current FSM state. The route maps the lifecycle `RuntimeError` / `ValueError` to `HTTPException(409, "Training cannot be started: {reason}")`. Common reasons: already running; **Investigating** a snapshot (exit via `/v1/snapshots/{id}/retrain` or `/resume`); **Replaying** a snapshot (stop via `/v1/snapshots/{id}/replay/control` with `action=stop`); missing training data (also the fall-through for an unsupported `dataset.generator` with nothing staged) |
+| 422  | Body validation, unknown `params` key, NaN/Inf in `inline_data`, or `InlineDataset` train/val alignment failures (length mismatch / half-specified val split) |
 | 503  | Lifecycle unbound                                                        |
+
+Canopy and other clients should treat Investigating/Replaying 409 bodies as actionable control-surface guidance (specific reason strings), not as generic server faults.
+
+**Staged juniper-data reload** (`TrainingLifecycleManager._reload_dataset`) applies the same alignment ideas to artifact arrays before they replace staged train/val tensors:
+
+- Train `X_train` / `y_train` must construct as 2-D tensors with equal sample counts.
+- Validation `X_test` / `y_test` must both be present or both absent; when present, 2-D with equal sample counts.
+- Malformed / non-numeric payloads raise `RuntimeError`, so swap/start callers keep the pending staging intact for retry.
 
 ---
 
@@ -629,7 +729,7 @@ curl -s -X POST http://localhost:8201/v1/training/start \
 
 **Summary** — Halt the currently running training.
 
-**Detailed description** — Idempotent; calling on an idle FSM returns gracefully. Implemented at `src/api/routes/training.py:75-80`.
+**Detailed description** — Idempotent when already `Stopped` / `Completed` / `Failed` (the FSM reject is ignored and callers still receive `stop_requested`). Rejected while `Investigating` or `Replaying`, so `training_state` cannot report `Stopped` while the FSM still blocks `start_training`. Implemented in `src/api/routes/training.py` → `lifecycle.stop_training()`.
 
 **Syntax / example**:
 
@@ -637,11 +737,16 @@ curl -s -X POST http://localhost:8201/v1/training/start \
 curl -s -X POST http://localhost:8201/v1/training/stop
 ```
 
-**State changes** — Transitions FSM out of `Training`/`Paused` to idle; cancels the training loop coroutine; flushes the WebSocket replay buffer's terminal `state` event.
+**State changes** — On a successful FSM transition: sets the stop event, moves out of `Training`/`Paused` toward idle, and force-broadcasts training state. When the FSM rejects the stop (`Investigating` / `Replaying`), no `training_state` mutation occurs.
 
-**Returns** — Envelope with `{"stopped": true, "epoch": <int>, ...}` from lifecycle.
+**Returns** — Envelope wrapping `{"status": "stop_requested", "timestamp": <float>}` from lifecycle on success.
 
-**Error handling** — `503` if lifecycle unbound. (No `409`; stop is permissive.)
+**Error handling**:
+
+| Code | Trigger |
+|------|---------|
+| 409  | FSM is `Investigating` or `Replaying` (`detail`: `Training cannot be stopped in the current state`) |
+| 503  | Lifecycle unbound |
 
 ---
 
@@ -767,8 +872,8 @@ curl -s http://localhost:8201/v1/training/status
 |-------|-------|---------|
 | `current_epoch` / `current_step` | `training_state` | Completed **training steps** — entries in the engine's per-pass history: one initial output-training pass plus one per cascade growth iteration. NOT inner output-training epochs. Single writer (the metrics drain); the two fields are aliases today. |
 | `max_epochs` | `training_state` | The **derived** total-epoch cap implied by the granular limits: `output_epochs + min(max_iterations, max_hidden_units) * (candidate_epochs + output_epochs)`. A display budget (the natural `Epoch: X / Y` denominator), not an enforced abort — the granular limits do the gating. Refreshed at network create / param apply / snapshot load. |
-| `output_epoch` / `output_total_epochs` | `training_state` | Live progress **within the current output-training pass** (inner epoch vs. that pass's budget, sampled ~every 25th epoch). Zeroed at run start, growth-phase exit, and run end. Output-phase sibling of the `candidate_epoch` pair. |
-| `candidate_epoch` / `candidate_total_epochs` | `training_state` | Live progress within the current candidate-pool training pass (from the worker progress stream). |
+| `output_epoch` / `output_total_epochs` | `training_state` | Live progress **within the current output-training pass** (inner epoch vs. that pass's budget, sampled ~every 25th epoch). Zeroed at run start (`_run_training`), growth-phase exit (the `training_end` handler after a grow), and run end. Output-phase sibling of the `candidate_epoch` pair — UI bars must not keep the previous pass's terminal values across those boundaries. |
+| `candidate_epoch` / `candidate_total_epochs` | `training_state` | Live progress within the current candidate-pool training pass (from the worker progress stream). Cleared with the output pair at the same C2b reset points. |
 | `grow_iteration` / `grow_max` | `training_state` | Cascade growth iteration counter vs. its `max_iterations` limit. |
 | `learning_rate`, `max_hidden_units`, `max_iterations` | `training_state` | Projections of the live network's effective values (synced at create / apply / snapshot-load) — the same values `/v1/network` and `GET /v1/training/params` report. |
 | `current_epoch` | `monitor` | Completed training steps (same unit as `training_state.current_epoch`). E.g. `20` after 14 hidden units = 20 completed passes, not 20 inner epochs. |
@@ -834,7 +939,43 @@ curl -s -X PATCH http://localhost:8201/v1/training/params \
 
 **Returns** — Envelope with the merged params dict plus the C2a accounting fields `applied` (keys that landed) and `skipped` (`{"key", "reason"}` rows). `epochs_max` is **deprecated as an input** (C2b / Q1): submitted values are accepted at the request boundary (floor `ge=1` only) but never applied — they are reported as `skipped(not-updatable)`, since the value is derived from the granular limits (see `GET /v1/training/params`).
 
-**Error handling** — `404` if no network; `422` for unknown keys / out-of-range values; `503` if lifecycle unbound.
+**Error handling**:
+
+| Code | Trigger |
+|------|---------|
+| 404  | No network loaded (a `ValueError` that is **not** an `InvalidCandidatePoolError`) |
+| 422  | Unknown keys / out-of-range values; **or** the typed C2.1 `InvalidCandidatePoolError` (a `ValueError` subclass) — the route's `except InvalidCandidatePoolError` clause must stay ahead of `except ValueError` so canopy gets the violation string, since collapsing it into the bare clause would surface a misleading 404 |
+| 503  | Lifecycle unbound |
+
+---
+
+### Staged dataset dialect (canopy → juniper-data)
+
+**Summary** — Canopy stages dataset configs in its own dialect; cascor translates at the juniper-data fetch boundary.
+
+**Routes** (same training router, `src/api/routes/training.py`):
+
+| Method | Path | Effect |
+|--------|------|--------|
+| `POST` | `/v1/training/dataset` | Stage a config for the next `start_training` (an empty body clears it) |
+| `DELETE` | `/v1/training/dataset` | Cancel the staged config |
+| `GET` | `/v1/training/dataset/pending` | Return the staged config (or `null`) for the canopy banner |
+| `POST` | `/v1/training/dataset/live` | In-flight live swap (experimental-functions gate) |
+
+Stored configs keep the canopy names (`StageDatasetRequest.dataset_type`: `spirals`, `moons`, `xor`, …). Translation happens only inside `TrainingLifecycleManager._translate_staged_config` when `_reload_dataset` / live-swap calls juniper-data `create_dataset`.
+
+| Canopy `dataset_type` | juniper-data generator | Param notes |
+|-----------------------|------------------------|-------------|
+| `spirals` | `spiral` | `n_samples` → `n_points_per_spiral` (`max(1, n_samples // max(1, n_spirals))`); `rotations` → `n_rotations` |
+| `moons` | `moon` | Spiral-only fields (`rotations`, `n_spirals`) stripped; `n_samples` forwarded |
+| `xor` | `xor` (passthrough — no alias entry needed) | `n_samples` → `n_points_per_quadrant` (`max(1, n_samples // 4)`); spiral fields stripped |
+| other / unknown | passthrough | Spiral-only fields stripped when not spiral/xor |
+
+`setdefault` preserves caller-supplied generic `params` on key conflict. Zero clamps (`n_samples=0`, `n_spirals=0`) avoid a `ZeroDivisionError` on the helper path; the Pydantic stage body still requires `n_samples >= 1` / `n_spirals >= 2` at the HTTP boundary.
+
+Without this alias layer, canopy-staged `spirals`/`moons` fail at juniper-data with "Unknown generator …".
+
+Regression pin: `src/tests/unit/api/test_lifecycle_manager_swap.py` — `TestTranslateStagedConfig`.
 
 ---
 
@@ -1105,7 +1246,7 @@ curl -s http://localhost:8201/v1/snapshots/snap_20260508_120000
 
 **Summary** — Restore a snapshot for inspection / modification (CAN-015d).
 
-**Detailed description** — Loads weights into the live network and transitions the FSM to `Investigating`, where the manual network-mutation endpoints are unlocked. Implemented at `src/api/routes/snapshots.py:163-210`.
+**Detailed description** — Loads weights into the live network and transitions the FSM to `Investigating`, where the manual network-mutation endpoints are unlocked. The route-boundary FSM preflight covers `Started` / `Paused` / **`Replaying`**, so an active-replay conflict returns a truthful `409` instead of being misreported as `404` (the lifecycle returns `loaded=False` when the load is rejected). Implemented in `src/api/routes/snapshots.py`.
 
 **Syntax / example**:
 
@@ -1119,12 +1260,12 @@ curl -s -X POST http://localhost:8201/v1/snapshots/snap_20260508_120000/restore
 
 **Error handling**:
 
-| Code | Trigger                                                    |
-|------|------------------------------------------------------------|
-| 400  | Invalid `snapshot_id` format                               |
-| 404  | Snapshot not found                                         |
-| 409  | FSM in `Started`/`Paused` (training must be stopped first) |
-| 503  | Lifecycle unbound                                          |
+| Code | Trigger |
+|------|---------|
+| 400  | Invalid `snapshot_id` format |
+| 404  | Snapshot not found / failed to load |
+| 409  | FSM in `Started` / `Paused` / `Replaying` (stop training, or `replay/control` with `action=stop`, first) |
+| 503  | Lifecycle unbound |
 
 ---
 
@@ -1132,7 +1273,7 @@ curl -s -X POST http://localhost:8201/v1/snapshots/snap_20260508_120000/restore
 
 **Summary** — Restore a snapshot and reset training history so the next start begins at epoch 0 (CAN-015a).
 
-**Detailed description** — Restores weights, topology, and meta-params, but clears history, counters, FSM, and the auto-snap-best ratchet. Implemented at `src/api/routes/snapshots.py:213-253`.
+**Detailed description** — Restores weights, topology, and meta-params, but clears history, counters, FSM, and the auto-snap-best ratchet. Same route-boundary `409` preflight as restore/resume (`Started` / `Paused` / `Replaying`) — without it a lifecycle rejection collapses to HTTP `404`. Implemented in `src/api/routes/snapshots.py`.
 
 **Syntax / example**:
 
@@ -1144,7 +1285,14 @@ curl -s -X POST http://localhost:8201/v1/snapshots/snap_20260508_120000/retrain
 
 **Returns** — Envelope with `snapshot_id`, `operation: "retrain"`, `fsm_state`, `time_index_default: 0`, post-restore `training_params`, `status: "ready"`.
 
-**Error handling** — `400` invalid id, `404` not found, `503` lifecycle unbound.
+**Error handling**:
+
+| Code | Trigger |
+|------|---------|
+| 400  | Invalid `snapshot_id` format |
+| 404  | Snapshot not found / failed to load |
+| 409  | FSM in `Started` / `Paused` / `Replaying` |
+| 503  | Lifecycle unbound |
 
 ---
 
@@ -1152,7 +1300,7 @@ curl -s -X POST http://localhost:8201/v1/snapshots/snap_20260508_120000/retrain
 
 **Summary** — Restore a snapshot preserving training history so the next start continues epoch numbering (CAN-015b).
 
-**Detailed description** — Same as `restore` but keeps history arrays and transitions FSM to `RESUME_READY`. The next `start_training` extends history from the snapshot's terminal epoch. Implemented at `src/api/routes/snapshots.py:256-302`.
+**Detailed description** — Same as `restore` but keeps history arrays and transitions FSM to `RESUME_READY`. The next `start_training` extends history from the snapshot's terminal epoch. The route-boundary `409` preflight includes `Replaying`, so replay conflicts are not misreported as `404`. Implemented in `src/api/routes/snapshots.py`.
 
 **Syntax / example**:
 
@@ -1166,12 +1314,12 @@ curl -s -X POST http://localhost:8201/v1/snapshots/snap_20260508_120000/resume
 
 **Error handling**:
 
-| Code | Trigger                   |
-|------|---------------------------|
-| 400  | Invalid id format         |
-| 404  | Snapshot not found        |
-| 409  | FSM in `Started`/`Paused` |
-| 503  | Lifecycle unbound         |
+| Code | Trigger |
+|------|---------|
+| 400  | Invalid id format |
+| 404  | Snapshot not found / failed to load |
+| 409  | FSM in `Started` / `Paused` / `Replaying` (stop training or the replay first) |
+| 503  | Lifecycle unbound |
 
 ---
 
@@ -1346,7 +1494,8 @@ Upstream changelog: [websockets changelog](https://websockets.readthedocs.io/en/
 All three sockets share these properties:
 
 - `X-API-Key` authenticated via `ws_authenticate()` (`src/api/websocket/manager.py`); failures close with `4001`.
-- Admission caps: every WebSocket reserves from the stack-global cap (default 200); `/ws/control` also reserves from the per-identity cap (default 5, keyed on the API-key digest). Over-cap attempts close with `1013`.
+- Admission caps: every WebSocket reserves from the stack-global cap (default 200); `/ws/control` also reserves from the per-identity cap (default 5, keyed on `ws_identity_key` — a truncated per-process HMAC of the **stripped** `X-API-Key`). Over-cap attempts close with `1013`.
+- Blank / whitespace-only `X-API-Key` headers do **not** share one per-identity bucket: `ws_identity_key` strips before the falsy check and returns `None`, so those callers use only the stack-global + per-IP caps (anonymous posture).
 - The legacy per-peer-IP cap remains DoS-dampening only. Behind Docker NAT, every client may present as the bridge gateway and therefore share one IP bucket; use the global and per-identity caps for limits that survive NAT.
 - Application-layer heartbeat: server sends `{"type":"ping","ts":<float>}` every 30s; the client must send a `{"type":"pong"}` (or any other frame — C3 tolerance) within 10s or the connection is closed with `1011`.
 - All payloads are JSON unless explicitly noted as binary.
@@ -1359,6 +1508,30 @@ All three sockets share these properties:
 - A client that sends nothing within the pong window is closed with code `1011`, reason `Heartbeat timeout: no pong or traffic within <N>s`, and a server-side WARNING log line. (Pre-C3 the close used `1006`, which RFC 6455 §7.4.1 forbids on the wire — the `websockets` server implementation rejects it, so the close frame never reached the peer and clients were left holding a silent half-open socket.)
 - `juniper-cascor-client >= 0.7.0` answers pings automatically on both streams (CL1) and exposes `is_alive(window)` / `last_frame_at` liveness surfaces for supervisors.
 - T5 observability: every heartbeat ping is recorded in the transport counters (`GET /v1/metrics/transport`, `messages_sent_by_type.ping`), and the WS manager logs a periodic INFO emission summary (`WS emission summary (last <N>s): metrics=…, ping=… (<K> active connections)`, interval `ws_emission_summary_interval_sec`, default `60`, env `JUNIPER_WS_EMISSION_SUMMARY_INTERVAL_SEC`, `<= 0` disables) so "connected but nothing flowing" is diagnosable server-side.
+
+#### Defensive numeric settings (`_numeric_setting`)
+
+`/ws/training` and `/ws/control` read the heartbeat (and control idle) timeouts through a shared helper `_numeric_setting(obj, name, fallback)` in `src/api/websocket/training_stream.py` and `src/api/websocket/control_stream.py`.
+
+| Attribute | Used on | Hardcoded fallback when missing / non-numeric |
+|-----------|---------|-----------------------------------------------|
+| `ws_heartbeat_interval_sec` | `/ws/training`, `/ws/control` | `30` |
+| `ws_heartbeat_pong_timeout_sec` | `/ws/training`, `/ws/control` | `10` |
+| `ws_control_idle_timeout_sec` | `/ws/control` only | the process `Settings.ws_control_idle_timeout_sec` (default `120`) |
+
+**Contract:**
+
+- Returns `getattr(obj, name)` only when the value is a real `int` or `float`.
+- Otherwise returns `fallback` — including when `obj` is `None`, the attribute is missing, the value is a string (even numeric-looking, like `"120"`), or a non-`Settings` double (for example `unittest.mock.MagicMock`) invents a stub object.
+- Intent: never leak a non-numeric into `asyncio.sleep` / `asyncio.wait_for`, which would raise `TypeError` and tear down the heartbeat/idle loops.
+
+**Operational notes:**
+
+- Production reads come from `app.state.settings` (control) or the handler's `Settings` instance (training). Per-app `create_app(settings=...)` overrides reach the same knobs.
+- An interval `<= 0` still disables the heartbeat after a successful numeric read; the control idle timeout continues to apply.
+- The helper is **not** a substitute for configuring real `Settings` in integration tests — it only prevents stub leakage from crashing the loops.
+
+Regression pin: `TestNumericSetting` in `src/tests/unit/api/test_control_stream_coverage.py` and `src/tests/unit/api/test_training_stream_coverage.py` — real ints/floats, `None` / missing attr, `MagicMock` stubs, and string values.
 
 ### WS `/ws/training`
 
@@ -1479,7 +1652,7 @@ websocat -H "X-API-Key: $API_KEY" ws://localhost:8201/ws/training
 
 **Summary** — Authenticated command channel for training lifecycle control.
 
-**Detailed description** — Origin header is rejected with `4003` if present (Phase B-pre-b: machine-to-machine only). Admission reserves a stack-global slot and a per-identity slot keyed on a non-reversible per-process HMAC of the presented `X-API-Key`; over-cap closes with `1013`. Per-connection leaky-bucket rate limit (default 10 cmd/s). Bidirectional 120 s idle timeout. Per-origin handshake cooldown. Phase D execution timeouts: `start` 10 s; `stop`/`pause`/`resume`/`reset` 2 s; `set_params` 1 s. Phase D §S10.7 lazily registers Prometheus counter `cascor_ws_control_command_received_total{command}` via `register_or_reuse`. Handler at `src/api/websocket/control_stream.py`.
+**Detailed description** — Origin header is rejected with `4003` if present (Phase B-pre-b: machine-to-machine only). Admission reserves a stack-global slot and a per-identity slot keyed on `ws_identity_key` (a truncated per-process HMAC-SHA256 of the **stripped** `X-API-Key`); blank / whitespace-only keys are anonymous and skip the per-identity reserve. Over-cap closes with `1013`. Per-connection leaky-bucket rate limit (default 10 cmd/s). Bidirectional 120 s idle timeout. Per-origin handshake cooldown. Phase D execution timeouts: `start` 10 s; `stop`/`pause`/`resume`/`reset` 2 s; `set_params` 1 s. Phase D §S10.7 lazily registers Prometheus counter `cascor_ws_control_command_received_total{command}` via `register_or_reuse`. Handler at `src/api/websocket/control_stream.py`.
 
 **Connect** — `ws://localhost:8201/ws/control` (mounted in `src/api/app.py:472`).
 
@@ -1516,6 +1689,9 @@ Valid commands: `start`, `stop`, `pause`, `resume`, `reset`, `set_params`. The s
 Validation and command failures keep the socket open and return the same
 envelope with `data.status: "error"` plus `data.error` and, when available,
 `data.code` (for example `unknown_command` or `invalid_params`).
+
+**Non-object JSON** — After a successful JSON parse, payloads that are not a JSON object (`[]`, `123`, `"pause"`, `null`, `true`) receive an in-band ack with `code: "invalid_message"` / `error: "Invalid JSON: expected object"`, and the recv loop **continues**. The connection stays open so a later valid command still dispatches. This is parity with `/ws/training`'s `isinstance(msg, dict)` guard; without it, `msg.get(...)` would raise `AttributeError` and kill the session. Distinct from **malformed** JSON (parse failure), which still closes with `1003`.
+
 The rate-limited response is the legacy flat shape emitted directly by the
 handler and also has no `seq`:
 
@@ -1549,9 +1725,10 @@ websocat -H "X-API-Key: $API_KEY" ws://localhost:8201/ws/control \
 | 1008 | Rate limit exceeded              |
 | 1006 | Heartbeat timeout, idle timeout  |
 
-Rate limiting and per-command failures arrive in-band as `command_response`
-messages rather than closing the socket. Oversized command messages (over 64 KB)
-also receive an error response and the connection stays open. Malformed JSON
+Rate limiting, per-command failures, and non-object JSON (`invalid_message`)
+arrive in-band as `command_response` / control-ack messages rather than closing
+the socket. Oversized command messages (over 64 KB) also receive an error
+response and the connection stays open. Malformed JSON (a parse failure)
 receives an error response and then closes with `1003`.
 
 ---
@@ -1560,43 +1737,110 @@ receives an error response and then closes with `1003`.
 
 **Summary** — Worker registration and task dispatch socket (juniper-cascor-worker).
 
-**Detailed description** — Origin header is rejected with `4003` if present (Section 12.3 — machine-to-machine only). Admission reserves only a stack-global WebSocket slot: worker fleets may share one token, and the server-assigned `worker_id` is not known until after admission. Optional Phase 4 protections: per-source-IP connection rate limiter (default 10 conn/min, burst 2), anomaly detector (perfect-correlation and training-time deviation guards), audit logging, and worker performance metrics. Handler at `src/api/websocket/worker_stream.py`.
+**Detailed description** — Origin header is rejected with `4003` if present (Section 12.3 — machine-to-machine only). Admission reserves only a stack-global WebSocket slot: worker fleets may share one token.
+The client-supplied `worker_id` is an untrusted display name (stored as `client_name`); the server assigns the authoritative registry id `worker-<12 hex>` after a valid `register` message (CR-026).
+Optional Phase 4 protections: per-source-IP connection rate limiter (default 10 conn/min, burst 3; disabled unless `worker_rate_limit_enabled`), an anomaly detector (`suspiciously_fast`, `perfect_correlation`, `stale_correlation`, and `duplicate_correlations` guards), audit logging, and worker performance metrics.
+Handler at `src/api/websocket/worker_stream.py`.
 
-**Connect** — `ws://localhost:8201/ws/v1/workers` (mounted in `src/api/app.py:473`).
+**Connect** — `ws://localhost:8201/ws/v1/workers` (mounted in `src/api/app.py`).
 
-**Wire protocol** — JSON envelope plus binary tensor frames. See `src/api/workers/protocol.py`.
+**Wire protocol** — JSON envelope plus binary tensor frames. See `src/api/workers/protocol.py` and `juniper_cascor_protocol.worker.WorkerMessageType` (a `StrEnum` whose values are the lowercase wire strings below).
 
-| Message type   | Direction       | Payload                                            |
-|----------------|-----------------|----------------------------------------------------|
-| `REGISTRATION` | worker → server | `{type, worker_id, capabilities{frameworks, ...}}` |
-| `HEARTBEAT`    | worker → server | periodic                                           |
-| `TASK_ASSIGN`  | server → worker | task spec + binary tensor frames                   |
-| `TASK_RESULT`  | worker → server | result envelope + binary tensor frames             |
-| `WORKER_ERROR` | worker → server | error envelope                                     |
+| Message type (`type`) | Direction       | Payload                                            |
+|-----------------------|-----------------|----------------------------------------------------|
+| `register`            | worker → server | `{type, worker_id, capabilities{frameworks, ...}}` |
+| `heartbeat`           | worker → server | periodic                                           |
+| `task_assign`         | server → worker | task spec + binary tensor frames                   |
+| `task_result`         | worker → server | result envelope + binary tensor frames             |
+| `error`               | either          | error envelope                                     |
 
 **Limits** — JSON ≤ 65 KB; binary ≤ 100 MB.
+
+#### Registration `worker_id` admission
+
+`WorkerProtocol.validate_register` (`src/api/workers/protocol.py`) requires:
+
+- `worker_id`: a string matching `^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$` (1–64 chars, must start alphanumeric, hyphens/underscores allowed after).
+- `capabilities`: a `dict`.
+
+Rejected shapes (non-string, empty, leading `-`/`_`, spaces, path-like, over 64 chars) return an error frame and close with **`4008`** (`Invalid registration`). A registration JSON parse failure closes with **`4006`**; a first message that is not `register` closes with **`4007`**; a full worker registry closes with **`4013`**.
+A valid `worker_id` becomes `client_name` only — it is never used as the registry primary key.
+
+#### `task_result` typed parse (`TaskResultMessage.from_dict`)
+
+Required fields: `task_id`, `candidate_id` (int), `correlation` (numeric in `[0.0, 1.0]`), `success` (bool), `epochs_completed` (int).
+`WorkerProtocol.validate_task_result` explicitly rejects JSON `true`/`false` for `candidate_id`, `epochs_completed`, and `correlation` — `isinstance(True, int)` is true in Python, so hostile or buggy workers must not slip bools through as ints/floats.
+
+Optional defaults when absent: `candidate_uuid=""`, `activation_name=""`, `all_correlations=[]`, `numerator=0.0`, `denominator=1.0`, `best_corr_idx=-1`, `tensor_manifest={}`, `error_message=None`.
+
+Regression pin: `src/tests/unit/api/test_worker_protocol.py` — `TestValidateRegister`, `TestTaskResultMessageFromDict`.
 
 **Example registration**:
 
 ```json
 {
-  "type": "registration",
+  "type": "register",
   "worker_id": "worker-abc123",
   "capabilities": {"frameworks": ["torch"], "gpu": true}
 }
 ```
 
-**State changes** — On `REGISTRATION` the worker is added to the registry. `TASK_RESULT` updates the worker's task counters, health score, and recent durations. `WORKER_ERROR` increments failure counters and may quarantine the worker (Phase 4 anomaly detector).
+**State changes** — On a valid `register` the worker is added to the registry under a server-generated id. An accepted `task_result` updates the worker's task counters, health score, and recent durations. Error frames increment failure counters and may quarantine the worker (Phase 4 anomaly detector).
+
+**Result acceptance** (`WorkerCoordinator.submit_result` in `src/api/workers/coordinator.py`):
+
+| Check | Rejection behavior |
+|-------|--------------------|
+| Duplicate `task_id` already completed | Reject; log warning |
+| Unknown / missing pending task | Reject; log warning |
+| **Unassigned** — `task.assigned_worker_id is None` (pre-dispatch / post-requeue window) | Reject; does **not** free the submitter's busy slot, so an unrelated active assignment is not wiped |
+| **Ownership** — `worker_id != task.assigned_worker_id` | Reject; mark the *submitting* worker task-complete as a failure; the pending task stays assigned to the original owner |
+| Schema (`validate_task_result`) | Reject + immediate requeue (`_reject_and_requeue_task`) |
+| Tensors (`validate_tensors` vs `tensor_manifest`) | Reject + immediate requeue (`_reject_and_requeue_task`) |
+
+Ownership is a trust boundary: without it a peer, stale, or malicious worker could complete work it was never assigned and corrupt candidate selection. After a wrong-owner reject, the legitimate assignee can still submit successfully.
+
+**Tensor manifest validation** (`WorkerProtocol.validate_tensors`):
+
+- Each manifest entry must be a `dict` with the required `shape` and `dtype` (missing fields / non-dict entries produce a validation-error list, not a `KeyError`).
+- Shape/dtype mismatches, NaN/Inf, and over-magnitude weights append errors.
+- Empty `weights` arrays return `"Tensor weights: empty array"` instead of crashing `np.max` on a zero-size reduction.
+- A manifest with more than `_MAX_TENSOR_MANIFEST_ENTRIES` (**32**) entries is an error.
+- Handler path: validation failures reject the result and keep the worker WebSocket session alive (fail-soft).
+
+Regression pins: `src/tests/unit/api/test_worker_coordinator.py` — `TestSubmitResult::test_reject_wrong_worker_ownership`; `src/tests/unit/api/test_worker_protocol.py` — `TestValidateTensors`.
+
+**In-flight task recovery** — Candidate rounds can stall when a worker dies or sends a broken `task_result` while still marked busy. Recovery paths:
+
+| Failure mode | Coordinator path | Socket fate | Requeue timing |
+|--------------|------------------|-------------|----------------|
+| Schema or tensor-manifest reject inside `submit_result` | `_reject_and_requeue_task` | Stays open | Immediate — `complete_task(..., success=False)`, clear `assigned_worker_id`, append to `_unassigned_tasks` |
+| Soft binary-frame abort (text instead of bytes, frame over 100 MB, or a `BinaryFrame.decode` `ValueError`) | `abort_in_flight_result` | Stays open; in-band `error` JSON | Immediate — `complete_task(..., success=False)` + requeue. Heartbeats alone cannot recover this path (CONC-10 will not fire). |
+| Heartbeat / stale worker (CONC-10) | `_check_stale_workers` | Closed by monitor | After `JUNIPER_CASCOR_REMOTE_WORKERS_HEARTBEAT_TIMEOUT` (default **30s**) |
+| Orphaned assignment fallback (including a clean disconnect, whose teardown only deregisters) | `_check_task_timeouts` | n/a | After `JUNIPER_CASCOR_REMOTE_WORKERS_TASK_REASSIGNMENT_TIMEOUT` (default **120s**) |
+
+Intent: schema/tensor rejects and soft aborts must not wait for the 120s reassignment timeout. Soft abort is especially important because the worker keeps heartbeating while remaining busy — without `abort_in_flight_result`, CONC-10 never reaps the task.
+
+**Receive-site protocol guards** (before the coordinator's schema checks):
+
+- Registration / loop JSON must be a JSON **object**. Non-objects (`null`, arrays, scalars) get an in-band error; registration closes with `4008` (loop messages stay open).
+- When `tensor_manifest` is present it must be a `dict` with ≤ **32** entries (`_MAX_TENSOR_MANIFEST_ENTRIES`, mirrored between `WorkerProtocol` and `worker_stream`). A wrong type or oversize returns an in-band error and stops the binary receive — it does **not** call `abort_in_flight_result`, so recovery there still depends on disconnect or the 120s timeout.
+- `BinaryFrame.decode` wraps non-UTF-8 dtype bytes as `ValueError` so soft-abort handling stays on a single exception type.
+
+**Anomaly history on deregister** — The worker-stream session `finally` path (alongside `registry.deregister`, the audit `WORKER_DEREGISTER` event, and metrics `on_deregister`) calls `AnomalyDetector.clear_worker(worker_id)` when `app.state.anomaly_detector` is bound. `clear_worker` is idempotent and pops that worker's `_worker_history` entry so (a) history cannot grow without bound across reconnect churn and (b) a recycled `worker_id` cannot inherit stale `duplicate_correlations` / `perfect_correlation` signals from a prior occupant. A missing `anomaly_detector` must not break disconnect cleanup.
 
 **Error handling / close codes**:
 
 | Code | Trigger                              |
 |------|--------------------------------------|
-| 1013 | Stack-global WebSocket cap hit       |
+| 1013 | Stack-global WebSocket cap reached    |
 | 4001 | Auth failure                         |
 | 4003 | Origin header present                |
 | 4004 | Worker subsystem not initialized     |
-| 1013 | Stack-global WebSocket cap reached   |
+| 4006 | Registration JSON parse failure      |
+| 4007 | First message was not `register`     |
+| 4008 | Invalid registration (`validate_register` failed — non-object JSON, bad `worker_id`, non-dict `capabilities`) |
+| 4013 | Worker registry at capacity          |
 | 4029 | Connection rate limit exceeded       |
 | 1006 | Message too large, heartbeat timeout |
 
@@ -1626,7 +1870,7 @@ The endpoints below mutate application state. All others are read-only.
 | POST `/v1/snapshots/{id}/replay`                                      | `lifecycle.start_replay()` (offloaded)          | Spawns replay thread + FSM → `REPLAYING`              |
 | POST `/v1/snapshots/{id}/replay/control`                              | `lifecycle.replay_control()`                    | Mutates replay session, may FSM → idle                |
 | WS `/ws/control` `start`/`stop`/`pause`/`resume`/`reset`/`set_params` | Same lifecycle methods as the REST counterparts | Same state changes                                    |
-| WS `/ws/v1/workers` `REGISTRATION` / `TASK_RESULT` / `WORKER_ERROR`   | Worker registry mutations                       | Adds/updates worker, updates counters, may quarantine |
+| WS `/ws/v1/workers` `register` / `task_result` / `error`              | Worker registry mutations                       | Adds/updates worker, updates counters, may quarantine |
 
 ---
 

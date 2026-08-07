@@ -32,6 +32,101 @@ tests even when `--slow` and `--integration` are set — so they never leak into
 the unit, integration, or scheduled-slow lanes. Both WS-6 workflows also pass
 `--slow --integration` because the tests carry those markers too.
 
+### API Security and Admission Coverage
+
+Operator-facing middleware, admission, and secrets contracts pinned in the API unit suite:
+
+| Area | Source | Test pin |
+|------|--------|----------|
+| CR-024 body-limit cap and stream enforcement | `api.middleware.RequestBodyLimitMiddleware` | `tests/unit/api/test_api_middleware.py` — `TestRequestBodyLimitMiddleware` |
+| REST auth-first / rate-limit keying | `api.middleware.SecurityMiddleware` + `api.security.RateLimiter` | `tests/unit/api/test_api_middleware.py` — `TestSecurityMiddlewareAuthRateLimitInterplay` |
+| Always-on security headers + conditional HSTS | `api.middleware.SecurityHeadersMiddleware` | `tests/unit/api/test_api_middleware.py` — `TestSecurityHeadersMiddleware` |
+| `ws_identity_key` blank/whitespace | `api.websocket.manager` | `tests/unit/api/test_ws_connection_caps.py` — `TestWsIdentityKey` |
+| Origins parser fail-soft | `api.settings` | `tests/unit/api/test_api_settings.py` — `TestWsControlAllowedOriginsParser` |
+
+Key scenarios:
+
+- **Body limit:** an oversized declared `Content-Length` → early **413**; an invalid header → **400**; chunked/streaming bodies over the cap → **413** with an early abort (not full buffering); an under-declared `Content-Length` (`N <= max`, stream larger than max) → **413** (CR-024; the stream-read must not be gated on `content_length is None`); a truthful under-limit `Content-Length` caches the body on `request._body` for downstream handlers (BUG-CC-15).
+- **Auth ↔ rate limit:** a missing/invalid `X-API-Key` returns 401 **before** `RateLimiter.check` (forged keys cannot burn budgets); distinct authenticated keys have independent fixed-window counters, while open auth (`api_keys=None`/`[]`) keys as `ip:…`; 429 responses preserve `Retry-After` and `X-RateLimit-*` after `SecurityMiddleware` rebuilds the `JSONResponse`; exempt paths (health/docs/`/metrics`) remain reachable after a saturated non-exempt client.
+- **Identity key:** an empty / whitespace-only `X-API-Key` → `None` (anonymous); real keys hash to a 16-char digest.
+
+```bash
+cd src
+PYTHONPATH=. python -m pytest tests/unit/api/test_api_middleware.py -v
+PYTHONPATH=. python -m pytest \
+  tests/unit/api/test_ws_connection_caps.py::TestWsIdentityKey \
+  tests/unit/api/test_api_settings.py -k "WsControlAllowedOrigins" -v
+```
+
+Why this matters:
+
+- Body-size enforcement is a DoS / memory-exhaustion control on every mutating HTTP request; a present-header-only gate looks correct in happy-path tests but silently reopens the under-declared bypass.
+- HSTS only fires on `X-Forwarded-Proto: https` — a misconfigured TLS terminator silently drops it.
+- Whitespace-only API-key headers are truthy strings; without the strip they would mint one shared per-identity digest and self-DoS under `JUNIPER_CASCOR_WS_MAX_CONNECTIONS_PER_IDENTITY`.
+
+### WebSocket `_numeric_setting` Defensive Reads
+
+`/ws/training` and `/ws/control` load heartbeat (and control idle) timeouts via `_numeric_setting(obj, name, fallback)` before passing them into `asyncio.sleep` / `asyncio.wait_for`.
+
+**Why it exists:** `unittest.mock.MagicMock` (and similar doubles) invent attribute stubs for any name. Feeding those stubs into asyncio timing APIs raises `TypeError` and kills the heartbeat/idle loops even though production `Settings` would have been fine.
+
+**Contract under test:**
+
+| Input | Result |
+|-------|--------|
+| A real `int` / `float` on the object | Returned unchanged |
+| `obj is None`, a missing attribute, a string value, or a `MagicMock` stub | The hardcoded `fallback` |
+
+Handler fallbacks: heartbeat interval `30`, pong timeout `10`, control idle → `Settings.ws_control_idle_timeout_sec` (default `120`). Source: `src/api/websocket/control_stream.py` and `training_stream.py`.
+
+**Pitfall when writing API WS tests:**
+
+- Prefer a real `Settings(...)` (or a `SimpleNamespace` with numeric fields) on `app.state.settings`.
+- Do not rely on a bare `MagicMock()` for settings if the handler under test reaches the heartbeat/idle path — `_numeric_setting` will fall back, masking whether your override was applied.
+- To assert the helper itself, call `control_stream._numeric_setting` / `training_stream._numeric_setting` directly (see `TestNumericSetting`).
+
+```bash
+cd src
+python -m pytest \
+  tests/unit/api/test_control_stream_coverage.py \
+  tests/unit/api/test_training_stream_coverage.py \
+  -k numeric_setting -v
+```
+
+### Inline / Reload Dataset Alignment Coverage
+
+Request-boundary and staged-reload split alignment lives in:
+
+- `src/tests/unit/api/test_inline_dataset_validation.py` — `InlineDataset` length / half-specified val → a model `ValueError` and HTTP `422`
+- `src/tests/unit/api/test_lifecycle_manager_swap.py` — `_reload_dataset` rejects non-2-D trains, sample-count mismatches, and partial `X_test`/`y_test`
+
+```bash
+cd src && PYTHONPATH=. python -m pytest \
+  tests/unit/api/test_inline_dataset_validation.py \
+  tests/unit/api/test_lifecycle_manager_swap.py -k "reload or mismatch or 2d or partial" \
+  -v
+```
+
+Operator contract: [POST `/v1/training/start`](../api/JUNIPER_CASCOR_API_REFERENCE.md#post-v1trainingstart) (`InlineDataset` alignment + staged reload notes).
+
+### Worker ID Admission and Staged Dialect Coverage
+
+| Area | Source | Test pin |
+|------|--------|----------|
+| Worker `register` ID regex + `TaskResultMessage.from_dict` | `api.workers.protocol` | `tests/unit/api/test_worker_protocol.py` — `TestValidateRegister`, `TestTaskResultMessageFromDict` |
+| Canopy → juniper-data dialect (`moons`/`spirals`, zero clamps, strip) | `TrainingLifecycleManager._translate_staged_config` | `tests/unit/api/test_lifecycle_manager_swap.py` — `TestTranslateStagedConfig` |
+
+```bash
+cd src && python -m pytest \
+  tests/unit/api/test_worker_protocol.py \
+  tests/unit/api/test_lifecycle_manager_swap.py -v
+```
+
+Why this matters:
+
+- Invalid worker IDs close with `4008` before the registry insert; the typed `task_result` parse rejects missing / out-of-bounds fields and JSON bools masquerading as ints.
+- Without moons/spirals aliasing, every canopy-staged reload fails at juniper-data with an unknown-generator error.
+
 ### Early-Stopping Regression Coverage (No Validation Data Path)
 
 The no-validation branch in `CascadeCorrelationNetwork.validate_training()` is covered by targeted unit regressions in `src/tests/unit/test_cascade_correlation_coverage_extended.py`.
@@ -428,6 +523,27 @@ bash util/run_coverage.bash                 # CI-parity aggregate gate
 python -m pytest src/tests/unit --cov=src --cov-report=term-missing
 python -m coverage report --fail-under=80   # Current aggregate threshold
 ```
+
+---
+
+## Worker In-Flight Recovery and Teardown Regressions
+
+Coverage for soft binary-frame abort requeue, receive-site protocol guards, result ownership, and anomaly-history teardown lives in the API unit suite:
+
+| Area | Files / focus |
+|------|----------------|
+| Result ownership + tensor validation | `src/tests/unit/api/test_worker_coordinator.py` (`TestSubmitResult::test_reject_wrong_worker_ownership`); `test_worker_protocol.py` (`TestValidateTensors`) |
+| Soft binary-frame abort | `test_worker_coordinator.py` / `test_worker_stream.py` — text / oversized / decode paths call `abort_in_flight_result` |
+| Non-object JSON + `tensor_manifest` guards | `test_worker_stream.py` / `test_worker_protocol.py` — object-only messages; manifest type + ≤ 32 entries; UTF-8 dtype `ValueError` |
+| Anomaly history on deregister | `test_worker_security_integration.py` — `test_disconnect_clears_anomaly_history`, `test_disconnect_without_anomaly_detector_still_cleans_up` |
+
+```bash
+cd src
+python -m pytest tests/unit/api/test_worker_coordinator.py tests/unit/api/test_worker_stream.py tests/unit/api/test_worker_protocol.py -k "abort or manifest or non_object or soft or ownership" -v
+python -m pytest tests/unit/api/test_worker_security_integration.py -k "anomaly" -v
+```
+
+Operator contracts: [JUNIPER_CASCOR_API_REFERENCE.md — WS `/ws/v1/workers`](../api/JUNIPER_CASCOR_API_REFERENCE.md#ws-wsv1workers).
 
 ---
 

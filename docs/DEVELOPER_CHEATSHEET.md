@@ -1,6 +1,6 @@
 # Developer Cheatsheet — juniper-cascor
 
-**Version**: 1.0.3  |  **Date**: 2026-08-05  |  **Project**: juniper-cascor
+**Version**: 1.0.4  |  **Date**: 2026-08-07  |  **Project**: juniper-cascor
 
 ---
 
@@ -55,7 +55,7 @@ docker compose --profile full up -d                            # Docker start
 
 **Add an endpoint:** Create route under `/v1`, register in `app.py`, add client method in `juniper-cascor-client`.
 
-**WebSocket:** `/ws/training` (metrics), `/ws/control` (commands), `/ws/v1/workers` (remote workers). Over-cap connections close with `1013`; update `ws_client.py`, canopy, and worker clients when adding or changing channels.
+**WebSocket:** `/ws/training` (metrics), `/ws/control` (commands), `/ws/v1/workers` (remote workers). Over-cap connections close with `1013`; update `ws_client.py`, canopy, and worker clients when adding or changing channels. `/ws/control` non-object JSON keeps the socket open with an `invalid_message` ack (only parse failures close `1003`). Heartbeat/idle timeouts on training/control go through `_numeric_setting` (non-numeric / `MagicMock` stubs fall back). Worker `task_result` acceptance requires ownership (`worker_id == assigned_worker_id`) plus fail-soft tensor-manifest validation — see [API workers socket](api/JUNIPER_CASCOR_API_REFERENCE.md#ws-wsv1workers).
 
 **ASGI transport:** handlers use FastAPI/Starlette only; `websockets` arrives via `uvicorn[standard]` (`requirements.lock` `# via uvicorn`). Major `websockets` bumps (for example 16 → 17) are transport-layer — keep Python ≥ 3.12, sync `conf/requirements-*.txt` with the lock, and smoke `tests/unit/api/test_websocket_*.py` + `test_ws_heartbeat.py` + `tests/integration/api/test_websocket_streaming.py`. Details: [ASGI WebSocket transport](api/JUNIPER_CASCOR_API_REFERENCE.md#asgi-websocket-transport).
 
@@ -63,8 +63,8 @@ docker compose --profile full up -d                            # Docker start
 
 | Endpoint                       | Method | Purpose                                          |
 |--------------------------------|--------|--------------------------------------------------|
-| `/v1/training/start`           | POST   | Start async training (inline or generated data)  |
-| `/v1/training/stop`            | POST   | Request stop                                     |
+| `/v1/training/start`           | POST   | Start async training (inline or generated data); `InlineDataset` requires aligned train/val lengths |
+| `/v1/training/stop`            | POST   | Request stop (409 while `Investigating` / `Replaying`) |
 | `/v1/training/pause`           | POST   | Pause active training                            |
 | `/v1/training/resume`          | POST   | Resume paused training                           |
 | `/v1/training/reset`           | POST   | Reset lifecycle state and metric buffer          |
@@ -89,10 +89,22 @@ Metrics nuance:
 - `/ws/training` can also emit `candidate_progress` messages (epoch 1, every 50 epochs, final epoch per candidate).
 - Fresh `/ws/training` connects receive `initial_status`, `state`, and `initial_metrics`; resume requests use `{"type":"resume","data":{"last_seq":...,"server_instance_id":...}}` and replay only buffered broadcasts with higher `seq`.
 - `/ws/control` rate limiting returns an in-band `command_response` with `status:"rate_limited"` and keeps the socket open; it does not close on normal command throttling.
+- REST `SecurityMiddleware`: auth before rate limit (a 401 does not burn budget); with auth on, budgets are per API key (`key:…`); with auth off + rate limiting on, per IP (`ip:…`); 429 keeps `Retry-After` / `X-RateLimit-*`; health, docs/OpenAPI/ReDoc, and `/metrics` are exempt.
+- `POST /v1/training/start` while the FSM is `Investigating` or `Replaying` returns **409** with the lifecycle reason (not a 500). Exit Investigating via `/v1/snapshots/{id}/retrain` or `/resume`; stop replay via `/v1/snapshots/{id}/replay/control` with `action=stop`.
+- Snapshot `restore` / `retrain` / `resume` preflight `Started` / `Paused` / `Replaying` at the route boundary and return **409** (not a misleading 404 from a rejected load).
+- C2b progress pairs (`output_epoch`/`output_total_epochs` and `candidate_epoch`/`candidate_total_epochs`) are zeroed at run start and at growth-phase exit, so UI bars never keep the previous pass's terminal values.
 
-**Middleware** (outermost first): CORS -> Security -> Prometheus -> RequestId. **Models:** Pydantic (API), dataclasses (config).
+**Middleware** (outer→inner when all enabled): RequestId → Prometheus → Security (auth/rate-limit) → SecurityHeaders → RequestBodyLimit → CORS. **Models:** Pydantic (API), dataclasses (config).
 
-> See: [API Reference](api/API_REFERENCE.md) | [API Schemas](api/API_SCHEMAS.md)
+**Body limit (CR-024):** mutating HTTP (`POST`/`PUT`/`PATCH`) is capped at 10 MiB (`_PROJECT_API_MAX_REQUEST_BODY_BYTES`). `Content-Length` is early-reject only — the stream-read always enforces the cumulative cap (including under-declared headers). Details: [Request body limits (CR-024)](api/JUNIPER_CASCOR_API_REFERENCE.md#request-body-limits-cr-024).
+
+**Tip — headers / workers / staged moons:**
+
+- `SecurityHeadersMiddleware` always sets nosniff / DENY / referrer / permissions / CSP; HSTS only when `X-Forwarded-Proto: https`.
+- Worker `register.worker_id` must match `^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$` or the socket closes `4008`; it is stored as `client_name` only — the server assigns `worker-<12 hex>` as the registry id (CR-026).
+- Canopy stages `spirals`/`moons`; `_translate_staged_config` aliases them to juniper-data `spiral`/`moon` at fetch (zero clamps + spiral-field strip).
+
+> See: [API Reference](api/API_REFERENCE.md) | [Cascor API Reference — security headers / workers / staged dialect](api/JUNIPER_CASCOR_API_REFERENCE.md#security-headers-securityheadersmiddleware) | [API Schemas](api/API_SCHEMAS.md)
 
 ---
 
@@ -114,8 +126,10 @@ Metrics nuance:
 | `JUNIPER_CASCOR_LOOPBACK_PUBLISH_ATTESTED` | `false`       | Bind attestation for non-loopback binds: port reachable only via a loopback-only host publish |
 | `JUNIPER_CASCOR_AUTH_PROXY_ATTESTED` | `false`             | Bind attestation for non-loopback binds: a fronting authenticating reverse proxy terminates access |
 | `JUNIPER_CASCOR_CORS_ORIGINS`    | `[]`                    | Allowed CORS origins                   |
-| `JUNIPER_CASCOR_API_KEYS`        | --                      | API keys for authentication            |
-| `JUNIPER_CASCOR_API_KEYS_FILE`   | --                      | Docker-secrets path for keys; existing empty file → open auth (compose `_FILE`-only pattern) |
+| `JUNIPER_CASCOR_API_KEYS`        | --                      | API keys for authentication (`[]`/unset = open auth) |
+| `JUNIPER_CASCOR_API_KEYS_FILE`   | --                      | Docker-secrets path for keys (`api.secrets.get_secret`); an existing empty/whitespace file returns `""` → open auth with **no** env fallback (compose `_FILE`-only pattern), while an **unreadable** file (`OSError`/`PermissionError`) fails soft to the plain env var |
+| `JUNIPER_CASCOR_RATE_LIMIT_ENABLED` | `false`              | Enable REST fixed-window rate limiting in `SecurityMiddleware` |
+| `JUNIPER_CASCOR_RATE_LIMIT_REQUESTS_PER_MINUTE` | `60`     | REST window size; per-key when auth is on, per-IP when open |
 | `JUNIPER_CASCOR_REQUIRE_AUTH`    | `false`                 | SEC-F01: `true` = refuse boot when keys missing/blank; default WARN-and-run-open |
 | `JUNIPER_SKIP_AUTH_POSTURE_CHECK` | unset                 | Escape hatch skipping the boot posture check (`1` to bypass; logged loudly) |
 | `JUNIPER_CASCOR_LOG_FORMAT`      | --                      | Set to `json` for JSON logging         |
@@ -123,17 +137,24 @@ Metrics nuance:
 | `JUNIPER_CASCOR_METRICS_ENABLED` | `false`                 | Enable Prometheus metrics              |
 | `JUNIPER_CASCOR_EVAL_METRICS_ENABLED` | `true`             | C7 F1/precision/recall/ROC-AUC on `/v1/metrics`, history, and WS `metrics` (not Prometheus) |
 | `JUNIPER_CASCOR_WS_MAX_CONNECTIONS_GLOBAL` | `200`        | Stack-wide WebSocket cap across training, control, and worker sockets |
-| `JUNIPER_CASCOR_WS_MAX_CONNECTIONS_PER_IDENTITY` | `5`     | `/ws/control` cap per API-key identity |
+| `JUNIPER_CASCOR_WS_MAX_CONNECTIONS_PER_IDENTITY` | `5`     | `/ws/control` cap per API-key identity (`ws_identity_key`; blank/whitespace `X-API-Key` → anonymous, global + per-IP caps only) |
 | `JUNIPER_CASCOR_WS_MAX_CONNECTIONS_PER_IP` | `5`          | Per-source-IP cap; DoS dampening only and shared behind Docker NAT |
-| `JUNIPER_CASCOR_WS_CONTROL_ALLOWED_ORIGINS` | `http://localhost:8050,http://127.0.0.1:8050,https://localhost:8050,https://127.0.0.1:8050` | `/ws/control` Origin allowlist. Accepts JSON-array or comma-CSV. Empty string disables (opt-out). For docker compose, add `http://juniper-canopy:8050` so canopy's `ControlStreamSupervisor` can connect. |
+| `JUNIPER_CASCOR_WS_CONTROL_ALLOWED_ORIGINS` | `http://localhost:8050,http://127.0.0.1:8050,https://localhost:8050,https://127.0.0.1:8050` | `/ws/control` Origin allowlist. Accepts JSON-array or comma-CSV. Malformed non-list JSON fails soft to CSV splitting; empty entries are stripped. Empty string disables (opt-out). For docker compose, add `http://juniper-canopy:8050` so canopy's `ControlStreamSupervisor` can connect. |
 | `JUNIPER_WS_REPLAY_BUFFER_SIZE` | `1024` | `/ws/training` broadcast replay buffer size. `0` disables resume replay. |
 | `JUNIPER_WS_INITIAL_METRICS_COUNT` | `100` | Recent metrics sent as `initial_metrics` on fresh `/ws/training` connect. `0` disables the automatic burst; clients can still send `subscribe_metrics`. |
 | `JUNIPER_WS_SEND_TIMEOUT_SECONDS` | `0.5` | Per-client WebSocket send timeout before a slow consumer is dropped from fan-out. |
 | `JUNIPER_WS_MAX_MESSAGE_SIZE_BYTES` | `60000` | Serialized JSON threshold for `chunked_message` envelopes. `0` disables chunking (tests only; oversized frames may be dropped by intermediaries). |
 | `JUNIPER_WS_CHUNK_PAYLOAD_SIZE_BYTES` | `32000` | Payload slice size for each `chunked_message`. |
 | `JUNIPER_CASCOR_WS_MAX_CONNECTIONS` | `50` | Global WebSocket connection cap, including pending `/ws/training` resume handshakes. |
-| `JUNIPER_CASCOR_WS_HEARTBEAT_INTERVAL_SEC` | `30` | Training/control heartbeat ping interval. |
-| `JUNIPER_CASCOR_WS_HEARTBEAT_PONG_TIMEOUT_SEC` | `10` | Training/control pong timeout before heartbeat close. |
+| `JUNIPER_WS_HEARTBEAT_INTERVAL_SEC` | `30` | Training/control heartbeat ping interval (`AliasChoices` name; **not** `JUNIPER_CASCOR_`-prefixed). `<= 0` disables the heartbeat. |
+| `JUNIPER_WS_HEARTBEAT_PONG_TIMEOUT_SEC` | `10` | Training/control pong/liveness window before heartbeat close (same `AliasChoices` binding). |
+| `JUNIPER_CASCOR_REMOTE_WORKERS_HEARTBEAT_TIMEOUT` | `30.0` | Worker heartbeat stale timeout (CONC-10 reap). |
+| `JUNIPER_CASCOR_REMOTE_WORKERS_TASK_REASSIGNMENT_TIMEOUT` | `120.0` | Fallback reassignment for orphaned in-flight tasks. Schema/tensor rejects and soft binary-frame aborts requeue immediately — do not wait for this timeout on those paths. |
+| `JUNIPER_CASCOR_AUTO_START_DATA_SERVICE` / `_CANOPY` | `false` | Local companion auto-start; a failed health probe terminates the subprocess and clears `_active_services` (see troubleshooting). |
+
+**Secrets tip:** Prefer a readable non-empty `*_FILE` in compose. If the mount exists but is unreadable, boot continues with the plain env var (or open auth when neither is set) — fix file permissions rather than assuming the env var was ignored.
+
+**Worker tip:** A candidate round that stalls with a still-connected worker after a bad binary `task_result` is the soft-abort path (text / oversized / decode failure); `abort_in_flight_result` requeues it immediately, because heartbeats keep CONC-10 from reaping it. See [API Reference — WS `/ws/v1/workers`](api/JUNIPER_CASCOR_API_REFERENCE.md#ws-wsv1workers).
 
 ---
 
@@ -251,7 +272,9 @@ Core: `torch`, `numpy`, `h5py`, `matplotlib`, `PyYAML`, `requests`
 
 **PyPI publish:** cut a GitHub Release (not a bare tag). Tags: `v*` → `publish.yml` (`juniper-cascor`); `juniper-cascor-protocol-v*` / `juniper-cascor-model-v*` → matching sub-package workflows. TestPyPI verify uses `--no-deps` and TestPyPI index only. Keep `pypa/gh-action-pypi-publish` SHA-pinned (Dependabot bumps all three workflows together).
 
-> See: [CI Quick Start](ci_cd/QUICK_START.md#dependabot-lockfile-updates) | [CI Manual — Lockfile](ci_cd/MANUAL.md#lockfile-update-workflow) | [CI Manual — PyPI Publishing](ci_cd/MANUAL.md#pypi-publishing) | [CI Reference](ci_cd/REFERENCE.md#publish-workflows) | [Dependency Update Workflow](../notes/DEPENDENCY_UPDATE_WORKFLOW.md) | [Environment Setup](install/ENVIRONMENT_SETUP.md)
+**Twine pins:** `conf/requirements_ci.txt` (and the conda CI freeze) are not the publish uploader. Publish and package-CI jobs `pip install` Twine unpinned for `twine check`; uploads use the action-bundled Twine. Twine 7 rejects Metadata 2.0 and needs `packaging >= 26.1` — smoke `python -m build && twine check dist/*` after a major freeze bump.
+
+> See: [CI Quick Start](ci_cd/QUICK_START.md#dependabot-lockfile-updates) | [CI Manual — Lockfile](ci_cd/MANUAL.md#lockfile-update-workflow) | [CI Manual — PyPI Publishing](ci_cd/MANUAL.md#pypi-publishing) | [Twine Pin Surfaces](ci_cd/MANUAL.md#twine-pin-surfaces) | [CI Reference](ci_cd/REFERENCE.md#publish-workflows) | [Dependency Update Workflow](../notes/DEPENDENCY_UPDATE_WORKFLOW.md) | [Environment Setup](install/ENVIRONMENT_SETUP.md)
 
 ---
 
@@ -274,6 +297,28 @@ Core: `torch`, `numpy`, `h5py`, `matplotlib`, `PyYAML`, `requests`
 | Server refuses to start with `AuthPostureError` / CRITICAL auth posture | `JUNIPER_CASCOR_REQUIRE_AUTH=true` and keys missing/blank (incl. empty `_FILE`) | Provision a real `JUNIPER_CASCOR_API_KEYS` / non-empty `*_FILE`, or set `REQUIRE_AUTH=false` only for bare/dev |
 | Protected routes open / boot WARNING "running OPEN" with compose secrets | Empty/whitespace `JUNIPER_CASCOR_API_KEYS_FILE` (compose `_FILE`-only); `get_secret()` returns `""` with no env fallback | Put a real key in the secret file; set `JUNIPER_CASCOR_REQUIRE_AUTH=true` so empty secrets fail boot |
 | WebSocket closes during connect with `1013`                           | Global, per-IP, or `/ws/control` per-identity cap reached   | Raise the relevant `JUNIPER_CASCOR_WS_MAX_CONNECTIONS_*` cap only after checking expected clients and worker fleet size |
+| Many `/ws/control` clients with blank `X-API-Key` hit `1013` together | Whitespace-only keys would share one identity digest        | `ws_identity_key` strips before the falsy check, so blanks are anonymous — send a real key (or omit the header) if you need a per-identity budget |
+| `/ws/control` drops after sending `[]` / a bare string / `null`       | Non-object JSON reaching `msg.get` would kill the recv loop  | The dict guard returns an `invalid_message` ack and keeps commanding — only malformed JSON closes `1003` |
+| WS heartbeat/idle test raises `TypeError` in `asyncio.sleep`/`wait_for`, or knobs ignored | Bare `MagicMock` / string on `app.state.settings` timing attrs; `_numeric_setting` falls back to defaults | Put a real `Settings` or numeric `SimpleNamespace` on `app.state.settings`; pin the helper with `pytest … -k numeric_setting` |
+| Responses missing `Strict-Transport-Security` behind HTTPS            | TLS terminator omitted `X-Forwarded-Proto: https`           | Forward `X-Forwarded-Proto: https` — HSTS is conditional on that header only |
+| Large `POST`/`PUT`/`PATCH` returns **413** `Request body too large`   | Body exceeded 10 MiB (`_PROJECT_API_MAX_REQUEST_BODY_BYTES`) | Shrink the JSON payload, use a dataset generator / staged data, or split the upload; do not raise the cap casually |
+| Body-limit middleware "passes" an under-declared `Content-Length`     | Stream-read gated on `content_length is None` (CR-024 regression) | Always stream-read mutating methods after the oversized-declared early reject; pin with `TestRequestBodyLimitMiddleware` |
+| `POST`/`DELETE` `/v1/network` returns 409 while paused or replaying   | Parked training thread, replay session, or snapshot investigation still owns the model | `stop` training, end replay (`replay/control` `action=stop`), or retrain/reset out of Investigating before create/delete |
+| `POST /v1/training/start` with `inline_data` returns `422` on lengths | `train_x`/`train_y` (or `val_*`) row counts differ, or only one of `val_x`/`val_y` | Align sample counts; send both val arrays or omit both — see [InlineDataset alignment](api/JUNIPER_CASCOR_API_REFERENCE.md#post-v1trainingstart) |
+| `POST /v1/training/start` → 409 mentioning Investigating / replaying  | FSM still in snapshot inspect or replay mode                | Retrain/resume out of Investigating, or `replay/control` `action=stop`, then start again |
+| `POST /v1/training/stop` → 409                                        | Stop attempted while `Investigating` / `Replaying`          | Exit Investigating via snapshot retrain/resume; stop replay first — stop is not permissive in those states |
+| Snapshot restore/retrain/resume → 409 during replay                   | Route preflights `Started` / `Paused` / `Replaying`         | Stop replay via `replay/control` `action=stop` (or stop training) before restore/retrain/resume |
+| `PATCH /v1/training/params` → 404 on a bad candidate-pool triple      | Typed `InvalidCandidatePoolError` collapsed into bare `ValueError` | The route maps that subclass to **422** with the violation string; keep the `except InvalidCandidatePoolError` clause ahead of `except ValueError` |
+| Live dataset swap / staged reload fails with train sample mismatch    | juniper-data artifact arrays not 2-D or X/y counts differ   | Fix the upstream artifact; `_reload_dataset` rejects partial `X_test`/`y_test` and non-2-D trains |
+| Staged canopy start fails with unknown generator `spirals`/`moons`    | Config reached juniper-data without `_translate_staged_config` | Ensure reload / live-swap goes through the lifecycle translate (`spirals`→`spiral`, `moons`→`moon`) |
+| Worker handshake closes with `4008`                                   | `worker_id` failed `validate_register` regex/type checks     | Use a 1–64 char alphanumeric/`_`/`-` id starting alphanumeric; treat it as a display name only |
+| Worker registry admission closes with `4013`                          | Worker registry at capacity                                  | Reduce fleet size or raise the registry limit after checking expected worker count |
+| Worker `task_result` rejected / task stays pending                    | Wrong `worker_id` vs `assigned_worker_id`, or a bad tensor manifest | Ensure only the assignee submits; fix manifest `shape`/`dtype` (non-dict entries / empty `weights` are validation errors) |
+| Candidate round stalls ~120s after a bad worker `task_result`         | Schema/tensor reject left the task assigned until reassignment | `_reject_and_requeue_task` frees the worker and requeues immediately — check worker logs for validation errors |
+| Candidate round stalls ~120s while the worker still heartbeats after a bad frame | Soft binary abort left the worker busy (CONC-10 cannot reap) | `abort_in_flight_result` frees + requeues text/oversized/decode failures immediately — inspect the worker `error` JSON |
+| Reconnected worker trips duplicate/perfect correlation anomalies      | Anomaly history surviving deregister under recycled IDs      | Teardown calls `AnomalyDetector.clear_worker`; see the worker-stream `finally` and `test_disconnect_clears_anomaly_history` |
+| Companion auto-start leaves a port conflict / atexit double-terminate | A failed health probe left a stale `_active_services` entry or an open log FD | `service_launcher` terminates, removes the entry in a `finally`, and closes the log handle in `ManagedService.terminate`; restart cascor after a failed companion boot |
+| Auth open / keys missing despite a `_FILE` mount                      | Unreadable secret file fell through to an unset env var       | Fix mount permissions, or set the plain `JUNIPER_CASCOR_API_KEYS` env var as the fallback |
 | Dependabot bumps `websockets` but app code never imports it           | Transitive pin from `uvicorn[standard]`                     | Review as transport-only; confirm lock `# via uvicorn`, sync `conf/requirements-pip.txt` / `conf/requirements_ci.txt`, run WebSocket suites |
 | After a `websockets` major bump, clients see half-open sockets        | App closed with reserved code `1006` (rejected on the wire) | Close with `1011` (or another allowed code); see C3 heartbeat contract in `training_stream.py` / `control_stream.py` |
 | Lock says `websockets==17.x` but `conf/requirements_*.txt` still `16.x` | Freeze files updated on separate Dependabot paths           | Align conf freeze pins with `requirements.lock` before merge; check `conf/conda_environment_ci.yaml` separately |
@@ -283,6 +328,7 @@ Core: `torch`, `numpy`, `h5py`, `matplotlib`, `PyYAML`, `requests`
 | Update Lockfile hard-fails on a human `pyproject.toml` PR             | Actions PAT missing/expired                                 | Restore Actions `CROSS_REPO_DISPATCH_TOKEN` or commit the regen in the PR |
 | Publish workflow skipped / wrong package                              | Release tag prefix does not match workflow guard            | Use `v*`, `juniper-cascor-protocol-v*`, or `juniper-cascor-model-v*` — see [PyPI Publishing](ci_cd/MANUAL.md#pypi-publishing) |
 | TestPyPI `400 File already exists` on publish                         | Dual trigger or concurrent upload of same version           | Publish via Release only (no `push: tags`); bump version to re-upload |
+| Dependabot Twine major only updates `requirements_ci.txt`             | Freeze ≠ publish install; the conda freeze may lag           | See [Twine Pin Surfaces](ci_cd/MANUAL.md#twine-pin-surfaces); re-check metadata under Twine ≥ 7 |
 
 ---
 
