@@ -215,18 +215,25 @@ class TestSubmitResult:
         assert accepted is False
         assert task_ids[0] not in coordinator._completed_task_ids
 
-    def test_reject_wrong_worker_result(self, coordinator, registry):
-        """Only the assigned worker may submit a task result."""
+    def test_reject_wrong_worker_ownership(self, coordinator, registry):
+        """A peer worker cannot submit a result for a task assigned to another worker."""
         registry.register("w1", {})
         registry.register("w2", {})
         task_ids = coordinator.submit_tasks("round-1", _make_task_specs(1), _make_tensors())
         coordinator.get_next_assignment("w1")
 
-        accepted = coordinator.submit_result("w2", _make_result_msg(task_ids[0]), _make_result_tensors())
+        msg = _make_result_msg(task_ids[0])
+        accepted = coordinator.submit_result("w2", msg, _make_result_tensors())
         assert accepted is False
+
+        # Task remains pending under the original assignee.
+        pending = coordinator._pending_tasks[task_ids[0]]
+        assert pending.completed is False
+        assert pending.assigned_worker_id == "w1"
         assert task_ids[0] not in coordinator._completed_task_ids
-        # Assigned worker can still complete after the wrong-worker reject.
-        accepted = coordinator.submit_result("w1", _make_result_msg(task_ids[0]), _make_result_tensors())
+
+        # Legitimate owner can still complete the task afterward.
+        accepted = coordinator.submit_result("w1", msg, _make_result_tensors())
         assert accepted is True
 
 
