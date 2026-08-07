@@ -1,6 +1,6 @@
 # Developer Cheatsheet — juniper-cascor
 
-**Version**: 1.0.2  |  **Date**: 2026-08-05  |  **Project**: juniper-cascor
+**Version**: 1.0.3  |  **Date**: 2026-08-05  |  **Project**: juniper-cascor
 
 ---
 
@@ -56,6 +56,8 @@ docker compose --profile full up -d                            # Docker start
 **Add an endpoint:** Create route under `/v1`, register in `app.py`, add client method in `juniper-cascor-client`.
 
 **WebSocket:** `/ws/training` (metrics), `/ws/control` (commands), `/ws/v1/workers` (remote workers). Over-cap connections close with `1013`; update `ws_client.py`, canopy, and worker clients when adding or changing channels.
+
+**ASGI transport:** handlers use FastAPI/Starlette only; `websockets` arrives via `uvicorn[standard]` (`requirements.lock` `# via uvicorn`). Major `websockets` bumps (for example 16 → 17) are transport-layer — keep Python ≥ 3.12, sync `conf/requirements-*.txt` with the lock, and smoke `tests/unit/api/test_websocket_*.py` + `test_ws_heartbeat.py` + `tests/integration/api/test_websocket_streaming.py`. Details: [ASGI WebSocket transport](api/JUNIPER_CASCOR_API_REFERENCE.md#asgi-websocket-transport).
 
 ### Training Lifecycle Quick Paths
 
@@ -272,6 +274,9 @@ Core: `torch`, `numpy`, `h5py`, `matplotlib`, `PyYAML`, `requests`
 | Server refuses to start with `AuthPostureError` / CRITICAL auth posture | `JUNIPER_CASCOR_REQUIRE_AUTH=true` and keys missing/blank (incl. empty `_FILE`) | Provision a real `JUNIPER_CASCOR_API_KEYS` / non-empty `*_FILE`, or set `REQUIRE_AUTH=false` only for bare/dev |
 | Protected routes open / boot WARNING "running OPEN" with compose secrets | Empty/whitespace `JUNIPER_CASCOR_API_KEYS_FILE` (compose `_FILE`-only); `get_secret()` returns `""` with no env fallback | Put a real key in the secret file; set `JUNIPER_CASCOR_REQUIRE_AUTH=true` so empty secrets fail boot |
 | WebSocket closes during connect with `1013`                           | Global, per-IP, or `/ws/control` per-identity cap reached   | Raise the relevant `JUNIPER_CASCOR_WS_MAX_CONNECTIONS_*` cap only after checking expected clients and worker fleet size |
+| Dependabot bumps `websockets` but app code never imports it           | Transitive pin from `uvicorn[standard]`                     | Review as transport-only; confirm lock `# via uvicorn`, sync `conf/requirements-pip.txt` / `conf/requirements_ci.txt`, run WebSocket suites |
+| After a `websockets` major bump, clients see half-open sockets        | App closed with reserved code `1006` (rejected on the wire) | Close with `1011` (or another allowed code); see C3 heartbeat contract in `training_stream.py` / `control_stream.py` |
+| Lock says `websockets==17.x` but `conf/requirements_*.txt` still `16.x` | Freeze files updated on separate Dependabot paths           | Align conf freeze pins with `requirements.lock` before merge; check `conf/conda_environment_ci.yaml` separately |
 | Golden / conformance tests collected but all skipped                  | Missing `--golden` / `--conformance` opt-in flags           | Pass the matching flag with `--slow --integration` (see `conftest.py`)                                                  |
 | Golden lane red locally after green unit CI                           | Wrong interpreter/torch or multi-thread / xdist             | Match CI pins (3.13 + torch 2.11.0, serial, `CASCOR_NUM_PROCESSES=1`, single-thread BLAS)                               |
 | Lockfile Freshness red; Update Lockfile green with no `[dependabot skip]` commit | `CROSS_REPO_DISPATCH_TOKEN` empty in Dependabot secret store | Register PAT under Dependabot secrets, or push a local `uv pip compile ... -o requirements.lock` |

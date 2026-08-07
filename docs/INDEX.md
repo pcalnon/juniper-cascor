@@ -79,6 +79,7 @@ This documentation serves two audiences:
 | `cascade_correlation/` | Core neural network implementation |
 | `candidate_unit/` | Candidate unit for network growth |
 | `spiral_problem/` | Two-spiral benchmark (requires JuniperData service) |
+| `api/websocket/` | REST/WebSocket service channels (FastAPI/Starlette; `websockets` via uvicorn) |
 | `juniper_data_client/` | REST API client for JuniperData service |
 | `cascor_constants/` | Project-wide constants |
 | `log_config/` | Logging configuration and custom logger |
