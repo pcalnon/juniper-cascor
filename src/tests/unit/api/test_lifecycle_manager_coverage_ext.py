@@ -41,7 +41,7 @@ def _attach_network(m, net) -> None:
 
 
 class TestNetworkGuards:
-    """create/delete network reject while training is active."""
+    """create/delete network reject while training/replay owns the model."""
 
     def test_create_network_rejected_while_started(self, mgr):
         with patch.object(mgr.state_machine, "is_started", return_value=True):
@@ -52,6 +52,43 @@ class TestNetworkGuards:
         with patch.object(mgr.state_machine, "is_started", return_value=True):
             with pytest.raises(RuntimeError, match="while training is active"):
                 mgr.delete_network()
+
+    def test_create_network_rejected_while_paused(self, mgr):
+        """PAUSED keeps a parked training thread that still owns the model."""
+        mgr.create_network(input_size=2, output_size=2)
+        assert mgr.state_machine.handle_command(Command.START)
+        assert mgr.state_machine.handle_command(Command.PAUSE)
+        with pytest.raises(RuntimeError, match="while training is active"):
+            mgr.create_network(input_size=3, output_size=2)
+        assert mgr.has_model()
+        assert mgr.state_machine.is_paused()
+
+    def test_delete_network_rejected_while_paused(self, mgr):
+        """Delete while PAUSED must not clear the model under a parked fit."""
+        mgr.create_network(input_size=2, output_size=2)
+        assert mgr.state_machine.handle_command(Command.START)
+        assert mgr.state_machine.handle_command(Command.PAUSE)
+        with pytest.raises(RuntimeError, match="while training is active"):
+            mgr.delete_network()
+        assert mgr.has_model()
+        assert mgr.state_machine.is_paused()
+
+    def test_create_network_rejected_while_replaying(self, mgr):
+        mgr.create_network(input_size=2, output_size=2)
+        assert mgr.state_machine.mark_replaying()
+        with pytest.raises(RuntimeError, match="while replay is active"):
+            mgr.create_network(input_size=3, output_size=2)
+        assert mgr.has_model()
+        assert mgr.state_machine.is_replaying()
+
+    def test_delete_network_rejected_while_replaying(self, mgr):
+        """Delete while REPLAYING must not orphan an active replay session."""
+        mgr.create_network(input_size=2, output_size=2)
+        assert mgr.state_machine.mark_replaying()
+        with pytest.raises(RuntimeError, match="while replay is active"):
+            mgr.delete_network()
+        assert mgr.has_model()
+        assert mgr.state_machine.is_replaying()
 
     def test_create_network_rejected_while_investigating(self, mgr):
         """INVESTIGATING owns an inspected snapshot — create must not replace it."""
@@ -199,6 +236,21 @@ class TestStartTrainingPendingReload:
                 mgr.start_training()
         reload.assert_called_once()
         assert mgr._pending_dataset_config is None
+
+    def test_reload_failure_preserves_pending_config(self, mgr):
+        """If ``_reload_dataset`` raises, the staged config must survive so the
+        operator can fix juniper-data and Restart-and-retry without re-staging.
+
+        Mirrors the integration contract in ``test_pending_dataset.py`` but as a
+        fast unit test against the lifecycle method directly.
+        """
+        mgr.create_network(input_size=2, output_size=2)
+        staged = {"dataset_type": "spirals", "n_samples": 4}
+        mgr._pending_dataset_config = dict(staged)
+        with patch.object(mgr, "_reload_dataset", side_effect=RuntimeError("juniper-data down")):
+            with pytest.raises(RuntimeError, match="juniper-data down"):
+                mgr.start_training()
+        assert mgr._pending_dataset_config == staged
 
 
 class TestRunTrainingSessionGaugeGuards:

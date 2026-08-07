@@ -65,9 +65,17 @@ class LeakyBucket:
 
     @property
     def retry_after(self) -> float:
-        """Estimated seconds until a token is available."""
+        """Estimated seconds until a token is available.
+
+        When ``refill_rate`` is zero (or negative), tokens never refill, so
+        there is no finite wait — return ``0.0`` rather than dividing by zero.
+        Callers still see ``try_acquire() is False`` and can surface a
+        rate-limit ack; a zero ``retry_after`` signals "no estimated wait".
+        """
         with self._lock:
             if self._tokens >= 1.0:
+                return 0.0
+            if self._refill_rate <= 0:
                 return 0.0
             deficit = 1.0 - self._tokens
             return round(deficit / self._refill_rate, 1)

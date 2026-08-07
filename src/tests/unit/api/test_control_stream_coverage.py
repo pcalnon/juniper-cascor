@@ -276,6 +276,64 @@ class TestHandshakeGates:
         cooldown.record_rejection.assert_called_once_with("10.0.0.9")
         ws.close.assert_awaited_once_with(code=4003, reason="Origin not allowed")
 
+    @pytest.mark.asyncio
+    async def test_auth_failure_records_rejection(self):
+        """Invalid API key closes 4001 and records a handshake rejection (parity with origin)."""
+        ws = AsyncMock()
+        auth = MagicMock()
+        auth.enabled = True
+        auth.validate.return_value = False
+        ws.app.state.api_key_auth = auth
+        ws.headers = {"X-API-Key": "bad-key"}
+
+        settings = MagicMock()
+        settings.disable_ws_control_endpoint = False
+        settings.ws_control_allowed_origins = []
+
+        cooldown = MagicMock()
+        cooldown.is_blocked.return_value = False
+
+        with patch("api.websocket.control_stream._get_cooldown", return_value=cooldown):
+            allowed = await _check_handshake_gates(ws, settings, "10.0.0.9")
+
+        assert allowed is False
+        cooldown.record_rejection.assert_called_once_with("10.0.0.9")
+        ws.close.assert_awaited_once_with(code=4001, reason="Authentication required")
+
+    @pytest.mark.asyncio
+    async def test_auth_failures_trip_real_handshake_cooldown(self):
+        """Repeated auth failures on a real HandshakeCooldown block the IP with 4029."""
+        from api.websocket.control_security import HandshakeCooldown
+
+        settings = MagicMock()
+        settings.disable_ws_control_endpoint = False
+        settings.ws_control_allowed_origins = []
+
+        cooldown = HandshakeCooldown(max_rejections=3, window_sec=60, block_sec=300)
+        client_ip = "203.0.113.50"
+
+        for _ in range(3):
+            ws = AsyncMock()
+            auth = MagicMock()
+            auth.enabled = True
+            auth.validate.return_value = False
+            ws.app.state.api_key_auth = auth
+            ws.headers = {"X-API-Key": "bad-key"}
+            with patch("api.websocket.control_stream._get_cooldown", return_value=cooldown):
+                allowed = await _check_handshake_gates(ws, settings, client_ip)
+            assert allowed is False
+            ws.close.assert_awaited_with(code=4001, reason="Authentication required")
+
+        assert cooldown.is_blocked(client_ip) is True
+
+        blocked_ws = AsyncMock()
+        blocked_ws.app.state.api_key_auth = None
+        with patch("api.websocket.control_stream._get_cooldown", return_value=cooldown):
+            allowed = await _check_handshake_gates(blocked_ws, settings, client_ip)
+
+        assert allowed is False
+        blocked_ws.close.assert_awaited_once_with(code=4029, reason="Too many rejected handshakes")
+
 
 @pytest.mark.unit
 class TestHandleCommandMessageBranches:
@@ -432,6 +490,46 @@ class TestControlRecvLoop:
             timeout=2.0,
         )
         ws.close.assert_awaited_once_with(code=1003, reason="Malformed JSON")
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("payload", ["[]", "123", '"pause"', "null", "true"])
+    async def test_non_dict_json_acks_error_and_keeps_session(self, payload):
+        """Non-object JSON must not AttributeError-kill the recv loop.
+
+        Pre-fix ``msg.get(...)`` assumed every successful ``json.loads``
+        returned a dict; arrays/scalars/null raised and aborted /ws/control.
+        Parity with /ws/training's ``isinstance(msg, dict)`` guard: ack the
+        client error and continue so a subsequent valid command still runs.
+        """
+        lifecycle = MagicMock()
+        lifecycle.pause_training.return_value = {"status": "Paused"}
+        ws = AsyncMock()
+        ws.receive_text = AsyncMock(
+            side_effect=[
+                payload,
+                json.dumps({"command": "pause"}),
+                WebSocketDisconnect(code=1000),
+            ]
+        )
+        bucket = LeakyBucket(capacity=10, refill_rate=10.0)
+        pong_received = asyncio.Event()
+
+        with pytest.raises(WebSocketDisconnect):
+            await asyncio.wait_for(
+                _control_recv_loop(ws, lifecycle, bucket, pong_received, idle_timeout=0, client_ip="127.0.0.1"),
+                timeout=2.0,
+            )
+
+        # Session stayed open: no close from the non-dict arm, and the later
+        # pause command still dispatched.
+        ws.close.assert_not_awaited()
+        lifecycle.pause_training.assert_called_once()
+        error_acks = [c.args[0] for c in ws.send_json.await_args_list if isinstance(c.args[0], dict) and c.args[0].get("type") == "command_response" and c.args[0].get("data", {}).get("status") == "error"]
+        # Envelope wraps payload under data=; also accept flat shapes if the
+        # helper ever flattens in tests.
+        if not error_acks:
+            error_acks = [c.args[0] for c in ws.send_json.await_args_list if "Invalid JSON: expected object" in str(c) or "invalid_message" in str(c)]
+        assert error_acks, f"expected non-dict error ack; got {ws.send_json.await_args_list}"
 
 
 @pytest.mark.unit

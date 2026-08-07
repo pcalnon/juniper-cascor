@@ -208,14 +208,16 @@ class WorkerProtocol:
         if errors:
             return errors
 
-        # Type checks
-        if not isinstance(msg["candidate_id"], int):
+        # Type checks. Reject bool explicitly: isinstance(True, int) is True
+        # in Python, so a JSON ``true`` must not pass for candidate_id /
+        # epochs_completed / correlation (wire integrity for hostile/buggy workers).
+        if isinstance(msg["candidate_id"], bool) or not isinstance(msg["candidate_id"], int):
             errors.append(f"candidate_id must be int, got {type(msg['candidate_id']).__name__}")
-        if not isinstance(msg["correlation"], (int, float)):
+        if isinstance(msg["correlation"], bool) or not isinstance(msg["correlation"], (int, float)):
             errors.append(f"correlation must be numeric, got {type(msg['correlation']).__name__}")
         if not isinstance(msg["success"], bool):
             errors.append(f"success must be bool, got {type(msg['success']).__name__}")
-        if not isinstance(msg["epochs_completed"], int):
+        if isinstance(msg["epochs_completed"], bool) or not isinstance(msg["epochs_completed"], int):
             errors.append(f"epochs_completed must be int, got {type(msg['epochs_completed']).__name__}")
 
         if errors:

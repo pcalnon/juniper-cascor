@@ -224,7 +224,8 @@ async def restore_snapshot(request: Request, snapshot_id: str) -> dict:
     ``Investigating``.
 
     Rejected with 409 if training is currently active (Started /
-    Paused) — same FSM-guard contract as Resume / Retrain.
+    Paused) or a replay session is running (Replaying) — same
+    FSM-guard contract as Resume / Retrain.
 
     CAN-014 (Sprint A-5): response includes the post-restore
     ``training_params`` so a tuning UI can reconcile state. CAN-015d
@@ -239,7 +240,9 @@ async def restore_snapshot(request: Request, snapshot_id: str) -> dict:
     lifecycle = _get_lifecycle(request)
     # Pre-flight FSM check — surface 409 at the route boundary rather
     # than letting the lifecycle's own check map to a generic 404.
-    if lifecycle.state_machine.is_started() or lifecycle.state_machine.is_paused():
+    # REPLAYING is included so an active replay conflict is not
+    # misreported as "snapshot not found" (lifecycle returns loaded=False).
+    if lifecycle.state_machine.is_started() or lifecycle.state_machine.is_paused() or lifecycle.state_machine.is_replaying():
         raise HTTPException(status_code=409, detail=f"Cannot restore from snapshot while training is {lifecycle.state_machine.status.name}")
     # PERF-CC-01: serializer.load_network is synchronous HDF5 I/O. Run it
     # off the event loop so concurrent requests aren't blocked while the
@@ -281,9 +284,17 @@ async def retrain_from_snapshot(request: Request, snapshot_id: str) -> dict:
     the Investigating-state work; B-1 stays close to the existing
     ``/restore`` shape so clients written against either endpoint can
     transition between them with minimal changes.
+
+    Rejected with 409 if training is currently active (Started /
+    Paused) or a replay session is running (Replaying) — same
+    FSM-guard contract as Restore / Resume. Without this preflight,
+    lifecycle rejection returns ``loaded=False`` and the route
+    misreports the conflict as HTTP 404.
     """
     _validate_snapshot_id(snapshot_id, client=request.client.host if request.client else None)
     lifecycle = _get_lifecycle(request)
+    if lifecycle.state_machine.is_started() or lifecycle.state_machine.is_paused() or lifecycle.state_machine.is_replaying():
+        raise HTTPException(status_code=409, detail=f"Cannot retrain from snapshot while training is {lifecycle.state_machine.status.name}")
     # PERF-CC-01: HDF5 I/O off the event loop, same as the other
     # snapshot routes. The reset side-effects (FSM, monitor, training_state)
     # are quick attribute writes — no need to fan out further.
@@ -321,7 +332,8 @@ async def resume_snapshot(request: Request, snapshot_id: str) -> dict:
     past it).
 
     Rejected with 409 if training is currently active (Started /
-    Paused) — the user must stop training before resuming.
+    Paused) or a replay session is running (Replaying) — the user
+    must stop training / replay before resuming.
 
     See ``juniper-ml/notes/JUNIPER_2026-05-01_JUNIPER-ECOSYSTEM_PHASE-6E-SPRINT-B-DESIGN.md`` §2.3.
     """
@@ -330,7 +342,7 @@ async def resume_snapshot(request: Request, snapshot_id: str) -> dict:
     # Pre-flight check on FSM state. The lifecycle method also checks
     # but we surface the conflict as 409 at the route boundary for a
     # clean client error rather than a generic 404.
-    if lifecycle.state_machine.is_started() or lifecycle.state_machine.is_paused():
+    if lifecycle.state_machine.is_started() or lifecycle.state_machine.is_paused() or lifecycle.state_machine.is_replaying():
         raise HTTPException(status_code=409, detail=f"Cannot resume from snapshot while training is {lifecycle.state_machine.status.name}")
     # PERF-CC-01: HDF5 I/O off the event loop, same as the other snapshot routes.
     result = await asyncio.to_thread(lifecycle.resume_from_snapshot, snapshot_id)

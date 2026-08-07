@@ -1496,8 +1496,14 @@ class TrainingLifecycleManager:
         from cascade_correlation.cascade_correlation import CascadeCorrelationNetwork
         from cascade_correlation.cascade_correlation_config.cascade_correlation_config import CascadeCorrelationConfig
 
-        if self.state_machine.is_started():
+        # Reject while STARTED (active fit), PAUSED (parked training thread still
+        # owns the network), or REPLAYING (history playback session). Replacing
+        # the model in those states races the parked/replay thread and corrupts
+        # status surfaces.
+        if self.state_machine.is_started() or self.state_machine.is_paused():
             raise RuntimeError("Cannot create network while training is active")
+        if self.state_machine.is_replaying():
+            raise RuntimeError("Cannot create network while replay is active")
         # INVESTIGATING owns an inspected snapshot model (patch_weights /
         # add_hidden_unit_manual / retrain). Replacing it in-place leaves the
         # FSM Investigating against a brand-new network that is not the
@@ -1540,8 +1546,14 @@ class TrainingLifecycleManager:
     def delete_network(self) -> None:
         """Delete the current network."""
         with self._lock:
-            if self.state_machine.is_started():
+            # Mirror create_network: PAUSED keeps a parked training thread that
+            # still references ``self.model``; REPLAYING owns a replay session.
+            # Clearing the model under either state leaves dangling futures /
+            # orphaned replay workers without event/session cleanup.
+            if self.state_machine.is_started() or self.state_machine.is_paused():
                 raise RuntimeError("Cannot delete network while training is active")
+            if self.state_machine.is_replaying():
+                raise RuntimeError("Cannot delete network while replay is active")
             # Mirror create_network: INVESTIGATING still owns the inspected
             # snapshot model for patch/retrain flows. Clearing it under that
             # state strands the FSM Investigating with no model.
@@ -2385,11 +2397,21 @@ class TrainingLifecycleManager:
             monitor.on_training_end()
 
     def stop_training(self) -> Dict[str, Any]:
-        """Request training stop."""
+        """Request training stop.
+
+        Idempotent when already Stopped / Completed / Failed (FSM reject
+        is ignored; callers still receive ``stop_requested``). Rejected
+        with ``RuntimeError`` while Investigating or Replaying so
+        ``training_state`` cannot report Stopped while the FSM still
+        blocks ``start_training``.
+        """
+        if self.state_machine.is_investigating() or self.state_machine.is_replaying():
+            raise RuntimeError(f"Cannot stop training while {self.state_machine.status.name}")
         self._stop_event.set()
-        self.state_machine.handle_command(Command.STOP)
-        self.training_state.update_state(status="Stopped", phase="Idle")
-        self._broadcast_training_state(force=True)
+        transitioned = self.state_machine.handle_command(Command.STOP)
+        if transitioned:
+            self.training_state.update_state(status="Stopped", phase="Idle")
+            self._broadcast_training_state(force=True)
         return {"status": "stop_requested", "timestamp": time.time()}
 
     def pause_training(self) -> Dict[str, Any]:
