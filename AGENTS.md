@@ -80,10 +80,14 @@ pre-commit install                                   # Install hooks
 | `JUNIPER_CASCOR_API_KEYS_FILE` | Docker-secrets path for API keys; an existing empty/whitespace file yields open auth in the compose `_FILE`-only pattern (`get_secret()` does not fall back to the plain env var) | `None` |
 | `JUNIPER_CASCOR_REQUIRE_AUTH` | SEC-F01 intended auth posture: `false` = WARN and run open when keys missing/blank; `true` = refuse boot with `AuthPostureError`. Set `true` wherever secrets are provisioned (composed juniper-deploy). Bypass with `JUNIPER_SKIP_AUTH_POSTURE_CHECK=1` (logged loudly). | `false` |
 | `JUNIPER_CASCOR_RATE_LIMIT_ENABLED` | Enable rate limiting | `false` |
-| `JUNIPER_CASCOR_RATE_LIMIT_REQUESTS_PER_MINUTE` | Requests per minute per IP | `60` |
+| `JUNIPER_CASCOR_RATE_LIMIT_REQUESTS_PER_MINUTE` | Fixed-window budget; keyed `key:<api_key>` when REST auth succeeds, `ip:<client>` when auth is disabled | `60` |
 | **WebSocket** | | |
 | `JUNIPER_CASCOR_WS_MAX_CONNECTIONS` | Maximum WebSocket connections | `50` |
-| `JUNIPER_CASCOR_WS_HEARTBEAT_INTERVAL_SEC` | WebSocket heartbeat interval | `30` |
+| `JUNIPER_WS_HEARTBEAT_INTERVAL_SEC` | WebSocket heartbeat interval (`Settings` `AliasChoices` name -- **not** `JUNIPER_CASCOR_`-prefixed) | `30` |
+| `JUNIPER_WS_HEARTBEAT_PONG_TIMEOUT_SEC` | WebSocket heartbeat pong/liveness window (same `AliasChoices` binding) | `10` |
+| **Remote Workers** | | |
+| `JUNIPER_CASCOR_REMOTE_WORKERS_HEARTBEAT_TIMEOUT` | Worker heartbeat stale timeout (CONC-10 reap) | `30.0` |
+| `JUNIPER_CASCOR_REMOTE_WORKERS_TASK_REASSIGNMENT_TIMEOUT` | Fallback reassignment for orphaned in-flight tasks. Schema/tensor rejects and soft binary-frame aborts requeue immediately -- do not wait for this timeout on those paths. | `120.0` |
 | **Observability** | | |
 | `JUNIPER_CASCOR_SENTRY_DSN` | Sentry DSN for error tracking | `None` (disabled) |
 | `JUNIPER_CASCOR_METRICS_ENABLED` | Enable Prometheus metrics | `false` |
@@ -329,9 +333,9 @@ The juniper-cascor service exposes a versioned REST API at the `/v1/` prefix. Al
 
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
-| `POST` | `/v1/network` | Yes | Create new network with configuration |
+| `POST` | `/v1/network` | Yes | Create new network with configuration (409 while STARTED / PAUSED / REPLAYING / INVESTIGATING) |
 | `GET` | `/v1/network` | Yes | Get current network info |
-| `DELETE` | `/v1/network` | Yes | Delete current network |
+| `DELETE` | `/v1/network` | Yes | Delete current network (409 while STARTED / PAUSED / REPLAYING / INVESTIGATING) |
 | `GET` | `/v1/network/topology` | Yes | Network topology for visualization |
 | `GET` | `/v1/network/stats` | Yes | Weight statistics |
 
@@ -340,13 +344,17 @@ The juniper-cascor service exposes a versioned REST API at the `/v1/` prefix. Al
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
 | `POST` | `/v1/training/start` | Yes | Start training (inline data or dataset generator) |
-| `POST` | `/v1/training/stop` | Yes | Stop training |
+| `POST` | `/v1/training/stop` | Yes | Stop training (409 while INVESTIGATING / REPLAYING) |
 | `POST` | `/v1/training/pause` | Yes | Pause training |
 | `POST` | `/v1/training/resume` | Yes | Resume paused training |
 | `POST` | `/v1/training/reset` | Yes | Reset training state |
 | `GET` | `/v1/training/status` | Yes | Get current training status |
 | `GET` | `/v1/training/params` | Yes | Get training parameters |
-| `PATCH` | `/v1/training/params` | Yes | Update runtime parameters |
+| `PATCH` | `/v1/training/params` | Yes | Update runtime parameters (typed `InvalidCandidatePoolError` → 422, other `ValueError` → 404) |
+| `POST` | `/v1/training/dataset` | Yes | Stage canopy-dialect dataset config for next start |
+| `DELETE` | `/v1/training/dataset` | Yes | Cancel staged dataset config |
+| `GET` | `/v1/training/dataset/pending` | Yes | Read staged dataset config (or `null`) |
+| `POST` | `/v1/training/dataset/live` | Yes | In-flight live dataset swap (experimental gate) |
 
 ### Dataset & Visualization
 
@@ -387,7 +395,7 @@ The juniper-cascor service exposes a versioned REST API at the `/v1/` prefix. Al
 | `ResponseEnvelope` | `api.models.common` | Standard response wrapper (status, data, error) |
 | `ErrorResponse` | `api.models.common` | Error detail model |
 | `NetworkCreateRequest` | `api.models.network` | Network creation parameters |
-| `TrainingStartRequest` | `api.models.training` | Training start parameters (data source, config) |
+| `TrainingStartRequest` | `api.models.training` | Training start parameters (data source, config); nested `InlineDataset` rejects train/val length mismatches and half-specified val splits at the request boundary (`422`) |
 | `TrainingParamUpdateRequest` | `api.models.training` | Runtime parameter update |
 | `ReadinessResponse` | `api.models.health` | Readiness with dependency status |
 
@@ -402,7 +410,8 @@ Three WebSocket channels provide real-time communication.
 - **Direction**: Client to server
 - **Authentication**: X-API-Key header
 - **Purpose**: Send training commands (start, stop, pause, resume, reset)
-- **Message format**: JSON command messages
+- **Message format**: JSON command messages (must be a JSON **object**)
+- **Non-object JSON**: In-band `invalid_message` ack (`Invalid JSON: expected object`); the recv loop continues and the connection stays open (parity with `/ws/training`'s `isinstance(msg, dict)` guard). Malformed JSON (parse failure) still closes with `1003`.
 - **Handler**: `api.websocket.control_stream.control_stream_handler()`
 
 ### `/ws/training` -- Metrics Stream
@@ -426,6 +435,16 @@ Three WebSocket channels provide real-time communication.
 - Thread-safe broadcasting via `asyncio.run_coroutine_threadsafe()`
 - Connection lifecycle management with bounded limit (default: 50)
 - Automatic heartbeat/keepalive
+- `/ws/control` per-identity admission uses `ws_identity_key` (`src/api/websocket/manager.py`): a truncated (16-char) per-process HMAC-SHA256 of the **stripped** `X-API-Key`. Blank / whitespace-only keys return `None` (anonymous) so they cannot collapse onto one shared SEC-F19 D4b identity bucket -- those callers rely on the global and per-IP caps only.
+
+### Defensive numeric settings (`_numeric_setting`)
+
+`/ws/training` and `/ws/control` read heartbeat (and control idle) timeouts through `_numeric_setting(obj, name, fallback)` before `asyncio.sleep` / `asyncio.wait_for`.
+
+- Attributes: `ws_heartbeat_interval_sec`, `ws_heartbeat_pong_timeout_sec`, and (control only) `ws_control_idle_timeout_sec`.
+- Only real `int`/`float` values are accepted; `None`, missing attributes, strings, and `MagicMock` stubs fall back (`30` / `10` / the process `Settings.ws_control_idle_timeout_sec`, default `120`).
+- Prevents non-numeric leaks from raising `TypeError` and tearing down the heartbeat/idle loops when tests stub `app.state.settings`.
+- Details: [`docs/api/JUNIPER_CASCOR_API_REFERENCE.md`](docs/api/JUNIPER_CASCOR_API_REFERENCE.md) § Defensive numeric settings.
 
 ---
 
@@ -448,6 +467,10 @@ The lifecycle system coordinates network training through deterministic state tr
 
 The lifecycle manager wraps the network's training methods non-intrusively to emit events without modifying the core algorithm.
 
+**Staged dataset dialect** -- Canopy stages `dataset_type` values in its own dialect (`spirals` / `moons` / `xor`). `TrainingLifecycleManager._translate_staged_config` aliases them to juniper-data generator keys (`spiral` / `moon`) only at the `_reload_dataset` / live-swap fetch boundary, remaps sample counts (`n_points_per_spiral`, `n_points_per_quadrant`), clamps zero divisors, and strips spiral-only fields for non-spiral generators. Stored configs keep the canopy names.
+
+**C2b progress pairs** -- `output_epoch`/`output_total_epochs` and `candidate_epoch`/`candidate_total_epochs` are zeroed at run start (`_run_training`) and at growth-phase exit (the `training_end` handler after a grow), so UI bars never keep the previous pass's terminal values across those boundaries.
+
 ---
 
 ## Remote Worker System
@@ -465,27 +488,47 @@ Distributed candidate training via WebSocket workers.
 **Worker Lifecycle**:
 
 1. Worker connects via `/ws/v1/workers` with API key
-2. Worker registers with capabilities (CPU/GPU, pool size)
-3. Coordinator assigns candidate training tasks
-4. Worker returns results as binary numpy frames
-5. Heartbeat keepalive (default 30s timeout)
-6. Auto-deregistration on heartbeat timeout
-7. Task reassignment on worker failure (default 120s timeout)
+2. Worker sends `register` with `worker_id` + `capabilities` (CPU/GPU, pool size)
+3. Server validates `worker_id` against `^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$` (else close `4008`), stores it as `client_name`, and assigns `worker-<12 hex>` as the authoritative registry id (CR-026)
+4. Coordinator assigns candidate training tasks
+5. Worker returns `task_result` envelopes plus binary numpy frames; the typed parse requires `task_id` / `candidate_id` / `correlation` ∈ [0, 1] / `success` / `epochs_completed`, and rejects JSON `true`/`false` for the int/float fields (`isinstance(True, int)` is true in Python)
+6. Heartbeat keepalive (default 30s timeout)
+7. Auto-deregistration on heartbeat timeout
+8. Task reassignment on worker failure (default 120s timeout)
+9. Session teardown clears `AnomalyDetector` history for that `worker_id` (`clear_worker`) so reconnect churn cannot grow `_worker_history` without bound or let a recycled id inherit stale anomaly signals
+
+**Result ownership & tensor validation** (`WorkerCoordinator.submit_result` / `WorkerProtocol.validate_tensors`):
+
+- Only the worker recorded in `PendingTask.assigned_worker_id` may complete a task. A peer / stale / wrong `worker_id` is rejected (`False`); the task stays incomplete under the original assignee, and `registry.complete_task(worker_id, success=False)` is charged to the *submitting* worker.
+- A result for a task whose `assigned_worker_id` is `None` (the pre-dispatch / post-requeue window) is rejected **without** freeing the submitter's busy slot, so an unrelated active assignment is not wiped.
+- `validate_tensors` returns validation errors (does not raise) for non-dict manifest entries, missing `shape` / `dtype`, empty `weights` (`Tensor weights: empty array` instead of a zero-size `np.max`), shape/dtype mismatches, and NaN/Inf / magnitude violations -- keeping the WebSocket result path from crashing the coordinator session.
+
+**In-flight task recovery** (do not assume every failure waits 120s):
+
+- Schema (`validate_task_result`) or tensor-manifest rejects call `_reject_and_requeue_task`: the submitting worker is freed (`complete_task(..., success=False)`), `task.assigned_worker_id` is cleared, and the `task_id` is appended to `_unassigned_tasks` for immediate redispatch.
+- A soft `task_result` binary-frame abort (text instead of bytes, frame over 100 MB, or a `BinaryFrame.decode` `ValueError`) calls `abort_in_flight_result`, which frees the worker and requeues while the socket stays open -- heartbeats alone cannot recover this path, so CONC-10 stale-worker reaping never fires on it.
+- Receive-site guards reject non-object JSON and a malformed / over-32-entry `tensor_manifest` before binary receive; those early rejects return an in-band error only and do **not** requeue, so recovery still falls back to disconnect or the 120s reassignment timeout.
+- Heartbeat / stale-worker reaping (`_check_stale_workers`) fires after `JUNIPER_CASCOR_REMOTE_WORKERS_HEARTBEAT_TIMEOUT` (default 30s); the orphaned-assignment fallback (`_check_task_timeouts`) after `JUNIPER_CASCOR_REMOTE_WORKERS_TASK_REASSIGNMENT_TIMEOUT` (default 120s).
+- Details: [`docs/api/JUNIPER_CASCOR_API_REFERENCE.md`](docs/api/JUNIPER_CASCOR_API_REFERENCE.md) § WS `/ws/v1/workers`.
 
 ---
 
 ## Middleware Stack
 
-Middleware executes in LIFO order (last added = first executed):
+Registered in `src/api/app.py` via successive `app.add_middleware(...)` calls. Starlette/FastAPI middleware runs **LIFO** (last added = first executed), so the outer-to-inner request order when all layers are enabled is:
 
-| Order | Middleware | Module | Purpose |
-|-------|-----------|--------|---------|
-| 1 | `SecurityHeadersMiddleware` | `api.middleware` | CSP, HSTS, X-Frame-Options, etc. |
-| 2 | `RequestBodyLimitMiddleware` | `api.middleware` | 10MB request body limit |
+| Order (outer → inner) | Middleware | Module | Purpose |
+|-----------------------|-----------|--------|---------|
+| 1 | `RequestIdMiddleware` | `api.observability` | X-Request-ID propagation (always added last, so runs first) |
+| 2 | `PrometheusMiddleware` | `api.observability` | Metrics (only when `metrics_enabled`) |
 | 3 | `SecurityMiddleware` | `api.middleware` | API key auth + rate limiting (exempt paths) |
-| 4 | `PrometheusMiddleware` | `api.observability` | Metrics (if enabled) |
-| 5 | `RequestIdMiddleware` | `api.observability` | X-Request-ID propagation |
-| 6 | `CORSMiddleware` | FastAPI/Starlette | CORS headers (if configured) |
+| 4 | `SecurityHeadersMiddleware` | `api.middleware` | CSP, HSTS, X-Frame-Options, etc. |
+| 5 | `RequestBodyLimitMiddleware` | `api.middleware` | 10 MiB request body limit (CR-024 stream cap) |
+| 6 | `CORSMiddleware` | FastAPI/Starlette | CORS headers (only if origins are configured) |
+
+WebSocket upgrade requests are **not** intercepted by `BaseHTTPMiddleware`, so `/ws/*` paths skip the body-limit and security-middleware HTTP paths entirely; they use WebSocket auth and message validation instead.
+
+`RequestBodyLimitMiddleware` uses `Content-Length` only as an early-reject fast path. For `POST`/`PUT`/`PATCH` it must always stream-read with a cumulative byte cap so under-declared headers cannot bypass the limit (CR-024). Cap constant: `_PROJECT_API_MAX_REQUEST_BODY_BYTES`. Tests: `tests/unit/api/test_api_middleware.py::TestRequestBodyLimitMiddleware`.
 
 ---
 
@@ -507,13 +550,33 @@ Middleware executes in LIFO order (last added = first executed):
 
 ### Rate Limiting
 
-- Fixed-window per IP (thread-safe)
-- Default: 60 requests/minute when enabled
-- Exempt paths: health endpoints, metrics
+- Fixed-window (thread-safe); optional via `JUNIPER_CASCOR_RATE_LIMIT_ENABLED` (default off)
+- Default: 60 requests/minute when enabled (`JUNIPER_CASCOR_RATE_LIMIT_REQUESTS_PER_MINUTE`)
+- Keying: `key:<api_key>` when REST API-key auth succeeds; `ip:<client>` when auth is disabled (`API_KEYS` unset / `[]`)
+- Ordering: `SecurityMiddleware` authenticates **before** rate limiting -- a 401 never burns a budget slot
+- 429 responses carry `Retry-After` plus `X-RateLimit-Limit` / `-Remaining` / `-Reset`, preserved through the middleware's `JSONResponse` rebuild
+- Exempt paths (`EXEMPT_PATHS`): `/v1/health`, `/v1/health/live`, `/v1/health/ready`, `/docs`, `/openapi.json`, `/redoc`, `/metrics`, `/metrics/`
+
+### Request Body Limits (CR-024)
+
+- Default cap: 10 MiB (`_PROJECT_API_MAX_REQUEST_BODY_BYTES`)
+- Mutating methods only (`POST` / `PUT` / `PATCH`)
+- Oversized declared `Content-Length` → HTTP 413; invalid header → HTTP 400
+- Stream path always enforces the cumulative cap (do **not** gate on absent `Content-Length` -- that reopens the under-declared bypass)
+- Under-limit bodies are cached on `request._body` for downstream handlers (BUG-CC-15)
+- WebSocket upgrades are not covered by this middleware (`BaseHTTPMiddleware` skip)
 
 ### Security Headers
 
-CSP, HSTS, X-Frame-Options, X-Content-Type-Options, Referrer-Policy applied to all responses.
+`SecurityHeadersMiddleware` (`api.middleware`) injects on every HTTP response, including health probes:
+
+- `X-Content-Type-Options: nosniff`
+- `X-Frame-Options: DENY`
+- `Referrer-Policy: strict-origin-when-cross-origin`
+- `Permissions-Policy: camera=(), microphone=(), geolocation=()`
+- `Content-Security-Policy: default-src 'none'; frame-ancestors 'none'` (constructor override supported)
+
+HSTS (`Strict-Transport-Security: max-age=31536000; includeSubDomains`) is added **only** when the request carries `X-Forwarded-Proto: https`. A TLS terminator that does not forward that header will silently omit HSTS on an otherwise-HTTPS public URL.
 
 ### TLS
 
@@ -900,12 +963,18 @@ cd ../juniper-deploy && make up
 
 ### Service Launcher
 
-When running outside containers, juniper-cascor can auto-start companion services:
+When running outside containers, juniper-cascor can auto-start companion services (`src/api/service_launcher.py`):
 
 - `JUNIPER_CASCOR_AUTO_START_DATA_SERVICE=true` -- Start juniper-data
 - `JUNIPER_CASCOR_AUTO_START_CANOPY=true` -- Start juniper-canopy
 
 The launcher probes health endpoints before declaring readiness.
+
+**Failed-start cleanup** (fail-closed registry / FD hygiene):
+
+- `ManagedService.terminate` always closes the companion log handle in a `finally` (even when wait/kill raises).
+- Health-probe exceptions are treated as unhealthy; the subprocess is terminated and removed from `_active_services`.
+- If `terminate()` itself raises after a failed health check, the launcher still drops the stale `_active_services` entry (the removal is in a `finally`), so atexit / shutdown cannot chase an orphaned companion or leave port conflicts.
 
 ---
 
