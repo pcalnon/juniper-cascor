@@ -70,3 +70,33 @@ class TestDecisionBoundaryRoute:
         client.post("/v1/network", json={"input_size": 2, "output_size": 2})
         response = client.get("/v1/decision-boundary?resolution=300")
         assert response.status_code == 422
+
+    def test_decision_boundary_lifecycle_missing_returns_503(self, client):
+        """GET /v1/decision-boundary returns 503 when lifecycle is uninitialized."""
+        lifecycle = client.app.state.lifecycle
+        del client.app.state.lifecycle
+        try:
+            response = client.get("/v1/decision-boundary")
+            assert response.status_code == 503
+            body = response.json()
+            assert "Lifecycle manager not initialized" in body["error"]["message"]
+        finally:
+            client.app.state.lifecycle = lifecycle
+
+    def test_decision_boundary_compute_failure_returns_500(self, client):
+        """GET /v1/decision-boundary returns 500 when boundary computation yields None."""
+        client.post("/v1/network", json={"input_size": 2, "output_size": 2})
+        train_x = [[0.0, 0.0], [1.0, 1.0], [0.0, 1.0], [1.0, 0.0]]
+        train_y = [[1.0, 0.0], [0.0, 1.0], [1.0, 0.0], [0.0, 1.0]]
+        with patch.object(TrainingLifecycleManager, "_run_training"):
+            client.post(
+                "/v1/training/start",
+                json={"inline_data": {"train_x": train_x, "train_y": train_y}},
+            )
+        client.post("/v1/training/stop")
+        client.post("/v1/training/reset")
+
+        with patch.object(client.app.state.lifecycle, "get_decision_boundary", return_value=None):
+            response = client.get("/v1/decision-boundary?resolution=10")
+        assert response.status_code == 500
+        assert "Failed to compute decision boundary" in response.json()["error"]["message"]
