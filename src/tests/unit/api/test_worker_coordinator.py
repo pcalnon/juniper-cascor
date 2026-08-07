@@ -229,20 +229,14 @@ class TestSubmitResult:
         coordinator.get_next_assignment("w2")
 
         # Late arrival from the previous round — must not count toward round-new.
-        accepted_stale = coordinator.submit_result(
-            "w1", _make_result_msg(old_ids[0], candidate_id=0), _make_result_tensors()
-        )
+        accepted_stale = coordinator.submit_result("w1", _make_result_msg(old_ids[0], candidate_id=0), _make_result_tensors())
         assert accepted_stale is False
         assert len(coordinator._results) == 0
         assert not coordinator._results_ready.is_set()
 
         # Current-round results still accepted.
-        assert coordinator.submit_result(
-            "w1", _make_result_msg(new_ids[0], candidate_id=0), _make_result_tensors()
-        )
-        assert coordinator.submit_result(
-            "w2", _make_result_msg(new_ids[1], candidate_id=1), _make_result_tensors()
-        )
+        assert coordinator.submit_result("w1", _make_result_msg(new_ids[0], candidate_id=0), _make_result_tensors())
+        assert coordinator.submit_result("w2", _make_result_msg(new_ids[1], candidate_id=1), _make_result_tensors())
         assert coordinator._results_ready.is_set()
         results = coordinator.collect_results(timeout=1.0)
         assert {r.task_id for r in results} == set(new_ids)
@@ -269,15 +263,11 @@ class TestSubmitResult:
             assigned_worker_id="w1",
         )
 
-        accepted = coordinator.submit_result(
-            "w1", _make_result_msg(stale_id, candidate_id=99), _make_result_tensors()
-        )
+        accepted = coordinator.submit_result("w1", _make_result_msg(stale_id, candidate_id=99), _make_result_tensors())
         assert accepted is False
         assert stale_id not in coordinator._results
         # Current-round task still completable.
-        assert coordinator.submit_result(
-            "w1", _make_result_msg(new_ids[0], candidate_id=0), _make_result_tensors()
-        )
+        assert coordinator.submit_result("w1", _make_result_msg(new_ids[0], candidate_id=0), _make_result_tensors())
 
 
 @pytest.mark.unit
