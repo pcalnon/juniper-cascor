@@ -27,6 +27,10 @@ logger = logging.getLogger("juniper_cascor.api.websocket.worker_stream")
 
 _MAX_JSON_SIZE = 65536  # 64KB for JSON messages
 _MAX_BINARY_SIZE = 100 * 1024 * 1024  # 100MB for tensor frames
+# Mirror WorkerProtocol._MAX_TENSOR_MANIFEST_ENTRIES — keep the receive-site
+# guard local so a hostile worker cannot stall on binary frames before the
+# coordinator schema check runs.
+_MAX_TENSOR_MANIFEST_ENTRIES = 32
 
 
 async def worker_stream_handler(websocket: WebSocket) -> None:
@@ -189,6 +193,13 @@ async def _handle_registration(websocket: WebSocket, registry: WorkerRegistry) -
         await websocket.close(code=4006, reason="Invalid JSON")
         return None
 
+    # JSON null / arrays / scalars parse successfully but are not objects;
+    # calling ``.get`` would raise AttributeError and tear down the session.
+    if not isinstance(msg, dict):
+        await websocket.send_json(WorkerProtocol.build_error("Registration message must be a JSON object"))
+        await websocket.close(code=4008, reason="Invalid registration")
+        return None
+
     if msg.get("type") != MessageType.REGISTER:
         await websocket.send_json(WorkerProtocol.build_error("First message must be registration"))
         await websocket.close(code=4007, reason="Expected registration")
@@ -271,6 +282,12 @@ async def _message_loop(
                 await websocket.send_json(WorkerProtocol.build_error("Invalid JSON"))
                 continue
 
+            # Non-object JSON (null/array/scalar) must not reach ``msg.get`` —
+            # that AttributeError aborts the whole worker session.
+            if not isinstance(msg, dict):
+                await websocket.send_json(WorkerProtocol.build_error("Message must be a JSON object"))
+                continue
+
             msg_type = msg.get("type")
 
             if msg_type == MessageType.HEARTBEAT:
@@ -349,7 +366,28 @@ async def _handle_task_result(
     coordinator: WorkerCoordinator,
 ) -> None:
     """Handle a task_result message and its associated binary tensor frames."""
+    # ``.get(..., {})`` only substitutes when the key is absent — a present
+    # null/string/list would otherwise be iterated (TypeError / char-by-char
+    # receive loop) before any schema validation runs.
+    if "tensor_manifest" in msg and not isinstance(msg["tensor_manifest"], dict):
+        logger.error(
+            "Invalid tensor_manifest type from worker %s: %s",
+            worker_id,
+            type(msg["tensor_manifest"]).__name__,
+        )
+        await websocket.send_json(WorkerProtocol.build_error(f"tensor_manifest must be a JSON object, got {type(msg['tensor_manifest']).__name__}"))
+        return
+
     manifest = msg.get("tensor_manifest", {})
+    if len(manifest) > _MAX_TENSOR_MANIFEST_ENTRIES:
+        logger.error(
+            "tensor_manifest too large from worker %s: %d entries",
+            worker_id,
+            len(manifest),
+        )
+        await websocket.send_json(WorkerProtocol.build_error(f"tensor_manifest has too many entries: {len(manifest)} > {_MAX_TENSOR_MANIFEST_ENTRIES}"))
+        return
+
     tensors: dict = {}
 
     # Receive binary frames for each tensor in manifest order

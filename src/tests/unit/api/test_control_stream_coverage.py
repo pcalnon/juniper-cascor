@@ -154,6 +154,39 @@ class TestControlStreamLifecycleUnavailable:
         assert any("not available" in str(c) or "Lifecycle manager not available" in str(c) for c in calls)
 
 
+class TestControlStreamAdmissionReject:
+    """SEC-F19 D4: try_admit=False must fail closed before accept/release."""
+
+    @pytest.mark.unit
+    @pytest.mark.asyncio
+    async def test_try_admit_false_rejects_without_session(self):
+        """Over-cap admission returns early: no accept, no release_admission."""
+        ws = AsyncMock()
+        ws.headers = {"origin": "http://localhost:8050"}
+        ws.client = ("127.0.0.1", 12345)
+        app_state = MagicMock()
+        app_state.api_key_auth = None
+        app_state.lifecycle = MagicMock()
+
+        async def _reject_and_close(websocket, *, endpoint, identity=None):
+            await websocket.close(code=1013, reason="Maximum connections reached")
+            return False
+
+        app_state.ws_manager.try_admit = AsyncMock(side_effect=_reject_and_close)
+        app_state.ws_manager.release_admission = AsyncMock()
+        ws.app.state = app_state
+
+        with patch("api.websocket.control_stream._check_handshake_gates", new_callable=AsyncMock, return_value=True):
+            await control_stream_handler(ws)
+
+        app_state.ws_manager.try_admit.assert_awaited_once()
+        assert app_state.ws_manager.try_admit.await_args.kwargs["endpoint"] == "control"
+        ws.accept.assert_not_awaited()
+        app_state.ws_manager.release_admission.assert_not_awaited()
+        ws.close.assert_awaited_once()
+        assert ws.close.call_args[1]["code"] == 1013
+
+
 class TestExecuteCommandEdge:
 
     @pytest.mark.unit
@@ -435,3 +468,32 @@ class TestControlRecvLoop:
             timeout=2.0,
         )
         ws.close.assert_awaited_once_with(code=1003, reason="Malformed JSON")
+
+
+@pytest.mark.unit
+class TestNumericSetting:
+    """``_numeric_setting`` must never leak non-numeric stubs into wait_for/sleep."""
+
+    def test_real_number_is_returned(self):
+        from types import SimpleNamespace
+
+        assert cs._numeric_setting(SimpleNamespace(ws_control_idle_timeout_sec=45), "ws_control_idle_timeout_sec", 120) == 45
+        assert cs._numeric_setting(SimpleNamespace(ws_heartbeat_interval_sec=1.5), "ws_heartbeat_interval_sec", 30) == 1.5
+
+    def test_none_obj_or_missing_attr_uses_fallback(self):
+        from types import SimpleNamespace
+
+        assert cs._numeric_setting(None, "ws_control_idle_timeout_sec", 120) == 120
+        assert cs._numeric_setting(SimpleNamespace(), "ws_control_idle_timeout_sec", 120) == 120
+
+    def test_magicmock_stub_uses_fallback(self):
+        # MagicMock attribute lookups return MagicMock children — the exact
+        # double shape that used to leak into asyncio.wait_for and crash.
+        stub = MagicMock()
+        assert cs._numeric_setting(stub, "ws_control_idle_timeout_sec", 120) == 120
+        assert cs._numeric_setting(stub, "ws_heartbeat_interval_sec", 30) == 30
+
+    def test_string_value_uses_fallback(self):
+        from types import SimpleNamespace
+
+        assert cs._numeric_setting(SimpleNamespace(ws_control_idle_timeout_sec="120"), "ws_control_idle_timeout_sec", 99) == 99
