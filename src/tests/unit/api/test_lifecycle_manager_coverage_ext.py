@@ -200,6 +200,21 @@ class TestStartTrainingPendingReload:
         reload.assert_called_once()
         assert mgr._pending_dataset_config is None
 
+    def test_reload_failure_preserves_pending_config(self, mgr):
+        """If ``_reload_dataset`` raises, the staged config must survive so the
+        operator can fix juniper-data and Restart-and-retry without re-staging.
+
+        Mirrors the integration contract in ``test_pending_dataset.py`` but as a
+        fast unit test against the lifecycle method directly.
+        """
+        mgr.create_network(input_size=2, output_size=2)
+        staged = {"dataset_type": "spirals", "n_samples": 4}
+        mgr._pending_dataset_config = dict(staged)
+        with patch.object(mgr, "_reload_dataset", side_effect=RuntimeError("juniper-data down")):
+            with pytest.raises(RuntimeError, match="juniper-data down"):
+                mgr.start_training()
+        assert mgr._pending_dataset_config == staged
+
 
 class TestRunTrainingSessionGaugeGuards:
     """``_run_training`` session-active gauge inc/dec guards are defensive."""

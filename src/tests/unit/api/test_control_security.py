@@ -82,6 +82,18 @@ class TestLeakyBucket:
         bucket = LeakyBucket(capacity=5, refill_rate=5.0)
         assert bucket.retry_after == 0.0
 
+    def test_retry_after_zero_refill_rate_does_not_divide_by_zero(self):
+        """Misconfigured refill_rate=0 must not raise ZeroDivisionError on ack path.
+
+        Control stream rate-limit responses call ``bucket.retry_after`` after
+        ``try_acquire`` fails. A zero refill rate means tokens never recover;
+        return 0.0 (no finite wait estimate) instead of crashing the handler.
+        """
+        bucket = LeakyBucket(capacity=1, refill_rate=0.0)
+        assert bucket.try_acquire() is True
+        assert bucket.try_acquire() is False
+        assert bucket.retry_after == 0.0
+
     def test_response_not_close_connection(self):
         """Rate limit sends response but does NOT close the connection (§S8)."""
         bucket = LeakyBucket(capacity=1, refill_rate=1.0)

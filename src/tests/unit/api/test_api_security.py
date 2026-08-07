@@ -43,6 +43,22 @@ class TestAPIKeyAuth:
         assert not auth.validate("invalid-key")
         assert not auth.validate(None)
 
+    def test_validate_empty_string_key_is_invalid(self) -> None:
+        """Empty-string X-API-Key is present but must not authenticate.
+
+        Distinguishes blank credentials from a missing header (None): both
+        fail closed when auth is enabled, but only None is "Missing".
+        """
+        auth = APIKeyAuth(["valid-key"])
+        assert not auth.validate("")
+        assert not auth.validate("   ")
+
+    def test_validate_unequal_length_key_is_invalid(self) -> None:
+        """Unequal-length keys exercise hmac.compare_digest safely and fail."""
+        auth = APIKeyAuth(["valid-key"])
+        assert not auth.validate("short")
+        assert not auth.validate("valid-key-with-extra-suffix")
+
     def test_validate_uses_timing_safe_comparison(self) -> None:
         """Validate should use hmac.compare_digest for timing-safe comparison."""
         import hmac
@@ -94,6 +110,19 @@ class TestAPIKeyAuth:
             await auth(request)
         assert exc_info.value.status_code == 401
         assert "Invalid API key" in exc_info.value.detail
+
+    @pytest.mark.asyncio
+    async def test_call_raises_401_invalid_not_missing_for_empty_string(self) -> None:
+        """Present-but-blank X-API-Key must surface as Invalid, not Missing."""
+        auth = APIKeyAuth(["valid-key"])
+        request = MagicMock()
+        request.headers.get.return_value = ""
+
+        with pytest.raises(HTTPException) as exc_info:
+            await auth(request)
+        assert exc_info.value.status_code == 401
+        assert "Invalid API key" in exc_info.value.detail
+        assert "Missing" not in exc_info.value.detail
 
     @pytest.mark.asyncio
     async def test_call_returns_key_when_valid(self) -> None:
