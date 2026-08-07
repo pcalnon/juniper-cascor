@@ -346,9 +346,7 @@ class TestProgressPairReset:
 
             # Pin the pre-fit zeroing contract; post-fit terminal bookkeeping is
             # outside this regression's scope (and may emit optional metrics).
-            with patch.object(mgr.model, "fit", side_effect=_assert_zeroed_before_fit), patch(
-                "api.lifecycle.manager.inc_training_session_completed"
-            ), patch("api.lifecycle.manager.dec_training_sessions"):
+            with patch.object(mgr.model, "fit", side_effect=_assert_zeroed_before_fit), patch("api.lifecycle.manager.inc_training_session_completed"), patch("api.lifecycle.manager.dec_training_sessions"):
                 mgr._run_training(torch.randn(4, 2), torch.zeros(4, 2), None, None)
             assert seen["fit"] is True
         finally:
