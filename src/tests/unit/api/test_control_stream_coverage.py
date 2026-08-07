@@ -411,17 +411,9 @@ class TestControlRecvLoop:
         # pause command still dispatched.
         ws.close.assert_not_awaited()
         lifecycle.pause_training.assert_called_once()
-        error_acks = [
-            c.args[0]
-            for c in ws.send_json.await_args_list
-            if isinstance(c.args[0], dict) and c.args[0].get("type") == "command_response" and c.args[0].get("data", {}).get("status") == "error"
-        ]
+        error_acks = [c.args[0] for c in ws.send_json.await_args_list if isinstance(c.args[0], dict) and c.args[0].get("type") == "command_response" and c.args[0].get("data", {}).get("status") == "error"]
         # Envelope wraps payload under data=; also accept flat shapes if the
         # helper ever flattens in tests.
         if not error_acks:
-            error_acks = [
-                c.args[0]
-                for c in ws.send_json.await_args_list
-                if "Invalid JSON: expected object" in str(c) or "invalid_message" in str(c)
-            ]
+            error_acks = [c.args[0] for c in ws.send_json.await_args_list if "Invalid JSON: expected object" in str(c) or "invalid_message" in str(c)]
         assert error_acks, f"expected non-dict error ack; got {ws.send_json.await_args_list}"
