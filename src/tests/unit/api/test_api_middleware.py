@@ -139,6 +139,100 @@ class TestSecurityMiddleware:
         assert "/v1/network" not in EXEMPT_PATHS
 
 
+@pytest.mark.unit
+class TestSecurityMiddlewareAuthRateLimitInterplay:
+    """Auth-first + rate-limit keying contracts on SecurityMiddleware.
+
+    These pin the interplay that the happy-path middleware tests do not:
+    failed auth must not burn rate-limit budget, 429 must preserve Retry-After
+    headers through the middleware JSONResponse path, distinct API keys get
+    independent budgets, and exempt paths stay free under a saturated limiter.
+    """
+
+    def test_failed_auth_does_not_increment_rate_limit(self, app_with_middleware):
+        """Missing/invalid keys return 401 before RateLimiter.check runs.
+
+        Swapping auth/rate-limit order would let an attacker exhaust a shared
+        IP budget with forged keys, then lock out a legitimate principal.
+        """
+        app = app_with_middleware(api_keys=["secret"], rate_limit_enabled=True, rpm=2)
+        # Reach into the middleware instance to inspect counters after failed auth.
+        middleware = next(m for m in app.user_middleware if m.cls is SecurityMiddleware)
+        limiter: RateLimiter = middleware.kwargs["rate_limiter"]
+        client = TestClient(app)
+
+        for _ in range(5):
+            assert client.get("/v1/network").status_code == 401
+            assert client.get("/v1/network", headers={"X-API-Key": "wrong"}).status_code == 401
+
+        assert limiter._counters == {}, "failed auth must not create rate-limit counters"
+
+        # Legitimate key still has a full budget after the auth failures.
+        assert client.get("/v1/network", headers={"X-API-Key": "secret"}).status_code == 200
+        assert client.get("/v1/network", headers={"X-API-Key": "secret"}).status_code == 200
+        assert client.get("/v1/network", headers={"X-API-Key": "secret"}).status_code == 429
+
+    def test_valid_key_429_preserves_retry_after_headers(self, app_with_middleware):
+        """429 from RateLimiter must keep Retry-After / X-RateLimit-* on the wire.
+
+        SecurityMiddleware catches HTTPException and rebuilds JSONResponse —
+        dropping ``exc.headers`` would silently strip Retry-After for clients.
+        """
+        app = app_with_middleware(api_keys=["secret"], rate_limit_enabled=True, rpm=1)
+        client = TestClient(app)
+        headers = {"X-API-Key": "secret"}
+        assert client.get("/v1/network", headers=headers).status_code == 200
+        response = client.get("/v1/network", headers=headers)
+        assert response.status_code == 429
+        assert response.headers["X-RateLimit-Limit"] == "1"
+        assert response.headers["X-RateLimit-Remaining"] == "0"
+        assert "X-RateLimit-Reset" in response.headers
+        assert "Retry-After" in response.headers
+        assert "Rate limit exceeded" in response.json()["detail"]
+
+    def test_distinct_api_keys_have_independent_budgets(self, app_with_middleware):
+        """Rate limiting keys on the authenticated API key, not a shared IP bucket."""
+        app = app_with_middleware(api_keys=["key-a", "key-b"], rate_limit_enabled=True, rpm=1)
+        client = TestClient(app)
+
+        assert client.get("/v1/network", headers={"X-API-Key": "key-a"}).status_code == 200
+        assert client.get("/v1/network", headers={"X-API-Key": "key-a"}).status_code == 429
+        # key-b must still be admitted on the same client IP.
+        assert client.get("/v1/network", headers={"X-API-Key": "key-b"}).status_code == 200
+        assert client.get("/v1/network", headers={"X-API-Key": "key-b"}).status_code == 429
+
+    def test_auth_disabled_rate_limit_keys_by_ip(self, app_with_middleware):
+        """Open-auth + rate-limit-on falls back to ip:… keys (dev posture)."""
+        app = app_with_middleware(api_keys=None, rate_limit_enabled=True, rpm=2)
+        middleware = next(m for m in app.user_middleware if m.cls is SecurityMiddleware)
+        limiter: RateLimiter = middleware.kwargs["rate_limiter"]
+        client = TestClient(app)
+
+        assert client.get("/v1/network").status_code == 200
+        assert client.get("/v1/network").status_code == 200
+        assert client.get("/v1/network").status_code == 429
+        assert any(key.startswith("ip:") for key in limiter._counters), limiter._counters
+
+    def test_exempt_path_ignores_saturated_rate_limit(self, app_with_middleware):
+        """Health probes must stay reachable even after a non-exempt 429."""
+        app = app_with_middleware(api_keys=["secret"], rate_limit_enabled=True, rpm=1)
+        client = TestClient(app)
+        headers = {"X-API-Key": "secret"}
+
+        assert client.get("/v1/network", headers=headers).status_code == 200
+        assert client.get("/v1/network", headers=headers).status_code == 429
+        # Exempt path bypasses both auth and rate-limit entirely.
+        assert client.get("/v1/health").status_code == 200
+        assert client.get("/v1/health").status_code == 200
+
+    def test_empty_api_keys_list_disables_auth_like_none(self, app_with_middleware):
+        """api_keys=[] is open-access (same as None) — rate-limit still applies by IP."""
+        app = app_with_middleware(api_keys=[], rate_limit_enabled=True, rpm=1)
+        client = TestClient(app)
+        assert client.get("/v1/network").status_code == 200
+        assert client.get("/v1/network").status_code == 429
+
+
 @pytest.fixture
 def body_limit_app():
     """Create a FastAPI app with a tiny body limit for testing (CR-024)."""
