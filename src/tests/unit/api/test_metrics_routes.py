@@ -93,3 +93,27 @@ class TestTransportEndpoint:
             assert data["bytes_sent_total"] > 0
             assert data["messages_sent_by_type"]["connection_established"] >= 1
             assert data["messages_sent_by_type"]["initial_metrics"] >= 1
+
+    def test_transport_endpoint_503_when_ws_manager_missing(self, client):
+        """GET /v1/metrics/transport returns 503 when ws_manager is uninitialized."""
+        client.app.state.ws_manager = None
+        response = client.get("/v1/metrics/transport")
+        assert response.status_code == 503
+        assert "WebSocket manager not initialized" in response.json()["error"]["message"]
+
+
+@pytest.mark.unit
+class TestMetricsRoutesUninitialized:
+    """Defensive 503 branches when lifespan state is incomplete."""
+
+    def test_get_metrics_503_when_lifecycle_missing(self, client):
+        client.app.state.lifecycle = None
+        response = client.get("/v1/metrics")
+        assert response.status_code == 503
+        assert "Lifecycle manager not initialized" in response.json()["error"]["message"]
+
+    def test_get_metrics_history_503_when_lifecycle_missing(self, client):
+        client.app.state.lifecycle = None
+        response = client.get("/v1/metrics/history")
+        assert response.status_code == 503
+        assert "Lifecycle manager not initialized" in response.json()["error"]["message"]
