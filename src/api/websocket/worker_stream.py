@@ -359,11 +359,7 @@ async def _handle_task_result(
             worker_id,
             type(msg["tensor_manifest"]).__name__,
         )
-        await websocket.send_json(
-            WorkerProtocol.build_error(
-                f"tensor_manifest must be a JSON object, got {type(msg['tensor_manifest']).__name__}"
-            )
-        )
+        await websocket.send_json(WorkerProtocol.build_error(f"tensor_manifest must be a JSON object, got {type(msg['tensor_manifest']).__name__}"))
         return
 
     manifest = msg.get("tensor_manifest", {})
@@ -373,11 +369,7 @@ async def _handle_task_result(
             worker_id,
             len(manifest),
         )
-        await websocket.send_json(
-            WorkerProtocol.build_error(
-                f"tensor_manifest has too many entries: {len(manifest)} > {_MAX_TENSOR_MANIFEST_ENTRIES}"
-            )
-        )
+        await websocket.send_json(WorkerProtocol.build_error(f"tensor_manifest has too many entries: {len(manifest)} > {_MAX_TENSOR_MANIFEST_ENTRIES}"))
         return
 
     tensors: dict = {}
