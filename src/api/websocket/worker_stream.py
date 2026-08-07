@@ -352,6 +352,22 @@ async def _message_loop(
             logger.warning("Unexpected binary frame from worker %s (outside result sequence)", worker_id)
 
 
+async def _abort_soft_result_frame(
+    websocket: WebSocket,
+    worker_id: str,
+    msg: dict,
+    coordinator: WorkerCoordinator,
+    error: str,
+) -> None:
+    """Send a soft-abort error and free/requeue the in-flight task.
+
+    Soft aborts leave the WebSocket open; without an immediate requeue the
+    worker stays busy and the task waits for ``_task_reassignment_timeout``.
+    """
+    await websocket.send_json(WorkerProtocol.build_error(error))
+    coordinator.abort_in_flight_result(worker_id, msg.get("task_id"))
+
+
 async def _handle_task_result(
     websocket: WebSocket,
     worker_id: str,
@@ -388,20 +404,32 @@ async def _handle_task_result(
         frame_msg = await websocket.receive()
         if "bytes" not in frame_msg:
             logger.error("Expected binary frame for tensor %s, got text from worker %s", tensor_name, worker_id)
-            await websocket.send_json(WorkerProtocol.build_error(f"Expected binary frame for tensor: {tensor_name}"))
+            await _abort_soft_result_frame(
+                websocket,
+                worker_id,
+                msg,
+                coordinator,
+                f"Expected binary frame for tensor: {tensor_name}",
+            )
             return
 
         raw_bytes = frame_msg["bytes"]
         if len(raw_bytes) > _MAX_BINARY_SIZE:
             logger.error("Binary frame for %s exceeds size limit from worker %s", tensor_name, worker_id)
-            await websocket.send_json(WorkerProtocol.build_error("Binary frame too large"))
+            await _abort_soft_result_frame(websocket, worker_id, msg, coordinator, "Binary frame too large")
             return
 
         try:
             tensors[tensor_name] = BinaryFrame.decode(raw_bytes)
         except ValueError as e:
             logger.error("Failed to decode binary frame for %s from worker %s: %s", tensor_name, worker_id, e)
-            await websocket.send_json(WorkerProtocol.build_error(f"Invalid binary frame for {tensor_name}: {e}"))
+            await _abort_soft_result_frame(
+                websocket,
+                worker_id,
+                msg,
+                coordinator,
+                f"Invalid binary frame for {tensor_name}: {e}",
+            )
             return
 
     # Submit the result to the coordinator

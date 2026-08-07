@@ -344,6 +344,13 @@ async def _control_recv_loop(
             await websocket.close(code=1003, reason="Malformed JSON")
             return
 
+        # Non-object JSON (arrays, numbers, strings, null) is a client error —
+        # keep the session open rather than AttributeError-killing the recv loop
+        # on ``msg.get(...)``. Parity with /ws/training's isinstance(dict) guard.
+        if not isinstance(msg, dict):
+            await websocket.send_json(create_control_ack_message("unknown", "error", error="Invalid JSON: expected object", code="invalid_message"))
+            continue
+
         if msg.get("type") == "pong":
             pong_received.set()
             continue

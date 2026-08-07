@@ -1496,8 +1496,14 @@ class TrainingLifecycleManager:
         from cascade_correlation.cascade_correlation import CascadeCorrelationNetwork
         from cascade_correlation.cascade_correlation_config.cascade_correlation_config import CascadeCorrelationConfig
 
-        if self.state_machine.is_started():
+        # Reject while STARTED (active fit), PAUSED (parked training thread still
+        # owns the network), or REPLAYING (history playback session). Replacing
+        # the model in those states races the parked/replay thread and corrupts
+        # status surfaces.
+        if self.state_machine.is_started() or self.state_machine.is_paused():
             raise RuntimeError("Cannot create network while training is active")
+        if self.state_machine.is_replaying():
+            raise RuntimeError("Cannot create network while replay is active")
         # INVESTIGATING owns an inspected snapshot model (patch_weights /
         # add_hidden_unit_manual / retrain). Replacing it in-place leaves the
         # FSM Investigating against a brand-new network that is not the
@@ -1540,8 +1546,14 @@ class TrainingLifecycleManager:
     def delete_network(self) -> None:
         """Delete the current network."""
         with self._lock:
-            if self.state_machine.is_started():
+            # Mirror create_network: PAUSED keeps a parked training thread that
+            # still references ``self.model``; REPLAYING owns a replay session.
+            # Clearing the model under either state leaves dangling futures /
+            # orphaned replay workers without event/session cleanup.
+            if self.state_machine.is_started() or self.state_machine.is_paused():
                 raise RuntimeError("Cannot delete network while training is active")
+            if self.state_machine.is_replaying():
+                raise RuntimeError("Cannot delete network while replay is active")
             # Mirror create_network: INVESTIGATING still owns the inspected
             # snapshot model for patch/retrain flows. Clearing it under that
             # state strands the FSM Investigating with no model.

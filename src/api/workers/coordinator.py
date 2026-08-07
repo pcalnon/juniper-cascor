@@ -184,6 +184,40 @@ class WorkerCoordinator:
                 self._registry.deregister(worker_id)
         self.unregister_send_callback(worker_id)
 
+    def abort_in_flight_result(self, worker_id: str, task_id: str | None = None) -> None:
+        """Free the worker and immediately requeue after a soft result-frame abort.
+
+        Called from ``_handle_task_result`` when the connection stays open but
+        a binary tensor frame is aborted (text instead of bytes, oversized, or
+        decode failure). Distinct from clean WebSocket disconnect requeue and
+        from schema/tensor reject inside :meth:`submit_result`: without this,
+        the worker remains busy *and* the task waits for
+        ``_task_reassignment_timeout`` (default 120s) while the worker keeps
+        heartbeating — so CONC-10 stale-worker reaping will not recover it.
+        """
+        with self._lock:
+            if task_id is None:
+                current = self._registry.get(worker_id)
+                task_id = current.active_task_id if current is not None else None
+
+            self._registry.complete_task(worker_id, success=False)
+
+            if task_id is None:
+                return
+
+            task = self._pending_tasks.get(task_id)
+            if task is None or task.completed:
+                return
+            if task.task_id not in self._unassigned_tasks:
+                task.assigned_worker_id = None
+                task.dispatched_at = time.time()
+                self._unassigned_tasks.append(task.task_id)
+                logger.info(
+                    "Task %s requeued after soft result-frame abort from worker %s",
+                    task.task_id,
+                    worker_id,
+                )
+
     def submit_tasks(
         self,
         round_id: str,
