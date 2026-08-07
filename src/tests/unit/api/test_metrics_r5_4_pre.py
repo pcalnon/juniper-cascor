@@ -444,16 +444,31 @@ class TestPendingTasksGaugeAudit_4_2:
         The coordinator's full ``submit_tasks`` flow requires a round-id
         and websocket dispatch; for a unit test we inject directly into
         ``_pending_tasks`` under the lock to avoid the integration
-        surface. The accessor doesn't care about task shape, only count.
+        surface. ``pending_tasks_count()`` only reads the dict size, but
+        ``cancel_round()`` walks the entries to release registry busy-state,
+        so the stand-in must expose the real task surface rather than a bare
+        ``object()``.
         """
         from api.workers.coordinator import WorkerCoordinator
         from api.workers.registry import WorkerRegistry
+
+        class _PendingTaskStub:
+            """Minimal stand-in for ``coordinator.PendingTask``.
+
+            Models the attributes the coordinator reads off a pending entry,
+            with the same defaults as the real dataclass — a freshly submitted
+            task is unassigned and not yet complete.
+            """
+
+            def __init__(self) -> None:
+                self.assigned_worker_id = None
+                self.completed = False
 
         reg = WorkerRegistry(heartbeat_timeout=30.0)
         coord = WorkerCoordinator(registry=reg)
         with coord._lock:  # noqa: SLF001 — test poke under the same lock
             for i in range(n):
-                coord._pending_tasks[f"task-{i}"] = object()  # type: ignore[assignment]
+                coord._pending_tasks[f"task-{i}"] = _PendingTaskStub()  # type: ignore[assignment]
         return coord, reg
 
     def test_pending_tasks_count_returns_dict_size(self):

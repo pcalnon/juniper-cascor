@@ -169,6 +169,20 @@ class TestGracefulDegradation:
         assert result["roc_auc"] is None
         assert result["undefined"]["roc_auc"] == "invalid_output"
 
+    def test_inf_in_target(self):
+        """Inf in the *target* tensor must degrade the same as Inf in output.
+
+        Production checks ``isfinite`` on both tensors; only Inf-in-output was
+        pinned previously — a NaN/Inf label from a corrupted eval split must not
+        emit a misleading numeric F1/AUC.
+        """
+        output = torch.tensor([[0.9], [0.2]])
+        target = torch.tensor([[float("inf")], [0.0]])
+        result = compute_scalar_classification_metrics(output, target)
+        for key in METRIC_KEYS:
+            assert result[key] is None, key
+            assert result["undefined"][key] == "invalid_output"
+
     def test_nan_target(self):
         """NaN in the *target* (not just output) is invalid_output for every scalar."""
         output = torch.tensor([[0.9], [0.2]])
@@ -209,6 +223,43 @@ class TestGracefulDegradation:
         assert _approx(result["recall"], 2.0 / 3.0)
         assert _approx(result["f1"], (2.0 / 3.0 + 1.0 + 0.0) / 3.0)
         assert result["undefined"] == {}
+
+
+@pytest.mark.unit
+class TestWeightedNeverTrueClass:
+    """Weighted average when a column has zero support (never present in target)."""
+
+    def test_weighted_ignores_zero_support_class(self):
+        """A never-true class (support=0) must not poison the weighted aggregate.
+
+        3-class one-hot where class 2 never appears in ``y_true``. Macro still
+        averages over all 3 columns (zero_division=0 for that class); weighted
+        must divide only by the positive support total.
+        """
+        # rows: class0, class1, class0, class1 — class2 never true
+        output = torch.tensor(
+            [
+                [3.0, 0.0, 0.0],
+                [0.0, 3.0, 0.0],
+                [3.0, 0.0, 0.0],
+                [0.0, 3.0, 1.0],
+            ]
+        )
+        target = torch.tensor(
+            [
+                [1.0, 0.0, 0.0],
+                [0.0, 1.0, 0.0],
+                [1.0, 0.0, 0.0],
+                [0.0, 1.0, 0.0],
+            ]
+        )
+        result = compute_scalar_classification_metrics(output, target, average="weighted")
+        assert result["average"] == "weighted"
+        # Perfect on the two present classes; class2 support=0 contributes nothing.
+        assert _approx(result["precision"], 1.0)
+        assert _approx(result["recall"], 1.0)
+        assert _approx(result["f1"], 1.0)
+        assert result["n_classes"] == 3
 
 
 @pytest.mark.unit

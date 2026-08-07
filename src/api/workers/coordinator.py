@@ -546,8 +546,23 @@ class WorkerCoordinator:
             return len(self._pending_tasks)
 
     def cancel_round(self) -> None:
-        """Cancel the current round and clear all pending tasks."""
+        """Cancel the current round and clear all pending tasks.
+
+        Also frees any registry ``active_task_id`` left from assignments in
+        this round. Without that release, ``assign_task`` keeps returning
+        False for the worker (busy), ``get_next_assignment`` refuses new
+        work, and ``_check_task_timeouts`` cannot help because pending
+        tracking was already cleared — permanently stuck capacity until
+        the worker reconnects.
+        """
         with self._lock:
+            # Capture workers that still hold an in-flight assignment before
+            # dropping coordinator tracking so we can free the registry.
+            busy_worker_ids: list[str] = []
+            for task in self._pending_tasks.values():
+                if task.assigned_worker_id is not None and not task.completed:
+                    busy_worker_ids.append(task.assigned_worker_id)
+
             self._pending_tasks.clear()
             self._unassigned_tasks.clear()
             self._results.clear()
@@ -555,6 +570,11 @@ class WorkerCoordinator:
             self._current_round_id = None
             self._current_round_task_count = 0
             self._results_ready.set()  # Unblock any waiting thread
+
+            for worker_id in busy_worker_ids:
+                # success=False: the task was aborted, not completed.
+                self._registry.complete_task(worker_id, success=False)
+
             logger.info("Current round cancelled")
 
     def shutdown(self) -> None:

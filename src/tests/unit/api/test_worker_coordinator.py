@@ -422,6 +422,27 @@ class TestCancelRound:
         assert coordinator.has_pending_tasks() is False
         assert coordinator._current_round_id is None
 
+    def test_cancel_frees_registry_active_task(self, coordinator, registry):
+        """cancel_round must clear registry active_task_id so the worker is idle again.
+
+        Regression: clearing only coordinator pending left ``active_task_id`` set,
+        so ``get_next_assignment`` forever refused (assign_task → False) and
+        ``_check_task_timeouts`` could not reclaim capacity (pending already gone).
+        """
+        registry.register("w1", {})
+        coordinator.submit_tasks("round-1", _make_task_specs(1), _make_tensors())
+        assert coordinator.get_next_assignment("w1") is not None
+        assert registry.get("w1").active_task_id is not None
+        assert registry.get("w1").idle is False
+
+        coordinator.cancel_round()
+
+        assert registry.get("w1").active_task_id is None
+        assert registry.get("w1").idle is True
+        # Worker can accept a fresh round without waiting for reconnect.
+        coordinator.submit_tasks("round-2", _make_task_specs(1), _make_tensors())
+        assert coordinator.get_next_assignment("w1") is not None
+
 
 @pytest.mark.unit
 class TestHealthMonitor:
