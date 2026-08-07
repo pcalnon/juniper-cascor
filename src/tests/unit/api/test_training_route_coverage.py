@@ -123,11 +123,13 @@ class TestStartTraining:
         assert body["data"]["status"] == "training_started"
 
     def test_start_training_unsupported_generator_rejected(self, client_with_network):
-        """Non-spiral dataset.generator must not silently succeed as spiral / empty start.
+        """W-1: a non-spiral dataset.generator is rejected 422 at the request boundary.
 
-        The route currently only materializes ``generator == "spiral"``. A request
-        for ``xor`` (accepted by the request model) with no staged data must fail
-        clearly and must not invoke the spiral generator.
+        Pre-W-1 the route materialized only ``generator == "spiral"`` and silently
+        IGNORED every other value, so this request fell through to a downstream 409
+        only because the fixture holds no staged/retained data. Post-W-1 the route
+        rejects it up front with guidance naming the staging endpoint, and the
+        spiral generator is never invoked.
         """
         with patch("api.routes.training._generate_spiral_data") as spiral_gen:
             response = client_with_network.post(
@@ -140,10 +142,56 @@ class TestStartTraining:
                     "epochs": 1,
                 },
             )
-        assert response.status_code == 409
+        assert response.status_code == 422
         detail = response.json()["error"]["message"]
-        assert "Training cannot be started" in detail
+        assert "not supported" in detail
+        assert "/v1/training/dataset" in detail
         spiral_gen.assert_not_called()
+
+    def test_start_training_nonspiral_rejected_even_with_retained_data(self, client_with_network):
+        """W-1's sharp arm: the silent-wrong-data class is closed.
+
+        Seed the lifecycle with retained inline data (a completed start), then post a
+        start naming ``generator: "xor"``. Pre-W-1 the generator was silently dropped
+        and training STARTED on the retained inline data — succeeding on the wrong
+        dataset. Post-W-1 the request 422s before the lifecycle is touched and no new
+        training run begins.
+        """
+        seed = client_with_network.post(
+            "/v1/training/start",
+            json={
+                "inline_data": {
+                    "train_x": [[0.1, 0.2], [0.3, 0.4], [0.5, 0.6], [0.7, 0.8]],
+                    "train_y": [[1.0, 0.0], [0.0, 1.0], [1.0, 0.0], [0.0, 1.0]],
+                },
+                "epochs": 1,
+            },
+        )
+        assert seed.status_code == 200
+        client_with_network.post("/v1/training/stop")
+
+        response = client_with_network.post(
+            "/v1/training/start",
+            json={
+                "dataset": {"generator": "xor", "params": {"n_samples": 20}},
+                "epochs": 1,
+            },
+        )
+        assert response.status_code == 422
+        assert "/v1/training/dataset" in response.json()["error"]["message"]
+        status = client_with_network.get("/v1/training/status").json()["data"]
+        assert status["training_active"] is False
+
+    def test_start_training_generator_none_keeps_prior_meaning(self, client_with_network):
+        """W-1 scope guard: ``dataset`` present with ``generator: null`` is NOT the
+        rejected class — it keeps its pre-W-1 fall-through (no generator requested,
+        inline/staged/retained data decide; here none exists, so the downstream 409)."""
+        response = client_with_network.post(
+            "/v1/training/start",
+            json={"dataset": {"source": "juniper-data", "params": {}}, "epochs": 1},
+        )
+        assert response.status_code == 409
+        assert "Training cannot be started" in response.json()["error"]["message"]
 
     def test_start_training_with_params(self, client_with_network):
         """start_training should accept training parameter overrides."""

@@ -75,6 +75,21 @@ async def start_training(request: Request, body: TrainingStartRequest = None) ->
                 y_val = torch.tensor(body.inline_data.val_y, dtype=torch.float32)
 
         # Handle dataset source (juniper-data generator)
+        # W-1 (CLI experimentation plan §11 / risk R-3): only the in-process
+        # ``spiral`` fallback is materialized on this route; every other
+        # generator value was previously IGNORED with no error, so a start
+        # carrying e.g. ``xor`` trained on whatever data was already staged or
+        # retained — the silent-wrong-data class. Reject non-spiral generators
+        # at the request boundary with guidance to the staging endpoint, which
+        # fetches the dataset from juniper-data and applies it at the next
+        # start (the path the canopy staging flow and the experiment driver's
+        # G-6 arm already use). ``generator is None`` keeps its prior meaning
+        # (no generator requested — inline/staged/retained data decide).
+        if body.dataset is not None and body.dataset.generator not in (None, "spiral"):
+            raise HTTPException(
+                status_code=422,
+                detail=(f"dataset.generator '{body.dataset.generator}' is not supported on POST /v1/training/start — " "only the in-process 'spiral' fallback is materialized here. Stage the dataset instead: " 'POST /v1/training/dataset with {"dataset_type": ..., "params": {...}}, then start training ' "(the staged config is fetched from juniper-data and applied at the next start; " "see GET /v1/training/dataset/pending)."),
+            )
         if body.dataset is not None and body.dataset.generator == "spiral":
             x, y = _generate_spiral_data(body.dataset.params or {})
 
