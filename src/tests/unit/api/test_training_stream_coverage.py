@@ -25,6 +25,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from fastapi import WebSocketDisconnect
 
+import api.websocket.training_stream as ts
 from api.websocket.manager import ReplayOutOfRange
 from api.websocket.training_stream import (
     _await_resume_frame,
@@ -284,3 +285,30 @@ class TestHandleResumeArms:
 
         # The resume still succeeds despite both emitters raising.
         assert result is True
+
+
+@pytest.mark.unit
+class TestNumericSetting:
+    """``_numeric_setting`` must never leak non-numeric stubs into wait_for/sleep."""
+
+    def test_real_number_is_returned(self):
+        from types import SimpleNamespace
+
+        assert ts._numeric_setting(SimpleNamespace(ws_heartbeat_interval_sec=12), "ws_heartbeat_interval_sec", 30) == 12
+        assert ts._numeric_setting(SimpleNamespace(ws_resume_handshake_timeout_s=2.5), "ws_resume_handshake_timeout_s", 5.0) == 2.5
+
+    def test_none_obj_or_missing_attr_uses_fallback(self):
+        from types import SimpleNamespace
+
+        assert ts._numeric_setting(None, "ws_heartbeat_interval_sec", 30) == 30
+        assert ts._numeric_setting(SimpleNamespace(), "ws_heartbeat_interval_sec", 30) == 30
+
+    def test_magicmock_stub_uses_fallback(self):
+        stub = MagicMock()
+        assert ts._numeric_setting(stub, "ws_heartbeat_interval_sec", 30) == 30
+        assert ts._numeric_setting(stub, "ws_resume_handshake_timeout_s", 5.0) == 5.0
+
+    def test_string_value_uses_fallback(self):
+        from types import SimpleNamespace
+
+        assert ts._numeric_setting(SimpleNamespace(ws_heartbeat_interval_sec="30"), "ws_heartbeat_interval_sec", 7) == 7
