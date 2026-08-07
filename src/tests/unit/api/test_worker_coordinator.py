@@ -470,3 +470,71 @@ class TestSendCallbacks:
         assert "w1" in coordinator._send_callbacks
         coordinator.unregister_send_callback("w1")
         assert "w1" not in coordinator._send_callbacks
+
+
+@pytest.mark.unit
+class TestHandleWorkerDisconnect:
+    """Clean disconnect must requeue in-flight work immediately (not wait timeout)."""
+
+    def test_disconnect_with_active_task_requeues_immediately(self, coordinator, registry):
+        """Active task returns to the unassigned queue on clean disconnect."""
+        registry.register("w1", {})
+        registry.register("w2", {})
+        task_ids = coordinator.submit_tasks("round-1", _make_task_specs(1), _make_tensors())
+        coordinator.register_send_callback("w1", MagicMock())
+        coordinator.get_next_assignment("w1")
+
+        assert coordinator.has_pending_tasks() is False
+        assert registry.get("w1").active_task_id == task_ids[0]
+
+        coordinator.handle_worker_disconnect("w1")
+
+        assert registry.get("w1") is None
+        assert "w1" not in coordinator._send_callbacks
+        assert coordinator.has_pending_tasks() is True
+        assert task_ids[0] in coordinator._unassigned_tasks
+        assert coordinator._pending_tasks[task_ids[0]].assigned_worker_id is None
+
+        # Peer can pick the requeued task without waiting for reassignment timeout.
+        assignment = coordinator.get_next_assignment("w2")
+        assert assignment is not None
+        assert assignment[0]["task_id"] == task_ids[0]
+
+    def test_disconnect_without_active_task_only_deregisters(self, coordinator, registry):
+        """Idle disconnect still deregisters and drops the send callback."""
+        registry.register("w1", {})
+        coordinator.register_send_callback("w1", MagicMock())
+        coordinator.submit_tasks("round-1", _make_task_specs(1), _make_tensors())
+
+        coordinator.handle_worker_disconnect("w1")
+
+        assert registry.get("w1") is None
+        assert "w1" not in coordinator._send_callbacks
+        # Unassigned task remains available for other workers.
+        assert coordinator.has_pending_tasks() is True
+
+    def test_disconnect_unknown_worker_is_noop(self, coordinator, registry):
+        """Unknown worker_id does not raise and does not mutate the queue."""
+        registry.register("w1", {})
+        task_ids = coordinator.submit_tasks("round-1", _make_task_specs(1), _make_tensors())
+        coordinator.get_next_assignment("w1")
+        before = list(coordinator._unassigned_tasks)
+
+        coordinator.handle_worker_disconnect("missing")
+
+        assert list(coordinator._unassigned_tasks) == before
+        assert registry.get("w1") is not None
+        assert coordinator._pending_tasks[task_ids[0]].assigned_worker_id == "w1"
+
+    def test_disconnect_idempotent_when_task_already_unassigned(self, coordinator, registry):
+        """Second disconnect after requeue does not duplicate the unassigned entry."""
+        registry.register("w1", {})
+        task_ids = coordinator.submit_tasks("round-1", _make_task_specs(1), _make_tensors())
+        coordinator.get_next_assignment("w1")
+
+        coordinator.handle_worker_disconnect("w1")
+        assert coordinator._unassigned_tasks.count(task_ids[0]) == 1
+
+        # Worker already gone — second call is a no-op.
+        coordinator.handle_worker_disconnect("w1")
+        assert coordinator._unassigned_tasks.count(task_ids[0]) == 1

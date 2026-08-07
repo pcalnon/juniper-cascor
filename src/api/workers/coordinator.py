@@ -150,6 +150,40 @@ class WorkerCoordinator:
         with self._lock:
             self._send_callbacks.pop(worker_id, None)
 
+    def handle_worker_disconnect(self, worker_id: str) -> None:
+        """Requeue any in-flight task and drop the worker on clean disconnect.
+
+        Called from the WebSocket handler ``finally`` when the socket closes
+        (including mid-binary-frame result receive). Distinct from
+        :meth:`_check_stale_workers` (heartbeat-timeout path) and from
+        schema/tensor reject-requeue in :meth:`submit_result`: without this,
+        a clean disconnect leaves ``assigned_worker_id`` set while
+        ``registry.deregister`` drops the worker, so the task sits orphaned
+        until ``_task_reassignment_timeout`` (default 120s).
+
+        Holds ``self._lock`` across requeue + deregister so a concurrent
+        :meth:`get_next_assignment` cannot land a new task on a worker that
+        is about to disappear (same lock discipline as CONC-10).
+        """
+        with self._lock:
+            current = self._registry.get(worker_id)
+            if current is not None:
+                active_task_id = current.active_task_id
+                if active_task_id is not None:
+                    task = self._pending_tasks.get(active_task_id)
+                    if task is not None and not task.completed:
+                        if active_task_id not in self._unassigned_tasks:
+                            task.assigned_worker_id = None
+                            task.dispatched_at = time.time()
+                            self._unassigned_tasks.append(active_task_id)
+                            logger.info(
+                                "Task %s requeued after worker %s disconnect",
+                                active_task_id,
+                                worker_id,
+                            )
+                self._registry.deregister(worker_id)
+        self.unregister_send_callback(worker_id)
+
     def abort_in_flight_result(self, worker_id: str, task_id: str | None = None) -> None:
         """Free the worker and immediately requeue after a soft result-frame abort.
 
