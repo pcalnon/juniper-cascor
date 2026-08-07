@@ -183,6 +183,47 @@ class TestGracefulDegradation:
             assert result[key] is None, key
             assert result["undefined"][key] == "invalid_output"
 
+    def test_nan_target(self):
+        """NaN in the *target* (not just output) is invalid_output for every scalar."""
+        output = torch.tensor([[0.9], [0.2]])
+        target = torch.tensor([[float("nan")], [0.0]])
+        result = compute_scalar_classification_metrics(output, target)
+        for key in METRIC_KEYS:
+            assert result[key] is None, key
+            assert result["undefined"][key] == "invalid_output"
+
+    def test_never_predicted_class_does_not_undefine_aggregates(self):
+        """A class present in y_true but never predicted contributes 0 via zero_division=0.
+
+        Macro aggregates stay defined; the undefined map must not treat this as
+        single_class / invalid_output (the C7 contract for per-class gaps).
+        """
+        # y_pred = [0,1,0,1]; y_true = [0,1,2,1] — class 2 never predicted.
+        output = torch.tensor(
+            [
+                [3.0, 0.0, 0.0],
+                [0.0, 3.0, 0.0],
+                [3.0, 0.0, 0.0],
+                [0.0, 3.0, 0.0],
+            ]
+        )
+        target = torch.tensor(
+            [
+                [1.0, 0.0, 0.0],
+                [0.0, 1.0, 0.0],
+                [0.0, 0.0, 1.0],
+                [0.0, 1.0, 0.0],
+            ]
+        )
+        result = compute_scalar_classification_metrics(output, target, average="macro")
+        # per-class P = [0.5, 1.0, 0.0] -> macro 0.5
+        # per-class R = [1.0, 1.0, 0.0] -> macro 2/3
+        # per-class F = [2/3, 1.0, 0.0] -> macro (2/3+1)/3
+        assert _approx(result["precision"], 0.5)
+        assert _approx(result["recall"], 2.0 / 3.0)
+        assert _approx(result["f1"], (2.0 / 3.0 + 1.0 + 0.0) / 3.0)
+        assert result["undefined"] == {}
+
 
 @pytest.mark.unit
 class TestWeightedNeverTrueClass:

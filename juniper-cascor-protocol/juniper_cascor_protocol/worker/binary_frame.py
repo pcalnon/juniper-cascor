@@ -105,7 +105,13 @@ class BinaryFrame:
         if len(data) < offset + dtype_len:
             raise ValueError("Binary frame too short for dtype string")
 
-        dtype_str = data[offset : offset + dtype_len].decode("utf-8")
+        # Contract: decode raises ValueError for all malformed frames.
+        # Non-UTF-8 dtype bytes raise UnicodeDecodeError natively — wrap so
+        # callers (worker_stream) can keep a single ``except ValueError``.
+        try:
+            dtype_str = data[offset : offset + dtype_len].decode("utf-8")
+        except UnicodeDecodeError as exc:
+            raise ValueError("Binary frame dtype string is not valid UTF-8") from exc
         offset += dtype_len
 
         try:

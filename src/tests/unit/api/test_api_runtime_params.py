@@ -102,6 +102,24 @@ class TestUpdateTrainingParams:
         response = test_client_with_network.patch("/v1/training/params", json={})
         assert response.status_code == 200
 
+    def test_update_params_while_replaying_returns_409(self, test_client_with_network):
+        """CAN-015c: PATCH /params during REPLAYING must be HTTP 409, not 500/404.
+
+        Manager raises RuntimeError; the route must map it to a conflict so
+        Canopy can prompt the operator to stop replay first.
+        """
+        from unittest.mock import patch
+
+        lifecycle = test_client_with_network.app.state.lifecycle
+        with patch.object(lifecycle.state_machine, "is_replaying", return_value=True):
+            response = test_client_with_network.patch(
+                "/v1/training/params",
+                json={"learning_rate": 0.005},
+            )
+        assert response.status_code == 409
+        message = response.json()["error"]["message"].lower()
+        assert "replay" in message
+
     def test_patch_semantics_null_fields_ignored(self, test_client_with_network):
         """PATCH semantics: null/missing fields are not applied."""
         # Get current learning_rate

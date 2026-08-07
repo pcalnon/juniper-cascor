@@ -51,6 +51,35 @@ class TestTLSConfig:
         with pytest.raises(FileNotFoundError, match="CA cert not found"):
             cfg.build_ssl_context()
 
+    def test_half_config_cert_only_raises(self, tmp_path):
+        """TLS enabled with cert_file but no key_file must fail closed."""
+        cert = tmp_path / "server.crt"
+        cert.write_text("dummy")
+        cfg = TLSConfig(enabled=True, cert_file=str(cert), key_file=None)
+        with pytest.raises(ValueError, match="requires both cert_file and key_file"):
+            cfg.build_ssl_context()
+
+    def test_half_config_key_only_raises(self, tmp_path):
+        """TLS enabled with key_file but no cert_file must fail closed."""
+        key = tmp_path / "server.key"
+        key.write_text("dummy")
+        cfg = TLSConfig(enabled=True, cert_file=None, key_file=str(key))
+        with pytest.raises(ValueError, match="requires both cert_file and key_file"):
+            cfg.build_ssl_context()
+
+    def test_enabled_without_cert_or_key_raises(self):
+        """TLS enabled with neither cert nor key must fail closed (not return bare context)."""
+        cfg = TLSConfig(enabled=True, cert_file=None, key_file=None)
+        with pytest.raises(ValueError, match="requires both cert_file and key_file"):
+            cfg.build_ssl_context()
+
+    def test_disabled_ignores_partial_paths(self, tmp_path):
+        """TLS disabled must ignore half-configured paths and return None."""
+        cert = tmp_path / "server.crt"
+        cert.write_text("dummy")
+        cfg = TLSConfig(enabled=False, cert_file=str(cert), key_file=None)
+        assert cfg.build_ssl_context() is None
+
 
 # ---------------------------------------------------------------------------
 # Rate Limiter Tests
@@ -538,74 +567,86 @@ class TestAuditEventType:
 # ---------------------------------------------------------------------------
 
 
+def _openssl_self_signed(tmp_path, stem: str):
+    """Generate a self-signed cert+key pair via openssl; skip if unavailable."""
+    import subprocess
+
+    key_file = tmp_path / f"{stem}.key"
+    cert_file = tmp_path / f"{stem}.crt"
+    result = subprocess.run(  # nosec B607, B603
+        [
+            "openssl",
+            "req",
+            "-x509",
+            "-newkey",
+            "rsa:2048",
+            "-keyout",
+            str(key_file),
+            "-out",
+            str(cert_file),
+            "-days",
+            "1",
+            "-nodes",
+            "-subj",
+            f"/CN=Test{stem}",
+        ],
+        capture_output=True,
+    )
+    if result.returncode != 0:
+        pytest.skip("openssl not available for cert generation")
+    return cert_file, key_file
+
+
 class TestTLSConfigExtended:
     """Extended tests for TLSConfig.build_ssl_context() covering TLS versions,
     client cert modes, CA loading, and the full happy path."""
 
-    def test_enabled_no_cert_no_key_returns_context(self):
-        """TLS enabled with no cert/key files still returns a context (for testing scenarios)."""
+    def test_enabled_no_cert_no_key_raises(self):
+        """TLS enabled with no cert/key must fail closed (no bare SSLContext)."""
         cfg = TLSConfig(enabled=True)
-        ctx = cfg.build_ssl_context()
-        assert ctx is not None
-        assert isinstance(ctx, ssl.SSLContext)
+        with pytest.raises(ValueError, match="requires both cert_file and key_file"):
+            cfg.build_ssl_context()
 
-    def test_min_tls_version_1_3(self):
+    def test_min_tls_version_1_3(self, tmp_path):
         """Default TLSv1.3 sets minimum_version correctly."""
-        cfg = TLSConfig(enabled=True, min_tls_version="TLSv1.3")
+        cert_file, key_file = _openssl_self_signed(tmp_path, "server13")
+        cfg = TLSConfig(enabled=True, cert_file=str(cert_file), key_file=str(key_file), min_tls_version="TLSv1.3")
         ctx = cfg.build_ssl_context()
         assert ctx.minimum_version == ssl.TLSVersion.TLSv1_3
 
-    def test_min_tls_version_1_2(self):
+    def test_min_tls_version_1_2(self, tmp_path):
         """Non-TLSv1.3 string falls back to TLSv1.2."""
-        cfg = TLSConfig(enabled=True, min_tls_version="TLSv1.2")
+        cert_file, key_file = _openssl_self_signed(tmp_path, "server12")
+        cfg = TLSConfig(enabled=True, cert_file=str(cert_file), key_file=str(key_file), min_tls_version="TLSv1.2")
         ctx = cfg.build_ssl_context()
         assert ctx.minimum_version == ssl.TLSVersion.TLSv1_2
 
-    def test_min_tls_version_unknown_falls_to_1_2(self):
+    def test_min_tls_version_unknown_falls_to_1_2(self, tmp_path):
         """Any unrecognized TLS version string falls back to TLSv1.2."""
-        cfg = TLSConfig(enabled=True, min_tls_version="TLSv1.1")
+        cert_file, key_file = _openssl_self_signed(tmp_path, "server11")
+        cfg = TLSConfig(enabled=True, cert_file=str(cert_file), key_file=str(key_file), min_tls_version="TLSv1.1")
         ctx = cfg.build_ssl_context()
         assert ctx.minimum_version == ssl.TLSVersion.TLSv1_2
 
-    def test_require_client_cert_no_ca_uses_system_store(self):
+    def test_require_client_cert_no_ca_uses_system_store(self, tmp_path):
         """require_client_cert=True without ca_file sets CERT_REQUIRED using system trust store."""
-        cfg = TLSConfig(enabled=True, require_client_cert=True)
+        cert_file, key_file = _openssl_self_signed(tmp_path, "server-mtls")
+        cfg = TLSConfig(enabled=True, cert_file=str(cert_file), key_file=str(key_file), require_client_cert=True)
         ctx = cfg.build_ssl_context()
         assert ctx.verify_mode == ssl.CERT_REQUIRED
 
     def test_require_client_cert_with_valid_ca(self, tmp_path):
         """require_client_cert=True with a valid CA file loads it and sets CERT_REQUIRED."""
-        # Create a self-signed CA cert for testing
-        import subprocess
-        import sys
+        ca_cert, _ca_key = _openssl_self_signed(tmp_path, "ca")
+        cert_file, key_file = _openssl_self_signed(tmp_path, "server-ca")
 
-        ca_key = tmp_path / "ca.key"
-        ca_cert = tmp_path / "ca.crt"
-
-        # Generate a self-signed cert using openssl (available on Linux)
-        result = subprocess.run(  # nosec B607, B603
-            [
-                "openssl",
-                "req",
-                "-x509",
-                "-newkey",
-                "rsa:2048",
-                "-keyout",
-                str(ca_key),
-                "-out",
-                str(ca_cert),
-                "-days",
-                "1",
-                "-nodes",
-                "-subj",
-                "/CN=TestCA",
-            ],
-            capture_output=True,
+        cfg = TLSConfig(
+            enabled=True,
+            cert_file=str(cert_file),
+            key_file=str(key_file),
+            require_client_cert=True,
+            ca_file=str(ca_cert),
         )
-        if result.returncode != 0:
-            pytest.skip("openssl not available for CA cert generation")
-
-        cfg = TLSConfig(enabled=True, require_client_cert=True, ca_file=str(ca_cert))
         ctx = cfg.build_ssl_context()
         assert ctx is not None
         assert ctx.verify_mode == ssl.CERT_REQUIRED

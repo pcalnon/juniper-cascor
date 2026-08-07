@@ -2,7 +2,7 @@
 
 from typing import Any, Dict, List, Literal, Optional
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from cascor_constants.constants_api import _PROJECT_API_DATASET_SOURCE_DEFAULT, _PROJECT_API_MAX_DATASET_SAMPLES, _PROJECT_API_MAX_DATASET_TARGETS
 
@@ -21,12 +21,30 @@ class InlineDataset(BaseModel):
 
     Size limits enforce that inline data is for small ad-hoc datasets only.
     For large datasets, use the juniper-data service.
+
+    Cross-field alignment is enforced at the request boundary so mismatched
+    sample counts (or a half-specified validation split) cannot reach
+    ``torch.tensor`` / ``fit`` and fail mid-training with an opaque shape error.
     """
 
     train_x: List[List[float]] = Field(..., max_length=_PROJECT_API_MAX_DATASET_SAMPLES, description="Training features (2D array)")
     train_y: List[List[float]] = Field(..., max_length=_PROJECT_API_MAX_DATASET_TARGETS, description="Training targets (2D array)")
     val_x: Optional[List[List[float]]] = Field(None, max_length=_PROJECT_API_MAX_DATASET_SAMPLES, description="Validation features")
     val_y: Optional[List[List[float]]] = Field(None, max_length=_PROJECT_API_MAX_DATASET_TARGETS, description="Validation targets")
+
+    @model_validator(mode="after")
+    def _validate_aligned_splits(self) -> "InlineDataset":
+        """Reject length / val-pair mismatches before tensors are constructed."""
+        if len(self.train_x) != len(self.train_y):
+            raise ValueError(f"train_x/train_y length mismatch: {len(self.train_x)} != {len(self.train_y)}")
+        has_val_x = self.val_x is not None
+        has_val_y = self.val_y is not None
+        if has_val_x != has_val_y:
+            missing = "val_y" if has_val_x else "val_x"
+            raise ValueError(f"validation split requires both val_x and val_y; missing {missing}")
+        if has_val_x and len(self.val_x) != len(self.val_y):  # type: ignore[arg-type]
+            raise ValueError(f"val_x/val_y length mismatch: {len(self.val_x)} != {len(self.val_y)}")  # type: ignore[arg-type]
+        return self
 
 
 class TrainingParams(BaseModel):

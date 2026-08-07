@@ -155,6 +155,14 @@ def test_binary_frame_decode_rejects_invalid_dtype_string():
         BinaryFrame.decode(payload)
 
 
+def test_binary_frame_decode_rejects_non_utf8_dtype_bytes():
+    """Non-UTF-8 dtype bytes must raise ValueError (contract for worker_stream)."""
+    # ndim=1, shape=(1,), dtype_len=2 with invalid UTF-8, plus 4 bytes of payload.
+    payload = struct.pack("<I", 1) + struct.pack("<I", 1) + struct.pack("<I", 2) + b"\xff\xfe" + b"\x00\x00\x00\x00"
+    with pytest.raises(ValueError, match="not valid UTF-8"):
+        BinaryFrame.decode(payload)
+
+
 def test_binary_frame_decode_rejects_size_mismatch():
     # shape=(3,), dtype=float32 (12 bytes expected), but provide 8 bytes of data.
     dtype_str = b"float32"
