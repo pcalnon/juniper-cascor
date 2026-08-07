@@ -528,20 +528,31 @@ python -m coverage report --fail-under=80   # Current aggregate threshold
 
 ## Worker In-Flight Recovery and Teardown Regressions
 
-Coverage for soft binary-frame abort requeue, receive-site protocol guards, result ownership, and anomaly-history teardown lives in the API unit suite:
+Coverage for all four immediate-requeue paths, result integrity, round cancellation, receive-site protocol guards, and anomaly-history teardown lives in the API unit suite:
 
 | Area | Files / focus |
 |------|----------------|
-| Result ownership + tensor validation | `src/tests/unit/api/test_worker_coordinator.py` (`TestSubmitResult::test_reject_wrong_worker_ownership`); `test_worker_protocol.py` (`TestValidateTensors`) |
-| Soft binary-frame abort | `test_worker_coordinator.py` / `test_worker_stream.py` — text / oversized / decode paths call `abort_in_flight_result` |
+| Result ownership + tensor validation | `src/tests/unit/api/test_worker_coordinator.py` (`TestSubmitResult::test_reject_wrong_worker_ownership`); `test_worker_protocol.py` (`TestValidateTensors`, incl. `test_empty_weights_returns_error`) |
+| Result integrity — `success=True` requires weights | `test_worker_coordinator.py` — `test_reject_success_true_with_missing_weights`, `test_reject_success_true_with_empty_weights`, `test_accept_success_false_without_weights` |
+| Requeue path 1 — schema / tensor reject | `test_worker_coordinator.py` — `_reject_and_requeue_task` arms under `TestSubmitResult` |
+| Requeue path 2 — soft binary-frame abort | `test_worker_coordinator.py` / `test_worker_stream.py` — text / oversized / decode paths call `abort_in_flight_result` |
+| Requeue path 3 — clean WebSocket disconnect | `test_worker_coordinator.py` — `TestHandleWorkerDisconnect` (requeue + deregister + send-callback drop under one lock) |
+| Requeue path 4 — dispatch send failure | `test_worker_coordinator.py` — `TestRequeueAfterDispatchFailure`; `test_worker_stream.py` — `test_send_json_failure_requeues_assigned_task`, `test_send_bytes_failure_requeues_after_partial_send` |
+| Round cancellation frees registry busy state | `test_worker_coordinator.py` — `TestCancelRound::test_cancel_frees_registry_active_task` |
 | Non-object JSON + `tensor_manifest` guards | `test_worker_stream.py` / `test_worker_protocol.py` — object-only messages; manifest type + ≤ 32 entries; UTF-8 dtype `ValueError` |
 | Anomaly history on deregister | `test_worker_security_integration.py` — `test_disconnect_clears_anomaly_history`, `test_disconnect_without_anomaly_detector_still_cleans_up` |
 
 ```bash
 cd src
-python -m pytest tests/unit/api/test_worker_coordinator.py tests/unit/api/test_worker_stream.py tests/unit/api/test_worker_protocol.py -k "abort or manifest or non_object or soft or ownership" -v
+python -m pytest tests/unit/api/test_worker_coordinator.py tests/unit/api/test_worker_stream.py tests/unit/api/test_worker_protocol.py -v
 python -m pytest tests/unit/api/test_worker_security_integration.py -k "anomaly" -v
 ```
+
+Why this matters:
+
+- Each requeue path has a **distinct** trigger and log line; conflating them hides which one regressed. A stall with a *still-heartbeating* worker narrows to the soft-abort or dispatch-send-failure path, because CONC-10 stale-worker reaping cannot fire while heartbeats continue.
+- The success-without-weights guard must stay ahead of `validate_tensors`, or an empty / absent `tensor_manifest` skips it and an untrained `CandidateUnit` wins N-best selection with a claimed correlation.
+- `cancel_round` must free the registry, not just the coordinator maps: once pending tracking is cleared, `_check_task_timeouts` can no longer reclaim a worker left marked busy.
 
 Operator contracts: [JUNIPER_CASCOR_API_REFERENCE.md — WS `/ws/v1/workers`](../api/JUNIPER_CASCOR_API_REFERENCE.md#ws-wsv1workers).
 

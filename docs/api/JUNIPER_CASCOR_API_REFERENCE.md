@@ -1796,9 +1796,20 @@ Regression pin: `src/tests/unit/api/test_worker_protocol.py` — `TestValidateRe
 | **Unassigned** — `task.assigned_worker_id is None` (pre-dispatch / post-requeue window) | Reject; does **not** free the submitter's busy slot, so an unrelated active assignment is not wiped |
 | **Ownership** — `worker_id != task.assigned_worker_id` | Reject; mark the *submitting* worker task-complete as a failure; the pending task stays assigned to the original owner |
 | Schema (`validate_task_result`) | Reject + immediate requeue (`_reject_and_requeue_task`) |
+| **`success=True` with a missing / empty `weights` tensor** | Reject; `registry.complete_task(..., success=False)`. Checked **before** `validate_tensors`, so an empty or absent `tensor_manifest` cannot skip the guard |
 | Tensors (`validate_tensors` vs `tensor_manifest`) | Reject + immediate requeue (`_reject_and_requeue_task`) |
 
 Ownership is a trust boundary: without it a peer, stale, or malicious worker could complete work it was never assigned and corrupt candidate selection. After a wrong-owner reject, the legitimate assignee can still submit successfully.
+
+**Result integrity — `success=True` requires weights.** `_dispatch_to_remote_workers` reconstructs a `CandidateUnit` from the result; when `weights` is absent it leaves the unit at its random-init parameters. Accepting a `success=True` payload with no weights would therefore poison N-best candidate selection with an untrained unit that still carries the worker's claimed correlation. The guard fires only for `success is True` — a `success=False` result may legitimately omit tensors and is accepted. Because the check runs ahead of `validate_tensors`, empty arrays fail closed here rather than raising inside the magnitude check.
+
+Note the deliberate asymmetry: this guard calls `registry.complete_task(..., success=False)` **without** `_reject_and_requeue_task`, so unlike a schema/tensor reject the pending task keeps its `assigned_worker_id` and falls back to the 120s `_check_task_timeouts` sweep.
+
+**Round cancellation (`WorkerCoordinator.cancel_round`)** — When a candidate round is cancelled (stop / shutdown / early exit), the coordinator first captures every worker still holding an in-flight assignment, then clears `_pending_tasks` / `_unassigned_tasks` / `_results` / `_completed_task_ids`, resets the round identity, unblocks `collect_results`, and finally calls `registry.complete_task(worker_id, success=False)` for each captured worker.
+
+Freeing the registry is not optional bookkeeping: if only the coordinator maps were cleared, `assign_task` would keep returning `False` (the worker still looks busy), `get_next_assignment` would permanently refuse it work, and `_check_task_timeouts` could not reclaim the capacity because the pending tracking is already gone — stuck remote capacity until the worker reconnects. Capturing the busy set *before* the clear is what makes the release possible.
+
+Source: `src/api/workers/coordinator.py` (`cancel_round`), `src/api/workers/registry.py` (`complete_task` clears `active_task_id`; `assign_task`).
 
 **Tensor manifest validation** (`WorkerProtocol.validate_tensors`):
 
@@ -1810,21 +1821,29 @@ Ownership is a trust boundary: without it a peer, stale, or malicious worker cou
 
 Regression pins: `src/tests/unit/api/test_worker_coordinator.py` — `TestSubmitResult::test_reject_wrong_worker_ownership`; `src/tests/unit/api/test_worker_protocol.py` — `TestValidateTensors`.
 
-**In-flight task recovery** — Candidate rounds can stall when a worker dies or sends a broken `task_result` while still marked busy. Recovery paths:
+**In-flight task recovery** — Candidate rounds can stall when a worker dies, never receives its assignment, or sends a broken `task_result` while still marked busy. There are **four** distinct immediate-requeue paths on `WorkerCoordinator`, each with its own trigger and its own log line, plus two timeout fallbacks:
 
-| Failure mode | Coordinator path | Socket fate | Requeue timing |
-|--------------|------------------|-------------|----------------|
-| Schema or tensor-manifest reject inside `submit_result` | `_reject_and_requeue_task` | Stays open | Immediate — `complete_task(..., success=False)`, clear `assigned_worker_id`, append to `_unassigned_tasks` |
-| Soft binary-frame abort (text instead of bytes, frame over 100 MB, or a `BinaryFrame.decode` `ValueError`) | `abort_in_flight_result` | Stays open; in-band `error` JSON | Immediate — `complete_task(..., success=False)` + requeue. Heartbeats alone cannot recover this path (CONC-10 will not fire). |
-| Heartbeat / stale worker (CONC-10) | `_check_stale_workers` | Closed by monitor | After `JUNIPER_CASCOR_REMOTE_WORKERS_HEARTBEAT_TIMEOUT` (default **30s**) |
-| Orphaned assignment fallback (including a clean disconnect, whose teardown only deregisters) | `_check_task_timeouts` | n/a | After `JUNIPER_CASCOR_REMOTE_WORKERS_TASK_REASSIGNMENT_TIMEOUT` (default **120s**) |
+| Failure mode | Coordinator path | Worker released via | Socket fate | Requeue log line |
+|--------------|------------------|---------------------|-------------|------------------|
+| Schema or tensor-manifest reject inside `submit_result` | `_reject_and_requeue_task` | `complete_task(..., success=False)` | Stays open | `Task <id> requeued after rejected result from worker <w>` |
+| Soft binary-frame abort (text instead of bytes, frame over 100 MB, or a `BinaryFrame.decode` `ValueError`) | `abort_in_flight_result` | `complete_task(..., success=False)` | Stays open; in-band `error` JSON | `Task <id> requeued after soft result-frame abort from worker <w>` |
+| Clean WebSocket close, including mid-binary-frame | `handle_worker_disconnect` | `registry.deregister` + `unregister_send_callback` (the worker is gone, so there is no busy slot to free) | Closed | `Task <id> requeued after worker <w> disconnect` |
+| `task_assign` never delivered — `send_json` / `send_bytes` raised after `get_next_assignment` already marked the task assigned | `requeue_after_dispatch_failure` | `complete_task(..., success=False)` | Usually still open | `Task <id> requeued after dispatch send failure to worker <w>` |
+| Heartbeat / stale worker (CONC-10) | `_check_stale_workers` | `registry.deregister` | Closed by monitor | After `JUNIPER_CASCOR_REMOTE_WORKERS_HEARTBEAT_TIMEOUT` (default **30s**) |
+| Orphaned assignment fallback | `_check_task_timeouts` | `complete_task(..., success=False)` | n/a | After `JUNIPER_CASCOR_REMOTE_WORKERS_TASK_REASSIGNMENT_TIMEOUT` (default **120s**) |
 
-Intent: schema/tensor rejects and soft aborts must not wait for the 120s reassignment timeout. Soft abort is especially important because the worker keeps heartbeating while remaining busy — without `abort_in_flight_result`, CONC-10 never reaps the task.
+All four immediate paths do the same three things to the pending task — clear `assigned_worker_id`, refresh `dispatched_at`, append the `task_id` to `_unassigned_tasks` — and all four are no-ops when the task is already completed or already queued, so a double-fire cannot double-enqueue.
+
+Intent: none of the four should wait for the 120s reassignment timeout. `abort_in_flight_result` and `requeue_after_dispatch_failure` matter most, because on both the worker keeps heartbeating while remaining busy — CONC-10 stale-worker reaping will never fire, so the 120s fallback is the only other recovery.
+
+`handle_worker_disconnect` holds `self._lock` across the requeue **and** the deregister (the CONC-10 lock discipline), so a concurrent `get_next_assignment` cannot land a fresh task on a worker that is about to disappear.
+
+**Dispatch send failure** — `_try_dispatch_task` (`src/api/websocket/worker_stream.py`) wraps the `send_json` **and** the `send_bytes` frame loop in one `try`, so a failure part-way through the tensor frames is caught by the same handler as a failed envelope send. It logs `Dispatch send failed for task <id> to worker <w> — requeueing` (with traceback) and calls `requeue_after_dispatch_failure(worker_id, task_id)`. The separate per-connection `_make_send_callback` is fail-soft in a weaker sense: it returns `False` on a send failure and performs no coordinator rollback.
 
 **Receive-site protocol guards** (before the coordinator's schema checks):
 
 - Registration / loop JSON must be a JSON **object**. Non-objects (`null`, arrays, scalars) get an in-band error; registration closes with `4008` (loop messages stay open).
-- When `tensor_manifest` is present it must be a `dict` with ≤ **32** entries (`_MAX_TENSOR_MANIFEST_ENTRIES`, mirrored between `WorkerProtocol` and `worker_stream`). A wrong type or oversize returns an in-band error and stops the binary receive — it does **not** call `abort_in_flight_result`, so recovery there still depends on disconnect or the 120s timeout.
+- When `tensor_manifest` is present it must be a `dict` with ≤ **32** entries (`_MAX_TENSOR_MANIFEST_ENTRIES`, mirrored between `WorkerProtocol` and `worker_stream`). A wrong type or oversize returns an in-band error and stops the binary receive — these header-level guards **still** do not requeue, so recovery there depends on disconnect or the 120s timeout. Note the asymmetry with the per-frame guards below them (missing bytes, oversized frame, decode failure), which do route through `_abort_soft_result_frame` → `abort_in_flight_result`.
 - `BinaryFrame.decode` wraps non-UTF-8 dtype bytes as `ValueError` so soft-abort handling stays on a single exception type.
 
 **Anomaly history on deregister** — The worker-stream session `finally` path (alongside `registry.deregister`, the audit `WORKER_DEREGISTER` event, and metrics `on_deregister`) calls `AnomalyDetector.clear_worker(worker_id)` when `app.state.anomaly_detector` is bound. `clear_worker` is idempotent and pops that worker's `_worker_history` entry so (a) history cannot grow without bound across reconnect churn and (b) a recycled `worker_id` cannot inherit stale `duplicate_correlations` / `perfect_correlation` signals from a prior occupant. A missing `anomaly_detector` must not break disconnect cleanup.
