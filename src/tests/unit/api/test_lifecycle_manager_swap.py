@@ -222,6 +222,65 @@ class TestReloadDataset:
             with pytest.raises(RuntimeError, match="artifact missing required key"):
                 mgr._reload_dataset(dataset_type="spiral")
 
+    def test_train_sample_count_mismatch_raises(self, mgr):
+        """X_train/y_train row counts must agree — otherwise fit fails mid-run."""
+        arrays = {
+            "X_train": np.zeros((4, 2), dtype=np.float32),
+            "y_train": np.zeros((3, 2), dtype=np.float32),
+        }
+        mod, _ = _fake_data_client_module(arrays=arrays)
+        with patch.dict(sys.modules, {"juniper_data_client": mod}), patch("api.secrets.get_secret", return_value=None), patch("api.settings.Settings"):
+            with pytest.raises(RuntimeError, match="train sample count mismatch"):
+                mgr._reload_dataset(dataset_type="spiral")
+        assert mgr._train_x is None and mgr._train_y is None
+
+    def test_partial_validation_split_raises(self, mgr):
+        """One of X_test/y_test without the other is a malformed artifact."""
+        arrays = {
+            "X_train": np.zeros((4, 2), dtype=np.float32),
+            "y_train": np.zeros((4, 2), dtype=np.float32),
+            "X_test": np.zeros((2, 2), dtype=np.float32),
+        }
+        mod, _ = _fake_data_client_module(arrays=arrays)
+        with patch.dict(sys.modules, {"juniper_data_client": mod}), patch("api.secrets.get_secret", return_value=None), patch("api.settings.Settings"):
+            with pytest.raises(RuntimeError, match="partial validation split"):
+                mgr._reload_dataset(dataset_type="spiral")
+        assert mgr._train_x is None and mgr._val_x is None
+
+    def test_validation_sample_count_mismatch_raises(self, mgr):
+        arrays = {
+            "X_train": np.zeros((4, 2), dtype=np.float32),
+            "y_train": np.zeros((4, 2), dtype=np.float32),
+            "X_test": np.zeros((2, 2), dtype=np.float32),
+            "y_test": np.zeros((1, 2), dtype=np.float32),
+        }
+        mod, _ = _fake_data_client_module(arrays=arrays)
+        with patch.dict(sys.modules, {"juniper_data_client": mod}), patch("api.secrets.get_secret", return_value=None), patch("api.settings.Settings"):
+            with pytest.raises(RuntimeError, match="validation sample count mismatch"):
+                mgr._reload_dataset(dataset_type="spiral")
+        assert mgr._train_x is None and mgr._val_x is None
+
+    def test_non_2d_train_arrays_raise(self, mgr):
+        arrays = {
+            "X_train": np.zeros((4,), dtype=np.float32),  # 1-D — not a feature matrix
+            "y_train": np.zeros((4, 2), dtype=np.float32),
+        }
+        mod, _ = _fake_data_client_module(arrays=arrays)
+        with patch.dict(sys.modules, {"juniper_data_client": mod}), patch("api.secrets.get_secret", return_value=None), patch("api.settings.Settings"):
+            with pytest.raises(RuntimeError, match="train arrays must be 2-D"):
+                mgr._reload_dataset(dataset_type="spiral")
+
+    def test_malformed_train_payload_raises(self, mgr):
+        """Non-numeric train payloads surface as a stable RuntimeError."""
+        arrays = {
+            "X_train": "not-an-array",
+            "y_train": np.zeros((2, 2), dtype=np.float32),
+        }
+        mod, _ = _fake_data_client_module(arrays=arrays)
+        with patch.dict(sys.modules, {"juniper_data_client": mod}), patch("api.secrets.get_secret", return_value=None), patch("api.settings.Settings"):
+            with pytest.raises(RuntimeError, match="train arrays are malformed"):
+                mgr._reload_dataset(dataset_type="spiral")
+
     def test_canopy_staged_spirals_config_is_translated(self, mgr):
         """The canopy-facing staged dialect (``dataset_type='spirals'``, total
         ``n_samples``, ``rotations``) is translated to juniper-data's registry
