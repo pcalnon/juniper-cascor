@@ -355,6 +355,35 @@ class TestHandleEvent:
         assert "output_weights" in payload
         assert "output_bias" in payload
 
+    def test_training_end_after_growth_clears_output_and_candidate_progress_pairs(self):
+        """C2b (79e8ad7): growth-phase exit zeroes BOTH within-pass progress pairs.
+
+        Canopy reads output_epoch / candidate_epoch from /v1/training/status. Leaving
+        a prior growth pass's terminal values (e.g. output_epoch=9976) makes a fresh
+        Output phase look stuck mid-pass.
+        """
+        mgr = TrainingLifecycleManager()
+        mgr.create_network(input_size=2, output_size=2)
+        mgr._grow_phase_entered = True
+        mgr.training_state.update_state(
+            output_epoch=9_976,
+            output_total_epochs=10_000,
+            candidate_epoch=75,
+            candidate_total_epochs=100,
+            phase="Growth",
+            phase_detail="training_candidates",
+        )
+
+        mgr._handle_event(_event("training_end", {"metrics": {}}))
+
+        state = mgr.training_state.get_state()
+        assert state["phase"] == "Output"
+        assert state["phase_detail"] == ""
+        assert state["output_epoch"] == 0
+        assert state["output_total_epochs"] == 0
+        assert state["candidate_epoch"] == 0
+        assert state["candidate_total_epochs"] == 0
+
     def test_training_end_without_growth_is_quiet(self):
         """training_end with no growth this run does not broadcast a topology or flip phase."""
         mgr = TrainingLifecycleManager()
@@ -362,11 +391,27 @@ class TestHandleEvent:
         ws_mgr = MagicMock()
         mgr.set_ws_manager(ws_mgr)
         mgr._grow_phase_entered = False
+        mgr.training_state.update_state(
+            output_epoch=26,
+            output_total_epochs=10_000,
+            candidate_epoch=12,
+            candidate_total_epochs=50,
+            phase="Output",
+            phase_detail="training_output",
+        )
 
         mgr._handle_event(_event("training_end", {"metrics": {}}))
 
         topology_calls = [c[0][0] for c in ws_mgr.broadcast_from_thread.call_args_list if isinstance(c[0][0], dict) and c[0][0].get("type") == "topology"]
         assert topology_calls == []
+        # Negative pin: without growth, progress pairs must NOT be cleared.
+        state = mgr.training_state.get_state()
+        assert state["output_epoch"] == 26
+        assert state["output_total_epochs"] == 10_000
+        assert state["candidate_epoch"] == 12
+        assert state["candidate_total_epochs"] == 50
+        assert state["phase"] == "Output"
+        assert state["phase_detail"] == "training_output"
 
 
 @pytest.mark.unit
@@ -396,6 +441,40 @@ class TestRunTraining:
         state = mgr.training_state.get_state()
         assert state["status"] == "Completed"
         assert state["phase"] == "Idle"
+
+    def test_run_start_resets_within_pass_progress_pairs(self):
+        """C2b (0eb78d1): _run_training zeroes progress pairs before fit so a new run
+        never displays the previous run's terminal inner-epoch values."""
+        mgr = TrainingLifecycleManager()
+        mgr.create_network(input_size=2, output_size=2)
+        mgr.training_state.update_state(
+            output_epoch=9_976,
+            output_total_epochs=10_000,
+            candidate_epoch=75,
+            candidate_total_epochs=100,
+        )
+        seen = {}
+
+        def fake_fit(x, y, *, X_val=None, y_val=None, on_event=None, **kw):
+            # Capture state at the first moment fit runs — after session-start reset.
+            state = mgr.training_state.get_state()
+            seen.update(
+                output_epoch=state["output_epoch"],
+                output_total_epochs=state["output_total_epochs"],
+                candidate_epoch=state["candidate_epoch"],
+                candidate_total_epochs=state["candidate_total_epochs"],
+                status=state["status"],
+            )
+
+        mgr.model.fit = fake_fit
+        x, y = self._toy()
+        mgr._run_training(x, y, x, y)
+
+        assert seen["status"] == "Started"
+        assert seen["output_epoch"] == 0
+        assert seen["output_total_epochs"] == 0
+        assert seen["candidate_epoch"] == 0
+        assert seen["candidate_total_epochs"] == 0
 
     def test_stop_event_marks_stopped(self):
         """A stop requested before fit returns yields a Stopped (cancelled) terminal state."""

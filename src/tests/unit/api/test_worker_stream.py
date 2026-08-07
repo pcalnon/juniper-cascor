@@ -476,6 +476,63 @@ class TestHandleRegistrationExtraEdgeCases:
         ws.close.assert_awaited_once()
         assert ws.close.call_args[1]["code"] == 4005
 
+    @pytest.mark.asyncio
+    async def test_registry_at_capacity_sends_error_and_closes_4013(self):
+        """Registry saturation rejects with a structured error frame and close 4013.
+
+        Distinct from 4008 (invalid registration) so operators can tell
+        capacity pressure from schema failures — important for websockets
+        major bumps where close-frame handling can regress.
+        """
+        registry = WorkerRegistry(heartbeat_timeout=30.0, max_workers=1)
+        registry.register("worker-already-here", {"cpu_cores": 2})
+
+        ws = AsyncMock()
+        ws.receive_text = AsyncMock(return_value=json.dumps(WorkerProtocol.build_register("new-worker", {"cpu_cores": 4})))
+
+        worker_id = await _handle_registration(ws, registry)
+
+        assert worker_id is None
+        assert registry.worker_count == 1
+        ws.send_json.assert_awaited_once()
+        error_msg = ws.send_json.call_args[0][0]
+        assert error_msg["type"] == "error"
+        assert "capacity" in error_msg["error"].lower()
+        ws.close.assert_awaited_once()
+        assert ws.close.call_args[1]["code"] == 4013
+        assert "capacity" in ws.close.call_args[1]["reason"].lower()
+
+
+@pytest.mark.unit
+class TestWorkerStreamAdmissionReject:
+    """SEC-F19 D4: try_admit=False must fail closed before accept/release."""
+
+    @pytest.mark.asyncio
+    async def test_try_admit_false_rejects_without_accept(self, registry, coordinator):
+        """Over-cap admission returns early: no accept, no release_admission."""
+
+        async def _reject_and_close(websocket, *, endpoint, identity=None):
+            await websocket.close(code=1013, reason="Maximum connections reached")
+            return False
+
+        ws = _make_websocket(
+            app_state={
+                "worker_coordinator": coordinator,
+                "worker_registry": registry,
+            }
+        )
+        ws.app.state.ws_manager.try_admit = AsyncMock(side_effect=_reject_and_close)
+        ws.app.state.ws_manager.release_admission = AsyncMock()
+
+        await worker_stream_handler(ws)
+
+        ws.app.state.ws_manager.try_admit.assert_awaited_once()
+        assert ws.app.state.ws_manager.try_admit.await_args.kwargs["endpoint"] == "workers"
+        ws.accept.assert_not_awaited()
+        ws.app.state.ws_manager.release_admission.assert_not_awaited()
+        ws.close.assert_awaited_once()
+        assert ws.close.call_args[1]["code"] == 1013
+
 
 @pytest.mark.unit
 class TestMessageLoop:

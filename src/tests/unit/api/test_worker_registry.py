@@ -321,6 +321,13 @@ class TestWorkerRegistry:
         registry.register("w1", {})
         registry.assign_task("w1", "task-1")
         assert registry.assign_task("w1", "task-2") is False
+        # Failed reassignment must leave the original active task untouched.
+        assert registry.get("w1").active_task_id == "task-1"
+
+    def test_assign_task_unknown_worker(self):
+        """assign_task returns False for an unregistered worker_id."""
+        registry = WorkerRegistry()
+        assert registry.assign_task("missing", "task-1") is False
 
     def test_complete_task_success(self):
         """complete_task increments completed count."""
@@ -339,6 +346,21 @@ class TestWorkerRegistry:
         registry.assign_task("w1", "task-1")
         registry.complete_task("w1", success=False)
         assert registry.get("w1").tasks_failed == 1
+
+    def test_complete_task_unknown_worker(self):
+        """complete_task returns False for an unregistered worker_id."""
+        registry = WorkerRegistry()
+        assert registry.complete_task("missing", success=True) is False
+
+    def test_complete_task_idle_worker_no_active_task(self):
+        """complete_task on idle worker returns False and leaves counters at zero."""
+        registry = WorkerRegistry()
+        registry.register("w1", {})
+        assert registry.complete_task("w1", success=True) is False
+        reg = registry.get("w1")
+        assert reg.tasks_completed == 0
+        assert reg.tasks_failed == 0
+        assert reg.active_task_id is None
 
     def test_available_worker_count(self):
         """available_worker_count counts idle, alive workers."""
