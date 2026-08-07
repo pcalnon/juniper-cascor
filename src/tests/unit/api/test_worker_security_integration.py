@@ -445,11 +445,13 @@ class TestAnomalyDetectorIntegration:
             "denominator": 2.0,
             "best_corr_idx": 9,
             "error_message": None,
-            "tensor_manifest": {},
+            "tensor_manifest": {"weights": {"shape": [4], "dtype": "float32"}},
             "training_duration": 5.0,
         }
 
-        accepted = coordinator.submit_result("w1", msg, {})
+        # A success=True result must carry trained weights — the coordinator
+        # rejects a weightless success before the anomaly hook is reached.
+        accepted = coordinator.submit_result("w1", msg, {"weights": np.array([0.1, 0.2, 0.3, 0.4], dtype=np.float32)})
         assert accepted is True
         coordinator.shutdown()
 
@@ -490,12 +492,13 @@ class TestAnomalyDetectorIntegration:
             "denominator": 2.0,
             "best_corr_idx": 9,
             "error_message": None,
-            "tensor_manifest": {},
+            "tensor_manifest": {"weights": {"shape": [4], "dtype": "float32"}},
             "training_duration": 0.001,  # suspiciously fast
         }
 
-        # Result is still accepted (anomaly detection logs but does not reject)
-        accepted = coordinator.submit_result("w1", msg, {})
+        # Result is still accepted (anomaly detection logs but does not reject).
+        # Weights are required for a success=True result to reach the hook.
+        accepted = coordinator.submit_result("w1", msg, {"weights": np.array([0.1, 0.2, 0.3, 0.4], dtype=np.float32)})
         assert accepted is True
         coordinator.shutdown()
 
@@ -534,9 +537,10 @@ class TestAnomalyDetectorIntegration:
             "denominator": 2.0,
             "best_corr_idx": 9,
             "error_message": None,
-            "tensor_manifest": {},
+            "tensor_manifest": {"weights": {"shape": [4], "dtype": "float32"}},
         }
 
-        accepted = coordinator.submit_result("w1", msg, {})
+        # success=True results must carry weights (see submit_result's guard).
+        accepted = coordinator.submit_result("w1", msg, {"weights": np.array([0.1, 0.2, 0.3, 0.4], dtype=np.float32)})
         assert accepted is True
         coordinator.shutdown()
