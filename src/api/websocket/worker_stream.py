@@ -161,6 +161,14 @@ async def _run_worker_session(
                 audit_logger.log(AuditEventType.WORKER_DEREGISTER, worker_id=worker_id)
             if worker_metrics:
                 worker_metrics.on_deregister(worker_id)
+            # Drop anomaly history for this worker so (a) the per-worker
+            # history dict cannot grow without bound across churn and
+            # (b) a recycled worker_id cannot inherit stale
+            # duplicate_correlations / perfect_correlation signals from a
+            # prior occupant. clear_worker is idempotent.
+            anomaly_detector = getattr(websocket.app.state, "anomaly_detector", None)
+            if anomaly_detector is not None:
+                anomaly_detector.clear_worker(worker_id)
             logger.info("Worker %s cleaned up", worker_id)
 
 

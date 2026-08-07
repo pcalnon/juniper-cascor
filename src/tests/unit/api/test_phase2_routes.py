@@ -75,6 +75,28 @@ class TestAdminExperimentalFunctionsRoute:
         resp = client.post("/v1/admin/experimental_functions", json={})
         assert resp.status_code == 422
 
+    def test_get_503_when_lifecycle_unbound(self, client):
+        """Admin gate must fail closed with 503 when lifespan binding is missing."""
+        original = client.app.state.lifecycle
+        client.app.state.lifecycle = None
+        try:
+            resp = client.get("/v1/admin/experimental_functions")
+            assert resp.status_code == 503
+            assert "Lifecycle manager not initialized" in resp.json()["error"]["message"]
+        finally:
+            client.app.state.lifecycle = original
+
+    def test_post_503_when_lifecycle_unbound(self, client):
+        """Mutating the experimental gate must also 503 when lifecycle is unbound."""
+        original = client.app.state.lifecycle
+        client.app.state.lifecycle = None
+        try:
+            resp = client.post("/v1/admin/experimental_functions", json={"enabled": True})
+            assert resp.status_code == 503
+            assert "Lifecycle manager not initialized" in resp.json()["error"]["message"]
+        finally:
+            client.app.state.lifecycle = original
+
 
 # ---------------------------------------------------------------------------
 # Live-swap route — exception translation table

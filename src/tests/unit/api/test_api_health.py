@@ -85,6 +85,20 @@ class TestHealthEndpoints:
         assert body["status"] == "unresponsive"
         assert "stale" in body["error"]
 
+    def test_liveness_503_when_tick_exceeds_budget(self, client):
+        """R1.2: tick succeeds but duration exceeds LIVENESS_TICK_BUDGET_MS → 503."""
+        from api.routes import health as health_module
+
+        # Any non-negative measured duration exceeds a negative budget.
+        with patch.object(health_module, "LIVENESS_TICK_BUDGET_MS", -1):
+            response = client.get("/v1/health/live")
+        assert response.status_code == 503
+        body = response.json()
+        assert body["status"] == "unresponsive"
+        assert body["tick"] == "juniper-cascor"
+        assert "exceeded budget" in body["error"]
+        assert isinstance(body["duration_ms"], int)
+
     def test_readiness_probe_default(self, client):
         """Test GET /v1/health/ready with lifecycle bound → 200 + ready."""
         response = client.get("/v1/health/ready")
