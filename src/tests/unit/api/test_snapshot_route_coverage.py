@@ -611,6 +611,33 @@ class TestUnifiedResponseShape:
         finally:
             lifecycle.network = None
 
+    def test_time_index_snapshot_window_skips_non_lenable_series(self, client):
+        """Non-``len()``able history values must be skipped (TypeError fail-soft).
+
+        Corrupted / scalar history entries must not crash restore metadata; the
+        window falls back to the longest len()-able series (or 0).
+        """
+        lifecycle = client.app.state.lifecycle
+
+        class FakeNetwork:
+            history = {
+                "train_loss": 3.14,  # float → len() raises TypeError
+                "value_loss": object(),  # not sized
+                "train_accuracy": [0.1, 0.2, 0.3, 0.4],  # 4 entries — longest valid
+                "value_accuracy": None,
+            }
+
+        lifecycle.network = FakeNetwork()
+        side_effect = self._force_fsm_state(lifecycle, "investigating")
+        try:
+            with patch.object(lifecycle, "load_snapshot", side_effect=side_effect):
+                response = client.post("/v1/snapshots/snap-window-typerror/restore")
+                assert response.status_code == 200
+                data = response.json()["data"]
+                assert data["time_index"]["snapshot_window"] == {"start_epoch": 0, "end_epoch": 4}
+        finally:
+            lifecycle.network = None
+
     def test_restore_rejected_when_training_active(self, client):
         """The pre-flight FSM check returns 409 when training is Started.
         This was an implicit contract before (load_snapshot would race

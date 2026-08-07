@@ -56,6 +56,23 @@ class TestWsIdentityKey:
         ws.headers = {}
         assert ws_identity_key(ws) is None
 
+    def test_none_when_empty_string_key(self):
+        """Empty ``X-API-Key`` must follow the anonymous path (no per-identity slot).
+
+        A blank header is truthy-as-present in some ASGI stacks but must not
+        mint an identity digest — otherwise every blank-key client collapses
+        onto one shared per-identity bucket and self-DoSes.
+        """
+        ws = MagicMock()
+        ws.headers = {"X-API-Key": ""}
+        assert ws_identity_key(ws) is None
+
+    def test_none_when_whitespace_only_key(self):
+        """Whitespace-only keys are treated as absent (anonymous)."""
+        ws = MagicMock()
+        ws.headers = {"X-API-Key": "   \t"}
+        assert ws_identity_key(ws) is None
+
 
 @pytest.mark.unit
 class TestGlobalCap:

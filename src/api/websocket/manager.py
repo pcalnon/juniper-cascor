@@ -71,7 +71,10 @@ def ws_identity_key(websocket: WebSocket) -> Optional[str]:
     stack-global + per-IP caps, which is the documented inert-behind-NAT
     posture.
     """
-    api_key = websocket.headers.get("X-API-Key")
+    # Treat missing / empty / whitespace-only keys as anonymous so blank
+    # headers do not mint a shared per-identity digest (self-DoS under the
+    # SEC-F19 D4b cap). Strip before the falsy check.
+    api_key = (websocket.headers.get("X-API-Key") or "").strip()
     if not api_key:
         return None
     return hmac.new(_IDENTITY_HMAC_KEY, api_key.encode("utf-8"), hashlib.sha256).hexdigest()[:16]

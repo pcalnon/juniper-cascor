@@ -540,3 +540,74 @@ class TestAnomalyDetectorIntegration:
         accepted = coordinator.submit_result("w1", msg, {})
         assert accepted is True
         coordinator.shutdown()
+
+    @pytest.mark.asyncio
+    async def test_disconnect_clears_anomaly_history(self):
+        """Session teardown must call ``AnomalyDetector.clear_worker`` so
+        history cannot accumulate across churn / ID reuse."""
+        detector = AnomalyDetector()
+        # Seed history as if the worker had submitted results this session.
+        detector.check_result("seed-placeholder", correlation=0.5, training_duration=5.0, task_id="t0")
+        # We don't know the server-assigned id yet; clear will be asserted on
+        # the id that actually registered. Seed a second synthetic id to prove
+        # clear_worker is selective.
+        detector.check_result("other-worker", correlation=0.6, training_duration=5.0, task_id="t1")
+
+        registry = WorkerRegistry(heartbeat_timeout=30.0)
+        coordinator = WorkerCoordinator(registry=registry, task_reassignment_timeout=5.0)
+        coordinator._anomaly_detector = detector
+
+        reg_msg = json.dumps(WorkerProtocol.build_register("client-name", {"cpu_cores": 2}))
+        ws = _make_websocket(
+            app_state={
+                "anomaly_detector": detector,
+                "worker_coordinator": coordinator,
+                "worker_registry": registry,
+            },
+        )
+        ws.receive_text = AsyncMock(return_value=reg_msg)
+        ws.receive = AsyncMock(side_effect=WebSocketDisconnect())
+        coordinator.get_next_assignment = MagicMock(return_value=None)
+
+        # Capture the server-assigned id at deregister time by wrapping clear_worker.
+        cleared: list[str] = []
+        original_clear = detector.clear_worker
+
+        def _tracking_clear(worker_id: str) -> None:
+            cleared.append(worker_id)
+            original_clear(worker_id)
+
+        with patch.object(detector, "clear_worker", side_effect=_tracking_clear):
+            await worker_stream_handler(ws)
+
+        assert len(cleared) == 1
+        server_id = cleared[0]
+        assert server_id.startswith("worker-")
+        # History for the deregistered worker is gone; unrelated workers remain.
+        assert detector.get_worker_stats(server_id) == {"total_results": 0}
+        assert detector.get_worker_stats("other-worker")["total_results"] == 1
+        coordinator.shutdown()
+
+    @pytest.mark.asyncio
+    async def test_disconnect_without_anomaly_detector_still_cleans_up(self):
+        """Missing ``app.state.anomaly_detector`` must not break disconnect cleanup."""
+        registry = WorkerRegistry(heartbeat_timeout=30.0)
+        coordinator = WorkerCoordinator(registry=registry, task_reassignment_timeout=5.0)
+
+        reg_msg = json.dumps(WorkerProtocol.build_register("w1", {"cpu_cores": 2}))
+        ws = _make_websocket(
+            app_state={
+                "worker_coordinator": coordinator,
+                "worker_registry": registry,
+            },
+        )
+        # Explicit None so getattr(..., None) skips clear_worker (MagicMock
+        # would otherwise invent a truthy anomaly_detector attribute).
+        ws.app.state.anomaly_detector = None
+        ws.receive_text = AsyncMock(return_value=reg_msg)
+        ws.receive = AsyncMock(side_effect=WebSocketDisconnect())
+        coordinator.get_next_assignment = MagicMock(return_value=None)
+
+        await worker_stream_handler(ws)
+        assert registry.worker_count == 0
+        coordinator.shutdown()
