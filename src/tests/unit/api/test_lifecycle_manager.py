@@ -788,6 +788,35 @@ class TestUpdateParamsAtomicity:
         with pytest.raises(ValueError, match="No network exists"):
             mgr.update_params({"learning_rate": 0.005})
 
+    def test_update_params_rejected_while_replaying(self):
+        """CAN-015c: REPLAYING rejects meta-param mutations (manager gate).
+
+        Without this guard, PATCH / WS set_params could mutate live network
+        knobs mid-replay and desync the synthetic epoch stream from the
+        snapshot history being replayed.
+        """
+        from unittest.mock import patch
+
+        net = self._FakeNetwork()
+        mgr = self._mgr_with_network(net)
+        original_lr = net.learning_rate
+        with patch.object(mgr.state_machine, "is_replaying", return_value=True):
+            with pytest.raises(RuntimeError, match="replaying"):
+                mgr.update_params({"learning_rate": 0.005})
+        assert net.learning_rate == pytest.approx(original_lr)
+
+    def test_update_params_allowed_while_investigating(self):
+        """INVESTIGATING explicitly allows meta-param edits (contrast REPLAYING)."""
+        from unittest.mock import patch
+
+        net = self._FakeNetwork()
+        mgr = self._mgr_with_network(net)
+        with patch.object(mgr.state_machine, "is_investigating", return_value=True):
+            with patch.object(mgr.state_machine, "is_replaying", return_value=False):
+                result = mgr.update_params({"learning_rate": 0.007})
+        assert net.learning_rate == pytest.approx(0.007)
+        assert "learning_rate" in result["applied"]
+
 
 @pytest.mark.unit
 class TestRestoreForRetrain:

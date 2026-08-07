@@ -23,6 +23,14 @@ Complete reference documentation for the Juniper Cascor test suite.
 | `validation`         | Input validation functions                 | Parameter checking, type validation                  | Runs with unit tests                          |
 | `accuracy`           | Accuracy calculation methods               | Classification accuracy, metrics                     | Runs with unit tests                          |
 | `early_stopping`     | Early stopping logic                       | Convergence detection, patience handling             | Runs with unit tests                          |
+| `golden`             | Golden / snapshot regression (OUT-12)      | Trajectory, predict-after-load, API snapshot goldens | Dedicated `golden-regression.yml` only        |
+| `conformance`        | model-core GrowableModel contract (OUT-13) | Interface shapes / keys / event order                | Dedicated `conformance.yml` only              |
+
+**Opt-in flags (required):** `--golden` and `--conformance` are separate from
+markers. Without the matching flag, `pytest_collection_modifyitems` skips those
+tests even when `--slow` and `--integration` are set — so they never leak into
+the unit, integration, or scheduled-slow lanes. Both WS-6 workflows also pass
+`--slow --integration` because the tests carry those markers too.
 
 ### Early-Stopping Regression Coverage (No Validation Data Path)
 
@@ -45,6 +53,35 @@ Why this matters:
 
 - The no-validation path is used when `x_val`/`y_val` are omitted, which is common in lightweight training runs.
 - Regressions here can silently disable or destabilize early stopping behavior even if validation-based tests still pass.
+
+### API Version Assertions (BUG-CC-04)
+
+Canonical runtime version for the API process:
+
+| Symbol / path | Source | Used by |
+|---------------|--------|---------|
+| `api.app._API_VERSION` | `importlib.metadata.version("juniper-cascor")` (fallback `"0.0.0-dev"`) | FastAPI `app.version`, Sentry, `set_build_info` |
+| `api.routes.health._API_VERSION` | Same `importlib.metadata` read (separate module fallback literal) | `/v1/health`, readiness `version` field |
+| `api.models.common._API_VERSION` | Module literal (may lag releases) | `ResponseEnvelope.meta.version` |
+
+**Rule for wiring tests:** import `api.app._API_VERSION` and assert equality against it. Do not pin `"0.x.y"` in tests that validate app metadata, health/readiness version fields, or build-info calls.
+
+```python
+from api.app import _API_VERSION, create_app
+
+assert create_app(...).version == _API_VERSION
+# health: assert response.json()["version"] == _API_VERSION
+```
+
+**Allowed literals:** synthetic model construction in fixtures (for example
+`ReadinessResponse(version="0.6.0", ...)`) and shape-only checks that only
+require `isinstance(..., str)`.
+
+**Companion check:** `TestBugCC04VersionSingleSource` in
+`src/tests/unit/test_phase_2e_topology_correlation_phase.py` asserts
+installed metadata equals `pyproject.toml` `version`.
+
+Full narrative and pitfalls: [Testing Manual — API Version Assertions](MANUAL.md#api-version-assertions-bug-cc-04).
 
 ### Marker Combinations
 

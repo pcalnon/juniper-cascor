@@ -122,6 +122,29 @@ class TestStartTraining:
         body = response.json()
         assert body["data"]["status"] == "training_started"
 
+    def test_start_training_unsupported_generator_rejected(self, client_with_network):
+        """Non-spiral dataset.generator must not silently succeed as spiral / empty start.
+
+        The route currently only materializes ``generator == "spiral"``. A request
+        for ``xor`` (accepted by the request model) with no staged data must fail
+        clearly and must not invoke the spiral generator.
+        """
+        with patch("api.routes.training._generate_spiral_data") as spiral_gen:
+            response = client_with_network.post(
+                "/v1/training/start",
+                json={
+                    "dataset": {
+                        "generator": "xor",
+                        "params": {"n_samples": 20},
+                    },
+                    "epochs": 1,
+                },
+            )
+        assert response.status_code == 409
+        detail = response.json()["error"]["message"]
+        assert "Training cannot be started" in detail
+        spiral_gen.assert_not_called()
+
     def test_start_training_with_params(self, client_with_network):
         """start_training should accept training parameter overrides."""
         response = client_with_network.post(

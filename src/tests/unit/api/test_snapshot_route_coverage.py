@@ -891,3 +891,26 @@ class TestReplaySnapshot:
             assert "time_index" in response.json()["error"]["message"]
         finally:
             self._teardown_replay_session(lifecycle)
+
+    def test_replay_control_runtime_error_maps_to_409(self, client):
+        """Race between preflight and lifecycle.replay_control must surface as 409."""
+        lifecycle = client.app.state.lifecycle
+        try:
+            self._install_replay_session(lifecycle, "snap-race")
+            with patch.object(lifecycle, "replay_control", side_effect=RuntimeError("session changed")):
+                response = client.post("/v1/snapshots/snap-race/replay/control", json={"action": "play"})
+            assert response.status_code == 409
+            assert "session changed" in response.json()["error"]["message"]
+        finally:
+            self._teardown_replay_session(lifecycle)
+
+    def test_replay_control_speed_missing_value_returns_400(self, client):
+        lifecycle = client.app.state.lifecycle
+        try:
+            self._install_replay_session(lifecycle, "snap-speed-missing")
+            response = client.post("/v1/snapshots/snap-speed-missing/replay/control", json={"action": "speed"})
+            assert response.status_code == 400
+            body = response.json()["error"]["message"].lower()
+            assert "value" in body or "speed" in body
+        finally:
+            self._teardown_replay_session(lifecycle)
