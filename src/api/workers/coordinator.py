@@ -293,6 +293,19 @@ class WorkerCoordinator:
                 logger.warning("Result for unknown task %s from worker %s — rejected", task_id, worker_id)
                 return False
 
+            # Ownership: only the worker that was assigned the task may
+            # submit its result. Without this check a peer worker (stale,
+            # buggy, or malicious) can complete work it was never given.
+            if task.assigned_worker_id is not None and task.assigned_worker_id != worker_id:
+                logger.warning(
+                    "Result for task %s from worker %s rejected — assigned to %s",
+                    task_id,
+                    worker_id,
+                    task.assigned_worker_id,
+                )
+                self._registry.complete_task(worker_id, success=False)
+                return False
+
             # Validate against schema (Section 12.7 rules 1, 3)
             schema_errors = WorkerProtocol.validate_task_result(msg)
             if schema_errors:

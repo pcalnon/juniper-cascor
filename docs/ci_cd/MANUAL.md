@@ -341,6 +341,48 @@ python -m pytest src/tests/unit \
 
 ---
 
+## Lockfile Update Workflow
+
+**Workflow:** `.github/workflows/lockfile-update.yml`  
+**Enforcement:** `lockfile-check` / "Lockfile Freshness" in `ci.yml` (required by the quality gate)
+
+### Intent
+
+Keep Docker/CI pins (`requirements.lock`) aligned with `pyproject.toml` when Dependabot or a human bumps dependency ranges, without relying on `GITHUB_TOKEN` (which would not re-trigger CI on the lock commit).
+
+### When it runs
+
+1. **Push** to `dependabot/pip/**` by `dependabot[bot]`
+2. **Pull request** that changes `pyproject.toml` on a branch in this repository (forks skipped — they cannot push with the PAT)
+
+### PAT availability gate
+
+Secrets are not readable in job `if:` expressions, so the first step exports `HAVE_PAT` from `secrets.CROSS_REPO_DISPATCH_TOKEN != ''` and branches in shell:
+
+| Actor / secret | Outcome |
+|----------------|---------|
+| PAT present | Checkout with PAT → `uv pip compile` → commit/push if dirty |
+| Dependabot + empty PAT | `::notice::` + skip remaining steps (exit 0) |
+| Anyone else + empty PAT | `::error::` + exit 1 |
+
+**Why Dependabot sees an empty PAT:** Dependabot-triggered workflow runs use the Dependabot secret store. Registering the token only under Actions secrets leaves Dependabot runs empty (historical hard-fail on run 30346680261 / #426; fixed by #428). Optional: duplicate the PAT under Dependabot secrets to restore auto-regen.
+
+### Operator recovery when auto-regen no-ops
+
+```bash
+uv pip compile pyproject.toml \
+  --extra ml --extra api --extra observability --extra juniper-data \
+  --index-strategy unsafe-best-match --no-emit-package torch \
+  --upgrade -o requirements.lock
+git add requirements.lock
+git commit -m "[dependabot skip] Update requirements.lock"
+git push
+```
+
+> Narrative + troubleshooting matrix: [notes/DEPENDENCY_UPDATE_WORKFLOW.md](../../notes/DEPENDENCY_UPDATE_WORKFLOW.md)
+
+---
+
 ## Environment Setup
 
 ### Conda Environment
@@ -368,6 +410,82 @@ mkdir -p logs src/logs reports/junit src/tests/reports
 ```
 
 ---
+
+## WS-6 Gates (Golden + Conformance)
+
+### Intent
+
+Before (and during) the WS-6 refactor that repoints cascor onto
+`juniper-service-core` / `juniper-model-core`, two **serial** CI lanes freeze
+observable behavior and the GrowableModel interface contract. A refactor that
+cannot keep both green without an intentional, reviewed golden update fails the
+WS-6 kill-criterion.
+
+| Half | Workflow | Roadmap | What it freezes |
+|------|----------|---------|-----------------|
+| OUT-12 | `golden-regression.yml` | Golden / snapshot regression | Training trajectory, predict-after-load, scrubbed API response shapes |
+| OUT-13 | `conformance.yml` | model-core conformance | Shapes / keys / event order via `juniper_model_core.conformance.GrowableModelConformance` |
+
+### Determinism contract (both lanes)
+
+Mirrored in the workflow YAML job `env:` and required for local reproduction:
+
+| Constraint | Value | Why |
+|------------|-------|-----|
+| Parallelism | **Serial only** — never `-n` / pytest-xdist | Parallel candidate reduction is not bit-stable |
+| `CASCOR_NUM_PROCESSES` | `1` | Forces sequential candidate path |
+| BLAS threads | `OMP` / `MKL` / `OPENBLAS` / `VECLIB` / `NUMEXPR` = `1` | Set at job level **before** Python loads native libs |
+| Python / torch | **3.13** / **2.11.0** (CPU wheel) | Calibration environment; CPU kernels match `+cu` of the same torch version for these tensors |
+| Interpreter | GIL required | `conftest` aborts under `Py_GIL_DISABLED` |
+| Collection gates | `--golden` or `--conformance` **plus** `--slow --integration` | Markers alone are insufficient — opt-in flags prevent leakage into unit / integration / scheduled-slow |
+
+Unlike goldens, conformance asserts **interface** (shapes / keys / event order),
+not float values — so it carries no cross-build tolerance risk. Goldens use
+tolerance for floats and exact compare for discrete/structural signals
+(`src/tests/golden_support.py`; see `src/tests/fixtures/golden/README.md`).
+
+### CI shape
+
+```
+push/PR/workflow_dispatch
+        │
+        ├─► golden-regression.yml
+        │     pip install torch==2.11.0 (CPU) then -e ".[all]"
+        │     pytest -m golden --golden --slow --integration src/tests/integration
+        │     artifact: golden-regression-results (JUnit, 30d)
+        │
+        └─► conformance.yml
+              pip install torch==2.11.0 (CPU) then -e ".[all]"
+              pytest -m conformance --conformance --slow --integration src/tests/conformance
+              artifact: conformance-results (JUnit, 30d)
+```
+
+Concurrency groups: `golden-${{ github.ref }}` / `conformance-${{ github.ref }}`
+with `cancel-in-progress: true`. Permissions: `contents: read` only.
+
+### Operator constraints
+
+1. **Do not add xdist** to either workflow. Serial is the safety property.
+2. **Do not drop the opt-in flags.** Without `--golden` / `--conformance`,
+   `pytest_collection_modifyitems` skips those markers even when `--slow` and
+   `--integration` are present (`src/tests/conftest.py`).
+3. **Pin torch before editable install** so `pip install -e ".[all]"` does not
+   upgrade away from `2.11.0`.
+4. **Regenerate goldens only after intentional behavior change** — set
+   `GOLDEN_CAPTURE=1`, review the diff, then re-run without capture. See
+   `src/tests/fixtures/golden/README.md`.
+5. Conformance skips the kit's bit-exact serialization check (D-C4); predict-
+   after-load coverage stays in the golden lane at `allclose` tolerance.
+
+### Package path-filtered CI
+
+| Workflow | Working directory | Matrix | Notes |
+|----------|-------------------|--------|-------|
+| `ci-protocol.yml` | `juniper-cascor-protocol/` | Python 3.12, 3.13 | 95% package coverage + `juniper-coverage-gap-map --enforce`; then build/`twine check` |
+| `ci-cascor-model.yml` | `juniper-cascor-model/` | Python 3.12 | CPU torch + `[test,full]`; coverage includes drift-guard; per-file gate via `juniper-ci-tools` |
+
+Both trigger on `paths:` for their package tree (and their workflow file) plus
+`workflow_dispatch`. They do **not** replace server `ci.yml`.
 
 ## PyPI Publishing
 
@@ -437,6 +555,17 @@ If tests timeout:
 2. Increase `--timeout` value
 3. Add `@pytest.mark.slow` to long-running tests
 
+### WS-6 Golden / Conformance Failures
+
+1. Confirm you reproduced with the calibration pins (Python 3.13, torch 2.11.0,
+   single-thread BLAS, `CASCOR_NUM_PROCESSES=1`, GIL env) — not the main CI 3.14
+   conda lane.
+2. Confirm serial execution (no xdist worker count in the command or plugin).
+3. For goldens: check whether an intentional behavior change needs
+   `GOLDEN_CAPTURE=1` + reviewed fixture update (`src/tests/fixtures/golden/`).
+4. For conformance: failures are interface/shape/order — compare against
+   `GrowableModelConformance` expectations, not float noise.
+
 ### Coverage Report Missing
 
 If coverage artifacts are empty:
@@ -452,6 +581,14 @@ If environment setup fails:
 1. Verify `conf/conda_environment.yaml` syntax
 2. Check channel availability (conda-forge, pytorch, nvidia)
 3. Review disk space (pipeline includes cleanup step)
+
+### Lockfile Freshness / Update Lockfile
+
+| Symptom | Cause | Fix |
+|---------|-------|-----|
+| Lockfile Freshness red; Update Lockfile green with no commit | Dependabot PAT gate no-op | Register `CROSS_REPO_DISPATCH_TOKEN` under Dependabot secrets, or push a local regen |
+| Update Lockfile fails on a human `pyproject.toml` PR | Actions PAT missing | Restore Actions secret or commit the lock in the PR |
+| Freshness fails after a range bump | Lock cannot satisfy new mins | Regen with `--upgrade` (see compile command above) |
 
 ### Publish Failures
 

@@ -337,7 +337,7 @@ Entries in `GET /v1/metrics/history` and `WS /ws/training` `metrics` messages:
 
 ```python
 {
-    "epoch": int,                       # 1-based epoch index
+    "epoch": int,                       # training-step index OR within-pass epoch (see kind)
     "timestamp": str,                   # ISO 8601 timestamp
     "loss": float,
     "accuracy": Optional[float],        # null for output-phase callback emissions
@@ -346,8 +346,32 @@ Entries in `GET /v1/metrics/history` and `WS /ws/training` `metrics` messages:
     "phase": str,                       # "output" | "candidate"
     "validation_loss": Optional[float],
     "validation_accuracy": Optional[float],
+    "kind": str,                        # "training_step" | "output_epoch" (C2b)
+    # C7 (U-4) scalar evaluation metrics — always present, nullable.
+    # Populated on the terminal training_step row of each drain when
+    # JUNIPER_CASCOR_EVAL_METRICS_ENABLED is on; null on output_epoch rows
+    # and when disabled / undefined for the batch.
+    "f1": Optional[float],
+    "precision": Optional[float],
+    "recall": Optional[float],
+    "roc_auc": Optional[float],
 }
 ```
+
+`GET /v1/metrics` (snapshot) additionally exposes a self-describing `eval_metrics` block:
+
+```python
+{
+    "enabled": bool,                    # JUNIPER_CASCOR_EVAL_METRICS_ENABLED
+    "average": str,                     # "macro" | "weighted" | "binary"
+    "split": Optional[str],             # "validation" | "training" | null
+    "n_samples": Optional[int],
+    "n_classes": Optional[int],
+    "undefined": dict,                  # metric_key -> reason (empty when all defined)
+}
+```
+
+Whole-metric undefined reasons: `empty_batch`, `single_class`, `invalid_output`.
 
 ### Callback-Driven Emission Granularity
 
