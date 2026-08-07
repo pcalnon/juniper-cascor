@@ -17,6 +17,9 @@ What stays in this module:
 - :class:`TaskAssignment`, :class:`TaskResultMessage` — typed dataclasses
   cascor uses internally for type-safe construction. They serialize to
   the same dicts the workers expect.
+- :class:`BinaryFrame` — a thin subclass of the shared codec that normalizes
+  the decode failure mode across every wheel the ``>=0.1.0a0`` floor admits
+  (see the class docstring); ``encode`` and the frame format are unchanged.
 
 Binary frame format and the message-type enum are defined in
 :mod:`juniper_cascor_protocol.worker.binary_frame` and
@@ -31,12 +34,42 @@ from dataclasses import dataclass, field
 from typing import Any
 
 import numpy as np
-from juniper_cascor_protocol.worker import BinaryFrame, WorkerMessageType
+from juniper_cascor_protocol.worker import BinaryFrame as _SharedBinaryFrame
+from juniper_cascor_protocol.worker import WorkerMessageType
 
 # METRICS-MON R2.2.2: re-export the shared StrEnum under its historical
 # server-side alias. Worker stream code, tests, and downstream callers
 # that imported ``MessageType`` continue to work unchanged.
 MessageType = WorkerMessageType
+
+
+class BinaryFrame(_SharedBinaryFrame):
+    """Shared binary-frame codec with a normalized server-side decode contract.
+
+    ``pyproject.toml`` floors the codec at the alpha
+    ``juniper-cascor-protocol>=0.1.0a0``, so the *installed* wheel may predate
+    the ``ValueError`` wrap that
+    :mod:`juniper_cascor_protocol.worker.binary_frame` now applies to non-UTF-8
+    dtype bytes. On those wheels ``.decode("utf-8")`` raises a raw
+    ``UnicodeDecodeError``; it is a ``ValueError`` subclass, so
+    :func:`api.websocket.worker_stream._handle_task_result` still catches it,
+    but its message is the bare codec text (``'utf-8' codec can't decode byte
+    …``) which is then echoed to the worker as the frame error.
+
+    Normalizing at the server's own import boundary keeps the operator-visible
+    error contract identical across every wheel the floor admits. Once the
+    wrapped protocol release ships and the floor is raised, the shared codec
+    raises ``ValueError`` directly and this override degrades to a passthrough.
+    """
+
+    @staticmethod
+    def decode(data: bytes) -> np.ndarray:
+        """Decode a binary frame, normalizing non-UTF-8 dtype bytes to ``ValueError``."""
+        try:
+            return _SharedBinaryFrame.decode(data)
+        except UnicodeDecodeError as exc:
+            raise ValueError("Binary frame dtype string is not valid UTF-8") from exc
+
 
 __all__ = [
     "BinaryFrame",
