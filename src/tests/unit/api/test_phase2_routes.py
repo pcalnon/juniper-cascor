@@ -97,6 +97,7 @@ class TestAdminExperimentalFunctionsRoute:
         finally:
             client.app.state.lifecycle = original
 
+
 # ---------------------------------------------------------------------------
 # Live-swap route — exception translation table
 # ---------------------------------------------------------------------------
