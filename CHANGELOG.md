@@ -17,6 +17,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **`ws_identity_key` treats blank / whitespace-only `X-API-Key` as anonymous.** Empty or whitespace-only headers previously hashed into a shared per-identity digest under the SEC-F19 D4b cap (self-DoS). The helper now strips before the falsy check so blank keys follow the anonymous (global/per-IP only) path. Tests: `src/tests/unit/api/test_ws_connection_caps.py`.
 
+- **Snapshot restore/resume/retrain while REPLAYING (and retrain while STARTED/PAUSED) → HTTP 409.** Route preflights previously omitted `is_replaying()` (and `/retrain` had no FSM preflight at all), so lifecycle `loaded=False` rejections were misreported as 404 "snapshot not found". Aligns restore/resume/retrain with the same conflict contract. Tests in `test_snapshot_route_coverage.py`.
+
+- **`stop_training` while INVESTIGATING / REPLAYING no longer desyncs FSM vs `training_state`.** STOP was rejected by the state machine but `training_state` was still forced to Stopped and broadcast — Canopy could show Stopped while `start_training` remained blocked. Now raises `RuntimeError`; REST maps to HTTP 409. Tests in `test_lifecycle_manager.py` / `test_training_route_coverage.py`.
+
+- **`validate_task_result` rejects JSON bool for int/numeric fields.** `isinstance(True, int)` previously accepted `candidate_id` / `epochs_completed` / `correlation` as bool. Tests in `test_worker_protocol.py`.
+
 - **InlineDataset + `_reload_dataset` — reject misaligned / half-specified splits at the boundary.**
   `InlineDataset` now cross-validates `train_x`/`train_y` lengths and requires `val_x`/`val_y` as a pair (matching lengths), so `POST /v1/training/start` returns 422 instead of constructing tensors that fail mid-`fit`. `_reload_dataset` likewise rejects juniper-data artifacts with non-2-D train/val arrays, train or validation sample-count mismatches, a partial `X_test`/`y_test` pair, or non-numeric train payloads — leaving prior tensors untouched so staged swaps can retry. Tests: `src/tests/unit/api/test_inline_dataset_validation.py`, extended `TestReloadDataset` in `test_lifecycle_manager_swap.py`.
 

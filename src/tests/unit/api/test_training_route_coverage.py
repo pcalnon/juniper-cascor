@@ -257,6 +257,38 @@ class TestStartTraining:
         assert forwarded_kwargs.get("patience") == 5
 
 
+class TestStopTraining:
+    """Tests for POST /training/stop."""
+
+    def test_stop_training_while_investigating_returns_409(self, client):
+        """Stop while Investigating must 409 — not silently desync FSM."""
+        lifecycle = client.app.state.lifecycle
+        lifecycle.state_machine.mark_investigating()
+        try:
+            response = client.post("/v1/training/stop")
+            assert response.status_code == 409
+            assert "cannot be stopped" in response.json()["error"]["message"].lower()
+            assert lifecycle.state_machine.is_investigating()
+        finally:
+            from api.lifecycle.state_machine import Command
+
+            lifecycle.state_machine.handle_command(Command.RESET)
+
+    def test_stop_training_while_replaying_returns_409(self, client):
+        """Stop while Replaying must 409 and leave FSM in REPLAYING."""
+        lifecycle = client.app.state.lifecycle
+        lifecycle.state_machine.mark_replaying()
+        try:
+            response = client.post("/v1/training/stop")
+            assert response.status_code == 409
+            assert "cannot be stopped" in response.json()["error"]["message"].lower()
+            assert lifecycle.state_machine.is_replaying()
+        finally:
+            from api.lifecycle.state_machine import Command
+
+            lifecycle.state_machine.handle_command(Command.RESET)
+
+
 class TestPauseTraining:
     """Tests for POST /training/pause."""
 
