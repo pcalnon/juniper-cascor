@@ -340,6 +340,28 @@ class TestHandleCommandMessageBranches:
         sent = ws.send_json.await_args[0][0]
         assert sent["data"]["status"] == "success"
 
+    @pytest.mark.asyncio
+    async def test_generic_lifecycle_exception_returns_execution_failed_ack(self):
+        """Lifecycle RuntimeError (e.g. stop when idle) yields opaque error ack; socket stays open.
+
+        Distinct from TimeoutError / ValidationError arms: generic failures must not
+        tear down the control channel so Canopy can retry.
+        """
+        ws = AsyncMock()
+        bucket = LeakyBucket(capacity=10, refill_rate=10.0)
+        lifecycle = MagicMock()
+        lifecycle.stop_training.side_effect = RuntimeError("Cannot stop: not training")
+
+        await _handle_command_message(ws, lifecycle, {"command": "stop", "command_id": "ex-1"}, bucket)
+
+        sent = ws.send_json.await_args[0][0]
+        assert sent["type"] == "command_response"
+        assert sent["data"]["status"] == "error"
+        assert sent["data"]["error"] == "Command execution failed"
+        assert sent["data"]["command_id"] == "ex-1"
+        # Keep-alive: generic execution failures must not close the control socket.
+        ws.close.assert_not_awaited()
+
 
 @pytest.mark.unit
 class TestControlPingLoop:

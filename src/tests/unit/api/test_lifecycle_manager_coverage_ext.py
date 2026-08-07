@@ -90,6 +90,25 @@ class TestNetworkGuards:
         assert mgr.has_model()
         assert mgr.state_machine.is_replaying()
 
+    def test_create_network_rejected_while_investigating(self, mgr):
+        """INVESTIGATING owns an inspected snapshot — create must not replace it."""
+        mgr.create_network(input_size=2, output_size=2)
+        assert mgr.state_machine.mark_investigating()
+        with pytest.raises(RuntimeError, match="while investigating a snapshot"):
+            mgr.create_network(input_size=3, output_size=2)
+        assert mgr.has_model()
+        assert mgr.state_machine.is_investigating()
+        assert mgr.network.config.input_size == 2
+
+    def test_delete_network_rejected_while_investigating(self, mgr):
+        """Delete while INVESTIGATING must not clear the inspected snapshot model."""
+        mgr.create_network(input_size=2, output_size=2)
+        assert mgr.state_machine.mark_investigating()
+        with pytest.raises(RuntimeError, match="while investigating a snapshot"):
+            mgr.delete_network()
+        assert mgr.has_model()
+        assert mgr.state_machine.is_investigating()
+
 
 class TestBroadcastThrottleGuard:
     """The GAP-WS-21 coalescer's metric-emission guard is defensive."""

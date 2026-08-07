@@ -1504,6 +1504,13 @@ class TrainingLifecycleManager:
             raise RuntimeError("Cannot create network while training is active")
         if self.state_machine.is_replaying():
             raise RuntimeError("Cannot create network while replay is active")
+        # INVESTIGATING owns an inspected snapshot model (patch_weights /
+        # add_hidden_unit_manual / retrain). Replacing it in-place leaves the
+        # FSM Investigating against a brand-new network that is not the
+        # restored snapshot — start_training stays rejected and weight edits
+        # target the wrong object. Require /retrain or /reset first.
+        if self.state_machine.is_investigating():
+            raise RuntimeError("Cannot create network while investigating a snapshot")
 
         self._params = kwargs.copy()
         config = CascadeCorrelationConfig.create_simple_config(**kwargs)
@@ -1547,6 +1554,11 @@ class TrainingLifecycleManager:
                 raise RuntimeError("Cannot delete network while training is active")
             if self.state_machine.is_replaying():
                 raise RuntimeError("Cannot delete network while replay is active")
+            # Mirror create_network: INVESTIGATING still owns the inspected
+            # snapshot model for patch/retrain flows. Clearing it under that
+            # state strands the FSM Investigating with no model.
+            if self.state_machine.is_investigating():
+                raise RuntimeError("Cannot delete network while investigating a snapshot")
             self.model = None
             self._params = None
             self.state_machine.handle_command(Command.RESET)
