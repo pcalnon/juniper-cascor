@@ -5,7 +5,7 @@
 **Author**: Paul Calnon
 **License**: MIT License
 **Version**: 0.7.0
-**Last Updated**: 2026-08-06
+**Last Updated**: 2026-08-07
 
 ---
 
@@ -278,6 +278,7 @@ juniper-cascor/
 │   ├── run_all_tests.bash            #   Test runner
 │   ├── profile_training.bash         #   py-spy profiler
 │   ├── get_code_stats.bash           #   Code statistics
+│   ├── sequence_safety/              #   Compositional-loss screens (symbol-loss + docs-additions)
 │   └── (30+ additional utility scripts)
 ├── data/                             # Spiral datasets (.pt files)
 ├── dist/                             # Build artifacts
@@ -293,7 +294,9 @@ juniper-cascor/
 │   │   ├── publish-protocol.yml      #   PyPI publish (juniper-cascor-protocol)
 │   │   ├── publish-cascor-model.yml  #   PyPI publish (juniper-cascor-model)
 │   │   ├── lockfile-update.yml       #   Dependency lockfile updates
-│   │   └── security-scan.yml         #   Security scanning
+│   │   ├── security-scan.yml         #   Security scanning
+│   │   ├── sequence-safety.yml       #   Per-PR compositional-loss screens (ADVISORY, standalone)
+│   │   └── main-verify.yml           #   Post-merge compositional-loss net (catch-up base + stable-title issue)
 │   ├── CODEOWNERS                    #   Code ownership rules
 │   └── dependabot.yml                #   Dependency update automation
 ├── .serena/memories/                 # Serena MCP server context
@@ -816,6 +819,8 @@ Gate: 80% aggregate (override with `COVERAGE_FAIL_UNDER=<n>`). Coverage runs in 
 | Publish model | `.github/workflows/publish-cascor-model.yml` | Release (`juniper-cascor-model-v*`) + `workflow_dispatch` | PyPI publish for `juniper-cascor-model` |
 | Lockfile Update | `.github/workflows/lockfile-update.yml` | Push to dependabot/** branches | Dependency lockfile refresh |
 | Security Scan | `.github/workflows/security-scan.yml` | Schedule/dispatch | Gitleaks, Bandit, pip-audit |
+| Sequence Safety (Advisory) | `.github/workflows/sequence-safety.yml` | PR (`main`/`develop`) | Per-PR symbol-loss + docs-deletion screens over base..HEAD (ADVISORY, standalone, never a required check) |
+| Post-Merge Main Verification | `.github/workflows/main-verify.yml` | Push `main`, dispatch | Bypass-proof post-merge compositional-loss net (catch-up base; stable-title tracking issue on failure) |
 
 ### Lockfile Update PAT Gate
 
@@ -843,6 +848,18 @@ Optional: register the same PAT under **Settings → Secrets → Dependabot** to
 
 - `.github/CODEOWNERS` -- Code ownership rules
 - `.github/dependabot.yml` -- Automated dependency updates
+
+### Sequence Safety (Compositional-Loss Net)
+
+Ported from juniper-ml (ml#873 / #880 / #928; the flood-remediation program) after the 2026-08-05 storm triage found *compositional loss* — a silently deleted def/class/method, a gutted body, or a net docs-section deletion that no per-PR check sees because a deleted test cannot fail — to be cascor's one remaining gap. Two pure-stdlib git-diff screens live in `util/sequence_safety/`:
+
+- `symbol_loss_check.py` — AST symbol inventory of BASE vs HEAD over `src/**/*.py` (includes `src/tests/**`); FAIL on a LOST / WEAKENED / DUPLICATED def, with a qualified-name / body-similarity relocation downgrade. Escape hatch: an `Allow-Symbol-Loss: <qualified.symbol>` commit trailer. (`@property`/`@x.setter` accessor pairs are disambiguated so they are never a false DUPLICATED — a cascor-src adaptation over the juniper-ml original.)
+- `docs_additions_check.py` — markdown deletion-magnitude screen over `AGENTS.md` + `docs/**` + `notes/**`; FAIL on a deleted heading or a run of ≥ N consecutive deleted lines, WARN on small in-place swaps. Escape hatch: an `Allow-Docs-Rewrite: <path>` commit trailer.
+
+Everything is **ADVISORY** — neither workflow is a required status check and this makes **no branch-ruleset change**.
+`sequence-safety.yml` surfaces findings per-PR at review (with WARN-only `allow-symbol-loss` / `docs-rewrite` label hatches); `main-verify.yml` is the bypass-proof post-merge net that fires on every merge to `main` (catch-up base sweeps any `[skip ci]` window; a stable-title tracking issue is upserted on failure).
+v1 defers the post-merge regression battery (cascor's suite is heavy) and Slack notify (no webhook secret) — see the workflow header comments.
+The screens are behaviourally identical to juniper-ml's, whose `tests/test_symbol_loss_check.py` + `tests/test_docs_additions_check.py` remain the authoritative regression suite.
 
 ---
 
