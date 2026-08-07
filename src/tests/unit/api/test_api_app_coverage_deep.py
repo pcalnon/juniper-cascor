@@ -240,6 +240,53 @@ class TestAutoStartTraining:
             await _auto_start_training(app, settings)
 
     @pytest.mark.asyncio
+    async def test_auto_start_malformed_dataset_params_fail_soft(self):
+        """Malformed AUTO_DATASET_PARAMS JSON must not crash the boot task."""
+        settings = Settings(auto_start=True, auto_dataset_params="{not-json")
+
+        mock_client_instance = MagicMock()
+        mock_client_instance.wait_for_ready.return_value = True
+        mock_lifecycle = MagicMock()
+
+        app = create_app(settings)
+        app.state.lifecycle = mock_lifecycle
+
+        with patch.dict("sys.modules", {"juniper_data_client": MagicMock(JuniperDataClient=MagicMock(return_value=mock_client_instance))}):
+            await _auto_start_training(app, settings)
+
+        mock_client_instance.create_dataset.assert_not_called()
+        mock_lifecycle.create_network.assert_not_called()
+        mock_lifecycle.start_training.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_auto_start_malformed_network_json_fail_soft(self):
+        """Malformed AUTO_NETWORK JSON fails soft after dataset fetch succeeds."""
+        settings = Settings(
+            auto_start=True,
+            auto_dataset_params="{}",
+            auto_network="{broken",
+        )
+
+        mock_client_instance = MagicMock()
+        mock_client_instance.wait_for_ready.return_value = True
+        mock_client_instance.create_dataset.return_value = {"dataset_id": "ds-bad-net"}
+        mock_client_instance.download_artifact_npz.return_value = {
+            "X_train": __import__("numpy").random.randn(8, 2).astype("float32"),
+            "y_train": __import__("numpy").random.randn(8, 2).astype("float32"),
+        }
+        mock_lifecycle = MagicMock()
+
+        app = create_app(settings)
+        app.state.lifecycle = mock_lifecycle
+
+        with patch.dict("sys.modules", {"juniper_data_client": MagicMock(JuniperDataClient=MagicMock(return_value=mock_client_instance))}):
+            await _auto_start_training(app, settings)
+
+        mock_client_instance.create_dataset.assert_called_once()
+        mock_lifecycle.create_network.assert_not_called()
+        mock_lifecycle.start_training.assert_not_called()
+
+    @pytest.mark.asyncio
     async def test_auto_start_import_error_handled(self):
         """Test auto-start handles missing juniper_data_client import (line 87)."""
         import builtins
