@@ -177,21 +177,37 @@ class TestHandleRegistration:
 
     @pytest.mark.asyncio
     async def test_wrong_message_type(self, registry):
-        """Non-registration first message closes the connection."""
+        """Non-registration first message closes with structured error + code 4007."""
         ws = AsyncMock()
         ws.receive_text = AsyncMock(return_value=json.dumps({"type": "heartbeat", "worker_id": "w1"}))
 
         worker_id = await _handle_registration(ws, registry)
         assert worker_id is None
+        # Ops/workers distinguish "expected REGISTER" (4007) from 4005/4006/4008/4013.
+        ws.send_json.assert_awaited_once()
+        error_msg = ws.send_json.call_args[0][0]
+        assert error_msg["type"] == "error"
+        assert "registration" in error_msg["error"].lower()
+        ws.close.assert_awaited_once()
+        assert ws.close.call_args.kwargs["code"] == 4007
+        assert ws.close.call_args.kwargs["reason"] == "Expected registration"
 
     @pytest.mark.asyncio
     async def test_missing_fields(self, registry):
-        """Registration with missing fields closes the connection."""
+        """Registration with missing fields closes with structured error + code 4008."""
         ws = AsyncMock()
         ws.receive_text = AsyncMock(return_value=json.dumps({"type": "register"}))  # Missing worker_id and capabilities
 
         worker_id = await _handle_registration(ws, registry)
         assert worker_id is None
+        # Invalid-registration (4008) must stay distinct from registry-full (4013).
+        ws.send_json.assert_awaited_once()
+        error_msg = ws.send_json.call_args[0][0]
+        assert error_msg["type"] == "error"
+        assert "invalid registration" in error_msg["error"].lower()
+        ws.close.assert_awaited_once()
+        assert ws.close.call_args.kwargs["code"] == 4008
+        assert ws.close.call_args.kwargs["reason"] == "Invalid registration"
 
 
 @pytest.mark.unit
