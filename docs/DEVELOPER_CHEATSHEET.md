@@ -1,6 +1,6 @@
 # Developer Cheatsheet — juniper-cascor
 
-**Version**: 1.0.4  |  **Date**: 2026-08-07  |  **Project**: juniper-cascor
+**Version**: 1.0.5  |  **Date**: 2026-08-07  |  **Project**: juniper-cascor
 
 ---
 
@@ -149,12 +149,23 @@ Metrics nuance:
 | `JUNIPER_WS_HEARTBEAT_INTERVAL_SEC` | `30` | Training/control heartbeat ping interval (`AliasChoices` name; **not** `JUNIPER_CASCOR_`-prefixed). `<= 0` disables the heartbeat. |
 | `JUNIPER_WS_HEARTBEAT_PONG_TIMEOUT_SEC` | `10` | Training/control pong/liveness window before heartbeat close (same `AliasChoices` binding). |
 | `JUNIPER_CASCOR_REMOTE_WORKERS_HEARTBEAT_TIMEOUT` | `30.0` | Worker heartbeat stale timeout (CONC-10 reap). |
-| `JUNIPER_CASCOR_REMOTE_WORKERS_TASK_REASSIGNMENT_TIMEOUT` | `120.0` | Fallback reassignment for orphaned in-flight tasks. Schema/tensor rejects and soft binary-frame aborts requeue immediately — do not wait for this timeout on those paths. |
+| `JUNIPER_CASCOR_REMOTE_WORKERS_TASK_REASSIGNMENT_TIMEOUT` | `120.0` | Fallback reassignment for orphaned in-flight tasks. All four immediate-requeue paths (reject, soft abort, clean disconnect, dispatch send failure) bypass this timeout — reaching it means none of them fired. |
 | `JUNIPER_CASCOR_AUTO_START_DATA_SERVICE` / `_CANOPY` | `false` | Local companion auto-start; a failed health probe terminates the subprocess and clears `_active_services` (see troubleshooting). |
 
 **Secrets tip:** Prefer a readable non-empty `*_FILE` in compose. If the mount exists but is unreadable, boot continues with the plain env var (or open auth when neither is set) — fix file permissions rather than assuming the env var was ignored.
 
-**Worker tip:** A candidate round that stalls with a still-connected worker after a bad binary `task_result` is the soft-abort path (text / oversized / decode failure); `abort_in_flight_result` requeues it immediately, because heartbeats keep CONC-10 from reaping it. See [API Reference — WS `/ws/v1/workers`](api/JUNIPER_CASCOR_API_REFERENCE.md#ws-wsv1workers).
+**Worker tip — the four immediate-requeue paths.** Nothing in-flight should wait for the 120s reassignment timeout; grep the coordinator log for the matching line to tell them apart:
+
+| Trigger | Method | Log line |
+|---------|--------|----------|
+| Schema / tensor reject in `submit_result` | `_reject_and_requeue_task` | `requeued after rejected result` |
+| Bad binary frame, socket stays open | `abort_in_flight_result` | `requeued after soft result-frame abort` |
+| Clean socket close (incl. mid-frame) | `handle_worker_disconnect` | `requeued after worker … disconnect` |
+| `task_assign` send failed post-assignment | `requeue_after_dispatch_failure` | `requeued after dispatch send failure` |
+
+The abort and dispatch-failure paths matter most: the worker keeps heartbeating while busy, so CONC-10 never reaps it. See [API Reference — WS `/ws/v1/workers`](api/JUNIPER_CASCOR_API_REFERENCE.md#ws-wsv1workers).
+
+**Worker tip:** A `task_result` with `success=true` and no `weights` tensor is rejected by `submit_result` (checked before `validate_tensors`, so an empty `tensor_manifest` cannot skip it) — otherwise `_dispatch_to_remote_workers` rebuilds a randomly initialized `CandidateUnit` that can win N-best selection. `success=false` may omit weights.
 
 ---
 
@@ -316,6 +327,10 @@ Core: `torch`, `numpy`, `h5py`, `matplotlib`, `PyYAML`, `requests`
 | Worker `task_result` rejected / task stays pending                    | Wrong `worker_id` vs `assigned_worker_id`, or a bad tensor manifest | Ensure only the assignee submits; fix manifest `shape`/`dtype` (non-dict entries / empty `weights` are validation errors) |
 | Candidate round stalls ~120s after a bad worker `task_result`         | Schema/tensor reject left the task assigned until reassignment | `_reject_and_requeue_task` frees the worker and requeues immediately — check worker logs for validation errors |
 | Candidate round stalls ~120s while the worker still heartbeats after a bad frame | Soft binary abort left the worker busy (CONC-10 cannot reap) | `abort_in_flight_result` frees + requeues text/oversized/decode failures immediately — inspect the worker `error` JSON |
+| Candidate round stalls ~120s after a worker socket drops mid-result | In-flight task left assigned by the disconnect teardown | `handle_worker_disconnect` requeues clean closes immediately (log `requeued after worker … disconnect`); check worker/process exit and registry deregister logs |
+| Candidate round stalls ~120s after `task_assign` while the worker still heartbeats | Dispatch `send_json`/`send_bytes` failed after `get_next_assignment`, leaving the worker busy | `requeue_after_dispatch_failure` frees + requeues immediately — grep for `Dispatch send failed for task` warnings |
+| Hidden-unit growth picks a near-random remote candidate | A `success=true` `task_result` was accepted with a missing/empty `weights` tensor | `submit_result` rejects success-without-weights ahead of `validate_tensors`; inspect worker result envelopes and the coordinator reject log |
+| Remote workers stay busy after a cancelled candidate round | `cancel_round` cleared pending maps but left registry `active_task_id` set | `cancel_round` captures busy workers before the clear and calls `complete_task(..., success=False)` per worker; if capacity is still stuck, check the worker's `active_task_id` in `/v1/workers` |
 | Reconnected worker trips duplicate/perfect correlation anomalies      | Anomaly history surviving deregister under recycled IDs      | Teardown calls `AnomalyDetector.clear_worker`; see the worker-stream `finally` and `test_disconnect_clears_anomaly_history` |
 | Companion auto-start leaves a port conflict / atexit double-terminate | A failed health probe left a stale `_active_services` entry or an open log FD | `service_launcher` terminates, removes the entry in a `finally`, and closes the log handle in `ManagedService.terminate`; restart cascor after a failed companion boot |
 | Auth open / keys missing despite a `_FILE` mount                      | Unreadable secret file fell through to an unset env var       | Fix mount permissions, or set the plain `JUNIPER_CASCOR_API_KEYS` env var as the fallback |
