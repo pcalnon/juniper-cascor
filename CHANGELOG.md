@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **W-11: direct-CLI experiment-YAML mapping** (CLI experimentation plan §11 / Wave 3.6). `main.py`'s thin adapter maps the `--config` experiment YAML's `dataset.params` / `training.params` onto the direct CLI's overridable knobs
+  (spiral shape/ratios/seed; learning-rate, correlation-threshold, max-hidden-units, patience, candidate/output epochs, with `max_epochs` aliasing to `output_epochs` per C2b) with `cascor_constants` as the fallback tier.
+  Keys with no direct-CLI counterpart (service-tier knobs like `max_iterations`) are reported loudly, never dropped silently. The Settings source (Wave 3.1) fail-loud-validates the file before the adapter reads it.
+  Tests: `src/tests/unit/test_w11_cli_yaml_mapping.py`.
+
 - **Wave 3.2: reference experiment YAMLs** under `conf/experiments/` (CLI experimentation plan §5.3/§14): `spiral-baseline.yaml` (the §5.4 reference — full cascade budget, all five §8.1 plots, snapshot + Grafana bridge), `spiral-smoke.yaml` (the P1.1 minimal-budget smoke, live-proven 2026-08-07), and `xor-staged.yaml` (the non-spiral G-6 staging-path reference — start-time generators other than spiral are rejected 422 per W-1). Each file validates against BOTH consumers: the app-side `ExperimentYamlSettingsSource` (`service:` projection, Wave 3.1) and the juniper-ml driver's `load_config` (§5.6).
 
 
