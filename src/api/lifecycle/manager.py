@@ -3312,18 +3312,39 @@ class TrainingLifecycleManager:
             rotations = params.pop("rotations", None)
             if rotations is not None:
                 params.setdefault("n_rotations", rotations)
+            params.pop("n_squares", None)
         elif generator == "xor":
             n_samples = params.pop("n_samples", None)
             if n_samples is not None:
                 params.setdefault("n_points_per_quadrant", max(1, int(n_samples) // 4))
             params.pop("rotations", None)
             params.pop("n_spirals", None)
-        else:
-            # circles / moon / mnist / gaussian take ``n_samples`` directly; drop
-            # the spiral-only typed fields so they never reach generators that do
-            # not declare them.
+            params.pop("n_squares", None)
+        elif generator == "gaussian":
+            # W-3: juniper-data's GaussianParams has NO ``n_samples`` — it takes a
+            # per-class count. A staged total would previously pass through and be
+            # silently ignored by the (extra-tolerant) params model, generating with
+            # defaults — the silent-wrong-params class. Divide by the requested
+            # class count (juniper-data GAUSSIAN_DEFAULT_N_CLASSES=2) like spiral's
+            # per-arm division.
+            n_classes = int(params.get("n_classes") or 2)
+            n_samples = params.pop("n_samples", None)
+            if n_samples is not None:
+                params.setdefault("n_samples_per_class", max(1, int(n_samples) // max(1, n_classes)))
             params.pop("rotations", None)
             params.pop("n_spirals", None)
+            params.pop("n_squares", None)
+        elif generator == "checkerboard":
+            # W-3: checkerboard takes ``n_samples`` AND ``n_squares`` directly; drop
+            # only the spiral-only fields.
+            params.pop("rotations", None)
+            params.pop("n_spirals", None)
+        else:
+            # circles / moon / mnist / equities take ``n_samples`` directly; drop
+            # every generator-specific typed field they do not declare.
+            params.pop("rotations", None)
+            params.pop("n_spirals", None)
+            params.pop("n_squares", None)
         return generator, params
 
     @staticmethod
