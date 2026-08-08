@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Wave 3.2: reference experiment YAMLs** under `conf/experiments/` (CLI experimentation plan §5.3/§14): `spiral-baseline.yaml` (the §5.4 reference — full cascade budget, all five §8.1 plots, snapshot + Grafana bridge), `spiral-smoke.yaml` (the P1.1 minimal-budget smoke, live-proven 2026-08-07), and `xor-staged.yaml` (the non-spiral G-6 staging-path reference — start-time generators other than spiral are rejected 422 per W-1). Each file validates against BOTH consumers: the app-side `ExperimentYamlSettingsSource` (`service:` projection, Wave 3.1) and the juniper-ml driver's `load_config` (§5.6).
+
+
+### Added
+
 - **Wave 3.1: experiment YAML config layer** (CLI experimentation plan §5.1/§5.2/§5.6, juniper-ml `notes/JUNIPER_2026-07-29_JUNIPER-ECOSYSTEM_CASCOR-RECURRENCE-CLI-TEST-VALIDATION-EXPERIMENTATION-PLAN.md`). New `ExperimentYamlSettingsSource` projects ONLY the experiment YAML's `service:` block into `Settings` with the ratified precedence `CLI/init > YAML > env > .env > defaults` — the stock `YamlConfigSettingsSource` would silently no-op under this model's `extra="ignore"` with the experiment YAML's nested top level. Fail-loud validation before boot: unknown top-level blocks, `schema_version` (1..1), unknown `service:` keys, and the launcher-owned infra keys (`host`/`port`/`juniper_data_url`, plus `eval_metrics_enabled` which belongs in `runtime:`) are rejected (§5.6 rules 1/2/6). Activated only by the new `JUNIPER_CASCOR_CONFIG_FILE` env var — inert for every existing env/compose deployment (risk R-4) — with a new `--config PATH` convenience flag on `server.py` and `main.py` that sets the env var before the first (`lru_cache`'d) settings load. Tests: `src/tests/unit/api/test_experiment_yaml_settings.py`.
 
 
