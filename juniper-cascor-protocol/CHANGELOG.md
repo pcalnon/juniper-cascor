@@ -8,6 +8,27 @@ with [PEP 440](https://peps.python.org/pep-0440/) pre-release identifiers.
 
 ## [Unreleased]
 
+### Fixed
+
+- **`BinaryFrame.decode` no longer leaks the raw codec error for a non-UTF-8 dtype string**
+  ([pcalnon/juniper-cascor#463](https://github.com/pcalnon/juniper-cascor/pull/463)).
+  Decoding the dtype field was a bare `data[...].decode("utf-8")`, so a frame whose dtype bytes are not valid UTF-8
+  surfaced Python's `'utf-8' codec can't decode byte 0xff in position 0: invalid start byte` verbatim. The cascor
+  server echoes that text back to the submitting worker as the frame error, so a wire-level fault was reported in
+  codec terms rather than frame terms. The decode is now wrapped and re-raised as
+  `ValueError("Binary frame dtype string is not valid UTF-8")` — chained via `from exc`, so the original codec error
+  is preserved on `__cause__` — matching the frame-level wording of every other malformed-frame rejection in
+  `decode` and its documented `Raises: ValueError` contract. Pinned by `tests/test_worker.py`.
+
+### Changed
+
+- **Non-UTF-8 dtype bytes now raise plain `ValueError` instead of `UnicodeDecodeError`.**
+  Same change as the entry above, called out separately because it is caller-visible. `UnicodeDecodeError` is a
+  `ValueError` subclass, so consumers catching `ValueError` — including the cascor server's `except ValueError`
+  around `BinaryFrame.decode` — are unaffected. A consumer catching `UnicodeDecodeError` *specifically* will no
+  longer match this path and should widen to `ValueError`. Every other raised exception type, the frame format, and
+  `encode` are unchanged.
+
 ## [0.1.0] - 2026-04-30
 
 ### Changed
