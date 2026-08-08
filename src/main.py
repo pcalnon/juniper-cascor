@@ -439,6 +439,7 @@ Examples:
     parser.add_argument("--profile-output", type=str, default="./profiles", help="Directory for profile output files (default: ./profiles)")
 
     parser.add_argument("--profile-top-n", type=int, default=30, help="Number of top functions to display in profile output (default: 30)")
+    parser.add_argument("--config", type=str, default=None, help="Experiment YAML whose service: block overrides env (sets JUNIPER_CASCOR_CONFIG_FILE before settings load; Wave 3.1)")
 
     return parser.parse_args()
 
@@ -448,6 +449,10 @@ Examples:
 # This is the entry point for the script.
 if __name__ == "__main__":
     args = parse_args()
+
+    if args.config:
+        # Wave 3.1: must land before the first Settings()/get_settings() use (SS5.2).
+        os.environ["JUNIPER_CASCOR_CONFIG_FILE"] = args.config
 
     if args.profile:
         from profiling.deterministic import ProfileContext

@@ -32,7 +32,7 @@ class TestServerMain:
         with patch("server.get_settings", return_value=mock_settings) as mock_get_settings, patch("server.create_app", return_value=mock_app) as mock_create_app, patch("server.uvicorn.run") as mock_uvicorn_run:
             from server import main
 
-            main()
+            main([])
 
             mock_get_settings.assert_called_once()
             mock_create_app.assert_called_once_with(mock_settings)
@@ -53,7 +53,7 @@ class TestServerMain:
         with patch("server.get_settings", return_value=mock_settings), patch("server.create_app", return_value=MagicMock()), patch("server.uvicorn.run") as mock_uvicorn_run:
             from server import main
 
-            main()
+            main([])
 
             call_kwargs = mock_uvicorn_run.call_args
             assert call_kwargs[1]["log_level"] == "warning" or call_kwargs.kwargs["log_level"] == "warning"
@@ -68,7 +68,7 @@ class TestServerMain:
         with patch("server.get_settings", return_value=mock_settings), patch("server.create_app", return_value=MagicMock()), patch("server.uvicorn.run") as mock_uvicorn_run:
             from server import main
 
-            main()
+            main([])
 
             _, kwargs = mock_uvicorn_run.call_args
             assert kwargs["host"] == "192.168.1.100"
