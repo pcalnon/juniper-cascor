@@ -63,11 +63,20 @@ The FastAPI service reads these settings through `api.settings.Settings` with th
 | `JUNIPER_CASCOR_PORT` | Integer | `8200` | API server listen port. |
 | `JUNIPER_CASCOR_LOOPBACK_PUBLISH_ATTESTED` | Boolean | `false` | One of the two bind attestations required when `JUNIPER_CASCOR_HOST` is non-loopback, such as `0.0.0.0`. Setting it to `true` attests the port is reachable only via a loopback-only host publish. |
 | `JUNIPER_CASCOR_AUTH_PROXY_ATTESTED` | Boolean | `false` | One of the two bind attestations required when `JUNIPER_CASCOR_HOST` is non-loopback. Setting it to `true` attests a fronting authenticating reverse proxy terminates access before the port. |
-| `JUNIPER_CASCOR_API_KEYS` | CSV / JSON list | unset | API keys accepted in `X-API-Key`. When unset, API-key auth is disabled for development. |
+| `JUNIPER_CASCOR_API_KEYS` | CSV / JSON list | unset | API keys accepted in `X-API-Key`. When unset/blank, API-key auth is disabled (dev mode). |
+| `JUNIPER_CASCOR_API_KEYS_FILE` | Path string | unset | Docker-secrets companion for `JUNIPER_CASCOR_API_KEYS`. `api.secrets.get_secret()` prefers an existing file over the plain env var and returns stripped contents — including `""` for empty/whitespace files (no env fallback). Settings injects that value only when `api_keys` is not already set; an empty file therefore leaves keys unset in the usual compose `_FILE`-only pattern. An **unreadable** file (`OSError` / `PermissionError`) instead falls through to the plain env var (fail-soft), as does a missing path or non-file. |
+| `JUNIPER_CASCOR_RATE_LIMIT_ENABLED` | Boolean | `false` | Enable REST fixed-window rate limiting in `SecurityMiddleware`. |
+| `JUNIPER_CASCOR_RATE_LIMIT_REQUESTS_PER_MINUTE` | Integer | `60` | REST requests per window when rate limiting is enabled. Keyed per API key when auth is on; per client IP when auth is off. |
+| `JUNIPER_CASCOR_REQUIRE_AUTH` | Boolean | `false` | SEC-F01 intended auth posture. `false` = missing/blank keys WARN and the service runs open; `true` = missing/blank keys refuse boot with `AuthPostureError`. Set `true` wherever secrets are provisioned (composed juniper-deploy). |
+| `JUNIPER_SKIP_AUTH_POSTURE_CHECK` | `1` / unset | unset | Escape hatch that skips `enforce_auth_posture` (logged loudly). Not a `JUNIPER_CASCOR_` setting — shared across Juniper services. |
 | `JUNIPER_CASCOR_WS_MAX_CONNECTIONS_GLOBAL` | Integer | `200` | Stack-absolute WebSocket admission cap across `/ws/training`, `/ws/control`, and `/ws/v1/workers`. |
-| `JUNIPER_CASCOR_WS_MAX_CONNECTIONS_PER_IDENTITY` | Integer | `5` | Per API-key identity admission cap for `/ws/control`. |
+| `JUNIPER_CASCOR_WS_MAX_CONNECTIONS_PER_IDENTITY` | Integer | `5` | Per API-key identity admission cap for `/ws/control`. Keyed on `ws_identity_key` (a truncated HMAC of the **stripped** `X-API-Key`); blank/whitespace headers are anonymous. |
 | `JUNIPER_CASCOR_WS_MAX_CONNECTIONS_PER_IP` | Integer | `5` | Per-source-IP cap for manager-routed sockets; useful as DoS dampening, but not an identity control behind Docker NAT. |
-| `JUNIPER_CASCOR_WS_HEARTBEAT_INTERVAL_SEC` | Integer | `30` | Server heartbeat interval for WebSocket channels. |
+| `JUNIPER_CASCOR_WS_CONTROL_ALLOWED_ORIGINS` | JSON list / CSV | localhost canopy origins | `/ws/control` Origin allowlist. Accepts a JSON array or comma-CSV. Malformed JSON that is not a list fails soft to CSV splitting; empty entries are stripped. An empty string disables the allowlist (explicit opt-out). |
+| `JUNIPER_WS_HEARTBEAT_INTERVAL_SEC` | Integer | `30` | Training/control application heartbeat interval (`Settings.ws_heartbeat_interval_sec`). Bound via an `AliasChoices` name — **not** the default `JUNIPER_CASCOR_` prefix. `<= 0` disables the heartbeat. |
+| `JUNIPER_WS_HEARTBEAT_PONG_TIMEOUT_SEC` | Integer | `10` | Pong/liveness window after each ping (`Settings.ws_heartbeat_pong_timeout_sec`). Same `AliasChoices` binding. |
+
+Handlers load these knobs (and the `/ws/control` `ws_control_idle_timeout_sec`, default `120`) through `_numeric_setting`, so non-numeric stubs cannot reach the asyncio timers — see [Defensive numeric settings](../api/JUNIPER_CASCOR_API_REFERENCE.md#defensive-numeric-settings-_numeric_setting).
 
 **Startup bind guard:** `create_app()` enforces the bind guard during lifespan startup before background training starts. A non-loopback bind with neither `JUNIPER_CASCOR_LOOPBACK_PUBLISH_ATTESTED=true` nor `JUNIPER_CASCOR_AUTH_PROXY_ATTESTED=true` raises `NonLoopbackBindError` and logs a CRITICAL refusal (no warning-only mode). Prefer loopback for local development:
 
@@ -85,7 +94,47 @@ JUNIPER_CASCOR_LOOPBACK_PUBLISH_ATTESTED=true \
 python server.py
 ```
 
-**WebSocket cap behavior:** over-cap WebSocket handshakes are closed with code `1013`. The global cap is the backstop that still works when Docker NAT collapses many callers to one bridge-gateway IP. The per-identity cap applies to `/ws/control`; worker sockets are global-cap-only because a worker fleet can share one machine token and the worker id is assigned after admission.
+**WebSocket cap behavior:** over-cap WebSocket handshakes are closed with code `1013`. The global cap is the backstop that still works when Docker NAT collapses many callers to one bridge-gateway IP. The per-identity cap applies to `/ws/control` and is keyed on a non-reversible digest of the **stripped** `X-API-Key` (`ws_identity_key`); missing, empty, or whitespace-only keys are treated as anonymous so blank headers cannot self-DoS by sharing one identity bucket. Worker sockets are global-cap-only because a worker fleet can share one machine token and the worker id is assigned after admission.
+
+**REST auth ↔ rate-limit ordering:** `SecurityMiddleware` (`src/api/middleware.py`) validates `X-API-Key` before calling `RateLimiter`. Invalid/missing keys return 401 without consuming a rate-limit slot. When `JUNIPER_CASCOR_RATE_LIMIT_ENABLED=true` and auth is configured, each key has its own 60/min window by default; open auth (`API_KEYS` unset/`[]`) keys by client IP instead. 429 responses include `Retry-After` and `X-RateLimit-*`. Health, docs, and `/metrics` paths are exempt so probes stay up after a saturated client. Details: [API Authentication](../api/JUNIPER_CASCOR_API_REFERENCE.md#authentication).
+
+**Worker anomaly history:** on `/ws/v1/workers` disconnect, session teardown clears that worker's `AnomalyDetector` history (`clear_worker`) so reconnect churn cannot grow `_worker_history` without bound or let a recycled `worker_id` inherit stale anomaly signals.
+
+**ASGI transport dependency:** the service does not declare `websockets` in `pyproject.toml`. It comes in through `uvicorn[standard]` (API extra) and is pinned in `requirements.lock` as `# via uvicorn`. Application handlers speak FastAPI/Starlette WebSockets only (`src/api/websocket/`). When Dependabot bumps `websockets` (including major lines such as 16 → 17):
+
+- Confirm Python ≥ 3.12 still holds (websockets 17 requires ≥ 3.11; this repo is already stricter).
+- Confirm `conf/requirements-pip.txt`, `conf/requirements_ci.txt`, and `requirements.lock` land on the same pin; `conf/conda_environment_ci.yaml` is a separate freeze and may need a follow-up.
+- Treat the change as transport-only unless CI WebSocket suites fail — see [ASGI WebSocket transport](../api/JUNIPER_CASCOR_API_REFERENCE.md#asgi-websocket-transport).
+
+### Lifecycle evaluation metrics (C7)
+
+| Variable | Type | Default | Purpose |
+|----------|------|---------|---------|
+| `JUNIPER_CASCOR_EVAL_METRICS_ENABLED` | Boolean env flag | `true` | Compute F1 / precision / recall / ROC-AUC once per training step over the eval split. Surfaced on `GET /v1/metrics`, `GET /v1/metrics/history`, and WS `metrics` frames. |
+
+This flag is read by `TrainingLifecycleManager` via `_env_flag` (`src/api/lifecycle/manager.py`) — it is **not** a `api.settings.Settings` field. Accepted truthy values: `1`, `true`, `yes`, `on` (case-insensitive). Set `0` / `false` / `no` / `off` to disable. Distinct from `JUNIPER_CASCOR_METRICS_ENABLED` (Prometheus). Operator detail: [C7 scalar evaluation metrics](../api/JUNIPER_CASCOR_API_REFERENCE.md#c7-scalar-evaluation-metrics).
+
+**Boot-time auth posture (SEC-F01):** after the bind guard, the lifespan calls `juniper_service_core.enforce_auth_posture(settings.api_keys, require_auth=settings.require_auth, service_name="juniper-cascor")` before serving. Blank or whitespace-only keys count as unset (the empty Docker-secret footgun). Outcomes:
+
+| `JUNIPER_CASCOR_REQUIRE_AUTH` | Keys configured? | Boot result |
+|------------------------------|------------------|-------------|
+| `false` (default) | No / blank | WARNING that cascor is running OPEN; process continues (bare/dev) |
+| `false` (default) | Yes | Quiet pass |
+| `true` | No / blank | CRITICAL + `AuthPostureError` — uvicorn startup fails |
+| `true` | Yes | Quiet pass |
+
+```bash
+# Fail-closed deploy posture (secrets provisioned)
+cd src
+JUNIPER_CASCOR_REQUIRE_AUTH=true \
+JUNIPER_CASCOR_API_KEYS='["prod-key-here"]' \
+python server.py
+
+# Compose secret mount — ensure the file has a real key, not a placeholder
+# JUNIPER_CASCOR_API_KEYS_FILE=/run/secrets/juniper_cascor_api_keys
+```
+
+**Empty `_FILE` pitfall:** if `JUNIPER_CASCOR_API_KEYS_FILE` points at an existing but empty/whitespace-only file, `get_secret()` returns `""` and never reads `JUNIPER_CASCOR_API_KEYS`. Settings only injects a truthy secret, so compose stacks that set `_FILE` alone end up with unset keys. With `REQUIRE_AUTH=false` the service starts open behind a healthy `/v1/health`; with `REQUIRE_AUTH=true` boot fails. Fill the secret file (or unset `_FILE`).
 
 ## CLI Arguments
 

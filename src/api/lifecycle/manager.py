@@ -1496,8 +1496,21 @@ class TrainingLifecycleManager:
         from cascade_correlation.cascade_correlation import CascadeCorrelationNetwork
         from cascade_correlation.cascade_correlation_config.cascade_correlation_config import CascadeCorrelationConfig
 
-        if self.state_machine.is_started():
+        # Reject while STARTED (active fit), PAUSED (parked training thread still
+        # owns the network), or REPLAYING (history playback session). Replacing
+        # the model in those states races the parked/replay thread and corrupts
+        # status surfaces.
+        if self.state_machine.is_started() or self.state_machine.is_paused():
             raise RuntimeError("Cannot create network while training is active")
+        if self.state_machine.is_replaying():
+            raise RuntimeError("Cannot create network while replay is active")
+        # INVESTIGATING owns an inspected snapshot model (patch_weights /
+        # add_hidden_unit_manual / retrain). Replacing it in-place leaves the
+        # FSM Investigating against a brand-new network that is not the
+        # restored snapshot — start_training stays rejected and weight edits
+        # target the wrong object. Require /retrain or /reset first.
+        if self.state_machine.is_investigating():
+            raise RuntimeError("Cannot create network while investigating a snapshot")
 
         self._params = kwargs.copy()
         config = CascadeCorrelationConfig.create_simple_config(**kwargs)
@@ -1533,8 +1546,19 @@ class TrainingLifecycleManager:
     def delete_network(self) -> None:
         """Delete the current network."""
         with self._lock:
-            if self.state_machine.is_started():
+            # Mirror create_network: PAUSED keeps a parked training thread that
+            # still references ``self.model``; REPLAYING owns a replay session.
+            # Clearing the model under either state leaves dangling futures /
+            # orphaned replay workers without event/session cleanup.
+            if self.state_machine.is_started() or self.state_machine.is_paused():
                 raise RuntimeError("Cannot delete network while training is active")
+            if self.state_machine.is_replaying():
+                raise RuntimeError("Cannot delete network while replay is active")
+            # Mirror create_network: INVESTIGATING still owns the inspected
+            # snapshot model for patch/retrain flows. Clearing it under that
+            # state strands the FSM Investigating with no model.
+            if self.state_machine.is_investigating():
+                raise RuntimeError("Cannot delete network while investigating a snapshot")
             self.model = None
             self._params = None
             self.state_machine.handle_command(Command.RESET)
@@ -2373,11 +2397,21 @@ class TrainingLifecycleManager:
             monitor.on_training_end()
 
     def stop_training(self) -> Dict[str, Any]:
-        """Request training stop."""
+        """Request training stop.
+
+        Idempotent when already Stopped / Completed / Failed (FSM reject
+        is ignored; callers still receive ``stop_requested``). Rejected
+        with ``RuntimeError`` while Investigating or Replaying so
+        ``training_state`` cannot report Stopped while the FSM still
+        blocks ``start_training``.
+        """
+        if self.state_machine.is_investigating() or self.state_machine.is_replaying():
+            raise RuntimeError(f"Cannot stop training while {self.state_machine.status.name}")
         self._stop_event.set()
-        self.state_machine.handle_command(Command.STOP)
-        self.training_state.update_state(status="Stopped", phase="Idle")
-        self._broadcast_training_state(force=True)
+        transitioned = self.state_machine.handle_command(Command.STOP)
+        if transitioned:
+            self.training_state.update_state(status="Stopped", phase="Idle")
+            self._broadcast_training_state(force=True)
         return {"status": "stop_requested", "timestamp": time.time()}
 
     def pause_training(self) -> Dict[str, Any]:
@@ -3292,6 +3326,55 @@ class TrainingLifecycleManager:
             params.pop("n_spirals", None)
         return generator, params
 
+    @staticmethod
+    def _artifact_to_tensors(arrays: Any) -> Tuple[torch.Tensor, torch.Tensor, Optional[torch.Tensor], Optional[torch.Tensor]]:
+        """Convert a juniper-data NPZ artifact into validated float32 tensors.
+
+        Returns ``(train_x, train_y, val_x, val_y)`` with ``val_*`` as ``None``
+        when the artifact carries no validation split. Split out of
+        ``_reload_dataset`` so the guard ladder (missing keys, malformed
+        arrays, non-2-D shapes, sample-count mismatches, partial validation
+        splits) stays inside the source complexity budget; every failure is a
+        ``RuntimeError`` the reload caller treats as a retryable staged-config
+        state.
+        """
+        try:
+            new_train_x = torch.tensor(arrays["X_train"], dtype=torch.float32)
+            new_train_y = torch.tensor(arrays["y_train"], dtype=torch.float32)
+        except KeyError as exc:
+            raise RuntimeError(f"juniper-data artifact missing required key: {exc}") from exc
+        except (TypeError, ValueError, RuntimeError) as exc:
+            # Non-array / non-numeric payloads blow up at tensor construction;
+            # surface a stable RuntimeError so swap/start callers can leave
+            # pending staging intact and retry after fixing the upstream artifact.
+            raise RuntimeError(f"juniper-data artifact train arrays are malformed: {exc}") from exc
+
+        if new_train_x.ndim != 2 or new_train_y.ndim != 2:
+            raise RuntimeError(f"juniper-data artifact train arrays must be 2-D; got X_train.ndim={new_train_x.ndim}, y_train.ndim={new_train_y.ndim}")
+        if new_train_x.shape[0] != new_train_y.shape[0]:
+            raise RuntimeError(f"juniper-data artifact train sample count mismatch: X_train={new_train_x.shape[0]} y_train={new_train_y.shape[0]}")
+
+        has_x_test = "X_test" in arrays
+        has_y_test = "y_test" in arrays
+        if has_x_test != has_y_test:
+            present = "X_test" if has_x_test else "y_test"
+            missing = "y_test" if has_x_test else "X_test"
+            raise RuntimeError(f"juniper-data artifact has partial validation split ({present} without {missing})")
+
+        if not has_x_test:
+            return new_train_x, new_train_y, None, None
+
+        try:
+            new_val_x = torch.tensor(arrays["X_test"], dtype=torch.float32)
+            new_val_y = torch.tensor(arrays["y_test"], dtype=torch.float32)
+        except (TypeError, ValueError, RuntimeError) as exc:
+            raise RuntimeError(f"juniper-data artifact validation arrays are malformed: {exc}") from exc
+        if new_val_x.ndim != 2 or new_val_y.ndim != 2:
+            raise RuntimeError(f"juniper-data artifact validation arrays must be 2-D; got X_test.ndim={new_val_x.ndim}, y_test.ndim={new_val_y.ndim}")
+        if new_val_x.shape[0] != new_val_y.shape[0]:
+            raise RuntimeError(f"juniper-data artifact validation sample count mismatch: X_test={new_val_x.shape[0]} y_test={new_val_y.shape[0]}")
+        return new_train_x, new_train_y, new_val_x, new_val_y
+
     def _reload_dataset(self, **cfg: Any) -> None:
         """Fetch a fresh dataset from juniper-data and replace the live tensors.
 
@@ -3363,20 +3446,11 @@ class TrainingLifecycleManager:
         except Exception as exc:
             raise RuntimeError(f"juniper-data fetch failed: {exc}") from exc
 
-        try:
-            new_train_x = torch.tensor(arrays["X_train"], dtype=torch.float32)
-            new_train_y = torch.tensor(arrays["y_train"], dtype=torch.float32)
-        except KeyError as exc:
-            raise RuntimeError(f"juniper-data artifact missing required key: {exc}") from exc
-
+        new_train_x, new_train_y, new_val_x, new_val_y = self._artifact_to_tensors(arrays)
+        self._val_x = new_val_x
+        self._val_y = new_val_y
         self._train_x = new_train_x
         self._train_y = new_train_y
-        if "X_test" in arrays and "y_test" in arrays:
-            self._val_x = torch.tensor(arrays["X_test"], dtype=torch.float32)
-            self._val_y = torch.tensor(arrays["y_test"], dtype=torch.float32)
-        else:
-            self._val_x = None
-            self._val_y = None
         # ISSUE_3_PHASE_2_LIVE_DATASET_SWAP §3.2 step 4d — track the canonical
         # cfg so ``swap_dataset_live`` can report it as ``before_cfg`` and so
         # the rollback path can restore it if a swap fails.
@@ -3510,10 +3584,18 @@ class TrainingLifecycleManager:
 
         Raises:
             ValueError: If no network exists.
+            RuntimeError: If a snapshot replay session is active (CAN-015c /
+                REPLAYING rejects meta-param mutations).
             Exception: Re-raises whatever setattr raised, after rolling back
                 any partially-applied updates.
         """
         with self._lock:
+            # CAN-015c (B-3): REPLAYING rejects training commands AND
+            # meta-param mutations. Enforce here so REST PATCH and WS
+            # ``set_params`` share one fail-closed gate (FSM docstring
+            # alone is not enough — neither surface consulted it).
+            if self.state_machine.is_replaying():
+                raise RuntimeError("Cannot update training parameters while replaying a snapshot — invoke /v1/snapshots/{id}/replay/control with action='stop' first")
 
             ########################################################################################
             # Do NOT remove this commented out code block until explicit approval has been granted

@@ -15,9 +15,14 @@ Training-runtime-defects plan (juniper-ml
 - **Counter semantics** — ``current_epoch`` counts training steps only (single writer); within-pass
   output progress rides the dedicated ``output_epoch`` / ``output_total_epochs`` pair; metrics rows
   carry a ``kind`` discriminator.
+- **Progress-pair reset** — within-pass pairs are zeroed at run start and growth-phase exit
+  (bug-fix-only commits 0eb78d1 / 79e8ad7) so canopy never shows a prior run's terminal inner epochs.
 """
 
+from unittest.mock import patch
+
 import pytest
+import torch
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
@@ -308,3 +313,69 @@ class TestCounterSemantics:
         snapshot = state.get_state()
         assert snapshot["output_epoch"] == 26
         assert snapshot["output_total_epochs"] == 10_000
+
+
+class TestProgressPairReset:
+    """C2b: within-pass progress pairs must not linger across run/phase boundaries.
+
+    Production fixes landed as bug-fix-only commits (0eb78d1 reset-on-start,
+    79e8ad7 clear-on-growth-exit) with no accompanying regression tests — a stale
+    canopy header (e.g. Epoch 9976 from the prior run) is the user-visible failure.
+    """
+
+    def test_run_training_zeros_progress_pairs_at_start(self):
+        """``_run_training`` zeroes both progress pairs before ``model.fit`` runs."""
+        mgr = TrainingLifecycleManager()
+        try:
+            mgr.create_network(input_size=2, output_size=2)
+            mgr.training_state.update_state(
+                output_epoch=9_976,
+                output_total_epochs=10_000,
+                candidate_epoch=40,
+                candidate_total_epochs=50,
+            )
+            seen = {"fit": False}
+
+            def _assert_zeroed_before_fit(*_args, **_kwargs):
+                state = mgr.training_state.get_state()
+                assert state["output_epoch"] == 0
+                assert state["output_total_epochs"] == 0
+                assert state["candidate_epoch"] == 0
+                assert state["candidate_total_epochs"] == 0
+                seen["fit"] = True
+
+            # Pin the pre-fit zeroing contract; post-fit terminal bookkeeping is
+            # outside this regression's scope (and may emit optional metrics).
+            with patch.object(mgr.model, "fit", side_effect=_assert_zeroed_before_fit), patch("api.lifecycle.manager.inc_training_session_completed"), patch("api.lifecycle.manager.dec_training_sessions"):
+                mgr._run_training(torch.randn(4, 2), torch.zeros(4, 2), None, None)
+            assert seen["fit"] is True
+        finally:
+            mgr.shutdown()
+
+    def test_growth_phase_exit_zeros_both_progress_pairs(self):
+        """``training_end`` after growth clears candidate AND output pairs (79e8ad7)."""
+
+        class _Event:
+            type = "training_end"
+            payload = {}
+
+        mgr = TrainingLifecycleManager()
+        try:
+            mgr.create_network(input_size=2, output_size=2)
+            mgr._grow_phase_entered = True
+            mgr.training_state.update_state(
+                phase="Growth",
+                output_epoch=250,
+                output_total_epochs=10_000,
+                candidate_epoch=40,
+                candidate_total_epochs=50,
+            )
+            mgr._handle_event(_Event())
+            state = mgr.training_state.get_state()
+            assert state["phase"] == "Output"
+            assert state["output_epoch"] == 0
+            assert state["output_total_epochs"] == 0
+            assert state["candidate_epoch"] == 0
+            assert state["candidate_total_epochs"] == 0
+        finally:
+            mgr.shutdown()

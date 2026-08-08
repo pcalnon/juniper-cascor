@@ -124,6 +124,58 @@ class TestSubmitTasks:
         assert coordinator._current_round_id == "round-new"
         assert coordinator._current_round_task_count == 1
 
+    def test_round_boundary_releases_workers_holding_cleared_tasks(self, coordinator, registry):
+        """The boundary clear must free workers that held the cleared tasks.
+
+        ``submit_tasks`` drops ``_pending_tasks`` / ``_unassigned_tasks`` at a
+        new round. Without the capture-before-clear release (the same discipline
+        as :meth:`WorkerCoordinator.cancel_round`) the registry keeps those
+        workers busy for tasks the coordinator no longer tracks: ``assign_task``
+        refuses them forever and ``_check_task_timeouts`` cannot recover them
+        because pending tracking is already gone — so the usable worker pool
+        shrinks at every round boundary until each worker reconnects.
+        """
+        registry.register("w1", {})
+        registry.register("w2", {})
+        coordinator.submit_tasks("round-old", _make_task_specs(2), _make_tensors())
+        assert coordinator.get_next_assignment("w1") is not None
+        assert coordinator.get_next_assignment("w2") is not None
+        assert registry.get("w1").idle is False
+        assert registry.get("w2").idle is False
+
+        new_ids = coordinator.submit_tasks("round-new", _make_task_specs(2), _make_tensors())
+
+        # Released, with no active_task_id dangling at a now-untracked task.
+        for worker_id in ("w1", "w2"):
+            assert registry.get(worker_id).idle is True, worker_id
+            assert registry.get(worker_id).active_task_id is None, worker_id
+
+        # ...and both can immediately pick up the new round's work.
+        assert coordinator.get_next_assignment("w1") is not None
+        assert coordinator.get_next_assignment("w2") is not None
+        assert {coordinator._pending_tasks[task_id].assigned_worker_id for task_id in new_ids} == {"w1", "w2"}
+
+    def test_round_boundary_leaves_idle_workers_untouched(self, coordinator, registry):
+        """Only workers holding a cleared task are released.
+
+        An idle worker (and one busy on nothing) must not be handed a spurious
+        ``complete_task``, which would corrupt the registry's completion counts.
+        """
+        registry.register("w1", {})
+        registry.register("w2", {})
+        coordinator.submit_tasks("round-old", _make_task_specs(1), _make_tensors())
+        assert coordinator.get_next_assignment("w1") is not None  # w2 stays idle
+        w2_before = registry.get("w2")
+        tasks_completed_before = getattr(w2_before, "tasks_completed", None)
+        tasks_failed_before = getattr(w2_before, "tasks_failed", None)
+
+        coordinator.submit_tasks("round-new", _make_task_specs(1), _make_tensors())
+
+        w2_after = registry.get("w2")
+        assert w2_after.idle is True
+        assert getattr(w2_after, "tasks_completed", None) == tasks_completed_before
+        assert getattr(w2_after, "tasks_failed", None) == tasks_failed_before
+
 
 @pytest.mark.unit
 class TestGetNextAssignment:
@@ -152,6 +204,79 @@ class TestGetNextAssignment:
         coordinator.submit_tasks("round-1", _make_task_specs(1), _make_tensors())
         coordinator.get_next_assignment("w1")
         assert registry.get("w1").idle is False
+
+    def test_get_next_assignment_skips_orphaned_unassigned_id(self, coordinator, registry):
+        """Stale queue ids without a pending entry must not block later tasks."""
+        registry.register("w1", {})
+        task_ids = coordinator.submit_tasks("round-1", _make_task_specs(1), _make_tensors())
+        # Plant an orphan ahead of the real task id.
+        coordinator._unassigned_tasks.insert(0, "orphaned-task-id")
+        assert coordinator._pending_tasks.get("orphaned-task-id") is None
+
+        result = coordinator.get_next_assignment("w1")
+        assert result is not None
+        msg, _frames = result
+        assert msg["task_id"] == task_ids[0]
+        assert "orphaned-task-id" not in coordinator._unassigned_tasks
+
+
+@pytest.mark.unit
+class TestAbortInFlightResult:
+    """Soft result-frame abort: free worker + immediate requeue (conn stays open)."""
+
+    def test_soft_abort_frees_worker_and_requeues(self, coordinator, registry):
+        """abort_in_flight_result clears busy state and puts the task back on the queue."""
+        registry.register("w1", {})
+        task_ids = coordinator.submit_tasks("round-1", _make_task_specs(1), _make_tensors())
+        assert coordinator.get_next_assignment("w1") is not None
+        assert registry.get("w1").idle is False
+
+        coordinator.abort_in_flight_result("w1", task_ids[0])
+
+        assert registry.get("w1").idle is True
+        pending = coordinator._pending_tasks[task_ids[0]]
+        assert pending.assigned_worker_id is None
+        assert task_ids[0] in coordinator._unassigned_tasks
+
+    def test_soft_abort_allows_immediate_peer_reassignment(self, coordinator, registry):
+        """After soft abort, a second idle worker can pick up the same task without waiting."""
+        registry.register("w1", {})
+        registry.register("w2", {})
+        task_ids = coordinator.submit_tasks("round-1", _make_task_specs(1), _make_tensors())
+        assert coordinator.get_next_assignment("w1") is not None
+
+        coordinator.abort_in_flight_result("w1", task_ids[0])
+
+        peer = coordinator.get_next_assignment("w2")
+        assert peer is not None
+        msg, _frames = peer
+        assert msg["task_id"] == task_ids[0]
+        assert registry.get("w2").idle is False
+        assert registry.get("w1").idle is True
+
+    def test_soft_abort_unknown_task_still_frees_worker(self, coordinator, registry):
+        """Unknown task_id still clears the worker's active assignment (fail-soft)."""
+        registry.register("w1", {})
+        task_ids = coordinator.submit_tasks("round-1", _make_task_specs(1), _make_tensors())
+        assert coordinator.get_next_assignment("w1") is not None
+
+        coordinator.abort_in_flight_result("w1", "not-a-real-task")
+
+        assert registry.get("w1").idle is True
+        # Original task remains assigned at coordinator level until timeout /
+        # disconnect path; soft abort with wrong id must not invent a requeue.
+        assert task_ids[0] not in coordinator._unassigned_tasks
+
+    def test_soft_abort_uses_registry_active_task_when_id_omitted(self, coordinator, registry):
+        """Omitting task_id falls back to the registry's active_task_id."""
+        registry.register("w1", {})
+        task_ids = coordinator.submit_tasks("round-1", _make_task_specs(1), _make_tensors())
+        assert coordinator.get_next_assignment("w1") is not None
+
+        coordinator.abort_in_flight_result("w1")
+
+        assert registry.get("w1").idle is True
+        assert task_ids[0] in coordinator._unassigned_tasks
 
 
 @pytest.mark.unit
@@ -218,15 +343,27 @@ class TestSubmitResult:
         Pins the round-boundary clear in ``submit_tasks``: the old task_id must
         no longer be in ``_pending_tasks``, so ``submit_result`` returns False
         (unknown task) rather than accepting and early-unblocking collection.
+
+        Ownership is enforced, so each current-round result must be submitted by
+        that task's real assignee. The assignees are read back explicitly rather
+        than assumed from call order — the earlier version of this test
+        submitted from a non-assignee and only passed because ownership was not
+        yet checked.
         """
         registry.register("w1", {})
         registry.register("w2", {})
         old_ids = coordinator.submit_tasks("round-old", _make_task_specs(1), _make_tensors())
-        coordinator.get_next_assignment("w1")
+        assert coordinator.get_next_assignment("w1") is not None
+        assert registry.get("w1").idle is False
 
         new_ids = coordinator.submit_tasks("round-new", _make_task_specs(2), _make_tensors())
-        coordinator.get_next_assignment("w1")
-        coordinator.get_next_assignment("w2")
+        # The boundary clear released w1's abandoned assignment, so it is
+        # eligible for the new round alongside the idle w2.
+        assert registry.get("w1").idle is True
+        assert coordinator.get_next_assignment("w1") is not None
+        assert coordinator.get_next_assignment("w2") is not None
+        assignees = {task_id: coordinator._pending_tasks[task_id].assigned_worker_id for task_id in new_ids}
+        assert set(assignees.values()) == {"w1", "w2"}
 
         # Late arrival from the previous round — must not count toward round-new.
         accepted_stale = coordinator.submit_result("w1", _make_result_msg(old_ids[0], candidate_id=0), _make_result_tensors())
@@ -234,9 +371,9 @@ class TestSubmitResult:
         assert len(coordinator._results) == 0
         assert not coordinator._results_ready.is_set()
 
-        # Current-round results still accepted.
-        assert coordinator.submit_result("w1", _make_result_msg(new_ids[0], candidate_id=0), _make_result_tensors())
-        assert coordinator.submit_result("w2", _make_result_msg(new_ids[1], candidate_id=1), _make_result_tensors())
+        # Current-round results still accepted — each from its own assignee.
+        for candidate_id, task_id in enumerate(new_ids):
+            assert coordinator.submit_result(assignees[task_id], _make_result_msg(task_id, candidate_id=candidate_id), _make_result_tensors())
         assert coordinator._results_ready.is_set()
         results = coordinator.collect_results(timeout=1.0)
         assert {r.task_id for r in results} == set(new_ids)
@@ -268,6 +405,173 @@ class TestSubmitResult:
         assert stale_id not in coordinator._results
         # Current-round task still completable.
         assert coordinator.submit_result("w1", _make_result_msg(new_ids[0], candidate_id=0), _make_result_tensors())
+
+    def test_reject_success_true_with_missing_weights(self, coordinator, registry):
+        """success=True with no weights tensor must not be accepted (poison-candidate guard)."""
+        registry.register("w1", {})
+        task_ids = coordinator.submit_tasks("round-1", _make_task_specs(1), _make_tensors())
+        coordinator.get_next_assignment("w1")
+
+        msg = _make_result_msg(task_ids[0])
+        msg["tensor_manifest"] = {}
+        accepted = coordinator.submit_result("w1", msg, {})
+        assert accepted is False
+        assert registry.get("w1").idle is True
+        assert task_ids[0] not in coordinator._results
+
+    def test_reject_success_true_with_empty_weights(self, coordinator, registry):
+        """success=True with an empty weights array is rejected."""
+        registry.register("w1", {})
+        task_ids = coordinator.submit_tasks("round-1", _make_task_specs(1), _make_tensors())
+        coordinator.get_next_assignment("w1")
+
+        msg = _make_result_msg(task_ids[0])
+        msg["tensor_manifest"] = {"weights": {"shape": [0], "dtype": "float32"}}
+        empty = {"weights": np.array([], dtype=np.float32)}
+        accepted = coordinator.submit_result("w1", msg, empty)
+        assert accepted is False
+        assert registry.get("w1").idle is True
+
+    def test_accept_success_false_without_weights(self, coordinator, registry):
+        """Failed results may omit weights — rejection is only for success=True."""
+        registry.register("w1", {})
+        task_ids = coordinator.submit_tasks("round-1", _make_task_specs(1), _make_tensors())
+        coordinator.get_next_assignment("w1")
+
+        msg = _make_result_msg(task_ids[0])
+        msg["success"] = False
+        msg["tensor_manifest"] = {}
+        accepted = coordinator.submit_result("w1", msg, {})
+        assert accepted is True
+        assert task_ids[0] in coordinator._results
+
+    def test_rejected_schema_result_requeues_assigned_task(self, coordinator, registry):
+        """Schema rejection frees the worker and requeues immediately (no timeout wait)."""
+        registry.register("w1", {})
+        task_ids = coordinator.submit_tasks("round-1", _make_task_specs(1), _make_tensors())
+        task_id = task_ids[0]
+        coordinator.get_next_assignment("w1")
+
+        msg = _make_result_msg(task_id)
+        msg["correlation"] = 5.0  # Out of bounds → schema reject
+        assert coordinator.submit_result("w1", msg, _make_result_tensors()) is False
+
+        pending = coordinator._pending_tasks[task_id]
+        assert pending.completed is False
+        assert pending.assigned_worker_id is None
+        assert task_id in coordinator._unassigned_tasks
+        assert registry.get("w1").active_task_id is None
+        assert registry.get("w1").idle is True
+
+    def test_rejected_schema_result_can_be_reassigned_immediately(self, coordinator, registry):
+        """After a rejected result, a second worker can pick up the same task without waiting."""
+        registry.register("w1", {})
+        registry.register("w2", {})
+        task_ids = coordinator.submit_tasks("round-1", _make_task_specs(1), _make_tensors())
+        task_id = task_ids[0]
+        coordinator.get_next_assignment("w1")
+
+        msg = _make_result_msg(task_id)
+        msg["correlation"] = 5.0
+        assert coordinator.submit_result("w1", msg, _make_result_tensors()) is False
+
+        reassigned = coordinator.get_next_assignment("w2")
+        assert reassigned is not None
+        reassigned_msg, _frames = reassigned
+        assert reassigned_msg["task_id"] == task_id
+        assert coordinator._pending_tasks[task_id].assigned_worker_id == "w2"
+
+    def test_rejected_tensor_result_requeues_assigned_task(self, coordinator, registry):
+        """Tensor validation failure uses the same immediate-requeue contract."""
+        registry.register("w1", {})
+        task_ids = coordinator.submit_tasks("round-1", _make_task_specs(1), _make_tensors())
+        task_id = task_ids[0]
+        coordinator.get_next_assignment("w1")
+
+        msg = _make_result_msg(task_id)
+        bad_tensors = _make_result_tensors()
+        bad_tensors["weights"] = np.array([float("nan")] * 4, dtype=np.float32)
+        assert coordinator.submit_result("w1", msg, bad_tensors) is False
+
+        assert coordinator._pending_tasks[task_id].assigned_worker_id is None
+        assert task_id in coordinator._unassigned_tasks
+        assert registry.get("w1").idle is True
+
+    def test_reject_unassigned_task_result(self, coordinator, registry):
+        """Results for pending-but-unassigned tasks (requeue window) are rejected."""
+        registry.register("w1", {})
+        task_ids = coordinator.submit_tasks("round-1", _make_task_specs(1), _make_tensors())
+        # Do not call get_next_assignment — task stays unassigned.
+        assert coordinator._pending_tasks[task_ids[0]].assigned_worker_id is None
+
+        accepted = coordinator.submit_result("w1", _make_result_msg(task_ids[0]), _make_result_tensors())
+        assert accepted is False
+        assert task_ids[0] not in coordinator._completed_task_ids
+
+    def test_reject_wrong_worker_ownership(self, coordinator, registry):
+        """A peer worker cannot submit a result for a task assigned to another worker."""
+        registry.register("w1", {})
+        registry.register("w2", {})
+        task_ids = coordinator.submit_tasks("round-1", _make_task_specs(1), _make_tensors())
+        coordinator.get_next_assignment("w1")
+
+        msg = _make_result_msg(task_ids[0])
+        accepted = coordinator.submit_result("w2", msg, _make_result_tensors())
+        assert accepted is False
+
+        # Task remains pending under the original assignee.
+        pending = coordinator._pending_tasks[task_ids[0]]
+        assert pending.completed is False
+        assert pending.assigned_worker_id == "w1"
+        assert task_ids[0] not in coordinator._completed_task_ids
+
+        # Legitimate owner can still complete the task afterward.
+        accepted = coordinator.submit_result("w1", msg, _make_result_tensors())
+        assert accepted is True
+
+
+@pytest.mark.unit
+class TestRequeueAfterDispatchFailure:
+    """Send-side dispatch failure must free the worker and requeue immediately."""
+
+    def test_requeue_frees_worker_and_returns_task(self, coordinator, registry):
+        """requeue_after_dispatch_failure clears busy state and restores the queue."""
+        registry.register("w1", {})
+        task_ids = coordinator.submit_tasks("round-1", _make_task_specs(1), _make_tensors())
+        assert coordinator.get_next_assignment("w1") is not None
+        assert registry.get("w1").idle is False
+
+        coordinator.requeue_after_dispatch_failure("w1", task_ids[0])
+
+        assert registry.get("w1").idle is True
+        assert task_ids[0] in coordinator._unassigned_tasks
+        assert coordinator._pending_tasks[task_ids[0]].assigned_worker_id is None
+
+    def test_requeue_allows_peer_to_pick_up_immediately(self, coordinator, registry):
+        """After send-failure requeue, another idle worker can take the task without waiting."""
+        registry.register("w1", {})
+        registry.register("w2", {})
+        task_ids = coordinator.submit_tasks("round-1", _make_task_specs(1), _make_tensors())
+        assert coordinator.get_next_assignment("w1") is not None
+
+        coordinator.requeue_after_dispatch_failure("w1", task_ids[0])
+
+        peer = coordinator.get_next_assignment("w2")
+        assert peer is not None
+        assert peer[0]["task_id"] == task_ids[0]
+        assert registry.get("w2").idle is False
+        assert registry.get("w1").idle is True
+
+    def test_requeue_unknown_task_still_frees_worker(self, coordinator, registry):
+        """Unknown task_id still clears the worker's active assignment (fail-soft)."""
+        registry.register("w1", {})
+        task_ids = coordinator.submit_tasks("round-1", _make_task_specs(1), _make_tensors())
+        assert coordinator.get_next_assignment("w1") is not None
+
+        coordinator.requeue_after_dispatch_failure("w1", "not-a-real-task")
+
+        assert registry.get("w1").idle is True
+        assert task_ids[0] not in coordinator._unassigned_tasks
 
 
 @pytest.mark.unit
@@ -344,6 +648,27 @@ class TestCancelRound:
         assert coordinator.has_pending_tasks() is False
         assert coordinator._current_round_id is None
 
+    def test_cancel_frees_registry_active_task(self, coordinator, registry):
+        """cancel_round must clear registry active_task_id so the worker is idle again.
+
+        Regression: clearing only coordinator pending left ``active_task_id`` set,
+        so ``get_next_assignment`` forever refused (assign_task → False) and
+        ``_check_task_timeouts`` could not reclaim capacity (pending already gone).
+        """
+        registry.register("w1", {})
+        coordinator.submit_tasks("round-1", _make_task_specs(1), _make_tensors())
+        assert coordinator.get_next_assignment("w1") is not None
+        assert registry.get("w1").active_task_id is not None
+        assert registry.get("w1").idle is False
+
+        coordinator.cancel_round()
+
+        assert registry.get("w1").active_task_id is None
+        assert registry.get("w1").idle is True
+        # Worker can accept a fresh round without waiting for reconnect.
+        coordinator.submit_tasks("round-2", _make_task_specs(1), _make_tensors())
+        assert coordinator.get_next_assignment("w1") is not None
+
 
 @pytest.mark.unit
 class TestHealthMonitor:
@@ -392,3 +717,71 @@ class TestSendCallbacks:
         assert "w1" in coordinator._send_callbacks
         coordinator.unregister_send_callback("w1")
         assert "w1" not in coordinator._send_callbacks
+
+
+@pytest.mark.unit
+class TestHandleWorkerDisconnect:
+    """Clean disconnect must requeue in-flight work immediately (not wait timeout)."""
+
+    def test_disconnect_with_active_task_requeues_immediately(self, coordinator, registry):
+        """Active task returns to the unassigned queue on clean disconnect."""
+        registry.register("w1", {})
+        registry.register("w2", {})
+        task_ids = coordinator.submit_tasks("round-1", _make_task_specs(1), _make_tensors())
+        coordinator.register_send_callback("w1", MagicMock())
+        coordinator.get_next_assignment("w1")
+
+        assert coordinator.has_pending_tasks() is False
+        assert registry.get("w1").active_task_id == task_ids[0]
+
+        coordinator.handle_worker_disconnect("w1")
+
+        assert registry.get("w1") is None
+        assert "w1" not in coordinator._send_callbacks
+        assert coordinator.has_pending_tasks() is True
+        assert task_ids[0] in coordinator._unassigned_tasks
+        assert coordinator._pending_tasks[task_ids[0]].assigned_worker_id is None
+
+        # Peer can pick the requeued task without waiting for reassignment timeout.
+        assignment = coordinator.get_next_assignment("w2")
+        assert assignment is not None
+        assert assignment[0]["task_id"] == task_ids[0]
+
+    def test_disconnect_without_active_task_only_deregisters(self, coordinator, registry):
+        """Idle disconnect still deregisters and drops the send callback."""
+        registry.register("w1", {})
+        coordinator.register_send_callback("w1", MagicMock())
+        coordinator.submit_tasks("round-1", _make_task_specs(1), _make_tensors())
+
+        coordinator.handle_worker_disconnect("w1")
+
+        assert registry.get("w1") is None
+        assert "w1" not in coordinator._send_callbacks
+        # Unassigned task remains available for other workers.
+        assert coordinator.has_pending_tasks() is True
+
+    def test_disconnect_unknown_worker_is_noop(self, coordinator, registry):
+        """Unknown worker_id does not raise and does not mutate the queue."""
+        registry.register("w1", {})
+        task_ids = coordinator.submit_tasks("round-1", _make_task_specs(1), _make_tensors())
+        coordinator.get_next_assignment("w1")
+        before = list(coordinator._unassigned_tasks)
+
+        coordinator.handle_worker_disconnect("missing")
+
+        assert list(coordinator._unassigned_tasks) == before
+        assert registry.get("w1") is not None
+        assert coordinator._pending_tasks[task_ids[0]].assigned_worker_id == "w1"
+
+    def test_disconnect_idempotent_when_task_already_unassigned(self, coordinator, registry):
+        """Second disconnect after requeue does not duplicate the unassigned entry."""
+        registry.register("w1", {})
+        task_ids = coordinator.submit_tasks("round-1", _make_task_specs(1), _make_tensors())
+        coordinator.get_next_assignment("w1")
+
+        coordinator.handle_worker_disconnect("w1")
+        assert coordinator._unassigned_tasks.count(task_ids[0]) == 1
+
+        # Worker already gone — second call is a no-op.
+        coordinator.handle_worker_disconnect("w1")
+        assert coordinator._unassigned_tasks.count(task_ids[0]) == 1

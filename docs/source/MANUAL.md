@@ -296,6 +296,56 @@ client.stop_workers(timeout)
 client.disconnect()
 ```
 
+### api/websocket/ (ASGI transport)
+
+**Location**: `src/api/websocket/`  
+**Purpose**: Real-time training, control, and remote-worker channels
+
+```
+api/websocket/
+├── manager.py           # WebSocketManager, ws_authenticate, admission
+├── training_stream.py   # /ws/training metrics + resume + heartbeat
+├── control_stream.py    # /ws/control commands + heartbeat
+├── worker_stream.py     # /ws/v1/workers machine protocol
+└── messages.py          # JSON frame builders
+```
+
+**Transport stack (important for dependency reviews):**
+
+| Layer | What cascor uses |
+|-------|------------------|
+| Handlers | FastAPI / Starlette `WebSocket` only — **no** `import websockets` in `src/` |
+| Server process | `uvicorn.run(...)` from `src/server.py` |
+| Wire library | `websockets`, installed by `uvicorn[standard]` (`requirements.lock`: `# via uvicorn`) |
+
+Do not add direct `websockets` calls in handlers. Reserved close codes such as `1006` are rejected by the production `websockets` server; heartbeat timeouts use `1011` (documented in the API reference C3 contract). When Dependabot bumps `websockets`, prefer the WebSocket unit/integration suites listed under [ASGI WebSocket transport](../api/JUNIPER_CASCOR_API_REFERENCE.md#asgi-websocket-transport).
+
+Heartbeat and control-idle timeouts on `training_stream.py` / `control_stream.py` are read through the module-local `_numeric_setting(obj, name, fallback)` helper before they reach `asyncio.sleep` / `asyncio.wait_for`, so a missing / non-numeric / `MagicMock` `app.state.settings` attribute falls back (`30` / `10` / `Settings.ws_control_idle_timeout_sec`) instead of raising `TypeError` and tearing down the loop.
+
+### api/middleware.py (request body limits)
+
+**Location**: `src/api/middleware.py`
+**Purpose**: HTTP security middleware — body size cap, security headers, API-key / rate-limit gate
+
+```
+api/
+├── middleware.py            # RequestBodyLimitMiddleware, SecurityHeadersMiddleware, SecurityMiddleware
+├── security.py              # APIKeyAuth, RateLimiter
+└── app.py                   # Registers middleware (LIFO)
+```
+
+**RequestBodyLimitMiddleware (CR-024):**
+
+- Cap: `_PROJECT_API_MAX_REQUEST_BODY_BYTES` (10 MiB) from `cascor_constants.constants_api`
+- Applies to `POST` / `PUT` / `PATCH` only
+- A declared `Content-Length` over the cap → immediate **413**; an invalid header → **400**
+- Always stream-reads mutating bodies with a cumulative byte cap — do **not** gate on `content_length is None` (that reopens the under-declared bypass)
+- Caches under-limit bodies on `request._body` for downstream handlers (BUG-CC-15)
+- WebSocket upgrades skip `BaseHTTPMiddleware` entirely
+
+Regression tests: `src/tests/unit/api/test_api_middleware.py::TestRequestBodyLimitMiddleware`.
+Operator reference: [Request body limits (CR-024)](../api/JUNIPER_CASCOR_API_REFERENCE.md#request-body-limits-cr-024).
+
 ### utils/
 
 **Location**: `src/utils/`  

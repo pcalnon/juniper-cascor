@@ -42,21 +42,24 @@ class ManagedService:
         return self.process.poll() is None
 
     def terminate(self, timeout: float = _PROJECT_API_SERVICE_DEFAULT_TERMINATE_TIMEOUT) -> None:
-        if not self.is_running():
-            logger.debug(f"{self.name} already stopped (rc={self.process.returncode})")
-            self._close_log()
-            return
-        logger.info(f"Terminating {self.name} (pid={self.process.pid})")
-        self.process.terminate()
+        # Always close the log handle — even when wait/kill raises — so a
+        # failed companion startup cannot leak open file descriptors.
         try:
-            self.process.wait(timeout=timeout)
-            logger.info(f"{self.name} stopped gracefully")
-        except subprocess.TimeoutExpired:
-            logger.warning(f"{self.name} did not stop in {timeout}s, sending SIGKILL")
-            self.process.kill()
-            self.process.wait(timeout=_PROJECT_API_PROCESS_TERMINATION_TIMEOUT)
-            logger.info(f"{self.name} killed")
-        self._close_log()
+            if not self.is_running():
+                logger.debug(f"{self.name} already stopped (rc={self.process.returncode})")
+                return
+            logger.info(f"Terminating {self.name} (pid={self.process.pid})")
+            self.process.terminate()
+            try:
+                self.process.wait(timeout=timeout)
+                logger.info(f"{self.name} stopped gracefully")
+            except subprocess.TimeoutExpired:
+                logger.warning(f"{self.name} did not stop in {timeout}s, sending SIGKILL")
+                self.process.kill()
+                self.process.wait(timeout=_PROJECT_API_PROCESS_TERMINATION_TIMEOUT)
+                logger.info(f"{self.name} killed")
+        finally:
+            self._close_log()
 
     def _close_log(self) -> None:
         if self._log_handle is not None:
@@ -171,15 +174,27 @@ async def start_service(
     _active_services.append(service)
 
     logger.info(f"Waiting for {name} health at {health_url} (timeout={health_timeout}s)")
-    healthy = await wait_for_health(health_url, timeout=health_timeout)
+    try:
+        healthy = await wait_for_health(health_url, timeout=health_timeout)
+    except Exception:
+        # Health probe failures (unexpected exceptions, cancellation) must
+        # still tear down the subprocess and drop the active-service entry —
+        # otherwise atexit / shutdown can chase an orphaned companion.
+        logger.exception(f"{name} health probe raised unexpectedly")
+        healthy = False
 
     if not healthy:
         if service.is_running():
             logger.error(f"{name} started but health check failed after {health_timeout}s")
         else:
             logger.error(f"{name} exited prematurely (rc={process.returncode})")
-        service.terminate()
-        _active_services.remove(service)
+        try:
+            service.terminate()
+        except Exception:  # nosec B110 — cleanup must not leave a stale registry entry
+            logger.exception(f"Failed to terminate unhealthy {name}")
+        finally:
+            if service in _active_services:
+                _active_services.remove(service)
         return None
 
     logger.info(f"{name} is healthy (pid={process.pid})")

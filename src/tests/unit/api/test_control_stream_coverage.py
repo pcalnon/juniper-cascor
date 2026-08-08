@@ -154,6 +154,39 @@ class TestControlStreamLifecycleUnavailable:
         assert any("not available" in str(c) or "Lifecycle manager not available" in str(c) for c in calls)
 
 
+class TestControlStreamAdmissionReject:
+    """SEC-F19 D4: try_admit=False must fail closed before accept/release."""
+
+    @pytest.mark.unit
+    @pytest.mark.asyncio
+    async def test_try_admit_false_rejects_without_session(self):
+        """Over-cap admission returns early: no accept, no release_admission."""
+        ws = AsyncMock()
+        ws.headers = {"origin": "http://localhost:8050"}
+        ws.client = ("127.0.0.1", 12345)
+        app_state = MagicMock()
+        app_state.api_key_auth = None
+        app_state.lifecycle = MagicMock()
+
+        async def _reject_and_close(websocket, *, endpoint, identity=None):
+            await websocket.close(code=1013, reason="Maximum connections reached")
+            return False
+
+        app_state.ws_manager.try_admit = AsyncMock(side_effect=_reject_and_close)
+        app_state.ws_manager.release_admission = AsyncMock()
+        ws.app.state = app_state
+
+        with patch("api.websocket.control_stream._check_handshake_gates", new_callable=AsyncMock, return_value=True):
+            await control_stream_handler(ws)
+
+        app_state.ws_manager.try_admit.assert_awaited_once()
+        assert app_state.ws_manager.try_admit.await_args.kwargs["endpoint"] == "control"
+        ws.accept.assert_not_awaited()
+        app_state.ws_manager.release_admission.assert_not_awaited()
+        ws.close.assert_awaited_once()
+        assert ws.close.call_args[1]["code"] == 1013
+
+
 class TestExecuteCommandEdge:
 
     @pytest.mark.unit
@@ -274,6 +307,64 @@ class TestHandshakeGates:
         cooldown.record_rejection.assert_not_called()
         ws.close.assert_not_awaited()
 
+    @pytest.mark.asyncio
+    async def test_auth_failure_records_rejection(self):
+        """Invalid API key closes 4001 and records a handshake rejection (parity with origin)."""
+        ws = AsyncMock()
+        auth = MagicMock()
+        auth.enabled = True
+        auth.validate.return_value = False
+        ws.app.state.api_key_auth = auth
+        ws.headers = {"X-API-Key": "bad-key"}
+
+        settings = MagicMock()
+        settings.disable_ws_control_endpoint = False
+        settings.ws_control_allowed_origins = []
+
+        cooldown = MagicMock()
+        cooldown.is_blocked.return_value = False
+
+        with patch("api.websocket.control_stream._get_cooldown", return_value=cooldown):
+            allowed = await _check_handshake_gates(ws, settings, "10.0.0.9")
+
+        assert allowed is False
+        cooldown.record_rejection.assert_called_once_with("10.0.0.9")
+        ws.close.assert_awaited_once_with(code=4001, reason="Authentication required")
+
+    @pytest.mark.asyncio
+    async def test_auth_failures_trip_real_handshake_cooldown(self):
+        """Repeated auth failures on a real HandshakeCooldown block the IP with 4029."""
+        from api.websocket.control_security import HandshakeCooldown
+
+        settings = MagicMock()
+        settings.disable_ws_control_endpoint = False
+        settings.ws_control_allowed_origins = []
+
+        cooldown = HandshakeCooldown(max_rejections=3, window_sec=60, block_sec=300)
+        client_ip = "203.0.113.50"
+
+        for _ in range(3):
+            ws = AsyncMock()
+            auth = MagicMock()
+            auth.enabled = True
+            auth.validate.return_value = False
+            ws.app.state.api_key_auth = auth
+            ws.headers = {"X-API-Key": "bad-key"}
+            with patch("api.websocket.control_stream._get_cooldown", return_value=cooldown):
+                allowed = await _check_handshake_gates(ws, settings, client_ip)
+            assert allowed is False
+            ws.close.assert_awaited_with(code=4001, reason="Authentication required")
+
+        assert cooldown.is_blocked(client_ip) is True
+
+        blocked_ws = AsyncMock()
+        blocked_ws.app.state.api_key_auth = None
+        with patch("api.websocket.control_stream._get_cooldown", return_value=cooldown):
+            allowed = await _check_handshake_gates(blocked_ws, settings, client_ip)
+
+        assert allowed is False
+        blocked_ws.close.assert_awaited_once_with(code=4029, reason="Too many rejected handshakes")
+
 
 @pytest.mark.unit
 class TestHandleCommandMessageBranches:
@@ -337,6 +428,28 @@ class TestHandleCommandMessageBranches:
 
         sent = ws.send_json.await_args[0][0]
         assert sent["data"]["status"] == "success"
+
+    @pytest.mark.asyncio
+    async def test_generic_lifecycle_exception_returns_execution_failed_ack(self):
+        """Lifecycle RuntimeError (e.g. stop when idle) yields opaque error ack; socket stays open.
+
+        Distinct from TimeoutError / ValidationError arms: generic failures must not
+        tear down the control channel so Canopy can retry.
+        """
+        ws = AsyncMock()
+        bucket = LeakyBucket(capacity=10, refill_rate=10.0)
+        lifecycle = MagicMock()
+        lifecycle.stop_training.side_effect = RuntimeError("Cannot stop: not training")
+
+        await _handle_command_message(ws, lifecycle, {"command": "stop", "command_id": "ex-1"}, bucket)
+
+        sent = ws.send_json.await_args[0][0]
+        assert sent["type"] == "command_response"
+        assert sent["data"]["status"] == "error"
+        assert sent["data"]["error"] == "Command execution failed"
+        assert sent["data"]["command_id"] == "ex-1"
+        # Keep-alive: generic execution failures must not close the control socket.
+        ws.close.assert_not_awaited()
 
 
 @pytest.mark.unit
@@ -408,3 +521,72 @@ class TestControlRecvLoop:
             timeout=2.0,
         )
         ws.close.assert_awaited_once_with(code=1003, reason="Malformed JSON")
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("payload", ["[]", "123", '"pause"', "null", "true"])
+    async def test_non_dict_json_acks_error_and_keeps_session(self, payload):
+        """Non-object JSON must not AttributeError-kill the recv loop.
+
+        Pre-fix ``msg.get(...)`` assumed every successful ``json.loads``
+        returned a dict; arrays/scalars/null raised and aborted /ws/control.
+        Parity with /ws/training's ``isinstance(msg, dict)`` guard: ack the
+        client error and continue so a subsequent valid command still runs.
+        """
+        lifecycle = MagicMock()
+        lifecycle.pause_training.return_value = {"status": "Paused"}
+        ws = AsyncMock()
+        ws.receive_text = AsyncMock(
+            side_effect=[
+                payload,
+                json.dumps({"command": "pause"}),
+                WebSocketDisconnect(code=1000),
+            ]
+        )
+        bucket = LeakyBucket(capacity=10, refill_rate=10.0)
+        pong_received = asyncio.Event()
+
+        with pytest.raises(WebSocketDisconnect):
+            await asyncio.wait_for(
+                _control_recv_loop(ws, lifecycle, bucket, pong_received, idle_timeout=0, client_ip="127.0.0.1"),
+                timeout=2.0,
+            )
+
+        # Session stayed open: no close from the non-dict arm, and the later
+        # pause command still dispatched.
+        ws.close.assert_not_awaited()
+        lifecycle.pause_training.assert_called_once()
+        error_acks = [c.args[0] for c in ws.send_json.await_args_list if isinstance(c.args[0], dict) and c.args[0].get("type") == "command_response" and c.args[0].get("data", {}).get("status") == "error"]
+        # Envelope wraps payload under data=; also accept flat shapes if the
+        # helper ever flattens in tests.
+        if not error_acks:
+            error_acks = [c.args[0] for c in ws.send_json.await_args_list if "Invalid JSON: expected object" in str(c) or "invalid_message" in str(c)]
+        assert error_acks, f"expected non-dict error ack; got {ws.send_json.await_args_list}"
+
+
+@pytest.mark.unit
+class TestNumericSetting:
+    """``_numeric_setting`` must never leak non-numeric stubs into wait_for/sleep."""
+
+    def test_real_number_is_returned(self):
+        from types import SimpleNamespace
+
+        assert cs._numeric_setting(SimpleNamespace(ws_control_idle_timeout_sec=45), "ws_control_idle_timeout_sec", 120) == 45
+        assert cs._numeric_setting(SimpleNamespace(ws_heartbeat_interval_sec=1.5), "ws_heartbeat_interval_sec", 30) == 1.5
+
+    def test_none_obj_or_missing_attr_uses_fallback(self):
+        from types import SimpleNamespace
+
+        assert cs._numeric_setting(None, "ws_control_idle_timeout_sec", 120) == 120
+        assert cs._numeric_setting(SimpleNamespace(), "ws_control_idle_timeout_sec", 120) == 120
+
+    def test_magicmock_stub_uses_fallback(self):
+        # MagicMock attribute lookups return MagicMock children — the exact
+        # double shape that used to leak into asyncio.wait_for and crash.
+        stub = MagicMock()
+        assert cs._numeric_setting(stub, "ws_control_idle_timeout_sec", 120) == 120
+        assert cs._numeric_setting(stub, "ws_heartbeat_interval_sec", 30) == 30
+
+    def test_string_value_uses_fallback(self):
+        from types import SimpleNamespace
+
+        assert cs._numeric_setting(SimpleNamespace(ws_control_idle_timeout_sec="120"), "ws_control_idle_timeout_sec", 99) == 99

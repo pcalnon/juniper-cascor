@@ -86,6 +86,17 @@ class TestBinaryFrame:
         with pytest.raises(ValueError, match="size mismatch"):
             BinaryFrame.decode(encoded[:-2])
 
+    def test_decode_non_utf8_dtype_raises_value_error(self):
+        """Non-UTF-8 dtype bytes raise ValueError (not UnicodeDecodeError).
+
+        worker_stream only catches ValueError around BinaryFrame.decode; a
+        raw UnicodeDecodeError would tear down the authenticated session.
+        """
+        # ndim=1, shape=(1,), dtype_len=2, dtype bytes = invalid UTF-8, + 4 bytes float32 data
+        payload = struct.pack("<I", 1) + struct.pack("<I", 1) + struct.pack("<I", 2) + b"\xff\xfe" + b"\x00\x00\x00\x00"
+        with pytest.raises(ValueError, match="not valid UTF-8"):
+            BinaryFrame.decode(payload)
+
     def test_c_contiguous_enforcement(self):
         """Non-contiguous input is made contiguous before encoding."""
         arr = np.array([[1.0, 2.0], [3.0, 4.0]], dtype=np.float32)
@@ -207,6 +218,22 @@ class TestValidateTaskResult:
         errors = WorkerProtocol.validate_task_result(msg)
         assert any("candidate_id" in e for e in errors)
 
+    def test_success_must_be_bool(self):
+        """JSON 0/1 integers must not be accepted as success (bool-only)."""
+        for bad in (0, 1, "true", None):
+            msg = self._valid_result()
+            msg["success"] = bad
+            errors = WorkerProtocol.validate_task_result(msg)
+            assert any("success must be bool" in e for e in errors), bad
+
+    def test_epochs_completed_must_be_int(self):
+        """epochs_completed rejects floats and non-numeric types."""
+        for bad in (12.5, "200", None, [200]):
+            msg = self._valid_result()
+            msg["epochs_completed"] = bad
+            errors = WorkerProtocol.validate_task_result(msg)
+            assert any("epochs_completed must be int" in e for e in errors), bad
+
     def test_correlation_out_of_bounds_high(self):
         """Correlation > 1.0 produces error."""
         msg = self._valid_result()
@@ -227,6 +254,52 @@ class TestValidateTaskResult:
         msg["correlation"] = 0.0
         assert WorkerProtocol.validate_task_result(msg) == []
         msg["correlation"] = 1.0
+        assert WorkerProtocol.validate_task_result(msg) == []
+
+    def test_bool_rejected_for_int_and_numeric_fields(self):
+        """JSON bool must not pass isinstance(..., int) / (int, float) checks.
+
+        Without an explicit bool reject, ``candidate_id: true``,
+        ``epochs_completed: false``, and ``correlation: true`` validate
+        as ints/floats because ``bool`` is an ``int`` subclass.
+        """
+        for field in ("candidate_id", "epochs_completed", "correlation"):
+            msg = self._valid_result()
+            msg[field] = True
+            errors = WorkerProtocol.validate_task_result(msg)
+            assert any(field in e for e in errors), f"expected type error for bool {field}, got {errors!r}"
+
+    def test_tensor_manifest_non_dict_rejected(self):
+        """Present-but-non-dict tensor_manifest is a schema error."""
+        msg = self._valid_result()
+        msg["tensor_manifest"] = "weights"
+        errors = WorkerProtocol.validate_task_result(msg)
+        assert any("tensor_manifest must be dict" in e for e in errors)
+
+    def test_tensor_manifest_null_rejected(self):
+        """JSON null tensor_manifest (None) is a schema error."""
+        msg = self._valid_result()
+        msg["tensor_manifest"] = None
+        errors = WorkerProtocol.validate_task_result(msg)
+        assert any("tensor_manifest must be dict" in e for e in errors)
+
+    def test_tensor_manifest_too_many_entries_rejected(self):
+        """Oversized tensor_manifest is rejected before a binary receive DoS."""
+        msg = self._valid_result()
+        msg["tensor_manifest"] = {f"t{i}": {"shape": [1], "dtype": "float32"} for i in range(33)}
+        errors = WorkerProtocol.validate_task_result(msg)
+        assert any("too many entries" in e for e in errors)
+
+    def test_tensor_manifest_absent_ok(self):
+        """Absent tensor_manifest remains valid (receive site defaults to {})."""
+        msg = self._valid_result()
+        assert "tensor_manifest" not in msg
+        assert WorkerProtocol.validate_task_result(msg) == []
+
+    def test_tensor_manifest_valid_dict_ok(self):
+        """A bounded dict tensor_manifest does not add schema errors."""
+        msg = self._valid_result()
+        msg["tensor_manifest"] = {"weights": {"shape": [4], "dtype": "float32"}}
         assert WorkerProtocol.validate_task_result(msg) == []
 
 
@@ -288,6 +361,38 @@ class TestValidateTensors:
         errors = WorkerProtocol.validate_tensors({"weights": arr}, manifest)
         assert any("magnitude" in e for e in errors)
 
+    def test_manifest_missing_shape_returns_error(self):
+        """Malformed manifest without shape must not raise KeyError."""
+        manifest = {"weights": {"dtype": "float32"}}
+        tensors = {"weights": np.zeros(4, dtype=np.float32)}
+        errors = WorkerProtocol.validate_tensors(tensors, manifest)
+        assert errors
+        assert any("shape" in e for e in errors)
+
+    def test_manifest_missing_dtype_returns_error(self):
+        """Malformed manifest without dtype must not raise KeyError."""
+        manifest = {"weights": {"shape": [4]}}
+        tensors = {"weights": np.zeros(4, dtype=np.float32)}
+        errors = WorkerProtocol.validate_tensors(tensors, manifest)
+        assert errors
+        assert any("dtype" in e for e in errors)
+
+    def test_manifest_non_dict_entry_returns_error(self):
+        """Non-dict manifest entries are rejected as validation errors."""
+        manifest = {"weights": "float32"}
+        tensors = {"weights": np.zeros(4, dtype=np.float32)}
+        errors = WorkerProtocol.validate_tensors(tensors, manifest)
+        assert errors
+        assert any("dict" in e for e in errors)
+
+    def test_empty_weights_returns_error(self):
+        """Empty weight arrays must not crash ``np.max``; return a validation error."""
+        manifest = {"weights": {"shape": [0], "dtype": "float32"}}
+        tensors = {"weights": np.array([], dtype=np.float32)}
+        errors = WorkerProtocol.validate_tensors(tensors, manifest)
+        assert errors
+        assert any("empty" in e.lower() for e in errors)
+
 
 @pytest.mark.unit
 class TestValidateRegister:
@@ -315,6 +420,107 @@ class TestValidateRegister:
         msg = {"worker_id": "w1", "capabilities": "not a dict"}
         errors = WorkerProtocol.validate_register(msg)
         assert any("dict" in e for e in errors)
+
+    def test_worker_id_must_be_string(self):
+        """Numeric worker_id is rejected (wire IDs are strings)."""
+        errors = WorkerProtocol.validate_register({"worker_id": 123, "capabilities": {}})
+        assert any("must be a string" in e for e in errors)
+
+    @pytest.mark.parametrize(
+        "worker_id",
+        [
+            "",
+            "-bad",
+            "_bad",
+            "bad id",
+            "evil/../x",
+            "a" * 65,
+        ],
+    )
+    def test_worker_id_pattern_rejects_invalid(self, worker_id):
+        """IDs must be 1-64 alnum/hyphen/underscore chars starting alnum."""
+        errors = WorkerProtocol.validate_register({"worker_id": worker_id, "capabilities": {}})
+        assert any("1-64 characters" in e for e in errors)
+
+    @pytest.mark.parametrize(
+        "worker_id",
+        [
+            "a",
+            "A0_-",
+            "worker-1",
+            "a" + ("b" * 63),  # exactly 64 chars, alphanumeric start
+        ],
+    )
+    def test_worker_id_pattern_accepts_boundary(self, worker_id):
+        """Boundary-valid IDs are admitted."""
+        assert len(worker_id) <= 64
+        assert WorkerProtocol.validate_register({"worker_id": worker_id, "capabilities": {}}) == []
+
+
+@pytest.mark.unit
+class TestTaskResultMessageFromDict:
+    """Typed parse of task_result wire dicts (admission into the coordinator)."""
+
+    def _valid_result(self):
+        return {
+            "type": "task_result",
+            "task_id": "t1",
+            "candidate_id": 0,
+            "correlation": 0.85,
+            "success": True,
+            "epochs_completed": 200,
+        }
+
+    def test_happy_path_applies_optional_defaults(self):
+        parsed = TaskResultMessage.from_dict(self._valid_result())
+        assert parsed.task_id == "t1"
+        assert parsed.candidate_id == 0
+        assert parsed.correlation == 0.85
+        assert parsed.success is True
+        assert parsed.epochs_completed == 200
+        assert parsed.candidate_uuid == ""
+        assert parsed.activation_name == ""
+        assert parsed.all_correlations == []
+        assert parsed.numerator == 0.0
+        assert parsed.denominator == 1.0
+        assert parsed.best_corr_idx == -1
+        assert parsed.tensor_manifest == {}
+        assert parsed.error_message is None
+
+    def test_optional_fields_preserved(self):
+        msg = self._valid_result()
+        msg.update(
+            {
+                "candidate_uuid": "uuid-1",
+                "activation_name": "tanh",
+                "all_correlations": [0.1, 0.85],
+                "numerator": 1.5,
+                "denominator": 2.0,
+                "best_corr_idx": 1,
+                "tensor_manifest": {"weights": {"shape": [4]}},
+                "error_message": None,
+            }
+        )
+        parsed = TaskResultMessage.from_dict(msg)
+        assert parsed.candidate_uuid == "uuid-1"
+        assert parsed.activation_name == "tanh"
+        assert parsed.all_correlations == [0.1, 0.85]
+        assert parsed.numerator == 1.5
+        assert parsed.denominator == 2.0
+        assert parsed.best_corr_idx == 1
+        assert parsed.tensor_manifest == {"weights": {"shape": [4]}}
+
+    def test_missing_required_field_raises(self):
+        msg = self._valid_result()
+        del msg["task_id"]
+        with pytest.raises(ValueError, match="Invalid task_result message"):
+            TaskResultMessage.from_dict(msg)
+
+    def test_correlation_out_of_bounds_raises(self):
+        msg = self._valid_result()
+        msg["correlation"] = 1.5
+        with pytest.raises(ValueError, match="out of bounds"):
+            TaskResultMessage.from_dict(msg)
 
 
 @pytest.mark.unit

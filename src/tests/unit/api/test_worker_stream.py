@@ -159,22 +159,55 @@ class TestHandleRegistration:
         ws.close.assert_awaited_once()
 
     @pytest.mark.asyncio
+    @pytest.mark.parametrize("payload", [None, [], 42, "register", True])
+    async def test_non_object_json_rejected(self, registry, payload):
+        """Non-object JSON must close cleanly — not AttributeError on ``.get``."""
+        ws = AsyncMock()
+        ws.receive_text = AsyncMock(return_value=json.dumps(payload))
+
+        worker_id = await _handle_registration(ws, registry)
+        assert worker_id is None
+        ws.send_json.assert_awaited()
+        err = ws.send_json.call_args[0][0]
+        assert err["type"] == "error"
+        assert "JSON object" in err["error"]
+        ws.close.assert_awaited_once()
+        assert ws.close.call_args[1]["code"] == 4008
+        assert registry.worker_count == 0
+
+    @pytest.mark.asyncio
     async def test_wrong_message_type(self, registry):
-        """Non-registration first message closes the connection."""
+        """Non-registration first message closes with structured error + code 4007."""
         ws = AsyncMock()
         ws.receive_text = AsyncMock(return_value=json.dumps({"type": "heartbeat", "worker_id": "w1"}))
 
         worker_id = await _handle_registration(ws, registry)
         assert worker_id is None
+        # Ops/workers distinguish "expected REGISTER" (4007) from 4005/4006/4008/4013.
+        ws.send_json.assert_awaited_once()
+        error_msg = ws.send_json.call_args[0][0]
+        assert error_msg["type"] == "error"
+        assert "registration" in error_msg["error"].lower()
+        ws.close.assert_awaited_once()
+        assert ws.close.call_args.kwargs["code"] == 4007
+        assert ws.close.call_args.kwargs["reason"] == "Expected registration"
 
     @pytest.mark.asyncio
     async def test_missing_fields(self, registry):
-        """Registration with missing fields closes the connection."""
+        """Registration with missing fields closes with structured error + code 4008."""
         ws = AsyncMock()
         ws.receive_text = AsyncMock(return_value=json.dumps({"type": "register"}))  # Missing worker_id and capabilities
 
         worker_id = await _handle_registration(ws, registry)
         assert worker_id is None
+        # Invalid-registration (4008) must stay distinct from registry-full (4013).
+        ws.send_json.assert_awaited_once()
+        error_msg = ws.send_json.call_args[0][0]
+        assert error_msg["type"] == "error"
+        assert "invalid registration" in error_msg["error"].lower()
+        ws.close.assert_awaited_once()
+        assert ws.close.call_args.kwargs["code"] == 4008
+        assert ws.close.call_args.kwargs["reason"] == "Invalid registration"
 
 
 @pytest.mark.unit
@@ -269,6 +302,60 @@ class TestTryDispatchTask:
         ws = AsyncMock()
         await _try_dispatch_task(ws, "w1", coordinator)
         ws.send_json.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_send_json_failure_requeues_assigned_task(self, coordinator, registry):
+        """send_json failure after assignment frees the worker and requeues immediately."""
+        registry.register("w1", {})
+        registry.register("w2", {})
+        tensors = {
+            "candidate_input": np.zeros((10, 4), dtype=np.float32),
+            "y": np.zeros((10, 1), dtype=np.float32),
+            "residual_error": np.zeros((10, 1), dtype=np.float32),
+        }
+        task_ids = coordinator.submit_tasks(
+            "r1",
+            [{"candidate_index": 0, "candidate_data": {}, "training_params": {}}],
+            tensors,
+        )
+
+        ws = AsyncMock()
+        ws.send_json = AsyncMock(side_effect=RuntimeError("socket closed"))
+
+        await _try_dispatch_task(ws, "w1", coordinator)
+
+        assert registry.get("w1").idle is True
+        assert task_ids[0] in coordinator._unassigned_tasks
+        assert coordinator._pending_tasks[task_ids[0]].assigned_worker_id is None
+
+        peer = coordinator.get_next_assignment("w2")
+        assert peer is not None
+        assert peer[0]["task_id"] == task_ids[0]
+
+    @pytest.mark.asyncio
+    async def test_send_bytes_failure_requeues_after_partial_send(self, coordinator, registry):
+        """Failure mid binary-frame send also rolls back the assignment."""
+        registry.register("w1", {})
+        tensors = {
+            "candidate_input": np.zeros((10, 4), dtype=np.float32),
+            "y": np.zeros((10, 1), dtype=np.float32),
+            "residual_error": np.zeros((10, 1), dtype=np.float32),
+        }
+        task_ids = coordinator.submit_tasks(
+            "r1",
+            [{"candidate_index": 0, "candidate_data": {}, "training_params": {}}],
+            tensors,
+        )
+
+        ws = AsyncMock()
+        ws.send_json = AsyncMock()
+        ws.send_bytes = AsyncMock(side_effect=RuntimeError("frame write failed"))
+
+        await _try_dispatch_task(ws, "w1", coordinator)
+
+        assert registry.get("w1").idle is True
+        assert task_ids[0] in coordinator._unassigned_tasks
+        ws.send_json.assert_awaited_once()
 
 
 @pytest.mark.unit
@@ -438,6 +525,75 @@ class TestWorkerStreamHandlerFullFlow:
 
         ws.accept.assert_awaited_once()
 
+    @pytest.mark.asyncio
+    async def test_mid_binary_frame_disconnect_requeues_assigned_task(self, registry, coordinator):
+        """Disconnect while awaiting result tensors requeues immediately for another worker.
+
+        Regression guard for websockets major bumps: a clean socket close mid
+        binary-frame sequence must not leave the task orphaned until
+        ``_task_reassignment_timeout`` (distinct from CONC-10 heartbeat reaping).
+        """
+        tensors = {
+            "candidate_input": np.zeros((10, 4), dtype=np.float32),
+            "y": np.zeros((10, 1), dtype=np.float32),
+            "residual_error": np.zeros((10, 1), dtype=np.float32),
+        }
+        task_ids = coordinator.submit_tasks(
+            "r1",
+            [{"candidate_index": 0, "candidate_data": {}, "training_params": {}}],
+            tensors,
+        )
+        registry.register("w2", {})
+
+        result_msg = json.dumps(
+            {
+                "type": "task_result",
+                "task_id": task_ids[0],
+                "candidate_id": 0,
+                "candidate_uuid": "uuid",
+                "correlation": 0.85,
+                "success": True,
+                "epochs_completed": 10,
+                "activation_name": "sigmoid",
+                "all_correlations": [0.85],
+                "numerator": 1.0,
+                "denominator": 2.0,
+                "best_corr_idx": 9,
+                "error_message": None,
+                "tensor_manifest": {
+                    "weights": {"shape": [4], "dtype": "float32"},
+                    "bias": {"shape": [1], "dtype": "float32"},
+                },
+            }
+        )
+
+        ws = _make_websocket(
+            app_state={
+                "worker_coordinator": coordinator,
+                "worker_registry": registry,
+            }
+        )
+        ws.receive_text = AsyncMock(return_value=json.dumps(WorkerProtocol.build_register("client-w1", {"cpu_cores": 4})))
+        # Connect-time dispatch assigns the pending task; the next receive is the
+        # task_result JSON, then the first expected binary frame disconnects.
+        ws.receive = AsyncMock(
+            side_effect=[
+                {"text": result_msg},
+                WebSocketDisconnect(),
+            ]
+        )
+
+        await worker_stream_handler(ws)
+
+        assert registry.get("w2") is not None
+        assert registry.worker_count == 1
+        assert task_ids[0] in coordinator._unassigned_tasks
+        assert coordinator._pending_tasks[task_ids[0]].assigned_worker_id is None
+
+        assignment = coordinator.get_next_assignment("w2")
+        assert assignment is not None
+        assert assignment[0]["task_id"] == task_ids[0]
+
 
 @pytest.mark.unit
 class TestHandleRegistrationExtraEdgeCases:
@@ -459,6 +615,63 @@ class TestHandleRegistrationExtraEdgeCases:
         assert error_msg["type"] == "error"
         ws.close.assert_awaited_once()
         assert ws.close.call_args[1]["code"] == 4005
+
+    @pytest.mark.asyncio
+    async def test_registry_at_capacity_sends_error_and_closes_4013(self):
+        """Registry saturation rejects with a structured error frame and close 4013.
+
+        Distinct from 4008 (invalid registration) so operators can tell
+        capacity pressure from schema failures — important for websockets
+        major bumps where close-frame handling can regress.
+        """
+        registry = WorkerRegistry(heartbeat_timeout=30.0, max_workers=1)
+        registry.register("worker-already-here", {"cpu_cores": 2})
+
+        ws = AsyncMock()
+        ws.receive_text = AsyncMock(return_value=json.dumps(WorkerProtocol.build_register("new-worker", {"cpu_cores": 4})))
+
+        worker_id = await _handle_registration(ws, registry)
+
+        assert worker_id is None
+        assert registry.worker_count == 1
+        ws.send_json.assert_awaited_once()
+        error_msg = ws.send_json.call_args[0][0]
+        assert error_msg["type"] == "error"
+        assert "capacity" in error_msg["error"].lower()
+        ws.close.assert_awaited_once()
+        assert ws.close.call_args[1]["code"] == 4013
+        assert "capacity" in ws.close.call_args[1]["reason"].lower()
+
+
+@pytest.mark.unit
+class TestWorkerStreamAdmissionReject:
+    """SEC-F19 D4: try_admit=False must fail closed before accept/release."""
+
+    @pytest.mark.asyncio
+    async def test_try_admit_false_rejects_without_accept(self, registry, coordinator):
+        """Over-cap admission returns early: no accept, no release_admission."""
+
+        async def _reject_and_close(websocket, *, endpoint, identity=None):
+            await websocket.close(code=1013, reason="Maximum connections reached")
+            return False
+
+        ws = _make_websocket(
+            app_state={
+                "worker_coordinator": coordinator,
+                "worker_registry": registry,
+            }
+        )
+        ws.app.state.ws_manager.try_admit = AsyncMock(side_effect=_reject_and_close)
+        ws.app.state.ws_manager.release_admission = AsyncMock()
+
+        await worker_stream_handler(ws)
+
+        ws.app.state.ws_manager.try_admit.assert_awaited_once()
+        assert ws.app.state.ws_manager.try_admit.await_args.kwargs["endpoint"] == "workers"
+        ws.accept.assert_not_awaited()
+        ws.app.state.ws_manager.release_admission.assert_not_awaited()
+        ws.close.assert_awaited_once()
+        assert ws.close.call_args[1]["code"] == 1013
 
 
 @pytest.mark.unit
@@ -589,6 +802,30 @@ class TestMessageLoop:
         assert "Invalid JSON" in error_responses[0][0][0]["error"]
 
     @pytest.mark.asyncio
+    @pytest.mark.parametrize("payload", [None, [], 7, "heartbeat"])
+    async def test_non_object_json_in_loop(self, registry, coordinator, payload):
+        """Non-object JSON in the loop errors and continues (session stays up)."""
+        registry.register("w1", {})
+        coordinator.get_next_assignment = MagicMock(return_value=None)
+
+        ws = AsyncMock()
+        ws.receive = AsyncMock(
+            side_effect=[
+                {"text": json.dumps(payload)},
+                WebSocketDisconnect(),
+            ]
+        )
+
+        with pytest.raises(WebSocketDisconnect):
+            await _message_loop(ws, "w1", registry, coordinator)
+
+        error_responses = [c for c in ws.send_json.call_args_list if c[0][0].get("type") == "error"]
+        assert len(error_responses) == 1
+        assert "JSON object" in error_responses[0][0][0]["error"]
+        # Worker remains registered — loop continued rather than crashing.
+        assert registry.get("w1") is not None
+
+    @pytest.mark.asyncio
     async def test_stray_binary_frame(self, registry, coordinator):
         """Binary frames outside a task_result sequence are warned about and ignored."""
         registry.register("w1", {})
@@ -674,6 +911,26 @@ class TestMessageLoop:
             await _message_loop(ws, "w1", registry, coordinator)
 
 
+def _assign_single_task(coordinator, registry, worker_id="w1"):
+    """Register worker, submit one task, assign it; return (task_id, result msg shell)."""
+    registry.register(worker_id, {})
+    tensors = {
+        "candidate_input": np.random.randn(8, 2).astype(np.float32),
+        "y": np.random.randn(8, 1).astype(np.float32),
+        "residual_error": np.random.randn(8, 1).astype(np.float32),
+    }
+    task_specs = [
+        {
+            "candidate_index": 0,
+            "candidate_data": {"input_size": 2, "activation_name": "sigmoid"},
+            "training_params": {"epochs": 1, "learning_rate": 0.01},
+        }
+    ]
+    task_ids = coordinator.submit_tasks("round-soft-abort", task_specs, tensors)
+    assert coordinator.get_next_assignment(worker_id) is not None
+    return task_ids[0]
+
+
 @pytest.mark.unit
 class TestHandleTaskResultEdgeCases:
     """Test edge cases in _handle_task_result."""
@@ -702,6 +959,95 @@ class TestHandleTaskResultEdgeCases:
         assert "Expected binary frame" in error_msg["error"]
 
     @pytest.mark.asyncio
+    async def test_missing_binary_frame_requeues_assigned_task(self, coordinator, registry):
+        """Soft text-for-bytes abort frees the busy worker and requeues immediately."""
+        task_id = _assign_single_task(coordinator, registry)
+        msg = {
+            "type": "task_result",
+            "task_id": task_id,
+            "tensor_manifest": {"weights": {"shape": [4], "dtype": "float32"}},
+        }
+        ws = AsyncMock()
+        ws.receive = AsyncMock(return_value={"text": "not-binary"})
+
+        await _handle_task_result(ws, "w1", msg, coordinator)
+
+        assert registry.get("w1").idle is True
+        assert task_id in coordinator._unassigned_tasks
+        assert coordinator._pending_tasks[task_id].assigned_worker_id is None
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("bad_manifest", ["weights", None, ["weights"], 3])
+    async def test_non_dict_tensor_manifest_rejected_before_receive(self, coordinator, registry, bad_manifest):
+        """Non-dict tensor_manifest must error immediately — never call receive()."""
+        registry.register("w1", {})
+        msg = {
+            "type": "task_result",
+            "task_id": "t1",
+            "tensor_manifest": bad_manifest,
+        }
+
+        ws = AsyncMock()
+        coordinator.submit_result = MagicMock(return_value=True)
+
+        await _handle_task_result(ws, "w1", msg, coordinator)
+
+        ws.receive.assert_not_awaited()
+        coordinator.submit_result.assert_not_called()
+        ws.send_json.assert_awaited_once()
+        error_msg = ws.send_json.call_args[0][0]
+        assert error_msg["type"] == "error"
+        assert "tensor_manifest must be a JSON object" in error_msg["error"]
+
+    @pytest.mark.asyncio
+    async def test_oversized_tensor_manifest_rejected_before_receive(self, coordinator, registry):
+        """Huge tensor_manifest is rejected before waiting for N binary frames."""
+        registry.register("w1", {})
+        msg = {
+            "type": "task_result",
+            "task_id": "t1",
+            "tensor_manifest": {f"t{i}": {"shape": [1], "dtype": "float32"} for i in range(33)},
+        }
+
+        ws = AsyncMock()
+        coordinator.submit_result = MagicMock(return_value=True)
+
+        await _handle_task_result(ws, "w1", msg, coordinator)
+
+        ws.receive.assert_not_awaited()
+        coordinator.submit_result.assert_not_called()
+        error_msg = ws.send_json.call_args[0][0]
+        assert error_msg["type"] == "error"
+        assert "too many entries" in error_msg["error"]
+
+    @pytest.mark.asyncio
+    async def test_non_utf8_dtype_binary_frame_returns_error(self, coordinator, registry):
+        """Non-UTF-8 dtype bytes surface as Invalid binary frame (ValueError path)."""
+        import struct
+
+        registry.register("w1", {})
+        msg = {
+            "type": "task_result",
+            "task_id": "t1",
+            "tensor_manifest": {
+                "weights": {"shape": [1], "dtype": "float32"},
+            },
+        }
+        # Valid header shape but invalid UTF-8 dtype bytes
+        bad_frame = struct.pack("<I", 1) + struct.pack("<I", 1) + struct.pack("<I", 2) + b"\xff\xfe" + b"\x00\x00\x00\x00"
+
+        ws = AsyncMock()
+        ws.receive = AsyncMock(return_value={"bytes": bad_frame})
+
+        await _handle_task_result(ws, "w1", msg, coordinator)
+
+        ws.send_json.assert_awaited_once()
+        error_msg = ws.send_json.call_args[0][0]
+        assert error_msg["type"] == "error"
+        assert "Invalid binary frame" in error_msg["error"]
+        assert "UTF-8" in error_msg["error"]
+
+    @pytest.mark.asyncio
     async def test_binary_frame_too_large(self, coordinator, registry):
         """Binary frames exceeding 100MB are rejected."""
         registry.register("w1", {})
@@ -726,6 +1072,26 @@ class TestHandleTaskResultEdgeCases:
         assert "too large" in error_msg["error"].lower()
 
     @pytest.mark.asyncio
+    async def test_binary_frame_too_large_requeues_assigned_task(self, coordinator, registry):
+        """Oversized soft abort frees the worker and requeues for a peer."""
+        task_id = _assign_single_task(coordinator, registry)
+        registry.register("w2", {})
+        msg = {
+            "type": "task_result",
+            "task_id": task_id,
+            "tensor_manifest": {"weights": {"shape": [4], "dtype": "float32"}},
+        }
+        ws = AsyncMock()
+        ws.receive = AsyncMock(return_value={"bytes": b"\x00" * (100 * 1024 * 1024 + 1)})
+
+        await _handle_task_result(ws, "w1", msg, coordinator)
+
+        assert registry.get("w1").idle is True
+        peer = coordinator.get_next_assignment("w2")
+        assert peer is not None
+        assert peer[0]["task_id"] == task_id
+
+    @pytest.mark.asyncio
     async def test_invalid_binary_frame_encoding(self, coordinator, registry):
         """Malformed binary frames that fail decoding return an error."""
         registry.register("w1", {})
@@ -747,6 +1113,23 @@ class TestHandleTaskResultEdgeCases:
         error_msg = ws.send_json.call_args[0][0]
         assert error_msg["type"] == "error"
         assert "Invalid binary frame" in error_msg["error"]
+
+    @pytest.mark.asyncio
+    async def test_invalid_binary_frame_requeues_assigned_task(self, coordinator, registry):
+        """Decode-failure soft abort frees the worker and requeues immediately."""
+        task_id = _assign_single_task(coordinator, registry)
+        msg = {
+            "type": "task_result",
+            "task_id": task_id,
+            "tensor_manifest": {"weights": {"shape": [4], "dtype": "float32"}},
+        }
+        ws = AsyncMock()
+        ws.receive = AsyncMock(return_value={"bytes": b"\x01"})
+
+        await _handle_task_result(ws, "w1", msg, coordinator)
+
+        assert registry.get("w1").idle is True
+        assert task_id in coordinator._unassigned_tasks
 
     @pytest.mark.asyncio
     async def test_result_rejected(self, coordinator, registry):

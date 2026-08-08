@@ -27,6 +27,10 @@ logger = logging.getLogger("juniper_cascor.api.websocket.worker_stream")
 
 _MAX_JSON_SIZE = 65536  # 64KB for JSON messages
 _MAX_BINARY_SIZE = 100 * 1024 * 1024  # 100MB for tensor frames
+# Mirror WorkerProtocol._MAX_TENSOR_MANIFEST_ENTRIES — keep the receive-site
+# guard local so a hostile worker cannot stall on binary frames before the
+# coordinator schema check runs.
+_MAX_TENSOR_MANIFEST_ENTRIES = 32
 
 
 async def worker_stream_handler(websocket: WebSocket) -> None:
@@ -147,16 +151,25 @@ async def _run_worker_session(
         # OBS-WIRE-02 (Q3): always re-emit the gauge on disconnect.
         if ws_manager is not None:
             ws_manager.unregister_endpoint_connection(websocket)
-        # Cleanup on disconnect
+        # Cleanup on disconnect — requeue any in-flight task immediately so a
+        # mid-task / mid-binary-frame close does not wait for the reassignment
+        # timeout (see WorkerCoordinator.handle_worker_disconnect).
         if worker_id is not None:
-            coordinator.unregister_send_callback(worker_id)
-            registry.deregister(worker_id)
+            coordinator.handle_worker_disconnect(worker_id)
             if audit_logger:
                 from api.workers.audit import AuditEventType
 
                 audit_logger.log(AuditEventType.WORKER_DEREGISTER, worker_id=worker_id)
             if worker_metrics:
                 worker_metrics.on_deregister(worker_id)
+            # Drop anomaly history for this worker so (a) the per-worker
+            # history dict cannot grow without bound across churn and
+            # (b) a recycled worker_id cannot inherit stale
+            # duplicate_correlations / perfect_correlation signals from a
+            # prior occupant. clear_worker is idempotent.
+            anomaly_detector = getattr(websocket.app.state, "anomaly_detector", None)
+            if anomaly_detector is not None:
+                anomaly_detector.clear_worker(worker_id)
             logger.info("Worker %s cleaned up", worker_id)
 
 
@@ -187,6 +200,13 @@ async def _handle_registration(websocket: WebSocket, registry: WorkerRegistry) -
     except json.JSONDecodeError:
         await websocket.send_json(WorkerProtocol.build_error("Invalid JSON"))
         await websocket.close(code=4006, reason="Invalid JSON")
+        return None
+
+    # JSON null / arrays / scalars parse successfully but are not objects;
+    # calling ``.get`` would raise AttributeError and tear down the session.
+    if not isinstance(msg, dict):
+        await websocket.send_json(WorkerProtocol.build_error("Registration message must be a JSON object"))
+        await websocket.close(code=4008, reason="Invalid registration")
         return None
 
     if msg.get("type") != MessageType.REGISTER:
@@ -271,6 +291,12 @@ async def _message_loop(
                 await websocket.send_json(WorkerProtocol.build_error("Invalid JSON"))
                 continue
 
+            # Non-object JSON (null/array/scalar) must not reach ``msg.get`` —
+            # that AttributeError aborts the whole worker session.
+            if not isinstance(msg, dict):
+                await websocket.send_json(WorkerProtocol.build_error("Message must be a JSON object"))
+                continue
+
             msg_type = msg.get("type")
 
             if msg_type == MessageType.HEARTBEAT:
@@ -326,6 +352,22 @@ async def _message_loop(
             logger.warning("Unexpected binary frame from worker %s (outside result sequence)", worker_id)
 
 
+async def _abort_soft_result_frame(
+    websocket: WebSocket,
+    worker_id: str,
+    msg: dict,
+    coordinator: WorkerCoordinator,
+    error: str,
+) -> None:
+    """Send a soft-abort error and free/requeue the in-flight task.
+
+    Soft aborts leave the WebSocket open; without an immediate requeue the
+    worker stays busy and the task waits for ``_task_reassignment_timeout``.
+    """
+    await websocket.send_json(WorkerProtocol.build_error(error))
+    coordinator.abort_in_flight_result(worker_id, msg.get("task_id"))
+
+
 async def _handle_task_result(
     websocket: WebSocket,
     worker_id: str,
@@ -333,7 +375,28 @@ async def _handle_task_result(
     coordinator: WorkerCoordinator,
 ) -> None:
     """Handle a task_result message and its associated binary tensor frames."""
+    # ``.get(..., {})`` only substitutes when the key is absent — a present
+    # null/string/list would otherwise be iterated (TypeError / char-by-char
+    # receive loop) before any schema validation runs.
+    if "tensor_manifest" in msg and not isinstance(msg["tensor_manifest"], dict):
+        logger.error(
+            "Invalid tensor_manifest type from worker %s: %s",
+            worker_id,
+            type(msg["tensor_manifest"]).__name__,
+        )
+        await websocket.send_json(WorkerProtocol.build_error(f"tensor_manifest must be a JSON object, got {type(msg['tensor_manifest']).__name__}"))
+        return
+
     manifest = msg.get("tensor_manifest", {})
+    if len(manifest) > _MAX_TENSOR_MANIFEST_ENTRIES:
+        logger.error(
+            "tensor_manifest too large from worker %s: %d entries",
+            worker_id,
+            len(manifest),
+        )
+        await websocket.send_json(WorkerProtocol.build_error(f"tensor_manifest has too many entries: {len(manifest)} > {_MAX_TENSOR_MANIFEST_ENTRIES}"))
+        return
+
     tensors: dict = {}
 
     # Receive binary frames for each tensor in manifest order
@@ -341,20 +404,32 @@ async def _handle_task_result(
         frame_msg = await websocket.receive()
         if "bytes" not in frame_msg:
             logger.error("Expected binary frame for tensor %s, got text from worker %s", tensor_name, worker_id)
-            await websocket.send_json(WorkerProtocol.build_error(f"Expected binary frame for tensor: {tensor_name}"))
+            await _abort_soft_result_frame(
+                websocket,
+                worker_id,
+                msg,
+                coordinator,
+                f"Expected binary frame for tensor: {tensor_name}",
+            )
             return
 
         raw_bytes = frame_msg["bytes"]
         if len(raw_bytes) > _MAX_BINARY_SIZE:
             logger.error("Binary frame for %s exceeds size limit from worker %s", tensor_name, worker_id)
-            await websocket.send_json(WorkerProtocol.build_error("Binary frame too large"))
+            await _abort_soft_result_frame(websocket, worker_id, msg, coordinator, "Binary frame too large")
             return
 
         try:
             tensors[tensor_name] = BinaryFrame.decode(raw_bytes)
         except ValueError as e:
             logger.error("Failed to decode binary frame for %s from worker %s: %s", tensor_name, worker_id, e)
-            await websocket.send_json(WorkerProtocol.build_error(f"Invalid binary frame for {tensor_name}: {e}"))
+            await _abort_soft_result_frame(
+                websocket,
+                worker_id,
+                msg,
+                coordinator,
+                f"Invalid binary frame for {tensor_name}: {e}",
+            )
             return
 
     # Submit the result to the coordinator
@@ -389,15 +464,29 @@ async def _try_dispatch_task(
         return
 
     msg, frames = assignment
+    task_id = msg.get("task_id")
 
-    # Send JSON envelope
-    await websocket.send_json(msg)
+    try:
+        # Send JSON envelope
+        await websocket.send_json(msg)
 
-    # Send binary tensor frames
-    for frame in frames:
-        await websocket.send_bytes(frame)
+        # Send binary tensor frames
+        for frame in frames:
+            await websocket.send_bytes(frame)
+    except Exception:
+        # get_next_assignment already marked the worker busy and the task
+        # assigned — roll back immediately so a broken socket does not pin
+        # the assignment until _task_reassignment_timeout.
+        logger.warning(
+            "Dispatch send failed for task %s to worker %s — requeueing",
+            task_id,
+            worker_id,
+            exc_info=True,
+        )
+        coordinator.requeue_after_dispatch_failure(worker_id, task_id)
+        return
 
-    logger.debug("Dispatched task %s to worker %s", msg.get("task_id"), worker_id)
+    logger.debug("Dispatched task %s to worker %s", task_id, worker_id)
 
 
 def _make_send_callback(websocket: WebSocket):

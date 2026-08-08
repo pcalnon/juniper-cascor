@@ -475,8 +475,11 @@ The juniper-cascor-client library provides a Python API for interacting with the
 - Triggering CI
 - Checking results
 - Reproducing CI locally
+- WS-6 golden / conformance gates (serial local reproduce)
+- Path-filtered package CI (`ci-protocol`, `ci-cascor-model`)
 - Quick fixes for common failures
 - Publishing packages to PyPI (Release tags + Trusted Publishing)
+- Twine pin surfaces (CI freeze vs unpinned `twine check` vs action upload)
 
 **When to Read:** First-time understanding CI, debugging CI failures
 
@@ -510,8 +513,10 @@ The juniper-cascor-client library provides a Python API for interacting with the
 - Job details (lint, test, integration, quality-gate, notify)
 - Coverage handling
 - Slow test handling (CASCOR-TIMEOUT-001)
+- WS-6 gates runbook (golden + conformance determinism contract)
 - Modifying the pipeline
 - PyPI publishing (OIDC Trusted Publishing, tag guards, TestPyPI verify)
+- Twine pin surfaces and Twine 7.0.0 review constraints
 
 **When to Read:** Understanding CI deeply, making CI changes
 
@@ -525,7 +530,10 @@ The juniper-cascor-client library provides a Python API for interacting with the
 **Key Sections:**
 
 - Workflow configuration reference
-- Publish workflows (tag guards, OIDC, verify contract)
+- WS-6 gate workflow pins and artifacts
+- Package CI path filters / coverage
+- Coverage gates (80% aggregate on main unit lane)
+- Publish workflows (tag guards, OIDC, verify contract, Twine pin surfaces)
 - Coverage gates (80% aggregate)
 - Artifact reference
 - Test marker mapping

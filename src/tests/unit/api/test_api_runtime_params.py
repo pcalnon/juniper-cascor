@@ -76,10 +76,49 @@ class TestUpdateTrainingParams:
         )
         assert response.status_code == 422
 
+    def test_invalid_candidate_pool_triple_returns_422(self, test_client_with_network):
+        """C2.1: InvalidCandidatePoolError must surface as HTTP 422, not ValueError→404.
+
+        ``InvalidCandidatePoolError`` subclasses ``ValueError``. The route has a
+        typed ``except InvalidCandidatePoolError`` *before* bare ``ValueError`` so
+        canopy gets a 422 with the violation string (toastable) rather than a
+        misleading 404. Manager-level raise is covered elsewhere; this pins the
+        HTTP mapping.
+        """
+        response = test_client_with_network.patch(
+            "/v1/training/params",
+            json={"selected_candidates": 5, "candidate_pool_size": 2},
+        )
+        assert response.status_code == 422
+        body = response.json()
+        assert body["status"] == "error"
+        assert body["error"]["code"] == "HTTP_422"
+        msg = body["error"]["message"]
+        assert "selected_candidates" in msg
+        assert "candidate_pool_size" in msg
+
     def test_update_params_empty_body_is_noop(self, test_client_with_network):
         """PATCH with empty body returns current params unchanged."""
         response = test_client_with_network.patch("/v1/training/params", json={})
         assert response.status_code == 200
+
+    def test_update_params_while_replaying_returns_409(self, test_client_with_network):
+        """CAN-015c: PATCH /params during REPLAYING must be HTTP 409, not 500/404.
+
+        Manager raises RuntimeError; the route must map it to a conflict so
+        Canopy can prompt the operator to stop replay first.
+        """
+        from unittest.mock import patch
+
+        lifecycle = test_client_with_network.app.state.lifecycle
+        with patch.object(lifecycle.state_machine, "is_replaying", return_value=True):
+            response = test_client_with_network.patch(
+                "/v1/training/params",
+                json={"learning_rate": 0.005},
+            )
+        assert response.status_code == 409
+        message = response.json()["error"]["message"].lower()
+        assert "replay" in message
 
     def test_patch_semantics_null_fields_ignored(self, test_client_with_network):
         """PATCH semantics: null/missing fields are not applied."""

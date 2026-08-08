@@ -32,7 +32,7 @@ This documentation serves two audiences:
 
 | Document | Description |
 |----------|-------------|
-| [REST and WebSocket API Reference](api/JUNIPER_CASCOR_API_REFERENCE.md) | Maintained service API documentation with REST endpoints, WebSocket protocols, close codes, and operational constraints |
+| [REST and WebSocket API Reference](api/JUNIPER_CASCOR_API_REFERENCE.md) | Maintained service API documentation with REST endpoints, WebSocket protocols, close codes, middleware / CR-024 body limits, `InlineDataset` alignment rules, worker in-flight task recovery, and operational constraints |
 | [Python API Reference](api/API_REFERENCE.md) | In-process Python API documentation with examples |
 | [API Schemas](api/API_SCHEMAS.md) | HDF5, lifecycle, WebSocket, and data structure schemas |
 
@@ -56,10 +56,10 @@ This documentation serves two audiences:
 
 | Document | Description |
 |----------|-------------|
-| [CI/CD Quick Start](ci_cd/QUICK_START.md) | Understand the CI pipeline and PyPI publish tags |
+| [CI/CD Quick Start](ci_cd/QUICK_START.md) | Understand the CI pipeline, WS-6 golden/conformance gates, package CI, and PyPI publish tags |
 | [CI Environment](ci_cd/ENVIRONMENT_SETUP.md) | GitHub Actions environment |
-| [CI/CD Manual](ci_cd/MANUAL.md) | Pipeline architecture, jobs, and PyPI publishing |
-| [CI/CD Reference](ci_cd/REFERENCE.md) | CI + publish workflow configuration reference |
+| [CI/CD Manual](ci_cd/MANUAL.md) | Pipeline architecture, WS-6 runbook, jobs, and PyPI publishing |
+| [CI/CD Reference](ci_cd/REFERENCE.md) | CI + Publish Workflow Configuration Reference (including WS-6 pins and package CI) |
 
 ### Source Code
 
@@ -79,6 +79,7 @@ This documentation serves two audiences:
 | `cascade_correlation/` | Core neural network implementation |
 | `candidate_unit/` | Candidate unit for network growth |
 | `spiral_problem/` | Two-spiral benchmark (requires JuniperData service) |
+| `api/websocket/` | REST/WebSocket service channels (FastAPI/Starlette; `websockets` via uvicorn) |
 | `juniper_data_client/` | REST API client for JuniperData service |
 | `cascor_constants/` | Project-wide constants |
 | `log_config/` | Logging configuration and custom logger |

@@ -122,6 +122,77 @@ class TestStartTraining:
         body = response.json()
         assert body["data"]["status"] == "training_started"
 
+    def test_start_training_unsupported_generator_rejected(self, client_with_network):
+        """W-1: a non-spiral dataset.generator is rejected 422 at the request boundary.
+
+        Pre-W-1 the route materialized only ``generator == "spiral"`` and silently
+        IGNORED every other value, so this request fell through to a downstream 409
+        only because the fixture holds no staged/retained data. Post-W-1 the route
+        rejects it up front with guidance naming the staging endpoint, and the
+        spiral generator is never invoked.
+        """
+        with patch("api.routes.training._generate_spiral_data") as spiral_gen:
+            response = client_with_network.post(
+                "/v1/training/start",
+                json={
+                    "dataset": {
+                        "generator": "xor",
+                        "params": {"n_samples": 20},
+                    },
+                    "epochs": 1,
+                },
+            )
+        assert response.status_code == 422
+        detail = response.json()["error"]["message"]
+        assert "not supported" in detail
+        assert "/v1/training/dataset" in detail
+        spiral_gen.assert_not_called()
+
+    def test_start_training_nonspiral_rejected_even_with_retained_data(self, client_with_network):
+        """W-1's sharp arm: the silent-wrong-data class is closed.
+
+        Seed the lifecycle with retained inline data (a completed start), then post a
+        start naming ``generator: "xor"``. Pre-W-1 the generator was silently dropped
+        and training STARTED on the retained inline data — succeeding on the wrong
+        dataset. Post-W-1 the request 422s before the lifecycle is touched and no new
+        training run begins.
+        """
+        seed = client_with_network.post(
+            "/v1/training/start",
+            json={
+                "inline_data": {
+                    "train_x": [[0.1, 0.2], [0.3, 0.4], [0.5, 0.6], [0.7, 0.8]],
+                    "train_y": [[1.0, 0.0], [0.0, 1.0], [1.0, 0.0], [0.0, 1.0]],
+                },
+                "epochs": 1,
+            },
+        )
+        assert seed.status_code == 200
+        client_with_network.post("/v1/training/stop")
+
+        response = client_with_network.post(
+            "/v1/training/start",
+            json={
+                "dataset": {"generator": "xor", "params": {"n_samples": 20}},
+                "epochs": 1,
+            },
+        )
+        assert response.status_code == 422
+        assert "/v1/training/dataset" in response.json()["error"]["message"]
+        status = client_with_network.get("/v1/training/status").json()["data"]
+        assert status["training_active"] is False
+
+    def test_start_training_generator_none_keeps_prior_meaning(self, client_with_network):
+        """W-1 scope guard: ``dataset`` present with ``generator: null`` is NOT the
+        rejected class — it keeps its pre-W-1 fall-through (no generator requested,
+        inline/staged/retained data decide; here none exists, so the downstream 409)."""
+        response = client_with_network.post(
+            "/v1/training/start",
+            json={"dataset": {"source": "juniper-data", "params": {}}, "epochs": 1},
+        )
+        assert response.status_code == 409
+        assert "Training cannot be started" in response.json()["error"]["message"]
+
     def test_start_training_with_params(self, client_with_network):
         """start_training should accept training parameter overrides."""
         response = client_with_network.post(
@@ -232,6 +303,79 @@ class TestStartTraining:
         forwarded_kwargs = spy.call_args.kwargs
         assert forwarded_kwargs.get("learning_rate") == 0.01
         assert forwarded_kwargs.get("patience") == 5
+
+    def test_start_training_while_investigating_returns_409(self, client_with_network):
+        """CAN-015d: start while Investigating must 409 with the specific reason string.
+
+        Manager-level RuntimeError is covered in lifecycle unit tests; this pins the
+        HTTP mapping so Canopy sees a actionable 409 (not a generic 500).
+        Orthogonal to create_network-while-Investigating and network PAUSED/REPLAYING guards.
+        """
+        lifecycle = client_with_network.app.state.lifecycle
+        assert lifecycle.state_machine.mark_investigating()
+        response = client_with_network.post(
+            "/v1/training/start",
+            json={
+                "inline_data": {
+                    "train_x": [[0.1, 0.2], [0.3, 0.4], [0.5, 0.6], [0.7, 0.8]],
+                    "train_y": [[1.0, 0.0], [0.0, 1.0], [1.0, 0.0], [0.0, 1.0]],
+                },
+            },
+        )
+        assert response.status_code == 409
+        msg = response.json()["error"]["message"]
+        assert "Investigating" in msg
+        assert lifecycle.state_machine.is_investigating()
+
+    def test_start_training_while_replaying_returns_409(self, client_with_network):
+        """CAN-015c: start while Replaying must 409 telling the client to stop replay first."""
+        lifecycle = client_with_network.app.state.lifecycle
+        assert lifecycle.state_machine.mark_replaying()
+        response = client_with_network.post(
+            "/v1/training/start",
+            json={
+                "inline_data": {
+                    "train_x": [[0.1, 0.2], [0.3, 0.4], [0.5, 0.6], [0.7, 0.8]],
+                    "train_y": [[1.0, 0.0], [0.0, 1.0], [1.0, 0.0], [0.0, 1.0]],
+                },
+            },
+        )
+        assert response.status_code == 409
+        msg = response.json()["error"]["message"]
+        assert "replaying" in msg.lower()
+        assert lifecycle.state_machine.is_replaying()
+
+
+class TestStopTraining:
+    """Tests for POST /training/stop."""
+
+    def test_stop_training_while_investigating_returns_409(self, client):
+        """Stop while Investigating must 409 — not silently desync FSM."""
+        lifecycle = client.app.state.lifecycle
+        lifecycle.state_machine.mark_investigating()
+        try:
+            response = client.post("/v1/training/stop")
+            assert response.status_code == 409
+            assert "cannot be stopped" in response.json()["error"]["message"].lower()
+            assert lifecycle.state_machine.is_investigating()
+        finally:
+            from api.lifecycle.state_machine import Command
+
+            lifecycle.state_machine.handle_command(Command.RESET)
+
+    def test_stop_training_while_replaying_returns_409(self, client):
+        """Stop while Replaying must 409 and leave FSM in REPLAYING."""
+        lifecycle = client.app.state.lifecycle
+        lifecycle.state_machine.mark_replaying()
+        try:
+            response = client.post("/v1/training/stop")
+            assert response.status_code == 409
+            assert "cannot be stopped" in response.json()["error"]["message"].lower()
+            assert lifecycle.state_machine.is_replaying()
+        finally:
+            from api.lifecycle.state_machine import Command
+
+            lifecycle.state_machine.handle_command(Command.RESET)
 
 
 class TestPauseTraining:

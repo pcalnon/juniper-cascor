@@ -150,6 +150,106 @@ class WorkerCoordinator:
         with self._lock:
             self._send_callbacks.pop(worker_id, None)
 
+    def requeue_after_dispatch_failure(self, worker_id: str, task_id: str | None) -> None:
+        """Free the worker and requeue a task after a failed WebSocket send.
+
+        Called from ``_try_dispatch_task`` when ``send_json`` / ``send_bytes``
+        raises after :meth:`get_next_assignment` has already marked the task
+        assigned and the worker busy. Without this rollback the worker stays
+        busy with an undelivered assignment until
+        ``_task_reassignment_timeout`` (default 120s) — and if the connection
+        keeps heartbeating, CONC-10 stale-worker reaping will not recover it.
+
+        Distinct from clean disconnect requeue and soft result-frame abort
+        paths used by sibling coverage PRs; this is the send-side mirror.
+        """
+        with self._lock:
+            self._registry.complete_task(worker_id, success=False)
+
+            if task_id is None:
+                return
+
+            task = self._pending_tasks.get(task_id)
+            if task is None or task.completed:
+                return
+            if task.task_id not in self._unassigned_tasks:
+                task.assigned_worker_id = None
+                task.dispatched_at = time.time()
+                self._unassigned_tasks.append(task.task_id)
+                logger.info(
+                    "Task %s requeued after dispatch send failure to worker %s",
+                    task.task_id,
+                    worker_id,
+                )
+
+    def handle_worker_disconnect(self, worker_id: str) -> None:
+        """Requeue any in-flight task and drop the worker on clean disconnect.
+
+        Called from the WebSocket handler ``finally`` when the socket closes
+        (including mid-binary-frame result receive). Distinct from
+        :meth:`_check_stale_workers` (heartbeat-timeout path) and from
+        schema/tensor reject-requeue in :meth:`submit_result`: without this,
+        a clean disconnect leaves ``assigned_worker_id`` set while
+        ``registry.deregister`` drops the worker, so the task sits orphaned
+        until ``_task_reassignment_timeout`` (default 120s).
+
+        Holds ``self._lock`` across requeue + deregister so a concurrent
+        :meth:`get_next_assignment` cannot land a new task on a worker that
+        is about to disappear (same lock discipline as CONC-10).
+        """
+        with self._lock:
+            current = self._registry.get(worker_id)
+            if current is not None:
+                active_task_id = current.active_task_id
+                if active_task_id is not None:
+                    task = self._pending_tasks.get(active_task_id)
+                    if task is not None and not task.completed:
+                        if active_task_id not in self._unassigned_tasks:
+                            task.assigned_worker_id = None
+                            task.dispatched_at = time.time()
+                            self._unassigned_tasks.append(active_task_id)
+                            logger.info(
+                                "Task %s requeued after worker %s disconnect",
+                                active_task_id,
+                                worker_id,
+                            )
+                self._registry.deregister(worker_id)
+        self.unregister_send_callback(worker_id)
+
+    def abort_in_flight_result(self, worker_id: str, task_id: str | None = None) -> None:
+        """Free the worker and immediately requeue after a soft result-frame abort.
+
+        Called from ``_handle_task_result`` when the connection stays open but
+        a binary tensor frame is aborted (text instead of bytes, oversized, or
+        decode failure). Distinct from clean WebSocket disconnect requeue and
+        from schema/tensor reject inside :meth:`submit_result`: without this,
+        the worker remains busy *and* the task waits for
+        ``_task_reassignment_timeout`` (default 120s) while the worker keeps
+        heartbeating — so CONC-10 stale-worker reaping will not recover it.
+        """
+        with self._lock:
+            if task_id is None:
+                current = self._registry.get(worker_id)
+                task_id = current.active_task_id if current is not None else None
+
+            self._registry.complete_task(worker_id, success=False)
+
+            if task_id is None:
+                return
+
+            task = self._pending_tasks.get(task_id)
+            if task is None or task.completed:
+                return
+            if task.task_id not in self._unassigned_tasks:
+                task.assigned_worker_id = None
+                task.dispatched_at = time.time()
+                self._unassigned_tasks.append(task.task_id)
+                logger.info(
+                    "Task %s requeued after soft result-frame abort from worker %s",
+                    task.task_id,
+                    worker_id,
+                )
+
     def submit_tasks(
         self,
         round_id: str,
@@ -177,8 +277,29 @@ class WorkerCoordinator:
             # early-unblocking ``collect_results`` before the new round's real
             # work finished (ISSUE-319 class; cascade filters by round_id after
             # collection, but the coordinator wait must not unblock early).
+            #
+            # Capture the workers still holding an in-flight assignment BEFORE
+            # dropping coordinator tracking, then release them below — the same
+            # capture-before-clear discipline as :meth:`cancel_round`. Without
+            # that release the registry keeps a worker busy for a task that no
+            # longer exists: ``assign_task`` returns False forever,
+            # ``get_next_assignment`` refuses it new work, and
+            # ``_check_task_timeouts`` cannot recover it because pending
+            # tracking is already gone — the worker is retired from the pool
+            # until it reconnects.
+            busy_worker_ids: list[str] = []
+            for stale_task in self._pending_tasks.values():
+                if stale_task.assigned_worker_id is not None and not stale_task.completed:
+                    busy_worker_ids.append(stale_task.assigned_worker_id)
+
             self._pending_tasks.clear()
             self._unassigned_tasks.clear()
+
+            for stale_worker_id in busy_worker_ids:
+                # success=False: the task was abandoned at the round boundary,
+                # not completed.
+                self._registry.complete_task(stale_worker_id, success=False)
+
             self._current_round_id = round_id
             self._current_round_task_count = len(tasks)
             self._results_ready.clear()
@@ -222,54 +343,58 @@ class WorkerCoordinator:
             # picks it up.
             if self._registry.get(worker_id) is None:
                 return None
-            if not self._unassigned_tasks:
-                return None
 
-            # Find the next unassigned task
-            task_id = self._unassigned_tasks.pop(0)
-            task = self._pending_tasks.get(task_id)
-            if task is None:
-                return None
+            # Drain orphaned unassigned ids (pending entry gone after cancel /
+            # round clear) so one stale queue entry cannot block later tasks
+            # for this assignment call.
+            while self._unassigned_tasks:
+                task_id = self._unassigned_tasks.pop(0)
+                task = self._pending_tasks.get(task_id)
+                if task is None:
+                    logger.warning("Orphaned unassigned task id %s — skipping", task_id)
+                    continue
 
-            # Assign to worker — confirm with the registry FIRST. The registry
-            # enforces one active task per worker (assign_task returns False for
-            # a busy or unknown worker); the pre-fix flow ignored that refusal,
-            # marked the PendingTask assigned, and sent it anyway, so a busy
-            # worker accumulated coordinator-level assignments the registry never
-            # tracked. `_check_stale_workers` requeues only the registry's
-            # `active_task_id` on deregistration, orphaning the extras until
-            # `_task_reassignment_timeout` (the worker_stream heartbeat path
-            # already guarded this with its own `reg.idle` check — ISSUE-319).
-            # Exposed by fix C4: re-enabled coordinator/registry logging widened
-            # the assign/dereg race window the CONC-10 suite hammers.
-            if not self._registry.assign_task(worker_id, task_id):
-                self._unassigned_tasks.insert(0, task_id)
-                logger.debug("Refusing assignment of task %s to worker %s (busy or unregistered)", task_id, worker_id)
-                return None
-            task.assigned_worker_id = worker_id
-            task.dispatched_at = time.time()
+                # Assign to worker — confirm with the registry FIRST. The registry
+                # enforces one active task per worker (assign_task returns False for
+                # a busy or unknown worker); the pre-fix flow ignored that refusal,
+                # marked the PendingTask assigned, and sent it anyway, so a busy
+                # worker accumulated coordinator-level assignments the registry never
+                # tracked. `_check_stale_workers` requeues only the registry's
+                # `active_task_id` on deregistration, orphaning the extras until
+                # `_task_reassignment_timeout` (the worker_stream heartbeat path
+                # already guarded this with its own `reg.idle` check — ISSUE-319).
+                # Exposed by fix C4: re-enabled coordinator/registry logging widened
+                # the assign/dereg race window the CONC-10 suite hammers.
+                if not self._registry.assign_task(worker_id, task_id):
+                    self._unassigned_tasks.insert(0, task_id)
+                    logger.debug("Refusing assignment of task %s to worker %s (busy or unregistered)", task_id, worker_id)
+                    return None
+                task.assigned_worker_id = worker_id
+                task.dispatched_at = time.time()
 
-            # Build assignment message
-            tensor_manifest = {}
-            frames = []
-            for tensor_name, arr in task.tensors.items():
-                tensor_manifest[tensor_name] = {
-                    "shape": list(arr.shape),
-                    "dtype": str(arr.dtype),
-                }
-                frames.append(BinaryFrame.encode(arr))
+                # Build assignment message
+                tensor_manifest = {}
+                frames = []
+                for tensor_name, arr in task.tensors.items():
+                    tensor_manifest[tensor_name] = {
+                        "shape": list(arr.shape),
+                        "dtype": str(arr.dtype),
+                    }
+                    frames.append(BinaryFrame.encode(arr))
 
-            msg = WorkerProtocol.build_task_assign(
-                task_id=task_id,
-                round_id=task.round_id,
-                candidate_index=task.candidate_index,
-                candidate_data=task.candidate_data,
-                training_params=task.training_params,
-                tensor_manifest=tensor_manifest,
-            )
+                msg = WorkerProtocol.build_task_assign(
+                    task_id=task_id,
+                    round_id=task.round_id,
+                    candidate_index=task.candidate_index,
+                    candidate_data=task.candidate_data,
+                    training_params=task.training_params,
+                    tensor_manifest=tensor_manifest,
+                )
 
-            logger.debug("Assigned task %s to worker %s (candidate %d)", task_id, worker_id, task.candidate_index)
-            return msg, frames
+                logger.debug("Assigned task %s to worker %s (candidate %d)", task_id, worker_id, task.candidate_index)
+                return msg, frames
+
+            return None
 
     def submit_result(
         self,
@@ -317,12 +442,49 @@ class WorkerCoordinator:
                 )
                 return False
 
+            # Ownership: only the currently assigned worker may submit.
+            # Reject the unassigned (pre-dispatch / post-requeue) window so a
+            # peer that merely knows ``task_id`` cannot complete work it was
+            # never given. Wrong-worker rejects also free the submitter's
+            # busy slot; unassigned rejects must not wipe an unrelated
+            # active assignment on the submitter.
+            if task.assigned_worker_id is None:
+                logger.warning("Result for unassigned task %s from worker %s — rejected", task_id, worker_id)
+                return False
+            if task.assigned_worker_id != worker_id:
+                logger.warning(
+                    "Result for task %s from worker %s rejected — assigned to %s",
+                    task_id,
+                    worker_id,
+                    task.assigned_worker_id,
+                )
+                self._registry.complete_task(worker_id, success=False)
+                return False
+
             # Validate against schema (Section 12.7 rules 1, 3)
             schema_errors = WorkerProtocol.validate_task_result(msg)
             if schema_errors:
                 logger.warning("Result validation failed for task %s: %s", task_id, schema_errors)
-                self._registry.complete_task(worker_id, success=False)
+                self._reject_and_requeue_task(task, worker_id)
                 return False
+
+            # Successful results must carry trained weights. An empty / missing
+            # ``tensor_manifest`` would otherwise skip validate_tensors below,
+            # so a success=True payload with no weights was accepted and
+            # ``_dispatch_to_remote_workers`` reconstructed a CandidateUnit with
+            # random init weights — poisoning candidate selection. Checked
+            # before manifest validation so empty arrays fail closed here
+            # rather than raising inside the magnitude check.
+            if msg.get("success") is True:
+                weights = tensors.get("weights") if tensors else None
+                if weights is None or getattr(weights, "size", 0) == 0:
+                    logger.warning(
+                        "Result for task %s from worker %s claimed success without weights — rejected",
+                        task_id,
+                        worker_id,
+                    )
+                    self._registry.complete_task(worker_id, success=False)
+                    return False
 
             # Validate tensors (Section 12.7 rules 4, 5, 6, 7)
             manifest = msg.get("tensor_manifest", {})
@@ -330,7 +492,7 @@ class WorkerCoordinator:
                 tensor_errors = WorkerProtocol.validate_tensors(tensors, manifest)
                 if tensor_errors:
                     logger.warning("Tensor validation failed for task %s: %s", task_id, tensor_errors)
-                    self._registry.complete_task(worker_id, success=False)
+                    self._reject_and_requeue_task(task, worker_id)
                     return False
 
             # Anomaly detection (Phase 4) — log warnings but do not reject
@@ -381,6 +543,28 @@ class WorkerCoordinator:
                 self._results_ready.set()
 
             return True
+
+    def _reject_and_requeue_task(self, task: PendingTask, worker_id: str) -> None:
+        """Free the worker and immediately requeue a rejected assigned task.
+
+        Called under ``self._lock`` from ``submit_result`` when schema or
+        tensor validation fails. Without this, ``complete_task`` frees the
+        worker but leaves ``task.assigned_worker_id`` set — so the task sits
+        orphaned until ``_check_task_timeouts`` fires after
+        ``_task_reassignment_timeout`` (default 120s).
+        """
+        self._registry.complete_task(worker_id, success=False)
+        if task.completed:
+            return
+        if task.task_id not in self._unassigned_tasks:
+            task.assigned_worker_id = None
+            task.dispatched_at = time.time()
+            self._unassigned_tasks.append(task.task_id)
+            logger.info(
+                "Task %s requeued after rejected result from worker %s",
+                task.task_id,
+                worker_id,
+            )
 
     def collect_results(self, timeout: float = 120.0) -> list[TaskResult]:
         """Wait for all results from the current round.
@@ -457,8 +641,23 @@ class WorkerCoordinator:
             return len(self._pending_tasks)
 
     def cancel_round(self) -> None:
-        """Cancel the current round and clear all pending tasks."""
+        """Cancel the current round and clear all pending tasks.
+
+        Also frees any registry ``active_task_id`` left from assignments in
+        this round. Without that release, ``assign_task`` keeps returning
+        False for the worker (busy), ``get_next_assignment`` refuses new
+        work, and ``_check_task_timeouts`` cannot help because pending
+        tracking was already cleared — permanently stuck capacity until
+        the worker reconnects.
+        """
         with self._lock:
+            # Capture workers that still hold an in-flight assignment before
+            # dropping coordinator tracking so we can free the registry.
+            busy_worker_ids: list[str] = []
+            for task in self._pending_tasks.values():
+                if task.assigned_worker_id is not None and not task.completed:
+                    busy_worker_ids.append(task.assigned_worker_id)
+
             self._pending_tasks.clear()
             self._unassigned_tasks.clear()
             self._results.clear()
@@ -466,6 +665,11 @@ class WorkerCoordinator:
             self._current_round_id = None
             self._current_round_task_count = 0
             self._results_ready.set()  # Unblock any waiting thread
+
+            for worker_id in busy_worker_ids:
+                # success=False: the task was aborted, not completed.
+                self._registry.complete_task(worker_id, success=False)
+
             logger.info("Current round cancelled")
 
     def shutdown(self) -> None:

@@ -166,6 +166,40 @@ class TestApiKeysParser:
         settings = Settings()
         assert settings.api_keys == ["CHANGE_BEFORE_PRODUCTION_USE"]
 
+    def test_empty_secret_file_alone_disables_auth(self, monkeypatch, tmp_path):
+        """Compose placeholder mounts often create a 0-byte secrets file.
+        With no plain env var, Settings must resolve to ``None`` (auth
+        disabled) rather than crash or treat ``""`` as a real key."""
+        secret_path = tmp_path / "juniper_cascor_api_keys"
+        secret_path.write_text("")
+        monkeypatch.setenv("JUNIPER_CASCOR_API_KEYS_FILE", str(secret_path))
+        monkeypatch.delenv("JUNIPER_CASCOR_API_KEYS", raising=False)
+        from api.settings import Settings
+
+        assert Settings().api_keys is None
+
+    def test_whitespace_only_secret_file_alone_disables_auth(self, monkeypatch, tmp_path):
+        """Whitespace-only secret files strip to empty and must disable auth."""
+        secret_path = tmp_path / "juniper_cascor_api_keys"
+        secret_path.write_text("  \n\t  ")
+        monkeypatch.setenv("JUNIPER_CASCOR_API_KEYS_FILE", str(secret_path))
+        monkeypatch.delenv("JUNIPER_CASCOR_API_KEYS", raising=False)
+        from api.settings import Settings
+
+        assert Settings().api_keys is None
+
+    def test_commas_only_secret_file_yields_empty_list(self, monkeypatch, tmp_path):
+        """``, ,`` is truthy at the get_secret layer so the model validator
+        injects it; ``_parse_api_keys`` must drop empties to ``[]`` (still
+        unconfigured for auth — not a crash, not a phantom key)."""
+        secret_path = tmp_path / "juniper_cascor_api_keys"
+        secret_path.write_text(", ,")
+        monkeypatch.setenv("JUNIPER_CASCOR_API_KEYS_FILE", str(secret_path))
+        monkeypatch.delenv("JUNIPER_CASCOR_API_KEYS", raising=False)
+        from api.settings import Settings
+
+        assert Settings().api_keys == []
+
 
 @pytest.mark.unit
 class TestWsControlAllowedOriginsParser:
@@ -254,3 +288,46 @@ class TestWsControlAllowedOriginsParser:
 
         settings = Settings(ws_control_allowed_origins=["http://prog:1", "http://prog:2"])
         assert settings.ws_control_allowed_origins == ["http://prog:1", "http://prog:2"]
+
+    def test_malformed_bracket_json_falls_back_to_csv(self, monkeypatch):
+        """A string that looks like a JSON array but fails to parse must
+        fail-soft to the comma-CSV splitter rather than raising at boot.
+
+        Operators occasionally hand-edit the env var into a half-JSON shape
+        (missing quotes / trailing commas). Boot must still start.
+        """
+        monkeypatch.setenv(
+            "JUNIPER_CASCOR_WS_CONTROL_ALLOWED_ORIGINS",
+            "[http://x:1,http://y:2]",
+        )
+        from api.settings import Settings
+
+        settings = Settings()
+        # Bracket-wrapped but not valid JSON → CSV path; brackets become part
+        # of the first/last tokens and are not stripped (documented fail-soft).
+        assert settings.ws_control_allowed_origins == ["[http://x:1", "http://y:2]"]
+
+    def test_invalid_json_array_with_non_list_payload_falls_back(self, monkeypatch):
+        """Valid JSON that is not a list (e.g. a JSON object) must fall through
+        to CSV rather than being accepted as an empty/wrong origins list.
+        """
+        monkeypatch.setenv(
+            "JUNIPER_CASCOR_WS_CONTROL_ALLOWED_ORIGINS",
+            '{"origin":"http://x:1"}',
+        )
+        from api.settings import Settings
+
+        settings = Settings()
+        # Object JSON is not a list → CSV split of the whole string yields one token.
+        assert settings.ws_control_allowed_origins == ['{"origin":"http://x:1"}']
+
+    def test_json_array_drops_empty_string_entries(self, monkeypatch):
+        """Empty / whitespace-only entries inside a JSON array are stripped."""
+        monkeypatch.setenv(
+            "JUNIPER_CASCOR_WS_CONTROL_ALLOWED_ORIGINS",
+            '["http://ok:1", "", "  ", "http://ok:2"]',
+        )
+        from api.settings import Settings
+
+        settings = Settings()
+        assert settings.ws_control_allowed_origins == ["http://ok:1", "http://ok:2"]

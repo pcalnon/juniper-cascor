@@ -363,6 +363,31 @@ class TestLifecycleManagerTrainingControl:
         result = mgr.stop_training()
         assert result["status"] == "stop_requested"
 
+    def test_stop_training_while_investigating_preserves_fsm(self):
+        """STOP while Investigating must not desync training_state vs FSM.
+
+        Previously handle_command(STOP) was rejected (FSM stayed
+        Investigating) but training_state was forced to Stopped, so
+        Canopy could show Stopped while start_training remained blocked.
+        """
+        mgr = TrainingLifecycleManager()
+        mgr.state_machine.mark_investigating()
+        mgr.training_state.update_state(status="Stopped", phase="Idle")
+        with pytest.raises(RuntimeError, match="INVESTIGATING"):
+            mgr.stop_training()
+        assert mgr.state_machine.is_investigating()
+        assert mgr.training_state.get_state()["status"] == "Stopped"
+        mgr.shutdown()
+
+    def test_stop_training_while_replaying_preserves_fsm(self):
+        """STOP while Replaying must raise and leave FSM in REPLAYING."""
+        mgr = TrainingLifecycleManager()
+        mgr.state_machine.mark_replaying()
+        with pytest.raises(RuntimeError, match="REPLAYING"):
+            mgr.stop_training()
+        assert mgr.state_machine.is_replaying()
+        mgr.shutdown()
+
     def test_pause_training_not_active(self):
         """Pause fails when training not active."""
         mgr = TrainingLifecycleManager()
@@ -762,6 +787,35 @@ class TestUpdateParamsAtomicity:
         mgr = TrainingLifecycleManager()
         with pytest.raises(ValueError, match="No network exists"):
             mgr.update_params({"learning_rate": 0.005})
+
+    def test_update_params_rejected_while_replaying(self):
+        """CAN-015c: REPLAYING rejects meta-param mutations (manager gate).
+
+        Without this guard, PATCH / WS set_params could mutate live network
+        knobs mid-replay and desync the synthetic epoch stream from the
+        snapshot history being replayed.
+        """
+        from unittest.mock import patch
+
+        net = self._FakeNetwork()
+        mgr = self._mgr_with_network(net)
+        original_lr = net.learning_rate
+        with patch.object(mgr.state_machine, "is_replaying", return_value=True):
+            with pytest.raises(RuntimeError, match="replaying"):
+                mgr.update_params({"learning_rate": 0.005})
+        assert net.learning_rate == pytest.approx(original_lr)
+
+    def test_update_params_allowed_while_investigating(self):
+        """INVESTIGATING explicitly allows meta-param edits (contrast REPLAYING)."""
+        from unittest.mock import patch
+
+        net = self._FakeNetwork()
+        mgr = self._mgr_with_network(net)
+        with patch.object(mgr.state_machine, "is_investigating", return_value=True):
+            with patch.object(mgr.state_machine, "is_replaying", return_value=False):
+                result = mgr.update_params({"learning_rate": 0.007})
+        assert net.learning_rate == pytest.approx(0.007)
+        assert "learning_rate" in result["applied"]
 
 
 @pytest.mark.unit
