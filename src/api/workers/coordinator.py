@@ -458,6 +458,15 @@ class WorkerCoordinator:
                     worker_id,
                     task.assigned_worker_id,
                 )
+                # Deliberately frees the submitter WITHOUT requeueing — the odd
+                # one out among this method's rejects. The schema / weightless-
+                # success / tensor rejects below all call
+                # ``_reject_and_requeue_task`` because the *assignee itself*
+                # returned something unusable, so the task is genuinely up for
+                # grabs. Here the task is still validly assigned to a different,
+                # live worker: requeueing would let any peer that merely knows
+                # ``task_id`` yank an in-flight assignment away from its real
+                # owner. Only the bogus submitter's own busy slot is released.
                 self._registry.complete_task(worker_id, success=False)
                 return False
 
@@ -475,6 +484,11 @@ class WorkerCoordinator:
             # random init weights — poisoning candidate selection. Checked
             # before manifest validation so empty arrays fail closed here
             # rather than raising inside the magnitude check.
+            #
+            # Requeued like the schema / tensor rejects below: this is a
+            # malformed submission for a task that was never actually done, so
+            # the task must go back on the queue rather than sit assigned to a
+            # freed worker until ``_task_reassignment_timeout`` (default 120s).
             if msg.get("success") is True:
                 weights = tensors.get("weights") if tensors else None
                 if weights is None or getattr(weights, "size", 0) == 0:
@@ -483,7 +497,7 @@ class WorkerCoordinator:
                         task_id,
                         worker_id,
                     )
-                    self._registry.complete_task(worker_id, success=False)
+                    self._reject_and_requeue_task(task, worker_id)
                     return False
 
             # Validate tensors (Section 12.7 rules 4, 5, 6, 7)
