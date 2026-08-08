@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **W-6: `JUNIPER_CASCOR_SNAPSHOTS_DIR` snapshot-directory override, service + direct CLI** (CLI experimentation plan §11; H-4/H-5). The service tier's `_get_snapshots_dir` (sole construction site for every `save_snapshot`/list/replay path) reads the env var
+  at call time; the direct-CLI tier's `constants_hdf5._HDF5_PROJECT_SNAPSHOTS_DIR` (the default flowing through `CascadeCorrelationConfig` into the trainer) reads it at import time. Unset or blank keeps the legacy `<repo>/src/snapshots` /
+  `<repo>/src/cascor_snapshots` paths byte-identically, so nothing changes for existing deployments; a per-run experiment launcher can now point each instance at its own `RUN_DIR/snapshots`, retiring the one-cascor-instance-per-checkout
+  interim rule for the snapshots class (the F-P1-4 `.h5`-debris finding). 7 new unit tests (`test_w6_snapshots_dir_override.py`) pin override/fallback/blank + call-time (service) and import-time (constants) semantics.
+
 - **W-2: the non-2-D artifact rejections now name the tier boundary** (CLI experimentation plan §11). The `_artifact_to_tensors` 2-D guards (landed with the InlineDataset/_reload_dataset hardening) satisfy W-2's minimum-viable rejection; the register additionally
   asks that the error *name the tier boundary* — both messages now state that 3-D sequence artifacts belong to the juniper-recurrence tier (OQ-4 ingestion-gate design). Test pin sharpened to assert the boundary naming.
 

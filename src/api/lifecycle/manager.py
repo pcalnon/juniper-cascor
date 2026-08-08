@@ -4401,8 +4401,20 @@ class TrainingLifecycleManager:
     # ------------------------------------------------------------------
 
     def _get_snapshots_dir(self) -> Path:
-        """Return the snapshots directory, creating it if needed."""
-        snapshots_dir = Path(__file__).resolve().parent.parent.parent / "snapshots"
+        """Return the snapshots directory, creating it if needed.
+
+        W-6 (CLI experimentation plan §11 / H-4): ``JUNIPER_CASCOR_SNAPSHOTS_DIR``
+        overrides the legacy hard-coded ``<repo>/src/snapshots`` so a per-run
+        launcher can point each cascor instance at its own ``RUN_DIR/snapshots``
+        (per-run config travels as process env, H-3). Read at call time — not
+        import time — so tests and long-lived processes see the current env. A
+        set-but-blank value is treated as unset (the blank-env guard class).
+        """
+        override = os.environ.get("JUNIPER_CASCOR_SNAPSHOTS_DIR", "").strip()
+        if override:
+            snapshots_dir = Path(override).expanduser()
+        else:
+            snapshots_dir = Path(__file__).resolve().parent.parent.parent / "snapshots"
         snapshots_dir.mkdir(parents=True, exist_ok=True)
         return snapshots_dir
 
