@@ -5,7 +5,7 @@
 **Author**: Paul Calnon
 **License**: MIT License
 **Version**: 0.7.0
-**Last Updated**: 2026-08-07
+**Last Updated**: 2026-08-08
 
 ---
 
@@ -279,7 +279,6 @@ juniper-cascor/
 │   ├── run_all_tests.bash            #   Test runner
 │   ├── profile_training.bash         #   py-spy profiler
 │   ├── get_code_stats.bash           #   Code statistics
-│   ├── sequence_safety/              #   Compositional-loss screens (symbol-loss + docs-additions)
 │   └── (30+ additional utility scripts)
 ├── data/                             # Spiral datasets (.pt files)
 ├── dist/                             # Build artifacts
@@ -921,15 +920,18 @@ Optional: register the same PAT under **Settings → Secrets → Dependabot** to
 
 ### Sequence Safety (Compositional-Loss Net)
 
-Ported from juniper-ml (ml#873 / #880 / #928; the flood-remediation program) after the 2026-08-05 storm triage found *compositional loss* — a silently deleted def/class/method, a gutted body, or a net docs-section deletion that no per-PR check sees because a deleted test cannot fail — to be cascor's one remaining gap. Two pure-stdlib git-diff screens live in `util/sequence_safety/`:
+Ported from juniper-ml (ml#873 / #880 / #928; the flood-remediation program) after the 2026-08-05 storm triage found *compositional loss* — a silently deleted def/class/method, a gutted body, or a net docs-section deletion that no per-PR check sees because a deleted test cannot fail — to be cascor's one remaining gap.
 
-- `symbol_loss_check.py` — AST symbol inventory of BASE vs HEAD over `src/**/*.py` (includes `src/tests/**`); FAIL on a LOST / WEAKENED / DUPLICATED def, with a qualified-name / body-similarity relocation downgrade. Escape hatch: an `Allow-Symbol-Loss: <qualified.symbol>` commit trailer. (`@property`/`@x.setter` accessor pairs are disambiguated so they are never a false DUPLICATED — a cascor-src adaptation over the juniper-ml original.)
-- `docs_additions_check.py` — markdown deletion-magnitude screen over `AGENTS.md` + `docs/**` + `notes/**`; FAIL on a deleted heading or a run of ≥ N consecutive deleted lines, WARN on small in-place swaps. Escape hatch: an `Allow-Docs-Rewrite: <path>` commit trailer.
+The two pure-stdlib git-diff screens are now **consumed from the published `juniper-ci-tools` package** (pinned `>=0.8.0,<0.9.0`) via two console scripts; the inline `util/sequence_safety/` copy that cascor#482 first ported was deleted in the Wave-3 retrofit (ml canonical, consumers consume — the same shape as the doc-tools / dep-docs migrations; see juniper-ml `notes/JUNIPER_2026-08-07_JUNIPER-ECOSYSTEM_SEQUENCE-SAFETY-ROLLOUT-PLAN.md`).
+
+- `juniper-symbol-loss-check --scope 'src/**/*.py'` — AST symbol inventory of BASE vs HEAD over `src/**/*.py` (includes `src/tests/**`); FAIL on a LOST / WEAKENED / DUPLICATED def, with a qualified-name / body-similarity relocation downgrade. Escape hatch: an `Allow-Symbol-Loss: <qualified.symbol>` commit trailer.
+  cascor passes `--scope 'src/**/*.py'` explicitly because the package's built-in default scope is juniper-ml's (`tests/*.py` + `util/**`); the `@property`/`@x.setter` accessor-pair disambiguation (once a cascor-local adaptation) is now upstreamed into the package.
+- `juniper-docs-additions-check` — markdown deletion-magnitude screen over the package's universal default docs cluster (`AGENTS.md` + `docs/**` + `notes/**`, so no `--scope` is needed); FAIL on a deleted heading or a run of ≥ N consecutive deleted lines, WARN on small in-place swaps. Escape hatch: an `Allow-Docs-Rewrite: <path>` commit trailer.
 
 Everything is **ADVISORY** — neither workflow is a required status check and this makes **no branch-ruleset change**.
-`sequence-safety.yml` surfaces findings per-PR at review (with WARN-only `allow-symbol-loss` / `docs-rewrite` label hatches); `main-verify.yml` is the bypass-proof post-merge net that fires on every merge to `main` (catch-up base sweeps any `[skip ci]` window; a stable-title tracking issue is upserted on failure).
+`sequence-safety.yml` surfaces findings per-PR at review (with WARN-only `allow-symbol-loss` / `docs-rewrite` label hatches); `main-verify.yml` is the bypass-proof post-merge net that fires on every merge to `main` (catch-up base sweeps any `[skip ci]` window; a stable-title tracking issue is upserted on failure). Both `pip install "juniper-ci-tools>=0.8.0,<0.9.0"` then invoke the console scripts.
 v1 defers the post-merge regression battery (cascor's suite is heavy) and Slack notify (no webhook secret) — see the workflow header comments.
-The screens are behaviourally identical to juniper-ml's, whose `tests/test_symbol_loss_check.py` + `tests/test_docs_additions_check.py` remain the authoritative regression suite.
+The screens' canonical regression suite lives in the `juniper-ci-tools` package; `src/tests/unit/test_sequence_safety_retired.py` is cascor's local guard that the inline copy stays deleted and the workflow pins keep admitting the packaged version.
 
 ---
 
