@@ -8,6 +8,8 @@ with [PEP 440](https://peps.python.org/pep-0440/) pre-release identifiers.
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-08-08
+
 ### Fixed
 
 - **`BinaryFrame.decode` no longer leaks the raw codec error for a non-UTF-8 dtype string**
