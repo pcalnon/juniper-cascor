@@ -362,6 +362,35 @@ class TestTranslateStagedConfig:
         assert params["n_points_per_spiral"] >= 1
         assert params["n_spirals"] == 0
 
+    def test_gaussian_n_samples_translates_to_per_class(self):
+        """W-3: gaussian has no n_samples — a staged total divides by n_classes."""
+        generator, params = TrainingLifecycleManager._translate_staged_config("gaussian", {"n_samples": 600, "n_classes": 3, "noise": 0.05})
+        assert generator == "gaussian"
+        assert params["n_samples_per_class"] == 200
+        assert "n_samples" not in params
+
+    def test_gaussian_default_class_divisor(self):
+        """Absent n_classes uses juniper-data's default (2)."""
+        generator, params = TrainingLifecycleManager._translate_staged_config("gaussian", {"n_samples": 100})
+        assert params["n_samples_per_class"] == 50
+
+    def test_gaussian_explicit_per_class_wins(self):
+        generator, params = TrainingLifecycleManager._translate_staged_config("gaussian", {"n_samples": 600, "n_samples_per_class": 42})
+        assert params["n_samples_per_class"] == 42
+
+    def test_checkerboard_keeps_n_samples_and_n_squares(self):
+        """W-3: checkerboard takes both directly; spiral-only fields still strip."""
+        generator, params = TrainingLifecycleManager._translate_staged_config("checkerboard", {"n_samples": 2000, "n_squares": 4, "rotations": 1.0})
+        assert generator == "checkerboard"
+        assert params["n_samples"] == 2000
+        assert params["n_squares"] == 4
+        assert "rotations" not in params
+
+    def test_n_squares_stripped_from_non_checkerboard(self):
+        for dataset_type in ("spirals", "xor", "circles", "gaussian"):
+            _, params = TrainingLifecycleManager._translate_staged_config(dataset_type, {"n_samples": 40, "n_squares": 4})
+            assert "n_squares" not in params, dataset_type
+
     def test_non_spiral_strips_spiral_only_fields(self):
         generator, params = TrainingLifecycleManager._translate_staged_config(
             "circles",

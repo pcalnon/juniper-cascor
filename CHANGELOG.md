@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **W-3: staged `dataset_type` Literal extended to `gaussian` + `checkerboard`** (CLI experimentation plan §11). New typed `n_squares` field (2–16, mirroring juniper-data's `CheckerboardParams`) surviving only for checkerboard; and a REAL gaussian translation —
+  juniper-data's `GaussianParams` has no `n_samples`, so a staged total previously passed through and was silently ignored (defaults generated — the silent-wrong-params class); it now divides by the requested `n_classes` (default 2) into `n_samples_per_class`,
+  mirroring spiral's per-arm division, with an explicit `n_samples_per_class` winning. Non-checkerboard generators strip `n_squares`. Tests: `TestTranslateStagedConfig` gaussian/checkerboard/strip arms.
+
 - **W-11: direct-CLI experiment-YAML mapping** (CLI experimentation plan §11 / Wave 3.6). `main.py`'s thin adapter maps the `--config` experiment YAML's `dataset.params` / `training.params` onto the direct CLI's overridable knobs
   (spiral shape/ratios/seed; learning-rate, correlation-threshold, max-hidden-units, patience, candidate/output epochs, with `max_epochs` aliasing to `output_epochs` per C2b) with `cascor_constants` as the fallback tier.
   Keys with no direct-CLI counterpart (service-tier knobs like `max_iterations`) are reported loudly, never dropped silently. The Settings source (Wave 3.1) fail-loud-validates the file before the adapter reads it.
