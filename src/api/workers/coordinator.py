@@ -475,6 +475,11 @@ class WorkerCoordinator:
             # random init weights — poisoning candidate selection. Checked
             # before manifest validation so empty arrays fail closed here
             # rather than raising inside the magnitude check.
+            #
+            # Requeued like the schema / tensor rejects below: this is a
+            # malformed submission for a task that was never actually done, so
+            # the task must go back on the queue rather than sit assigned to a
+            # freed worker until ``_task_reassignment_timeout`` (default 120s).
             if msg.get("success") is True:
                 weights = tensors.get("weights") if tensors else None
                 if weights is None or getattr(weights, "size", 0) == 0:
@@ -483,7 +488,7 @@ class WorkerCoordinator:
                         task_id,
                         worker_id,
                     )
-                    self._registry.complete_task(worker_id, success=False)
+                    self._reject_and_requeue_task(task, worker_id)
                     return False
 
             # Validate tensors (Section 12.7 rules 4, 5, 6, 7)

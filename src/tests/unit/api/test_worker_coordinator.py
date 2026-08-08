@@ -407,30 +407,70 @@ class TestSubmitResult:
         assert coordinator.submit_result("w1", _make_result_msg(new_ids[0], candidate_id=0), _make_result_tensors())
 
     def test_reject_success_true_with_missing_weights(self, coordinator, registry):
-        """success=True with no weights tensor must not be accepted (poison-candidate guard)."""
+        """success=True with no weights tensor is rejected AND requeued.
+
+        The task was never actually completed, so it uses the same
+        immediate-requeue contract as the schema / tensor rejects rather than
+        freeing the worker and leaving the task assigned for the full
+        ``_task_reassignment_timeout``.
+        """
         registry.register("w1", {})
         task_ids = coordinator.submit_tasks("round-1", _make_task_specs(1), _make_tensors())
+        task_id = task_ids[0]
         coordinator.get_next_assignment("w1")
 
-        msg = _make_result_msg(task_ids[0])
+        msg = _make_result_msg(task_id)
         msg["tensor_manifest"] = {}
         accepted = coordinator.submit_result("w1", msg, {})
         assert accepted is False
+        assert task_id not in coordinator._results
+
+        pending = coordinator._pending_tasks[task_id]
+        assert pending.completed is False
+        assert pending.assigned_worker_id is None
+        assert task_id in coordinator._unassigned_tasks
+        assert registry.get("w1").active_task_id is None
         assert registry.get("w1").idle is True
-        assert task_ids[0] not in coordinator._results
 
     def test_reject_success_true_with_empty_weights(self, coordinator, registry):
-        """success=True with an empty weights array is rejected."""
+        """success=True with an empty weights array is rejected AND requeued."""
         registry.register("w1", {})
         task_ids = coordinator.submit_tasks("round-1", _make_task_specs(1), _make_tensors())
+        task_id = task_ids[0]
         coordinator.get_next_assignment("w1")
 
-        msg = _make_result_msg(task_ids[0])
+        msg = _make_result_msg(task_id)
         msg["tensor_manifest"] = {"weights": {"shape": [0], "dtype": "float32"}}
         empty = {"weights": np.array([], dtype=np.float32)}
         accepted = coordinator.submit_result("w1", msg, empty)
         assert accepted is False
+
+        assert coordinator._pending_tasks[task_id].assigned_worker_id is None
+        assert task_id in coordinator._unassigned_tasks
         assert registry.get("w1").idle is True
+
+    def test_weightless_success_reject_can_be_reassigned_immediately(self, coordinator, registry):
+        """After a weightless-success reject, a peer picks the task up without waiting.
+
+        Mirrors ``test_rejected_schema_result_can_be_reassigned_immediately``:
+        the point of requeueing is that recovery does not wait for
+        ``_task_reassignment_timeout``.
+        """
+        registry.register("w1", {})
+        registry.register("w2", {})
+        task_ids = coordinator.submit_tasks("round-1", _make_task_specs(1), _make_tensors())
+        task_id = task_ids[0]
+        coordinator.get_next_assignment("w1")
+
+        msg = _make_result_msg(task_id)
+        msg["tensor_manifest"] = {}
+        assert coordinator.submit_result("w1", msg, {}) is False
+
+        reassigned = coordinator.get_next_assignment("w2")
+        assert reassigned is not None
+        reassigned_msg, _frames = reassigned
+        assert reassigned_msg["task_id"] == task_id
+        assert coordinator._pending_tasks[task_id].assigned_worker_id == "w2"
 
     def test_accept_success_false_without_weights(self, coordinator, registry):
         """Failed results may omit weights — rejection is only for success=True."""
