@@ -214,6 +214,85 @@ global log_config
 
 #####################################################################################################################################################################################################
 # Define the main function for Juniper Cascor
+
+#####################################################################################################################################################################################################
+# W-11 (CLI experimentation plan SS11 / Wave 3.6): direct-CLI experiment-YAML mapping.
+# --config (Wave 3.1) already threads JUNIPER_CASCOR_CONFIG_FILE and the Settings source
+# fail-loud-validates the file (SS5.6) when main() constructs Settings below -- so these
+# helpers may read the blocks leniently. The adapter maps the YAML's dataset.params /
+# training.params onto the direct CLI's overridable knobs, with cascor_constants as the
+# fallback tier (SS5.1: CLI env-var threading > YAML > constants). Keys with no
+# direct-CLI counterpart are reported loudly, never dropped silently (the W-1 doctrine).
+
+# YAML key -> resolved knob name used by main()'s SpiralProblem/evaluate call sites.
+_W11_DATASET_KEY_MAP = {
+    "n_points_per_spiral": "n_points",
+    "n_spirals": "n_spirals",
+    "n_rotations": "n_rotations",
+    "noise": "noise",
+    "train_ratio": "train_ratio",
+    "test_ratio": "test_ratio",
+    "seed": "random_seed",
+}
+_W11_TRAINING_KEY_MAP = {
+    "learning_rate": "learning_rate",
+    "correlation_threshold": "correlation_threshold",
+    "max_hidden_units": "max_hidden_units",
+    "patience": "patience",
+    "candidate_epochs": "candidate_epochs",
+    "output_epochs": "output_epochs",
+    # C2b semantics: TrainingParams.max_epochs is the initial output-training pass budget
+    # and defaults to output_epochs -- the closest direct-CLI knob. An explicit
+    # output_epochs wins over the alias.
+    "max_epochs": "output_epochs",
+}
+
+
+def _load_experiment_blocks():
+    """Return (dataset.params, training.params) from the --config experiment YAML ({} when unset)."""
+    config_path = os.environ.get("JUNIPER_CASCOR_CONFIG_FILE")
+    if not config_path:
+        return {}, {}
+    import yaml as _yaml
+
+    try:
+        data = _yaml.safe_load(open(config_path, encoding="utf-8").read()) or {}
+    except OSError as exc:
+        # The Settings source raises first in practice; this guard keeps the adapter honest
+        # if the file vanishes between the two reads.
+        Logger.error(f"Cascor: W-11: experiment config unreadable: {exc}")
+        sys.exit(3)
+    dataset_params = (data.get("dataset") or {}).get("params") or {}
+    training_params = (data.get("training") or {}).get("params") or {}
+    return dict(dataset_params), dict(training_params)
+
+
+def _resolve_cli_overrides(dataset_params, training_params):
+    """Map YAML blocks onto direct-CLI knob names; return (overrides, unmapped_keys).
+
+    ``overrides`` is {knob_name: value}; ``unmapped_keys`` lists YAML keys with no
+    direct-CLI counterpart (service-tier-only knobs like max_iterations or
+    candidate_pool_size) -- the caller reports them loudly.
+    """
+    overrides = {}
+    unmapped = []
+    for key, value in dataset_params.items():
+        knob = _W11_DATASET_KEY_MAP.get(key)
+        if knob is None:
+            unmapped.append(f"dataset.params.{key}")
+        else:
+            overrides[knob] = value
+    for key, value in training_params.items():
+        knob = _W11_TRAINING_KEY_MAP.get(key)
+        if knob is None:
+            unmapped.append(f"training.params.{key}")
+        elif knob == "output_epochs" and key == "max_epochs" and "output_epochs" in training_params:
+            continue  # explicit output_epochs wins over the max_epochs alias
+        else:
+            overrides[knob] = value
+    return overrides, sorted(unmapped)
+
+
 def main():
     Logger.info("Cascor: main: Starting the Cascade Correlation Neural Network project")
     Logger.info(f"Cascor: main: Project constants: Log Level: {_CASCOR_LOG_LEVEL}, Log Level Name: {_CASCOR_LOG_LEVEL_NAME}")
@@ -330,6 +409,14 @@ def main():
         logger.error(f"Cascor: main: Pre-flight check FAILED: JuniperData service at {juniper_data_url} is not reachable. " f"Error: {e}\n" f"    Please start the JuniperData service before running JuniperCascor:\n" f"        cd juniper-data && conda activate JuniperData && ./try\n" f"    Or:  conda activate JuniperData && python -m juniper_data")
         sys.exit(4)
 
+    # W-11: resolve experiment-YAML overrides (constants are the fallback tier).
+    _w11_dataset, _w11_training = _load_experiment_blocks()
+    _w11, _w11_unmapped = _resolve_cli_overrides(_w11_dataset, _w11_training)
+    if _w11:
+        logger.info(f"Cascor: main: W-11 experiment-YAML overrides active: {sorted(_w11)}")
+    if _w11_unmapped:
+        logger.warning(f"Cascor: main: W-11: experiment-YAML keys with no direct-CLI counterpart (service-tier only), IGNORED here: {_w11_unmapped}")
+
     # Instantiate the SpiralProblem class
     logger.info("Cascor: main: Creating SpiralProblem instance")
     sp = SpiralProblem(
@@ -338,32 +425,32 @@ def main():
         _SpiralProblem__dataset_file_info=None,
         _SpiralProblem__activation_function=_CASCOR_ACTIVATION_FUNCTION,
         _SpiralProblem__candidate_display_frequency=_CASCOR_CANDIDATE_DISPLAY_FREQUENCY,
-        _SpiralProblem__candidate_epochs=_CASCOR_CANDIDATE_EPOCHS,
+        _SpiralProblem__candidate_epochs=_w11.get("candidate_epochs", _CASCOR_CANDIDATE_EPOCHS),
         _SpiralProblem__clockwise=_CASCOR_CLOCKWISE,
-        _SpiralProblem__correlation_threshold=_CASCOR_CORRELATION_THRESHOLD,
+        _SpiralProblem__correlation_threshold=_w11.get("correlation_threshold", _CASCOR_CORRELATION_THRESHOLD),
         _SpiralProblem__default_origin=_CASCOR_DEFAULT_ORIGIN,
         _SpiralProblem__default_radius=_CASCOR_DEFAULT_RADIUS,
         _SpiralProblem__distribution=_CASCOR_DISTRIBUTION_FACTOR,
         _SpiralProblem__epochs_max=_CASCOR_EPOCHS_MAX,
         _SpiralProblem__generate_plots_default=_CASCOR_GENERATE_PLOTS_DEFAULT,
         _SpiralProblem__input_size=_CASCOR_INPUT_SIZE,
-        _SpiralProblem__learning_rate=_CASCOR_LEARNING_RATE,
+        _SpiralProblem__learning_rate=_w11.get("learning_rate", _CASCOR_LEARNING_RATE),
         _SpiralProblem__log_config=log_config,
         _SpiralProblem__log_file_name=_CASCOR_LOG_FILE_NAME,
         _SpiralProblem__log_file_path=_CASCOR_LOG_FILE_PATH,
         _SpiralProblem__log_level_name=_CASCOR_LOG_LEVEL_NAME,
-        _SpiralProblem__max_hidden_units=_CASCOR_MAX_HIDDEN_UNITS,
-        _SpiralProblem__n_points=_CASCOR_NUMBER_POINTS_PER_SPIRAL,
-        _SpiralProblem__n_rotations=_CASCOR_NUM_ROTATIONS,
-        _SpiralProblem__n_spirals=_CASCOR_NUM_SPIRALS,
-        _SpiralProblem__noise=_CASCOR_NOISE_FACTOR_DEFAULT,
+        _SpiralProblem__max_hidden_units=_w11.get("max_hidden_units", _CASCOR_MAX_HIDDEN_UNITS),
+        _SpiralProblem__n_points=_w11.get("n_points", _CASCOR_NUMBER_POINTS_PER_SPIRAL),
+        _SpiralProblem__n_rotations=_w11.get("n_rotations", _CASCOR_NUM_ROTATIONS),
+        _SpiralProblem__n_spirals=_w11.get("n_spirals", _CASCOR_NUM_SPIRALS),
+        _SpiralProblem__noise=_w11.get("noise", _CASCOR_NOISE_FACTOR_DEFAULT),
         _SpiralProblem__output_size=_CASCOR_OUTPUT_SIZE,
-        _SpiralProblem__patience=_CASCOR_PATIENCE,
-        _SpiralProblem__output_epochs=_CASCOR_OUTPUT_EPOCHS,
+        _SpiralProblem__patience=_w11.get("patience", _CASCOR_PATIENCE),
+        _SpiralProblem__output_epochs=_w11.get("output_epochs", _CASCOR_OUTPUT_EPOCHS),
         _SpiralProblem__status_display_frequency=_CASCOR_STATUS_DISPLAY_FREQUENCY,
-        _SpiralProblem__random_seed=_CASCOR_RANDOM_SEED,
-        _SpiralProblem__train_ratio=_CASCOR_TRAIN_RATIO,
-        _SpiralProblem__test_ratio=_CASCOR_TEST_RATIO,
+        _SpiralProblem__random_seed=_w11.get("random_seed", _CASCOR_RANDOM_SEED),
+        _SpiralProblem__train_ratio=_w11.get("train_ratio", _CASCOR_TRAIN_RATIO),
+        _SpiralProblem__test_ratio=_w11.get("test_ratio", _CASCOR_TEST_RATIO),
     )
     logger.debug(f"Main: sp: Type: {type(sp)}, Value:\n{sp}")
 
@@ -397,17 +484,17 @@ def main():
     # Solve the two spiral problem using the SpiralProblem instance
     logger.info("Main: Solving SpiralProblem instance")
     sp.evaluate(
-        n_points=_CASCOR_NUMBER_POINTS_PER_SPIRAL,
-        n_spirals=_CASCOR_NUM_SPIRALS,
-        n_rotations=_CASCOR_NUM_ROTATIONS,
+        n_points=_w11.get("n_points", _CASCOR_NUMBER_POINTS_PER_SPIRAL),
+        n_spirals=_w11.get("n_spirals", _CASCOR_NUM_SPIRALS),
+        n_rotations=_w11.get("n_rotations", _CASCOR_NUM_ROTATIONS),
         clockwise=_CASCOR_CLOCKWISE,
         distribution=_CASCOR_DISTRIBUTION_FACTOR,
         random_value_scale=_CASCOR_RANDOM_VALUE_SCALE,
         default_origin=_CASCOR_DEFAULT_ORIGIN,
         default_radius=_CASCOR_DEFAULT_RADIUS,
-        train_ratio=_CASCOR_TRAIN_RATIO,
-        test_ratio=_CASCOR_TEST_RATIO,
-        noise=_CASCOR_NOISE_FACTOR_DEFAULT,
+        train_ratio=_w11.get("train_ratio", _CASCOR_TRAIN_RATIO),
+        test_ratio=_w11.get("test_ratio", _CASCOR_TEST_RATIO),
+        noise=_w11.get("noise", _CASCOR_NOISE_FACTOR_DEFAULT),
         plot=_CASCOR_GENERATE_PLOTS_DEFAULT,
     )
     logger.info("Main: Completed solving SpiralProblem instance")
