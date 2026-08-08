@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Wave 3.1: experiment YAML config layer** (CLI experimentation plan §5.1/§5.2/§5.6, juniper-ml `notes/JUNIPER_2026-07-29_JUNIPER-ECOSYSTEM_CASCOR-RECURRENCE-CLI-TEST-VALIDATION-EXPERIMENTATION-PLAN.md`). New `ExperimentYamlSettingsSource` projects ONLY the experiment YAML's `service:` block into `Settings` with the ratified precedence `CLI/init > YAML > env > .env > defaults` — the stock `YamlConfigSettingsSource` would silently no-op under this model's `extra="ignore"` with the experiment YAML's nested top level. Fail-loud validation before boot: unknown top-level blocks, `schema_version` (1..1), unknown `service:` keys, and the launcher-owned infra keys (`host`/`port`/`juniper_data_url`, plus `eval_metrics_enabled` which belongs in `runtime:`) are rejected (§5.6 rules 1/2/6). Activated only by the new `JUNIPER_CASCOR_CONFIG_FILE` env var — inert for every existing env/compose deployment (risk R-4) — with a new `--config PATH` convenience flag on `server.py` and `main.py` that sets the env var before the first (`lru_cache`'d) settings load. Tests: `src/tests/unit/api/test_experiment_yaml_settings.py`.
+
+
 ### Fixed
 
 - **W-1: non-spiral `dataset.generator` on `POST /v1/training/start` is rejected 422 instead of silently ignored** (CLI experimentation plan §11, juniper-ml `notes/JUNIPER_2026-07-29_JUNIPER-ECOSYSTEM_CASCOR-RECURRENCE-CLI-TEST-VALIDATION-EXPERIMENTATION-PLAN.md`). The route materializes only the in-process `spiral` fallback; every other generator value was dropped with no error, so a start carrying e.g. `xor` trained on whatever data was already staged or retained — silent-wrong-data. The 422 detail names the staging path (`POST /v1/training/dataset` → applied at the next start). `generator: null` keeps its prior fall-through meaning. Consumers checked: canopy's start body carries no generator (its dataset changes ride the staging flow) and the experiment driver already stages non-spiral generators (its G-6 arm). Tests: `test_training_route_coverage.py` (updated pin + the retained-data sharp arm + the `generator: null` scope guard).
