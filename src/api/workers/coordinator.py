@@ -458,6 +458,15 @@ class WorkerCoordinator:
                     worker_id,
                     task.assigned_worker_id,
                 )
+                # Deliberately frees the submitter WITHOUT requeueing — the odd
+                # one out among this method's rejects. The schema / weightless-
+                # success / tensor rejects below all call
+                # ``_reject_and_requeue_task`` because the *assignee itself*
+                # returned something unusable, so the task is genuinely up for
+                # grabs. Here the task is still validly assigned to a different,
+                # live worker: requeueing would let any peer that merely knows
+                # ``task_id`` yank an in-flight assignment away from its real
+                # owner. Only the bogus submitter's own busy slot is released.
                 self._registry.complete_task(worker_id, success=False)
                 return False
 
