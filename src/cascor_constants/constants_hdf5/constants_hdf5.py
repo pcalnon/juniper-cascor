@@ -29,6 +29,7 @@
 #
 #
 #####################################################################################################################################################################################################
+import os
 import pathlib
 
 # import torch
@@ -43,7 +44,17 @@ _HDF5_PROJECT_SOURCE_DIR = _HDF5_PROJECT_CONSTANTS_DIR.parent.resolve()
 _HDF5_PROJECT_DIR = _HDF5_PROJECT_SOURCE_DIR.parent.resolve()
 
 _HDF5_PROJECT_SNAPSHOTS_DIR_NAME = "cascor_snapshots"
-_HDF5_PROJECT_SNAPSHOTS_DIR = pathlib.Path(_HDF5_PROJECT_SOURCE_DIR).joinpath(_HDF5_PROJECT_SNAPSHOTS_DIR_NAME)
+# W-6 (CLI experimentation plan §11 / H-5): JUNIPER_CASCOR_SNAPSHOTS_DIR overrides the legacy
+# <repo>/src/cascor_snapshots so a per-run launcher can point the direct CLI's snapshots at its own
+# RUN_DIR/snapshots. Constants resolve at import time, so the override must be in the process env
+# before the first cascor_constants import (the launcher exports it before exec). A set-but-blank
+# value is treated as unset (the blank-env guard class). Shares one env var with the service tier
+# (api/lifecycle/manager.py _get_snapshots_dir).
+_HDF5_PROJECT_SNAPSHOTS_DIR_OVERRIDE = os.environ.get("JUNIPER_CASCOR_SNAPSHOTS_DIR", "").strip()
+if _HDF5_PROJECT_SNAPSHOTS_DIR_OVERRIDE:
+    _HDF5_PROJECT_SNAPSHOTS_DIR = pathlib.Path(_HDF5_PROJECT_SNAPSHOTS_DIR_OVERRIDE).expanduser()
+else:
+    _HDF5_PROJECT_SNAPSHOTS_DIR = pathlib.Path(_HDF5_PROJECT_SOURCE_DIR).joinpath(_HDF5_PROJECT_SNAPSHOTS_DIR_NAME)
 
 
 # Define HDF5 Storage class Constants to provide reasonable defaults
