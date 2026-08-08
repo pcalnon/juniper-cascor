@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-08-08
+
 ### Added
 
 - **W-6: `JUNIPER_CASCOR_SNAPSHOTS_DIR` snapshot-directory override, service + direct CLI** (CLI experimentation plan §11; H-4/H-5). The service tier's `_get_snapshots_dir` (sole construction site for every `save_snapshot`/list/replay path) reads the env var
