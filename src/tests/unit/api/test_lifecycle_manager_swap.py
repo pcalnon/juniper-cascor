@@ -267,7 +267,7 @@ class TestReloadDataset:
         }
         mod, _ = _fake_data_client_module(arrays=arrays)
         with patch.dict(sys.modules, {"juniper_data_client": mod}), patch("api.secrets.get_secret", return_value=None), patch("api.settings.Settings"):
-            with pytest.raises(RuntimeError, match="train arrays must be 2-D"):
+            with pytest.raises(RuntimeError, match="train arrays must be 2-D.*juniper-recurrence tier"):
                 mgr._reload_dataset(dataset_type="spiral")
 
     def test_malformed_train_payload_raises(self, mgr):

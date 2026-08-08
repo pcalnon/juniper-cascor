@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **W-2: the non-2-D artifact rejections now name the tier boundary** (CLI experimentation plan §11). The `_artifact_to_tensors` 2-D guards (landed with the InlineDataset/_reload_dataset hardening) satisfy W-2's minimum-viable rejection; the register additionally
+  asks that the error *name the tier boundary* — both messages now state that 3-D sequence artifacts belong to the juniper-recurrence tier (OQ-4 ingestion-gate design). Test pin sharpened to assert the boundary naming.
+
 - **W-11 amendment: `candidate_pool_size` is now a mapped direct-CLI knob.** `SpiralProblem` accepts `_SpiralProblem__candidate_pool_size` (forwarded into the network config) but `main()` never passed it, so the initial W-11 adapter
   classified the key service-tier-only. P1.2 re-run profiling showed the constants pool (156 candidates across 2 growth rounds) dominating smoke-scale wall time even with epochs/patience bounded — the YAML key now feeds the ctor,
   with the constants default unchanged.
