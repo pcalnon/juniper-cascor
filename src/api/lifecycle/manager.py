@@ -3371,7 +3371,7 @@ class TrainingLifecycleManager:
             raise RuntimeError(f"juniper-data artifact train arrays are malformed: {exc}") from exc
 
         if new_train_x.ndim != 2 or new_train_y.ndim != 2:
-            raise RuntimeError(f"juniper-data artifact train arrays must be 2-D; got X_train.ndim={new_train_x.ndim}, y_train.ndim={new_train_y.ndim}")
+            raise RuntimeError(f"juniper-data artifact train arrays must be 2-D; got X_train.ndim={new_train_x.ndim}, y_train.ndim={new_train_y.ndim} " "-- 3-D sequence artifacts belong to the juniper-recurrence tier, not cascade-correlation (W-2 tier boundary; " "see the OQ-4 3-D ingestion-gate design in juniper-ml notes/)")
         if new_train_x.shape[0] != new_train_y.shape[0]:
             raise RuntimeError(f"juniper-data artifact train sample count mismatch: X_train={new_train_x.shape[0]} y_train={new_train_y.shape[0]}")
 
@@ -3391,7 +3391,7 @@ class TrainingLifecycleManager:
         except (TypeError, ValueError, RuntimeError) as exc:
             raise RuntimeError(f"juniper-data artifact validation arrays are malformed: {exc}") from exc
         if new_val_x.ndim != 2 or new_val_y.ndim != 2:
-            raise RuntimeError(f"juniper-data artifact validation arrays must be 2-D; got X_test.ndim={new_val_x.ndim}, y_test.ndim={new_val_y.ndim}")
+            raise RuntimeError(f"juniper-data artifact validation arrays must be 2-D; got X_test.ndim={new_val_x.ndim}, y_test.ndim={new_val_y.ndim} " "-- 3-D sequence artifacts belong to the juniper-recurrence tier, not cascade-correlation (W-2 tier boundary)")
         if new_val_x.shape[0] != new_val_y.shape[0]:
             raise RuntimeError(f"juniper-data artifact validation sample count mismatch: X_test={new_val_x.shape[0]} y_test={new_val_y.shape[0]}")
         return new_train_x, new_train_y, new_val_x, new_val_y
