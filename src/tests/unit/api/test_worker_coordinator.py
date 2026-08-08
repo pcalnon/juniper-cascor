@@ -102,6 +102,80 @@ class TestSubmitTasks:
         coordinator.submit_tasks("round-1", _make_task_specs(), _make_tensors())
         assert coordinator.has_pending_tasks() is True
 
+    def test_submit_tasks_clears_prior_round_pending(self, coordinator, registry):
+        """A new round must drop leftover pending/unassigned from the prior round.
+
+        Without this clear, a late prior-round ``submit_result`` remains
+        acceptable (task_id still in ``_pending_tasks``) and can satisfy the new
+        round's completion count, early-unblocking ``collect_results``.
+        """
+        registry.register("w1", {})
+        old_ids = coordinator.submit_tasks("round-old", _make_task_specs(2), _make_tensors())
+        coordinator.get_next_assignment("w1")  # one assigned, one unassigned
+        assert len(coordinator._pending_tasks) == 2
+        assert len(coordinator._unassigned_tasks) == 1
+
+        new_ids = coordinator.submit_tasks("round-new", _make_task_specs(1), _make_tensors())
+
+        assert set(coordinator._pending_tasks) == set(new_ids)
+        assert old_ids[0] not in coordinator._pending_tasks
+        assert old_ids[1] not in coordinator._pending_tasks
+        assert coordinator._unassigned_tasks == new_ids
+        assert coordinator._current_round_id == "round-new"
+        assert coordinator._current_round_task_count == 1
+
+    def test_round_boundary_releases_workers_holding_cleared_tasks(self, coordinator, registry):
+        """The boundary clear must free workers that held the cleared tasks.
+
+        ``submit_tasks`` drops ``_pending_tasks`` / ``_unassigned_tasks`` at a
+        new round. Without the capture-before-clear release (the same discipline
+        as :meth:`WorkerCoordinator.cancel_round`) the registry keeps those
+        workers busy for tasks the coordinator no longer tracks: ``assign_task``
+        refuses them forever and ``_check_task_timeouts`` cannot recover them
+        because pending tracking is already gone — so the usable worker pool
+        shrinks at every round boundary until each worker reconnects.
+        """
+        registry.register("w1", {})
+        registry.register("w2", {})
+        coordinator.submit_tasks("round-old", _make_task_specs(2), _make_tensors())
+        assert coordinator.get_next_assignment("w1") is not None
+        assert coordinator.get_next_assignment("w2") is not None
+        assert registry.get("w1").idle is False
+        assert registry.get("w2").idle is False
+
+        new_ids = coordinator.submit_tasks("round-new", _make_task_specs(2), _make_tensors())
+
+        # Released, with no active_task_id dangling at a now-untracked task.
+        for worker_id in ("w1", "w2"):
+            assert registry.get(worker_id).idle is True, worker_id
+            assert registry.get(worker_id).active_task_id is None, worker_id
+
+        # ...and both can immediately pick up the new round's work.
+        assert coordinator.get_next_assignment("w1") is not None
+        assert coordinator.get_next_assignment("w2") is not None
+        assert {coordinator._pending_tasks[task_id].assigned_worker_id for task_id in new_ids} == {"w1", "w2"}
+
+    def test_round_boundary_leaves_idle_workers_untouched(self, coordinator, registry):
+        """Only workers holding a cleared task are released.
+
+        An idle worker (and one busy on nothing) must not be handed a spurious
+        ``complete_task``, which would corrupt the registry's completion counts.
+        """
+        registry.register("w1", {})
+        registry.register("w2", {})
+        coordinator.submit_tasks("round-old", _make_task_specs(1), _make_tensors())
+        assert coordinator.get_next_assignment("w1") is not None  # w2 stays idle
+        w2_before = registry.get("w2")
+        tasks_completed_before = getattr(w2_before, "tasks_completed", None)
+        tasks_failed_before = getattr(w2_before, "tasks_failed", None)
+
+        coordinator.submit_tasks("round-new", _make_task_specs(1), _make_tensors())
+
+        w2_after = registry.get("w2")
+        assert w2_after.idle is True
+        assert getattr(w2_after, "tasks_completed", None) == tasks_completed_before
+        assert getattr(w2_after, "tasks_failed", None) == tasks_failed_before
+
 
 @pytest.mark.unit
 class TestGetNextAssignment:
@@ -262,6 +336,75 @@ class TestSubmitResult:
         bad_tensors["weights"] = np.array([float("nan")] * 4, dtype=np.float32)
         accepted = coordinator.submit_result("w1", msg, bad_tensors)
         assert accepted is False
+
+    def test_reject_stale_round_result_after_new_submit(self, coordinator, registry):
+        """Late prior-round results are rejected once a new round is submitted.
+
+        Pins the round-boundary clear in ``submit_tasks``: the old task_id must
+        no longer be in ``_pending_tasks``, so ``submit_result`` returns False
+        (unknown task) rather than accepting and early-unblocking collection.
+
+        Ownership is enforced, so each current-round result must be submitted by
+        that task's real assignee. The assignees are read back explicitly rather
+        than assumed from call order — the earlier version of this test
+        submitted from a non-assignee and only passed because ownership was not
+        yet checked.
+        """
+        registry.register("w1", {})
+        registry.register("w2", {})
+        old_ids = coordinator.submit_tasks("round-old", _make_task_specs(1), _make_tensors())
+        assert coordinator.get_next_assignment("w1") is not None
+        assert registry.get("w1").idle is False
+
+        new_ids = coordinator.submit_tasks("round-new", _make_task_specs(2), _make_tensors())
+        # The boundary clear released w1's abandoned assignment, so it is
+        # eligible for the new round alongside the idle w2.
+        assert registry.get("w1").idle is True
+        assert coordinator.get_next_assignment("w1") is not None
+        assert coordinator.get_next_assignment("w2") is not None
+        assignees = {task_id: coordinator._pending_tasks[task_id].assigned_worker_id for task_id in new_ids}
+        assert set(assignees.values()) == {"w1", "w2"}
+
+        # Late arrival from the previous round — must not count toward round-new.
+        accepted_stale = coordinator.submit_result("w1", _make_result_msg(old_ids[0], candidate_id=0), _make_result_tensors())
+        assert accepted_stale is False
+        assert len(coordinator._results) == 0
+        assert not coordinator._results_ready.is_set()
+
+        # Current-round results still accepted — each from its own assignee.
+        for candidate_id, task_id in enumerate(new_ids):
+            assert coordinator.submit_result(assignees[task_id], _make_result_msg(task_id, candidate_id=candidate_id), _make_result_tensors())
+        assert coordinator._results_ready.is_set()
+        results = coordinator.collect_results(timeout=1.0)
+        assert {r.task_id for r in results} == set(new_ids)
+        assert all(r.round_id == "round-new" for r in results)
+
+    def test_reject_stale_round_id_defense(self, coordinator, registry):
+        """Defense-in-depth: reject when PendingTask.round_id != current round.
+
+        Simulates a linger by injecting a prior-round PendingTask after the new
+        round started — the round_id guard must still reject.
+        """
+        registry.register("w1", {})
+        new_ids = coordinator.submit_tasks("round-new", _make_task_specs(1), _make_tensors())
+        coordinator.get_next_assignment("w1")
+
+        stale_id = "stale-lingering-task"
+        coordinator._pending_tasks[stale_id] = PendingTask(
+            task_id=stale_id,
+            round_id="round-old",
+            candidate_index=99,
+            candidate_data={"input_size": 4, "activation_name": "sigmoid"},
+            training_params={"epochs": 10, "learning_rate": 0.01},
+            tensors=_make_tensors(),
+            assigned_worker_id="w1",
+        )
+
+        accepted = coordinator.submit_result("w1", _make_result_msg(stale_id, candidate_id=99), _make_result_tensors())
+        assert accepted is False
+        assert stale_id not in coordinator._results
+        # Current-round task still completable.
+        assert coordinator.submit_result("w1", _make_result_msg(new_ids[0], candidate_id=0), _make_result_tensors())
 
     def test_reject_success_true_with_missing_weights(self, coordinator, registry):
         """success=True with no weights tensor must not be accepted (poison-candidate guard)."""
