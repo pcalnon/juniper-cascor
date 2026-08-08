@@ -1,0 +1,62 @@
+# spiral-baseline — the reference cascor experiment (CLI experimentation plan §5.4, Wave 3.2).
+# Drive with the juniper-ml stack:
+#   util/experiment_stack.bash --up --cascor --config conf/experiments/spiral-baseline.yaml
+#   python util/experiments/run_experiment.py --config .../spiral-baseline.yaml --run-dir $RUN_DIR
+# The service: block is consumed by the app's ExperimentYamlSettingsSource (YAML > env, §5.1);
+# dataset:/training: by the driver; runtime:/outputs: by the launcher/driver — never Settings.
+schema_version: 1
+experiment:
+  name: spiral-baseline
+  description: "Two-arm spiral, default cascade budget, decision-boundary plots"
+  seed: 20260729
+
+service:                               # -> juniper-cascor Settings (launcher CLI still owns the bind)
+  log_level: INFO
+  metrics_enabled: true                # code default is FALSE — must be set for /metrics (G-3)
+  auto_start: false                    # the driver starts training
+  auto_start_data_service: false       # never let cascor spawn a data service
+  # host / port / juniper_data_url are launcher-owned and REJECTED here (§5.6 rule 6)
+
+dataset:                               # -> juniper-data POST /v1/datasets (driver)
+  generator: spiral
+  persist: true
+  tags: ["experiment", "spiral-baseline"]
+  ttl_seconds: 86400
+  params:
+    n_spirals: 2
+    n_points_per_spiral: 500
+    n_rotations: 3.0
+    noise: 0.05
+    algorithm: modern
+    train_ratio: 0.8
+    test_ratio: 0.2
+    seed: 20260729
+
+training:                              # -> POST /v1/training/start (driver)
+  start_fresh: true
+  params:                              # TrainingParams — extra="forbid" server-side
+    max_epochs: 2000
+    max_iterations: 12
+    early_stopping: true
+    learning_rate: 0.05
+    candidate_learning_rate: 0.05
+    correlation_threshold: 0.2
+    candidate_pool_size: 8
+    max_hidden_units: 24
+    patience: 200
+    convergence_threshold: 1.0e-5
+    candidate_patience: 100
+    candidate_epochs: 500
+
+runtime:                               # launcher-exported process env, never Settings
+  num_processes: 4
+  blas_threads: 2
+  eval_metrics_enabled: true
+
+outputs:                               # driver/launcher-consumed
+  decision_boundary_resolution: 200
+  metrics_history_count: 1000
+  plots: [dataset, decision_boundary, training_history, candidate_correlation, eval_metrics]
+  snapshot_at_end: true
+  max_wall_seconds: 3600
+  grafana_bridge: true
