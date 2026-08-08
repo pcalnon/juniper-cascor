@@ -269,6 +269,37 @@ class WorkerCoordinator:
             List of task_ids for the submitted tasks.
         """
         with self._lock:
+            # Round boundary: drop leftover pending/unassigned entries from any
+            # prior round. ``_results`` / ``_completed_task_ids`` were already
+            # cleared here, but stale ``_pending_tasks`` remained — a late
+            # ``submit_result`` for a previous-round task_id was re-accepted and
+            # could satisfy ``len(_results) >= _current_round_task_count``,
+            # early-unblocking ``collect_results`` before the new round's real
+            # work finished (ISSUE-319 class; cascade filters by round_id after
+            # collection, but the coordinator wait must not unblock early).
+            #
+            # Capture the workers still holding an in-flight assignment BEFORE
+            # dropping coordinator tracking, then release them below — the same
+            # capture-before-clear discipline as :meth:`cancel_round`. Without
+            # that release the registry keeps a worker busy for a task that no
+            # longer exists: ``assign_task`` returns False forever,
+            # ``get_next_assignment`` refuses it new work, and
+            # ``_check_task_timeouts`` cannot recover it because pending
+            # tracking is already gone — the worker is retired from the pool
+            # until it reconnects.
+            busy_worker_ids: list[str] = []
+            for stale_task in self._pending_tasks.values():
+                if stale_task.assigned_worker_id is not None and not stale_task.completed:
+                    busy_worker_ids.append(stale_task.assigned_worker_id)
+
+            self._pending_tasks.clear()
+            self._unassigned_tasks.clear()
+
+            for stale_worker_id in busy_worker_ids:
+                # success=False: the task was abandoned at the round boundary,
+                # not completed.
+                self._registry.complete_task(stale_worker_id, success=False)
+
             self._current_round_id = round_id
             self._current_round_task_count = len(tasks)
             self._results_ready.clear()
@@ -395,6 +426,20 @@ class WorkerCoordinator:
             task = self._pending_tasks.get(task_id)
             if task is None:
                 logger.warning("Result for unknown task %s from worker %s — rejected", task_id, worker_id)
+                return False
+
+            # Stale-round defense: reject results whose PendingTask belongs to a
+            # prior round even if the entry somehow lingered in ``_pending_tasks``
+            # (e.g. races with a concurrent ``submit_tasks``). Complements the
+            # pending clear at round start above.
+            if self._current_round_id is not None and task.round_id != self._current_round_id:
+                logger.warning(
+                    "Result for stale-round task %s (task round %s, current %s) from worker %s — rejected",
+                    task_id,
+                    task.round_id,
+                    self._current_round_id,
+                    worker_id,
+                )
                 return False
 
             # Ownership: only the currently assigned worker may submit.

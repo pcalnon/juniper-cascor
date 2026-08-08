@@ -11,6 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **W-1: non-spiral `dataset.generator` on `POST /v1/training/start` is rejected 422 instead of silently ignored** (CLI experimentation plan §11, juniper-ml `notes/JUNIPER_2026-07-29_JUNIPER-ECOSYSTEM_CASCOR-RECURRENCE-CLI-TEST-VALIDATION-EXPERIMENTATION-PLAN.md`). The route materializes only the in-process `spiral` fallback; every other generator value was dropped with no error, so a start carrying e.g. `xor` trained on whatever data was already staged or retained — silent-wrong-data. The 422 detail names the staging path (`POST /v1/training/dataset` → applied at the next start). `generator: null` keeps its prior fall-through meaning. Consumers checked: canopy's start body carries no generator (its dataset changes ride the staging flow) and the experiment driver already stages non-spiral generators (its G-6 arm). Tests: `test_training_route_coverage.py` (updated pin + the retained-data sharp arm + the `generator: null` scope guard).
 
+- **WorkerCoordinator round boundary clears stale pending tasks and releases their workers.** `submit_tasks` now clears `_pending_tasks` / `_unassigned_tasks` at each new round (matching the existing `_results` / `_completed_task_ids` reset), and `submit_result` rejects results whose `PendingTask.round_id` does not match `_current_round_id`. Without the clear, a late prior-round result could still be accepted and satisfy `len(_results) >= _current_round_task_count`, early-unblocking `collect_results` before the new round finished (ISSUE-319 class; cascade already filters by `round_id` after collection). The clear also captures every worker still holding one of the cleared tasks **before** dropping the maps and releases each with `complete_task(..., success=False)` — the same capture-before-clear discipline as `cancel_round`. Without that release the registry kept those workers busy for tasks the coordinator no longer tracked, so `assign_task` refused them forever and `_check_task_timeouts` could not recover them (pending tracking was already gone) — the usable worker pool shrank at every round boundary. Regression coverage in `test_worker_coordinator.py`.
+
 ### Security
 
 - **Worker result ownership** — `WorkerCoordinator.submit_result` now rejects results whose submitting `worker_id` does not match the task's `assigned_worker_id`, so a peer worker cannot complete work it was never assigned. Tests: `test_worker_coordinator.py::TestSubmitResult::test_reject_wrong_worker_ownership`.
@@ -59,6 +61,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Training start while INVESTIGATING / REPLAYING → HTTP 409** — route-level pins that Canopy receives the specific RuntimeError reason string (not a generic 500). Extends `test_training_route_coverage.py`.
 - **`InvalidCandidatePoolError` → HTTP 422 route pin** — `PATCH /v1/training/params` must not collapse the typed C2.1 violation into bare `ValueError`→404. Extends `test_api_runtime_params.py`.
 - **C7 classification_metrics edges** — Inf-in-target degradation + weighted average with a never-true (zero-support) class. Extends `test_classification_metrics.py`.
+
+### Tests
+
+- Gate-level regression: empty `ws_control_allowed_origins` skips the control WebSocket Origin check (documented opt-out) in `test_control_stream_coverage.py`.
+- `get_secret` when `_FILE` points at a directory falls back to the plain env var (or `None`) without raising — `test_api_secrets.py`.
 
 ## [0.7.0] - 2026-07-28
 
