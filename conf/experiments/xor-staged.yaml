@@ -1,0 +1,38 @@
+# xor-staged — a non-spiral reference showing the G-6 staging path (CLI experimentation plan §6.3/§10.3).
+# Non-spiral generators are REJECTED 422 on POST /v1/training/start (W-1); the driver stages them via
+# POST /v1/training/dataset instead and asserts the loaded input width after the run (G-6 anti-silence).
+schema_version: 1
+experiment:
+  name: xor-staged
+  description: "XOR quadrants via the staging path, small budgets, boundary plot"
+  seed: 20260807
+
+service:
+  log_level: INFO
+  metrics_enabled: true
+  auto_start: false
+  auto_start_data_service: false
+
+dataset:
+  generator: xor                       # staged as dataset_type "xor" (driver alias map)
+  params:
+    n_points_per_quadrant: 250
+    noise: 0.05
+    seed: 20260807
+
+training:
+  params:
+    max_epochs: 200
+    max_iterations: 4
+    max_hidden_units: 6
+    candidate_pool_size: 4
+    early_stopping: true
+
+runtime:
+  blas_threads: 2
+
+outputs:
+  plots: [dataset, decision_boundary, training_history]
+  metrics_history_count: 500
+  max_wall_seconds: 1200
+  grafana_bridge: true

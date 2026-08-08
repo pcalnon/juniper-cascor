@@ -1,0 +1,42 @@
+# spiral-smoke — the P1.1 smoke configuration, live-proven 2026-08-07 (exit 0, COMPLETED 24s;
+# evidence: juniper-ml notes/JUNIPER_2026-08-07_JUNIPER-ECOSYSTEM_CLI-EXPERIMENTATION-P1-SMOKE-EVIDENCE.md).
+# Minimal budgets for a fast end-to-end sanity run of the launcher + driver + plots + stats.
+schema_version: 1
+experiment:
+  name: spiral-smoke
+  description: "P1.1 minimal-budget spiral smoke (launcher + driver end-to-end)"
+  seed: 20260807
+
+service:
+  log_level: INFO
+  metrics_enabled: true
+  auto_start: false
+  auto_start_data_service: false
+
+dataset:
+  generator: spiral
+  params:
+    n_spirals: 2
+    n_points_per_spiral: 200
+    n_rotations: 2.0
+    noise: 0.05
+    train_ratio: 0.8
+    test_ratio: 0.2
+    seed: 20260807
+
+training:
+  params:
+    max_epochs: 50
+    max_iterations: 2
+    max_hidden_units: 2
+    candidate_pool_size: 4
+    early_stopping: true
+
+runtime:
+  blas_threads: 2
+
+outputs:
+  plots: [dataset, decision_boundary, training_history]
+  metrics_history_count: 500
+  max_wall_seconds: 600
+  grafana_bridge: true
