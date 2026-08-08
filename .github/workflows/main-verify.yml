@@ -5,10 +5,10 @@
 # Application:   juniper_cascor
 # File Name:     main-verify.yml
 # Author:        Paul Calnon
-# Version:       0.1.0
+# Version:       0.2.0
 #
 # Date Created:  2026-08-07
-# Last Modified: 2026-08-07
+# Last Modified: 2026-08-08
 #
 # License:       MIT License
 # Copyright:     Copyright (c) 2024-2026 Paul Calnon
@@ -23,7 +23,7 @@
 #
 #    Jobs:
 #      * symbol-screen -- ALWAYS runs. AST symbol-loss screen + docs deletion-magnitude
-#        screen of BASE .. <merge>, both via util/sequence_safety/. Uploads the JSON
+#        screen of BASE .. <merge>, both via the pinned juniper-ci-tools package. Uploads the JSON
 #        reports as an artifact. FAILs the job on a compositional-loss finding. Seconds to
 #        run (AST + git).
 #          CATCH-UP BASE (ml#880 G3.1): a quoted `[skip ci]` in a merge-commit body skips
@@ -61,9 +61,12 @@
 #      only the notify job elevates ('issues: write') to upsert the tracking issue.
 #
 # References:
-#    - util/sequence_safety/{symbol_loss_check,docs_additions_check}.py
+#    - juniper-ci-tools (PyPI >=0.8.0,<0.9.0): juniper-symbol-loss-check /
+#      juniper-docs-additions-check console scripts (canonical source; the inline
+#      util/sequence_safety/ copy was deleted in this PR -- ml canonical, consumers consume)
 #    - juniper-ml .github/workflows/main-verify.yml (the #928 stable-title / catch-up-base version this ports)
 #    - juniper-ml notes/JUNIPER_2026-07-28_JUNIPER-ML_CURSOR-PR-FLOOD-REMEDIATION-ANALYSIS.md
+#    - juniper-ml notes/JUNIPER_2026-08-07_JUNIPER-ECOSYSTEM_SEQUENCE-SAFETY-ROLLOUT-PLAN.md (Wave 3)
 #####################################################################################################################################################################################################
 
 name: Post-Merge Main Verification
@@ -109,6 +112,11 @@ jobs:
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: ${{ env.PYTHON_TEST_VERSION }}
+
+      - name: Install juniper-ci-tools
+        run: |
+          python -m pip install --upgrade "pip>=26.1.1"
+          pip install "juniper-ci-tools>=0.8.0,<0.9.0"
 
       - name: Resolve catch-up base
         id: base
@@ -175,14 +183,14 @@ jobs:
           echo "--- symbol-loss screen ---"
           # Human run to the log carries the authoritative exit code; the guarded --json run
           # then writes the artifact (same verdicts, machine-readable).
-          python3 util/sequence_safety/symbol_loss_check.py --base "$base" --head "$HEAD_SHA"
+          juniper-symbol-loss-check --scope 'src/**/*.py' --base "$base" --head "$HEAD_SHA"
           src=$?
-          python3 util/sequence_safety/symbol_loss_check.py --base "$base" --head "$HEAD_SHA" --json > symbol-report.json || true
+          juniper-symbol-loss-check --scope 'src/**/*.py' --base "$base" --head "$HEAD_SHA" --json > symbol-report.json || true
           echo ""
           echo "--- docs deletion-magnitude screen ---"
-          python3 util/sequence_safety/docs_additions_check.py --base "$base" --head "$HEAD_SHA"
+          juniper-docs-additions-check --base "$base" --head "$HEAD_SHA"
           drc=$?
-          python3 util/sequence_safety/docs_additions_check.py --base "$base" --head "$HEAD_SHA" --json > docs-report.json || true
+          juniper-docs-additions-check --base "$base" --head "$HEAD_SHA" --json > docs-report.json || true
           echo ""
           echo "symbol screen exit=${src} ; docs screen exit=${drc}"
           if [ "${src}" -ge 2 ] || [ "${drc}" -ge 2 ]; then
