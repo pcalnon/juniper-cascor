@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **W-11 amendment: `candidate_pool_size` is now a mapped direct-CLI knob.** `SpiralProblem` accepts `_SpiralProblem__candidate_pool_size` (forwarded into the network config) but `main()` never passed it, so the initial W-11 adapter
+  classified the key service-tier-only. P1.2 re-run profiling showed the constants pool (156 candidates across 2 growth rounds) dominating smoke-scale wall time even with epochs/patience bounded — the YAML key now feeds the ctor,
+  with the constants default unchanged.
+
 - **W-3: staged `dataset_type` Literal extended to `gaussian` + `checkerboard`** (CLI experimentation plan §11). New typed `n_squares` field (2–16, mirroring juniper-data's `CheckerboardParams`) surviving only for checkerboard; and a REAL gaussian translation —
   juniper-data's `GaussianParams` has no `n_samples`, so a staged total previously passed through and was silently ignored (defaults generated — the silent-wrong-params class); it now divides by the requested `n_classes` (default 2) into `n_samples_per_class`,
   mirroring spiral's per-arm division, with an explicit `n_samples_per_class` winning. Non-checkerboard generators strip `n_squares`. Tests: `TestTranslateStagedConfig` gaussian/checkerboard/strip arms.

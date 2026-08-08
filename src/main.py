@@ -61,6 +61,7 @@ from cascor_constants.constants import (
     _CASCOR_ACTIVATION_FUNCTION,
     _CASCOR_CANDIDATE_DISPLAY_FREQUENCY,
     _CASCOR_CANDIDATE_EPOCHS,
+    _CASCOR_CANDIDATE_POOL_SIZE,
     _CASCOR_CLOCKWISE,
     _CASCOR_CORRELATION_THRESHOLD,
     _CASCOR_DEFAULT_ORIGIN,
@@ -240,6 +241,7 @@ _W11_TRAINING_KEY_MAP = {
     "max_hidden_units": "max_hidden_units",
     "patience": "patience",
     "candidate_epochs": "candidate_epochs",
+    "candidate_pool_size": "candidate_pool_size",
     "output_epochs": "output_epochs",
     # C2b semantics: TrainingParams.max_epochs is the initial output-training pass budget
     # and defaults to output_epochs -- the closest direct-CLI knob. An explicit
@@ -426,6 +428,7 @@ def main():
         _SpiralProblem__activation_function=_CASCOR_ACTIVATION_FUNCTION,
         _SpiralProblem__candidate_display_frequency=_CASCOR_CANDIDATE_DISPLAY_FREQUENCY,
         _SpiralProblem__candidate_epochs=_w11.get("candidate_epochs", _CASCOR_CANDIDATE_EPOCHS),
+        _SpiralProblem__candidate_pool_size=_w11.get("candidate_pool_size", _CASCOR_CANDIDATE_POOL_SIZE),
         _SpiralProblem__clockwise=_CASCOR_CLOCKWISE,
         _SpiralProblem__correlation_threshold=_w11.get("correlation_threshold", _CASCOR_CORRELATION_THRESHOLD),
         _SpiralProblem__default_origin=_CASCOR_DEFAULT_ORIGIN,

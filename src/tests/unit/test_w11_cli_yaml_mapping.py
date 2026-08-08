@@ -69,9 +69,14 @@ class TestResolveCliOverrides:
         )
         assert "dataset.params.algorithm" in unmapped
         assert "training.params.max_iterations" in unmapped
-        assert "training.params.candidate_pool_size" in unmapped
         assert "training.params.early_stopping" in unmapped
         assert "max_iterations" not in overrides
+        # candidate_pool_size IS mappable since the W-11 pool amendment: SpiralProblem
+        # takes _SpiralProblem__candidate_pool_size (spiral_problem.py:129) — P1.2
+        # re-run profiling showed the constants pool (156 candidates over 2 rounds)
+        # dominating smoke-scale wall time.
+        assert overrides["candidate_pool_size"] == 8
+        assert "training.params.candidate_pool_size" not in unmapped
 
     def test_empty_blocks_are_inert(self):
         from main import _resolve_cli_overrides
