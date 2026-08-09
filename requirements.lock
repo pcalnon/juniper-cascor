@@ -142,7 +142,7 @@ pydantic==2.13.4
     #   pydantic-settings
 pydantic-core==2.46.4
     # via pydantic
-pydantic-settings==2.14.2
+pydantic-settings==2.15.0
     # via
     #   juniper-cascor (pyproject.toml)
     #   juniper-service-core
@@ -164,11 +164,11 @@ requests==2.34.2
     # via juniper-data-client
 sentry-sdk==2.66.1
     # via juniper-cascor (pyproject.toml)
-setuptools==83.0.0
+setuptools==84.0.0
     # via torch
 six==1.17.0
     # via python-dateutil
-starlette==1.4.1
+starlette==1.6.0
     # via
     #   juniper-cascor (pyproject.toml)
     #   fastapi
