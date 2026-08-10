@@ -455,3 +455,75 @@ class TestGenerateSpiralData:
         x, y = _generate_spiral_data({})
         assert x.dtype == torch.float32
         assert y.dtype == torch.float32
+
+    # ------------------------------------------------------------------ #
+    # F-P4-1 regression arms: param fidelity + the radius-10 scale fix.
+    # The unit-radius fallback pinned candidate correlation at ~2.7e-4
+    # (tanh linear regime vs an x-orthogonal residual), terminating every
+    # service spiral run below_threshold with zero hidden units.
+    # ------------------------------------------------------------------ #
+
+    def test_generate_spiral_data_canonical_param_name(self):
+        """F-P4-1: the juniper-data name n_points_per_spiral is honored (previously silently ignored)."""
+        from api.routes.training import _generate_spiral_data
+
+        x, y = _generate_spiral_data({"n_points_per_spiral": 40, "n_spirals": 2})
+        assert x.shape[0] == 80
+        assert y.shape[1] == 2
+
+    def test_generate_spiral_data_legacy_param_name_still_accepted(self):
+        """The legacy n_per_spiral key keeps working (canonical wins when both are present)."""
+        from api.routes.training import _generate_spiral_data
+
+        x, _ = _generate_spiral_data({"n_per_spiral": 30})
+        assert x.shape[0] == 60
+        x, _ = _generate_spiral_data({"n_points_per_spiral": 20, "n_per_spiral": 30})
+        assert x.shape[0] == 40
+
+    def test_generate_spiral_data_default_radius_10_scale(self):
+        """F-P4-1: default scale is the classic radius 10 (unit radius was degenerate for candidate training)."""
+        from api.routes.training import _generate_spiral_data
+
+        x, _ = _generate_spiral_data({})
+        assert 9.5 <= float(x.abs().max()) <= 10.5
+
+    def test_generate_spiral_data_custom_radius(self):
+        """The radius param scales the spiral."""
+        from api.routes.training import _generate_spiral_data
+
+        x, _ = _generate_spiral_data({"radius": 3.0})
+        assert 2.8 <= float(x.abs().max()) <= 3.2
+
+    def test_generate_spiral_data_seeded_noise_reproducible(self):
+        """Seeded noise is reproducible; a different seed moves the points."""
+        import torch
+
+        from api.routes.training import _generate_spiral_data
+
+        x1, _ = _generate_spiral_data({"noise": 0.25, "seed": 7})
+        x2, _ = _generate_spiral_data({"noise": 0.25, "seed": 7})
+        x3, _ = _generate_spiral_data({"noise": 0.25, "seed": 8})
+        assert torch.equal(x1, x2)
+        assert not torch.equal(x1, x3)
+
+    def test_generate_spiral_data_noiseless_default_is_deterministic(self):
+        """The default (noise 0) stays deterministic without a seed, as before."""
+        import torch
+
+        from api.routes.training import _generate_spiral_data
+
+        x1, _ = _generate_spiral_data({})
+        x2, _ = _generate_spiral_data({})
+        assert torch.equal(x1, x2)
+
+    def test_generate_spiral_data_rotations_param(self):
+        """n_rotations stretches the parameter sweep (arc length grows with rotations)."""
+        from api.routes.training import _generate_spiral_data
+
+        x2, _ = _generate_spiral_data({"n_rotations": 2.0})
+        x4, _ = _generate_spiral_data({"n_rotations": 4.0})
+        # Same radius envelope either way; the 4-rotation spiral winds tighter,
+        # so consecutive-point spacing near the rim differs. Just pin the
+        # envelope and shape here — the winding count is visual.
+        assert x2.shape == x4.shape
+        assert 9.5 <= float(x4.abs().max()) <= 10.5

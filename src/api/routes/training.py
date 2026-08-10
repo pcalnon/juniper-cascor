@@ -352,21 +352,44 @@ async def cancel_swap_dataset_live(request: Request) -> dict:
 
 
 def _generate_spiral_data(params: dict):
-    """Generate spiral dataset for training."""
+    """Generate the in-process fallback spiral dataset for training.
+
+    F-P4-1 (CLI experimentation P4): this fallback previously read only the
+    legacy ``n_per_spiral`` key and emitted a unit-radius spiral (coordinates
+    normalized by 1/(4pi)) — silent infidelities against the juniper-data
+    ``SpiralParams`` schema callers actually send. The unit-radius scale is
+    degenerate for candidate training: with the default candidate init
+    (``randn * 0.1``) every tanh candidate operates in its linear regime,
+    where the output-layer-converged residual is orthogonal to the candidate
+    family, so best-of-pool correlation pins at ~2.7e-4 and ``grow_network``
+    terminates ``below_threshold`` with zero hidden units at chance accuracy.
+    The identical spiral at the classic radius-10 scale (``spiral_problem``
+    and juniper-data both default to 10.0) trains normally.
+
+    Honors the juniper-data SpiralParams names (``n_points_per_spiral``,
+    ``n_rotations``, ``noise``, ``radius``, ``seed``); the legacy
+    ``n_per_spiral`` key is still accepted. Defaults preserve the prior point
+    count (100/spiral) and rotation count (2.0) while fixing the scale.
+    """
     import numpy as np
 
-    n_per_spiral = params.get("n_per_spiral", 100)
-    n_spirals = params.get("n_spirals", 2)
+    n_per_spiral = int(params.get("n_points_per_spiral", params.get("n_per_spiral", 100)))
+    n_spirals = int(params.get("n_spirals", 2))
+    n_rotations = float(params.get("n_rotations", 2.0))
+    noise = float(params.get("noise", 0.0))
+    radius = float(params.get("radius", 10.0))
+    rng = np.random.default_rng(params.get("seed"))
 
     x_data = []
     y_data = []
 
     for i in range(n_spirals):
-        t = np.linspace(0, 4 * np.pi, n_per_spiral)
+        t = np.linspace(0, 2 * np.pi * n_rotations, n_per_spiral)
         angle_offset = 2 * np.pi * i / n_spirals
+        radial = radius * t / max(float(t[-1]), 1e-12)
 
-        x_spiral = t * np.cos(t + angle_offset) / (4 * np.pi)
-        y_spiral = t * np.sin(t + angle_offset) / (4 * np.pi)
+        x_spiral = radial * np.cos(t + angle_offset) + noise * rng.standard_normal(n_per_spiral)
+        y_spiral = radial * np.sin(t + angle_offset) + noise * rng.standard_normal(n_per_spiral)
 
         x_data.append(np.stack([x_spiral, y_spiral], axis=1))
 
