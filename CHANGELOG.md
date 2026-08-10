@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **`juniper-cascor-protocol` floor raised to `>=0.2.0`** (was the alpha `>=0.1.0a0`). `juniper-cascor-protocol` 0.2.0 went live on PyPI 2026-08-10 and is the release that wraps non-UTF-8 dtype bytes in `BinaryFrame.decode` as
+  `ValueError("Binary frame dtype string is not valid UTF-8")` (chained `from` the underlying `UnicodeDecodeError`) — the #463 fix. The alpha soak the old floor comment deferred to is over, so every admitted wheel now raises the
+  normalized error from the shared codec itself. Deployments pinning the pre-wrap `0.1.0` / `0.1.0a0` wheel must upgrade the protocol package. `requirements.lock` is refreshed in lockstep (`juniper-cascor-protocol==0.1.0` → `==0.2.0`,
+  the only pin that moves) — the old pin no longer satisfies the new floor, so the `Lockfile Freshness` CI gate would otherwise fail resolution outright.
+
+- **`api.workers.protocol.BinaryFrame` is now a plain re-export of the shared codec** (the local normalizing subclass is gone). While the floor admitted pre-wrap wheels, this module carried a `BinaryFrame(_SharedBinaryFrame)` subclass
+  whose sole job was to catch the raw `UnicodeDecodeError` those wheels raised and re-raise it as `ValueError("Binary frame dtype string is not valid UTF-8")`, so the error `api.websocket.worker_stream._handle_task_result` echoes back to
+  the worker read the same on every wheel. With the floor at `>=0.2.0` the shared codec raises that exact `ValueError` with that exact message directly, so the subclass was dead weight. **No public behaviour changes**: `BinaryFrame` is
+  still exported from `api.workers.protocol` (and `api.workers`), `encode` / `decode` / the wire format are untouched, and the operator-visible failure remains the same exception type carrying the same message — filed under `Changed`
+  rather than `Removed` because nothing importable or catchable was withdrawn (see PR for the SemVer-signalling rationale). The only observable delta is object identity: `api.workers.protocol.BinaryFrame` **is** now
+  `juniper_cascor_protocol.worker.BinaryFrame` rather than a subclass of it; nothing in the tree performs `isinstance` / `issubclass` / identity checks against it. Regression coverage is unchanged and still green —
+  `test_worker_protocol.py::TestBinaryFrame::test_decode_non_utf8_dtype_raises_value_error` now passes by way of the shared codec instead of the shim.
+
 ## [0.8.0] - 2026-08-08
 
 ### Added
