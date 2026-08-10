@@ -162,7 +162,7 @@ pyyaml==6.0.3
     #   uvicorn
 requests==2.34.2
     # via juniper-data-client
-sentry-sdk==2.66.1
+sentry-sdk==2.67.1
     # via juniper-cascor (pyproject.toml)
 setuptools==84.0.0
     # via torch
@@ -184,7 +184,7 @@ typing-extensions==4.16.0
     #   pydantic-core
     #   torch
     #   typing-inspection
-typing-inspection==0.4.2
+typing-inspection==0.4.3
     # via
     #   fastapi
     #   pydantic
