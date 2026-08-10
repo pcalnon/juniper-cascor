@@ -50,7 +50,7 @@ idna==3.18
     #   requests
 jinja2==3.1.6
     # via torch
-juniper-cascor-protocol==0.1.0
+juniper-cascor-protocol==0.2.0
     # via juniper-cascor (pyproject.toml)
 juniper-data==0.11.0
     # via juniper-cascor (pyproject.toml)

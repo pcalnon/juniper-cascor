@@ -72,8 +72,12 @@ dependencies = [
     # StrEnum + BinaryFrame numpy codec for /ws/v1/workers). The cascor
     # server is the first consumer of its own protocol package, so the
     # source of truth lives in juniper-cascor-protocol and the server
-    # imports it. Promotion to >=0.1.0 stable follows the alpha soak.
-    "juniper-cascor-protocol>=0.1.0a0",
+    # imports it. The alpha soak is over: 0.2.0 (PyPI, 2026-08-10) is the
+    # release that wraps non-UTF-8 dtype bytes in ``BinaryFrame.decode``
+    # as ``ValueError("Binary frame dtype string is not valid UTF-8")``
+    # (#463), so flooring here retires the local normalizing subclass
+    # ``src/api/workers/protocol.py`` carried for the pre-wrap wheels.
+    "juniper-cascor-protocol>=0.2.0",
     # WS-6 B-phase (native model-core adoption): the production CascorModel
     # wrapper (src/api/models/cascor_model.py) imports juniper_model_core at
     # module load, so the abstract model interface is now a runtime dependency
