@@ -22,6 +22,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `juniper_cascor_protocol.worker.BinaryFrame` rather than a subclass of it; nothing in the tree performs `isinstance` / `issubclass` / identity checks against it. Regression coverage is unchanged and still green —
   `test_worker_protocol.py::TestBinaryFrame::test_decode_non_utf8_dtype_raises_value_error` now passes by way of the shared codec instead of the shim.
 
+### Fixed
+
+- **A round in which *every* candidate errors is no longer reported as a normal `no_candidate` completion** (#509, honest-outcome half). `grow_network` takes its `no_candidate` exit whenever the best candidate is `None`, which conflated two
+  unrelated outcomes: *no candidate was good enough* (a real algorithmic result — the network legitimately stops with the units it has) and *no candidate could be trained at all* (infrastructure — the observed trigger is an exhausted GPU, where
+  `CandidateUnit.__init__` dies with `AcceleratorError: CUDA error: out of memory`). In the second case the run reported `succeeded` / `no_candidate` / 1 hidden unit while having trained nothing, so downstream experiment campaigns silently
+  recorded a converged-looking result for a dead host. This is the mechanism behind the late-cell corruption seen in the P4 spiral campaigns.
+  The existing BUG-CC-18 / ROBUST-01 guards in `_execute_candidate_training` do not cover it: they fire only when *both* the parallel and sequential paths raise, or when the result list comes back empty. Neither holds here — the per-candidate
+  handlers catch the error and **return** a `CandidateTrainingResult(success=False, candidate=None)`, so a full-length set of all-failed results is produced through the normal path.
+  `TrainingResults.success_count` (candidates that trained *without erroring*) already distinguished the two and was simply never consulted; note that `failed_count` is **not** an error count — it is `len(results) - successful_candidates`, i.e.
+  candidates that missed the correlation threshold — so it could not have served. A new `_raise_if_candidate_training_failed` guard now raises the existing `CandidateTrainingError` when candidates were attempted and `success_count == 0`, after
+  setting a new `_completion_reason` of `candidate_training_failed` (set before the raise, and surviving it because `get_status` reads the value off the persisted network object). `TrainingLifecycleManager` already wraps `model.fit` in
+  `except Exception` → `mark_failed`, so the run now reaches the correct terminal **Failed** state, metric, and broadcast with no new plumbing. A partially-degraded round (at least one candidate trained) keeps its benign `no_candidate` exit.
+  `completion_reason` is a cross-repo-visible field, but canopy's consumer is forward-compatible by construction — `service_backend` passes it through and `DashboardManager._completion_reason_label` is a `dict.get` returning `None` for unknown
+  values (pinned by canopy's own `test_unknown_reason_stays_bare`) — so no canopy change is required. 8 new unit tests in `test_completion_reason.py` cover the raise, the reason string, error-text surfacing, both `error_messages` shapes, and the
+  three no-false-positive paths (partial success, nothing attempted, `None` results). The forkserver-lifecycle half of #509 is tracked separately.
+
 ## [0.8.0] - 2026-08-08
 
 ### Added
