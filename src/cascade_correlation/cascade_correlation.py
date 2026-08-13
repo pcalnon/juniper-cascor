@@ -3995,6 +3995,59 @@ class CascadeCorrelationNetwork:
         except Exception:
             self.logger.debug("set_candidate_correlation emission failed", exc_info=True)
 
+    def _raise_if_candidate_training_failed(self, training_results: Optional[TrainingResults]) -> None:
+        """Issue #509: refuse to report an infrastructure failure as ``no_candidate``.
+
+        ``grow_network`` reaches its ``no_candidate`` exit whenever the best candidate
+        is ``None``. Two very different things produce that state:
+
+        * **No candidate was good enough** — every candidate trained, none beat the
+          correlation threshold. A real algorithmic outcome; the run legitimately
+          completes with the units it already has.
+        * **No candidate could be trained at all** — every candidate errored. The
+          observed case is a full GPU, where ``CandidateUnit.__init__`` dies with
+          ``AcceleratorError: CUDA error: out of memory``.
+
+        The second case slips past the existing BUG-CC-18 / ROBUST-01 guards in
+        ``_execute_candidate_training`` because those only fire when *both* training
+        paths raise, or when the result list is empty. Here neither holds: the
+        per-candidate handlers catch the error and **return** a
+        ``CandidateTrainingResult(success=False, candidate=None)``, so a full set of
+        all-failed results comes back normally. The run then reported ``succeeded`` /
+        ``no_candidate`` / 1 hidden unit while having trained nothing — silently
+        corrupting downstream experiment campaigns.
+
+        ``success_count`` (candidates that trained *without erroring*) already
+        distinguishes the two and was simply never consulted. Note that
+        ``failed_count`` is **not** an error count — it is
+        ``len(results) - successful_candidates``, i.e. candidates that missed the
+        correlation threshold — so it cannot be used for this test.
+
+        Raises:
+            CandidateTrainingError: if candidates were attempted and none trained
+                successfully. ``TrainingLifecycleManager`` already wraps
+                ``model.fit`` in ``except Exception`` and marks the run Failed, so
+                raising yields the correct terminal state, metric, and broadcast
+                with no new plumbing. ``_completion_reason`` is set before the raise
+                and survives it, because ``get_status`` reads it off the persisted
+                network object.
+        """
+        if training_results is None:
+            return
+        attempted = len(training_results.candidate_ids or [])
+        if not attempted or (training_results.success_count or 0) > 0:
+            return
+
+        # ``error_messages`` is annotated ``List[str]`` but ``get_candidates_error_messages``
+        # returns a dict keyed by candidate id/uuid — accept either shape.
+        raw_errors = training_results.error_messages or {}
+        error_values = list(raw_errors.values()) if isinstance(raw_errors, dict) else list(raw_errors)
+        sample = "; ".join(str(message) for message in error_values[:3]) or "no error message recorded"
+
+        self._completion_reason = "candidate_training_failed"
+        self.logger.error(f"CascadeCorrelationNetwork: _raise_if_candidate_training_failed: All {attempted} candidate(s) failed to train (0 trained successfully). This is an infrastructure failure, not a converged network. First errors: {sample}")
+        raise CandidateTrainingError(f"All {attempted} candidate(s) failed to train (0 trained successfully). This is an infrastructure failure — commonly GPU exhaustion — not a converged network. Refusing to report it as a normal 'no_candidate' completion. First errors: {sample}")
+
     def _install_hidden_unit(
         self,
         weights: torch.Tensor,
@@ -4386,6 +4439,10 @@ class CascadeCorrelationNetwork:
 
             # Train candidate units
             if not (training_results := self._get_training_results(x_train=x_train, y_train=y_train, residual_error=residual_error)) or not training_results.best_candidate:
+                # Issue #509: "no candidate was good enough" and "no candidate could be
+                # trained at all" both land here. Separate them before recording the
+                # benign outcome — the infrastructure case raises instead of breaking.
+                self._raise_if_candidate_training_failed(training_results)
                 self.logger.warning("CascadeCorrelationNetwork: grow_network: Training results are None or best candidate is None, stopping growth of the network.")
                 self._completion_reason = "no_candidate"
                 break

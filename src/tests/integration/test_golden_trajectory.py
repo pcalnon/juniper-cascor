@@ -34,6 +34,9 @@ _KNOWN_COMPLETION_REASONS = {
     "below_threshold",
     "early_stopped",
     "max_iterations",
+    # Issue #509: every candidate errored (e.g. GPU exhaustion). Raises out of
+    # grow_network, so a golden run only ever sees this on a broken host.
+    "candidate_training_failed",
 }
 
 
