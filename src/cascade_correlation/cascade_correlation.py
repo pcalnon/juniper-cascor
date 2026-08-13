@@ -1095,6 +1095,12 @@ class CascadeCorrelationNetwork:
         # OPT-5: Track active SharedMemory blocks for cleanup on error/shutdown
         self._active_shm_blocks = []
         atexit.register(self._cleanup_shared_memory)
+        # Issue #509: the RC-4 pool is released at the end of every fit(); this is the
+        # belt-and-braces arm for a pool created outside a fit (a direct
+        # train_candidates call) or left behind by an abrupt exit. Registering a bound
+        # method pins the instance for the process lifetime — the same trade the
+        # _cleanup_shared_memory registration above already makes.
+        atexit.register(self._release_candidate_worker_pool)
 
         # Phase 1b: Remote worker coordinator reference (set via set_worker_coordinator)
         self._worker_coordinator = None
@@ -1900,16 +1906,22 @@ class CascadeCorrelationNetwork:
         max_iterations = max_iterations if max_iterations is not None else self.max_iterations
         self._validate_positive_integer(max_iterations, "max_iterations")
         self.logger.info(f"CascadeCorrelationNetwork: fit: Starting main training loop with max_epochs: {max_epochs}, max_iterations: {max_iterations}, early stopping: {early_stopping}")
-        self.grow_network(
-            x_train=x_train,
-            y_train=y_train,
-            max_iterations=max_iterations,
-            early_stopping=early_stopping,
-            patience_counter=patience_counter,
-            best_value_loss=best_value_loss,
-            x_val=x_val,
-            y_val=y_val,
-        )
+        try:
+            self.grow_network(
+                x_train=x_train,
+                y_train=y_train,
+                max_iterations=max_iterations,
+                early_stopping=early_stopping,
+                patience_counter=patience_counter,
+                best_value_loss=best_value_loss,
+                x_val=x_val,
+                y_val=y_val,
+            )
+        finally:
+            # Issue #509: the growth rounds are over, so the RC-4 pool's reason to
+            # persist is too. In a ``finally`` because a failed run is exactly when
+            # leaked GPU-holding children do the most damage to the next one.
+            self._release_candidate_worker_pool()
         self.history["hidden_units_added"].append({"correlation": 0.0, "weight_shape": (), "unit_index": -1})
         self.logger.info("CascadeCorrelationNetwork: fit: Training completed.")
         self.logger.debug(f"CascadeCorrelationNetwork: fit: Final history: {len(self.history.get('train_loss', []))} epochs recorded")
@@ -3711,6 +3723,35 @@ class CascadeCorrelationNetwork:
         self._cleanup_shared_memory_blocks()
 
         self.logger.debug("CascadeCorrelationNetwork: _shutdown_worker_pool: Persistent pool shut down")
+
+    def _release_candidate_worker_pool(self) -> None:
+        """Issue #509: end the RC-4 pool's persistence when the *run* ends.
+
+        RC-4 deliberately keeps candidate workers alive **across growth rounds** —
+        that is the optimization, and it is preserved. What was missing is the other
+        end of that lifetime: nothing ever released the pool when the run finished.
+        ``_shutdown_worker_pool``'s own docstring claims it runs "when the network is
+        being serialized/destroyed", but its only production caller was
+        ``_ensure_worker_pool`` recycling a stale pool, so a healthy pool simply
+        outlived every run that created it.
+
+        The consequence is not a tidy-up nit. The orphaned forkserver children keep
+        their CUDA context (~116 MiB each) and reparent to ``systemd --user``; the
+        forkserver's parent-death detection uses a pipe heartbeat that can take many
+        minutes to fire, so they accumulate at roughly 285 MiB per experiment cell
+        until the card is full. Once it is, ``CandidateUnit.__init__`` dies with
+        ``AcceleratorError: CUDA error: out of memory`` for every candidate, and the
+        run reports a plausible-looking result computed from nothing — degradation
+        that tracks position in a campaign rather than any experimental variable.
+
+        Cleanup must never mask the outcome of the work it follows, so every failure
+        here is logged and swallowed: this runs from a ``finally`` in ``fit`` where a
+        training exception may already be in flight, and from ``atexit``.
+        """
+        try:
+            self._shutdown_worker_pool()
+        except Exception:  # nosec B110 — cleanup must not propagate exceptions
+            self.logger.warning("CascadeCorrelationNetwork: _release_candidate_worker_pool: Failed to release the candidate worker pool; forkserver children may survive this run", exc_info=True)
 
     def _cleanup_shared_memory(self):
         """Emergency cleanup of SharedMemory blocks on process exit (OPT-5)."""
