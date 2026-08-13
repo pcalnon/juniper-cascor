@@ -22,6 +22,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `juniper_cascor_protocol.worker.BinaryFrame` rather than a subclass of it; nothing in the tree performs `isinstance` / `issubclass` / identity checks against it. Regression coverage is unchanged and still green —
   `test_worker_protocol.py::TestBinaryFrame::test_decode_non_utf8_dtype_raises_value_error` now passes by way of the shared codec instead of the shim.
 
+### Fixed
+
+- **The RC-4 persistent candidate pool is now released when the run ends, instead of outliving it** (#509, forkserver-lifecycle half). RC-4 deliberately keeps candidate workers alive **across growth rounds** — that optimization is unchanged and still applies to
+  every round within a `fit`. What was missing is the other end of that lifetime: `_shutdown_worker_pool`'s docstring claims it runs "when the network is being serialized/destroyed", but its only production caller was `_ensure_worker_pool` recycling a *stale* pool,
+  so a **healthy** pool was never torn down at all. Nothing else covered the gap — the constructor's `atexit` hook registered only `_cleanup_shared_memory`, and there is no `__del__`.
+  The orphaned forkserver children keep their CUDA context (~116 MiB each) and reparent to `systemd --user`; the forkserver's parent-death detection uses a pipe heartbeat that can take many minutes to fire, so they accumulate at roughly **285 MiB per experiment
+  cell** and exhaust an 8 GiB card after ~4–5 cells (measured 2026-08-10/11: 63 compute processes, 180 MiB free of 8192; reaping recovered 5058 MiB). Once the card is full every `CandidateUnit.__init__` dies with `AcceleratorError: CUDA error: out of memory`, and
+  the run reports a plausible-looking result computed from nothing — degradation that tracks **position in a campaign** rather than any experimental variable, which is what made it so expensive to diagnose.
+  `fit` now releases the pool in a **`finally`**, so a failed run cleans up too — that is exactly the GPU-pressure case where the next run must not inherit more orphans, and it is newly reachable now that the honest-outcome half raises on an all-candidates-errored
+  round. A guarded `_release_candidate_worker_pool` wrapper logs and swallows any teardown failure so cleanup can never mask the outcome of the work it follows (in either direction: a teardown error neither hides a training exception nor fails a good run), and it
+  is also registered with `atexit` alongside the existing shared-memory hook for pools created outside a `fit`.
+  Trade-off: a caller issuing many short sequential `fit` calls on one network now pays pool startup once per fit rather than once per process. RC-4's target — per-*round* overhead, of which there are many per fit — is untouched, and silent scientific corruption
+  is not a defensible price for a warm pool between runs. Issue direction (2) (releasing the CUDA context inside the child) is not needed once the children actually exit: process exit releases the context. 8 new unit tests in
+  `test_candidate_pool_release.py` cover both `fit` exit paths, both cleanup-failure directions, the helper, and the `atexit` registration.
+
 ## [0.8.0] - 2026-08-08
 
 ### Added
