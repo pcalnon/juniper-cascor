@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Serialisation faults are reported as `500`, not `400` (`APD-CASCOR-002`).** The blanket
+  `@app.exception_handler(ValueError)` returned `400 VALIDATION_ERROR`, and
+  `pydantic_core.PydanticSerializationError` subclasses `ValueError` — so when the app failed to
+  serialise its *own* response, the caller was told they had sent a bad request. The defect was
+  invisible to 5xx alerting (it never produced a 5xx), misattributed to the client, and stripped of
+  its diagnostic by the generic `"Invalid request parameters"` message. `PydanticSerializationError`
+  is now classified as the 500 it is and logged at exception level so the traceback survives.
+  `coerce_native_scalars` remains as the narrow pre-emption for the numpy-scalar case inside
+  `success_response`, but it only ever covered that one call path. A plain `ValueError` is unchanged
+  and still returns `400`.
+
 ### Changed
 
 - **`juniper-cascor-protocol` floor raised to `>=0.2.0`** (was the alpha `>=0.1.0a0`). `juniper-cascor-protocol` 0.2.0 went live on PyPI 2026-08-10 and is the release that wraps non-UTF-8 dtype bytes in `BinaryFrame.decode` as
