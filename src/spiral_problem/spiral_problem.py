@@ -1332,10 +1332,20 @@ class SpiralProblem(object):
         self.logger.trace("SpiralProblem: solve_n_spiral_problem: Training the network on the N Spiral Problem dataset")
         self.logger.debug("SpiralProblem: solve_n_spiral_problem: Created Spiral Problem...")
         self.logger.debug(f"SpiralProblem: solve_n_spiral_problem: Spiral Problem: \n{self.network}")
+        # L-1: pass the *instance* budget, not the module constant. ``fit`` uses
+        # ``max_epochs`` for the initial output-layer pass only; every per-round
+        # output pass inside ``grow_network`` uses ``self.output_epochs``. Pinning
+        # the constant here made the two disagree whenever a caller configured
+        # ``output_epochs`` -- main.py's W-11 mapping sets
+        # ``_SpiralProblem__output_epochs`` from the experiment YAML, so a direct-CLI
+        # run with ``max_epochs: 100`` still trained the initial pass for the
+        # constant's 10000 epochs while every later pass correctly stopped at 100.
+        # It also contradicted the project's own cost model: TrainingLifecycleManager
+        # .derive_epochs_cap documents the initial pass as costing ``output_epochs``.
         self.history = self.network.fit(
             self.x,
             self.y,
-            max_epochs=_SPIRAL_PROBLEM_OUTPUT_EPOCHS,
+            max_epochs=self.output_epochs,
         )
         self.logger.debug(f"SpiralProblem: solve_n_spiral_problem: Training history: {self.history}")
 
