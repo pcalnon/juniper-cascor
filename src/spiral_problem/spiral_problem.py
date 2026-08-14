@@ -48,6 +48,7 @@ import warnings
 # from inspect import currentframe, getframeinfo
 from typing import Any, Callable, Tuple
 
+import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
@@ -110,6 +111,32 @@ from cascor_constants.constants import (  # _PROJECT_MODEL_AUTHKEY,; _PROJECT_MO
 )
 from log_config.log_config import LogConfig
 from log_config.logger.logger import Logger
+
+#####################################################################################################################################################################################################
+# F-P1-3: backends that never open a window, so plt.show() returns immediately instead of
+# parking the caller in a GUI event loop. Only consulted if the modern registry API is
+# unavailable (matplotlib < 3.9 or a future rename).
+_NON_INTERACTIVE_MPL_BACKENDS = frozenset({"agg", "cairo", "pdf", "pgf", "ps", "svg", "template"})
+
+
+def _backend_is_interactive() -> bool:
+    """
+    Description:
+        Report whether the active matplotlib backend opens windows, i.e. whether plt.show()
+        blocks until the user closes them. Used to keep a headless/automated run from
+        parking forever in the GUI event loop after training has already finished (F-P1-3).
+    Returns:
+        True if the backend is interactive (plt.show() blocks), False otherwise.
+    """
+    backend = matplotlib.get_backend()
+    try:
+        from matplotlib.backends import BackendFilter, backend_registry
+
+        interactive = backend_registry.list_builtin(BackendFilter.INTERACTIVE)
+    except (ImportError, AttributeError):
+        # Pre-3.9 matplotlib (or a renamed registry): fall back to the static name set.
+        return backend.lower() not in _NON_INTERACTIVE_MPL_BACKENDS
+    return backend.lower() in {name.lower() for name in interactive}
 
 
 #####################################################################################################################################################################################################
@@ -1323,8 +1350,21 @@ class SpiralProblem(object):
             self.network.plot_training_history()
         self.logger.trace("SpiralProblem: solve_n_spiral_problem: Completed solving N Spiral Problem")
         if self.plot:
-            plt.show()
-            self.plotter.join()
+            # F-P1-3: both calls below BLOCK under an interactive backend -- plt.show() parks
+            # this process in the GUI event loop and self.plotter.join() waits on the
+            # (non-daemon) dataset-plot child, which is itself parked in its own plt.show().
+            # Training has already finished here, so on a headless/automated run the process
+            # simply never exits and never reports: the run is killed at whatever bound the
+            # caller set and looks, from the outside, exactly like a compute-bound run.
+            #
+            # A non-interactive backend (Agg -- headless default, or MPLBACKEND=Agg) opens no
+            # windows, so there is nothing to wait for. Skipping loses no artifact: the
+            # plot_* helpers only ever show figures, they never savefig.
+            if _backend_is_interactive():
+                plt.show()
+                self.plotter.join()
+            else:
+                self.logger.info(f"SpiralProblem: solve_n_spiral_problem: Non-interactive matplotlib backend ({matplotlib.get_backend()}) -- skipping the blocking plt.show()/join. Figures are display-only and are not saved.")
 
     def evaluate(
         self,

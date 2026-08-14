@@ -295,7 +295,16 @@ def _resolve_cli_overrides(dataset_params, training_params):
     return overrides, sorted(unmapped)
 
 
-def main():
+def main(generate_plots: bool = _CASCOR_GENERATE_PLOTS_DEFAULT):
+    """
+    Run the spiral problem end to end.
+
+    Args:
+        generate_plots: Whether to build the dataset / decision-boundary / training-history
+            figures. Defaults to the project constant; `--no-plots` turns them off, which is
+            what an automated or headless run wants (F-P1-3) since the figures are
+            display-only and are never saved to disk.
+    """
     Logger.info("Cascor: main: Starting the Cascade Correlation Neural Network project")
     Logger.info(f"Cascor: main: Project constants: Log Level: {_CASCOR_LOG_LEVEL}, Log Level Name: {_CASCOR_LOG_LEVEL_NAME}")
     Logger.info(f"Cascor: main: Project constants: Log File Name: {_CASCOR_LOG_FILE_NAME}, Log File Path: {_CASCOR_LOG_FILE_PATH}")
@@ -435,7 +444,7 @@ def main():
         _SpiralProblem__default_radius=_CASCOR_DEFAULT_RADIUS,
         _SpiralProblem__distribution=_CASCOR_DISTRIBUTION_FACTOR,
         _SpiralProblem__epochs_max=_CASCOR_EPOCHS_MAX,
-        _SpiralProblem__generate_plots_default=_CASCOR_GENERATE_PLOTS_DEFAULT,
+        _SpiralProblem__generate_plots_default=generate_plots,
         _SpiralProblem__input_size=_CASCOR_INPUT_SIZE,
         _SpiralProblem__learning_rate=_w11.get("learning_rate", _CASCOR_LEARNING_RATE),
         _SpiralProblem__log_config=log_config,
@@ -498,7 +507,7 @@ def main():
         train_ratio=_w11.get("train_ratio", _CASCOR_TRAIN_RATIO),
         test_ratio=_w11.get("test_ratio", _CASCOR_TEST_RATIO),
         noise=_w11.get("noise", _CASCOR_NOISE_FACTOR_DEFAULT),
-        plot=_CASCOR_GENERATE_PLOTS_DEFAULT,
+        plot=generate_plots,
     )
     logger.info("Main: Completed solving SpiralProblem instance")
 
@@ -516,6 +525,7 @@ def parse_args():
         epilog="""
 Examples:
   python main.py                      # Run normally
+  python main.py --no-plots           # Run headless / automated (no blocking figures)
   python main.py --profile            # Run with cProfile profiling
   python main.py --profile-memory     # Run with memory profiling
   python main.py --profile --profile-output ./my_profiles
@@ -530,6 +540,7 @@ Examples:
 
     parser.add_argument("--profile-top-n", type=int, default=30, help="Number of top functions to display in profile output (default: 30)")
     parser.add_argument("--config", type=str, default=None, help="Experiment YAML whose service: block overrides env (sets JUNIPER_CASCOR_CONFIG_FILE before settings load; Wave 3.1)")
+    parser.add_argument("--no-plots", action="store_true", help="Skip the dataset / decision-boundary / training-history figures. Recommended for automated and headless runs: the figures are display-only (never saved), and under an interactive backend showing them blocks the process after training finishes (F-P1-3)")
 
     return parser.parse_args()
 
@@ -544,12 +555,17 @@ if __name__ == "__main__":
         # Wave 3.1: must land before the first Settings()/get_settings() use (SS5.2).
         os.environ["JUNIPER_CASCOR_CONFIG_FILE"] = args.config
 
+    # F-P1-3: resolved once so every entry path below (plain, cProfile, tracemalloc) honours
+    # --no-plots. A profiling run is automated by definition, so it is exactly the path that
+    # must not park in a GUI event loop after training finishes.
+    generate_plots = _CASCOR_GENERATE_PLOTS_DEFAULT and not args.no_plots
+
     if args.profile:
         from profiling.deterministic import ProfileContext
 
         Logger.info("Cascor: Starting with cProfile profiling enabled")
         with ProfileContext("main_training", output_dir=args.profile_output) as profiler:
-            main()
+            main(generate_plots=generate_plots)
         profiler.print_stats(top_n=args.profile_top_n)
         profiler.save()
 
@@ -558,10 +574,10 @@ if __name__ == "__main__":
 
         Logger.info("Cascor: Starting with memory profiling enabled")
         with MemoryTracker("main_training") as tracker:
-            main()
+            main(generate_plots=generate_plots)
         tracker.print_summary()
         tracker.print_top_allocations(top_n=args.profile_top_n)
         tracker.print_diff(top_n=args.profile_top_n)
 
     else:
-        main()
+        main(generate_plots=generate_plots)
