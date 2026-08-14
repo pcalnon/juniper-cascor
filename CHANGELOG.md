@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-08-14
+
 ### Changed
 
 - **`juniper-cascor-protocol` floor raised to `>=0.2.0`** (was the alpha `>=0.1.0a0`). `juniper-cascor-protocol` 0.2.0 went live on PyPI 2026-08-10 and is the release that wraps non-UTF-8 dtype bytes in `BinaryFrame.decode` as
