@@ -75,6 +75,8 @@ from candidate_unit.candidate_unit import CandidateTrainingResult, CandidateUnit
 from cascade_correlation.cascade_correlation_config.cascade_correlation_config import CascadeCorrelationConfig
 from cascade_correlation.cascade_correlation_exceptions.cascade_correlation_exceptions import CandidateTrainingError, ConfigurationError, TrainingError, ValidationError  # CascadeCorrelationError,; NetworkInitializationError,
 from cascor_constants.constants import (  # TODO: Commented out for F401 compliance - may be needed for future activation function selection; _CASCADE_CORRELATION_NETWORK_ACTIVATION_FUNCTION_NN_RELU,; _CASCADE_CORRELATION_NETWORK_ACTIVATION_FUNCTION_NN_SIGMOID,; _CASCADE_CORRELATION_NETWORK_ACTIVATION_FUNCTION_NN_TANH,; _CASCADE_CORRELATION_NETWORK_ACTIVATION_FUNCTION_RELU,; _CASCADE_CORRELATION_NETWORK_ACTIVATION_FUNCTION_SIGMOID,; _CASCADE_CORRELATION_NETWORK_ACTIVATION_FUNCTION_TANH,APPROVED
+    _CANDIDATE_UNIT_CONVERGENCE_THRESHOLD,
+    _CANDIDATE_UNIT_PATIENCE,
     _CASCADE_CORRELATION_NETWORK_ACTIVATION_FUNCTION_DEFAULT,
     _CASCADE_CORRELATION_NETWORK_ACTIVATION_FUNCTION_NAME,
     _CASCADE_CORRELATION_NETWORK_ACTIVATION_FUNCTIONS_DICT,
@@ -2242,6 +2244,12 @@ class CascadeCorrelationNetwork:
             shm_metadata["candidate_epochs"] = self.candidate_epochs
             shm_metadata["candidate_learning_rate"] = self.candidate_learning_rate
             shm_metadata["candidate_display_frequency"] = self.candidate_display_frequency
+            # CASCOR-505: the candidate early-stopping controls are network attributes set from
+            # the API/config, but the pool workers construct their own CandidateUnit and cannot
+            # see `self`. Carry them in the task payload or every candidate silently runs the
+            # CandidateUnit module defaults.
+            shm_metadata["candidate_patience"] = self.candidate_patience
+            shm_metadata["candidate_convergence_threshold"] = self.candidate_convergence_threshold
             training_inputs = shm_metadata
             self.logger.debug(f"CascadeCorrelationNetwork: _generate_candidate_tasks: OPT-5 SharedMemory block created: {shm.name}")
         except Exception as shm_err:
@@ -2260,6 +2268,10 @@ class CascadeCorrelationNetwork:
                 residual_error,
                 self.candidate_learning_rate,
                 self.candidate_display_frequency,
+                # CASCOR-505: appended, not inserted, so a 6-element tuple built by an older
+                # caller still unpacks (see the length-guarded unpack in _build_candidate_inputs).
+                self.candidate_patience,
+                self.candidate_convergence_threshold,
             )
 
         # Generate candidate metadata
@@ -3292,6 +3304,12 @@ class CascadeCorrelationNetwork:
                     CandidateUnit__random_value_scale=candidate_inputs.get("random_value_scale"),
                     CandidateUnit__uuid=candidate_inputs.get("candidate_uuid"),
                     CandidateUnit__candidate_index=candidate_inputs.get("candidate_index"),
+                    # CASCOR-505: without these two the pool ran the module defaults no matter
+                    # what the API applied. Defaults are repeated here because a caller that
+                    # patches _build_candidate_inputs may hand back a dict without the keys, and
+                    # CandidateUnit does not coerce None for either field.
+                    CandidateUnit__patience=candidate_inputs.get("candidate_patience", _CANDIDATE_UNIT_PATIENCE),
+                    CandidateUnit__convergence_threshold=candidate_inputs.get("candidate_convergence_threshold", _CANDIDATE_UNIT_CONVERGENCE_THRESHOLD),
                 )
                 logger.debug(f"CascadeCorrelationNetwork: train_candidate_worker: Completed Instantiating CandidateUnit object: Worker ID: {worker_id}, Worker UUID: {worker_uuid}, Candidate UUID: {candidate.get_uuid()}")
             except Exception as e:
@@ -3404,6 +3422,22 @@ class CascadeCorrelationNetwork:
             candidate_epochs = training_inputs["candidate_epochs"]
             candidate_learning_rate = training_inputs["candidate_learning_rate"]
             candidate_display_frequency = training_inputs["candidate_display_frequency"]
+            # CASCOR-505: absent keys mean a payload built before this fix — fall back to the
+            # CandidateUnit module defaults, which is exactly what those workers already used.
+            candidate_patience = training_inputs.get("candidate_patience", _CANDIDATE_UNIT_PATIENCE)
+            candidate_convergence_threshold = training_inputs.get("candidate_convergence_threshold", _CANDIDATE_UNIT_CONVERGENCE_THRESHOLD)
+        elif len(training_inputs) >= 8:
+            # CASCOR-505: 8-element legacy tuple carries the candidate early-stopping controls.
+            (
+                candidate_input,
+                candidate_epochs,
+                y,
+                residual_error,
+                candidate_learning_rate,
+                candidate_display_frequency,
+                candidate_patience,
+                candidate_convergence_threshold,
+            ) = training_inputs
         else:
             (
                 candidate_input,
@@ -3413,6 +3447,8 @@ class CascadeCorrelationNetwork:
                 candidate_learning_rate,
                 candidate_display_frequency,
             ) = training_inputs
+            candidate_patience = _CANDIDATE_UNIT_PATIENCE
+            candidate_convergence_threshold = _CANDIDATE_UNIT_CONVERGENCE_THRESHOLD
         logger.debug(f"CascadeCorrelationNetwork: _build_candidate_inputs: Successfully Unpacked Training inputs: Worker ID: {worker_id}, Worker UUID: {worker_uuid}, Candidate UUID: {candidate_uuid}.")
         logger.debug(f"CascadeCorrelationNetwork: _build_candidate_inputs: Unpacked Task data, Candidate data, and Training inputs: Worker ID: {worker_id}, Worker UUID: {worker_uuid}, Candidate Index: {candidate_index}, Candidate UUID: {candidate_uuid}, Training Inputs: x shape: {candidate_input.shape}, epochs: {candidate_epochs}, y shape: {y.shape}, residual_error shape: {residual_error.shape}, learning_rate: {candidate_learning_rate}, display_frequency: {candidate_display_frequency}")
         logger.verbose(f"CascadeCorrelationNetwork: _build_candidate_inputs: Training inputs: x shape: {candidate_input.shape}, epochs: {candidate_epochs}, y shape: {y.shape}, residual_error shape: {residual_error.shape}, learning_rate: {candidate_learning_rate}, display_frequency: {candidate_display_frequency}")
@@ -3439,6 +3475,8 @@ class CascadeCorrelationNetwork:
             "residual_error": residual_error,
             "candidate_learning_rate": candidate_learning_rate,
             "candidate_display_frequency": candidate_display_frequency,
+            "candidate_patience": candidate_patience,  # CASCOR-505
+            "candidate_convergence_threshold": candidate_convergence_threshold,  # CASCOR-505
             "activation_fn": activation_fn,
             "round_id": round_id,
             "_shm_handle": shm_handle,  # OPT-5: SharedMemory handle for deferred close (None if legacy path)

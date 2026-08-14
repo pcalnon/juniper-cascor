@@ -49,6 +49,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Trade-off: a caller issuing many short sequential `fit` calls on one network now pays pool startup once per fit rather than once per process. RC-4's target — per-*round* overhead, of which there are many per fit — is untouched, and silent scientific corruption
   is not a defensible price for a warm pool between runs. Issue direction (2) (releasing the CUDA context inside the child) is not needed once the children actually exit: process exit releases the context. 8 new unit tests in
   `test_candidate_pool_release.py` cover both `fit` exit paths, both cleanup-failure directions, the helper, and the `atexit` registration.
+- **`candidate_patience` and `candidate_convergence_threshold` now reach the candidate pool** (#505). Both are accepted at the API boundary, whitelisted in `_apply_params_unlocked`, and set as network attributes — but the pool's workers
+  construct their own `CandidateUnit` in a separate process and cannot see `self`, and neither value was ever placed in the task payload. Every candidate therefore ran the `CandidateUnit` module defaults (patience 50, convergence 0.001)
+  no matter what was configured, while `GET /v1/training/params` echoed the requested value straight back off the network attribute. Confirmed live during the P4 E-A campaign: runs sent `candidate_patience: 100`, the API reported 100,
+  and the candidate logs still read `Early stopping at epoch 50 - no improvement for 50 epochs`.
+  `_generate_candidate_tasks` now carries both values in **both** payload shapes — the OPT-5 SharedMemory metadata dict and the legacy fallback tuple — `_build_candidate_inputs` surfaces them, and the worker's `CandidateUnit(...)` passes
+  them. The legacy tuple grows from 6 to 8 elements by **appending**, so the first six positions keep their meaning and a 6-element tuple built by an older caller still unpacks; both the short tuple and a metadata dict without the new keys
+  fall back to the same module defaults those callers already got, so nothing changes for them. The `_create_candidate_unit` factory (sequential path) already threaded both and is untouched; so is the result-reconstruction
+  `CandidateUnit` in `_collect_training_results`, which carries returned weights and never trains.
+  Impact beyond the API: every committed experiment config setting either key — `conf/experiments/spiral-baseline.yaml` among them — was silently running the pool at 50 / 0.001, so any study sweeping candidate patience or convergence
+  through the service was measuring one operating point. 10 new unit tests in `test_candidate_hyperparam_plumbing.py` pin the whole chain; the decisive ones assert on the **constructed unit's** `patience` / `convergence_threshold` rather
+  than on the payload dict, because this is the CASCOR-P0-005 key-name-mismatch class, where a key exists in the payload under one name and the constructor silently reads another.
 
 ## [0.8.0] - 2026-08-08
 
