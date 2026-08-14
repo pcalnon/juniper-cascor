@@ -2,6 +2,7 @@
 
 import pytest
 from fastapi.testclient import TestClient
+from pydantic_core import PydanticSerializationError
 
 from api.app import _API_VERSION, create_app
 from api.settings import Settings
@@ -77,6 +78,27 @@ class TestAppFactory:
         body = response.json()
         assert body["status"] == "error"
         assert body["error"]["code"] == "VALIDATION_ERROR"
+
+    def test_serialization_fault_returns_500_not_400(self):
+        """APD-CASCOR-002: a serialisation fault is the server's, not the caller's.
+
+        ``PydanticSerializationError`` subclasses ``ValueError``, so the blanket
+        handler reported the app's own failure to serialise a response as a 400 --
+        invisible to 5xx alerting, misattributed to the client, and stripped of its
+        diagnostic by the generic "Invalid request parameters" message.
+        """
+        app = create_app(Settings(auto_start=False))
+
+        @app.get("/test-serialization-error")
+        async def raise_serialization_error():
+            raise PydanticSerializationError("Unable to serialize unknown type: <class 'numpy.float32'>")
+
+        client = TestClient(app, raise_server_exceptions=False)
+        response = client.get("/test-serialization-error")
+        assert response.status_code == 500
+        body = response.json()
+        assert body["status"] == "error"
+        assert body["error"]["code"] == "INTERNAL_ERROR"
 
     def test_general_exception_handler(self):
         """Test that unhandled exceptions return 500."""

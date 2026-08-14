@@ -14,6 +14,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from juniper_service_core import enforce_auth_posture
+from pydantic_core import PydanticSerializationError
 
 from api import provenance
 from api.lifecycle.manager import TrainingLifecycleManager
@@ -677,6 +678,21 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # Exception handlers
     @app.exception_handler(ValueError)
     async def value_error_handler(request: Request, exc: ValueError) -> JSONResponse:
+        # ``PydanticSerializationError`` subclasses ValueError, but it is a SERVER
+        # fault: the app failed to serialise its own response. Reporting it as 400
+        # misattributes our defect to the caller, hides it from 5xx alerting, and
+        # replaces the diagnostic with "Invalid request parameters". Classify it as
+        # the 500 it is, and log at exception level so the traceback survives.
+        #
+        # ``coerce_native_scalars`` (api/models/common.py) pre-empts the common
+        # numpy-scalar case inside ``success_response``; this catches every other
+        # serialisation fault, which that helper by construction cannot.
+        if isinstance(exc, PydanticSerializationError):
+            logger.exception("Response serialization failed")
+            return JSONResponse(
+                status_code=500,
+                content=error_response("INTERNAL_ERROR", "Internal server error"),
+            )
         logger.debug("Validation error: %s", exc)
         return JSONResponse(
             status_code=400,
