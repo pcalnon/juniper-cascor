@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Q-6: `JUNIPER_CASCOR_LOG_DIR` log-directory override, service + direct CLI** (CLI experimentation plan §11; H-7). Mirrors the W-6 `JUNIPER_CASCOR_SNAPSHOTS_DIR` override in shape and semantics, against the same class of problem: a
+  checkout-shared path that concurrent cascor processes collide on. The direct-CLI tier resolves `constants._PROJECT_LOG_DIR_DEFAULT` from the env var at import time (and with it `_PROJECT_LOG_FILE_PATH` and the `_LOGGER_*` /
+  `_LOG_CONFIG_*` constants the file handlers default to); the service tier's two `_resolve_log_dir` helpers (`api/observability.py`, `api/service_launcher.py`) read it at call time — deliberately **before** their `cascor_constants`
+  import, so the override also holds on the `ImportError` fallback, which never consults the constants and would otherwise write to the shared checkout path in precisely the degraded case that fallback exists for. Unset or blank keeps
+  `<repo>/logs` byte-identically, so nothing changes for existing deployments. 20 new unit tests (`test_q6_log_dir_override.py`) pin override / fallback / blank / whitespace / `~`-expansion, call-time-not-cached for both service
+  helpers, the `ImportError`-fallback arm, and that the downstream logger constants follow the override rather than drifting from it.
+- Why this is an evidence-integrity fix and not only a concurrency nicety: cascor's parent logger writes **only** to this file — stdout carries just candidate-worker lines — so the markers that decide a run's verdict (`Training
+  completed`, `Completed solving …`) exist nowhere else. Two cascor processes sharing a checkout interleave and rotate away each other's evidence. That is not hypothetical: it is how the F-P1-3 arm A/B logs were lost when a long-lived
+  service rotated the shared file mid-investigation. A per-run launcher can now point each instance at its own `RUN_DIR/logs`, which is the precondition H-7 named for retiring the one-cascor-instance-per-checkout rule (Wave 5.3, and
+  `run_suite`'s refusal of `app: cascor` with `parallel > 1`).
+
 ## [0.9.0] - 2026-08-14
 
 ### Fixed

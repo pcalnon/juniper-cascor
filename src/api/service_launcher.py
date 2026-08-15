@@ -83,7 +83,17 @@ atexit.register(_cleanup_at_exit)
 
 
 def _resolve_log_dir() -> Path:
-    """Resolve the canonical log directory for subprocess output."""
+    """Resolve the canonical log directory for subprocess output.
+
+    Honours the ``JUNIPER_CASCOR_LOG_DIR`` override first (Q-6 / H-7) so a per-run
+    launcher keeps subprocess output inside its own ``RUN_DIR/logs`` rather than the
+    checkout-shared ``<repo>/logs``. Read at call time, not import time, so the
+    override also holds on the ``ImportError`` fallback below, which never consults
+    the constants. A set-but-blank value is treated as unset (the blank-env guard class).
+    """
+    override = os.environ.get("JUNIPER_CASCOR_LOG_DIR", "").strip()
+    if override:
+        return Path(override).expanduser()
     try:
         from cascor_constants.constants import _PROJECT_LOG_DIR_DEFAULT
 
