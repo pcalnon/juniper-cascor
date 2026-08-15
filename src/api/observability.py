@@ -50,10 +50,20 @@ _NAMESPACE_DEFAULT: str = "juniper_cascor"
 def _resolve_log_dir() -> Path:
     """Resolve the absolute log directory path.
 
-    Uses the project constants if available, otherwise falls back to
-    a ``logs/`` directory relative to the project root (two levels up
-    from ``src/api/``).
+    Honours the ``JUNIPER_CASCOR_LOG_DIR`` override first (Q-6 / H-7), so a per-run
+    launcher can keep this service's file log inside its own ``RUN_DIR/logs`` rather
+    than the checkout-shared ``<repo>/logs`` that concurrent cascor processes interleave
+    and rotate away. Read at call time, not import time, so the override also holds on
+    the ``ImportError`` fallback below — which never consults the constants and would
+    otherwise silently write to the shared checkout path. A set-but-blank value is
+    treated as unset (the blank-env guard class).
+
+    Otherwise uses the project constants if available, and finally falls back to a
+    ``logs/`` directory relative to the project root (two levels up from ``src/api/``).
     """
+    override = os.environ.get("JUNIPER_CASCOR_LOG_DIR", "").strip()
+    if override:
+        return Path(override).expanduser()
     try:
         from cascor_constants.constants import _PROJECT_LOG_DIR_DEFAULT
 
