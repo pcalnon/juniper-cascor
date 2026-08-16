@@ -5,18 +5,21 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from api.middleware import EXEMPT_PATHS, RequestBodyLimitMiddleware, SecurityHeadersMiddleware, SecurityMiddleware
-from api.security import APIKeyAuth, RateLimiter
+from api.security import APIKeyAuth, FailedAuthThrottle, RateLimiter, build_failed_auth_throttle
 
 
 @pytest.fixture
 def app_with_middleware():
     """Create a FastAPI app with security middleware."""
 
-    def _create(api_keys=None, rate_limit_enabled=False, rpm=60):
+    def _create(api_keys=None, rate_limit_enabled=False, rpm=60, throttle=None):
         app = FastAPI()
         auth = APIKeyAuth(api_keys)
         limiter = RateLimiter(requests_per_minute=rpm, enabled=rate_limit_enabled)
-        app.add_middleware(SecurityMiddleware, api_key_auth=auth, rate_limiter=limiter)
+        # ``throttle=None`` deliberately exercises the production default (an enabled
+        # FailedAuthThrottle at the library budget), so the pre-existing arms below prove the
+        # default is transparent to well-behaved traffic.
+        app.add_middleware(SecurityMiddleware, api_key_auth=auth, rate_limiter=limiter, failed_auth_throttle=throttle)
 
         @app.get("/v1/health")
         async def health():
@@ -154,8 +157,22 @@ class TestSecurityMiddlewareAuthRateLimitInterplay:
 
         Swapping auth/rate-limit order would let an attacker exhaust a shared
         IP budget with forged keys, then lock out a legitimate principal.
+
+        The failed-auth throttle is given a deliberately generous budget so that this test keeps
+        measuring what it was written to measure -- the *identity-keyed limiter's* counters --
+        rather than tripping the pre-auth throttle. Mirrors the inverse move in
+        ``juniper-service-core``'s own harness, which uses a generous ``requests_per_minute`` so
+        any 429 it sees must have come from the throttle. The 10 failed attempts below are
+        exactly the throttle's default budget, so without this the final valid request is
+        throttled at the door; APD-CASCOR-004 coverage lives in
+        ``TestFailedAuthThrottleIntegration``.
         """
-        app = app_with_middleware(api_keys=["secret"], rate_limit_enabled=True, rpm=2)
+        app = app_with_middleware(
+            api_keys=["secret"],
+            rate_limit_enabled=True,
+            rpm=2,
+            throttle=build_failed_auth_throttle(max_failures=100, window_seconds=60),
+        )
         # Reach into the middleware instance to inspect counters after failed auth.
         middleware = next(m for m in app.user_middleware if m.cls is SecurityMiddleware)
         limiter: RateLimiter = middleware.kwargs["rate_limiter"]
@@ -446,3 +463,135 @@ class TestRequestBodyLimitMiddleware:
         assert response.status_code == 200
         # Handler echoes received_bytes; presence + 200 confirm body was readable downstream.
         assert "received_bytes" in response.json()
+
+
+@pytest.mark.unit
+class TestFailedAuthThrottleIntegration:
+    """APD-CASCOR-004: the 401 path must consume budget.
+
+    Mirrors the corpus in ``juniper-service-core/tests/test_middleware.py`` so the fork and the
+    shared package cannot drift apart silently again.
+    """
+
+    def test_failed_auth_attempts_are_throttled(self, app_with_middleware):
+        """The arm that catches a half-port.
+
+        Wiring only the pre-auth ``check()`` and omitting ``record_failure()`` yields a throttle
+        that never accumulates -- a silent no-op -- and every request below would stay 401
+        forever instead of turning 429.
+        """
+        app = app_with_middleware(api_keys=["secret"], throttle=build_failed_auth_throttle(max_failures=3, window_seconds=60))
+        client = TestClient(app)
+
+        for _ in range(3):
+            assert client.get("/v1/network", headers={"X-API-Key": "wrong"}).status_code == 401
+
+        response = client.get("/v1/network", headers={"X-API-Key": "wrong"})
+        assert response.status_code == 429
+        assert int(response.headers["Retry-After"]) >= 1
+
+    def test_valid_credentials_never_consume_the_throttle_budget(self, app_with_middleware):
+        """Well-behaved traffic sees no behaviour change, which is why the default is enabled."""
+        app = app_with_middleware(api_keys=["secret"], throttle=build_failed_auth_throttle(max_failures=2, window_seconds=60))
+        client = TestClient(app)
+
+        for _ in range(25):
+            assert client.get("/v1/network", headers={"X-API-Key": "secret"}).status_code == 200
+
+    def test_throttle_is_enabled_by_default(self, app_with_middleware):
+        """No throttle passed: the production ``add_middleware`` call site must still be covered.
+
+        ``api/app.py`` constructs SecurityMiddleware without a throttle argument, so a default of
+        ``None`` that meant "disabled" would leave the running service exactly as unprotected as
+        before the fix.
+        """
+        app = app_with_middleware(api_keys=["secret"])
+        client = TestClient(app)
+
+        for _ in range(10):
+            assert client.get("/v1/network", headers={"X-API-Key": "wrong"}).status_code == 401
+        assert client.get("/v1/network", headers={"X-API-Key": "wrong"}).status_code == 429
+
+    def test_throttle_can_be_opted_out(self, app_with_middleware):
+        app = app_with_middleware(api_keys=["secret"], throttle=build_failed_auth_throttle(enabled=False))
+        client = TestClient(app)
+
+        for _ in range(25):
+            assert client.get("/v1/network", headers={"X-API-Key": "wrong"}).status_code == 401
+
+    def test_quota_429_is_not_counted_as_an_authentication_failure(self, app_with_middleware):
+        """Only a 401 feeds the throttle.
+
+        A 429 from the identity-keyed limiter is a quota outcome, not a credential guess.
+        Counting it would let an authenticated caller throttle *itself* out of the auth path
+        merely by exceeding its own quota.
+        """
+        throttle = build_failed_auth_throttle(max_failures=2, window_seconds=60)
+        app = app_with_middleware(api_keys=["secret"], rate_limit_enabled=True, rpm=1, throttle=throttle)
+        client = TestClient(app)
+
+        assert client.get("/v1/network", headers={"X-API-Key": "secret"}).status_code == 200
+        for _ in range(5):
+            assert client.get("/v1/network", headers={"X-API-Key": "secret"}).status_code == 429
+
+        # None of those quota 429s were recorded, so the failure budget is still intact.
+        assert throttle.check("testclient")[0] is False
+
+    def test_exempt_paths_bypass_the_throttle(self, app_with_middleware):
+        """Health checks stay reachable even from an IP that is currently throttled."""
+        app = app_with_middleware(api_keys=["secret"], throttle=build_failed_auth_throttle(max_failures=1, window_seconds=60))
+        client = TestClient(app)
+
+        assert client.get("/v1/network", headers={"X-API-Key": "wrong"}).status_code == 401
+        assert client.get("/v1/network", headers={"X-API-Key": "wrong"}).status_code == 429
+        assert client.get("/v1/health").status_code == 200
+
+
+@pytest.mark.unit
+class TestFailedAuthThrottle:
+    """Unit behaviour of the throttle itself (APD-CASCOR-004)."""
+
+    def test_check_does_not_consume_budget(self):
+        throttle = FailedAuthThrottle(max_failures=1, window_seconds=60)
+        for _ in range(10):
+            assert throttle.check("1.2.3.4") == (False, 0)
+        throttle.record_failure("1.2.3.4")
+        blocked, retry_after = throttle.check("1.2.3.4")
+        assert blocked is True
+        assert retry_after >= 1
+
+    def test_is_keyed_per_source_ip(self):
+        throttle = FailedAuthThrottle(max_failures=1, window_seconds=60)
+        throttle.record_failure("1.2.3.4")
+        assert throttle.check("1.2.3.4")[0] is True
+        assert throttle.check("5.6.7.8")[0] is False
+
+    def test_window_rolls_over(self):
+        throttle = FailedAuthThrottle(max_failures=1, window_seconds=0)  # every check starts a new window
+        throttle.record_failure("1.2.3.4")
+        assert throttle.check("1.2.3.4")[0] is False
+
+    def test_disabled_never_blocks(self):
+        throttle = FailedAuthThrottle(max_failures=1, enabled=False)
+        for _ in range(10):
+            throttle.record_failure("1.2.3.4")
+        assert throttle.check("1.2.3.4") == (False, 0)
+
+    def test_reset_clears_state(self):
+        throttle = FailedAuthThrottle(max_failures=1, window_seconds=60)
+        throttle.record_failure("1.2.3.4")
+        assert throttle.check("1.2.3.4")[0] is True
+        throttle.reset()
+        assert throttle.check("1.2.3.4")[0] is False
+
+    def test_prunes_expired_entries(self):
+        """Bounded memory: a dict keyed by attacker-supplied source IPs is itself a DoS vector."""
+        throttle = FailedAuthThrottle(max_failures=100, window_seconds=0)
+        for i in range(FailedAuthThrottle._CLEANUP_INTERVAL + 10):
+            throttle.record_failure(f"10.0.0.{i % 255}")
+        assert len(throttle._failures) <= FailedAuthThrottle._MAX_ENTRIES
+
+    def test_build_factory_defaults_match_the_documented_budget(self):
+        throttle = build_failed_auth_throttle()
+        assert throttle.enabled is True
+        assert throttle.max_failures == 10
