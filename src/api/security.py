@@ -234,6 +234,170 @@ class RateLimiter:
             self._request_count_since_cleanup = 0
 
 
+class FailedAuthThrottle:
+    """IP-keyed throttle for *failed* authentication attempts.
+
+    Ported from :class:`juniper_service_core.security.FailedAuthThrottle` (juniper-ml#1082) to
+    close APD-CASCOR-004. juniper-cascor maintains its own copy of the service-tier security code
+    rather than consuming ``juniper-service-core``, so the shared fix did not reach it; see the
+    ``pre-auth-throttle`` row of ``juniper-ml/tests/test_service_fork_drift.py``.
+
+    :class:`RateLimiter` cannot cover this. It is keyed on the authenticated identity
+    (``key:{api_key}``, falling back to ``ip:{client_ip}``), which means it can only run *after*
+    authentication -- and :class:`~api.middleware.SecurityMiddleware` therefore never reaches it
+    when auth raises. The result is that the entire 401 path consumes no budget at all: an
+    attacker guessing API keys, or simply flooding with garbage credentials, is not rate limited
+    by anything.
+
+    Reordering is the wrong fix. Running the identity-keyed limiter first would mean ``api_key``
+    is always ``None`` at that point, so every caller shares one ``ip:`` bucket -- collapsing all
+    authenticated callers behind a single NAT into one quota. The right shape is two limiters: a
+    coarse one here, before authentication, and the identity-keyed one after.
+
+    This throttle only ever consumes budget on a **failed** attempt, which is what makes it safe
+    to enable by default: a caller presenting a valid key is never counted, so well-behaved
+    traffic sees no behaviour change whatsoever. It is a security control, not a fairness quota,
+    which is also why it should not be made to fail open -- see the note in :meth:`check`.
+
+    Fixed-window, in-memory, and thread-safe: suitable for single-process deployments. Behind
+    multiple replicas each process keeps its own counters, so the effective budget multiplies by
+    the replica count; a shared store is required for exact enforcement across a fleet.
+    """
+
+    _CLEANUP_INTERVAL = 100  # Prune every N recorded failures.
+    _MAX_ENTRIES = 10_000  # Hard cap on tracked source IPs.
+
+    def __init__(
+        self,
+        max_failures: int = 10,
+        window_seconds: int = 60,
+        enabled: bool = True,
+    ) -> None:
+        """Initialize the failed-authentication throttle.
+
+        Args:
+            max_failures: Failed attempts allowed per source IP per window.
+            window_seconds: Window duration in seconds.
+            enabled: Whether the throttle is active.
+        """
+        self._max_failures = max_failures
+        self._window = window_seconds
+        self._enabled = enabled
+        self._failures: dict[str, tuple[int, float]] = defaultdict(lambda: (0, 0.0))
+        self._lock = Lock()
+        self._records_since_cleanup = 0
+
+    @property
+    def enabled(self) -> bool:
+        """Whether the throttle is active."""
+        return self._enabled
+
+    @property
+    def max_failures(self) -> int:
+        """Failed attempts allowed per source IP per window."""
+        return self._max_failures
+
+    def _maybe_cleanup(self) -> None:
+        """Lazy-prune expired buckets. Caller must hold ``_lock``.
+
+        Mirrors :meth:`RateLimiter._maybe_cleanup` (BUG-CC-13) -- an unbounded dict keyed by
+        attacker-supplied source IPs is itself a denial-of-service vector.
+        """
+        now = time.time()
+        cutoff = now - (2 * self._window)
+        expired = [ip for ip, (_, ts) in self._failures.items() if ts < cutoff]
+        for ip in expired:
+            del self._failures[ip]
+        if expired:
+            logger.debug("FailedAuthThrottle: pruned %d expired entries", len(expired))
+        if len(self._failures) > self._MAX_ENTRIES:
+            oldest = sorted(self._failures, key=lambda ip: self._failures[ip][1])
+            for ip in oldest[: len(self._failures) - self._MAX_ENTRIES]:
+                del self._failures[ip]
+
+    def check(self, client_ip: str) -> tuple[bool, int]:
+        """Report whether a source IP is currently over its failed-attempt budget.
+
+        This is a read-only probe -- it does not consume budget. Budget is consumed only by
+        :meth:`record_failure`, so a caller presenting valid credentials is never counted.
+
+        Note this never fails open on error, because it is a security control rather than a
+        fairness quota: a throttle that disables itself under stress hands an attacker a
+        denial-of-protection primitive, where breaking the limiter is the cheapest first move.
+
+        Args:
+            client_ip: The source address to check.
+
+        Returns:
+            Tuple of ``(blocked, retry_after_seconds)``. ``retry_after`` is 0 when not blocked.
+        """
+        if not self._enabled:
+            return (False, 0)
+
+        now = time.time()
+        with self._lock:
+            count, window_start = self._failures[client_ip]
+            if now - window_start >= self._window:
+                return (False, 0)  # Window rolled over; the old count no longer applies.
+            if count >= self._max_failures:
+                return (True, max(1, int(self._window - (now - window_start))))
+            return (False, 0)
+
+    def record_failure(self, client_ip: str) -> None:
+        """Record one failed authentication attempt against a source IP.
+
+        Args:
+            client_ip: The source address that failed to authenticate.
+        """
+        if not self._enabled:
+            return
+
+        now = time.time()
+        with self._lock:
+            self._records_since_cleanup += 1
+            if self._records_since_cleanup >= self._CLEANUP_INTERVAL:
+                self._maybe_cleanup()
+                self._records_since_cleanup = 0
+
+            count, window_start = self._failures[client_ip]
+            if now - window_start >= self._window:
+                self._failures[client_ip] = (1, now)
+            else:
+                self._failures[client_ip] = (count + 1, window_start)
+
+    def reset(self) -> None:
+        """Clear all recorded failures. Useful for testing."""
+        with self._lock:
+            self._failures.clear()
+
+
+def build_failed_auth_throttle(
+    max_failures: int = 10,
+    window_seconds: int = 60,
+    enabled: bool = True,
+) -> FailedAuthThrottle:
+    """Build a :class:`FailedAuthThrottle` from injected config.
+
+    Pure factory: no global settings read and no module-level singleton, matching
+    :func:`juniper_service_core.security.build_failed_auth_throttle`. There is deliberately no
+    ``CASCOR_*`` settings field for the throttle -- neither juniper-service-core nor
+    juniper-recurrence exposes one, and adding a knob here would diverge the forks further.
+
+    Args:
+        max_failures: Failed attempts allowed per source IP per window.
+        window_seconds: Window duration in seconds.
+        enabled: Whether the throttle is active.
+
+    Returns:
+        A configured :class:`FailedAuthThrottle` instance.
+    """
+    return FailedAuthThrottle(
+        max_failures=max_failures,
+        window_seconds=window_seconds,
+        enabled=enabled,
+    )
+
+
 _api_key_auth: APIKeyAuth | None = None
 _rate_limiter: RateLimiter | None = None
 _singleton_lock = Lock()
