@@ -452,7 +452,15 @@ class Settings(BaseSettings):
           a single-string Docker secret file naturally produces; matches
           the juniper-data parser).
         * Already a list (including JSON-deserialised lists from
-          ``pydantic-settings``) → returned as-is.
+          ``pydantic-settings``) → blank / whitespace-only entries dropped; an
+          all-blank list becomes ``None`` (auth disabled).
+
+        APD-CASCOR-006: both branches must filter. The comma-separated-string
+        branch always did; the list branch returned ``v`` untouched, so the JSON
+        form ``JUNIPER_CASCOR_API_KEYS='[""]'`` survived as ``['']`` and enabled
+        authentication that then accepted an empty ``X-API-Key``.
+        ``APIKeyAuth.__init__`` also filters -- that is the load-bearing guard, and
+        this is defence in depth at the boundary where the inconsistency lived.
 
         Without this validator the bare string read from a Docker secrets
         file (e.g. ``CHANGE_BEFORE_PRODUCTION_USE`` from
@@ -467,6 +475,9 @@ class Settings(BaseSettings):
             return None
         if isinstance(v, str):
             return [k.strip() for k in v.split(",") if k.strip()]
+        if isinstance(v, (list, tuple)):
+            cleaned = [k.strip() if isinstance(k, str) else k for k in v if not isinstance(k, str) or k.strip()]
+            return cleaned or None
         return v  # type: ignore[return-value]
 
     rate_limit_enabled: bool = _JUNIPER_CASCOR_API_RATELIMIT_DISABLED
