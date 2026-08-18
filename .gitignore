@@ -48,21 +48,26 @@ __pycache__/*
 __init__.cpython*
 **/__init__.cpython*
 
-# CascadeCorrelationNetwork class snapshots
+# CascadeCorrelationNetwork snapshot ARTIFACTS.
+#
+# `src/snapshots/` is an importable Python package (snapshot_serializer.py,
+# snapshot_cli.py, snapshot_common.py, ...) that ALSO receives .h5 artifacts at
+# runtime. Six of the rules here used to ignore the whole directory
+# (`src/snapshots/*`, `src/snapshots/`, `src/snapshots`, and the `**/snapshots`
+# equivalents), which swept in that tracked source: editing any module in it
+# required `git add -f`, and a glob in this directory is a code-deletion tool --
+# a cleanup once removed five snapshot MODULES and broke every boot (cascor#501).
+#
+# Ignore the artifacts by extension/name instead, so the package stays visible.
 **/cascor/cascor_snapshots/*
 cascor_snapshot_*.h5
 
 src/snapshots/snapshot_*.h5
 src/snapshots/*.h5
-src/snapshots/*
-src/snapshots/
-src/snapshots
 
 **/snapshots/snapshot_*.h5
 **/snapshots/*.h5
-**/snapshots/*
-**/snapshots/
-**/snapshots
+**/snapshots/snapshot_history.jsonl
 
 # Sensitive files and dirs
 .env

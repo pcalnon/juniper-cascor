@@ -426,8 +426,27 @@ class Logger(logging.getLoggerClass()):
             _console_message = cls._logging_message(cls._formatter_string_console, cls._console_dict)
             _file_message = cls._logging_message(cls._formatter_string_file, cls._file_dict)
             print(f"+{_console_message(frame, tsp, level, message)}")
-            with open(cls._logging_file, "a") as f:
-                f.write(f"+{_file_message(frame, tsp, level, message)}\n")
+            _line = f"+{_file_message(frame, tsp, level, message)}\n"
+            try:
+                with open(cls._logging_file, "a") as f:
+                    f.write(_line)
+            except FileNotFoundError:
+                # The log directory may legitimately not exist yet:
+                #   * a fresh checkout or `git worktree add` has no `logs/`, and
+                #     `_logging_file` is resolved from the checkout root at IMPORT
+                #     time (see the class attribute above), so the very first
+                #     classmethod log call crashed the process before anything
+                #     else could run;
+                #   * `JUNIPER_CASCOR_LOG_DIR` (Q-6) lets an operator point the log
+                #     somewhere new, which makes "directory does not exist" a
+                #     first-class case rather than an edge one.
+                # `Logger.__init__` does create the directory, but only inside its
+                # dictConfig branch -- and classmethod calls can precede any
+                # instance being constructed. Create on demand and retry once;
+                # this costs nothing on the (overwhelmingly common) happy path.
+                os.makedirs(os.path.dirname(cls._logging_file) or ".", exist_ok=True)
+                with open(cls._logging_file, "a") as f:
+                    f.write(_line)
 
     ####################################################################################################################################
     # Define logging methods
