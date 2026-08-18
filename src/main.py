@@ -39,15 +39,23 @@ import logging.config
 import os
 import sys
 
-# PARALLEL-FIX (RC-1): Set BLAS thread environment variables BEFORE any library that uses
-# BLAS (numpy, torch, scipy) is imported. These environment variables are read once when the
-# BLAS library is first loaded; setting them after import has no effect. This prevents the
-# parent process from spawning excessive internal threads that would compete with worker
-# processes during parallel candidate training.
-# Values here are defaults; they can be overridden by the user's environment.
-os.environ.setdefault("OMP_NUM_THREADS", "2")
-os.environ.setdefault("MKL_NUM_THREADS", "2")
-os.environ.setdefault("OPENBLAS_NUM_THREADS", "2")
+# PARALLEL-FIX (RC-1), corrected in #531: the BLAS thread policy is now shared with the SERVICE
+# entry point instead of living here alone. Must run BEFORE any BLAS-importing module (numpy,
+# torch, scipy) -- these variables are read once at library load and are inherited, unchangeably,
+# by every forkserver-created candidate worker.
+#
+# This used to hard-cap all three to 2. The service enters via `uvicorn api.app:create_app`, never
+# executed it, and so loaded BLAS uncapped -- two entry points into the same trainer running
+# different thread pools by accident of which file started the process. Measured cost: the capped
+# path's candidate phase ran 1.52x the uncapped path's on identical data and initialisation, with
+# 1.30x attributable to the cap (juniper-cascor#531). The default is now a no-op, matching the
+# service; `JUNIPER_CASCOR_BLAS_THREADS` opts back in.
+#
+# RC-1's actual oversubscription fix -- torch.set_num_threads() per worker and for the parent --
+# is untouched and does not depend on these variables.
+from parallelism.blas_threads import configure_blas_threads
+
+configure_blas_threads()
 
 from dotenv import load_dotenv
 
