@@ -26,6 +26,49 @@ class TestAPIKeyAuth:
         auth = APIKeyAuth(["key1", "key2"])
         assert auth.enabled
 
+    def test_blank_key_does_not_enable_auth(self) -> None:
+        """APD-CASCOR-006: a blank key must not enable authentication.
+
+        ``JUNIPER_CASCOR_API_KEYS='[""]'`` parses to ``['']``. Without the filter
+        that set ``_enabled = True`` and then validated an empty ``X-API-Key`` --
+        strictly worse than auth being off, because the deployment believes it is
+        protected.
+        """
+        assert not APIKeyAuth([""]).enabled
+
+    def test_whitespace_only_key_does_not_enable_auth(self) -> None:
+        for blank in (" ", "\t", "\n", "   \t\n "):
+            assert not APIKeyAuth([blank]).enabled, f"{blank!r} must not enable auth"
+
+    def test_blank_key_never_validates(self) -> None:
+        """The impact, not just the flag: an empty key must never be accepted.
+
+        With ONLY a blank key auth is disabled, so ``validate`` is vacuously True --
+        which is why the meaningful assertion pairs a blank with a real key and
+        checks that the blank still does not admit an empty ``X-API-Key``.
+        """
+        auth = APIKeyAuth(["", "real-key"])
+        assert auth.enabled
+        assert auth.validate("real-key")
+        assert not auth.validate("")
+        assert not auth.validate(" ")
+
+    def test_blank_keys_are_dropped_but_real_ones_kept(self) -> None:
+        auth = APIKeyAuth(["", "  ", "real-key", "\t"])
+        assert auth.enabled
+        assert auth.validate("real-key")
+
+    def test_non_string_entries_are_dropped(self) -> None:
+        """A malformed JSON list must not crash or half-enable auth.
+
+        The filter runs before the element is hashed into the set, so an
+        unhashable entry cannot raise TypeError here.
+        """
+        assert not APIKeyAuth([None, 0, {}]).enabled  # type: ignore[list-item]
+        auth = APIKeyAuth([None, "real-key"])  # type: ignore[list-item]
+        assert auth.enabled
+        assert auth.validate("real-key")
+
     def test_validate_returns_true_when_disabled(self) -> None:
         """Validate should return True when auth is disabled."""
         auth = APIKeyAuth(None)
@@ -425,3 +468,40 @@ class TestSecurityModuleFunctions:
         limiter2 = get_rate_limiter()
         assert auth1 is not auth2
         assert limiter1 is not limiter2
+
+
+@pytest.mark.unit
+class TestApiKeysSettingsValidator:
+    """APD-CASCOR-006: both branches of ``_parse_api_keys`` must filter blanks.
+
+    The comma-separated-string branch always did; the list branch returned ``v``
+    untouched, which is why the JSON form was the reachable shape of this defect.
+    Mirrors the juniper-data sibling test of the same name.
+    """
+
+    @staticmethod
+    def _parse(value):
+        from api.settings import Settings
+
+        return Settings._parse_api_keys(value)
+
+    def test_json_list_of_one_blank_becomes_none(self) -> None:
+        """The exact reachable shape: JUNIPER_CASCOR_API_KEYS='[""]'."""
+        assert self._parse([""]) is None
+
+    def test_json_list_of_whitespace_becomes_none(self) -> None:
+        assert self._parse(["  ", "\t"]) is None
+
+    def test_json_list_keeps_real_keys_and_strips_them(self) -> None:
+        assert self._parse(["  real  ", ""]) == ["real"]
+
+    def test_comma_string_branch_still_filters(self) -> None:
+        """Regression guard on the branch that was already correct."""
+        assert self._parse("a, ,b") == ["a", "b"]
+
+    def test_none_and_empty_string_are_unchanged(self) -> None:
+        assert self._parse(None) is None
+        assert self._parse("") is None
+
+    def test_tuple_is_handled_like_a_list(self) -> None:
+        assert self._parse(("", "real")) == ["real"]

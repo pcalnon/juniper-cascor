@@ -433,6 +433,13 @@ class CascadeHDF5Serializer:
                 self._save_network_parameters_to_hdf5_helper(network, opt_group)
             except Exception as e:
                 self.logger.warning(f"CascadeHDF5Serializer: Could not save optimizer state: {e}")
+        elif hasattr(network, "output_optimizer"):
+            # The attribute exists but is None -- e.g. a network whose topology was
+            # edited, or one restored from a snapshot whose optimizer could not be
+            # rebuilt. No optimizer group is written, so any optimizer state the
+            # source snapshot carried is dropped on this save. That used to be
+            # entirely silent; say it out loud.
+            self.logger.warning("CascadeHDF5Serializer: network.output_optimizer is None - writing no optimizer group; optimizer state from any source snapshot is not carried forward")
 
         self.logger.debug("CascadeHDF5Serializer: Saved parameters")
 
@@ -445,7 +452,16 @@ class CascadeHDF5Serializer:
         }
         write_str_dataset(opt_group, "state_dict", json.dumps(opt_state_serializable))
         write_str_attr(opt_group, "optimizer_type", type(network.output_optimizer).__name__)
-        write_str_attr(opt_group, "learning_rate", network.learning_rate)
+        # Record the lr the OPTIMIZER is actually running with. ``network.learning_rate``
+        # is a separate field that diverges from ``config.optimizer_config.learning_rate``
+        # (what ``_create_optimizer`` reads) after a runtime params patch, so persisting it
+        # here recorded a value the optimizer never used.
+        actual_lr = getattr(network, "learning_rate", None)
+        try:
+            actual_lr = network.output_optimizer.param_groups[0]["lr"]
+        except (AttributeError, IndexError, KeyError, TypeError):
+            pass
+        write_str_attr(opt_group, "learning_rate", actual_lr)
         self.logger.debug("CascadeHDF5Serializer: Saved optimizer state")
 
     def _save_hidden_units(self, hdf5_file: h5py.File, network, compression: str, compression_opts: int) -> None:
@@ -1029,34 +1045,106 @@ class CascadeHDF5Serializer:
 
         self.logger.debug("CascadeHDF5Serializer: Loaded parameters")
 
+    @staticmethod
+    def _coerce_optimizer_lr(raw: Any, fallback: float) -> float:
+        """Coerce a persisted ``learning_rate`` value to ``float``.
+
+        ``learning_rate`` is written through ``write_str_attr``, which stores
+        ``np.bytes_(str(value))``. Reading it back with a bare ``attrs.get`` and
+        handing it to an optimizer raises ``TypeError: '<=' not supported between
+        instances of 'float' and 'numpy.bytes_'`` inside torch's ``0.0 <= lr``
+        validation -- and every snapshot in the corpus stores it as bytes, so that
+        fires on essentially every load. Accepts bytes / str / numpy scalar /
+        float so both the historical string form and a plain numeric attribute
+        round-trip.
+        """
+        if raw is None:
+            return float(fallback)
+        if isinstance(raw, (bytes, bytearray, np.bytes_)):
+            raw = raw.decode("utf-8", "replace")
+        try:
+            return float(raw)
+        except (TypeError, ValueError):
+            return float(fallback)
+
+    @staticmethod
+    def _rehydrate_optimizer_state(opt_state_dict: Dict[str, Any]) -> Dict[str, Any]:
+        """Return a JSON-round-tripped optimizer ``state_dict`` in torch form.
+
+        ``_save_network_parameters_to_hdf5_helper`` stringifies the per-parameter
+        keys and calls ``.tolist()`` on every tensor. **``load_state_dict`` ACCEPTS
+        that raw JSON form without raising** -- and then keys the state by the
+        strings ``"0"`` / ``"1"``, which match no ``Parameter``. The result is an
+        optimizer that reports "restored" while carrying no usable state, training
+        silently from a fresh start. Keys must return to ``int`` and buffers to
+        tensors, or the restore is a lie.
+        """
+        state: Dict[Any, Any] = {}
+        for key, entry in (opt_state_dict.get("state") or {}).items():
+            try:
+                key = int(key)
+            except (TypeError, ValueError):
+                pass
+            state[key] = {inner_k: (torch.tensor(inner_v) if isinstance(inner_v, list) else inner_v) for inner_k, inner_v in (entry or {}).items()}
+        return {"state": state, "param_groups": opt_state_dict.get("param_groups", [])}
+
     def _load_optimizer_state_from_hdf5_helper(self, opt_group, network):
         import torch.optim as optim
 
-        # Get optimizer type
         opt_type = read_str_attr(opt_group, "optimizer_type", "Adam")
-        learning_rate = opt_group.attrs.get("learning_rate", network.learning_rate)
 
-        # Create temporary output layer to get parameters for optimizer
+        # Parse the persisted state first: its ``param_groups[0]["lr"]`` is the
+        # learning rate the optimizer actually ran with. The ``learning_rate``
+        # attribute records ``network.learning_rate``, which diverges from
+        # ``config.optimizer_config.learning_rate`` (what ``_create_optimizer``
+        # reads) after any runtime params patch, so the attribute alone is not
+        # authoritative.
+        opt_state_dict = None
+        if "state_dict" in opt_group:
+            try:
+                opt_state_dict = json.loads(read_str_dataset(opt_group, "state_dict"))
+            except (ValueError, TypeError) as exc:
+                self.logger.warning(f"CascadeHDF5Serializer: Could not parse optimizer state_dict: {exc}")
+
+        learning_rate = self._coerce_optimizer_lr(opt_group.attrs.get("learning_rate"), network.learning_rate)
+        if opt_state_dict:
+            param_groups = opt_state_dict.get("param_groups") or []
+            if param_groups and "lr" in param_groups[0]:
+                learning_rate = self._coerce_optimizer_lr(param_groups[0]["lr"], learning_rate)
+
+        # Rebuild the output layer the optimizer was bound to at save time.
+        # ``nn.Linear`` stores weight as (out, in) -- the transpose of
+        # ``output_weights`` -- which is the shape the persisted buffers carry.
         input_size = network.output_weights.shape[0]
         output_layer = torch.nn.Linear(input_size, network.output_size)
         with torch.no_grad():
             output_layer.weight.copy_(network.output_weights.t())
             output_layer.bias.copy_(network.output_bias)
 
-        # Create optimizer (currently only Adam supported)
-        # TODO: Extend to support more optimizers
-        if opt_type != "Adam":
-            self.logger.warning(f"Unknown optimizer type: {opt_type}, using Adam")
-        network.output_optimizer = optim.Adam(output_layer.parameters(), lr=learning_rate)
+        # Honour the recorded optimizer class. ``optimizer_type`` is NOT persisted
+        # anywhere else in the snapshot (``OptimizerConfig`` is skipped by
+        # ``_config_to_dict``), so this group is its only record -- rebuilding
+        # everything as Adam makes ``GET`` training params report a metaparameter
+        # the operator never chose.
+        opt_cls = getattr(optim, opt_type, None)
+        type_matched = isinstance(opt_cls, type) and issubclass(opt_cls, optim.Optimizer)
+        if not type_matched:
+            self.logger.warning(f"CascadeHDF5Serializer: Unrecognized optimizer type {opt_type!r}; rebuilding as Adam WITHOUT restoring state")
+            opt_cls = optim.Adam
 
-        # Load optimizer state if state_dict exists
-        if "state_dict" in opt_group:
-            opt_state_json = read_str_dataset(opt_group, "state_dict")
-            opt_state_dict = json.loads(opt_state_json)
-            # Note: State restoration is complex and may not fully restore momentum. This provides the structure but training may need a few warmup steps
-            self.logger.debug("CascadeHDF5Serializer: Loaded optimizer state")
-            self.logger.debug(f"CascadeHDF5Serializer: Note that optimizer state restoration may be incomplete: {opt_state_dict.keys()}")
-        else:
+        network.output_optimizer = opt_cls(output_layer.parameters(), lr=learning_rate)
+
+        if opt_state_dict and type_matched:
+            try:
+                network.output_optimizer.load_state_dict(self._rehydrate_optimizer_state(opt_state_dict))
+                self.logger.debug(f"CascadeHDF5Serializer: Restored {opt_type} state ({len(opt_state_dict.get('state') or {})} parameter entries)")
+            except (KeyError, ValueError, TypeError) as exc:
+                # Buffers differ per optimizer family (Adam keeps exp_avg/step, SGD
+                # momentum_buffer), so a type/shape mismatch must degrade rather
+                # than propagate -- raising here would fail loads that succeed
+                # today. The freshly-built optimizer is kept.
+                self.logger.warning(f"CascadeHDF5Serializer: Could not restore {opt_type} state ({exc}); optimizer rebuilt without it")
+        elif opt_state_dict is None:
             self.logger.debug("CascadeHDF5Serializer: Created optimizer without state dict")
 
     def _load_hidden_units(self, hdf5_file: h5py.File, network) -> None:

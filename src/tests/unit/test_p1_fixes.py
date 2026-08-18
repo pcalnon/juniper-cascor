@@ -94,6 +94,16 @@ def _save_and_reload_network_hdf5_helper(tmpdir, network, CascadeCorrelationNetw
     loaded_network = CascadeCorrelationNetwork.load_from_hdf5(str(filepath))
     assert loaded_network is not None, "Network should load successfully"  # trunk-ignore(bandit/B101)
     assert hasattr(loaded_network, "output_optimizer"), "Loaded network should have optimizer"  # trunk-ignore(bandit/B101)
+    # ``hasattr`` alone is satisfied by ``None`` -- which is exactly what this
+    # assertion used to allow, so a load that silently dropped the optimizer
+    # printed the success banner below for years. Mirror the pre-save assertions.
+    assert loaded_network.output_optimizer is not None, "Optimizer should be restored, not None"  # trunk-ignore(bandit/B101)
+    saved_optimizer_cls = type(network.output_optimizer).__name__
+    assert type(loaded_network.output_optimizer).__name__ == saved_optimizer_cls, "Restored optimizer should be the same class as the saved one"  # trunk-ignore(bandit/B101)
+    # State must be keyed by Parameter objects. ``load_state_dict`` accepts the
+    # JSON-round-tripped form with string keys WITHOUT raising, producing an
+    # optimizer that reports "restored" while carrying no usable state.
+    assert all(not isinstance(k, str) for k in loaded_network.output_optimizer.state), "Restored optimizer state must not be keyed by strings"  # trunk-ignore(bandit/B101)
 
     print("✅ PASS: Optimizer saved and restored successfully")
 
