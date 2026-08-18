@@ -29,7 +29,15 @@ class APIKeyAuth:
         Args:
             api_keys: List of valid API keys. If None or empty, auth is disabled.
         """
-        self._api_keys: set[str] = set(api_keys) if api_keys else set()
+        # APD-CASCOR-006: blank / whitespace-only / non-string entries are filtered
+        # out BEFORE `_enabled` is derived. Without the filter,
+        # ``JUNIPER_CASCOR_API_KEYS='[""]'`` parses to ``['']``, sets
+        # ``_enabled = True``, and then validates an empty ``X-API-Key``. That is
+        # strictly worse than authentication being off, because the deployment
+        # believes it is protected. Byte-identical to the canonical filter in
+        # ``juniper_service_core.security.APIKeyAuth`` (security.py:44), which this
+        # fork otherwise shadows.
+        self._api_keys: set[str] = {k for k in (api_keys or []) if isinstance(k, str) and k.strip()}
         self._enabled = len(self._api_keys) > 0
 
     @property

@@ -25,6 +25,7 @@ from helpers.utilities import set_deterministic_behavior
 
 from cascade_correlation.cascade_correlation import CascadeCorrelationNetwork
 from cascade_correlation.cascade_correlation_config.cascade_correlation_config import CascadeCorrelationConfig
+from snapshots.snapshot_common import write_str_attr
 from snapshots.snapshot_serializer import CascadeHDF5Serializer
 
 
@@ -72,7 +73,43 @@ class TestLoadOptimizerStateHelper:
 
     @pytest.mark.unit
     def test_load_optimizer_unknown_type_falls_back_to_adam(self):
-        """Unknown optimizer type falls back to Adam with warning."""
+        """An UNRESOLVABLE optimizer type falls back to Adam with a warning.
+
+        Previously this test used ``"SGD"`` as the stand-in for "unknown", which
+        pinned the silent SGD -> Adam downgrade as intended behaviour. SGD is a
+        real ``torch.optim`` class and is now honoured (see
+        ``test_load_optimizer_honours_recorded_sgd_type``), so the unknown case
+        needs a genuinely unresolvable name.
+        """
+        serializer = _make_serializer()
+        network = _make_network()
+        network.train_output_layer(torch.randn(10, 2), torch.randn(10, 2), epochs=2)
+
+        with tempfile.NamedTemporaryFile(suffix=".h5", delete=False) as f:
+            filepath = f.name
+
+        try:
+            with h5py.File(filepath, "w") as hf:
+                opt_group = hf.create_group("optimizer")
+                opt_group.attrs["optimizer_type"] = "NotARealOptimizer"
+                opt_group.attrs["learning_rate"] = 0.01
+
+            with h5py.File(filepath, "r") as hf:
+                serializer._load_optimizer_state_from_hdf5_helper(hf["optimizer"], network)
+                assert network.output_optimizer is not None
+                assert type(network.output_optimizer).__name__ == "Adam"
+            serializer.logger.warning.assert_called()
+        finally:
+            os.unlink(filepath)
+
+    @pytest.mark.unit
+    def test_load_optimizer_honours_recorded_sgd_type(self):
+        """A snapshot recording SGD restores an SGD, not an Adam.
+
+        ``optimizer_type`` is not persisted anywhere else in the snapshot, so
+        rebuilding every optimizer as Adam made ``GET`` training params report a
+        metaparameter the operator never chose.
+        """
         serializer = _make_serializer()
         network = _make_network()
         network.train_output_layer(torch.randn(10, 2), torch.randn(10, 2), epochs=2)
@@ -88,8 +125,82 @@ class TestLoadOptimizerStateHelper:
 
             with h5py.File(filepath, "r") as hf:
                 serializer._load_optimizer_state_from_hdf5_helper(hf["optimizer"], network)
+                assert type(network.output_optimizer).__name__ == "SGD"
+        finally:
+            os.unlink(filepath)
+
+    @pytest.mark.unit
+    def test_load_optimizer_coerces_bytes_learning_rate(self):
+        """``learning_rate`` persisted as bytes must not break the load.
+
+        The production writer stores it through ``write_str_attr`` as
+        ``np.bytes_``; reading it raw and handing it to torch raises
+        ``TypeError: '<=' not supported between instances of 'float' and
+        'numpy.bytes_'``. Fixtures that write a plain float bypass the real
+        writer and cannot catch this -- so write bytes, as production does.
+        """
+        serializer = _make_serializer()
+        network = _make_network()
+        network.train_output_layer(torch.randn(10, 2), torch.randn(10, 2), epochs=2)
+
+        with tempfile.NamedTemporaryFile(suffix=".h5", delete=False) as f:
+            filepath = f.name
+
+        try:
+            with h5py.File(filepath, "w") as hf:
+                opt_group = hf.create_group("optimizer")
+                write_str_attr(opt_group, "optimizer_type", "Adam")
+                write_str_attr(opt_group, "learning_rate", 0.025)
+
+            with h5py.File(filepath, "r") as hf:
+                serializer._load_optimizer_state_from_hdf5_helper(hf["optimizer"], network)
                 assert network.output_optimizer is not None
-            serializer.logger.warning.assert_called()
+                assert network.output_optimizer.param_groups[0]["lr"] == pytest.approx(0.025)
+        finally:
+            os.unlink(filepath)
+
+    @pytest.mark.unit
+    def test_optimizer_state_survives_real_round_trip(self):
+        """End-to-end contract: state survives save -> load through the REAL writer.
+
+        Guards the inert-restore trap: ``load_state_dict`` accepts the
+        JSON-round-tripped form with string keys without raising, yielding an
+        optimizer that reports "restored" but whose state matches no parameter.
+        """
+        serializer = _make_serializer()
+        network = _make_network()
+        network.train_output_layer(torch.randn(10, 2), torch.randn(10, 2), epochs=3)
+        before = network.output_optimizer.state_dict()
+
+        with tempfile.NamedTemporaryFile(suffix=".h5", delete=False) as f:
+            filepath = f.name
+
+        try:
+            assert serializer.save_network(network, filepath)
+            loaded = serializer.load_network(filepath, restore_multiprocessing=False)
+            assert loaded is not None
+            opt = loaded.output_optimizer
+            assert opt is not None
+            saved_optimizer_cls = type(network.output_optimizer).__name__
+            assert type(opt).__name__ == saved_optimizer_cls
+            # Parameter-keyed, never string-keyed.
+            assert opt.state, "restored optimizer carries no state"
+            assert all(not isinstance(k, str) for k in opt.state)
+            # Buffers are tensors and the step counter survived.
+            entry = next(iter(opt.state.values()))
+            assert any(isinstance(v, torch.Tensor) for v in entry.values())
+            want_step = next(iter(before["state"].values())).get("step")
+            if want_step is not None and "step" in entry:
+                assert float(entry["step"]) == pytest.approx(float(want_step))
+            # A re-save must not silently drop the optimizer group.
+            with tempfile.NamedTemporaryFile(suffix=".h5", delete=False) as f2:
+                second = f2.name
+            try:
+                assert serializer.save_network(loaded, second)
+                with h5py.File(second, "r") as hf:
+                    assert "params/output_layer/optimizer" in hf
+            finally:
+                os.unlink(second)
         finally:
             os.unlink(filepath)
 
