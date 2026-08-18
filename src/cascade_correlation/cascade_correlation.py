@@ -3862,18 +3862,21 @@ class CascadeCorrelationNetwork:
         logger = Logger
         from queue import Empty
 
-        # PARALLEL-FIX (RC-1): Pin PyTorch internal thread pool to configured thread count per worker.
-        # Without this, each worker defaults to using ALL CPU cores for BLAS/autograd threads,
-        # causing N_workers * M_threads oversubscription that effectively serializes execution.
-        # Environment variables must be set before any BLAS operation; torch.set_num_threads()
-        # controls the PyTorch ATen thread pool directly.
+        # PARALLEL-FIX (RC-1): pin the PyTorch ATen thread pool per worker. Without this each
+        # worker defaults to using ALL CPU cores for BLAS/autograd threads, causing
+        # N_workers * M_threads oversubscription that effectively serializes execution. THIS is
+        # the oversubscription guard, it works, and it runs identically on both entry points.
+        #
+        # The three environment variables are deliberately NOT set here (#531). They are read once
+        # when BLAS first loads -- which, in a forkserver-created worker, happened in an ancestor
+        # process long before this line -- so assigning them here could never resize this worker's
+        # pool. It only made the code read as though the worker controlled its own budget, which
+        # is what delayed finding the real, entry-point-level asymmetry. The pool size is settled
+        # by parallelism.blas_threads at entry-point import time; see that module.
         import torch as _torch
 
         _thread_count_str = str(max(1, worker_thread_count))
         _torch.set_num_threads(max(1, worker_thread_count))
-        os.environ["OMP_NUM_THREADS"] = _thread_count_str
-        os.environ["MKL_NUM_THREADS"] = _thread_count_str
-        os.environ["OPENBLAS_NUM_THREADS"] = _thread_count_str
         logger.debug(f"CascadeCorrelationNetwork: _worker_loop: PyTorch thread count pinned to {_thread_count_str} for worker process isolation")
 
         logger.debug("CascadeCorrelationNetwork: _worker_loop: Worker process started")
