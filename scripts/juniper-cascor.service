@@ -43,10 +43,13 @@ ProtectHome=read-only
 ReadWritePaths=%h/Development/python/Juniper/juniper-cascor/logs
 ReadWritePaths=%h/Development/python/Juniper/juniper-cascor/data
 ReadWritePaths=%h/Development/python/Juniper/juniper-cascor/src/cascor_snapshots
-# The SERVICE tier writes src/snapshots (api/lifecycle/manager.py _get_snapshots_dir);
-# cascor_snapshots above is the direct-CLI dir. Without this line, ProtectSystem=strict +
-# ProtectHome=read-only EPERM every POST /v1/snapshots save (latent — fixed with G-13).
-ReadWritePaths=%h/Development/python/Juniper/juniper-cascor/src/snapshots
+# The SERVICE tier writes <repo>/snapshots at the REPO ROOT
+# (api/lifecycle/manager.py _get_snapshots_dir); cascor_snapshots above is the direct-CLI
+# dir. Without this line, ProtectSystem=strict + ProtectHome=read-only EPERM every
+# POST /v1/snapshots save (latent — fixed with G-13). The service path moved out of
+# src/snapshots because that directory is an importable Python package (cascor#501);
+# keep this entry in step with _get_snapshots_dir or saves silently start failing.
+ReadWritePaths=%h/Development/python/Juniper/juniper-cascor/snapshots
 PrivateTmp=true
 ProtectControlGroups=true
 ProtectKernelModules=true

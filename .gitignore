@@ -65,6 +65,12 @@ cascor_snapshot_*.h5
 src/snapshots/snapshot_*.h5
 src/snapshots/*.h5
 
+# The SERVICE tier now writes to <repo>/snapshots (repo root), not into the
+# src/snapshots package -- see api/lifecycle/manager.py _get_snapshots_dir. The
+# two src/snapshots patterns above are retained so any pre-move artifact left in
+# the package is still ignored rather than suddenly showing up as untracked.
+/snapshots/
+
 **/snapshots/snapshot_*.h5
 **/snapshots/*.h5
 **/snapshots/snapshot_history.jsonl

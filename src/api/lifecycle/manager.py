@@ -4404,17 +4404,28 @@ class TrainingLifecycleManager:
         """Return the snapshots directory, creating it if needed.
 
         W-6 (CLI experimentation plan §11 / H-4): ``JUNIPER_CASCOR_SNAPSHOTS_DIR``
-        overrides the legacy hard-coded ``<repo>/src/snapshots`` so a per-run
-        launcher can point each cascor instance at its own ``RUN_DIR/snapshots``
-        (per-run config travels as process env, H-3). Read at call time — not
-        import time — so tests and long-lived processes see the current env. A
-        set-but-blank value is treated as unset (the blank-env guard class).
+        overrides the default so a per-run launcher can point each cascor
+        instance at its own ``RUN_DIR/snapshots`` (per-run config travels as
+        process env, H-3). Read at call time — not import time — so tests and
+        long-lived processes see the current env. A set-but-blank value is
+        treated as unset (the blank-env guard class).
+
+        The default is ``<repo>/snapshots`` — the REPO ROOT, deliberately not
+        ``<repo>/src/snapshots``. ``src/snapshots`` is an importable Python
+        package (``snapshot_serializer.py``, ``snapshot_cli.py``, ...), and
+        writing ``.h5`` artifacts into it coupled data to code: a cleanup glob
+        in that directory once deleted five snapshot MODULES and broke every
+        boot (cascor#501), and ``.gitignore`` had to blanket-ignore the
+        directory, so editing the tracked source required ``git add -f``. The
+        package stays where it is; only the artifact destination moves, landing
+        alongside ``logs/`` at the repo root.
         """
         override = os.environ.get("JUNIPER_CASCOR_SNAPSHOTS_DIR", "").strip()
         if override:
             snapshots_dir = Path(override).expanduser()
         else:
-            snapshots_dir = Path(__file__).resolve().parent.parent.parent / "snapshots"
+            # parents[3] == the repo root (this file is src/api/lifecycle/manager.py).
+            snapshots_dir = Path(__file__).resolve().parents[3] / "snapshots"
         snapshots_dir.mkdir(parents=True, exist_ok=True)
         return snapshots_dir
 

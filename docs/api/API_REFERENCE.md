@@ -703,7 +703,8 @@ print(f"Dataset shape: x={x_train.shape}, y={y_train.shape}")
 
 ## Serialization API
 
-**Location**: `src/snapshots/`
+**Code location**: `src/snapshots/` (the serializer package)  
+**Snapshot artifacts**: `<repo>/snapshots/` — the repo root, overridable with `JUNIPER_CASCOR_SNAPSHOTS_DIR`
 **Stability**: Stable
 
 ### CascadeHDF5Serializer

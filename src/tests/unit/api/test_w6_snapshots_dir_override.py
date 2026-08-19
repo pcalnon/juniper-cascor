@@ -63,12 +63,12 @@ class TestServiceTierOverride:
     def test_unset_falls_back_to_legacy_src_snapshots(self, mgr, monkeypatch):
         monkeypatch.delenv("JUNIPER_CASCOR_SNAPSHOTS_DIR", raising=False)
         resolved = mgr._get_snapshots_dir()
-        assert resolved == _SRC_DIR / "snapshots"
+        assert resolved == _SRC_DIR.parent / "snapshots"
 
     def test_blank_value_is_treated_as_unset(self, mgr, monkeypatch):
         monkeypatch.setenv("JUNIPER_CASCOR_SNAPSHOTS_DIR", "   ")
         resolved = mgr._get_snapshots_dir()
-        assert resolved == _SRC_DIR / "snapshots"
+        assert resolved == _SRC_DIR.parent / "snapshots"
 
     def test_call_time_read_not_cached(self, mgr, tmp_path, monkeypatch):
         """Two calls under different env values resolve differently — the
