@@ -28,11 +28,29 @@ on:
     branches: [main]
     paths:
       - "juniper-cascor-model/**"
+      # The drift guard (juniper-cascor-model/tests/test_drift.py) compares the extracted
+      # trees against their src/ counterparts, so a change on the SRC side must trigger this
+      # workflow too. Filtering on juniper-cascor-model/** alone meant the gate never ran for
+      # the very edits that cause drift -- which is how the W-6 JUNIPER_CASCOR_SNAPSHOTS_DIR
+      # override reached the published package missing entirely.
+      - "src/candidate_unit/**"
+      - "src/utils/**"
+      - "src/log_config/**"
+      - "src/cascor_constants/**"
       - ".github/workflows/ci-cascor-model.yml"
   pull_request:
     branches: [main]
     paths:
       - "juniper-cascor-model/**"
+      # The drift guard (juniper-cascor-model/tests/test_drift.py) compares the extracted
+      # trees against their src/ counterparts, so a change on the SRC side must trigger this
+      # workflow too. Filtering on juniper-cascor-model/** alone meant the gate never ran for
+      # the very edits that cause drift -- which is how the W-6 JUNIPER_CASCOR_SNAPSHOTS_DIR
+      # override reached the published package missing entirely.
+      - "src/candidate_unit/**"
+      - "src/utils/**"
+      - "src/log_config/**"
+      - "src/cascor_constants/**"
       - ".github/workflows/ci-cascor-model.yml"
   workflow_dispatch:
 
