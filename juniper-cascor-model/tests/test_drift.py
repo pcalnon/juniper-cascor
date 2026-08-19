@@ -32,7 +32,13 @@ _INTENTIONAL_DIVERGENCE = frozenset({Path("log_config/logger/logger.py")})
 
 # Files whose only intended divergence is normalized away before comparison, so any other
 # drift in them is still caught.
-_NORMALIZED_DIVERGENCE = frozenset({Path("cascor_constants/constants.py")})
+#
+# EMPTY as of the 2026-08-19 re-extraction: cascor_constants/constants.py used to carry a
+# package-local rewrite of the JUNIPER_CASCOR_LOG_DIR override, which was normalized away
+# here. That rewrite also dropped the ``.strip()`` blank guard, so a whitespace-only value
+# produced a directory literally named "   ". The file is now extracted verbatim, so there
+# is nothing left to normalize -- and any future drift in it is caught byte-for-byte.
+_NORMALIZED_DIVERGENCE: frozenset = frozenset()
 
 _PACKAGE_LOG_DIR_OVERRIDE = """# juniper-cascor-model: honor JUNIPER_CASCOR_LOG_DIR so deployments (e.g. the distributed
 # worker, where this package lives in site-packages and the source-relative logs/ dir is

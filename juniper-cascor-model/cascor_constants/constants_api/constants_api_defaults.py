@@ -81,12 +81,22 @@ _PROJECT_API_MAX_DATASET_TARGETS: int = 100000
 # Lifecycle Manager Defaults (api/lifecycle/manager.py and api/lifecycle/monitor.py)
 #####################################################################################################################################################################################################
 
-# Lifecycle training-limit caps are intentionally large so the user (or the
+# Lifecycle training-limit caps were intentionally large so the user (or the
 # canopy UI), not the API default, chooses when to stop. Aligned with the
 # canopy / requirements-spec values per
 # juniper-ml/notes/code-review/JUNIPER_2026-04-08_JUNIPER-ECOSYSTEM_CANOPY-CASCOR-INTERFACE-ROADMAP.md
 # §3.5 (PR #122 raised these from 1e3/1e3/1e3; rolled back to small values
 # during the Waves 1-6 hardcoded-values cleanup #123 — V35d re-aligns).
+#
+# RETIRED as TrainingState seeds in C2b (training-runtime-defects plan §4 I-4 /
+# §12 Q1): they formed a second default layer that made /v1/training/status
+# disagree with /v1/network (the status projection now mirrors the live
+# network's effective values, and max_epochs is the Q1 derived cap — see
+# TrainingLifecycleManager.derive_epochs_cap). In particular the 1e11
+# _PROJECT_API_LIFECYCLE_DEFAULT_EPOCHS_MAX exceeded the PATCH model's own
+# le=1e6 ceiling, so canopy forms seeded from the echo were wholesale-rejected
+# 422 on every full-form apply. Kept (unreferenced by the lifecycle) only so
+# external importers of the constants surface do not break.
 _PROJECT_API_LIFECYCLE_DEFAULT_MAX_HIDDEN_UNITS: int = 10_000
 _PROJECT_API_LIFECYCLE_DEFAULT_EPOCHS_MAX: int = 100_000_000_000
 _PROJECT_API_LIFECYCLE_DEFAULT_MAX_ITERATIONS: int = 1_000_000

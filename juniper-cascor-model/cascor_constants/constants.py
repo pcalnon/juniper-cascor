@@ -416,10 +416,26 @@ _PROJECT_SOURCE_DIR = _PROJECT_CONSTANTS_DIR.parent.resolve()
 _PROJECT_DIR = _PROJECT_SOURCE_DIR.parent.resolve()
 
 _PROJECT_LOG_DIR_NAME_DEFAULT = "logs"
-# juniper-cascor-model: honor JUNIPER_CASCOR_LOG_DIR so deployments (e.g. the distributed
-# worker, where this package lives in site-packages and the source-relative logs/ dir is
-# not writable) can redirect file logging without code changes. Unset -> source default.
-_PROJECT_LOG_DIR_DEFAULT = pathlib.Path(os.environ.get("JUNIPER_CASCOR_LOG_DIR") or pathlib.Path(_PROJECT_DIR, _PROJECT_LOG_DIR_NAME_DEFAULT))
+# Q-6 (CLI experimentation plan §11 / H-7): JUNIPER_CASCOR_LOG_DIR overrides the checkout-shared
+# <repo>/logs so a per-run launcher can point this process's file log at its own RUN_DIR/logs.
+# Mirrors the W-6 JUNIPER_CASCOR_SNAPSHOTS_DIR override (constants_hdf5.py) in shape and semantics.
+#
+# Why this is not merely a concurrency nicety: cascor's parent logger writes ONLY to this file --
+# stdout carries just candidate-worker lines -- so the markers that decide a run's verdict
+# ("Training completed", "Completed solving ...") exist nowhere else. Two cascor processes sharing a
+# checkout therefore interleave and rotate away each other's evidence. Not hypothetical: that is how
+# the F-P1-3 arm A/B logs were lost when a long-lived service rotated the shared file mid-arc.
+#
+# Constants resolve at import time, so the override must be in the process env before the first
+# cascor_constants import (the launcher exports it before exec). A set-but-blank value is treated as
+# unset (the blank-env guard class). Shares one env var with the service tier
+# (api/service_launcher.py and api/observability.py, both _resolve_log_dir), which reads it at call
+# time so the override holds even on their ImportError fallback path.
+_PROJECT_LOG_DIR_OVERRIDE = os.environ.get("JUNIPER_CASCOR_LOG_DIR", "").strip()
+if _PROJECT_LOG_DIR_OVERRIDE:
+    _PROJECT_LOG_DIR_DEFAULT = pathlib.Path(_PROJECT_LOG_DIR_OVERRIDE).expanduser()
+else:
+    _PROJECT_LOG_DIR_DEFAULT = pathlib.Path(_PROJECT_DIR, _PROJECT_LOG_DIR_NAME_DEFAULT)
 
 _PROJECT_CONFIG_DIR_NAME_DEFAULT = "conf"
 _PROJECT_CONFIG_DIR_DEFAULT = pathlib.Path(_PROJECT_DIR, _PROJECT_CONFIG_DIR_NAME_DEFAULT)
