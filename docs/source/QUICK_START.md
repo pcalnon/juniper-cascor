@@ -142,7 +142,8 @@ The `CascadeCorrelationConfig` dataclass holds all network hyperparameters:
 
 ### Serialization Code
 
-**Location**: `src/snapshots/`
+**Code location**: `src/snapshots/` (the serializer package)  
+**Snapshot artifacts**: `<repo>/snapshots/` — the repo root, overridable with `JUNIPER_CASCOR_SNAPSHOTS_DIR`
 
 - `snapshot_serializer.py` - Main HDF5 save/load logic
 - `snapshot_utils.py` - Utility functions
