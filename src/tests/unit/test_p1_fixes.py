@@ -108,6 +108,54 @@ def _save_and_reload_network_hdf5_helper(tmpdir, network, CascadeCorrelationNetw
     print("✅ PASS: Optimizer saved and restored successfully")
 
 
+def test_2b_optimizer_state_survives_resume():
+    """R3: restoring the optimizer is only half the contract — training must USE it.
+
+    Test 2 above proves the optimizer round-trips through HDF5. It was still
+    discarded the moment training resumed: ``train_output_layer`` rebuilt the
+    optimizer unconditionally on every call, so a resumed run restarted the output
+    layer's optimization from zero moments while reporting a successful restore.
+    """
+    print("\n[Test 2b] Optimizer state survives a resume...")
+    _verify_optimizer_state_survives_resume_helper()
+
+
+def _verify_optimizer_state_survives_resume_helper():
+    from cascade_correlation.cascade_correlation import CascadeCorrelationNetwork
+    from cascade_correlation.cascade_correlation_config.cascade_correlation_config import CascadeCorrelationConfig
+
+    def step_count(optimizer):
+        entry = next(iter(optimizer.state.values()))
+        return int(float(entry["step"]))
+
+    config = CascadeCorrelationConfig(input_size=2, output_size=1)
+    network = CascadeCorrelationNetwork(config=config)
+    x, y = torch.randn(10, 2), torch.randn(10, 1)
+    network.train_output_layer(x, y, epochs=4)
+    warm_step = step_count(network.output_optimizer)
+    assert warm_step == 4, f"expected 4 optimizer steps, got {warm_step}"  # trunk-ignore(bandit/B101)
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        filepath = Path(tmpdir) / "resume_contract.h5"
+        assert network.save_to_hdf5(str(filepath), include_training_state=True), "Save should succeed"  # trunk-ignore(bandit/B101)
+        resumed = CascadeCorrelationNetwork.load_from_hdf5(str(filepath))
+
+    assert resumed is not None, "Network should load successfully"  # trunk-ignore(bandit/B101)
+    assert step_count(resumed.output_optimizer) == warm_step, "Restore alone should preserve the step counter"  # trunk-ignore(bandit/B101)
+
+    weights_before = resumed.output_weights.detach().clone()
+    resumed.train_output_layer(x, y, epochs=3)
+
+    # Continued, not restarted.
+    assert step_count(resumed.output_optimizer) == warm_step + 3, f"Resume must continue the optimizer: expected {warm_step + 3} steps, got {step_count(resumed.output_optimizer)}"  # trunk-ignore(bandit/B101)
+    # ...and the layer genuinely trained. Carrying state over by reusing the
+    # restored optimizer OBJECT would satisfy the step assertion above while
+    # stepping parameters the live layer does not own — a silent no-op.
+    assert not torch.equal(weights_before, resumed.output_weights.detach()), "Output weights did not move — optimizer stepped parameters the layer does not own"  # trunk-ignore(bandit/B101)
+
+    print(f"✅ PASS: Optimizer continued at step {step_count(resumed.output_optimizer)} (was {warm_step}) and the layer trained")
+
+
 def test_3_training_counters_persistence():
     """Test that training counters are persisted in HDF5."""
     print("\n[Test 3] Training counter persistence...")

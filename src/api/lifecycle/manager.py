@@ -4077,6 +4077,10 @@ class TrainingLifecycleManager:
             # optimizer's state dict is keyed by tensor identity —
             # ``current`` is the live key, ``new_tensor`` won't be
             # found until a new optimizer is constructed against it.
+            # No ``output_field``: ``output_optimizer`` optimizes only the output
+            # ``nn.Linear``, so it holds no state for a hidden unit and this is
+            # correctly a no-op. Kept as a call rather than dropped so a future
+            # hidden-unit optimizer inherits the guard.
             self._zero_optimizer_state_for(current)
             self.network.hidden_units[hidden_unit_index][field] = new_tensor
         else:
@@ -4088,7 +4092,7 @@ class TrainingLifecycleManager:
                     "detail": f"shape mismatch: {attr} expects {tuple(current.shape)}, got {tuple(new_tensor.shape)}",
                 }
             # Zero the optimizer state BEFORE reassignment (see above).
-            self._zero_optimizer_state_for(current)
+            self._zero_optimizer_state_for(current, output_field=field)
             requires_grad = bool(getattr(current, "requires_grad", False))
             if requires_grad:
                 new_tensor.requires_grad_(True)
@@ -4113,16 +4117,66 @@ class TrainingLifecycleManager:
         # forward-pass dtypes stay uniform with the existing network.
         return tensor.to(dtype=torch.float32)
 
-    def _zero_optimizer_state_for(self, parameter) -> None:
+    # ``train_output_layer`` builds the output layer as a single ``nn.Linear``,
+    # whose ``parameters()`` yield ``weight`` then ``bias``, so the output
+    # optimizer's flattened parameter list is always ``[weight, bias]`` in that
+    # order. That positional correspondence is the ONLY link between a
+    # network-level tensor (``output_weights`` / ``output_bias``) and the
+    # ``Parameter`` the optimizer keys its state by — the two are never the same
+    # object, which is why the identity lookup below can never match on its own.
+    _OUTPUT_OPTIMIZER_SLOTS: Dict[str, int] = {"weights": 0, "bias": 1}
+
+    def _resolve_optimizer_parameter(self, optimizer, parameter, output_field: Optional[str]):
+        """Find the ``Parameter`` whose optimizer state corresponds to ``parameter``.
+
+        Tries object identity first, so an optimizer that genuinely holds the
+        network-level tensor keeps working, then falls back to the positional slot
+        described on ``_OUTPUT_OPTIMIZER_SLOTS``. Returns None when no correspondence
+        can be established.
+        """
+        state = optimizer.state
+        # Identity, not ``in`` / ``.get`` — dict lookup would fall back to ``==``
+        # on a hash collision, and tensor ``==`` returns a tensor whose truth value
+        # raises rather than answering the question.
+        for key in state:
+            if key is parameter:
+                return key
+        if output_field is None:
+            return None
+        slot = self._OUTPUT_OPTIMIZER_SLOTS.get(output_field)
+        if slot is None:
+            return None
+        params = [p for group in getattr(optimizer, "param_groups", ()) for p in group.get("params", ())]
+        if slot >= len(params):
+            return None
+        candidate = params[slot]
+        # ``nn.Linear.weight`` is the transpose of ``output_weights``, so shapes
+        # differ by construction — but element counts must agree. A mismatch means
+        # the layout assumption no longer holds; zero nothing rather than the wrong
+        # buffer.
+        if candidate.numel() != parameter.numel():
+            self.logger.debug(f"_zero_optimizer_state_for: slot {slot} numel {candidate.numel()} != target numel {parameter.numel()}; skipping")
+            return None
+        return candidate
+
+    def _zero_optimizer_state_for(self, parameter, *, output_field: Optional[str] = None) -> None:
         """Zero out the optimizer's momentum/variance buffers for a
         single parameter, if the network exposes a step-LR optimizer
-        whose ``state`` keys include the parameter object identity.
+        whose ``state`` covers that parameter.
 
-        Best-effort: if the optimizer is None, missing state, or
-        keyed differently, the function is a no-op. The patched
-        weights still take effect; only the optimizer's stale
-        momentum survives, and the next training step will overwrite
-        it within a few iterations regardless.
+        ``output_field`` names which output-layer slot ``parameter`` corresponds to
+        (``"weights"`` / ``"bias"``); omit it for a tensor the output optimizer does
+        not hold. Without it this was a permanent no-op — it was called with
+        ``network.output_weights``, never with the ``nn.Linear`` ``Parameter`` the
+        optimizer actually keys state by — which was harmless only for as long as
+        ``train_output_layer`` threw the optimizer away on every call. Now that a
+        resume carries the moments forward (R3), a weight edit that skipped this
+        would be stepped with pre-edit Adam moments.
+
+        Best-effort: if the optimizer is None, missing state, or keyed
+        unrecognizably, the function is a no-op. The patched weights still take
+        effect; only the optimizer's stale momentum survives, and the next training
+        step will overwrite it within a few iterations regardless.
         """
         optimizer = getattr(self.network, "output_optimizer", None)
         if optimizer is None:
@@ -4130,7 +4184,10 @@ class TrainingLifecycleManager:
         state = getattr(optimizer, "state", None)
         if not isinstance(state, dict):
             return
-        param_state = state.get(parameter)
+        target = self._resolve_optimizer_parameter(optimizer, parameter, output_field)
+        if target is None:
+            return
+        param_state = state.get(target)
         if not isinstance(param_state, dict):
             return
         for key, val in list(param_state.items()):
