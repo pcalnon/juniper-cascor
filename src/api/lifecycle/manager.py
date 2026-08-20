@@ -27,6 +27,8 @@ from api.models.cascor_model import CascorModel
 from api.models.common import coerce_native_scalars as _common_coerce_native_scalars
 from api.observability import TRAINING_SESSION_STATUS_CANCELLED, TRAINING_SESSION_STATUS_FAILURE, TRAINING_SESSION_STATUS_SUCCESS, dec_training_sessions, inc_training_session_completed, inc_training_sessions, observe_training_step_duration, record_training_epoch, set_hidden_units, set_training_accuracy, set_training_loss
 from cascor_constants.constants_api import _PROJECT_API_DRAIN_THREAD_JOIN_TIMEOUT, _PROJECT_API_LIFECYCLE_DEFAULT_CANDIDATE_PATIENCE, _PROJECT_API_NETWORK_INPUT_SIZE_DEFAULT, _PROJECT_API_NETWORK_OUTPUT_SIZE_DEFAULT, _PROJECT_API_PROGRESS_QUEUE_GET_TIMEOUT, _PROJECT_API_PROGRESS_QUEUE_WAIT_TIMEOUT
+from snapshots.snapshot_load_status import SnapshotLoadResult
+from snapshots.snapshot_load_status import absent as snapshot_absent
 
 
 def _env_flag(name: str, *, default: bool) -> bool:
@@ -4558,29 +4560,34 @@ class TrainingLifecycleManager:
     # same set when locking it as read-only.
     _NETWORK_HISTORY_KEYS: tuple = ("train_loss", "value_loss", "train_accuracy", "value_accuracy")
 
-    def _load_snapshot_to_network(self, snapshot_id: str) -> bool:
+    def _load_snapshot_to_network(self, snapshot_id: str) -> SnapshotLoadResult:
         """Locate the snapshot, deserialize, and install on the lifecycle.
 
         Internal helper extracted from ``load_snapshot`` so each Phase 6E
         Sprint B operation (Restore / Replay / Resume / Retrain) can share
         the load semantics while diverging on post-load state mutations
         (FSM transitions, history resets, replay-session setup, etc.).
-        Returns True on success, False if the snapshot is missing or the
-        deserializer fails.
+
+        D-B: returns a :class:`SnapshotLoadResult` rather than a bare ``bool`` so the
+        four verbs can tell the caller *why* a load failed. It is falsy on failure, so
+        ``if not ok:`` call sites read unchanged. Absent is detected in two places —
+        here at the glob, and again inside ``load_network_result`` — which is why the
+        classification cannot live in the serializer alone.
         """
         snapshots_dir = self._get_snapshots_dir()
         matches = [f for f in snapshots_dir.glob("*.h5") if f.stem == snapshot_id]
         if not matches:
             self.logger.warning(f"Snapshot not found: {snapshot_id}")
-            return False
+            return snapshot_absent(f"no snapshot with id {snapshot_id!r}")
 
         from snapshots.snapshot_serializer import CascadeHDF5Serializer
 
         serializer = CascadeHDF5Serializer()
-        network = serializer.load_network(matches[0])
-        if network is None:
-            self.logger.error(f"Failed to load snapshot: {snapshot_id}")
-            return False
+        result = serializer.load_network_result(matches[0])
+        if not result:
+            self.logger.error(f"Failed to load snapshot {snapshot_id}: {result.status} — {result.detail}")
+            return result
+        network = result.network
 
         # WS-6 B-phase: the HDF5 deserializer yields a *bare* CCN — re-wrap it so the
         # manager keeps holding a CascorModel (a getter-only property would leave
@@ -4596,19 +4603,24 @@ class TrainingLifecycleManager:
         # ``/v1/network`` and ``GET /v1/training/params`` after every
         # Restore / Replay / Resume / Retrain load.
         self._sync_training_state_from_network()
-        return True
+        return result
 
-    def _snapshot_result(self, *, loaded: bool, snapshot_id: str, operation: str, reason: Optional[str] = None) -> Dict[str, Any]:
+    def _snapshot_result(self, *, loaded: bool, snapshot_id: str, operation: str, reason: Optional[str] = None, reason_code: Optional[str] = None) -> Dict[str, Any]:
         """Status dict for the snapshot load/restore/resume verbs (WS-6 B2b return
-        convergence toward the ServiceLifecycleManager seam). Internal contract: the
-        snapshot routes build their own HTTP payload via ``_build_unified_payload`` and
-        consume only ``loaded`` for error-mapping."""
+        convergence toward the ServiceLifecycleManager seam).
+
+        ``reason`` is human-readable; ``reason_code`` is the machine-readable
+        discriminator the routes map to a status code (D-B) — one of the
+        ``snapshot_load_status`` constants, or ``None`` for a non-load failure such as
+        an FSM rejection. The routes previously consumed only ``loaded``, so every
+        failure became the same 404 no matter what ``reason`` said."""
         return {
             "loaded": loaded,
             "snapshot_id": snapshot_id,
             "operation": operation,
             "fsm_state": self.state_machine.status.name,
             "reason": reason,
+            "reason_code": reason_code,
         }
 
     def load_snapshot(self, snapshot_id: str) -> Dict[str, Any]:
@@ -4636,9 +4648,9 @@ class TrainingLifecycleManager:
             self.logger.warning(f"load_snapshot rejected: lifecycle is {self.state_machine.status.name}")
             return self._snapshot_result(loaded=False, snapshot_id=snapshot_id, operation="restore", reason=f"rejected: lifecycle is {self.state_machine.status.name}")
 
-        ok = self._load_snapshot_to_network(snapshot_id)
-        if not ok:
-            return self._snapshot_result(loaded=False, snapshot_id=snapshot_id, operation="restore", reason="snapshot not found or failed to load")
+        outcome = self._load_snapshot_to_network(snapshot_id)
+        if not outcome:
+            return self._snapshot_result(loaded=False, snapshot_id=snapshot_id, operation="restore", reason=outcome.detail, reason_code=outcome.status)
 
         # CAN-015d (B-4): transition to Investigating and clear any
         # state from prior snapshot operations. The user explicitly
@@ -4680,9 +4692,9 @@ class TrainingLifecycleManager:
         if self.state_machine.is_started() or self.state_machine.is_paused() or self.state_machine.is_replaying():
             self.logger.warning(f"restore_for_retrain rejected: lifecycle is {self.state_machine.status.name}")
             return self._snapshot_result(loaded=False, snapshot_id=snapshot_id, operation="retrain", reason=f"rejected: lifecycle is {self.state_machine.status.name}")
-        ok = self._load_snapshot_to_network(snapshot_id)
-        if not ok:
-            return self._snapshot_result(loaded=False, snapshot_id=snapshot_id, operation="retrain", reason="snapshot not found or failed to load")
+        outcome = self._load_snapshot_to_network(snapshot_id)
+        if not outcome:
+            return self._snapshot_result(loaded=False, snapshot_id=snapshot_id, operation="retrain", reason=outcome.detail, reason_code=outcome.status)
 
         # Clear history arrays on the network. ``getattr`` rather than direct
         # attribute access so a network that doesn't expose ``history`` yet
@@ -4756,9 +4768,9 @@ class TrainingLifecycleManager:
             self.logger.warning(f"resume_from_snapshot rejected: lifecycle is {self.state_machine.status.name}")
             return self._snapshot_result(loaded=False, snapshot_id=snapshot_id, operation="resume", reason=f"rejected: lifecycle is {self.state_machine.status.name}")
 
-        ok = self._load_snapshot_to_network(snapshot_id)
-        if not ok:
-            return self._snapshot_result(loaded=False, snapshot_id=snapshot_id, operation="resume", reason="snapshot not found or failed to load")
+        outcome = self._load_snapshot_to_network(snapshot_id)
+        if not outcome:
+            return self._snapshot_result(loaded=False, snapshot_id=snapshot_id, operation="resume", reason=outcome.detail, reason_code=outcome.status)
 
         # Compute the resume-point epoch from the loaded network's
         # history. Use the longest array's length so a snapshot that's
@@ -4795,7 +4807,7 @@ class TrainingLifecycleManager:
         self.logger.info(f"Snapshot restored for resume: {snapshot_id} (resume_point_epoch={resume_point})")
         return self._snapshot_result(loaded=True, snapshot_id=snapshot_id, operation="resume")
 
-    def start_replay(self, snapshot_id: str) -> bool:
+    def start_replay(self, snapshot_id: str) -> Dict[str, Any]:
         """Load a snapshot and start a replay session (CAN-015c).
 
         Phase 6E Sprint B B-3. Loads the snapshot identically to
@@ -4815,14 +4827,19 @@ class TrainingLifecycleManager:
         installed.
 
         See ``notes/PHASE_6E_SPRINT_B_DESIGN.md`` §2.2.
+
+        D-B: returns the same ``_snapshot_result`` dict as its three sibling verbs.
+        It previously returned a bare ``bool``, which left it with no channel for a
+        failure reason at all — so replay was the one verb that could not distinguish
+        an absent snapshot from a corrupt one even in principle.
         """
         if self.state_machine.is_started() or self.state_machine.is_paused():
             self.logger.warning(f"start_replay rejected: training is {self.state_machine.status.name}")
-            return False
+            return self._snapshot_result(loaded=False, snapshot_id=snapshot_id, operation="replay", reason=f"rejected: lifecycle is {self.state_machine.status.name}")
 
-        ok = self._load_snapshot_to_network(snapshot_id)
-        if not ok:
-            return False
+        outcome = self._load_snapshot_to_network(snapshot_id)
+        if not outcome:
+            return self._snapshot_result(loaded=False, snapshot_id=snapshot_id, operation="replay", reason=outcome.detail, reason_code=outcome.status)
 
         # If a previous replay session was running, tear it down first
         # so its thread doesn't keep emitting against the new history.
@@ -4853,7 +4870,7 @@ class TrainingLifecycleManager:
         session.start_thread()
 
         self.logger.info(f"Snapshot replay started: {snapshot_id} (length={session.length})")
-        return True
+        return self._snapshot_result(loaded=True, snapshot_id=snapshot_id, operation="replay")
 
     def replay_control(self, action: str, **params: Any) -> Dict[str, Any]:
         """Apply a control action to the active replay session (CAN-015c).

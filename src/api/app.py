@@ -765,12 +765,25 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         """
         # Starlette's ``HTTPException.__init__`` auto-fills ``detail``
         # with ``HTTPStatus(status_code).phrase`` when the caller
-        # doesn't pass one, so ``exc.detail`` is always a string by
+        # doesn't pass one, so ``exc.detail`` is normally a string by
         # the time we get here. ``str()`` defends against future
         # subclasses that might return non-str detail objects.
-        message = str(exc.detail)
+        #
+        # API-09b (first use: D-B's snapshot error taxonomy): a route may instead pass
+        # ``detail={"code": "SEMANTIC_CODE", "message": "..."}`` when the caller needs a
+        # machine-readable discriminator that ``HTTP_NNN`` cannot express — two
+        # different failures sharing one status code, or one failure whose meaning
+        # clients must branch on without string-matching prose. String details are
+        # untouched, so every existing route keeps its exact shape.
+        detail = exc.detail
+        if isinstance(detail, dict) and "message" in detail:
+            code = str(detail.get("code") or f"HTTP_{exc.status_code}")
+            message = str(detail["message"])
+        else:
+            code = f"HTTP_{exc.status_code}"
+            message = str(detail)
         envelope = error_response(
-            code=f"HTTP_{exc.status_code}",
+            code=code,
             message=message,
         )
         return JSONResponse(

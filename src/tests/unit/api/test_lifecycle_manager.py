@@ -1533,7 +1533,7 @@ class TestReplayLifecycleIntegration:
         mgr.create_network(input_size=2, output_size=2)
         mgr.state_machine.handle_command(Command.START)
         with patch.object(mgr, "_get_snapshots_dir", return_value=tmp_path):
-            assert mgr.start_replay("anything") is False
+            assert mgr.start_replay("anything")["loaded"] is False
         assert mgr.state_machine.is_started()
         mgr.shutdown()
 
@@ -1542,7 +1542,7 @@ class TestReplayLifecycleIntegration:
 
         mgr = TrainingLifecycleManager()
         with patch.object(mgr, "_get_snapshots_dir", return_value=tmp_path):
-            assert mgr.start_replay("nonexistent") is False
+            assert mgr.start_replay("nonexistent")["loaded"] is False
         assert mgr.state_machine.is_stopped()
         assert mgr._replay_session is None
         mgr.shutdown()
@@ -1553,7 +1553,7 @@ class TestReplayLifecycleIntegration:
         ctxs = self._stub_load(mgr, tmp_path, {"train_loss": [0.1, 0.2, 0.3], "value_loss": [], "train_accuracy": [], "value_accuracy": []})
         with ctxs[0], ctxs[1]:
             try:
-                assert mgr.start_replay("snap") is True
+                assert mgr.start_replay("snap")["loaded"] is True
                 assert mgr.state_machine.is_replaying()
                 assert mgr._replay_session is not None
                 assert mgr._replay_session.snapshot_id == "snap"
