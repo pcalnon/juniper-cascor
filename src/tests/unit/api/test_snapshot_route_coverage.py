@@ -256,14 +256,16 @@ class TestRestoreSnapshot:
         with patch.object(client.app.state.lifecycle, "load_snapshot", return_value={"loaded": False}):
             response = client.post("/v1/snapshots/nonexistent/restore")
             assert response.status_code == 404
-            assert "not found or failed to load" in response.json()["error"]["message"]
+            assert "not found" in response.json()["error"]["message"]
+            assert response.json()["error"]["code"] == "SNAPSHOT_ABSENT"
 
     def test_restore_snapshot_load_fails_returns_404(self, client):
         """restore_snapshot should return 404 when load_snapshot fails (returns False)."""
         with patch.object(client.app.state.lifecycle, "load_snapshot", return_value={"loaded": False}):
             response = client.post("/v1/snapshots/snap-bad/restore")
             assert response.status_code == 404
-            assert "not found or failed to load" in response.json()["error"]["message"]
+            assert "not found" in response.json()["error"]["message"]
+            assert response.json()["error"]["code"] == "SNAPSHOT_ABSENT"
 
     def test_restore_snapshot_runs_in_thread(self, client):
         """PERF-CC-01: load_snapshot must be invoked via asyncio.to_thread."""
@@ -337,7 +339,8 @@ class TestRetrainFromSnapshot:
         with patch.object(client.app.state.lifecycle, "restore_for_retrain", return_value={"loaded": False}):
             response = client.post("/v1/snapshots/nonexistent/retrain")
             assert response.status_code == 404
-            assert "not found or failed to load" in response.json()["error"]["message"]
+            assert "not found" in response.json()["error"]["message"]
+            assert response.json()["error"]["code"] == "SNAPSHOT_ABSENT"
 
     def test_retrain_snapshot_rejected_when_training_active(self, client):
         """STARTED must surface 409 at the route, not lifecycle 404."""
@@ -469,7 +472,8 @@ class TestResumeSnapshot:
         with patch.object(client.app.state.lifecycle, "resume_from_snapshot", return_value={"loaded": False}):
             response = client.post("/v1/snapshots/nonexistent/resume")
             assert response.status_code == 404
-            assert "not found or failed to load" in response.json()["error"]["message"]
+            assert "not found" in response.json()["error"]["message"]
+            assert response.json()["error"]["code"] == "SNAPSHOT_ABSENT"
 
     def test_resume_snapshot_rejected_when_training_active(self, client):
         """The pre-flight FSM check returns 409 when training is Started."""
@@ -773,7 +777,7 @@ class TestReplaySnapshot:
 
         def fake_start(snapshot_id):
             self._install_replay_session(lifecycle, snapshot_id, length=3)
-            return True
+            return {"loaded": True, "snapshot_id": snapshot_id, "operation": "replay", "reason": None, "reason_code": None}
 
         try:
             with patch.object(lifecycle, "start_replay", side_effect=fake_start):
@@ -791,7 +795,7 @@ class TestReplaySnapshot:
             self._teardown_replay_session(lifecycle)
 
     def test_start_replay_route_404_when_load_fails(self, client):
-        with patch.object(client.app.state.lifecycle, "start_replay", return_value=False):
+        with patch.object(client.app.state.lifecycle, "start_replay", return_value={"loaded": False, "reason": "no snapshot", "reason_code": "snapshot_absent"}):
             response = client.post("/v1/snapshots/nonexistent/replay")
             assert response.status_code == 404
 
@@ -815,7 +819,7 @@ class TestReplaySnapshot:
 
             captured["thread"] = threading.current_thread().name
             self._install_replay_session(client.app.state.lifecycle, snapshot_id)
-            return True
+            return {"loaded": True, "snapshot_id": snapshot_id, "operation": "replay", "reason": None, "reason_code": None}
 
         try:
             with patch.object(client.app.state.lifecycle, "start_replay", side_effect=fake_start):

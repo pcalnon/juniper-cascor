@@ -92,6 +92,10 @@ from utils.activation import ActivationWithDerivative
 
 from .snapshot_common import calculate_tensor_checksum, load_numpy_array, load_tensor, read_str_attr, read_str_dataset, save_numpy_array, save_tensor, verify_tensor_checksum, write_str_attr, write_str_dataset
 from .snapshot_errors import SnapshotSaveError
+from .snapshot_load_status import SnapshotLoadResult
+from .snapshot_load_status import absent as snapshot_absent
+from .snapshot_load_status import corrupt as snapshot_corrupt
+from .snapshot_load_status import loaded as snapshot_loaded
 
 
 class CascadeHDF5Serializer:
@@ -264,8 +268,12 @@ class CascadeHDF5Serializer:
         """
         try:
             with h5py.File(filepath, "r") as hdf5_file:
-                if not self._validate_format(hdf5_file):
-                    return {"valid": False, "error": "Invalid format"}
+                # Report WHICH check failed. ``_validate_format`` covers far more than
+                # the format string — required groups, hidden-unit consistency, param
+                # datasets — so a flat "Invalid format" pointed the operator at the one
+                # thing that was usually fine.
+                if (format_detail := self._validate_format_detail(hdf5_file)) is not None:
+                    return {"valid": False, "error": format_detail}
 
                 # Extract summary information
                 summary = {
@@ -873,10 +881,56 @@ class CascadeHDF5Serializer:
                     save_numpy_array(data_group, key, dataset, compression, compression_opts)
         self.logger.debug("CascadeHDF5Serializer: Saved training data")
 
+    def load_network_result(self, filepath: Union[str, Path], restore_multiprocessing: bool = True) -> SnapshotLoadResult:
+        """
+        Load a CascadeCorrelationNetwork, reporting the reason on failure.
+
+        D-B: the load itself still goes through :meth:`load_network`, which stays the
+        seam every caller and test knows. Only when it comes back ``None`` does this
+        run a second, cheap pass to work out WHY — because that is the one thing the
+        bare ``None`` throws away, and the API then reported every cause as
+        ``404 "not found or failed to load"``, fusing *pick a different snapshot* with
+        *investigate data loss*.
+
+        Classifying after the fact rather than threading a reason through the loader
+        keeps the hot path and the public signature untouched; the extra file open
+        happens only on the error path.
+
+        Returns:
+            SnapshotLoadResult — ``network`` set and ``status == SNAPSHOT_OK`` on
+            success; otherwise ``SNAPSHOT_ABSENT`` or ``SNAPSHOT_CORRUPT`` with a
+            human-readable ``detail``.
+        """
+        network = self.load_network(filepath, restore_multiprocessing)
+        if network is not None:
+            return snapshot_loaded(network)
+        return self._classify_load_failure(filepath)
+
+    def _classify_load_failure(self, filepath: Union[str, Path]) -> SnapshotLoadResult:
+        """Work out why :meth:`load_network` returned ``None`` (D-B).
+
+        Absent is unambiguous. Everything else is corrupt: the file is there but the
+        deserializer could not turn it into a network — a rejected format, a missing
+        group, an unreadable file. ``_validate_format_detail`` supplies the specific
+        reason when it can, so the operator is told which check failed rather than
+        just "failed to load".
+        """
+        if not os.path.exists(filepath):
+            return snapshot_absent(f"no snapshot file at {filepath}")
+        try:
+            with h5py.File(filepath, "r") as hdf5_file:
+                detail = self._validate_format_detail(hdf5_file)
+        except Exception as exc:  # noqa: BLE001 - any read failure means corrupt
+            return snapshot_corrupt(f"unreadable snapshot: {exc}")
+        return snapshot_corrupt(detail or "snapshot could not be deserialized into a network")
+
     # def load_network(self, filepath: Union[str, Path], restore_multiprocessing: bool = True) -> Optional:  # Original - invalid Optional usage
     def load_network(self, filepath: Union[str, Path], restore_multiprocessing: bool = True) -> Optional[Any]:
         """
         Load a CascadeCorrelationNetwork from HDF5 format.
+
+        Returns ``None`` on every failure. Callers that need to distinguish *absent*
+        from *corrupt* (D-B) should use :meth:`load_network_result` instead.
 
         Args:
             filepath: Path to HDF5 file
@@ -911,6 +965,11 @@ class CascadeHDF5Serializer:
                 if restore_multiprocessing and "mp" in hdf5_file:
                     self._restore_multiprocessing_state(hdf5_file, network)
                 if not self._validate_shapes(network):
+                    # D-E (tracked separately, juniper-ml#1199): this only warns, and the
+                    # shape-broken network is installed on the live lifecycle anyway. One
+                    # violation class then trains silently on garbage. Deliberately NOT
+                    # changed here — reclassifying it as CORRUPT is a behaviour change over
+                    # ~170 currently-loadable archive files and needs its own decision.
                     self.logger.warning("CascadeHDF5Serializer: Network loaded but shape validation found issues")
             self.logger.info(f"CascadeHDF5Serializer: Successfully loaded network from {filepath}")
             return network
@@ -1623,9 +1682,26 @@ class CascadeHDF5Serializer:
         except Exception as e:
             return self._log_exception_stacktrace("Shape validation failed: ", e, False)
 
-    def _validate_format(self, hdf5_file: h5py.File) -> bool:  # noqa: C901 - validation requires multiple checks
+    def _validate_format(self, hdf5_file: h5py.File) -> bool:
         """
         Validate HDF5 file format with comprehensive checks.
+
+        Thin wrapper over :meth:`_validate_format_detail`, kept because callers and
+        tests treat format validation as a boolean gate.
+
+        Returns:
+            bool: True if file format is valid, False otherwise
+        """
+        return self._validate_format_detail(hdf5_file) is None
+
+    def _reject_format(self, message: str) -> str:
+        """Log a format rejection and return it as the reason string."""
+        self.logger.error(message)
+        return message
+
+    def _validate_format_detail(self, hdf5_file: h5py.File) -> Optional[str]:  # noqa: C901 - validation requires multiple checks
+        """
+        Validate HDF5 file format, returning WHICH check failed.
 
         Validates:
         - Format name and version compatibility
@@ -1633,8 +1709,13 @@ class CascadeHDF5Serializer:
         - Hidden units consistency
         - Parameter dataset shapes
 
+        Every branch already produced a precise error message; previously all of them
+        collapsed into a bare ``False``, and ``verify_saved_network`` reported the
+        result to the operator as ``'Invalid format'`` — pointing at the format string
+        even when the real problem was, say, a missing ``params`` group.
+
         Returns:
-            bool: True if file format is valid, False otherwise
+            None if the format is valid, otherwise the reason it was rejected.
         """
         try:
             # Check format identifier
@@ -1644,8 +1725,7 @@ class CascadeHDF5Serializer:
                 _HDF5_FORMAT_NAME_LEGACY,
                 _HDF5_FORMAT_NAME_CURRENT,
             ]:
-                self.logger.error(f"Invalid format: {format_name}")
-                return False
+                return self._reject_format(f"Invalid format: {format_name}")
 
             # Check format version compatibility
             format_version = read_str_attr(hdf5_file, "format_version", "1")
@@ -1654,8 +1734,7 @@ class CascadeHDF5Serializer:
                 serializer_major_version = int(self.format_version.split(".")[0])
 
                 if file_major_version > serializer_major_version:
-                    self.logger.error(f"Incompatible format version: file={format_version}, " f"serializer={self.format_version}")
-                    return False
+                    return self._reject_format(f"Incompatible format version: file={format_version}, " f"serializer={self.format_version}")
             except (ValueError, IndexError):
                 self.logger.warning(f"Could not parse format version: {format_version}")
 
@@ -1663,8 +1742,7 @@ class CascadeHDF5Serializer:
             required_groups = ["meta", "config", "params", "arch", "random"]
             for group in required_groups:
                 if group not in hdf5_file:
-                    self.logger.error(f"Missing required group: {group}")
-                    return False
+                    return self._reject_format(f"Missing required group: {group}")
 
             # Check for required datasets in params group
             if "params" in hdf5_file:
@@ -1672,14 +1750,11 @@ class CascadeHDF5Serializer:
                 if "output_layer" in params_group:
                     output_group = params_group["output_layer"]
                     if "weights" not in output_group:
-                        self.logger.error("Missing output layer weights dataset")
-                        return False
+                        return self._reject_format("Missing output layer weights dataset")
                     if "bias" not in output_group:
-                        self.logger.error("Missing output layer bias dataset")
-                        return False
+                        return self._reject_format("Missing output layer bias dataset")
                 else:
-                    self.logger.error("Missing output_layer group in params")
-                    return False
+                    return self._reject_format("Missing output_layer group in params")
 
             # Verify hidden units consistency
             if "hidden_units" in hdf5_file:
@@ -1688,8 +1763,7 @@ class CascadeHDF5Serializer:
                 actual_units = len([k for k in hidden_group.keys() if k.startswith("unit_")])
 
                 if num_units_attr != actual_units:
-                    self.logger.error(f"Hidden units count mismatch: num_units={num_units_attr}, " f"actual groups={actual_units}")
-                    return False
+                    return self._reject_format(f"Hidden units count mismatch: num_units={num_units_attr}, " f"actual groups={actual_units}")
 
                 # Verify each hidden unit has required datasets
                 for i in range(num_units_attr):
@@ -1697,17 +1771,15 @@ class CascadeHDF5Serializer:
                     if unit_name in hidden_group:
                         unit_group = hidden_group[unit_name]
                         if "weights" not in unit_group:
-                            self.logger.error(f"Hidden unit {i} missing weights dataset")
-                            return False
+                            return self._reject_format(f"Hidden unit {i} missing weights dataset")
                         if "bias" not in unit_group:
-                            self.logger.error(f"Hidden unit {i} missing bias dataset")
-                            return False
+                            return self._reject_format(f"Hidden unit {i} missing bias dataset")
 
             self.logger.debug("CascadeHDF5Serializer: Format validation passed")
-            return True
+            return None
 
         except Exception as e:
-            return self._log_exception_stacktrace("Format validation failed: ", e, False)
+            return self._log_exception_stacktrace("Format validation failed: ", e, f"format validation raised: {e}")
 
     def _log_exception_stacktrace(self, arg0, e, arg2):
         self.logger.error(f"{arg0}{e}")
