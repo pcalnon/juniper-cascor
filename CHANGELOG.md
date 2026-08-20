@@ -7,6 +7,61 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **One snapshot root for every stack origin: `<repo>/cascor-snapshots/`.** The direct-CLI tier
+  (`cascor_constants/constants_hdf5`) and the service tier (`api/lifecycle/manager._get_snapshots_dir`)
+  now resolve to the same repo-root directory, which the container also bind-mounts. Snapshots are
+  project **assets**, not per-origin scratch: a model saved by a container run is restored by a CLI run
+  and resumed by a service run, and the shared root is what makes that work without configuration.
+  `JUNIPER_CASCOR_SNAPSHOTS_DIR` still overrides both (W-6), unchanged, blank-is-unset intact.
+  Supersedes two roots — `src/cascor_snapshots/` (historical direct-CLI) and `<repo>/snapshots/` (the
+  short-lived service root introduced in #537, which never held a file). Design of record: juniper-ml
+  `notes/JUNIPER_2026-08-20_JUNIPER-ECOSYSTEM_SNAPSHOT-STORAGE-CONVENTION-DESIGN.md`.
+- **`namespaces = false` in `pyproject.toml` — the actual guard that keeps artifacts off PyPI.**
+  `[tool.setuptools.packages.find]` defaults to `namespaces = true` (PEP 420), whose finder requires
+  no `__init__.py` and filters names only on a dot — so a built wheel's `top_level.txt` listed
+  `cascor-snapshots`, `conf`, `data`, `docs`, `images`, `logs`, `notes`, `scripts`, `util`, **and the
+  two sibling distributions `juniper-cascor-model` / `juniper-cascor-protocol`**, which publish their
+  own wheels and must never ship inside this one. Disabling it drops exactly those eleven and keeps
+  all 29 real packages. Pinned by `TestPackagingExcludesArtifacts`.
+  - The hyphen in `cascor-snapshots` is **defence in depth, not a structural guarantee** — an earlier
+    draft of this change claimed setuptools "can never discover" a hyphenated directory. That is
+    false, and three independent reviews caught it: `find_namespace_packages` returns
+    `cascor-snapshots`, and `importlib.import_module("cascor-snapshots")` resolves it as a PEP 420
+    namespace package. What the hyphen does buy is real but smaller: it cannot be written as an
+    `import` statement, and plain `find_packages` skips it. The #501 class (a cleanup glob deleted
+    five snapshot MODULES and broke every boot) is closed by the artifact root holding no `.py`.
+- **`cascor-snapshots/.gitkeep` is tracked, and the ignore rule is `/cascor-snapshots/*`** rather than
+  the bare directory form — git cannot re-include a path under an excluded directory. Shipping the
+  directory is load-bearing twice: systemd **fails** a unit whose `ReadWritePaths=` names a missing
+  path (and under `ProtectSystem=strict` the service could not create it), and a missing docker
+  bind-mount source is created by the daemon as **root**, which then EPERMs the uid-1000 container on
+  every save. The three `ReadWritePaths=` entries also gain the `-` prefix; as shipped, two of them
+  named directories that no longer exist, so the unit could not start at all.
+- **`ENV JUNIPER_CASCOR_SNAPSHOTS_DIR=/app/cascor-snapshots` in the image**, so a bare `docker run`
+  and the Helm deployment are correct by default and orchestrators only mount over an already-correct
+  path. `.dockerignore` now excludes the artifact roots and `logs/`: nothing `COPY`s them, but every
+  build walked ~5 GB of context, and a future `COPY . .` would have baked the archive into a
+  published image.
+- **`snapshot_cli cleanup` is dry-run by default and refuses the shared root.** It previously deleted
+  immediately, with no confirmation and a `--keep 10` default — pointed at the consolidated archive
+  that removes 27,886 of 27,896 models. It also sorted by `mtime`, which in this archive is not
+  creation time (a copy reset every timestamp), so "keep the N most recent" did not select what it
+  claimed to. `--yes` to apply; `allow_shared_root=True` reserved for a ratified retention policy.
+- **`.gitignore` is now DIRECTORY-anchored for snapshots.** The rules this replaces ignored by
+  *filename* (`cascor_snapshot_*.h5`), so an artifact with any other name in the same directory was not
+  ignored — `git check-ignore --no-index` proves it — and the service tier's own `snapshot_<ISO>Z.h5`
+  never matched. `/cascor-snapshots/` means the filename can change (Phase 6.1 adds a run id) without
+  quietly un-ignoring the archive. The inert `**/cascor/cascor_snapshots/*` rule, which required a path
+  component named exactly `cascor` that no real path has, is retired.
+- `scripts/juniper-cascor.service` collapses its two snapshot `ReadWritePaths` entries into one for the
+  new root. Under `ProtectSystem=strict` + `ProtectHome=read-only` a missing entry EPERMs every
+  `POST /v1/snapshots` save silently, so this must stay in step with `_get_snapshots_dir`.
+- `util/rename_snapshots.bash` retargets `DEST_DIR`; the snapshot-artifact docs in
+  `docs/api/API_REFERENCE.md`, `docs/source/QUICK_START.md`, `docs/install/REFERENCE.md` and
+  `notes/API_REFERENCE.md` name the new root.
+
 ### Added
 
 - **Q-6: `JUNIPER_CASCOR_LOG_DIR` log-directory override, service + direct CLI** (CLI experimentation plan §11; H-7). Mirrors the W-6 `JUNIPER_CASCOR_SNAPSHOTS_DIR` override in shape and semantics, against the same class of problem: a

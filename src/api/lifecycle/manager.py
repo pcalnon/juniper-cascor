@@ -4469,22 +4469,37 @@ class TrainingLifecycleManager:
         long-lived processes see the current env. A set-but-blank value is
         treated as unset (the blank-env guard class).
 
-        The default is ``<repo>/snapshots`` — the REPO ROOT, deliberately not
-        ``<repo>/src/snapshots``. ``src/snapshots`` is an importable Python
-        package (``snapshot_serializer.py``, ``snapshot_cli.py``, ...), and
-        writing ``.h5`` artifacts into it coupled data to code: a cleanup glob
-        in that directory once deleted five snapshot MODULES and broke every
-        boot (cascor#501), and ``.gitignore`` had to blanket-ignore the
-        directory, so editing the tracked source required ``git add -f``. The
-        package stays where it is; only the artifact destination moves, landing
-        alongside ``logs/`` at the repo root.
+        The default is ``<repo>/cascor-snapshots`` — the REPO ROOT, and the ONE
+        snapshot root shared by every stack origin (direct CLI, this service, and
+        the container, which bind-mounts this same host directory). Snapshots are
+        project assets, not per-origin scratch: a model saved by a container run is
+        restored by a CLI run and resumed by a service run.
+
+        Two earlier destinations are superseded and must not come back:
+
+        * ``<repo>/src/snapshots`` — an importable Python package
+          (``snapshot_serializer.py``, ``snapshot_cli.py``, ...). Writing ``.h5``
+          artifacts into it coupled data to code: a cleanup glob there once deleted
+          five snapshot MODULES and broke every boot (cascor#501), and
+          ``.gitignore`` had to blanket-ignore the directory, so editing the
+          tracked source required ``git add -f``.
+        * ``<repo>/snapshots`` — the short-lived root this function used between
+          cascor#537 and the storage-convention ruling. It never held a file.
+
+        The **hyphen** in ``cascor-snapshots`` is load-bearing, not cosmetic: it is
+        not a valid Python identifier, so setuptools can never discover the
+        directory as a package and no cleanup can mistake it for code. That closes
+        the cascor#501 class structurally rather than by convention.
+
+        Design of record: juniper-ml
+        ``notes/JUNIPER_2026-08-20_JUNIPER-ECOSYSTEM_SNAPSHOT-STORAGE-CONVENTION-DESIGN.md``.
         """
         override = os.environ.get("JUNIPER_CASCOR_SNAPSHOTS_DIR", "").strip()
         if override:
             snapshots_dir = Path(override).expanduser()
         else:
             # parents[3] == the repo root (this file is src/api/lifecycle/manager.py).
-            snapshots_dir = Path(__file__).resolve().parents[3] / "snapshots"
+            snapshots_dir = Path(__file__).resolve().parents[3] / "cascor-snapshots"
         snapshots_dir.mkdir(parents=True, exist_ok=True)
         return snapshots_dir
 

@@ -50,30 +50,47 @@ __init__.cpython*
 
 # CascadeCorrelationNetwork snapshot ARTIFACTS.
 #
-# `src/snapshots/` is an importable Python package (snapshot_serializer.py,
-# snapshot_cli.py, snapshot_common.py, ...) that ALSO receives .h5 artifacts at
-# runtime. Six of the rules here used to ignore the whole directory
-# (`src/snapshots/*`, `src/snapshots/`, `src/snapshots`, and the `**/snapshots`
-# equivalents), which swept in that tracked source: editing any module in it
-# required `git add -f`, and a glob in this directory is a code-deletion tool --
-# a cleanup once removed five snapshot MODULES and broke every boot (cascor#501).
+# The ONE snapshot root is `<repo>/cascor-snapshots/` -- the repo root, shared by
+# every stack origin: the direct CLI, the FastAPI service, and the container,
+# which bind-mounts this same host directory. Snapshots are project ASSETS, so
+# they live inside the Juniper tree where the whole-tree offline backup captures
+# them, and they are ignored here so they never enter git. Transfer between hosts
+# or users is out-of-band and user-driven; nothing here is published.
 #
-# Ignore the artifacts by extension/name instead, so the package stays visible.
-**/cascor/cascor_snapshots/*
-cascor_snapshot_*.h5
+# DIRECTORY-anchored on purpose. The rules this replaces ignored by FILENAME
+# (`cascor_snapshot_*.h5`), so an artifact with any other name in the same
+# directory was NOT ignored -- `git check-ignore --no-index` proves it -- and the
+# service tier's own `snapshot_<ISO>Z.h5` never matched at all. Anchoring on the
+# directory means the filename can change (Phase 6.1 adds a run id) without
+# quietly un-ignoring 27,000 files.
+#
+# The `/*` form, not `/cascor-snapshots/`. Git cannot re-include anything under a
+# directory it has excluded, so the bare-directory form would make the .gitkeep
+# below impossible -- and that .gitkeep is load-bearing twice over: the systemd
+# unit's ReadWritePaths needs the directory to EXIST at start, and a missing
+# docker bind-mount source is created root-owned by the daemon, which then EPERMs
+# the uid-1000 container on every save. Shipping the directory is what makes a
+# fresh clone work. (`logs/*` at the top of this file uses the same form.)
+/cascor-snapshots/*
+!/cascor-snapshots/.gitkeep
 
-src/snapshots/snapshot_*.h5
+# `src/snapshots/` is an importable Python package (snapshot_serializer.py,
+# snapshot_cli.py, snapshot_common.py, ...). Rules that ignored the whole
+# directory swept in that tracked source: editing any module required
+# `git add -f`, and a glob in that directory is a code-deletion tool -- a cleanup
+# once removed five snapshot MODULES and broke every boot (cascor#501). Artifacts
+# no longer land there; these by-name rules stay so a stray one is ignored rather
+# than surfacing as untracked, while the package source stays visible.
 src/snapshots/*.h5
+src/snapshots/snapshot_history.jsonl
 
-# The SERVICE tier now writes to <repo>/snapshots (repo root), not into the
-# src/snapshots package -- see api/lifecycle/manager.py _get_snapshots_dir. The
-# two src/snapshots patterns above are retained so any pre-move artifact left in
-# the package is still ignored rather than suddenly showing up as untracked.
+# Superseded roots. Kept ignored so an un-updated code path cannot quietly commit
+# artifacts into one of them:
+#   <repo>/snapshots            -- short-lived service root (cascor#537 -> the convention ruling)
+#   <repo>/src/cascor_snapshots -- the historical direct-CLI root
 /snapshots/
-
-**/snapshots/snapshot_*.h5
-**/snapshots/*.h5
-**/snapshots/snapshot_history.jsonl
+src/cascor_snapshots/
+cascor_snapshot_*.h5
 
 # Sensitive files and dirs
 .env

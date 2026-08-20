@@ -407,8 +407,7 @@ client = JuniperDataClient(
 | `logs/` | Application log files | `.gitignore` |
 | `reports/` | Test and coverage reports | `.gitignore` |
 | `images/` | Generated visualizations and plots | Tracked |
-| `snapshots/` | HDF5 network snapshot files | `.gitignore` |
-| `src/cascor_snapshots/` | Additional snapshot storage | `.gitignore` |
+| `cascor-snapshots/` | Snapshot artifacts, all tiers (repo root; was `src/cascor_snapshots/`) | `.gitignore` |
 | `profiles/` | Profiling output files | `.gitignore` |
 
 ### data/

@@ -499,7 +499,10 @@ def generate_spiral_dataset(
 ## Serialization API
 
 **Code location**: `src/snapshots/` (the serializer package)  
-**Snapshot artifacts**: `<repo>/snapshots/` — the repo root, overridable with `JUNIPER_CASCOR_SNAPSHOTS_DIR`
+**Snapshot artifacts**: `<repo>/cascor-snapshots/` — the repo root, and the ONE root shared by the
+direct-CLI, service, and container tiers (the container bind-mounts this same host directory).
+Overridable with `JUNIPER_CASCOR_SNAPSHOTS_DIR`. Ignored by git; captured by the whole-tree offline
+backup; never published to PyPI.
 
 ### CascadeHDF5Serializer
 
