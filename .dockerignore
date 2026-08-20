@@ -32,3 +32,14 @@ dist/
 .ruff_cache/
 .coverage
 coverage.xml
+
+# Snapshot artifacts and logs. Nothing COPYs them (the Dockerfile takes only
+# requirements.lock, pyproject.toml/README/LICENSE, and src/), but every
+# `docker compose build` still walks and stats them as build context: 1.8 GB /
+# ~27,900 files of snapshots plus ~3.2 GB of logs, on a context that is otherwise
+# ~192 MB. This is also a correctness guard -- a future `COPY . .` would otherwise
+# bake the snapshot archive into a published image.
+cascor-snapshots/
+cascor_snapshots/
+snapshots/*.h5
+logs/
