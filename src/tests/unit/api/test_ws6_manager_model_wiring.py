@@ -87,11 +87,11 @@ def test_hdf5_load_rewraps_bare_ccn(tmp_path, monkeypatch):
 
     loaded = _make_ccn()
     (tmp_path / "snap.h5").write_bytes(b"")  # presence only; load_network is stubbed
-    monkeypatch.setattr(snap_ser.CascadeHDF5Serializer, "load_network", lambda self, path: loaded, raising=True)
+    monkeypatch.setattr(snap_ser.CascadeHDF5Serializer, "load_network", lambda self, path, restore_multiprocessing=True: loaded, raising=True)
 
     mgr = TrainingLifecycleManager()
     monkeypatch.setattr(mgr, "_get_snapshots_dir", lambda: tmp_path, raising=True)
-    assert mgr._load_snapshot_to_network("snap") is True
+    assert bool(mgr._load_snapshot_to_network("snap")) is True
     assert isinstance(mgr.model, CascorModel)
     assert mgr.network is loaded  # the bare CCN got wrapped, exposed via the property
 
