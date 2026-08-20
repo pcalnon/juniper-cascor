@@ -114,3 +114,91 @@ class TestAppFactory:
         body = response.json()
         assert body["status"] == "error"
         assert body["error"]["code"] == "INTERNAL_ERROR"
+
+
+@pytest.mark.unit
+class TestCorsPreflight:
+    """CORS must execute OUTSIDE SecurityMiddleware.
+
+    Regression coverage for APD-CASCOR-001b (sibling of APD-DATA-035). CORS was
+    registered first, which under Starlette's prepending ``add_middleware`` made
+    it the INNERMOST layer -- so ``SecurityMiddleware`` saw browser preflights
+    first and answered them 401. A preflight carries no ``X-API-Key`` by
+    construction, so no browser could ever reach a protected endpoint.
+    """
+
+    # A real, non-exempt route: not in ``api.middleware.EXEMPT_PATHS``.
+    PROTECTED_PATH = "/v1/network/stats"
+
+    @staticmethod
+    def _app():
+        """An app with BOTH a CORS origin and an API key, so auth is really active."""
+        return create_app(
+            Settings(
+                auto_start=False,
+                cors_origins=["http://localhost:3000"],
+                api_keys=["preflight-test-key"],
+            )
+        )
+
+    def test_cors_executes_outside_security_middleware(self):
+        """Order is the contract: index 0 runs outermost, so CORS must precede Security."""
+        order = [m.cls.__name__ for m in self._app().user_middleware]
+
+        assert "CORSMiddleware" in order, order
+        assert "SecurityMiddleware" in order, order
+        assert order.index("CORSMiddleware") < order.index("SecurityMiddleware"), f"CORS must run outside SecurityMiddleware, got outermost-first order {order}"
+
+    def test_preflight_to_protected_path_is_not_answered_401(self):
+        """The defect itself: a genuine preflight must get CORS headers, not 401."""
+        client = TestClient(self._app())
+
+        response = client.options(
+            self.PROTECTED_PATH,
+            headers={"Origin": "http://localhost:3000", "Access-Control-Request-Method": "GET"},
+        )
+
+        assert response.status_code != 401, "preflight was rejected by auth; it carries no API key by design"
+        assert response.status_code == 200
+        assert response.headers.get("access-control-allow-origin") == "http://localhost:3000"
+
+    def test_preflight_from_disallowed_origin_is_still_rejected(self):
+        """Negative control: moving CORS outermost must not accept arbitrary origins."""
+        client = TestClient(self._app())
+
+        response = client.options(
+            self.PROTECTED_PATH,
+            headers={"Origin": "http://evil.example", "Access-Control-Request-Method": "GET"},
+        )
+
+        assert response.headers.get("access-control-allow-origin") is None
+        assert response.status_code == 400
+
+    def test_non_preflight_options_still_requires_auth(self):
+        """The auth surface must not widen.
+
+        This is why the fix is a reorder and not an ``OPTIONS`` bypass inside
+        ``_is_exempt``: a bypass would exempt every ``OPTIONS`` request, while
+        CORS short-circuits only a genuine preflight (one carrying
+        ``Access-Control-Request-Method``).
+        """
+        client = TestClient(self._app())
+
+        with_origin = client.options(self.PROTECTED_PATH, headers={"Origin": "http://localhost:3000"})
+        bare = client.options(self.PROTECTED_PATH)
+
+        assert with_origin.status_code == 401
+        assert bare.status_code == 401
+
+    def test_auth_failure_still_carries_cors_headers(self):
+        """Outermost CORS also annotates error responses.
+
+        Without this a browser sees an opaque CORS failure instead of the real
+        401, which is why the misordering was hard to diagnose client-side.
+        """
+        client = TestClient(self._app())
+
+        response = client.get(self.PROTECTED_PATH, headers={"Origin": "http://localhost:3000"})
+
+        assert response.status_code == 401
+        assert response.headers.get("access-control-allow-origin") == "http://localhost:3000"
