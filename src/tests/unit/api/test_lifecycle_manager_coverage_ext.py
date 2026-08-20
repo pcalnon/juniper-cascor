@@ -377,12 +377,18 @@ class TestSnapshotSaveLoad:
     def test_load_snapshot_injects_worker_coordinator(self, mgr, tmp_path):
         (tmp_path / "snap_wc.h5").write_bytes(b"stub")
         loaded_net = types.SimpleNamespace(set_worker_coordinator=MagicMock())
+        from snapshots.snapshot_load_status import loaded as _snapshot_loaded
+
         fake_serializer = MagicMock()
         fake_serializer.load_network.return_value = loaded_net
+        # D-B: the manager reads the classified result, so a whole-object mock has to
+        # stub it too — otherwise MagicMock returns a truthy stand-in and the wrong
+        # network is installed silently.
+        fake_serializer.load_network_result.return_value = _snapshot_loaded(loaded_net)
         mgr._worker_coordinator = MagicMock()
         with patch.object(mgr, "_get_snapshots_dir", return_value=tmp_path), patch("snapshots.snapshot_serializer.CascadeHDF5Serializer", return_value=fake_serializer), patch("api.lifecycle.manager.CascorModel", side_effect=lambda network: types.SimpleNamespace(network=network)):
             ok = mgr._load_snapshot_to_network("snap_wc")
-        assert ok is True
+        assert bool(ok) is True
         loaded_net.set_worker_coordinator.assert_called_once_with(mgr._worker_coordinator)
 
     def test_load_snapshot_not_found(self, mgr, tmp_path):
@@ -434,7 +440,7 @@ class TestReplayControlAndStart:
         _attach_network(mgr, net)
         with patch.object(mgr, "_load_snapshot_to_network", return_value=True):
             ok = mgr.start_replay("snap")
-        assert ok is True
+        assert ok["loaded"] is True
         prior.stop.assert_called_once()
 
     def test_replay_control_speed_requires_value(self, mgr):

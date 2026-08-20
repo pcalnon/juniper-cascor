@@ -3,16 +3,44 @@
 import asyncio
 import logging
 import re
+from typing import NoReturn
 
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, field_validator
 
 from api.models.common import success_response
 from snapshots.snapshot_errors import SnapshotSaveError
+from snapshots.snapshot_load_status import SNAPSHOT_CORRUPT
 
 logger = logging.getLogger("juniper_cascor.api.routes.snapshots")
 
 router = APIRouter(prefix="/snapshots", tags=["snapshots"])
+
+
+def _raise_snapshot_load_error(snapshot_id: str, result: dict) -> NoReturn:
+    """Translate a failed snapshot load into the right HTTP error (D-B).
+
+    Every failure used to raise ``404 "not found or failed to load"``, fusing two
+    opposite operator situations: *pick a different snapshot* and *investigate data
+    loss*. A corrupt snapshot is now ``422`` — the request is well formed, the entity
+    is not processable — while ``404`` is reserved for one that genuinely is not there.
+
+    The detail is a dict so the envelope carries a machine-readable ``error.code``
+    alongside the prose; clients branch on that rather than string-matching a sentence.
+    ``409`` is deliberately not reused here: these routes already spend it on FSM
+    conflicts, and reusing it would trade one ambiguity for another.
+    """
+    reason = result.get("reason") or "no further detail"
+    if result.get("reason_code") == SNAPSHOT_CORRUPT:
+        raise HTTPException(
+            status_code=422,
+            detail={"code": "SNAPSHOT_CORRUPT", "message": f"Snapshot '{snapshot_id}' exists but could not be read: {reason}"},
+        )
+    raise HTTPException(
+        status_code=404,
+        detail={"code": "SNAPSHOT_ABSENT", "message": f"Snapshot '{snapshot_id}' not found"},
+    )
+
 
 # SEC-17: allowlist for snapshot identifiers. The lifecycle manager already
 # matches on file stems via ``glob("*.h5")`` so a crafted path with ``..``
@@ -249,7 +277,7 @@ async def restore_snapshot(request: Request, snapshot_id: str) -> dict:
     # snapshot is being read.
     result = await asyncio.to_thread(lifecycle.load_snapshot, snapshot_id)
     if not result["loaded"]:
-        raise HTTPException(status_code=404, detail=f"Snapshot '{snapshot_id}' not found or failed to load")
+        _raise_snapshot_load_error(snapshot_id, result)
     payload = _build_unified_payload(
         lifecycle,
         snapshot_id,
@@ -300,7 +328,7 @@ async def retrain_from_snapshot(request: Request, snapshot_id: str) -> dict:
     # are quick attribute writes — no need to fan out further.
     result = await asyncio.to_thread(lifecycle.restore_for_retrain, snapshot_id)
     if not result["loaded"]:
-        raise HTTPException(status_code=404, detail=f"Snapshot '{snapshot_id}' not found or failed to load")
+        _raise_snapshot_load_error(snapshot_id, result)
     payload = _build_unified_payload(
         lifecycle,
         snapshot_id,
@@ -347,7 +375,7 @@ async def resume_snapshot(request: Request, snapshot_id: str) -> dict:
     # PERF-CC-01: HDF5 I/O off the event loop, same as the other snapshot routes.
     result = await asyncio.to_thread(lifecycle.resume_from_snapshot, snapshot_id)
     if not result["loaded"]:
-        raise HTTPException(status_code=404, detail=f"Snapshot '{snapshot_id}' not found or failed to load")
+        _raise_snapshot_load_error(snapshot_id, result)
     payload = _build_unified_payload(
         lifecycle,
         snapshot_id,
@@ -402,9 +430,9 @@ async def start_replay_endpoint(request: Request, snapshot_id: str) -> dict:
         raise HTTPException(status_code=409, detail=f"Cannot start replay while training is {lifecycle.state_machine.status.name}")
     # PERF-CC-01: HDF5 I/O off the event loop. The thread spawn itself
     # is fast but lives on the worker so we don't need a separate path.
-    success = await asyncio.to_thread(lifecycle.start_replay, snapshot_id)
-    if not success:
-        raise HTTPException(status_code=404, detail=f"Snapshot '{snapshot_id}' not found or failed to load")
+    result = await asyncio.to_thread(lifecycle.start_replay, snapshot_id)
+    if not result["loaded"]:
+        _raise_snapshot_load_error(snapshot_id, result)
     payload = _build_unified_payload(
         lifecycle,
         snapshot_id,
