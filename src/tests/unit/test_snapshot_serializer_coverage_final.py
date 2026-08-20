@@ -231,6 +231,185 @@ class TestLoadOptimizerStateHelper:
 
 
 # ---------------------------------------------------------------------------
+# R3 resume follow-on: the restored optimizer's STATE must survive the rebuild
+# that ``train_output_layer`` performs on every call.
+# ---------------------------------------------------------------------------
+def _optimizer_step(optimizer):
+    """Number of steps the optimizer has taken, or None if it has no state."""
+    if not optimizer.state:
+        return None
+    entry = next(iter(optimizer.state.values()))
+    step = entry.get("step")
+    return None if step is None else int(float(step))
+
+
+def _round_trip(network):
+    """Save ``network`` through the real writer and return the loaded copy."""
+    serializer = _make_serializer()
+    with tempfile.NamedTemporaryFile(suffix=".h5", delete=False) as f:
+        filepath = f.name
+    try:
+        assert serializer.save_network(network, filepath)
+        loaded = serializer.load_network(filepath, restore_multiprocessing=False)
+    finally:
+        os.unlink(filepath)
+    assert loaded is not None
+    return loaded
+
+
+def _grow_output_space(network):
+    """Install a hidden unit through the SAME helpers the cascade-grow path uses.
+
+    ``add_unit`` / ``add_units_as_layer`` both route through these two, so the
+    parameter-space change this produces is the real one rather than a
+    test-shaped imitation.
+    """
+    prev_in = network.output_weights.shape[0]
+    network._install_hidden_unit(
+        weights=torch.randn(prev_in, dtype=torch.float32),
+        bias=torch.tensor([0.0], dtype=torch.float32),
+        activation_fn=network.activation_fn,
+        correlation=0.5,
+    )
+    network._resize_output_layer_for_new_units(num_added=1, prev_input_size=prev_in)
+
+
+class TestOutputOptimizerStateReuse:
+    """``train_output_layer`` rebuilds the optimizer every call; R3 makes it carry
+    the prior state over when — and only when — that state still applies."""
+
+    @pytest.mark.unit
+    def test_resume_continues_optimizer_step_rather_than_restarting(self):
+        """The headline contract: a resumed run continues the snapshot's optimizer.
+
+        Before R3 the restored optimizer was replaced by a fresh one before its first
+        step, so the step counter restarted at 0 and Adam's moments were discarded —
+        the resumed run silently re-derived momentum the snapshot already held.
+        """
+        set_deterministic_behavior(seed=42)
+        network = _make_network()
+        x, y = torch.randn(10, 2), torch.randn(10, 2)
+        network.train_output_layer(x, y, epochs=3)
+        warm_step = _optimizer_step(network.output_optimizer)
+        assert warm_step == 3
+
+        loaded = _round_trip(network)
+        assert _optimizer_step(loaded.output_optimizer) == warm_step, "restore itself must preserve the step counter"
+
+        loaded.train_output_layer(x, y, epochs=2)
+        assert _optimizer_step(loaded.output_optimizer) == warm_step + 2, "resume must CONTINUE the optimizer, not restart it"
+
+    @pytest.mark.unit
+    def test_resumed_output_layer_actually_trains(self):
+        """Adoption must not cost the training step itself.
+
+        The obvious implementation — reuse the restored optimizer OBJECT once its
+        ``param_groups`` shapes match — passes a shape check and then silently stops
+        training: the loader binds that optimizer to a throwaway ``nn.Linear`` it
+        built itself, so ``loss.backward()`` fills ``.grad`` on the layer
+        ``train_output_layer`` created while ``step()`` iterates the loader's, whose
+        ``.grad`` is None. Loss is still logged and callbacks still fire, so only an
+        assertion that the weights MOVED catches it.
+        """
+        set_deterministic_behavior(seed=42)
+        network = _make_network()
+        x, y = torch.randn(10, 2), torch.randn(10, 2)
+        network.train_output_layer(x, y, epochs=3)
+
+        loaded = _round_trip(network)
+        before = loaded.output_weights.detach().clone()
+        loaded.train_output_layer(x, y, epochs=2)
+
+        assert not torch.equal(before, loaded.output_weights.detach()), "output weights did not move — the optimizer stepped parameters the layer does not own"
+
+    @pytest.mark.unit
+    def test_growth_still_rebuilds_optimizer_state(self):
+        """Negative control — without it the continuity test above proves nothing.
+
+        Adding a hidden unit grows the output layer's parameter space, so the prior
+        moments describe parameters that no longer exist and MUST be dropped. This is
+        also why the fix is golden-neutral: every grow-loop call site runs right after
+        a unit is installed.
+        """
+        set_deterministic_behavior(seed=42)
+        network = _make_network()
+        x, y = torch.randn(10, 2), torch.randn(10, 2)
+        network.train_output_layer(x, y, epochs=3)
+        assert _optimizer_step(network.output_optimizer) == 3
+
+        _grow_output_space(network)
+        network.train_output_layer(x, y, epochs=2)
+
+        assert _optimizer_step(network.output_optimizer) == 2, "a grown parameter space must start from fresh optimizer state"
+
+    @pytest.mark.unit
+    def test_optimizer_type_change_refuses_adoption(self):
+        """``PATCH /v1/training/params`` can change ``optimizer_type``; SGD must not
+        inherit Adam's moments."""
+        set_deterministic_behavior(seed=42)
+        network = _make_network()
+        x, y = torch.randn(10, 2), torch.randn(10, 2)
+        network.train_output_layer(x, y, epochs=3)
+        assert type(network.output_optimizer).__name__ == "Adam"
+
+        network.config.optimizer_config.optimizer_type = "SGD"
+        network.train_output_layer(x, y, epochs=2)
+
+        assert type(network.output_optimizer).__name__ == "SGD"
+        assert _optimizer_step(network.output_optimizer) is None, "SGD keeps no step counter; Adam's state must not have been adopted"
+
+    @pytest.mark.unit
+    def test_current_learning_rate_wins_over_snapshot(self):
+        """State comes from the snapshot, hyperparameters from the live config.
+
+        ``load_state_dict`` replaces ``param_groups`` wholesale, so adopting it
+        verbatim would silently revert a live learning-rate patch to the snapshot's
+        value.
+        """
+        set_deterministic_behavior(seed=42)
+        network = _make_network()
+        x, y = torch.randn(10, 2), torch.randn(10, 2)
+        network.train_output_layer(x, y, epochs=3)
+        snapshot_lr = network.output_optimizer.param_groups[0]["lr"]
+
+        loaded = _round_trip(network)
+        patched_lr = snapshot_lr * 3.0
+        loaded.config.optimizer_config.learning_rate = patched_lr
+        loaded.train_output_layer(x, y, epochs=2)
+
+        assert loaded.output_optimizer.param_groups[0]["lr"] == pytest.approx(patched_lr), "a patched learning rate must survive optimizer-state adoption"
+        assert _optimizer_step(loaded.output_optimizer) == 5, "the state itself must still have been adopted"
+
+    @pytest.mark.unit
+    def test_cold_start_has_no_prior_optimizer(self):
+        """A fresh network has no ``output_optimizer`` ATTRIBUTE at all, so the
+        adoption path must read it defensively — a bare access raises on first fit."""
+        set_deterministic_behavior(seed=42)
+        network = _make_network()
+        assert not hasattr(network, "output_optimizer") or network.output_optimizer is None
+
+        network.train_output_layer(torch.randn(10, 2), torch.randn(10, 2), epochs=2)
+
+        assert network.output_optimizer is not None
+        assert _optimizer_step(network.output_optimizer) == 2
+
+    @pytest.mark.unit
+    def test_none_optimizer_after_topology_edit_refuses_adoption(self):
+        """``add_hidden_unit_manual`` / a degraded restore set ``output_optimizer`` to
+        None; the same ``getattr`` guard has to cover that without a separate flag."""
+        set_deterministic_behavior(seed=42)
+        network = _make_network()
+        x, y = torch.randn(10, 2), torch.randn(10, 2)
+        network.train_output_layer(x, y, epochs=3)
+
+        network.output_optimizer = None
+        network.train_output_layer(x, y, epochs=2)
+
+        assert network.output_optimizer is not None
+        assert _optimizer_step(network.output_optimizer) == 2
+
+
+# ---------------------------------------------------------------------------
 # Hidden units history save/load round trip
 # ---------------------------------------------------------------------------
 class TestHiddenUnitsHistory:

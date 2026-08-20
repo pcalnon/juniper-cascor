@@ -2049,8 +2049,14 @@ class CascadeCorrelationNetwork:
         # INTENTIONAL: Recreate nn.Linear and optimizer on every call.
         # In Cascade Correlation, the output layer's parameter space changes each time
         # a hidden unit is added (input_size grows), so the previous nn.Linear and
-        # optimizer state are invalid.  Rebuilding from the current output_weights
+        # optimizer object are invalid.  Rebuilding from the current output_weights
         # ensures the optimizer tracks the correct parameter tensors.
+        #
+        # R3: recreating the OBJECT is still correct; discarding the accumulated
+        # optimizer STATE is not.  On a resume the parameter space is unchanged and
+        # the moments restored from the snapshot are the whole point of resuming, so
+        # ``_adopt_prior_output_optimizer_state`` below transfers them onto the new
+        # optimizer when — and only when — they still apply.
         output_layer = nn.Linear(input_size, self.output_size)
         with torch.no_grad():
             output_layer.weight.copy_(self.output_weights.t())  # Transpose because nn.Linear expects (out_features, in_features)
@@ -2060,8 +2066,13 @@ class CascadeCorrelationNetwork:
 
         # Use this layer for optimization (store as instance variable for HDF5 serialization)
         # Create or recreate optimizer using factory method (see INTENTIONAL note above)
+        # R3: capture the outgoing optimizer BEFORE the rebuild so its state can be
+        # carried over.  ``output_optimizer`` is assigned nowhere else and never in
+        # ``__init__``, so a bare attribute access raises on the first ``fit``.
+        prior_optimizer = getattr(self, "output_optimizer", None)
         self.output_optimizer = self._create_optimizer(output_layer.parameters())
         self.logger.debug(f"CascadeCorrelationNetwork: train_output_layer: Created optimizer: {type(self.output_optimizer).__name__}")
+        self._adopt_prior_output_optimizer_state(prior_optimizer, self.output_optimizer)
         optimizer = self.output_optimizer
         self.logger.debug(f"CascadeCorrelationNetwork: train_output_layer: Learning Rate: {self.learning_rate}, Optimizer: {type(optimizer).__name__}")
         self.logger.debug(f"CascadeCorrelationNetwork: train_output_layer: Output layer initialized with weights shape: {output_layer.weight.shape}, Bias shape: {output_layer.bias.shape}")
@@ -3260,6 +3271,83 @@ class CascadeCorrelationNetwork:
         optimizer = optimizer_map[config.optimizer_type]()
         self.logger.debug(f"CascadeCorrelationNetwork: _create_optimizer: Created {config.optimizer_type} optimizer with lr={config.learning_rate}")
         return optimizer
+
+    def _adopt_prior_output_optimizer_state(self, prior_optimizer, optimizer) -> bool:
+        """Carry a prior output optimizer's accumulated state onto a freshly built one.
+
+        R3 (resume follow-on). ``train_output_layer`` rebuilds the output ``nn.Linear``
+        and its optimizer on every call because Cascade Correlation grows the output
+        layer's parameter space each time a hidden unit is installed. That is right on
+        a grow pass and wrong on a resume, where the space is unchanged and the
+        optimizer restored from the snapshot is precisely what the operator asked to
+        continue from — Adam's moments and its step counter were being discarded, so a
+        resumed run silently restarted the output layer's optimization.
+
+        Reusing the restored optimizer OBJECT is not an option, and fails silently if
+        attempted. The snapshot loader binds it to a throwaway ``nn.Linear`` that it
+        builds itself (``snapshots/snapshot_serializer.py``), whose ``Parameter``\\ s are
+        not the ones ``train_output_layer`` just created. Shapes are identical by
+        construction, so a shape check on the object PASSES — and then
+        ``loss.backward()`` populates ``.grad`` on the new layer's parameters while
+        ``optimizer.step()`` iterates the old ones, whose ``.grad`` is ``None``. The
+        step is a no-op, the unchanged weights are copied back, loss is still logged
+        and callbacks still fire: the output layer stops training with no error
+        anywhere. Torch's optimizer ``state_dict`` is POSITIONALLY indexed, so routing
+        the state through it re-binds it to the new parameters instead.
+
+        Hyperparameters are deliberately NOT adopted. ``load_state_dict`` replaces
+        ``param_groups`` wholesale, which would silently revert a live
+        ``PATCH /v1/training/params`` learning-rate change back to the snapshot's
+        value. The current config wins for hyperparameters; the snapshot wins for
+        state.
+
+        Returns:
+            True when state was adopted. False — a no-op leaving the freshly built
+            optimizer untouched — in every other case: a cold start with no prior
+            optimizer, a topology change that grew the parameter space, an optimizer
+            type change, a prior that never stepped, or a malformed prior state.
+        """
+        if prior_optimizer is None or optimizer is None:
+            return False
+
+        # Compare against the optimizer just built from the CURRENT config rather
+        # than against the config's ``optimizer_type`` string: ``_create_optimizer``
+        # silently falls back to Adam for an unrecognized type, so comparing the
+        # strings would disagree with what was actually constructed.
+        if type(prior_optimizer) is not type(optimizer):
+            self.logger.debug(f"CascadeCorrelationNetwork: _adopt_prior_output_optimizer_state: optimizer type changed ({type(prior_optimizer).__name__} -> {type(optimizer).__name__}); starting from fresh state")
+            return False
+
+        prior_params = [p for group in getattr(prior_optimizer, "param_groups", ()) for p in group.get("params", ())]
+        new_params = [p for group in optimizer.param_groups for p in group.get("params", ())]
+        if len(prior_params) != len(new_params) or any(tuple(a.shape) != tuple(b.shape) for a, b in zip(prior_params, new_params)):
+            # The normal grow-pass outcome: ``input_size`` grew with the new hidden
+            # unit, so the prior moments describe a parameter space that no longer
+            # exists. This is the branch that keeps the golden trajectory byte-stable.
+            self.logger.debug("CascadeCorrelationNetwork: _adopt_prior_output_optimizer_state: output parameter space changed; starting from fresh optimizer state")
+            return False
+
+        if not getattr(prior_optimizer, "state", None):
+            self.logger.debug("CascadeCorrelationNetwork: _adopt_prior_output_optimizer_state: prior optimizer carries no state; nothing to adopt")
+            return False
+
+        # Snapshot the current config's hyperparameters before ``load_state_dict``
+        # overwrites ``param_groups`` with the persisted ones.
+        hyperparameters = [{key: value for key, value in group.items() if key != "params"} for group in optimizer.param_groups]
+        try:
+            optimizer.load_state_dict(prior_optimizer.state_dict())
+        except (KeyError, ValueError, TypeError) as exc:
+            # Torch validates group and parameter counts before mutating anything, so
+            # the freshly built optimizer is still intact here. Degrade to fresh state
+            # rather than failing the training pass.
+            self.logger.warning(f"CascadeCorrelationNetwork: _adopt_prior_output_optimizer_state: could not adopt prior optimizer state ({exc}); starting from fresh state")
+            return False
+
+        for group, saved in zip(optimizer.param_groups, hyperparameters):
+            group.update(saved)
+
+        self.logger.debug(f"CascadeCorrelationNetwork: _adopt_prior_output_optimizer_state: adopted {type(optimizer).__name__} state ({len(optimizer.state)} parameter entries) at lr={optimizer.param_groups[0].get('lr')}")
+        return True
 
     @staticmethod
     def train_candidate_worker(task_data_input: tuple = None, parallel: bool = True, progress_callback=None) -> None:

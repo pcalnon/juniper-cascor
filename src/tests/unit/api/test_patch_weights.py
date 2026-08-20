@@ -305,3 +305,72 @@ class TestOptimizerStateZeroOut:
         new_values = torch.zeros_like(lc.network.output_weights).tolist()
         result = lc.patch_weights(target="output", field="weights", values=new_values)
         assert result["status"] == lc._PATCH_OK
+
+
+class TestZeroOptimizerStateWithRealOptimizer:
+    """The same zero-out, against the optimizer production actually builds.
+
+    Every other test in this file keys a mock optimizer's ``state`` by the
+    network-level tensor (``network.output_weights``). Production never does:
+    ``train_output_layer`` builds an ``nn.Linear`` and hands ITS ``Parameter``\\ s to
+    the optimizer, so the identity lookup could never match and the zero-out was a
+    permanent no-op that the mocks reported as working. That was harmless only
+    while the optimizer was thrown away on every call; now that a resume carries
+    the moments forward (R3), an edit stepped with pre-edit moments is a real
+    defect. These tests use a REAL optimizer so the correspondence is exercised.
+    """
+
+    @staticmethod
+    def _warm_real_optimizer(lc):
+        """Give the network a genuine, stepped ``output_optimizer``."""
+        x = torch.randn(8, 2, dtype=torch.float32)
+        y = torch.randn(8, 1, dtype=torch.float32)
+        lc.network.train_output_layer(x, y, epochs=3)
+        optimizer = lc.network.output_optimizer
+        # Fill the running buffers with a recognizably non-zero pattern.
+        for entry in optimizer.state.values():
+            for key, val in entry.items():
+                if isinstance(val, torch.Tensor) and val.dim() > 0:
+                    entry[key] = torch.full_like(val, 0.5)
+        return optimizer
+
+    def _slot_state(self, optimizer, slot):
+        params = [p for group in optimizer.param_groups for p in group["params"]]
+        return optimizer.state[params[slot]]
+
+    def test_patching_output_weights_zeroes_the_real_slot(self):
+        lc = _make_lifecycle_with_network()
+        optimizer = self._warm_real_optimizer(lc)
+        assert torch.count_nonzero(self._slot_state(optimizer, 0)["exp_avg"]) > 0
+
+        new_values = torch.zeros_like(lc.network.output_weights).tolist()
+        result = lc.patch_weights(target="output", field="weights", values=new_values)
+
+        assert result["status"] == lc._PATCH_OK
+        weight_state = self._slot_state(optimizer, 0)
+        assert torch.all(weight_state["exp_avg"] == 0), "pre-edit moments survived an output-weight patch"
+        assert torch.all(weight_state["exp_avg_sq"] == 0)
+        # The bias slot was not edited, so its moments must be left alone.
+        assert torch.count_nonzero(self._slot_state(optimizer, 1)["exp_avg"]) > 0, "patching weights must not clear the bias slot"
+
+    def test_patching_output_bias_zeroes_only_the_bias_slot(self):
+        lc = _make_lifecycle_with_network()
+        optimizer = self._warm_real_optimizer(lc)
+
+        new_values = torch.zeros_like(lc.network.output_bias).tolist()
+        result = lc.patch_weights(target="output", field="bias", values=new_values)
+
+        assert result["status"] == lc._PATCH_OK
+        assert torch.all(self._slot_state(optimizer, 1)["exp_avg"] == 0), "pre-edit moments survived an output-bias patch"
+        assert torch.count_nonzero(self._slot_state(optimizer, 0)["exp_avg"]) > 0, "patching bias must not clear the weight slot"
+
+    def test_step_counter_is_preserved_across_a_patch(self):
+        """Only the running statistics carry pre-edit bias; the step count does not."""
+        lc = _make_lifecycle_with_network()
+        optimizer = self._warm_real_optimizer(lc)
+        before = float(self._slot_state(optimizer, 0)["step"])
+
+        result = lc.patch_weights(target="output", field="weights", values=torch.zeros_like(lc.network.output_weights).tolist())
+
+        assert result["status"] == lc._PATCH_OK
+        assert float(self._slot_state(optimizer, 0)["step"]) == before
