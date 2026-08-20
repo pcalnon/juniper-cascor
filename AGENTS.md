@@ -5,7 +5,7 @@
 **Author**: Paul Calnon
 **License**: MIT License
 **Version**: 0.9.0
-**Last Updated**: 2026-08-14
+**Last Updated**: 2026-08-20
 
 ---
 
@@ -525,12 +525,25 @@ Registered in `src/api/app.py` via successive `app.add_middleware(...)` calls. S
 
 | Order (outer → inner) | Middleware | Module | Purpose |
 |-----------------------|-----------|--------|---------|
-| 1 | `RequestIdMiddleware` | `api.observability` | X-Request-ID propagation (always added last, so runs first) |
-| 2 | `PrometheusMiddleware` | `api.observability` | Metrics (only when `metrics_enabled`) |
-| 3 | `SecurityMiddleware` | `api.middleware` | API key auth + rate limiting (exempt paths) |
-| 4 | `SecurityHeadersMiddleware` | `api.middleware` | CSP, HSTS, X-Frame-Options, etc. |
-| 5 | `RequestBodyLimitMiddleware` | `api.middleware` | 10 MiB request body limit (CR-024 stream cap) |
-| 6 | `CORSMiddleware` | FastAPI/Starlette | CORS headers (only if origins are configured) |
+| 1 | `CORSMiddleware` | FastAPI/Starlette | CORS headers + preflight short-circuit (only if origins are configured) |
+| 2 | `RequestIdMiddleware` | `api.observability` | X-Request-ID propagation |
+| 3 | `PrometheusMiddleware` | `api.observability` | Metrics (only when `metrics_enabled`) |
+| 4 | `SecurityMiddleware` | `api.middleware` | API key auth + rate limiting (exempt paths) |
+| 5 | `SecurityHeadersMiddleware` | `api.middleware` | CSP, HSTS, X-Frame-Options, etc. |
+| 6 | `RequestBodyLimitMiddleware` | `api.middleware` | 10 MiB request body limit (CR-024 stream cap) |
+
+**`CORSMiddleware` must stay outermost — it is added last for exactly that reason.**
+A browser preflight carries no `X-API-Key`: the browser generates the preflight itself, and
+author-defined headers ride only on the actual request that follows. So any ordering that puts
+`SecurityMiddleware` outside CORS answers every preflight to a non-exempt path with 401, and no
+browser client on a configured origin can reach a protected endpoint. Running outermost also
+attaches the CORS headers to error responses (401/429), so a browser surfaces the real status
+instead of an opaque CORS failure.
+
+This is a stronger guarantee than an `OPTIONS` bypass in `SecurityMiddleware._is_exempt` would
+give: CORS short-circuits only a *genuine* preflight (one carrying
+`Access-Control-Request-Method`), so a plain `OPTIONS` request still authenticates. Pinned by
+`tests/unit/api/test_api_app.py::TestCorsPreflight`.
 
 WebSocket upgrade requests are **not** intercepted by `BaseHTTPMiddleware`, so `/ws/*` paths skip the body-limit and security-middleware HTTP paths entirely; they use WebSocket auth and message validation instead.
 

@@ -615,22 +615,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     app.state.settings = settings
 
-    # CORS: only enable when origins are explicitly configured.
-    allow_credentials = bool(settings.cors_origins) and "*" not in settings.cors_origins
-
-    if settings.cors_origins:
-        app.add_middleware(
-            CORSMiddleware,
-            allow_origins=settings.cors_origins,
-            allow_credentials=allow_credentials,
-            allow_methods=["*"],
-            allow_headers=["*"],
-        )
-
     # Request body size limit
     app.add_middleware(RequestBodyLimitMiddleware)
 
-    # Security headers (outermost — runs on every response)
+    # Security headers
     app.add_middleware(SecurityHeadersMiddleware)
 
     # Security (API key auth + rate limiting)
@@ -642,12 +630,36 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.add_middleware(SecurityMiddleware, api_key_auth=api_key_auth, rate_limiter=rate_limiter)
     app.state.api_key_auth = api_key_auth
 
-    # Observability middleware (added after SecurityMiddleware, before CORS)
-    # Middleware execution is LIFO: last added runs first.
-    # Order: RequestIdMiddleware → PrometheusMiddleware → SecurityMiddleware → SecurityHeaders → CORS
+    # Observability middleware
     if settings.metrics_enabled:
         app.add_middleware(PrometheusMiddleware, service_name="juniper-cascor", namespace="juniper_cascor")
     app.add_middleware(RequestIdMiddleware)
+
+    # CORS: only enable when origins are explicitly configured.
+    #
+    # Registered LAST so it executes OUTERMOST. Starlette's ``add_middleware``
+    # prepends, so execution order is the reverse of registration order:
+    #
+    #   CORS → RequestId → Prometheus → Security → SecurityHeaders
+    #        → RequestBodyLimit → routes
+    #
+    # CORS must sit OUTSIDE SecurityMiddleware. A browser preflight carries no
+    # ``X-API-Key``: the browser generates the preflight itself, and
+    # author-defined headers ride only on the actual request that follows. So
+    # with CORS innermost every preflight to a non-exempt path was answered 401
+    # and the browser never issued the real request. Outermost also attaches the
+    # CORS headers to error responses (401/429), so a browser can surface the
+    # real status instead of an opaque CORS failure.
+    allow_credentials = bool(settings.cors_origins) and "*" not in settings.cors_origins
+
+    if settings.cors_origins:
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=settings.cors_origins,
+            allow_credentials=allow_credentials,
+            allow_methods=["*"],
+            allow_headers=["*"],
+        )
 
     # REST Routes
     app.include_router(health.router, prefix="/v1")
