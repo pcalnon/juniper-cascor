@@ -28,6 +28,17 @@ build-backend = "setuptools.build_meta"
 [tool.setuptools.packages.find]
 where = [".", "src"]
 exclude = ["tests*", "backups*"]
+# namespaces = false is the STRUCTURAL guard that keeps artifact and documentation directories out
+# of the distribution. pyproject's find defaults to namespaces = true (PEP 420), whose finder has no
+# __init__.py requirement and no name filter beyond rejecting dots -- so with the default, a built
+# wheel's top_level.txt listed cascor-snapshots, conf, data, docs, images, logs, notes, scripts,
+# util, AND the two sibling sub-packages juniper-cascor-model / juniper-cascor-protocol, which have
+# their own distributions and must never ship inside this one.
+#
+# Turning it off drops exactly those eleven and keeps all 29 real packages (every directory that
+# carries an __init__.py). It is what actually satisfies "snapshots never reach PyPI" -- a hyphen in
+# the directory name does NOT, contrary to an earlier draft of this change.
+namespaces = false
 
 [project]
 name = "juniper-cascor"

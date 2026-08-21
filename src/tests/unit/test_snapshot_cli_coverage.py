@@ -461,7 +461,7 @@ class TestCleanupOldSnapshots:
             result = cleanup_old_snapshots(directory, keep_count=10)
 
             assert result is True
-            mock_utils.cleanup_old_files.assert_called_once_with(directory, 10)
+            mock_utils.cleanup_old_files.assert_called_once_with(directory, 10, dry_run=True)
 
     def test_cleanup_old_snapshots_no_files_deleted(self, tmp_path):
         """Test cleanup when no files are deleted."""
@@ -611,7 +611,7 @@ class TestMainCLI:
             result = main()
 
             assert result == 0
-            mock_cleanup.assert_called_once_with(directory, 10)
+            mock_cleanup.assert_called_once_with(directory, 10, False)
 
     def test_main_cleanup_command_with_keep(self, tmp_path):
         """Test main with cleanup command and keep count."""
@@ -624,7 +624,29 @@ class TestMainCLI:
 
             result = main()
 
-            mock_cleanup.assert_called_once_with(directory, 5)
+            mock_cleanup.assert_called_once_with(directory, 5, False)
+
+    def test_main_cleanup_command_defaults_to_dry_run(self, tmp_path):
+        """No --yes means the CLI asks for a dry run. The flag is the whole guard between
+        `snapshot_cli cleanup <archive>` and deleting 27,886 of 27,896 models."""
+        directory = str(tmp_path)
+
+        with patch("sys.argv", ["snapshot_cli.py", "cleanup", directory]), patch("snapshots.snapshot_cli.cleanup_old_snapshots") as mock_cleanup:
+            mock_cleanup.return_value = True
+            from snapshots.snapshot_cli import main
+
+            main()
+            assert mock_cleanup.call_args[0][2] is False, "third positional arg is `yes`"
+
+    def test_main_cleanup_command_yes_applies(self, tmp_path):
+        directory = str(tmp_path)
+
+        with patch("sys.argv", ["snapshot_cli.py", "cleanup", directory, "--yes"]), patch("snapshots.snapshot_cli.cleanup_old_snapshots") as mock_cleanup:
+            mock_cleanup.return_value = True
+            from snapshots.snapshot_cli import main
+
+            main()
+            mock_cleanup.assert_called_once_with(directory, 10, True)
 
     def test_main_command_failure(self, tmp_path):
         """Test main when command returns failure."""

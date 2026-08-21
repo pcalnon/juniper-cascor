@@ -49,9 +49,9 @@ class TestSnapshotsDirOverride:
 
     VAR = "JUNIPER_CASCOR_SNAPSHOTS_DIR"
 
-    def test_unset_keeps_legacy_cascor_snapshots(self, monkeypatch):
+    def test_unset_resolves_to_canonical_root_name(self, monkeypatch):
         mod = _reload(hdf5_module, monkeypatch, self.VAR, None)
-        assert mod._HDF5_PROJECT_SNAPSHOTS_DIR.name == "cascor_snapshots"
+        assert mod._HDF5_PROJECT_SNAPSHOTS_DIR.name == "cascor-snapshots"
 
     def test_override_is_honoured(self, monkeypatch, tmp_path):
         target = tmp_path / "run-snapshots"
@@ -65,7 +65,31 @@ class TestSnapshotsDirOverride:
     @pytest.mark.parametrize("blank", ["", "   ", "\t"])
     def test_blank_value_is_treated_as_unset(self, monkeypatch, blank):
         mod = _reload(hdf5_module, monkeypatch, self.VAR, blank)
-        assert mod._HDF5_PROJECT_SNAPSHOTS_DIR.name == "cascor_snapshots"
+        assert mod._HDF5_PROJECT_SNAPSHOTS_DIR.name == "cascor-snapshots"
+
+
+class TestInstalledCopyFallback:
+    """This package IS the site-packages copy for the distributed worker, so the
+    installed-copy branch is its normal deployment shape rather than an edge case."""
+
+    def test_installed_copy_falls_back_to_cwd_and_warns(self, monkeypatch, tmp_path):
+        import sysconfig
+
+        real = sysconfig.get_paths
+        pkg_root = pathlib.Path(hdf5_module.__file__).resolve().parents[2]
+
+        def fake_get_paths(*a, **kw):
+            paths = dict(real(*a, **kw))
+            paths["purelib"] = str(pkg_root)
+            paths["platlib"] = str(pkg_root)
+            return paths
+
+        monkeypatch.setattr(sysconfig, "get_paths", fake_get_paths)
+        monkeypatch.chdir(tmp_path)
+        with pytest.warns(RuntimeWarning, match="JUNIPER_CASCOR_SNAPSHOTS_DIR"):
+            mod = _reload(hdf5_module, monkeypatch, "JUNIPER_CASCOR_SNAPSHOTS_DIR", None)
+        assert mod._HDF5_PROJECT_SNAPSHOTS_DIR == tmp_path / "cascor-snapshots"
+        assert not mod._HDF5_PROJECT_SNAPSHOTS_DIR.is_relative_to(pkg_root)
 
 
 class TestLogDirOverride:
