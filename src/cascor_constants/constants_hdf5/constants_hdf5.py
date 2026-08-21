@@ -39,6 +39,31 @@ import warnings
 # import numpy as np
 
 
+# Declared public surface. Every name here is imported by name elsewhere:
+# ``cascor_constants/constants.py`` takes the five ``_HDF5_PROJECT_*`` paths and re-exports
+# them; ``snapshots/snapshot_serializer.py`` takes the two format names; the two
+# ``..._SNAPSHOTS_DIR_{NAME,OVERRIDE}`` values are the W-6 override contract the tests observe.
+#
+# Declaring it is also the DECLARED-SURFACE half of the CodeQL ``py/unused-global-variable``
+# fix (the other half is the single unconditional assignment below). Nothing in this module
+# reads most of these names, so a scanner that cannot follow the cross-module imports reads
+# them as dead. ``cascor_constants/constants.py`` is the only constants module in this repo
+# that declares ``__all__``, and it is also the only one CodeQL has never flagged -- while
+# five of its siblings, all lacking ``__all__``, carry open alerts. That is the natural
+# experiment this list is based on.
+__all__ = [
+    "_HDF5_FORMAT_NAME_CURRENT",
+    "_HDF5_FORMAT_NAME_LEGACY",
+    "_HDF5_PROJECT_CONSTANTS_DIR",
+    "_HDF5_PROJECT_DIR",
+    "_HDF5_PROJECT_HDF5_CONSTANTS_DIR",
+    "_HDF5_PROJECT_SNAPSHOTS_DIR",
+    "_HDF5_PROJECT_SNAPSHOTS_DIR_NAME",
+    "_HDF5_PROJECT_SNAPSHOTS_DIR_OVERRIDE",
+    "_HDF5_PROJECT_SOURCE_DIR",
+]
+
+
 #####################################################################################################################################################################################################
 _HDF5_PROJECT_HDF5_CONSTANTS_DIR = pathlib.Path(__file__).parent.resolve()
 _HDF5_PROJECT_CONSTANTS_DIR = _HDF5_PROJECT_HDF5_CONSTANTS_DIR.parent.resolve()
@@ -111,17 +136,34 @@ def _hdf5_module_is_installed() -> bool:
 # lives. The hyphen still buys something real -- it cannot be written as `import cascor_snapshots`,
 # and plain find_packages skips it -- so it stays; it is just not the load-bearing part.
 _HDF5_PROJECT_SNAPSHOTS_DIR_OVERRIDE = os.environ.get("JUNIPER_CASCOR_SNAPSHOTS_DIR", "").strip()
-if _HDF5_PROJECT_SNAPSHOTS_DIR_OVERRIDE:
-    _HDF5_PROJECT_SNAPSHOTS_DIR = pathlib.Path(_HDF5_PROJECT_SNAPSHOTS_DIR_OVERRIDE).expanduser()
-elif _hdf5_module_is_installed():
-    warnings.warn(
-        "JUNIPER_CASCOR_SNAPSHOTS_DIR is not set and cascor_constants was imported from an " "installed package, so there is no project root to derive a snapshot directory from. " f"Falling back to {pathlib.Path.cwd() / _HDF5_PROJECT_SNAPSHOTS_DIR_NAME}. Set " "JUNIPER_CASCOR_SNAPSHOTS_DIR to the shared snapshot root for this host.",
-        RuntimeWarning,
-        stacklevel=2,
-    )
-    _HDF5_PROJECT_SNAPSHOTS_DIR = pathlib.Path.cwd().joinpath(_HDF5_PROJECT_SNAPSHOTS_DIR_NAME)
-else:
-    _HDF5_PROJECT_SNAPSHOTS_DIR = pathlib.Path(_HDF5_PROJECT_DIR).joinpath(_HDF5_PROJECT_SNAPSHOTS_DIR_NAME)
+
+
+def _hdf5_resolve_snapshots_dir(override: str) -> pathlib.Path:
+    """Resolve the snapshot root: explicit override, else project root, else cwd + warn.
+
+    Extracted so the module-level name is assigned EXACTLY ONCE, unconditionally. That is
+    not a style preference -- it is the fix for CodeQL ``py/unused-global-variable``
+    (alerts 6325/6326 on ``main``, open since 2026-08-08). Assigning a module global only
+    inside ``if``/``elif``/``else`` branches defeats the query's reachability analysis, so
+    a name that IS imported by ``cascor_constants/constants.py`` reads as dead. Every other
+    top-level name in this module is assigned unconditionally and none of them has ever been
+    flagged; this one was the sole conditional assignment and the sole flagged name. Keep it
+    unconditional.
+    """
+    if override:
+        return pathlib.Path(override).expanduser()
+    if _hdf5_module_is_installed():
+        fallback = pathlib.Path.cwd().joinpath(_HDF5_PROJECT_SNAPSHOTS_DIR_NAME)
+        warnings.warn(
+            "JUNIPER_CASCOR_SNAPSHOTS_DIR is not set and cascor_constants was imported from an " "installed package, so there is no project root to derive a snapshot directory from. " f"Falling back to {fallback}. Set JUNIPER_CASCOR_SNAPSHOTS_DIR to the shared snapshot " "root for this host.",
+            RuntimeWarning,
+            stacklevel=2,
+        )
+        return fallback
+    return pathlib.Path(_HDF5_PROJECT_DIR).joinpath(_HDF5_PROJECT_SNAPSHOTS_DIR_NAME)
+
+
+_HDF5_PROJECT_SNAPSHOTS_DIR = _hdf5_resolve_snapshots_dir(_HDF5_PROJECT_SNAPSHOTS_DIR_OVERRIDE)
 
 
 # Define HDF5 Storage class Constants to provide reasonable defaults
