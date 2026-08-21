@@ -380,6 +380,45 @@ class TestGetNetworkSummary:
 class TestCleanupOldFiles:
     """Tests for HDF5Utils.cleanup_old_files()."""
 
+    def test_dry_run_is_the_default_and_deletes_nothing(self, tmp_path):
+        """The default must not delete. This function is reachable from a shipped CLI
+        (``snapshot_cli cleanup <dir> [--keep N]``) that had no confirmation of any kind,
+        so an omitted argument must never destroy data."""
+        for i in range(15):
+            (tmp_path / f"network_{i}.h5").write_text("x")
+        would_delete = HDF5Utils.cleanup_old_files(str(tmp_path), keep_count=10)
+        assert would_delete == 5, "dry-run still reports what it WOULD remove"
+        assert len(list(tmp_path.glob("*.h5"))) == 15, "dry-run must delete nothing"
+
+    def test_refuses_the_shared_snapshot_root(self, tmp_path, monkeypatch):
+        """The shared root is a protected project asset store. Refusal is unconditional --
+        not even ``dry_run=False`` and ``keep_count=0`` may sweep it -- because ``mtime`` is
+        not creation time in that archive, so 'keep the N most recent' does not even select
+        what it claims to."""
+        monkeypatch.setenv("JUNIPER_CASCOR_SNAPSHOTS_DIR", str(tmp_path))
+        for i in range(5):
+            (tmp_path / f"network_{i}.h5").write_text("x")
+        assert HDF5Utils.cleanup_old_files(str(tmp_path), keep_count=0, dry_run=False) == 0
+        assert len(list(tmp_path.glob("*.h5"))) == 5
+
+    def test_shared_root_refusal_is_opt_outable(self, tmp_path, monkeypatch):
+        """A ratified retention policy can still act, but only by saying so explicitly."""
+        monkeypatch.setenv("JUNIPER_CASCOR_SNAPSHOTS_DIR", str(tmp_path))
+        for i in range(5):
+            (tmp_path / f"network_{i}.h5").write_text("x")
+        deleted = HDF5Utils.cleanup_old_files(str(tmp_path), keep_count=2, dry_run=False, allow_shared_root=True)
+        assert deleted == 3
+        assert len(list(tmp_path.glob("*.h5"))) == 2
+
+    def test_unrelated_directory_is_not_mistaken_for_the_shared_root(self, tmp_path, monkeypatch):
+        """The guard must not block the intended use -- pruning a per-run RUN_DIR/snapshots."""
+        monkeypatch.setenv("JUNIPER_CASCOR_SNAPSHOTS_DIR", str(tmp_path / "shared"))
+        run_dir = tmp_path / "run"
+        run_dir.mkdir()
+        for i in range(5):
+            (run_dir / f"network_{i}.h5").write_text("x")
+        assert HDF5Utils.cleanup_old_files(str(run_dir), keep_count=2, dry_run=False) == 3
+
     def test_cleanup_nonexistent_directory(self, tmp_path):
         """Test cleanup on non-existent directory returns 0."""
         nonexistent = str(tmp_path / "nonexistent_dir")
@@ -390,7 +429,7 @@ class TestCleanupOldFiles:
 
     def test_cleanup_empty_directory(self, tmp_path):
         """Test cleanup on empty directory returns 0."""
-        result = HDF5Utils.cleanup_old_files(str(tmp_path))
+        result = HDF5Utils.cleanup_old_files(str(tmp_path), dry_run=False)
 
         assert result == 0
 
@@ -402,7 +441,7 @@ class TestCleanupOldFiles:
             filepath.touch()
             time.sleep(0.01)  # Ensure different modification times
 
-        result = HDF5Utils.cleanup_old_files(str(tmp_path), keep_count=5)
+        result = HDF5Utils.cleanup_old_files(str(tmp_path), keep_count=5, dry_run=False)
 
         assert result == 0
         assert len(list(tmp_path.glob("*.h5"))) == 5
@@ -417,7 +456,7 @@ class TestCleanupOldFiles:
             files.append(filepath)
             time.sleep(0.02)  # Ensure different modification times
 
-        result = HDF5Utils.cleanup_old_files(str(tmp_path), keep_count=2)
+        result = HDF5Utils.cleanup_old_files(str(tmp_path), keep_count=2, dry_run=False)
 
         assert result == 3
         remaining = list(tmp_path.glob("*.h5"))
@@ -435,7 +474,7 @@ class TestCleanupOldFiles:
         (tmp_path / "readme.txt").touch()
         (tmp_path / "data.json").touch()
 
-        result = HDF5Utils.cleanup_old_files(str(tmp_path), keep_count=0)
+        result = HDF5Utils.cleanup_old_files(str(tmp_path), keep_count=0, dry_run=False)
 
         # Only HDF5 files should be deleted
         assert result == 2
@@ -447,7 +486,7 @@ class TestCleanupOldFiles:
         for i in range(3):
             (tmp_path / f"network_{i}.h5").touch()
 
-        result = HDF5Utils.cleanup_old_files(str(tmp_path), keep_count=0)
+        result = HDF5Utils.cleanup_old_files(str(tmp_path), keep_count=0, dry_run=False)
 
         assert result == 3
         assert len(list(tmp_path.glob("*.h5"))) == 0
@@ -462,7 +501,7 @@ class TestCleanupOldFiles:
         # Create actual files
         (tmp_path / "network.h5").touch()
 
-        result = HDF5Utils.cleanup_old_files(str(tmp_path), keep_count=0)
+        result = HDF5Utils.cleanup_old_files(str(tmp_path), keep_count=0, dry_run=False)
 
         assert result == 1
         assert subdir.exists()  # Directory should not be deleted

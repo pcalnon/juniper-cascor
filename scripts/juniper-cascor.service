@@ -40,16 +40,24 @@ CPUQuota=400%%
 NoNewPrivileges=true
 ProtectSystem=strict
 ProtectHome=read-only
-ReadWritePaths=%h/Development/python/Juniper/juniper-cascor/logs
-ReadWritePaths=%h/Development/python/Juniper/juniper-cascor/data
-ReadWritePaths=%h/Development/python/Juniper/juniper-cascor/src/cascor_snapshots
-# The SERVICE tier writes <repo>/snapshots at the REPO ROOT
-# (api/lifecycle/manager.py _get_snapshots_dir); cascor_snapshots above is the direct-CLI
-# dir. Without this line, ProtectSystem=strict + ProtectHome=read-only EPERM every
-# POST /v1/snapshots save (latent — fixed with G-13). The service path moved out of
-# src/snapshots because that directory is an importable Python package (cascor#501);
-# keep this entry in step with _get_snapshots_dir or saves silently start failing.
-ReadWritePaths=%h/Development/python/Juniper/juniper-cascor/snapshots
+ReadWritePaths=-%h/Development/python/Juniper/juniper-cascor/logs
+ReadWritePaths=-%h/Development/python/Juniper/juniper-cascor/data
+# ONE snapshot root for every stack origin -- this service, the direct CLI, and the
+# container (which bind-mounts this same host directory). Replaces two entries that
+# tracked two now-superseded roots: src/cascor_snapshots (historical direct-CLI) and
+# <repo>/snapshots (the short-lived service root between cascor#537 and the
+# storage-convention ruling). Without an entry here, ProtectSystem=strict +
+# ProtectHome=read-only EPERM every POST /v1/snapshots save -- silently, since the
+# save path only warns. KEEP THIS IN STEP with _get_snapshots_dir
+# (api/lifecycle/manager.py) or saves start failing with no other signal.
+#
+# The leading '-' matters: systemd FAILS a unit whose ReadWritePaths= names a path that
+# does not exist, and under ProtectSystem=strict the service cannot create it itself.
+# Both entries this replaces lacked the prefix AND pointed at directories that no longer
+# exist, so the unit as shipped could not start -- a latent break the rename would have
+# carried forward. The directory is now also tracked via cascor-snapshots/.gitkeep, so a
+# fresh clone has it; the '-' is the belt to that braces.
+ReadWritePaths=-%h/Development/python/Juniper/juniper-cascor/cascor-snapshots
 PrivateTmp=true
 ProtectControlGroups=true
 ProtectKernelModules=true

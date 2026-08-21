@@ -211,14 +211,24 @@ def compare_snapshots(filepath1: str, filepath2: str):
         return False
 
 
-def cleanup_old_snapshots(directory: str, keep_count: int = 10):
-    """Clean up old snapshot files."""
-    print(f"Cleaning up old snapshots in {directory} (keeping {keep_count} most recent)")
+def cleanup_old_snapshots(directory: str, keep_count: int = 10, yes: bool = False):
+    """Clean up old snapshot files.
+
+    Dry-run unless ``--yes`` is passed, and the shared snapshot root is refused outright
+    (``HDF5Utils.cleanup_old_files``). Both guards exist because this command previously
+    deleted immediately, with no confirmation and a ``--keep 10`` default -- pointed at the
+    consolidated archive that would have removed 27,886 of 27,896 models.
+    """
+    mode = "Deleting" if yes else "[dry-run] Would delete"
+    print(f"{mode} old snapshots in {directory} (keeping {keep_count} most recent)")
 
     try:
-        deleted_count = HDF5Utils.cleanup_old_files(directory, keep_count)
+        deleted_count = HDF5Utils.cleanup_old_files(directory, keep_count, dry_run=not yes)
         if deleted_count > 0:
-            print(f"✓ Deleted {deleted_count} old snapshot files")
+            verb = "Deleted" if yes else "Would delete"
+            print(f"✓ {verb} {deleted_count} old snapshot files")
+            if not yes:
+                print("  Nothing was removed. Re-run with --yes to apply.")
         else:
             print("No old files to delete")
         return True
@@ -274,6 +284,7 @@ Examples:
     cleanup_parser = subparsers.add_parser("cleanup", help="Clean up old snapshots")
     cleanup_parser.add_argument("directory", help="Directory to clean")
     cleanup_parser.add_argument("--keep", type=int, default=10, help="Number of recent files to keep (default: 10)")
+    cleanup_parser.add_argument("--yes", action="store_true", help="Actually delete (default: dry-run, deletes nothing)")
 
     args = parser.parse_args()
 
@@ -296,7 +307,7 @@ Examples:
         elif args.command == "compare":
             success = compare_snapshots(args.file1, args.file2)
         elif args.command == "cleanup":
-            success = cleanup_old_snapshots(args.directory, args.keep)
+            success = cleanup_old_snapshots(args.directory, args.keep, args.yes)
         else:
             parser.print_help()
             return 1

@@ -6,6 +6,7 @@ Consolidated from hdf5_utilities.py with fixes for string handling.
 
 import datetime
 import os
+import pathlib
 import shutil
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
@@ -299,18 +300,71 @@ class HDF5Utils:
         return summary
 
     @staticmethod
-    def cleanup_old_files(directory: str, keep_count: int = 10) -> int:
+    def _is_shared_snapshot_root(directory: str) -> bool:
+        """True when ``directory`` is the host's shared snapshot root.
+
+        That root is a project ASSET store: it holds tens of thousands of models that
+        outlive every stack, is shared by the direct CLI, the service and the container
+        alike, and is captured by the whole-tree offline backup. Age-based retention over
+        it is a policy decision the owner has explicitly reserved -- see the snapshot
+        lifecycle design's Phase 4, which writes no retention policy until the archive can
+        say what each file IS. Deleting the 27,886 oldest of 27,896 files because a CLI
+        default said ``--keep 10`` is not that policy.
+        """
+        try:
+            resolved = pathlib.Path(directory).expanduser().resolve()
+        except (OSError, ValueError):
+            return False
+        override = os.environ.get("JUNIPER_CASCOR_SNAPSHOTS_DIR", "").strip()
+        candidates = []
+        if override:
+            candidates.append(pathlib.Path(override).expanduser())
+        # <repo>/cascor-snapshots -- this file is src/snapshots/snapshot_utils.py
+        candidates.append(pathlib.Path(__file__).resolve().parents[2] / "cascor-snapshots")
+        for candidate in candidates:
+            try:
+                if resolved == candidate.expanduser().resolve():
+                    return True
+            except (OSError, ValueError):  # pragma: no cover - defensive
+                continue
+        return False
+
+    @staticmethod
+    def cleanup_old_files(directory: str, keep_count: int = 10, *, dry_run: bool = True, allow_shared_root: bool = False) -> int:
         """
         Clean up old network files, keeping only the most recent ones.
 
         Args:
             directory: Directory containing network files
             keep_count: Number of most recent files to keep
+            dry_run: When True (the DEFAULT), report what would be deleted and delete
+                nothing. Deletion must be asked for explicitly.
+            allow_shared_root: Permit operating on the host's shared snapshot root.
+                Refused by default.
 
         Returns:
-            Number of files deleted
+            Number of files deleted -- or, under ``dry_run``, the number that WOULD be.
+
+        Two guards, both added because this function is reachable from a shipped CLI
+        (``snapshot_cli cleanup <dir> [--keep N]``) with no confirmation of any kind:
+
+        * **Dry-run by default.** This matches the safety contract the rest of the
+          ecosystem's destructive tooling already uses (``--dry-run`` default, ``--yes``
+          required). An age-ordered ``os.remove`` loop with a ``keep_count=10`` default is
+          not something that should happen because an argument was omitted.
+        * **Refuses the shared snapshot root.** ``mtime`` is not creation time in that
+          archive -- a copy reset every timestamp, so files named 2025-10 carry 2026
+          mtimes -- which makes "keep the 10 most recent" not merely dangerous but
+          *wrong*: it sorts by a field that does not mean what it appears to mean.
+
+        Neither guard restricts the intended use (pruning a per-run ``RUN_DIR/snapshots``);
+        both require an explicit opt-in for the case that destroys research data.
         """
         if not os.path.exists(directory):
+            return 0
+
+        if HDF5Utils._is_shared_snapshot_root(directory) and not allow_shared_root:
+            Logger.warning(f"HDF5Utils: refusing to clean up {directory}: it is the SHARED snapshot root, a " "project asset store protected from deletion. mtime is not creation time in that " "archive, so 'keep the N most recent' would not even select what it claims to. " "Pass allow_shared_root=True only with a ratified retention policy.")
             return 0
 
         # Find all HDF5 files
@@ -328,6 +382,10 @@ class HDF5Utils:
         # Delete old files
         deleted_count = 0
         for filepath, _ in hdf5_files[keep_count:]:
+            if dry_run:
+                deleted_count += 1
+                Logger.info(f"HDF5Utils: [dry-run] would delete old file: {filepath}")
+                continue
             try:
                 os.remove(filepath)
                 deleted_count += 1

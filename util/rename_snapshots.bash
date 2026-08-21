@@ -21,7 +21,7 @@ LANG_DIR="python"
 PROJ_DIR="Juniper"
 REPO_DIR="juniper-cascor"
 SRCE_DIR="src/snapshots"
-DEST_DIR="src/cascor_snapshots"
+DEST_DIR="cascor-snapshots"   # repo-root canonical snapshot root (storage-convention ruling 2026-08-20)
 
 
 ########################################################################################################################################################################################################################
