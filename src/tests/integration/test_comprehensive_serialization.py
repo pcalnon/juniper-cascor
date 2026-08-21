@@ -116,14 +116,19 @@ class TestHiddenUnitsPreservation(unittest.TestCase):
         config = CascadeCorrelationConfig(input_size=2, output_size=1, random_seed=42)
         network = CascadeCorrelationNetwork(config=config)
 
-        # Manually add hidden units for testing
+        # Install through the real growth helpers. The per-unit weight lengths were
+        # already right here, but appending directly left ``output_weights`` at its
+        # original width -- a shape-inconsistent network that D-E's load-time
+        # integrity gate now refuses.
         for i in range(3):
-            unit = {
-                "weights": torch.randn(2 + i) * 0.1,
-                "bias": torch.randn(1) * 0.1,
-                "correlation": 0.5 + i * 0.1,
-            }
-            network.hidden_units.append(unit)
+            prev_in = network.output_weights.shape[0]
+            network._install_hidden_unit(
+                weights=torch.randn(prev_in, dtype=torch.float32) * 0.1,
+                bias=torch.randn(1, dtype=torch.float32) * 0.1,
+                activation_fn=network.activation_fn,
+                correlation=0.5 + i * 0.1,
+            )
+            network._resize_output_layer_for_new_units(num_added=1, prev_input_size=prev_in)
 
         # Save and load
         serializer = CascadeHDF5Serializer()

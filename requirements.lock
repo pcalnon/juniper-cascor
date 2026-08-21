@@ -194,7 +194,7 @@ urllib3==2.7.0
     #   juniper-data-client
     #   requests
     #   sentry-sdk
-uvicorn==0.52.3
+uvicorn==0.52.4
     # via juniper-cascor (pyproject.toml)
 uvloop==0.22.1
     # via uvicorn

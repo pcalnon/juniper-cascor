@@ -1,0 +1,12 @@
+# Keeps <repo>/cascor-snapshots/ present in a fresh clone.
+#
+# Not cosmetic. Two things break when this directory is absent:
+#   * scripts/juniper-cascor.service lists it in ReadWritePaths=. systemd fails a unit
+#     whose ReadWritePaths= names a missing path (unless prefixed with '-'), and under
+#     ProtectSystem=strict + ProtectHome=read-only the service could not create it anyway.
+#   * docker compose bind-mounts it. A missing bind source is created by the DAEMON, as
+#     root, and the uid-1000 container then EPERMs on every snapshot save -- silently,
+#     because the save path only warns.
+#
+# Everything else in here is ignored (.gitignore: /cascor-snapshots/*). Snapshots are
+# project assets that live in the tree for the offline backup, and never enter git.

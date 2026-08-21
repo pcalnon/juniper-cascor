@@ -66,7 +66,7 @@ COPY --from=builder /usr/local/bin /usr/local/bin
 COPY --chown=juniper:juniper src/ ./src/
 
 # Create required directories
-RUN mkdir -p logs reports/junit data && chown -R juniper:juniper /app
+RUN mkdir -p logs reports/junit data cascor-snapshots && chown -R juniper:juniper /app
 
 USER juniper
 
@@ -84,6 +84,13 @@ ENV PYTHONPATH=/app/src
 ENV JUNIPER_CASCOR_HOST=127.0.0.1
 ENV JUNIPER_CASCOR_PORT=8200
 ENV JUNIPER_CASCOR_LOG_LEVEL=INFO
+# Declared in the IMAGE so every launch path is correct by default -- a bare `docker run`
+# (which this file's own header documents) and the Helm deployment, not just compose.
+# Left underived on purpose: the service tier used to compute this as parents[3]/"snapshots"
+# = /app/snapshots while compose mounted /app/data, one directory away, so every
+# containerized snapshot was written to the container's writable layer and lost on recreate.
+# Nothing errored. Orchestrators now only have to MOUNT over a path that is already right.
+ENV JUNIPER_CASCOR_SNAPSHOTS_DIR=/app/cascor-snapshots
 ENV JUNIPER_DATA_URL=http://localhost:8100
 
 # Build provenance (see the ARG block in the runtime stage above): exported so
