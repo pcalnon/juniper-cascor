@@ -14,7 +14,7 @@ import pickle  # trunk-ignore(bandit/B403)
 import random
 import sys
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 # SEC-11: allowlist for the snapshot RNG-state unpickler. Only modules we
 # know Python's ``random.getstate()`` payloads reference (plus their pickle
@@ -92,8 +92,9 @@ from utils.activation import ActivationWithDerivative
 
 from .snapshot_common import calculate_tensor_checksum, load_numpy_array, load_tensor, read_str_attr, read_str_dataset, save_numpy_array, save_tensor, verify_tensor_checksum, write_str_attr, write_str_dataset
 from .snapshot_errors import SnapshotSaveError
-from .snapshot_load_status import SnapshotLoadResult
+from .snapshot_load_status import SNAPSHOT_ARCH_MISMATCH, SNAPSHOT_CORRUPT, SnapshotLoadResult
 from .snapshot_load_status import absent as snapshot_absent
+from .snapshot_load_status import arch_mismatch
 from .snapshot_load_status import corrupt as snapshot_corrupt
 from .snapshot_load_status import loaded as snapshot_loaded
 
@@ -922,19 +923,50 @@ class CascadeHDF5Serializer:
                 detail = self._validate_format_detail(hdf5_file)
         except Exception as exc:  # noqa: BLE001 - any read failure means corrupt
             return snapshot_corrupt(f"unreadable snapshot: {exc}")
-        return snapshot_corrupt(detail or "snapshot could not be deserialized into a network")
+        if detail is not None:
+            return snapshot_corrupt(detail)
+
+        # D-E: the format is fine, so the refusal came from an integrity gate. Re-load
+        # permissively to recover WHICH gate — the checks need the built network, which
+        # the failed load did not hand back. Only ever runs on the error path, and it
+        # goes through ``load_network`` so a patched loader stays the seam.
+        network = self.load_network(filepath, restore_multiprocessing=False, allow_invalid=True)
+        if network is not None:
+            try:
+                with h5py.File(filepath, "r") as hdf5_file:
+                    findings = self._check_integrity(hdf5_file, network)
+            except Exception as exc:  # noqa: BLE001 - re-read failure means corrupt
+                return snapshot_corrupt(f"unreadable snapshot: {exc}")
+            if findings:
+                # Report the first finding; the rest are already logged. Arch mismatch
+                # wins if present, because it names a different investigation than
+                # "something is damaged".
+                status, first = next((f for f in findings if f[0] == SNAPSHOT_ARCH_MISMATCH), findings[0])
+                return arch_mismatch(first) if status == SNAPSHOT_ARCH_MISMATCH else snapshot_corrupt(first)
+
+        return snapshot_corrupt("snapshot could not be deserialized into a network")
 
     # def load_network(self, filepath: Union[str, Path], restore_multiprocessing: bool = True) -> Optional:  # Original - invalid Optional usage
-    def load_network(self, filepath: Union[str, Path], restore_multiprocessing: bool = True) -> Optional[Any]:
+    def load_network(self, filepath: Union[str, Path], restore_multiprocessing: bool = True, allow_invalid: bool = False) -> Optional[Any]:
         """
         Load a CascadeCorrelationNetwork from HDF5 format.
 
         Returns ``None`` on every failure. Callers that need to distinguish *absent*
         from *corrupt* (D-B) should use :meth:`load_network_result` instead.
 
+        D-E: the load is now **fail-closed**. Six integrity gates ran here before and
+        none of them stopped anything — the loader logged (two at ERROR), returned the
+        network anyway, and then logged ``Successfully loaded network``. A snapshot that
+        fails any gate is refused.
+
         Args:
             filepath: Path to HDF5 file
             restore_multiprocessing: Whether to restore multiprocessing state
+            allow_invalid: Load a snapshot that FAILS an integrity gate anyway, for
+                forensics. Deliberately library/CLI-only — no API surface reaches it,
+                so a knowingly-broken network can never be put on the live lifecycle
+                from a URL. Roughly 0.6% of the archive needs it (~170 files, measured).
+                Do not train a network loaded this way.
 
         Returns:
             CascadeCorrelationNetwork instance or None if failed
@@ -964,13 +996,14 @@ class CascadeHDF5Serializer:
                     self._load_training_history(hdf5_file, network)
                 if restore_multiprocessing and "mp" in hdf5_file:
                     self._restore_multiprocessing_state(hdf5_file, network)
-                if not self._validate_shapes(network):
-                    # D-E (tracked separately, juniper-ml#1199): this only warns, and the
-                    # shape-broken network is installed on the live lifecycle anyway. One
-                    # violation class then trains silently on garbage. Deliberately NOT
-                    # changed here — reclassifying it as CORRUPT is a behaviour change over
-                    # ~170 currently-loadable archive files and needs its own decision.
-                    self.logger.warning("CascadeHDF5Serializer: Network loaded but shape validation found issues")
+                findings = self._check_integrity(hdf5_file, network)
+            if findings:
+                for status, detail in findings:
+                    self.logger.error(f"CascadeHDF5Serializer: integrity gate failed [{status}]: {detail}")
+                if not allow_invalid:
+                    self.logger.error(f"CascadeHDF5Serializer: REFUSING to load {filepath}: {len(findings)} integrity finding(s). Pass allow_invalid=True to inspect it anyway.")
+                    return None
+                self.logger.warning(f"CascadeHDF5Serializer: loading {filepath} DESPITE {len(findings)} integrity finding(s) (allow_invalid=True) — inspect only, do not train this network")
             self.logger.info(f"CascadeHDF5Serializer: Successfully loaded network from {filepath}")
             return network
         except Exception as e:
@@ -1072,26 +1105,11 @@ class CascadeHDF5Serializer:
             if "bias" in output_group:
                 network.output_bias = load_tensor(output_group["bias"])
 
-            # Verify checksums if they exist
-            if "checksums" in output_group:
-                try:
-                    checksums_json = read_str_dataset(output_group, "checksums")
-                    checksums = json.loads(checksums_json)
-
-                    if "output_weights" in checksums and hasattr(network, "output_weights"):
-                        if not verify_tensor_checksum(network.output_weights, checksums["output_weights"]):
-                            self.logger.error("CascadeHDF5Serializer: Output weights checksum verification failed!")
-                        else:
-                            self.logger.debug("CascadeHDF5Serializer: Output weights checksum verified")
-
-                    if "output_bias" in checksums and hasattr(network, "output_bias"):
-                        if not verify_tensor_checksum(network.output_bias, checksums["output_bias"]):
-                            self.logger.error("CascadeHDF5Serializer: Output bias checksum verification failed!")
-                        else:
-                            self.logger.debug("CascadeHDF5Serializer: Output bias checksum verified")
-
-                except Exception as e:
-                    self.logger.warning(f"CascadeHDF5Serializer: Could not verify checksums: {e}")
+            # D-E: checksum verification moved to ``_check_integrity``, which is the
+            # single place that both verifies AND acts. It used to live here and only
+            # logged at ERROR before continuing, so a mismatch — unambiguous evidence
+            # of corruption — never stopped the load. Verifying in both places would
+            # re-hash the tensors on every successful load for no benefit.
 
             # Load optimizer state if it exists
             if "optimizer" in output_group:
@@ -1647,6 +1665,75 @@ class CascadeHDF5Serializer:
         network.patience_counter = meta_group.attrs.get("patience_counter", 0)
         network.best_value_loss = meta_group.attrs.get("best_value_loss", float("inf"))
         self.logger.debug(f"CascadeHDF5Serializer: Restored training counters - snapshot: {network.snapshot_counter}, patience: {network.patience_counter}")
+
+    def _verify_output_checksums(self, hdf5_file: h5py.File, network) -> List[Tuple[str, str]]:
+        """Re-hash the output-layer tensors and compare against the stored checksums.
+
+        A mismatch is positive evidence that the bytes on disk no longer describe the
+        tensors that were saved. Returns one finding per failing tensor; an absent or
+        unreadable checksum block yields none (nothing to compare against is not the
+        same as evidence of damage).
+        """
+        findings: List[Tuple[str, str]] = []
+        try:
+            output_group = hdf5_file["params"]["output_layer"]
+        except (KeyError, TypeError):
+            return findings
+        if "checksums" not in output_group:
+            return findings
+        try:
+            checksums = json.loads(read_str_dataset(output_group, "checksums"))
+        except (ValueError, TypeError) as exc:
+            self.logger.warning(f"CascadeHDF5Serializer: Could not read checksums: {exc}")
+            return findings
+
+        for key, attr in (("output_weights", "output_weights"), ("output_bias", "output_bias")):
+            expected = checksums.get(key)
+            tensor = getattr(network, attr, None)
+            if expected is None or tensor is None:
+                continue
+            if not verify_tensor_checksum(tensor, expected):
+                findings.append((SNAPSHOT_CORRUPT, f"{attr} checksum mismatch — the stored tensor does not match its recorded checksum"))
+        return findings
+
+    def _check_integrity(self, hdf5_file: h5py.File, network) -> List[Tuple[str, str]]:
+        """Run every load-time integrity gate and report what failed (D-E).
+
+        These checks all existed before; none of them stopped anything. The loader ran
+        six of them, logged (two at ERROR), and returned the network anyway — then
+        logged ``Successfully loaded network`` on the next line. The gates are now
+        collected here so ``load_network`` can act on them once.
+
+        Why that mattered: three shape-violation classes raise later, but a
+        hidden-unit weight vector of length 1 is broadcast-compatible with the slice it
+        multiplies, so the network computes a *different answer* with no error anywhere
+        — it trains, reports a plausible loss, and can be re-snapshotted, propagating
+        the corruption.
+
+        Returns:
+            A list of ``(status, detail)`` findings; empty means every gate passed.
+        """
+        findings: List[Tuple[str, str]] = []
+
+        # Gates 1-2 — the declared architecture vs the network that was actually built.
+        # ``_create_network_from_file`` builds from the ``config`` group while the
+        # tensors come from ``params``; when those disagree nothing reconciles them, so
+        # a snapshot can describe two different networks at once.
+        if "arch" in hdf5_file:
+            arch_group = hdf5_file["arch"]
+            for attr, actual in (("input_size", network.input_size), ("output_size", network.output_size)):
+                saved = arch_group.attrs.get(attr, actual)
+                if saved != actual:
+                    findings.append((SNAPSHOT_ARCH_MISMATCH, f"{attr} disagrees: the snapshot's arch group says {saved}, the network built from its config is {actual}"))
+
+        # Gates 3-4 — checksum verification.
+        findings.extend(self._verify_output_checksums(hdf5_file, network))
+
+        # Gate 5 — tensor shapes against the network's declared dimensions.
+        if not self._validate_shapes(network):
+            findings.append((SNAPSHOT_CORRUPT, "tensor shapes are inconsistent with the network's declared dimensions (see the shape errors logged above)"))
+
+        return findings
 
     def _validate_shapes(self, network) -> bool:
         """

@@ -10,7 +10,7 @@ from pydantic import BaseModel, field_validator
 
 from api.models.common import success_response
 from snapshots.snapshot_errors import SnapshotSaveError
-from snapshots.snapshot_load_status import SNAPSHOT_CORRUPT
+from snapshots.snapshot_load_status import SNAPSHOT_ARCH_MISMATCH, SNAPSHOT_UNUSABLE
 
 logger = logging.getLogger("juniper_cascor.api.routes.snapshots")
 
@@ -31,11 +31,16 @@ def _raise_snapshot_load_error(snapshot_id: str, result: dict) -> NoReturn:
     conflicts, and reusing it would trade one ambiguity for another.
     """
     reason = result.get("reason") or "no further detail"
-    if result.get("reason_code") == SNAPSHOT_CORRUPT:
-        raise HTTPException(
-            status_code=422,
-            detail={"code": "SNAPSHOT_CORRUPT", "message": f"Snapshot '{snapshot_id}' exists but could not be read: {reason}"},
-        )
+    reason_code = result.get("reason_code")
+    if reason_code in SNAPSHOT_UNUSABLE:
+        # D-E: an arch mismatch keeps the 422 but gets its own code, because it points
+        # at a different investigation — nothing is damaged, the snapshot is
+        # self-inconsistent about its own dimensions.
+        if reason_code == SNAPSHOT_ARCH_MISMATCH:
+            message = f"Snapshot '{snapshot_id}' describes a different network than it declares: {reason}"
+        else:
+            message = f"Snapshot '{snapshot_id}' exists but could not be read: {reason}"
+        raise HTTPException(status_code=422, detail={"code": reason_code.upper(), "message": message})
     raise HTTPException(
         status_code=404,
         detail={"code": "SNAPSHOT_ABSENT", "message": f"Snapshot '{snapshot_id}' not found"},
