@@ -67,16 +67,21 @@ from dotenv import load_dotenv
 # from cascor_constants.constants import _CASCOR_ORIG_POINTS  # trunk-ignore(ruff/F401)
 from cascor_constants.constants import (
     _CASCOR_ACTIVATION_FUNCTION,
+    _CASCOR_CANDIDATE_CONVERGENCE_THRESHOLD,
     _CASCOR_CANDIDATE_DISPLAY_FREQUENCY,
     _CASCOR_CANDIDATE_EPOCHS,
+    _CASCOR_CANDIDATE_LEARNING_RATE,
+    _CASCOR_CANDIDATE_PATIENCE,
     _CASCOR_CANDIDATE_POOL_SIZE,
     _CASCOR_CLOCKWISE,
+    _CASCOR_CONVERGENCE_THRESHOLD,
     _CASCOR_CORRELATION_THRESHOLD,
     _CASCOR_DEFAULT_ORIGIN,
     _CASCOR_DEFAULT_RADIUS,
     _CASCOR_DISTRIBUTION_FACTOR,
     _CASCOR_EPOCHS_MAX,
     _CASCOR_GENERATE_PLOTS_DEFAULT,
+    _CASCOR_INIT_OUTPUT_WEIGHTS,
     _CASCOR_INPUT_SIZE,
     _CASCOR_LEARNING_RATE,
     _CASCOR_LOG_CONFIG_FILE_NAME,
@@ -97,6 +102,7 @@ from cascor_constants.constants import (
     _CASCOR_LOG_LEVEL_REDEFINITION,
     _CASCOR_LOG_MESSAGE_DEFAULT,
     _CASCOR_MAX_HIDDEN_UNITS,
+    _CASCOR_MAX_ITERATIONS,
     _CASCOR_NOISE_FACTOR_DEFAULT,
     _CASCOR_NUM_ROTATIONS,
     _CASCOR_NUM_SPIRALS,
@@ -251,6 +257,23 @@ _W11_TRAINING_KEY_MAP = {
     "candidate_epochs": "candidate_epochs",
     "candidate_pool_size": "candidate_pool_size",
     "output_epochs": "output_epochs",
+    # L-4 (2026-08-21): full parity. These five were dropped with a warning, so a direct-CLI
+    # run was not configured the way its YAML read. Two of them were already plumbed end to
+    # end and only missing an entry here -- spiral-baseline.yaml asks for
+    # candidate_learning_rate 0.05 and convergence_threshold 1.0e-5 and the CLI was running
+    # the constants 0.1 and 0.001 (2x and 100x looser), which silently confounds any
+    # CLI-vs-service comparison built on that config.
+    "candidate_learning_rate": "candidate_learning_rate",
+    "convergence_threshold": "convergence_threshold",
+    "candidate_convergence_threshold": "candidate_convergence_threshold",
+    "init_output_weights": "init_output_weights",
+    "optimizer_type": "optimizer_type",
+    # The knob is named ``activation_function`` on SpiralProblem and
+    # ``activation_function_name`` on the config / TrainingParams; same value.
+    "activation_function_name": "activation_function",
+    "candidate_patience": "candidate_patience",
+    "early_stopping": "early_stopping",
+    "max_iterations": "max_iterations",
     # C2b semantics: TrainingParams.max_epochs is the initial output-training pass budget
     # and defaults to output_epochs -- the closest direct-CLI knob. An explicit
     # output_epochs wins over the alias.
@@ -446,10 +469,19 @@ def main(generate_plots: bool = _CASCOR_GENERATE_PLOTS_DEFAULT):
         _SpiralProblem__spiral_config=logging.config,
         _SpiralProblem__dataset_tensors=None,
         _SpiralProblem__dataset_file_info=None,
-        _SpiralProblem__activation_function=_CASCOR_ACTIVATION_FUNCTION,
+        _SpiralProblem__activation_function=_w11.get("activation_function", _CASCOR_ACTIVATION_FUNCTION),
         _SpiralProblem__candidate_display_frequency=_CASCOR_CANDIDATE_DISPLAY_FREQUENCY,
         _SpiralProblem__candidate_epochs=_w11.get("candidate_epochs", _CASCOR_CANDIDATE_EPOCHS),
+        # L-4: the five keys the CLI previously dropped. Each keeps the same
+        # ``_w11.get(<key>, <constant>)`` shape as its neighbours, so an absent YAML key still
+        # resolves to exactly the constant the CLI used before this change.
+        _SpiralProblem__candidate_learning_rate=_w11.get("candidate_learning_rate", _CASCOR_CANDIDATE_LEARNING_RATE),
+        _SpiralProblem__candidate_convergence_threshold=_w11.get("candidate_convergence_threshold", _CASCOR_CANDIDATE_CONVERGENCE_THRESHOLD),
+        _SpiralProblem__candidate_patience=_w11.get("candidate_patience", _CASCOR_CANDIDATE_PATIENCE),
         _SpiralProblem__candidate_pool_size=_w11.get("candidate_pool_size", _CASCOR_CANDIDATE_POOL_SIZE),
+        _SpiralProblem__convergence_threshold=_w11.get("convergence_threshold", _CASCOR_CONVERGENCE_THRESHOLD),
+        _SpiralProblem__early_stopping=_w11.get("early_stopping", True),
+        _SpiralProblem__max_iterations=_w11.get("max_iterations", _CASCOR_MAX_ITERATIONS),
         _SpiralProblem__clockwise=_CASCOR_CLOCKWISE,
         _SpiralProblem__correlation_threshold=_w11.get("correlation_threshold", _CASCOR_CORRELATION_THRESHOLD),
         _SpiralProblem__default_origin=_CASCOR_DEFAULT_ORIGIN,
@@ -457,6 +489,7 @@ def main(generate_plots: bool = _CASCOR_GENERATE_PLOTS_DEFAULT):
         _SpiralProblem__distribution=_CASCOR_DISTRIBUTION_FACTOR,
         _SpiralProblem__epochs_max=_CASCOR_EPOCHS_MAX,
         _SpiralProblem__generate_plots_default=generate_plots,
+        _SpiralProblem__init_output_weights=_w11.get("init_output_weights", _CASCOR_INIT_OUTPUT_WEIGHTS),
         _SpiralProblem__input_size=_CASCOR_INPUT_SIZE,
         _SpiralProblem__learning_rate=_w11.get("learning_rate", _CASCOR_LEARNING_RATE),
         _SpiralProblem__log_config=log_config,
@@ -468,6 +501,7 @@ def main(generate_plots: bool = _CASCOR_GENERATE_PLOTS_DEFAULT):
         _SpiralProblem__n_rotations=_w11.get("n_rotations", _CASCOR_NUM_ROTATIONS),
         _SpiralProblem__n_spirals=_w11.get("n_spirals", _CASCOR_NUM_SPIRALS),
         _SpiralProblem__noise=_w11.get("noise", _CASCOR_NOISE_FACTOR_DEFAULT),
+        _SpiralProblem__optimizer_type=_w11.get("optimizer_type", "Adam"),
         _SpiralProblem__output_size=_CASCOR_OUTPUT_SIZE,
         _SpiralProblem__patience=_w11.get("patience", _CASCOR_PATIENCE),
         _SpiralProblem__output_epochs=_w11.get("output_epochs", _CASCOR_OUTPUT_EPOCHS),
