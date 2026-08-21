@@ -1248,26 +1248,12 @@ class CascadeHDF5Serializer:
             if "bias" in unit_group:
                 unit["bias"] = load_tensor(unit_group["bias"])
 
-            # Verify checksums if they exist
-            if "checksums" in unit_group:
-                try:
-                    checksums_json = read_str_dataset(unit_group, "checksums")
-                    checksums = json.loads(checksums_json)
-
-                    if "weights" in checksums and "weights" in unit:
-                        if not verify_tensor_checksum(unit["weights"], checksums["weights"]):
-                            self.logger.error(f"CascadeHDF5Serializer: Hidden unit {i} weights checksum verification failed!")
-                        else:
-                            self.logger.debug(f"CascadeHDF5Serializer: Hidden unit {i} weights checksum verified")
-
-                    if "bias" in checksums and "bias" in unit:
-                        if not verify_tensor_checksum(unit["bias"], checksums["bias"]):
-                            self.logger.error(f"CascadeHDF5Serializer: Hidden unit {i} bias checksum verification failed!")
-                        else:
-                            self.logger.debug(f"CascadeHDF5Serializer: Hidden unit {i} bias checksum verified")
-
-                except Exception as e:
-                    self.logger.warning(f"CascadeHDF5Serializer: Could not verify checksums for hidden unit {i}: {e}")
+            # D-E: hidden-unit checksum verification moved to ``_check_integrity``,
+            # alongside the output-layer one. It used to live here and only log at
+            # ERROR before continuing, so a same-shape tamper of a hidden unit's
+            # weights loaded cleanly -- the very failure class D-E closes, missed on
+            # the first pass because the gate inventory counted six and there are
+            # eight.
 
             # Load correlation
             if "correlation" in unit_group.attrs:
@@ -1696,8 +1682,43 @@ class CascadeHDF5Serializer:
                 findings.append((SNAPSHOT_CORRUPT, f"{attr} checksum mismatch — the stored tensor does not match its recorded checksum"))
         return findings
 
+    def _verify_hidden_unit_checksums(self, hdf5_file: h5py.File, network) -> List[Tuple[str, str]]:
+        """Re-hash each hidden unit's tensors against its stored checksums.
+
+        The output layer is not the only thing with checksums. A same-shape tamper of a
+        hidden unit's weights passes every shape check, so before this ran as a gate it
+        loaded cleanly with nothing but an ERROR line in the log — measured, not
+        assumed.
+        """
+        findings: List[Tuple[str, str]] = []
+        if "hidden_units" not in hdf5_file:
+            return findings
+        hidden_group = hdf5_file["hidden_units"]
+        for i, unit in enumerate(getattr(network, "hidden_units", []) or []):
+            unit_group = hidden_group.get(f"unit_{i}")
+            if unit_group is None or "checksums" not in unit_group:
+                continue
+            try:
+                checksums = json.loads(read_str_dataset(unit_group, "checksums"))
+            except (ValueError, TypeError) as exc:
+                self.logger.warning(f"CascadeHDF5Serializer: Could not read checksums for hidden unit {i}: {exc}")
+                continue
+            for field in ("weights", "bias"):
+                expected = checksums.get(field)
+                tensor = unit.get(field) if isinstance(unit, dict) else None
+                if expected is None or tensor is None:
+                    continue
+                if not verify_tensor_checksum(tensor, expected):
+                    findings.append((SNAPSHOT_CORRUPT, f"hidden unit {i} {field} checksum mismatch — the stored tensor does not match its recorded checksum"))
+        return findings
+
     def _check_integrity(self, hdf5_file: h5py.File, network) -> List[Tuple[str, str]]:
         """Run every load-time integrity gate and report what failed (D-E).
+
+        EIGHT gates, not six: the first D-E pass counted the output-layer checksums and
+        missed the per-hidden-unit pair, which meant a same-shape tamper of a hidden
+        unit still loaded. Count them here, in one place, so the next addition cannot
+        be missed the same way.
 
         These checks all existed before; none of them stopped anything. The loader ran
         six of them, logged (two at ERROR), and returned the network anyway — then
@@ -1726,8 +1747,9 @@ class CascadeHDF5Serializer:
                 if saved != actual:
                     findings.append((SNAPSHOT_ARCH_MISMATCH, f"{attr} disagrees: the snapshot's arch group says {saved}, the network built from its config is {actual}"))
 
-        # Gates 3-4 — checksum verification.
+        # Gates 3-6 — checksum verification, output layer AND every hidden unit.
         findings.extend(self._verify_output_checksums(hdf5_file, network))
+        findings.extend(self._verify_hidden_unit_checksums(hdf5_file, network))
 
         # Gate 5 — tensor shapes against the network's declared dimensions.
         if not self._validate_shapes(network):

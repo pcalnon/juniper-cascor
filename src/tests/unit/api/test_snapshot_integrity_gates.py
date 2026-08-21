@@ -115,6 +115,20 @@ def break_checksum(path):
     _replace(path, "params/output_layer/weights", np.full(shape, 7.5, dtype=np.float32))
 
 
+def break_hidden_unit_checksum(path, unit=1):
+    """Gates 5-6: a hidden unit tampered at the SAME shape.
+
+    Every shape check passes, so before this was a gate the snapshot loaded cleanly with
+    nothing but an ERROR line in the log. This is the arm that caught the first D-E
+    pass counting six gates when there are eight.
+    """
+    dataset = f"hidden_units/unit_{unit}/weights"
+    with h5py.File(path, "r") as hf:
+        shape = hf[dataset].shape
+        assert "checksums" in hf[f"hidden_units/unit_{unit}"], "fixture needs hidden-unit checksums"
+    _replace(path, dataset, np.full(shape, 9.9, dtype=np.float32))
+
+
 class TestGatesRejectAtLoad:
     """Every gate is fail-closed now; none of them were before."""
 
@@ -153,6 +167,39 @@ class TestGatesRejectAtLoad:
         assert result.status == SNAPSHOT_CORRUPT
         assert "checksum" in result.detail.lower()
 
+    def test_hidden_unit_checksum_mismatch_is_refused(self, tmp_path):
+        """The gap the first D-E pass left: shapes all pass, only the checksum objects.
+
+        Measured before the fix: the strict loader ACCEPTED this, logging the mismatch
+        at ERROR and continuing — the identical defect D-E closed for the output layer.
+        """
+        path = write_valid(tmp_path)
+        break_hidden_unit_checksum(path)
+
+        serializer = CascadeHDF5Serializer()
+        assert serializer.load_network(path, restore_multiprocessing=False) is None, "a tampered hidden unit must not load"
+        result = serializer.load_network_result(path, restore_multiprocessing=False)
+        assert result.status == SNAPSHOT_CORRUPT
+        assert "hidden unit" in result.detail.lower() and "checksum" in result.detail.lower()
+
+    def test_hidden_unit_tamper_passes_every_shape_check(self, tmp_path):
+        """Proves the arm above is not just re-testing the shape gate.
+
+        If the tamper changed shapes, ``_validate_shapes`` would catch it and the
+        checksum gate would be untested. It must be the checksum and nothing else.
+        """
+        path = write_valid(tmp_path)
+        break_hidden_unit_checksum(path)
+
+        serializer = CascadeHDF5Serializer()
+        network = serializer.load_network(path, restore_multiprocessing=False, allow_invalid=True)
+        assert serializer._validate_shapes(network) is True, "shapes must still be valid, or this tests the wrong gate"
+
+        with h5py.File(path, "r") as hf:
+            findings = serializer._check_integrity(hf, network)
+        assert findings, "the checksum gate produced no finding"
+        assert all("checksum" in detail.lower() for _, detail in findings), findings
+
     def test_arch_mismatch_is_refused_with_its_own_reason(self, tmp_path):
         path = write_valid(tmp_path)
         break_arch(path)
@@ -167,7 +214,7 @@ class TestGatesRejectAtLoad:
 class TestForensicOptIn:
     """The escape hatch is library-only, by decision — no API surface reaches it."""
 
-    @pytest.mark.parametrize("break_it", [break_output_shape, break_hidden_shape_broadcast, break_arch, break_checksum])
+    @pytest.mark.parametrize("break_it", [break_output_shape, break_hidden_shape_broadcast, break_arch, break_checksum, break_hidden_unit_checksum])
     def test_allow_invalid_loads_anyway(self, tmp_path, break_it):
         path = write_valid(tmp_path)
         break_it(path)
@@ -245,6 +292,7 @@ class TestCheckIntegrityUnit:
         for break_it, expected in (
             (break_arch, SNAPSHOT_ARCH_MISMATCH),
             (break_checksum, SNAPSHOT_CORRUPT),
+            (break_hidden_unit_checksum, SNAPSHOT_CORRUPT),
             (break_hidden_shape_broadcast, SNAPSHOT_CORRUPT),
         ):
             path = write_valid(tmp_path, f"g-{break_it.__name__}")
@@ -263,6 +311,9 @@ class TestCheckIntegrityUnit:
 
         body = inspect.getsource(CascadeHDF5Serializer._load_parameters)
         assert "verify_tensor_checksum" not in body, f"checksum verification is back in {source[1]} — it now lives in _check_integrity"
+
+        hidden_body = inspect.getsource(CascadeHDF5Serializer._load_hidden_units)
+        assert "verify_tensor_checksum" not in hidden_body, "hidden-unit checksum verification is back in _load_hidden_units — it now lives in _check_integrity"
 
 
 class TestSnapshotHistoryStillWritten:
