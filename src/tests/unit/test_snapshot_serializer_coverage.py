@@ -67,16 +67,22 @@ def network_with_hidden_units():
         patience=1,
     )
     network = CascadeCorrelationNetwork(config=config)
-    # Manually add hidden units instead of calling fit() to avoid training overhead
+    # Install hidden units through the same helpers the cascade-grow path uses,
+    # instead of calling fit() -- still no training overhead, but the result is a
+    # network that could actually exist. Appending to ``hidden_units`` directly (the
+    # previous approach) left ``output_weights`` un-widened and gave every unit the
+    # same weight length, i.e. a shape-inconsistent network that D-E's load-time
+    # integrity gate now refuses.
     for i in range(2):
         torch.manual_seed(42 + i)
-        hidden_unit = {
-            "weights": torch.randn(2),
-            "bias": torch.randn(1),
-            "activation_fn": torch.tanh,
-            "correlation": 0.5 + i * 0.1,
-        }
-        network.hidden_units.append(hidden_unit)
+        prev_in = network.output_weights.shape[0]
+        network._install_hidden_unit(
+            weights=torch.randn(prev_in, dtype=torch.float32),
+            bias=torch.randn(1, dtype=torch.float32),
+            activation_fn=torch.tanh,
+            correlation=0.5 + i * 0.1,
+        )
+        network._resize_output_layer_for_new_units(num_added=1, prev_input_size=prev_in)
     return network
 
 
@@ -541,8 +547,13 @@ class TestChecksumVerificationFailure:
                 del output_group["checksums"]
                 output_group.create_dataset("checksums", data=np.bytes_(json.dumps(checksums)))
 
-        loaded = serializer.load_network(str(filepath), CascadeCorrelationNetwork)
-        assert loaded is not None
+        # D-E: a checksum mismatch is positive evidence of corruption. This used to
+        # assert ``loaded is not None`` -- the load logged the failure at ERROR and
+        # returned the network anyway, so the test pinned the defect as the contract.
+        assert serializer.load_network(str(filepath), restore_multiprocessing=False) is None
+
+        # The forensic hatch still reaches it, and is the only thing that does.
+        assert serializer.load_network(str(filepath), restore_multiprocessing=False, allow_invalid=True) is not None
 
 
 class TestLoadCUDARandomStates:

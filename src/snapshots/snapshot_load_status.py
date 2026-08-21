@@ -30,6 +30,18 @@ SNAPSHOT_ABSENT = "snapshot_absent"
 #: a retry might help), and NOT 409 (already used by these routes for FSM conflicts).
 SNAPSHOT_CORRUPT = "snapshot_corrupt"
 
+#: A snapshot is internally readable but describes a DIFFERENT network than it
+#: declares — its ``arch`` group and its parameter tensors agree with each other while
+#: disagreeing with the ``config`` group the network is actually built from (D-E §3).
+#: Distinguished from ``SNAPSHOT_CORRUPT`` because it points at a different
+#: investigation: nothing is damaged, the file is self-inconsistent about its own
+#: dimensions. Also maps to HTTP 422.
+SNAPSHOT_ARCH_MISMATCH = "snapshot_arch_mismatch"
+
+#: Statuses that mean "the file is there, but we will not load it" — i.e. every
+#: failure that is NOT simply absent. Route-level status mapping keys off this.
+SNAPSHOT_UNUSABLE = (SNAPSHOT_CORRUPT, SNAPSHOT_ARCH_MISMATCH)
+
 
 @dataclass(frozen=True)
 class SnapshotLoadResult:
@@ -59,6 +71,11 @@ def absent(detail: str) -> SnapshotLoadResult:
 def corrupt(detail: str) -> SnapshotLoadResult:
     """A snapshot exists but cannot be read."""
     return SnapshotLoadResult(network=None, status=SNAPSHOT_CORRUPT, detail=detail)
+
+
+def arch_mismatch(detail: str) -> SnapshotLoadResult:
+    """A snapshot's declared architecture disagrees with the network it builds."""
+    return SnapshotLoadResult(network=None, status=SNAPSHOT_ARCH_MISMATCH, detail=detail)
 
 
 def loaded(network: Any) -> SnapshotLoadResult:

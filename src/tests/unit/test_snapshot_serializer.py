@@ -210,14 +210,17 @@ class TestEdgeCases:
         )
         network = CascadeCorrelationNetwork(config=config)
 
-        # Add a mock hidden unit
-        hidden_unit = {
-            "weights": torch.randn(3),
-            "bias": torch.tensor([0.1]),
-            "activation_fn": torch.tanh,
-            "correlation": 0.5,
-        }
-        network.hidden_units.append(hidden_unit)
+        # Install through the real growth helpers. Appending to ``hidden_units``
+        # directly left ``output_weights`` un-widened -- a network that could not
+        # exist, and which D-E's load-time integrity gate now refuses.
+        prev_in = network.output_weights.shape[0]
+        network._install_hidden_unit(
+            weights=torch.randn(prev_in, dtype=torch.float32),
+            bias=torch.tensor([0.1], dtype=torch.float32),
+            activation_fn=torch.tanh,
+            correlation=0.5,
+        )
+        network._resize_output_layer_for_new_units(num_added=1, prev_input_size=prev_in)
 
         result = serializer.save_network(network, temp_file)
         assert result is True
