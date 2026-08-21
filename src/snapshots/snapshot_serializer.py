@@ -97,6 +97,7 @@ from .snapshot_load_status import absent as snapshot_absent
 from .snapshot_load_status import arch_mismatch
 from .snapshot_load_status import corrupt as snapshot_corrupt
 from .snapshot_load_status import loaded as snapshot_loaded
+from .snapshot_provenance import read_provenance, write_provenance
 
 
 class CascadeHDF5Serializer:
@@ -158,6 +159,11 @@ class CascadeHDF5Serializer:
 
             with h5py.File(filepath, "w") as hdf5_file:
                 self._save_network_objects_helper(hdf5_file, network, compression, compression_opts)
+                # D-C: stamp which run produced this model, from the process env the
+                # launcher exports. Writes nothing when the run is unidentified, so
+                # absence keeps meaning "unknown" rather than "failed to record".
+                if write_provenance(hdf5_file):
+                    self.logger.debug("CascadeHDF5Serializer: Recorded run provenance")
                 # Save training history if requested
                 if include_training_state:
                     self._save_training_history(hdf5_file, network, compression, compression_opts)
@@ -996,6 +1002,10 @@ class CascadeHDF5Serializer:
                     self._load_training_history(hdf5_file, network)
                 if restore_multiprocessing and "mp" in hdf5_file:
                     self._restore_multiprocessing_state(hdf5_file, network)
+                # D-C: attach run identity to the loaded network. ``None`` when the
+                # snapshot predates provenance or came from an unidentified run —
+                # that is a real answer, not a failure, and must never gate the load.
+                network.provenance = read_provenance(hdf5_file)
                 findings = self._check_integrity(hdf5_file, network)
             if findings:
                 for status, detail in findings:
