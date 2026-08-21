@@ -63,9 +63,11 @@ from cascor_constants.constants import (  # _PROJECT_MODEL_AUTHKEY,; _PROJECT_MO
     _SPIRAL_PROBLEM_AUTHKEY,
     _SPIRAL_PROBLEM_BASE_MANAGER_ADDRESS_IP,
     _SPIRAL_PROBLEM_BASE_MANAGER_ADDRESS_PORT,
+    _SPIRAL_PROBLEM_CANDIDATE_CONVERGENCE_THRESHOLD,
     _SPIRAL_PROBLEM_CANDIDATE_DISPLAY_FREQUENCY,
     _SPIRAL_PROBLEM_CANDIDATE_EPOCHS,
     _SPIRAL_PROBLEM_CANDIDATE_LEARNING_RATE,
+    _SPIRAL_PROBLEM_CANDIDATE_PATIENCE,
     _SPIRAL_PROBLEM_CANDIDATE_POOL_SIZE,
     _SPIRAL_PROBLEM_CLOCKWISE,
     _SPIRAL_PROBLEM_CONVERGENCE_THRESHOLD,
@@ -77,6 +79,7 @@ from cascor_constants.constants import (  # _PROJECT_MODEL_AUTHKEY,; _PROJECT_MO
     _SPIRAL_PROBLEM_EPOCH_DISPLAY_FREQUENCY,
     _SPIRAL_PROBLEM_EPOCHS_MAX,
     _SPIRAL_PROBLEM_GENERATE_PLOTS_DEFAULT,
+    _SPIRAL_PROBLEM_INIT_OUTPUT_WEIGHTS,
     _SPIRAL_PROBLEM_INPUT_SIZE,
     _SPIRAL_PROBLEM_LEARNING_RATE,
     _SPIRAL_PROBLEM_LOG_DATE_FORMAT,
@@ -91,6 +94,7 @@ from cascor_constants.constants import (  # _PROJECT_MODEL_AUTHKEY,; _PROJECT_MO
     _SPIRAL_PROBLEM_LOG_LEVEL_NUMBERS_DICT,
     _SPIRAL_PROBLEM_LOG_LEVEL_NUMBERS_LIST,
     _SPIRAL_PROBLEM_MAX_HIDDEN_UNITS,
+    _SPIRAL_PROBLEM_MAX_ITERATIONS,
     _SPIRAL_PROBLEM_MAX_NEW,
     _SPIRAL_PROBLEM_MAX_ORIG,
     _SPIRAL_PROBLEM_MIN_NEW,
@@ -153,16 +157,22 @@ class SpiralProblem(object):
         _SpiralProblem__candidate_display_frequency: int = _SPIRAL_PROBLEM_CANDIDATE_DISPLAY_FREQUENCY,
         _SpiralProblem__candidate_epochs: int = _SPIRAL_PROBLEM_CANDIDATE_EPOCHS,
         _SpiralProblem__candidate_learning_rate: float = _SPIRAL_PROBLEM_CANDIDATE_LEARNING_RATE,
+        _SpiralProblem__candidate_convergence_threshold: float = _SPIRAL_PROBLEM_CANDIDATE_CONVERGENCE_THRESHOLD,
+        _SpiralProblem__candidate_patience: int = _SPIRAL_PROBLEM_CANDIDATE_PATIENCE,
         _SpiralProblem__candidate_pool_size: int = _SPIRAL_PROBLEM_CANDIDATE_POOL_SIZE,
         _SpiralProblem__clockwise: bool = _SPIRAL_PROBLEM_CLOCKWISE,  # True for clockwise spirals, False for counter-clockwise
         _SpiralProblem__correlation_threshold: float = _SPIRAL_PROBLEM_CORRELATION_THRESHOLD,
         _SpiralProblem__epoch_display_frequency: int = _SPIRAL_PROBLEM_EPOCH_DISPLAY_FREQUENCY,
+        # W-11 (L-4): mirrors ``CascadeCorrelationNetwork.fit``'s own default rather than
+        # minting a constant tier for one boolean — fit's signature is the authority.
+        _SpiralProblem__early_stopping: bool = True,
         _SpiralProblem__epochs_max: int = _SPIRAL_PROBLEM_EPOCHS_MAX,
         _SpiralProblem__generate_plots_default: bool = _SPIRAL_PROBLEM_GENERATE_PLOTS_DEFAULT,
         _SpiralProblem__default_origin: float = _SPIRAL_PROBLEM_DEFAULT_ORIGIN,
         _SpiralProblem__default_radius: float = _SPIRAL_PROBLEM_DEFAULT_RADIUS,
         _SpiralProblem__display_frequency: int = _SPIRAL_PROBLEM_DISPLAY_FREQUENCY,
         _SpiralProblem__distribution: float = _SPIRAL_PROBLEM_DISTRIBUTION_FACTOR,
+        _SpiralProblem__init_output_weights: str = _SPIRAL_PROBLEM_INIT_OUTPUT_WEIGHTS,
         _SpiralProblem__input_size: int = _SPIRAL_PROBLEM_INPUT_SIZE,
         _SpiralProblem__learning_rate: float = _SPIRAL_PROBLEM_LEARNING_RATE,
         _SpiralProblem__log_config: LogConfig | None = None,
@@ -178,6 +188,7 @@ class SpiralProblem(object):
         _SpiralProblem__log_level_numbers_dict: dict = _SPIRAL_PROBLEM_LOG_LEVEL_NUMBERS_DICT,
         _SpiralProblem__log_level_numbers_list: list = _SPIRAL_PROBLEM_LOG_LEVEL_NUMBERS_LIST,
         _SpiralProblem__max_hidden_units: int = _SPIRAL_PROBLEM_MAX_HIDDEN_UNITS,
+        _SpiralProblem__max_iterations: int = _SPIRAL_PROBLEM_MAX_ITERATIONS,
         _SpiralProblem__max_new: float = _SPIRAL_PROBLEM_MAX_NEW,  # Maximum value for the new points
         _SpiralProblem__max_orig: float = _SPIRAL_PROBLEM_MAX_ORIG,  # Maximum value for the original points
         _SpiralProblem__min_new: float = _SPIRAL_PROBLEM_MIN_NEW,  # Minimum value for the new points
@@ -188,6 +199,8 @@ class SpiralProblem(object):
         _SpiralProblem__noise: float = _SPIRAL_PROBLEM_NOISE_FACTOR_DEFAULT,
         _SpiralProblem__orig_points: int = _SPIRAL_PROBLEM_ORIG_POINTS,  # User provided data points or None
         _SpiralProblem__output_epochs: int = _SPIRAL_PROBLEM_OUTPUT_EPOCHS,
+        # Mirrors CascadeCorrelationConfig's own literal default; there is no constant tier.
+        _SpiralProblem__optimizer_type: str = "Adam",
         _SpiralProblem__output_size: int = _SPIRAL_PROBLEM_OUTPUT_SIZE,
         _SpiralProblem__patience: int = _SPIRAL_PROBLEM_PATIENCE,
         _SpiralProblem__convergence_threshold: float = _SPIRAL_PROBLEM_CONVERGENCE_THRESHOLD,
@@ -342,6 +355,22 @@ class SpiralProblem(object):
         self.logger.verbose(f"SpiralProblem: __init__: Candidate pool size: {self.candidate_pool_size}")
         self.candidate_learning_rate = _SpiralProblem__candidate_learning_rate
         self.logger.verbose(f"SpiralProblem: __init__: Candidate learning rate: {self.candidate_learning_rate}")
+        # W-11 (L-4): the three knobs the direct CLI previously could not honour. The network
+        # layer already accepted all three -- CascadeCorrelationConfig takes candidate_patience
+        # and max_iterations, and fit() takes early_stopping and max_iterations -- so only this
+        # class stood between an experiment YAML and the run it describes.
+        self.candidate_convergence_threshold = _SpiralProblem__candidate_convergence_threshold
+        self.logger.verbose(f"SpiralProblem: __init__: Candidate convergence threshold: {self.candidate_convergence_threshold}")
+        self.candidate_patience = _SpiralProblem__candidate_patience
+        self.logger.verbose(f"SpiralProblem: __init__: Candidate patience: {self.candidate_patience}")
+        self.early_stopping = _SpiralProblem__early_stopping
+        self.logger.verbose(f"SpiralProblem: __init__: Early stopping: {self.early_stopping}")
+        self.max_iterations = _SpiralProblem__max_iterations
+        self.logger.verbose(f"SpiralProblem: __init__: Max iterations: {self.max_iterations}")
+        self.init_output_weights = _SpiralProblem__init_output_weights
+        self.logger.verbose(f"SpiralProblem: __init__: Init output weights: {self.init_output_weights}")
+        self.optimizer_type = _SpiralProblem__optimizer_type
+        self.logger.verbose(f"SpiralProblem: __init__: Optimizer type: {self.optimizer_type}")
         self.max_hidden_units = _SpiralProblem__max_hidden_units
         self.logger.verbose(f"SpiralProblem: __init__: Max hidden units: {self.max_hidden_units}")
         self.activation_function = _SpiralProblem__activation_function
@@ -430,8 +459,13 @@ class SpiralProblem(object):
                     # activation_functions_dict=self.activation_functions_dict,
                     learning_rate=self.learning_rate,
                     candidate_learning_rate=self.candidate_learning_rate,
+                    candidate_convergence_threshold=self.candidate_convergence_threshold,
+                    candidate_patience=self.candidate_patience,
                     candidate_pool_size=self.candidate_pool_size,
                     candidate_epochs=self.candidate_epochs,
+                    max_iterations=self.max_iterations,
+                    init_output_weights=self.init_output_weights,
+                    optimizer_type=self.optimizer_type,
                     epochs_max=self.epochs_max,
                     output_epochs=self.output_epochs,
                     patience=self.patience,
@@ -1342,10 +1376,22 @@ class SpiralProblem(object):
         # constant's 10000 epochs while every later pass correctly stopped at 100.
         # It also contradicted the project's own cost model: TrainingLifecycleManager
         # .derive_epochs_cap documents the initial pass as costing ``output_epochs``.
+        # W-11 (L-4): ``early_stopping`` and ``max_iterations`` are forwarded so an experiment
+        # YAML setting them is honoured here as it is on the service tier. Both previously fell
+        # back to fit()'s own defaults regardless of what the config asked for.
+        #
+        # ``max_epochs=self.output_epochs`` is the direct-CLI alias and is DELIBERATELY kept:
+        # L-2 (settled 2026-08-21) makes ``max_epochs`` the initial-pass budget and
+        # ``output_epochs`` the per-round budget, and passing ``output_epochs`` here is what
+        # gives the CLI one budget for every pass. That is a known, instrumented divergence
+        # from the service (juniper-ml#1159 records it on the run manifest) -- not something
+        # this change is quietly altering.
         self.history = self.network.fit(
             self.x,
             self.y,
             max_epochs=self.output_epochs,
+            early_stopping=self.early_stopping,
+            max_iterations=self.max_iterations,
         )
         self.logger.debug(f"SpiralProblem: solve_n_spiral_problem: Training history: {self.history}")
 
