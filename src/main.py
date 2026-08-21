@@ -282,7 +282,11 @@ def _resolve_cli_overrides(dataset_params, training_params):
 
     ``overrides`` is {knob_name: value}; ``unmapped_keys`` lists YAML keys with no
     direct-CLI counterpart (service-tier-only knobs like max_iterations or
-    candidate_pool_size) -- the caller reports them loudly.
+    candidate_patience) -- the caller reports them loudly.
+
+    ``candidate_pool_size`` was the example here until 2026-08-21 and is wrong: it is
+    mapped, and has been since this map was introduced. An example that names a MAPPED
+    key teaches the opposite of what the docstring is for.
     """
     overrides = {}
     unmapped = []

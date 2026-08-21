@@ -1871,14 +1871,28 @@ class CascadeCorrelationNetwork:
         # Initial training of the output layer
         self.logger.trace("CascadeCorrelationNetwork: fit: Starting initial training of the output layer.")
         self.logger.info("CascadeCorrelationNetwork: fit: Initial training of output layer")
-        # L-2 (scope note): ``max_epochs`` governs THIS initial output pass only. It is
-        # deliberately not forwarded to ``grow_network`` below, whose per-round output
-        # passes read ``self.output_epochs`` directly. The two therefore agree only while
-        # a caller leaves ``max_epochs`` unset (falling back to ``self.output_epochs``
-        # here) or passes a value equal to it. ``max_epochs`` is in the service's
-        # ``_FIT_KWARGS``, so an explicit PATCH can still split them; whether an explicit
-        # ``max_epochs`` should also re-budget the per-round passes is an open semantic
-        # question, not settled here. See the F-P1-3 root-cause note, finding L-2.
+        # L-2 (SETTLED 2026-08-21, owner decision): ``max_epochs`` governs THIS initial
+        # output pass only, and ``output_epochs`` governs ``grow_network``'s per-round
+        # passes. That split is INTENDED, not an oversight -- it is deliberately not
+        # forwarded to ``grow_network`` below, whose per-round output passes read
+        # ``self.output_epochs`` directly (three sites). The two therefore agree only
+        # while a caller leaves ``max_epochs`` unset (falling back to ``self.output_epochs``
+        # here) or passes a value equal to it, and ``max_epochs`` is in the service's
+        # ``_FIT_KWARGS``, so an explicit PATCH can still split them.
+        #
+        # The question this note previously left open -- whether an explicit ``max_epochs``
+        # should ALSO re-budget the per-round passes -- was answered NO. Forwarding it
+        # would change service behaviour and is golden-suite-visible, and the split is the
+        # semantics the two knobs are named for: one bounds the initial pass, the other
+        # bounds each growth round. Do not "fix" this by forwarding ``max_epochs``.
+        #
+        # The residual footgun is real and is INSTRUMENTED rather than removed: a config
+        # setting ``max_epochs`` without ``output_epochs`` runs the service at N-then-10000
+        # (the ``output_epochs`` default) while the direct CLI aliases ``max_epochs`` onto
+        # every pass, so the arms are not like-for-like. juniper-ml#1159 detects exactly
+        # that and records a ``validation_warnings`` entry on the run manifest. Set BOTH
+        # knobs for any CLI-vs-service comparison. See the F-P1-3 root-cause note,
+        # finding L-2, and juniper-ml#1143 SS2.2.
         max_epochs = (max_epochs, self.output_epochs)[max_epochs is None]
         # BUG-CC-09: re-validate after the ``self.output_epochs`` fall-back —
         # the earlier check only ran when ``max_epochs`` came in non-None,
