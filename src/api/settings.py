@@ -59,7 +59,6 @@ _JUNIPER_CASCOR_API_WS_PENDING_MAX_DURATION_S_DEFAULT: float = _JUNIPER_CASCOR_A
 
 _JUNIPER_CASCOR_API_KEYS_LIST_EMPTY: list[str] | None = None
 _JUNIPER_CASCOR_API_RATELIMIT_DISABLED: bool = False
-_JUNIPER_CASCOR_API_RATELIMIT_ENABLED: bool = True
 _JUNIPER_CASCOR_API_RATELIMIT_DEFAULT: int = 60
 
 _JUNIPER_CASCOR_API_LOG_FORMAT_TEXT: str = "text"
@@ -72,7 +71,6 @@ _JUNIPER_CASCOR_API_METRICS_ENABLED_DISABLED: bool = False
 _JUNIPER_CASCOR_API_METRICS_ENABLED_DEFAULT: bool = _JUNIPER_CASCOR_API_METRICS_ENABLED_DISABLED
 
 _JUNIPER_CASCOR_API_AUTO_START_DISABLED: bool = False
-_JUNIPER_CASCOR_API_AUTO_START_ENABLED: bool = True
 # Default OFF. Auto-start trains on boot onto a default (empty) network, which violates
 # the clean-STOPPED initial-state assumption every API / Canopy / automation caller makes
 # (it left the #319 probe staring at epoch 7576 / 0 hidden units on a fresh stack). It is
