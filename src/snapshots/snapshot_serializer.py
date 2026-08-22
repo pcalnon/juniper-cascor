@@ -5,6 +5,7 @@ Provides comprehensive state capture and restoration with full multiprocessing s
 """
 
 import datetime
+import inspect
 import io
 import json
 import multiprocessing as mp
@@ -1623,12 +1624,58 @@ class CascadeHDF5Serializer:
             if "config_json" in config_group:
                 config_json = read_str_dataset(config_group, "config_json")
                 config_dict = json.loads(config_json)
+                # Two DIFFERENT filters, and both are load-bearing.
+                #
+                # 1. The explicit drops below are fields ``CascadeCorrelationConfig``
+                #    DOES accept, but whose serialized form is unusable: ``json.dumps``
+                #    ran with ``default=str``, so an activation-function map or a log
+                #    config comes back as a repr string rather than the live object.
+                #    Passing those through would construct a network holding junk, so
+                #    they must be dropped by name even though the allowlist would keep
+                #    them. (``logger`` / ``candidates_per_layer`` /
+                #    ``layer_selection_strategy`` are not accepted and would be dropped
+                #    by (2) anyway; they stay here as documentation of intent.)
                 config_dict.pop("activation_functions_dict", None)
                 config_dict.pop("log_config", None)
                 config_dict.pop("logger", None)
                 # Remove runtime-only attributes not in CascadeCorrelationConfig
                 config_dict.pop("candidates_per_layer", None)
                 config_dict.pop("layer_selection_strategy", None)
+                # 2. Drop any field the CURRENT config class no longer accepts.
+                #
+                #    Without this, ``CascadeCorrelationConfig(**config_dict)`` raises
+                #    TypeError on strict keyword matching and the whole load fails with
+                #    the generic "snapshot could not be deserialized into a network" --
+                #    a message that names nothing, for a snapshot that is perfectly
+                #    intact. Measured 2026-08-22: 14 archive snapshots written by cascor
+                #    0.3.2 carry ``optimizer_config``, a real field at the time that has
+                #    since been removed.
+                #
+                #    The denylist above cannot cover this: it would have to be extended
+                #    by hand at every field removal, and nothing prompts anyone to do so,
+                #    so each removal silently bricks whichever slice of the archive still
+                #    carries that field. An allowlist derived from the class itself needs
+                #    no maintenance and cannot fall behind. Snapshots are long-lived
+                #    project assets; the config schema is not frozen.
+                #    Guarded two ways, because a filter that gets its allowlist wrong
+                #    drops REAL config silently -- a far worse failure than the one it
+                #    fixes. If ``__init__`` ever accepts ``**kwargs`` (a decorator without
+                #    ``functools.wraps`` is enough to make ``signature`` report that), then
+                #    every name is legal, ``TypeError`` cannot happen, and filtering would
+                #    strip the whole config; so that case skips the filter entirely. And an
+                #    uninspectable constructor falls back to the pre-existing behaviour
+                #    rather than failing the load.
+                try:
+                    parameters = inspect.signature(CascadeCorrelationConfig.__init__).parameters
+                except (TypeError, ValueError) as exc:  # pragma: no cover - pure-Python class, but a bad allowlist must never win
+                    self.logger.warning(f"CascadeHDF5Serializer: could not introspect CascadeCorrelationConfig ({exc}); passing config through unfiltered")
+                    parameters = None
+                if parameters is not None and not any(p.kind is inspect.Parameter.VAR_KEYWORD for p in parameters.values()):
+                    accepted = {name for name in parameters if name != "self"}
+                    dropped = sorted(set(config_dict) - accepted)
+                    if dropped:
+                        self.logger.warning(f"CascadeHDF5Serializer: dropping {len(dropped)} config field(s) this version no longer accepts: {dropped}")
+                        config_dict = {key: value for key, value in config_dict.items() if key in accepted}
                 if "meta" in hdf5_file:
                     meta_group = hdf5_file["meta"]
                     if saved_uuid := read_str_attr(meta_group, "uuid", None):
