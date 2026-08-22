@@ -1663,6 +1663,73 @@ class CascadeHDF5Serializer:
             config_dict = {key: value for key, value in config_dict.items() if key in accepted}
         return config_dict
 
+    def _tensors_corroborate_arch(self, hdf5_file: h5py.File, input_size: int, output_size: int) -> bool:
+        """Do the stored output-layer tensors actually have the geometry ``arch`` claims?
+
+        This is the whole basis for preferring ``arch`` over ``config_json``: not that arch
+        is inherently more trustworthy, but that on the affected snapshots the TENSORS agree
+        with it and only ``config_json`` dissents. Verifying that rather than assuming it is
+        what keeps a genuine arch/tensor disagreement reportable as
+        ``SNAPSHOT_ARCH_MISMATCH`` instead of being reconciled into silence.
+        """
+        try:
+            output_group = hdf5_file["params"]["output_layer"]
+            weights_shape = tuple(output_group["weights"].shape)
+            bias_shape = tuple(output_group["bias"].shape)
+        except (KeyError, TypeError, AttributeError):
+            return False
+        num_hidden = 0
+        if "hidden_units" in hdf5_file:
+            num_hidden = sum(1 for key in hdf5_file["hidden_units"] if key.startswith("unit_"))
+        return weights_shape == (input_size + num_hidden, output_size) and bias_shape == (output_size,)
+
+    def _reconcile_structural_dims(self, config_dict: Dict[str, Any], hdf5_file: h5py.File) -> None:
+        """Prefer ``arch`` over ``config_json`` for ``input_size`` / ``output_size`` -- but
+        ONLY when the stored tensors corroborate ``arch``.
+
+        A snapshot records these in FOUR places from TWO sources: ``arch.attrs``,
+        ``config.attrs`` and the ``params`` tensors are all written from the LIVE network;
+        ``config/config_json`` alone is written from the config OBJECT.
+        ``_resize_network_for_dataset`` -- the live dataset swap -- assigns
+        ``self.output_size`` and never touches ``self.config``, and nothing in the tree ever
+        assigns ``config.output_size``. So after a resize the config object is permanently
+        stale and every later snapshot records the contradiction.
+
+        Rebuilding from the stale copy produced a network NARROWER than the tensors about to
+        be loaded into it, which the arch gate then correctly refused. Measured 2026-08-22
+        (juniper-ml#1254): 239 archive snapshots, every one intact.
+
+        THE CORROBORATION CHECK IS NOT OPTIONAL. Reconciling unconditionally would make
+        ``SNAPSHOT_ARCH_MISMATCH`` unreachable -- the network would be built FROM arch, so it
+        could never disagree with arch -- retiring a distinct load status that D-E added
+        deliberately, that four API routes map to their own 422 code, and that exists to tell
+        an operator "this is a different investigation from damage". A deliberately corrupted
+        arch would then be reported as generic shape damage instead.
+
+        So the rule is narrow: reconcile only where the tensors say arch is right and only
+        ``config_json`` is stale. Everything else still reaches the gates unchanged.
+        """
+        if "arch" not in hdf5_file:
+            return
+        arch_group = hdf5_file["arch"]
+        dims = {}
+        for field in ("input_size", "output_size"):
+            if field not in arch_group.attrs:
+                return
+            try:
+                dims[field] = int(arch_group.attrs[field])
+            except (TypeError, ValueError):  # a non-numeric attr is a different fault; leave it to the gates
+                return
+        if not any(config_dict.get(field) != value for field, value in dims.items()):
+            return
+        if not self._tensors_corroborate_arch(hdf5_file, dims["input_size"], dims["output_size"]):
+            self.logger.debug("CascadeHDF5Serializer: arch disagrees with config_json but the tensors do not corroborate arch; leaving it to the integrity gates")
+            return
+        for field, value in dims.items():
+            if config_dict.get(field) != value:
+                self.logger.warning(f"CascadeHDF5Serializer: {field} in config_json ({config_dict.get(field)}) disagrees with the arch group ({value}); rebuilding from arch, which the stored tensors corroborate (the config object goes stale after a dataset resize)")
+                config_dict[field] = value
+
     def _create_network_from_file(self, hdf5_file: h5py.File):
         """Create a network instance from HDF5 configuration."""
         try:
@@ -1676,6 +1743,7 @@ class CascadeHDF5Serializer:
             if "config_json" in config_group:
                 config_json = read_str_dataset(config_group, "config_json")
                 config_dict = self._sanitize_config_dict(json.loads(config_json), CascadeCorrelationConfig)
+                self._reconcile_structural_dims(config_dict, hdf5_file)
                 if "meta" in hdf5_file:
                     meta_group = hdf5_file["meta"]
                     if saved_uuid := read_str_attr(meta_group, "uuid", None):
