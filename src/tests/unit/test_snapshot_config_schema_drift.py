@@ -161,6 +161,7 @@ class TestKnownFieldsSurvive:
         assert network is not None
         assert not isinstance(getattr(network, "activation_functions_dict", None), str), "the stringified activation map must never reach the network"
 
+
 class TestTheFilterCannotMisfire:
     """A filter that gets its allowlist wrong drops REAL config silently, which is worse
     than the TypeError it exists to prevent. Both escape hatches are pinned."""
