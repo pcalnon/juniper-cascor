@@ -81,6 +81,32 @@ if sysconfig.get_config_var("Py_GIL_DISABLED") and not os.environ.get("CASCOR_AL
 if "CASCOR_LOG_LEVEL" not in os.environ:
     os.environ["CASCOR_LOG_LEVEL"] = "WARNING"
 
+# ===================================================================
+# CRITICAL: redirect snapshots BEFORE any cascor imports (same reason)
+# ===================================================================
+# ``train_output_layer`` calls ``create_snapshot()`` unconditionally, so every
+# test that trains an output layer writes a real .h5 -- and with no override it
+# writes into the SHARED archive at <repo>/cascor-snapshots, alongside ~27.9k
+# research artifacts. Measured 2026-08-21: running tests/unit/test_p1_fixes.py
+# alone added one file there.
+#
+# That is test exhaust accumulating in a project asset store, and it is exactly
+# what makes "which of these snapshots matter?" hard to answer -- the question
+# the D-C provenance and the §6.2 index exist to fix.
+#
+# The override MUST be set here, before the first cascor import: the model tier
+# resolves JUNIPER_CASCOR_SNAPSHOTS_DIR at IMPORT time in
+# cascor_constants/constants_hdf5/constants_hdf5.py, so doing this in
+# pytest_configure() is too late -- the constant is already bound. Same
+# constraint, and the same fix, as the CASCOR_LOG_LEVEL block above.
+#
+# An explicit JUNIPER_CASCOR_SNAPSHOTS_DIR from the caller is honoured, so a
+# deliberate run against a chosen root still works.
+if "JUNIPER_CASCOR_SNAPSHOTS_DIR" not in os.environ:
+    import tempfile
+
+    os.environ["JUNIPER_CASCOR_SNAPSHOTS_DIR"] = tempfile.mkdtemp(prefix="cascor-test-snapshots-")
+
 # from typing import Tuple, Dict, Any, Optional
 from typing import Dict, Tuple
 from unittest.mock import MagicMock
