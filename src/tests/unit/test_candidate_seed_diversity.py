@@ -44,13 +44,32 @@ class TestCandidateSeedDiversity:
         return CascadeCorrelationNetwork(config=basic_config)
 
     def test_candidates_have_different_seeds(self, network):
-        """Test that candidates in pool are initialized with different seeds."""
-        import random
+        """Test that candidates in pool are initialized with different seeds.
 
-        # Generate candidate seeds the same way as _generate_candidate_tasks does
-        random.seed(network.random_seed)
-        candidate_seeds = [random.randint(0, network.random_max_value) for _ in range(network.candidate_pool_size)]
+        Drives the real derivation instead of re-implementing it. This test used to
+        reproduce `random.seed(...)` + `random.randint(...)` inline and assert on its own
+        local copy, which said nothing about the network at all -- and said nothing at all
+        once the derivation moved to a network-owned generator (juniper-cascor#532). A test
+        that reproduces the code under test is how that regression returns silently.
+        """
+        # _generate_candidate_tasks reads only candidate_input.shape[1], so a 2-wide tensor
+        # matches this fixture's input_size.
+        candidate_input = torch.zeros((6, 2), dtype=torch.float32)
+        try:
+            tasks = network._generate_candidate_tasks(candidate_input, candidate_input.clone(), candidate_input.clone())
+            # Task payload is (index, input_size, activation_name, random_value_scale, uuid,
+            # SEED, random_max_value, sequence_max_value); the seed is element 5.
+            candidate_seeds = [task[1][5] for task in tasks]
+        finally:
+            for blk in list(getattr(network, "_active_shm_blocks", [])):
+                try:
+                    blk.close_and_unlink()
+                except Exception:  # nosec B110 -- test cleanup must not mask the assertion
+                    pass
+            if hasattr(network, "_active_shm_blocks"):
+                network._active_shm_blocks.clear()
 
+        assert len(candidate_seeds) == network.candidate_pool_size
         # All seeds should be unique (very high probability with large random_max_value)
         assert len(candidate_seeds) == len(set(candidate_seeds)), "All candidates should have unique seeds"
 
