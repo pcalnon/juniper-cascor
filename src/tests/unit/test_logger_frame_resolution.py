@@ -141,12 +141,7 @@ class TestNoStackWalkRegression(unittest.TestCase):
                 self.assertNotIn(
                     banned,
                     code,
-                    msg=(
-                        f"{banned} is back in logger.py. It walks the whole stack and calls "
-                        "inspect.getmodule per frame, which copies and scans sys.modules -- "
-                        "~20,700x slower per resolution and ~78% of candidate-worker CPU when "
-                        "this was last measured. Use frame.f_back attributes instead."
-                    ),
+                    msg=(f"{banned} is back in logger.py. It walks the whole stack and calls " "inspect.getmodule per frame, which copies and scans sys.modules -- " "~20,700x slower per resolution and ~78% of candidate-worker CPU when " "this was last measured. Use frame.f_back attributes instead."),
                 )
 
 
