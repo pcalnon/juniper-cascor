@@ -4,6 +4,7 @@ HDF5 Serializer for CascadeCorrelationNetwork objects.
 Provides comprehensive state capture and restoration with full multiprocessing support.
 """
 
+import contextlib
 import datetime
 import inspect
 import io
@@ -14,6 +15,7 @@ import pathlib as pl
 import pickle  # trunk-ignore(bandit/B403)
 import random
 import sys
+import uuid
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 
@@ -122,6 +124,55 @@ class CascadeHDF5Serializer:
         self.format_version = "2"
         self.format_name = _HDF5_FORMAT_NAME_CURRENT
 
+    @contextlib.contextmanager
+    def _atomic_hdf5_write(self, filepath: Union[str, Path]):
+        """Open an HDF5 file for writing that only appears at ``filepath`` once complete.
+
+        Writing straight at the destination -- which this did until 2026-08-23 -- means an
+        interrupted or raising save leaves a PARTIAL ``.h5`` under the final name,
+        indistinguishable from a good snapshot without opening it. That is not theoretical:
+        it is the sole root cause of every structurally-incomplete file in the live archive.
+        Measured 2026-08-22 (juniper-ml#1254), 273 of 27,908 snapshots, and every one of them
+        is a strict PREFIX of the write order
+        (``root -> meta -> config -> arch -> params -> hidden_units -> random -> mp``):
+
+            * 6 with no groups at all      -- died before the root attributes
+            * 2 with only config + meta    -- died before ``arch``
+            * 265 with unit_0 but no more  -- died inside ``_save_hidden_units``
+
+        The 265 are unrecoverable. ``_save_hidden_units`` writes ``num_units`` BEFORE the
+        unit loop, so those files confidently declare 5/10/20/50 hidden units, agree with
+        their own output-layer geometry, and contain one. Nothing can reconstruct the rest.
+
+        So: write to a sibling temporary, then ``os.replace``, which is atomic within a
+        filesystem. A crash now leaves a temp file and the previous snapshot intact, instead
+        of a corpse wearing the real name.
+
+        THE TEMPORARY MUST NOT END IN ``.h5``. The index scanner
+        (``juniper-ml/util/snapshot_index.py``) selects on ``suffix == ".h5"`` and
+        ``snapshot_utils`` globs ``cascor_snapshot_*.h5``; a temp file left behind by a hard
+        kill would otherwise be scanned, counted, and cleanup-eligible as though it were a
+        snapshot -- reintroducing the exact confusion this fixes. The name is also
+        dot-prefixed and carries pid + a random suffix so concurrent writers to one path
+        cannot collide.
+        """
+        destination = Path(filepath)
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        temporary = destination.with_name(f".{destination.name}.partial-{os.getpid()}-{uuid.uuid4().hex[:8]}")
+        handle = h5py.File(temporary, "w")
+        try:
+            yield handle
+            # Closed inside the try on purpose: HDF5 flushes on close, so a failure THERE is
+            # a write failure and must not be followed by a rename that publishes it.
+            handle.close()
+        except BaseException:
+            with contextlib.suppress(Exception):
+                handle.close()
+            with contextlib.suppress(OSError):
+                temporary.unlink()
+            raise
+        os.replace(temporary, destination)
+
     def save_network(
         self,
         network,
@@ -155,10 +206,7 @@ class CascadeHDF5Serializer:
         try:
             self.logger.info(f"CascadeHDF5Serializer: Saving network to {filepath}")
 
-            # Ensure directory exists
-            Path(filepath).parent.mkdir(parents=True, exist_ok=True)
-
-            with h5py.File(filepath, "w") as hdf5_file:
+            with self._atomic_hdf5_write(filepath) as hdf5_file:
                 self._save_network_objects_helper(hdf5_file, network, compression, compression_opts)
                 # D-C: stamp which run produced this model, from the process env the
                 # launcher exports. Writes nothing when the run is unidentified, so
@@ -204,10 +252,7 @@ class CascadeHDF5Serializer:
         try:
             self.logger.info(f"CascadeHDF5Serializer: Saving object to {filepath}")
 
-            # Ensure directory exists
-            Path(filepath).parent.mkdir(parents=True, exist_ok=True)
-
-            with h5py.File(filepath, "w") as hdf5_file:
+            with self._atomic_hdf5_write(filepath) as hdf5_file:
                 # CASCOR-P0-004 FIX: Changed from _save_root_attributes (wrong arg count) to _save_network_objects_helper
                 # OLD (TypeError - 4 args passed to 2-arg method):
                 # self._save_root_attributes(hdf5_file, objectify, compression, compression_opts)
