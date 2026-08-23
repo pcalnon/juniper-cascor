@@ -848,6 +848,26 @@ class CascadeCorrelationNetwork:
     # call can build an optimizer on the expanded tensors.
     # ------------------------------------------------------------------
 
+    def _sync_config_dimensions(self) -> None:
+        """Copy the live structural dimensions back onto the config object.
+
+        ``input_size`` / ``output_size`` live in two places -- on the network (authoritative
+        at runtime, and what the tensors are built to) and on ``self.config`` (what
+        ``_save_configuration`` serializes into ``config_json``). They are read from the
+        config once at construction and then diverge the moment the network is resized.
+
+        Keeping them in step is what stops a snapshot describing two different networks at
+        once. Written defensively: a config without these attributes is left alone rather
+        than gaining them, so an unusual or stubbed config cannot turn a resize into a
+        crash on the training path.
+        """
+        config = getattr(self, "config", None)
+        if config is None:
+            return
+        for field, value in (("input_size", self.input_size), ("output_size", self.output_size)):
+            if hasattr(config, field):
+                setattr(config, field, value)
+
     def _resize_network_for_dataset(self, input_size_new: int, output_size_new: int) -> Dict[str, int]:
         """Grow ``self.input_size`` / ``self.output_size`` to fit a new dataset.
 
@@ -896,6 +916,20 @@ class CascadeCorrelationNetwork:
         self.input_size = input_size_new
         self.output_size = output_size_new
         self.active_output_dim = output_size_new
+        # The config object is a SECOND copy of these two dimensions, and until 2026-08-23
+        # nothing here updated it -- ``config.input_size`` / ``config.output_size`` were read
+        # at construction and never assigned again anywhere in the tree. So a resized network
+        # carried a permanently stale config, and every snapshot taken afterwards recorded
+        # the contradiction: ``arch`` and the tensors at the NEW width, ``config_json`` at the
+        # old one.
+        #
+        # That is not hypothetical. It made 239 of the archive's 27,908 snapshots unloadable
+        # (juniper-ml#1254): the loader rebuilds from ``config_json``, so it produced a
+        # network narrower than the tensors about to be loaded into it, and the arch
+        # integrity gate correctly refused the file. juniper-cascor#560 taught the LOADER to
+        # recover those by preferring ``arch`` when the tensors corroborate it; this is the
+        # writer-side half, so newly-written snapshots stop needing that recovery at all.
+        self._sync_config_dimensions()
 
         self.logger.debug(f"CascadeCorrelationNetwork: _resize_network_for_dataset: grew network to input={input_size_new} output={output_size_new} (deltas: input={input_delta}, output={output_delta}, hidden={len(self.hidden_units)} preserved)")
         return {
