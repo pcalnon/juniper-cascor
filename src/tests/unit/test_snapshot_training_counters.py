@@ -35,7 +35,6 @@ THE FIX HAS TWO HALVES, AND BOTH ARE NEEDED
 
 import os
 import sys
-import tempfile
 
 import h5py
 import pytest
@@ -114,8 +113,7 @@ class TestBestValueLossIsMeasured:
     """The reported ask: ``best_value_loss`` must carry a real number after training."""
 
     def test_it_is_no_longer_inf_after_training(self, tmp_path):
-        module = __import__("juniper_data.generators.xor", fromlist=["x"]) if _has_juniper_data() else None
-        x, y = _training_data(module)
+        x, y = _training_data()
         network = _network(max_hidden_units=2, candidate_pool_size=3, candidate_epochs=40, output_epochs=60, max_iterations=2)
         network.fit(x, y, max_epochs=60, max_iterations=2)
         assert hasattr(network, "best_value_loss"), "grow_network must publish the value it already computes"
@@ -125,7 +123,7 @@ class TestBestValueLossIsMeasured:
 
     def test_patience_counter_is_published_too(self, tmp_path):
         """Same line, same cause -- it was a local beside best_value_loss."""
-        x, y = _training_data(None)
+        x, y = _training_data()
         network = _network(max_hidden_units=2, candidate_pool_size=3, candidate_epochs=40, output_epochs=60, max_iterations=2)
         network.fit(x, y, max_epochs=60, max_iterations=2)
         assert hasattr(network, "patience_counter")
@@ -138,7 +136,7 @@ class TestBestValueLossIsMeasured:
         assert "best_value_loss" not in meta
 
     def test_the_value_round_trips(self, tmp_path):
-        x, y = _training_data(None)
+        x, y = _training_data()
         network = _network(max_hidden_units=2, candidate_pool_size=3, candidate_epochs=40, output_epochs=60, max_iterations=2)
         network.fit(x, y, max_epochs=60, max_iterations=2)
         path = _save(network, tmp_path)
@@ -146,12 +144,14 @@ class TestBestValueLossIsMeasured:
         assert restored.best_value_loss == pytest.approx(network.best_value_loss)
 
 
-def _has_juniper_data() -> bool:
-    return True
+def _training_data():
+    """A tiny XOR-shaped problem, built inline.
 
-
-def _training_data(_module):
-    """A tiny XOR-shaped problem. Kept local so the suite needs no juniper-data tree."""
+    Deliberately NOT sourced from juniper-data: this suite must run wherever cascor's own
+    unit tests run, and reaching into a sibling repo would make it fail in any environment
+    that has cascor but not juniper-data. An earlier draft imported the xor generator and
+    then discarded it, which was both dead weight and a hidden cross-repo dependency.
+    """
     x = torch.tensor([[0.0, 0.0], [0.0, 1.0], [1.0, 0.0], [1.0, 1.0]] * 25, dtype=torch.float32)
     y = torch.tensor([[1.0, 0.0], [0.0, 1.0], [0.0, 1.0], [1.0, 0.0]] * 25, dtype=torch.float32)
     return x, y
