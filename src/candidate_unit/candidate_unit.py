@@ -298,6 +298,25 @@ class CandidateUnit:
         # Display functions will be recreated lazily in train() when needed
 
     #################################################################################################################################################################################################
+    # Identify this unit in logs. `CascadeCorrelationNetwork._add_best_candidate` interpolates the
+    # unit itself, so without a __repr__ the installed candidate reaches every shipped log as a bare
+    # memory address -- which names nothing and differs every run. WHICH candidate was installed is
+    # the one fact separating "a near-tie flipped" from "the arithmetic jittered" (juniper-cascor#532).
+    def __repr__(self) -> str:
+        """Return a cheap, stable identity string for this candidate unit.
+
+        Deliberately O(1) and attribute-defensive. This runs on a logging path (see the CR-062
+        note in _get_correlations), so it must never format a tensor and must never raise: a
+        __repr__ that raises breaks the very log record that called it, and instances reach this
+        method part-formed via __setstate__ on the forked-worker path.
+
+        `correlation` is emitted at full repr precision rather than rounded -- the adjacent
+        "Final Correlation" line rounds to 6 dp, and in the cap-4 cell the top two round-0
+        correlations differ only in the 6th decimal place.
+        """
+        return f"CandidateUnit(candidate_index={getattr(self, 'candidate_index', None)!r}, uuid={getattr(self, 'uuid', None)!r}, correlation={getattr(self, 'correlation', None)!r})"
+
+    #################################################################################################################################################################################################
     # Helper method to perform initialization tasks for the __init__ method
     def _initialize_randomness(self, seed: Optional[int] = None, max_value: Optional[int] = None) -> None:
         """
