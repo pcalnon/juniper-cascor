@@ -135,6 +135,28 @@ class TestVerifySavedNetworkNamesTheFailingCheck:
         assert result["valid"] is False
         assert "Invalid format" in result["error"]
 
+    def test_absent_format_attribute_is_not_reported_as_invalid(self, tmp_path):
+        """An ABSENT ``format`` is a different failure from a WRONG one.
+
+        ``read_str_attr`` returns None when the attribute does not exist, and the
+        rejection branch rendered that straight into the message -- so the six
+        emptiest files in the archive were each reported as ``Invalid format: None``,
+        naming a format that does not exist rather than the attribute that is missing.
+        The distinction matters because the two have different causes: a wrong value
+        means some other writer stamped it, an absent one means the write died before
+        stamping anything.
+        """
+        path = tmp_path / "no-format-attr.h5"
+        with h5py.File(path, "w") as hf:
+            # Deliberately stamp NOTHING -- this is the truncated-write signature.
+            hf.attrs["format_version"] = "1"
+
+        result = CascadeHDF5Serializer().verify_saved_network(str(path))
+
+        assert result["valid"] is False
+        assert "Missing required attribute: format" in result["error"]
+        assert "None" not in result["error"], "the absent attribute must be named, not rendered as a phantom format value"
+
 
 class TestRouteStatusMapping:
     """The four verbs must agree, because the fusion was duplicated four times."""
