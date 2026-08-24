@@ -2037,6 +2037,13 @@ class CascadeHDF5Serializer:
         try:
             # Check format identifier
             format_name = read_str_attr(hdf5_file, "format")
+            # ``read_str_attr`` returns None for an ABSENT attribute, which is a different
+            # failure from a present-but-wrong one: it means the write died before stamping
+            # the format, not that some other writer stamped the wrong value. Rendering the
+            # absence through the branch below produced "Invalid format: None", which names
+            # nothing and reads as though a format literally called "None" was found.
+            if format_name is None:
+                return self._reject_format("Missing required attribute: format")
             if format_name not in [
                 self.format_name,
                 _HDF5_FORMAT_NAME_LEGACY,
