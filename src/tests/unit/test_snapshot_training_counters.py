@@ -109,6 +109,59 @@ class TestAbsentCountersAreOmitted:
         assert CascadeHDF5Serializer().load_network(str(path), restore_multiprocessing=False) is not None
 
 
+class TestTheLoadPathDoesNotFabricateEither:
+    """The half cascor#565 MISSED, and the half its own tests could not see.
+
+    #565 stopped the WRITE path fabricating, but ``_restore_training_state_helper`` kept doing
+    exactly that with ``.get(name, default)``. So the defect returned on any RESUME path: load
+    a snapshot that correctly omits ``best_value_loss``, get ``inf`` written onto the instance,
+    re-save, and the file now claims a measurement nobody took. Measured before the fix --
+
+        pass 1 (fresh save)      {'snapshot_counter': 0}
+        pass 2 (save after load) {..., 'patience_counter': 0, 'best_value_loss': inf}
+
+    ``TestAbsentCountersAreOmitted`` above could NOT catch it: it exercises ``current_epoch``,
+    the one field the restore helper already happened to guard. A round trip was required.
+    """
+
+    def test_absence_survives_a_load_save_round_trip(self, tmp_path):
+        network = _network()
+        first = _save(network, tmp_path, "first")
+        assert "best_value_loss" not in _meta(first)
+
+        serializer = CascadeHDF5Serializer()
+        reloaded = serializer.load_network(str(first), restore_multiprocessing=False)
+        assert reloaded is not None
+        second = tmp_path / "second.h5"
+        assert serializer.save_network(reloaded, str(second))
+
+        assert "best_value_loss" not in _meta(second), "the load path must not fabricate a counter the snapshot never carried"
+        assert "patience_counter" not in _meta(second)
+        assert sorted(_meta(first)) == sorted(_meta(second)), "a load/save round trip must not invent metadata"
+
+    def test_a_real_value_still_round_trips(self, tmp_path):
+        """Guarding must not break restoring counters that ARE present."""
+        network = _network()
+        network.best_value_loss = 0.25
+        network.patience_counter = 3
+        path = _save(network, tmp_path, "carrying")
+        restored = CascadeHDF5Serializer().load_network(str(path), restore_multiprocessing=False)
+        assert float(restored.best_value_loss) == pytest.approx(0.25)
+        assert int(restored.patience_counter) == 3
+
+    def test_a_counter_less_snapshot_still_loads(self, tmp_path):
+        """Regression for the SECOND defect the guard exposed.
+
+        ``_restore_training_state_helper``'s own debug log f-stringed
+        ``network.patience_counter`` unconditionally. Once the attribute was legitimately
+        absent that log raised AttributeError, the enclosing handler turned it into "Could not
+        create network from file", and a perfectly good snapshot reported SNAPSHOT_CORRUPT.
+        """
+        path = _save(_network(), tmp_path, "counterless")
+        result = CascadeHDF5Serializer().load_network_result(str(path), restore_multiprocessing=False)
+        assert result.status == "ok", f"a snapshot with no training counters must load cleanly, got {result.status}: {result.detail}"
+
+
 class TestBestValueLossIsMeasured:
     """The reported ask: ``best_value_loss`` must carry a real number after training."""
 
