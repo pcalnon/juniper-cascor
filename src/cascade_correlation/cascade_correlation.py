@@ -3399,6 +3399,53 @@ class CascadeCorrelationNetwork:
 
     @staticmethod
     def train_candidate_worker(task_data_input: tuple = None, parallel: bool = True, progress_callback=None) -> None:
+        """Entry point for a candidate-pool worker, with opt-in per-worker profiling.
+
+        The candidate workers are FORKED, so nothing that profiles the parent ever sees
+        their time -- and the candidate phase is where the cost is. `main.py --profile`
+        instruments the parent only, and the service has no equivalent flag at all, so
+        there was otherwise no way to look inside a worker from either entry point.
+
+        Set ``JUNIPER_CASCOR_WORKER_PROFILE=<dir>`` and every worker invocation dumps a
+        ``.prof`` there, named by pid. Unset -- the default, and the shipped behaviour --
+        this costs one ``os.environ.get`` and a direct call, so it cannot perturb a
+        measurement run.
+
+        USE IT FOR ATTRIBUTION, NOT FOR TIMING. cProfile's per-call overhead is large
+        relative to this workload, and it flattens the very effect it would be used to
+        measure: during the CLI-vs-service investigation a 9.2 ms/epoch gap measured
+        1.9 ms under cProfile, and the per-call ratio fell to 0.944 -- i.e. profiling
+        destroyed the difference. Use this to find WHICH functions dominate a worker; use
+        ``py-spy --native`` when the question is how big a difference is. (py-spy cannot
+        combine ``--native`` with ``--nonblocking``, and under ``ptrace_scope=1`` it must
+        be an ancestor of the process it samples, not an attacher.)
+        """
+        _prof_dir = os.environ.get("JUNIPER_CASCOR_WORKER_PROFILE", "").strip()
+        if not _prof_dir:
+            return CascadeCorrelationNetwork._train_candidate_worker_impl(task_data_input, parallel, progress_callback)
+
+        import cProfile  # noqa: PLC0415 -- lazy on purpose: profiling is opt-in, keep the import off the default path
+
+        _pr = cProfile.Profile()
+        _pr.enable()
+        try:
+            return CascadeCorrelationNetwork._train_candidate_worker_impl(task_data_input, parallel, progress_callback)
+        finally:
+            # `finally`, so a worker that raises still leaves its profile behind -- an
+            # exception path is exactly when the timing is most worth seeing.
+            _pr.disable()
+            try:
+                pl.Path(_prof_dir).mkdir(parents=True, exist_ok=True)
+                _pr.dump_stats(f"{_prof_dir}/worker-{os.getpid()}-{uuid.uuid4().hex[:8]}.prof")
+            except Exception:  # nosec B110 -- profiling must never break a training run
+                pass
+
+    @staticmethod
+    def _train_candidate_worker_impl(task_data_input: tuple = None, parallel: bool = True, progress_callback=None) -> None:
+        # NOTE: the log records below deliberately keep the name "train_candidate_worker".
+        # Log-parsing tooling anchors on message TEXT (a line-number anchor silently parsed
+        # nothing after an earlier refactor shifted this file by ~90 lines), so renaming the
+        # strings to match this method would break those parsers for no benefit.
         logger = Logger
         logger.info("CascadeCorrelationNetwork: train_candidate_worker: Starting training of Candidate Units in Pool.")
         try:  # Get task data for process worker
