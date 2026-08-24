@@ -63,6 +63,23 @@ uv pip compile pyproject.toml \
 
 > Details: [CI Manual — Lockfile Update](MANUAL.md#lockfile-update-workflow) | [Dependency Update Workflow](../../notes/DEPENDENCY_UPDATE_WORKFLOW.md)
 
+## CodeQL and GitHub Actions Dependabot
+
+`.github/workflows/codeql.yml` is the Python CodeQL lane (`queries: +security-and-quality`). It is **not** a required check.
+
+| Trigger | When CodeQL runs |
+|---------|------------------|
+| Push | `main`, `develop` |
+| Pull request | **`main` only** |
+| Schedule | Monday 06:00 UTC (same cron as `security-scan.yml`) |
+| Manual dispatch | **None** |
+
+Dependabot groups `github/codeql-action*` so `init` / `autobuild` / `analyze` **and** `ci.yml`'s Bandit `upload-sarif` bump in one PR. Review those four SHA pins together.
+
+The other two security lanes stay separate: `ci.yml` **Security Scans** (Gitleaks + blocking Bandit + pip-audit) and Monday `security-scan.yml` (Bandit + `pip-audit --strict`, no CodeQL).
+
+> Details: [CI Manual — CodeQL](MANUAL.md#codeql-analysis) | [CI Reference — CodeQL](REFERENCE.md#codeql-analysis)
+
 ## Checking Results
 
 ### Finding Workflow Runs

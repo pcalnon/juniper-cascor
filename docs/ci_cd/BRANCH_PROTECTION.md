@@ -1,7 +1,7 @@
 # Branch Protection Rules - Juniper Cascor
 
-**Version**: 0.4.0
-**Last Updated**: 2026-01-29
+**Version**: 0.4.1
+**Last Updated**: 2026-08-24
 **Author**: Paul Calnon
 
 ---
@@ -126,9 +126,12 @@ The per-file rollout is tracked with `juniper-coverage-gap-map` from coverage JS
 
 | Tool       | Purpose                        | Enforcement     |
 | ---------- | ------------------------------ | --------------- |
-| Gitleaks   | Secrets detection              | Hard fail       |
-| Bandit     | Python SAST (security issues)  | SARIF upload    |
-| pip-audit  | Dependency vulnerabilities     | Warning         |
+| Gitleaks   | Secrets detection              | Hard fail (`ci.yml` Security Scans; skipped on `repository_dispatch`) |
+| Bandit     | Python SAST (security issues)  | Hard fail on medium+; SARIF upload is best-effort (`continue-on-error`) |
+| pip-audit  | Dependency vulnerabilities     | Both `ci.yml` and `security-scan.yml` use `--strict`. `ci.yml` also passes documented torch `--ignore-vuln` IDs; `security-scan.yml` does not. |
+| CodeQL     | Semantic SAST (Python)         | Advisory soak — **not** a required context |
+
+CodeQL lives in `.github/workflows/codeql.yml` (push `main`/`develop`, PR `main`, Monday 06:00 UTC). It does not appear in the required-status-check list below. Findings go to **Security → Code scanning**, not the Quality Gate.
 
 ### Secrets Management
 

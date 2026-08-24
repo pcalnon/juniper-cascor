@@ -2,8 +2,8 @@
 
 ## Complete Navigation Guide to Juniper Cascor Documentation
 
-**Version:** 0.6.3  
-**Last Updated:** February 1, 2026  
+**Version:** 0.6.4  
+**Last Updated:** August 24, 2026  
 **Project:** Juniper Cascor - Cascade Correlation Neural Network Implementation
 
 ---
@@ -477,6 +477,7 @@ The juniper-cascor-client library provides a Python API for interacting with the
 - Reproducing CI locally
 - WS-6 golden / conformance gates (serial local reproduce)
 - Path-filtered package CI (`ci-protocol`, `ci-cascor-model`)
+- CodeQL soak lane + `codeql-action` Dependabot group
 - Quick fixes for common failures
 - Publishing packages to PyPI (Release tags + Trusted Publishing)
 - Twine pin surfaces (CI freeze vs unpinned `twine check` vs action upload)
@@ -514,6 +515,7 @@ The juniper-cascor-client library provides a Python API for interacting with the
 - Coverage handling
 - Slow test handling (CASCOR-TIMEOUT-001)
 - WS-6 gates runbook (golden + conformance determinism contract)
+- CodeQL Analysis (triggers, soak posture, Dependabot group, contrast with Bandit/pip-audit)
 - Modifying the pipeline
 - PyPI publishing (OIDC Trusted Publishing, tag guards, TestPyPI verify)
 - Twine pin surfaces and Twine 7.0.0 review constraints
@@ -532,6 +534,7 @@ The juniper-cascor-client library provides a Python API for interacting with the
 - Workflow configuration reference
 - WS-6 gate workflow pins and artifacts
 - Package CI path filters / coverage
+- CodeQL Analysis (`codeql.yml` triggers, query pack, `codeql-action` group, contrast with `ci.yml` / `security-scan.yml`)
 - Coverage gates (80% aggregate on main unit lane)
 - Publish workflows (tag guards, OIDC, verify contract, Twine pin surfaces)
 - Coverage gates (80% aggregate)
