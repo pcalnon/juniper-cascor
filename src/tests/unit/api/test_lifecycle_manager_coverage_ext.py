@@ -109,6 +109,26 @@ class TestNetworkGuards:
         assert mgr.has_model()
         assert mgr.state_machine.is_investigating()
 
+    def test_create_network_rejected_while_resume_ready(self, mgr):
+        """RESUME_READY owns the snapshotted model — create must not replace it.
+
+        Replacing the network in-place left the FSM resume-ready against a
+        vanilla model, so the next start_training took the resume-retention
+        path (history rebuild + auto-snap ratchet) on a brand-new network.
+        delete_network already RESET's the FSM; create must reject instead.
+        """
+        info = mgr.create_network(input_size=2, output_size=2)
+        original_uuid = info["uuid"]
+        mgr._resume_point_epoch = 42
+        assert mgr.state_machine.mark_resume_ready()
+        with pytest.raises(RuntimeError, match="resume-ready"):
+            mgr.create_network(input_size=3, output_size=2)
+        assert mgr.has_model()
+        assert mgr.state_machine.is_resume_ready()
+        assert mgr.get_network_info()["uuid"] == original_uuid
+        assert mgr.get_network_info()["input_size"] == 2
+        assert mgr._resume_point_epoch == 42
+
 
 class TestBroadcastThrottleGuard:
     """The GAP-WS-21 coalescer's metric-emission guard is defensive."""
