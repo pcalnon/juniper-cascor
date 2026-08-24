@@ -1,9 +1,9 @@
 {
   "data": {
-    "output_weight_max": 0.1644180715084076,
-    "output_weight_mean": 0.02714592032134533,
-    "output_weight_min": -0.03998362272977829,
-    "output_weight_std": 0.07554948329925537,
+    "output_weight_max": 0.16441836953163147,
+    "output_weight_mean": 0.05215559899806976,
+    "output_weight_min": -0.012267008423805237,
+    "output_weight_std": 0.05867166444659233,
     "total_hidden_units": 2
   },
   "meta": {},
