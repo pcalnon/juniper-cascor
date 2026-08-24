@@ -288,10 +288,22 @@ class CascadeHDF5Serializer:
         write_str_attr(meta_group, "creation_timestamp", datetime.datetime.now().isoformat())
 
         # Training state counters for resuming training
-        meta_group.attrs["snapshot_counter"] = getattr(network, "snapshot_counter", 0)
-        meta_group.attrs["current_epoch"] = getattr(network, "current_epoch", 0)
-        meta_group.attrs["patience_counter"] = getattr(network, "patience_counter", 0)
-        meta_group.attrs["best_value_loss"] = getattr(network, "best_value_loss", float("inf"))
+        # Write a training counter ONLY if the network actually carries it.
+        #
+        # These were ``getattr(network, "current_epoch", 0)`` and friends until 2026-08-23, and
+        # the defaults are what made a whole class of defect invisible: an attribute the model
+        # never assigns is serialized as ``0`` / ``inf``, INDISTINGUISHABLE from a measured
+        # zero. Reading the live archive literally therefore said every one of 27,908 snapshots
+        # sat at epoch 0 with no best loss -- that nothing had ever trained. That reading nearly
+        # justified deleting 27,005 real models, and it only came apart on checking a network
+        # known to have grown to 260 hidden units.
+        #
+        # Absence must look like absence. A missing key is a question a reader can ask; a
+        # fabricated default is an answer they cannot check. ``_restore_training_state_helper``
+        # already tolerates missing keys, and so do the index and classification tools.
+        for attribute in ("snapshot_counter", "current_epoch", "patience_counter", "best_value_loss"):
+            if hasattr(network, attribute):
+                meta_group.attrs[attribute] = getattr(network, attribute)
 
         # Environment metadata
         write_str_attr(meta_group, "python_version", sys.version)

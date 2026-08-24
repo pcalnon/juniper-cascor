@@ -4780,6 +4780,20 @@ class CascadeCorrelationNetwork:
             # Update loop state from validation results (critical for early stopping convergence)
             patience_counter = validate_training_results.patience_counter
             best_value_loss = validate_training_results.best_value_loss
+            # ...and publish onto the instance, which is what a SNAPSHOT records.
+            #
+            # Until 2026-08-23 these lived only as locals here. They drove early stopping
+            # correctly, but ``self.best_value_loss`` and ``self.patience_counter`` were never
+            # assigned anywhere in this class -- so ``_save_metadata``'s
+            # ``getattr(network, "best_value_loss", float("inf"))`` fell through to its default
+            # on every write. Measured over the live archive: ``best_value_loss`` is ``inf``
+            # and ``patience_counter`` is ``0`` in **all 27,908** snapshots.
+            #
+            # That is worse than missing data, because it is INDISTINGUISHABLE from a real
+            # measurement. A reader cannot tell "training never improved" from "nobody ever
+            # wrote this down", and the archive read literally says no run ever converged.
+            self.best_value_loss = best_value_loss
+            self.patience_counter = patience_counter
             if self.logger.isEnabledFor(logging.DEBUG):
                 self.logger.debug(f"CascadeCorrelationNetwork: grow_network: Iteration {iteration}, Early Stop: {validate_training_results.early_stop}, Patience Counter: {validate_training_results.patience_counter}, Best Value Loss: {validate_training_results.best_value_loss:.6f}, Value Output: {validate_training_results.value_output} Value Loss: {validate_training_results.value_loss:.6f}, Value Accuracy: {validate_training_results.value_accuracy:.4f}")
             if validate_training_results.early_stop:
