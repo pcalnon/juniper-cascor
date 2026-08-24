@@ -1827,12 +1827,38 @@ class CascadeHDF5Serializer:
 
     def _restore_training_state_helper(self, hdf5_file, network):
         meta_group = hdf5_file["meta"]
-        network.snapshot_counter = meta_group.attrs.get("snapshot_counter", 0)
-        if "current_epoch" in meta_group.attrs:
-            network.current_epoch = meta_group.attrs.get("current_epoch", 0)
-        network.patience_counter = meta_group.attrs.get("patience_counter", 0)
-        network.best_value_loss = meta_group.attrs.get("best_value_loss", float("inf"))
-        self.logger.debug(f"CascadeHDF5Serializer: Restored training counters - snapshot: {network.snapshot_counter}, patience: {network.patience_counter}")
+        # Restore a counter ONLY if the snapshot carries it -- the mirror of the write-side
+        # rule in ``_save_metadata``.
+        #
+        # cascor#565 stopped the WRITE path fabricating absent counters, but left this helper
+        # doing exactly that with ``.get(name, default)``. The result was that the defect came
+        # back on any RESUME path: load a snapshot that correctly omits ``best_value_loss``,
+        # and ``inf`` was written onto the instance; re-save it and the file now claims a
+        # measurement that was never taken. Measured round trip before this fix --
+        #
+        #     pass 1 (fresh save)      {'snapshot_counter': 0}                      <- correct
+        #     pass 2 (save after load) {..., 'patience_counter': 0,
+        #                                    'best_value_loss': inf}                <- fabricated
+        #
+        # -- so a resumed run laundered absence into data, which is the precise reading that
+        # nearly justified deleting 27,005 real models (juniper-ml#1254).
+        #
+        # Safe to guard all four: ``snapshot_counter`` is initialised in
+        # ``CascadeCorrelationNetwork.__init__``, so a loaded network always has one, and
+        # ``best_value_loss`` / ``patience_counter`` / ``current_epoch`` are only ever assigned
+        # by the training loop -- leaving them unset preserves "never trained here".
+        restored = []
+        for attribute in ("snapshot_counter", "current_epoch", "patience_counter", "best_value_loss"):
+            if attribute in meta_group.attrs:
+                setattr(network, attribute, meta_group.attrs[attribute])
+                restored.append(f"{attribute}={meta_group.attrs[attribute]}")
+        # Report what was ACTUALLY restored. The previous line f-stringed
+        # ``network.patience_counter`` unconditionally, which was harmless only while the
+        # loop above always set it: the moment a counter is legitimately absent, the log
+        # statement itself raises AttributeError, the enclosing handler turns that into
+        # "Could not create network from file", and a perfectly good snapshot reports as
+        # SNAPSHOT_CORRUPT. Caught by round-tripping a fresh save, not by reading the code.
+        self.logger.debug(f"CascadeHDF5Serializer: Restored training counters: {', '.join(restored) if restored else '(none present in this snapshot)'}")
 
     def _verify_output_checksums(self, hdf5_file: h5py.File, network) -> List[Tuple[str, str]]:
         """Re-hash the output-layer tensors and compare against the stored checksums.
