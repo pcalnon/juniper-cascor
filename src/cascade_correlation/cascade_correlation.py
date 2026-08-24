@@ -2343,7 +2343,31 @@ class CascadeCorrelationNetwork:
 
         # Generate candidate metadata
         candidate_uuids = [str(uuid.uuid4()) for _ in range(self.candidate_pool_size)]
-        candidate_seeds = [random.randint(0, self.random_max_value) for _ in range(self.candidate_pool_size)]  # trunk-ignore(bandit/B311)
+        # Candidate seeds come from a network-OWNED generator, not from the process-global `random`
+        # stream.
+        #
+        # WHY. `random.randint` draws from the interpreter-wide stream, so a candidate's seed is a
+        # function of how many times ANYTHING in the process has drawn from that stream before this
+        # point -- not of the configured seed. Measured consequence: on an identical cell with
+        # `network_seed=42` on both paths, the direct CLI's round-0 seed list begins at the
+        # service's FOURTH element and stays three draws offset for the whole run, because
+        # `SpiralProblem` (CLI-only) consumes three extra values first. The two entry points
+        # therefore train different candidates on identical configuration, and part of the measured
+        # CLI-vs-service work difference is that rather than any property of either path.
+        #
+        # It is also silently fragile: adding one `random` call anywhere -- a retry, a shuffle, a
+        # log line that samples -- re-seeds every candidate in every later round. Nothing fails; the
+        # numbers just change.
+        #
+        # A dedicated `random.Random` seeded from the network seed makes the k-th round's seeds a
+        # function of (random_seed, k) alone. Created lazily so that a network restored from a
+        # snapshot, or one whose seed is set after construction, still picks it up; it is a plain
+        # picklable object, so __getstate__ carries its position and a resumed run continues the
+        # sequence rather than replaying round 0's seeds.
+        if getattr(self, "_candidate_seed_rng", None) is None:
+            self._candidate_seed_rng = random.Random(self.random_seed)  # nosec B311 -- reproducibility, not secrecy  # trunk-ignore(bandit/B311)
+            self.logger.debug(f"CascadeCorrelationNetwork: _generate_candidate_tasks: candidate-seed generator initialised from random_seed={self.random_seed}")
+        candidate_seeds = [self._candidate_seed_rng.randint(0, self.random_max_value) for _ in range(self.candidate_pool_size)]
         candidate_data = [
             (
                 i,
