@@ -126,6 +126,7 @@ from cascor_constants.constants import (  # TODO: Commented out for F401 complia
     _CASCADE_CORRELATION_NETWORK_TASK_QUEUE_TIMEOUT,
     _CASCADE_CORRELATION_NETWORK_WORKER_STANDBY_SLEEPYTIME,
 )
+
 # Issue #568/#570: the plotter import is LAZY (function-local at every use site). At module
 # level it dragged matplotlib+PIL into everything that imports the trainer -- including every
 # forkserver candidate worker, which imports this module to unpickle its Process target and
@@ -6044,6 +6045,8 @@ class CascadeCorrelationNetwork:
         Raises:
             ValidationError: If input tensors are not valid for plotting
         """
+        from cascor_plotter.cascor_plotter import CascadeCorrelationPlotter  # noqa: PLC0415 -- lazy on purpose (#568)
+
         CascadeCorrelationPlotter.plot_dataset(x, y, title)
 
     def plot_decision_boundary(
