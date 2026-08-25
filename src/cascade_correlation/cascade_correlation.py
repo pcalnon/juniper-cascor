@@ -126,7 +126,12 @@ from cascor_constants.constants import (  # TODO: Commented out for F401 complia
     _CASCADE_CORRELATION_NETWORK_TASK_QUEUE_TIMEOUT,
     _CASCADE_CORRELATION_NETWORK_WORKER_STANDBY_SLEEPYTIME,
 )
-from cascor_plotter.cascor_plotter import CascadeCorrelationPlotter
+
+# Issue #568/#570: the plotter import is LAZY (function-local at every use site). At module
+# level it dragged matplotlib+PIL into everything that imports the trainer -- including every
+# forkserver candidate worker, which imports this module to unpickle its Process target and
+# never plots (measured: `import cascade_correlation` = 1,334 modules with matplotlib; 1,110
+# without it). See the constructor and plot helpers for the local imports.
 from log_config.log_config import LogConfig
 from log_config.logger.logger import Logger
 
@@ -1388,6 +1393,8 @@ class CascadeCorrelationNetwork:
         self._candidate_display_progress = display_progress(display_frequency=self.candidate_display_frequency)
 
         # Initialize plotter
+        from cascor_plotter.cascor_plotter import CascadeCorrelationPlotter  # noqa: PLC0415 -- lazy on purpose (#568): workers import this module and never plot
+
         self.plotter = CascadeCorrelationPlotter(logger=self.logger)
         self.logger.debug("CascadeCorrelationNetwork: _init_display_components: Display components initialized")
 
@@ -6038,6 +6045,8 @@ class CascadeCorrelationNetwork:
         Raises:
             ValidationError: If input tensors are not valid for plotting
         """
+        from cascor_plotter.cascor_plotter import CascadeCorrelationPlotter  # noqa: PLC0415 -- lazy on purpose (#568)
+
         CascadeCorrelationPlotter.plot_dataset(x, y, title)
 
     def plot_decision_boundary(
