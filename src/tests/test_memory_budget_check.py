@@ -1,11 +1,16 @@
 #!/usr/bin/env python3
 """
 Project:     Juniper
-Sub-Project: juniper-ml
+Sub-Project: juniper-cascor
 Application: tests
 Author:      Paul Calnon
-Version:     0.1.0
 License:     MIT License
+
+NOTE: no `Version:` header line. cascor enforces BUG-CC-04 repo-wide via
+src/tests/unit/test_phase_2e_topology_correlation_phase.py::test_no_version_header_lines_in_source,
+which rglobs src/**/*.py and rejects any line starting `Version:`. juniper-ml's
+standard file header carries one, so a verbatim port fails cascor's suite -- and it
+fails in a DIFFERENT test file, so running only the ported file's tests passes.
 
 Tests for ``util/memory_budget_check.py`` (P2 of the shared-session-memory plan).
 
