@@ -195,6 +195,10 @@ class ValidateTrainingResults:
 
 # Maximum queue size to prevent unbounded memory growth (DoS vector)
 _QUEUE_MAXSIZE = 1024
+# Issue #586: TOTAL graceful-join budget for the whole pool at shutdown, shared across
+# workers via a deadline -- not a per-worker allowance. With 7 workers a per-worker 5 s
+# join serialized into ~35 s per cap-16 direct-CLI run (~32% of the training span).
+_WORKER_SHUTDOWN_GRACE_SECONDS = 5.0
 
 # DUAL-PATH/TIMEOUT FIX (2026-05-30): default *inactivity* timeout for candidate
 # result collection. ``_collect_training_results`` historically used a fixed 60s
@@ -3908,22 +3912,61 @@ class CascadeCorrelationNetwork:
                 except Exception as e:
                     self.logger.warning(f"CascadeCorrelationNetwork: _send_shutdown_sentinels: Failed to send sentinel {i}: {e}")
 
+    def _drain_progress_queue(self) -> None:
+        """Best-effort drain of the advisory progress queue (Issue #586).
+
+        Bounded so a pathological producer can never wedge shutdown; every failure is
+        swallowed -- this runs on cleanup paths where an exception may already be in
+        flight.
+        """
+        q = self._persistent_progress_queue
+        if q is None:
+            return
+        drained = 0
+        try:
+            for _ in range(100_000):
+                try:
+                    q.get_nowait()
+                    drained += 1
+                except Exception:
+                    break
+        except Exception:  # nosec B110 — cleanup must not propagate exceptions
+            pass
+        if drained:
+            self.logger.debug(f"CascadeCorrelationNetwork: _drain_progress_queue: Drained {drained} undelivered progress item(s) at shutdown")
+
     def _terminate_workers(self) -> None:
-        """Join workers with timeout, escalating to terminate and SIGKILL if needed."""
+        """Join workers against a SHARED deadline, escalating to terminate and SIGKILL.
+
+        Issue #586: the previous per-worker ``join(timeout=5.0)`` serialized -- with the
+        whole pool stuck (the advisory-queue exit hang this issue fixed at the source),
+        7 workers cost 7 x 5 s of pure teardown inside fit(). The graceful budget is now
+        ``_WORKER_SHUTDOWN_GRACE_SECONDS`` TOTAL: the first join may consume it all, later
+        joins get the remainder (``join(0)`` is a non-blocking poll), so a pathological
+        pool costs ~one grace period, not one per worker. Per-worker escalation order is
+        unchanged: join -> is_alive -> terminate -> join -> is_alive -> SIGKILL.
+        """
         import signal
 
+        deadline = time.monotonic() + _WORKER_SHUTDOWN_GRACE_SECONDS
+        stuck = []
         for worker in self._persistent_workers:
-            worker.join(timeout=5.0)
+            worker.join(timeout=max(0.0, deadline - time.monotonic()))
             if worker.is_alive():
                 self.logger.warning(f"CascadeCorrelationNetwork: _terminate_workers: Worker {worker.name} did not stop gracefully, terminating")
                 worker.terminate()
-                worker.join(timeout=1.0)
-                if worker.is_alive():
-                    try:
-                        os.kill(worker.pid, signal.SIGKILL)
-                        worker.join(timeout=0.5)
-                    except Exception:  # nosec B110 — cleanup must not propagate exceptions
-                        pass
+                stuck.append(worker)
+        if not stuck:
+            return
+        kill_deadline = time.monotonic() + 1.0
+        for worker in stuck:
+            worker.join(timeout=max(0.0, kill_deadline - time.monotonic()))
+            if worker.is_alive():
+                try:
+                    os.kill(worker.pid, signal.SIGKILL)
+                    worker.join(timeout=0.5)
+                except Exception:  # nosec B110 — cleanup must not propagate exceptions
+                    pass
 
     def _cleanup_shared_memory_blocks(self) -> None:
         """Clean up any outstanding SharedMemory blocks (active + pending unlink).
@@ -3959,6 +4002,12 @@ class CascadeCorrelationNetwork:
             return
 
         self.logger.debug(f"CascadeCorrelationNetwork: _shutdown_worker_pool: Shutting down {len(self._persistent_workers)} persistent workers")
+
+        # Issue #586: drain the advisory progress queue BEFORE sentinels so any worker
+        # feeder thread still holding buffered progress can flush into the freed pipe and
+        # the worker can exit promptly (belt-and-braces alongside the workers' own
+        # cancel_join_thread in _release_advisory_queues).
+        self._drain_progress_queue()
 
         # Send sentinels to tell workers to exit
         self._send_shutdown_sentinels()
@@ -4135,7 +4184,33 @@ class CascadeCorrelationNetwork:
 
                 logger.error(f"CascadeCorrelationNetwork: _worker_loop: Traceback: {traceback.format_exc()}")
                 CascadeCorrelationNetwork._publish_failure_result(task, e, result_queue, logger)
+        # Issue #586: a process that has ever put() into a multiprocessing.Queue waits at
+        # interpreter exit for that queue's feeder thread to flush its buffer into the pipe.
+        # Progress/instrumentation are ADVISORY streams the parent stops draining after the
+        # final round, so a worker whose feeder still holds items hangs at exit, eats its
+        # join timeout, and gets terminated -- measured as 7/7 ungraceful stops burning
+        # ~35 s per cap-16 CLI run (0/7 at cap 4; 0/7 on the service). Cancelling the
+        # join-thread on the advisory queues lets the worker exit immediately; undelivered
+        # progress is discarded, which is correct -- training is already over. The RESULT
+        # queue is deliberately NOT cancelled: results must flush.
+        CascadeCorrelationNetwork._release_advisory_queues(progress_queue, instrumentation_queue, logger)
         logger.debug("CascadeCorrelationNetwork: _worker_loop: Worker process ended")
+
+    @staticmethod
+    def _release_advisory_queues(progress_queue, instrumentation_queue, logger) -> None:
+        """Cancel the feeder join-thread on the ADVISORY queues so worker exit never blocks.
+
+        Issue #586. Guarded with getattr: tests drive ``_worker_loop`` with stdlib queues,
+        which have no ``cancel_join_thread``.
+        """
+        for _q in (progress_queue, instrumentation_queue):
+            _cancel = getattr(_q, "cancel_join_thread", None)
+            if _cancel is None:
+                continue
+            try:
+                _cancel()
+            except Exception as e:  # nosec B110 -- exit-path cleanup must never raise
+                logger.debug(f"CascadeCorrelationNetwork: _release_advisory_queues: cancel_join_thread failed: {e}")
 
     @staticmethod
     def _process_worker_task(task, shared_training_inputs, progress_queue, result_queue, parallel, logger):
