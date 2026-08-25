@@ -118,7 +118,21 @@ from cascor_constants.constants import (
 )
 from log_config.log_config import LogConfig
 from log_config.logger.logger import Logger
-from spiral_problem.spiral_problem import SpiralProblem
+# Issue #568/#570: a forkserver/spawn child re-imports this module as ``__mp_main__``
+# during multiprocessing's spawn-preparation (spawn._main -> prepare -> _fixup_main_from_path)
+# BEFORE unpickling its Process object. Nothing a candidate worker runs references this
+# module's namespace (the pool target is a staticmethod on an importable module; the args
+# are queues, scalars and tensors), so the re-import used to be pure waste -- and expensive
+# waste: ``spiral_problem`` drags matplotlib+PIL, and the bootstrap Sentry block below drags
+# sentry_sdk plus its fastapi/httpx integration autoloads, INTO EVERY CANDIDATE WORKER
+# (measured 1,872-module workers against a 1,093-module forkserver; cascor#570 evidence).
+# Everything heavy or side-effectful is therefore gated on NOT being that re-import.
+_MP_CHILD_REIMPORT = __name__ == "__mp_main__"
+
+if _MP_CHILD_REIMPORT:
+    SpiralProblem = None  # never touched by workers; real class on every other import path
+else:
+    from spiral_problem.spiral_problem import SpiralProblem
 
 # import sys  # TODO: F401 - unused import, may be needed for future use
 
@@ -184,8 +198,12 @@ def _resolve_sentry_dsn() -> str | None:
     return prefixed
 
 
-load_dotenv()
-_sentry_dsn = _resolve_sentry_dsn()
+if not _MP_CHILD_REIMPORT:
+    load_dotenv()
+# Issue #568/#570: in a worker child re-import the DSN resolves to None, so the whole
+# bootstrap-Sentry arm below is skipped -- workers must never initialise Sentry (each of
+# the 7-8 pool workers used to, silently, on every DSN-configured run).
+_sentry_dsn = _resolve_sentry_dsn() if not _MP_CHILD_REIMPORT else None
 if _sentry_dsn:
     # CFG-02 (v7 roadmap §13524): ``sentry-sdk`` is now an optional dep
     # declared in the ``[observability]`` extra. Lazy-import here so that
