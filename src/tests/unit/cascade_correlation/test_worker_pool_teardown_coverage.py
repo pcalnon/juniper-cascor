@@ -42,11 +42,13 @@ class _FakeWorker:
         self.pid = pid
         self._alive = list(alive_sequence)
         self.terminated = False
+        self.join_timeouts = []
 
     def is_alive(self):
         return self._alive.pop(0) if self._alive else False
 
     def join(self, timeout=None):
+        self.join_timeouts.append(timeout)
         return None
 
     def terminate(self):
@@ -294,3 +296,181 @@ class TestCandidateTrainingManagerStart:
         mgr = CandidateTrainingManager()
         with pytest.raises(ValueError, match="Invalid start method"):
             mgr.start(method="bogus")
+
+
+class _RecordingAdvisoryQueue:
+    """Advisory-queue stand-in recording ``cancel_join_thread`` calls (Issue #586)."""
+
+    def __init__(self, *, raise_on_cancel=False):
+        self.cancelled = 0
+        self._raise = raise_on_cancel
+
+    def cancel_join_thread(self):
+        if self._raise:
+            raise RuntimeError("cancel boom")
+        self.cancelled += 1
+
+
+class _DrainableQueue:
+    """Progress-queue stand-in: ``get_nowait`` pops preset items, then raises (Issue #586)."""
+
+    def __init__(self, items, event_log):
+        self._items = list(items)
+        self._event_log = event_log
+
+    def get_nowait(self):
+        if not self._items:
+            raise RuntimeError("empty")
+        self._event_log.append("drain")
+        return self._items.pop(0)
+
+
+class _SentinelLoggingQueue(_FakeQueue):
+    """Task-queue stand-in that also appends to a shared event log (Issue #586)."""
+
+    def __init__(self, event_log):
+        super().__init__()
+        self._event_log = event_log
+
+    def put(self, item, timeout=None):
+        self._event_log.append("sentinel")
+        super().put(item, timeout=timeout)
+
+
+def _stuff_queue_and_exit(q, n, release):
+    """Child body for the Issue #586 exit-hang repro (fork ctx: no pickling needed).
+
+    Fills an undrained mp.Queue past pipe capacity, optionally releases the advisory
+    queue the way ``_worker_loop`` now does, then returns -- interpreter exit either
+    hangs on the feeder flush (release=False: the pre-fix behaviour) or completes
+    (release=True).
+    """
+    for i in range(n):
+        q.put(("progress", i, "x" * 64))
+    if release:
+        cc_mod.CascadeCorrelationNetwork._release_advisory_queues(q, None, cc_mod.Logger)
+
+
+class TestIssue586ShutdownHang:
+    """Issue #586: cap-16 CLI pool teardown burned ~35 s -- 7/7 ungraceful stops.
+
+    GUARDS (fail on the pre-fix code): the mp-level exit-hang repro's fixed arm, the
+    shared-deadline budget test, and the drain-before-sentinels ordering test.
+    NOT guards (pass either way): the raise-swallowing and missing-attribute arms --
+    property assertions on the new helper, listed so they are not mistaken for
+    regression coverage.
+    """
+
+    def test_release_advisory_queues_cancels_both_and_tolerates_gaps(self):
+        prog = _RecordingAdvisoryQueue()
+        instr = _RecordingAdvisoryQueue()
+        cc_mod.CascadeCorrelationNetwork._release_advisory_queues(prog, instr, cc_mod.Logger)
+        assert prog.cancelled == 1 and instr.cancelled == 1
+        # None slots and stdlib queues (no cancel_join_thread) are tolerated.
+        cc_mod.CascadeCorrelationNetwork._release_advisory_queues(None, None, cc_mod.Logger)
+        cc_mod.CascadeCorrelationNetwork._release_advisory_queues(object(), None, cc_mod.Logger)
+        # A raising cancel is swallowed (exit-path cleanup must never raise).
+        cc_mod.CascadeCorrelationNetwork._release_advisory_queues(_RecordingAdvisoryQueue(raise_on_cancel=True), None, cc_mod.Logger)
+
+    def test_worker_loop_releases_advisory_queues_on_sentinel(self):
+        import queue as _stdlib_queue
+
+        task_q = _stdlib_queue.Queue()
+        task_q.put(None)  # immediate sentinel
+        prog = _RecordingAdvisoryQueue()
+        cc_mod.CascadeCorrelationNetwork._worker_loop(
+            task_q,
+            _stdlib_queue.Queue(),
+            parallel=False,
+            task_queue_timeout=0.5,
+            worker_thread_count=1,
+            shared_training_inputs=None,
+            progress_queue=prog,
+            instrumentation_queue=None,
+        )
+        assert prog.cancelled == 1
+
+    def test_terminate_workers_join_budget_is_shared_not_serial(self, simple_network):
+        net = simple_network
+        workers = [_FakeWorker(f"w{i}", [True, True]) for i in range(7)]
+        net._persistent_workers = workers
+
+        clock = [0.0]
+
+        def _fake_monotonic():
+            return clock[0]
+
+        real_join = _FakeWorker.join
+
+        def _consuming_join(self, timeout=None):
+            # Simulate the worst case: a stuck worker consumes its whole join timeout.
+            clock[0] += timeout or 0.0
+            return real_join(self, timeout=timeout)
+
+        with patch.object(cc_mod.time, "monotonic", _fake_monotonic), patch.object(_FakeWorker, "join", _consuming_join), patch.object(cc_mod.os, "kill"):
+            net._terminate_workers()
+
+        phase1 = [w.join_timeouts[0] for w in workers]
+        # First worker may consume the whole grace budget; the rest share the remainder.
+        assert phase1[0] == pytest.approx(cc_mod._WORKER_SHUTDOWN_GRACE_SECONDS)
+        assert sum(phase1) == pytest.approx(cc_mod._WORKER_SHUTDOWN_GRACE_SECONDS, abs=0.01)
+        # Pre-fix behaviour was 5 s PER WORKER (35 s total) -- this is the regression guard.
+        assert sum(phase1) < 2 * cc_mod._WORKER_SHUTDOWN_GRACE_SECONDS
+        # Escalation still reached every stuck worker.
+        assert all(w.terminated for w in workers)
+
+    def test_terminate_workers_graceful_pool_pays_nothing_extra(self, simple_network):
+        net = simple_network
+        workers = [_FakeWorker(f"w{i}", [False]) for i in range(3)]
+        net._persistent_workers = workers
+        net._terminate_workers()
+        assert not any(w.terminated for w in workers)
+        assert all(len(w.join_timeouts) == 1 for w in workers)
+
+    def test_shutdown_drains_progress_before_sentinels(self, simple_network):
+        net = simple_network
+        event_log = []
+        net._persistent_workers = [_FakeWorker("w0", [False])]
+        net._persistent_task_queue = _SentinelLoggingQueue(event_log)
+        net._persistent_progress_queue = _DrainableQueue(["p1", "p2", "p3"], event_log)
+        net._shutdown_worker_pool()
+        assert "sentinel" in event_log and "drain" in event_log
+        assert event_log.index("sentinel") > len(event_log) - 1 - event_log[::-1].index("drain") - 1
+        assert event_log[:3] == ["drain", "drain", "drain"]
+
+    @pytest.mark.timeout(30)
+    def test_exit_hang_repro_and_fix(self):
+        """The mechanism guard, both arms (Issue #586).
+
+        UNFIXED arm: a child that stuffs an undrained mp.Queue past pipe capacity and
+        exits WITHOUT releasing hangs at interpreter exit (feeder flush) -- this arm
+        proves the repro reproduces, so the fixed arm below cannot pass vacuously.
+        FIXED arm: the same child calling ``_release_advisory_queues`` exits promptly.
+        """
+        import multiprocessing as _mp
+
+        ctx = _mp.get_context("fork")
+        n_items = 20_000  # far past the ~64 KiB pipe capacity
+
+        hang_q = ctx.Queue()
+        hang_child = ctx.Process(target=_stuff_queue_and_exit, args=(hang_q, n_items, False), daemon=True)
+        hang_child.start()
+        hang_child.join(timeout=2.5)
+        try:
+            assert hang_child.is_alive(), "repro no longer reproduces -- the fixed arm below would prove nothing"
+        finally:
+            hang_child.terminate()
+            hang_child.join(timeout=2.0)
+            hang_q.cancel_join_thread()
+
+        fixed_q = ctx.Queue()
+        fixed_child = ctx.Process(target=_stuff_queue_and_exit, args=(fixed_q, n_items, True), daemon=True)
+        fixed_child.start()
+        fixed_child.join(timeout=2.5)
+        try:
+            assert not fixed_child.is_alive(), "worker still hangs at exit despite _release_advisory_queues"
+        finally:
+            if fixed_child.is_alive():
+                fixed_child.terminate()
+                fixed_child.join(timeout=2.0)
+            fixed_q.cancel_join_thread()
