@@ -457,10 +457,15 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         await ws_manager.close_all()
         logger.info("WebSocket connections closed")
 
-    # Shutdown: clean up lifecycle manager if present
+    # Shutdown: clean up lifecycle manager if present. Off the event loop: shutdown()
+    # joins a live training thread (bounded, seconds) and the loop must stay free to run
+    # the terminal-state broadcasts that thread hands it via run_coroutine_threadsafe.
+    # This stanza is the last Python that runs on a SIGTERM stop (uvicorn re-raises the
+    # signal with the default disposition once the lifespan returns; atexit never runs),
+    # which is why the lifecycle must release the run's resources here rather than later.
     lifecycle = getattr(app.state, "lifecycle", None)
     if lifecycle is not None:
-        lifecycle.shutdown()
+        await asyncio.to_thread(lifecycle.shutdown)
         logger.info("Lifecycle manager shut down")
 
     # Shutdown: terminate managed companion services (reverse start order)

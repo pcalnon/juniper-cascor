@@ -1,10 +1,14 @@
 """Tests for API app factory."""
 
+import asyncio
+from unittest.mock import patch
+
 import pytest
 from fastapi.testclient import TestClient
 from pydantic_core import PydanticSerializationError
 
 from api.app import _API_VERSION, create_app
+from api.lifecycle.manager import TrainingLifecycleManager
 from api.settings import Settings
 
 
@@ -63,6 +67,24 @@ class TestAppFactory:
             assert manager._max_connections_global == 23
             assert manager._max_connections_per_identity == 3
             assert manager._max_connections_per_ip == 4
+
+    def test_lifespan_runs_lifecycle_shutdown_off_the_event_loop(self):
+        """2026-08-25 stop-during-training fix: the lifespan must await
+        ``lifecycle.shutdown()`` in a worker thread. It joins a live training thread for
+        up to seconds, and the event loop has to stay free to run the terminal-state
+        broadcasts that thread hands it -- so no running loop may be visible from
+        inside the call."""
+        seen = {}
+
+        def record(_self):
+            seen["running_loop"] = asyncio._get_running_loop()
+
+        app = create_app(Settings(auto_start=False))
+        with patch.object(TrainingLifecycleManager, "shutdown", autospec=True, side_effect=record):
+            with TestClient(app):
+                pass
+        assert "running_loop" in seen, "lifespan did not call lifecycle.shutdown()"
+        assert seen["running_loop"] is None, "lifecycle.shutdown() ran on the event-loop thread"
 
     def test_value_error_handler(self):
         """Test that ValueError returns 400."""
