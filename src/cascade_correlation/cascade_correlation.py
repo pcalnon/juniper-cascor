@@ -1100,9 +1100,11 @@ class CascadeCorrelationNetwork:
         """Initialize multiprocessing context and manager attributes."""
         self.logger.trace("CascadeCorrelationNetwork: _init_multiprocessing: Initializing multiprocessing components")
 
-        # Initialize multiprocessing context using configured context type
-        # self._mp_ctx = mp.get_context("forkserver")
-        # This is unnecessary:  Changing Context type did not corrUse 'fork' context for better compatibility with BaseManager on Linux
+        # Multiprocessing start method: the configured context type, "forkserver" by default
+        # (_PROJECT_MODEL_CANDIDATE_TRAINING_CONTEXT in cascor_constants.constants_model). The
+        # candidate pool is created with this context's Process; the preload list below applies
+        # only when the start method is forkserver. (Issue #569: an earlier comment here said the
+        # code used the "fork" context -- it never did on this path.)
         context_type = self.config.candidate_training_context_type or _CASCADE_CORRELATION_NETWORK_CANDIDATE_TRAINING_CONTEXT
         self._mp_ctx = mp.get_context(context_type)
 
@@ -1118,6 +1120,15 @@ class CascadeCorrelationNetwork:
                         "random",
                         "logging",
                         "datetime",
+                        # Issue #569 (F3): preload the trainer itself so every candidate worker
+                        # forks with it already imported instead of re-importing it (~70 modules
+                        # post-#588) after fork to unpickle its target. Fork-safety audit of the
+                        # import closure is recorded on the issue: no import-time resource is
+                        # created that a forked child would share. Listed last so the torch/numpy
+                        # preloads above still import first. NOTE: CPython's forkserver swallows a
+                        # preload ImportError, so a wrong module string here is a silent no-op --
+                        # verify with the forkserver module census, not by the absence of errors.
+                        "cascade_correlation.cascade_correlation",
                     ]
                 )
             except Exception as e:
