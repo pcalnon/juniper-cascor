@@ -12,7 +12,7 @@ from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query, Request
 
-from api.models.common import success_response
+from api.models.common import ResponseEnvelope, success_response
 
 logger = logging.getLogger("juniper_cascor.api.routes.history")
 
@@ -26,7 +26,7 @@ def _get_lifecycle(request: Request):
     return lifecycle
 
 
-@router.get("/dataset_swaps")
+@router.get("/dataset_swaps", operation_id="get_dataset_swap_events", response_model=ResponseEnvelope)
 async def get_dataset_swap_events(
     request: Request,
     since: Optional[str] = Query(

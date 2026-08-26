@@ -12,7 +12,7 @@ from api.lifecycle.manager import (
     SwapCancelledError,
     SwapInProgressError,
 )
-from api.models.common import success_response
+from api.models.common import ResponseEnvelope, success_response
 from api.models.training import StageDatasetRequest, SwapDatasetLiveRequest, TrainingParamUpdateRequest, TrainingStartRequest
 
 logger = logging.getLogger("juniper_cascor.api.routes.training")
@@ -27,7 +27,7 @@ def _get_lifecycle(request: Request):
     return lifecycle
 
 
-@router.post("/start")
+@router.post("/start", operation_id="start_training", response_model=ResponseEnvelope)
 async def start_training(request: Request, body: TrainingStartRequest = None) -> dict:
     """Start network training.
 
@@ -117,7 +117,7 @@ async def start_training(request: Request, body: TrainingStartRequest = None) ->
         raise HTTPException(status_code=409, detail=f"Training cannot be started: {e}") from e
 
 
-@router.post("/stop")
+@router.post("/stop", operation_id="stop_training", response_model=ResponseEnvelope)
 async def stop_training(request: Request) -> dict:
     """Stop network training."""
     lifecycle = _get_lifecycle(request)
@@ -129,7 +129,7 @@ async def stop_training(request: Request) -> dict:
         raise HTTPException(status_code=409, detail="Training cannot be stopped in the current state") from e
 
 
-@router.post("/pause")
+@router.post("/pause", operation_id="pause_training", response_model=ResponseEnvelope)
 async def pause_training(request: Request) -> dict:
     """Pause network training."""
     lifecycle = _get_lifecycle(request)
@@ -141,7 +141,7 @@ async def pause_training(request: Request) -> dict:
         raise HTTPException(status_code=409, detail="Training cannot be paused in the current state") from e
 
 
-@router.post("/resume")
+@router.post("/resume", operation_id="resume_training", response_model=ResponseEnvelope)
 async def resume_training(request: Request) -> dict:
     """Resume paused training."""
     lifecycle = _get_lifecycle(request)
@@ -153,7 +153,7 @@ async def resume_training(request: Request) -> dict:
         raise HTTPException(status_code=409, detail="Training cannot be resumed in the current state") from e
 
 
-@router.post("/reset")
+@router.post("/reset", operation_id="reset_training", response_model=ResponseEnvelope)
 async def reset_training(request: Request) -> dict:
     """Reset training state."""
     lifecycle = _get_lifecycle(request)
@@ -161,7 +161,7 @@ async def reset_training(request: Request) -> dict:
     return success_response(result)
 
 
-@router.post("/metrics/clear")
+@router.post("/metrics/clear", operation_id="clear_metrics", response_model=ResponseEnvelope)
 async def clear_metrics(request: Request) -> dict:
     """Clear the retained training metrics/history, with undo (C5 / Q4 use-case 1).
 
@@ -180,7 +180,7 @@ async def clear_metrics(request: Request) -> dict:
     return success_response(lifecycle.clear_metrics_with_undo())
 
 
-@router.post("/metrics/clear/undo")
+@router.post("/metrics/clear/undo", operation_id="undo_clear_metrics", response_model=ResponseEnvelope)
 async def undo_clear_metrics(request: Request) -> dict:
     """Undo the most recent metrics/history clear (C5 / Q4 use-case 1 fallback).
 
@@ -198,7 +198,7 @@ async def undo_clear_metrics(request: Request) -> dict:
         raise HTTPException(status_code=409, detail=str(e)) from e
 
 
-@router.get("/status")
+@router.get("/status", operation_id="get_status", response_model=ResponseEnvelope)
 async def get_status(request: Request) -> dict:
     """Get current training status with atomic snapshot_seq."""
     lifecycle = _get_lifecycle(request)
@@ -213,7 +213,7 @@ async def get_status(request: Request) -> dict:
     return success_response(status)
 
 
-@router.get("/params")
+@router.get("/params", operation_id="get_params", response_model=ResponseEnvelope)
 async def get_params(request: Request) -> dict:
     """Get current training parameters."""
     lifecycle = _get_lifecycle(request)
@@ -222,7 +222,7 @@ async def get_params(request: Request) -> dict:
     return success_response(lifecycle.get_training_params())
 
 
-@router.patch("/params")
+@router.patch("/params", operation_id="update_training_params", response_model=ResponseEnvelope)
 async def update_training_params(request: Request, body: TrainingParamUpdateRequest) -> dict:
     """Update runtime-modifiable training parameters.
 
@@ -260,7 +260,7 @@ async def update_training_params(request: Request, body: TrainingParamUpdateRequ
 # (cold-swap), or DELETE the staged config to cancel before restart.
 
 
-@router.post("/dataset")
+@router.post("/dataset", operation_id="stage_dataset", response_model=ResponseEnvelope)
 async def stage_dataset(request: Request, body: StageDatasetRequest) -> dict:
     """Stage a dataset-config change for the next ``start_training``.
 
@@ -272,14 +272,14 @@ async def stage_dataset(request: Request, body: StageDatasetRequest) -> dict:
     return success_response(lifecycle.stage_dataset_config(**cfg))
 
 
-@router.delete("/dataset")
+@router.delete("/dataset", operation_id="cancel_dataset_stage", response_model=ResponseEnvelope)
 async def cancel_dataset_stage(request: Request) -> dict:
     """Discard any staged dataset change — Phase 1 Cancel button target."""
     lifecycle = _get_lifecycle(request)
     return success_response(lifecycle.clear_pending_dataset_config())
 
 
-@router.get("/dataset/pending")
+@router.get("/dataset/pending", operation_id="get_pending_dataset", response_model=ResponseEnvelope)
 async def get_pending_dataset(request: Request) -> dict:
     """Return the staged dataset config (or null) — drives the canopy banner."""
     lifecycle = _get_lifecycle(request)
@@ -297,7 +297,7 @@ async def get_pending_dataset(request: Request) -> dict:
 #   5xx                                  — juniper-data fetch / arch-adapt failure (rolled back)
 
 
-@router.post("/dataset/live")
+@router.post("/dataset/live", operation_id="swap_dataset_live", response_model=ResponseEnvelope)
 async def swap_dataset_live(request: Request, body: SwapDatasetLiveRequest) -> dict:
     """Initiate an in-flight dataset swap (P2-1a skeleton; P2-1b cancel-aware)."""
     lifecycle = _get_lifecycle(request)
@@ -324,7 +324,7 @@ async def swap_dataset_live(request: Request, body: SwapDatasetLiveRequest) -> d
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
 
-@router.delete("/dataset/live")
+@router.delete("/dataset/live", operation_id="cancel_swap_dataset_live", response_model=ResponseEnvelope)
 async def cancel_swap_dataset_live(request: Request) -> dict:
     """Cancel an in-flight live dataset swap (P2-1b).
 

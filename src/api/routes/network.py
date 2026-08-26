@@ -6,7 +6,7 @@ from fastapi import APIRouter, HTTPException, Request
 
 logger = logging.getLogger("juniper_cascor.api.routes.network")
 
-from api.models.common import success_response
+from api.models.common import ResponseEnvelope, success_response
 from api.models.network import AddHiddenUnitRequest, NetworkCreateRequest, PatchWeightsRequest
 
 router = APIRouter(prefix="/network", tags=["network"])
@@ -19,7 +19,7 @@ def _get_lifecycle(request: Request):
     return lifecycle
 
 
-@router.post("")
+@router.post("", operation_id="create_network", response_model=ResponseEnvelope)
 async def create_network(request: Request, body: NetworkCreateRequest) -> dict:
     """Create a new CasCor network."""
     lifecycle = _get_lifecycle(request)
@@ -31,7 +31,7 @@ async def create_network(request: Request, body: NetworkCreateRequest) -> dict:
         raise HTTPException(status_code=409, detail="Network cannot be created in the current state") from e
 
 
-@router.get("")
+@router.get("", operation_id="get_network", response_model=ResponseEnvelope)
 async def get_network(request: Request) -> dict:
     """Get current network info."""
     lifecycle = _get_lifecycle(request)
@@ -40,7 +40,7 @@ async def get_network(request: Request) -> dict:
     return success_response(lifecycle.get_network_info())
 
 
-@router.delete("")
+@router.delete("", operation_id="delete_network", response_model=ResponseEnvelope)
 async def delete_network(request: Request) -> dict:
     """Delete the current network."""
     lifecycle = _get_lifecycle(request)
@@ -52,7 +52,7 @@ async def delete_network(request: Request) -> dict:
         raise HTTPException(status_code=409, detail="Network cannot be deleted in the current state") from e
 
 
-@router.get("/topology")
+@router.get("/topology", operation_id="get_topology", response_model=ResponseEnvelope)
 async def get_topology(request: Request) -> dict:
     """Get network topology for visualization."""
     lifecycle = _get_lifecycle(request)
@@ -64,7 +64,7 @@ async def get_topology(request: Request) -> dict:
     return success_response(topology)
 
 
-@router.get("/stats")
+@router.get("/stats", operation_id="get_stats", response_model=ResponseEnvelope)
 async def get_stats(request: Request) -> dict:
     """Get network weight statistics."""
     lifecycle = _get_lifecycle(request)
@@ -73,7 +73,7 @@ async def get_stats(request: Request) -> dict:
     return success_response(lifecycle.get_statistics())
 
 
-@router.patch("/weights")
+@router.patch("/weights", operation_id="patch_weights", response_model=ResponseEnvelope)
 async def patch_weights(request: Request, body: PatchWeightsRequest) -> dict:
     """CAN-015h-1: surgically rewrite a single parameter group.
 
@@ -121,7 +121,7 @@ async def patch_weights(request: Request, body: PatchWeightsRequest) -> dict:
     raise HTTPException(status_code=500, detail="patch_weights returned an unexpected status")
 
 
-@router.post("/hidden-units")
+@router.post("/hidden-units", operation_id="add_hidden_unit", response_model=ResponseEnvelope)
 async def add_hidden_unit(request: Request, body: AddHiddenUnitRequest) -> dict:
     """CAN-015h-2: append a fresh hidden unit at the cascade tail.
 
@@ -176,7 +176,7 @@ async def add_hidden_unit(request: Request, body: AddHiddenUnitRequest) -> dict:
     raise HTTPException(status_code=500, detail="add_hidden_unit_manual returned an unexpected status")
 
 
-@router.delete("/hidden-units/{idx}")
+@router.delete("/hidden-units/{idx}", operation_id="delete_hidden_unit", response_model=ResponseEnvelope)
 async def delete_hidden_unit(request: Request, idx: int) -> dict:
     """CAN-015h-3: remove the hidden unit at ``idx`` with cascade rebuild.
 
