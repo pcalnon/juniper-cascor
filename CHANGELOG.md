@@ -9,6 +9,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Every route declares an `operation_id`, and every envelope route a `response_model`
+  (defect-register `APD-CASCOR-003` + its unfiled `operation_id` sibling).** Two gaps over one set
+  of 47 decorators, done in one pass because splitting them rewrites every decorator twice.
+  `operation_id` was absent on all 47, so FastAPI derived `<handler>_<path>_<method>` — a generated
+  SDK's method names were coupled to the handler name, the router prefix **and** the version prefix,
+  and renaming a handler or bumping `/v1` silently renamed every client method. Each route now
+  declares an explicit id, and the published set of 47 is frozen by a test: a rename has to be a
+  deliberate edit to that list, and — pinned as an expected-survival case — renaming the *handler*
+  changes nothing.
+  `response_model` was absent on 46 of 47. It is now declared on the **44** routes that build their
+  body with `success_response()`. **This is wire-neutral, and measured rather than assumed**:
+  `success_response()` already returns `ResponseEnvelope(...).model_dump()`, so an enveloped body has
+  already round-tripped through the exact model `response_model=` re-applies — the second pass is
+  idempotent by construction. That guarantee holds only while every enveloped route goes through the
+  helper, so a test pins that property directly.
+  **The three health routes are deliberately excluded** from the `response_model` half, and the
+  exclusion is pinned so it reads as a decision rather than an oversight. `readiness_probe` already
+  declared `ReadinessResponse`; `health_check` and `liveness_probe` return bare dicts on the
+  documented cross-service API-02 `{status, version, service}` base shared with juniper-data and
+  juniper-canopy, and declaring a model there is **not** wire-neutral — an optional field absent from
+  the 200 body reappears as an explicit `"error": null`, because `response_model_exclude_none`
+  defaults to `False`. Giving those two their own models is a cross-repo wire decision, not this
+  defect. No request or response body changes.
+
 - **One snapshot root for every stack origin: `<repo>/cascor-snapshots/`.** The direct-CLI tier
   (`cascor_constants/constants_hdf5`) and the service tier (`api/lifecycle/manager._get_snapshots_dir`)
   now resolve to the same repo-root directory, which the container also bind-mounts. Snapshots are
