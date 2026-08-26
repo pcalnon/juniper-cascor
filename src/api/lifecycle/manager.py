@@ -35,9 +35,10 @@ from snapshots.snapshot_load_status import absent as snapshot_absent
 # the run's SharedMemory blocks) before releasing those resources from the shutdown thread
 # itself. Budgeted so the whole lifespan shutdown stays inside the shortest stop-tool grace
 # window (10 s: experiment_stack.bash / docker stop) even when the join times out and the
-# explicit pool release then spends its own ``_WORKER_SHUTDOWN_GRACE_SECONDS`` (5 s) + 1.5 s
-# escalation: 3 + 6.5 < 10. The interrupt itself lands within ~25 output epochs
-# (milliseconds); only a stop that arrives mid-candidate-round runs the clock.
+# explicit pool release then spends its own ``_WORKER_SHUTDOWN_GRACE_SECONDS`` (5 s) + a 1 s
+# terminate-join + 0.5 s per worker that outlives its SIGKILL join (none in practice):
+# 3 + 6.5 < 10 in the realistic worst case. The interrupt itself lands within ~25 output
+# epochs (milliseconds); only a stop that arrives mid-candidate-round runs the clock.
 _SHUTDOWN_TRAINING_JOIN_TIMEOUT_SECONDS = 3.0
 
 
@@ -5034,10 +5035,12 @@ class TrainingLifecycleManager:
         The FastAPI lifespan's shutdown stanza calls this, and on a SIGTERM stop that stanza
         is the LAST Python code that runs: uvicorn's ``Server.capture_signals`` restores the
         default SIGTERM disposition and re-raises the captured signal the moment ``serve()``
-        returns, so the kernel terminates the process a few hundred milliseconds after this
-        method returns -- no ``atexit`` hooks, no interpreter finalisation, no thread joins
-        (measured 2026-08-25 on uvicorn 0.46: dead 0.28 s after SIGTERM, wait status 143,
-        ``atexit`` never fired; SIGINT is the only stop that unwinds normally). Every fleet
+        returns, so the kernel terminates the process within milliseconds of this method
+        returning (about 0.2-0.3 s after the SIGTERM itself) -- no ``atexit`` hooks, no
+        interpreter finalisation, no thread joins (measured 2026-08-25 on uvicorn 0.46.0; the
+        behaviour dates from 0.29 and every env/lockfile in the fleet is newer: dead 0.28 s
+        after SIGTERM, wait status 143, ``atexit`` never fired; SIGINT is the only stop that
+        unwinds normally). Every fleet
         stop tool -- ``juniper_chop_all.bash``, ``experiment_stack.bash``,
         ``isolated_stack.bash``, ``docker stop`` -- sends SIGTERM.
 
