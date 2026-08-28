@@ -1791,7 +1791,13 @@ class TrainingLifecycleManager:
                 self._grow_phase_entered = True
                 self.state_machine.set_phase(TrainingPhase.CANDIDATE)
                 self.monitor.on_phase_change(self.state_machine.phase.name.lower())
-                self.training_state.update_state(phase="Candidate", phase_started_at=datetime.now().isoformat())
+                # F-CANOPY-026: tz-AWARE UTC, never naive local. ``datetime.now()`` here
+                # emitted a naive local timestamp; canopy's phase-duration readout
+                # stamps a naive value as UTC and subtracts it from ``now(UTC)``, so the
+                # displayed elapsed time was inflated by exactly the host's UTC offset
+                # (measured: 302m29s for a phase 2m29s old on a CDT box — 18000 s).
+                # Invisible in any UTC-0 environment, which is why CI never saw it.
+                self.training_state.update_state(phase="Candidate", phase_started_at=datetime.now(UTC).isoformat())
                 self._broadcast_training_state(force=True)
             self.training_state.update_state(
                 grow_iteration=int(detail.get("grow_iteration", 0)),
@@ -2336,7 +2342,8 @@ class TrainingLifecycleManager:
         monitor.on_phase_change(sm.phase.name.lower())
         # C2b: reset the within-pass progress pairs at run start so a new run
         # never displays the previous run's terminal inner-epoch values.
-        state.update_state(status="Started", phase="Output", phase_started_at=datetime.now().isoformat(), output_epoch=0, output_total_epochs=0, candidate_epoch=0, candidate_total_epochs=0)
+        # F-CANOPY-026: tz-aware UTC — see the candidate-phase site above.
+        state.update_state(status="Started", phase="Output", phase_started_at=datetime.now(UTC).isoformat(), output_epoch=0, output_total_epochs=0, candidate_epoch=0, candidate_total_epochs=0)
         self._broadcast_training_state(force=True)
         # OBS-WIRE-01 (A.1): mark the session active; balanced by dec in the finally so the
         # gauge (which gates TrainingStalled / TrainingLossNotDecreasing / LowCandidateCorrelation
