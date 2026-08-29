@@ -345,6 +345,36 @@ class TestStartTraining:
         assert "replaying" in msg.lower()
         assert lifecycle.state_machine.is_replaying()
 
+    def test_start_training_while_paused_returns_409(self, client_with_network):
+        """Start while PAUSED must 409 — operators resume, they do not start.
+
+        Manager-level RuntimeError is covered in lifecycle unit tests; this pins
+        the HTTP mapping so Canopy sees 409 (not a second training_started).
+        """
+        from api.lifecycle.state_machine import Command
+
+        lifecycle = client_with_network.app.state.lifecycle
+        assert lifecycle.state_machine.handle_command(Command.START)
+        lifecycle.pause_training()
+        assert lifecycle.state_machine.is_paused()
+        assert not lifecycle._pause_event.is_set()
+        response = client_with_network.post(
+            "/v1/training/start",
+            json={
+                "inline_data": {
+                    "train_x": [[0.1, 0.2], [0.3, 0.4], [0.5, 0.6], [0.7, 0.8]],
+                    "train_y": [[1.0, 0.0], [0.0, 1.0], [1.0, 0.0], [0.0, 1.0]],
+                },
+            },
+        )
+        assert response.status_code == 409
+        msg = response.json()["error"]["message"]
+        assert "paused" in msg.lower()
+        assert "resume" in msg.lower()
+        assert lifecycle.state_machine.is_paused()
+        assert not lifecycle._pause_event.is_set()
+        assert lifecycle._training_future is None
+
 
 class TestStopTraining:
     """Tests for POST /training/stop."""
@@ -396,6 +426,25 @@ class TestResumeTraining:
         response = client.post("/v1/training/resume")
         assert response.status_code == 409
         assert "cannot be resumed" in response.json()["error"]["message"].lower()
+
+
+class TestResetTraining:
+    """Tests for POST /training/reset."""
+
+    def test_reset_while_replaying_stops_session(self, client):
+        """RESET is the REPLAYING escape hatch — REST must tear down the driver."""
+        from unittest.mock import MagicMock
+
+        lifecycle = client.app.state.lifecycle
+        session = MagicMock()
+        lifecycle._replay_session = session
+        assert lifecycle.state_machine.mark_replaying()
+        response = client.post("/v1/training/reset")
+        assert response.status_code == 200
+        assert response.json()["data"]["status"] == "reset"
+        session.stop.assert_called_once()
+        assert lifecycle._replay_session is None
+        assert lifecycle.state_machine.is_stopped()
 
 
 class TestGetParams:

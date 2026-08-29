@@ -73,6 +73,22 @@ class TestCreateNetworkErrors:
             assert response.status_code == 409
             assert "cannot be created" in response.json()["error"]["message"]
 
+    def test_create_network_while_resume_ready_returns_409(self, client):
+        """Create while RESUME_READY must 409 and leave the snapshotted model in place."""
+        created = client.post("/v1/network", json={"input_size": 2, "output_size": 2})
+        assert created.status_code == 200
+        original_uuid = created.json()["data"]["uuid"]
+        lifecycle = client.app.state.lifecycle
+        lifecycle._resume_point_epoch = 7
+        assert lifecycle.state_machine.mark_resume_ready()
+        response = client.post("/v1/network", json={"input_size": 3, "output_size": 2})
+        assert response.status_code == 409
+        assert "cannot be created" in response.json()["error"]["message"]
+        assert lifecycle.state_machine.is_resume_ready()
+        assert lifecycle.get_network_info()["uuid"] == original_uuid
+        assert lifecycle.get_network_info()["input_size"] == 2
+        assert lifecycle._resume_point_epoch == 7
+
 
 class TestDeleteNetworkErrors:
     """Tests for delete_network error paths."""

@@ -1524,6 +1524,14 @@ class TrainingLifecycleManager:
         # target the wrong object. Require /retrain or /reset first.
         if self.state_machine.is_investigating():
             raise RuntimeError("Cannot create network while investigating a snapshot")
+        # RESUME_READY still owns the snapshotted model plus resume markers
+        # (_resume_point_epoch, auto-snap ratchet). Replacing the network
+        # in-place leaves the FSM resume-ready against a vanilla model, so
+        # the next start_training takes the resume-retention path on a
+        # brand-new network. Require /v1/training/start (continue) or
+        # /v1/training/reset first. delete_network already RESET's the FSM.
+        if self.state_machine.is_resume_ready():
+            raise RuntimeError("Cannot create network while resume-ready — invoke /v1/training/start to continue the restored run, or /v1/training/reset first")
 
         self._params = kwargs.copy()
         config = CascadeCorrelationConfig.create_simple_config(**kwargs)
@@ -2107,6 +2115,39 @@ class TrainingLifecycleManager:
             existing._init_weight_history()
         self._weight_history_recorder.register()
 
+    def _reject_start_for_state_locked(self) -> None:
+        """Reject ``start_training`` from every FSM state that forbids a start.
+
+        Extracted from ``start_training``'s locked section so this guard set can
+        grow without pushing that method past the repo's ``--max-complexity=15``
+        ceiling — C901 is deliberately enabled here (LOW-001), so the ceiling is
+        a real constraint rather than something to ``noqa`` past.
+
+        Caller must already hold ``self._lock``. Every branch raises, so a clean
+        return means "the FSM permits a start".
+        """
+        if self.state_machine.is_started():
+            raise RuntimeError("Training already in progress")
+        # PAUSED still owns a parked fit thread. Falling through would
+        # ``_pause_event.set()`` (unblocking that thread) AND queue a
+        # second ``_run_training`` future on the single-worker executor.
+        # Operators must ``/v1/training/resume`` — never start-over-pause.
+        if self.state_machine.is_paused():
+            raise RuntimeError("Cannot start training while paused — invoke /v1/training/resume")
+        # CAN-015d (B-4): Investigating is the inspection / modification
+        # mode loaded by ``/restore``. Training commands are explicitly
+        # rejected — the user must invoke ``/retrain`` or ``/resume`` to
+        # transition out of Investigating before starting training.
+        # Failing fast at the API boundary is much clearer than
+        # letting the future submit and the FSM transition fail
+        # silently on the background training thread.
+        if self.state_machine.is_investigating():
+            raise RuntimeError("Cannot start training while Investigating a snapshot — invoke /v1/snapshots/{id}/retrain or /resume to transition out of Investigating first")
+        # CAN-015c (B-3): Replaying is read-only playback. Same
+        # rejection contract — user must /replay/control stop first.
+        if self.state_machine.is_replaying():
+            raise RuntimeError("Cannot start training while replaying a snapshot — invoke /v1/snapshots/{id}/replay/control with action='stop' first")
+
     def start_training(
         self,
         X: Optional[torch.Tensor] = None,
@@ -2145,21 +2186,7 @@ class TrainingLifecycleManager:
             Status dictionary
         """
         with self._lock:
-            if self.state_machine.is_started():
-                raise RuntimeError("Training already in progress")
-            # CAN-015d (B-4): Investigating is the inspection / modification
-            # mode loaded by ``/restore``. Training commands are explicitly
-            # rejected — the user must invoke ``/retrain`` or ``/resume`` to
-            # transition out of Investigating before starting training.
-            # Failing fast at the API boundary is much clearer than
-            # letting the future submit and the FSM transition fail
-            # silently on the background training thread.
-            if self.state_machine.is_investigating():
-                raise RuntimeError("Cannot start training while Investigating a snapshot — invoke /v1/snapshots/{id}/retrain or /resume to transition out of Investigating first")
-            # CAN-015c (B-3): Replaying is read-only playback. Same
-            # rejection contract — user must /replay/control stop first.
-            if self.state_machine.is_replaying():
-                raise RuntimeError("Cannot start training while replaying a snapshot — invoke /v1/snapshots/{id}/replay/control with action='stop' first")
+            self._reject_start_for_state_locked()
 
             if X is not None:
                 self._train_x = X
@@ -2460,9 +2487,24 @@ class TrainingLifecycleManager:
         Normalises the control-event pair via ``_reset_event_state`` so a
         subsequent ``start_training`` does not inherit a stale
         ``_pause_event.clear()`` from a prior pause (BUG-CC-#5).
+
+        The FSM documents RESET as the REPLAYING escape hatch (alongside
+        ``/replay/control stop``). Tear down ``_replay_session`` here so
+        that hatch does not leave the replay driver thread emitting
+        synthetic ``epoch_end`` frames after the FSM has gone Stopped.
+        ``session.stop()`` failures are swallowed (same as ``shutdown``)
+        so a stuck driver cannot block the escape hatch; the session
+        reference is always cleared.
         """
         self._reset_event_state()
         self._last_emitted_history_len = 0
+        session = self._replay_session
+        if session is not None:
+            try:
+                session.stop()
+            except Exception:
+                self.logger.exception("reset: failed to stop replay session")
+            self._replay_session = None
         self.state_machine.handle_command(Command.RESET)
         self.monitor.clear_metrics()
         self.training_state.update_state(

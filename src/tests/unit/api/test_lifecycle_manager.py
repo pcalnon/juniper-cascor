@@ -409,6 +409,31 @@ class TestLifecycleManagerTrainingControl:
         assert state["current_epoch"] == 0
         assert state["current_step"] == 0
 
+    def test_start_training_rejected_while_paused(self):
+        """Start while PAUSED must raise — operators resume, they do not start.
+
+        Without this guard, start_training ``_pause_event.set()`` unblocks a
+        parked fit thread AND queues a second ``_run_training`` future on the
+        single-worker executor. The FSM can stay PAUSED while training runs
+        again. Pin: reject, leave pause_event cleared, submit no future.
+        """
+        mgr = TrainingLifecycleManager()
+        mgr.create_network(input_size=2, output_size=2)
+        assert mgr.state_machine.handle_command(Command.START)
+        mgr.pause_training()
+        assert mgr.state_machine.is_paused()
+        assert not mgr._pause_event.is_set()
+        x = torch.randn(8, 2)
+        y = torch.zeros(8, 2)
+        y[:4, 0] = 1
+        y[4:, 1] = 1
+        with pytest.raises(RuntimeError, match="paused"):
+            mgr.start_training(X=x, y=y)
+        assert mgr.state_machine.is_paused()
+        assert not mgr._pause_event.is_set()
+        assert mgr._training_future is None
+        mgr.shutdown()
+
 
 @pytest.mark.unit
 class TestLifecycleManagerStatus:
@@ -1695,6 +1720,46 @@ class TestReplayLifecycleIntegration:
                     mgr.start_training(X=x, y=y)
             finally:
                 mgr.stop_replay()
+        mgr.shutdown()
+
+    def test_reset_while_replaying_stops_session(self, tmp_path):
+        """RESET is the REPLAYING escape hatch — it must tear down the driver.
+
+        Previously reset() ran Command.RESET (FSM → STOPPED) without calling
+        session.stop() / clearing ``_replay_session``, so synthetic epoch_end
+        frames kept firing after the control plane reported Stopped.
+        """
+        mgr = TrainingLifecycleManager()
+        mgr.create_network(input_size=2, output_size=2)
+        ctxs = self._stub_load(mgr, tmp_path, {"train_loss": [0.1, 0.2, 0.3], "value_loss": [], "train_accuracy": [], "value_accuracy": []})
+        with ctxs[0], ctxs[1]:
+            assert mgr.start_replay("snap")["loaded"] is True
+            session = mgr._replay_session
+            assert session is not None
+            assert mgr.state_machine.is_replaying()
+            result = mgr.reset()
+            assert result["status"] == "reset"
+            assert mgr._replay_session is None
+            assert mgr.state_machine.is_stopped()
+            # A second stop is a no-op (session already cleared); proves we
+            # do not leave a live driver that stop_replay would still own.
+            assert mgr.stop_replay() == {"status": "not_active"}
+        mgr.shutdown()
+
+    def test_reset_while_replaying_clears_session_even_if_stop_raises(self):
+        """A stuck replay driver must not block the RESET escape hatch."""
+        from unittest.mock import MagicMock
+
+        mgr = TrainingLifecycleManager()
+        session = MagicMock()
+        session.stop.side_effect = RuntimeError("stuck thread")
+        mgr._replay_session = session
+        mgr.state_machine.mark_replaying()
+        result = mgr.reset()
+        assert result["status"] == "reset"
+        session.stop.assert_called_once()
+        assert mgr._replay_session is None
+        assert mgr.state_machine.is_stopped()
         mgr.shutdown()
 
     def test_load_snapshot_rejected_while_replaying(self, tmp_path):
