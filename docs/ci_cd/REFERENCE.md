@@ -1,10 +1,9 @@
 # CI/CD Reference
 
 **Project**: Juniper Cascor  
-**Workflow Files**: `.github/workflows/ci.yml`, `golden-regression.yml`, `conformance.yml`, `ci-protocol.yml`, `ci-cascor-model.yml`, `lockfile-update.yml`, `publish.yml`, `publish-protocol.yml`, `publish-cascor-model.yml`  
-**Workflow Files**: `.github/workflows/ci.yml`
+**Workflow Files**: `.github/workflows/ci.yml`, `codeql.yml`, `security-scan.yml`, `golden-regression.yml`, `conformance.yml`, `ci-protocol.yml`, `ci-cascor-model.yml`, `lockfile-update.yml`, `publish.yml`, `publish-protocol.yml`, `publish-cascor-model.yml`
 
-**Last Updated**: 2026-08-05
+**Last Updated**: 2026-08-24
 
 ---
 
@@ -60,6 +59,51 @@ Fixtures: `src/tests/fixtures/golden/`. Capture rewrite: `GOLDEN_CAPTURE=1`.
 |----------|--------------|---------------|----------|
 | `ci-protocol.yml` | `juniper-cascor-protocol/**` | 3.12, 3.13 | `--cov-fail-under=95` + `juniper-coverage-gap-map --enforce` |
 | `ci-cascor-model.yml` | `juniper-cascor-model/**` | 3.12 | package + candidate/utils/log_config/constants; per-file enforce |
+
+## CodeQL Analysis
+
+Semantic SAST for Python. Source of truth: `.github/workflows/codeql.yml` (fleet template; header names `juniper-data/.github/workflows/codeql.yml` as the copy origin). Operator runbook: [CI Manual — CodeQL Analysis](MANUAL.md#codeql-analysis).
+
+| Setting | Value |
+|---------|-------|
+| Job | `analyze` on `ubuntu-latest` |
+| Language matrix | `python` (`fail-fast: false`) |
+| Queries | `+security-and-quality` (default security pack **plus** quality queries) |
+| Steps | `codeql-action/init` → `autobuild` → `analyze` (`category: /language:python`) |
+| Permissions | `actions: read`, `contents: read`, `security-events: write` |
+| Required check | **No** — soak / advisory (same convention `sequence-safety.yml` cites). Do not treat a red CodeQL run as a merge blocker unless a ruleset later adds the context. |
+| `workflow_dispatch` | **None** — push, PR, or wait for the Monday cron |
+
+### Triggers
+
+| Event | Branches |
+|-------|----------|
+| `push` | `main`, `develop` |
+| `pull_request` | `main` only (a PR targeting `develop` does **not** run CodeQL) |
+| `schedule` | `0 6 * * 1` (Monday 06:00 UTC — same cron as `security-scan.yml`) |
+
+### Action pins (Dependabot `codeql-action` group)
+
+`.github/dependabot.yml` groups `github/codeql-action*` so these four SHA pins move together:
+
+| Use | Workflow |
+|-----|----------|
+| `github/codeql-action/init` | `codeql.yml` |
+| `github/codeql-action/autobuild` | `codeql.yml` |
+| `github/codeql-action/analyze` | `codeql.yml` |
+| `github/codeql-action/upload-sarif` | `ci.yml` **Security Scans** job (Bandit SARIF → GitHub code scanning) |
+
+Do not document a specific SHA or `v4.x.y` patch — Dependabot refreshes the pin and the `# vX.Y.Z` comment. Partial hand-edits of one of the four uses leave CodeQL init/analyze and Bandit SARIF upload on different action versions.
+
+### Contrast with the other security lanes
+
+| Lane | Workflow | What it runs | GitHub code scanning |
+|------|----------|--------------|----------------------|
+| CodeQL | `codeql.yml` | CodeQL Python query pack | Native CodeQL upload from `analyze` |
+| PR / push CI | `ci.yml` job `security` | Gitleaks (skip `repository_dispatch`), Bandit medium+ (blocking) + SARIF (`--exit-zero` then upload), pip-audit | Bandit SARIF via `upload-sarif` (`if: always()`, `continue-on-error: true`) |
+| Scheduled | `security-scan.yml` | Bandit medium+ + `pip-audit --strict`; artifact `security-reports` | **None** (no CodeQL, no Gitleaks, no `upload-sarif`) |
+
+`security-scan.yml` has `workflow_dispatch`; `codeql.yml` does not.
 
 ## Publish Workflows
 
@@ -426,6 +470,10 @@ Freshness recompiles with `--constraint requirements.lock` and diffs `pkg==versi
 | Conformance fails after model-core bump | Interface drift in `CascorModel` adapter hooks | Fix production `CascorModel` / factory hooks — do not weaken the kit |
 | Package CI did not run | Path filter missed the change | Edit under `juniper-cascor-protocol/` or `juniper-cascor-model/`, or use `workflow_dispatch` |
 | Lockfile Freshness red on Dependabot PR | PAT gate green no-op (Dependabot secret store) | Register `CROSS_REPO_DISPATCH_TOKEN` under Dependabot secrets, or commit a local regen |
+| CodeQL missing on a `develop` PR | `pull_request` filter is `main` only | Push the branch to `develop`, retarget the PR at `main`, or wait for the Monday cron on `main`/`develop` |
+| CodeQL action pins drifted across files | Partial merge of a `codeql-action` group PR | Keep `init` / `autobuild` / `analyze` / `ci.yml` `upload-sarif` on the same SHA |
+| Bandit findings missing from the Security tab | `upload-sarif` is `continue-on-error: true` | The blocking Bandit step still failed the **Security Scans** job; the SARIF upload is best-effort |
+| No way to re-run CodeQL from Actions | `codeql.yml` has no `workflow_dispatch` | Push an empty commit, open/sync a PR against `main`, or wait for Monday 06:00 UTC |
 | Update Lockfile hard-fails on human PR | Actions PAT missing/expired | Restore Actions secret or commit lock manually |
 | Publish skipped for wrong package | Tag prefix does not match workflow guard | Use `v*` / `juniper-cascor-protocol-v*` / `juniper-cascor-model-v*` |
 | TestPyPI 400 already exists | Concurrent publish or retry of same version | Bump version; avoid dual `release`+`push: tags` triggers |
@@ -457,4 +505,5 @@ act -j test
 - [Testing Guide](../testing/QUICK_START.md)
 - [Installation Guide](../install/QUICK_START.md)
 - [API Reference](../api/API_REFERENCE.md)
+- [CodeQL Analysis](#codeql-analysis)
 - Test Runner Scripts (`src/tests/scripts/`)

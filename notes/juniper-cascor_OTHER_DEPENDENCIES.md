@@ -2,7 +2,7 @@
 
 **Project**: Juniper
 **Application**: juniper-cascor
-**Last Updated**: 2026-02-25
+**Last Updated**: 2026-08-24
 
 ---
 
@@ -40,7 +40,7 @@ For conda/mamba-managed dependencies, see `conf/conda_environment_ci.yaml`.
 | actions/cache | v4 | github-action | Dependency caching |
 | conda-incubator/setup-miniconda | v3 | github-action | Conda/Miniforge setup in CI |
 | gitleaks/gitleaks-action | v2 | github-action | Secrets detection |
-| github/codeql-action/upload-sarif | v3 | github-action | SARIF security upload |
+| github/codeql-action (`init`, `autobuild`, `analyze`, `upload-sarif`) | SHA-pinned (Dependabot `codeql-action` group) | github-action | CodeQL Python SAST + Bandit SARIF upload to GitHub code scanning |
 
 ## Pre-commit Hooks
 
