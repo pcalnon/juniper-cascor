@@ -2115,6 +2115,39 @@ class TrainingLifecycleManager:
             existing._init_weight_history()
         self._weight_history_recorder.register()
 
+    def _reject_start_for_state_locked(self) -> None:
+        """Reject ``start_training`` from every FSM state that forbids a start.
+
+        Extracted from ``start_training``'s locked section so this guard set can
+        grow without pushing that method past the repo's ``--max-complexity=15``
+        ceiling — C901 is deliberately enabled here (LOW-001), so the ceiling is
+        a real constraint rather than something to ``noqa`` past.
+
+        Caller must already hold ``self._lock``. Every branch raises, so a clean
+        return means "the FSM permits a start".
+        """
+        if self.state_machine.is_started():
+            raise RuntimeError("Training already in progress")
+        # PAUSED still owns a parked fit thread. Falling through would
+        # ``_pause_event.set()`` (unblocking that thread) AND queue a
+        # second ``_run_training`` future on the single-worker executor.
+        # Operators must ``/v1/training/resume`` — never start-over-pause.
+        if self.state_machine.is_paused():
+            raise RuntimeError("Cannot start training while paused — invoke /v1/training/resume")
+        # CAN-015d (B-4): Investigating is the inspection / modification
+        # mode loaded by ``/restore``. Training commands are explicitly
+        # rejected — the user must invoke ``/retrain`` or ``/resume`` to
+        # transition out of Investigating before starting training.
+        # Failing fast at the API boundary is much clearer than
+        # letting the future submit and the FSM transition fail
+        # silently on the background training thread.
+        if self.state_machine.is_investigating():
+            raise RuntimeError("Cannot start training while Investigating a snapshot — invoke /v1/snapshots/{id}/retrain or /resume to transition out of Investigating first")
+        # CAN-015c (B-3): Replaying is read-only playback. Same
+        # rejection contract — user must /replay/control stop first.
+        if self.state_machine.is_replaying():
+            raise RuntimeError("Cannot start training while replaying a snapshot — invoke /v1/snapshots/{id}/replay/control with action='stop' first")
+
     def start_training(
         self,
         X: Optional[torch.Tensor] = None,
@@ -2153,27 +2186,7 @@ class TrainingLifecycleManager:
             Status dictionary
         """
         with self._lock:
-            if self.state_machine.is_started():
-                raise RuntimeError("Training already in progress")
-            # PAUSED still owns a parked fit thread. Falling through would
-            # ``_pause_event.set()`` (unblocking that thread) AND queue a
-            # second ``_run_training`` future on the single-worker executor.
-            # Operators must ``/v1/training/resume`` — never start-over-pause.
-            if self.state_machine.is_paused():
-                raise RuntimeError("Cannot start training while paused — invoke /v1/training/resume")
-            # CAN-015d (B-4): Investigating is the inspection / modification
-            # mode loaded by ``/restore``. Training commands are explicitly
-            # rejected — the user must invoke ``/retrain`` or ``/resume`` to
-            # transition out of Investigating before starting training.
-            # Failing fast at the API boundary is much clearer than
-            # letting the future submit and the FSM transition fail
-            # silently on the background training thread.
-            if self.state_machine.is_investigating():
-                raise RuntimeError("Cannot start training while Investigating a snapshot — invoke /v1/snapshots/{id}/retrain or /resume to transition out of Investigating first")
-            # CAN-015c (B-3): Replaying is read-only playback. Same
-            # rejection contract — user must /replay/control stop first.
-            if self.state_machine.is_replaying():
-                raise RuntimeError("Cannot start training while replaying a snapshot — invoke /v1/snapshots/{id}/replay/control with action='stop' first")
+            self._reject_start_for_state_locked()
 
             if X is not None:
                 self._train_x = X
