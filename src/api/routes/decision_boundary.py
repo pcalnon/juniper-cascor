@@ -4,7 +4,7 @@ import asyncio
 
 from fastapi import APIRouter, HTTPException, Query, Request
 
-from api.models.common import success_response
+from api.models.common import ResponseEnvelope, success_response
 from cascor_constants.constants_api import _PROJECT_API_DECISION_BOUNDARY_RESOLUTION_DEFAULT, _PROJECT_API_DECISION_BOUNDARY_RESOLUTION_MAX, _PROJECT_API_DECISION_BOUNDARY_RESOLUTION_MIN, _PROJECT_API_HTTP_404_NOT_FOUND, _PROJECT_API_HTTP_500_INTERNAL_SERVER_ERROR, _PROJECT_API_HTTP_503_SERVICE_UNAVAILABLE
 
 router = APIRouter(prefix="/decision-boundary", tags=["decision-boundary"])
@@ -17,7 +17,7 @@ def _get_lifecycle(request: Request):
     return lifecycle
 
 
-@router.get("")
+@router.get("", operation_id="get_decision_boundary", response_model=ResponseEnvelope)
 async def get_decision_boundary(
     request: Request,
     resolution: int = Query(_PROJECT_API_DECISION_BOUNDARY_RESOLUTION_DEFAULT, ge=_PROJECT_API_DECISION_BOUNDARY_RESOLUTION_MIN, le=_PROJECT_API_DECISION_BOUNDARY_RESOLUTION_MAX, description="Grid resolution for boundary computation"),

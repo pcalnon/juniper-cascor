@@ -8,7 +8,7 @@ from typing import NoReturn
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, field_validator
 
-from api.models.common import success_response
+from api.models.common import ResponseEnvelope, success_response
 from snapshots.snapshot_errors import SnapshotSaveError
 from snapshots.snapshot_load_status import SNAPSHOT_ARCH_MISMATCH, SNAPSHOT_UNUSABLE
 
@@ -174,7 +174,7 @@ def _build_unified_payload(
     return payload
 
 
-@router.post("")
+@router.post("", operation_id="save_snapshot", response_model=ResponseEnvelope)
 async def save_snapshot(request: Request, body: SnapshotCreateRequest = None) -> dict:
     """Save a snapshot of the current network state."""
     lifecycle = _get_lifecycle(request)
@@ -198,14 +198,14 @@ async def save_snapshot(request: Request, body: SnapshotCreateRequest = None) ->
     return success_response(result)
 
 
-@router.get("")
+@router.get("", operation_id="list_snapshots", response_model=ResponseEnvelope)
 async def list_snapshots(request: Request) -> dict:
     """List all available snapshots."""
     lifecycle = _get_lifecycle(request)
     return success_response(lifecycle.list_snapshots())
 
 
-@router.get("/{snapshot_id}")
+@router.get("/{snapshot_id}", operation_id="get_snapshot", response_model=ResponseEnvelope)
 async def get_snapshot(request: Request, snapshot_id: str) -> dict:
     """Get metadata for a specific snapshot."""
     _validate_snapshot_id(snapshot_id, client=request.client.host if request.client else None)
@@ -216,7 +216,7 @@ async def get_snapshot(request: Request, snapshot_id: str) -> dict:
     return success_response(result)
 
 
-@router.get("/{snapshot_id}/history/dataset_swaps")
+@router.get("/{snapshot_id}/history/dataset_swaps", operation_id="get_snapshot_dataset_swaps", response_model=ResponseEnvelope)
 async def get_snapshot_dataset_swaps(request: Request, snapshot_id: str) -> dict:
     """Read the ``dataset_swap`` events stored in a snapshot's HDF5 file.
 
@@ -242,7 +242,7 @@ async def get_snapshot_dataset_swaps(request: Request, snapshot_id: str) -> dict
     return success_response({"events": events})
 
 
-@router.post("/{snapshot_id}/restore")
+@router.post("/{snapshot_id}/restore", operation_id="restore_snapshot", response_model=ResponseEnvelope)
 async def restore_snapshot(request: Request, snapshot_id: str) -> dict:
     """Restore a network from a snapshot for inspection and modification.
 
@@ -295,7 +295,7 @@ async def restore_snapshot(request: Request, snapshot_id: str) -> dict:
     return success_response(payload)
 
 
-@router.post("/{snapshot_id}/retrain")
+@router.post("/{snapshot_id}/retrain", operation_id="retrain_from_snapshot", response_model=ResponseEnvelope)
 async def retrain_from_snapshot(request: Request, snapshot_id: str) -> dict:
     """Restore a snapshot and reset history for a fresh training run.
 
@@ -346,7 +346,7 @@ async def retrain_from_snapshot(request: Request, snapshot_id: str) -> dict:
     return success_response(payload)
 
 
-@router.post("/{snapshot_id}/resume")
+@router.post("/{snapshot_id}/resume", operation_id="resume_snapshot", response_model=ResponseEnvelope)
 async def resume_snapshot(request: Request, snapshot_id: str) -> dict:
     """Restore a snapshot and prepare to continue training (CAN-015b).
 
@@ -408,7 +408,7 @@ class ReplayControlRequest(BaseModel):
     end: int | None = None
 
 
-@router.post("/{snapshot_id}/replay")
+@router.post("/{snapshot_id}/replay", operation_id="start_replay_endpoint", response_model=ResponseEnvelope)
 async def start_replay_endpoint(request: Request, snapshot_id: str) -> dict:
     """Start a replay session for a snapshot's training history (CAN-015c).
 
@@ -452,7 +452,7 @@ async def start_replay_endpoint(request: Request, snapshot_id: str) -> dict:
     return success_response(payload)
 
 
-@router.post("/{snapshot_id}/replay/control")
+@router.post("/{snapshot_id}/replay/control", operation_id="replay_control_endpoint", response_model=ResponseEnvelope)
 async def replay_control_endpoint(request: Request, snapshot_id: str, body: ReplayControlRequest) -> dict:
     """Control the active replay session (CAN-015c).
 

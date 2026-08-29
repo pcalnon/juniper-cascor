@@ -9,7 +9,7 @@ import time
 
 from fastapi import APIRouter, HTTPException, Request
 
-from api.models.common import success_response
+from api.models.common import ResponseEnvelope, success_response
 
 logger = logging.getLogger("juniper_cascor.api.routes.workers")
 
@@ -58,7 +58,7 @@ def _serialize_worker(worker) -> dict:
     }
 
 
-@router.get("")
+@router.get("", operation_id="list_workers", response_model=ResponseEnvelope)
 async def list_workers(request: Request) -> dict:
     """List all registered workers with status."""
     registry = _get_registry(request)
@@ -71,7 +71,7 @@ async def list_workers(request: Request) -> dict:
     )
 
 
-@router.get("/stats")
+@router.get("/stats", operation_id="get_worker_stats", response_model=ResponseEnvelope)
 async def get_worker_stats(request: Request) -> dict:
     """Aggregate worker statistics."""
     registry = _get_registry(request)
@@ -97,7 +97,7 @@ async def get_worker_stats(request: Request) -> dict:
     )
 
 
-@router.get("/{worker_id}")
+@router.get("/{worker_id}", operation_id="get_worker", response_model=ResponseEnvelope)
 async def get_worker(request: Request, worker_id: str) -> dict:
     """Get details for a specific worker."""
     registry = _get_registry(request)

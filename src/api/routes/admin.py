@@ -15,7 +15,7 @@ import logging
 
 from fastapi import APIRouter, HTTPException, Request
 
-from api.models.common import success_response
+from api.models.common import ResponseEnvelope, success_response
 from api.models.training import ExperimentalFunctionsToggleRequest
 
 logger = logging.getLogger("juniper_cascor.api.routes.admin")
@@ -30,14 +30,14 @@ def _get_lifecycle(request: Request):
     return lifecycle
 
 
-@router.get("/experimental_functions")
+@router.get("/experimental_functions", operation_id="get_experimental_functions", response_model=ResponseEnvelope)
 async def get_experimental_functions(request: Request) -> dict:
     """Report whether the experimental-functions gate is currently open."""
     lifecycle = _get_lifecycle(request)
     return success_response({"enabled": lifecycle.get_experimental_functions()})
 
 
-@router.post("/experimental_functions")
+@router.post("/experimental_functions", operation_id="set_experimental_functions", response_model=ResponseEnvelope)
 async def set_experimental_functions(request: Request, body: ExperimentalFunctionsToggleRequest) -> dict:
     """Open or close the experimental-functions gate.
 

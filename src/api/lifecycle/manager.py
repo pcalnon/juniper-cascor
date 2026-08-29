@@ -30,6 +30,17 @@ from cascor_constants.constants_api import _PROJECT_API_DRAIN_THREAD_JOIN_TIMEOU
 from snapshots.snapshot_load_status import SnapshotLoadResult
 from snapshots.snapshot_load_status import absent as snapshot_absent
 
+# How long ``shutdown()`` waits for a live training thread to observe ``_stop_event`` and
+# unwind through ``fit``'s ``finally`` (which releases the candidate-worker pool and unlinks
+# the run's SharedMemory blocks) before releasing those resources from the shutdown thread
+# itself. Budgeted so the whole lifespan shutdown stays inside the shortest stop-tool grace
+# window (10 s: experiment_stack.bash / docker stop) even when the join times out and the
+# explicit pool release then spends its own ``_WORKER_SHUTDOWN_GRACE_SECONDS`` (5 s) + a 1 s
+# terminate-join + 0.5 s per worker that outlives its SIGKILL join (none in practice):
+# 3 + 6.5 < 10 in the realistic worst case. The interrupt itself lands within ~25 output
+# epochs (milliseconds); only a stop that arrives mid-candidate-round runs the clock.
+_SHUTDOWN_TRAINING_JOIN_TIMEOUT_SECONDS = 3.0
+
 
 def _env_flag(name: str, *, default: bool) -> bool:
     """Parse a boolean environment variable (``1/0``, ``true/false``, ``yes/no``,
@@ -1780,7 +1791,13 @@ class TrainingLifecycleManager:
                 self._grow_phase_entered = True
                 self.state_machine.set_phase(TrainingPhase.CANDIDATE)
                 self.monitor.on_phase_change(self.state_machine.phase.name.lower())
-                self.training_state.update_state(phase="Candidate", phase_started_at=datetime.now().isoformat())
+                # F-CANOPY-026: tz-AWARE UTC, never naive local. ``datetime.now()`` here
+                # emitted a naive local timestamp; canopy's phase-duration readout
+                # stamps a naive value as UTC and subtracts it from ``now(UTC)``, so the
+                # displayed elapsed time was inflated by exactly the host's UTC offset
+                # (measured: 302m29s for a phase 2m29s old on a CDT box — 18000 s).
+                # Invisible in any UTC-0 environment, which is why CI never saw it.
+                self.training_state.update_state(phase="Candidate", phase_started_at=datetime.now(UTC).isoformat())
                 self._broadcast_training_state(force=True)
             self.training_state.update_state(
                 grow_iteration=int(detail.get("grow_iteration", 0)),
@@ -2325,7 +2342,8 @@ class TrainingLifecycleManager:
         monitor.on_phase_change(sm.phase.name.lower())
         # C2b: reset the within-pass progress pairs at run start so a new run
         # never displays the previous run's terminal inner-epoch values.
-        state.update_state(status="Started", phase="Output", phase_started_at=datetime.now().isoformat(), output_epoch=0, output_total_epochs=0, candidate_epoch=0, candidate_total_epochs=0)
+        # F-CANOPY-026: tz-aware UTC — see the candidate-phase site above.
+        state.update_state(status="Started", phase="Output", phase_started_at=datetime.now(UTC).isoformat(), output_epoch=0, output_total_epochs=0, candidate_epoch=0, candidate_total_epochs=0)
         self._broadcast_training_state(force=True)
         # OBS-WIRE-01 (A.1): mark the session active; balanced by dec in the finally so the
         # gauge (which gates TrainingStalled / TrainingLossNotDecreasing / LowCandidateCorrelation
@@ -5019,8 +5037,70 @@ class TrainingLifecycleManager:
     # ------------------------------------------------------------------
 
     def shutdown(self) -> None:
-        """Clean up resources."""
+        """Release the run's resources before the process goes away.
+
+        The FastAPI lifespan's shutdown stanza calls this, and on a SIGTERM stop that stanza
+        is the LAST Python code that runs: uvicorn's ``Server.capture_signals`` restores the
+        default SIGTERM disposition and re-raises the captured signal the moment ``serve()``
+        returns, so the kernel terminates the process within milliseconds of this method
+        returning (about 0.2-0.3 s after the SIGTERM itself) -- no ``atexit`` hooks, no
+        interpreter finalisation, no thread joins (measured 2026-08-25 on uvicorn 0.46.0; the
+        behaviour dates from 0.29 and every env/lockfile in the fleet is newer: dead 0.28 s
+        after SIGTERM, wait status 143, ``atexit`` never fired; SIGINT is the only stop that
+        unwinds normally). Every fleet
+        stop tool -- ``juniper_chop_all.bash``, ``experiment_stack.bash``,
+        ``isolated_stack.bash``, ``docker stop`` -- sends SIGTERM.
+
+        Before this fix the method set ``_stop_event`` and returned at once
+        (``Executor.shutdown(wait=False, cancel_futures=True)`` cancels only QUEUED futures and
+        never waits for the running one), so a service stopped mid-training died with the
+        training thread live, its forkserver candidate-worker pool orphaned, and the round's
+        deferred-unlink ``SharedMemory`` block plus the pool queues' nine semaphores left in
+        ``/dev/shm`` -- the ``juniper_train_*`` / ``sem.mp-*`` ledger characterised in
+        juniper-ml ``notes/JUNIPER_2026-08-25_JUNIPER-CASCOR_DEV-SHM-LEAK-CHARACTERISATION.md``.
+        The same kill-mid-write trigger produced cohort B (273 truncated snapshots) until
+        cascor#561 made the snapshot write atomic.
+
+        Order of operations:
+
+        1. Set ``_stop_event`` (and ``_pause_event``, so a paused wait-loop wakes to observe
+           the stop) and join the training future, bounded by
+           ``_SHUTDOWN_TRAINING_JOIN_TIMEOUT_SECONDS``. The join lets the existing
+           ``TrainingInterrupted`` path (``_handle_event`` -> ``_check_for_interrupt``) unwind
+           ``fit`` on the training thread, whose ``finally`` releases the candidate pool and
+           unlinks the shared-memory blocks (``_release_candidate_worker_pool`` ->
+           ``_shutdown_worker_pool``). The interrupt lands within ~25 output epochs; a stop
+           that arrives mid-candidate-round has to wait for the round, so the join can time
+           out -- that is logged, never raised.
+        2. Whether or not the join completed, release the network's candidate pool and
+           shared memory explicitly (:meth:`_release_network_resources`; both hooks are
+           idempotent). This replaces the ``atexit`` registrations that never fire under
+           SIGTERM and is the belt-and-braces path for a timed-out join.
+        3. Tear down the replay session and the executor as before. ``wait=False`` is kept on
+           purpose: ``Executor.shutdown(wait=True)`` has no timeout, so it would block on a
+           timed-out training thread until the fit ends naturally (minutes) and guarantee the
+           stop tool's SIGKILL escalation instead of preventing it.
+
+        Synchronous by design (tests call it directly); the lifespan runs it via
+        ``asyncio.to_thread`` so a multi-second join never blocks the event loop.
+        """
+        started = time.monotonic()
         self._stop_event.set()
+        self._pause_event.set()  # ensure a paused wait-loop wakes to observe the stop
+        training_joined = True
+        future = self._training_future
+        if future is not None and not future.done():
+            try:
+                future.result(timeout=_SHUTDOWN_TRAINING_JOIN_TIMEOUT_SECONDS)
+            except TimeoutError:
+                training_joined = False
+                self.logger.warning("shutdown: training thread did not unwind within %.1fs; releasing the candidate pool and shared memory from the shutdown thread", _SHUTDOWN_TRAINING_JOIN_TIMEOUT_SECONDS)
+            except Exception as exc:
+                # Only "has the thread finished" matters here; ``_run_training`` has already
+                # recorded the terminal state, and a failed fit's exception is not shutdown's.
+                self.logger.debug("shutdown: training future raised on join: %s", exc)
+        self._training_future = None
+        self._release_network_resources()
         self.stop_liveness_heartbeat()
         # CAN-015c (B-3): drain any active replay session so the
         # background driver thread doesn't outlive the lifecycle.
@@ -5033,4 +5113,29 @@ class TrainingLifecycleManager:
         if self._executor:
             self._executor.shutdown(wait=False, cancel_futures=True)
             self._executor = None
-        self.logger.info("TrainingLifecycleManager shut down")
+        elapsed = time.monotonic() - started
+        if training_joined:
+            self.logger.info("TrainingLifecycleManager shut down (%.2fs)", elapsed)
+        else:
+            self.logger.warning("TrainingLifecycleManager shut down with the training thread still running (%.2fs); the process exit will abandon it", elapsed)
+
+    def _release_network_resources(self) -> None:
+        """Release the wrapped network's candidate-worker pool and SharedMemory blocks.
+
+        Runs on the shutdown path after the bounded training join. After a clean unwind
+        ``fit``'s ``finally`` has already emptied both and the calls are no-ops; after a
+        timed-out join they do the release the abandoned training thread no longer can.
+        Every failure is logged and swallowed -- nothing downstream of shutdown could act on
+        an exception, and the process is about to exit either way.
+        """
+        network = self.network
+        if network is None:
+            return
+        for hook_name in ("_release_candidate_worker_pool", "_cleanup_shared_memory"):
+            hook = getattr(network, hook_name, None)
+            if not callable(hook):
+                continue
+            try:
+                hook()
+            except Exception:
+                self.logger.warning("shutdown: %s failed", hook_name, exc_info=True)

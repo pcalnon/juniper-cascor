@@ -13,6 +13,7 @@ Covers:
 
 import os
 import sys
+import threading
 import time
 from unittest.mock import MagicMock, patch
 
@@ -21,7 +22,7 @@ import torch
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))))
 
-from api.lifecycle.manager import TrainingLifecycleManager
+from api.lifecycle.manager import _SHUTDOWN_TRAINING_JOIN_TIMEOUT_SECONDS, TrainingInterrupted, TrainingLifecycleManager
 from api.lifecycle.state_machine import Command
 
 pytestmark = pytest.mark.unit
@@ -318,6 +319,118 @@ class TestShutdown:
 
         mgr.shutdown()
         # After shutdown, executor should be cleaned up
+
+    # ------------------------------------------------------------------
+    # 2026-08-25 stop-during-training fix (juniper-ml
+    # notes/JUNIPER_2026-08-25_JUNIPER-CASCOR_DEV-SHM-LEAK-CHARACTERISATION.md §6).
+    # On a SIGTERM stop the lifespan's shutdown stanza is the last Python that runs
+    # (uvicorn re-raises the signal with the default disposition once the lifespan
+    # returns; atexit never fires), so shutdown() itself must unwind training and
+    # release the run's resources before it returns.
+    # ------------------------------------------------------------------
+
+    def test_shutdown_joins_a_live_training_thread_before_returning(self):
+        """shutdown() must not return while the training thread is still inside fit.
+
+        Pre-fix it set ``_stop_event`` and returned at once; the process then died with
+        the thread live (the /dev/shm ``juniper_train_*`` + 9 ``sem.mp-*`` ledger). The
+        fake fit mirrors the engine's callback-driven interrupt: it observes the stop
+        event and raises ``TrainingInterrupted``, which ``_run_training`` records as a
+        clean stop.
+        """
+        mgr = TrainingLifecycleManager()
+        mgr.create_network(input_size=2, output_size=2)
+        fit_entered = threading.Event()
+
+        def fit_until_stopped(*_args, **_kwargs):
+            fit_entered.set()
+            while not mgr._stop_event.is_set():
+                time.sleep(0.005)
+            raise TrainingInterrupted("stop_requested")
+
+        future = None
+        try:
+            with patch.object(mgr.network, "fit", side_effect=fit_until_stopped):
+                mgr.start_training(X=torch.randn(10, 2), y=torch.randn(10, 2))
+                assert fit_entered.wait(timeout=10), "fake fit never started"
+                future = mgr._training_future
+                assert future is not None and not future.done()
+                started = time.monotonic()
+                mgr.shutdown()
+                elapsed = time.monotonic() - started
+            assert future.done(), "shutdown() returned with the training future still running"
+            assert elapsed < _SHUTDOWN_TRAINING_JOIN_TIMEOUT_SECONDS, f"join took {elapsed:.2f}s: the interrupt path did not fire"
+            assert mgr._training_future is None
+            assert mgr._executor is None
+            assert mgr.training_state.get_state()["status"] == "Stopped"
+        finally:
+            mgr._stop_event.set()
+            if future is not None:
+                future.result(timeout=10)
+
+    def test_shutdown_is_bounded_and_still_releases_resources_when_training_ignores_the_stop(self, caplog):
+        """A training thread that never observes ``_stop_event`` (a stop landing
+        mid-candidate-round) must not hold shutdown() hostage: the join is bounded, the
+        outcome is logged, and the network's pool + shared-memory release hooks still run
+        from the shutdown thread -- they are what the dead ``atexit`` path used to do.
+        """
+        mgr = TrainingLifecycleManager()
+        mgr.create_network(input_size=2, output_size=2)
+        fit_entered = threading.Event()
+        release_fit = threading.Event()
+
+        def fit_ignoring_stop(*_args, **_kwargs):
+            fit_entered.set()
+            release_fit.wait(timeout=30)
+            return {"train_loss": [0.5]}
+
+        pool_release = MagicMock()
+        shm_cleanup = MagicMock()
+        future = None
+        try:
+            with (
+                patch.object(mgr.network, "fit", side_effect=fit_ignoring_stop),
+                patch.object(mgr.network, "_release_candidate_worker_pool", pool_release),
+                patch.object(mgr.network, "_cleanup_shared_memory", shm_cleanup),
+                patch("api.lifecycle.manager._SHUTDOWN_TRAINING_JOIN_TIMEOUT_SECONDS", 0.2),
+                caplog.at_level("WARNING", logger="api.lifecycle.manager"),
+            ):
+                mgr.start_training(X=torch.randn(10, 2), y=torch.randn(10, 2))
+                assert fit_entered.wait(timeout=10), "fake fit never started"
+                future = mgr._training_future
+                started = time.monotonic()
+                mgr.shutdown()
+                elapsed = time.monotonic() - started
+                assert not future.done(), "the fake fit was supposed to outlive the join"
+                assert elapsed < 2.0, f"shutdown() blocked {elapsed:.2f}s on a training thread that ignored the stop"
+            pool_release.assert_called_once()
+            shm_cleanup.assert_called_once()
+            assert mgr._training_future is None
+            assert mgr._executor is None
+            assert any("did not unwind within" in rec.getMessage() for rec in caplog.records), "the timed-out join must be logged"
+        finally:
+            release_fit.set()
+            if future is not None:
+                future.result(timeout=10)
+
+    def test_shutdown_releases_pool_and_shared_memory_when_idle(self):
+        """No training in flight: both release hooks still run (a pool can outlive its
+        run), and both are safe no-ops on a fresh network."""
+        mgr = TrainingLifecycleManager()
+        mgr.create_network(input_size=2, output_size=2)
+        with patch.object(mgr.network, "_release_candidate_worker_pool") as pool_release, patch.object(mgr.network, "_cleanup_shared_memory") as shm_cleanup:
+            mgr.shutdown()
+        pool_release.assert_called_once()
+        shm_cleanup.assert_called_once()
+
+    def test_shutdown_swallows_a_failing_release_hook_and_runs_the_next(self):
+        """Cleanup must never mask shutdown: a wedged pool release is logged, and the
+        shared-memory unlink still runs after it."""
+        mgr = TrainingLifecycleManager()
+        mgr.create_network(input_size=2, output_size=2)
+        with patch.object(mgr.network, "_release_candidate_worker_pool", side_effect=RuntimeError("pool wedged")), patch.object(mgr.network, "_cleanup_shared_memory") as shm_cleanup:
+            mgr.shutdown()  # must not raise
+        shm_cleanup.assert_called_once()
 
 
 class TestHasTrainingData:

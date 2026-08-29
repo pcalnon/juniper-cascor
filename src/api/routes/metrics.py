@@ -2,7 +2,7 @@
 
 from fastapi import APIRouter, HTTPException, Query, Request
 
-from api.models.common import success_response
+from api.models.common import ResponseEnvelope, success_response
 
 router = APIRouter(prefix="/metrics", tags=["metrics"])
 
@@ -14,7 +14,7 @@ def _get_lifecycle(request: Request):
     return lifecycle
 
 
-@router.get("")
+@router.get("", operation_id="get_metrics", response_model=ResponseEnvelope)
 async def get_metrics(request: Request) -> dict:
     """Get current training metrics snapshot."""
     lifecycle = _get_lifecycle(request)
@@ -23,7 +23,7 @@ async def get_metrics(request: Request) -> dict:
     return success_response(lifecycle.get_metrics())
 
 
-@router.get("/history")
+@router.get("/history", operation_id="get_metrics_history", response_model=ResponseEnvelope)
 async def get_metrics_history(
     request: Request,
     count: int = Query(None, ge=1, description="Number of recent metrics to return"),
@@ -33,7 +33,7 @@ async def get_metrics_history(
     return success_response(lifecycle.get_metrics_history(count=count))
 
 
-@router.get("/transport")
+@router.get("/transport", operation_id="get_transport_stats", response_model=ResponseEnvelope)
 async def get_transport_stats(request: Request) -> dict:
     """GAP-WS-16: cumulative WebSocket transport counters.
 

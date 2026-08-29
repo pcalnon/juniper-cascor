@@ -68,6 +68,15 @@ class TestStartupTaskWiringSourceLevel:
         assert "task.cancel()" in self.source
         assert "asyncio.gather" in self.source and "return_exceptions=True" in self.source, "shutdown must await startup tasks with return_exceptions=True"
 
+    def test_shutdown_joins_the_lifecycle_off_the_event_loop(self):
+        # 2026-08-25 stop-during-training fix: lifecycle.shutdown() joins a live
+        # training thread (bounded, seconds). It must run via asyncio.to_thread so the
+        # loop stays free for the terminal-state broadcasts that thread schedules with
+        # run_coroutine_threadsafe -- and it must still be awaited inside the lifespan,
+        # because on a SIGTERM stop nothing after the lifespan runs (uvicorn re-raises
+        # the signal with the default disposition; atexit never fires).
+        assert "await asyncio.to_thread(lifecycle.shutdown)" in self.source, "lifespan must run lifecycle.shutdown() off the event loop via asyncio.to_thread"
+
 
 # Defer the import until the behavioural fixture asks for it.
 
