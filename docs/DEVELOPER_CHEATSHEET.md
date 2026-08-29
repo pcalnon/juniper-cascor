@@ -1,6 +1,6 @@
 # Developer Cheatsheet — juniper-cascor
 
-**Version**: 1.0.5  |  **Date**: 2026-08-07  |  **Project**: juniper-cascor
+**Version**: 1.0.6  |  **Date**: 2026-08-24  |  **Project**: juniper-cascor
 
 ---
 
@@ -281,11 +281,17 @@ Core: `torch`, `numpy`, `h5py`, `matplotlib`, `PyYAML`, `requests`
 
 **Dependabot lockfile:** `lockfile-update.yml` auto-regens when `CROSS_REPO_DISPATCH_TOKEN` is visible to the run. Dependabot uses a separate secret store — missing PAT there is a green no-op; **Lockfile Freshness** still blocks stale locks. Register the PAT under Dependabot secrets to restore auto-push.
 
+**CodeQL:** `codeql.yml` runs Python CodeQL (`+security-and-quality`) on push to `main`/`develop`, PRs targeting **`main` only**, and Monday 06:00 UTC.
+Soak — not a required check; no `workflow_dispatch`.
+Dependabot group `codeql-action` bumps `init`/`autobuild`/`analyze` plus `ci.yml` Bandit `upload-sarif` together.
+Scheduled `security-scan.yml` is Bandit + `pip-audit --strict` only (no CodeQL, no Gitleaks).
+
 **PyPI publish:** cut a GitHub Release (not a bare tag). Tags: `v*` → `publish.yml` (`juniper-cascor`); `juniper-cascor-protocol-v*` / `juniper-cascor-model-v*` → matching sub-package workflows. TestPyPI verify uses `--no-deps` and TestPyPI index only. Keep `pypa/gh-action-pypi-publish` SHA-pinned (Dependabot bumps all three workflows together).
 
 **Twine pins:** `conf/requirements_ci.txt` (and the conda CI freeze) are not the publish uploader. Publish and package-CI jobs `pip install` Twine unpinned for `twine check`; uploads use the action-bundled Twine. Twine 7 rejects Metadata 2.0 and needs `packaging >= 26.1` — smoke `python -m build && twine check dist/*` after a major freeze bump.
 
-> See: [CI Quick Start](ci_cd/QUICK_START.md#dependabot-lockfile-updates) | [CI Manual — Lockfile](ci_cd/MANUAL.md#lockfile-update-workflow) | [CI Manual — PyPI Publishing](ci_cd/MANUAL.md#pypi-publishing) | [Twine Pin Surfaces](ci_cd/MANUAL.md#twine-pin-surfaces) | [CI Reference](ci_cd/REFERENCE.md#publish-workflows) | [Dependency Update Workflow](../notes/DEPENDENCY_UPDATE_WORKFLOW.md) | [Environment Setup](install/ENVIRONMENT_SETUP.md)
+> See: [CI Quick Start](ci_cd/QUICK_START.md#dependabot-lockfile-updates) | [CI Quick Start — CodeQL](ci_cd/QUICK_START.md#codeql-and-github-actions-dependabot) | [CI Manual — Lockfile](ci_cd/MANUAL.md#lockfile-update-workflow) | [CI Manual — CodeQL](ci_cd/MANUAL.md#codeql-analysis)
+> See also: [CI Manual — PyPI Publishing](ci_cd/MANUAL.md#pypi-publishing) | [Twine Pin Surfaces](ci_cd/MANUAL.md#twine-pin-surfaces) | [CI Reference](ci_cd/REFERENCE.md#publish-workflows) | [CI Reference — CodeQL](ci_cd/REFERENCE.md#codeql-analysis) | [Dependency Update Workflow](../notes/DEPENDENCY_UPDATE_WORKFLOW.md) | [Environment Setup](install/ENVIRONMENT_SETUP.md)
 
 ---
 
@@ -300,6 +306,7 @@ Core: `torch`, `numpy`, `h5py`, `matplotlib`, `PyYAML`, `requests`
 | HDF5/pickle restore changed activation unexpectedly (legacy behavior) | Previous fallback-to-ReLU behavior no longer applies        | Use only supported activation names; unknown names now fail fast with `ValueError`                        |
 | GPU tests skipped                                                     | No CUDA or flag missing                                     | `pytest --gpu` on GPU machine                                                                             |
 | Long tests skipped                                                    | Flag not passed                                             | `pytest --run-long`                                                                                       |
+| CodeQL missing on a PR targeting `develop`                            | `codeql.yml` `pull_request` filter is `main` only           | Retarget at `main`, push to `develop`, or wait for the Monday 06:00 UTC cron                              |
 | HDF5 load fails                                                       | Corrupted or version mismatch                               | `python -m snapshots.snapshot_cli verify snapshot.h5`                                                     |
 | NaN in training                                                       | LR too high or bad data                                     | Reduce `learning_rate`, check tensors                                                                     |
 | C7 `f1`/`roc_auc` always `null` on history rows                       | Within-pass `output_epoch` rows, or eval metrics disabled   | Read terminal `kind="training_step"` rows; ensure `JUNIPER_CASCOR_EVAL_METRICS_ENABLED` is not `0`/`false` |

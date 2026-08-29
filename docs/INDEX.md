@@ -1,6 +1,6 @@
 # Juniper Cascor Documentation
 
-**Version**: 0.6.3 | [Changelog](../CHANGELOG.md) | [Full Documentation Overview](DOCUMENTATION_OVERVIEW.md)
+**Version**: 0.6.4 | [Changelog](../CHANGELOG.md) | [Full Documentation Overview](DOCUMENTATION_OVERVIEW.md)
 
 Juniper Cascor is an AI/ML research platform implementing the **Cascade Correlation Neural Network** algorithm from foundational research (Fahlman & Lebiere, 1990). The project emphasizes ground-up implementations from primary literature, enabling transparent exploration of constructive learning algorithms.
 
@@ -56,10 +56,10 @@ This documentation serves two audiences:
 
 | Document | Description |
 |----------|-------------|
-| [CI/CD Quick Start](ci_cd/QUICK_START.md) | Understand the CI pipeline, WS-6 golden/conformance gates, package CI, and PyPI publish tags |
+| [CI/CD Quick Start](ci_cd/QUICK_START.md) | Understand the CI pipeline, WS-6 golden/conformance gates, package CI, CodeQL soak lane, and PyPI publish tags |
 | [CI Environment](ci_cd/ENVIRONMENT_SETUP.md) | GitHub Actions environment |
-| [CI/CD Manual](ci_cd/MANUAL.md) | Pipeline architecture, WS-6 runbook, jobs, and PyPI publishing |
-| [CI/CD Reference](ci_cd/REFERENCE.md) | CI + Publish Workflow Configuration Reference (including WS-6 pins and package CI) |
+| [CI/CD Manual](ci_cd/MANUAL.md) | Pipeline architecture, WS-6 runbook, CodeQL analysis, jobs, and PyPI publishing |
+| [CI/CD Reference](ci_cd/REFERENCE.md) | CI + CodeQL + Publish Workflow Configuration Reference (including WS-6 pins and package CI) |
 
 ### Source Code
 

@@ -1,7 +1,7 @@
 # Dependency Update Workflow — juniper-cascor
 
-**Last Updated:** 2026-08-05
-**Version:** 1.1.0
+**Last Updated:** 2026-08-24
+**Version:** 1.1.1
 **Status:** Current
 
 ---
@@ -190,10 +190,27 @@ When Dependabot opens a PR that bumps `websockets` (including major lines such a
 
 Operator-facing detail: [ASGI WebSocket transport](../docs/api/JUNIPER_CASCOR_API_REFERENCE.md#asgi-websocket-transport).
 
+## GitHub Actions Dependabot (`codeql-action` group)
+
+Pip lockfiles are only half of Dependabot. `.github/dependabot.yml` also has a `github-actions` ecosystem (weekly Monday, `open-pull-requests-limit: 3`, labels `dependencies` / `ci`, commit prefix `ci`).
+
+The only named group is `codeql-action`, matching `github/codeql-action*`. That is why a CodeQL bump PR also edits `ci.yml`: Bandit SARIF upload uses `github/codeql-action/upload-sarif` and must stay on the same SHA as `codeql.yml`'s `init` / `autobuild` / `analyze`.
+
+| Constraint | Why |
+|------------|-----|
+| Review all four `codeql-action` uses in one PR | Split pins leave CodeQL analyze and Bandit SARIF on different action versions |
+| Do not expect `workflow_dispatch` on CodeQL | `codeql.yml` has none; `security-scan.yml` does |
+| A PR targeting `develop` will not run CodeQL | `pull_request.branches` is `[main]` only |
+
+Operator-facing detail: [CI Manual — CodeQL Analysis](../docs/ci_cd/MANUAL.md#codeql-analysis).
+
 ## Related Documentation
 
 - [CI/CD Quick Start — Dependabot lockfile](../docs/ci_cd/QUICK_START.md#dependabot-lockfile-updates)
+- [CI/CD Quick Start — CodeQL](../docs/ci_cd/QUICK_START.md#codeql-and-github-actions-dependabot)
 - [CI/CD Manual — Lockfile Update](../docs/ci_cd/MANUAL.md#lockfile-update-workflow)
+- [CI/CD Manual — CodeQL Analysis](../docs/ci_cd/MANUAL.md#codeql-analysis)
 - [CI/CD Reference — Lockfile Update](../docs/ci_cd/REFERENCE.md#lockfile-update-workflow)
-- Workflow source: `.github/workflows/lockfile-update.yml`
+- [CI/CD Reference — CodeQL Analysis](../docs/ci_cd/REFERENCE.md#codeql-analysis)
+- Workflow source: `.github/workflows/lockfile-update.yml`, `.github/workflows/codeql.yml`
 - Freshness gate: `.github/workflows/ci.yml` job `lockfile-check`

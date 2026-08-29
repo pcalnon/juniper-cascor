@@ -1,7 +1,7 @@
 # CI/CD Manual
 
 **Project**: Juniper Cascor  
-**Version**: 0.3.16  
+**Version**: 0.3.17  
 **Reference**: CASCOR-P1-007
 
 ---
@@ -383,6 +383,64 @@ git push
 
 ---
 
+## CodeQL Analysis
+
+**Workflow:** `.github/workflows/codeql.yml`  
+**Enforcement:** Soak / advisory — **not** a required status check (the same convention `sequence-safety.yml` documents). Findings land in the repository **Security → Code scanning** tab.
+
+### Intent
+
+Run GitHub CodeQL semantic SAST on the Python tree so query-pack findings (security **and** quality: `queries: +security-and-quality`) sit beside Bandit/Gitleaks/pip-audit rather than replacing them. The workflow file is the fleet Python template; its header names `juniper-data/.github/workflows/codeql.yml` as the copy origin. First-run comment in the YAML: treat the initial cycle as a shakedown, then an owner may promote it to a required context — this repo has **not** done that.
+
+### When it runs
+
+| Event | Filter |
+|-------|--------|
+| `push` | `main`, `develop` |
+| `pull_request` | `main` **only** |
+| `schedule` | Monday 06:00 UTC (`0 6 * * 1`) — same cron as `security-scan.yml` |
+
+There is **no** `workflow_dispatch`. To force a run: push to `main`/`develop`, open or synchronize a PR targeting `main`, or wait for the weekly cron.
+
+### What it does
+
+1. Checkout (SHA-pinned `actions/checkout`)
+2. `github/codeql-action/init` with `languages: python` and `queries: +security-and-quality`
+3. `github/codeql-action/autobuild` (Python has no compile step; this is the template default)
+4. `github/codeql-action/analyze` with `category: /language:python`
+
+Job `analyze` uses `fail-fast: false` and `security-events: write`. Results do not feed `ci.yml`'s Quality Gate.
+
+### Pins and Dependabot
+
+Dependabot's `github-actions` ecosystem groups `github/codeql-action*` (`.github/dependabot.yml`). One PR bumps all four uses together:
+
+- `codeql.yml`: `init`, `autobuild`, `analyze`
+- `ci.yml` Security Scans: `upload-sarif` for Bandit (`reports/security/bandit.sarif`)
+
+Keep those four SHAs aligned. Do not pin a patch version in docs — the group PR updates the SHA and the `# vX.Y.Z` comment.
+
+The Bandit upload is **best-effort**: `if: always()` and `continue-on-error: true`. A failed SARIF upload does not fail Security Scans; the separate Bandit invocation with `--confidence-level medium --severity-level medium` is the blocking check.
+
+### Contrast
+
+| Workflow | Gitleaks | Bandit | pip-audit | CodeQL |
+|----------|----------|--------|-----------|--------|
+| `ci.yml` `security` | Yes (skipped on `repository_dispatch`) | Blocking medium+ + SARIF upload | `--strict` + documented torch `--ignore-vuln` list | No (only `upload-sarif`) |
+| `security-scan.yml` | No | Blocking medium+ (artifact only) | `--strict` (no ignore list in this workflow) | No |
+| `codeql.yml` | No | No | No | Yes |
+
+### Operator pitfalls
+
+- A PR whose base is `develop` never starts CodeQL. Retarget at `main` or push the commits onto `develop`/`main`.
+- Monday 06:00 UTC also starts `security-scan.yml`. Overlapping Bandit + CodeQL load is expected, not a stuck runner.
+- `security-scan.yml` can be dispatched by hand; CodeQL cannot. Do not look for a "Run workflow" button on **CodeQL Analysis**.
+- Monday `pip-audit --strict` in `security-scan.yml` has **no** torch `--ignore-vuln` list. A red scheduled scan can be an advisory `ci.yml` already ignores — compare the two commands before treating it as a new CVE.
+
+> Contract tables: [CI Reference — CodeQL Analysis](REFERENCE.md#codeql-analysis)
+
+---
+
 ## Environment Setup
 
 ### Conda Environment
@@ -624,6 +682,10 @@ If environment setup fails:
 | Protocol verify import fails under `--no-deps` | Expecting `import juniper_cascor_protocol` | Use `importlib.metadata` version check (workflow already does) |
 | Wrong package published / skipped | Tag prefix mismatch | Use `v*` for the app, `juniper-cascor-<pkg>-v*` for sub-packages |
 | `twine check` fails after merging a Twine major in `requirements_ci.txt` | The local/CI freeze Twine is not what publish uses; or the Metadata-Version is too old for Twine 7 | Rebuild with current setuptools; run `twine check` under Twine ≥ 7; do not expect the freeze pin to change the action's upload Twine |
+| CodeQL did not run on this PR | `codeql.yml` `pull_request` branches are `[main]` only | Retarget the PR at `main`, or push to `main`/`develop` |
+| Cannot click **Run workflow** on CodeQL Analysis | No `workflow_dispatch` on `codeql.yml` | Push / PR-against-`main` / wait for Monday 06:00 UTC |
+| Dependabot CodeQL PR touches `ci.yml` too | `upload-sarif` is in the same `codeql-action` group | Expected — review Bandit SARIF pin with the CodeQL pins |
+| Security tab missing Bandit but Security Scans is green | `upload-sarif` `continue-on-error: true` | Check the upload step log; the blocking Bandit CLI still ran |
 | `conda_environment_ci.yaml` still pins old Twine after a `requirements_ci.txt` bump | Generated freezes update on different cadences | Regenerate via the CI dependency-docs job (`juniper-generate-dep-docs`); publish jobs ignore both freezes |
 
 ---
@@ -635,3 +697,4 @@ If environment setup fails:
 - **P2-NEW-002**: Coverage Thresholds in CI
 - **juniper-ml#384 / #555**: TestPyPI verify policy and dual-trigger race
 - **JuniperCanopy CI/CD**: Base workflow pattern
+- **CodeQL soak**: `.github/workflows/codeql.yml` (not a required check)

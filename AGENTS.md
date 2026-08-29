@@ -5,7 +5,7 @@
 **Author**: Paul Calnon
 **License**: MIT License
 **Version**: 0.9.0
-**Last Updated**: 2026-08-21
+**Last Updated**: 2026-08-24
 
 ---
 
@@ -294,7 +294,8 @@ juniper-cascor/
 │   │   ├── publish-protocol.yml      #   PyPI publish (juniper-cascor-protocol)
 │   │   ├── publish-cascor-model.yml  #   PyPI publish (juniper-cascor-model)
 │   │   ├── lockfile-update.yml       #   Dependency lockfile updates
-│   │   ├── security-scan.yml         #   Security scanning
+│   │   ├── codeql.yml                #   CodeQL semantic SAST (Python; soak)
+│   │   ├── security-scan.yml         #   Scheduled Bandit + pip-audit
 │   │   ├── sequence-safety.yml       #   Per-PR compositional-loss screens (ADVISORY, standalone)
 │   │   └── main-verify.yml           #   Post-merge compositional-loss net (catch-up base + stable-title issue)
 │   ├── CODEOWNERS                    #   Code ownership rules
@@ -900,7 +901,8 @@ Gate: 80% aggregate (override with `COVERAGE_FAIL_UNDER=<n>`). Coverage runs in 
 | Publish protocol | `.github/workflows/publish-protocol.yml` | Release (`juniper-cascor-protocol-v*`) + `workflow_dispatch` | PyPI publish for `juniper-cascor-protocol` |
 | Publish model | `.github/workflows/publish-cascor-model.yml` | Release (`juniper-cascor-model-v*`) + `workflow_dispatch` | PyPI publish for `juniper-cascor-model` |
 | Lockfile Update | `.github/workflows/lockfile-update.yml` | Push to dependabot/** branches | Dependency lockfile refresh |
-| Security Scan | `.github/workflows/security-scan.yml` | Schedule/dispatch | Gitleaks, Bandit, pip-audit |
+| CodeQL Analysis | `.github/workflows/codeql.yml` | Push `main`/`develop`, PR `main`, weekly Monday 06:00 UTC | Python CodeQL SAST (`+security-and-quality`; soak, not a required check) |
+| Security Scan | `.github/workflows/security-scan.yml` | Schedule/dispatch | Bandit + pip-audit `--strict` (no CodeQL, no Gitleaks) |
 | Sequence Safety (Advisory) | `.github/workflows/sequence-safety.yml` | PR (`main`/`develop`) | Per-PR symbol-loss + docs-deletion screens over base..HEAD (ADVISORY, standalone, never a required check) |
 | Post-Merge Main Verification | `.github/workflows/main-verify.yml` | Push `main`, dispatch | Bypass-proof post-merge compositional-loss net (catch-up base; stable-title tracking issue on failure) |
 
@@ -916,6 +918,15 @@ Gate: 80% aggregate (override with `COVERAGE_FAIL_UNDER=<n>`). Coverage runs in 
 
 Optional: register the same PAT under **Settings → Secrets → Dependabot** to restore Dependabot auto-regen. Operator narrative: [`notes/DEPENDENCY_UPDATE_WORKFLOW.md`](notes/DEPENDENCY_UPDATE_WORKFLOW.md).
 
+### CodeQL Analysis
+
+`.github/workflows/codeql.yml` runs GitHub CodeQL on Python (`queries: +security-and-quality`).
+Push `main`/`develop`, PR **`main` only**, weekly Monday 06:00 UTC (same cron as `security-scan.yml`).
+No `workflow_dispatch`. Soak / not a required check — findings go to **Security → Code scanning**, not the Quality Gate.
+Dependabot groups `github/codeql-action*` so `init` / `autobuild` / `analyze` and `ci.yml`'s Bandit `upload-sarif` bump together.
+Bandit SARIF upload is `continue-on-error: true`; the blocking Bandit step is the separate medium+ CLI invocation.
+Details: [`docs/ci_cd/MANUAL.md`](docs/ci_cd/MANUAL.md#codeql-analysis) / [`docs/ci_cd/REFERENCE.md`](docs/ci_cd/REFERENCE.md#codeql-analysis).
+
 ### CI Pipeline Jobs (ci.yml)
 
 - Pre-commit hooks (black, isort, flake8, mypy, bandit)
@@ -929,7 +940,7 @@ Optional: register the same PAT under **Settings → Secrets → Dependabot** to
 ### Additional GitHub Configuration
 
 - `.github/CODEOWNERS` -- Code ownership rules
-- `.github/dependabot.yml` -- Automated dependency updates
+- `.github/dependabot.yml` -- Automated dependency updates (`codeql-action` group covers `github/codeql-action*`)
 
 ### Sequence Safety (Compositional-Loss Net)
 
