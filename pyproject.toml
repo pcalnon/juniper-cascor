@@ -102,7 +102,7 @@ dependencies = [
     # disables APIKeyAuth and serves protected routes open behind a healthy
     # health check) is loud at boot. Stdlib-only import surface; 0.5.0 is the
     # release that ships the check. Pin mirrors the model-core floor+cap style.
-    "juniper-service-core>=0.5.0,<0.7.0",
+    "juniper-service-core>=0.5.0,<0.8.0",
 ]
 
 [project.optional-dependencies]

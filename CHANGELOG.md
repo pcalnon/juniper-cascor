@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **`juniper-service-core` ceiling raised to `<0.8.0`** so 0.7.0 can be adopted. 0.7.0 introduces
+  `WorkerCoordinator.release_worker_tasks`. cascor'''s only production import of the package is
+  `enforce_auth_posture` (`src/api/app.py:16`) and a grep for `juniper_service_core.workers` /
+  `.websocket` returns zero hits, so this is a ceiling raise for adoptability, not a behaviour
+  change. **Noted for the fork-drift ledger**: cascor carries its own
+  `src/api/workers/coordinator.py` and `src/api/websocket/worker_stream.py`, and already has the
+  equivalent remedy under a *different* public name -- `handle_worker_disconnect`
+  (`coordinator.py:185`, called at `worker_stream.py:158`). Same fix, divergent names across the
+  two trees; nothing forces them to converge.
+
 ## [0.10.0] - 2026-08-30
 
 ### Changed
