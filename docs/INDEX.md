@@ -27,6 +27,7 @@ This documentation serves two audiences:
 | [Environment Setup](install/ENVIRONMENT_SETUP.md) | Detailed environment configuration |
 | [User Manual](install/USER_MANUAL.md) | Comprehensive usage instructions |
 | [Configuration Reference](install/REFERENCE.md) | CLI arguments and environment variables |
+| [Agent Technical Reference](REFERENCE.md) | Reference material relocated verbatim from `AGENTS.md` under the memory budget — directory structure, REST and WebSocket protocol, core components, constants, dependencies |
 
 ### API Documentation
 

@@ -9,6 +9,33 @@
 
 ---
 
+## Hazards (resident — do not relocate)
+
+Directives whose **non-application destroys work**. Everything else in this file may be demoted to
+`docs/REFERENCE.md` under the memory budget; these may not, because a pointer only helps an agent
+that already knows to look. Adding a new hazard here is legitimate — ratchet space out of a
+reference section in the same PR rather than waiving the budget gate.
+
+- **`CORSMiddleware` must stay OUTERMOST — it is added last for exactly that reason.** A browser
+  preflight carries no `X-API-Key` (the browser generates it; author-defined headers ride only on
+  the request that follows), so any ordering that puts `SecurityMiddleware` outside CORS answers
+  every preflight to a non-exempt path with **401**, and no browser client on a configured origin
+  can reach a protected endpoint. Running outermost also attaches CORS headers to 401/429 responses,
+  so a browser surfaces the real status instead of an opaque CORS failure. Pinned by
+  `tests/unit/api/test_api_app.py::TestCorsPreflight`. Full rationale: § Middleware Stack.
+- **`RequestBodyLimitMiddleware` must always STREAM-READ with a cumulative byte cap.**
+  `Content-Length` is an early-reject fast path only — for `POST`/`PUT`/`PATCH`, trusting it lets an
+  **under-declared header bypass the limit entirely** (CR-024). Cap: `_PROJECT_API_MAX_REQUEST_BODY_BYTES`.
+  Pinned by `tests/unit/api/test_api_middleware.py::TestRequestBodyLimitMiddleware`.
+- **`/ws/*` paths skip the HTTP middleware stack.** WebSocket upgrades are **not** intercepted by
+  `BaseHTTPMiddleware`, so the body-limit and security middlewares never run for them; WebSocket
+  auth and message validation are the only controls there. A guard added to the HTTP stack does
+  **not** cover the WebSocket surface, and nothing will tell you so.
+- **`/tmp/` is prohibited** as the home for any script that produces, modifies or analyzes
+  repository content — it is reaped when sessions/containers end and the scripts are irrecoverable.
+  Scratch *data* there is fine; source files are not. Full rule and the motivating incident:
+  § Script Placement.
+
 ## Quick Reference
 
 ### Conda Environment
