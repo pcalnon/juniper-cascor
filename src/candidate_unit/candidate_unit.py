@@ -698,6 +698,32 @@ class CandidateUnit:
         return candidate_training_result
 
     #################################################################################################################################################################################################
+    @staticmethod
+    def _tensor_brief(t) -> str:
+        """Compact, cheap summary of a tensor for a log line: shape plus a scalar L2 norm.
+
+        PERF (cascor#573, measured 2026-08-29): interpolating a tensor into an f-string calls
+        ``Tensor.__format__``, which formats EVERY element. The single INFO progress line below
+        accounted for **1,813,318** ``__format__`` calls and ~33% of candidate-worker self time in
+        a 32-profile corpus -- 1,131 emitted lines x 2 tensors x ~800 elements each. Formatting an
+        800-element vector into a progress line is not diagnostics; shape and magnitude are what a
+        reader of a progress line actually uses, and they cost O(1) to render.
+
+        Evidence: juniper-ml ``reports/measurements-2026-08-29/format_caller_attribution.txt`` and
+        ``notes/JUNIPER_2026-08-29_JUNIPER-ECOSYSTEM_GATED-MEASUREMENTS-RESULTS.md`` section 3.
+
+        Returns ``"None"`` for a missing tensor -- ``CandidateParametersUpdate.norm_output`` is
+        declared ``Optional[torch.Tensor]``, so this path is reachable and must not raise: a
+        diagnostic line must never be the thing that fails a training run.
+        """
+        if t is None:
+            return "None"
+        try:
+            return f"shape={tuple(t.shape)} l2={float(t.norm()):.6f}"
+        except Exception as exc:  # noqa: BLE001 - a log line must not break training
+            return f"<unrenderable {type(exc).__name__}>"
+
+    #################################################################################################################################################################################################
     # Initialize display progress frequency checker with candidate unit display frequency
     def _display_training_progress(self, epoch, candidate_parameters_update, residual_error):
         """Display training progress at specified frequency intervals."""
@@ -711,7 +737,7 @@ class CandidateUnit:
 
         # Display progress if epoch matches frequency
         if self._candidate_display_progress(epoch):
-            self.logger.info(f"CandidateUnit: train: Epoch {epoch + 1} - Norm Output: {candidate_parameters_update.norm_output}, Norm Error: {candidate_parameters_update.norm_error}")
+            self.logger.info(f"CandidateUnit: train: Epoch {epoch + 1} - " f"Norm Output: {self._tensor_brief(candidate_parameters_update.norm_output)}, " f"Norm Error: {self._tensor_brief(candidate_parameters_update.norm_error)}")
 
         self.logger.verbose(f"CandidateUnit: train: Epoch {epoch + 1} - Residual Error: Shape: {residual_error.shape}, Dtype: {residual_error.dtype}")
 
@@ -822,7 +848,7 @@ class CandidateUnit:
             error_i = residual_error[:, i] if residual_error.dim() > 1 else residual_error
 
             # Calculate correlation for the current output index
-            (correlation, norm_output, norm_error, numerator, denominator) = self._calculate_correlation(output=output, residual_error=error_i)
+            correlation, norm_output, norm_error, numerator, denominator = self._calculate_correlation(output=output, residual_error=error_i)
             if _log_verbose:
                 self.logger.verbose("CandidateUnit: _multi_output_correlation: Correlation for output %d: %s", i, correlation)
 
