@@ -136,9 +136,12 @@ class TestSecurityMiddleware:
         assert "/v1/health" in EXEMPT_PATHS
         assert "/v1/health/live" in EXEMPT_PATHS
         assert "/v1/health/ready" in EXEMPT_PATHS
-        assert "/docs" in EXEMPT_PATHS
-        assert "/openapi.json" in EXEMPT_PATHS
-        assert "/redoc" in EXEMPT_PATHS
+        # APD-DATA-024: the documentation surface is deliberately NOT exempt, and the
+        # ABSENCE is what is pinned -- a re-add would silently republish the schema on
+        # any deployment that also re-enabled docs_url, and only an assertion catches it.
+        assert "/docs" not in EXEMPT_PATHS
+        assert "/openapi.json" not in EXEMPT_PATHS
+        assert "/redoc" not in EXEMPT_PATHS
         assert "/v1/network" not in EXEMPT_PATHS
 
 
