@@ -17,9 +17,13 @@ EXEMPT_PATHS = {
     "/v1/health",
     "/v1/health/live",
     "/v1/health/ready",
-    "/docs",
-    "/openapi.json",
-    "/redoc",
+    # APD-DATA-024 / service-core 0.6.0: the documentation surface is deliberately
+    # NOT exempt. ``_is_exempt()`` ignores whether a key is configured, so listing
+    # /docs, /openapi.json and /redoc here made "docs enabled" and "docs public"
+    # the same switch: re-enabling ``docs_url`` in app.py (currently gated on
+    # ``docs_enabled = not settings.api_keys``) would serve the schema to everyone
+    # while looking like it sat behind the key. Removing them decouples the two --
+    # an authenticated deployment can now mount the docs AND require a key for them.
     # SEC-16 / POC §3.1: ``/metrics`` is gated by the parallel
     # ``MetricsAuthMiddleware`` IP allowlist (cascor mirror of
     # ``juniper-data``'s middleware) instead of SecurityMiddleware's
