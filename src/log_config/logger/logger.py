@@ -205,6 +205,21 @@ class Logger(logging.getLoggerClass()):
     # _level_fatal = logging.getLevelName(60)
     _level_fatal = "FATAL"
 
+    # PERF (cascor#573, measured 2026-08-29): memoised level-name -> level-number map for the
+    # per-record filter. ``_filter_by_level`` previously ran ``is_valid_level`` twice and
+    # ``getLevelNumber`` twice per record -- roughly four ``_is_valid_level_name`` string
+    # validations -- costing **11.19 s across 646,016 calls, 13.2% of candidate-worker self time**,
+    # of which **91% were for records that were then discarded**. Levels are a closed set, so the
+    # answer is cacheable.
+    #
+    # Caches negatives (None) as well as hits, so a repeatedly-invalid level is also cheap.
+    #
+    # MUST be invalidated whenever a level is registered: ``__init_custom_log_levels`` calls
+    # ``addLevelName`` at RUNTIME (during ``Logger.__init__``), not only at import, so a level that
+    # resolves to None early can legitimately become valid later. Caching without invalidation
+    # would silently drop every record at a custom level. See ``_invalidate_level_cache``.
+    _level_number_cache: dict = {}
+
     _level_names = {
         "TRACE": _level_trace,
         "VERBOSE": _level_verbose,
@@ -445,14 +460,47 @@ class Logger(logging.getLoggerClass()):
 
     ####################################################################################################################################
     @classmethod
+    def _invalidate_level_cache(cls) -> None:
+        """Drop the memoised level->number map. Call after ANY level registration.
+
+        ``addLevelName`` is invoked at runtime by ``__init_custom_log_levels``, so a name that
+        resolved to None before registration becomes valid after it. Without this, the negative
+        cache entry would persist and every record at that custom level would be silently
+        discarded -- a failure that produces no error and no output.
+        """
+        cls._level_number_cache.clear()
+
+    @classmethod
+    def _resolve_level_number(cls, level):
+        """Memoised ``getLevelNumber`` with the validity check folded in.
+
+        Returns the level number, or ``None`` when the level is invalid -- identical semantics to
+        the ``is_valid_level`` + ``getLevelNumber`` pair it replaces, including the None result
+        that makes ``_filter_by_level`` return False.
+        """
+        try:
+            return cls._level_number_cache[level]
+        except KeyError:
+            pass
+        except TypeError:
+            # Unhashable level (a list, say). Cannot be cached; resolve it the slow way rather
+            # than raising out of a logging call.
+            return cls.getLevelNumber(level) if cls.is_valid_level(level=level) else None
+        num = cls.getLevelNumber(level) if cls.is_valid_level(level=level) else None
+        cls._level_number_cache[level] = num
+        return num
+
+    @classmethod
     def _filter_by_level(cls, level=None, log_level=None) -> bool:
         # CASCOR-PERF-003: Fixed bug where is_valid_level() result (boolean) was passed
         # to getLevelNumber() instead of the actual level name/number.
         # Validate first, then get the number from the original level value.
-        if not cls.is_valid_level(level=level) or not cls.is_valid_level(level=log_level):
-            return False
-        valid_level_num = cls.getLevelNumber(level)
-        valid_loglevel_num = cls.getLevelNumber(log_level)
+        #
+        # PERF (cascor#573): the validate-then-resolve pair is memoised in _resolve_level_number.
+        # Semantics are unchanged -- an invalid level still yields None and therefore False -- but
+        # the steady state is two dict lookups instead of four string validations.
+        valid_level_num = cls._resolve_level_number(level)
+        valid_loglevel_num = cls._resolve_level_number(log_level)
         if valid_level_num is None or valid_loglevel_num is None:
             return False
         # Message should only be logged if message_level >= configured_log_level
@@ -837,6 +885,10 @@ class Logger(logging.getLoggerClass()):
             # self.debug("Logger: __init_custom_log_levels: Add the custom log level attributes for current custom name and number")
             Logger.debug("Logger: __init_custom_log_levels: Add the custom log level attributes for current custom name and number")
             addLevelName(custom_log_level_number, custom_log_level_name)
+            # cascor#573: the level set just changed, so the memoised name->number map may hold a
+            # negative entry for this very name. Drop it, or every record at this custom level is
+            # silently discarded.
+            Logger._invalidate_level_cache()
 
             # Assign the custom log level method to the logger class
             # self.debug(f"Logger: __init_custom_log_levels: Assigning custom log level method: {custom_log_level_method} for custom log level name: {custom_log_level_name}")
