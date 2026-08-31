@@ -52,7 +52,7 @@ jinja2==3.1.6
     # via torch
 juniper-cascor-protocol==0.2.0
     # via juniper-cascor (pyproject.toml)
-juniper-data==0.11.0
+juniper-data==0.12.0
     # via juniper-cascor (pyproject.toml)
 juniper-data-client==0.4.2
     # via juniper-cascor (pyproject.toml)
