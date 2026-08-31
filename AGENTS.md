@@ -50,6 +50,17 @@ reference section in the same PR rather than waiving the budget gate.
   left them and the returned `final_loss` reflects an unchanged forward pass — which is why the
   value is re-validated *after* the fall-back at `cascade_correlation.py:1952`. juniper-ml#1159
   detects the split config and records a `validation_warnings` entry on the run manifest.
+- **Never serialize a training counter the network does not carry — absence must look like
+  absence.** `_save_metadata` writes `snapshot_counter` / `current_epoch` / `patience_counter` /
+  `best_value_loss` only under `hasattr` (`snapshots/snapshot_serializer.py:290`). Until
+  2026-08-23 these were `getattr(network, ..., 0)`, and the default is what made a whole defect
+  class invisible: an attribute the model never assigns serializes as `0` / `inf`,
+  **indistinguishable from a measured zero**. Read literally, the live archive then said all
+  27,908 snapshots sat at epoch 0 having never trained — a reading that **nearly justified
+  deleting 27,005 real models**, and came apart only on checking a network known to have grown to
+  260 hidden units. A missing key is a question a reader can ask; a fabricated default is an
+  answer they cannot check. `_restore_training_state_helper`, the index and the classification
+  tools all tolerate missing keys, so re-adding a default buys nothing and destroys the evidence.
 
 ## Quick Reference
 
