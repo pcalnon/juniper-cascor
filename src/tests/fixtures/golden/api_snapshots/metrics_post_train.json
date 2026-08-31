@@ -4,6 +4,7 @@
     "eval_metrics": {
       "average": "macro",
       "enabled": true,
+      "final": null,
       "n_classes": 2,
       "n_samples": 60,
       "split": "training",

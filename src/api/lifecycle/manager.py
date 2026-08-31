@@ -160,6 +160,8 @@ class _PreSwapSnapshot:  # noqa: D101 - frozen container, not part of the public
         "train_y",
         "val_x",
         "val_y",
+        "test_x",
+        "test_y",
         "state_dict",
         "input_size",
         "output_size",
@@ -184,6 +186,8 @@ class _PreSwapSnapshot:  # noqa: D101 - frozen container, not part of the public
         output_weights=None,
         output_bias=None,
         hidden_unit_weights=None,
+        test_x=None,
+        test_y=None,
     ):
         # Plain container for the §3.7 guardrail-#1 pre-swap state. Tensor
         # references only — we don't .clone() since the swap path immediately
@@ -195,6 +199,10 @@ class _PreSwapSnapshot:  # noqa: D101 - frozen container, not part of the public
         self.train_y = train_y
         self.val_x = val_x
         self.val_y = val_y
+        # cascor#582: the reported-metric partition rolls back with the rest, or an
+        # aborted swap silently leaves the final score computed on the wrong rows.
+        self.test_x = test_x
+        self.test_y = test_y
         self.state_dict = state_dict
         self.input_size = input_size
         self.output_size = output_size
@@ -1172,6 +1180,14 @@ class TrainingLifecycleManager:
         self._train_y: Optional[torch.Tensor] = None
         self._val_x: Optional[torch.Tensor] = None
         self._val_y: Optional[torch.Tensor] = None
+        # cascor#582: the REPORTED partition, distinct from the in-loop one above.
+        # Unpopulated today -- no producer emits X_val, so _reported_split() falls back
+        # to the val tensors and behaviour is unchanged. The slot exists so the final
+        # score has somewhere to come from that early stopping never saw.
+        self._test_x: Optional[torch.Tensor] = None
+        self._test_y: Optional[torch.Tensor] = None
+        # cascor#582: computed ONCE at successful completion (see _run_training).
+        self._final_scalar_metrics: Optional[Dict[str, Any]] = None
 
         # C7 (U-4): expanded scalar evaluation metrics — F1 / precision / recall
         # / ROC-AUC computed over the evaluation split (the validation/test split
@@ -1908,6 +1924,66 @@ class TrainingLifecycleManager:
             return self._val_x, self._val_y
         return self._train_x, self._train_y
 
+    def _reported_split(self) -> tuple:
+        """cascor#582: the partition the FINAL score is reported on.
+
+        Distinct from :meth:`_eval_split`, which is the in-loop signal early stopping
+        consumes. The design invariant is that no quantity computed on the reported
+        partition may influence a training decision -- so this deliberately does NOT
+        fall back to the training split the way ``_eval_split`` does: reporting a
+        training-set score as a held-out one is the failure being removed, not a
+        degraded-but-acceptable mode.
+
+        Returns ``(None, None)`` when there is nothing legitimate to report on. Today
+        ``_test_x`` is always None (no producer emits ``X_val``), so this returns the
+        val tensors and the reported number is unchanged -- the honesty comes from
+        :meth:`_reported_split_name`, which stops calling that number held-out.
+        """
+        if self._test_x is not None and self._test_y is not None:
+            return self._test_x, self._test_y
+        if self._val_x is not None and self._val_y is not None:
+            return self._val_x, self._val_y
+        return None, None
+
+    def _reported_split_name(self) -> Optional[str]:
+        """Honest label for whichever partition :meth:`_reported_split` returned."""
+        if self._test_x is not None and self._test_y is not None:
+            return "test"
+        if self._val_x is not None and self._val_y is not None:
+            return "validation"
+        return None
+
+    def _compute_final_eval_metrics(self) -> Optional[Dict[str, Any]]:
+        """cascor#582: evaluate the final model ONCE, on the reported partition.
+
+        Why this exists: every other scalar-metric computation in this class is gated on
+        a new training-history row appearing (``_drain_scalars_if_new``) and is cached for
+        ``/v1/metrics``. That means the "final" reported number is whichever mid-training
+        computation ran last -- structurally it is not *defined* to be the finished model's
+        score. This runs after the last weight update, exactly once, on the success path
+        only: a stopped or failed run has no final model to report.
+
+        Never raises. A diagnostic must not be the thing that fails a completed run.
+        """
+        if not self._eval_metrics_enabled:
+            return None
+        network = self.network
+        x, y = self._reported_split()
+        if network is None or x is None or y is None:
+            return None
+        try:
+            with torch.no_grad():
+                output = network.forward(x)
+            metrics = compute_scalar_classification_metrics(output, y, average=self._eval_metrics_average)
+        except Exception:
+            self.logger.debug("cascor#582: final eval-metrics computation failed", exc_info=True)
+            return None
+        if isinstance(metrics, dict):
+            metrics = dict(metrics)
+            metrics["split"] = self._reported_split_name()
+            metrics["final"] = True
+        return metrics
+
     def _compute_eval_scalar_metrics(self) -> Optional[Dict[str, Any]]:
         """C7 (U-4): compute F1 / precision / recall / ROC-AUC over the
         evaluation split via a single ``torch.no_grad()`` forward pass.
@@ -2345,6 +2421,12 @@ class TrainingLifecycleManager:
         sm = self.state_machine
         stop_event = self._stop_event
 
+        # cascor#582: clear the previous run's final score BEFORE this one starts. Without
+        # this a stopped or failed run would keep serving the prior run's ``final`` block,
+        # which is worse than serving none -- it would look like a result for a run that
+        # never produced one.
+        self._final_scalar_metrics = None
+
         # Reset per-run bookkeeping (was monitored_fit's per-fit reset + the _step_timer box).
         # _cascade_emitted_count baselines at the units already present so a retrain only emits
         # cascade_add for units grown this run.
@@ -2417,6 +2499,11 @@ class TrainingLifecycleManager:
                 self._broadcast_training_state(force=True)
                 inc_training_session_completed(TRAINING_SESSION_STATUS_CANCELLED)
             else:
+                # cascor#582: the final score is computed HERE -- after the last weight
+                # update, before the terminal transition, and on the success path only.
+                # A stopped or failed run has no finished model to report on, which is
+                # why this is not in the ``finally`` below.
+                self._final_scalar_metrics = self._compute_final_eval_metrics()
                 sm.mark_completed()
                 state.update_state(status="Completed", phase="Idle")
                 self._broadcast_training_state(force=True)
@@ -2711,6 +2798,13 @@ class TrainingLifecycleManager:
                 "n_samples": scalars.get("n_samples"),
                 "n_classes": scalars.get("n_classes"),
                 "undefined": scalars.get("undefined", {}),
+                # cascor#582: ``split`` above describes the LIVE, mid-training metric --
+                # it is recomputed whenever a history row appears, so it reflects the
+                # model at that moment, not at completion. ``final`` is the once-only
+                # evaluation of the finished model on the reported partition, present
+                # only after a successful run. A consumer wanting "the result" wants
+                # ``final``; the sibling fields are a progress signal.
+                "final": self._final_scalar_metrics,
             },
         }
 
@@ -2941,6 +3035,8 @@ class TrainingLifecycleManager:
                     train_y=self._train_y,
                     val_x=self._val_x,
                     val_y=self._val_y,
+                    test_x=self._test_x,
+                    test_y=self._test_y,
                     state_dict=copy.deepcopy(self.network.state_dict()) if hasattr(self.network, "state_dict") else None,
                     input_size=getattr(self.network, "input_size", None),
                     output_size=getattr(self.network, "output_size", None),
@@ -3292,6 +3388,8 @@ class TrainingLifecycleManager:
         self._train_y = pre.train_y
         self._val_x = pre.val_x
         self._val_y = pre.val_y
+        self._test_x = pre.test_x
+        self._test_y = pre.test_y
         # P2-1d: restore the network's loss-mask depth so a half-completed
         # shrink doesn't leave the next training run masking against a stale
         # active dim. ``None`` snapshot means "wasn't set pre-swap, leave alone".
