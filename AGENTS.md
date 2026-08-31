@@ -61,6 +61,22 @@ reference section in the same PR rather than waiving the budget gate.
   260 hidden units. A missing key is a question a reader can ask; a fabricated default is an
   answer they cannot check. `_restore_training_state_helper`, the index and the classification
   tools all tolerate missing keys, so re-adding a default buys nothing and destroys the evidence.
+- **Never let failed candidate training look like a converged network — and `success_count`, not
+  `failed_count`, is the test.** Three guards enforce this and each covers a case the others miss
+  (BUG-CC-18 / ROBUST-01). **(a)** Both training paths raise → `CandidateTrainingError`
+  (`cascade_correlation.py:2541`). **(b)** Empty result list after a non-exception return →
+  `CandidateTrainingError` (`:2549`). **(c)** *Every candidate errored individually* — the observed
+  case is a full GPU (`CandidateUnit.__init__` dying on `CUDA error: out of memory`). This one
+  **slips past (a) and (b)**: the per-candidate handlers catch and **return**
+  `CandidateTrainingResult(success=False, candidate=None)`, so a full, non-empty result list comes
+  back with no exception, and the run reported `succeeded` / `no_candidate` / 1 hidden unit **while
+  having trained nothing — silently corrupting downstream experiment campaigns**.
+  `_raise_if_candidate_training_failed` (`:4425`) closes it by consulting `success_count`.
+  **`failed_count` cannot be used for this test** — it is `len(results) - successful_candidates`,
+  i.e. candidates that missed the *correlation threshold*, not candidates that errored.
+  Related: `_get_dummy_results` (`:3057`) still exists and is still referenced at `:3005`, where it
+  would fabricate zero-correlation candidates. That branch is unreachable **only because guard (b)
+  raises first** — weaken (b) and the fabrication path is live again.
 
 ## Quick Reference
 
