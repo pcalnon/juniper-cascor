@@ -93,14 +93,19 @@ class TestCandidatePoolInvariants:
         # we just need the invariant violation NOT to silently apply.
         assert resp.status_code in (400, 422), f"expected 4xx, got {resp.status_code}: {resp.text}"
         body = resp.json()
-        # API-09 PR 3 (2026-05-21): the two error paths return
-        # different shapes. 400 from ``raise HTTPException(...)``
-        # goes through the envelope handler and lands at
-        # ``body["error"]["message"]``. 422 from FastAPI's
-        # ``RequestValidationError`` handler (Pydantic field-level
-        # validation) is untouched by API-09 and still returns the
-        # legacy ``{"detail": [...]}`` shape. Extract the searchable
-        # message from whichever shape applies.
+        # Both error paths now return the SAME envelope shape, so the message is
+        # always at ``body["error"]["message"]``: 400 from ``raise
+        # HTTPException(...)`` via the HTTPException handler, and 422 from
+        # Pydantic field validation via the ``RequestValidationError`` handler.
+        #
+        # This comment previously said the 422 path "is untouched by API-09 and
+        # still returns the legacy ``{"detail": [...]}`` shape" -- true when
+        # written, and the checked-in evidence that API-09's "migration complete"
+        # claim was false. That gap is closed (defect-register APD-CCLIENT-008);
+        # the per-field list still exists, on ``error.detail``.
+        #
+        # The legacy ``detail`` branch is retained ONLY so this integration test
+        # keeps passing against a pre-fix cascor build; it is not a live shape.
         if "error" in body and isinstance(body.get("error"), dict):
             haystack = body["error"]["message"]
         else:

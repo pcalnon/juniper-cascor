@@ -11,6 +11,8 @@ from contextlib import asynccontextmanager
 
 import torch
 from fastapi import FastAPI, HTTPException, Request
+from fastapi.encoders import jsonable_encoder
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from juniper_service_core import enforce_auth_posture
@@ -593,6 +595,28 @@ async def _auto_start_canopy(
         logger.exception("Auto-start canopy failed")
 
 
+def _render_validation_message(errors: list) -> str:
+    """Summarise ``RequestValidationError.errors()`` as one human-readable line.
+
+    The structured list stays on ``error.detail``; this is only the prose half,
+    so a consumer reading ``error.message`` alone still learns which field failed
+    rather than seeing a bare "Invalid request parameters". Mirrors the rendering
+    ``juniper-cascor-client._render_error_detail`` performs client-side, so both
+    ends of the wire describe a validation failure the same way.
+
+    Defensive by construction: ``errors()`` entries are framework-shaped, but a
+    malformed entry must not turn a 422 into a 500 inside the error handler.
+    """
+    parts: list[str] = []
+    for err in errors or []:
+        if not isinstance(err, dict):
+            continue
+        loc = ".".join(str(p) for p in (err.get("loc") or ()))
+        msg = str(err.get("msg") or "invalid")
+        parts.append(f"{loc}: {msg}" if loc else msg)
+    return "; ".join(parts) or "Invalid request parameters"
+
+
 def create_app(settings: Settings | None = None) -> FastAPI:
     """Create and configure the FastAPI application.
 
@@ -693,6 +717,66 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         )
 
     # Exception handlers
+    @app.exception_handler(RequestValidationError)
+    async def request_validation_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
+        """API-09 completion: the 422 path the original migration missed.
+
+        **This is the handler whose absence made "migration complete" false.**
+        API-09 wrapped ``HTTPException``, ``ValueError`` and ``Exception``, and its
+        own docstring claimed clients "no longer have to parse two error formats".
+        They did. ``RequestValidationError`` is **not** a ``ValueError`` subclass
+        (its MRO is ``ValidationException -> Exception``), so the ``ValueError``
+        handler below could never catch it, and FastAPI *actively installs* its own
+        default for it -- this was never passive fallthrough that registering
+        ``Exception`` might have covered. Every Pydantic field-validation failure
+        therefore returned the raw ``{"detail": [...]}`` while everything else
+        returned the envelope.
+
+        The proof was checked into this repo: ``juniper-cascor-client``'s
+        ``_handle_response`` sniffs ``body["error"]`` then falls back to
+        ``body["detail"]`` (defect-register ``APD-CCLIENT-008``), and
+        ``tests/integration/api/test_candidate_pool_invariants.py`` branched on both
+        shapes with a comment saying 422 "is untouched by API-09".
+
+        **The per-field list is preserved, not flattened.** ``errors()`` is a list of
+        ``{"type", "loc", "msg", ...}`` objects saying *which* field failed and why;
+        it goes to ``error.detail`` unmodified, with only a prose summary on
+        ``error.message``. ``juniper-data`` recorded the same constraint on
+        ``APD-DATA-013``: flattening "would destroy the per-field structure the
+        client was just built to consume".
+
+        **No top-level ``detail`` alias, deliberately.** PR 3 dropped that alias
+        after its soak window, and reinstating it would not help the only known
+        consumer anyway: ``_handle_response`` tests ``body["error"]`` *first*, so an
+        un-upgraded client takes the envelope branch regardless. Such a client
+        degrades gracefully -- it reads ``error.message`` (prose) instead of the
+        list, and neither crashes nor mis-parses.
+
+        Response shape:
+
+        .. code-block:: json
+
+            {
+              "status": "error",
+              "error": {
+                "code": "VALIDATION_ERROR",
+                "message": "body.input_size: Field required",
+                "detail": [{"type": "missing", "loc": ["body", "input_size"], ...}]
+              },
+              "meta": {"timestamp": ..., "version": ...}
+            }
+        """
+        errors = jsonable_encoder(exc.errors())
+        logger.debug("Request validation failed: %s", errors)
+        return JSONResponse(
+            status_code=422,
+            content=error_response(
+                "VALIDATION_ERROR",
+                _render_validation_message(errors),
+                detail=errors,
+            ),
+        )
+
     @app.exception_handler(ValueError)
     async def value_error_handler(request: Request, exc: ValueError) -> JSONResponse:
         # ``PydanticSerializationError`` subclasses ValueError, but it is a SERVER
@@ -718,14 +802,23 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.exception_handler(HTTPException)
     async def http_exception_handler(request: Request, exc: HTTPException) -> JSONResponse:
-        """API-09 (migration complete after PR 3).
+        """API-09 (PR 3 completed the ``HTTPException`` half; the 422 path landed later).
 
         Wraps every ``raise HTTPException(...)`` in cascor's API
         routes into the project's standard ``ResponseEnvelope`` /
-        ``ErrorResponse`` shape so clients no longer have to parse
-        two error formats (the FastAPI default ``{"detail": "..."}``
-        for ``HTTPException`` vs. the envelope shape for ``ValueError``
-        and ``Exception``). See
+        ``ErrorResponse`` shape.
+
+        **Historical accuracy note.** This docstring previously said
+        "migration complete after PR 3" and that clients "no longer
+        have to parse two error formats". Both were false for three
+        months: PR 3 covered ``HTTPException``, ``ValueError`` and
+        ``Exception``, but never ``RequestValidationError``, so every
+        Pydantic field-validation 422 kept returning FastAPI's raw
+        ``{"detail": [...]}``. Clients did still parse two formats --
+        ``juniper-cascor-client`` carried the sniff as defect-register
+        ``APD-CCLIENT-008``. The gap is closed by
+        ``request_validation_handler`` above; the claim is now true, and
+        is stated here as history rather than silently corrected. See
         ``notes/API_09_ERROR_ENVELOPE_MIGRATION_DESIGN_2026-05-21.md``
         for the full migration history.
 

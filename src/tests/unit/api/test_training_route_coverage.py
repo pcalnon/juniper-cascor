@@ -282,7 +282,13 @@ class TestStartTraining:
         )
         assert response.status_code == 422
         body = response.json()
-        assert any("evil_injection_key" in str(err) for err in body.get("detail", [])), body
+        # API-09 422 completion (defect-register APD-CCLIENT-008): validation
+        # failures now return cascor's envelope, and the per-field list this
+        # assertion depends on lives at ``error.detail`` rather than top-level
+        # ``detail``. The SEC-07 substance is unchanged and is what matters here:
+        # the rejected key must be NAMED, so a caller learns about the typo or
+        # the injection attempt instead of seeing a bare "invalid request".
+        assert any("evil_injection_key" in str(err) for err in body["error"]["detail"]), body
 
     def test_start_training_accepts_all_known_params(self, client_with_network):
         """SEC-07: TrainingParams model forwards every known key unchanged."""
