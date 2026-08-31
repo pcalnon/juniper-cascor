@@ -7,10 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **API-09 error-envelope migration completed: the 422 path it missed.** A
+  `RequestValidationError` handler now wraps Pydantic field-validation failures in cascor's standard
+  envelope, so every error response finally has one shape. Closes defect-register
+  `APD-CCLIENT-008`, whose real cause was here rather than in the client.
+
+  The gap was invisible for three months because `RequestValidationError` is **not** a `ValueError`
+  subclass (MRO `ValidationException -> Exception`) and FastAPI *actively installs* its own default
+  handler for it — so neither the `ValueError` handler nor the `Exception` handler could ever have
+  caught it. Meanwhile the `HTTPException` handler's docstring asserted "migration complete after
+  PR 3" and that clients "no longer have to parse two error formats". Both were false, and the
+  counter-evidence was checked into this repo: `test_candidate_pool_invariants.py` branched on the
+  two shapes, and `juniper-cascor-client._handle_response` carried the sniff. Both are corrected.
+
+  **The per-field list is preserved, not flattened.** `errors()` says *which* field failed and why,
+  so it goes to `error.detail` unmodified with only a prose summary on `error.message`; `juniper-data`
+  recorded the same constraint on `APD-DATA-013`. **No top-level `detail` alias** — PR 3 retired that
+  deliberately, and it would not help the only known consumer anyway, which tests `body["error"]`
+  first and so degrades gracefully (prose instead of the list) until upgraded.
+
+  `ErrorDetail.detail` widens to `str | list[dict] | None` to carry it. Mutation-tested: unregistering
+  the handler fails 6 arms. Suite: **2225 passed** (`src/tests/unit/api`).
+
 ### Changed
 
 - **`juniper-service-core` ceiling raised to `<0.8.0`** so 0.7.0 can be adopted. 0.7.0 introduces
-  `WorkerCoordinator.release_worker_tasks`. cascor'''s only production import of the package is
+  `WorkerCoordinator.release_worker_tasks`. cascor's only production import of the package is
   `enforce_auth_posture` (`src/api/app.py:16`) and a grep for `juniper_service_core.workers` /
   `.websocket` returns zero hits, so this is a ceiling raise for adoptability, not a behaviour
   change. **Noted for the fork-drift ledger**: cascor carries its own

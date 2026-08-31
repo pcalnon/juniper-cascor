@@ -67,11 +67,30 @@ class ResponseEnvelope(BaseModel):
 
 
 class ErrorDetail(BaseModel):
-    """Error detail model."""
+    """Error detail model.
+
+    ``detail`` carries a *structured* payload when one exists, and stays
+    ``None`` otherwise. Two shapes are in use and both are deliberate:
+
+    * ``None`` -- every ``HTTPException`` route. The human-readable text is
+      ``message``; there is no per-field structure to carry. Pinned by
+      ``test_api_09_http_exception_envelope.py``.
+    * ``list[dict]`` -- request-validation failures (422). FastAPI's
+      ``RequestValidationError.errors()`` is a list of per-field objects
+      (``{"type", "loc", "msg", ...}``), and that structure is the whole value
+      of a validation error: it says *which field* failed and *why*.
+      Flattening it into a string is not an acceptable simplification --
+      ``juniper-cascor-client``'s ``_render_error_detail`` renders it and
+      ``exc.detail`` exposes it unmodified, so collapsing it here would
+      destroy information the published client is built to consume. This is
+      the same trap ``juniper-data`` recorded on ``APD-DATA-013``.
+
+    ``str`` remains accepted for callers that pass prose explicitly.
+    """
 
     code: str
     message: str
-    detail: str | None = None
+    detail: str | list[dict[str, Any]] | None = None
 
 
 class ErrorResponse(BaseModel):
@@ -97,8 +116,13 @@ def success_response(data: Any = None) -> dict:
     return ResponseEnvelope(status="success", data=coerce_native_scalars(data)).model_dump()
 
 
-def error_response(code: str, message: str, detail: str | None = None) -> dict:
-    """Create an error response envelope."""
+def error_response(code: str, message: str, detail: "str | list[dict[str, Any]] | None" = None) -> dict:
+    """Create an error response envelope.
+
+    ``detail`` accepts the structured ``list[dict]`` that
+    ``RequestValidationError.errors()`` produces as well as prose; see
+    :class:`ErrorDetail` for why the list must not be flattened.
+    """
     return ErrorResponse(
         error=ErrorDetail(code=code, message=message, detail=detail),
     ).model_dump()
