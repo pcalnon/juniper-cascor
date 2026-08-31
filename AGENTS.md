@@ -5,7 +5,7 @@
 **Author**: Paul Calnon
 **License**: MIT License
 **Version**: 0.10.0
-**Last Updated**: 2026-08-30
+**Last Updated**: 2026-08-31
 
 ---
 
@@ -35,6 +35,21 @@ reference section in the same PR rather than waiving the budget gate.
   repository content — it is reaped when sessions/containers end and the scripts are irrecoverable.
   Scratch *data* there is fine; source files are not. Full rule and the motivating incident:
   § Script Placement.
+- **`max_epochs` alone silently diverges the service from the CLI, and a non-positive
+  `output_epochs` silently no-ops training.** `fit()` applies `max_epochs` to the **initial** output
+  pass only; `grow_network`'s per-round passes read `self.output_epochs` directly (three sites —
+  `cascade_correlation.py:4894`, `:5085`, `:5137`). That split is **intended**: do **not** "fix" it
+  by forwarding `max_epochs`, which changes service behaviour and is golden-suite-visible (finding
+  L-2, settled 2026-08-21). But `max_epochs` *is* in the service's `_FIT_KWARGS`
+  (`src/api/lifecycle/manager.py:2094`), so a config that sets it without `output_epochs` runs the
+  service at N-then-**10000** (the `output_epochs` default) while the direct CLI aliases the two —
+  the arms are not like-for-like and the service is quietly better-trained and slower than the
+  config appears to ask for. **Any CLI-vs-service comparison must set BOTH knobs, to the same
+  value.** Separately (BUG-CC-09), a non-positive resolved `output_epochs` reaching
+  `train_output_layer` makes `range(0)` never execute — weights stay wherever the previous iteration
+  left them and the returned `final_loss` reflects an unchanged forward pass — which is why the
+  value is re-validated *after* the fall-back at `cascade_correlation.py:1952`. juniper-ml#1159
+  detects the split config and records a `validation_warnings` entry on the run manifest.
 
 ## Quick Reference
 
