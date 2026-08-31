@@ -62,7 +62,7 @@ juniper-model-core==0.3.1
     #   juniper-service-core
 juniper-observability==0.4.0
     # via juniper-cascor (pyproject.toml)
-juniper-service-core==0.6.0
+juniper-service-core==0.7.0
     # via juniper-cascor (pyproject.toml)
 kiwisolver==1.5.1
     # via matplotlib
