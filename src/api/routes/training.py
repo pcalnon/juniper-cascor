@@ -32,7 +32,7 @@ async def start_training(request: Request, body: TrainingStartRequest = None) ->
     """Start network training.
 
     Accepts an optional request body with:
-    - inline_data: Direct training data (train_x, train_y, val_x, val_y)
+    - inline_data: Direct training data (train_x, train_y, val_x, val_y, test_x, test_y)
     - dataset: Dataset source specification (juniper-data or generator)
     - params: Training parameter overrides
     - epochs: Max epochs override (shorthand)
@@ -55,6 +55,8 @@ async def start_training(request: Request, body: TrainingStartRequest = None) ->
     y = None
     x_val = None
     y_val = None
+    x_test = None
+    y_test = None
     # C5 (Q4 use-case 2 / U-1): start-fresh toggle (default off). Forwarded to
     # the lifecycle, which discards the model + retained metrics/history before
     # a fresh run (snapshots preserved). Omitted / False continues the current
@@ -73,6 +75,13 @@ async def start_training(request: Request, body: TrainingStartRequest = None) ->
             if body.inline_data.val_x is not None and body.inline_data.val_y is not None:
                 x_val = torch.tensor(body.inline_data.val_x, dtype=torch.float32)
                 y_val = torch.tensor(body.inline_data.val_y, dtype=torch.float32)
+            # cascor#582: the REPORTED partition. Same both-or-neither guard, same
+            # reason. This is the only ingress that can populate it today — the
+            # juniper-data artifact path still has no third partition to read
+            # (the ecosystem change, design §6 O-1).
+            if body.inline_data.test_x is not None and body.inline_data.test_y is not None:
+                x_test = torch.tensor(body.inline_data.test_x, dtype=torch.float32)
+                y_test = torch.tensor(body.inline_data.test_y, dtype=torch.float32)
 
         # Handle dataset source (juniper-data generator)
         # W-1 (CLI experimentation plan §11 / risk R-3): only the in-process
@@ -102,7 +111,7 @@ async def start_training(request: Request, body: TrainingStartRequest = None) ->
             kwargs["max_epochs"] = body.epochs
 
     try:
-        result = lifecycle.start_training(X=x, y=y, X_val=x_val, y_val=y_val, start_fresh=start_fresh, **kwargs)
+        result = lifecycle.start_training(X=x, y=y, X_val=x_val, y_val=y_val, X_test=x_test, y_test=y_test, start_fresh=start_fresh, **kwargs)
         return success_response(result)
     except (RuntimeError, ValueError) as e:
         # Surface the specific reason (training already in progress / no dataset

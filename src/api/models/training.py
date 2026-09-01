@@ -23,27 +23,56 @@ class InlineDataset(BaseModel):
     For large datasets, use the juniper-data service.
 
     Cross-field alignment is enforced at the request boundary so mismatched
-    sample counts (or a half-specified validation split) cannot reach
+    sample counts (or a half-specified validation/test split) cannot reach
     ``torch.tensor`` / ``fit`` and fail mid-training with an opaque shape error.
+
+    cascor#582: ``val_*`` is the IN-LOOP partition (early stopping consumes it);
+    ``test_*`` is the REPORTED one, which no training decision may read. They are
+    separate fields because they are separate jobs — see
+    ``TrainingLifecycleManager._eval_split`` vs ``._reported_split``.
     """
+
+    # ``extra="forbid"`` matches ``TrainingParams`` below. Without it this model
+    # SILENTLY DROPPED unknown keys, so a caller sending ``test_x`` before the
+    # field existed got a 200 and a run that never saw the partition it supplied
+    # (ml#1523 §2.5). A typo'd key now 422s at the boundary instead.
+    model_config = ConfigDict(extra="forbid")
 
     train_x: List[List[float]] = Field(..., max_length=_PROJECT_API_MAX_DATASET_SAMPLES, description="Training features (2D array)")
     train_y: List[List[float]] = Field(..., max_length=_PROJECT_API_MAX_DATASET_TARGETS, description="Training targets (2D array)")
-    val_x: Optional[List[List[float]]] = Field(None, max_length=_PROJECT_API_MAX_DATASET_SAMPLES, description="Validation features")
-    val_y: Optional[List[List[float]]] = Field(None, max_length=_PROJECT_API_MAX_DATASET_TARGETS, description="Validation targets")
+    val_x: Optional[List[List[float]]] = Field(None, max_length=_PROJECT_API_MAX_DATASET_SAMPLES, description="Validation features (in-loop signal; early stopping reads this)")
+    val_y: Optional[List[List[float]]] = Field(None, max_length=_PROJECT_API_MAX_DATASET_TARGETS, description="Validation targets (in-loop signal; early stopping reads this)")
+    test_x: Optional[List[List[float]]] = Field(None, max_length=_PROJECT_API_MAX_DATASET_SAMPLES, description="Held-out test features; scored once after training, never read by a training decision")
+    test_y: Optional[List[List[float]]] = Field(None, max_length=_PROJECT_API_MAX_DATASET_TARGETS, description="Held-out test targets; scored once after training, never read by a training decision")
 
     @model_validator(mode="after")
     def _validate_aligned_splits(self) -> "InlineDataset":
-        """Reject length / val-pair mismatches before tensors are constructed."""
+        """Reject length / pair mismatches before tensors are constructed."""
         if len(self.train_x) != len(self.train_y):
             raise ValueError(f"train_x/train_y length mismatch: {len(self.train_x)} != {len(self.train_y)}")
-        has_val_x = self.val_x is not None
-        has_val_y = self.val_y is not None
-        if has_val_x != has_val_y:
-            missing = "val_y" if has_val_x else "val_x"
-            raise ValueError(f"validation split requires both val_x and val_y; missing {missing}")
-        if has_val_x and len(self.val_x) != len(self.val_y):  # type: ignore[arg-type]
-            raise ValueError(f"val_x/val_y length mismatch: {len(self.val_x)} != {len(self.val_y)}")  # type: ignore[arg-type]
+        # Feature/target WIDTH must agree across splits, not just row counts. A
+        # narrower split is zero-padded up to the network dims downstream
+        # (``_pad_dataset_for_network`` / ``_pad_test_split_for_network``); a WIDER
+        # one has no legal padding and would surface as an opaque shape error deep
+        # in a forward pass — or, for the reported split, as a silently absent
+        # final score, because that forward is wrapped in a deliberate bare
+        # ``except``. Catching it here keeps the failure at the boundary.
+        train_width_x = len(self.train_x[0]) if self.train_x else None
+        train_width_y = len(self.train_y[0]) if self.train_y else None
+        for name in ("val", "test"):
+            xs = getattr(self, f"{name}_x")
+            ys = getattr(self, f"{name}_y")
+            if (xs is not None) != (ys is not None):
+                missing = f"{name}_y" if xs is not None else f"{name}_x"
+                raise ValueError(f"{name} split requires both {name}_x and {name}_y; missing {missing}")
+            if xs is None:
+                continue
+            if len(xs) != len(ys):
+                raise ValueError(f"{name}_x/{name}_y length mismatch: {len(xs)} != {len(ys)}")
+            if xs and train_width_x is not None and len(xs[0]) != train_width_x:
+                raise ValueError(f"{name}_x feature count {len(xs[0])} does not match train_x's {train_width_x}")
+            if ys and train_width_y is not None and len(ys[0]) != train_width_y:
+                raise ValueError(f"{name}_y target count {len(ys[0])} does not match train_y's {train_width_y}")
         return self
 
 

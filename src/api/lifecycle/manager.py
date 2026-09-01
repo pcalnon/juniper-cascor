@@ -1945,6 +1945,25 @@ class TrainingLifecycleManager:
             return self._val_x, self._val_y
         return None, None
 
+    def _eval_split_name(self) -> Optional[str]:
+        """Honest label for whichever partition :meth:`_eval_split` returned.
+
+        The in-loop counterpart of :meth:`_reported_split_name`. Extracted from an
+        inline conditional in ``get_metrics`` so the two labels cannot drift apart
+        as their split methods evolve.
+
+        Deliberately a BEHAVIOUR-PRESERVING extraction: the training branch tests
+        ``_train_x`` alone, mirroring the conditional it replaces (which tested
+        ``_eval_split()``'s first element). ``_reported_split_name`` checks a full
+        pair instead — the asymmetry is inherited, not introduced, and tightening
+        it is not this change's business.
+        """
+        if self._val_x is not None and self._val_y is not None:
+            return "validation"
+        if self._train_x is not None:
+            return "training"
+        return None
+
     def _reported_split_name(self) -> Optional[str]:
         """Honest label for whichever partition :meth:`_reported_split` returned."""
         if self._test_x is not None and self._test_y is not None:
@@ -2231,6 +2250,8 @@ class TrainingLifecycleManager:
         *,
         X_val: Optional[torch.Tensor] = None,
         y_val: Optional[torch.Tensor] = None,
+        X_test: Optional[torch.Tensor] = None,
+        y_test: Optional[torch.Tensor] = None,
         start_fresh: bool = False,
         **kwargs,
     ) -> Dict[str, Any]:
@@ -2239,8 +2260,16 @@ class TrainingLifecycleManager:
         Args:
             X: Training features tensor
             y: Training targets tensor
-            X_val: Validation features
-            y_val: Validation targets
+            X_val: Validation features — the IN-LOOP signal. Early stopping and
+                the live scalar metrics read this split.
+            y_val: Validation targets (in-loop)
+            X_test: cascor#582 — held-out test features, the REPORTED partition.
+                Scored exactly once by ``_compute_final_eval_metrics`` after the
+                last weight update; no training decision may read it. Omitted
+                leaves the current test tensors in place (same retain-on-omit
+                semantics as ``X_val``), so a continue-training run keeps the
+                partition it was given.
+            y_test: Held-out test targets (reported)
             start_fresh: C5 (Q4 use-case 2 / U-1) — when True, DISCARD the
                 current model and all retained metrics/history before the run
                 (a clean-launch-equivalent reset via
@@ -2270,6 +2299,12 @@ class TrainingLifecycleManager:
             if X_val is not None:
                 self._val_x = X_val
                 self._val_y = y_val
+            # cascor#582: the reported partition, kept strictly parallel to the
+            # in-loop one above — including retain-on-omit, so the two cannot
+            # drift apart in lifecycle.
+            if X_test is not None:
+                self._test_x = X_test
+                self._test_y = y_test
 
             # FRONTEND_ISSUES_PLAN_2026-05-09 §3.5.1 / Issue #3 Phase 1 — if
             # the user staged a dataset change while training was stopped,
@@ -2334,6 +2369,10 @@ class TrainingLifecycleManager:
                     _active_input_dim,
                     active_output_dim,
                 ) = self._pad_dataset_for_network(self._train_x, self._train_y, self._val_x, self._val_y)
+                # cascor#582: the reported pair pads on the same trigger as the
+                # in-loop one. Skipping it here is invisible until the end of the
+                # run, when the final forward pass fails into a swallowing except.
+                self._pad_test_split_for_network()
                 if hasattr(self.network, "active_output_dim"):
                     self.network.active_output_dim = active_output_dim
 
@@ -2774,8 +2813,7 @@ class TrainingLifecycleManager:
         # of a run and whenever computation is disabled/unavailable.
         latest = self._latest_scalar_metrics
         scalars = latest if isinstance(latest, dict) else {}
-        eval_x, _eval_y = self._eval_split()
-        eval_split = "validation" if (self._val_x is not None and self._val_y is not None) else ("training" if eval_x is not None else None)
+        eval_split = self._eval_split_name()
 
         return {
             "epoch": len(train_loss),
@@ -3131,6 +3169,10 @@ class TrainingLifecycleManager:
                     active_input_dim,
                     active_output_dim,
                 ) = self._pad_dataset_for_network(self._train_x, self._train_y, self._val_x, self._val_y)
+                # cascor#582: same trigger as the in-loop pair (see the start path).
+                # A live swap can GROW the network, so a test split that fitted
+                # before this resize does not fit after it.
+                self._pad_test_split_for_network()
                 # Set the loss-mask depth on the network. Same attribute that
                 # ``_resize_network_for_dataset`` reset to ``output_size_new``
                 # — overriding here when the dataset is smaller than the
@@ -3362,6 +3404,38 @@ class TrainingLifecycleManager:
                 val_y = torch.cat([val_y, torch.zeros(val_y.shape[0], output_pad, dtype=val_y.dtype, device=val_y.device)], dim=1)
 
         return x, y, val_x, val_y, active_input_dim, active_output_dim
+
+    def _pad_test_split_for_network(self) -> None:
+        """cascor#582: zero-pad the REPORTED tensors up to the network's dims, in place.
+
+        Why this is separate from :meth:`_pad_dataset_for_network` rather than a
+        sixth/seventh parameter on it: that helper's 6-tuple return is unpacked at
+        two production sites and ten test sites, and widening it would rewrite a
+        well-covered load-bearing path to carry a partition it does not otherwise
+        touch. This mirrors its padding rule for one extra pair instead.
+
+        Why it is needed at all: ``_compute_final_eval_metrics`` runs
+        ``network.forward(self._test_x)``, and the network's ``input_size`` may
+        exceed the dataset's feature count (a smaller dataset padded up, or a
+        live swap that grew the network). An unpadded ``_test_x`` raises inside
+        that forward — where a deliberate bare ``except`` swallows it and returns
+        ``None``. The final score would then simply be **absent**, with no error
+        anywhere: the failure would read as "this run had nothing to report".
+
+        Each pair member is padded from its OWN width, so a test split narrower
+        than the training split still lands exactly on the network dims. No-ops
+        when the tensors are unset or already the right width.
+        """
+        if self.network is None:
+            return
+        net_input = int(self.network.input_size)
+        net_output = int(self.network.output_size)
+        if self._test_x is not None and self._test_x.shape[1] < net_input:
+            pad = net_input - self._test_x.shape[1]
+            self._test_x = torch.cat([self._test_x, torch.zeros(self._test_x.shape[0], pad, dtype=self._test_x.dtype, device=self._test_x.device)], dim=1)
+        if self._test_y is not None and self._test_y.shape[1] < net_output:
+            pad = net_output - self._test_y.shape[1]
+            self._test_y = torch.cat([self._test_y, torch.zeros(self._test_y.shape[0], pad, dtype=self._test_y.dtype, device=self._test_y.device)], dim=1)
 
     def _rollback_pre_swap_state(self, pre: "_PreSwapSnapshot") -> None:  # noqa: C901
         """Restore the network + tensor refs from a pre-swap snapshot.
@@ -3632,6 +3706,18 @@ class TrainingLifecycleManager:
         self._val_y = new_val_y
         self._train_x = new_train_x
         self._train_y = new_train_y
+        # cascor#582: a replaced dataset invalidates the reported partition. Unlike
+        # ``start_training``'s retain-on-omit (where omitting means "keep training on
+        # what I gave you"), this path swaps the data wholesale — so retaining would
+        # score the new run against the PREVIOUS dataset's held-out rows and label the
+        # result "test". Clearing makes ``_reported_split`` fall back to val, which is
+        # the pre-#614 behaviour and is honestly labelled.
+        #
+        # This is where the juniper-data artifact's own third partition will be read
+        # once the producer emits one (design §6 O-1 / plan Chunk 4). Until then the
+        # artifact carries only X_test, which is already bound to ``_val_*`` above.
+        self._test_x = None
+        self._test_y = None
         # ISSUE_3_PHASE_2_LIVE_DATASET_SWAP §3.2 step 4d — track the canonical
         # cfg so ``swap_dataset_live`` can report it as ``before_cfg`` and so
         # the rollback path can restore it if a swap fails.
