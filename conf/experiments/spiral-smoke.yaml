@@ -26,7 +26,21 @@ dataset:
 
 training:
   params:
+    # `output_epochs` MUST accompany `max_epochs`, and must match it. On the SERVICE path
+    # `max_epochs` bounds only the INITIAL output pass; every later pass reads `output_epochs`,
+    # which falls back to `_PROJECT_MODEL_OUTPUT_EPOCHS = 10000`
+    # (src/cascor_constants/constants_model/constants_model.py:300). The direct CLI instead
+    # ALIASES `max_epochs -> output_epochs` (src/main.py:299), so the two paths silently diverge
+    # and the service arm runs better-trained and slower than the config appears to ask for.
+    #
+    # Measured 2026-09-02 at this file's (10, 10) override -- the budget PF-1 uses:
+    #   without output_epochs : drive 65-126 s, 4012 steps   <- later passes at the 10000 fallback
+    #   with output_epochs 50 : drive 15.1 s,    32 steps
+    # i.e. the service was doing ~125x the work this file asks for. Confirmed from run evidence,
+    # not just source: `output_epoch` history rows reach epoch 10000 even at the NATIVE (2, 2)
+    # budget, for BOTH non-initial passes.
     max_epochs: 50
+    output_epochs: 50
     max_iterations: 2
     max_hidden_units: 2
     candidate_pool_size: 4
