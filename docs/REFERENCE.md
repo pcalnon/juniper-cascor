@@ -343,6 +343,60 @@ Three WebSocket channels provide real-time communication.
 
 ---
 
+## Remote Worker System Reference
+
+Relocated verbatim from `AGENTS.md` (P3 of the shared-session-memory plan) so it is read on demand rather than loaded into every session.
+
+Distributed candidate training via WebSocket workers.
+
+| Component | Module | Purpose |
+|-----------|--------|---------|
+| `WorkerRegistry` | `api.workers.registry` | Worker pool management (register, deregister, health) |
+| `WorkerCoordinator` | `api.workers.coordinator` | Task dispatch, monitoring, result collection |
+| Worker Protocol | `api.workers.protocol` | Wire format: JSON envelope + binary numpy frames |
+| Worker Security | `api.workers.security` | Authentication, token management |
+| Worker Audit | `api.workers.audit` | Audit logging for worker operations |
+
+**Worker Lifecycle**:
+
+1. Worker connects via `/ws/v1/workers` with API key
+2. Worker sends `register` with `worker_id` + `capabilities` (CPU/GPU, pool size)
+3. Server validates `worker_id` against `^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$` (else close `4008`), stores it as `client_name`, and assigns `worker-<12 hex>` as the authoritative registry id (CR-026)
+4. Coordinator assigns candidate training tasks
+5. Worker returns `task_result` envelopes plus binary numpy frames; the typed parse requires `task_id` / `candidate_id` / `correlation` ∈ [0, 1] / `success` / `epochs_completed`, and rejects JSON `true`/`false` for the int/float fields (`isinstance(True, int)` is true in Python)
+6. Heartbeat keepalive (default 30s timeout)
+7. Auto-deregistration on heartbeat timeout
+8. Task reassignment on worker failure (default 120s timeout)
+9. Session teardown calls `coordinator.handle_worker_disconnect(worker_id)` -- which requeues any in-flight task, then deregisters the worker and drops its send callback -- and clears `AnomalyDetector` history for that `worker_id` (`clear_worker`) so reconnect churn cannot grow `_worker_history` without bound or let a recycled id inherit stale anomaly signals
+
+**Result ownership & tensor validation** (`WorkerCoordinator.submit_result` / `WorkerProtocol.validate_tensors`):
+
+- Only the worker recorded in `PendingTask.assigned_worker_id` may complete a task. A peer / stale / wrong `worker_id` is rejected (`False`); the task stays incomplete under the original assignee, and `registry.complete_task(worker_id, success=False)` is charged to the *submitting* worker.
+- A result for a task whose `assigned_worker_id` is `None` (the pre-dispatch / post-requeue window) is rejected **without** freeing the submitter's busy slot, so an unrelated active assignment is not wiped.
+- `validate_tensors` returns validation errors (does not raise) for non-dict manifest entries, missing `shape` / `dtype`, empty `weights` (`Tensor weights: empty array` instead of a zero-size `np.max`), shape/dtype mismatches, and NaN/Inf / magnitude violations -- keeping the WebSocket result path from crashing the coordinator session.
+- A `success=True` result with a missing or empty `weights` tensor is rejected, checked **before** `validate_tensors` so an empty / absent `tensor_manifest` cannot skip the guard. Otherwise `_dispatch_to_remote_workers` rebuilds a `CandidateUnit` at random-init parameters that still carries the worker's claimed correlation, poisoning N-best selection. `success=False` may legitimately omit weights. This guard frees the worker but does **not** requeue -- the task falls back to the 120s sweep.
+
+**In-flight task recovery** -- four distinct immediate-requeue paths on `WorkerCoordinator`, each with its own trigger and log line (do not assume any failure waits 120s):
+
+| Trigger | Method | Worker released via | Log line |
+|---------|--------|---------------------|----------|
+| Schema / tensor-manifest reject inside `submit_result` | `_reject_and_requeue_task` | `complete_task(..., success=False)` | `Task <id> requeued after rejected result from worker <w>` |
+| Soft `task_result` binary-frame abort (text instead of bytes, frame over 100 MB, `BinaryFrame.decode` `ValueError`) | `abort_in_flight_result` | `complete_task(..., success=False)` | `Task <id> requeued after soft result-frame abort from worker <w>` |
+| Clean WebSocket close, including mid-binary-frame | `handle_worker_disconnect` | `registry.deregister` + `unregister_send_callback` | `Task <id> requeued after worker <w> disconnect` |
+| `task_assign` never delivered (`send_json` / `send_bytes` raised after `get_next_assignment`) | `requeue_after_dispatch_failure` | `complete_task(..., success=False)` | `Task <id> requeued after dispatch send failure to worker <w>` |
+
+- All four clear `assigned_worker_id`, refresh `dispatched_at`, and append to `_unassigned_tasks`; each is a no-op if the task is already completed or already queued.
+- `handle_worker_disconnect` is called from the worker-stream session `finally` and holds `self._lock` across the requeue **and** the deregister (CONC-10 lock discipline), so a concurrent `get_next_assignment` cannot land a task on a worker about to disappear.
+- `_try_dispatch_task` wraps `send_json` **and** the `send_bytes` frame loop in one `try`, so a partial-send failure is caught too; it logs `Dispatch send failed for task <id> to worker <w> — requeueing` before the rollback. The per-connection `_make_send_callback` only returns `False` on failure and performs no coordinator rollback.
+- Receive-site guards reject non-object JSON and a malformed / over-32-entry `tensor_manifest` before binary receive; those header-level rejects return an in-band error only and do **not** requeue (unlike the per-frame guards, which route through `_abort_soft_result_frame`), so recovery there still falls back to disconnect or the 120s timeout.
+- Heartbeat / stale-worker reaping (`_check_stale_workers`) fires after `JUNIPER_CASCOR_REMOTE_WORKERS_HEARTBEAT_TIMEOUT` (default 30s); the orphaned-assignment fallback (`_check_task_timeouts`) after `JUNIPER_CASCOR_REMOTE_WORKERS_TASK_REASSIGNMENT_TIMEOUT` (default 120s).
+- **Round cancellation** -- `cancel_round` captures every worker still holding an in-flight assignment **before** clearing the coordinator maps, then calls `registry.complete_task(worker_id, success=False)` for each. Without that release the worker stays busy forever: `assign_task` keeps returning `False`, `get_next_assignment` refuses it work, and `_check_task_timeouts` cannot help because pending tracking is already gone.
+- Details: [`docs/api/JUNIPER_CASCOR_API_REFERENCE.md`](../docs/api/JUNIPER_CASCOR_API_REFERENCE.md) § WS `/ws/v1/workers`.
+
+---
+
+---
+
 ## Core Components Reference
 
 Relocated verbatim from `AGENTS.md` (P3 of the shared-session-memory plan) so it is read on demand rather than loaded into every session.
