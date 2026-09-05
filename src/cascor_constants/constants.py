@@ -219,6 +219,7 @@ from cascor_constants.constants_problem.constants_problem import (
     _SPIRAL_PROBLEM_RANDOM_VALUE_SCALE,
     _SPIRAL_PROBLEM_TEST_RATIO,
     _SPIRAL_PROBLEM_TRAIN_RATIO,
+    _SPIRAL_PROBLEM_VAL_RATIO,
 )
 
 #####################################################################################################################################################################################################
@@ -357,6 +358,7 @@ __all__ = [
     "_SPIRAL_PROBLEM_RANDOM_VALUE_SCALE",
     "_SPIRAL_PROBLEM_TEST_RATIO",
     "_SPIRAL_PROBLEM_TRAIN_RATIO",
+    "_SPIRAL_PROBLEM_VAL_RATIO",
 ]
 
 # ##########################################################################################################
@@ -737,6 +739,7 @@ _CASCOR_RANDOM_VALUE_SCALE = _SPIRAL_PROBLEM_RANDOM_VALUE_SCALE
 _CASCOR_STATUS_DISPLAY_FREQUENCY = _PROJECT_MODEL_STATUS_DISPLAY_FREQUENCY
 _CASCOR_TEST_RATIO = _SPIRAL_PROBLEM_TEST_RATIO
 _CASCOR_TRAIN_RATIO = _SPIRAL_PROBLEM_TRAIN_RATIO
+_CASCOR_VAL_RATIO = _SPIRAL_PROBLEM_VAL_RATIO
 
 
 #####################################################################################################################################################################################################
@@ -840,6 +843,7 @@ _SPIRAL_PROBLEM_BASE_MANAGER_ADDRESS_PORT = _PROJECT_MODEL_BASE_MANAGER_ADDRESS_
 _SPIRAL_PROBLEM_STATUS_DISPLAY_FREQUENCY = _CASCOR_STATUS_DISPLAY_FREQUENCY
 _SPIRAL_PROBLEM_TEST_RATIO = _CASCOR_TEST_RATIO
 _SPIRAL_PROBLEM_TRAIN_RATIO = _CASCOR_TRAIN_RATIO
+_SPIRAL_PROBLEM_VAL_RATIO = _CASCOR_VAL_RATIO
 
 
 #####################################################################################################################################################################################################

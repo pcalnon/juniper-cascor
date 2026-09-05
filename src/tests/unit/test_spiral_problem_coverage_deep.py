@@ -1066,18 +1066,31 @@ class TestSolveNSpiralProblem:
     We therefore patch the constant to ``False`` in each test.
     """
 
-    def _make_mock_dataset(self, n_train=70, n_test=30, n_spirals=2):
-        """Helper to create mock dataset tuples."""
+    def _make_mock_dataset(self, n_train=70, n_val=10, n_test=20, n_spirals=2):
+        """Helper to create mock dataset tuples.
+
+        FOUR partitions, matching ``SpiralDatasetTuple``. This helper returned three
+        until 2026-09-05, and that is precisely why the arity regression cascor#620
+        introduced went unnoticed: every test exercising the CLI path patches
+        ``generate_n_spiral_dataset`` with this value, so the STUB defined the shape
+        under test and the provider's real four-partition return was never seen here.
+        A stub allowed to disagree with the seam it stands in for tests nothing about
+        that seam.
+        """
         x_train = torch.randn(n_train, 2)
         y_train = torch.zeros(n_train, n_spirals)
         y_train[:, 0] = 1
+        x_val = torch.randn(n_val, 2)
+        y_val = torch.zeros(n_val, n_spirals)
+        y_val[:, 0] = 1
         x_test = torch.randn(n_test, 2)
         y_test = torch.zeros(n_test, n_spirals)
         y_test[:, 1] = 1
-        x_full = torch.cat([x_train, x_test])
-        y_full = torch.cat([y_train, y_test])
+        x_full = torch.cat([x_train, x_val, x_test])
+        y_full = torch.cat([y_train, y_val, y_test])
         return (
             (x_train, y_train),
+            (x_val, y_val),
             (x_test, y_test),
             (x_full, y_full),
         )
@@ -1142,6 +1155,35 @@ class TestSolveNSpiralProblem:
         assert torch.equal(x_arg, mock_data[0][0])
         assert torch.equal(y_arg, mock_data[0][1])
 
+    def test_solve_passes_the_val_split_to_fit(self, sp):
+        """``fit`` receives the VAL partition as ``x_val`` -- never test, never nothing.
+
+        ``fit()`` has accepted ``x_val`` / ``y_val`` since it was written and the CLI
+        never passed them, so ``early_stopping=True`` had nothing to stop on: the CLI
+        trained to budget while the service tier stopped early (design decision 5, the
+        tier asymmetry E-11 names). Asserting only that *something* arrives would pass
+        if `x_test` were handed over instead -- which would make the reported score
+        selected-on, the exact defect this arc removes. So the identity of the tensor
+        is what is checked here, against both neighbours.
+        """
+        mock_data = self._make_mock_dataset()
+        sp.network = MagicMock()
+        sp.network.fit.return_value = {"loss": [0.1]}
+        sp.network.summary.return_value = None
+
+        with patch.object(sp, "generate_n_spiral_dataset", return_value=mock_data), patch("spiral_problem.spiral_problem._SPIRAL_PROBLEM_GENERATE_PLOTS_DEFAULT", False):
+            sp.solve_n_spiral_problem(plot=False)
+
+        kwargs = sp.network.fit.call_args.kwargs
+        # Index rather than unpack: the discarded names read as dead locals to CodeQL,
+        # and its alerts post PR review threads that block the merge on a green build.
+        x_val, y_val = mock_data[1]
+        x_test = mock_data[2][0]
+        assert kwargs["x_val"] is not None and kwargs["y_val"] is not None, "the CLI must hand fit() a validation split"
+        assert torch.equal(kwargs["x_val"], x_val)
+        assert torch.equal(kwargs["y_val"], y_val)
+        assert not torch.equal(kwargs["x_val"], x_test), "the in-loop split must not be the reported one"
+
     def test_solve_with_default_params_uses_fallbacks(self, sp):
         """When None params are passed, class attributes are used."""
         mock_data = self._make_mock_dataset()
@@ -1166,18 +1208,31 @@ class TestSolveNSpiralProblem:
 class TestEvaluate:
     """Tests for evaluate method with mocked dependencies."""
 
-    def _make_mock_dataset(self, n_train=70, n_test=30, n_spirals=2):
-        """Helper to create mock dataset tuples."""
+    def _make_mock_dataset(self, n_train=70, n_val=10, n_test=20, n_spirals=2):
+        """Helper to create mock dataset tuples.
+
+        FOUR partitions, matching ``SpiralDatasetTuple``. This helper returned three
+        until 2026-09-05, and that is precisely why the arity regression cascor#620
+        introduced went unnoticed: every test exercising the CLI path patches
+        ``generate_n_spiral_dataset`` with this value, so the STUB defined the shape
+        under test and the provider's real four-partition return was never seen here.
+        A stub allowed to disagree with the seam it stands in for tests nothing about
+        that seam.
+        """
         x_train = torch.randn(n_train, 2)
         y_train = torch.zeros(n_train, n_spirals)
         y_train[:, 0] = 1
+        x_val = torch.randn(n_val, 2)
+        y_val = torch.zeros(n_val, n_spirals)
+        y_val[:, 0] = 1
         x_test = torch.randn(n_test, 2)
         y_test = torch.zeros(n_test, n_spirals)
         y_test[:, 1] = 1
-        x_full = torch.cat([x_train, x_test])
-        y_full = torch.cat([y_train, y_test])
+        x_full = torch.cat([x_train, x_val, x_test])
+        y_full = torch.cat([y_train, y_val, y_test])
         return (
             (x_train, y_train),
+            (x_val, y_val),
             (x_test, y_test),
             (x_full, y_full),
         )

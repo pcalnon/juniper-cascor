@@ -112,6 +112,7 @@ from cascor_constants.constants import (  # _PROJECT_MODEL_AUTHKEY,; _PROJECT_MO
     _SPIRAL_PROBLEM_STATUS_DISPLAY_FREQUENCY,
     _SPIRAL_PROBLEM_TEST_RATIO,
     _SPIRAL_PROBLEM_TRAIN_RATIO,
+    _SPIRAL_PROBLEM_VAL_RATIO,
 )
 from log_config.log_config import LogConfig
 from log_config.logger.logger import Logger
@@ -215,6 +216,7 @@ class SpiralProblem(object):
         _SpiralProblem__status_display_frequency: int = _SPIRAL_PROBLEM_STATUS_DISPLAY_FREQUENCY,
         _SpiralProblem__test_ratio: float = _SPIRAL_PROBLEM_TEST_RATIO,
         _SpiralProblem__train_ratio: float = _SPIRAL_PROBLEM_TRAIN_RATIO,
+        _SpiralProblem__val_ratio: float = _SPIRAL_PROBLEM_VAL_RATIO,
         _SpiralProblem__uuid: uuid.UUID | None = None,
         **kwargs,
     ):
@@ -262,6 +264,8 @@ class SpiralProblem(object):
             _SpiralProblem__status_display_frequency: Frequency of status display during training.
             _SpiralProblem__test_ratio: Ratio of test data to total data. Must be between 0.0 and 1.0.
             _SpiralProblem__train_ratio: Ratio of training data to total data. Must be between 0.0 and 1.0.
+            _SpiralProblem__val_ratio: Ratio of IN-LOOP validation data to total data. Early stopping reads
+                this partition and no reported metric may. Must be between 0.0 and 1.0.
             _SpiralProblem__uuid: UUID for the Spiral Problem instance.
         Raises:
             ValueError: If the input parameters are invalid.
@@ -337,6 +341,8 @@ class SpiralProblem(object):
         self.logger.verbose(f"SpiralProblem: __init__: Training ratio: {self.train_ratio}")
         self.test_ratio = _SpiralProblem__test_ratio
         self.logger.verbose(f"SpiralProblem: __init__: Testing ratio: {self.test_ratio}")
+        self.val_ratio = _SpiralProblem__val_ratio
+        self.logger.verbose(f"SpiralProblem: __init__: Validation ratio: {self.val_ratio}")
         self.min_new = _SpiralProblem__min_new
         self.logger.verbose(f"SpiralProblem: __init__: Minimum new value: {self.min_new}")
         self.max_new = _SpiralProblem__max_new
@@ -592,6 +598,7 @@ class SpiralProblem(object):
             clockwise=clockwise,
             train_ratio=train_ratio,
             test_ratio=test_ratio,
+            val_ratio=self.val_ratio,
             seed=self.random_seed,
         )
 
@@ -1314,13 +1321,21 @@ class SpiralProblem(object):
         self.logger.debug(f"SpiralProblem: solve_n_spiral_problem: Partitioned dataset: Size: {len(dataset_partitions)}, Type: {type(dataset_partitions)}, Value:\n{dataset_partitions}")
         self.logger.debug(f"SpiralProblem: solve_n_spiral_problem: Generated N spiral dataset with {self.n_points} points and noise level {self.noise}.")
 
-        # Unpack the dataset partitions
+        # Unpack the dataset partitions.
+        #
+        # FOUR, not three. cascor#620 widened ``SpiralDatasetTuple`` to carry the val
+        # pair between train and test; this unpack was left at three, so the direct CLI
+        # raised ``ValueError: too many values to unpack (expected 3)`` against a real
+        # service. The unit tests did not catch it because they patch
+        # ``generate_n_spiral_dataset`` with a hand-built three-tuple -- the stub, not
+        # the provider, defined the shape they saw.
         self.logger.trace("SpiralProblem: solve_n_spiral_problem: Unpacking dataset partitions")
-        train_partition, test_partition, full_partition = dataset_partitions
+        train_partition, val_partition, test_partition, full_partition = dataset_partitions
         self.logger.verbose(f"SpiralProblem: solve_n_spiral_problem: Train Partition: Type: {type(train_partition)}, Length: {len(train_partition)}, Value:\n{train_partition}")
         self.logger.verbose(f"SpiralProblem: solve_n_spiral_problem: Test Partition: Type: {type(test_partition)}, Length: {len(test_partition)}, Value:\n{test_partition}")
         self.logger.verbose(f"SpiralProblem: solve_n_spiral_problem: Full Partition: Type: {type(full_partition)}, Length: {len(full_partition)}, Value:\n{full_partition}")
         self.x_train, self.y_train = train_partition
+        self.x_val, self.y_val = val_partition
         self.x_test, self.y_test = test_partition
         self.x_full, self.y_full = full_partition
 
@@ -1386,9 +1401,20 @@ class SpiralProblem(object):
         # gives the CLI one budget for every pass. That is a known, instrumented divergence
         # from the service (juniper-ml#1159 records it on the run manifest) -- not something
         # this change is quietly altering.
+        # Chunk 6 / design decision 5: the CLI gains the in-loop validation signal the
+        # service tier already had. ``fit()`` has accepted ``x_val`` / ``y_val`` since it
+        # was written -- nothing ever passed them, so ``early_stopping=True`` here had
+        # nothing to stop on and the CLI trained to budget while the service stopped
+        # early. That asymmetry is the whole of E-11.
+        #
+        # ``self.x_val`` is the val partition, never ``self.x_test``: reading test here
+        # would make the reported score selected-on, which is the defect the partition
+        # arc exists to remove.
         self.history = self.network.fit(
             self.x,
             self.y,
+            x_val=self.x_val,
+            y_val=self.y_val,
             max_epochs=self.output_epochs,
             early_stopping=self.early_stopping,
             max_iterations=self.max_iterations,
@@ -1433,6 +1459,7 @@ class SpiralProblem(object):
         plot=None,
         train_ratio=None,
         test_ratio=None,
+        val_ratio=None,
         random_value_scale=None,
         default_origin=None,
         default_radius=None,
@@ -1451,6 +1478,8 @@ class SpiralProblem(object):
             plot: Whether to plot the results
             train_ratio: Ratio of training data to total data. Must be between 0.0 and 1.0.
             test_ratio: Ratio of test data to total data. Must be between 0.0 and 1.0.
+            val_ratio: Ratio of IN-LOOP validation data to total data. Early stopping reads this
+                partition and no reported metric may. Must be between 0.0 and 1.0.
             random_value_scale: Scale for random values
             default_origin: Default origin for the spirals
             default_radius: Default radius for the spirals
@@ -1488,6 +1517,8 @@ class SpiralProblem(object):
         self.logger.verbose(f"SpiralProblem: evaluate: Training data ratio: {self.train_ratio}")
         self.test_ratio = test_ratio if test_ratio is not None else (self.test_ratio if self.test_ratio is not None else _SPIRAL_PROBLEM_TEST_RATIO)
         self.logger.verbose(f"SpiralProblem: evaluate: Test data ratio: {self.test_ratio}")
+        self.val_ratio = val_ratio if val_ratio is not None else (getattr(self, "val_ratio", None) if getattr(self, "val_ratio", None) is not None else _SPIRAL_PROBLEM_VAL_RATIO)
+        self.logger.verbose(f"SpiralProblem: evaluate: Validation data ratio: {self.val_ratio}")
         self.random_value_scale = random_value_scale if random_value_scale is not None else (self.random_value_scale if self.random_value_scale is not None else _SPIRAL_PROBLEM_RANDOM_VALUE_SCALE)
         self.logger.verbose(f"SpiralProblem: evaluate: Random value scale: {self.random_value_scale}")
         self.default_origin = default_origin if default_origin is not None else (self.default_origin if self.default_origin is not None else _SPIRAL_PROBLEM_DEFAULT_ORIGIN)
