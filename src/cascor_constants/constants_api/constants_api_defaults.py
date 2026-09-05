@@ -113,6 +113,30 @@ _PROJECT_API_LIFECYCLE_DEFAULT_CANDIDATE_PATIENCE: int = 30
 
 _PROJECT_API_JUNIPER_DATA_URL_DEFAULT: str = "http://localhost:8100"
 _PROJECT_API_JUNIPER_DATA_READY_TIMEOUT: int = 60
+
+# Whether this run accepts a dataset juniper-data could not produce in full --
+# a universe truncated to its symbol cap, or rows whose fundamentals no rescue
+# path could resolve.
+#
+# FALSE by default, deliberately. juniper-data refuses such a request with 422
+# unless the caller opts in, and a training run that silently trains on a
+# partial dataset reports a score for data nobody chose. Opting in is a decision
+# with consequences for every metric downstream, so it is made explicitly:
+# ``--allow-truncated-datasets``, ``JUNIPER_CASCOR_ALLOW_TRUNCATED_DATASETS``,
+# or ``allow_truncated_datasets:`` in the experiment YAML's ``service:`` block.
+_PROJECT_API_ALLOW_TRUNCATED_DATASETS_DEFAULT: bool = False
+
+# Generators that can produce a PARTIAL dataset, and therefore accept the
+# ``allow_truncation`` opt-in. Every other generator synthesises its data and can
+# always deliver in full, so forwarding the flag to them would send a parameter
+# they ignore -- noise on every request, and a false suggestion that the knob
+# does something there.
+#
+# Tracks juniper-data: a generator that gains an input bound has to be added
+# here, or its shortfall will refuse the request with no way for a cascor run to
+# opt in. The cost of drift is a hard failure with a clear message, not silent
+# bad data, which is the right direction for this list to fail in.
+_PROJECT_API_TRUNCATABLE_GENERATORS: frozenset = frozenset({"equities", "equities_seq", "csv_import"})
 _PROJECT_API_SELF_HEALTH_CHECK_URL_TEMPLATE: str = "http://localhost:{port}/v1/health"
 _PROJECT_API_CANOPY_STARTUP_WAIT_TIMEOUT: float = 30.0
 _PROJECT_API_CANOPY_STARTUP_CHECK_INTERVAL: float = 1.0
@@ -161,3 +185,73 @@ _PROJECT_API_DECISION_BOUNDARY_RESOLUTION_MAX: int = 200
 _PROJECT_API_HTTP_503_SERVICE_UNAVAILABLE: int = 503
 _PROJECT_API_HTTP_404_NOT_FOUND: int = 404
 _PROJECT_API_HTTP_500_INTERNAL_SERVER_ERROR: int = 500
+
+
+# Declared so every name here is an EXPLICIT export.
+#
+# CodeQL resolves `from cascor_constants...` to ONE of the two top-level
+# `cascor_constants` packages (this file exists byte-identically under
+# juniper-cascor-model/), so the other copy has no visible importer and every
+# constant in it reads as dead. `py/unused-global-variable` then posts a PR
+# review thread, which blocks the merge while every required check is green.
+#
+# The alerts are diff-scoped, so only NEWLY ADDED constants get flagged -- which
+# is why 51 of these lived here unflagged and the two added by the truncation
+# opt-in were not. Declaring __all__ marks them all as intentional exports and
+# closes the rule for this module permanently, rather than one constant at a
+# time. Add new constants to this list.
+__all__ = [
+    "_PROJECT_API_ALLOW_TRUNCATED_DATASETS_DEFAULT",
+    "_PROJECT_API_ANOMALY_DUPLICATE_CORR_WINDOW",
+    "_PROJECT_API_ANOMALY_STALE_CORR_THRESHOLD",
+    "_PROJECT_API_CANOPY_DEMO_MODE_DISABLED",
+    "_PROJECT_API_CANOPY_HEALTH_CHECK_URL",
+    "_PROJECT_API_CANOPY_STARTUP_CHECK_INTERVAL",
+    "_PROJECT_API_CANOPY_STARTUP_WAIT_TIMEOUT",
+    "_PROJECT_API_DATASET_SOURCE_DEFAULT",
+    "_PROJECT_API_DECISION_BOUNDARY_RESOLUTION_DEFAULT",
+    "_PROJECT_API_DECISION_BOUNDARY_RESOLUTION_MAX",
+    "_PROJECT_API_DECISION_BOUNDARY_RESOLUTION_MIN",
+    "_PROJECT_API_DRAIN_THREAD_JOIN_TIMEOUT",
+    "_PROJECT_API_HEALTH_CHECK_HTTP_TIMEOUT",
+    "_PROJECT_API_HTTP_400_BAD_REQUEST",
+    "_PROJECT_API_HTTP_404_NOT_FOUND",
+    "_PROJECT_API_HTTP_413_PAYLOAD_TOO_LARGE",
+    "_PROJECT_API_HTTP_500_INTERNAL_SERVER_ERROR",
+    "_PROJECT_API_HTTP_503_SERVICE_UNAVAILABLE",
+    "_PROJECT_API_JUNIPER_DATA_READY_TIMEOUT",
+    "_PROJECT_API_JUNIPER_DATA_URL_DEFAULT",
+    "_PROJECT_API_LIFECYCLE_DEFAULT_CANDIDATE_PATIENCE",
+    "_PROJECT_API_LIFECYCLE_DEFAULT_EPOCHS_MAX",
+    "_PROJECT_API_LIFECYCLE_DEFAULT_MAX_HIDDEN_UNITS",
+    "_PROJECT_API_LIFECYCLE_DEFAULT_MAX_ITERATIONS",
+    "_PROJECT_API_MAX_DATASET_SAMPLES",
+    "_PROJECT_API_MAX_DATASET_TARGETS",
+    "_PROJECT_API_MAX_REQUEST_BODY_BYTES",
+    "_PROJECT_API_METRICS_BUFFER_SIZE",
+    "_PROJECT_API_NETWORK_ACTIVATION_FUNCTION_DEFAULT",
+    "_PROJECT_API_NETWORK_CANDIDATE_EPOCHS_DEFAULT",
+    "_PROJECT_API_NETWORK_CANDIDATE_LEARNING_RATE_DEFAULT",
+    "_PROJECT_API_NETWORK_CANDIDATE_POOL_SIZE_DEFAULT",
+    "_PROJECT_API_NETWORK_CORRELATION_THRESHOLD_DEFAULT",
+    "_PROJECT_API_NETWORK_EPOCHS_MAX_DEFAULT",
+    "_PROJECT_API_NETWORK_INIT_OUTPUT_WEIGHTS_DEFAULT",
+    "_PROJECT_API_NETWORK_INPUT_SIZE_DEFAULT",
+    "_PROJECT_API_NETWORK_LEARNING_RATE_DEFAULT",
+    "_PROJECT_API_NETWORK_MAX_HIDDEN_UNITS_DEFAULT",
+    "_PROJECT_API_NETWORK_MAX_ITERATIONS_DEFAULT",
+    "_PROJECT_API_NETWORK_OUTPUT_EPOCHS_DEFAULT",
+    "_PROJECT_API_NETWORK_OUTPUT_SIZE_DEFAULT",
+    "_PROJECT_API_NETWORK_PATIENCE_DEFAULT",
+    "_PROJECT_API_PROCESS_TERMINATION_TIMEOUT",
+    "_PROJECT_API_PROGRESS_QUEUE_GET_TIMEOUT",
+    "_PROJECT_API_PROGRESS_QUEUE_WAIT_TIMEOUT",
+    "_PROJECT_API_RATE_LIMITER_CLEANUP_INTERVAL",
+    "_PROJECT_API_SELF_HEALTH_CHECK_URL_TEMPLATE",
+    "_PROJECT_API_SERVICE_DEFAULT_TERMINATE_TIMEOUT",
+    "_PROJECT_API_SERVICE_HEALTH_POLL_INTERVAL",
+    "_PROJECT_API_SERVICE_HEALTH_POLL_TIMEOUT",
+    "_PROJECT_API_SERVICE_TERMINATION_TIMEOUT",
+    "_PROJECT_API_TLS_MIN_VERSION_DEFAULT",
+    "_PROJECT_API_TRUNCATABLE_GENERATORS",
+]

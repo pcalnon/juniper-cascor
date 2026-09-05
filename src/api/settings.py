@@ -91,6 +91,10 @@ _JUNIPER_CASCOR_API_AUTO_START_DEFAULT: bool = _JUNIPER_CASCOR_API_AUTO_START_DI
 # unnoticed". Opting in marks the run rather than hiding it.
 _JUNIPER_CASCOR_API_ALLOW_MISSING_VALIDATION_SPLIT_DEFAULT: bool = False
 
+# Sourced from the constants module rather than restated, so the CLI help text,
+# the settings default and the constants class cannot drift apart.
+from cascor_constants.constants_api.constants_api_defaults import _PROJECT_API_ALLOW_TRUNCATED_DATASETS_DEFAULT  # noqa: E402
+
 _JUNIPER_CASCOR_API_AUTO_START_DATA_SERVICE_DEFAULT: bool = False
 _JUNIPER_CASCOR_API_AUTO_START_DATA_SERVICE_COMMAND_DEFAULT: str = "python -m juniper_data"
 
@@ -551,6 +555,16 @@ class Settings(BaseSettings):
     )
 
     allow_missing_validation_split: bool = _JUNIPER_CASCOR_API_ALLOW_MISSING_VALIDATION_SPLIT_DEFAULT
+
+    # Accept a dataset juniper-data could not produce in full. FALSE by default.
+    #
+    # Three surfaces, all reaching this one field: ``--allow-truncated-datasets``
+    # on the CLI (which exports the env var before settings load, the same idiom
+    # ``--config`` uses), ``JUNIPER_CASCOR_ALLOW_TRUNCATED_DATASETS`` in the
+    # environment or ``.env``, and ``allow_truncated_datasets:`` in an experiment
+    # YAML's ``service:`` block. CLI wins because it is applied last, at the
+    # process boundary, before anything reads settings.
+    allow_truncated_datasets: bool = _PROJECT_API_ALLOW_TRUNCATED_DATASETS_DEFAULT
 
     auto_start: bool = _JUNIPER_CASCOR_API_AUTO_START_DEFAULT
     auto_start_data_service: bool = _JUNIPER_CASCOR_API_AUTO_START_DATA_SERVICE_DEFAULT

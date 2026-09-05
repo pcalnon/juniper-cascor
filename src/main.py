@@ -620,6 +620,16 @@ Examples:
 
     parser.add_argument("--profile-top-n", type=int, default=30, help="Number of top functions to display in profile output (default: 30)")
     parser.add_argument("--config", type=str, default=None, help="Experiment YAML whose service: block overrides env (sets JUNIPER_CASCOR_CONFIG_FILE before settings load; Wave 3.1)")
+    parser.add_argument(
+        "--allow-truncated-datasets",
+        action="store_true",
+        help=(
+            "Accept a dataset juniper-data could not produce in full -- a universe truncated to its symbol cap, or rows whose fundamentals no rescue path could resolve. "
+            "OFF by default: without it juniper-data refuses such a request (422) and this run FAILS rather than training on data nobody chose. "
+            "With it, the shortfall is logged, the dataset is permanently annotated, and the run proceeds. "
+            "Also settable as JUNIPER_CASCOR_ALLOW_TRUNCATED_DATASETS or allow_truncated_datasets: in an experiment YAML service: block. PRECEDENCE: an experiment YAML wins over this flag (the YAML settings source ranks above env), and this flag wins over a bare environment variable."
+        ),
+    )
     parser.add_argument("--no-plots", action="store_true", help="Skip the dataset / decision-boundary / training-history figures. Recommended for automated and headless runs: the figures are display-only (never saved), and under an interactive backend showing them blocks the process after training finishes (F-P1-3)")
 
     return parser.parse_args()
@@ -634,6 +644,21 @@ if __name__ == "__main__":
     if args.config:
         # Wave 3.1: must land before the first Settings()/get_settings() use (SS5.2).
         os.environ["JUNIPER_CASCOR_CONFIG_FILE"] = args.config
+
+    if args.allow_truncated_datasets:
+        # Same idiom as --config: exported before anything constructs Settings.
+        #
+        # PRECEDENCE, measured rather than assumed: this beats a bare environment
+        # variable, but an experiment YAML beats it. Settings ranks its sources
+        # [init, ExperimentYaml, env, dotenv], and pydantic-settings gives the
+        # FIRST source priority -- so `--config foo.yaml --allow-truncated-datasets`
+        # honours the YAML, not the flag. That fails CLOSED (a YAML saying false
+        # keeps the refusal), which is the safe direction, but it is the opposite
+        # of what an earlier version of this comment and the --help text claimed.
+        #
+        # Only ever set, never cleared, so omitting the flag leaves an operator's
+        # env/config choice standing rather than overriding it with the default.
+        os.environ["JUNIPER_CASCOR_ALLOW_TRUNCATED_DATASETS"] = "true"
 
     # F-P1-3: resolved once so every entry path below (plain, cProfile, tracemalloc) honours
     # --no-plots. A profiling run is automated by definition, so it is exactly the path that
