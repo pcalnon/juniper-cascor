@@ -169,28 +169,69 @@ class TestGetDataset:
         assert result == {"loaded": False}
 
     def test_with_training_data_returns_metadata(self):
-        """get_dataset should return metadata when training data is stored."""
+        """get_dataset reports one count PER PARTITION, and does not conflate two.
+
+        Sized distinctly (100 / 20 / 35) on purpose: while ``test_samples`` was read off
+        ``_val_x`` -- correct before cascor#620, when the two were the same rows -- this
+        assertion passed with the validation count under the test name. Equal sizes would
+        let it pass again.
+        """
         mgr = TrainingLifecycleManager()
         mgr._train_x = torch.randn(100, 2)
         mgr._train_y = torch.randn(100, 2)
         mgr._val_x = torch.randn(20, 2)
         mgr._val_y = torch.randn(20, 2)
+        mgr._test_x = torch.randn(35, 2)
+        mgr._test_y = torch.randn(35, 2)
 
         result = mgr.get_dataset()
         assert result["loaded"] is True
         assert result["train_samples"] == 100
-        assert result["test_samples"] == 20
+        assert result["val_samples"] == 20
+        assert result["test_samples"] == 35
         assert result["input_features"] == 2
         assert result["output_features"] == 2
 
+    def test_val_and_test_counts_are_not_the_same_field(self):
+        """The regression itself: a val-only manager must NOT report those rows as test."""
+        mgr = TrainingLifecycleManager()
+        mgr._train_x = torch.randn(10, 2)
+        mgr._train_y = torch.randn(10, 2)
+        mgr._val_x = torch.randn(7, 2)
+        mgr._val_y = torch.randn(7, 2)
+
+        result = mgr.get_dataset()
+        assert result["val_samples"] == 7
+        assert result["test_samples"] == 0, "with no _test_x there is no reported partition to count"
+
+    def test_dataset_data_carries_the_reported_partition_too(self):
+        """``get_dataset_data`` returned val arrays and no test arrays.
+
+        A visualiser drawing "the held-out data" from that payload was drawing the in-loop
+        split, or nothing at all.
+        """
+        mgr = TrainingLifecycleManager()
+        mgr._train_x = torch.randn(4, 2)
+        mgr._train_y = torch.randn(4, 2)
+        mgr._val_x = torch.randn(3, 2)
+        mgr._val_y = torch.randn(3, 2)
+        mgr._test_x = torch.randn(2, 2)
+        mgr._test_y = torch.randn(2, 2)
+
+        data = mgr.get_dataset_data()
+        assert len(data["val_x"]) == 3
+        assert len(data["test_x"]) == 2
+        assert len(data["train_x"]) == 4
+
     def test_with_training_data_no_validation(self):
-        """get_dataset should report 0 test_samples when no validation data."""
+        """Both optional partitions absent -> both counts are 0, neither is invented."""
         mgr = TrainingLifecycleManager()
         mgr._train_x = torch.randn(50, 3)
         mgr._train_y = torch.randn(50, 2)
 
         result = mgr.get_dataset()
         assert result["loaded"] is True
+        assert result["val_samples"] == 0
         assert result["test_samples"] == 0
         assert result["input_features"] == 3
 

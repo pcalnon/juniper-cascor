@@ -1,3 +1,31 @@
+# Declared so CodeQL's ``py/unused-global-variable`` can see these names as exported.
+# This package exists TWICE under the same top-level name -- once in ``src/`` and once in
+# ``juniper-cascor-model/`` (byte-identical, enforced by ``test_drift.py``) -- so CodeQL
+# resolves every import to one copy and the twin's globals read as dead. That false
+# positive posts a PR review thread, and an unresolved thread blocks the merge while
+# every required check reads green. ``constants.py`` already carries one for the same
+# reason; this module did not, so any edit to a constant here blocked its own PR.
+__all__ = [
+    "_SPIRAL_PROBLEM_CLOCKWISE",
+    "_SPIRAL_PROBLEM_DEFAULT_ORIGIN",
+    "_SPIRAL_PROBLEM_DEFAULT_RADIUS",
+    "_SPIRAL_PROBLEM_DISTRIBUTION_FACTOR",
+    "_SPIRAL_PROBLEM_GENERATE_PLOTS_DEFAULT",
+    "_SPIRAL_PROBLEM_MAX_NEW",
+    "_SPIRAL_PROBLEM_MAX_ORIG",
+    "_SPIRAL_PROBLEM_MIN_NEW",
+    "_SPIRAL_PROBLEM_MIN_ORIG",
+    "_SPIRAL_PROBLEM_NOISE_FACTOR_DEFAULT",
+    "_SPIRAL_PROBLEM_NUMBER_POINTS_PER_SPIRAL",
+    "_SPIRAL_PROBLEM_NUM_ROTATIONS",
+    "_SPIRAL_PROBLEM_NUM_SPIRALS",
+    "_SPIRAL_PROBLEM_ORIG_POINTS",
+    "_SPIRAL_PROBLEM_OUTPUT_SIZE",
+    "_SPIRAL_PROBLEM_RANDOM_VALUE_SCALE",
+    "_SPIRAL_PROBLEM_TEST_RATIO",
+    "_SPIRAL_PROBLEM_TRAIN_RATIO",
+    "_SPIRAL_PROBLEM_VAL_RATIO",
+]
 #!/usr/bin/env python
 #####################################################################################################################################################################################################
 # Project:       Juniper
@@ -844,9 +872,16 @@ _SPIRAL_PROBLEM_DEFAULT_RADIUS = 10.0
 # _SPIRAL_PROBLEM_DEFAULT_RADIUS = 35.0
 
 #####################################################################################################################################################################################################
-# Define constants for the Two Spiral Problem Dataset, train and test ratios used for splitting the dataset
+# Define constants for the Two Spiral Problem Dataset, train / val / test ratios used for splitting the dataset.
+#
+# ``val`` is the IN-LOOP split -- early stopping reads it and no reported metric may.
+# Its share comes out of TEST (0.2 -> 0.1), never out of train: design section 6.3 is
+# explicit that the training count does not move, and moving it would invalidate every
+# CLI baseline for a reason the design rejects. The three sum to 1.0; the generator
+# refuses them otherwise.
 _SPIRAL_PROBLEM_TRAIN_RATIO = 0.8
-_SPIRAL_PROBLEM_TEST_RATIO = 0.2
+_SPIRAL_PROBLEM_VAL_RATIO = 0.1
+_SPIRAL_PROBLEM_TEST_RATIO = 0.1
 
 #####################################################################################################################################################################################################
 # Define constants for the Two Spiral Problem Dataset, number and limits of original points and limits for new points. These constants are used to scale an original dataset to a new dataset limits.

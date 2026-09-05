@@ -115,6 +115,7 @@ from cascor_constants.constants import (
     _CASCOR_STATUS_DISPLAY_FREQUENCY,
     _CASCOR_TEST_RATIO,
     _CASCOR_TRAIN_RATIO,
+    _CASCOR_VAL_RATIO,
 )
 from log_config.log_config import LogConfig
 from log_config.logger.logger import Logger
@@ -266,6 +267,7 @@ _W11_DATASET_KEY_MAP = {
     "noise": "noise",
     "train_ratio": "train_ratio",
     "test_ratio": "test_ratio",
+    "val_ratio": "val_ratio",
     "seed": "random_seed",
 }
 _W11_TRAINING_KEY_MAP = {
@@ -539,6 +541,7 @@ def main(generate_plots: bool = _CASCOR_GENERATE_PLOTS_DEFAULT):
         _SpiralProblem__random_seed=_w11.get("random_seed", _CASCOR_RANDOM_SEED),
         _SpiralProblem__train_ratio=_w11.get("train_ratio", _CASCOR_TRAIN_RATIO),
         _SpiralProblem__test_ratio=_w11.get("test_ratio", _CASCOR_TEST_RATIO),
+        _SpiralProblem__val_ratio=_w11.get("val_ratio", _CASCOR_VAL_RATIO),
     )
     logger.debug(f"Main: sp: Type: {type(sp)}, Value:\n{sp}")
 
@@ -582,6 +585,7 @@ def main(generate_plots: bool = _CASCOR_GENERATE_PLOTS_DEFAULT):
         default_radius=_CASCOR_DEFAULT_RADIUS,
         train_ratio=_w11.get("train_ratio", _CASCOR_TRAIN_RATIO),
         test_ratio=_w11.get("test_ratio", _CASCOR_TEST_RATIO),
+        val_ratio=_w11.get("val_ratio", _CASCOR_VAL_RATIO),
         noise=_w11.get("noise", _CASCOR_NOISE_FACTOR_DEFAULT),
         plot=generate_plots,
     )

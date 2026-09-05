@@ -116,6 +116,7 @@ class SpiralDataProvider:
         clockwise: bool,
         train_ratio: float,
         test_ratio: float,
+        val_ratio: float,
         seed: Optional[int] = None,
         algorithm: Optional[str] = None,
     ) -> SpiralDatasetTuple:
@@ -130,13 +131,18 @@ class SpiralDataProvider:
             clockwise: Whether spirals rotate clockwise.
             train_ratio: Fraction of data for training set.
             test_ratio: Fraction of data for test set.
+            val_ratio: Fraction of data for the IN-LOOP validation set. Early stopping
+                reads this partition and no reported metric may; the three ratios must
+                sum to 1.0 or juniper-data refuses the request.
             seed: Random seed for reproducibility.
             algorithm: Generation algorithm - 'modern' (default) or 'legacy_cascor' for backward compatibility.
 
         Returns:
-            Tuple containing:
+            Tuple containing FOUR partitions, in this order:
                 - (x_train, y_train): Training set features and targets as torch tensors.
-                - (x_test, y_test): Test set features and targets as torch tensors.
+                - (x_val, y_val): the IN-LOOP validation partition. ``(None, None)`` only
+                  when the artifact omits it, which juniper-data no longer produces.
+                - (x_test, y_test): the REPORTED partition; no training decision reads it.
                 - (x_full, y_full): Full dataset features and targets as torch tensors.
 
         Raises:
@@ -151,7 +157,15 @@ class SpiralDataProvider:
             "n_rotations": n_rotations,
             "noise": noise_level,
             "clockwise": clockwise,
+            # ``carve`` is deliberate. juniper-data 0.13.0 defaults to ADDITIVE sizing,
+            # where the native size knob denotes the TRAIN count and val/test are
+            # generated as extra rows -- under which these three ratios are ignored and
+            # ``n_points_per_spiral`` would silently mean something new. The CLI's
+            # ``n_points`` has always meant points per spiral for the whole dataset, so
+            # carve is the mode that keeps it meaning that.
+            "sizing_mode": "carve",
             "train_ratio": train_ratio,
+            "val_ratio": val_ratio,
             "test_ratio": test_ratio,
         }
         if seed is not None:
