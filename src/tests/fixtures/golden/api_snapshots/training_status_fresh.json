@@ -1,6 +1,7 @@
 {
   "data": {
     "completion_reason": null,
+    "dataset_shortfall": null,
     "metrics_clear_undo_available": false,
     "monitor": {
       "current_epoch": 0,

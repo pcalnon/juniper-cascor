@@ -7,7 +7,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`dataset_shortfall` on `GET /v1/training/status`** (additive; `null` when the producer
+  delivered in full, which is the overwhelming majority). Carries `dataset_id`,
+  `accepted_via_allow_truncated_datasets`, the producer's `truncation` and `data_quality`
+  descriptors verbatim, and a one-sentence `summary`.
+
+  The partial-data contract requires a run that accepted a partial dataset to annotate **progress,
+  metrics and results**. Until now the shortfall reached only the training **log** — which cannot be
+  polled, never reaches the WS stream, and canopy cannot render — so a run trained on partial data
+  was indistinguishable over the API from one that got everything it asked for, and the score it
+  reported carried no mark of the data behind it. Because `get_status()` feeds the WS training
+  stream, this reaches both surfaces at once.
+
+  `dataset_id` is recorded **beside** the annotation deliberately: cascor issues its own
+  `create_dataset`, and the deployment default can change the params and therefore the
+  content-addressed id. An annotation that does not name the dataset it describes is a claim about
+  an unidentified artifact.
+
 ### Fixed
+
+- **A deployment-wide `allow_truncated_datasets` silently overrode a caller's explicit refusal.**
+  The forwarding was `jd_params = {**jd_params, "allow_truncation": True}` — the literal key **last**
+  in the merge, so it replaced a caller-supplied `allow_truncation: False`.
+
+  The partial-data contract offers three options, and the third — *fail the data load completely* —
+  is expressed by sending **neither** parameter so juniper-data answers 422. On any deployment with
+  the flag on, "send neither" silently became "accept", making option 3 **unreachable** and
+  defeating the point of asking. The deployment value is now a **default**, not an override: an
+  explicit caller value of either polarity wins.
+
+  Regression-pinned in both directions, plus the two arms that keep the flag working
+  (`test_the_deployment_default_still_applies_when_the_caller_is_silent`,
+  `test_nothing_is_forwarded_when_the_flag_is_off`) and one pinning that `incomplete_rows` — how
+  option 2 (*drop*) is expressed — reaches the producer untouched.
 
 - **API-09 error-envelope migration completed: the 422 path it missed.** A
   `RequestValidationError` handler now wraps Pydantic field-validation failures in cascor's standard
