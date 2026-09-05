@@ -113,6 +113,30 @@ _PROJECT_API_LIFECYCLE_DEFAULT_CANDIDATE_PATIENCE: int = 30
 
 _PROJECT_API_JUNIPER_DATA_URL_DEFAULT: str = "http://localhost:8100"
 _PROJECT_API_JUNIPER_DATA_READY_TIMEOUT: int = 60
+
+# Whether this run accepts a dataset juniper-data could not produce in full --
+# a universe truncated to its symbol cap, or rows whose fundamentals no rescue
+# path could resolve.
+#
+# FALSE by default, deliberately. juniper-data refuses such a request with 422
+# unless the caller opts in, and a training run that silently trains on a
+# partial dataset reports a score for data nobody chose. Opting in is a decision
+# with consequences for every metric downstream, so it is made explicitly:
+# ``--allow-truncated-datasets``, ``JUNIPER_CASCOR_ALLOW_TRUNCATED_DATASETS``,
+# or ``allow_truncated_datasets:`` in the experiment YAML's ``service:`` block.
+_PROJECT_API_ALLOW_TRUNCATED_DATASETS_DEFAULT: bool = False
+
+# Generators that can produce a PARTIAL dataset, and therefore accept the
+# ``allow_truncation`` opt-in. Every other generator synthesises its data and can
+# always deliver in full, so forwarding the flag to them would send a parameter
+# they ignore -- noise on every request, and a false suggestion that the knob
+# does something there.
+#
+# Tracks juniper-data: a generator that gains an input bound has to be added
+# here, or its shortfall will refuse the request with no way for a cascor run to
+# opt in. The cost of drift is a hard failure with a clear message, not silent
+# bad data, which is the right direction for this list to fail in.
+_PROJECT_API_TRUNCATABLE_GENERATORS: frozenset = frozenset({"equities", "equities_seq", "csv_import"})
 _PROJECT_API_SELF_HEALTH_CHECK_URL_TEMPLATE: str = "http://localhost:{port}/v1/health"
 _PROJECT_API_CANOPY_STARTUP_WAIT_TIMEOUT: float = 30.0
 _PROJECT_API_CANOPY_STARTUP_CHECK_INTERVAL: float = 1.0
