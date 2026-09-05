@@ -3647,6 +3647,70 @@ class TrainingLifecycleManager:
         return test_x, test_y, warning
 
     @staticmethod
+    def _describe_dataset_fetch_failure(exc: Exception, *, allow_truncated: bool) -> str:
+        """Turn a juniper-data fetch failure into something an operator can act on.
+
+        A 422 from the producer is not a generic outage: it means the dataset
+        could not be produced in full and this run did not opt in. That is a
+        different problem with a different fix, and the message has to say so --
+        the run is about to fail, and the only thing the operator has is this
+        line.
+
+        The 422 body already names which symbols were affected, how many rows,
+        and both remedies; it is quoted rather than replaced. What is added is
+        the part juniper-data cannot know: which knob to turn on THIS side.
+        """
+        detail = str(exc)
+        looks_like_shortfall = "422" in detail or "allow_truncation" in detail or "incomplete_rows" in detail
+        if not looks_like_shortfall or allow_truncated:
+            return f"juniper-data fetch failed: {detail}"
+        return f"juniper-data could not produce the requested dataset in full, and this run did not accept a partial one, so the run is FAILING rather than training on data nobody chose. " f"Producer detail: {detail} " f"To accept it, re-run with --allow-truncated-datasets (or set JUNIPER_CASCOR_ALLOW_TRUNCATED_DATASETS=true, or allow_truncated_datasets: true in the experiment YAML service: block). " f"The resulting dataset is permanently annotated as partial, and so is every metric derived from it."
+
+    def _log_dataset_shortfall(self, meta: Dict[str, Any], *, allow_truncated: bool) -> None:
+        """Log what the producer could not deliver, when this run accepted it.
+
+        The producer's ``DatasetMeta`` carries ``truncation`` (how much is
+        missing) and ``data_quality`` (what is wrong with what is present). Both
+        are permanent, but they live in the artifact -- and an operator reading a
+        training log will never open it. So the shortfall is restated here, at
+        WARNING, on the run that chose to accept it.
+
+        Silent when the dataset is clean, which is the overwhelming majority.
+        """
+        truncation = meta.get("truncation") or None
+        quality = meta.get("data_quality") or None
+        if not truncation and not quality:
+            return
+
+        if truncation:
+            self.logger.warning(
+                "DATASET IS PARTIAL: %s of %s %s were imported (cap %s). This run accepted it via allow_truncated_datasets=%s; the dataset and every metric derived from it are annotated accordingly.",
+                truncation.get("imported"),
+                truncation.get("requested"),
+                truncation.get("unit"),
+                truncation.get("cap"),
+                allow_truncated,
+            )
+        if quality:
+            unrescued = quality.get("unrescued") or {}
+            degraded = quality.get("degraded") or {}
+            if unrescued:
+                self.logger.warning(
+                    "DATASET HAS UNRESOLVABLE VALUES: %d symbol(s) %s (%s), affecting %s row(s). Policy applied: %s.",
+                    len(unrescued),
+                    "were dropped" if quality.get("policy") == "drop" else "carry filled placeholders",
+                    ", ".join(sorted(unrescued)),
+                    quality.get("rows_affected"),
+                    quality.get("policy"),
+                )
+            if degraded:
+                self.logger.warning(
+                    "DATASET HAS DEGRADED VALUES: %d symbol(s) resolved from a weaker source (%s) -- quantities derived from them are NOT directly comparable with the rest.",
+                    len(degraded),
+                    ", ".join(f"{ticker}={kind}" for ticker, kind in sorted(degraded.items())),
+                )
+
+    @staticmethod
     def _artifact_optional_partition(arrays: Any, x_key: str, y_key: str, label: str, n_features: int) -> Tuple[Optional[torch.Tensor], Optional[torch.Tensor]]:
         """Read one OPTIONAL partition pair from an artifact, fully guarded.
 
@@ -3785,6 +3849,7 @@ class TrainingLifecycleManager:
         from api.secrets import get_secret
         from api.settings import Settings
         from cascor_constants.constants_api import _PROJECT_API_JUNIPER_DATA_URL_DEFAULT
+        from cascor_constants.constants_api.constants_api_defaults import _PROJECT_API_TRUNCATABLE_GENERATORS
 
         # CFG-04: Settings field consolidates the JUNIPER_DATA_URL env-var
         # lookup; ``or DEFAULT`` preserves the legacy localhost:8100
@@ -3797,12 +3862,31 @@ class TrainingLifecycleManager:
         client = JuniperDataClient(base_url=data_url, api_key=api_key)
 
         generator, jd_params = self._translate_staged_config(dataset_type, cfg)
+
+        # Forward this run's truncation stance to the producer. juniper-data
+        # refuses (422) a request it cannot satisfy in full unless the caller
+        # opts in, so an unset flag means the fetch below fails and takes the run
+        # with it -- which is the point: a score computed on a partial dataset is
+        # a score for data nobody chose.
+        allow_truncated = bool(Settings().allow_truncated_datasets)
+        if allow_truncated and generator in _PROJECT_API_TRUNCATABLE_GENERATORS:
+            # Only the generators that can actually produce a partial dataset.
+            # Every other generator synthesises its data and always delivers in
+            # full, so forwarding the flag there would send a parameter it
+            # ignores -- and imply the knob does something it does not.
+            jd_params = {**jd_params, "allow_truncation": True}
+
         try:
             result = client.create_dataset(generator=generator, params=jd_params, persist=True)
             dataset_id = result["dataset_id"]
             arrays = client.download_artifact_npz(dataset_id)
         except Exception as exc:
-            raise RuntimeError(f"juniper-data fetch failed: {exc}") from exc
+            raise RuntimeError(self._describe_dataset_fetch_failure(exc, allow_truncated=allow_truncated)) from exc
+
+        # The producer records what it could not deliver in DatasetMeta; surface
+        # it here so an accepted shortfall is visible in THIS run's log and not
+        # only in the artifact a reader may never open.
+        self._log_dataset_shortfall(result.get("meta") or {}, allow_truncated=allow_truncated)
 
         new_train_x, new_train_y, new_val_x, new_val_y, new_test_x, new_test_y = self._artifact_to_tensors(arrays)
         # §6.1 rules 1-3: decide what an artifact WITHOUT a validation split means
