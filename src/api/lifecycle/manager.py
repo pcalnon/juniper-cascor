@@ -3834,13 +3834,25 @@ class TrainingLifecycleManager:
         self.logger.info("Reloaded dataset %r (%d train samples)", dataset_type, new_train_x.shape[0])
 
     def get_dataset(self) -> Dict[str, Any]:
-        """Return dataset metadata."""
+        """Return dataset metadata, one count per partition.
+
+        ``test_samples`` used to be read off ``_val_x``. That was CORRECT while the two
+        were the same rows -- before the third partition, ``_val_*`` held the test data
+        and cascor early-stopped on it. cascor#620 separated them, and this reader was
+        not updated: it reported the VALIDATION row count under the name ``test_samples``,
+        so juniper-canopy displayed the in-loop split's size as the held-out one.
+
+        ``val_samples`` is new. A consumer that wants the three-way breakdown now gets it
+        without inferring anything, and ``num_samples`` arithmetic done downstream spans
+        three partitions rather than two.
+        """
         if self._train_x is None:
             return {"loaded": False}
         return {
             "loaded": True,
             "train_samples": self._train_x.shape[0],
-            "test_samples": self._val_x.shape[0] if self._val_x is not None else 0,
+            "val_samples": self._val_x.shape[0] if self._val_x is not None else 0,
+            "test_samples": self._test_x.shape[0] if self._test_x is not None else 0,
             "input_features": self._train_x.shape[1],
             "output_features": self._train_y.shape[1],
         }
@@ -3856,6 +3868,11 @@ class TrainingLifecycleManager:
         if self._val_x is not None:
             result["val_x"] = self._val_x.detach().cpu().tolist()
             result["val_y"] = self._val_y.detach().cpu().tolist()
+        # The reported partition was missing entirely. A visualiser drawing "the held-out
+        # data" from this payload was drawing the in-loop split.
+        if self._test_x is not None:
+            result["test_x"] = self._test_x.detach().cpu().tolist()
+            result["test_y"] = self._test_y.detach().cpu().tolist()
         return result
 
     def get_training_params(self) -> Dict[str, Any]:
