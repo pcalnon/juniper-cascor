@@ -192,15 +192,22 @@ class TestReloadDataset:
         assert mgr._val_x is not None and mgr._val_x.shape[0] == 2
         assert mgr._current_dataset_config["dataset_type"] == "spiral"
 
-    def test_happy_path_without_validation_arrays(self, mgr):
+    def test_train_only_artifact_is_refused(self, mgr):
+        """§6.1 rule 3: no val AND no test means nothing held out to report from.
+
+        This previously asserted the opposite -- that a train-only artifact loads
+        happily with ``_val_x`` left None. It did, and then scored the training
+        rows under an evaluation label, which is the defect the three-way
+        partition removes. No switch re-enables it.
+        """
         arrays = {
             "X_train": np.zeros((5, 2), dtype=np.float32),
             "y_train": np.zeros((5, 2), dtype=np.float32),
         }
         mod, client = _fake_data_client_module(arrays=arrays)
         with patch.dict(sys.modules, {"juniper_data_client": mod}), patch("api.secrets.get_secret", return_value=None), patch("api.settings.Settings"):
-            mgr._reload_dataset(dataset_type="xor")
-        assert mgr._val_x is None and mgr._val_y is None
+            with pytest.raises(RuntimeError, match="NEITHER a validation split"):
+                mgr._reload_dataset(dataset_type="xor")
 
     def test_generic_params_are_merged(self, mgr):
         mod, client = _fake_data_client_module()
@@ -235,11 +242,17 @@ class TestReloadDataset:
         assert mgr._train_x is None and mgr._train_y is None
 
     def test_partial_validation_split_raises(self, mgr):
-        """One of X_test/y_test without the other is a malformed artifact."""
+        """One of X_val/y_val without the other is a malformed artifact.
+
+        Repointed from X_test to X_val: this test's NAME was already the right
+        one, but before the third partition existed the split cascor validated on
+        was the artifact's ``X_test``. Now it is ``X_val``, and the test-split
+        sibling below covers the other half.
+        """
         arrays = {
             "X_train": np.zeros((4, 2), dtype=np.float32),
             "y_train": np.zeros((4, 2), dtype=np.float32),
-            "X_test": np.zeros((2, 2), dtype=np.float32),
+            "X_val": np.zeros((2, 2), dtype=np.float32),
         }
         mod, _ = _fake_data_client_module(arrays=arrays)
         with patch.dict(sys.modules, {"juniper_data_client": mod}), patch("api.secrets.get_secret", return_value=None), patch("api.settings.Settings"):
@@ -251,14 +264,49 @@ class TestReloadDataset:
         arrays = {
             "X_train": np.zeros((4, 2), dtype=np.float32),
             "y_train": np.zeros((4, 2), dtype=np.float32),
-            "X_test": np.zeros((2, 2), dtype=np.float32),
-            "y_test": np.zeros((1, 2), dtype=np.float32),
+            "X_val": np.zeros((2, 2), dtype=np.float32),
+            "y_val": np.zeros((1, 2), dtype=np.float32),
         }
         mod, _ = _fake_data_client_module(arrays=arrays)
         with patch.dict(sys.modules, {"juniper_data_client": mod}), patch("api.secrets.get_secret", return_value=None), patch("api.settings.Settings"):
             with pytest.raises(RuntimeError, match="validation sample count mismatch"):
                 mgr._reload_dataset(dataset_type="spiral")
         assert mgr._train_x is None and mgr._val_x is None
+
+    def test_partial_test_split_raises(self, mgr):
+        """The reported partition gets the same guard as the in-loop one.
+
+        Both run through one helper precisely so they cannot drift; this is the
+        half that would silently stop being checked if they ever did.
+        """
+        arrays = {
+            "X_train": np.zeros((4, 2), dtype=np.float32),
+            "y_train": np.zeros((4, 2), dtype=np.float32),
+            "X_val": np.zeros((2, 2), dtype=np.float32),
+            "y_val": np.zeros((2, 2), dtype=np.float32),
+            "X_test": np.zeros((2, 2), dtype=np.float32),
+        }
+        mod, _ = _fake_data_client_module(arrays=arrays)
+        with patch.dict(sys.modules, {"juniper_data_client": mod}), patch("api.secrets.get_secret", return_value=None), patch("api.settings.Settings"):
+            with pytest.raises(RuntimeError, match="partial test split"):
+                mgr._reload_dataset(dataset_type="spiral")
+
+    def test_validation_feature_count_mismatch_raises(self, mgr):
+        """§6a: a val split whose feature count differs from train is malformed.
+
+        A forward pass on it would fail mid-run, or worse, succeed on a
+        coincidentally-broadcastable shape.
+        """
+        arrays = {
+            "X_train": np.zeros((4, 2), dtype=np.float32),
+            "y_train": np.zeros((4, 2), dtype=np.float32),
+            "X_val": np.zeros((2, 5), dtype=np.float32),
+            "y_val": np.zeros((2, 2), dtype=np.float32),
+        }
+        mod, _ = _fake_data_client_module(arrays=arrays)
+        with patch.dict(sys.modules, {"juniper_data_client": mod}), patch("api.secrets.get_secret", return_value=None), patch("api.settings.Settings"):
+            with pytest.raises(RuntimeError, match="validation feature count mismatch"):
+                mgr._reload_dataset(dataset_type="spiral")
 
     def test_non_2d_train_arrays_raise(self, mgr):
         arrays = {

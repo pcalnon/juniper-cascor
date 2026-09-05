@@ -1186,6 +1186,11 @@ class TrainingLifecycleManager:
         # score has somewhere to come from that early stopping never saw.
         self._test_x: Optional[torch.Tensor] = None
         self._test_y: Optional[torch.Tensor] = None
+        # §6.4 option 1: set when a run proceeded WITHOUT a real validation split,
+        # via the explicit override. Non-None means the reported metrics are
+        # selected-on rather than held-out, and every surface that shows them owes
+        # the reader this caveat. None on the clean path.
+        self._validation_warning: Optional[str] = None
         # cascor#582: computed ONCE at successful completion (see _run_training).
         self._final_scalar_metrics: Optional[Dict[str, Any]] = None
 
@@ -1916,13 +1921,26 @@ class TrainingLifecycleManager:
             manager_ref._broadcast_training_state()
 
     def _eval_split(self) -> tuple:
-        """C7 (U-4): the evaluation split for the scalar metrics — the
-        validation/test tensors (``_val_x``/``_val_y``, sourced from the
-        dataset's ``X_test``/``y_test``) when present, else the training split.
-        Returns ``(None, None)`` when no data is loaded."""
+        """C7 (U-4): the in-loop evaluation split for the scalar metrics.
+
+        The validation tensors (``_val_x``/``_val_y``) when present, else
+        ``(None, None)``.
+
+        **The training-split fallback is deliberately gone** (§6.1 rule 3). It
+        returned the training rows and let them be scored as an evaluation
+        metric -- a number that looks like validation and is not. ``_val_*`` is
+        now sourced from the artifact's own ``X_val``, so its absence is a real
+        condition the ingestion gate has already refused or explicitly marked;
+        by the time this is called there is nothing left to paper over.
+
+        The consequence is intended and visible rather than silent: with no
+        validation split the scalar metrics (f1 / precision / recall / roc_auc)
+        are not computed at all, and :meth:`_eval_split_name` returns None to say
+        so, instead of reporting a training-set score under an eval label.
+        """
         if self._val_x is not None and self._val_y is not None:
             return self._val_x, self._val_y
-        return self._train_x, self._train_y
+        return None, None
 
     def _reported_split(self) -> tuple:
         """cascor#582: the partition the FINAL score is reported on.
@@ -1948,20 +1966,19 @@ class TrainingLifecycleManager:
     def _eval_split_name(self) -> Optional[str]:
         """Honest label for whichever partition :meth:`_eval_split` returned.
 
-        The in-loop counterpart of :meth:`_reported_split_name`. Extracted from an
-        inline conditional in ``get_metrics`` so the two labels cannot drift apart
-        as their split methods evolve.
+        The in-loop counterpart of :meth:`_reported_split_name`, and now exactly
+        as narrow: ``"validation"`` or nothing.
 
-        Deliberately a BEHAVIOUR-PRESERVING extraction: the training branch tests
-        ``_train_x`` alone, mirroring the conditional it replaces (which tested
-        ``_eval_split()``'s first element). ``_reported_split_name`` checks a full
-        pair instead — the asymmetry is inherited, not introduced, and tightening
-        it is not this change's business.
+        The ``"training"`` branch is gone with the fallback it labelled (§6.1
+        rule 3). It was honest about what it named, but naming a training-set
+        score truthfully does not make it a usable in-loop signal, and keeping
+        the label while removing the data would have left this reporting a
+        partition :meth:`_eval_split` no longer returns. The two must agree; the
+        earlier asymmetry with ``_reported_split_name`` is now resolved in favour
+        of the stricter one.
         """
         if self._val_x is not None and self._val_y is not None:
             return "validation"
-        if self._train_x is not None:
-            return "training"
         return None
 
     def _reported_split_name(self) -> Optional[str]:
@@ -3582,14 +3599,116 @@ class TrainingLifecycleManager:
         return generator, params
 
     @staticmethod
-    def _artifact_to_tensors(arrays: Any) -> Tuple[torch.Tensor, torch.Tensor, Optional[torch.Tensor], Optional[torch.Tensor]]:
+    def _resolve_validation_split(
+        val_x: Optional[torch.Tensor],
+        val_y: Optional[torch.Tensor],
+        test_x: Optional[torch.Tensor],
+        test_y: Optional[torch.Tensor],
+    ) -> Tuple[Optional[torch.Tensor], Optional[torch.Tensor], Optional[str]]:
+        """Apply §6.1's rules 1-3 to an ingested artifact. Fail loudly, never guess.
+
+        * **Rule 1** -- ``X_val`` present ⟹ use it as the in-loop signal. ``X_test``
+          is reserved for the final score and must not be read during training.
+        * **Rule 2** -- ``X_val`` absent, ``X_test`` present ⟹ do NOT proceed by
+          default. Proceeding promotes ``X_test`` to the in-loop signal, which
+          makes early stopping select on the very rows the final score is reported
+          from -- the defect this arc removes. Permitted only behind the explicit
+          ``allow_missing_validation_split`` switch, and then the run is MARKED.
+        * **Rule 3** -- neither present ⟹ refuse outright. The old "else the
+          training split" fallback produced a number that looked like validation
+          and was not, and no switch re-enables it.
+
+        Returns:
+            ``(val_x, val_y, warning)``. ``warning`` is None on the clean path and
+            a caveat string when rule 2's override was taken -- the caller attaches
+            it to the run so the reported metrics carry it (§6.4 option 1).
+
+        Raises:
+            RuntimeError: under rule 2 without the override, or under rule 3.
+        """
+        if val_x is not None and val_y is not None:
+            return val_x, val_y, None
+
+        if test_x is None or test_y is None:
+            raise RuntimeError("juniper-data artifact carries NEITHER a validation split (X_val/y_val) nor a test split " "(X_test/y_test), so there is no held-out data to early-stop on or report from. Refusing the " "run: training against the training split produces a number that looks like validation and is " "not. Regenerate the dataset with a juniper-data version that emits the three-way partition.")
+
+        # Local import and a FRESH Settings(), matching ``_reload_dataset``'s idiom:
+        # the override is a runtime decision and must see env changes made since
+        # process start, which a cached ``get_settings()`` would not.
+        from api.settings import Settings
+
+        if not Settings().allow_missing_validation_split:
+            raise RuntimeError(
+                "juniper-data artifact has no validation split (X_val/y_val); only X_test is present. Proceeding " "would promote X_test to the in-loop signal, so early stopping would select on the same rows the " "final score is reported from. Refusing by default (design §6.4: a headless run must never take " "this silently). Either regenerate the dataset with a juniper-data version that emits X_val, or " "set JUNIPER_CASCOR_ALLOW_MISSING_VALIDATION_SPLIT=true to proceed with a recorded warning."
+            )
+
+        warning = "No validation split in the dataset artifact: X_test was promoted to the in-loop signal, so early " "stopping selected on the same rows the reported metrics come from. Those metrics are SELECTED-ON, " "not held-out, and are not comparable to a run with a real X_val."
+        logging.getLogger(__name__).warning("§6.1 rule 2 override taken — %s", warning)
+        return test_x, test_y, warning
+
+    @staticmethod
+    def _artifact_optional_partition(arrays: Any, x_key: str, y_key: str, label: str, n_features: int) -> Tuple[Optional[torch.Tensor], Optional[torch.Tensor]]:
+        """Read one OPTIONAL partition pair from an artifact, fully guarded.
+
+        The §6a consumer gate, applied identically to ``val`` and ``test`` so the
+        two cannot drift: present ⟹ 2-D, paired, row counts matching each other
+        and feature count matching ``X_train``; absent ⟹ ``(None, None)``, which
+        is a valid artifact shape and not a failure.
+
+        Args:
+            arrays: the NPZ array mapping.
+            x_key: feature key, e.g. ``"X_val"``.
+            y_key: target key, e.g. ``"y_val"``.
+            label: human name for this partition in error text ("validation" /
+                "test"). Passed rather than derived from the key, because
+                ``X_val`` reads as "val" and every message about it should say
+                which partition failed in the vocabulary the design uses.
+            n_features: ``X_train``'s feature count, which this partition must match.
+
+        Returns:
+            ``(x, y)`` tensors, or ``(None, None)`` when the artifact omits both.
+
+        Raises:
+            RuntimeError: on a half-present pair, a malformed array, a non-2-D
+                array, a row-count mismatch, or a feature-count mismatch.
+        """
+        has_x = x_key in arrays
+        has_y = y_key in arrays
+        if has_x != has_y:
+            present, missing = (x_key, y_key) if has_x else (y_key, x_key)
+            raise RuntimeError(f"juniper-data artifact has partial {label} split ({present} without {missing})")
+        if not has_x:
+            return None, None
+
+        try:
+            x = torch.tensor(arrays[x_key], dtype=torch.float32)
+            y = torch.tensor(arrays[y_key], dtype=torch.float32)
+        except (TypeError, ValueError, RuntimeError) as exc:
+            raise RuntimeError(f"juniper-data artifact {label} arrays are malformed: {exc}") from exc
+
+        if x.ndim != 2 or y.ndim != 2:
+            raise RuntimeError(f"juniper-data artifact {label} arrays must be 2-D; got {x_key}.ndim={x.ndim}, {y_key}.ndim={y.ndim} " "-- 3-D sequence artifacts belong to the juniper-recurrence tier, not cascade-correlation (W-2 tier boundary)")
+        if x.shape[0] != y.shape[0]:
+            raise RuntimeError(f"juniper-data artifact {label} sample count mismatch: {x_key}={x.shape[0]} {y_key}={y.shape[0]}")
+        if x.shape[1] != n_features:
+            raise RuntimeError(f"juniper-data artifact {label} feature count mismatch: {x_key} has {x.shape[1]} features, X_train has {n_features}")
+        return x, y
+
+    @staticmethod
+    def _artifact_to_tensors(arrays: Any) -> Tuple[torch.Tensor, torch.Tensor, Optional[torch.Tensor], Optional[torch.Tensor], Optional[torch.Tensor], Optional[torch.Tensor]]:
         """Convert a juniper-data NPZ artifact into validated float32 tensors.
 
-        Returns ``(train_x, train_y, val_x, val_y)`` with ``val_*`` as ``None``
-        when the artifact carries no validation split. Split out of
-        ``_reload_dataset`` so the guard ladder (missing keys, malformed
-        arrays, non-2-D shapes, sample-count mismatches, partial validation
-        splits) stays inside the source complexity budget; every failure is a
+        Returns ``(train_x, train_y, val_x, val_y, test_x, test_y)``.
+
+        **``val`` and ``test`` are now read from their OWN keys.** Before the
+        third partition existed this function read ``X_test`` / ``y_test`` and
+        returned them as ``val_*`` -- the promotion that made the in-loop signal
+        and the reported score the same rows, which is the defect the ecosystem
+        partition design exists to remove. ``X_val`` is the in-loop signal;
+        ``X_test`` is the reported partition and no training decision may read it.
+
+        Either optional partition may be absent; the caller decides what that
+        means (see §6.1 rules 1-3 in the design of record). Every failure is a
         ``RuntimeError`` the reload caller treats as a retryable staged-config
         state.
         """
@@ -3609,26 +3728,10 @@ class TrainingLifecycleManager:
         if new_train_x.shape[0] != new_train_y.shape[0]:
             raise RuntimeError(f"juniper-data artifact train sample count mismatch: X_train={new_train_x.shape[0]} y_train={new_train_y.shape[0]}")
 
-        has_x_test = "X_test" in arrays
-        has_y_test = "y_test" in arrays
-        if has_x_test != has_y_test:
-            present = "X_test" if has_x_test else "y_test"
-            missing = "y_test" if has_x_test else "X_test"
-            raise RuntimeError(f"juniper-data artifact has partial validation split ({present} without {missing})")
-
-        if not has_x_test:
-            return new_train_x, new_train_y, None, None
-
-        try:
-            new_val_x = torch.tensor(arrays["X_test"], dtype=torch.float32)
-            new_val_y = torch.tensor(arrays["y_test"], dtype=torch.float32)
-        except (TypeError, ValueError, RuntimeError) as exc:
-            raise RuntimeError(f"juniper-data artifact validation arrays are malformed: {exc}") from exc
-        if new_val_x.ndim != 2 or new_val_y.ndim != 2:
-            raise RuntimeError(f"juniper-data artifact validation arrays must be 2-D; got X_test.ndim={new_val_x.ndim}, y_test.ndim={new_val_y.ndim} " "-- 3-D sequence artifacts belong to the juniper-recurrence tier, not cascade-correlation (W-2 tier boundary)")
-        if new_val_x.shape[0] != new_val_y.shape[0]:
-            raise RuntimeError(f"juniper-data artifact validation sample count mismatch: X_test={new_val_x.shape[0]} y_test={new_val_y.shape[0]}")
-        return new_train_x, new_train_y, new_val_x, new_val_y
+        n_features = int(new_train_x.shape[1])
+        new_val_x, new_val_y = TrainingLifecycleManager._artifact_optional_partition(arrays, "X_val", "y_val", "validation", n_features)
+        new_test_x, new_test_y = TrainingLifecycleManager._artifact_optional_partition(arrays, "X_test", "y_test", "test", n_features)
+        return new_train_x, new_train_y, new_val_x, new_val_y, new_test_x, new_test_y
 
     def _reload_dataset(self, **cfg: Any) -> None:
         """Fetch a fresh dataset from juniper-data and replace the live tensors.
@@ -3701,7 +3804,11 @@ class TrainingLifecycleManager:
         except Exception as exc:
             raise RuntimeError(f"juniper-data fetch failed: {exc}") from exc
 
-        new_train_x, new_train_y, new_val_x, new_val_y = self._artifact_to_tensors(arrays)
+        new_train_x, new_train_y, new_val_x, new_val_y, new_test_x, new_test_y = self._artifact_to_tensors(arrays)
+        # §6.1 rules 1-3: decide what an artifact WITHOUT a validation split means
+        # before binding anything, so a run can never quietly proceed on the
+        # X_test-as-validation promotion that this arc exists to remove.
+        new_val_x, new_val_y, warning = self._resolve_validation_split(new_val_x, new_val_y, new_test_x, new_test_y)
         self._val_x = new_val_x
         self._val_y = new_val_y
         self._train_x = new_train_x
@@ -3710,14 +3817,16 @@ class TrainingLifecycleManager:
         # ``start_training``'s retain-on-omit (where omitting means "keep training on
         # what I gave you"), this path swaps the data wholesale — so retaining would
         # score the new run against the PREVIOUS dataset's held-out rows and label the
-        # result "test". Clearing makes ``_reported_split`` fall back to val, which is
-        # the pre-#614 behaviour and is honestly labelled.
+        # result "test".
         #
-        # This is where the juniper-data artifact's own third partition will be read
-        # once the producer emits one (design §6 O-1 / plan Chunk 4). Until then the
-        # artifact carries only X_test, which is already bound to ``_val_*`` above.
-        self._test_x = None
-        self._test_y = None
+        # The artifact's own third partition is read here now that the producer emits
+        # one (design §6 O-1 / plan Chunk 4, juniper-data#361). `X_test` binds to the
+        # REPORTED slot and `X_val` to the in-loop one; they are no longer the same
+        # rows. A legacy artifact carrying only `X_test` leaves `_val_*` per the
+        # §6.1 resolution above.
+        self._test_x = new_test_x
+        self._test_y = new_test_y
+        self._validation_warning = warning
         # ISSUE_3_PHASE_2_LIVE_DATASET_SWAP §3.2 step 4d — track the canonical
         # cfg so ``swap_dataset_live`` can report it as ``before_cfg`` and so
         # the rollback path can restore it if a swap fails.

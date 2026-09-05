@@ -220,16 +220,28 @@ class TestDatasetSwapClearsTheReportedPair:
 
         monkeypatch.setitem(sys.modules, "juniper_data_client", _types.SimpleNamespace(JuniperDataClient=_FakeClient))
 
-    def test_reload_clears_a_stale_reported_pair(self, mgr, monkeypatch):
+    @staticmethod
+    def _three_way_arrays():
         import numpy as np
 
-        arrays = {
+        return {
             "X_train": np.ones((4, 2), dtype=np.float32),
             "y_train": np.ones((4, 1), dtype=np.float32),
+            "X_val": np.full((3, 2), 3.0, dtype=np.float32),
+            "y_val": np.full((3, 1), 3.0, dtype=np.float32),
             "X_test": np.full((2, 2), 5.0, dtype=np.float32),
             "y_test": np.full((2, 1), 5.0, dtype=np.float32),
         }
-        self._stub_client(monkeypatch, arrays)
+
+    def test_reload_clears_a_stale_reported_pair(self, mgr, monkeypatch):
+        """The stale pair must not survive a swap, and the new one must be the artifact's.
+
+        Rewritten for the three-way partition: the artifact now carries its own
+        ``X_val``, so ``_test_x`` is REPLACED by the new dataset's held-out rows
+        rather than cleared to None. The staleness invariant is unchanged and is
+        what the 7.0-valued rows check.
+        """
+        self._stub_client(monkeypatch, self._three_way_arrays())
         monkeypatch.setattr(mgr, "_translate_staged_config", lambda dt, cfg: ("spiral", {}))
 
         mgr._test_x, mgr._test_y = torch.full((9, 2), 7.0), torch.full((9, 1), 7.0)
@@ -237,10 +249,54 @@ class TestDatasetSwapClearsTheReportedPair:
 
         mgr._reload_dataset(dataset_type="spiral")
 
-        assert mgr._test_x is None, "a replaced dataset must not leave the old held-out rows behind"
-        assert mgr._test_y is None
-        assert mgr._reported_split_name() == "validation", "post-swap the label must degrade honestly"
-        assert mgr._val_x.shape == (2, 2), "the artifact's X_test still binds to the in-loop slot"
+        assert mgr._test_x.shape == (2, 2), "the artifact's X_test binds to the REPORTED slot"
+        assert not torch.equal(mgr._test_x, torch.full((9, 2), 7.0)), "the old dataset's held-out rows must not survive"
+        assert mgr._val_x.shape == (3, 2), "the artifact's X_val binds to the IN-LOOP slot"
+        assert mgr._reported_split_name() == "test"
+        assert mgr._eval_split_name() == "validation"
+        assert not torch.equal(mgr._val_x, mgr._test_x), "the in-loop signal and the reported score must be different rows"
+        assert mgr._validation_warning is None, "a three-way artifact carries no caveat"
+
+    def test_reload_refuses_a_legacy_artifact_without_a_validation_split(self, mgr, monkeypatch):
+        """§6.1 rule 2: no ``X_val`` must not silently promote ``X_test``.
+
+        This is the defect the whole arc removes, so the default has to be a
+        refusal rather than a warning nobody reads.
+        """
+        import numpy as np
+
+        legacy = {
+            "X_train": np.ones((4, 2), dtype=np.float32),
+            "y_train": np.ones((4, 1), dtype=np.float32),
+            "X_test": np.full((2, 2), 5.0, dtype=np.float32),
+            "y_test": np.full((2, 1), 5.0, dtype=np.float32),
+        }
+        self._stub_client(monkeypatch, legacy)
+        monkeypatch.setattr(mgr, "_translate_staged_config", lambda dt, cfg: ("spiral", {}))
+
+        with pytest.raises(RuntimeError, match="no validation split"):
+            mgr._reload_dataset(dataset_type="spiral")
+
+    def test_reload_proceeds_with_a_caveat_when_explicitly_overridden(self, mgr, monkeypatch):
+        """§6.4 option 1: the override proceeds, and MARKS the run."""
+        import numpy as np
+
+        legacy = {
+            "X_train": np.ones((4, 2), dtype=np.float32),
+            "y_train": np.ones((4, 1), dtype=np.float32),
+            "X_test": np.full((2, 2), 5.0, dtype=np.float32),
+            "y_test": np.full((2, 1), 5.0, dtype=np.float32),
+        }
+        self._stub_client(monkeypatch, legacy)
+        monkeypatch.setattr(mgr, "_translate_staged_config", lambda dt, cfg: ("spiral", {}))
+        monkeypatch.setenv("JUNIPER_CASCOR_ALLOW_MISSING_VALIDATION_SPLIT", "true")
+
+        mgr._reload_dataset(dataset_type="spiral")
+
+        assert mgr._val_x.shape == (2, 2), "the override promotes X_test to the in-loop slot"
+        assert torch.equal(mgr._val_x, mgr._test_x), "which is exactly the selected-on condition the caveat describes"
+        assert mgr._validation_warning is not None, "an overridden run MUST carry the caveat"
+        assert "SELECTED-ON" in mgr._validation_warning
 
 
 class TestEvalSplitNameExtraction:
@@ -250,10 +306,17 @@ class TestEvalSplitNameExtraction:
         mgr._val_x, mgr._val_y = torch.zeros(2, 2), torch.zeros(2, 1)
         assert mgr._eval_split_name() == "validation"
 
-    def test_training_when_only_train_present(self, mgr):
+    def test_none_when_only_train_present(self, mgr):
+        """§6.1 rule 3: a training-only state has no in-loop partition to name.
+
+        This previously asserted ``"training"``. The label was honest about which
+        rows it named, but naming training rows truthfully does not make them a
+        usable in-loop signal, and the label must agree with ``_eval_split``,
+        which no longer returns them.
+        """
         mgr._val_x = mgr._val_y = None
         mgr._train_x, mgr._train_y = torch.zeros(2, 2), torch.zeros(2, 1)
-        assert mgr._eval_split_name() == "training"
+        assert mgr._eval_split_name() is None
 
     def test_none_when_nothing_loaded(self, mgr):
         mgr._val_x = mgr._val_y = mgr._train_x = mgr._train_y = None

@@ -51,7 +51,7 @@ class TestReportedSplitSelection:
         assert mgr._reported_split_name() == "validation"
 
     def test_does_NOT_fall_back_to_training(self, mgr):
-        """The invariant. ``_eval_split`` falls back to train; this must not.
+        """The invariant. Neither split falls back to train any more.
 
         Reporting a training-set score under a held-out label is the defect being
         removed, so the absence of any reportable partition has to surface as
@@ -62,12 +62,21 @@ class TestReportedSplitSelection:
         assert mgr._reported_split() == (None, None)
         assert mgr._reported_split_name() is None
 
-    def test_eval_split_still_falls_back_to_training(self, mgr):
-        """Regression guard: the IN-LOOP path is unchanged by this work."""
+    def test_eval_split_no_longer_falls_back_to_training(self, mgr):
+        """§6.1 rule 3: the IN-LOOP fallback is gone too.
+
+        This previously asserted the opposite -- it was a regression guard for a
+        fallback that the three-way partition removes. ``_val_*`` now comes from
+        the artifact's own ``X_val``, so its absence is a condition the ingestion
+        gate has already refused or explicitly marked; silently scoring the
+        training rows as an in-loop metric is no longer available as a degraded
+        mode.
+        """
         mgr._train_x, mgr._train_y = _t(9.0), _t(9.0)
         mgr._val_x = mgr._val_y = None
-        x, _ = mgr._eval_split()
-        assert torch.equal(x, _t(9.0))
+
+        assert mgr._eval_split() == (None, None)
+        assert mgr._eval_split_name() is None, "the label must not name a partition _eval_split no longer returns"
 
     def test_partial_pair_is_not_reportable(self, mgr):
         """A half-populated pair must not be treated as a partition."""

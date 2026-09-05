@@ -18,11 +18,17 @@ from cascade_correlation.cascade_correlation_exceptions.cascade_correlation_exce
 from spiral_problem.spiral_problem import SpiralProblem
 
 
-def _make_mock_result(n_train=2, n_test=1, n_spirals=2):
-    """Create mock tensor result matching SpiralDataProvider return format."""
-    n_full = n_train + n_test
+def _make_mock_result(n_train=2, n_val=2, n_test=1, n_spirals=2):
+    """Create mock tensor result matching SpiralDataProvider return format.
+
+    Four pairs since the three-way partition: the ``val`` pair is the in-loop
+    signal and sits between train and test, so a stale three-pair double would
+    silently bind ``test`` rows to the ``val`` slot.
+    """
+    n_full = n_train + n_val + n_test
     return (
         (torch.randn(n_train, 2), torch.zeros(n_train, n_spirals)),
+        (torch.randn(n_val, 2), torch.zeros(n_val, n_spirals)),
         (torch.randn(n_test, 2), torch.zeros(n_test, n_spirals)),
         (torch.randn(n_full, 2), torch.zeros(n_full, n_spirals)),
     )
@@ -118,7 +124,7 @@ class TestMandatoryJuniperDataIntegration:
                 assert call_kwargs["seed"] == 42
 
     def test_returns_correct_tuple_format(self):
-        """Must return ((x_train, y_train), (x_test, y_test), (x_full, y_full))."""
+        """Must return ((x_train, y_train), (x_val, y_val), (x_test, y_test), (x_full, y_full))."""
         mock_result = _make_mock_result()
 
         with patch.dict(os.environ, {"JUNIPER_DATA_URL": "http://localhost:8100"}):
@@ -134,8 +140,8 @@ class TestMandatoryJuniperDataIntegration:
                 result = sp.generate_n_spiral_dataset()
 
                 assert isinstance(result, tuple)
-                assert len(result) == 3
-                (x_train, y_train), (x_test, y_test), (x_full, y_full) = result
+                assert len(result) == 4, "train / val / test / full"
+                (x_train, y_train), (x_val, y_val), (x_test, y_test), (x_full, y_full) = result
                 assert isinstance(x_train, torch.Tensor)
                 assert isinstance(y_train, torch.Tensor)
 

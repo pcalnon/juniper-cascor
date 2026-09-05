@@ -276,7 +276,7 @@ class TestSpiralDataProviderTensorConversion:
                 test_ratio=0.1,
             )
 
-            (x_train, y_train), (x_test, y_test), (x_full, y_full) = result
+            (x_train, y_train), (x_val, y_val), (x_test, y_test), (x_full, y_full) = result
 
             assert x_train.dtype == torch.float32
             assert y_train.dtype == torch.float32
@@ -314,7 +314,7 @@ class TestSpiralDataProviderTensorConversion:
                 test_ratio=0.1,
             )
 
-            (x_train, y_train), (x_test, y_test), (x_full, y_full) = result
+            (x_train, y_train), (x_val, y_val), (x_test, y_test), (x_full, y_full) = result
 
             assert x_train.shape == (3, 2)
             assert y_train.shape == (3, 2)
@@ -355,7 +355,7 @@ class TestSpiralDataProviderTensorConversion:
                 test_ratio=0.1,
             )
 
-            (x_train, y_train), _, _ = result
+            (x_train, y_train), _, _, _ = result
 
             np.testing.assert_array_almost_equal(x_train.numpy(), expected_x_train)
             np.testing.assert_array_almost_equal(y_train.numpy(), expected_y_train)
@@ -594,7 +594,7 @@ class TestSpiralDataProviderContractValidation:
                 train_ratio=0.8,
                 test_ratio=0.2,
             )
-            assert len(result) == 3
+            assert len(result) == 4, "train / val / test / full"
 
     def test_error_message_lists_missing_keys(self):
         """Error message should list which specific keys are missing."""

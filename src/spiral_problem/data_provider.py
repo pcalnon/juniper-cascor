@@ -28,7 +28,8 @@ logger = logging.getLogger(__name__)
 
 SpiralDatasetTuple = Tuple[
     Tuple[torch.Tensor, torch.Tensor],  # (x_train, y_train)
-    Tuple[torch.Tensor, torch.Tensor],  # (x_test, y_test)
+    Tuple[Optional[torch.Tensor], Optional[torch.Tensor]],  # (x_val, y_val) — the IN-LOOP signal
+    Tuple[torch.Tensor, torch.Tensor],  # (x_test, y_test) — the REPORTED partition
     Tuple[torch.Tensor, torch.Tensor],  # (x_full, y_full)
 ]
 
@@ -185,7 +186,8 @@ class SpiralDataProvider:
             arrays: Dictionary of numpy arrays from NPZ file.
 
         Returns:
-            Tuple of tensor pairs for train, test, and full datasets.
+            Tuple of tensor pairs for train, val, test, and full datasets. The
+            ``val`` pair is ``(None, None)`` for a legacy two-partition artifact.
 
         Raises:
             SpiralDataProviderError: If NPZ artifact does not meet the expected contract.
@@ -195,20 +197,37 @@ class SpiralDataProvider:
         if missing_keys:
             raise SpiralDataProviderError(f"NPZ artifact missing required keys: {sorted(missing_keys)}. " f"Expected: {sorted(required_keys)}, got: {sorted(arrays.keys())}")
 
-        for key in required_keys:
+        # `X_val` / `y_val` are deliberately NOT in `required_keys`. Design §6a:
+        # a validation split that is PRESENT is validated like any other, and one
+        # that is absent is a legal artifact shape the consumer gate handles --
+        # not a load failure. Requiring it here would reject every artifact
+        # produced before juniper-data#361.
+        has_val = "X_val" in arrays and "y_val" in arrays
+        if ("X_val" in arrays) != ("y_val" in arrays):
+            present = "X_val" if "X_val" in arrays else "y_val"
+            missing = "y_val" if "X_val" in arrays else "X_val"
+            raise SpiralDataProviderError(f"NPZ artifact has a partial validation split ({present} without {missing})")
+
+        checked_keys = set(required_keys) | ({"X_val", "y_val"} if has_val else set())
+        for key in sorted(checked_keys):
             arr = arrays[key]
             if arr.ndim != 2:
                 raise SpiralDataProviderError(f"NPZ array '{key}' has {arr.ndim} dimensions, expected 2. Shape: {arr.shape}")
 
-        for key in ["X_train", "X_test", "X_full"]:
+        for key in ["X_train", "X_test", "X_full"] + (["X_val"] if has_val else []):
             if arrays[key].shape[1] != 2:
                 raise SpiralDataProviderError(f"Feature array '{key}' has {arrays[key].shape[1]} columns, expected 2 (x, y coordinates). " f"Shape: {arrays[key].shape}")
 
+        if has_val and arrays["X_val"].shape[0] != arrays["y_val"].shape[0]:
+            raise SpiralDataProviderError(f"NPZ validation sample count mismatch: X_val={arrays['X_val'].shape[0]} y_val={arrays['y_val'].shape[0]}")
+
         x_train = torch.tensor(arrays["X_train"], dtype=torch.float32)
         y_train = torch.tensor(arrays["y_train"], dtype=torch.float32)
+        x_val = torch.tensor(arrays["X_val"], dtype=torch.float32) if has_val else None
+        y_val = torch.tensor(arrays["y_val"], dtype=torch.float32) if has_val else None
         x_test = torch.tensor(arrays["X_test"], dtype=torch.float32)
         y_test = torch.tensor(arrays["y_test"], dtype=torch.float32)
         x_full = torch.tensor(arrays["X_full"], dtype=torch.float32)
         y_full = torch.tensor(arrays["y_full"], dtype=torch.float32)
 
-        return (x_train, y_train), (x_test, y_test), (x_full, y_full)
+        return (x_train, y_train), (x_val, y_val), (x_test, y_test), (x_full, y_full)

@@ -142,6 +142,13 @@ def fake_juniper_data_client(monkeypatch):
     mock_instance.download_artifact_npz.return_value = {
         "X_train": np.array([[0.0, 0.0], [1.0, 1.0], [0.5, 0.5], [0.2, 0.8]], dtype=np.float32),
         "y_train": np.array([[1.0, 0.0], [0.0, 1.0], [1.0, 0.0], [0.0, 1.0]], dtype=np.float32),
+        # §6.1: a train-only artifact is REFUSED, and a refused reload deliberately
+        # leaves the staged config in place for retry -- which is what this fixture
+        # was tripping over. Distinct row counts so a mis-bound partition is visible.
+        "X_val": np.array([[0.1, 0.1], [0.9, 0.9]], dtype=np.float32),
+        "y_val": np.array([[1.0, 0.0], [0.0, 1.0]], dtype=np.float32),
+        "X_test": np.array([[0.3, 0.7]], dtype=np.float32),
+        "y_test": np.array([[1.0, 0.0]], dtype=np.float32),
     }
     mock_client_cls.return_value = mock_instance
     module.JuniperDataClient = mock_client_cls  # type: ignore[attr-defined]
