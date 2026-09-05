@@ -65,6 +65,7 @@ def _default_dataset_kwargs():
         "noise_level": 0.05,
         "clockwise": False,
         "train_ratio": 0.8,
+        "val_ratio": 0.1,
         "test_ratio": 0.1,
     }
 

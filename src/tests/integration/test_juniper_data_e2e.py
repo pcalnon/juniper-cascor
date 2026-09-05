@@ -200,7 +200,8 @@ class TestJuniperDataE2EFullFlow:
             noise_level=0.1,
             clockwise=True,
             train_ratio=0.7,
-            test_ratio=0.3,
+            test_ratio=0.2,
+            val_ratio=0.1,
             seed=42,
         )
 
@@ -228,7 +229,8 @@ class TestJuniperDataE2EFullFlow:
             noise_level=0.1,
             clockwise=True,
             train_ratio=0.7,
-            test_ratio=0.3,
+            test_ratio=0.2,
+            val_ratio=0.1,
             seed=42,
         )
 
@@ -245,7 +247,8 @@ class TestJuniperDataE2EFullFlow:
             noise_level=0.1,
             clockwise=True,
             train_ratio=0.7,
-            test_ratio=0.3,
+            test_ratio=0.2,
+            val_ratio=0.1,
             seed=42,
             algorithm="legacy_cascor",
         )
@@ -268,7 +271,8 @@ class TestJuniperDataE2EFullFlow:
             noise_level=0.1,
             clockwise=True,
             train_ratio=0.7,
-            test_ratio=0.3,
+            test_ratio=0.2,
+            val_ratio=0.1,
             seed=42,
         )
 

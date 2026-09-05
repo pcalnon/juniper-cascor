@@ -81,6 +81,7 @@ class TestSpiralDataProviderUseJuniperData:
                 clockwise=False,
                 train_ratio=0.8,
                 test_ratio=0.1,
+                val_ratio=0.1,
             )
 
     def test_empty_string_url_raises_on_validate_configuration(self):
@@ -127,6 +128,7 @@ class TestSpiralDataProviderGetSpiralDataset:
                 clockwise=True,
                 train_ratio=0.7,
                 test_ratio=0.2,
+                val_ratio=0.1,
                 seed=42,
             )
 
@@ -170,6 +172,7 @@ class TestSpiralDataProviderGetSpiralDataset:
                 clockwise=False,
                 train_ratio=0.8,
                 test_ratio=0.1,
+                val_ratio=0.1,
                 seed=None,
             )
 
@@ -203,6 +206,7 @@ class TestSpiralDataProviderGetSpiralDataset:
                 clockwise=False,
                 train_ratio=0.8,
                 test_ratio=0.1,
+                val_ratio=0.1,
             )
 
             mock_client.download_artifact_npz.assert_called_once_with("specific-dataset-123")
@@ -234,6 +238,7 @@ class TestSpiralDataProviderGetSpiralDataset:
                 clockwise=False,
                 train_ratio=0.8,
                 test_ratio=0.1,
+                val_ratio=0.1,
                 algorithm="legacy_cascor",
             )
 
@@ -274,6 +279,7 @@ class TestSpiralDataProviderTensorConversion:
                 clockwise=False,
                 train_ratio=0.8,
                 test_ratio=0.1,
+                val_ratio=0.1,
             )
 
             (x_train, y_train), (x_val, y_val), (x_test, y_test), (x_full, y_full) = result
@@ -312,6 +318,7 @@ class TestSpiralDataProviderTensorConversion:
                 clockwise=False,
                 train_ratio=0.8,
                 test_ratio=0.1,
+                val_ratio=0.1,
             )
 
             (x_train, y_train), (x_val, y_val), (x_test, y_test), (x_full, y_full) = result
@@ -353,6 +360,7 @@ class TestSpiralDataProviderTensorConversion:
                 clockwise=False,
                 train_ratio=0.8,
                 test_ratio=0.1,
+                val_ratio=0.1,
             )
 
             (x_train, y_train), _, _, _ = result
@@ -380,6 +388,7 @@ class TestSpiralDataProviderErrorHandling:
                     clockwise=False,
                     train_ratio=0.8,
                     test_ratio=0.1,
+                    val_ratio=0.1,
                 )
 
             assert "not configured" in str(exc_info.value)
@@ -402,6 +411,7 @@ class TestSpiralDataProviderErrorHandling:
                     clockwise=False,
                     train_ratio=0.8,
                     test_ratio=0.1,
+                    val_ratio=0.1,
                 )
 
             assert "Failed to fetch spiral dataset" in str(exc_info.value)
@@ -426,6 +436,7 @@ class TestSpiralDataProviderErrorHandling:
                     clockwise=False,
                     train_ratio=0.8,
                     test_ratio=0.1,
+                    val_ratio=0.1,
                 )
 
             assert "Failed to fetch spiral dataset" in str(exc_info.value)
@@ -504,6 +515,7 @@ class TestSpiralDataProviderContractValidation:
                     clockwise=False,
                     train_ratio=0.8,
                     test_ratio=0.2,
+                    val_ratio=0.1,
                 )
             assert "missing required keys" in str(exc_info.value).lower()
 
@@ -534,6 +546,7 @@ class TestSpiralDataProviderContractValidation:
                     clockwise=False,
                     train_ratio=0.8,
                     test_ratio=0.2,
+                    val_ratio=0.1,
                 )
             assert "dimensions" in str(exc_info.value).lower()
 
@@ -564,6 +577,7 @@ class TestSpiralDataProviderContractValidation:
                     clockwise=False,
                     train_ratio=0.8,
                     test_ratio=0.2,
+                    val_ratio=0.1,
                 )
             assert "columns" in str(exc_info.value).lower()
 
@@ -593,6 +607,7 @@ class TestSpiralDataProviderContractValidation:
                 clockwise=False,
                 train_ratio=0.8,
                 test_ratio=0.2,
+                val_ratio=0.1,
             )
             assert len(result) == 4, "train / val / test / full"
 
@@ -621,6 +636,7 @@ class TestSpiralDataProviderContractValidation:
                     clockwise=False,
                     train_ratio=0.8,
                     test_ratio=0.2,
+                    val_ratio=0.1,
                 )
             error_msg = str(exc_info.value)
             assert "X_test" in error_msg
