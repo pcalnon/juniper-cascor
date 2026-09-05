@@ -5,7 +5,6 @@ Sub-Project:   JuniperCascor
 Application:   juniper_cascor
 File Name:     test_allow_truncated_datasets.py
 Author:        Paul Calnon
-Version:       0.6.0
 License:       MIT License
 
 juniper-data refuses (422) a dataset it cannot produce in full unless the caller
