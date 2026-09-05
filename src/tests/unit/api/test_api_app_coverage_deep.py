@@ -190,6 +190,12 @@ class TestAutoStartTraining:
         mock_client_instance.download_artifact_npz.return_value = {
             "X_train": __import__("numpy").random.randn(20, 2).astype("float32"),
             "y_train": __import__("numpy").random.randn(20, 2).astype("float32"),
+            # §6.1: a train-only artifact is refused -- there is nothing held out.
+            # Distinct row counts so a mis-bound partition cannot pass silently.
+            "X_val": __import__("numpy").random.randn(5, 2).astype("float32"),
+            "y_val": __import__("numpy").random.randn(5, 2).astype("float32"),
+            "X_test": __import__("numpy").random.randn(4, 2).astype("float32"),
+            "y_test": __import__("numpy").random.randn(4, 2).astype("float32"),
         }
 
         mock_lifecycle = MagicMock()
@@ -273,6 +279,12 @@ class TestAutoStartTraining:
         mock_client_instance.download_artifact_npz.return_value = {
             "X_train": __import__("numpy").random.randn(8, 2).astype("float32"),
             "y_train": __import__("numpy").random.randn(8, 2).astype("float32"),
+            # §6.1: a train-only artifact is refused -- there is nothing held out.
+            # Distinct row counts so a mis-bound partition cannot pass silently.
+            "X_val": __import__("numpy").random.randn(2, 2).astype("float32"),
+            "y_val": __import__("numpy").random.randn(2, 2).astype("float32"),
+            "X_test": __import__("numpy").random.randn(1, 2).astype("float32"),
+            "y_test": __import__("numpy").random.randn(1, 2).astype("float32"),
         }
         mock_lifecycle = MagicMock()
 
@@ -341,6 +353,12 @@ class TestAutoStartTraining:
         mock_client_instance.download_artifact_npz.return_value = {
             "X_train": __import__("numpy").random.randn(10, 2).astype("float32"),
             "y_train": __import__("numpy").random.randn(10, 2).astype("float32"),
+            # §6.1: a train-only artifact is refused -- there is nothing held out.
+            # Distinct row counts so a mis-bound partition cannot pass silently.
+            "X_val": __import__("numpy").random.randn(2, 2).astype("float32"),
+            "y_val": __import__("numpy").random.randn(2, 2).astype("float32"),
+            "X_test": __import__("numpy").random.randn(2, 2).astype("float32"),
+            "y_test": __import__("numpy").random.randn(2, 2).astype("float32"),
         }
 
         mock_lifecycle = MagicMock()
@@ -379,6 +397,12 @@ class TestAutoStartTraining:
         mock_client_instance.download_artifact_npz.return_value = {
             "X_train": __import__("numpy").random.randn(10, 2).astype("float32"),
             "y_train": __import__("numpy").random.randn(10, 2).astype("float32"),
+            # §6.1: a train-only artifact is refused -- there is nothing held out.
+            # Distinct row counts so a mis-bound partition cannot pass silently.
+            "X_val": __import__("numpy").random.randn(2, 2).astype("float32"),
+            "y_val": __import__("numpy").random.randn(2, 2).astype("float32"),
+            "X_test": __import__("numpy").random.randn(2, 2).astype("float32"),
+            "y_test": __import__("numpy").random.randn(2, 2).astype("float32"),
         }
 
         mock_lifecycle = MagicMock()

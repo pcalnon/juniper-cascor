@@ -79,6 +79,18 @@ _JUNIPER_CASCOR_API_AUTO_START_DISABLED: bool = False
 # See notes/CASCOR_STARTUP_SECRET_INDIRECTION_INVESTIGATION_2026-06-14.md (3.3).
 _JUNIPER_CASCOR_API_AUTO_START_DEFAULT: bool = _JUNIPER_CASCOR_API_AUTO_START_DISABLED
 
+# §6.4 of the ecosystem partition design: when a dataset artifact carries no
+# validation split, a HEADLESS run refuses and shuts down. That default is
+# overridden only by an explicit run-with-warnings switch -- this one.
+#
+# Default OFF, and the direction matters. Proceeding without a validation split
+# means promoting X_test to the in-loop signal, so early stopping selects on the
+# same rows the final score is reported from. That is the exact defect the
+# three-way partition exists to remove, and §6.4 is explicit that a headless run
+# must never take it silently: "that is precisely how the current situation went
+# unnoticed". Opting in marks the run rather than hiding it.
+_JUNIPER_CASCOR_API_ALLOW_MISSING_VALIDATION_SPLIT_DEFAULT: bool = False
+
 _JUNIPER_CASCOR_API_AUTO_START_DATA_SERVICE_DEFAULT: bool = False
 _JUNIPER_CASCOR_API_AUTO_START_DATA_SERVICE_COMMAND_DEFAULT: str = "python -m juniper_data"
 
@@ -537,6 +549,8 @@ class Settings(BaseSettings):
         description=("JuniperData service URL (e.g., 'http://localhost:8100'). " "Canonical env var: JUNIPER_DATA_URL (unprefixed, ecosystem-wide). " "Per-service override: JUNIPER_CASCOR_JUNIPER_DATA_URL."),
         validation_alias=AliasChoices("juniper_data_url", "JUNIPER_DATA_URL", "JUNIPER_CASCOR_JUNIPER_DATA_URL"),
     )
+
+    allow_missing_validation_split: bool = _JUNIPER_CASCOR_API_ALLOW_MISSING_VALIDATION_SPLIT_DEFAULT
 
     auto_start: bool = _JUNIPER_CASCOR_API_AUTO_START_DEFAULT
     auto_start_data_service: bool = _JUNIPER_CASCOR_API_AUTO_START_DATA_SERVICE_DEFAULT

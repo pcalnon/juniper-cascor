@@ -34,11 +34,33 @@ def _two_class_eval():
     return x, y
 
 
+def _two_class_eval_holdout():
+    """Same shape and class balance as :func:`_two_class_eval`, different rows.
+
+    Distinct values so a test cannot pass by scoring the training rows.
+    """
+    x = torch.tensor([[0.3, 0.7], [0.7, 0.3], [0.25, 0.75], [0.75, 0.25]], dtype=torch.float32)
+    y = torch.tensor([[1.0, 0.0], [0.0, 1.0], [1.0, 0.0], [0.0, 1.0]], dtype=torch.float32)
+    return x, y
+
+
 def _manager_with_network_and_eval():
+    """A manager with a REAL validation split, as this helper's name always claimed.
+
+    It used to bind only ``_train_x``/``_train_y`` and let ``_eval_split``'s
+    training-split fallback supply the "eval" half. §6.1 rule 3 removes that
+    fallback, so the eval split is now bound explicitly — which is what every
+    caller of this helper was already asserting against.
+
+    The val rows are deliberately DISTINCT from the train rows. Reusing the same
+    tensor would let a future regression that silently re-pointed the metrics at
+    the training split keep passing.
+    """
     mgr = TrainingLifecycleManager()
     mgr.create_network(input_size=2, output_size=2)
     x, y = _two_class_eval()
     mgr._train_x, mgr._train_y = x, y
+    mgr._val_x, mgr._val_y = _two_class_eval_holdout()
     return mgr
 
 
@@ -148,6 +170,10 @@ class TestDrainScalarSurface:
         mgr.create_network(input_size=2, output_size=2)
         mgr._train_x = torch.tensor([[0.2, 0.8], [0.9, 0.1], [0.1, 0.7], [0.8, 0.2]], dtype=torch.float32)
         mgr._train_y = torch.tensor([[1.0, 0.0], [1.0, 0.0], [1.0, 0.0], [1.0, 0.0]], dtype=torch.float32)
+        # The single-class condition must live on the EVAL split, which is now the
+        # validation partition rather than the training rows the old fallback used.
+        mgr._val_x = mgr._train_x
+        mgr._val_y = mgr._train_y
         _append_step(mgr)
         mgr._extract_and_record_metrics()
         row = mgr.monitor.get_all_metrics()[-1]
@@ -219,7 +245,7 @@ class TestSnapshotSurface:
         meta = snap["eval_metrics"]
         assert meta["enabled"] is True
         assert meta["average"] == "macro"
-        assert meta["split"] == "training"
+        assert meta["split"] == "validation", "the eval split is the validation partition now, not the training rows"
         assert meta["n_samples"] == 4
         assert meta["n_classes"] == 2
         assert meta["undefined"] == {}
@@ -319,6 +345,9 @@ class TestRestSurface:
         lifecycle = client.app.state.lifecycle
         x, y = _two_class_eval()
         lifecycle._train_x, lifecycle._train_y = x, y
+        # The scalars are computed on the VALIDATION partition, so this route test
+        # has to supply one — the training rows no longer stand in for it.
+        lifecycle._val_x, lifecycle._val_y = _two_class_eval_holdout()
         _append_step(lifecycle)
         lifecycle._extract_and_record_metrics()
         response = client.get("/v1/metrics/history")

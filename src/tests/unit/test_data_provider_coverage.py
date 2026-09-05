@@ -166,7 +166,7 @@ class TestBuildSpiralDataset:
 
             mock_client.create_dataset.assert_called_once_with(generator="spiral", params=params)
             mock_client.download_artifact_npz.assert_called_once_with("ds-001")
-            assert len(result) == 3
+            assert len(result) == 4, "train / val / test / full"
 
 
 class TestConvertArraysToTensorsDirect:
@@ -177,7 +177,7 @@ class TestConvertArraysToTensorsDirect:
         provider = SpiralDataProvider(juniper_data_url="http://localhost:8100")
         arrays = _make_valid_arrays()
 
-        (x_train, y_train), (x_test, y_test), (x_full, y_full) = provider._convert_arrays_to_tensors(arrays)
+        (x_train, y_train), (x_val, y_val), (x_test, y_test), (x_full, y_full) = provider._convert_arrays_to_tensors(arrays)
 
         assert isinstance(x_train, torch.Tensor)
         assert x_train.dtype == torch.float32
@@ -245,9 +245,9 @@ class TestGetSpiralDatasetIntegration:
 
             result = provider.get_spiral_dataset(**_default_dataset_kwargs())
 
-            (x_train, y_train), (x_test, y_test), (x_full, y_full) = result
+            (x_train, y_train), (x_val, y_val), (x_test, y_test), (x_full, y_full) = result
             assert isinstance(x_train, torch.Tensor)
-            assert len(result) == 3
+            assert len(result) == 4, "train / val / test / full"
 
     def test_client_exception_wrapped_in_provider_error(self):
         """get_spiral_dataset should wrap client exceptions in SpiralDataProviderError."""

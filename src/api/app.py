@@ -9,7 +9,6 @@ import sys
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
-import torch
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
@@ -520,8 +519,18 @@ async def _auto_start_training(app: FastAPI, settings: Settings) -> None:
 
         # Download training data as numpy arrays
         arrays = await asyncio.to_thread(client.download_artifact_npz, dataset_id)
-        x_train = torch.tensor(arrays["X_train"], dtype=torch.float32)
-        y_train = torch.tensor(arrays["y_train"], dtype=torch.float32)
+        # Reuse the manager's ingestion rather than re-reading the keys here. A
+        # second, simpler reader is how the two paths drift: this one used to take
+        # X_train alone and hand the run NO held-out data at all, so the auto-start
+        # demo trained with neither an in-loop signal nor a reportable partition.
+        # The shared path also brings the §6a guard ladder and §6.1's refusal.
+        #
+        # Called on the CLASS, not on ``app.state.lifecycle``: both helpers are
+        # static, and binding them to the instance would make this path depend on
+        # a collaborator that tests legitimately replace with a double.
+        x_train, y_train, x_val, y_val, x_test, y_test = TrainingLifecycleManager._artifact_to_tensors(arrays)
+        x_val, y_val, _ = TrainingLifecycleManager._resolve_validation_split(x_val, y_val, x_test, y_test)
+        lifecycle: TrainingLifecycleManager = app.state.lifecycle
         logger.info(f"Auto-start: training data loaded — {x_train.shape[0]} samples, {x_train.shape[1]} features")
 
         # Create network — infer input/output sizes from training data.
@@ -535,12 +544,13 @@ async def _auto_start_training(app: FastAPI, settings: Settings) -> None:
         network_config = json.loads(settings.auto_network)
         network_config.setdefault("input_size", x_train.shape[1])
         network_config.setdefault("output_size", y_train.shape[1] if y_train.dim() > 1 else 1)
-        lifecycle: TrainingLifecycleManager = app.state.lifecycle
         network_info = lifecycle.create_network(**network_config)
         logger.info(f"Auto-start: network created — {network_info['input_size']}x{network_info['output_size']}")
 
-        # Start training
-        train_result = lifecycle.start_training(X=x_train, y=y_train)
+        # Start training. The val pair is the in-loop signal and the test pair the
+        # reported partition; passing both is what keeps early stopping off the
+        # rows the final score comes from.
+        train_result = lifecycle.start_training(X=x_train, y=y_train, X_val=x_val, y_val=y_val, X_test=x_test, y_test=y_test)
         logger.info(f"Auto-start: training initiated — {train_result}")
 
     except Exception:
