@@ -282,14 +282,18 @@ class TestSpiralDataProviderTensorConversion:
                 val_ratio=0.1,
             )
 
-            (x_train, y_train), (x_val, y_val), (x_test, y_test), (x_full, y_full) = result
+            # THREE pairs since decision 11 retired the ``full`` member. This artifact
+            # still CARRIES ``X_full`` / ``y_full`` -- a legacy shape the provider must
+            # keep loading -- it simply no longer returns them.
+            (x_train, y_train), (x_val, y_val), (x_test, y_test) = result
 
             assert x_train.dtype == torch.float32
             assert y_train.dtype == torch.float32
             assert x_test.dtype == torch.float32
             assert y_test.dtype == torch.float32
-            assert x_full.dtype == torch.float32
-            assert y_full.dtype == torch.float32
+            assert (x_val, y_val) == (None, None), "a two-way artifact has no val pair"
+            # The whole dataset is now derived, and must carry the converted dtype too.
+            assert torch.cat([x_train, x_test], dim=0).dtype == torch.float32
 
     def test_preserves_array_shape(self):
         """Should preserve array shapes during conversion."""
@@ -321,14 +325,15 @@ class TestSpiralDataProviderTensorConversion:
                 val_ratio=0.1,
             )
 
-            (x_train, y_train), (x_val, y_val), (x_test, y_test), (x_full, y_full) = result
+            (x_train, y_train), (_, _), (x_test, y_test) = result
 
             assert x_train.shape == (3, 2)
             assert y_train.shape == (3, 2)
             assert x_test.shape == (1, 2)
             assert y_test.shape == (1, 2)
-            assert x_full.shape == (4, 2)
-            assert y_full.shape == (4, 2)
+            # The retired ``X_full`` was (4, 2); the derived concatenation reproduces it.
+            assert torch.cat([x_train, x_test], dim=0).shape == (4, 2)
+            assert torch.cat([y_train, y_test], dim=0).shape == (4, 2)
 
     def test_preserves_array_values(self):
         """Should preserve array values during conversion."""
@@ -363,7 +368,7 @@ class TestSpiralDataProviderTensorConversion:
                 val_ratio=0.1,
             )
 
-            (x_train, y_train), _, _, _ = result
+            (x_train, y_train), _, _ = result
 
             np.testing.assert_array_almost_equal(x_train.numpy(), expected_x_train)
             np.testing.assert_array_almost_equal(y_train.numpy(), expected_y_train)
@@ -609,7 +614,7 @@ class TestSpiralDataProviderContractValidation:
                 test_ratio=0.2,
                 val_ratio=0.1,
             )
-            assert len(result) == 4, "train / val / test / full"
+            assert len(result) == 3, "train / val / test"
 
     def test_error_message_lists_missing_keys(self):
         """Error message should list which specific keys are missing."""

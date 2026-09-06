@@ -30,7 +30,6 @@ SpiralDatasetTuple = Tuple[
     Tuple[torch.Tensor, torch.Tensor],  # (x_train, y_train)
     Tuple[Optional[torch.Tensor], Optional[torch.Tensor]],  # (x_val, y_val) — the IN-LOOP signal
     Tuple[torch.Tensor, torch.Tensor],  # (x_test, y_test) — the REPORTED partition
-    Tuple[torch.Tensor, torch.Tensor],  # (x_full, y_full)
 ]
 
 
@@ -138,12 +137,17 @@ class SpiralDataProvider:
             algorithm: Generation algorithm - 'modern' (default) or 'legacy_cascor' for backward compatibility.
 
         Returns:
-            Tuple containing FOUR partitions, in this order:
+            Tuple containing THREE partitions, in this order:
                 - (x_train, y_train): Training set features and targets as torch tensors.
                 - (x_val, y_val): the IN-LOOP validation partition. ``(None, None)`` only
                   when the artifact omits it, which juniper-data no longer produces.
                 - (x_test, y_test): the REPORTED partition; no training decision reads it.
-                - (x_full, y_full): Full dataset features and targets as torch tensors.
+
+            There is deliberately no ``full`` member. Decision 11 retires the ``*_full``
+            family from the NPZ contract; a caller that wants the whole dataset builds it
+            with ``torch.cat`` over the three partitions, which is what juniper-data was
+            doing on the producer side all along (``juniper_data/core/split.py``:
+            ``X_full = np.vstack([X_train, X_val, X_test])``).
 
         Raises:
             SpiralDataProviderError: If JuniperData service is unreachable or returns an error.
@@ -200,13 +204,19 @@ class SpiralDataProvider:
             arrays: Dictionary of numpy arrays from NPZ file.
 
         Returns:
-            Tuple of tensor pairs for train, val, test, and full datasets. The
+            Tuple of tensor pairs for the train, val and test partitions. The
             ``val`` pair is ``(None, None)`` for a legacy two-partition artifact.
 
         Raises:
             SpiralDataProviderError: If NPZ artifact does not meet the expected contract.
         """
-        required_keys = {"X_train", "y_train", "X_test", "y_test", "X_full", "y_full"}
+        # `X_full` / `y_full` are NOT required -- decision 11 retires the family from the
+        # producer side (juniper-data#369), so demanding them here would reject every
+        # artifact produced after it. They are not FORBIDDEN either: design §9.5.4 obliges
+        # consumers to keep tolerating an artifact that still carries them, and every
+        # artifact minted before #369 does. Tolerating means exactly this -- they are
+        # neither required, validated, nor read. Extra keys are ignored.
+        required_keys = {"X_train", "y_train", "X_test", "y_test"}
         missing_keys = required_keys - set(arrays.keys())
         if missing_keys:
             raise SpiralDataProviderError(f"NPZ artifact missing required keys: {sorted(missing_keys)}. " f"Expected: {sorted(required_keys)}, got: {sorted(arrays.keys())}")
@@ -228,7 +238,7 @@ class SpiralDataProvider:
             if arr.ndim != 2:
                 raise SpiralDataProviderError(f"NPZ array '{key}' has {arr.ndim} dimensions, expected 2. Shape: {arr.shape}")
 
-        for key in ["X_train", "X_test", "X_full"] + (["X_val"] if has_val else []):
+        for key in ["X_train", "X_test"] + (["X_val"] if has_val else []):
             if arrays[key].shape[1] != 2:
                 raise SpiralDataProviderError(f"Feature array '{key}' has {arrays[key].shape[1]} columns, expected 2 (x, y coordinates). " f"Shape: {arrays[key].shape}")
 
@@ -241,7 +251,5 @@ class SpiralDataProvider:
         y_val = torch.tensor(arrays["y_val"], dtype=torch.float32) if has_val else None
         x_test = torch.tensor(arrays["X_test"], dtype=torch.float32)
         y_test = torch.tensor(arrays["y_test"], dtype=torch.float32)
-        x_full = torch.tensor(arrays["X_full"], dtype=torch.float32)
-        y_full = torch.tensor(arrays["y_full"], dtype=torch.float32)
 
-        return (x_train, y_train), (x_val, y_val), (x_test, y_test), (x_full, y_full)
+        return (x_train, y_train), (x_val, y_val), (x_test, y_test)

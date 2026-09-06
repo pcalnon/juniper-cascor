@@ -1069,13 +1069,18 @@ class TestSolveNSpiralProblem:
     def _make_mock_dataset(self, n_train=70, n_val=10, n_test=20, n_spirals=2):
         """Helper to create mock dataset tuples.
 
-        FOUR partitions, matching ``SpiralDatasetTuple``. This helper returned three
-        until 2026-09-05, and that is precisely why the arity regression cascor#620
-        introduced went unnoticed: every test exercising the CLI path patches
-        ``generate_n_spiral_dataset`` with this value, so the STUB defined the shape
-        under test and the provider's real four-partition return was never seen here.
-        A stub allowed to disagree with the seam it stands in for tests nothing about
-        that seam.
+        THREE partitions, matching ``SpiralDatasetTuple``. The count has moved twice:
+        this helper returned three until 2026-09-05, and that is precisely why the arity
+        regression cascor#620 introduced went unnoticed -- every test exercising the CLI
+        path patches ``generate_n_spiral_dataset`` with this value, so the STUB defined
+        the shape under test and the provider's real return was never seen here. A stub
+        allowed to disagree with the seam it stands in for tests nothing about that seam.
+
+        It went to four for the val split, and back to three when decision 11 retired the
+        ``*_full`` family: ``solve_n_spiral_problem`` now DERIVES ``x_full`` / ``y_full``
+        by concatenating these three, so a fourth pair here would be ignored rather than
+        wrong -- silently, which is worse. ``tests/unit/test_cli_partition_arity_contract.py``
+        drives the real conversion and is what actually holds the two in step.
         """
         x_train = torch.randn(n_train, 2)
         y_train = torch.zeros(n_train, n_spirals)
@@ -1086,13 +1091,10 @@ class TestSolveNSpiralProblem:
         x_test = torch.randn(n_test, 2)
         y_test = torch.zeros(n_test, n_spirals)
         y_test[:, 1] = 1
-        x_full = torch.cat([x_train, x_val, x_test])
-        y_full = torch.cat([y_train, y_val, y_test])
         return (
             (x_train, y_train),
             (x_val, y_val),
             (x_test, y_test),
-            (x_full, y_full),
         )
 
     def test_solve_basic_no_plot(self, sp):
@@ -1114,6 +1116,15 @@ class TestSolveNSpiralProblem:
         assert hasattr(sp, "x_full")
         assert hasattr(sp, "y_full")
         assert hasattr(sp, "history")
+
+        # ``x_full`` / ``y_full`` are DERIVED now, not unpacked -- the provider stopped
+        # returning them when decision 11 retired the ``*_full`` family. ``hasattr``
+        # alone would pass against a derivation that concatenated the wrong partitions,
+        # or the right ones in the wrong order, so assert the array itself.
+        (x_train, y_train), (x_val, y_val), (x_test, y_test) = mock_data
+        assert torch.equal(sp.x_full, torch.cat([x_train, x_val, x_test], dim=0))
+        assert torch.equal(sp.y_full, torch.cat([y_train, y_val, y_test], dim=0))
+        assert sp.x_full.shape[0] == 100  # 70 train + 10 val + 20 test
 
     def test_solve_sets_parameters(self, sp):
         """Test that solve_n_spiral_problem correctly sets parameter overrides."""
@@ -1211,13 +1222,18 @@ class TestEvaluate:
     def _make_mock_dataset(self, n_train=70, n_val=10, n_test=20, n_spirals=2):
         """Helper to create mock dataset tuples.
 
-        FOUR partitions, matching ``SpiralDatasetTuple``. This helper returned three
-        until 2026-09-05, and that is precisely why the arity regression cascor#620
-        introduced went unnoticed: every test exercising the CLI path patches
-        ``generate_n_spiral_dataset`` with this value, so the STUB defined the shape
-        under test and the provider's real four-partition return was never seen here.
-        A stub allowed to disagree with the seam it stands in for tests nothing about
-        that seam.
+        THREE partitions, matching ``SpiralDatasetTuple``. The count has moved twice:
+        this helper returned three until 2026-09-05, and that is precisely why the arity
+        regression cascor#620 introduced went unnoticed -- every test exercising the CLI
+        path patches ``generate_n_spiral_dataset`` with this value, so the STUB defined
+        the shape under test and the provider's real return was never seen here. A stub
+        allowed to disagree with the seam it stands in for tests nothing about that seam.
+
+        It went to four for the val split, and back to three when decision 11 retired the
+        ``*_full`` family: ``solve_n_spiral_problem`` now DERIVES ``x_full`` / ``y_full``
+        by concatenating these three, so a fourth pair here would be ignored rather than
+        wrong -- silently, which is worse. ``tests/unit/test_cli_partition_arity_contract.py``
+        drives the real conversion and is what actually holds the two in step.
         """
         x_train = torch.randn(n_train, 2)
         y_train = torch.zeros(n_train, n_spirals)
@@ -1228,13 +1244,10 @@ class TestEvaluate:
         x_test = torch.randn(n_test, 2)
         y_test = torch.zeros(n_test, n_spirals)
         y_test[:, 1] = 1
-        x_full = torch.cat([x_train, x_val, x_test])
-        y_full = torch.cat([y_train, y_val, y_test])
         return (
             (x_train, y_train),
             (x_val, y_val),
             (x_test, y_test),
-            (x_full, y_full),
         )
 
     def test_evaluate_basic(self, sp):

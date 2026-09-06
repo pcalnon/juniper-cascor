@@ -167,7 +167,7 @@ class TestBuildSpiralDataset:
 
             mock_client.create_dataset.assert_called_once_with(generator="spiral", params=params)
             mock_client.download_artifact_npz.assert_called_once_with("ds-001")
-            assert len(result) == 4, "train / val / test / full"
+            assert len(result) == 3, "train / val / test"
 
 
 class TestConvertArraysToTensorsDirect:
@@ -178,7 +178,10 @@ class TestConvertArraysToTensorsDirect:
         provider = SpiralDataProvider(juniper_data_url="http://localhost:8100")
         arrays = _make_valid_arrays()
 
-        (x_train, y_train), (x_val, y_val), (x_test, y_test), (x_full, y_full) = provider._convert_arrays_to_tensors(arrays)
+        # The val pair is `(None, None)` for this legacy two-way artifact and nothing below
+        # reads it; binding names to it trips CodeQL's unused-local query, which blocks the
+        # merge on an unresolved review thread while every check still reads green.
+        (x_train, y_train), (_, _), (x_test, y_test) = provider._convert_arrays_to_tensors(arrays)
 
         assert isinstance(x_train, torch.Tensor)
         assert x_train.dtype == torch.float32
@@ -186,8 +189,11 @@ class TestConvertArraysToTensorsDirect:
         assert y_train.shape == (2, 2)
         assert x_test.shape == (1, 2)
         assert y_test.shape == (1, 2)
-        assert x_full.shape == (3, 2)
-        assert y_full.shape == (3, 2)
+        # ``_make_valid_arrays`` still carries ``X_full`` / ``y_full`` -- the legacy shape
+        # the provider must keep loading -- but no longer returns them. The whole dataset
+        # is the concatenation, which reproduces the retired (3, 2) array.
+        assert torch.cat([x_train, x_test], dim=0).shape == (3, 2)
+        assert torch.cat([y_train, y_test], dim=0).shape == (3, 2)
 
     def test_missing_keys_raises_error(self):
         """_convert_arrays_to_tensors should raise when required keys are missing."""
@@ -246,9 +252,9 @@ class TestGetSpiralDatasetIntegration:
 
             result = provider.get_spiral_dataset(**_default_dataset_kwargs())
 
-            (x_train, y_train), (x_val, y_val), (x_test, y_test), (x_full, y_full) = result
+            (x_train, _), (_, _), (_, _) = result
             assert isinstance(x_train, torch.Tensor)
-            assert len(result) == 4, "train / val / test / full"
+            assert len(result) == 3, "train / val / test"
 
     def test_client_exception_wrapped_in_provider_error(self):
         """get_spiral_dataset should wrap client exceptions in SpiralDataProviderError."""
