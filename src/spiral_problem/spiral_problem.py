@@ -566,10 +566,13 @@ class SpiralProblem(object):
             - The function generates the spirals using the `generate_spiral_data` function.
             - When JUNIPER_DATA_URL environment variable is set, fetches data from JuniperData service instead of local generation.
         Returns:
-            tuple: A tuple containing the training and test sets, and the full dataset.
+            tuple: THREE partition pairs -- train, val, test. There is no ``full`` member;
+                decision 11 retires the ``*_full`` family from the NPZ contract, and
+                ``solve_n_spiral_problem`` derives the whole dataset by concatenation.
                 - (x_train, y_train): Training set features and targets.
-                - (x_test, y_test): Test set features and targets.
-                - (x_full, y_full): Full dataset features and targets.
+                - (x_val, y_val): the IN-LOOP validation partition, ``(None, None)`` only
+                  for a legacy two-partition artifact.
+                - (x_test, y_test): the REPORTED partition; no training decision reads it.
         """
         # CFG-04: Settings field consolidates the JUNIPER_DATA_URL env-var
         # lookup. Required (no fallback) — fail loudly with the same
@@ -1323,21 +1326,37 @@ class SpiralProblem(object):
 
         # Unpack the dataset partitions.
         #
-        # FOUR, not three. cascor#620 widened ``SpiralDatasetTuple`` to carry the val
-        # pair between train and test; this unpack was left at three, so the direct CLI
-        # raised ``ValueError: too many values to unpack (expected 3)`` against a real
-        # service. The unit tests did not catch it because they patch
-        # ``generate_n_spiral_dataset`` with a hand-built three-tuple -- the stub, not
-        # the provider, defined the shape they saw.
+        # THREE, not four. Decision 11 retires the ``*_full`` family from the NPZ
+        # contract (juniper-data#369), so the provider no longer returns a fourth
+        # ``full`` pair -- ``self.x_full`` / ``self.y_full`` are DERIVED below instead.
+        #
+        # This unpack has been wrong once before, in the other direction: cascor#620
+        # widened ``SpiralDatasetTuple`` from three pairs to four and left the unpack at
+        # three, so the direct CLI raised ``ValueError: too many values to unpack
+        # (expected 3)`` against a real service, on every run. The unit suite stayed
+        # green because every test on this path patches ``generate_n_spiral_dataset``
+        # with a hand-built tuple -- the stub, not the provider, defined the arity they
+        # saw. ``src/tests/unit/test_cli_partition_arity_contract.py`` binds the two
+        # together; it drives the REAL conversion, so it fails if this drifts again.
         self.logger.trace("SpiralProblem: solve_n_spiral_problem: Unpacking dataset partitions")
-        train_partition, val_partition, test_partition, full_partition = dataset_partitions
+        train_partition, val_partition, test_partition = dataset_partitions
         self.logger.verbose(f"SpiralProblem: solve_n_spiral_problem: Train Partition: Type: {type(train_partition)}, Length: {len(train_partition)}, Value:\n{train_partition}")
         self.logger.verbose(f"SpiralProblem: solve_n_spiral_problem: Test Partition: Type: {type(test_partition)}, Length: {len(test_partition)}, Value:\n{test_partition}")
-        self.logger.verbose(f"SpiralProblem: solve_n_spiral_problem: Full Partition: Type: {type(full_partition)}, Length: {len(full_partition)}, Value:\n{full_partition}")
         self.x_train, self.y_train = train_partition
         self.x_val, self.y_val = val_partition
         self.x_test, self.y_test = test_partition
-        self.x_full, self.y_full = full_partition
+
+        # Derive the whole dataset rather than reading a retired key. This reproduces
+        # exactly what juniper-data used to ship as ``X_full``: `juniper_data/core/split.py`
+        # built it as ``np.vstack([X_train, X_val, X_test])`` over contiguous slices, so
+        # the concatenation below is row-for-row identical for any spiral artifact --
+        # legacy or post-#369. A legacy TWO-way artifact has no val pair; it contributes
+        # nothing to the concatenation, which likewise matches the old two-way ``X_full``.
+        _full_x = [self.x_train] + ([self.x_val] if self.x_val is not None else []) + [self.x_test]
+        _full_y = [self.y_train] + ([self.y_val] if self.y_val is not None else []) + [self.y_test]
+        self.x_full = torch.cat(_full_x, dim=0)
+        self.y_full = torch.cat(_full_y, dim=0)
+        self.logger.verbose(f"SpiralProblem: solve_n_spiral_problem: Full partition DERIVED from {len(_full_x)} partitions (the *_full family is retired; decision 11)")
 
         self.logger.info(f"SpiralProblem: solve_n_spiral_problem: Dataset x_full: Shape: {self.x_full.shape}, Type: {type(self.x_full)}, Value:\n{self.x_full}")
         self.logger.debug(f"SpiralProblem: solve_n_spiral_problem: Dataset x_full: Shape: {self.x_full.shape}, Type: {type(self.x_full)}, Value:\n{self.x_full}")

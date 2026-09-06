@@ -21,16 +21,20 @@ from spiral_problem.spiral_problem import SpiralProblem
 def _make_mock_result(n_train=2, n_val=2, n_test=1, n_spirals=2):
     """Create mock tensor result matching SpiralDataProvider return format.
 
-    Four pairs since the three-way partition: the ``val`` pair is the in-loop
-    signal and sits between train and test, so a stale three-pair double would
-    silently bind ``test`` rows to the ``val`` slot.
+    THREE pairs. The ``val`` pair is the in-loop signal and sits between train and
+    test, so a stale two-pair double would silently bind ``test`` rows to the ``val``
+    slot. Decision 11 removed the fourth ``full`` pair -- the whole dataset is now
+    derived by concatenation, so a stale FOUR-pair double is the drift to watch for
+    now, and ``tests/unit/test_cli_partition_arity_contract.py`` is what catches it.
+
+    This is a hand-built double: it does not track the provider on its own. That is
+    precisely the defect cascor#620 shipped, so keep it in step with
+    ``SpiralDatasetTuple``.
     """
-    n_full = n_train + n_val + n_test
     return (
         (torch.randn(n_train, 2), torch.zeros(n_train, n_spirals)),
         (torch.randn(n_val, 2), torch.zeros(n_val, n_spirals)),
         (torch.randn(n_test, 2), torch.zeros(n_test, n_spirals)),
-        (torch.randn(n_full, 2), torch.zeros(n_full, n_spirals)),
     )
 
 
@@ -124,7 +128,7 @@ class TestMandatoryJuniperDataIntegration:
                 assert call_kwargs["seed"] == 42
 
     def test_returns_correct_tuple_format(self):
-        """Must return ((x_train, y_train), (x_val, y_val), (x_test, y_test), (x_full, y_full))."""
+        """Must return ((x_train, y_train), (x_val, y_val), (x_test, y_test))."""
         mock_result = _make_mock_result()
 
         with patch.dict(os.environ, {"JUNIPER_DATA_URL": "http://localhost:8100"}):
@@ -140,8 +144,8 @@ class TestMandatoryJuniperDataIntegration:
                 result = sp.generate_n_spiral_dataset()
 
                 assert isinstance(result, tuple)
-                assert len(result) == 4, "train / val / test / full"
-                (x_train, y_train), (x_val, y_val), (x_test, y_test), (x_full, y_full) = result
+                assert len(result) == 3, "train / val / test"
+                (x_train, y_train), (_, _), (_, _) = result
                 assert isinstance(x_train, torch.Tensor)
                 assert isinstance(y_train, torch.Tensor)
 

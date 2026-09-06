@@ -149,14 +149,22 @@ class TestJuniperDataE2EDatasetCreation:
 
         arrays = patched_jd_client.download_artifact_npz(dataset_id)
 
-        required_keys = {"X_train", "y_train", "X_test", "y_test", "X_full", "y_full"}
+        # ``X_full`` / ``y_full`` are NOT required: decision 11 (juniper-data#369) stops
+        # the producer emitting them. This test runs against whatever juniper-data is
+        # installed, which may be either side of that change, so the family is asserted
+        # presence-conditionally -- exactly as ``X_val`` is in the next test.
+        required_keys = {"X_train", "y_train", "X_test", "y_test"}
         assert required_keys <= set(arrays.keys())
 
         for key in required_keys:
             assert isinstance(arrays[key], np.ndarray), f"{key} should be ndarray"
 
-        for key in ["X_train", "X_test", "X_full"]:
+        for key in ["X_train", "X_test"]:
             assert arrays[key].shape[1] == 2, f"{key} should have 2 feature columns"
+
+        for key in ("X_full", "y_full"):
+            if key in arrays:
+                assert isinstance(arrays[key], np.ndarray), f"{key} should be ndarray when present"
 
     def test_npz_arrays_have_correct_shapes(self, patched_jd_client):
         """Array shapes are consistent: train + val + test == full.
@@ -175,7 +183,12 @@ class TestJuniperDataE2EDatasetCreation:
         # `X_val` is therefore presence-conditional here (juniper-data#361), while
         # the length identity holds under both the two- and three-way contracts.
         partitions = [arrays[f"X_{name}"].shape[0] for name in ("train", "val", "test") if f"X_{name}" in arrays]
-        assert sum(partitions) == arrays["X_full"].shape[0]
+        assert len(partitions) >= 2, "an artifact must carry at least the train and test partitions"
+        # Decision 11 retires ``X_full``, so the identity is asserted only when the
+        # producer still emits it. Guarding it this way keeps the check meaningful
+        # against a pre-#369 juniper-data instead of deleting a real invariant outright.
+        if "X_full" in arrays:
+            assert sum(partitions) == arrays["X_full"].shape[0]
         assert arrays["X_train"].shape[0] > 0
         assert arrays["y_train"].shape[1] == 2  # number of classes == number of spirals
 
@@ -205,11 +218,11 @@ class TestJuniperDataE2EFullFlow:
             seed=42,
         )
 
-        assert isinstance(result, tuple) and len(result) == 4
+        assert isinstance(result, tuple) and len(result) == 3
 
-        (x_train, y_train), (x_val, y_val), (x_test, y_test), (x_full, y_full) = result
+        (x_train, y_train), (x_val, _), (x_test, y_test) = result
 
-        for t in (x_train, y_train, x_test, y_test, x_full, y_full):
+        for t in (x_train, y_train, x_test, y_test):
             assert isinstance(t, torch.Tensor)
             assert t.dtype == torch.float32
 
@@ -218,11 +231,13 @@ class TestJuniperDataE2EFullFlow:
         # Producer-version tolerant: the row counts depend on which juniper-data
         # is installed (see the note in test_npz_arrays_have_correct_shapes).
         assert x_train.shape[0] > 0
-        assert x_full.shape[0] >= x_train.shape[0] + x_test.shape[0]
+        # The whole dataset is derived now, not returned. Same check, live arrays.
+        x_whole = torch.cat([x_train] + ([x_val] if x_val is not None else []) + [x_test], dim=0)
+        assert x_whole.shape[0] >= x_train.shape[0] + x_test.shape[0]
 
     def test_provider_with_3_spirals(self, patched_spiral_data_provider):
         """3-spiral dataset produces 3-class labels and correct total points."""
-        (x_train, y_train), (x_val, y_val), (x_test, y_test), (x_full, y_full) = patched_spiral_data_provider.get_spiral_dataset(
+        (x_train, y_train), (x_val, _), (x_test, _) = patched_spiral_data_provider.get_spiral_dataset(
             n_spirals=3,
             n_points=30,
             n_rotations=1.5,
@@ -236,7 +251,8 @@ class TestJuniperDataE2EFullFlow:
 
         assert y_train.shape[1] == 3
         assert x_train.shape[0] > 0
-        assert x_full.shape[0] >= x_train.shape[0] + x_test.shape[0]
+        x_whole = torch.cat([x_train] + ([x_val] if x_val is not None else []) + [x_test], dim=0)
+        assert x_whole.shape[0] >= x_train.shape[0] + x_test.shape[0]
 
     def test_provider_with_legacy_algorithm(self, patched_spiral_data_provider):
         """Legacy algorithm produces the same valid tensor structure."""
@@ -253,8 +269,8 @@ class TestJuniperDataE2EFullFlow:
             algorithm="legacy_cascor",
         )
 
-        assert isinstance(result, tuple) and len(result) == 4
-        (x_train, y_train), _, _, _ = result
+        assert isinstance(result, tuple) and len(result) == 3
+        (x_train, y_train), _, _ = result
         assert isinstance(x_train, torch.Tensor)
         assert x_train.shape[1] == 2
 
@@ -264,7 +280,7 @@ class TestJuniperDataE2EFullFlow:
         from cascade_correlation.cascade_correlation_config.cascade_correlation_config import CascadeCorrelationConfig
 
         n_spirals = 2
-        (x_train, y_train), _, _, _ = patched_spiral_data_provider.get_spiral_dataset(
+        (x_train, y_train), _, _ = patched_spiral_data_provider.get_spiral_dataset(
             n_spirals=n_spirals,
             n_points=50,
             n_rotations=1.5,
