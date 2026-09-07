@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **An ingested artifact carrying NaN or Inf now fails at the boundary, by name.**
+  `_artifact_to_tensors` validated dtype, dimensionality, pairing and row counts, but not
+  finiteness — so a non-finite value passed every check unchanged, reached the optimiser, and
+  surfaced as a NaN loss several layers from its cause. The reader was left working backwards from
+  a diverged run to a producer they cannot see.
+
+  All six arrays are checked (`X_train`/`y_train` plus both optional partitions), the message
+  reports **how many** values are non-finite out of how many — one stray NaN and a wholly-NaN
+  column are different problems — and it names the producer-side remedy, which is not otherwise
+  discoverable from cascor.
+
+  **Reachable rather than theoretical since juniper-data#378** made `fundamentals_fill="nan"` the
+  `equities` default: rows before a ticker's first SEC filing carry NaN in `total_shares`,
+  `market_cap` and `days_since_report`, which is **43.1%** of a default 2000-onwards window.
+  No current path feeds such an artifact here — `equities_seq` is barred three ways and flat
+  `equities` requests are post-2009 — so this is a guard against the next one, not a live outage.
+
+  Pinned by `TestNonFiniteArtifactArrays` (10 arms, parametrised across all six keys). Verified
+  non-vacuous: neutering the check turns 9 of 10 red, and the one that stays green is the
+  clean-artifact arm.
+
 ### Added
 
 - **`dataset_shortfall` on `GET /v1/training/status`** (additive; `null` when the producer
