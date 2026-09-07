@@ -622,3 +622,82 @@ class TestPendingDatasetConfig:
         assert result["status"] == "cleared"
         assert result["discarded"] == {"dataset_type": "xor"}
         assert mgr.get_pending_dataset_config() is None
+
+
+@pytest.mark.unit
+class TestNonFiniteArtifactArrays:
+    """A NaN or Inf in an ingested artifact must fail HERE, naming itself.
+
+    Every other malformity in ``_artifact_to_tensors`` already fails with a
+    message that says what is wrong. A non-finite value did not: it passed
+    dtype, shape, pairing and row-count checks unchanged, reached the optimiser,
+    and surfaced as a NaN loss several layers from its cause -- leaving the
+    reader to work backwards from a diverged run to a producer they cannot see.
+
+    Reachable rather than theoretical since juniper-data#378 made
+    ``fundamentals_fill="nan"`` the equities default: rows before a ticker's
+    first SEC filing carry NaN, which is 43.1% of a default 2000-onwards window.
+    """
+
+    @staticmethod
+    def _clean(rows: int = 4, features: int = 2) -> dict:
+        return {
+            "X_train": np.zeros((rows, features), dtype=np.float32),
+            "y_train": np.zeros((rows, 2), dtype=np.float32),
+            "X_val": np.zeros((2, features), dtype=np.float32),
+            "y_val": np.zeros((2, 2), dtype=np.float32),
+            "X_test": np.zeros((2, features), dtype=np.float32),
+            "y_test": np.zeros((2, 2), dtype=np.float32),
+        }
+
+    def test_a_clean_artifact_still_loads(self) -> None:
+        """The guard must not reject the overwhelmingly common case."""
+        train_x, train_y, val_x, val_y, test_x, test_y = TrainingLifecycleManager._artifact_to_tensors(self._clean())
+        assert train_x.shape == (4, 2)
+        assert val_x is not None and test_x is not None
+
+    @pytest.mark.parametrize("key", ["X_train", "y_train", "X_val", "y_val", "X_test", "y_test"])
+    def test_a_nan_in_any_partition_is_refused(self, key: str) -> None:
+        """All six arrays, not just the required pair.
+
+        Parametrised because the optional partitions travel a different code
+        path (``_artifact_optional_partition``) and would otherwise be guarded
+        only by inspection.
+        """
+        arrays = self._clean()
+        arrays[key] = arrays[key].copy()
+        arrays[key][0, 0] = np.nan
+        with pytest.raises(RuntimeError, match=f"{key} contains 1 non-finite"):
+            TrainingLifecycleManager._artifact_to_tensors(arrays)
+
+    def test_an_inf_is_refused_too(self) -> None:
+        """Inf diverges a run just as thoroughly as NaN, and is not caught by isnan."""
+        arrays = self._clean()
+        arrays["X_train"] = arrays["X_train"].copy()
+        arrays["X_train"][1, 1] = np.inf
+        with pytest.raises(RuntimeError, match="X_train contains 1 non-finite"):
+            TrainingLifecycleManager._artifact_to_tensors(arrays)
+
+    def test_the_message_names_the_remedy(self) -> None:
+        """A refusal the operator cannot act on just moves the confusion.
+
+        The producer-side knob is not discoverable from cascor, so the message
+        carries it: this is the one place a reader learns that `equities`
+        defaults to a NaN fill.
+        """
+        arrays = self._clean()
+        arrays["X_train"] = arrays["X_train"].copy()
+        arrays["X_train"][0, 0] = np.nan
+        with pytest.raises(RuntimeError) as excinfo:
+            TrainingLifecycleManager._artifact_to_tensors(arrays)
+        message = str(excinfo.value)
+        assert "fundamentals_fill" in message
+        assert "start_date" in message
+
+    def test_the_count_is_reported_not_just_the_fact(self) -> None:
+        """One stray NaN and a wholly-NaN column are different problems."""
+        arrays = self._clean()
+        arrays["X_train"] = arrays["X_train"].copy()
+        arrays["X_train"][:, 0] = np.nan
+        with pytest.raises(RuntimeError, match="X_train contains 4 non-finite value"):
+            TrainingLifecycleManager._artifact_to_tensors(arrays)

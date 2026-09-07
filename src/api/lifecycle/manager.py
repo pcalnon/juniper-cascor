@@ -3857,6 +3857,29 @@ class TrainingLifecycleManager:
         n_features = int(new_train_x.shape[1])
         new_val_x, new_val_y = TrainingLifecycleManager._artifact_optional_partition(arrays, "X_val", "y_val", "validation", n_features)
         new_test_x, new_test_y = TrainingLifecycleManager._artifact_optional_partition(arrays, "X_test", "y_test", "test", n_features)
+
+        # REFUSE NaN/Inf AT THE BOUNDARY, by name.
+        #
+        # Every other malformity here already fails with a message that says what
+        # is wrong; a non-finite value did not. It passed dtype, shape, pairing
+        # and row-count checks unchanged, reached the optimiser, and surfaced as
+        # a NaN loss several layers away from its cause -- the reader then has to
+        # work backwards from a diverged run to a producer they cannot see.
+        #
+        # This became reachable rather than theoretical when juniper-data made
+        # `fundamentals_fill="nan"` the equities default (juniper-data#378): rows
+        # before a ticker's first SEC filing carry NaN in `total_shares`,
+        # `market_cap` and `days_since_report`, which is 43.1% of a default
+        # 2000-onwards window. No current path feeds such an artifact here --
+        # `equities_seq` is barred three ways and flat `equities` requests are
+        # post-2009 -- so this is a guard against the next one, not a fix for a
+        # live outage.
+        for tensor, label in ((new_train_x, "X_train"), (new_train_y, "y_train"), (new_val_x, "X_val"), (new_val_y, "y_val"), (new_test_x, "X_test"), (new_test_y, "y_test")):
+            if tensor is None:
+                continue
+            if not torch.isfinite(tensor).all():
+                non_finite = int((~torch.isfinite(tensor)).sum().item())
+                raise RuntimeError(f"juniper-data artifact {label} contains {non_finite} non-finite value(s) (NaN or Inf) out of {tensor.numel()}. " "Training on them yields a NaN loss with no indication of the cause. If this is an `equities` dataset, the " "producer's `fundamentals_fill` default is `nan`: request `fundamentals_fill=zero` or `drop`, or a " "`start_date` after the ticker's first SEC filing (~2009).")
         return new_train_x, new_train_y, new_val_x, new_val_y, new_test_x, new_test_y
 
     def _reload_dataset(self, **cfg: Any) -> None:
