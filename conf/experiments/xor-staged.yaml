@@ -22,7 +22,18 @@ dataset:
 
 training:
   params:
+    # `output_epochs` MUST accompany `max_epochs`, and must match it. On the SERVICE path
+    # `max_epochs` bounds only the INITIAL output pass; every later pass reads `output_epochs`,
+    # which falls back to `_PROJECT_MODEL_OUTPUT_EPOCHS = 10000`. The direct CLI instead ALIASES
+    # `max_epochs -> output_epochs`, so without both keys the two paths silently diverge and the
+    # service arm runs ~50x the work this file asks for.
+    #
+    # Set to 200/200 on 2026-09-07 (owner decision, juniper-ml P2 item 0.5). This file describes
+    # itself as "small budgets"; the split contradicted that, and unlike `spiral-baseline.yaml`
+    # -- whose split is a documented service-only reference budget -- there was no rationale for
+    # it here. The same defect survived a month in `spiral-smoke.yaml` before cascor#618.
     max_epochs: 200
+    output_epochs: 200
     max_iterations: 4
     max_hidden_units: 6
     candidate_pool_size: 4
