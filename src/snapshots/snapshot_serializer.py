@@ -93,7 +93,7 @@ from cascor_constants.constants_hdf5.constants_hdf5 import _HDF5_FORMAT_NAME_CUR
 from log_config.logger.logger import Logger
 from utils.activation import ActivationWithDerivative
 
-from .snapshot_common import calculate_tensor_checksum, load_numpy_array, load_tensor, read_str_attr, read_str_dataset, save_numpy_array, save_tensor, verify_tensor_checksum, write_str_attr, write_str_dataset
+from .snapshot_common import calculate_tensor_checksum, load_numpy_array, load_tensor, read_scalar_attr, read_str_attr, read_str_dataset, save_numpy_array, save_tensor, verify_tensor_checksum, write_str_attr, write_str_dataset
 from .snapshot_errors import SnapshotSaveError
 from .snapshot_load_status import SNAPSHOT_ARCH_MISMATCH, SNAPSHOT_CORRUPT, SnapshotLoadResult
 from .snapshot_load_status import absent as snapshot_absent
@@ -1345,11 +1345,15 @@ class CascadeHDF5Serializer:
 
         random_group = hdf5_file["random"]
 
-        # Load random parameters
-        network.random_seed = random_group.attrs.get("seed", network.random_seed)
-        network.random_max_value = random_group.attrs.get("max_value", network.random_max_value)
-        network.sequence_max_value = random_group.attrs.get("sequence_max_value", network.sequence_max_value)
-        network.random_value_scale = random_group.attrs.get("value_scale", network.random_value_scale)
+        # Load random parameters -- as PLAIN PYTHON scalars. ``attrs.get`` returns
+        # NumPy scalars, and ``random.Random(np.int64(42))`` is a TypeError on
+        # Python >= 3.12: every ``/resume`` and ``/retrain`` restored the seed as
+        # ``np.int64`` and the first candidate phase died in
+        # ``_generate_candidate_tasks`` (2026-09-08). See ``read_scalar_attr``.
+        network.random_seed = read_scalar_attr(random_group, "seed", network.random_seed)
+        network.random_max_value = read_scalar_attr(random_group, "max_value", network.random_max_value)
+        network.sequence_max_value = read_scalar_attr(random_group, "sequence_max_value", network.sequence_max_value)
+        network.random_value_scale = read_scalar_attr(random_group, "value_scale", network.random_value_scale)
 
         # Restore RNG states
         try:
