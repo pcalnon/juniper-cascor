@@ -5,7 +5,7 @@
 **Author**: Paul Calnon
 **License**: MIT License
 **Version**: 0.11.0
-**Last Updated**: 2026-09-08
+**Last Updated**: 2026-09-09
 
 ---
 
@@ -80,7 +80,7 @@ reference section in the same PR rather than waiving the budget gate.
 
 ## Quick Reference
 
-### Conda Environment
+### Conda [Environment](Environment)
 
 > **Required:** Activate the live `JuniperCascor1` conda environment before running any commands. The env name is **versioned** — rebuilds increment the suffix and rename the old env `*-DEPRECATED` (never activate those). Discover yours with `conda env list | grep JuniperCascor`.
 
