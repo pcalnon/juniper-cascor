@@ -59,6 +59,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `_reload_dataset` sets the field never sees it over WS — it polls `/v1/training/status`
   (canopy does, at 1 Hz). The manager comment that made the same claim is corrected here.
 
+- **`util/check_image_cpu_only.py` let the `cuda-*` family through, and the merge job's
+  digest-identity step accepted any number of linux images per pushed digest.** The 2026-09-07 CUDA
+  worker image carried `cuda-toolkit`, `cuda-bindings` and `cuda-pathfinder` next to the `nvidia-*`
+  wheels and `triton` -- the very family `requirements.lock` pins outright here -- and the census
+  forbade only the latter two families, so an image with torch `X+cpu` plus those three would have
+  read `cuda_stack=0`. It now forbids `nvidia-*`, `cuda-*` and `triton`. `publish-image.yml`'s merge
+  job also asserts that each pushed per-arch digest resolves to exactly **one** linux image whose
+  architecture is the digest file's name, so a multi-platform index could never count an image the
+  census did not run on as verified. Both pinned by `src/tests/unit/test_dockerfile_cpu_torch_pin.py`.
+  Follow-up 6a of juniper-ml
+  
+  `prompts/thread-handoff_automated-prompts/HANDOFF_2026-09-08_container-registry-rollout-wave-2-opened-and-the-cuda-class-in-three-shapes.md`.
 - **The container image installed the entire CUDA stack -- ~3 GB of `nvidia-*`, `triton` and
   `cuda-toolkit` wheels -- on an image that is CPU-only by design.** `requirements.lock` was
   resolved against the CUDA torch on PyPI, so it pins those packages *outright*, and `Dockerfile`
