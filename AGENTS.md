@@ -796,7 +796,9 @@ Performance micro-benchmarks in `src/tests/performance/` cover:
 - Autograd overhead
 - End-to-end profiling
 
-**Timing reference (PF-4, report-only)**: cut with `--run-performance --benchmark-storage=file://$HOME/.local/state/juniper-experiments/baselines/cascor-micro --benchmark-autosave` (storage **outside** every checkout — `.benchmarks/` is gitignored and dies with a worktree), compare with `--benchmark-compare=NNNN`, and never add `--benchmark-compare-fail`: the owner ruled timing report-only (juniper-ml P2 item 2.5, 2026-09-07) because the reference host's quiet noise band is 20.5%. The saved JSON carries host identity in `machine_info.juniper` (compared, warns on change) and the load average at save time in `juniper_run` (recorded, never compared). Procedure: `docs/testing/REFERENCE.md` § Micro timing reference.
+**Timing reference (PF-4, report-only)**:
+cut with `--run-performance --benchmark-storage=file://$HOME/.local/state/juniper-experiments/baselines/cascor-micro --benchmark-autosave` (storage **outside** every checkout — `.benchmarks/` is gitignored and dies with a worktree), compare with `--benchmark-compare=NNNN`, and never add `--benchmark-compare-fail`: the owner ruled timing report-only (juniper-ml P2 item 2.5, 2026-09-07) because the reference host's quiet noise band is 20.5%.
+The saved JSON carries host identity in `machine_info.juniper` (compared, warns on change) and the load average at save time in `juniper_run` (recorded, never compared). Procedure: `docs/testing/REFERENCE.md` § Micro timing reference.
 
 ---
 
