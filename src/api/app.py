@@ -486,7 +486,27 @@ async def _auto_start_training(app: FastAPI, settings: Settings) -> None:
     the auto-start sequence completes. Uses JuniperDataClient to create and
     fetch training data, then uses the lifecycle manager to create a network
     and start training.
+
+    Failures here are still SWALLOWED -- the service must come up healthy
+    whether or not the demo run starts, and that is deliberate. What changed
+    (2026-09-09, the round-38 follow-ups filed in cascor#624's body) is that a
+    swallowed failure now leaves a queryable trace: every give-up path records
+    its reason on ``lifecycle._auto_start_failure``, which ``get_status()``
+    publishes as ``auto_start_failure``. The record used to be a log line and
+    nothing else, so a deployment whose auto-start died served a green
+    ``/v1/health`` and a status payload identical to an idle service's.
     """
+    # Bound BEFORE the try so every give-up path below -- including one that
+    # fails on its first statement -- can record its reason. ``getattr`` with a
+    # default rather than a subscript because an absent lifecycle is itself a
+    # failure this function has to survive long enough to log.
+    lifecycle: TrainingLifecycleManager | None = getattr(app.state, "lifecycle", None)
+
+    def _record_failure(message: str) -> None:
+        """Put the reason where ``get_status()`` can see it, then let it be swallowed."""
+        if lifecycle is not None:
+            lifecycle._auto_start_failure = message
+
     try:
         from juniper_data_client import JuniperDataClient
 
@@ -502,23 +522,71 @@ async def _auto_start_training(app: FastAPI, settings: Settings) -> None:
         logger.info(f"Auto-start: waiting for JuniperData at {data_url}")
         ready = await asyncio.to_thread(client.wait_for_ready, timeout=_PROJECT_API_JUNIPER_DATA_READY_TIMEOUT)
         if not ready:
-            logger.error(f"Auto-start failed: JuniperData not ready after {_PROJECT_API_JUNIPER_DATA_READY_TIMEOUT}s")
+            not_ready = f"Auto-start failed: JuniperData not ready after {_PROJECT_API_JUNIPER_DATA_READY_TIMEOUT}s at {data_url}"
+            logger.error(not_ready)
+            _record_failure(not_ready)
             return
 
         # Create dataset via JuniperData
         dataset_params = json.loads(settings.auto_dataset_params)
-        logger.info(f"Auto-start: creating '{settings.auto_dataset}' dataset with params={dataset_params}")
-        result = await asyncio.to_thread(
-            client.create_dataset,
+        # Forward this deployment's truncation stance to the producer, through
+        # the SAME helper the staged path uses so the two cannot drift. Before
+        # this, auto-start sent no opt-in at all: a deployment with
+        # ``JUNIPER_CASCOR_ALLOW_TRUNCATED_DATASETS=true`` and a truncatable
+        # generator still took the producer's 422, and the service came up with
+        # no training and a swallowed exception naming a knob that was already on.
+        #
+        # A DEFAULT, NEVER AN OVERRIDE: an ``allow_truncation`` already present
+        # in ``JUNIPER_CASCOR_AUTO_DATASET_PARAMS`` wins, in either polarity, so
+        # the operator's third option ("fail the data load completely", expressed
+        # by sending ``false``) stays reachable on a flag-on deployment.
+        dataset_params, acceptance_source, wire_stance, caller_refused = TrainingLifecycleManager._resolve_truncation_stance(
+            dataset_params,
             generator=settings.auto_dataset,
-            params=dataset_params,
-            persist=True,
+            allow_truncated=bool(settings.allow_truncated_datasets),
         )
-        dataset_id = result["dataset_id"]
+        logger.info(f"Auto-start: creating '{settings.auto_dataset}' dataset with params={dataset_params}")
+        try:
+            result = await asyncio.to_thread(
+                client.create_dataset,
+                generator=settings.auto_dataset,
+                params=dataset_params,
+                persist=True,
+            )
+            dataset_id = result["dataset_id"]
+            # Download training data as numpy arrays
+            arrays = await asyncio.to_thread(client.download_artifact_npz, dataset_id)
+        except Exception as exc:
+            # A 422 here is not a generic outage: the dataset could not be
+            # produced in full and this run did not opt in. The shared describer
+            # names the knob to turn on THIS side (and tells a caller that sent
+            # ``allow_truncation=false`` to re-send the request instead, since a
+            # service knob cannot override their own value). Logged at ERROR
+            # because it is actionable, recorded because a log line is not a
+            # surface, and then swallowed like every other auto-start failure.
+            fetch_failure = TrainingLifecycleManager._describe_dataset_fetch_failure(exc, allow_truncated=wire_stance, caller_refused=caller_refused)
+            logger.error("Auto-start failed: %s", fetch_failure)
+            _record_failure(fetch_failure)
+            return
         logger.info(f"Auto-start: dataset created — id={dataset_id}")
 
-        # Download training data as numpy arrays
-        arrays = await asyncio.to_thread(client.download_artifact_npz, dataset_id)
+        if lifecycle is None:  # pragma: no cover - a lifespan that reached here without one is a programming error
+            raise RuntimeError("Auto-start: app.state.lifecycle is not initialised")
+
+        # Annotate the run with what the producer could NOT deliver, exactly as
+        # ``_reload_dataset`` does for a staged run. Without it an auto-started
+        # run training on a partial dataset reported ``dataset_shortfall: null``
+        # -- indistinguishable over the API from one that got everything it asked
+        # for, so its score carried no mark of the data behind it. The log line
+        # and the pollable annotation are both emitted, with the same source.
+        #
+        # ``dataset_id`` rides along because the deployment default above can
+        # change the params and therefore the content-addressed id; an annotation
+        # that does not name its artifact is a claim about an unidentified one.
+        meta = result.get("meta") or {}
+        lifecycle._log_dataset_shortfall(meta, acceptance_source=acceptance_source)
+        lifecycle._dataset_shortfall = TrainingLifecycleManager._build_dataset_shortfall(meta, dataset_id=dataset_id, acceptance_source=acceptance_source)
+
         # Reuse the manager's ingestion rather than re-reading the keys here. A
         # second, simpler reader is how the two paths drift: this one used to take
         # X_train alone and hand the run NO held-out data at all, so the auto-start
@@ -530,7 +598,6 @@ async def _auto_start_training(app: FastAPI, settings: Settings) -> None:
         # a collaborator that tests legitimately replace with a double.
         x_train, y_train, x_val, y_val, x_test, y_test = TrainingLifecycleManager._artifact_to_tensors(arrays)
         x_val, y_val, _ = TrainingLifecycleManager._resolve_validation_split(x_val, y_val, x_test, y_test)
-        lifecycle: TrainingLifecycleManager = app.state.lifecycle
         logger.info(f"Auto-start: training data loaded — {x_train.shape[0]} samples, {x_train.shape[1]} features")
 
         # Create network — infer input/output sizes from training data.
@@ -553,8 +620,14 @@ async def _auto_start_training(app: FastAPI, settings: Settings) -> None:
         train_result = lifecycle.start_training(X=x_train, y=y_train, X_val=x_val, y_val=y_val, X_test=x_test, y_test=y_test)
         logger.info(f"Auto-start: training initiated — {train_result}")
 
-    except Exception:
+    except Exception as exc:
         logger.exception("Auto-start training failed")
+        # Recorded as well as logged, and for EVERY remaining failure -- a field
+        # named ``auto_start_failure`` that stays None while the failure is only
+        # in the log would be the same denial ``dataset_shortfall`` carried
+        # before cascor#633. The exception type is kept: the message alone is
+        # frequently empty (a bare ``KeyError('meta')`` renders as ``'meta'``).
+        _record_failure(f"Auto-start training failed: {type(exc).__name__}: {exc}")
 
 
 async def _auto_start_canopy(

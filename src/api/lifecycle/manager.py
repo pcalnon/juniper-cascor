@@ -1241,6 +1241,16 @@ class TrainingLifecycleManager:
         # read by ``get_status()``. It exists because the annotation was
         # previously written only to the training LOG, which nothing can poll.
         self._dataset_shortfall: Optional[Dict[str, Any]] = None
+        # ``_auto_start_failure`` carries why the auto-start sequence gave up, or
+        # ``None`` -- which is both "it succeeded" and "it was never enabled".
+        # Set by ``app.py``'s ``_auto_start_training``, read by ``get_status()``.
+        # Auto-start deliberately swallows its failures so the service still
+        # comes up healthy; before this the ONLY record was a log line, so a
+        # deployment with ``JUNIPER_CASCOR_AUTO_START=true`` and a dead
+        # juniper-data served a green ``/v1/health`` and a status payload
+        # indistinguishable from an idle service that was simply waiting for a
+        # request.
+        self._auto_start_failure: Optional[str] = None
         self._swap_in_progress: bool = False
         # P2-1b: ``_swap_cancel_requested`` is signalled by
         # ``DELETE /v1/training/dataset/live`` and observed at safe checkpoints
@@ -2819,6 +2829,19 @@ class TrainingLifecycleManager:
             # over the API from one that got everything -- and a reported score
             # carried no mark of the data behind it.
             "dataset_shortfall": self._dataset_shortfall,
+            # Why the auto-start sequence gave up, or None. Additive field, and
+            # None on every deployment that does not use auto-start at all.
+            #
+            # Auto-start runs as a background task and swallows its exceptions on
+            # purpose -- the service must come up healthy either way. The cost was
+            # that a failure left NO queryable trace: `/v1/health` stayed green,
+            # `training_active` read false, and nothing distinguished "the dataset
+            # fetch was refused" from "nobody has asked for a run yet". A field
+            # named for the failure that stayed None while the failure was logged
+            # would be the same class of denial `dataset_shortfall` was fixed for
+            # (cascor#633), so every give-up path in `_auto_start_training` sets
+            # it -- producer never ready, dataset fetch refused, and anything else.
+            "auto_start_failure": self._auto_start_failure,
         }
 
     def get_metrics(self) -> Dict[str, Any]:
@@ -2856,6 +2879,23 @@ class TrainingLifecycleManager:
             "val_accuracy": val_accuracy[-1] if val_accuracy else None,
             "hidden_units": hidden_units,
             "timestamp": datetime.now().isoformat(),
+            # What the producer could NOT deliver for the dataset these numbers
+            # were computed on, or None when it delivered in full. Additive and
+            # identical to the field ``get_status()`` carries -- one value, read
+            # from two surfaces, so the two cannot disagree.
+            #
+            # It belongs HERE and not only on the status route because this is
+            # where the numbers are. The partial-data contract requires the
+            # "accept" and "drop" options to annotate progress, metrics AND
+            # results; a consumer reading `/v1/metrics` alone (canopy's metric
+            # panels do) otherwise gets an accuracy with no mark of the data
+            # behind it and no reason to go looking for one.
+            #
+            # ``get_metrics_history`` deliberately does NOT carry it: its rows
+            # are per-epoch samples from the monitor, and the shortfall is a
+            # property of the run's dataset, not of any epoch in it. Stamping it
+            # onto every row would imply it could vary between them.
+            "dataset_shortfall": self._dataset_shortfall,
             # C7 (U-4) flat scalar evaluation metrics (nullable).
             "f1": scalars.get("f1"),
             "precision": scalars.get("precision"),
@@ -3802,6 +3842,70 @@ class TrainingLifecycleManager:
                 return False
         return bool(value)
 
+    @staticmethod
+    def _resolve_truncation_stance(params: Dict[str, Any], *, generator: str, allow_truncated: bool) -> Tuple[Dict[str, Any], Optional[str], bool, bool]:
+        """Resolve one dataset request's truncation stance: what to send, and who chose it.
+
+        ONE implementation, because there are two live dataset-fetch paths --
+        ``_reload_dataset`` (the staged / live-swap route) and ``app.py``'s
+        ``_auto_start_training`` -- and a second, simpler reader is how the two
+        drift. That is not hypothetical on this pair: auto-start already re-read
+        the artifact keys itself once and handed the run no held-out data at all.
+        Until this became shared (2026-09-09, the round-38 follow-ups filed in
+        cascor#624's body), auto-start forwarded no opt-in on a deployment whose
+        flag was on, and annotated nothing afterwards -- so an auto-started run
+        training on a partial dataset reported ``dataset_shortfall: null``, which
+        is the same denial cascor#633 removed from the staged path.
+
+        Returns ``(params, acceptance_source, wire_stance, caller_refused)``:
+
+        * ``params`` -- what to put on the wire. Never mutated in place; the
+          caller's dict is returned unchanged when no default applies.
+        * ``acceptance_source`` -- one of the three ``_PROJECT_API_SHORTFALL_*``
+          constants, or ``None`` when no opt-in was sent from this side. ``None``
+          is not "clean": ``_build_dataset_shortfall`` then records the PRODUCER
+          as the authority, because juniper-data ORs the request with ITS
+          deployment's opt-in and a client cannot refuse that.
+        * ``wire_stance`` -- whether an opt-in actually went on the wire. The
+          setting alone is the wrong witness (a caller-supplied value wins over
+          it), and ``_describe_dataset_fetch_failure`` keys its remedy off this.
+        * ``caller_refused`` -- the caller sent an explicit ``false``. Its remedy
+          differs from a silent caller's: re-send the dataset request, rather
+          than turn a service knob the caller's own value overrides.
+        """
+        from cascor_constants.constants_api.constants_api_defaults import _PROJECT_API_TRUNCATABLE_GENERATORS
+
+        caller_stance = TrainingLifecycleManager._as_bool_stance(params.get("allow_truncation"))
+        if allow_truncated and generator in _PROJECT_API_TRUNCATABLE_GENERATORS and "allow_truncation" not in params:
+            # Only the generators that can actually produce a partial dataset.
+            # Every other generator synthesises its data and always delivers in
+            # full, so forwarding the flag there would send a parameter it
+            # ignores -- and imply the knob does something it does not.
+            #
+            # A DEPLOYMENT DEFAULT, NOT AN OVERRIDE. This used to be an
+            # unconditional ``{**params, "allow_truncation": True}`` -- the
+            # literal key LAST in the merge, so it silently replaced a
+            # caller-supplied ``allow_truncation: False``. That made the owner's
+            # third option ("fail the data load completely", expressed by sending
+            # neither parameter) UNREACHABLE on any deployment where the flag was
+            # on: "send neither" became "accept". The caller is the more specific
+            # authority here, so an explicit value of either polarity wins.
+            params = {**params, "allow_truncation": True}
+
+        # What actually went on the wire, and who put it there. The setting alone
+        # is the wrong witness on both sides of this: a caller-supplied value wins
+        # over it (above), and the producer applies its OWN deployment opt-in on
+        # top of whatever arrives. So "did this run accept a partial dataset" is
+        # answered by the request that was sent, and "who accepted it" needs a
+        # third value for the case where nobody on this side did.
+        wire_stance = bool(TrainingLifecycleManager._as_bool_stance(params.get("allow_truncation")))
+        if caller_stance is not None:
+            acceptance_source = _PROJECT_API_SHORTFALL_ACCEPTED_BY_REQUEST if caller_stance else None
+        else:
+            acceptance_source = _PROJECT_API_SHORTFALL_ACCEPTED_BY_DEPLOYMENT if wire_stance else None
+
+        return params, acceptance_source, wire_stance, caller_stance is False
+
     def _log_dataset_shortfall(self, meta: Dict[str, Any], *, acceptance_source: Optional[str]) -> None:
         """Log what the producer could not deliver, when this run accepted it.
 
@@ -4012,7 +4116,6 @@ class TrainingLifecycleManager:
         from api.secrets import get_secret
         from api.settings import Settings
         from cascor_constants.constants_api import _PROJECT_API_JUNIPER_DATA_URL_DEFAULT
-        from cascor_constants.constants_api.constants_api_defaults import _PROJECT_API_TRUNCATABLE_GENERATORS
 
         # CFG-04: Settings field consolidates the JUNIPER_DATA_URL env-var
         # lookup; ``or DEFAULT`` preserves the legacy localhost:8100
@@ -4031,42 +4134,20 @@ class TrainingLifecycleManager:
         # opts in, so an unset flag means the fetch below fails and takes the run
         # with it -- which is the point: a score computed on a partial dataset is
         # a score for data nobody chose.
-        caller_stance = self._as_bool_stance(jd_params.get("allow_truncation"))
-        allow_truncated = bool(Settings().allow_truncated_datasets)
-        if allow_truncated and generator in _PROJECT_API_TRUNCATABLE_GENERATORS and "allow_truncation" not in jd_params:
-            # Only the generators that can actually produce a partial dataset.
-            # Every other generator synthesises its data and always delivers in
-            # full, so forwarding the flag there would send a parameter it
-            # ignores -- and imply the knob does something it does not.
-            #
-            # A DEPLOYMENT DEFAULT, NOT AN OVERRIDE. This used to be an
-            # unconditional ``{**jd_params, "allow_truncation": True}`` -- the
-            # literal key LAST in the merge, so it silently replaced a
-            # caller-supplied ``allow_truncation: False``. That made the owner's
-            # third option ("fail the data load completely", expressed by sending
-            # neither parameter) UNREACHABLE on any deployment where the flag was
-            # on: "send neither" became "accept". The caller is the more specific
-            # authority here, so an explicit value of either polarity wins.
-            jd_params = {**jd_params, "allow_truncation": True}
-
-        # What actually went on the wire, and who put it there. The setting alone
-        # is the wrong witness on both sides of this: a caller-supplied value wins
-        # over it (above), and the producer applies its OWN deployment opt-in on
-        # top of whatever arrives. So "did this run accept a partial dataset" is
-        # answered by the request that was sent, and "who accepted it" needs a
-        # third value for the case where nobody on this side did.
-        requested_truncation = bool(self._as_bool_stance(jd_params.get("allow_truncation")))
-        if caller_stance is not None:
-            acceptance_source = _PROJECT_API_SHORTFALL_ACCEPTED_BY_REQUEST if caller_stance else None
-        else:
-            acceptance_source = _PROJECT_API_SHORTFALL_ACCEPTED_BY_DEPLOYMENT if requested_truncation else None
+        #
+        # Resolved by the SHARED helper, which ``_auto_start_training`` also
+        # calls: the deployment flag is a default and never an override, and the
+        # three values it returns alongside the params (who accepted, what went
+        # on the wire, whether the caller refused) are what the annotation and
+        # the failure message are built from. See ``_resolve_truncation_stance``.
+        jd_params, acceptance_source, requested_truncation, caller_refused = self._resolve_truncation_stance(jd_params, generator=generator, allow_truncated=bool(Settings().allow_truncated_datasets))
 
         try:
             result = client.create_dataset(generator=generator, params=jd_params, persist=True)
             dataset_id = result["dataset_id"]
             arrays = client.download_artifact_npz(dataset_id)
         except Exception as exc:
-            raise RuntimeError(self._describe_dataset_fetch_failure(exc, allow_truncated=requested_truncation, caller_refused=caller_stance is False)) from exc
+            raise RuntimeError(self._describe_dataset_fetch_failure(exc, allow_truncated=requested_truncation, caller_refused=caller_refused)) from exc
 
         # The producer records what it could not deliver in DatasetMeta; surface
         # it here so an accepted shortfall is visible in THIS run's log and not

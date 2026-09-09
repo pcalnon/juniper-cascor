@@ -36,6 +36,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `tests/performance/timing_reference.py`, pinned from the CI-collected unit tier by
   `tests/unit/test_perf_timing_reference_helpers.py`. Procedure: `docs/testing/REFERENCE.md`
   § Micro timing reference.
+- **`dataset_shortfall` on `GET /v1/metrics`** (additive; `null` when the producer delivered in
+  full). The same field `GET /v1/training/status` has carried since cascor#624, read from the same
+  attribute so the two surfaces cannot disagree. `/v1/metrics` is where the numbers are, so it is
+  where the caveat has to be: the partial-data contract requires an accepted shortfall to annotate
+  **progress, metrics and results**, and a consumer reading the metrics route alone — canopy's
+  metric panels do — otherwise got an accuracy with no mark of the data behind it and no reason to
+  go looking for one. `GET /v1/metrics/history` deliberately does **not** carry it: its rows are
+  per-epoch samples, and the shortfall is a property of the run's dataset rather than of any epoch
+  in it, so stamping it on every row would imply it could vary between them.
+- **`auto_start_failure` on `GET /v1/training/status`** (additive; `null` normally, and on every
+  deployment that never enables auto-start). `_auto_start_training` swallows its exceptions on
+  purpose — the service must come up healthy whether or not the demo run starts — but until now
+  the only record was a log line: `/v1/health` stayed green, `training_active` read `false`, and
+  nothing distinguished *"the dataset fetch was refused"* from *"nobody has asked for a run yet"*.
+  All three give-up paths now set it: the producer never becoming ready, the dataset fetch failing
+  (carrying the shortfall-refusal message, remedy included), and the catch-all handler, which
+  records the exception **type** as well as its message because a bare `KeyError('meta')` renders
+  as `'meta'`.
 
 ### Fixed
 
@@ -115,6 +133,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   this module (`constants_api/__init__.py` names every symbol explicitly), so `__all__` here is
   documentation and a CodeQL signal, never behaviour: no import changes. Verified by the drift suite
   (3 passed, previously 1 failed / 2 passed) and by `test_allow_truncated_datasets.py` (28 passed).
+
+- **An auto-started run carried none of the partial-data contract: it forwarded no truncation
+  opt-in, annotated nothing, and swallowed its failures where nothing could see them.**
+  `_auto_start_training` (`src/api/app.py`) calls `create_dataset` and `download_artifact_npz`
+  itself instead of going through `_reload_dataset`, so all three behaviours the staged path
+  gained across cascor#621 / cascor#624 / cascor#633 were simply absent here. Concretely: a
+  deployment with `JUNIPER_CASCOR_ALLOW_TRUNCATED_DATASETS=true` auto-starting on a truncatable
+  generator still sent no `allow_truncation`, took the producer's 422, and came up healthy with no
+  training — while the knob that would have allowed the fetch was already on. And a run that did
+  receive a partial dataset reported `dataset_shortfall: null`, indistinguishable over the API
+  from one that got everything it asked for, so its score carried no mark of the data behind it.
+
+  Both paths now resolve the stance through **one** shared helper,
+  `TrainingLifecycleManager._resolve_truncation_stance`, because a second, simpler reader is how
+  these two drift — this same function had already re-read the artifact keys itself once and
+  handed the run no held-out data at all. The deployment flag stays a DEFAULT and never an
+  override (an `allow_truncation` in `JUNIPER_CASCOR_AUTO_DATASET_PARAMS` wins, in either
+  polarity, so "send neither parameter and fail" stays reachable), and the pollable annotation and
+  the training-log line are written from the same `acceptance_source`. Failures are still
+  swallowed — the service must come up healthy either way — but a shortfall refusal is now logged
+  at ERROR with the remedy the producer's 422 cannot know, and every give-up path records its
+  reason on the new `auto_start_failure` status field (see Added). Round-38 follow-ups 1 and 2,
+  filed in cascor#624's PR body and confirmed against source 2026-09-08. Pinned by
+  `src/tests/unit/api/test_auto_start_shortfall.py` (23 arms).
+
+- **`--allow-truncated-datasets` is inert on `src/main.py`'s own run, and now says so.** The flag
+  does nothing but export `JUNIPER_CASCOR_ALLOW_TRUNCATED_DATASETS`, and `main.py` reaches only
+  the in-process two-spiral problem — synthesised locally, never partial, and it asks juniper-data
+  for nothing. The readers are the SERVICE this process may launch and the API's dataset paths.
+  The flag is deliberately **kept**, because that export is exactly how it reaches a launched
+  service; what changed is that its `--help` text now names the surfaces it does and does not
+  affect, and passing it emits one WARNING saying the same. An accepted flag that silently does
+  nothing is worse than a rejected one: the operator concludes the shortfall was allowed, and
+  nothing ever asked. The stanza moved out of `if __name__ == "__main__":` into
+  `apply_allow_truncated_datasets()` so the warning is reachable by a test at all — code under
+  `__main__` cannot be called, and an untested warning is one that stops firing without anyone
+  noticing. Round-38 follow-up 3.
 
 ## [0.11.0] - 2026-09-08
 

@@ -864,7 +864,7 @@ curl -s http://localhost:8201/v1/training/status
 
 **State changes** — None.
 
-**Returns** — Envelope with: `training_state`, `training_active`, `network_loaded`, `state_machine`, `monitor`, `completion_reason`, `metrics_clear_undo_available`, `snapshot_seq`, `server_instance_id`. `metrics_clear_undo_available` (C5, additive) is `true` while an explicit metrics clear (`POST /v1/training/metrics/clear`) can still be undone — i.e. no run has started since — so a UI can render the undo affordance across a page reload without a separate poll.
+**Returns** — Envelope with: `training_state`, `training_active`, `network_loaded`, `state_machine`, `monitor`, `completion_reason`, `metrics_clear_undo_available`, `pending_dataset`, `dataset_shortfall`, `auto_start_failure`, `snapshot_seq`, `server_instance_id`. `metrics_clear_undo_available` (C5, additive) is `true` while an explicit metrics clear (`POST /v1/training/metrics/clear`) can still be undone — i.e. no run has started since — so a UI can render the undo affordance across a page reload without a separate poll. `dataset_shortfall` (additive) is `null` unless juniper-data could not produce this run's dataset in full, in which case it carries `dataset_id`, `accepted_by_this_run`, `acceptance_source`, `accepted_via_allow_truncated_datasets`, the producer's `truncation` / `data_quality` descriptors and a one-sentence `summary`; the same object is on `GET /v1/metrics`. `auto_start_failure` (additive) is `null` normally and carries the reason the auto-start sequence gave up — auto-start swallows its failures so the service still comes up healthy, and this is the only surface that can be polled for why it did not train.
 
 **Counter semantics (C2b — the contract UI consumers should render):**
 
@@ -1035,7 +1035,7 @@ curl -s http://localhost:8201/v1/metrics
 
 **State changes** — None.
 
-**Returns** — Envelope with the most recent metrics object (epoch, loss/accuracy, C7 scalars + `eval_metrics`, etc.).
+**Returns** — Envelope with the most recent metrics object (epoch, loss/accuracy, C7 scalars + `eval_metrics`, etc.), plus `dataset_shortfall` — the same object `GET /v1/training/status` carries, read from the same attribute so the two surfaces cannot disagree. It is `null` unless the producer could not deliver this run's dataset in full; these numbers were computed on that data, so the caveat travels with them. `GET /v1/metrics/history` deliberately does **not** carry it: its rows are per-epoch samples and the shortfall is a property of the run's dataset, not of any epoch in it.
 
 **Error handling** — `404` if no network; `503` if lifecycle unbound.
 
