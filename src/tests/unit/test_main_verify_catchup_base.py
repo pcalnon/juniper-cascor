@@ -89,7 +89,7 @@ def _find_repo_root(start: Path) -> Path:
 
 
 def _git(cwd: Path, *args: str) -> str:
-    proc = subprocess.run(  # nosec B603,B607 - fixed git argv in temp fixture
+    proc = subprocess.run(  # nosec B603 B607 - fixed git argv in temp fixture
         ["git", *args],
         cwd=cwd,
         capture_output=True,
@@ -197,7 +197,7 @@ class CatchUpBaseRehearsalTest(unittest.TestCase):
             env["GITHUB_OUTPUT"] = str(gh_out)
             env["GITHUB_STEP_SUMMARY"] = str(step_summary)
 
-            proc = subprocess.run(  # nosec B603,B607 - workflow shell, fixed argv
+            proc = subprocess.run(  # nosec B603 B607 - workflow shell, fixed argv
                 ["bash", str(script_path)],
                 cwd=repo,
                 capture_output=True,
