@@ -102,6 +102,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   image extras) is pinned in the CPU lock; `src/tests/unit/test_dockerfile_cpu_torch_pin.py` pins
   Dockerfile ↔ lock ↔ workflow. `requirements.lock` is unchanged and remains the GPU dev lock.
 
+- **`CI — juniper-cascor-model` was RED on `main`, and the fix that broke it did not work
+  either.** The four `_PROJECT_API_SHORTFALL_*` constants added on 2026-09-09 were never listed in
+  `cascor_constants/constants_api/constants_api_defaults.py`'s `__all__`, so CodeQL reported them as
+  unused globals; the remedy added a **second** `__all__` in the middle of the file, and only to the
+  `juniper-cascor-model/` mirror. That is wrong twice. It broke `tests/test_drift.py`, which requires
+  the extracted tree to be byte-identical to `src/` — red on `main` from `44dafe0` onward. And it had
+  no effect on the finding it was meant to silence, because the module already ends with its own
+  complete `__all__`, so the mid-file binding is simply replaced at import time by the one at the
+  end, which still did not name the four constants. The stray block is gone and the four names are
+  in the real `__all__`, in its existing alphabetical order, in **both** copies. Nothing star-imports
+  this module (`constants_api/__init__.py` names every symbol explicitly), so `__all__` here is
+  documentation and a CodeQL signal, never behaviour: no import changes. Verified by the drift suite
+  (3 passed, previously 1 failed / 2 passed) and by `test_allow_truncated_datasets.py` (28 passed).
+
 ## [0.11.0] - 2026-09-08
 
 ### Removed
