@@ -554,6 +554,11 @@ async def _auto_start_training(app: FastAPI, settings: Settings) -> None:
                 persist=True,
             )
             dataset_id = result["dataset_id"]
+            # Logged BEFORE the download, not after the whole block succeeds: a
+            # download that fails still leaves the id of the artifact it failed
+            # on in the log, which is the only handle an operator has for asking
+            # juniper-data what happened.
+            logger.info(f"Auto-start: dataset created — id={dataset_id}")
             # Download training data as numpy arrays
             arrays = await asyncio.to_thread(client.download_artifact_npz, dataset_id)
         except Exception as exc:
@@ -568,7 +573,6 @@ async def _auto_start_training(app: FastAPI, settings: Settings) -> None:
             logger.error("Auto-start failed: %s", fetch_failure)
             _record_failure(fetch_failure)
             return
-        logger.info(f"Auto-start: dataset created — id={dataset_id}")
 
         if lifecycle is None:  # pragma: no cover - a lifespan that reached here without one is a programming error
             raise RuntimeError("Auto-start: app.state.lifecycle is not initialised")
