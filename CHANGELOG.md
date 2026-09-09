@@ -7,6 +7,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **`dataset_shortfall` now says WHO accepted the partial dataset — and no longer denies an
+  acceptance it is annotating.** `accepted_via_allow_truncated_datasets` was the raw value of this
+  service's own setting. Two live paths made it read `false` on a run training on partial data:
+  the caller supplying `allow_truncation: true` in the staged params (the path canopy's options 1
+  and 2 use, with the service flag off), and juniper-data accepting on its **own** deployment
+  opt-in — which it ORs with the request and a client cannot refuse — while nothing was sent from
+  here. The annotation is additive: `accepted_by_this_run` (an opt-in went on the wire from this
+  side), `acceptance_source` (`request_params` | `allow_truncated_datasets` | `producer`), and the
+  original field kept with its literal meaning — true only when THIS service's setting supplied
+  the opt-in. The `summary` sentence and the training-log line carry the same clause.
+
+  Found by round-37 handoff validation in juniper-ml. The producer's descriptor carries no
+  authority field, so the source is derived from what this run **sent**, and `producer` is
+  inferred when nothing was sent and a shortfall arrived anyway. Pinned by three arms of
+  `TestShortfallIsPollable` that run `_reload_dataset` up to the annotation and stop.
+
+- **A caller's explicit `allow_truncation: false` now gets the refusal message, not a bare
+  "fetch failed".** `_describe_dataset_fetch_failure` keyed the remedy off the service **setting**;
+  with the flag on and the caller refusing (honoured since cascor#624), the producer's 422 came
+  back as `juniper-data fetch failed: …` with no remedy — in exactly the case the remedy exists
+  for. It now keys off the stance that went on the wire, and tells a caller that refused to
+  re-send `allow_truncation=true` with `incomplete_rows=accept|drop` rather than pointing them at
+  a service knob their own value overrides. The staged value is read as a tri-state
+  (`_as_bool_stance`), because the params cross a JSON boundary and `bool("false")` is `True`.
+
+- **The refusal message opens with a machine-readable token, `[dataset_shortfall_refused]`**
+  (`_PROJECT_API_SHORTFALL_REFUSAL_TOKEN`), so a consumer can recognise the class without
+  matching prose; canopy's three-way partial-data prompt keys on it. It rides inside the 409
+  `detail` because that is the one channel every transport carries — the WS control path
+  forwards `error` as a bare string. An ordinary outage does not carry it.
+
+- **Correction to the `dataset_shortfall` entry below: it does NOT ride the WS training
+  stream.** `get_status()` is read by the stream only in the one-shot `initial_status` frame at
+  connect; the broadcast set has no status frame. A client already connected when
+  `_reload_dataset` sets the field never sees it over WS — it polls `/v1/training/status`
+  (canopy does, at 1 Hz). The manager comment that made the same claim is corrected here.
+
 ## [0.11.0] - 2026-09-08
 
 ### Removed
