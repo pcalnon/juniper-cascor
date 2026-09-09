@@ -60,6 +60,45 @@ def read_str_attr(obj: Union[h5py.Group, h5py.Dataset], key: str, default: Optio
     return str(val)
 
 
+def read_scalar_attr(obj: Union[h5py.Group, h5py.Dataset], key: str, default: Any = None) -> Any:
+    """
+    Read a scalar attribute as a PLAIN PYTHON scalar (``int`` / ``float`` / ``str``).
+
+    h5py hands attribute values back as NumPy scalars (``np.int64``, ``np.float64``),
+    and a NumPy scalar is not an ``int``: ``random.Random(np.int64(42))`` raises
+    ``TypeError("The only supported seed types are: None, int, float, str, bytes, and
+    bytearray")`` on Python >= 3.12. Every snapshot written by this serializer carries
+    ``random/seed`` as ``np.int64``, so a network restored through ``/resume`` or
+    ``/retrain`` died at the first candidate phase, when ``_generate_candidate_tasks``
+    seeded its RNG from the restored value (found 2026-09-08 on the canopy E2E
+    fixture, cascor 0.9.0, Python 3.13).
+
+    Equality hides the type -- ``np.int64(42) == 42`` is ``True`` -- which is why the
+    existing round-trip test on the VALUE never caught it. The regression test
+    asserts the type.
+
+    Args:
+        obj: HDF5 group or dataset
+        key: Attribute key
+        default: Returned unchanged when the key is absent
+
+    Returns:
+        The attribute as a plain Python scalar; bytes are decoded to ``str``.
+    """
+    if key not in obj.attrs:
+        return default
+
+    val = obj.attrs[key]
+
+    if isinstance(val, (bytes, np.bytes_)):
+        return val.decode("utf-8")
+    if isinstance(val, np.generic):
+        return val.item()
+    if isinstance(val, np.ndarray) and val.ndim == 0:
+        return val.item()
+    return val
+
+
 def write_str_dataset(group: h5py.Group, name: str, value: Any, **kwargs) -> h5py.Dataset:
     """
     Write a string dataset with proper UTF-8 encoding.
