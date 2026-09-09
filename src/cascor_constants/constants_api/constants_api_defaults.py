@@ -137,6 +137,25 @@ _PROJECT_API_ALLOW_TRUNCATED_DATASETS_DEFAULT: bool = False
 # opt in. The cost of drift is a hard failure with a clear message, not silent
 # bad data, which is the right direction for this list to fail in.
 _PROJECT_API_TRUNCATABLE_GENERATORS: frozenset = frozenset({"equities", "equities_seq", "csv_import"})
+
+# Machine-readable prefix on the run-failure message raised when juniper-data
+# refused (422) a dataset it could not produce in full and no opt-in was on the
+# wire. The prose after it is for an operator; the prefix is for a CONSUMER
+# (canopy's three-way partial-data prompt) that has to recognise the refusal
+# class without pattern-matching English. It rides inside the 409 ``detail``
+# string because that is the one channel every transport carries -- the WS
+# control path forwards ``error`` as a bare string.
+_PROJECT_API_SHORTFALL_REFUSAL_TOKEN: str = "[dataset_shortfall_refused]"
+
+# Who put the opt-in on the wire when a partial dataset was accepted. Recorded on
+# the ``dataset_shortfall`` annotation as ``acceptance_source`` so the annotation
+# says WHO accepted, not merely that something was. The third value exists
+# because juniper-data ORs the request with ITS OWN deployment opt-in and a
+# client cannot opt out of it: a partial dataset can arrive that nobody on this
+# side asked for, and the annotation must not then claim this run refused it.
+_PROJECT_API_SHORTFALL_ACCEPTED_BY_REQUEST: str = "request_params"
+_PROJECT_API_SHORTFALL_ACCEPTED_BY_DEPLOYMENT: str = "allow_truncated_datasets"
+_PROJECT_API_SHORTFALL_ACCEPTED_BY_PRODUCER: str = "producer"
 _PROJECT_API_SELF_HEALTH_CHECK_URL_TEMPLATE: str = "http://localhost:{port}/v1/health"
 _PROJECT_API_CANOPY_STARTUP_WAIT_TIMEOUT: float = 30.0
 _PROJECT_API_CANOPY_STARTUP_CHECK_INTERVAL: float = 1.0
