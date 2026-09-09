@@ -783,6 +783,62 @@ jobs:
 
           echo "::notice::requirements.lock satisfies pyproject.toml ✓"
 
+      # The CONTAINER image installs requirements-cpu.lock (requirements.lock minus the CUDA
+      # stack; its header carries the derivation). Constraint-mode regen of that lock needs
+      # the PyTorch CPU index in CI, so -- as juniper-cascor-worker does -- the cheaper
+      # assertion runs here: every name-form dependency the image needs (base deps + the
+      # four extras the lock is compiled with, torch excepted) must appear pinned. Catches a
+      # dependency added to pyproject.toml but never re-locked into the CPU lock, which would
+      # break the container at import time rather than the build.
+      - name: Check requirements-cpu.lock contains every image dependency
+        run: |
+          python3 - <<'PY'
+          import re
+          import sys
+          import tomllib
+
+          with open("pyproject.toml", "rb") as f:
+              project = tomllib.load(f)["project"]
+          image_extras = ("ml", "api", "observability", "juniper-data")
+          declared = list(project["dependencies"])
+          for extra in image_extras:
+              declared.extend(project["optional-dependencies"][extra])
+
+          # Strip version specifiers / extras / env markers, leaving the canonical
+          # PEP 503 normalised package name.
+          name_re = re.compile(r"^[A-Za-z0-9_.-]+")
+          required = {
+              name_re.match(d).group(0).lower().replace("_", "-")
+              for d in declared
+              if name_re.match(d)
+          }
+          # torch is deliberately excluded from the CPU lock: the Dockerfile installs it
+          # from the PyTorch CPU index, pinned (matches --no-emit-package torch).
+          required.discard("torch")
+
+          with open("requirements-cpu.lock") as f:
+              locked = {
+                  line.split("==", 1)[0].strip().lower().replace("_", "-")
+                  for line in f
+                  if line and not line.startswith((" ", "\t", "#"))
+                  and "==" in line
+              }
+
+          missing = sorted(required - locked)
+          if missing:
+              print(
+                  "::error::requirements-cpu.lock is missing image deps: "
+                  + ", ".join(missing)
+                  + " -- regenerate with the command in the lockfile header"
+              )
+              sys.exit(1)
+
+          print(
+              f"::notice::requirements-cpu.lock contains all "
+              f"{len(required)} image deps ✓"
+          )
+          PY
+
   # ═══════════════════════════════════════════════════════════════════════════════════════════════
   # Docker Build & Smoke Test: Verify Dockerfile builds and container starts
   # ═══════════════════════════════════════════════════════════════════════════════════════════════
