@@ -566,6 +566,7 @@ Gate: 80% aggregate (override with `COVERAGE_FAIL_UNDER=<n>`). Coverage runs in 
 | Publish | `.github/workflows/publish.yml` | Release (`v*`) | PyPI publish for `juniper-cascor` (TestPyPI → verify → PyPI) |
 | Publish protocol | `.github/workflows/publish-protocol.yml` | Release (`juniper-cascor-protocol-v*`) + `workflow_dispatch` | PyPI publish for `juniper-cascor-protocol` |
 | Publish model | `.github/workflows/publish-cascor-model.yml` | Release (`juniper-cascor-model-v*`) + `workflow_dispatch` | PyPI publish for `juniper-cascor-model` |
+| Publish container image | `.github/workflows/publish-image.yml` | Release (`v*` only -- tag-guarded), PR touching image inputs (build-only), `workflow_dispatch` | GHCR multi-arch (amd64 + arm64) service image, CPU-only by pin (`requirements-cpu.lock`); never a required check |
 | Lockfile Update | `.github/workflows/lockfile-update.yml` | Push to dependabot/** branches | Dependency lockfile refresh |
 | CodeQL Analysis | `.github/workflows/codeql.yml` | Push `main`/`develop`, PR `main`, weekly Monday 06:00 UTC | Python CodeQL SAST (`+security-and-quality`; soak, not a required check) |
 | Security Scan | `.github/workflows/security-scan.yml` | Schedule/dispatch | Bandit + pip-audit `--strict` (no CodeQL, no Gitleaks) |
