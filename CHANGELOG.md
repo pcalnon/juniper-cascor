@@ -7,6 +7,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`publish-image.yml` -- the service container image is published to GHCR on every `v*`
+  release** as a multi-arch manifest (`linux/amd64` + `linux/arm64`, each built on a native runner,
+  no QEMU), tagged `X.Y.Z` / `X.Y` / `latest`, pushed by digest with tags written exactly once by
+  the merge job. Wave 2 of the container-registry rollout (juniper-ml
+  `notes/JUNIPER_2026-09-05_JUNIPER-ECOSYSTEM_CONTAINER-REGISTRY-PUBLISHING-PLAN.md`); template
+  `juniper-cascor-worker/.github/workflows/publish-image.yml`. Both jobs are guarded to the `v` tag
+  family, because `juniper-cascor-protocol-v*` / `juniper-cascor-model-v*` releases fire the same
+  event and would otherwise republish `juniper-cascor:latest` from the wrong release. The PR arm
+  builds both arches and pushes nothing; a `workflow_dispatch` with `push: true` publishes
+  `dispatch-<sha>` as a rehearsal. Not a required status check (it is `paths:`-filtered).
+
+### Fixed
+
+- **`util/check_image_cpu_only.py` let the `cuda-*` family through, and the merge job's
+  digest-identity step accepted any number of linux images per pushed digest.** The 2026-09-07 CUDA
+  worker image carried `cuda-toolkit`, `cuda-bindings` and `cuda-pathfinder` next to the `nvidia-*`
+  wheels and `triton` -- the very family `requirements.lock` pins outright here -- and the census
+  forbade only the latter two families, so an image with torch `X+cpu` plus those three would have
+  read `cuda_stack=0`. It now forbids `nvidia-*`, `cuda-*` and `triton`. `publish-image.yml`'s merge
+  job also asserts that each pushed per-arch digest resolves to exactly **one** linux image whose
+  architecture is the digest file's name, so a multi-platform index could never count an image the
+  census did not run on as verified. Both pinned by `src/tests/unit/test_dockerfile_cpu_torch_pin.py`.
+  Follow-up 6a of juniper-ml
+  `prompts/thread-handoff_automated-prompts/HANDOFF_2026-09-08_container-registry-rollout-wave-2-opened-and-the-cuda-class-in-three-shapes.md`.
+- **The container image installed the entire CUDA stack -- ~3 GB of `nvidia-*`, `triton` and
+  `cuda-toolkit` wheels -- on an image that is CPU-only by design.** `requirements.lock` was
+  resolved against the CUDA torch on PyPI, so it pins those packages *outright*, and `Dockerfile`
+  installed the lock wholesale; torch itself came from the CPU index but *unpinned*. New
+  `requirements-cpu.lock` is `requirements.lock` minus the CUDA stack (shared pins identical by
+  construction: `--constraint requirements.lock`), the Dockerfile installs it with torch pinned to
+  `ARG TORCH_VERSION`+cpu (2.14.0, what the unpinned install resolved to) in **both** installs and
+  the CPU index as an extra index on the lock install, and `pip check` gates the builder.
+  `util/check_image_cpu_only.py` asserts the contract *inside* the image (pinned `+cpu` version,
+  `torch.version.cuda is None`, **no** `nvidia-*` / `triton` distribution) on the PR arm and on the
+  publish path; `Lockfile Freshness` asserts every dependency the image needs (base + the four
+  image extras) is pinned in the CPU lock; `src/tests/unit/test_dockerfile_cpu_torch_pin.py` pins
+  Dockerfile ↔ lock ↔ workflow. `requirements.lock` is unchanged and remains the GPU dev lock.
+
 ## [0.11.0] - 2026-09-08
 
 ### Removed
