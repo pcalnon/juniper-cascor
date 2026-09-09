@@ -69,6 +69,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   architecture is the digest file's name, so a multi-platform index could never count an image the
   census did not run on as verified. Both pinned by `src/tests/unit/test_dockerfile_cpu_torch_pin.py`.
   Follow-up 6a of juniper-ml
+  
   `prompts/thread-handoff_automated-prompts/HANDOFF_2026-09-08_container-registry-rollout-wave-2-opened-and-the-cuda-class-in-three-shapes.md`.
 - **The container image installed the entire CUDA stack -- ~3 GB of `nvidia-*`, `triton` and
   `cuda-toolkit` wheels -- on an image that is CPU-only by design.** `requirements.lock` was
