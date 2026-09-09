@@ -162,6 +162,13 @@ _PROJECT_API_CANOPY_STARTUP_CHECK_INTERVAL: float = 1.0
 _PROJECT_API_CANOPY_DEMO_MODE_DISABLED: str = "false"
 _PROJECT_API_CANOPY_HEALTH_CHECK_URL: str = "http://localhost:8050/v1/health"
 
+__all__ = [
+    "_PROJECT_API_SHORTFALL_REFUSAL_TOKEN",
+    "_PROJECT_API_SHORTFALL_ACCEPTED_BY_REQUEST",
+    "_PROJECT_API_SHORTFALL_ACCEPTED_BY_DEPLOYMENT",
+    "_PROJECT_API_SHORTFALL_ACCEPTED_BY_PRODUCER",
+]
+
 
 #####################################################################################################################################################################################################
 # Service Launcher Timeouts (api/service_launcher.py)
