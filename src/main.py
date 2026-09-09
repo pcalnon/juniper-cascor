@@ -627,12 +627,61 @@ Examples:
             "Accept a dataset juniper-data could not produce in full -- a universe truncated to its symbol cap, or rows whose fundamentals no rescue path could resolve. "
             "OFF by default: without it juniper-data refuses such a request (422) and this run FAILS rather than training on data nobody chose. "
             "With it, the shortfall is logged, the dataset is permanently annotated, and the run proceeds. "
-            "Also settable as JUNIPER_CASCOR_ALLOW_TRUNCATED_DATASETS or allow_truncated_datasets: in an experiment YAML service: block. PRECEDENCE: an experiment YAML wins over this flag (the YAML settings source ranks above env), and this flag wins over a bare environment variable."
+            "Also settable as JUNIPER_CASCOR_ALLOW_TRUNCATED_DATASETS or allow_truncated_datasets: in an experiment YAML service: block. PRECEDENCE: an experiment YAML wins over this flag (the YAML settings source ranks above env), and this flag wins over a bare environment variable. "
+            "NO EFFECT ON THIS ENTRY POINT'S OWN RUN: main.py does fetch its dataset from juniper-data (it health-checks the service first and refuses to run without it), but the generator on this path is hardcoded `spiral`, which juniper-data synthesises server-side and always delivers in full -- it is not one of the truncatable generators, so no shortfall can ever arise here for the flag to act on. "
+            "All this flag does here is EXPORT the environment variable, which configures the SERVICE this process may launch and is what every other entry point (src/server.py, the API's dataset paths) reads. Passing it to a plain `python main.py` changes nothing about that run, and the run logs a warning saying so."
         ),
     )
     parser.add_argument("--no-plots", action="store_true", help="Skip the dataset / decision-boundary / training-history figures. Recommended for automated and headless runs: the figures are display-only (never saved), and under an interactive backend showing them blocks the process after training finishes (F-P1-3)")
 
     return parser.parse_args()
+
+
+def apply_allow_truncated_datasets(enabled: bool) -> bool:
+    """Export the truncation opt-in, and say out loud that it does nothing HERE.
+
+    Same idiom as ``--config``: the variable is exported before anything
+    constructs ``Settings``.
+
+    PRECEDENCE, measured rather than assumed: this beats a bare environment
+    variable, but an experiment YAML beats it. ``Settings`` ranks its sources
+    ``[init, ExperimentYaml, env, dotenv]`` and pydantic-settings gives the FIRST
+    source priority -- so ``--config foo.yaml --allow-truncated-datasets``
+    honours the YAML, not the flag. That fails CLOSED (a YAML saying false keeps
+    the refusal), which is the safe direction, but it is the opposite of what an
+    earlier version of this comment and the ``--help`` text claimed.
+
+    Only ever SET, never cleared, so omitting the flag leaves an operator's
+    env/config choice standing rather than overriding it with the default.
+
+    INERT ON THIS ENTRY POINT'S OWN RUN, which is why the warning exists rather
+    than being left for the operator to infer from an unchanged result. Not
+    because the data is local -- ``main`` DOES fetch from juniper-data, and
+    refuses to start when ``/v1/health`` is unreachable -- but because the
+    generator here is hardcoded ``spiral``, which juniper-data synthesises
+    server-side and always delivers in full. ``spiral`` is not in
+    ``_PROJECT_API_TRUNCATABLE_GENERATORS``, so no shortfall can arise for the
+    flag to act on. The exported variable is read by the SERVICE and by the
+    API's dataset paths, and by nothing else this process runs afterwards.
+    An accepted flag that silently does nothing is worse than a rejected one --
+    the operator concludes the shortfall was allowed, when it was never asked
+    about. The flag is deliberately NOT removed: exporting it IS its purpose, and
+    it is how ``--allow-truncated-datasets`` reaches a service this process
+    launches.
+
+    A function rather than an inline stanza under ``__main__`` so it is
+    reachable: code under ``if __name__ == "__main__":`` cannot be called by a
+    test, and an untested warning is a warning that stops firing without anyone
+    noticing.
+
+    Returns:
+        True when the flag was set and the export happened, False otherwise.
+    """
+    if not enabled:
+        return False
+    os.environ["JUNIPER_CASCOR_ALLOW_TRUNCATED_DATASETS"] = "true"
+    Logger.warning("Cascor: --allow-truncated-datasets exported JUNIPER_CASCOR_ALLOW_TRUNCATED_DATASETS=true, but it has NO EFFECT on this entry point's own run: this path trains the `spiral` generator, which juniper-data always delivers in full and which is not truncatable, so there is no shortfall here for the flag to act on. It configures the service this process may launch, and the settings the other entry points read.")
+    return True
 
 
 #####################################################################################################################################################################################################
@@ -645,20 +694,7 @@ if __name__ == "__main__":
         # Wave 3.1: must land before the first Settings()/get_settings() use (SS5.2).
         os.environ["JUNIPER_CASCOR_CONFIG_FILE"] = args.config
 
-    if args.allow_truncated_datasets:
-        # Same idiom as --config: exported before anything constructs Settings.
-        #
-        # PRECEDENCE, measured rather than assumed: this beats a bare environment
-        # variable, but an experiment YAML beats it. Settings ranks its sources
-        # [init, ExperimentYaml, env, dotenv], and pydantic-settings gives the
-        # FIRST source priority -- so `--config foo.yaml --allow-truncated-datasets`
-        # honours the YAML, not the flag. That fails CLOSED (a YAML saying false
-        # keeps the refusal), which is the safe direction, but it is the opposite
-        # of what an earlier version of this comment and the --help text claimed.
-        #
-        # Only ever set, never cleared, so omitting the flag leaves an operator's
-        # env/config choice standing rather than overriding it with the default.
-        os.environ["JUNIPER_CASCOR_ALLOW_TRUNCATED_DATASETS"] = "true"
+    apply_allow_truncated_datasets(args.allow_truncated_datasets)
 
     # F-P1-3: resolved once so every entry path below (plain, cProfile, tracemalloc) honours
     # --no-plots. A profiling run is automated by definition, so it is exactly the path that

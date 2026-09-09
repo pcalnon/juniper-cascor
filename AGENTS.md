@@ -168,6 +168,9 @@ pre-commit install                                   # Install hooks
 | `JUNIPER_CASCOR_AUTO_START_DATA_SERVICE_COMMAND` | Command to launch juniper-data service | `python -m juniper_data` |
 | `JUNIPER_CASCOR_AUTO_START_CANOPY` | Auto-start juniper-canopy companion | `false` |
 | `JUNIPER_CASCOR_AUTO_START_CANOPY_COMMAND` | Command to launch juniper-canopy service | `python -m juniper_canopy` |
+| **Dataset Ingestion** | | |
+| `JUNIPER_CASCOR_ALLOW_TRUNCATED_DATASETS` | Accept a dataset juniper-data could not produce in full. OFF: the producer's 422 FAILS the run rather than train on data nobody chose. Also set by `--allow-truncated-datasets` (`src/main.py`; export-only, inert on that entry point's own run) and by `allow_truncated_datasets:` in an experiment YAML `service:` block, which **wins over both**. A caller's own `allow_truncation` beats all three, **either** polarity. Annotated as `dataset_shortfall`. | `false` |
+| `JUNIPER_CASCOR_ALLOW_MISSING_VALIDATION_SPLIT` | Proceed when an artifact carries `X_test` but **no** `X_val` (design rule 2): `X_test` becomes the in-loop signal and the run is MARKED, because early stopping then selects on the rows the final score is reported from. OFF: refuse. Neither partition present (rule 3) refuses outright and **no** switch re-enables it. Read on the artifact-ingest paths; the inline `start_training` route, handed tensors directly, never reaches it. | `false` |
 | **Remote Workers** | | |
 | `JUNIPER_CASCOR_REMOTE_WORKERS_HEARTBEAT_TIMEOUT` | Worker heartbeat stale timeout, seconds (CONC-10 reap) | `30.0` |
 | `JUNIPER_CASCOR_REMOTE_WORKERS_TASK_REASSIGNMENT_TIMEOUT` | Fallback reassignment for orphaned in-flight tasks, seconds. All four immediate-requeue paths (reject, soft abort, clean disconnect, dispatch send failure) bypass this timeout -- reaching it means none of them fired. | `120.0` |

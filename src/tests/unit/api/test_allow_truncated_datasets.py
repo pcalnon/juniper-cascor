@@ -420,9 +420,34 @@ class TestShortfallIsPollable:
         manager.training_state.get_state.return_value = {}
         manager.get_pending_dataset_config = lambda: None
         manager._metrics_undo_available = lambda: False
+        manager._auto_start_failure = None
 
         manager._dataset_shortfall = None
         assert manager.get_status()["dataset_shortfall"] is None
 
         manager._dataset_shortfall = {"dataset_id": "d3", "summary": "14 of 503 symbols imported (cap 14)"}
         assert manager.get_status()["dataset_shortfall"]["dataset_id"] == "d3"
+
+    def test_get_metrics_carries_it_too(self) -> None:
+        """`/v1/metrics` is where the numbers are, so it is where the caveat has to be.
+
+        A consumer reading the metrics route alone -- canopy's metric panels do --
+        otherwise gets an accuracy with no mark of the data behind it and no
+        reason to go looking for one. The partial-data contract requires the
+        "accept" and "drop" options to annotate progress, metrics AND results.
+
+        One field read from two surfaces, so status and metrics cannot disagree.
+        ``get_metrics_history`` deliberately does NOT carry it: its rows are
+        per-epoch samples, and the shortfall is a property of the run's dataset,
+        not of any epoch in it -- stamping it on every row would imply it could
+        vary between them.
+        """
+        manager = TrainingLifecycleManager()
+        manager.create_network(input_size=2, output_size=2)
+        manager.network.history = {"train_loss": [0.5], "train_accuracy": [0.6], "value_loss": [0.55], "value_accuracy": [0.55]}
+        manager.network.hidden_units = []
+
+        assert manager.get_metrics()["dataset_shortfall"] is None
+
+        manager._dataset_shortfall = {"dataset_id": "d4", "summary": "14 of 503 symbols imported (cap 14)"}
+        assert manager.get_metrics()["dataset_shortfall"]["dataset_id"] == "d4"
