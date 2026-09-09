@@ -7,7 +7,56 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Removed
+
+- **BREAKING (contract): cascor no longer requires, validates or returns the `*_full` family**
+  (cascor#625; decision 11 of juniper-ml
+  `notes/JUNIPER_2026-08-29_JUNIPER-ECOSYSTEM_TRAIN-EVAL-TEST-PARTITION-DESIGN.md` §9.5, whose
+  producer half is juniper-data#369 — since 2026-09-06 no newly-minted artifact carries `X_full` /
+  `y_full`, and every generator's `generator_version` is `3.0.0`). Three changes that only work
+  together: `required_keys` in `src/spiral_problem/data_provider.py` drops `X_full` / `y_full`;
+  `SpiralDatasetTuple` narrows from four pairs to **three** (`train` / `val` / `test`), so any caller
+  unpacking four values breaks at unpack time; and `self.x_full` / `self.y_full` keep their meaning
+  but are now **derived** with `torch.cat` over the partitions. That derivation is exact, not an
+  approximation: `juniper_data/core/split.py` built the key as `np.vstack([X_train, X_val, X_test])`
+  over contiguous slices, so the concatenation is row-for-row identical for any spiral artifact,
+  legacy or current (a legacy two-way artifact has no val pair and contributes nothing, matching the
+  old two-way `X_full`).
+
+  **Tolerated, never required, never asserted absent.** A legacy artifact still carrying the family
+  loads unchanged — the keys are neither required, validated nor read, so extra keys are ignored.
+  One consequence worth stating: a **malformed** `X_full` can no longer fail a load whose live
+  partitions are fine; under the old contract the retired key kept veto power over a good artifact.
+  Pinned by `TestTheRetiredFullFamilyIsToleratedNotRequired` (both shapes load, identical partitions,
+  a malformed `_full` cannot fail the load — deliberately with no assertion that `X_full` is absent,
+  which §9.5.4 forbids) and `TestTheDerivedWholeDatasetMatchesTheRetiredKey`. The row-order identity
+  is a property of `split.py`'s contiguous slicing and does **not** generalise to the `equities` /
+  `equities_seq` generators (entity-major `_full`, split-major partitions); those never reach this
+  spiral-only provider.
+
 ### Fixed
+
+- **The direct CLI was broken by #620 for the four days between it and #622.** Widening
+  `SpiralDatasetTuple` to four pairs inserted `val` between train and test while
+  `SpiralProblem.solve_n_spiral_problem` kept unpacking three, so every run against a live
+  juniper-data raised `ValueError: too many values to unpack (expected 3)`. The suite stayed green
+  because every test on that path stubbed `generate_n_spiral_dataset` with a hand-built three-tuple —
+  the stub, not the provider, decided the shape under test. `test_cli_partition_arity_contract.py`
+  now binds the stub's arity to the provider's real return and pins the partition **order** by
+  distinct row counts, so a transposition (which would make the reported score selected-on) fails too.
+  (#625 later narrowed the tuple to three again; the test moved with it.)
+
+- **`GET /v1/dataset` reported the VALIDATION row count under `test_samples`** (cascor#623). The
+  reader was written when `_val_*` held the test data and was not updated by #620, so since then the
+  endpoint had been reporting the in-loop split's size under the held-out split's name — and
+  juniper-canopy had been displaying it that way. `test_samples` now reads `_test_x`; the test that
+  pinned the defect sized the two partitions equally, so it now sizes all three distinctly.
+
+- **Two experiment configs set `max_epochs` alone, so the service silently did up to 125× the
+  configured work** (`conf/experiments/spiral-smoke.yaml`, cascor#618; `conf/experiments/xor-staged.yaml`, cascor#629). The service applies
+  `max_epochs` only to the *initial* output pass and reads `output_epochs` (default 10000) for every
+  later one, while the direct CLI aliases the two; any CLI-vs-service comparison must set both to the
+  same value. Both configs now do.
 
 - **An ingested artifact carrying NaN or Inf now fails at the boundary, by name.**
   `_artifact_to_tensors` validated dtype, dimensionality, pairing and row counts, but not
@@ -31,6 +80,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   clean-artifact arm.
 
 ### Added
+
+- **`InlineDataset` accepts an explicit held-out partition (`test_x` / `test_y`) — and now rejects
+  unknown keys with a 422** (cascor#616; the inline half of juniper-ml
+  `notes/JUNIPER_2026-08-31_JUNIPER-CASCOR_TEST-PARTITION-SLOT-INVESTIGATION.md` §3). Three silent
+  failure modes closed: `InlineDataset` declared no `model_config`, so it did not inherit
+  `TrainingParams`' `extra="forbid"` and a caller sending `test_x` got a **200** and a run that never
+  saw the partition it supplied — **callers that were sending unrecognised keys and relying on them
+  being dropped now get a 422**; an unpadded test partition would have raised inside the deliberately
+  bare `except` around the final forward pass and surfaced as an absent score with no error anywhere,
+  so `_pad_test_split_for_network` mirrors the train/val padding rule; and `_reload_dataset` replaced
+  the dataset wholesale but left the previous dataset's held-out rows in the slot, so it now clears
+  it. A test split **wider** than train is rejected (narrower is zero-padded up; wider has no legal
+  padding). 24 tests, four of them mutation-verified.
+
+- **`--allow-truncated-datasets`, and a run that does not set it fails when juniper-data cannot
+  deliver in full** (cascor#621; the command-line half of the 2026-09-05 partial-data contract,
+  producer side juniper-data#366). One field, three surfaces that cannot drift because `Settings`
+  sources the constant `_PROJECT_API_ALLOW_TRUNCATED_DATASETS_DEFAULT = False`: the flag (exports the
+  env var before the first `Settings()`, so it beats env), `JUNIPER_CASCOR_ALLOW_TRUNCATED_DATASETS`,
+  and `allow_truncated_datasets:` in an experiment YAML `service:` block. Unset ⇒ a producer **422**
+  (a universe truncated to its symbol cap, or rows no rescue path could resolve) fails the run with a
+  message naming all three surfaces and quoting the producer's own detail; a connection refusal stays
+  a plain passthrough. Set ⇒ the shortfall is restated at WARNING on this run's log, `unrescued` and
+  `degraded` on separate lines. Forwarded only to the generators that can produce a partial dataset
+  (`equities`, `equities_seq`, `csv_import`); the synthetic generators always deliver in full and are
+  not sent a knob that would imply otherwise.
+
+- **`GET /v1/dataset` reports `val_samples`, and `get_dataset_data()` carries `test_x` / `test_y`**
+  (cascor#623). With three partitions a consumer wanting the breakdown gets it without inferring
+  anything, and `num_samples` arithmetic downstream can span three partitions instead of two.
 
 - **`dataset_shortfall` on `GET /v1/training/status`** (additive; `null` when the producer
   delivered in full, which is the overwhelming majority). Carries `dataset_id`,
@@ -89,6 +168,65 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the handler fails 6 arms. Suite: **2225 passed** (`src/tests/unit/api`).
 
 ### Changed
+
+- **BREAKING (behaviour): the service early-stops on `X_val`, and refuses an artifact that has no
+  validation split** (cascor#620 — Chunk 4 of juniper-ml
+  `notes/JUNIPER_2026-08-30_JUNIPER-ECOSYSTEM_PARTITION-IMPLEMENTATION-PLAN.md`, "this is the fix";
+  closes the promotion defect behind #582). The defect was one function: `_artifact_to_tensors` read
+  the artifact's `X_test` / `y_test` and returned them **as** the in-loop `val_x` / `val_y`, so early
+  stopping selected on the very rows the final score was reported from. Now `_val_*` (in-loop,
+  early stopping) comes from the artifact's **`X_val`** and `_test_*` (scored once, after training)
+  from its **`X_test`**, through one guarded reader (`_artifact_optional_partition`) that both
+  optional partitions share: present ⟹ 2-D, paired, row counts agreeing and feature count matching
+  `X_train`; absent ⟹ a legal shape, not a load failure. `api/app.py`'s auto-start uses the same
+  reader (it previously handed the run `X_train` alone — no held-out data at all).
+
+  The plan's §6.1 rules are enforced by `_resolve_validation_split` in
+  `src/api/lifecycle/manager.py`: **rule 1** — `X_val` present ⟹ used in-loop, `X_test` untouched
+  until the final score; **rule 2** — `X_val` absent, `X_test` present ⟹ **refused**, because
+  proceeding re-creates the promotion; permitted only behind
+  `JUNIPER_CASCOR_ALLOW_MISSING_VALIDATION_SPLIT=true`, and then the run carries a recorded warning
+  that its metrics are *selected-on*; **rule 3** — neither present ⟹ **refused outright, and no
+  switch re-enables it**. `_eval_split` loses its training-split fallback and `_eval_split_name`
+  its `"training"` label with it. The gate sits on the artifact-fetch path (`_reload_dataset` and the
+  auto-start); the inline-data `start_training` route trains on exactly the tensors the caller sends.
+
+  **Upgrade note.** A deployment whose juniper-data predates 0.13.0 (the first release that emits
+  `X_val`) will have every artifact-backed run refused by default. Regenerate datasets against a
+  current juniper-data (the `generator_version` bump means a fresh request never resolves to a cached
+  two-way artifact), or set the override knowingly. Reported scores are no longer comparable with
+  those of earlier releases: they were selected-on then and are held-out now. **V-3 of the design
+  (measuring how much early stopping on a real `X_val` changes the reported numbers) has not been
+  taken** — this release ships the behaviour, not the measurement.
+
+- **The direct CLI now carves a validation split and early-stops on it — its results change**
+  (cascor#622; Chunk 6 / design decision 5). `CascadeCorrelationNetwork.fit()` has accepted
+  `x_val` / `y_val` since it was written and **nothing ever passed them**, so `early_stopping=True`
+  in the CLI had nothing to stop on: the CLI trained to budget while the service stopped early.
+  `SpiralProblem.solve_n_spiral_problem` now hands `fit()` the val partition (never the test one).
+  The default ratios move from `train 0.8 / test 0.2` to **`train 0.8 / val 0.1 / test 0.1`**
+  (`_SPIRAL_PROBLEM_VAL_RATIO = 0.1`): val comes out of **test, never out of train**, because design
+  §6.3 keeps the training count fixed — taking it from train would invalidate every CLI baseline.
+  `get_spiral_dataset` sends `sizing_mode: "carve"` explicitly, since juniper-data 0.13.0 defaults to
+  **additive** sizing (under which the ratios are ignored and `n_points_per_spiral` means the *train*
+  count), and `val_ratio` is a required argument so a call site that forgets it fails at the call
+  rather than silently producing a two-way split. Any CLI result recorded before this release was
+  trained to budget on a 0.8 / 0.2 cut; the V-3 measurement of the difference is still owed.
+
+- **The final score is computed once, after training, on a partition that is not the in-loop one**
+  (cascor#614; the prerequisite juniper-ml#1523 identified — cascor had no end-of-training
+  evaluation at all). Every existing scalar-metric computation was gated on a new training-history
+  row and cached for `/v1/metrics`, so the "final" number was structurally *whichever mid-training
+  computation ran last*. `_compute_final_eval_metrics()` now runs exactly once after the last weight
+  update, on the success path only (a stopped or failed run has no final model to report), and is
+  exposed as **`eval_metrics.final`** — `null` when nothing is reportable. `_reported_split()` is
+  the partition that number comes from; unlike `_eval_split()` it deliberately does **not** fall back
+  to the training split — reporting a training-set score under a held-out label is the defect being
+  removed, so "nothing reportable" surfaces as `null`, not as a plausible number. The
+  `_PreSwapSnapshot` carries the test slot so an aborted swap cannot leave the final score computed on
+  the wrong rows, and a per-run reset stops a stopped run serving the *previous* run's `final`. The
+  golden fixture `metrics_post_train.json` gained one deterministic line, `"final": null`, because that
+  run has no val split.
 
 - **`juniper-service-core` ceiling raised to `<0.8.0`** so 0.7.0 can be adopted. 0.7.0 introduces
   `WorkerCoordinator.release_worker_tasks`. cascor's only production import of the package is
