@@ -33,7 +33,7 @@ from candidate_unit.candidate_unit import CandidateUnit
 from cascade_correlation.cascade_correlation import CascadeCorrelationNetwork
 from cascade_correlation.cascade_correlation_config.cascade_correlation_config import CascadeCorrelationConfig
 
-from .conftest import BenchmarkTimer, _make_benchmark_config, benchmark_stats_ms, load_latest_baseline, save_baseline
+from .conftest import _make_benchmark_config, benchmark_stats_ms, load_latest_baseline, save_baseline
 
 # ===================================================================
 # THRESHOLD CONSTANTS
