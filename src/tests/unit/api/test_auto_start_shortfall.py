@@ -372,7 +372,14 @@ class TestTheCliFlagSaysItIsInert:
         warn.assert_called_once()
         message = warn.call_args.args[0]
         assert "NO EFFECT" in message
-        assert "two-spiral" in message
+        # The warning must name the REASON, not just the verdict. `spiral` is what makes
+        # the flag inert here -- juniper-data always delivers it in full and it is not in
+        # the truncatable set. An earlier version said the data was generated locally and
+        # that main.py asks juniper-data for nothing, which is false: main.py health-checks
+        # the service and refuses to start without it.
+        assert "spiral" in message
+        assert "in full" in message
+        assert "locally" not in message
 
     def test_nothing_happens_when_the_flag_is_absent(self) -> None:
         """Only ever SET, never cleared: omitting it leaves an operator's env choice standing."""

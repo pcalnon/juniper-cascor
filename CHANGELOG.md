@@ -159,9 +159,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `src/tests/unit/api/test_auto_start_shortfall.py` (23 arms).
 
 - **`--allow-truncated-datasets` is inert on `src/main.py`'s own run, and now says so.** The flag
-  does nothing but export `JUNIPER_CASCOR_ALLOW_TRUNCATED_DATASETS`, and `main.py` reaches only
-  the in-process two-spiral problem — synthesised locally, never partial, and it asks juniper-data
-  for nothing. The readers are the SERVICE this process may launch and the API's dataset paths.
+  does nothing but export `JUNIPER_CASCOR_ALLOW_TRUNCATED_DATASETS`, and the generator `main.py`
+  reaches is hardcoded `spiral` — which juniper-data synthesises server-side and always delivers
+  in full, and which is not one of the truncatable generators, so no shortfall can arise here for
+  the flag to act on. (Note the reason: `main.py` **does** fetch from juniper-data, and refuses to
+  start when `/v1/health` is unreachable. It is the generator that cannot be partial, not the
+  data path that is absent.) The readers are the SERVICE this process may launch and the API's
+  dataset paths.
   The flag is deliberately **kept**, because that export is exactly how it reaches a launched
   service; what changed is that its `--help` text now names the surfaces it does and does not
   affect, and passing it emits one WARNING saying the same. An accepted flag that silently does
