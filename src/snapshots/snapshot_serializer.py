@@ -1085,8 +1085,8 @@ class CascadeHDF5Serializer:
         arch_group = hdf5_file["arch"]
 
         # Verify architecture matches
-        saved_input_size = arch_group.attrs.get("input_size", network.input_size)
-        saved_output_size = arch_group.attrs.get("output_size", network.output_size)
+        saved_input_size = read_scalar_attr(arch_group, "input_size", network.input_size)
+        saved_output_size = read_scalar_attr(arch_group, "output_size", network.output_size)
 
         if saved_input_size != network.input_size:
             self.logger.warning(f"Input size mismatch: {saved_input_size} != {network.input_size}")
@@ -1143,7 +1143,16 @@ class CascadeHDF5Serializer:
             "candidate_convergence_threshold",
         ):
             if key in config_group.attrs:
-                value = config_group.attrs[key]
+                # As a PLAIN PYTHON scalar. ``attrs[key]`` is a NumPy scalar, and a
+                # restored tunable travels into places that require Python types:
+                # ``(a, b)[candidate_pool_size < 1]`` raises ``TypeError: tuple indices
+                # must be integers or slices, not numpy.bool`` in candidate training,
+                # and the ``state`` WebSocket frame that carries ``learning_rate`` /
+                # ``max_epochs`` goes through stdlib ``json.dumps``, which cannot
+                # serialise ``np.float64`` -- so the first broadcast after a restore
+                # failed inside ``send_json`` and every subscriber was dropped
+                # (2026-09-08). See ``read_scalar_attr``.
+                value = read_scalar_attr(config_group, key)
                 # ``getattr`` rather than ``hasattr`` so a freshly-loaded
                 # network missing the attribute still picks up the value
                 # — none of cascor's tunables are read-only properties.
@@ -1299,7 +1308,7 @@ class CascadeHDF5Serializer:
             return
 
         hidden_group = hdf5_file["hidden_units"]
-        num_units = hidden_group.attrs.get("num_units", 0)
+        num_units = int(read_scalar_attr(hidden_group, "num_units", 0))
 
         network.hidden_units = []
         for i in range(num_units):
@@ -1646,13 +1655,13 @@ class CascadeHDF5Serializer:
         role = read_str_attr(mp_group, "role", "none")
         start_method = read_str_attr(mp_group, "start_method", "spawn")
         address_host = read_str_attr(mp_group, "address_host", "127.0.0.1")
-        address_port = mp_group.attrs.get("address_port", 0)
+        address_port = read_scalar_attr(mp_group, "address_port", 0)
         authkey_hex = read_str_attr(mp_group, "authkey_hex", "")
-        autostart = mp_group.attrs.get("autostart", True)
+        autostart = read_scalar_attr(mp_group, "autostart", True)
 
         # Restore timeouts
-        network.candidate_training_tasks_queue_timeout = mp_group.attrs.get("tasks_queue_timeout", 30.0)
-        network.candidate_training_shutdown_timeout = mp_group.attrs.get("shutdown_timeout", 10.0)
+        network.candidate_training_tasks_queue_timeout = read_scalar_attr(mp_group, "tasks_queue_timeout", 30.0)
+        network.candidate_training_shutdown_timeout = read_scalar_attr(mp_group, "shutdown_timeout", 10.0)
 
         # Set multiprocessing context
         network.candidate_training_context = mp.get_context(start_method)

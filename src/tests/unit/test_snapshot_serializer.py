@@ -296,6 +296,72 @@ class TestRandomStatePreservation:
         assert torch.allclose(output_before, output_after)
 
 
+class TestRestoredScalarsArePythonTypes:
+    """Every scalar a load hands back must be a plain Python type, not a NumPy scalar.
+
+    h5py returns attribute values as NumPy scalars. Three places in cascor cannot take
+    them, and all three were hit live on 2026-09-08 by a network restored through
+    ``/resume``:
+
+    * ``random.Random(np.int64(42))`` -> TypeError (Python >= 3.12) in candidate seeding;
+    * ``(a, b)[np.int64(8) < 1]`` -> ``TypeError: tuple indices must be integers or
+      slices, not numpy.bool`` in ``_execute_parallel_training``;
+    * ``json.dumps({"learning_rate": np.float64(0.01)})`` -> TypeError inside
+      Starlette's ``send_json`` for the ``state`` broadcast -- after which the WebSocket
+      manager silently dropped every subscriber.
+
+    Equality never catches any of these (``np.int64(42) == 42``), so these tests assert
+    the TYPE and exercise the three uses directly.
+    """
+
+    TUNABLES = (
+        "learning_rate",
+        "candidate_learning_rate",
+        "max_hidden_units",
+        "correlation_threshold",
+        "candidate_pool_size",
+        "patience",
+        "epochs_max",
+        "max_iterations",
+        "output_epochs",
+        "candidate_patience",
+        "candidate_epochs",
+        "convergence_threshold",
+        "candidate_convergence_threshold",
+    )
+
+    def test_runtime_tunables_restore_as_python_scalars(self, serializer, simple_network, temp_file):
+        serializer.save_network(simple_network, temp_file, include_training_state=True)
+        loaded = serializer.load_network(temp_file, CascadeCorrelationNetwork)
+        for key in self.TUNABLES:
+            value = getattr(loaded, key, None)
+            if value is None:
+                continue  # not every tunable is set on a minimal network
+            assert not isinstance(value, np.generic), f"{key} restored as {type(value).__name__}"
+
+    def test_restored_tunables_survive_the_three_live_uses(self, serializer, simple_network, temp_file):
+        import json
+        import random
+
+        serializer.save_network(simple_network, temp_file, include_training_state=True)
+        loaded = serializer.load_network(temp_file, CascadeCorrelationNetwork)
+        # 1. candidate seeding
+        random.Random(loaded.random_seed)
+        # 2. the tuple-index idiom in _execute_parallel_training
+        pool = loaded.candidate_pool_size
+        assert ("fallback", "parallel")[pool < 1] in ("fallback", "parallel")
+        # 3. the state broadcast: stdlib json, no default= hook, exactly like send_json
+        json.dumps({key: getattr(loaded, key) for key in self.TUNABLES if hasattr(loaded, key)})
+
+    def test_multiprocessing_timeouts_restore_as_python_floats(self, serializer, simple_network, temp_file):
+        serializer.save_network(simple_network, temp_file, include_training_state=True)
+        loaded = serializer.load_network(temp_file, CascadeCorrelationNetwork)
+        for key in ("candidate_training_tasks_queue_timeout", "candidate_training_shutdown_timeout"):
+            value = getattr(loaded, key, None)
+            if value is not None:
+                assert not isinstance(value, np.generic), f"{key} restored as {type(value).__name__}"
+
+
 class TestConfigSerialization:
     """Tests for configuration serialization."""
 
