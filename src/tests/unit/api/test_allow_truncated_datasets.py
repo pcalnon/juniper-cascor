@@ -28,7 +28,7 @@ import pytest
 
 from api.lifecycle.manager import TrainingLifecycleManager
 from api.settings import Settings
-from cascor_constants.constants_api.constants_api_defaults import _PROJECT_API_ALLOW_TRUNCATED_DATASETS_DEFAULT
+from cascor_constants.constants_api.constants_api_defaults import _PROJECT_API_ALLOW_TRUNCATED_DATASETS_DEFAULT, _PROJECT_API_SHORTFALL_ACCEPTED_BY_DEPLOYMENT, _PROJECT_API_SHORTFALL_ACCEPTED_BY_PRODUCER, _PROJECT_API_SHORTFALL_ACCEPTED_BY_REQUEST, _PROJECT_API_SHORTFALL_REFUSAL_TOKEN
 
 pytestmark = pytest.mark.unit
 
@@ -90,6 +90,31 @@ class TestRunFailureMessage:
         message = TrainingLifecycleManager._describe_dataset_fetch_failure(Exception("HTTP 422 allow_truncation"), allow_truncated=True)
         assert message.startswith("juniper-data fetch failed:")
 
+    def test_the_refusal_opens_with_a_machine_readable_token(self) -> None:
+        """A consumer (canopy's three-way prompt) must recognise the class without matching prose.
+
+        The token is the contract; the sentence after it is free to change. An
+        ordinary outage must NOT carry it, or the prompt fires on a dead service.
+        """
+        refusal = TrainingLifecycleManager._describe_dataset_fetch_failure(Exception("HTTP 422 allow_truncation"), allow_truncated=False)
+        assert refusal.startswith(_PROJECT_API_SHORTFALL_REFUSAL_TOKEN + " ")
+        outage = TrainingLifecycleManager._describe_dataset_fetch_failure(Exception("connection refused"), allow_truncated=False)
+        assert _PROJECT_API_SHORTFALL_REFUSAL_TOKEN not in outage
+
+    def test_a_caller_that_refused_is_told_to_resend_not_to_flip_the_setting(self) -> None:
+        """An explicit allow_truncation=false wins over the service setting (cascor#624).
+
+        Pointing that caller at --allow-truncated-datasets would send them to a knob
+        that cannot change the outcome. The remedy is the request's own two
+        parameters, and the message must say which stance was actually taken.
+        """
+        message = TrainingLifecycleManager._describe_dataset_fetch_failure(Exception("HTTP 422 allow_truncation"), allow_truncated=False, caller_refused=True)
+        assert message.startswith(_PROJECT_API_SHORTFALL_REFUSAL_TOKEN)
+        assert "explicitly refused" in message
+        assert "allow_truncation=true" in message
+        assert "incomplete_rows=accept" in message and "incomplete_rows=drop" in message
+        assert "--allow-truncated-datasets" not in message
+
 
 class TestShortfallLogging:
     """An accepted shortfall has to be visible in THIS run's log."""
@@ -102,13 +127,13 @@ class TestShortfallLogging:
 
     def test_a_clean_dataset_logs_nothing(self, caplog: pytest.LogCaptureFixture) -> None:
         with caplog.at_level(logging.WARNING):
-            self._manager()._log_dataset_shortfall({}, allow_truncated=False)
+            self._manager()._log_dataset_shortfall({}, acceptance_source=None)
         assert caplog.records == []
 
     def test_truncation_is_reported_with_its_numbers(self, caplog: pytest.LogCaptureFixture) -> None:
         meta = {"truncation": {"unit": "symbols", "cap": 14, "requested": 503, "imported": 14}}
         with caplog.at_level(logging.WARNING):
-            self._manager()._log_dataset_shortfall(meta, allow_truncated=True)
+            self._manager()._log_dataset_shortfall(meta, acceptance_source=_PROJECT_API_SHORTFALL_ACCEPTED_BY_DEPLOYMENT)
         text = caplog.text
         assert "DATASET IS PARTIAL" in text
         assert "503" in text and "14" in text
@@ -129,7 +154,7 @@ class TestShortfallLogging:
             }
         }
         with caplog.at_level(logging.WARNING):
-            self._manager()._log_dataset_shortfall(meta, allow_truncated=True)
+            self._manager()._log_dataset_shortfall(meta, acceptance_source=_PROJECT_API_SHORTFALL_ACCEPTED_BY_DEPLOYMENT)
         text = caplog.text
         assert "UNRESOLVABLE" in text and "STZ" in text and "1510" in text
         assert "DEGRADED" in text and "META=period_average" in text
@@ -138,8 +163,27 @@ class TestShortfallLogging:
     def test_drop_policy_says_dropped_not_filled(self, caplog: pytest.LogCaptureFixture) -> None:
         meta = {"data_quality": {"unrescued": {"STZ": "x"}, "degraded": {}, "rows_affected": 0, "policy": "drop"}}
         with caplog.at_level(logging.WARNING):
-            self._manager()._log_dataset_shortfall(meta, allow_truncated=True)
+            self._manager()._log_dataset_shortfall(meta, acceptance_source=_PROJECT_API_SHORTFALL_ACCEPTED_BY_DEPLOYMENT)
         assert "were dropped" in caplog.text
+
+    def test_the_log_names_who_accepted_and_the_producer_when_nobody_here_did(self, caplog: pytest.LogCaptureFixture) -> None:
+        """juniper-data ORs the request with its own deployment opt-in; a client cannot opt out.
+
+        A partial dataset that arrives with no opt-in sent from this side was accepted
+        by the PRODUCER, and the log must say so rather than restate a setting that
+        was off -- the old line read "accepted it via allow_truncated_datasets=False".
+        """
+        meta = {"truncation": {"unit": "symbols", "cap": 14, "requested": 503, "imported": 14}}
+        with caplog.at_level(logging.WARNING):
+            self._manager()._log_dataset_shortfall(meta, acceptance_source=None)
+        assert "DATASET SHORTFALL" in caplog.text
+        assert "producer's own deployment default" in caplog.text
+        assert "allow_truncated_datasets=False" not in caplog.text
+
+        caplog.clear()
+        with caplog.at_level(logging.WARNING):
+            self._manager()._log_dataset_shortfall(meta, acceptance_source=_PROJECT_API_SHORTFALL_ACCEPTED_BY_REQUEST)
+        assert "dataset request itself" in caplog.text
 
 
 class TestCallerStanceIsNotOverridden:
@@ -214,13 +258,44 @@ class TestCallerStanceIsNotOverridden:
         params = self._params_on_the_wire({"allow_truncation": True, "incomplete_rows": "drop"}, deployment_flag=False)
         assert params["incomplete_rows"] == "drop"
 
+    def test_a_refusal_after_an_explicit_false_still_names_a_remedy(self) -> None:
+        """The failure message must key off the WIRE stance, not the setting.
+
+        Flag ON, caller sends allow_truncation=false: cascor withholds its default
+        (correct), the producer refuses, and the message used to consult the
+        SETTING -- so it returned the bare "fetch failed" line, with no remedy, in
+        exactly the case the remedy exists for. Found by round-37 validation.
+        """
+        sent: dict = {}
+
+        class _RefusingClient:
+            def __init__(self, **_kwargs: object) -> None:
+                pass
+
+            def create_dataset(self, *, generator: str, params: dict, persist: bool) -> dict:
+                sent["params"] = dict(params)
+                raise RuntimeError("HTTP 422: Shares outstanding could not be resolved for part of the requested universe. Re-submit with allow_truncation=true")
+
+        settings = SimpleNamespace(juniper_data_url="http://juniper-data:8100", allow_truncated_datasets=True)
+        with (
+            patch("juniper_data_client.JuniperDataClient", _RefusingClient),
+            patch("api.settings.Settings", lambda: settings),
+            patch("api.secrets.get_secret", lambda _name: "key"),
+            pytest.raises(RuntimeError) as excinfo,
+        ):
+            self._manager()._reload_dataset(dataset_type="equities", params={"allow_truncation": False})
+        assert sent["params"]["allow_truncation"] is False, "the caller's refusal must reach the producer unchanged"
+        message = str(excinfo.value)
+        assert message.startswith(_PROJECT_API_SHORTFALL_REFUSAL_TOKEN)
+        assert "explicitly refused" in message and "allow_truncation=true" in message
+
 
 class TestShortfallIsPollable:
     """A log line is not a surface. Canopy has to be able to READ the shortfall."""
 
     def test_a_clean_dataset_annotates_nothing(self) -> None:
         """None, not a dict of empties -- a consumer branches on presence alone."""
-        assert TrainingLifecycleManager._build_dataset_shortfall({}, dataset_id="d1", allow_truncated=False) is None
+        assert TrainingLifecycleManager._build_dataset_shortfall({}, dataset_id="d1", acceptance_source=None) is None
 
     def test_the_annotation_names_the_dataset_it_describes(self) -> None:
         """An annotation that does not identify its artifact is a claim about nothing.
@@ -231,7 +306,7 @@ class TestShortfallIsPollable:
         being silently attributed to each other.
         """
         meta = {"truncation": {"unit": "symbols", "cap": 14, "requested": 503, "imported": 14}}
-        built = TrainingLifecycleManager._build_dataset_shortfall(meta, dataset_id="abc123", allow_truncated=True)
+        built = TrainingLifecycleManager._build_dataset_shortfall(meta, dataset_id="abc123", acceptance_source=_PROJECT_API_SHORTFALL_ACCEPTED_BY_DEPLOYMENT)
         assert built is not None
         assert built["dataset_id"] == "abc123"
         assert built["accepted_via_allow_truncated_datasets"] is True
@@ -248,11 +323,89 @@ class TestShortfallIsPollable:
                 "policy": "accept",
             }
         }
-        built = TrainingLifecycleManager._build_dataset_shortfall(meta, dataset_id="d2", allow_truncated=True)
+        built = TrainingLifecycleManager._build_dataset_shortfall(meta, dataset_id="d2", acceptance_source=_PROJECT_API_SHORTFALL_ACCEPTED_BY_DEPLOYMENT)
         assert built is not None
         assert built["data_quality"]["unrescued"] == {"STZ": "no shares concept"}
         assert built["data_quality"]["degraded"] == {"META": "period_average"}
         assert "unresolvable" in built["summary"] and "weaker source" in built["summary"]
+
+    _PARTIAL_META = {"truncation": {"unit": "symbols", "cap": 14, "requested": 503, "imported": 14}}
+
+    @staticmethod
+    def _annotation_after_reload(caller_params: dict, *, deployment_flag: bool, meta: dict) -> dict:
+        """Run ``_reload_dataset`` up to the point the annotation is set, then stop.
+
+        The fake client delivers ``meta`` and a placeholder artifact; tensor
+        conversion is patched to raise, because the annotation is built BEFORE it
+        and everything after it is tensor plumbing this test has no opinion about.
+        """
+
+        class _PartialClient:
+            def __init__(self, **_kwargs: object) -> None:
+                pass
+
+            def create_dataset(self, *, generator: str, params: dict, persist: bool) -> dict:
+                return {"dataset_id": "partial-1", "meta": meta}
+
+            def download_artifact_npz(self, dataset_id: str) -> dict:
+                return {}
+
+        class _StopAfterAnnotation(Exception):
+            pass
+
+        manager = TrainingLifecycleManager.__new__(TrainingLifecycleManager)
+        manager.logger = logging.getLogger("test.annotation")
+        manager._dataset_shortfall = None
+        settings = SimpleNamespace(juniper_data_url="http://juniper-data:8100", allow_truncated_datasets=deployment_flag)
+        with (
+            patch("juniper_data_client.JuniperDataClient", _PartialClient),
+            patch("api.settings.Settings", lambda: settings),
+            patch("api.secrets.get_secret", lambda _name: "key"),
+            patch.object(TrainingLifecycleManager, "_artifact_to_tensors", side_effect=_StopAfterAnnotation("stop")),
+            pytest.raises(_StopAfterAnnotation),
+        ):
+            manager._reload_dataset(dataset_type="equities", params=dict(caller_params))
+        assert manager._dataset_shortfall is not None
+        return manager._dataset_shortfall
+
+    def test_a_caller_opt_in_is_recorded_as_the_request(self) -> None:
+        """Options 1 and 2 of the partial-data contract arrive as request params, with the service flag off."""
+        built = self._annotation_after_reload({"allow_truncation": True}, deployment_flag=False, meta=self._PARTIAL_META)
+        assert built["accepted_by_this_run"] is True
+        assert built["acceptance_source"] == _PROJECT_API_SHORTFALL_ACCEPTED_BY_REQUEST
+        # The original field means exactly what its name says: the SETTING did not supply this opt-in.
+        assert built["accepted_via_allow_truncated_datasets"] is False
+        assert "dataset request itself" in built["summary"]
+
+    def test_the_service_setting_is_recorded_as_the_deployment(self) -> None:
+        built = self._annotation_after_reload({}, deployment_flag=True, meta=self._PARTIAL_META)
+        assert built["accepted_by_this_run"] is True
+        assert built["acceptance_source"] == _PROJECT_API_SHORTFALL_ACCEPTED_BY_DEPLOYMENT
+        assert built["accepted_via_allow_truncated_datasets"] is True
+        assert "allow_truncated_datasets setting" in built["summary"]
+
+    def test_a_partial_dataset_nobody_here_asked_for_names_the_producer(self) -> None:
+        """THE REGRESSION (round-37 handoff §0.13).
+
+        Flag off, caller silent, and the producer delivered a partial dataset anyway
+        -- its own deployment opt-in, which a client cannot refuse. The annotation
+        used to read ``accepted_via_allow_truncated_datasets: false``: the truth
+        about the setting, and a denial of the acceptance it was annotating. It now
+        says who accepted, and that this run did not.
+        """
+        built = self._annotation_after_reload({}, deployment_flag=False, meta=self._PARTIAL_META)
+        assert built["accepted_by_this_run"] is False
+        assert built["acceptance_source"] == _PROJECT_API_SHORTFALL_ACCEPTED_BY_PRODUCER
+        assert built["accepted_via_allow_truncated_datasets"] is False
+        assert "producer" in built["summary"]
+
+    def test_a_string_stance_is_read_as_a_bool(self) -> None:
+        """The staged params cross a JSON boundary; ``bool("false")`` is ``True``."""
+        assert TrainingLifecycleManager._as_bool_stance("false") is False
+        assert TrainingLifecycleManager._as_bool_stance("True") is True
+        assert TrainingLifecycleManager._as_bool_stance(False) is False
+        assert TrainingLifecycleManager._as_bool_stance(None) is None
+        assert TrainingLifecycleManager._as_bool_stance("") is None
 
     def test_get_status_carries_it(self) -> None:
         """The single field canopy needs -- and it reaches the WS stream for free."""
