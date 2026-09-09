@@ -39,6 +39,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`dataset_shortfall` now says WHO accepted the partial dataset — and no longer denies an
+  acceptance it is annotating.** `accepted_via_allow_truncated_datasets` was the raw value of this
+  service's own setting. Two live paths made it read `false` on a run training on partial data:
+  the caller supplying `allow_truncation: true` in the staged params (the path canopy's options 1
+  and 2 use, with the service flag off), and juniper-data accepting on its **own** deployment
+  opt-in — which it ORs with the request and a client cannot refuse — while nothing was sent from
+  here. The annotation is additive: `accepted_by_this_run` (an opt-in went on the wire from this
+  side), `acceptance_source` (`request_params` | `allow_truncated_datasets` | `producer`), and the
+  original field kept with its literal meaning — true only when THIS service's setting supplied
+  the opt-in. The `summary` sentence and the training-log line carry the same clause.
+
+  Found by round-37 handoff validation in juniper-ml. The producer's descriptor carries no
+  authority field, so the source is derived from what this run **sent**, and `producer` is
+  inferred when nothing was sent and a shortfall arrived anyway. Pinned by three arms of
+  `TestShortfallIsPollable` that run `_reload_dataset` up to the annotation and stop.
+
+- **A caller's explicit `allow_truncation: false` now gets the refusal message, not a bare
+  "fetch failed".** `_describe_dataset_fetch_failure` keyed the remedy off the service **setting**;
+  with the flag on and the caller refusing (honoured since cascor#624), the producer's 422 came
+  back as `juniper-data fetch failed: …` with no remedy — in exactly the case the remedy exists
+  for. It now keys off the stance that went on the wire, and tells a caller that refused to
+  re-send `allow_truncation=true` with `incomplete_rows=accept|drop` rather than pointing them at
+  a service knob their own value overrides. The staged value is read as a tri-state
+  (`_as_bool_stance`), because the params cross a JSON boundary and `bool("false")` is `True`.
+
+- **The refusal message opens with a machine-readable token, `[dataset_shortfall_refused]`**
+  (`_PROJECT_API_SHORTFALL_REFUSAL_TOKEN`), so a consumer can recognise the class without
+  matching prose; canopy's three-way partial-data prompt keys on it. It rides inside the 409
+  `detail` because that is the one channel every transport carries — the WS control path
+  forwards `error` as a bare string. An ordinary outage does not carry it.
+
+- **Correction to the `dataset_shortfall` entry below: it does NOT ride the WS training
+  stream.** `get_status()` is read by the stream only in the one-shot `initial_status` frame at
+  connect; the broadcast set has no status frame. A client already connected when
+  `_reload_dataset` sets the field never sees it over WS — it polls `/v1/training/status`
+  (canopy does, at 1 Hz). The manager comment that made the same claim is corrected here.
+
 - **`util/check_image_cpu_only.py` let the `cuda-*` family through, and the merge job's
   digest-identity step accepted any number of linux images per pushed digest.** The 2026-09-07 CUDA
   worker image carried `cuda-toolkit`, `cuda-bindings` and `cuda-pathfinder` next to the `nvidia-*`
@@ -49,6 +86,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   architecture is the digest file's name, so a multi-platform index could never count an image the
   census did not run on as verified. Both pinned by `src/tests/unit/test_dockerfile_cpu_torch_pin.py`.
   Follow-up 6a of juniper-ml
+
   `prompts/thread-handoff_automated-prompts/HANDOFF_2026-09-08_container-registry-rollout-wave-2-opened-and-the-cuda-class-in-three-shapes.md`.
 - **The container image installed the entire CUDA stack -- ~3 GB of `nvidia-*`, `triton` and
   `cuda-toolkit` wheels -- on an image that is CPU-only by design.** `requirements.lock` was
@@ -726,10 +764,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   lifts. Measured on the CI `unit and not slow` subset (`--cov=src`, statement
   basis — the gate basis).
 
-  | Scope | Before (stmt) | After (stmt) |
-  |-------|---------------|--------------|
+  | Scope                                                   | Before (stmt)      | After (stmt)           |
+  |---------------------------------------------------------|--------------------|------------------------|
   | `src/cascade_correlation/cascade_correlation.py` (file) | 1991/2232 = 89.20% | 2173/2232 = **97.36%** |
-  | `src/cascade_correlation` (sub-module, pooled) | 1991/2232 = 89.20% | 2173/2232 = **97.36%** |
+  | `src/cascade_correlation` (sub-module, pooled)          | 1991/2232 = 89.20% | 2173/2232 = **97.36%** |
 
   The `src/cascade_correlation` sub-module clears the ratified ≥95% pooled bar
   (its only statement-bearing file dominates the pool; the package
@@ -778,11 +816,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Per-file coverage lift 2 (C-5) — WebSocket layer (`src/api/websocket/`).** Tests-only; no source changed, no CI gate flipped. Part 2 of the split under the ecosystem per-file coverage rollout (juniper-ml [`notes/JUNIPER_ECOSYSTEM_PER_FILE_COVERAGE_ROLLOUT_SCOPING_2026-06-30.md`](https://github.com/pcalnon/juniper-ml/blob/main/notes/JUNIPER_ECOSYSTEM_PER_FILE_COVERAGE_ROLLOUT_SCOPING_2026-06-30.md)); lifts the three lowest-coverage WebSocket source files — the sub-module recommended next after PR-1 ([#368](https://github.com/pcalnon/juniper-cascor/pull/368)) — to full statement coverage of their previously-uncovered branches:
 
-  | File | Before (stmt) | After (stmt) |
-  |------|---------------|--------------|
+  | File                                   | Before (stmt)    | After (stmt)          |
+  |----------------------------------------|------------------|-----------------------|
   | `src/api/websocket/training_stream.py` | 114/156 = 73.08% | 156/156 = **100.00%** |
-  | `src/api/websocket/control_stream.py` | 161/193 = 83.42% | 193/193 = **100.00%** |
-  | `src/api/websocket/manager.py` | 275/308 = 89.29% | 308/308 = **100.00%** |
+  | `src/api/websocket/control_stream.py`  | 161/193 = 83.42% | 193/193 = **100.00%** |
+  | `src/api/websocket/manager.py`         | 275/308 = 89.29% | 308/308 = **100.00%** |
 
   The `src/api/websocket` sub-module clears the ratified ≥95% pooled bar: **88.17% → 99.37%** (842/955 → 949/955, statement-weighted).
 
@@ -821,11 +859,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Per-file coverage lift 2 (C-5) — WebSocket layer (`src/api/websocket/`).** Tests-only; no source changed, no CI gate flipped. Part 2 of the split under the ecosystem per-file coverage rollout (juniper-ml [`notes/JUNIPER_ECOSYSTEM_PER_FILE_COVERAGE_ROLLOUT_SCOPING_2026-06-30.md`](https://github.com/pcalnon/juniper-ml/blob/main/notes/JUNIPER_ECOSYSTEM_PER_FILE_COVERAGE_ROLLOUT_SCOPING_2026-06-30.md)); lifts the three lowest-coverage WebSocket source files — the sub-module recommended next after PR-1 ([#368](https://github.com/pcalnon/juniper-cascor/pull/368)) — to full statement coverage of their previously-uncovered branches:
 
-  | File | Before (stmt) | After (stmt) |
-  |------|---------------|--------------|
+  | File                                   | Before (stmt)    | After (stmt)          |
+  |----------------------------------------|------------------|-----------------------|
   | `src/api/websocket/training_stream.py` | 114/156 = 73.08% | 156/156 = **100.00%** |
-  | `src/api/websocket/control_stream.py` | 161/193 = 83.42% | 193/193 = **100.00%** |
-  | `src/api/websocket/manager.py` | 275/308 = 89.29% | 308/308 = **100.00%** |
+  | `src/api/websocket/control_stream.py`  | 161/193 = 83.42% | 193/193 = **100.00%** |
+  | `src/api/websocket/manager.py`         | 275/308 = 89.29% | 308/308 = **100.00%** |
 
   The `src/api/websocket` sub-module clears the ratified ≥95% pooled bar: **88.17% → 99.37%** (842/955 → 949/955, statement-weighted). Overall cascor coverage 90.20% → 91.03%. New fast unit tests (40 across `test_training_stream_coverage.py` [new], `test_control_stream_coverage.py`, and `test_websocket_manager.py`) drive the resume-handshake + replay arms (`training_stream._await_resume_frame` / `_handle_resume`), the control-path handshake gates / leaky-bucket rate-limit / invalid-params / heartbeat / idle-timeout branches (`control_stream`), and the manager's per-endpoint bookkeeping, per-IP accounting, pending-connection rejection, and defensive metric-emission guards (`manager`) — all via `AsyncMock` seams (no live sockets). Measured on the CI `unit and not slow` subset (the gate basis) with `juniper-coverage-gap-map` (`juniper-ci-tools 0.6.0`, advisory). The blocking `--enforce` gate lands in the final PR of the split once every sub-module clears.
 
@@ -869,8 +907,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Per-file coverage lift 3 (C-5) — API application factory (`src/api/app.py`).** Tests-only; no source changed, no CI gate flipped. Part 3 of the split under the ecosystem per-file coverage rollout (juniper-ml [`notes/JUNIPER_ECOSYSTEM_PER_FILE_COVERAGE_ROLLOUT_SCOPING_2026-06-30.md`](https://github.com/pcalnon/juniper-ml/blob/main/notes/JUNIPER_ECOSYSTEM_PER_FILE_COVERAGE_ROLLOUT_SCOPING_2026-06-30.md)); lifts the last sub-95 file in the `src/api` sub-module so the sub-module clears the ratified ≥95% pooled bar:
 
-  | File | Before (stmt) | After (stmt) |
-  |------|---------------|--------------|
+  | File             | Before (stmt)    | After (stmt)         |
+  |------------------|------------------|----------------------|
   | `src/api/app.py` | 208/245 = 84.90% | 243/245 = **99.18%** |
 
   The `src/api` sub-module clears the ratified ≥95% pooled bar: **94.74% → 98.83%** (810/855 → 845/855, statement-weighted). Overall cascor statement coverage 93.42% → 93.70% (on the current base, which already includes #371's WebSocket lift). Eight new fast unit tests (extending `src/tests/unit/api/test_api_app_coverage_deep.py`) drive the previously-uncovered lifespan companion-service arms — the `auto_start_data_service` launch plus the reverse-order managed-service shutdown drain, and the `auto_start_canopy` task wiring plus its shutdown in-flight cancellation — the `_auto_start_canopy` background task (cascor-healthy / cascor-not-ready / launch-failure / exception paths), and the best-effort `_unregister_worker_metrics_collector` REGISTRY-exception arm — all via `AsyncMock` seams (no live subprocess or health poll). The two statements left uncovered are the import-time `importlib.metadata.PackageNotFoundError` version-fallback (reachable only by reimporting the module with the package uninstalled) — left as-is, no pragma. Measured on the CI `unit and not slow` subset (the gate basis) with `juniper-coverage-gap-map` (`juniper-ci-tools 0.6.0`, advisory). The blocking `--enforce` gate lands in the final PR of the split once every sub-module clears.
@@ -1336,7 +1374,7 @@ unset JUNIPER_DATA_URL
 - **Coverage Improvements by Module**:
 
   | Module                                       | Before  | After   |
-  | -------------------------------------------- | ------- | ------- |
+  |----------------------------------------------|---------|---------|
   | `cascade_correlation/cascade_correlation.py` | 46%     | 86%     |
   | `candidate_unit/candidate_unit.py`           | 56%     | 86%     |
   | `cascor_constants/constants.py`              | 50%     | 99%     |
@@ -2469,34 +2507,34 @@ unset JUNIPER_DATA_URL
 
 ## Version History
 
-| Version | Date       | Description                              |
-| ------- | ---------- | ---------------------------------------- |
-| 0.6.7   | 2026-02-05 | Integration Development Plan             |
-| 0.6.6   | 2026-02-04 | Test/CI Phase 4 (benchmarks, matrix)     |
-| 0.6.5   | 2026-02-04 | Test/CI Phase 3 (tooling quality gates)  |
-| 0.6.4   | 2026-02-04 | Test/CI Phases 0-2 (test integrity)      |
-| 0.6.3   | 2026-02-01 | JuniperData integration documentation    |
-| 0.6.2   | 2026-02-01 | CI/CD parity across all 3 apps           |
-| 0.6.1   | 2026-01-31 | Algorithm parameter + E2E validation     |
-| 0.6.0   | 2026-01-30 | JuniperData Cascor Integration (Phase 3) |
-| 0.5.1   | 2026-01-29 | Pre-commit Compliance (MyPy, F401, B907) |
-| 0.5.0   | 2026-01-29 | JuniperData Extraction (Phases 0-2)      |
-| 0.4.1   | 2026-01-29 | Documentation Overhaul                   |
-| 0.4.0   | 2026-01-29 | CI/CD Pipeline Overhaul                  |
-| 0.3.16  | 2026-01-24 | CI/CD Pipeline Setup (P1-007)            |
-| 0.3.15  | 2026-01-24 | Fixed P0 issues, serialization coverage  |
-| 0.3.14  | 2026-01-22 | Fixed multiprocessing and test issues    |
-| 0.3.13  | 2026-01-21 | Fixed test timeout configuration         |
-| 0.3.12  | 2026-01-21 | Fixed activation pickling for MP         |
-| 0.3.7   | 2026-01-16 | Fixed port conflicts, sequential fallback|
-| 0.3.6   | 2026-01-15 | Fixed spawn context module imports       |
-| 0.3.5   | 2025-01-15 | Fixed API compatibility and test suite   |
-| 0.3.4   | 2025-01-15 | Fixed multiprocessing and dependencies   |
-| 0.3.3   | 2025-01-12 | Addressed critical runtime errors        |
-| 0.3.2   | 2025-01-12 | MVP Complete                             |
-| 0.3.1   | 2025-12-09 | Code refactoring and cleanup             |
-| 0.3.0   | 2025-12-08 | Standalone project structure             |
-| 0.2.0   | 2025-10-28 | Phase 1 complete, serialization fixes    |
-| 0.1.1   | 2025-10-25 | HDF5 serialization critical fixes        |
-| 0.1.0   | 2025-10-15 | P0/P1 critical bug fixes                 |
-| 0.0.1   | 2023-06-13 | Initial development release              |
+| Version | Date       | Description                               |
+|---------|------------|-------------------------------------------|
+| 0.6.7   | 2026-02-05 | Integration Development Plan              |
+| 0.6.6   | 2026-02-04 | Test/CI Phase 4 (benchmarks, matrix)      |
+| 0.6.5   | 2026-02-04 | Test/CI Phase 3 (tooling quality gates)   |
+| 0.6.4   | 2026-02-04 | Test/CI Phases 0-2 (test integrity)       |
+| 0.6.3   | 2026-02-01 | JuniperData integration documentation     |
+| 0.6.2   | 2026-02-01 | CI/CD parity across all 3 apps            |
+| 0.6.1   | 2026-01-31 | Algorithm parameter + E2E validation      |
+| 0.6.0   | 2026-01-30 | JuniperData Cascor Integration (Phase 3)  |
+| 0.5.1   | 2026-01-29 | Pre-commit Compliance (MyPy, F401, B907)  |
+| 0.5.0   | 2026-01-29 | JuniperData Extraction (Phases 0-2)       |
+| 0.4.1   | 2026-01-29 | Documentation Overhaul                    |
+| 0.4.0   | 2026-01-29 | CI/CD Pipeline Overhaul                   |
+| 0.3.16  | 2026-01-24 | CI/CD Pipeline Setup (P1-007)             |
+| 0.3.15  | 2026-01-24 | Fixed P0 issues, serialization coverage   |
+| 0.3.14  | 2026-01-22 | Fixed multiprocessing and test issues     |
+| 0.3.13  | 2026-01-21 | Fixed test timeout configuration          |
+| 0.3.12  | 2026-01-21 | Fixed activation pickling for MP          |
+| 0.3.7   | 2026-01-16 | Fixed port conflicts, sequential fallback |
+| 0.3.6   | 2026-01-15 | Fixed spawn context module imports        |
+| 0.3.5   | 2025-01-15 | Fixed API compatibility and test suite    |
+| 0.3.4   | 2025-01-15 | Fixed multiprocessing and dependencies    |
+| 0.3.3   | 2025-01-12 | Addressed critical runtime errors         |
+| 0.3.2   | 2025-01-12 | MVP Complete                              |
+| 0.3.1   | 2025-12-09 | Code refactoring and cleanup              |
+| 0.3.0   | 2025-12-08 | Standalone project structure              |
+| 0.2.0   | 2025-10-28 | Phase 1 complete, serialization fixes     |
+| 0.1.1   | 2025-10-25 | HDF5 serialization critical fixes         |
+| 0.1.0   | 2025-10-15 | P0/P1 critical bug fixes                  |
+| 0.0.1   | 2023-06-13 | Initial development release               |
