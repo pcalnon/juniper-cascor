@@ -26,7 +26,7 @@ from api.lifecycle.state_machine import Command, TrainingPhase, TrainingStateMac
 from api.models.cascor_model import CascorModel
 from api.models.common import coerce_native_scalars as _common_coerce_native_scalars
 from api.observability import TRAINING_SESSION_STATUS_CANCELLED, TRAINING_SESSION_STATUS_FAILURE, TRAINING_SESSION_STATUS_SUCCESS, dec_training_sessions, inc_training_session_completed, inc_training_sessions, observe_training_step_duration, record_training_epoch, set_hidden_units, set_training_accuracy, set_training_loss
-from cascor_constants.constants_api import _PROJECT_API_DRAIN_THREAD_JOIN_TIMEOUT, _PROJECT_API_LIFECYCLE_DEFAULT_CANDIDATE_PATIENCE, _PROJECT_API_NETWORK_INPUT_SIZE_DEFAULT, _PROJECT_API_NETWORK_OUTPUT_SIZE_DEFAULT, _PROJECT_API_PROGRESS_QUEUE_GET_TIMEOUT, _PROJECT_API_PROGRESS_QUEUE_WAIT_TIMEOUT
+from cascor_constants.constants_api import _PROJECT_API_DRAIN_THREAD_JOIN_TIMEOUT, _PROJECT_API_LIFECYCLE_DEFAULT_CANDIDATE_PATIENCE, _PROJECT_API_NETWORK_INPUT_SIZE_DEFAULT, _PROJECT_API_NETWORK_OUTPUT_SIZE_DEFAULT, _PROJECT_API_PROGRESS_QUEUE_GET_TIMEOUT, _PROJECT_API_PROGRESS_QUEUE_WAIT_TIMEOUT, _PROJECT_API_SHORTFALL_ACCEPTED_BY_DEPLOYMENT, _PROJECT_API_SHORTFALL_ACCEPTED_BY_PRODUCER, _PROJECT_API_SHORTFALL_ACCEPTED_BY_REQUEST, _PROJECT_API_SHORTFALL_REFUSAL_TOKEN
 from snapshots.snapshot_load_status import SnapshotLoadResult
 from snapshots.snapshot_load_status import absent as snapshot_absent
 
@@ -3663,7 +3663,7 @@ class TrainingLifecycleManager:
         return test_x, test_y, warning
 
     @staticmethod
-    def _describe_dataset_fetch_failure(exc: Exception, *, allow_truncated: bool) -> str:
+    def _describe_dataset_fetch_failure(exc: Exception, *, allow_truncated: bool, caller_refused: bool = False) -> str:
         """Turn a juniper-data fetch failure into something an operator can act on.
 
         A 422 from the producer is not a generic outage: it means the dataset
@@ -3675,15 +3675,35 @@ class TrainingLifecycleManager:
         The 422 body already names which symbols were affected, how many rows,
         and both remedies; it is quoted rather than replaced. What is added is
         the part juniper-data cannot know: which knob to turn on THIS side.
+
+        ``allow_truncated`` is the stance that went ON THE WIRE -- whether an
+        opt-in was sent, by this service's setting or by the caller's own params
+        -- not the setting alone. The two differ in exactly the case the remedy
+        exists for: a caller-supplied ``allow_truncation: false`` on a deployment
+        with the flag on is honoured (cascor#624), the producer refuses, and
+        keying this off the setting produced the bare ``fetch failed`` line with
+        no remedy at all. ``caller_refused`` distinguishes the two no-opt-in cases
+        because their remedies differ: a caller that sent ``false`` re-sends
+        ``true``; a silent caller turns the knob on this side.
+
+        The message opens with a machine-readable token so a consumer can
+        recognise the refusal class without matching prose; canopy's three-way
+        partial-data prompt keys on it.
         """
         detail = str(exc)
         looks_like_shortfall = "422" in detail or "allow_truncation" in detail or "incomplete_rows" in detail
         if not looks_like_shortfall or allow_truncated:
             return f"juniper-data fetch failed: {detail}"
-        return f"juniper-data could not produce the requested dataset in full, and this run did not accept a partial one, so the run is FAILING rather than training on data nobody chose. " f"Producer detail: {detail} " f"To accept it, re-run with --allow-truncated-datasets (or set JUNIPER_CASCOR_ALLOW_TRUNCATED_DATASETS=true, or allow_truncated_datasets: true in the experiment YAML service: block). " f"The resulting dataset is permanently annotated as partial, and so is every metric derived from it."
+        if caller_refused:
+            stance = "and this run explicitly refused a partial one (the dataset request sent allow_truncation=false)"
+            remedy = "To accept it, re-send the dataset request with allow_truncation=true, plus incomplete_rows=accept to keep the affected rows or incomplete_rows=drop to remove them."
+        else:
+            stance = "and this run did not accept a partial one"
+            remedy = "To accept it, re-run with --allow-truncated-datasets (or set JUNIPER_CASCOR_ALLOW_TRUNCATED_DATASETS=true, or allow_truncated_datasets: true in the experiment YAML service: block), or send allow_truncation=true on the dataset request itself."
+        return f"{_PROJECT_API_SHORTFALL_REFUSAL_TOKEN} juniper-data could not produce the requested dataset in full, {stance}, so the run is FAILING rather than training on data nobody chose. " f"Producer detail: {detail} " f"{remedy} " "The resulting dataset is permanently annotated as partial, and so is every metric derived from it."
 
     @staticmethod
-    def _build_dataset_shortfall(meta: Dict[str, Any], *, dataset_id: Optional[str], allow_truncated: bool) -> Optional[Dict[str, Any]]:
+    def _build_dataset_shortfall(meta: Dict[str, Any], *, dataset_id: Optional[str], acceptance_source: Optional[str]) -> Optional[Dict[str, Any]]:
         """Build the pollable annotation, or ``None`` when the dataset is clean.
 
         ``_log_dataset_shortfall`` says the same thing to the training log. This
@@ -3700,6 +3720,14 @@ class TrainingLifecycleManager:
         ``summary`` is included so canopy renders one sentence instead of
         re-deriving it from the parts -- two formatters over one structure drift,
         and the drift shows up as a UI that disagrees with the log.
+
+        ``acceptance_source`` is who put the opt-in on the wire -- the caller's
+        own params, or this service's ``allow_truncated_datasets`` setting -- or
+        ``None`` when nothing was sent. A partial dataset can still arrive in that
+        last case: juniper-data ORs the request with ITS deployment's opt-in and
+        a client cannot opt out of it. The annotation then records the producer
+        as the authority, rather than claiming this run refused the data it is
+        training on.
         """
         truncation = meta.get("truncation") or None
         quality = meta.get("data_quality") or None
@@ -3717,18 +3745,64 @@ class TrainingLifecycleManager:
             if degraded:
                 parts.append(f"{len(degraded)} symbol(s) resolved from a weaker source")
 
+        source = acceptance_source or _PROJECT_API_SHORTFALL_ACCEPTED_BY_PRODUCER
+        parts.append(TrainingLifecycleManager._describe_acceptance(source))
+
         return {
             "dataset_id": dataset_id,
-            # The stance THIS run took, recorded next to its consequence so a
+            # WHO accepted the shortfall, recorded next to its consequence so a
             # reader does not have to correlate with a settings dump to learn
-            # whether the shortfall was chosen or merely tolerated.
-            "accepted_via_allow_truncated_datasets": allow_truncated,
+            # whether it was chosen or merely tolerated. ``accepted_by_this_run``
+            # answers the question a reader usually means ("did we ask for
+            # this?"); ``acceptance_source`` is that answer's provenance; and the
+            # original field is kept for its consumers, now meaning exactly what
+            # its name says -- true only when THIS SERVICE'S setting supplied the
+            # opt-in. It used to be the setting's raw value, which read ``false``
+            # on a run that accepted via the caller's params and on one the
+            # producer accepted on its own authority: an annotation denying the
+            # acceptance it was annotating.
+            "accepted_by_this_run": source != _PROJECT_API_SHORTFALL_ACCEPTED_BY_PRODUCER,
+            "acceptance_source": source,
+            "accepted_via_allow_truncated_datasets": source == _PROJECT_API_SHORTFALL_ACCEPTED_BY_DEPLOYMENT,
             "truncation": truncation,
             "data_quality": quality,
             "summary": "; ".join(parts),
         }
 
-    def _log_dataset_shortfall(self, meta: Dict[str, Any], *, allow_truncated: bool) -> None:
+    @staticmethod
+    def _describe_acceptance(source: str) -> str:
+        """One clause saying who let the partial dataset through -- for the log and the summary."""
+        return {
+            _PROJECT_API_SHORTFALL_ACCEPTED_BY_REQUEST: "accepted by the dataset request itself (allow_truncation=true)",
+            _PROJECT_API_SHORTFALL_ACCEPTED_BY_DEPLOYMENT: "accepted by this service's allow_truncated_datasets setting",
+            _PROJECT_API_SHORTFALL_ACCEPTED_BY_PRODUCER: "accepted by the producer's own deployment default (this run sent no opt-in, and a client cannot opt out of the producer's choice)",
+        }.get(source, f"accepted via {source}")
+
+    @staticmethod
+    def _as_bool_stance(value: Any) -> Optional[bool]:
+        """Read a caller's ``allow_truncation`` as a tri-state: absent, refused, or opted in.
+
+        The staged params are a free-form dict that has crossed at least one JSON
+        boundary and possibly a YAML one, so the value may arrive as a string.
+        ``bool("false")`` is ``True`` -- truthiness is not an "is it set" test --
+        so the string forms are read explicitly. Anything unrecognised falls back
+        to truthiness, which is what the producer's own coercion will make of it.
+        """
+        if value is None:
+            return None
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, str):
+            lowered = value.strip().lower()
+            if lowered == "":
+                return None
+            if lowered in {"true", "1", "yes", "on"}:
+                return True
+            if lowered in {"false", "0", "no", "off"}:
+                return False
+        return bool(value)
+
+    def _log_dataset_shortfall(self, meta: Dict[str, Any], *, acceptance_source: Optional[str]) -> None:
         """Log what the producer could not deliver, when this run accepted it.
 
         The producer's ``DatasetMeta`` carries ``truncation`` (how much is
@@ -3744,14 +3818,18 @@ class TrainingLifecycleManager:
         if not truncation and not quality:
             return
 
+        # WHO let it through comes first, once, because it is the same answer for
+        # both kinds of shortfall and it is the line an operator reads back to
+        # decide whether this run's numbers were chosen or merely tolerated.
+        source = acceptance_source or _PROJECT_API_SHORTFALL_ACCEPTED_BY_PRODUCER
+        self.logger.warning("DATASET SHORTFALL: this run is training on a partial dataset, %s.", self._describe_acceptance(source))
         if truncation:
             self.logger.warning(
-                "DATASET IS PARTIAL: %s of %s %s were imported (cap %s). This run accepted it via allow_truncated_datasets=%s; the artifact carries a permanent annotation, and this run reports it as `dataset_shortfall` on /v1/training/status.",
+                "DATASET IS PARTIAL: %s of %s %s were imported (cap %s); the artifact carries a permanent annotation, and this run reports it as `dataset_shortfall` on /v1/training/status.",
                 truncation.get("imported"),
                 truncation.get("requested"),
                 truncation.get("unit"),
                 truncation.get("cap"),
-                allow_truncated,
             )
         if quality:
             unrescued = quality.get("unrescued") or {}
@@ -3953,6 +4031,7 @@ class TrainingLifecycleManager:
         # opts in, so an unset flag means the fetch below fails and takes the run
         # with it -- which is the point: a score computed on a partial dataset is
         # a score for data nobody chose.
+        caller_stance = self._as_bool_stance(jd_params.get("allow_truncation"))
         allow_truncated = bool(Settings().allow_truncated_datasets)
         if allow_truncated and generator in _PROJECT_API_TRUNCATABLE_GENERATORS and "allow_truncation" not in jd_params:
             # Only the generators that can actually produce a partial dataset.
@@ -3970,32 +4049,49 @@ class TrainingLifecycleManager:
             # authority here, so an explicit value of either polarity wins.
             jd_params = {**jd_params, "allow_truncation": True}
 
+        # What actually went on the wire, and who put it there. The setting alone
+        # is the wrong witness on both sides of this: a caller-supplied value wins
+        # over it (above), and the producer applies its OWN deployment opt-in on
+        # top of whatever arrives. So "did this run accept a partial dataset" is
+        # answered by the request that was sent, and "who accepted it" needs a
+        # third value for the case where nobody on this side did.
+        requested_truncation = bool(self._as_bool_stance(jd_params.get("allow_truncation")))
+        if caller_stance is not None:
+            acceptance_source = _PROJECT_API_SHORTFALL_ACCEPTED_BY_REQUEST if caller_stance else None
+        else:
+            acceptance_source = _PROJECT_API_SHORTFALL_ACCEPTED_BY_DEPLOYMENT if requested_truncation else None
+
         try:
             result = client.create_dataset(generator=generator, params=jd_params, persist=True)
             dataset_id = result["dataset_id"]
             arrays = client.download_artifact_npz(dataset_id)
         except Exception as exc:
-            raise RuntimeError(self._describe_dataset_fetch_failure(exc, allow_truncated=allow_truncated)) from exc
+            raise RuntimeError(self._describe_dataset_fetch_failure(exc, allow_truncated=requested_truncation, caller_refused=caller_stance is False)) from exc
 
         # The producer records what it could not deliver in DatasetMeta; surface
         # it here so an accepted shortfall is visible in THIS run's log and not
         # only in the artifact a reader may never open.
         meta = result.get("meta") or {}
-        self._log_dataset_shortfall(meta, allow_truncated=allow_truncated)
+        self._log_dataset_shortfall(meta, acceptance_source=acceptance_source)
         # ...AND ON THE RUN, not only in the log. A log line is not a surface: it
         # cannot be polled, it does not reach the WS stream, and canopy cannot
         # render it. Without this, a run that accepted a partial dataset is
         # indistinguishable over the API from one that got everything it asked
         # for -- so the score it reports carries no mark of the data it was
         # computed on. ``get_status()`` reads this, which puts it on
-        # ``/v1/training/status`` and the WS training stream at once.
+        # ``/v1/training/status``. It does NOT ride the WS training stream: the
+        # stream's only reader of ``get_status()`` is the one-shot
+        # ``initial_status`` frame sent at connect (``training_stream.py``), and
+        # the broadcast set has no status frame -- a client already connected
+        # when this is set never sees it over WS. A live consumer polls the
+        # status route; canopy does, at 1 Hz.
         #
         # ``dataset_id`` is recorded ALONGSIDE the annotation deliberately: this
         # request is not necessarily the driver's, because the deployment default
         # applied above changes the params and therefore the content-addressed id.
         # An annotation that does not name the dataset it describes is a claim
         # about an unidentified artifact.
-        self._dataset_shortfall = self._build_dataset_shortfall(meta, dataset_id=dataset_id, allow_truncated=allow_truncated)
+        self._dataset_shortfall = self._build_dataset_shortfall(meta, dataset_id=dataset_id, acceptance_source=acceptance_source)
 
         new_train_x, new_train_y, new_val_x, new_val_y, new_test_x, new_test_y = self._artifact_to_tensors(arrays)
         # §6.1 rules 1-3: decide what an artifact WITHOUT a validation split means
