@@ -297,6 +297,50 @@ bash run_tests.bash -u -j           # Unit tests in parallel
 bash run_tests.bash -m "spiral"     # Spiral problem tests
 ```
 
+### Micro timing reference (PF-4 — report-only)
+
+The performance tier's **timing reference** is a pytest-benchmark saved run. It is cut with the
+benchmark storage pointed **outside every checkout**: `.benchmarks/` is gitignored, and a
+`git worktree remove` deletes ignored files, so a reference cut into a worktree dies with it.
+
+```bash
+cd src
+STORE=file://$HOME/.local/state/juniper-experiments/baselines/cascor-micro
+python -m pytest tests/performance/test_baselines.py tests/performance/test_micro_*.py \
+    --run-performance --benchmark-storage="$STORE" --benchmark-autosave
+```
+
+Compare a later run against it. **This is a report, never a gate** — owner decision 2026-09-07,
+juniper-ml P2 item 2.5: the reference host's quiet-run noise band is 20.5% and six competing
+processes cost +19.9%, so no percentage tolerance can tell a regression from an ordinary loaded
+host. Do **not** add `--benchmark-compare-fail`.
+
+```bash
+python -m pytest tests/performance/test_baselines.py tests/performance/test_micro_*.py \
+    --run-performance --benchmark-storage="$STORE" --benchmark-compare=0001
+```
+
+What the saved JSON carries beyond pytest-benchmark's defaults, via the two hooks at the bottom of
+`tests/performance/conftest.py` (helpers in `tests/performance/timing_reference.py`, pinned by
+`tests/unit/test_perf_timing_reference_helpers.py`):
+
+| Field | Compared? | Why |
+|-------|-----------|-----|
+| `machine_info.juniper` — `cpu_model`, `cpu_count`, torch and numpy versions, the 1-thread pin | **Yes** — a difference makes `--benchmark-compare` warn | Identity, mirroring the run tier's `HOST.json`. A figure from another host, torch build or thread pin is not comparable. |
+| `juniper_run` — 1/5/15-minute load average at save time, UTC timestamp, `git_sha` | No — recorded only | The condition the figure was taken under. A load average inside `machine_info` would make every comparison warn, and the warning would stop meaning anything. |
+
+Read the load average before trusting a figure: a reference cut on a busy host is a reference for
+that condition. Re-cutting on a quiet host supersedes it — the storage keeps every run numbered.
+
+`baseline_YYYYMMDD.json` (the memory gate's store, `tests/performance/baselines/`, gitignored)
+also records `mean_ms` / `median_ms` / `stddev_ms` / `min_ms` / `max_ms` / `rounds` / `iterations`
+for the forward-pass entries, and `cpu_model`, `loadavg_1m` and `git_sha` in every entry's
+`environment`. Before 2026-09-08 no baseline file had ever held a timing: all 22 files that ever
+existed (21 tracked until cascor commit `971d35a`, plus the live `baseline_20260526.json`; 312
+entries) carry parameters and memory keys only. The two fixed ceilings in `test_baselines.py`
+(`FIT_TIME_THRESHOLD_S = 60`, `SERIALIZATION_TIME_THRESHOLD_S = 30`) are sanity asserts on absolute
+wall time, not baseline comparisons; they and the memory gate are unchanged.
+
 ### Coverage Commands
 
 ```bash

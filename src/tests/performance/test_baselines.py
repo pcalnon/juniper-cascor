@@ -33,7 +33,7 @@ from candidate_unit.candidate_unit import CandidateUnit
 from cascade_correlation.cascade_correlation import CascadeCorrelationNetwork
 from cascade_correlation.cascade_correlation_config.cascade_correlation_config import CascadeCorrelationConfig
 
-from .conftest import BenchmarkTimer, _make_benchmark_config, load_latest_baseline, save_baseline
+from .conftest import _make_benchmark_config, benchmark_stats_ms, load_latest_baseline, save_baseline
 
 # ===================================================================
 # THRESHOLD CONSTANTS
@@ -129,7 +129,8 @@ class TestForwardPassBaseline:
 
         result = benchmark(network_5_hidden.forward, x)
         assert result is not None
-        save_baseline(f"forward_{n_hidden}_hidden", {"hidden_units": n_hidden})
+        # The entry records what was measured, not only what was configured (P2 item 2.4).
+        save_baseline(f"forward_{n_hidden}_hidden", {"hidden_units": n_hidden, **benchmark_stats_ms(benchmark)})
 
     def test_forward_10_hidden(self, benchmark, network_10_hidden, small_spiral_data):
         """Forward pass with ~10 hidden units."""
@@ -138,7 +139,7 @@ class TestForwardPassBaseline:
 
         result = benchmark(network_10_hidden.forward, x)
         assert result is not None
-        save_baseline(f"forward_{n_hidden}_hidden", {"hidden_units": n_hidden})
+        save_baseline(f"forward_{n_hidden}_hidden", {"hidden_units": n_hidden, **benchmark_stats_ms(benchmark)})
 
     def test_forward_scaling_samples(self, benchmark, small_spiral_data, medium_spiral_data, large_spiral_data):
         """Forward pass scaling with sample count (0 hidden units)."""
