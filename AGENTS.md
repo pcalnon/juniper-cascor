@@ -80,7 +80,7 @@ reference section in the same PR rather than waiving the budget gate.
 
 ## Quick Reference
 
-### Conda [Environment](Environment)
+### Conda [Environment](docs/install/ENVIRONMENT_SETUP.md#Conda-Environment-Setup-(Recommended))
 
 > **Required:** Activate the live `JuniperCascor1` conda environment before running any commands. The env name is **versioned** — rebuilds increment the suffix and rename the old env `*-DEPRECATED` (never activate those). Discover yours with `conda env list | grep JuniperCascor`.
 
@@ -136,62 +136,62 @@ pre-commit install                                   # Install hooks
 
 ### Environment Variables
 
-| Variable | Description | Default |
-|----------|-------------|---------|
-| **Server Configuration** | | |
-| `JUNIPER_CASCOR_HOST` | API listen address | `127.0.0.1` |
-| `JUNIPER_CASCOR_PORT` | API listen port | `8200` |
-| `JUNIPER_CASCOR_LOG_LEVEL` | Log level (TRACE, DEBUG, INFO, WARNING, ERROR) | `INFO` |
-| `JUNIPER_CASCOR_LOG_FORMAT` | Log output format (`text` or `json`) | `text` |
-| `JUNIPER_CASCOR_CORS_ORIGINS` | CORS allowed origins (JSON list) | `[]` (none) |
-| **Authentication & Security** | | |
-| `JUNIPER_CASCOR_API_KEYS` | Comma-separated API keys for authentication | `None` (auth disabled) |
-| `JUNIPER_CASCOR_API_KEYS_FILE` | Docker-secrets path for API keys; an existing empty/whitespace file yields open auth in the compose `_FILE`-only pattern (`get_secret()` does not fall back to the plain env var) | `None` |
-| `JUNIPER_CASCOR_REQUIRE_AUTH` | SEC-F01 intended auth posture: `false` = WARN and run open when keys missing/blank; `true` = refuse boot with `AuthPostureError`. Set `true` wherever secrets are provisioned (composed juniper-deploy). Bypass with `JUNIPER_SKIP_AUTH_POSTURE_CHECK=1` (logged loudly). | `false` |
-| `JUNIPER_CASCOR_RATE_LIMIT_ENABLED` | Enable rate limiting | `false` |
-| `JUNIPER_CASCOR_RATE_LIMIT_REQUESTS_PER_MINUTE` | Fixed-window budget; keyed `key:<api_key>` when REST auth succeeds, `ip:<client>` when auth is disabled | `60` |
-| **WebSocket** | | |
-| `JUNIPER_CASCOR_WS_MAX_CONNECTIONS` | Maximum WebSocket connections | `50` |
-| `JUNIPER_WS_HEARTBEAT_INTERVAL_SEC` | WebSocket heartbeat interval (`Settings` `AliasChoices` name -- **not** `JUNIPER_CASCOR_`-prefixed) | `30` |
-| `JUNIPER_WS_HEARTBEAT_PONG_TIMEOUT_SEC` | WebSocket heartbeat pong/liveness window (same `AliasChoices` binding) | `10` |
-| **Observability** | | |
-| `JUNIPER_CASCOR_SENTRY_DSN` | Sentry DSN for error tracking | `None` (disabled) |
-| `JUNIPER_CASCOR_METRICS_ENABLED` | Enable Prometheus metrics | `false` |
-| `JUNIPER_CASCOR_EVAL_METRICS_ENABLED` | Compute C7 scalar evaluation metrics (F1/precision/recall/ROC-AUC) per training step over the eval split; surfaced on `/v1/metrics`, `/v1/metrics/history`, and the WS `metrics` frames. Distinct from `JUNIPER_CASCOR_METRICS_ENABLED` (Prometheus). Set `0`/`false` to disable. | `true` |
-| **Auto-Start** | | |
-| `JUNIPER_CASCOR_AUTO_START` | Auto-start training on server startup | `true` |
-| `JUNIPER_CASCOR_AUTO_DATASET` | Default dataset generator | `spiral` |
-| `JUNIPER_CASCOR_AUTO_DATASET_PARAMS` | Dataset generator parameters (JSON) | `{}` |
-| `JUNIPER_CASCOR_AUTO_NETWORK` | Network creation parameters (JSON) | `{}` |
-| `JUNIPER_CASCOR_AUTO_TRAIN_EPOCHS` | Auto-start training max epochs | `200` |
-| `JUNIPER_CASCOR_AUTO_START_DATA_SERVICE` | Auto-start juniper-data companion | `false` |
-| `JUNIPER_CASCOR_AUTO_START_DATA_SERVICE_COMMAND` | Command to launch juniper-data service | `python -m juniper_data` |
-| `JUNIPER_CASCOR_AUTO_START_CANOPY` | Auto-start juniper-canopy companion | `false` |
-| `JUNIPER_CASCOR_AUTO_START_CANOPY_COMMAND` | Command to launch juniper-canopy service | `python -m juniper_canopy` |
-| **Remote Workers** | | |
-| `JUNIPER_CASCOR_REMOTE_WORKERS_HEARTBEAT_TIMEOUT` | Worker heartbeat stale timeout, seconds (CONC-10 reap) | `30.0` |
-| `JUNIPER_CASCOR_REMOTE_WORKERS_TASK_REASSIGNMENT_TIMEOUT` | Fallback reassignment for orphaned in-flight tasks, seconds. All four immediate-requeue paths (reject, soft abort, clean disconnect, dispatch send failure) bypass this timeout -- reaching it means none of them fired. | `120.0` |
-| **Legacy / Integration** | | |
-| `CASCOR_LOG_LEVEL` | Override log level at runtime | `INFO` |
-| `JUNIPER_DATA_URL` | JuniperData service URL | `http://localhost:8100` |
-| `JUNIPER_DATA_API_KEY` | API key for JuniperData authentication | (none) |
+| Variable                                                  | Description                                                                                                                                                                                                                                                                       | Default                    |
+|-----------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|----------------------------|
+| **Server Configuration**                                  |                                                                                                                                                                                                                                                                                   |                            |
+| `JUNIPER_CASCOR_HOST`                                     | API listen address                                                                                                                                                                                                                                                                | `127.0.0.1`                |
+| `JUNIPER_CASCOR_PORT`                                     | API listen port                                                                                                                                                                                                                                                                   | `8200`                     |
+| `JUNIPER_CASCOR_LOG_LEVEL`                                | Log level (TRACE, DEBUG, INFO, WARNING, ERROR)                                                                                                                                                                                                                                    | `INFO`                     |
+| `JUNIPER_CASCOR_LOG_FORMAT`                               | Log output format (`text` or `json`)                                                                                                                                                                                                                                              | `text`                     |
+| `JUNIPER_CASCOR_CORS_ORIGINS`                             | CORS allowed origins (JSON list)                                                                                                                                                                                                                                                  | `[]` (none)                |
+| **Authentication & Security**                             |                                                                                                                                                                                                                                                                                   |                            |
+| `JUNIPER_CASCOR_API_KEYS`                                 | Comma-separated API keys for authentication                                                                                                                                                                                                                                       | `None` (auth disabled)     |
+| `JUNIPER_CASCOR_API_KEYS_FILE`                            | Docker-secrets path for API keys; an existing empty/whitespace file yields open auth in the compose `_FILE`-only pattern (`get_secret()` does not fall back to the plain env var)                                                                                                 | `None`                     |
+| `JUNIPER_CASCOR_REQUIRE_AUTH`                             | SEC-F01 intended auth posture: `false` = WARN and run open when keys missing/blank; `true` = refuse boot with `AuthPostureError`. Set `true` wherever secrets are provisioned (composed juniper-deploy). Bypass with `JUNIPER_SKIP_AUTH_POSTURE_CHECK=1` (logged loudly).         | `false`                    |
+| `JUNIPER_CASCOR_RATE_LIMIT_ENABLED`                       | Enable rate limiting                                                                                                                                                                                                                                                              | `false`                    |
+| `JUNIPER_CASCOR_RATE_LIMIT_REQUESTS_PER_MINUTE`           | Fixed-window budget; keyed `key:<api_key>` when REST auth succeeds, `ip:<client>` when auth is disabled                                                                                                                                                                           | `60`                       |
+| **WebSocket**                                             |                                                                                                                                                                                                                                                                                   |                            |
+| `JUNIPER_CASCOR_WS_MAX_CONNECTIONS`                       | Maximum WebSocket connections                                                                                                                                                                                                                                                     | `50`                       |
+| `JUNIPER_WS_HEARTBEAT_INTERVAL_SEC`                       | WebSocket heartbeat interval (`Settings` `AliasChoices` name -- **not** `JUNIPER_CASCOR_`-prefixed)                                                                                                                                                                               | `30`                       |
+| `JUNIPER_WS_HEARTBEAT_PONG_TIMEOUT_SEC`                   | WebSocket heartbeat pong/liveness window (same `AliasChoices` binding)                                                                                                                                                                                                            | `10`                       |
+| **Observability**                                         |                                                                                                                                                                                                                                                                                   |                            |
+| `JUNIPER_CASCOR_SENTRY_DSN`                               | Sentry DSN for error tracking                                                                                                                                                                                                                                                     | `None` (disabled)          |
+| `JUNIPER_CASCOR_METRICS_ENABLED`                          | Enable Prometheus metrics                                                                                                                                                                                                                                                         | `false`                    |
+| `JUNIPER_CASCOR_EVAL_METRICS_ENABLED`                     | Compute C7 scalar evaluation metrics (F1/precision/recall/ROC-AUC) per training step over the eval split; surfaced on `/v1/metrics`, `/v1/metrics/history`, and the WS `metrics` frames. Distinct from `JUNIPER_CASCOR_METRICS_ENABLED` (Prometheus). Set `0`/`false` to disable. | `true`                     |
+| **Auto-Start**                                            |                                                                                                                                                                                                                                                                                   |                            |
+| `JUNIPER_CASCOR_AUTO_START`                               | Auto-start training on server startup                                                                                                                                                                                                                                             | `true`                     |
+| `JUNIPER_CASCOR_AUTO_DATASET`                             | Default dataset generator                                                                                                                                                                                                                                                         | `spiral`                   |
+| `JUNIPER_CASCOR_AUTO_DATASET_PARAMS`                      | Dataset generator parameters (JSON)                                                                                                                                                                                                                                               | `{}`                       |
+| `JUNIPER_CASCOR_AUTO_NETWORK`                             | Network creation parameters (JSON)                                                                                                                                                                                                                                                | `{}`                       |
+| `JUNIPER_CASCOR_AUTO_TRAIN_EPOCHS`                        | Auto-start training max epochs                                                                                                                                                                                                                                                    | `200`                      |
+| `JUNIPER_CASCOR_AUTO_START_DATA_SERVICE`                  | Auto-start juniper-data companion                                                                                                                                                                                                                                                 | `false`                    |
+| `JUNIPER_CASCOR_AUTO_START_DATA_SERVICE_COMMAND`          | Command to launch juniper-data service                                                                                                                                                                                                                                            | `python -m juniper_data`   |
+| `JUNIPER_CASCOR_AUTO_START_CANOPY`                        | Auto-start juniper-canopy companion                                                                                                                                                                                                                                               | `false`                    |
+| `JUNIPER_CASCOR_AUTO_START_CANOPY_COMMAND`                | Command to launch juniper-canopy service                                                                                                                                                                                                                                          | `python -m juniper_canopy` |
+| **Remote Workers**                                        |                                                                                                                                                                                                                                                                                   |                            |
+| `JUNIPER_CASCOR_REMOTE_WORKERS_HEARTBEAT_TIMEOUT`         | Worker heartbeat stale timeout, seconds (CONC-10 reap)                                                                                                                                                                                                                            | `30.0`                     |
+| `JUNIPER_CASCOR_REMOTE_WORKERS_TASK_REASSIGNMENT_TIMEOUT` | Fallback reassignment for orphaned in-flight tasks, seconds. All four immediate-requeue paths (reject, soft abort, clean disconnect, dispatch send failure) bypass this timeout -- reaching it means none of them fired.                                                          | `120.0`                    |
+| **Legacy / Integration**                                  |                                                                                                                                                                                                                                                                                   |                            |
+| `CASCOR_LOG_LEVEL`                                        | Override log level at runtime                                                                                                                                                                                                                                                     | `INFO`                     |
+| `JUNIPER_DATA_URL`                                        | JuniperData service URL                                                                                                                                                                                                                                                           | `http://localhost:8100`    |
+| `JUNIPER_DATA_API_KEY`                                    | API key for JuniperData authentication                                                                                                                                                                                                                                            | (none)                     |
 
 ### Key Entry Points
 
-| File | Purpose |
-|------|---------|
-| `src/server.py` | **FastAPI server entry point** (primary production mode) |
-| `src/main.py` | CLI entry point for standalone two-spiral training |
-| `src/api/app.py` | FastAPI application factory with lifespan management |
-| `src/api/settings.py` | Pydantic-based application configuration |
-| `src/cascade_correlation/cascade_correlation.py` | Core neural network implementation |
-| `src/candidate_unit/candidate_unit.py` | Candidate unit for network growth |
-| `src/spiral_problem/spiral_problem.py` | Two-spiral problem solver |
-| `src/parallelism/task_distributor.py` | Distributed task scheduling (local + remote workers) |
-| `src/profiling/` | Profiling infrastructure (memory, deterministic) |
-| `src/tests/scripts/run_tests.bash` | Test runner script |
-| `src/tests/conftest.py` | Test configuration and fixtures |
-| `util/profile_training.bash` | py-spy sampling profiler |
+| File                                             | Purpose                                                  |
+|--------------------------------------------------|----------------------------------------------------------|
+| `src/server.py`                                  | **FastAPI server entry point** (primary production mode) |
+| `src/main.py`                                    | CLI entry point for standalone two-spiral training       |
+| `src/api/app.py`                                 | FastAPI application factory with lifespan management     |
+| `src/api/settings.py`                            | Pydantic-based application configuration                 |
+| `src/cascade_correlation/cascade_correlation.py` | Core neural network implementation                       |
+| `src/candidate_unit/candidate_unit.py`           | Candidate unit for network growth                        |
+| `src/spiral_problem/spiral_problem.py`           | Two-spiral problem solver                                |
+| `src/parallelism/task_distributor.py`            | Distributed task scheduling (local + remote workers)     |
+| `src/profiling/`                                 | Profiling infrastructure (memory, deterministic)         |
+| `src/tests/scripts/run_tests.bash`               | Test runner script                                       |
+| `src/tests/conftest.py`                          | Test configuration and fixtures                          |
+| `util/profile_training.bash`                     | py-spy sampling profiler                                 |
 
 ---
 
@@ -207,10 +207,10 @@ Juniper Cascor is an AI/ML research platform implementing the **Cascade Correlat
 
 **Operational Modes**:
 
-| Mode | Entry Point | Purpose |
-|------|-------------|---------|
+| Mode        | Entry Point     | Purpose                                                          |
+|-------------|-----------------|------------------------------------------------------------------|
 | **Service** | `src/server.py` | FastAPI REST/WebSocket server for production and integration use |
-| **CLI** | `src/main.py` | Standalone training on the two-spiral problem |
+| **CLI**     | `src/main.py`   | Standalone training on the two-spiral problem                    |
 
 ---
 
@@ -230,11 +230,11 @@ The three WebSocket channels, their message envelopes, and the admission rules. 
 
 The lifecycle system coordinates network training through deterministic state transitions.
 
-| Component | Module | Purpose |
-|-----------|--------|---------|
-| `TrainingLifecycleManager` | `api.lifecycle.manager` | Central orchestrator (thread-safe via locks) |
-| `TrainingStateMachine` | `api.lifecycle.state_machine` | Deterministic state transitions (idle, training, paused, etc.) |
-| `TrainingMonitor` | `api.lifecycle.monitor` | Callback-based metrics collection |
+| Component                  | Module                        | Purpose                                                        |
+|----------------------------|-------------------------------|----------------------------------------------------------------|
+| `TrainingLifecycleManager` | `api.lifecycle.manager`       | Central orchestrator (thread-safe via locks)                   |
+| `TrainingStateMachine`     | `api.lifecycle.state_machine` | Deterministic state transitions (idle, training, paused, etc.) |
+| `TrainingMonitor`          | `api.lifecycle.monitor`       | Callback-based metrics collection                              |
 
 **Training Events** (emitted via callbacks):
 
@@ -259,14 +259,14 @@ Worker registry/coordinator components, the connect-to-deregister lifecycle, and
 
 Registered in `src/api/app.py` via successive `app.add_middleware(...)` calls. Starlette/FastAPI middleware runs **LIFO** (last added = first executed), so the outer-to-inner request order when all layers are enabled is:
 
-| Order (outer → inner) | Middleware | Module | Purpose |
-|-----------------------|-----------|--------|---------|
-| 1 | `CORSMiddleware` | FastAPI/Starlette | CORS headers + preflight short-circuit (only if origins are configured) |
-| 2 | `RequestIdMiddleware` | `api.observability` | X-Request-ID propagation |
-| 3 | `PrometheusMiddleware` | `api.observability` | Metrics (only when `metrics_enabled`) |
-| 4 | `SecurityMiddleware` | `api.middleware` | API key auth + rate limiting (exempt paths) |
-| 5 | `SecurityHeadersMiddleware` | `api.middleware` | CSP, HSTS, X-Frame-Options, etc. |
-| 6 | `RequestBodyLimitMiddleware` | `api.middleware` | 10 MiB request body limit (CR-024 stream cap) |
+| Order (outer → inner) | Middleware                   | Module              | Purpose                                                                 |
+|-----------------------|------------------------------|---------------------|-------------------------------------------------------------------------|
+| 1                     | `CORSMiddleware`             | FastAPI/Starlette   | CORS headers + preflight short-circuit (only if origins are configured) |
+| 2                     | `RequestIdMiddleware`        | `api.observability` | X-Request-ID propagation                                                |
+| 3                     | `PrometheusMiddleware`       | `api.observability` | Metrics (only when `metrics_enabled`)                                   |
+| 4                     | `SecurityMiddleware`         | `api.middleware`    | API key auth + rate limiting (exempt paths)                             |
+| 5                     | `SecurityHeadersMiddleware`  | `api.middleware`    | CSP, HSTS, X-Frame-Options, etc.                                        |
+| 6                     | `RequestBodyLimitMiddleware` | `api.middleware`    | 10 MiB request body limit (CR-024 stream cap)                           |
 
 **`CORSMiddleware` must stay outermost — it is added last for exactly that reason.**
 A browser preflight carries no `X-API-Key`: the browser generates the preflight itself, and
@@ -455,25 +455,25 @@ Tests touching these collectors should use `juniper_observability.testing.reset_
 
 ### Test Categories (Markers)
 
-| Marker | Description |
-|--------|-------------|
-| `unit` | Unit tests for individual components |
-| `integration` | Integration tests for full workflows |
-| `performance` | Performance and benchmarking tests |
-| `slow` | Long-running tests |
-| `long` | Long-running correctness tests (use `--run-long`) |
-| `gpu` | GPU/CUDA tests |
-| `multiprocessing` | Multiprocessing tests |
-| `spiral` | Spiral problem tests |
-| `correlation` | Correlation calculation tests |
-| `network_growth` | Network growth algorithm tests |
-| `candidate_training` | Candidate unit training tests |
-| `validation` | Input validation tests |
-| `accuracy` | Accuracy calculation tests |
-| `early_stopping` | Early stopping logic tests |
-| `golden` | Golden / snapshot regression (OUT-12; needs `--golden`, serial WS-6 lane) |
-| `conformance` | model-core GrowableModel conformance (OUT-13; needs `--conformance`, serial WS-6 lane) |
-| `requires_juniper_data` | Tests requiring juniper-data package |
+| Marker                  | Description                                                                            |
+|-------------------------|----------------------------------------------------------------------------------------|
+| `unit`                  | Unit tests for individual components                                                   |
+| `integration`           | Integration tests for full workflows                                                   |
+| `performance`           | Performance and benchmarking tests                                                     |
+| `slow`                  | Long-running tests                                                                     |
+| `long`                  | Long-running correctness tests (use `--run-long`)                                      |
+| `gpu`                   | GPU/CUDA tests                                                                         |
+| `multiprocessing`       | Multiprocessing tests                                                                  |
+| `spiral`                | Spiral problem tests                                                                   |
+| `correlation`           | Correlation calculation tests                                                          |
+| `network_growth`        | Network growth algorithm tests                                                         |
+| `candidate_training`    | Candidate unit training tests                                                          |
+| `validation`            | Input validation tests                                                                 |
+| `accuracy`              | Accuracy calculation tests                                                             |
+| `early_stopping`        | Early stopping logic tests                                                             |
+| `golden`                | Golden / snapshot regression (OUT-12; needs `--golden`, serial WS-6 lane)              |
+| `conformance`           | model-core GrowableModel conformance (OUT-13; needs `--conformance`, serial WS-6 lane) |
+| `requires_juniper_data` | Tests requiring juniper-data package                                                   |
 
 ### Test Directory Structure
 
@@ -555,33 +555,33 @@ Gate: 80% aggregate (override with `COVERAGE_FAIL_UNDER=<n>`). Coverage runs in 
 
 ### GitHub Actions Workflows
 
-| Workflow | File | Triggers | Purpose |
-|----------|------|----------|---------|
-| CI/CD Pipeline | `.github/workflows/ci.yml` | Push (main, develop, feature/**, fix/**), PR, dispatch | Pre-commit, unit tests, integration tests, security scanning |
-| Golden Regression (WS-6) | `.github/workflows/golden-regression.yml` | Push `main`, PR `main`/`develop`, dispatch | Serial OUT-12 golden / snapshot regression (Python 3.13 + torch 2.11.0) |
-| Conformance (WS-6) | `.github/workflows/conformance.yml` | Push `main`, PR `main`/`develop`, dispatch | Serial OUT-13 model-core GrowableModel conformance |
-| CI — protocol | `.github/workflows/ci-protocol.yml` | Path-filtered on `juniper-cascor-protocol/**`, dispatch | Package tests + build/`twine check` |
-| CI — cascor-model | `.github/workflows/ci-cascor-model.yml` | Path-filtered on `juniper-cascor-model/**`, dispatch | Package tests (incl. drift-guard) + build/`twine check` |
-| Scheduled Long Tests | `.github/workflows/scheduled-tests.yml` | Cron schedule (nightly), dispatch | Slow and long-running correctness tests |
-| Publish | `.github/workflows/publish.yml` | Release (`v*`) | PyPI publish for `juniper-cascor` (TestPyPI → verify → PyPI) |
-| Publish protocol | `.github/workflows/publish-protocol.yml` | Release (`juniper-cascor-protocol-v*`) + `workflow_dispatch` | PyPI publish for `juniper-cascor-protocol` |
-| Publish model | `.github/workflows/publish-cascor-model.yml` | Release (`juniper-cascor-model-v*`) + `workflow_dispatch` | PyPI publish for `juniper-cascor-model` |
-| Publish container image | `.github/workflows/publish-image.yml` | Release (`v*` only -- tag-guarded), PR touching image inputs (build-only), `workflow_dispatch` | GHCR multi-arch (amd64 + arm64) service image, CPU-only by pin (`requirements-cpu.lock`); never a required check |
-| Lockfile Update | `.github/workflows/lockfile-update.yml` | Push to dependabot/** branches | Dependency lockfile refresh |
-| CodeQL Analysis | `.github/workflows/codeql.yml` | Push `main`/`develop`, PR `main`, weekly Monday 06:00 UTC | Python CodeQL SAST (`+security-and-quality`; soak, not a required check) |
-| Security Scan | `.github/workflows/security-scan.yml` | Schedule/dispatch | Bandit + pip-audit `--strict` (no CodeQL, no Gitleaks) |
-| Sequence Safety (Advisory) | `.github/workflows/sequence-safety.yml` | PR (`main`/`develop`) | Per-PR symbol-loss + docs-deletion screens over base..HEAD (ADVISORY, standalone, never a required check) |
-| Post-Merge Main Verification | `.github/workflows/main-verify.yml` | Push `main`, dispatch | Bypass-proof post-merge compositional-loss net (catch-up base; stable-title tracking issue on failure) |
+| Workflow                     | File                                         | Triggers                                                                                       | Purpose                                                                                                          |
+|------------------------------|----------------------------------------------|------------------------------------------------------------------------------------------------|------------------------------------------------------------------------------------------------------------------|
+| CI/CD Pipeline               | `.github/workflows/ci.yml`                   | Push (main, develop, feature/**, fix/**), PR, dispatch                                         | Pre-commit, unit tests, integration tests, security scanning                                                     |
+| Golden Regression (WS-6)     | `.github/workflows/golden-regression.yml`    | Push `main`, PR `main`/`develop`, dispatch                                                     | Serial OUT-12 golden / snapshot regression (Python 3.13 + torch 2.11.0)                                          |
+| Conformance (WS-6)           | `.github/workflows/conformance.yml`          | Push `main`, PR `main`/`develop`, dispatch                                                     | Serial OUT-13 model-core GrowableModel conformance                                                               |
+| CI — protocol                | `.github/workflows/ci-protocol.yml`          | Path-filtered on `juniper-cascor-protocol/**`, dispatch                                        | Package tests + build/`twine check`                                                                              |
+| CI — cascor-model            | `.github/workflows/ci-cascor-model.yml`      | Path-filtered on `juniper-cascor-model/**`, dispatch                                           | Package tests (incl. drift-guard) + build/`twine check`                                                          |
+| Scheduled Long Tests         | `.github/workflows/scheduled-tests.yml`      | Cron schedule (nightly), dispatch                                                              | Slow and long-running correctness tests                                                                          |
+| Publish                      | `.github/workflows/publish.yml`              | Release (`v*`)                                                                                 | PyPI publish for `juniper-cascor` (TestPyPI → verify → PyPI)                                                     |
+| Publish protocol             | `.github/workflows/publish-protocol.yml`     | Release (`juniper-cascor-protocol-v*`) + `workflow_dispatch`                                   | PyPI publish for `juniper-cascor-protocol`                                                                       |
+| Publish model                | `.github/workflows/publish-cascor-model.yml` | Release (`juniper-cascor-model-v*`) + `workflow_dispatch`                                      | PyPI publish for `juniper-cascor-model`                                                                          |
+| Publish container image      | `.github/workflows/publish-image.yml`        | Release (`v*` only -- tag-guarded), PR touching image inputs (build-only), `workflow_dispatch` | GHCR multi-arch (amd64 + arm64) service image, CPU-only by pin (`requirements-cpu.lock`); never a required check |
+| Lockfile Update              | `.github/workflows/lockfile-update.yml`      | Push to dependabot/** branches                                                                 | Dependency lockfile refresh                                                                                      |
+| CodeQL Analysis              | `.github/workflows/codeql.yml`               | Push `main`/`develop`, PR `main`, weekly Monday 06:00 UTC                                      | Python CodeQL SAST (`+security-and-quality`; soak, not a required check)                                         |
+| Security Scan                | `.github/workflows/security-scan.yml`        | Schedule/dispatch                                                                              | Bandit + pip-audit `--strict` (no CodeQL, no Gitleaks)                                                           |
+| Sequence Safety (Advisory)   | `.github/workflows/sequence-safety.yml`      | PR (`main`/`develop`)                                                                          | Per-PR symbol-loss + docs-deletion screens over base..HEAD (ADVISORY, standalone, never a required check)        |
+| Post-Merge Main Verification | `.github/workflows/main-verify.yml`          | Push `main`, dispatch                                                                          | Bypass-proof post-merge compositional-loss net (catch-up base; stable-title tracking issue on failure)           |
 
 ### Lockfile Update PAT Gate
 
 `lockfile-update.yml` checks out and pushes with `CROSS_REPO_DISPATCH_TOKEN` so the lock commit re-triggers CI. Dependabot runs use the Dependabot secret store — a PAT registered only under Actions secrets is empty there.
 
-| Condition | Behavior |
-|-----------|----------|
-| PAT present | Auto-regen + `[dependabot skip]` push |
+| Condition                      | Behavior                                                                                |
+|--------------------------------|-----------------------------------------------------------------------------------------|
+| PAT present                    | Auto-regen + `[dependabot skip]` push                                                   |
 | PAT absent + `dependabot[bot]` | Green no-op (`::notice::`); **Lockfile Freshness** in `ci.yml` still blocks stale locks |
-| PAT absent + other actor | Hard fail (secret misconfiguration) |
+| PAT absent + other actor       | Hard fail (secret misconfiguration)                                                     |
 
 Optional: register the same PAT under **Settings → Secrets → Dependabot** to restore Dependabot auto-regen. Operator narrative: [`notes/DEPENDENCY_UPDATE_WORKFLOW.md`](notes/DEPENDENCY_UPDATE_WORKFLOW.md).
 
@@ -693,9 +693,9 @@ cd ../juniper-deploy && make up
 
 ### Service Ports
 
-| Service | Port | Health Endpoint |
-|---------|------|-----------------|
-| juniper-cascor | 8200 | `/v1/health` |
+| Service        | Port | Health Endpoint |
+|----------------|------|-----------------|
+| juniper-cascor | 8200 | `/v1/health`    |
 
 ### Service Launcher
 
@@ -732,12 +732,12 @@ Every documentation file, what belongs in it, and where it lives. Moved to [`doc
 
 The project includes Serena MCP server configuration in `.serena/memories/`:
 
-| File | Purpose |
-|------|---------|
-| `project_overview.md` | Project context for Serena |
-| `code_style_conventions.md` | Coding standards context |
-| `suggested_commands.md` | Suggested development commands |
-| `task_completion_checklist.md` | Task completion guidelines |
+| File                           | Purpose                        |
+|--------------------------------|--------------------------------|
+| `project_overview.md`          | Project context for Serena     |
+| `code_style_conventions.md`    | Coding standards context       |
+| `suggested_commands.md`        | Suggested development commands |
+| `task_completion_checklist.md` | Task completion guidelines     |
 
 Serena provides semantic code analysis tools for navigating the codebase, finding symbols, and understanding architecture through symbolic tools rather than raw file reads.
 
@@ -852,13 +852,13 @@ Critical instruction: Thread handoff MUST replace thread compaction when context
 
 **Additional triggers**:
 
-| Condition | Indicator |
-|-----------|-----------|
-| Context saturation | 15+ tool calls or 5+ file edits |
-| Phase boundary | Logical work phase complete |
-| Degraded recall | Re-reading files or re-asking questions |
-| Multi-module transition | Moving between major components |
-| User request | User says "hand off", "new thread", or similar |
+| Condition               | Indicator                                      |
+|-------------------------|------------------------------------------------|
+| Context saturation      | 15+ tool calls or 5+ file edits                |
+| Phase boundary          | Logical work phase complete                    |
+| Degraded recall         | Re-reading files or re-asking questions        |
+| Multi-module transition | Moving between major components                |
+| User request            | User says "hand off", "new thread", or similar |
 
 **Do NOT handoff** when:
 
