@@ -237,6 +237,11 @@ results.xml
 **/reports/**
 
 # Test Performance Baseline
+# pytest-benchmark's storage (`--benchmark-autosave` / `--benchmark-save`) defaults to ./.benchmarks
+# under the CWD. The timing REFERENCE is cut with --benchmark-storage pointed OUTSIDE every checkout
+# (docs/testing/REFERENCE.md § Micro timing reference); anything that lands here is scratch.
+.benchmarks/
+**/.benchmarks/
 src/tests/performance/baselines/baseline_*.json
 src/tests/performance/baselines/*_*.json
 **/tests/performance/baselines/baseline_*.json

@@ -7,7 +7,7 @@ File Path:     src/tests/performance/
 Author:        Paul Calnon
 
 Date Created:  2026-03-31
-Last Modified: 2026-03-31
+Last Modified: 2026-09-08
 
 License:       MIT License
 Copyright:     Copyright (c) 2024-2026 Paul Calnon
@@ -19,6 +19,12 @@ Description:
 
     Performance tests are gated behind CASCOR_BENCHMARK_MODE=1 or --run-performance.
     They are never collected in standard test runs.
+
+    TIMING REFERENCE (juniper-ml perf lane P2 item 2.4 / PF-4, 2026-09-08). Two pytest-benchmark
+    hooks at the bottom of this file stamp the saved JSON: host identity into ``machine_info``
+    (compared by ``--benchmark-compare``, a difference WARNS) and the load condition beside it
+    (recorded, never compared). Report-only by owner decision (P2 item 2.5): nothing asserts on a
+    timing. The helpers live in ``timing_reference.py`` so the unit tier can pin them.
 """
 
 import json
@@ -35,6 +41,16 @@ import torch
 from candidate_unit.candidate_unit import CandidateUnit
 from cascade_correlation.cascade_correlation import CascadeCorrelationNetwork
 from cascade_correlation.cascade_correlation_config.cascade_correlation_config import CascadeCorrelationConfig
+
+from .timing_reference import BENCHMARK_THREAD_PIN, benchmark_stats_ms, collect_environment, run_condition_fields, stable_machine_fields
+
+__all__ = [
+    "BASELINES_DIR",
+    "BenchmarkTimer",
+    "benchmark_stats_ms",
+    "load_latest_baseline",
+    "save_baseline",
+]
 
 # ===================================================================
 # BASELINES DIRECTORY
@@ -62,11 +78,11 @@ def deterministic_benchmark_env():
     torch.backends.cudnn.benchmark = False
 
     original_threads = torch.get_num_threads()
-    torch.set_num_threads(1)
+    torch.set_num_threads(BENCHMARK_THREAD_PIN)
 
-    os.environ["OMP_NUM_THREADS"] = "1"
-    os.environ["MKL_NUM_THREADS"] = "1"
-    os.environ["OPENBLAS_NUM_THREADS"] = "1"
+    os.environ["OMP_NUM_THREADS"] = str(BENCHMARK_THREAD_PIN)
+    os.environ["MKL_NUM_THREADS"] = str(BENCHMARK_THREAD_PIN)
+    os.environ["OPENBLAS_NUM_THREADS"] = str(BENCHMARK_THREAD_PIN)
 
     yield
 
@@ -316,8 +332,12 @@ def save_baseline(test_name: str, results: Dict, environment: Dict = None):
 
     Args:
         test_name: Identifier for this benchmark
-        results: Dict with keys like mean_ms, stddev_ms, min_ms, max_ms, iterations
-        environment: Optional environment metadata
+        results: Dict with keys like mean_ms, stddev_ms, min_ms, max_ms, iterations --
+            ``benchmark_stats_ms(benchmark)`` produces exactly that set from a completed
+            ``benchmark`` fixture. Until 2026-09-08 every caller passed only its parameters,
+            so no baseline file had ever held a timing.
+        environment: Optional environment metadata (default: ``collect_environment()``, which
+            carries host identity -- ``cpu_model``, thread pins, ``git_sha`` -- and ``loadavg_1m``)
     """
     BASELINES_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -375,19 +395,28 @@ def load_latest_baseline(test_name: str) -> Dict:
 
 
 def _collect_environment() -> Dict:
-    """Collect environment metadata for baseline reproducibility."""
-    import platform
-    import sys
+    """Collect environment metadata for baseline reproducibility (see ``timing_reference``)."""
+    return collect_environment()
 
-    return {
-        "python_version": sys.version,
-        "torch_version": torch.__version__,
-        "numpy_version": np.__version__,
-        "platform": platform.platform(),
-        "cpu_count": os.cpu_count(),
-        "torch_num_threads": torch.get_num_threads(),
-        "omp_num_threads": os.environ.get("OMP_NUM_THREADS", "unset"),
-    }
+
+# ===================================================================
+# PYTEST-BENCHMARK SAVED-JSON HOOKS (timing reference, P2 item 2.4)
+# ===================================================================
+#
+# Both fire from ``BenchmarkSession.handle_saving`` at session end, so registering them in this
+# directory's conftest is sufficient: the session assembles ``machine_info`` lazily, after every
+# collected conftest has been loaded. ``--benchmark-compare`` re-assembles it the same way and
+# warns when the saved and current values differ -- which is why identity and condition are split.
+
+
+def pytest_benchmark_update_machine_info(config, machine_info):
+    """Host identity into ``machine_info``: compared on ``--benchmark-compare``, warns on change."""
+    machine_info["juniper"] = stable_machine_fields()
+
+
+def pytest_benchmark_update_json(config, benchmarks, output_json):
+    """Load condition beside the saved run: recorded, never compared."""
+    output_json["juniper_run"] = run_condition_fields()
 
 
 # ===================================================================

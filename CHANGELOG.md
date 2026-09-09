@@ -19,6 +19,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   event and would otherwise republish `juniper-cascor:latest` from the wrong release. The PR arm
   builds both arches and pushes nothing; a `workflow_dispatch` with `push: true` publishes
   `dispatch-<sha>` as a rehearsal. Not a required status check (it is `paths:`-filtered).
+- **Micro-tier timing reference (juniper-ml perf lane P2 item 2.4 / PF-4).** `tests/performance/`
+  now records what it measures. `save_baseline` entries carry pytest-benchmark's timing summary
+  (`mean_ms` / `median_ms` / `stddev_ms` / `min_ms` / `max_ms` / `rounds` / `iterations`) for the
+  forward-pass benchmarks, every entry's `environment` gains `cpu_model`, `loadavg_1m` and
+  `git_sha`, and two pytest-benchmark hooks in the performance `conftest.py` stamp host identity
+  into the saved run's `machine_info` (compared by `--benchmark-compare`, warns on change) and the
+  load average at save time into `juniper_run` beside it (recorded, never compared). Before this
+  no cascor baseline file had ever held a timing figure: all 22 `baseline_*.json` files that ever
+  existed (21 tracked until commit `971d35a` deleted them, plus the live gitignored one; 312
+  entries) carry parameters and memory keys only, while `save_baseline`'s docstring promised
+  `mean_ms` from the start. **Report-only by owner decision** (P2 item 2.5, 2026-09-07): nothing
+  asserts on a timing, and the memory gate and the two fixed `*_TIME_THRESHOLD_S` ceilings are
+  unchanged. `.benchmarks/` is now gitignored — the reference is cut with `--benchmark-storage`
+  pointed outside every checkout, because a `git worktree remove` deletes ignored files. Helpers in
+  `tests/performance/timing_reference.py`, pinned from the CI-collected unit tier by
+  `tests/unit/test_perf_timing_reference_helpers.py`. Procedure: `docs/testing/REFERENCE.md`
+  § Micro timing reference.
 
 ### Fixed
 
