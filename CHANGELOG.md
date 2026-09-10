@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **`lockfile-update.yml` regenerated `requirements.lock` alone, so every dependency bump drifted
+  `requirements-cpu.lock`** -- the container image's lock, which is *derived* from the GPU lock via
+  `--constraint requirements.lock`. Nothing reported it: the CI check asserts only that every image
+  dependency is **present** in the CPU lock, never that its version agrees with the GPU lock's.
+  juniper-cascor-worker shows where that ends up -- its two locks had diverged on 10 of their 19
+  shared pins by 2026-09-09 (`setuptools` 70.2.0 vs 83.0.0, `numpy` 2.4.4 vs 2.5.1, ...) with every
+  build green. The workflow now re-derives the CPU lock in the same run, reading the torch pin from
+  the `Dockerfile`'s `ARG TORCH_VERSION` and **refusing** if the lock header's recipe disagrees with
+  it, preserving the hand-written header uv would otherwise overwrite, and committing **both** locks
+  in the **same** GitHub-signed commit so the derived pair can never land half-updated. Follow-up 6c
+  of juniper-ml
+  `prompts/thread-handoff_automated-prompts/HANDOFF_2026-09-08_container-registry-rollout-wave-2-opened-and-the-cuda-class-in-three-shapes.md`.
+- **`requirements-cpu.lock` carried an author's absolute home directory** on 18 of its `# via`
+  annotation lines (`/home/pcalnon/Development/python/Juniper/juniper-cascor/pyproject.toml`), an
+  artifact of the hand-compile that created it. Regenerated from the repo root so the annotations are
+  relative. **Comment-only: all 53 pins are unchanged**, verified by diffing the pin lines. Doing it
+  here rather than leaving it to the first automated run keeps that run a no-op instead of an
+  unreviewed 18-line rewrite.
+
 ### Added
 
 - **`publish-image.yml` -- the service container image is published to GHCR on every `v*`
