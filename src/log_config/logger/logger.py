@@ -159,6 +159,20 @@ class Logger(logging.getLoggerClass()):
     _level_name = _LOGGER_CONTENT_FIELD_NAMES_LEVELNAME
     _message_name = _LOGGER_CONTENT_FIELD_NAMES_MESSAGE
 
+    # RETIRED AS LEVEL STATE by P1.1 (cascor#573). These two are NO LONGER READ by the emit
+    # path -- ``_log_level`` is the single configured level, written by ``set_level`` and read by
+    # both ``isEnabledFor`` and ``_filter_by_level``. Do NOT wire either of them back into a
+    # filtering decision: that is precisely the two-state split P1.1 removed.
+    #
+    # They are retained rather than deleted only because their sole remaining consumer is the
+    # arc's instrument (juniper-ml util/ad-hoc/2026-09-02_logging_doc_refutation_probe.py), which
+    # reads them to demonstrate the historical split. Their deletion belongs with P2.2, which also
+    # removes ``_get_log_level`` / ``_get_log_level_check`` -- and is symbol loss, so it needs an
+    # enumerated ``Allow-Symbol-Loss:`` trailer.
+    #
+    # They could never disagree with ``_log_level`` anyway: all three derive from
+    # ``_LOG_CONFIG_LOG_LEVEL_NAME`` and move together with JUNIPER_CASCOR_LOG_LEVEL. Verified
+    # across four environments by juniper-ml util/ad-hoc/2026-09-11_p11_level_constants_probe.py.
     _level_logger_config = _LOGGER_LOG_LEVEL_LOGGING_CONFIG
     # _level_logger_name = "INFO"  # CASCOR-PERF-001: Was hardcoded, ignoring CASCOR_LOG_LEVEL env var
     _level_logger_name = _LOGGER_LOG_LEVEL_NAME  # CASCOR-PERF-001: Use configured value to respect CASCOR_LOG_LEVEL
@@ -338,7 +352,18 @@ class Logger(logging.getLoggerClass()):
     # Define class methods to Test for valid log level name or number
     @classmethod
     def is_valid_level(cls, level=None) -> bool:
-        return cls._is_valid_level_name(level=level) or cls._is_valid_level_number(level == level)
+        # P1.1(c) (cascor#573): was ``_is_valid_level_number(level == level)``, which passed the
+        # BOOLEAN ``level == level`` -- always True except for NaN -- instead of ``level``. Since
+        # ``isinstance(True, int)`` and ``True == 1 == TRACE``, the predicate returned True for
+        # every input: ``is_valid_level("BANANA")`` and ``is_valid_level(None)`` were both True.
+        #
+        # Behaviour-preserving at both existing call sites (``_resolve_level_number``, :488/:489),
+        # which read ``getLevelNumber(level) if is_valid_level(level) else None``: ``getLevelNumber``
+        # already returned None for an invalid level, so the pair yielded None either way. The fix
+        # short-circuits instead, and makes the repo's only validity predicate able to say no --
+        # a prerequisite for P4-G4 ("an unknown level name must fail loudly at configuration time"),
+        # which is unimplementable while this returns True for everything.
+        return cls._is_valid_level_name(level=level) or cls._is_valid_level_number(level=level)
 
     @classmethod
     def _is_valid_level_name(
@@ -434,6 +459,17 @@ class Logger(logging.getLoggerClass()):
         cls,
         level=None,
     ) -> None:
+        """Set the configured level. **The single writer of the single configured level.**
+
+        P1.1 (cascor#573): ``cls._log_level`` is now read by BOTH the guard predicate
+        (``isEnabledFor`` -> ``get_level``) and the emit filter (``_log_at_level`` ->
+        ``_filter_by_level``). Before P1.1 this method wrote only the guard's copy while the emit
+        filter read ``_level_logger_name``, which was assigned once in the class body and never
+        written again -- so this method was a no-op for emission.
+
+        If a second configured-level attribute is ever added, it must be written HERE or not exist.
+        ``tests/unit/test_logger_level_state_reconciliation.py`` fails if the two paths diverge.
+        """
         if cls._is_valid_level_name(level=level):
             cls._log_level = level.upper() or _LOGGER_LOG_LEVEL_NAME
         elif cls._is_valid_level_number(level=level):
@@ -511,10 +547,16 @@ class Logger(logging.getLoggerClass()):
     # Define Logger class log level Logging with Filtering methods
     @classmethod
     def _log_at_level(cls, frame=None, tsp=None, level=None, message=None, args=None) -> None:
-        if cls._filter_by_level(
-            level=level,
-            log_level=cls._get_log_level_check(config_lvl=cls._level_logger_config, norm_lvl=cls._level_logger_name)(cls.is_configured()),
-        ):
+        # P1.1(b) (cascor#573): the emit filter reads ``_log_level`` -- the SAME value
+        # ``set_level`` writes and ``isEnabledFor`` reads. It previously resolved its threshold
+        # from ``_level_logger_config`` / ``_level_logger_name``, neither of which ``set_level``
+        # ever wrote and the latter of which was assigned once in the class body and never again.
+        # ``Logger.set_level(...)`` -- called on construction by candidate_unit.py:188 and :297 --
+        # was therefore a NO-OP for emission: it opened every guard while the records behind them
+        # were still discarded. A correct guard and a broken guard produced the same log, which is
+        # why this is verified by probe (tests/unit/test_logger_level_state_reconciliation.py)
+        # rather than by log inspection.
+        if cls._filter_by_level(level=level, log_level=cls._log_level):
             # Lazy formatting: only interpolate %s args when the message passes the level filter
             if args:
                 message = message % args
