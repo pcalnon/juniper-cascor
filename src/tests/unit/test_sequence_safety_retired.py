@@ -38,7 +38,14 @@ INLINE_DIR = REPO_ROOT / "util" / "sequence_safety"
 
 # The juniper-ci-tools release that first shipped the two screens as console scripts
 # (juniper-symbol-loss-check / juniper-docs-additions-check) plus the --scope knob cascor
-# relies on. Every consumer pin must admit this version.
+# relies on. No consumer pin may resolve BELOW this version.
+#
+# The check is "the pin's floor is at or above this", not "the pin's range contains this".
+# The containment form was wrong in one direction: raising the floor past 0.8.0 -- which the
+# juniper-ci-tools 0.9.0 release did across all nine repos on 2026-09-11 -- leaves the screens
+# perfectly installable, but a range of >=0.9.0,<0.10.0 does not *contain* 0.8.0, so the old
+# predicate failed a legitimate bump. What actually breaks the screens is a pin that can
+# resolve to something older than this constant, and that is what is asserted now.
 _CI_TOOLS_MIN = (0, 8, 0)
 
 # The two advisory workflows that consume the packaged screens, and the console scripts
@@ -80,17 +87,22 @@ class TestSequenceSafetyRetired:
         stray = _inline_py_modules()
         assert not stray, "The inline sequence-safety copy has been resurrected under util/sequence_safety/: " + ", ".join(str(p.relative_to(REPO_ROOT)) for p in stray) + ". The screens are consumed from the juniper-ci-tools package now (juniper-symbol-loss-check / juniper-docs-additions-check) — do not re-add the inline copy. See this file's module docstring."
 
-    def test_screen_workflow_pins_admit_packaged_version(self):
-        """Each advisory workflow's juniper-ci-tools pin must still admit >= 0.8.0."""
+    def test_screen_workflow_pins_cannot_resolve_below_the_packaged_version(self):
+        """Each advisory workflow's juniper-ci-tools pin must be unable to resolve below 0.8.0.
+
+        A pin that can reach an older release silently stops the screens installing: the console
+        scripts and the ``--scope`` knob cascor passes did not exist before then. A pin whose floor
+        is NEWER than 0.8.0 is fine -- see the note on ``_CI_TOOLS_MIN``.
+        """
         want = _pad(_CI_TOOLS_MIN)
         problems: list[str] = []
         for name in _SCREEN_WORKFLOWS:
             workflow = WORKFLOWS_DIR / name
             assert workflow.is_file(), f"missing screen workflow {name}"
             pins = _ci_tools_pins(workflow.read_text(encoding="utf-8"))
-            if not any(lo <= want < hi for lo, hi in pins):
-                problems.append(f"  - {name}: juniper-ci-tools pin(s) {pins or '[]'} do not admit {'.'.join(str(n) for n in _CI_TOOLS_MIN)}")
-        assert not problems, "Sequence-safety workflow pin drift (a stale ceiling would silently stop the screens installing):\n" + "\n".join(problems)
+            if not pins or not all(lo >= want and hi > want for lo, hi in pins):
+                problems.append(f"  - {name}: juniper-ci-tools pin(s) {pins or '[]'} can resolve below {'.'.join(str(n) for n in _CI_TOOLS_MIN)}")
+        assert not problems, "Sequence-safety workflow pin drift (a pin reaching an older release would silently stop the screens installing):\n" + "\n".join(problems)
 
     def test_screen_workflows_invoke_console_scripts(self):
         """Both workflows must still call the packaged console scripts (retrofit wiring)."""
