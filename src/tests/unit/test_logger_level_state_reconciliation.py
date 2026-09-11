@@ -54,10 +54,16 @@ import pytest
 from log_config.logger.logger import Logger
 
 #: REQUIRED, not decorative. CI's unit lane runs ``pytest -m "unit and not slow" src/tests/unit``
-#: (ci.yml:312-317), so an UNMARKED file in this directory is collected and then silently
-#: deselected -- it never runs, and nothing reports that it did not. Measured 2026-09-11: 12 files
-#: / 156 tests in src/tests/unit are deselected for exactly this reason, among them
-#: ``test_logger_frame_resolution.py``, which the roadmap names as P2.1's only detector.
+#: (ci.yml:312-317), so a test in this directory with no ``unit`` marker is collected and then
+#: silently deselected -- it never runs, and nothing reports that it did not.
+#:
+#: Measured 2026-09-11 by collection (NOT by grep): **146 tests across 15 files** carried no
+#: ``unit`` marker, among them ``test_logger_frame_resolution.py``, which the roadmap names as
+#: P2.1's only detector. Corrects this comment's first version, which said "12 files / 156 tests":
+#: grep counts FILES when the unit of the question is TESTS -- six of those files were PARTLY
+#: marked -- a ``test_*.py`` glob misses the ``api/`` subdirectory (41 of the 146), and 10 of the
+#: 156 deselected were ``unit`` + ``slow``, excluded on purpose rather than by accident.
+#:
 #: Without this line, the guard below would be a guard in name only.
 pytestmark = pytest.mark.unit
 

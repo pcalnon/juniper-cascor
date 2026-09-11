@@ -19,7 +19,15 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
+import pytest
+
 from parallelism import blas_threads  # noqa: E402
+
+# CI's unit lane runs ``pytest -m "unit and not slow" src/tests/unit`` (ci.yml:312-317),
+# so a test here with no ``unit`` marker is collected and then silently DESELECTED -- it
+# never runs and the job still reports success. Module-level, so it covers every test in
+# the file including ones added later.
+pytestmark = pytest.mark.unit
 
 SRC = Path(__file__).resolve().parents[2]
 

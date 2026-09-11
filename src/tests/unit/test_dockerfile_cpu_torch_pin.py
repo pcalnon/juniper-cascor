@@ -28,6 +28,12 @@ from pathlib import Path
 import pytest
 import yaml
 
+# CI's unit lane runs ``pytest -m "unit and not slow" src/tests/unit`` (ci.yml:312-317),
+# so a test here with no ``unit`` marker is collected and then silently DESELECTED -- it
+# never runs and the job still reports success. Module-level, so it covers every test in
+# the file including ones added later.
+pytestmark = pytest.mark.unit
+
 REPO = Path(__file__).resolve().parents[3]
 DOCKERFILE = REPO / "Dockerfile"
 CPU_LOCK = REPO / "requirements-cpu.lock"

@@ -15,6 +15,12 @@ import torch
 
 from candidate_unit.candidate_unit import CandidateUnit
 
+# CI's unit lane runs ``pytest -m "unit and not slow" src/tests/unit`` (ci.yml:312-317),
+# so a test here with no ``unit`` marker is collected and then silently DESELECTED -- it
+# never runs and the job still reports success. Module-level, so it covers every test in
+# the file including ones added later.
+pytestmark = pytest.mark.unit
+
 
 def _get_test_epochs():
     """Get training epochs based on fast-slow mode."""

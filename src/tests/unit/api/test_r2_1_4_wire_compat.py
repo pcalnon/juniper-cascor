@@ -26,6 +26,12 @@ from fastapi.testclient import TestClient
 from api.app import create_app
 from api.settings import Settings
 
+# CI's unit lane runs ``pytest -m "unit and not slow" src/tests/unit`` (ci.yml:312-317),
+# so a test here with no ``unit`` marker is collected and then silently DESELECTED -- it
+# never runs and the job still reports success. Module-level, so it covers every test in
+# the file including ones added later.
+pytestmark = pytest.mark.unit
+
 
 @pytest.fixture
 def healthy_client(monkeypatch):
