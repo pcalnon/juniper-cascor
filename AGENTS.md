@@ -5,7 +5,7 @@
 **Author**: Paul Calnon
 **License**: MIT License
 **Version**: 0.11.0
-**Last Updated**: 2026-09-10
+**Last Updated**: 2026-09-11
 
 ---
 
@@ -623,7 +623,7 @@ The two pure-stdlib git-diff screens are now **consumed from the published `juni
 - `juniper-docs-additions-check` — markdown deletion-magnitude screen over the package's universal default docs cluster (`AGENTS.md` + `docs/**` + `notes/**`, so no `--scope` is needed); FAIL on a deleted heading or a run of ≥ N consecutive deleted lines, WARN on small in-place swaps. Escape hatch: an `Allow-Docs-Rewrite: <path>` commit trailer.
 
 Everything is **ADVISORY** — neither workflow is a required status check and this makes **no branch-ruleset change**.
-`sequence-safety.yml` surfaces findings per-PR at review (with WARN-only `allow-symbol-loss` / `docs-rewrite` label hatches); `main-verify.yml` is the bypass-proof post-merge net that fires on every merge to `main` (catch-up base sweeps any `[skip ci]` window; a stable-title tracking issue is upserted on failure). Both `pip install "juniper-ci-tools>=0.8.0,<0.10.0"` then invoke the console scripts.
+`sequence-safety.yml` surfaces findings per-PR at review (with WARN-only `allow-symbol-loss` / `docs-rewrite` label hatches); `main-verify.yml` is the bypass-proof post-merge net that fires on every merge to `main` (catch-up base sweeps any `[skip ci]` window; a stable-title tracking issue is upserted on failure). Both `pip install "juniper-ci-tools>=0.9.0,<0.10.0"` then invoke the console scripts.
 v1 defers the post-merge regression battery (cascor's suite is heavy) and Slack notify (no webhook secret) — see the workflow header comments.
 The screens' canonical regression suite lives in the `juniper-ci-tools` package; `src/tests/unit/test_sequence_safety_retired.py` is cascor's local guard that the inline copy stays deleted and the workflow pins keep admitting the packaged version.
 
