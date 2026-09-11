@@ -93,6 +93,11 @@ class TestSequenceSafetyRetired:
         A pin that can reach an older release silently stops the screens installing: the console
         scripts and the ``--scope`` knob cascor passes did not exist before then. A pin whose floor
         is NEWER than 0.8.0 is fine -- see the note on ``_CI_TOOLS_MIN``.
+
+        Renamed 2026-09-11 from ``test_screen_workflow_pins_admit_packaged_version``; the old name
+        described the old containment predicate, which failed the 0.9.0 floor bump. The rename is
+        waived in that commit with an ``Allow-Symbol-Loss:`` trailer -- the sequence-safety screen
+        scores a same-file rename as a LOST symbol, which is correct behaviour, not a false alarm.
         """
         want = _pad(_CI_TOOLS_MIN)
         problems: list[str] = []
