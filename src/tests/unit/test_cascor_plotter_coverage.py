@@ -15,6 +15,12 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(
 from cascade_correlation.cascade_correlation_exceptions.cascade_correlation_exceptions import ValidationError
 from cascor_plotter.cascor_plotter import CascadeCorrelationPlotter
 
+# CI's unit lane runs ``pytest -m "unit and not slow" src/tests/unit`` (ci.yml:312-317),
+# so a test here with no ``unit`` marker is collected and then silently DESELECTED -- it
+# never runs and the job still reports success. Module-level, so it covers every test in
+# the file including ones added later.
+pytestmark = pytest.mark.unit
+
 
 class TestCascadeCorrelationPlotterInit:
     """Tests for CascadeCorrelationPlotter initialization."""

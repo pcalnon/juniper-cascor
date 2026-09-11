@@ -11,6 +11,14 @@ juniper-ml ``notes/BUILD_PROVENANCE_DESIGN_2026-06-14.md``.
 
 from pathlib import Path
 
+import pytest
+
+# CI's unit lane runs ``pytest -m "unit and not slow" src/tests/unit`` (ci.yml:312-317),
+# so a test here with no ``unit`` marker is collected and then silently DESELECTED -- it
+# never runs and the job still reports success. Module-level, so it covers every test in
+# the file including ones added later.
+pytestmark = pytest.mark.unit
+
 REPO_ROOT = Path(__file__).resolve().parents[3]
 DOCKERIGNORE = REPO_ROOT / ".dockerignore"
 
