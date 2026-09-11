@@ -114,9 +114,9 @@ class TestSetLevelMovesBothPaths(unittest.TestCase):
                     guard = Logger.isEnabledFor(level=num)
                     emit = Logger._filter_by_level(level=name, log_level=Logger._log_level)
                     self.assertEqual(
-                        guard, emit,
-                        f"configured={configured}: guard says {guard} for {name} but the emit "
-                        f"filter says {emit}. The two configured-level states have diverged again.",
+                        guard,
+                        emit,
+                        f"configured={configured}: guard says {guard} for {name} but the emit " f"filter says {emit}. The two configured-level states have diverged again.",
                     )
 
     def test_set_level_actually_changes_the_decision(self):
@@ -162,10 +162,9 @@ class TestEmitPathReadsLogLevel(unittest.TestCase):
                     emitted = self._emits(method, f"__p11_{configured}_{name}__")
                     guard = log.isEnabledFor(level=num)
                     self.assertEqual(
-                        guard, emitted,
-                        f"configured={configured}: isEnabledFor({name})={guard} but the real emit "
-                        f"path {'emitted' if emitted else 'discarded'} the record. set_level is a "
-                        f"no-op for emission again.",
+                        guard,
+                        emitted,
+                        f"configured={configured}: isEnabledFor({name})={guard} but the real emit " f"path {'emitted' if emitted else 'discarded'} the record. set_level is a " f"no-op for emission again.",
                     )
 
     def test_the_private_module_is_not_stubbed(self):
@@ -176,9 +175,9 @@ class TestEmitPathReadsLogLevel(unittest.TestCase):
             with contextlib.redirect_stdout(buf):
                 log.trace("__p11_liveness__")
         self.assertIn(
-            "__p11_liveness__", buf.getvalue(),
-            "The privately-imported logger emitted nothing at TRACE. The emit path is stubbed or "
-            "broken, so TestEmitPathReadsLogLevel proves nothing.",
+            "__p11_liveness__",
+            buf.getvalue(),
+            "The privately-imported logger emitted nothing at TRACE. The emit path is stubbed or " "broken, so TestEmitPathReadsLogLevel proves nothing.",
         )
 
 
@@ -197,19 +196,18 @@ class TestRetiredLevelStateIsInert(unittest.TestCase):
                 log._level_logger_config = 1
                 after = [(n, log._filter_by_level(level=n, log_level=log._log_level)) for n, _u, _m in LEVELS]
                 self.assertEqual(
-                    before, after,
-                    "Mutating _level_logger_name / _level_logger_config moved an emission decision. "
-                    "They have been wired back into the filter -- that is the two-state split P1.1 "
-                    "removed.",
+                    before,
+                    after,
+                    "Mutating _level_logger_name / _level_logger_config moved an emission decision. " "They have been wired back into the filter -- that is the two-state split P1.1 " "removed.",
                 )
 
                 buf = io.StringIO()
                 with contextlib.redirect_stdout(buf):
                     log.trace("__p11_retired__")
                 self.assertNotIn(
-                    "__p11_retired__", buf.getvalue(),
-                    "A TRACE record emitted while _log_level is INFO, because the retired state was "
-                    "consulted. The emit path must read _log_level and nothing else.",
+                    "__p11_retired__",
+                    buf.getvalue(),
+                    "A TRACE record emitted while _log_level is INFO, because the retired state was " "consulted. The emit path must read _log_level and nothing else.",
                 )
             finally:
                 log._level_logger_name, log._level_logger_config = saved_name, saved_config
@@ -222,8 +220,7 @@ class TestIsValidLevel(unittest.TestCase):
         for bad in ("BANANA", None, "", 8, 999, -1, object()):
             self.assertFalse(
                 Logger.is_valid_level(bad),
-                f"is_valid_level({bad!r}) should be False; the repo's only validity predicate "
-                f"cannot say no, and P4-G4 (fail loudly on an unknown level) needs it to.",
+                f"is_valid_level({bad!r}) should be False; the repo's only validity predicate " f"cannot say no, and P4-G4 (fail loudly on an unknown level) needs it to.",
             )
 
     def test_accepts_valid(self):
