@@ -244,16 +244,32 @@ class Logger(logging.getLoggerClass()):
         "CRITICAL": _level_critical,
         "FATAL": _level_fatal,
     }
-    _level_numbers = {
-        "TRACE": 1,
-        "VERBOSE": 5,
-        "DEBUG": 10,
-        "INFO": 20,
-        "WARNING": 30,
-        "ERROR": 40,
-        "CRITICAL": 50,
-        "FATAL": 60,
-    }
+    # P1.2 (cascor#573): DERIVED, not restated. This was a hardcoded literal table that happened
+    # to agree with the canonical one -- the same shape P1.1 removed for the configured level, one
+    # level up: the CLASS path (``_is_valid_level_number``, ``_get_level_number``,
+    # ``_get_level_name``) read this dict while the INSTANCE path read
+    # ``_LOGGER_LOG_LEVEL_NUMBERS_DICT``, two objects that merely happened to hold equal values.
+    #
+    # Verified equal before the swap, so no number changes here; what changes is that they can no
+    # longer DRIFT (juniper-ml util/ad-hoc/2026-09-12_p12_level_table_equivalence.py).
+    #
+    # Canonical source: ``cascor_constants/constants.py`` ``_PROJECT_LOG_LEVEL_NUMBER_*``, reaching
+    # this module through ``_PROJECT_… -> _LOG_CONFIG_… -> _LOGGER_LOG_LEVEL_NUMBERS_DICT``.
+    # A copy, not an alias: mutating one must not silently retarget the other.
+    _level_numbers = dict(_LOGGER_LOG_LEVEL_NUMBERS_DICT)
+
+    # P1.2(d): symbolic level numbers, so call sites can say ``Logger.TRACE`` instead of a bare
+    # ``1``. Deliberately distinct from the ``_level_trace = "TRACE"`` string attributes above --
+    # those carry level NAMES, these carry level NUMBERS, and conflating them is how
+    # ``isEnabledFor(level=5)  # TRACE`` (5 is VERBOSE) got written in candidate_unit.py.
+    TRACE = _level_numbers["TRACE"]
+    VERBOSE = _level_numbers["VERBOSE"]
+    DEBUG = _level_numbers["DEBUG"]
+    INFO = _level_numbers["INFO"]
+    WARNING = _level_numbers["WARNING"]
+    ERROR = _level_numbers["ERROR"]
+    CRITICAL = _level_numbers["CRITICAL"]
+    FATAL = _level_numbers["FATAL"]
 
     ####################################################################################################################################
     # Logger Class Methods
