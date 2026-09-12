@@ -170,7 +170,12 @@ def log_if_enabled(logger, level: int, msg_func: Callable[[], str]):
     Avoids expensive string formatting when log level is disabled.
 
     Example:
-        log_if_enabled(logger, TRACE, lambda: f"Expensive: {compute_debug()}")
+        log_if_enabled(logger, Logger.TRACE, lambda: f"Expensive: {compute_debug()}")
+
+    The level is a NUMBER. Take it from the one canonical table -- ``Logger.TRACE`` and its
+    siblings, or ``_LOGGER_LOG_LEVEL_NUMBERS_DICT`` from cascor_constants -- never a literal.
+    This example used to name a module-local ``TRACE = 5``, which was really VERBOSE's number
+    (P1.2, cascor#573).
     """
     if logger.isEnabledFor(level):
         logger.log(level, msg_func())
@@ -246,6 +251,23 @@ class LogFrequencyTracker:
         self._total_time.clear()
 
 
-# Pre-defined log levels (match custom levels from log_config)
-TRACE = 5
-VERBOSE = 15
+# P1.2 (cascor#573): the third level table is GONE, not corrected.
+#
+# This was::
+#
+#     # Pre-defined log levels (match custom levels from log_config)
+#     TRACE = 5
+#     VERBOSE = 15
+#
+# and the comment was false in both entries: log_config's canonical table
+# (cascor_constants/constants.py ``_PROJECT_LOG_LEVEL_NUMBER_*``) has TRACE=1 and VERBOSE=5, so
+# this module's TRACE was really VERBOSE and its VERBOSE was a level that does not exist. It was
+# the only one of cascor's three level tables that CONTRADICTED the other two.
+#
+# Deleted rather than corrected because neither name was referenced from executable code anywhere
+# in the repository -- ``TRACE`` appeared only inside the ``log_if_enabled`` docstring example
+# above, ``VERBOSE`` nowhere at all, and no test pinned either value. Correcting them would have
+# preserved a third definition for nothing, against the rule that there be exactly one.
+#
+# A caller that needs a level number should import it: ``Logger.TRACE`` / ``Logger.VERBOSE``, or
+# ``_LOGGER_LOG_LEVEL_NUMBERS_DICT`` from cascor_constants.
