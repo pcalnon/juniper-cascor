@@ -593,8 +593,8 @@ class CandidateUnit:
         self.logger.debug(f"CandidateUnit: train: Early stopping enabled: {self.early_stopping}, Patience: {self.patience}")
 
         # Log constant metadata once before the loop (CR-062: hoist invariant values)
-        _log_debug = self.logger.isEnabledFor(level=10)  # DEBUG
-        _log_trace = self.logger.isEnabledFor(level=5)  # TRACE
+        _log_debug = self.logger.isEnabledFor(level=Logger.DEBUG)
+        _log_trace = self.logger.isEnabledFor(level=Logger.TRACE)
         if _log_debug:
             self.logger.debug("CandidateUnit: train: Residual error shape: %s, dtype: %s, dims: %s", residual_error.shape, residual_error.dtype, residual_error.dim())
 
@@ -761,9 +761,9 @@ class CandidateUnit:
         """
         # Compute correlation with each output and use the maximum absolute correlation
         # CR-062: Guard log calls that evaluate tensor/object repr to avoid expensive __repr__ in hot path
-        _log_debug = self.logger.isEnabledFor(level=10)  # DEBUG
-        _log_verbose = self.logger.isEnabledFor(level=8)  # VERBOSE
-        _log_trace = self.logger.isEnabledFor(level=5)  # TRACE
+        _log_debug = self.logger.isEnabledFor(level=Logger.DEBUG)
+        _log_verbose = self.logger.isEnabledFor(level=Logger.VERBOSE)
+        _log_trace = self.logger.isEnabledFor(level=Logger.TRACE)
         if _log_trace:
             self.logger.trace("CandidateUnit: _get_correlations: Getting Correlations for network, residual_error shape: %s", residual_error.shape)
         if _log_debug:
@@ -830,8 +830,8 @@ class CandidateUnit:
             correlations: List of tuples containing correlation, output index, normalized output, normalized error, numerator, and denominator
         """
         # CR-062: Guard log calls to avoid expensive f-string evaluation in hot path
-        _log_debug = self.logger.isEnabledFor(level=10)  # DEBUG
-        _log_verbose = self.logger.isEnabledFor(level=8)  # VERBOSE
+        _log_debug = self.logger.isEnabledFor(level=Logger.DEBUG)
+        _log_verbose = self.logger.isEnabledFor(level=Logger.VERBOSE)
 
         if _log_debug:
             self.logger.debug("CandidateUnit: _multi_output_correlation: Residual error shape: %s, Output shape: %s", residual_error.shape, output.shape)
@@ -1043,7 +1043,7 @@ class CandidateUnit:
             grad_output: Gradient of output with respect to weights
         """
         # CR-062: Guard log calls to avoid expensive f-string evaluation in hot path
-        _log_debug = self.logger.isEnabledFor(level=10)  # DEBUG
+        _log_debug = self.logger.isEnabledFor(level=Logger.DEBUG)
 
         if _log_debug:
             self.logger.debug("CandidateUnit: _update_weights_and_bias: Input shape: %s, Residual error shape: %s, Learning rate: %s", candidate_parameters_update.x.shape, candidate_parameters_update.residual_error.shape, candidate_parameters_update.learning_rate)
