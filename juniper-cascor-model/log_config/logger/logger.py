@@ -220,6 +220,31 @@ class Logger(logging.getLoggerClass()):
         "FATAL": 60,
     }
 
+    # P1.3 (cascor#573): REQUIRED here, not optional.
+    #
+    # candidate_unit.py's guard sites now read ``Logger.DEBUG`` / ``Logger.VERBOSE`` /
+    # ``Logger.TRACE``, and that file is byte-gated (juniper-cascor-model/tests/test_drift.py:27),
+    # so the package ships the identical source. This module, by contrast, is on
+    # ``_INTENTIONAL_DIVERGENCE`` (:31) and is NOT byte-compared -- so without these eight names
+    # the package's CandidateUnit would raise AttributeError on the first guard evaluation, i.e.
+    # on every candidate construction, while src/ stayed green. The byte-gate guarantees the
+    # CALLER is mirrored; nothing guarantees the CALLEE is.
+    #
+    # Derived from this module's own ``_level_numbers`` rather than from the canonical
+    # cascor_constants chain, so the package stays self-consistent regardless of how far this
+    # divergent copy has drifted. Values are identical to the canonical table today.
+    #
+    # Once decision 4's convergence lands (this file re-extracted, `_INTENTIONAL_DIVERGENCE`
+    # retired), this block is superseded by src's.
+    TRACE = _level_numbers["TRACE"]
+    VERBOSE = _level_numbers["VERBOSE"]
+    DEBUG = _level_numbers["DEBUG"]
+    INFO = _level_numbers["INFO"]
+    WARNING = _level_numbers["WARNING"]
+    ERROR = _level_numbers["ERROR"]
+    CRITICAL = _level_numbers["CRITICAL"]
+    FATAL = _level_numbers["FATAL"]
+
     ####################################################################################################################################
     # Logger Class Methods
     @classmethod
