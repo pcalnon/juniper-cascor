@@ -58,7 +58,18 @@ class APIKeyAuth:
             return True
         if api_key is None:
             return False
-        return any(hmac.compare_digest(api_key, k) for k in self._api_keys)
+        # Constant-time comparison against every configured key. ``any()`` would
+        # short-circuit on the first match, so the NUMBER of comparisons would
+        # depend on where the matching key falls in the iteration; hmac.compare_digest
+        # itself already runs in time proportional to the input length regardless of
+        # where a mismatching byte appears, so walking the whole key set preserves
+        # that property per key while still accepting on a match. Mirrors
+        # juniper-data's reference implementation (juniper_data/api/security.py).
+        matched = False
+        for candidate in self._api_keys:
+            if hmac.compare_digest(api_key, candidate):
+                matched = True
+        return matched
 
     async def __call__(self, request: Request) -> str | None:
         """FastAPI dependency for API key validation.

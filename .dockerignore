@@ -43,3 +43,29 @@ cascor-snapshots/
 cascor_snapshots/
 snapshots/*.h5
 logs/
+
+# Test suite and its artifacts.
+#
+# `COPY src/ ./src/` (Dockerfile:48 in the builder, :86 in the runtime stage) is
+# DIRECTORY-grained, not file-grained, so without these rules the published image
+# carries the entire suite. Measured 2026-09-21 INSIDE the pulled artifact, not
+# inferred: `juniper-cascor:0.11.0` shipped **268** test files.
+#
+# The `**/` prefix is load-bearing. A bare `tests/` matches the CONTEXT ROOT only,
+# and the suite lives at `src/tests/` -- the same nesting rule the `**/__pycache__/`
+# and `**/*.egg-info/` entries above already account for.
+#
+# This is also a credential guard, and the reason it is worth writing down: a CI
+# publish builds from a CLEAN CHECKOUT, so only COMMITTED files can reach an image.
+# That is what keeps the juniper-deploy `secrets/` class (eight live credential
+# files in a working tree with no `.dockerignore`) from reproducing here. But a
+# credential COMMITTED anywhere under `src/tests/` would ship into a published
+# production image, and no Docker-level control would stop it -- the only backstops
+# are CI gitleaks, which is pattern-based rather than path-aware, and a pre-commit
+# hook whose `files` regex is anchored to a root-exact `.env`.
+#
+# Nothing depends on the tests being present in the image: the publish smoke test
+# imports `cascade_correlation`, `api` and `snapshots` only, and `conformance.yml`
+# runs on the host against a checkout, never in a container.
+**/tests/
+**/reports/
