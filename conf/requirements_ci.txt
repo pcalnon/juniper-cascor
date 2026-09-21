@@ -112,7 +112,7 @@ nvidia-cufft==12.4.0.43
 nvidia-cufile==1.19.0.109
 nvidia-curand==10.4.4.49
 nvidia-cusolver==12.3.4.7
-nvidia-cusparse==12.8.6.49
+nvidia-cusparse==12.8.6.72
 nvidia-cusparselt-cu13==0.9.1
 nvidia-nccl-cu13==2.31.2
 nvidia-nvjitlink==13.4.92
