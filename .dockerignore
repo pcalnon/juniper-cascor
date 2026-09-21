@@ -16,6 +16,24 @@
 .git/
 .gitignore
 
+# -- Credentials. Docker does NOT honour .gitignore, and this image is PUBLIC.
+#    `COPY src/ ./src/` is a DIRECTORY allowlist, not a file allowlist, so it ships
+#    everything tracked beneath src/. Patterns are matched by Go filepath.Match
+#    RELATIVE TO THE CONTEXT ROOT, which is why each has a `**/` twin.
+secrets/
+**/secrets/
+*.key
+**/*.key
+*.pem
+**/*.pem
+*.p12
+*.pfx
+.env
+.env.*
+**/.env
+**/.env.*
+!.env.example
+
 # Python build artifacts
 __pycache__/
 **/__pycache__/
@@ -28,8 +46,11 @@ dist/
 
 # Test / type-check caches
 .pytest_cache/
+**/.pytest_cache/
 .mypy_cache/
+**/.mypy_cache/
 .ruff_cache/
+**/.ruff_cache/
 .coverage
 coverage.xml
 
@@ -40,9 +61,23 @@ coverage.xml
 # ~192 MB. This is also a correctness guard -- a future `COPY . .` would otherwise
 # bake the snapshot archive into a published image.
 cascor-snapshots/
+**/cascor-snapshots/
 cascor_snapshots/
+**/cascor_snapshots/
 snapshots/*.h5
+**/snapshots/*.h5
 logs/
+**/logs/
+
+# CORRECTED 2026-09-21: the exclusions immediately above were ROOT-ANCHORED and therefore
+# INERT against the paths that exist. `cascor_snapshots/` does not match
+# `src/cascor_snapshots/` -- which is under the `COPY src/` that ships. Measured: 766 `.h5`
+# files, 39 MB, and ALL 766 carry a plaintext 32-byte multiprocessing authkey as
+# `authkey_hex` on their `mp` group (288 distinct), written by
+# `src/snapshots/snapshot_serializer.py:699-702`. They stayed out of every PUBLISHED image
+# only because `.gitignore:92` keeps them untracked and CI builds from `actions/checkout`;
+# a LOCAL `docker compose build` would have baked them into an image stamped with the
+# RELEASED tag. The `**/` twins above close that.
 
 # Test suite and its artifacts.
 #
