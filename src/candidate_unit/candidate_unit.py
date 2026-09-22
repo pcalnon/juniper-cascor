@@ -727,19 +727,42 @@ class CandidateUnit:
     # Initialize display progress frequency checker with candidate unit display frequency
     def _display_training_progress(self, epoch, candidate_parameters_update, residual_error):
         """Display training progress at specified frequency intervals."""
-        self.logger.debug("CandidateUnit: _display_training_progress: Checking if training progress should be displayed")
-        self.logger.debug(f"CandidateUnit: _display_training_progress: Display frequency: {self.display_frequency}, Current Epoch: {epoch + 1}")
+        # CR-062 / P1.4 (cascor#573): hoist the level tests and pass %-args instead of f-strings.
+        #
+        # This method is called once per epoch per candidate (:664, inside `for epoch in
+        # range(epochs)`), and until now it evaluated THREE unguarded log calls every time --
+        # two of them interpolating eagerly, regardless of the configured level. `train_detailed`
+        # hoists `_log_debug`/`_log_trace` at :595-596 and uses that idiom at :598/:604/:629; this
+        # method was an unconverted island inside it.
+        #
+        # Measured 2026-09-21 against the real Logger at a disabled level, per call: an unguarded
+        # f-string `verbose` cost ~2,330-2,375 ns, of which ~1,017 ns was the f-string itself; a
+        # hoisted boolean test costs ~31 ns. %-args defer the remaining interpolation into
+        # `_filter_by_level`'s block (logger.py:578, `message = message % args`, inside the `if` at
+        # :575), so a discarded record never builds its string at all.
+        #
+        # The guard is hoisted to the top of the METHOD rather than into `train_detailed` because
+        # the signature is load-bearing: juniper-cascor-model/tests/test_candidate_unit_training_paths.py:146
+        # calls this with three positional arguments.
+        _log_debug = self.logger.isEnabledFor(level=Logger.DEBUG)
+        _log_verbose = self.logger.isEnabledFor(level=Logger.VERBOSE)
+
+        if _log_debug:
+            self.logger.debug("CandidateUnit: _display_training_progress: Checking if training progress should be displayed")
+            self.logger.debug("CandidateUnit: _display_training_progress: Display frequency: %s, Current Epoch: %d", self.display_frequency, epoch + 1)
         # Reinitialize display function if needed
         if self._candidate_display_progress is None:
-            self.logger.debug(f"CandidateUnit: _display_training_progress: Display function: Type: {type(self._candidate_display_progress)}, Value: {self._candidate_display_progress}")
-            self.logger.debug(f"CandidateUnit: _display_training_progress: Display function is None, re-initializing with frequency: Type: {type(self.display_frequency)}, Value: {self.display_frequency}")
+            if _log_debug:
+                self.logger.debug("CandidateUnit: _display_training_progress: Display function: Type: %s, Value: %s", type(self._candidate_display_progress), self._candidate_display_progress)
+                self.logger.debug("CandidateUnit: _display_training_progress: Display function is None, re-initializing with frequency: Type: %s, Value: %s", type(self.display_frequency), self.display_frequency)
             self._candidate_display_progress = self._init_display_progress(display_frequency=self.display_frequency)
 
         # Display progress if epoch matches frequency
         if self._candidate_display_progress(epoch):
             self.logger.info(f"CandidateUnit: train: Epoch {epoch + 1} - " f"Norm Output: {self._tensor_brief(candidate_parameters_update.norm_output)}, " f"Norm Error: {self._tensor_brief(candidate_parameters_update.norm_error)}")
 
-        self.logger.verbose(f"CandidateUnit: train: Epoch {epoch + 1} - Residual Error: Shape: {residual_error.shape}, Dtype: {residual_error.dtype}")
+        if _log_verbose:
+            self.logger.verbose("CandidateUnit: train: Epoch %d - Residual Error: Shape: %s, Dtype: %s", epoch + 1, residual_error.shape, residual_error.dtype)
 
     #################################################################################################################################################################################################
     # Get the correlations for the candidate unit.
