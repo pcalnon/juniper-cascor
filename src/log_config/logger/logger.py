@@ -1095,7 +1095,23 @@ class Logger(logging.getLoggerClass()):
         Returns:
             bool: True if the logger is enabled for the specified log level, False otherwise.
         """
-        configured_level = cls.getLevelNumber(cls.get_level())
+        # PERF (cascor#573, P1.4 review): resolve through the SAME memo the emit filter uses.
+        #
+        # cascor#598 memoised ``_filter_by_level`` via ``_resolve_level_number`` and left this
+        # guard on the unmemoised path, so the guard became more expensive than the filter it
+        # exists to skip -- and than the f-string interpolation it exists to prevent. Measured
+        # 2026-09-21 against the real Logger at a disabled level: ``isEnabledFor`` ~1,000-1,300 ns
+        # per call, versus ~1,017 ns for the tensor f-string at candidate_unit.py:742 and ~10-60 ns
+        # for a hoisted boolean. ``get_level()`` returns a level NAME, so each call re-ran
+        # ``_is_valid_level_name`` + ``_get_level_number`` -- five Python frames, three ``.upper()``
+        # allocations and two linear scans of an 8-entry dict -- to re-derive a constant.
+        #
+        # Semantics are unchanged. ``_resolve_level_number(x)`` is
+        # ``getLevelNumber(x) if is_valid_level(x) else None``, and ``getLevelNumber`` already
+        # returns None for every invalid level -- the equivalence ``is_valid_level``'s own P1.1(c)
+        # comment records at :376-379. The None -> NOTSET fallback below is therefore reached in
+        # exactly the same cases as before.
+        configured_level = cls._resolve_level_number(cls.get_level())
         if configured_level is None:
             configured_level = logging.NOTSET
         return level >= configured_level

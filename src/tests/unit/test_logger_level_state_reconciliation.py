@@ -250,5 +250,87 @@ class TestIsValidLevel(unittest.TestCase):
             self.assertEqual(Logger._resolve_level_number(name), num)
 
 
+class TestGuardResolvesThroughTheSharedMemo(unittest.TestCase):
+    """The guard must resolve the configured level through the SAME memo the emit filter uses.
+
+    cascor#598 memoised ``_filter_by_level`` via ``_resolve_level_number`` and left
+    ``isEnabledFor`` on the direct ``getLevelNumber(get_level())`` path. ``get_level()`` returns a
+    level NAME, so every guard call re-ran ``_is_valid_level_name`` + ``_get_level_number`` -- five
+    Python frames, three ``.upper()`` allocations and two linear scans of an 8-entry dict -- to
+    re-derive a constant that cannot change between ``set_level`` calls.
+
+    Measured 2026-09-21 against the real ``Logger`` at a disabled level (juniper-ml
+    ``util/ad-hoc/2026-09-21_p14_isenabledfor_memo_verify.py``): the guard cost **~1,270 ns**, while
+    the tensor f-string at ``candidate_unit.py:742`` that guards exist to prevent cost **~1,020 ns**
+    -- the guard was more expensive than the work it was skipping. Routing it through the memo took
+    it to **~341 ns (3.7x)**, with all 132 cells of the (configured level x probe level) behaviour
+    table identical.
+
+    NO TIMING ASSERTION LIVES HERE, deliberately: a wall-clock assertion on a shared CI runner is a
+    flake generator. What is pinned is the **mechanism** -- a guard call must leave its resolution
+    in the shared cache. Reverting ``isEnabledFor`` to ``getLevelNumber`` fails
+    ``test_a_guard_call_populates_the_shared_cache`` and **nothing else in the suite**, which is
+    exactly why the test is needed: the regression emits identical output and breaks no other test.
+    """
+
+    def test_a_guard_call_populates_the_shared_cache(self):
+        """The mutation check. Revert the call at ``isEnabledFor`` and only this test fails."""
+        with _RestoreLevel(Logger) as logger_cls:
+            logger_cls.set_level("INFO")
+            logger_cls._invalidate_level_cache()
+            self.assertEqual(dict(logger_cls._level_number_cache), {}, "precondition: cache is empty")
+
+            logger_cls.isEnabledFor(logger_cls.VERBOSE)
+
+            self.assertIn(
+                logger_cls.get_level(),
+                logger_cls._level_number_cache,
+                "isEnabledFor must resolve the configured level through _resolve_level_number -- " "the same memo _filter_by_level uses. An empty cache here means the guard is back " "on the unmemoised getLevelNumber path, where every guarded call site in the repo " "pays ~4x to re-derive a constant. Nothing else in the suite detects that.",
+            )
+
+    def test_guard_and_filter_share_one_cache(self):
+        """Not two memos that happen to agree -- one, so an invalidation reaches both."""
+        with _RestoreLevel(Logger) as logger_cls:
+            logger_cls.set_level("INFO")
+            logger_cls._invalidate_level_cache()
+
+            logger_cls.isEnabledFor(logger_cls.VERBOSE)
+            after_guard = dict(logger_cls._level_number_cache)
+
+            logger_cls._filter_by_level(level=logger_cls.VERBOSE, log_level=logger_cls._log_level)
+            after_filter = dict(logger_cls._level_number_cache)
+
+            self.assertTrue(after_guard, "the guard populated nothing")
+            for key, value in after_guard.items():
+                self.assertEqual(
+                    after_filter.get(key),
+                    value,
+                    f"the filter disagrees with the guard about {key!r} -- two caches, not one",
+                )
+
+    def test_the_answer_is_unchanged_at_every_configured_level(self):
+        """Equivalence pin: memoised or not, the guard's answer is the same everywhere.
+
+        ``_resolve_level_number(x)`` is ``getLevelNumber(x) if is_valid_level(x) else None``, and
+        ``getLevelNumber`` already returned None for every invalid level -- the equivalence
+        ``is_valid_level``'s own P1.1(c) comment records at its definition. This enumerates that
+        rather than trusting it, and asserts both answers appear so a match cannot be vacuous.
+        """
+        seen = set()
+        with _RestoreLevel(Logger) as logger_cls:
+            for configured_name, configured_num, _m in LEVELS:
+                logger_cls.set_level(configured_name)
+                for _probe_name, probe_num, _m2 in LEVELS:
+                    answer = logger_cls.isEnabledFor(probe_num)
+                    expected = probe_num >= configured_num
+                    self.assertEqual(
+                        answer,
+                        expected,
+                        f"isEnabledFor({probe_num}) with configured={configured_name} " f"({configured_num}) should be {expected}",
+                    )
+                    seen.add(answer)
+        self.assertEqual(seen, {True, False}, "vacuous: the sweep produced only one answer")
+
+
 if __name__ == "__main__":
     unittest.main()
