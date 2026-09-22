@@ -53,6 +53,7 @@ from api.app import create_app  # noqa: E402
 from api.settings import Settings  # noqa: E402
 
 RECV_TIMEOUT_S = 3.0
+SHUTDOWN_TIMEOUT_S = 30.0
 POLL_ATTEMPTS = 100
 POLL_INTERVAL_S = 0.05
 
@@ -160,11 +161,12 @@ async def main() -> int:
 
         server_side_a.send_json = _failing_send_json
         await mgr.broadcast({"type": "metrics", "data": {"epoch": 2}})
+        closed_in_time = True
         try:
             await asyncio.wait_for(a.conn.wait_closed(), timeout=RECV_TIMEOUT_S)
         except asyncio.TimeoutError:
-            pass
-        report.check("B: dropped client got close 1011", a.conn.close_code == 1011, f"close_code={a.conn.close_code} reason={a.conn.close_reason!r}")
+            closed_in_time = False  # the half-open outcome F-CASCOR-004 describes; reported just below
+        report.check("B: dropped client got close 1011", closed_in_time and a.conn.close_code == 1011, f"closed_in_time={closed_in_time} close_code={a.conn.close_code} reason={a.conn.close_reason!r}")
         got_b2 = await b.next_of_type("metrics")
         report.check("B: the other client got the broadcast", got_b2 is not None and got_b2["data"] == {"epoch": 2}, f"b={got_b2}")
         report.check("B: dropped client's handler returned", await _poll(lambda: len(mgr._endpoint_connections["training"]) == 1), f"training bucket={len(mgr._endpoint_connections['training'])}")
@@ -185,7 +187,7 @@ async def main() -> int:
         report.check("teardown: every slot released", await _poll(lambda: mgr._global_ws_count == 0 and not mgr._per_ip_counts), f"global={mgr._global_ws_count} per_ip={mgr._per_ip_counts}")
     finally:
         server.should_exit = True
-        await serve_task
+        await asyncio.wait_for(serve_task, timeout=SHUTDOWN_TIMEOUT_S)
 
     print("ALL CHECKS PASSED" if report.passed else "SOME CHECKS FAILED", flush=True)
     return 0 if report.passed else 1
