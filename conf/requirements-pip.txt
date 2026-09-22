@@ -113,7 +113,7 @@ typer==0.27.2
 typer-slim==0.24.0
 typing_extensions==4.16.0
 typing-inspection==0.4.4
-unicodedata2==17.0.1
+unicodedata2==18.0.0
 urllib3==2.8.0
 uvicorn==0.53.0
 uvloop==0.22.1
