@@ -226,9 +226,11 @@ class TestAutoStartAnnotatesTheRun:
     async def test_a_partial_dataset_nobody_here_asked_for_names_the_producer(self) -> None:
         """Flag off, params silent, and juniper-data delivered a partial dataset anyway.
 
-        Its own deployment opt-in, which it ORs with the request and a client
-        cannot refuse. The annotation must record that this run did not accept
-        it -- not deny that anyone did.
+        Its own deployment opt-in, which it applies to a request that sends no
+        stance. (Before juniper-data APD-DATA-052 it ORed on top of an explicit
+        ``false`` too, and a client could not refuse; now it does not.) The
+        annotation must record that this run did not accept it -- not deny that
+        anyone did.
         """
         manager, _ = await _run_auto_start({}, deployment_flag=False, meta=_PARTIAL_META)
         assert manager._dataset_shortfall is not None

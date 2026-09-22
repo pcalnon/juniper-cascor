@@ -167,11 +167,16 @@ class TestShortfallLogging:
         assert "were dropped" in caplog.text
 
     def test_the_log_names_who_accepted_and_the_producer_when_nobody_here_did(self, caplog: pytest.LogCaptureFixture) -> None:
-        """juniper-data ORs the request with its own deployment opt-in; a client cannot opt out.
+        """juniper-data applies its own deployment opt-in to a request that sends no stance.
 
         A partial dataset that arrives with no opt-in sent from this side was accepted
         by the PRODUCER, and the log must say so rather than restate a setting that
         was off -- the old line read "accepted it via allow_truncated_datasets=False".
+
+        This docstring said "a client cannot opt out" until juniper-data APD-DATA-052
+        made ``allow_truncation`` a tri-state. One CAN now, by sending ``false``; this
+        test covers the case where nobody did, which is still reachable and still the
+        case the PRODUCER value exists for.
         """
         meta = {"truncation": {"unit": "symbols", "cap": 14, "requested": 503, "imported": 14}}
         with caplog.at_level(logging.WARNING):
@@ -387,8 +392,10 @@ class TestShortfallIsPollable:
     def test_a_partial_dataset_nobody_here_asked_for_names_the_producer(self) -> None:
         """THE REGRESSION (round-37 handoff §0.13).
 
-        Flag off, caller silent, and the producer delivered a partial dataset anyway
-        -- its own deployment opt-in, which a client cannot refuse. The annotation
+        Flag off, caller SILENT (not refusing -- since juniper-data APD-DATA-052 an
+        explicit ``false`` would refuse, and this test deliberately sends neither), and
+        the producer delivered a partial dataset anyway on its own deployment opt-in.
+        The annotation
         used to read ``accepted_via_allow_truncated_datasets: false``: the truth
         about the setting, and a denial of the acceptance it was annotating. It now
         says who accepted, and that this run did not.

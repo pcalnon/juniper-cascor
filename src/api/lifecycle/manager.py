@@ -3764,10 +3764,20 @@ class TrainingLifecycleManager:
         ``acceptance_source`` is who put the opt-in on the wire -- the caller's
         own params, or this service's ``allow_truncated_datasets`` setting -- or
         ``None`` when nothing was sent. A partial dataset can still arrive in that
-        last case: juniper-data ORs the request with ITS deployment's opt-in and
-        a client cannot opt out of it. The annotation then records the producer
-        as the authority, rather than claiming this run refused the data it is
-        training on.
+        last case: juniper-data applies ITS deployment's opt-in to a request that
+        expresses no stance. The annotation then records the producer as the
+        authority, rather than claiming this run refused the data it is training
+        on.
+
+        **This used to say "and a client cannot opt out of it", which is no
+        longer true** (juniper-data APD-DATA-052, 2026-09-22). ``allow_truncation``
+        is a tri-state there now -- ``true`` / ``false`` / ``null``, where only
+        ``null`` (or omission) defers to the producer's deployment -- so an
+        explicit ``false`` refuses even against a producer that opted in. The
+        PRODUCER branch is therefore still reachable and still correct, but it
+        now means "nobody on this side expressed a stance", not "nobody on this
+        side *could*". The remedy for an operator who does not want it is to send
+        ``allow_truncation=false``, which is what ``_describe_acceptance`` says.
         """
         truncation = meta.get("truncation") or None
         quality = meta.get("data_quality") or None
@@ -3815,7 +3825,7 @@ class TrainingLifecycleManager:
         return {
             _PROJECT_API_SHORTFALL_ACCEPTED_BY_REQUEST: "accepted by the dataset request itself (allow_truncation=true)",
             _PROJECT_API_SHORTFALL_ACCEPTED_BY_DEPLOYMENT: "accepted by this service's allow_truncated_datasets setting",
-            _PROJECT_API_SHORTFALL_ACCEPTED_BY_PRODUCER: "accepted by the producer's own deployment default (this run sent no opt-in, and a client cannot opt out of the producer's choice)",
+            _PROJECT_API_SHORTFALL_ACCEPTED_BY_PRODUCER: "accepted by the producer's own deployment default (this run sent no opt-in; send allow_truncation=false to refuse it)",
         }.get(source, f"accepted via {source}")
 
     @staticmethod
@@ -3864,8 +3874,11 @@ class TrainingLifecycleManager:
         * ``acceptance_source`` -- one of the three ``_PROJECT_API_SHORTFALL_*``
           constants, or ``None`` when no opt-in was sent from this side. ``None``
           is not "clean": ``_build_dataset_shortfall`` then records the PRODUCER
-          as the authority, because juniper-data ORs the request with ITS
-          deployment's opt-in and a client cannot refuse that.
+          as the authority, because juniper-data applies ITS deployment's opt-in
+          to a request that expresses no stance. (Before juniper-data
+          APD-DATA-052 this read "and a client cannot refuse that" -- an explicit
+          ``false`` now does refuse, so ``None`` here means no stance was sent,
+          not that none could be.)
         * ``wire_stance`` -- whether an opt-in actually went on the wire. The
           setting alone is the wrong witness (a caller-supplied value wins over
           it), and ``_describe_dataset_fetch_failure`` keys its remedy off this.
@@ -3894,10 +3907,16 @@ class TrainingLifecycleManager:
 
         # What actually went on the wire, and who put it there. The setting alone
         # is the wrong witness on both sides of this: a caller-supplied value wins
-        # over it (above), and the producer applies its OWN deployment opt-in on
-        # top of whatever arrives. So "did this run accept a partial dataset" is
-        # answered by the request that was sent, and "who accepted it" needs a
-        # third value for the case where nobody on this side did.
+        # over it (above), and the producer applies its OWN deployment opt-in to a
+        # request that expresses no stance. So "did this run accept a partial
+        # dataset" is answered by the request that was sent, and "who accepted it"
+        # needs a third value for the case where nobody on this side did.
+        #
+        # Since juniper-data APD-DATA-052 the producer applies its default only
+        # when the request omits the flag or sends null -- it no longer ORs on top
+        # of an explicit ``false``. That makes the `caller_refused` remedy below
+        # honest end to end: it was a cross-repo falsehood before, because the
+        # producer overrode the refusal it was reporting.
         wire_stance = bool(TrainingLifecycleManager._as_bool_stance(params.get("allow_truncation")))
         if caller_stance is not None:
             acceptance_source = _PROJECT_API_SHORTFALL_ACCEPTED_BY_REQUEST if caller_stance else None
