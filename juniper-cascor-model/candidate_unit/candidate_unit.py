@@ -191,12 +191,12 @@ class CandidateUnit:
         # Initialize candidate index for unique seeding
         candidate_index = CandidateUnit__candidate_index if CandidateUnit__candidate_index is not None else 0
         self.candidate_index = self._coerce_int_like(candidate_index, "CandidateUnit__candidate_index")
-        self.logger.verbose(f"CandidateUnit: __init__: Candidate index: {self.candidate_index}")
+        self.logger.verbose("CandidateUnit: __init__: Candidate index: %s", self.candidate_index)
 
         # Initialize CandidateUnit class attributes for randomness
         random_seed = CandidateUnit__random_seed if CandidateUnit__random_seed is not None else _CANDIDATE_UNIT_RANDOM_SEED
         self.random_seed = self._coerce_int_like(random_seed, "CandidateUnit__random_seed")
-        self.logger.verbose(f"CandidateUnit: __init__: Random seed: {self.random_seed}")
+        self.logger.verbose("CandidateUnit: __init__: Random seed: %s", self.random_seed)
         random_max_value = CandidateUnit__random_max_value if CandidateUnit__random_max_value is not None else _CANDIDATE_UNIT_RANDOM_MAX_VALUE
         self.random_max_value = self._coerce_int_like(random_max_value, "CandidateUnit__random_max_value")
         self.logger.verbose(f"CandidateUnit: __init__: Random max value: {self.random_max_value}")
@@ -210,19 +210,19 @@ class CandidateUnit:
         # Initialize CandidateUnit class attributes with Input size, Output Size and Activation Function
         self.logger.trace("CandidateUnit: __init__: Initializing CandidateUnit class attributes with input parameters.")
         self.input_size = CandidateUnit__input_size
-        self.logger.verbose(f"CandidateUnit: __init__: Input size: {self.input_size}")
+        self.logger.verbose("CandidateUnit: __init__: Input size: %s", self.input_size)
         self.output_size = CandidateUnit__output_size
-        self.logger.verbose(f"CandidateUnit: __init__: Output size: {self.output_size}")
+        self.logger.verbose("CandidateUnit: __init__: Output size: %s", self.output_size)
 
         # Cache activation function wrapper to avoid recreating on every forward pass (P2 optimization)
         self.activation_fn = self._init_activation_with_derivative(CandidateUnit__activation_function)
         self.activation_fn_base = self.activation_fn.activation_fn
-        self.logger.verbose(f"CandidateUnit: __init__: Base Activation function: {self.activation_fn_base}")
+        self.logger.verbose("CandidateUnit: __init__: Base Activation function: %s", self.activation_fn_base)
         self.logger.debug("CandidateUnit: __init__: Cached activation function wrapper")
 
         # Initialize CandidateUnit class attributes for training epochs
         self.epochs = CandidateUnit__epochs
-        self.logger.verbose(f"CandidateUnit: __init__: Epochs: {self.epochs}")
+        self.logger.verbose("CandidateUnit: __init__: Epochs: %s", self.epochs)
         self.epochs_max = CandidateUnit__epochs_max
         self.logger.verbose(f"CandidateUnit: __init__: Max epochs: {self.epochs_max}")
 
@@ -230,13 +230,13 @@ class CandidateUnit:
         self.learning_rate = CandidateUnit__learning_rate
         self.logger.verbose(f"CandidateUnit: __init__: Learning rate: {self.learning_rate}")
         self.random_value_scale = CandidateUnit__random_value_scale
-        self.logger.verbose(f"CandidateUnit: __init__: Random value scale: {self.random_value_scale}")
+        self.logger.verbose("CandidateUnit: __init__: Random value scale: %s", self.random_value_scale)
 
         # Initialize CandidateUnit class attributes for early stopping and patience
         self.early_stopping = CandidateUnit__early_stopping
-        self.logger.verbose(f"CandidateUnit: __init__: Early stopping: {self.early_stopping}")
+        self.logger.verbose("CandidateUnit: __init__: Early stopping: %s", self.early_stopping)
         self.patience = CandidateUnit__patience
-        self.logger.verbose(f"CandidateUnit: __init__: Patience: {self.patience}")
+        self.logger.verbose("CandidateUnit: __init__: Patience: %s", self.patience)
         self.convergence_threshold = CandidateUnit__convergence_threshold
         self.logger.verbose(f"CandidateUnit: __init__: Convergence threshold: {self.convergence_threshold}")
 
@@ -257,19 +257,19 @@ class CandidateUnit:
 
         # Initialize candidate unit UUID
         self.set_uuid(CandidateUnit__uuid)
-        self.logger.verbose(f"CandidateUnit: __init__: UUID: {self.uuid}")
+        self.logger.verbose("CandidateUnit: __init__: UUID: %s", self.uuid)
 
         # Initialize CandidateUnit class attributes for display frequency and status frequency
         self.display_frequency = CandidateUnit__display_frequency
-        self.logger.verbose(f"CandidateUnit: __init__: Display frequency: {self.display_frequency}")
+        self.logger.verbose("CandidateUnit: __init__: Display frequency: %s", self.display_frequency)
         self.status_frequency = CandidateUnit__status_frequency
-        self.logger.verbose(f"CandidateUnit: __init__: Status frequency: {self.status_frequency}")
+        self.logger.verbose("CandidateUnit: __init__: Status frequency: %s", self.status_frequency)
 
         # Initialize display progress frequency checker with candidate unit display frequency
         self._candidate_display_progress = self._init_display_progress(display_frequency=self.display_frequency)
-        self.logger.verbose(f"CandidateUnit: __init__: Candidate display progress function initialized with display frequency: {self.display_frequency}, _candidate_display_progress = {self._candidate_display_progress}")
+        self.logger.verbose("CandidateUnit: __init__: Candidate display progress function initialized with display frequency: %s, _candidate_display_progress = %s", self.display_frequency, self._candidate_display_progress)
         self._candidate_display_status = self._init_display_status(display_status=self.status_frequency)
-        self.logger.verbose(f"CandidateUnit: __init__: Candidate display status function initialized with status frequency: {self.status_frequency}, _candidate_display_status = {self._candidate_display_status}")
+        self.logger.verbose("CandidateUnit: __init__: Candidate display status function initialized with status frequency: %s, _candidate_display_status = %s", self.status_frequency, self._candidate_display_status)
 
         self.logger.debug("CandidateUnit: __init__: Completed initialization of Candidate Unit")
         self.logger.trace("CandidateUnit: __init__: Completed the __init__ method for the Candidate Unit")
@@ -328,7 +328,7 @@ class CandidateUnit:
         """
         self.logger.trace("CandidateUnit: _initialize_randomness: Initializing randomness for the candidate unit")
         seed = self._coerce_int_like(seed or _CANDIDATE_UNIT_RANDOM_SEED, "seed")
-        self.logger.verbose(f"CandidateUnit: _initialize_randomness: Random seed set to: {seed}")
+        self.logger.verbose("CandidateUnit: _initialize_randomness: Random seed set to: %s", seed)
         # max_value = max_value or _CANDIDATE_UNIT_RANDOM_MAX_VALUE
         # max_value = 10000
         max_value = self._coerce_int_like(max_value or _PROJECT_MODEL_CANDIDATE_RANDOM_MAX_VALUE, "max_value")  # Using a small max value to limit the number of random calls needed to roll to the desired sequence
@@ -381,7 +381,7 @@ class CandidateUnit:
         # random_sequence = generator(0, max_value)
         # trunk-ignore(bandit/B311)
         random_sequence = random.randint(0, max_value)
-        self.logger.verbose(f"CandidateUnit: _seed_random_generator: Random sequence number rolled to: {random_sequence}")
+        self.logger.verbose("CandidateUnit: _seed_random_generator: Random sequence number rolled to: %s", random_sequence)
         self._roll_sequence_number(sequence=random_sequence, max_value=max_value, generator=generator)
         self.logger.trace("CandidateUnit: _seed_random_generator: Completed initialization of random generator with seed and sequence for the candidate unit")
 
@@ -409,10 +409,10 @@ class CandidateUnit:
             roll_count = min(sequence, MAX_ROLL_COUNT) if sequence else 0
             for _ in range(roll_count):
                 generator(0, max_value)
-            self.logger.verbose(f"CandidateUnit: _roll_sequence_number: Discarded {roll_count} random values to roll to the desired sequence.")
+            self.logger.verbose("CandidateUnit: _roll_sequence_number: Discarded %s random values to roll to the desired sequence.", roll_count)
             if sequence and sequence > MAX_ROLL_COUNT:
-                self.logger.warning(f"CandidateUnit: _roll_sequence_number: Sequence {sequence} exceeded MAX_ROLL_COUNT {MAX_ROLL_COUNT}, capped at {MAX_ROLL_COUNT}")
-            self.logger.verbose(f"CandidateUnit: _roll_sequence_number: Random Generator rolled for sequence number: {sequence}")
+                self.logger.warning("CandidateUnit: _roll_sequence_number: Sequence %s exceeded MAX_ROLL_COUNT %s, capped at %s", sequence, MAX_ROLL_COUNT, MAX_ROLL_COUNT)
+            self.logger.verbose("CandidateUnit: _roll_sequence_number: Random Generator rolled for sequence number: %s", sequence)
         self.logger.trace("CandidateUnit: _roll_sequence_number: Completed rolling of sequence number.")
 
     def _seed_hash(self, seed: int = None) -> None:
@@ -440,7 +440,7 @@ class CandidateUnit:
         # Validate the activation function
         self.logger.trace("CandidateUnit: _init_activation_with_derivative: Validating activation function")
         activation_fn = (activation_fn, _CANDIDATE_UNIT_ACTIVATION_FUNCTION)[activation_fn is None]
-        self.logger.debug(f"CandidateUnit: _init_activation_with_derivative: Using activation function: {activation_fn}")
+        self.logger.debug("CandidateUnit: _init_activation_with_derivative: Using activation function: %s", activation_fn)
 
         # CASCOR-P1-003: Use picklable ActivationWithDerivative class instead of local function
         # OLD: Local function - NOT picklable for multiprocessing!
@@ -492,7 +492,7 @@ class CandidateUnit:
         # Add shape guard for 1-D inputs
         if x.dim() == 1:
             x = x.unsqueeze(0)
-            self.logger.trace(f"CandidateUnit: forward: Reshaped 1-D input to 2-D: {x.shape}")
+            self.logger.trace("CandidateUnit: forward: Reshaped 1-D input to 2-D: %s", x.shape)
 
         self.logger.trace("CandidateUnit: forward: Calculating output using weights and bias")
         output = self.activation_fn(torch.sum(x * self.weights, dim=1) + self.bias)
@@ -581,16 +581,16 @@ class CandidateUnit:
 
         # Initialize display progress frequency checker with candidate unit display frequency
         self._candidate_display_progress = self._init_display_progress(display_frequency=self.display_frequency)
-        self.logger.verbose(f"CandidateUnit: train: Candidate display progress function initialized with display frequency: {self.display_frequency}, _candidate_display_progress = {self._candidate_display_progress}")
+        self.logger.verbose("CandidateUnit: train: Candidate display progress function initialized with display frequency: %s, _candidate_display_progress = %s", self.display_frequency, self._candidate_display_progress)
         self._candidate_display_status = self._init_display_status(display_status=self.status_frequency)
-        self.logger.verbose(f"CandidateUnit: train: Candidate display status function initialized with status frequency: {self.status_frequency}, _candidate_display_status = {self._candidate_display_status}")
+        self.logger.verbose("CandidateUnit: train: Candidate display status function initialized with status frequency: %s, _candidate_display_status = %s", self.status_frequency, self._candidate_display_status)
 
         # Initialize early stopping tracking variables
         best_correlation_so_far = 0.0
         epochs_without_improvement = 0
         early_stopped = False
         actual_epochs_completed = 0
-        self.logger.debug(f"CandidateUnit: train: Early stopping enabled: {self.early_stopping}, Patience: {self.patience}")
+        self.logger.debug("CandidateUnit: train: Early stopping enabled: %s, Patience: %s", self.early_stopping, self.patience)
 
         # Log constant metadata once before the loop (CR-062: hoist invariant values)
         _log_debug = self.logger.isEnabledFor(level=Logger.DEBUG)
@@ -641,7 +641,7 @@ class CandidateUnit:
                     self.logger.debug(f"CandidateUnit: train: Improved correlation to {best_correlation_so_far:.6f}, resetting patience counter")
                 else:
                     epochs_without_improvement += 1
-                    self.logger.debug(f"CandidateUnit: train: No improvement, patience counter: {epochs_without_improvement}/{self.patience}")
+                    self.logger.debug("CandidateUnit: train: No improvement, patience counter: %s/%s", epochs_without_improvement, self.patience)
 
                 if epochs_without_improvement >= self.patience:
                     self.logger.info(f"CandidateUnit: train: Early stopping at epoch {epoch + 1} - no improvement for {self.patience} epochs")
@@ -672,7 +672,7 @@ class CandidateUnit:
         # Generate final output after training
         self.logger.trace("CandidateUnit: train: Calculating the final correlation after training")
         output = self.forward(x)
-        self.logger.debug(f"CandidateUnit: train: Output Shape: {output.shape}, For Final Epoch")
+        self.logger.debug("CandidateUnit: train: Output Shape: %s, For Final Epoch", output.shape)
 
         # Calculate final correlation
         self.logger.trace("CandidateUnit: train: Calculating the final correlation after training, For Final Epoch.")
@@ -681,7 +681,7 @@ class CandidateUnit:
 
         # Save actual epochs completed (account for early stopping)
         candidate_training_result.epochs_completed = actual_epochs_completed
-        self.logger.debug(f"CandidateUnit: train: Completed epochs: {candidate_training_result.epochs_completed}, Early stopped: {early_stopped}, For Final Epoch.")
+        self.logger.debug("CandidateUnit: train: Completed epochs: %s, Early stopped: %s, For Final Epoch.", candidate_training_result.epochs_completed, early_stopped)
 
         # Extract the best correlation value and update instance variable
         if candidate_training_result and candidate_training_result.success and candidate_training_result.correlation != 0.0:
@@ -805,7 +805,7 @@ class CandidateUnit:
 
         # Find the best correlation by maximum absolute value
         best_idx = int(np.argmax(np.abs(np.array(correlations)))) if correlations else -1
-        self.logger.debug(f"CandidateUnit: _get_correlations: Best correlation index: {best_idx}")
+        self.logger.debug("CandidateUnit: _get_correlations: Best correlation index: %s", best_idx)
 
         # Get the best correlation data
         if best_idx >= 0:
@@ -934,7 +934,7 @@ class CandidateUnit:
 
         # Log the calculated absolute value of the correlation
         self.logger.debug(f"CandidateUnit: _get_correlation_abs_value: Correlation: {correlation}, Correlation absolute value: {correlation_abs}")
-        self.logger.trace(f"CandidateUnit: _get_correlation_abs_value: Returning absolute value of correlation: {correlation_abs}")
+        self.logger.trace("CandidateUnit: _get_correlation_abs_value: Returning absolute value of correlation: %s", correlation_abs)
         self.logger.trace("CandidateUnit: _get_correlation_abs_value: Completed the _get_correlation_abs_value method")
 
         # Return the absolute value of the correlation
@@ -990,7 +990,7 @@ class CandidateUnit:
             denominator: Normalization factor (product of standard deviations)
         """
         self.logger.trace("CandidateUnit: _calculate_correlation: Starting minibatch correlation calculation")
-        self.logger.debug(f"CandidateUnit: _calculate_correlation: Output shape: {output.shape}, Residual error shape: {residual_error.shape}")
+        self.logger.debug("CandidateUnit: _calculate_correlation: Output shape: %s, Residual error shape: %s", output.shape, residual_error.shape)
 
         # Validate the parameters for correlation calculation
         self._validate_correlation_params(output=output, residual_error=residual_error)
@@ -1086,7 +1086,7 @@ class CandidateUnit:
         if candidate_parameters_update.residual_error.dim() > 1 and candidate_parameters_update.residual_error.shape[1] > 1:
             # Multi-output: slice to the best output index
             if candidate_parameters_update.best_corr_idx >= 0:
-                self.logger.debug(f"CandidateUnit: _update_weights_and_bias: Multi-output detected, using error slice at index {candidate_parameters_update.best_corr_idx}")
+                self.logger.debug("CandidateUnit: _update_weights_and_bias: Multi-output detected, using error slice at index %s", candidate_parameters_update.best_corr_idx)
                 error_slice = candidate_parameters_update.residual_error[:, candidate_parameters_update.best_corr_idx]
             else:
                 self.logger.warning("CandidateUnit: _update_weights_and_bias: Invalid best_corr_idx, using first error column")
@@ -1174,7 +1174,7 @@ class CandidateUnit:
             raise TypeError("CandidateUnit: _validate_correlation_params: Output and residual error must be torch.Tensor types.")
 
         # Check if output and residual error have compatible shapes
-        self.logger.debug(f"CandidateUnit: _validate_correlation_params: Output shape: {output.shape}, Residual error shape: {residual_error.shape}")
+        self.logger.debug("CandidateUnit: _validate_correlation_params: Output shape: %s, Residual error shape: %s", output.shape, residual_error.shape)
         self.logger.trace("CandidateUnit: _validate_correlation_params: Validating output and residual error shapes")
         if output.shape[0] != residual_error.shape[0]:
             raise ValueError("CandidateUnit: _validate_correlation_params: Output and residual error must have the same batch size.")
@@ -1186,18 +1186,18 @@ class CandidateUnit:
             raise ValueError("CandidateUnit: _validate_correlation_params: Output and residual error must have at least one dimension.")
 
         # Ensure that output and residual error have compatible dimensions
-        self.logger.debug(f"CandidateUnit: _validate_correlation_params: Output shape: {output.shape}, Residual error shape: {residual_error.shape}")
+        self.logger.debug("CandidateUnit: _validate_correlation_params: Output shape: %s, Residual error shape: %s", output.shape, residual_error.shape)
         self.logger.trace("CandidateUnit: _validate_correlation_params: Validating output and residual error dimensions for multi-output networks")
         if len(output.shape) > 2 or len(residual_error.shape) > 2:
             raise ValueError("CandidateUnit: _validate_correlation_params: Output and residual error must have at most two dimensions.")
 
         # Ensure that output and residual error have the same number of features if residual_error has more than one dimension
-        self.logger.debug(f"CandidateUnit: _validate_correlation_params: Output shape: {output.shape}, Residual error shape: {residual_error.shape}")
+        self.logger.debug("CandidateUnit: _validate_correlation_params: Output shape: %s, Residual error shape: %s", output.shape, residual_error.shape)
         self.logger.trace("CandidateUnit: _validate_correlation_params: Validating output and residual error features for multi-output networks")
         self.logger.verbose(f"CandidateUnit: _validate_correlation_params: Residual Error: Shape: {residual_error.shape}, Shape Length: {len(residual_error.shape)}, Type: {type(residual_error)}, Dimensions: {residual_error.dim()}, Dtype: {residual_error.dtype}")
         dimensions = residual_error.dim() if hasattr(residual_error, "dim") else len(residual_error.shape)
         index = dimensions - 1 if dimensions > 1 else 0
-        self.logger.debug(f"CandidateUnit: _validate_correlation_params: Checking if output and residual error have the same number of features at Index {index}, Dimensions: {dimensions}")
+        self.logger.debug("CandidateUnit: _validate_correlation_params: Checking if output and residual error have the same number of features at Index %s, Dimensions: %s", index, dimensions)
         if output.shape[index] != residual_error.shape[index] and dimensions > 1:
             raise ValueError("CandidateUnit: _validate_correlation_params: Output and residual error must have the same number of features if residual_error has more than one dimension.")
 
@@ -1220,7 +1220,7 @@ class CandidateUnit:
         """
         self.logger.trace("CandidateUnit: _generate_uuid: Inside the CandidateUnit class Generate UUID method")
         new_uuid = str(uuid.uuid4())
-        self.logger.debug(f"CandidateUnit: _generate_uuid: UUID: {new_uuid}")
+        self.logger.debug("CandidateUnit: _generate_uuid: UUID: %s", new_uuid)
         self.logger.trace("CandidateUnit: _generate_uuid: Completed the CandidateUnit class Generate UUID method")
         return new_uuid
 
@@ -1237,7 +1237,7 @@ class CandidateUnit:
         """
         self.logger.trace("CandidateUnit: _init_display_progress: Inside the CandidateUnit class Initialize Display Progress method")
         candidate_display_progress = display_progress(display_frequency=display_frequency)
-        self.logger.debug(f"CandidateUnit: _init_display_progress: Display frequency set to: {display_frequency}, Candidate Display Progress: {candidate_display_progress}")
+        self.logger.debug("CandidateUnit: _init_display_progress: Display frequency set to: %s, Candidate Display Progress: %s", display_frequency, candidate_display_progress)
         self.logger.trace("CandidateUnit: _init_display_progress: Completed the CandidateUnit class Initialize Display Progress method")
         return candidate_display_progress
 
@@ -1254,7 +1254,7 @@ class CandidateUnit:
         """
         self.logger.trace("CandidateUnit: _init_display_status: Inside the CandidateUnit class Initialize Display Status method")
         candidate_display_status = display_progress(display_frequency=display_status)
-        self.logger.debug(f"CandidateUnit: _init_display_status: Candidate Display Status: {candidate_display_status}")
+        self.logger.debug("CandidateUnit: _init_display_status: Candidate Display Status: %s", candidate_display_status)
         self.logger.trace("CandidateUnit: _init_display_status: Completed the CandidateUnit class Initialize Display Status method")
         return candidate_display_status
 
@@ -1404,9 +1404,9 @@ class CandidateUnit:
         if not hasattr(self, "uuid") or self.uuid is None:
             self.uuid = (uuid, self._generate_uuid())[uuid is None]  # Generate a new UUID if none is provided
         else:
-            self.logger.fatal(f"CandidateUnit: set_uuid: Fatal Error: UUID already set: {self.uuid}. Changing UUID is bad Juju.  Exiting...")
+            self.logger.fatal("CandidateUnit: set_uuid: Fatal Error: UUID already set: %s. Changing UUID is bad Juju.  Exiting...", self.uuid)
             sys.exit(1)
-        self.logger.debug(f"CandidateUnit: set_uuid: UUID set to: {self.uuid}")
+        self.logger.debug("CandidateUnit: set_uuid: UUID set to: %s", self.uuid)
         self.logger.trace("CandidateUnit: set_uuid: Completed setting UUID for CandidateUnit class")
 
     ####################################################################################################################################
@@ -1424,7 +1424,7 @@ class CandidateUnit:
         if not hasattr(self, "uuid") or self.uuid is None:
             self.set_uuid()  # Ensure UUID is set if not already
             self.logger.trace("CandidateUnit: get_uuid: UUID was not set, generated a new one.")
-        self.logger.debug(f"CandidateUnit: get_uuid: Returning UUID: {self.uuid}")
+        self.logger.debug("CandidateUnit: get_uuid: Returning UUID: %s", self.uuid)
         self.logger.trace("CandidateUnit: get_uuid: Completed getting UUID for CandidateUnit class")
         return self.uuid
 

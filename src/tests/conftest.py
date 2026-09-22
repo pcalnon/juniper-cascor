@@ -777,6 +777,27 @@ class _NoOpLogger:
 
     level = 30  # WARNING
 
+    @staticmethod
+    def _fmt(msg, args):
+        """Interpolate %-args the way the real Logger does at ``logger.py`` (``message % args``).
+
+        P6.4 (cascor#573) converts hot-path call sites from f-strings to %-args. This stub used to
+        print ``msg`` alone and discard ``*a``, which was harmless while every call site was an
+        f-string and silently wrong the moment one was converted: the test log then showed the raw
+        template, e.g. ``Failed to send sentinel %s: %s``. That is a stub that stops tracking the
+        thing it stands in for -- it cannot fail a test, it just quietly degrades every WARNING and
+        above into an unreadable one.
+
+        Never raises: a bad template must not turn a logging call into a test failure, which is the
+        same contract the real logger keeps.
+        """
+        if not args:
+            return msg
+        try:
+            return msg % args
+        except (TypeError, ValueError):
+            return f"{msg} {args!r}"
+
     def trace(self, *a, **kw):
         pass
 
@@ -790,13 +811,13 @@ class _NoOpLogger:
         pass
 
     def warning(self, msg, *a, **kw):
-        print(f"[WARNING] {msg}")
+        print(f"[WARNING] {self._fmt(msg, a)}")
 
     def error(self, msg, *a, **kw):
-        print(f"[ERROR] {msg}")
+        print(f"[ERROR] {self._fmt(msg, a)}")
 
     def critical(self, msg, *a, **kw):
-        print(f"[CRITICAL] {msg}")
+        print(f"[CRITICAL] {self._fmt(msg, a)}")
 
     def fatal(self, msg, *a, **kw):
         print(f"[FATAL] {msg}")
