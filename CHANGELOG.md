@@ -27,6 +27,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   relative. **Comment-only: all 53 pins are unchanged**, verified by diffing the pin lines. Doing it
   here rather than leaving it to the first automated run keeps that run a no-op instead of an
   unreviewed 18-line rewrite.
+- **A broadcast that could not be serialized dropped every `/ws/training` subscriber, silently and
+  without closing a socket (F-CASCOR-004).** Starlette's `send_json` serializes with stdlib
+  `json.dumps` and no `default=`, so a NumPy scalar in a payload raised `TypeError` inside *every*
+  client's send; `_send_json` swallowed it with no log, and `broadcast` called `disconnect()` on each
+  subscriber in turn -- which forgets a socket but never closes it. On 2026-09-08 both canopy relays
+  were dropped 1-3 ms after `ResumeReady -> Started` by a `state` frame carrying the NumPy-typed
+  tunables of F-CASCOR-003, and sat half-open for the rest of the run while the heartbeat pings kept
+  them looking healthy. juniper-cascor#632 removed that trigger; this removes the mechanism.
+  `WebSocketManager` now attributes a failure to what caused it. An **unserializable message is the
+  message's fault**: it is detected once per broadcast, before seq assignment and the fan-out,
+  logged at ERROR (message type, exception, and on Python >= 3.14 the path to the offending value),
+  counted, and skipped -- no subscriber is dropped or closed, no seq is consumed, nothing enters the
+  replay buffer. There is deliberately no coercion: the producer must emit plain Python types.
+  `send_personal_message` refuses such a message the same way and returns `False`. A
+  **per-connection failure** (a send that raises or times out) drops only that subscriber, and now
+  **closes** its socket (code `1011`, errors suppressed) as well as forgetting it, so the peer sees a
+  close and can reconnect. The broadcast waits at most the send timeout for that close; the close
+  itself is shielded and finishes in the background, because cancelling it would abandon the closing
+  handshake part-way (and uvicorn's `websockets` implementation swallows the cancellation once the
+  close frame is written). `_send_json`'s generic failure branch logs a WARNING. The `/ws/training`
+  receive loop stops once the server has closed the socket, so a frame the peer had in flight cannot
+  end the handler with Starlette's `RuntimeError`; its `finally` -> `disconnect()` stays idempotent.
+  New counter: `unserializable_messages_total` on `GET /v1/metrics/transport` and
+  `cascor_ws_unserializable_messages_total{type}` in Prometheus; such a message no longer adds to
+  `send_failures`, which is now per-connection failures only. Tests:
+  `src/tests/unit/api/test_ws_broadcast_fault_isolation.py`; wire check:
+  `util/ad-hoc/2026-09-22_f_cascor_004_live_ws_probe.py`. Ledger: juniper-ml
+  `notes/JUNIPER_2026-08-09_JUNIPER-CANOPY_E2E-VALIDATION-EVIDENCE.md`, entry F-CASCOR-004.
 
 ### Added
 

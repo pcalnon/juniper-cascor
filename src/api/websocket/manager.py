@@ -28,6 +28,13 @@ from fastapi import WebSocket
 
 logger = logging.getLogger("juniper_cascor.api.websocket")
 
+# F-CASCOR-004: the close frame sent to a subscriber that a broadcast drops
+# because a send to it failed or timed out. 1011 matches the heartbeat-timeout
+# close in ``training_stream`` -- the other path on which the server gives up
+# on a connection -- and the reason stays well under RFC 6455's 123-byte limit.
+BROADCAST_DROP_CLOSE_CODE = 1011
+BROADCAST_DROP_CLOSE_REASON = "Broadcast send failed or timed out"
+
 # SEC-F19 / D4b: per-process random key for the identity-cap HMAC (see
 # ``ws_identity_key``). The per-identity WS cap only needs a stable,
 # non-reversible bucket key WITHIN one process run, so a keyed HMAC with an
@@ -161,6 +168,10 @@ class WebSocketManager:
 
         # Send timeout (GAP-WS-07 quick-fix)
         self._send_timeout_seconds = send_timeout_seconds
+        # F-CASCOR-004: closes of dropped subscribers that outlived the bounded
+        # wait in ``_close_dropped_subscriber`` and are finishing in the
+        # background. Held so the loop cannot garbage-collect a pending task.
+        self._pending_closes: Set[asyncio.Future] = set()
 
         # GAP-WS-16: bandwidth counters. Updated under _seq_lock because the
         # send path is invoked from both the asyncio event loop and the
@@ -171,6 +182,13 @@ class WebSocketManager:
         self._messages_sent_by_type: Dict[str, int] = {}
         self._bytes_sent_by_type: Dict[str, int] = {}
         self._send_failures: int = 0
+        # F-CASCOR-004: messages refused before any send because they cannot be
+        # serialized to JSON -- one per skipped message (per broadcast, not per
+        # subscriber). Kept apart from ``_send_failures`` on purpose: that
+        # counter is per-connection delivery failures, this one is a producer
+        # defect, and conflating them is how an unserializable ``state`` frame
+        # came to be handled as a fault of every client.
+        self._unserializable_messages_total: int = 0
 
         # GAP-WS-18: message-size guard + chunking. Broadcasts whose serialized
         # JSON exceeds ``max_message_size_bytes`` are split into a sequence of
@@ -648,6 +666,76 @@ class WebSocketManager:
             return buffered[idx:]
 
     # ------------------------------------------------------------------
+    # Serialization guard (F-CASCOR-004)
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _serialization_error(message: dict) -> Optional[Exception]:
+        """Return the exception that keeps ``message`` off the wire, or ``None``.
+
+        F-CASCOR-004: mirrors what the transport does to a frame. Starlette's
+        ``WebSocket.send_json`` serializes with stdlib
+        ``json.dumps(data, separators=(",", ":"), ensure_ascii=False)`` -- no
+        ``default=`` -- and the ASGI server encodes the text frame as UTF-8. A
+        NumPy scalar (``np.int64``, ``np.bool_``) fails the first step with
+        ``TypeError``; a lone surrogate (an undecodable file name, say) passes
+        it and fails the second with ``UnicodeEncodeError``. Both are
+        properties of the message alone, whichever client it is sent to.
+
+        Deliberately no coercion (no ``default=str``): the producer must emit
+        plain Python types -- the F-CASCOR-003 lesson -- and a sanitizer here
+        would hide that class of bug instead of reporting it.
+        """
+        try:
+            json.dumps(message, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+        except Exception as exc:  # anything raised here is a property of the message
+            return exc
+        return None
+
+    def _refuse_unserializable(self, message: dict, path: str) -> bool:
+        """Log, count and refuse a message that cannot be serialized (F-CASCOR-004).
+
+        Returns ``True`` when the caller must skip ``message``. Called ONCE per
+        broadcast -- before seq assignment, before chunking and before the
+        fan-out -- so the failure is attributed to the message rather than to
+        each client in turn. Nothing is sent, no subscriber is disconnected or
+        closed, and (for a broadcast) no seq is consumed and nothing enters the
+        replay buffer, so a resuming client cannot be replayed a frame that
+        was never deliverable.
+
+        Before this guard the ``TypeError`` surfaced inside every client's
+        ``send_json``; ``_send_json`` swallowed it without a log and
+        ``broadcast`` dropped each subscriber in turn, leaving their sockets
+        open (2026-09-08: both canopy relays forgotten 1-3 ms after
+        ``ResumeReady -> Started``).
+        """
+        exc = self._serialization_error(message)
+        if exc is None:
+            return False
+        msg_type = str(message.get("type") or "unknown")
+        with self._seq_lock:
+            self._unserializable_messages_total += 1
+        # Python >= 3.14's json attaches the path to the offending value as
+        # exception notes ("when serializing dict item 'patience'", innermost
+        # first); on older interpreters there are none and the suffix is empty.
+        notes = "; ".join(getattr(exc, "__notes__", None) or ())
+        logger.error(
+            "WebSocket %s skipped: the %s message cannot be serialized to JSON (%s: %s%s); no subscriber was disconnected -- the producer must emit plain Python types",
+            path,
+            msg_type,
+            type(exc).__name__,
+            exc,
+            f" [{notes}]" if notes else "",
+        )
+        try:
+            from api.observability import ws_inc_unserializable_messages
+
+            ws_inc_unserializable_messages(msg_type)
+        except Exception:
+            logger.debug("ws_inc_unserializable_messages emission failed", exc_info=True)
+        return True
+
+    # ------------------------------------------------------------------
     # Chunking (GAP-WS-18)
     # ------------------------------------------------------------------
 
@@ -671,7 +759,9 @@ class WebSocketManager:
         try:
             serialized = json.dumps(message, default=str)
         except (TypeError, ValueError):
-            # If we can't serialize for sizing, let _send_json handle the error.
+            # Unreachable from broadcast() / send_personal_message(), which
+            # refuse an unserializable message before chunking (F-CASCOR-004);
+            # a direct caller still gets its message back unchunked.
             return [message]
         if len(serialized) <= self._max_message_size_bytes:
             return [message]
@@ -716,8 +806,21 @@ class WebSocketManager:
 
         GAP-WS-18: oversized messages are split into chunked_message envelopes
         before seq assignment so each chunk gets its own seq and replay slot.
+
+        F-CASCOR-004 -- a failure is attributed to whatever caused it:
+
+        * A message that cannot be serialized is a fault of the MESSAGE. It is
+          detected once, before seq assignment and the fan-out, then logged at
+          ERROR, counted and skipped (:meth:`_refuse_unserializable`); every
+          subscriber stays connected.
+        * A send that raises or times out is a fault of THAT connection. Only
+          that subscriber is dropped, and it is closed as well as forgotten
+          (:meth:`_close_dropped_subscriber`) so the peer sees a close and can
+          reconnect instead of holding a socket the manager no longer serves.
         """
         if not self._active_connections:
+            return
+        if self._refuse_unserializable(message, "broadcast"):
             return
         for sub_message in self._maybe_chunk_message(message):
             enriched = self._assign_seq_and_buffer(sub_message)
@@ -725,8 +828,55 @@ class WebSocketManager:
             for ws in self._active_connections.copy():
                 if not await self._send_json(ws, enriched):
                     disconnected.append(ws)
+            # F-CASCOR-004: forget every failed subscriber before closing any,
+            # so a concurrent broadcast stops targeting them while the (bounded)
+            # closes run.
             for ws in disconnected:
                 await self.disconnect(ws)
+            for ws in disconnected:
+                await self._close_dropped_subscriber(ws)
+
+    async def _close_dropped_subscriber(self, websocket: WebSocket) -> None:
+        """Close a subscriber a broadcast has just dropped and forgotten (F-CASCOR-004).
+
+        :meth:`disconnect` only forgets a socket: it never closes it, so the
+        endpoint's receive loop and heartbeat kept the connection open and the
+        peer went on holding a stream nothing was broadcast to -- canopy's
+        relay reported it healthy for as long as the heartbeat pings flowed.
+
+        The close uses :data:`BROADCAST_DROP_CLOSE_CODE`. Errors are
+        suppressed -- the transport may already be gone -- and the wait is
+        bounded by the send timeout, because a peer too slow to take a frame
+        may be too slow to take the close. The bound limits the WAIT, not the
+        close: the close is shielded and finishes in the background under the
+        server's own close timeout. Cancelling it instead would abandon the
+        closing handshake part-way, and the ``websockets`` implementation
+        uvicorn runs swallows a cancellation once the close frame is written,
+        so it would not even bound the wait.
+
+        The endpoint's ``finally`` -> :meth:`disconnect` then runs a second
+        time; that is safe, because the first call popped the connection meta,
+        so the second releases no slot.
+        """
+        try:
+            closing = asyncio.ensure_future(websocket.close(code=BROADCAST_DROP_CLOSE_CODE, reason=BROADCAST_DROP_CLOSE_REASON))
+        except Exception:
+            logger.debug("Could not start the close of a dropped WebSocket subscriber", exc_info=True)
+            return
+        self._pending_closes.add(closing)
+        closing.add_done_callback(self._close_finished)
+        try:
+            await asyncio.wait_for(asyncio.shield(closing), timeout=self._send_timeout_seconds)
+        except asyncio.TimeoutError:
+            logger.debug("Close of a dropped WebSocket subscriber still in flight after %.2fs; finishing in the background", self._send_timeout_seconds)
+        except Exception:
+            logger.debug("Close of a dropped WebSocket subscriber failed", exc_info=True)
+
+    def _close_finished(self, closing: asyncio.Future) -> None:
+        """Done callback for a subscriber close: release it and mark its outcome retrieved."""
+        self._pending_closes.discard(closing)
+        if not closing.cancelled():
+            closing.exception()  # retrieved, so a failed close is never reported as "never retrieved"
 
     def broadcast_from_thread(self, message: dict) -> None:
         """Thread-safe broadcast using asyncio.run_coroutine_threadsafe.
@@ -776,7 +926,14 @@ class WebSocketManager:
         the client (no resume), but no socket teardown.
 
         Returns True only if every chunk was delivered successfully.
+
+        F-CASCOR-004: a message that cannot be serialized is refused before any
+        send -- logged at ERROR and counted exactly as in :meth:`broadcast` --
+        and reported as ``False``, since nothing was delivered. The connection
+        is left alone: the fault is the message's, not this client's.
         """
+        if self._refuse_unserializable(message, "personal send"):
+            return False
         chunks = self._maybe_chunk_message(message)
         for sub_message in chunks:
             if not await self._send_json(websocket, sub_message):
@@ -822,7 +979,13 @@ class WebSocketManager:
             except Exception:
                 logger.debug("ws_inc_broadcast_timeout emission failed", exc_info=True)
             return False
-        except Exception:
+        except Exception as exc:
+            # F-CASCOR-004: this branch used to count the failure and return
+            # with no log at all, so a subscriber dropped for it left no trace
+            # server-side. broadcast() and send_personal_message() refuse an
+            # unserializable message before they get here, so what lands here
+            # is a per-connection failure -- name it, as the timeout arm does.
+            logger.warning("WebSocket send of a %s message failed (%s: %s)", msg_type, type(exc).__name__, exc)
             with self._seq_lock:
                 self._send_failures += 1
             return False
@@ -933,12 +1096,18 @@ class WebSocketManager:
         messages that exceeded the size threshold and were split) and
         ``chunks_emitted_total`` (total chunk envelopes emitted), so we can
         see how often the chunker is firing in production.
+
+        F-CASCOR-004: ``unserializable_messages_total`` counts messages refused
+        before any send because they could not be serialized (one per message,
+        not per subscriber). Such a message no longer adds to
+        ``send_failures``, which is now per-connection delivery failures only.
         """
         with self._seq_lock:
             return {
                 "bytes_sent_total": self._bytes_sent_total,
                 "messages_sent_total": self._messages_sent_total,
                 "send_failures": self._send_failures,
+                "unserializable_messages_total": self._unserializable_messages_total,
                 "messages_sent_by_type": dict(self._messages_sent_by_type),
                 "bytes_sent_by_type": dict(self._bytes_sent_by_type),
                 "uptime_seconds": time.monotonic() - self._server_start_time,

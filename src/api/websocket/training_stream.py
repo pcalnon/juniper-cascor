@@ -37,6 +37,7 @@ import logging
 import time
 
 from fastapi import WebSocket, WebSocketDisconnect
+from fastapi.websockets import WebSocketState
 
 from api.websocket.manager import ReplayOutOfRange, ws_authenticate
 from api.websocket.messages import create_initial_metrics_message, create_state_message
@@ -174,9 +175,19 @@ async def _recv_pong_loop(
     C3 liveness tolerance: EVERY received frame sets ``pong_received`` (before
     parsing) — inbound traffic of any shape proves the peer is alive, so the
     heartbeat loop only reaps genuinely silent peers.
+
+    F-CASCOR-004: the loop also ends once the SERVER has closed the socket —
+    the WS manager closes a subscriber whose broadcast send failed or timed
+    out, and the heartbeat closes a silent one. Starlette then refuses
+    ``receive_text()`` with ``RuntimeError`` rather than
+    ``WebSocketDisconnect``, so a frame the peer had in flight when the close
+    went out would otherwise end the handler with an unhandled exception (an
+    "Exception in ASGI application" traceback) instead of a clean return.
     """
     try:
         while True:
+            if getattr(websocket, "application_state", None) == WebSocketState.DISCONNECTED:
+                return
             raw = await websocket.receive_text()
             # C3: any inbound frame is proof of liveness for the heartbeat loop.
             pong_received.set()
