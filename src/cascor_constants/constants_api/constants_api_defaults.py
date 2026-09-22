@@ -150,9 +150,16 @@ _PROJECT_API_SHORTFALL_REFUSAL_TOKEN: str = "[dataset_shortfall_refused]"
 # Who put the opt-in on the wire when a partial dataset was accepted. Recorded on
 # the ``dataset_shortfall`` annotation as ``acceptance_source`` so the annotation
 # says WHO accepted, not merely that something was. The third value exists
-# because juniper-data ORs the request with ITS OWN deployment opt-in and a
-# client cannot opt out of it: a partial dataset can arrive that nobody on this
-# side asked for, and the annotation must not then claim this run refused it.
+# because juniper-data applies ITS OWN deployment opt-in to a request that
+# expresses no stance: a partial dataset can arrive that nobody on this side
+# asked for, and the annotation must not then claim this run refused it.
+#
+# This comment read "and a client cannot opt out of it" until juniper-data
+# APD-DATA-052 (2026-09-22) made ``allow_truncation`` a tri-state -- ``true`` /
+# ``false`` / ``null``, where only ``null`` or omission defers to the producer.
+# An explicit ``false`` now refuses even against a producer that opted in, so
+# the PRODUCER value still exists and is still reachable, but it means "no
+# stance was sent from this side", not "no stance could be".
 _PROJECT_API_SHORTFALL_ACCEPTED_BY_REQUEST: str = "request_params"
 _PROJECT_API_SHORTFALL_ACCEPTED_BY_DEPLOYMENT: str = "allow_truncated_datasets"
 _PROJECT_API_SHORTFALL_ACCEPTED_BY_PRODUCER: str = "producer"
