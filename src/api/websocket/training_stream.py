@@ -176,17 +176,18 @@ async def _recv_pong_loop(
     parsing) — inbound traffic of any shape proves the peer is alive, so the
     heartbeat loop only reaps genuinely silent peers.
 
-    F-CASCOR-004: the loop also ends once the SERVER has closed the socket —
-    the WS manager closes a subscriber whose broadcast send failed or timed
-    out, and the heartbeat closes a silent one. Starlette then refuses
-    ``receive_text()`` with ``RuntimeError`` rather than
-    ``WebSocketDisconnect``, so a frame the peer had in flight when the close
-    went out would otherwise end the handler with an unhandled exception (an
-    "Exception in ASGI application" traceback) instead of a clean return.
+    F-CASCOR-004: once the SERVER has closed the socket -- the WS manager
+    closes a subscriber whose broadcast send failed or timed out, and the
+    heartbeat closes a silent one -- the loop stops dispatching and drains
+    (:func:`_drain_until_disconnect`). It cannot keep calling
+    ``receive_text()``: after the server's own close Starlette refuses that
+    with ``RuntimeError``, not ``WebSocketDisconnect``, so a frame the peer
+    had in flight would end the handler with an unhandled exception.
     """
     try:
         while True:
             if getattr(websocket, "application_state", None) == WebSocketState.DISCONNECTED:
+                await _drain_until_disconnect(websocket)
                 return
             raw = await websocket.receive_text()
             # C3: any inbound frame is proof of liveness for the heartbeat loop.
@@ -202,6 +203,29 @@ async def _recv_pong_loop(
                 await _handle_subscribe_metrics(websocket, ws_manager, lifecycle, msg, subscribe_metrics_max_count)
     except WebSocketDisconnect:
         pass
+
+
+async def _drain_until_disconnect(websocket: WebSocket) -> None:
+    """After the server has closed the socket, consume frames until the ASGI server reports the disconnect.
+
+    F-CASCOR-004: the handler must not return while the close frame may still
+    be waiting to go out. uvicorn's sans-I/O protocol (its ``ws="auto"``
+    choice at the pinned uvicorn 0.53.0 / websockets 17.1) holds the frame
+    while the write buffer is full, and closes the transport the moment the
+    app returns if no close frame has been written yet -- so a handler that
+    returned on the peer's next frame (an auto-pong, say) would turn a clean
+    ``1011`` into an abnormal ``1006`` on the peer's side. uvicorn reports
+    the disconnect once the frame is written, or once the connection is
+    lost, so this returns exactly when leaving is safe.
+
+    ``receive()`` checks only the peer's side of the connection, so unlike
+    ``receive_text()`` it still works after the server's close. What arrives
+    meanwhile is discarded, not dispatched: the stream is over.
+    """
+    while True:
+        message = await websocket.receive()
+        if message.get("type") == "websocket.disconnect":
+            return
 
 
 async def _handle_subscribe_metrics(

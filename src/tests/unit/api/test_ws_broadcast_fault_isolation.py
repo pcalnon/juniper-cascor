@@ -12,13 +12,16 @@ What is pinned here:
 
 1. An unserializable message is the MESSAGE's fault. It is refused once, before
    seq assignment and fan-out -- logged at ERROR, counted, skipped -- and no
-   subscriber is dropped or closed. ``send_personal_message`` returns ``False``
-   for it rather than a vacuous ``True``.
+   subscriber is dropped or closed. ``send_personal_message`` still returns
+   ``False`` for it, as it did before, but now through the same refusal
+   instead of a silent send failure.
 2. ``_send_json``'s generic failure branch logs a WARNING naming the exception.
 3. A PER-CONNECTION failure (send error or timeout) drops that subscriber AND
    closes its socket -- errors suppressed, the broadcast's wait for the close
-   bounded, the close itself left to finish rather than cancelled -- while the
-   endpoint's receive loop and ``finally`` -> ``disconnect()`` stay idempotent.
+   bounded, the close itself left to finish rather than cancelled, and a close
+   that fails after the wait not reported as an asyncio error -- while the
+   endpoint's receive loop drains until the server reports the disconnect and
+   its ``finally`` -> ``disconnect()`` stays idempotent.
 
 The clients are REAL ``starlette.websockets.WebSocket`` objects over an
 in-memory ASGI transport (:class:`_AsgiPeer`) that, like the server, encodes
@@ -26,12 +29,14 @@ each text frame as UTF-8. An ``AsyncMock`` cannot reproduce the defect: its
 ``send_json`` serializes nothing, whereas Starlette's runs stdlib
 ``json.dumps`` with no ``default=`` and raises ``TypeError`` on ``np.int64``.
 What this does NOT exercise is a real server: uvicorn's close handshake,
-its timeouts and the wire are outside these tests.
+its timeouts and the wire are outside these tests (see
+``util/ad-hoc/2026-09-22_f_cascor_004_live_ws_probe.py`` for those).
 """
 
 import asyncio
 import contextlib
 import json
+import logging
 import time
 from types import SimpleNamespace
 from typing import Callable, List, Optional
@@ -67,6 +72,7 @@ class _AsgiPeer:
         self.fail_sends_with: Optional[BaseException] = None  # every data frame raises this
         self.stall_sends = False  # a data frame blocks until release(): a peer that stopped reading
         self.stall_closes = False  # ...and so does the close frame
+        self.fail_close_with: Optional[BaseException] = None  # the close raises this (after any stall): the peer is gone
         self.frames_after_close: List[str] = []  # frames the peer had in flight when the close went out
         self._drained = asyncio.Event()
         self._inbox: asyncio.Queue = asyncio.Queue()
@@ -90,15 +96,28 @@ class _AsgiPeer:
             self.close_attempts.append(message)
             if self.stall_closes:
                 await self._drained.wait()
+            if self.fail_close_with is not None:
+                # The connection is lost: the server tells the app, and the close raises.
+                self._inbox.put_nowait({"type": "websocket.disconnect", "code": 1006})
+                raise self.fail_close_with
             for text in self.frames_after_close:
                 self._inbox.put_nowait({"type": "websocket.receive", "text": text})
-            # What the ASGI server hands the app once the closing handshake completes.
+            # What the ASGI server hands the app once the close frame is written.
             self._inbox.put_nowait({"type": "websocket.disconnect", "code": message["code"]})
         self.sent.append(message)
 
     def hang_up(self) -> None:
         """The peer disconnects on its own."""
         self._inbox.put_nowait({"type": "websocket.disconnect", "code": 1000})
+
+    def peer_sends(self, text: str) -> None:
+        """The peer sends a text frame, whatever the server is doing."""
+        self._inbox.put_nowait({"type": "websocket.receive", "text": text})
+
+    @property
+    def inbox_empty(self) -> bool:
+        """Every frame the peer sent has been read by the server."""
+        return self._inbox.empty()
 
     def release(self) -> None:
         """The stalled peer starts reading again: every blocked frame completes."""
@@ -429,6 +448,68 @@ class TestPerConnectionFailureClosesTheSocket:
         await _until(lambda: not mgr._pending_closes)
 
     @pytest.mark.asyncio
+    async def test_a_close_that_fails_after_the_wait_is_not_reported_as_an_asyncio_error(self, caplog):
+        """A slow subscriber is dropped, then its peer resets before the backlog drains: that is no ERROR.
+
+        Written as ``wait_for(shield(close))``, the timed-out wait made Python
+        >= 3.14 attach a logger to the shielded close, so its later failure
+        was reported through the loop's exception handler -- "WebSocketDisconnect
+        exception in shielded future", at ERROR, with a traceback -- although
+        ``_close_finished`` retrieves the exception. 3.12 and 3.13 have no such
+        logger, so there this passes either way; the 3.14 CI leg is the guard.
+
+        The loop's exception handler is the primary instrument: it sees the
+        report even when logging is configured to drop it, which would make a
+        caplog-only assertion pass vacuously.
+        """
+        loop = asyncio.get_running_loop()
+        reported: List[dict] = []
+        previous_handler = loop.get_exception_handler()
+
+        def _record(event_loop, context):
+            reported.append(context)
+            event_loop.default_exception_handler(context)
+
+        loop.set_exception_handler(_record)
+        try:
+            with caplog.at_level(logging.DEBUG, logger="asyncio"):
+                mgr = WebSocketManager(send_timeout_seconds=0.05)
+                wedged, good = await _connected_pair(mgr)
+                wedged.stall_sends = True
+                wedged.stall_closes = True
+                wedged.fail_close_with = ConnectionResetError("peer reset before the backlog drained")
+
+                await asyncio.wait_for(mgr.broadcast({"type": "metrics", "data": {"epoch": 1}}), timeout=5.0)
+                assert len(wedged.close_attempts) == 1 and wedged.close_codes == []  # still in flight at the bound
+
+                wedged.release()  # ...and now it fails
+                await _until(lambda: not mgr._pending_closes)
+                for _ in range(3):
+                    await asyncio.sleep(0)  # let every done-callback of the failed close run
+        finally:
+            loop.set_exception_handler(previous_handler)
+
+        assert reported == []
+        assert [record.getMessage() for record in caplog.records if record.name == "asyncio" and record.levelno >= logging.ERROR] == []
+        assert good.frames[-1]["type"] == "metrics"
+
+    @pytest.mark.asyncio
+    async def test_a_close_cancelled_at_shutdown_is_released_quietly(self):
+        """At shutdown the loop cancels a close still in flight; its done callback must not raise.
+
+        ``exception()`` on a cancelled future raises ``CancelledError``, which a
+        done callback would surface as an "Exception in callback" error.
+        """
+        mgr = WebSocketManager()
+        closing = asyncio.get_running_loop().create_future()
+        mgr._pending_closes.add(closing)
+        closing.cancel()
+
+        mgr._close_finished(closing)
+
+        assert mgr._pending_closes == set()
+
+    @pytest.mark.asyncio
     async def test_every_failed_subscriber_is_forgotten_before_any_close(self):
         """While the first close is in flight, no failed subscriber is still a broadcast target."""
         mgr = WebSocketManager(send_timeout_seconds=2.0)
@@ -520,6 +601,50 @@ class TestTrainingStreamHandlerAfterADrop:
         good.hang_up()
         await asyncio.wait_for(tasks[1], timeout=5.0)
         assert mgr.connection_count == 0 and mgr._global_ws_count == 0 and mgr._per_ip_counts == {}
+
+    @pytest.mark.asyncio
+    async def test_handler_drains_until_the_server_reports_the_disconnect(self):
+        """While the server's close is still waiting to go out, the handler must not return.
+
+        uvicorn's sans-I/O protocol (its ``ws="auto"`` choice at the pinned
+        uvicorn 0.53.0 / websockets 17.1) holds a close frame while its write
+        buffer is full, and closes the transport as soon as the app returns if
+        no close frame has been written. A handler that returned on the peer's
+        next frame -- here a pong that was in flight -- would cost the peer its
+        1011 close frame: it would see an abnormal 1006 instead. The fake plays
+        that server: the close stays pending until ``release()``, and only then
+        is the disconnect reported.
+        """
+        mgr = WebSocketManager(send_timeout_seconds=0.05)
+        app = _handler_app(mgr)
+        slow, good = _AsgiPeer("10.0.0.1", app=app), _AsgiPeer("10.0.0.2", app=app)
+        tasks = [asyncio.create_task(training_stream_handler(peer.websocket)) for peer in (slow, good)]
+        await _until(lambda: mgr.connection_count == 2)
+        slow.stall_sends = True
+        slow.stall_closes = True
+
+        await asyncio.wait_for(mgr.broadcast({"type": "metrics", "data": {"epoch": 1}}), timeout=5.0)
+        assert len(slow.close_attempts) == 1 and slow.close_codes == []  # the close is waiting to go out
+
+        slow.peer_sends('{"type":"pong"}')
+        await _until(lambda: slow.inbox_empty)  # the handler has read the pong...
+        await asyncio.sleep(0.05)  # ...and a handler about to return has had ample time to
+        assert not tasks[0].done()
+
+        slow.peer_sends('{"type":"pong"}')  # a frame that arrives mid-drain is consumed, and does not end it either
+        await _until(lambda: slow.inbox_empty)
+        await asyncio.sleep(0.05)
+        assert not tasks[0].done()
+
+        slow.release()  # the buffer drains: the close frame is written and the disconnect reported
+        await asyncio.wait_for(tasks[0], timeout=5.0)
+        assert slow.close_codes == [BROADCAST_DROP_CLOSE_CODE]
+        await _until(lambda: not mgr._pending_closes)
+        assert mgr._global_ws_count == 1 and mgr._per_ip_counts == {"10.0.0.2": 1}
+
+        good.hang_up()
+        await asyncio.wait_for(tasks[1], timeout=5.0)
+        assert mgr._global_ws_count == 0 and mgr._per_ip_counts == {}
 
     @pytest.mark.asyncio
     async def test_frame_in_flight_when_the_close_went_out_does_not_crash_the_handler(self):

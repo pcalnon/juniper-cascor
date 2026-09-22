@@ -168,9 +168,10 @@ class WebSocketManager:
 
         # Send timeout (GAP-WS-07 quick-fix)
         self._send_timeout_seconds = send_timeout_seconds
-        # F-CASCOR-004: closes of dropped subscribers that outlived the bounded
-        # wait in ``_close_dropped_subscriber`` and are finishing in the
-        # background. Held so the loop cannot garbage-collect a pending task.
+        # F-CASCOR-004: closes of dropped subscribers, held from start to finish
+        # (including any that outlive the bounded wait in
+        # ``_close_dropped_subscriber``) so the loop, which keeps only weak
+        # references to tasks, cannot garbage-collect one mid-close.
         self._pending_closes: Set[asyncio.Future] = set()
 
         # GAP-WS-16: bandwidth counters. Updated under _seq_lock because the
@@ -708,6 +709,13 @@ class WebSocketManager:
         ``broadcast`` dropped each subscriber in turn, leaving their sockets
         open (2026-09-08: both canopy relays forgotten 1-3 ms after
         ``ResumeReady -> Started``).
+
+        Running before chunking is also a behaviour change for an OVERSIZED
+        message. The chunker sizes with ``json.dumps(default=str)``, so a
+        message over ``max_message_size_bytes`` holding a NumPy scalar or a
+        lone surrogate used to be delivered, the NumPy value retyped
+        (``np.int64(3)`` arrived as the JSON string ``"3"``) and the
+        surrogate escaped. It is now refused like any other.
         """
         exc = self._serialization_error(message)
         if exc is None:
@@ -815,8 +823,8 @@ class WebSocketManager:
           subscriber stays connected.
         * A send that raises or times out is a fault of THAT connection. Only
           that subscriber is dropped, and it is closed as well as forgotten
-          (:meth:`_close_dropped_subscriber`) so the peer sees a close and can
-          reconnect instead of holding a socket the manager no longer serves.
+          (:meth:`_close_dropped_subscriber`), so the connection ends instead
+          of being held open for a peer the manager no longer serves.
         """
         if not self._active_connections:
             return
@@ -848,11 +856,30 @@ class WebSocketManager:
         suppressed -- the transport may already be gone -- and the wait is
         bounded by the send timeout, because a peer too slow to take a frame
         may be too slow to take the close. The bound limits the WAIT, not the
-        close: the close is shielded and finishes in the background under the
-        server's own close timeout. Cancelling it instead would abandon the
-        closing handshake part-way, and the ``websockets`` implementation
-        uvicorn runs swallows a cancellation once the close frame is written,
-        so it would not even bound the wait.
+        close: ``asyncio.wait`` stops waiting and leaves the close running,
+        neither cancelled nor shielded.
+
+        * Not cancelled: uvicorn's legacy ``websockets`` protocol writes the
+          close frame at once and then swallows a cancellation of the closing
+          handshake, and that library documents cancelling ``close()`` as
+          discouraged.
+        * Not shielded: when a ``wait_for(shield(...))`` times out, Python
+          >= 3.14 attaches a logger to the shielded task, so a close that
+          fails later -- the peer resets before the backlog drains -- is
+          reported as "... exception in shielded future" at ERROR, however
+          the exception is retrieved.
+
+        How long the close then takes is the ASGI server's business. uvicorn's
+        sans-I/O protocol, which ``ws="auto"`` selects at the pinned uvicorn
+        0.53.0 / websockets 17.1, holds every frame -- the close included --
+        while its write buffer is over the high-water mark, and its 10 s close
+        timer starts only once the frame is written. So when the peer has
+        stopped reading and the buffer is full, the close waits until the
+        connection itself ends. That is not a regression: before this change
+        such a peer was never closed at all. Meanwhile the ``/ws/training``
+        receive loop keeps draining until the server reports the disconnect,
+        so the handler cannot return -- which would let uvicorn drop the
+        transport without the frame -- while the close still waits to go out.
 
         The endpoint's ``finally`` -> :meth:`disconnect` then runs a second
         time; that is safe, because the first call popped the connection meta,
@@ -865,18 +892,22 @@ class WebSocketManager:
             return
         self._pending_closes.add(closing)
         closing.add_done_callback(self._close_finished)
-        try:
-            await asyncio.wait_for(asyncio.shield(closing), timeout=self._send_timeout_seconds)
-        except asyncio.TimeoutError:
+        done, _ = await asyncio.wait({closing}, timeout=self._send_timeout_seconds)
+        if not done:
             logger.debug("Close of a dropped WebSocket subscriber still in flight after %.2fs; finishing in the background", self._send_timeout_seconds)
-        except Exception:
-            logger.debug("Close of a dropped WebSocket subscriber failed", exc_info=True)
 
     def _close_finished(self, closing: asyncio.Future) -> None:
-        """Done callback for a subscriber close: release it and mark its outcome retrieved."""
+        """Done callback for a subscriber close: release it, and retrieve and log its outcome.
+
+        Retrieving the exception here is what keeps a failed close from being
+        reported as "Task exception was never retrieved".
+        """
         self._pending_closes.discard(closing)
-        if not closing.cancelled():
-            closing.exception()  # retrieved, so a failed close is never reported as "never retrieved"
+        if closing.cancelled():
+            return
+        exc = closing.exception()
+        if exc is not None:
+            logger.debug("Close of a dropped WebSocket subscriber failed (%s: %s)", type(exc).__name__, exc)
 
     def broadcast_from_thread(self, message: dict) -> None:
         """Thread-safe broadcast using asyncio.run_coroutine_threadsafe.

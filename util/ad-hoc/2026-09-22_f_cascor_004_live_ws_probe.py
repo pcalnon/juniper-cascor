@@ -13,8 +13,7 @@ Related: finding F-CASCOR-004 in juniper-ml
 
 The unit tests drive a real Starlette ``WebSocket`` over an in-memory transport, so
 they cannot show what a peer sees on the wire. This probe serves the real app with
-uvicorn (its default ``websockets`` protocol) and connects with the ``websockets``
-client library:
+uvicorn and connects with the ``websockets`` client library:
 
 A. an unserializable broadcast (NumPy scalars in a ``state`` frame, the F-CASCOR-003
    shape) drops nobody: both clients stay open and receive the next broadcast, and
@@ -23,16 +22,35 @@ B. a per-connection send failure -- injected on ONE server-side socket, since a
    genuine one cannot be provoked on demand -- reaches that client as a close frame
    with code 1011, the other client keeps receiving, the dropped client's server-side
    handler returns, and uvicorn logs no "Exception in ASGI application";
-C. the dropped client can reconnect: its admission slots were released exactly once.
+C. the dropped client can reconnect: its admission slots were released exactly once;
+D. a GENUINE slow reader: a client that stops reading is dropped by a real send
+   timeout once the server's write buffer is full, then sends a frame while the close
+   is still waiting to go out, then starts reading again. It must receive the 1011
+   close frame after its backlog. uvicorn's sans-I/O protocol holds that frame while
+   the buffer is full and closes the transport as soon as the app returns, so a
+   handler that returned on the in-flight frame would leave the peer with 1006.
+
+Which uvicorn websockets protocol runs matters for D: ``--ws auto`` (the default, and
+what ``src/server.py`` uses) is the legacy ``websockets`` protocol at uvicorn 0.46 and
+the sans-I/O one at the pinned uvicorn 0.53.0. To run the container's stack from the
+JuniperCascor1 env, install the pinned server into a scratch directory first:
+
+    pip install --no-deps --target <dir> uvicorn==0.53.0 websockets==17.1
+    PYTHONPATH=<dir> python util/ad-hoc/2026-09-22_f_cascor_004_live_ws_probe.py
 
 Usage, from the repo root in the JuniperCascor1 env:
 
-    python util/ad-hoc/2026-09-22_f_cascor_004_live_ws_probe.py
+    python util/ad-hoc/2026-09-22_f_cascor_004_live_ws_probe.py [--ws auto|websockets|websockets-sansio]
 
 Exit 0 = every check passed; 1 = at least one failed. On a tree without the fix,
-A fails (both clients are forgotten without a close) and B / C cannot run.
+A fails (both clients are forgotten without a close) and B / C / D cannot run. At
+this PR's first head (7cfad9fc: an early return from the receive loop, and a
+``wait_for(shield(...))`` close), D failed on the sans-I/O stack only -- close_code
+1006 with no close frame, plus an asyncio "WebSocketDisconnect exception in shielded
+future" ERROR -- and passed on the legacy one.
 """
 
+import argparse
 import asyncio
 import json
 import logging
@@ -46,6 +64,7 @@ sys.path.insert(0, str(REPO_ROOT / "src"))
 
 import numpy as np  # noqa: E402
 import uvicorn  # noqa: E402
+import websockets  # noqa: E402
 from websockets.asyncio.client import ClientConnection, connect  # noqa: E402
 from websockets.exceptions import ConnectionClosed  # noqa: E402
 
@@ -56,6 +75,10 @@ RECV_TIMEOUT_S = 3.0
 SHUTDOWN_TIMEOUT_S = 30.0
 POLL_ATTEMPTS = 100
 POLL_INTERVAL_S = 0.05
+D_FRAME_BYTES = 50_000  # below the 60,000-byte chunking threshold, so each broadcast is one frame
+D_MAX_FRAMES = 1_000  # 50 MB: far past the buffers below
+D_SOCKET_BUFFER_BYTES = 64 * 1024  # fixed kernel buffers, so D fills them in a few frames instead of autotuning to ~36 MB
+D_SETTLE_S = 1.0  # time for a handler that returns on the in-flight frame to have done so
 
 
 class _LogCapture(logging.Handler):
@@ -87,6 +110,18 @@ class _Client:
                 return frame
         return None
 
+    async def read_until_closed(self) -> Tuple[bool, int]:
+        """Read everything until the connection closes: (closed, frames read before the close)."""
+        frames = 0
+        while True:
+            try:
+                await asyncio.wait_for(self.conn.recv(), timeout=RECV_TIMEOUT_S)
+            except ConnectionClosed:
+                return True, frames
+            except asyncio.TimeoutError:
+                return False, frames
+            frames += 1
+
 
 class _Report:
     def __init__(self) -> None:
@@ -110,25 +145,60 @@ async def _poll(predicate) -> bool:
     return predicate()
 
 
-async def _subscribe(url: str) -> _Client:
-    client = _Client(await connect(url))
+async def _subscribe(url: str, **connect_kwargs) -> _Client:
+    client = _Client(await connect(url, **connect_kwargs))
     for frame_type in ("connection_established", "initial_status", "state"):
         if await client.next_of_type(frame_type) is None:
             raise RuntimeError(f"handshake frame {frame_type!r} never arrived")
     return client
 
 
-async def main() -> int:
+async def _scenario_d(report: _Report, mgr, url: str, port: int) -> None:
+    """D -- a genuine slow reader, with a frame in flight while its close waits to go out."""
+    client_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    client_sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, D_SOCKET_BUFFER_BYTES)  # a fixed, small receive window
+    client_sock.setblocking(False)
+    await asyncio.get_running_loop().sock_connect(client_sock, ("127.0.0.1", port))
+    # max_queue=1: pause reading from the socket once a frame is buffered. compression=None:
+    # permessage-deflate (on by default) shrinks these frames ~500x, and the buffers would never fill.
+    d = await _subscribe(url, sock=client_sock, max_queue=1, compression=None)
+    report.check("D: one active subscriber", await _poll(lambda: mgr.connection_count == 1), f"active={mgr.connection_count}")
+    failures_before = mgr.transport_stats()["send_failures"]
+    blob = "x" * D_FRAME_BYTES
+    frames_sent = 0
+    for frames_sent in range(1, D_MAX_FRAMES + 1):
+        await mgr.broadcast({"type": "metrics", "data": {"i": frames_sent, "blob": blob}})
+        if mgr.connection_count == 0:
+            break
+        await asyncio.sleep(0)  # let the client's reader run, as the service's loop does between broadcasts
+    failures = mgr.transport_stats()["send_failures"] - failures_before
+    if not report.check("D: the reader that stopped reading was dropped by a send timeout", mgr.connection_count == 0 and failures == 1, f"after {frames_sent} frames of {D_FRAME_BYTES} B; send_failures +{failures}"):
+        return
+    report.check("D: its close was still waiting to go out after the bounded wait", bool(mgr._pending_closes), f"pending closes={len(mgr._pending_closes)}")
+
+    await d.conn.send(json.dumps({"type": "pong"}))  # the peer's frame, in flight while the close waits
+    await asyncio.sleep(D_SETTLE_S)
+    closed, backlog = await d.read_until_closed()  # the peer reads again
+    rcvd = d.conn.protocol.close_rcvd  # the Close frame the server sent, or None if the connection just ended
+    report.check("D: after its backlog, the slow reader received close 1011", closed and d.conn.close_code == 1011 and rcvd is not None, f"closed={closed} backlog_frames={backlog} close_code={d.conn.close_code} close_frame={rcvd}")
+    report.check("D: the dropped reader's close finished", await _poll(lambda: not mgr._pending_closes), f"pending closes={len(mgr._pending_closes)}")
+
+
+async def main(ws_protocol: str) -> int:
     report = _Report()
     app = create_app(Settings(auto_start=False, ws_resume_handshake_timeout_s=0.1, ws_initial_metrics_count=0))
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    sock.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, D_SOCKET_BUFFER_BYTES)  # accepted sockets inherit it (Linux)
     sock.bind(("127.0.0.1", 0))
     port = sock.getsockname()[1]
-    server = uvicorn.Server(uvicorn.Config(app, log_level="warning", lifespan="on"))
+    config = uvicorn.Config(app, log_level="warning", lifespan="on", ws=ws_protocol)
+    server = uvicorn.Server(config)
     serve_task = asyncio.create_task(server.serve(sockets=[sock]))
     if not await _poll(lambda: server.started):
         print("uvicorn did not start", flush=True)
         return 1
+    protocol = config.ws_protocol_class
+    print(f"uvicorn {uvicorn.__version__}, websockets {websockets.__version__}, ws={ws_protocol!r} -> {protocol.__module__}.{protocol.__name__}", flush=True)
     asgi_errors = _LogCapture()
     logging.getLogger("uvicorn.error").addHandler(asgi_errors)
     mgr = app.state.ws_manager
@@ -153,7 +223,7 @@ async def main() -> int:
         a_port = a.conn.local_address[1]
         server_side_a = next((ws for ws in mgr._active_connections if ws.client.port == a_port), None)
         if not report.check("B: found a's server-side socket", server_side_a is not None):
-            print("SOME CHECKS FAILED (B and C need the subscriber A should have kept)", flush=True)
+            print("SOME CHECKS FAILED (B, C and D need the subscriber A should have kept)", flush=True)
             return 1
 
         async def _failing_send_json(data, mode="text"):
@@ -181,10 +251,14 @@ async def main() -> int:
         await mgr.broadcast({"type": "metrics", "data": {"epoch": 3}})
         got_a2 = await a2.next_of_type("metrics")
         report.check("C: reconnected client receives broadcasts", got_a2 is not None and got_a2["data"] == {"epoch": 3}, f"a2={got_a2}")
-
         await a2.conn.close()
         await b.conn.close()
+        report.check("C: every slot released", await _poll(lambda: mgr._global_ws_count == 0 and not mgr._per_ip_counts), f"global={mgr._global_ws_count} per_ip={mgr._per_ip_counts}")
+
+        # D -- a genuine slow reader.
+        await _scenario_d(report, mgr, url, port)
         report.check("teardown: every slot released", await _poll(lambda: mgr._global_ws_count == 0 and not mgr._per_ip_counts), f"global={mgr._global_ws_count} per_ip={mgr._per_ip_counts}")
+        report.check("teardown: no unhandled handler exception", not any("Exception in ASGI application" in m for m in asgi_errors.messages), f"uvicorn.error={asgi_errors.messages}")
     finally:
         server.should_exit = True
         await asyncio.wait_for(serve_task, timeout=SHUTDOWN_TIMEOUT_S)
@@ -194,4 +268,6 @@ async def main() -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(asyncio.run(main()))
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument("--ws", default="auto", help="uvicorn websockets protocol: auto (what src/server.py uses), websockets, websockets-sansio")
+    sys.exit(asyncio.run(main(parser.parse_args().ws)))

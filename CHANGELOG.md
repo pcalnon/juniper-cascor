@@ -40,15 +40,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   logged at ERROR (message type, exception, and on Python >= 3.14 the path to the offending value),
   counted, and skipped -- no subscriber is dropped or closed, no seq is consumed, nothing enters the
   replay buffer. There is deliberately no coercion: the producer must emit plain Python types.
-  `send_personal_message` refuses such a message the same way and returns `False`. A
-  **per-connection failure** (a send that raises or times out) drops only that subscriber, and now
-  **closes** its socket (code `1011`, errors suppressed) as well as forgetting it, so the peer sees a
-  close and can reconnect. The broadcast waits at most the send timeout for that close; the close
-  itself is shielded and finishes in the background, because cancelling it would abandon the closing
-  handshake part-way (and uvicorn's `websockets` implementation swallows the cancellation once the
-  close frame is written). `_send_json`'s generic failure branch logs a WARNING. The `/ws/training`
-  receive loop stops once the server has closed the socket, so a frame the peer had in flight cannot
-  end the handler with Starlette's `RuntimeError`; its `finally` -> `disconnect()` stays idempotent.
+  `send_personal_message` refuses such a message the same way; it returns `False`, as it did before,
+  but now with the ERROR line and the counter instead of a silent send failure. **Behaviour change
+  for oversized messages:** because the check runs before chunking, a message over
+  `ws_max_message_size_bytes` (60,000) holding a NumPy scalar or a lone surrogate is now refused. The
+  chunker sizes with `json.dumps(default=str)`, so such a message used to be delivered, with the
+  NumPy value retyped (`np.int64(3)` arrived as the JSON string `"3"`) and the surrogate escaped. The
+  broadcast most likely to exceed the threshold, the topology snapshot, is built from native types
+  (`get_topology`). A **per-connection failure** (a send that raises or times out) drops only that subscriber,
+  and now **closes** its socket (code `1011`, errors suppressed) as well as forgetting it. The
+  broadcast waits at most the send timeout for that close, via `asyncio.wait`, which neither cancels
+  it (uvicorn's legacy `websockets` protocol swallows a cancellation mid-handshake) nor shields it (on
+  Python 3.14 a timed-out `wait_for(shield(...))` reports the close's later failure as an asyncio
+  ERROR, "... exception in shielded future"). `_send_json`'s generic failure branch logs a WARNING.
+  Once the server has closed the socket, the `/ws/training` receive loop drains until the ASGI server
+  reports the disconnect, rather than returning. uvicorn's sans-I/O protocol (what `ws="auto"`
+  selects at the pinned uvicorn 0.53.0 / websockets 17.1) holds the close frame while its write
+  buffer is full, and closes the transport as soon as the app returns. A handler that returned on
+  the peer's next frame therefore left a slow reader with an abnormal `1006` instead of the `1011`
+  frame. Draining also keeps a frame in flight from ending the handler with Starlette's
+  `RuntimeError`, and the handler's `finally` -> `disconnect()` stays idempotent. A peer that never
+  reads again still never receives the close frame: its close waits until the connection itself
+  ends, which is no worse than before, when such a peer was never closed at all.
   New counter: `unserializable_messages_total` on `GET /v1/metrics/transport` and
   `cascor_ws_unserializable_messages_total{type}` in Prometheus; such a message no longer adds to
   `send_failures`, which is now per-connection failures only. Tests:
