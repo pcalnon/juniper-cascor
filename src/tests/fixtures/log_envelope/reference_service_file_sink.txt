@@ -10,6 +10,7 @@
 [registry.py: __init__:169] (2026-09-01 05:35:56,047) [INFO] WorkerRegistry initialized (heartbeat_timeout=30.0s, max_workers=250)
 [coordinator.py: __init__:116] (2026-09-01 05:35:56,047) [INFO] WorkerCoordinator initialized (reassignment_timeout=120.0s, health_check=10.0s)
 [coordinator.py: start_monitor:133] (2026-09-01 05:35:56,047) [INFO] Health monitor thread started
+[manager.py: _reload_dataset:3725] (2026-09-01 05:35:58,506) [INFO] Reloaded dataset 'spirals' (320 train samples)
 [log_config.py: __init__:175] (2026-09-01 05:35:58) [INFO] LogConfig: __init__: Created custom logger by instantiating Logger class
 [log_config.py: __init__:183] (2026-09-01 05:35:58) [INFO] LogConfig: __init__: Completed Initialization of LogConfig class
 +[cascade_correlation.py: __init__:621] (2026-09-01 05:35:59) [INFO] CascadeCorrelationNetwork: __init__: Initialization completed

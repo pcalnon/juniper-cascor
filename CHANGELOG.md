@@ -24,7 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   inline tensors record *unknown*. A pending staged dataset still wins, as it does over the tensors.
 - **The log-record envelope and named-marker contract is enforced in cascor CI** (cascor#573,
   roadmap step P0.4). juniper-ml's analysis tooling parses cascor's logs -- the `+` sentinel, the
-  timestamp and its precision, the `func:LINE]` prefix, and 34 message markers such as
+  timestamp and its precision, the `func:LINE]` prefix, and 35 message markers such as
   `fit: Training completed.` -- and none of that breakage was visible here: a message rename left
   every cascor test green. `src/tests/unit/test_log_record_envelope_contract.py` now pins it, with
   fixtures and a README under `src/tests/fixtures/log_envelope/`:

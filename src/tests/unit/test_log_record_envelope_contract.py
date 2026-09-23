@@ -8,7 +8,7 @@ License:     MIT License
 WHY THIS FILE EXISTS
 cascor's log records are parsed by scripts in juniper-ml: they split worker from parent records
 on the ``+`` sentinel, parse the ``(timestamp)`` -- three of them only at SECOND resolution --
-anchor on the ``func:LINE]`` prefix, and match 34 distinct message markers such as
+anchor on the ``func:LINE]`` prefix, and match 35 distinct message markers such as
 ``fit: Training completed.``. Every one of those breakages is invisible here: change the message,
 drop the sentinel or add milliseconds, and cascor's suite stays green while the analysis tooling
 silently stops matching. A test in juniper-ml cannot fail a cascor PR -- separate repositories, no

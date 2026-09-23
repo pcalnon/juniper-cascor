@@ -172,6 +172,21 @@
     },
     {
       "fragments": [
+        "Reloaded dataset "
+      ],
+      "sites": [
+        {
+          "file": "src/api/lifecycle/manager.py",
+          "method": "info"
+        }
+      ],
+      "consumers": [
+        "juniper-ml/util/ad-hoc/2026-08-25_g4_overhead_decomposition.py:56"
+      ],
+      "required_level": 20
+    },
+    {
+      "fragments": [
         "Starting main training loop with max_epochs: ",
         ", max_iterations: ",
         ", early stopping: "

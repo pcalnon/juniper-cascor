@@ -94,7 +94,7 @@
       "source_lines": 88171,
       "source_sha256": "4c1c833190e4154a17ea2d0685ab5cee18b6eb2130b1446430103a6a1f6e229f",
       "cascor_rev": null,
-      "kept_lines": 33,
+      "kept_lines": 34,
       "kept_source_line_numbers": [
         1,
         2,
@@ -108,6 +108,7 @@
         10,
         11,
         12,
+        16,
         21,
         22,
         23,
@@ -138,7 +139,7 @@
       "source_lines": 77953,
       "source_sha256": "2356b497a8d5ba461eef0eedf745b67f2411772c56087ab60bbdf315fb9a813f",
       "cascor_rev": null,
-      "kept_lines": 42,
+      "kept_lines": 43,
       "kept_source_line_numbers": [
         1,
         2,
@@ -157,6 +158,7 @@
         19,
         20,
         21,
+        23,
         31,
         32,
         33,

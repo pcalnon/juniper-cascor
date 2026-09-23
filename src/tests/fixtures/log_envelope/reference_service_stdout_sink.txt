@@ -15,6 +15,7 @@ INFO:     Uvicorn running on http://127.0.0.1:8230 (Press CTRL+C to quit)
 INFO:     127.0.0.1:34346 - "GET /v1/health HTTP/1.1" 200 OK
 INFO:     127.0.0.1:34360 - "GET /v1/health HTTP/1.1" 200 OK
 INFO:     127.0.0.1:34364 - "POST /v1/training/dataset HTTP/1.1" 200 OK
+2026-09-01 05:35:58,506 - api.lifecycle.manager - INFO - Reloaded dataset 'spirals' (320 train samples)
 +[cascade_correlation.py: 621] (2026-09-01 05:35:59) [INFO] CascadeCorrelationNetwork: __init__: Initialization completed
 INFO:     127.0.0.1:34372 - "POST /v1/training/start HTTP/1.1" 200 OK
 INFO:     127.0.0.1:34388 - "GET /v1/training/status HTTP/1.1" 200 OK

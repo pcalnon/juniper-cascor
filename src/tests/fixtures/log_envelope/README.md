@@ -38,7 +38,7 @@ resolution; the millisecond records are Path C**.
 | file | what | produced by |
 | --- | --- | --- |
 | `envelope_golden.json` | Path A formatter constants and date format; the whole parsed `conf/logging_config.yaml`; the handlers Path B and Path C actually INSTALL (formats, `datefmt`, levels, file name, rotation); the shapes each reference capture carries | this test under `LOG_ENVELOPE_CAPTURE=1` |
-| `marker_inventory.json` | 34 message markers juniper-ml anchors on: their literal fragments (in order), the file that emits each, the level a consumer can rely on, and every consumer by path | juniper-ml `util/ad-hoc/2026-09-22_p04_log_marker_census.py --emit-inventory` |
+| `marker_inventory.json` | 35 message markers juniper-ml anchors on: their literal fragments (in order), the file that emits each, the level a consumer can rely on, and every consumer by path | juniper-ml `util/ad-hoc/2026-09-22_p04_log_marker_census.py --emit-inventory` |
 | `reference_*.txt` | excerpts of four REAL sinks: the P0.1 corpus run (direct CLI, cascor `8065ca0f`) file and stdout, and a 2026-09-01 service run's file and stdout | juniper-ml `util/ad-hoc/2026-09-22_p04_reference_capture_excerpt.py` |
 | `reference_captures.json` | provenance for each excerpt: source path, size, sha256, cascor revision (or `null` where the run did not record one), and the source line numbers kept | the same script |
 
