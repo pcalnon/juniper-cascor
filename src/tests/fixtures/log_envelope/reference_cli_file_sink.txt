@@ -1,0 +1,49 @@
++[main.py: main:375] (2026-09-22 03:27:40) [INFO] Cascor: main: Starting the Cascade Correlation Neural Network project
++[main.py: main:376] (2026-09-22 03:27:40) [INFO] Cascor: main: Project constants: Log Level: 20, Log Level Name: INFO
++[main.py: main:377] (2026-09-22 03:27:40) [INFO] Cascor: main: Project constants: Log File Name: juniper_cascor.log, Log File Path: ~/.local/state/juniper-experiments/p01-logging-at8065ca0f-v3/cli-01/logs
+[log_config.py: __init__:175] (2026-09-22 03:27:40) [INFO] LogConfig: __init__: Created custom logger by instantiating Logger class
+[log_config.py: __init__:183] (2026-09-22 03:27:40) [INFO] LogConfig: __init__: Completed Initialization of LogConfig class
+[main.py: main:418] (2026-09-22 03:27:40) [INFO] Cascor: main: Successfully created LogConfig class & Logger object: log level: 20
+[main.py: main:419] (2026-09-22 03:27:40) [INFO] Cascor: main: Inside Main function
+[main.py: main:420] (2026-09-22 03:27:40) [INFO] Cascor: main: Completed Initialization of Project Logger
+[main.py: main:478] (2026-09-22 03:27:40) [INFO] Cascor: main: Pre-flight check: Verifying JuniperData service at http://127.0.0.1:8110
+[main.py: main:485] (2026-09-22 03:27:40) [INFO] Cascor: main: Pre-flight check: JuniperData service is healthy (HTTP 200)
+[main.py: main:494] (2026-09-22 03:27:40) [INFO] Cascor: main: W-11 experiment-YAML overrides active: ['candidate_epochs', 'candidate_pool_size', 'correlation_threshold', 'early_stopping', 'learning_rate', 'max_hidden_units', 'max_iterations', 'n_points', 'n_rotations', 'n_spirals', 'noise', 'output_epochs', 'patience', 'random_seed', 'test_ratio', 'train_ratio', 'val_ratio']
+[main.py: main:499] (2026-09-22 03:27:40) [INFO] Cascor: main: Creating SpiralProblem instance
+[spiral_problem.py: generate_n_spiral_dataset:591] (2026-09-22 03:27:40) [INFO] SpiralProblem: generate_n_spiral_dataset: Using JuniperData service at http://127.0.0.1:8110
+[spiral_problem.py: solve_n_spiral_problem:1361] (2026-09-22 03:27:40) [INFO] SpiralProblem: solve_n_spiral_problem: Dataset x_full: Shape: torch.Size([1000, 2]), Type: <class 'torch.Tensor'>, Value:
+tensor([[-6.7395,  6.9053],
+        [ 6.8342,  5.3055],
+        [-3.9317, -6.1032],
+        ...,
+        [-1.2829,  9.1219],
+        [-5.3761,  7.9684],
+        [-2.2317,  1.8848]])
+tensor([[0., 1.],
+        [0., 1.],
+        [0., 1.],
+        ...,
+        [0., 1.],
+[cascade_correlation.py: train_output_layer:2181] (2026-09-22 03:27:41) [INFO] CascadeCorrelationNetwork: train_output_layer: Output Layer Training - Epoch 10, Loss: 0.325420
+[cascade_correlation.py: train_output_layer:2201] (2026-09-22 03:27:42) [INFO] CascadeCorrelationNetwork: train_output_layer: Final output layer training loss: 0.246147
+[snapshot_serializer.py: save_network:207] (2026-09-22 03:27:42) [INFO] CascadeHDF5Serializer: Saving network to ~/Development/python/Juniper/worktrees/juniper-cascor--p01--logging-corpus--20260922-0630--8065ca0f/cascor-snapshots/cascor_snapshot_20260922_032742_48bcdb13-3d0f-4848-a0e8-fb5b9ec1624e.h5
+[snapshot_serializer.py: save_network:224] (2026-09-22 03:27:42) [INFO] CascadeHDF5Serializer: Successfully saved network to ~/Development/python/Juniper/worktrees/juniper-cascor--p01--logging-corpus--20260922-0630--8065ca0f/cascor-snapshots/cascor_snapshot_20260922_032742_48bcdb13-3d0f-4848-a0e8-fb5b9ec1624e.h5
+[cascade_correlation.py: _accuracy:5937] (2026-09-22 03:27:42) [INFO] CascadeCorrelationNetwork: _accuracy: Calculated accuracy: 0.5138, Percentage: 51.3750%
+[cascade_correlation.py: calculate_accuracy:5870] (2026-09-22 03:27:42) [INFO] CascadeCorrelationNetwork: calculate_accuracy: Calculated accuracy: 0.5138, Percentage: 51.38%
+[cascade_correlation.py: fit:1988] (2026-09-22 03:27:42) [INFO] CascadeCorrelationNetwork: fit: Starting main training loop with max_epochs: 2000, max_iterations: 128, early stopping: True
+[cascade_correlation.py: train_candidates:2247] (2026-09-22 03:27:42) [INFO] CascadeCorrelationNetwork: train_candidates: Executing candidate training with 7 processes.
+[task_distributor.py: distribute_and_collect:85] (2026-09-22 03:27:42) [INFO] TaskDistributor: Distributing 8 tasks — 8 local, 0 remote (local_capacity=7, remote_workers=0)
+[cascade_correlation.py: _ensure_worker_pool:3918] (2026-09-22 03:27:44) [INFO] CascadeCorrelationNetwork: _ensure_worker_pool: Persistent pool created with 7 workers
++[candidate_unit.py: _display_training_progress:762] (2026-09-22 03:27:45) [INFO] CandidateUnit: train: Epoch 10 - Norm Output: shape=(800,) l2=17.686398, Norm Error: shape=(800,) l2=14.032722
++[candidate_unit.py: train_detailed:689] (2026-09-22 03:27:45) [INFO] CandidateUnit: train: Final Correlation: UUID: dce25202-fd12-4973-8f0a-48a616702277, Final correlation value: 0.032924, Best Corr Index: 1
+[cascade_correlation.py: grow_network:4967] (2026-09-22 03:27:48) [INFO] CascadeCorrelationNetwork: grow_network: Iteration 0 - Train Loss: 0.239217, Train Accuracy: 0.5787, Early stop: False
+[cascade_correlation.py: grow_network:4983] (2026-09-22 03:27:56) [INFO] CascadeCorrelationNetwork: grow_network: Finished training after 3 iterations. Total hidden units: 4. Completion reason: early_stopped
+[cascade_correlation.py: fit:2006] (2026-09-22 03:27:56) [INFO] CascadeCorrelationNetwork: fit: Training completed.
+[cascade_correlation.py: summary:6015] (2026-09-22 03:27:56) [INFO] CascadeCorrelationNetwork: summary: Number of hidden units: 4
+
+0.607500
+0.550000
+
+0.607500
+0.550000
+[main.py: main:592] (2026-09-22 03:27:56) [INFO] Main: Completed solving SpiralProblem instance
