@@ -1383,16 +1383,19 @@ class TrainingLifecycleManager:
         self._experimental_functions_enabled: bool = os.environ.get("CASCOR_EXPERIMENTAL_FUNCTIONS_ENABLED") == "1"
         self._current_dataset_config: Optional[Dict[str, Any]] = None
         # ``_dataset_shortfall`` carries what the producer could NOT deliver for
-        # the dataset THIS RUN fetched -- ``None`` when that fetch delivered in
-        # full (the overwhelming majority) AND when the run fetched nothing.
-        # Written by ``_reload_dataset`` (the staged and live-swap fetch), handed
-        # to ``start_training`` by ``app.py``'s auto-start for the tensors it
-        # fetched itself, and re-decided at the START OF EVERY RUN
-        # (``start_training``; APD-CASCOR-013) -- before that it was written at one
-        # line and never cleared, so a run started on inline data kept the previous
-        # run's annotation and named a ``dataset_id`` it was not training on.
-        # Cleared by ``reset()``, and rolled back with the data by a cancelled or
-        # refused live swap. Read by ``get_status()`` / ``get_metrics()``. It
+        # the dataset that is LOADED -- the one a run trains on -- or ``None``
+        # when it was delivered in full (the overwhelming majority) or did not
+        # come from juniper-data at all (inline tensors). APD-CASCOR-013: it
+        # MOVES WITH THE DATA. Written wherever tensors are bound -- by
+        # ``_reload_dataset`` (the staged and live-swap fetch), by
+        # ``start_training`` for tensors passed in as ``X`` (``None``, or the
+        # annotation ``app.py``'s auto-start hands in for the tensors it fetched
+        # itself) -- restored with the data by a refused staged fetch or a
+        # cancelled or refused live swap, and left alone wherever the data is
+        # retained (a plain restart, ``reset()``, a start-fresh). Before this it
+        # was written at one line and never cleared, so a run started on inline
+        # data kept the previous run's annotation and named a ``dataset_id`` it
+        # was not training on. Read by ``get_status()`` / ``get_metrics()``. It
         # exists because the annotation was previously written only to the
         # training LOG, which nothing can poll.
         self._dataset_shortfall: Optional[Dict[str, Any]] = None
@@ -2484,11 +2487,10 @@ class TrainingLifecycleManager:
                 a typed ``TrainingParams`` body into ``**kwargs``. Omitted, a run
                 on caller-supplied tensors reports ``None``. Passing it without
                 ``X`` raises ``ValueError``, because it would then be a claim
-                about data this call did not supply. Deliberately NOT the same
-                lifecycle as ``dataset_config``: that record follows the loaded
-                data (a retained-data start keeps it); this annotation follows the
-                run's own fetch (a retained-data start reports ``None``), per the
-                APD-CASCOR-013 ruling.
+                about data this call did not supply. The SAME lifecycle as
+                ``dataset_config`` (owner ruling 2026-09-23, "follow the loaded
+                data"): both are bound together with ``X``, both are replaced by a
+                staged fetch, and both survive a start that retains the data.
             **kwargs: TrainingParams body. Fields in ``_FIT_KWARGS`` are
                 forwarded to ``network.fit``; everything else is applied
                 in-place via ``update_params`` so the next fit pass sees
@@ -2503,19 +2505,24 @@ class TrainingLifecycleManager:
         with self._lock:
             self._reject_start_for_state_locked()
 
-            # APD-CASCOR-013 (RULED): the annotation is re-decided at the START OF
-            # EVERY RUN. It describes what THIS run fetched, or it is None -- a run
-            # that fetched nothing correctly reports nothing. Decided here and
-            # APPLIED at submit, below, so a start that is refused or fails before
-            # the run exists leaves the previous run's annotation untouched.
+            # APD-CASCOR-013. The ruling: the field "is named for what THIS run
+            # trained on". The owner settled how, 2026-09-23: FOLLOW THE LOADED
+            # DATA. The annotation is bound together with the tensors it describes
+            # -- here for tensors passed in as ``X``, in ``_reload_dataset`` for a
+            # fetch -- and left alone when a start retains the data, so a run on
+            # partial data always says so. Rejected: reporting ``None`` for a start
+            # on retained data because that start fetched nothing, which is the
+            # "annotation denies the partial data it trains on" shape
+            # APD-CASCOR-007 fixed.
             #
             # Before this it was written at one line and never cleared: a run started
             # on inline tensors kept the previous run's annotation, naming a
-            # ``dataset_id`` it was not training on. Same family as APD-CASCOR-007 --
-            # an annotation describing data this run is not training on.
+            # ``dataset_id`` it was not training on. Bound WITH the data rather than
+            # at submit, a start that binds tensors and then fails still leaves the
+            # annotation describing what is loaded, and a refused start (the FSM
+            # guard above) binds nothing and changes nothing.
             if dataset_shortfall is not None and X is None:
                 raise ValueError("dataset_shortfall annotates caller-supplied tensors; pass it together with X")
-            run_shortfall = dataset_shortfall
 
             if X is not None:
                 self._train_x = X
@@ -2526,6 +2533,10 @@ class TrainingLifecycleManager:
                 # route would name the previous staged dataset while training on
                 # inline data.
                 self._current_dataset_config = dict(dataset_config) if dataset_config else None
+                # ...and so does what the producer could not deliver for it:
+                # ``None`` for raw inline tensors, the caller's own annotation for
+                # tensors it fetched itself (auto-start).
+                self._dataset_shortfall = dataset_shortfall
             if X_val is not None:
                 self._val_x = X_val
                 self._val_y = y_val
@@ -2541,11 +2552,11 @@ class TrainingLifecycleManager:
             # consume it now (before the future is submitted). On reload
             # failure, leave the staged config in place so the user can fix
             # the upstream juniper-data issue and Restart-and-retry without
-            # losing their selection. The fetch's annotation becomes this run's
-            # (APD-CASCOR-013), replacing any a caller handed in with inline
+            # losing their selection. The fetch binds its own annotation with its
+            # data (APD-CASCOR-013), replacing any a caller handed in with inline
             # tensors, because the staged data is what this run trains on.
             if self._pending_dataset_config:
-                run_shortfall = self._consume_pending_dataset_locked()
+                self._consume_pending_dataset_locked()
 
             if self._train_x is None or self._train_y is None:
                 raise ValueError("Training data not provided")
@@ -2667,29 +2678,28 @@ class TrainingLifecycleManager:
             with self._metrics_undo_lock:
                 self._metrics_undo_buffer = None
 
-            # APD-CASCOR-013: the run exists from here, so this is where its
-            # annotation takes effect (see the top of this block).
-            self._dataset_shortfall = run_shortfall
             self._training_future = self._executor.submit(self._run_training, self._train_x, self._train_y, self._val_x, self._val_y, **fit_kwargs)
 
         return {"status": "training_started", "timestamp": time.time()}
 
-    def _consume_pending_dataset_locked(self) -> Optional[Dict[str, Any]]:
-        """Fetch the staged dataset for the run about to start; return its annotation.
+    def _consume_pending_dataset_locked(self) -> None:
+        """Fetch the staged dataset for the run about to start, keeping data and annotation together.
 
         Extracted from ``start_training`` so its locked section stays under the
         repo's ``--max-complexity=15`` ceiling (C901 is enforced there, LOW-001).
         Caller must hold ``self._lock``.
 
-        On success the staged config is consumed and the annotation the fetch
-        wrote is returned for ``start_training`` to apply at submit. On failure
-        the config is LEFT staged, so the user can fix the upstream juniper-data
-        issue and retry without losing their selection -- and the annotation is
-        put back. ``_reload_dataset`` writes it as soon as the producer answers,
-        BEFORE the artifact is converted and its partitions resolved; a refusal
-        there (a val-less artifact under the section 6.1 rules, a malformed one)
-        binds no tensors, so without the restore the status would describe an
-        artifact nobody is training on while the previous data stays loaded.
+        On success the staged config is consumed, and ``_reload_dataset`` has
+        bound the new tensors together with their annotation (APD-CASCOR-013). On
+        failure the config is LEFT staged, so the user can fix the upstream
+        juniper-data issue and retry without losing their selection -- and the
+        annotation is put back. ``_reload_dataset`` writes it as soon as the
+        producer answers, BEFORE the artifact is converted and its partitions
+        resolved; a refusal there (a val-less artifact under the section 6.1
+        rules, a malformed one) binds no tensors, so without the restore the
+        annotation would describe an artifact nobody is training on while the
+        previous data -- which a retained-data start would then train on -- stays
+        loaded.
         """
         prior_shortfall = self._dataset_shortfall
         try:
@@ -2698,7 +2708,6 @@ class TrainingLifecycleManager:
             self._dataset_shortfall = prior_shortfall
             raise
         self._pending_dataset_config = None
-        return self._dataset_shortfall
 
     def _run_training(self, x, y, x_val, y_val, **kwargs) -> None:
         """Execute training in the background thread (submitted by ``start_training``).
@@ -2893,11 +2902,12 @@ class TrainingLifecycleManager:
             self._replay_session = None
         self.state_machine.handle_command(Command.RESET)
         self.monitor.clear_metrics()
-        # APD-CASCOR-013: the annotation belongs to a run, and reset discards the
-        # run -- its metrics are cleared on the line above and the counters go back
-        # to zero below. Kept, it would mark an empty dashboard as partial-data.
-        # The next start re-decides it in any case; this clears the window between.
-        self._dataset_shortfall = None
+        # APD-CASCOR-013: reset does NOT clear ``_dataset_shortfall``, and that is
+        # deliberate (owner ruling 2026-09-23, "follow the loaded data"). Reset
+        # discards the run's metrics and counters, never its data: ``_train_x``
+        # stays bound, ``current_dataset`` keeps naming it, and the next plain
+        # start trains on it. The annotation describes that data, so clearing it
+        # here would make that run report a partial dataset as complete.
         self.training_state.update_state(
             status="Stopped",
             phase="Idle",
@@ -3051,11 +3061,12 @@ class TrainingLifecycleManager:
             # has started since). Lets canopy render the undo affordance across
             # a page reload without a separate poll. Additive field only.
             "metrics_clear_undo_available": self._metrics_undo_available(),
-            # What the producer could NOT deliver for the dataset THIS RUN
-            # fetched, or None -- when that fetch delivered in full, and when the
-            # run fetched nothing (inline tensors, or data retained from an
-            # earlier run: re-decided at every start, APD-CASCOR-013). Additive
-            # field.
+            # What the producer could NOT deliver for the dataset that is loaded
+            # -- the one this run trains on, whether it fetched it or retained it
+            # -- or None when that dataset was delivered in full or never came from
+            # juniper-data (inline tensors). It moves with the data, exactly as
+            # ``current_dataset`` below does (APD-CASCOR-013; owner ruling
+            # 2026-09-23). Additive field.
             #
             # Canopy needs this to annotate progress, metrics and results, which
             # the partial-data contract requires of its "accept" and "drop"

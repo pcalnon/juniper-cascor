@@ -603,13 +603,13 @@ async def _auto_start_training(app: FastAPI, settings: Settings) -> None:
         # change the params and therefore the content-addressed id; an annotation
         # that does not name its artifact is a claim about an unidentified one.
         #
-        # BUILT here, APPLIED by ``start_training`` (APD-CASCOR-013). The
-        # annotation is re-decided at the start of every run, so writing it onto
-        # the manager before the start below would be erased by that start --
-        # which is handed this run's tensors inline, like any caller that fetched
-        # nothing. It is also why a sequence that fails between here and the start
+        # BUILT here, BOUND by ``start_training`` together with the tensors it
+        # describes (APD-CASCOR-013: the annotation moves with the data). Written
+        # onto the manager before the start below, it would be replaced the moment
+        # that start binds this run's tensors -- which it is handed inline, like any
+        # caller's. It is also why a sequence that fails between here and the start
         # (a refused or malformed artifact, a network that cannot be built) leaves
-        # no annotation behind: there is no run for it to describe.
+        # no annotation behind: it binds no data, so there is nothing to describe.
         meta = result.get("meta") or {}
         lifecycle._log_dataset_shortfall(meta, acceptance_source=acceptance_source)
         dataset_shortfall = TrainingLifecycleManager._build_dataset_shortfall(meta, dataset_id=dataset_id, acceptance_source=acceptance_source)
@@ -647,8 +647,8 @@ async def _auto_start_training(app: FastAPI, settings: Settings) -> None:
         # ``dataset_config`` names what was loaded, for ``current_dataset`` on the
         # status route: the generator and the params actually sent to the producer.
         # ``dataset_shortfall`` is what that fetch could not deliver
-        # (APD-CASCOR-013): it travels with the tensors because the start
-        # re-decides the annotation and would erase one written beforehand.
+        # (APD-CASCOR-013): it travels with the tensors because the start binds
+        # the annotation together with the data it describes.
         train_result = lifecycle.start_training(
             X=x_train,
             y=y_train,

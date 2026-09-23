@@ -25,25 +25,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Three version surfaces restated `"0.6.0"` while the distribution was 0.11.0** (#668).
+  `juniper_cascor.__version__` was a hardcoded literal -- the value `publish.yml`'s TestPyPI check
+  prints on every release; `api.models.common._API_VERSION` was another, and it is the default
+  `meta.version` of **every enveloped API response**; `/v1/health`'s source-checkout fallback was
+  the third. BUG-CC-04 had moved `api.app` and `/v1/health`'s installed path onto
+  `importlib.metadata` and missed these. All three now read `importlib.metadata.version("juniper-cascor")`
+  and fall back to the same non-release `"0.0.0-dev"` sentinel `api.app` uses, so no version literal
+  is left to bump by hand. **Visible change**: enveloped responses now report the installed version
+  in `meta.version` instead of `0.6.0`; no Juniper consumer reads that field.
+  `src/tests/unit/test_package_version_single_source.py` pins each surface to the installed version
+  and fails if any of the four assigns a release-number literal -- mutation-checked: 5 of its 6
+  cases fail against the pre-fix tree.
 - **`dataset_shortfall` kept the previous run's annotation, naming a dataset the run was not
   training on** (APD-CASCOR-013). It was written at one line and never cleared -- not on a new
   run, not on reset -- so a run started on inline tensors reported the last staged run's
-  shortfall and its `dataset_id`. RULED: clear it at the **start of every run**; it describes
-  what THIS run fetched, or it is `null` ("a run that fetched nothing correctly reports
-  nothing"; rejected: clearing only on a new fetch, and documenting the old behaviour). It is
-  re-decided in `start_training` and applied only when the run is actually submitted, so a
-  refused or failed start leaves the running run's annotation alone. **A plain Stop -> Start on
-  retained data now reports `null`**, which is the ruling's own sentence and the consequence most
-  likely to surprise -- and since `current_dataset` (above) follows the LOADED data, the two fields
-  can disagree on such a start: `current_dataset` names a dataset whose shortfall is no longer
-  reported. auto-start hands its fetch's annotation to `start_training` (new
-  keyword-only `dataset_shortfall`) instead of writing it first, which the start would erase; an
-  auto-start that fails between fetch and start now leaves no annotation behind. Three adjacent
-  paths had the same defect and are fixed with it: `reset()` clears it; a cancelled or refused
-  live swap rolls it back with the data (a new `_PreSwapSnapshot` slot); and a staged fetch
-  refused after its annotation was written (a val-less or malformed artifact) restores the
-  previous one. Pinned by `src/tests/unit/api/test_shortfall_lifecycle.py` (11 arms; 7 fail
-  against the pre-fix manager, 4 are over-correction guards that pass both ways).
+  shortfall and its `dataset_id`. RULED: the field is named for what THIS run trains on; the
+  owner settled how on 2026-09-23 -- **it follows the loaded data**. The annotation is bound
+  together with the tensors it describes (in `start_training` for tensors passed as `X`, in
+  `_reload_dataset` for a fetch), so a run on inline data reports `null`, a run on a new fetch
+  reports that fetch's, and a run on data RETAINED from an earlier fetch -- a plain Stop -> Start,
+  or a start after `reset()` -- carries that data's annotation, consistent with `current_dataset`
+  (Added, above). Rejected: `null` for a retained-data start because it fetched nothing -- the
+  "annotation denies the partial data it trains on" shape APD-CASCOR-007 fixed; also rejected
+  earlier, clearing only on a new fetch and documenting the old behaviour. auto-start hands its
+  fetch's annotation to `start_training` with the tensors (new keyword-only `dataset_shortfall`);
+  an auto-start that fails between fetch and start binds nothing and leaves no annotation. Two
+  adjacent paths had the same defect and are fixed with it: a cancelled or refused live swap rolls
+  the annotation back with the data (a new `_PreSwapSnapshot` slot), and a staged fetch refused
+  after its annotation was written (a val-less or malformed artifact) restores the previous one.
+  Pinned by `src/tests/unit/api/test_shortfall_lifecycle.py` (13 arms, including the
+  over-correction guards: new inline data after a partial run still reports `null`, and so does a
+  retained start on that inline data).
 - **The truncatable-generator set is read from juniper-data, not restated in cascor**
   (APD-CASCOR-008). `_PROJECT_API_TRUNCATABLE_GENERATORS` is **removed** from both
   `cascor_constants` trees; the set is derived from juniper-data's `GET /v1/generators` -- a
@@ -60,18 +73,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   already on. On the staged path this removes any startup dependency; auto-start is itself a
   boot-time request that runs once, so there the retry is the operator's. Pinned by
   `src/tests/unit/api/test_truncatable_generators.py` plus new arms in the two truncation suites.
-- **Three version surfaces restated `"0.6.0"` while the distribution was 0.11.0** (#668).
-  `juniper_cascor.__version__` was a hardcoded literal -- the value `publish.yml`'s TestPyPI check
-  prints on every release; `api.models.common._API_VERSION` was another, and it is the default
-  `meta.version` of **every enveloped API response**; `/v1/health`'s source-checkout fallback was
-  the third. BUG-CC-04 had moved `api.app` and `/v1/health`'s installed path onto
-  `importlib.metadata` and missed these. All three now read `importlib.metadata.version("juniper-cascor")`
-  and fall back to the same non-release `"0.0.0-dev"` sentinel `api.app` uses, so no version literal
-  is left to bump by hand. **Visible change**: enveloped responses now report the installed version
-  in `meta.version` instead of `0.6.0`; no Juniper consumer reads that field.
-  `src/tests/unit/test_package_version_single_source.py` pins each surface to the installed version
-  and fails if any of the four assigns a release-number literal -- mutation-checked: 5 of its 6
-  cases fail against the pre-fix tree.
 - **`lockfile-update.yml` regenerated `requirements.lock` alone, so every dependency bump drifted
   `requirements-cpu.lock`** -- the container image's lock, which is *derived* from the GPU lock via
   `--constraint requirements.lock`. Nothing reported it: the CI check asserts only that every image

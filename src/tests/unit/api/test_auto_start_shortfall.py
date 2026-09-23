@@ -175,10 +175,11 @@ async def _run_auto_start(
 async def _annotation_handed_to_the_run(caller_params: Dict[str, Any], *, deployment_flag: bool, meta: Dict[str, Any]) -> Tuple[TrainingLifecycleManager, Optional[Dict[str, Any]]]:
     """Run the WHOLE sequence and return the annotation auto-start hands to ``start_training``.
 
-    APD-CASCOR-013 re-decides the annotation at the start of every run, so
-    auto-start no longer writes it onto the manager ahead of its own start (that
-    start would erase it); it passes it in with the tensors it fetched. The
-    annotation is therefore observed where it now travels: the start call.
+    APD-CASCOR-013 binds the annotation together with the tensors it describes,
+    so auto-start no longer writes it onto the manager ahead of its own start
+    (binding the tensors would replace it); it passes it in with the tensors it
+    fetched. The annotation is therefore observed where it now travels: the start
+    call.
     ``start_training`` and ``create_network`` are doubles because what they do
     with it is ``test_shortfall_lifecycle.py``'s subject, not this file's.
     """
@@ -384,11 +385,12 @@ class TestAutoStartAnnotatesTheRun:
         assert kwargs["X"] is not None and kwargs["X"].shape[0] == 20
 
     async def test_the_annotation_survives_a_real_start(self) -> None:
-        """End to end through the REAL ``start_training``, whose start is where it now takes effect.
+        """End to end through the REAL ``start_training``, which binds it together with the tensors.
 
         The failure mode this pins: writing the annotation onto the manager and
         then starting the run on inline tensors -- which is what auto-start did --
-        is erased by the start's own clear. Only the fit is replaced.
+        is replaced the moment the start binds those tensors. Only the fit is
+        replaced.
         """
         manager = TrainingLifecycleManager()
         try:
