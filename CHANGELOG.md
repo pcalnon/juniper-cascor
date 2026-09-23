@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **The BLAS thread policy now caps at 2 by default: owner decision D1, ruled 2026-09-23**
+  (`src/parallelism/blas_threads.py`). `configure_blas_threads()` used to do nothing unless
+  `JUNIPER_CASCOR_BLAS_THREADS` was set. It now sets `OMP_NUM_THREADS` / `MKL_NUM_THREADS` /
+  `OPENBLAS_NUM_THREADS` to **2** wherever they are unset, on both entry points.
+  `JUNIPER_CASCOR_BLAS_THREADS=<n>` still picks the width, and **`0` / `off` / `none` now opt out**
+  to the old runtime default. A malformed value falls back to 2 with a stderr note, where it used
+  to fall back to no cap. Anything exported explicitly still wins, including the juniper-ml
+  launcher's `runtime.blas_threads`.
+  **Why the old default had to go:** the constructor's `torch.set_num_threads` pin binds only the
+  thread that builds the network. The service trains on another thread, and that thread ran its
+  first output pass at the runtime default (16 on a 16-core host) until the first
+  candidate-result collection re-pinned it to 2. Capping that pass cut it by 49.2%.
+  **Why it is safe:** cascor#531 made "do nothing" the default because the cap looked costly,
+  including an epoch-count channel that wall time cannot see. The flip was gated on measuring
+  that channel. Against the old default, a cap of 2 reproduced every per-candidate
+  `epochs_completed`, every phase's winning candidate and the final loss **bit-identically**. A
+  seed change did move the counts, so the instrument could see a difference. A training thread
+  held at 16 for the whole run also moved one count. Evidence:
+  `juniper-ml/notes/JUNIPER_2026-09-23_JUNIPER-ECOSYSTEM_PERF-LANE-D1-EPOCH-COUNT-DEBT.md`.
+  **Deployment note:** a service container that does not export these variables now runs BLAS 2
+  wide instead of runtime-default wide. Set `JUNIPER_CASCOR_BLAS_THREADS=off` to restore the old
+  behaviour.
+
 ### Added
 
 - **`current_dataset` on `GET /v1/training/status` — which dataset is loaded.** Additive.

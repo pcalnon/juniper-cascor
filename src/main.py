@@ -48,8 +48,10 @@ import sys
 # executed it, and so loaded BLAS uncapped -- two entry points into the same trainer running
 # different thread pools by accident of which file started the process. Measured cost: the capped
 # path's candidate phase ran 1.52x the uncapped path's on identical data and initialisation, with
-# 1.30x attributable to the cap (juniper-cascor#531). The default is now a no-op, matching the
-# service; `JUNIPER_CASCOR_BLAS_THREADS` opts back in.
+# 1.30x attributable to the cap (juniper-cascor#531). The default then became a no-op, matching the
+# service. Since 2026-09-23 (owner decision D1) both paths cap at 2 wherever the variables are unset:
+# #531's penalty did not reproduce on current code and the cap was measured not to move the epoch
+# count. `JUNIPER_CASCOR_BLAS_THREADS` sets another width or opts out (0 / off / none).
 #
 # RC-1's actual oversubscription fix -- torch.set_num_threads() per worker and for the parent --
 # is untouched and does not depend on these variables.
