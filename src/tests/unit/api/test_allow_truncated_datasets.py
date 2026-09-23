@@ -24,13 +24,32 @@ import sys
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
+import numpy as np
 import pytest
 
-from api.lifecycle.manager import TrainingLifecycleManager
+from api.lifecycle.manager import _TRUNCATABLE_GENERATORS, TrainingLifecycleManager
 from api.settings import Settings
 from cascor_constants.constants_api.constants_api_defaults import _PROJECT_API_ALLOW_TRUNCATED_DATASETS_DEFAULT, _PROJECT_API_SHORTFALL_ACCEPTED_BY_DEPLOYMENT, _PROJECT_API_SHORTFALL_ACCEPTED_BY_PRODUCER, _PROJECT_API_SHORTFALL_ACCEPTED_BY_REQUEST, _PROJECT_API_SHORTFALL_REFUSAL_TOKEN
 
 pytestmark = pytest.mark.unit
+
+# What juniper-data's ``GET /v1/generators`` says, reduced to the one fact the
+# stance resolver reads: whether the param schema declares ``allow_truncation``.
+# Since APD-CASCOR-008 the truncatable set is derived from this rather than from a
+# cascor constant, so every fake producer below has to answer it -- a fake that
+# cannot is an UNREADABLE list, and the deployment default is then withheld.
+_GENERATOR_LISTING = [
+    {"name": "equities", "schema": {"properties": {"allow_truncation": {"anyOf": [{"type": "boolean"}, {"type": "null"}]}}}},
+    {"name": "spiral", "schema": {"properties": {"n_spirals": {"type": "integer"}}}},
+]
+
+
+@pytest.fixture(autouse=True)
+def _fresh_truncatable_memo():
+    """The derived set is memoised per process; one test's success must not serve the next."""
+    _TRUNCATABLE_GENERATORS.reset()
+    yield
+    _TRUNCATABLE_GENERATORS.reset()
 
 
 class TestDefaultAndSurfaces:
@@ -223,6 +242,9 @@ class TestCallerStanceIsNotOverridden:
             def __init__(self, **_kwargs: object) -> None:
                 pass
 
+            def list_generators(self) -> list:
+                return _GENERATOR_LISTING
+
             def create_dataset(self, *, generator: str, params: dict, persist: bool) -> dict:
                 sent["generator"] = generator
                 sent["params"] = dict(params)
@@ -276,6 +298,9 @@ class TestCallerStanceIsNotOverridden:
         class _RefusingClient:
             def __init__(self, **_kwargs: object) -> None:
                 pass
+
+            def list_generators(self) -> list:
+                return _GENERATOR_LISTING
 
             def create_dataset(self, *, generator: str, params: dict, persist: bool) -> dict:
                 sent["params"] = dict(params)
@@ -338,25 +363,29 @@ class TestShortfallIsPollable:
 
     @staticmethod
     def _annotation_after_reload(caller_params: dict, *, deployment_flag: bool, meta: dict) -> dict:
-        """Run ``_reload_dataset`` up to the point the annotation is set, then stop.
+        """Run ``_reload_dataset`` to completion and return the annotation it bound.
 
-        The fake client delivers ``meta`` and a placeholder artifact; tensor
-        conversion is patched to raise, because the annotation is built BEFORE it
-        and everything after it is tensor plumbing this test has no opinion about.
+        The fake client delivers ``meta`` and a real three-partition artifact, and
+        the reload runs to the end. It used to stop at tensor conversion, because
+        the annotation was written BEFORE it -- which was itself the defect: a
+        status poll during conversion saw a shortfall for data never loaded.
+        Since APD-CASCOR-013 the annotation is set only when the data is bound, so
+        it can only be observed after a completed reload.
         """
 
         class _PartialClient:
             def __init__(self, **_kwargs: object) -> None:
                 pass
 
+            def list_generators(self) -> list:
+                return _GENERATOR_LISTING
+
             def create_dataset(self, *, generator: str, params: dict, persist: bool) -> dict:
                 return {"dataset_id": "partial-1", "meta": meta}
 
             def download_artifact_npz(self, dataset_id: str) -> dict:
-                return {}
-
-        class _StopAfterAnnotation(Exception):
-            pass
+                rng = np.random.default_rng(20260923)
+                return {key: rng.standard_normal((rows, 2)).astype("float32") for key, rows in (("X_train", 20), ("y_train", 20), ("X_val", 6), ("y_val", 6), ("X_test", 4), ("y_test", 4))}
 
         manager = TrainingLifecycleManager.__new__(TrainingLifecycleManager)
         manager.logger = logging.getLogger("test.annotation")
@@ -366,10 +395,9 @@ class TestShortfallIsPollable:
             patch("juniper_data_client.JuniperDataClient", _PartialClient),
             patch("api.settings.Settings", lambda: settings),
             patch("api.secrets.get_secret", lambda _name: "key"),
-            patch.object(TrainingLifecycleManager, "_artifact_to_tensors", side_effect=_StopAfterAnnotation("stop")),
-            pytest.raises(_StopAfterAnnotation),
         ):
             manager._reload_dataset(dataset_type="equities", params=dict(caller_params))
+        assert manager._train_x is not None, "the reload must have bound the data the annotation describes"
         assert manager._dataset_shortfall is not None
         return manager._dataset_shortfall
 

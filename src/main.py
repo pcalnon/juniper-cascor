@@ -661,9 +661,10 @@ def apply_allow_truncated_datasets(enabled: bool) -> bool:
     because the data is local -- ``main`` DOES fetch from juniper-data, and
     refuses to start when ``/v1/health`` is unreachable -- but because the
     generator here is hardcoded ``spiral``, which juniper-data synthesises
-    server-side and always delivers in full. ``spiral`` is not in
-    ``_PROJECT_API_TRUNCATABLE_GENERATORS``, so no shortfall can arise for the
-    flag to act on. The exported variable is read by the SERVICE and by the
+    server-side and always delivers in full. ``spiral``'s param schema declares
+    no ``allow_truncation``, so it is not in the truncatable set the service
+    derives from juniper-data's ``GET /v1/generators`` (APD-CASCOR-008), and no
+    shortfall can arise for the flag to act on. The exported variable is read by the SERVICE and by the
     API's dataset paths, and by nothing else this process runs afterwards.
     An accepted flag that silently does nothing is worse than a rejected one --
     the operator concludes the shortfall was allowed, when it was never asked

@@ -125,6 +125,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `src/tests/unit/test_package_version_single_source.py` pins each surface to the installed version
   and fails if any of the four assigns a release-number literal -- mutation-checked: 5 of its 6
   cases fail against the pre-fix tree.
+- **`dataset_shortfall` kept the previous run's annotation, naming a dataset the run was not
+  training on** (APD-CASCOR-013). It was written at one line and never cleared -- not on a new
+  run, not on reset -- so a run started on inline tensors reported the last staged run's
+  shortfall and its `dataset_id`. RULED: the field is named for what THIS run trains on; the
+  owner settled how on 2026-09-23 -- **it follows the loaded data**. The annotation is bound
+  together with the tensors it describes (in `start_training` for tensors passed as `X`, in
+  `_reload_dataset` for a fetch), so a run on inline data reports `null`, a run on a new fetch
+  reports that fetch's, and a run on data RETAINED from an earlier fetch -- a plain Stop -> Start,
+  or a start after `reset()` -- carries that data's annotation, consistent with `current_dataset`
+  (Added, above). Rejected: `null` for a retained-data start because it fetched nothing -- the
+  "annotation denies the partial data it trains on" shape APD-CASCOR-007 fixed; also rejected
+  earlier, clearing only on a new fetch and documenting the old behaviour. auto-start hands its
+  fetch's annotation to `start_training` with the tensors (new keyword-only `dataset_shortfall`);
+  an auto-start that fails between fetch and start binds nothing and leaves no annotation. Two
+  adjacent paths had the same defect and are fixed with it: a cancelled or refused live swap rolls
+  the annotation back with the data (a new `_PreSwapSnapshot` slot), and the fetch itself now
+  assigns the annotation only AFTER the artifact is converted and its tensors bound -- it used to
+  write it first, so a status poll during conversion showed a shortfall for data never loaded,
+  and a refused artifact (a val-less or malformed one) left it describing data that was not.
+  Pinned by `src/tests/unit/api/test_shortfall_lifecycle.py` (14 arms, including a poll taken
+  mid-conversion through the real fetch path, and the over-correction guards: new inline data
+  after a partial run still reports `null`, and so does a retained start on that inline data).
+- **The truncatable-generator set is read from juniper-data, not restated in cascor**
+  (APD-CASCOR-008). `_PROJECT_API_TRUNCATABLE_GENERATORS` is **removed** from both
+  `cascor_constants` trees; the set is derived from juniper-data's `GET /v1/generators` -- a
+  generator is truncatable iff its param schema declares `allow_truncation` (today exactly
+  `csv_import`, `equities`, `equities_seq`, measured through the real app). RULED 2026-09-09
+  (juniper-ml#1864; rejected: widening the `dataset_type` Literal, narrowing the constant). For
+  the case that ruling left open, RULED 2026-09-22: **withhold the opt-in and retry** -- if the
+  list cannot be read, no deployment opt-in is sent for that request, so juniper-data's own
+  default governs, and only a successful read is memoised (rejected: refusing to start, a
+  built-in fallback copy, a last-known set on disk). The list is read only when the resolver
+  consults it (flag on, caller silent), through a dedicated client bounded to 5 s with no
+  retries (the staged path holds the manager lock), and memoised per juniper-data URL; a listing
+  in which no entry carries a schema (an older producer, a test double listing `parameters`)
+  counts as UNREAD and is not memoised, where it used to be cached as "nothing is truncatable".
+  A refusal never tells the operator to set the flag while it is on: after a withheld opt-in it
+  says how to retry on each path (a failed start stays staged, a live swap is re-issued,
+  auto-start needs a restart), and for a generator the list does not declare it points at the
+  request's own `allow_truncation`. On the staged path this removes any startup dependency;
+  auto-start is itself a boot-time request that runs once, so there the retry is the operator's.
+  Operator docs: the flag's note in `AGENTS.md` and the `dataset_shortfall` entry in
+  `docs/api/JUNIPER_CASCOR_API_REFERENCE.md`. Pinned by
+  `src/tests/unit/api/test_truncatable_generators.py` plus new arms in the two truncation suites.
 - **`lockfile-update.yml` regenerated `requirements.lock` alone, so every dependency bump drifted
   `requirements-cpu.lock`** -- the container image's lock, which is *derived* from the GPU lock via
   `--constraint requirements.lock`. Nothing reported it: the CI check asserts only that every image

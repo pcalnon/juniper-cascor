@@ -126,17 +126,14 @@ _PROJECT_API_JUNIPER_DATA_READY_TIMEOUT: int = 60
 # or ``allow_truncated_datasets:`` in the experiment YAML's ``service:`` block.
 _PROJECT_API_ALLOW_TRUNCATED_DATASETS_DEFAULT: bool = False
 
-# Generators that can produce a PARTIAL dataset, and therefore accept the
-# ``allow_truncation`` opt-in. Every other generator synthesises its data and can
-# always deliver in full, so forwarding the flag to them would send a parameter
-# they ignore -- noise on every request, and a false suggestion that the knob
-# does something there.
-#
-# Tracks juniper-data: a generator that gains an input bound has to be added
-# here, or its shortfall will refuse the request with no way for a cascor run to
-# opt in. The cost of drift is a hard failure with a clear message, not silent
-# bad data, which is the right direction for this list to fail in.
-_PROJECT_API_TRUNCATABLE_GENERATORS: frozenset = frozenset({"equities", "equities_seq", "csv_import"})
+# There is deliberately NO constant naming the generators that can produce a
+# PARTIAL dataset. ``_PROJECT_API_TRUNCATABLE_GENERATORS`` lived here and restated
+# knowledge juniper-data owns; it is now derived at runtime from juniper-data's
+# ``GET /v1/generators`` (a generator is truncatable iff its param schema declares
+# ``allow_truncation``) by ``api.lifecycle.manager._TruncatableGenerators`` --
+# APD-CASCOR-008, ruled 2026-09-09, with the unreachable-list case ruled
+# 2026-09-22 (withhold the opt-in, retry on the next request). Do not restore a
+# copy here as a fallback: that option was offered and rejected.
 
 # Machine-readable prefix on the run-failure message raised when juniper-data
 # refused (422) a dataset it could not produce in full and no opt-in was on the
@@ -283,5 +280,4 @@ __all__ = [
     "_PROJECT_API_SHORTFALL_ACCEPTED_BY_REQUEST",
     "_PROJECT_API_SHORTFALL_REFUSAL_TOKEN",
     "_PROJECT_API_TLS_MIN_VERSION_DEFAULT",
-    "_PROJECT_API_TRUNCATABLE_GENERATORS",
 ]

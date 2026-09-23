@@ -18,7 +18,7 @@ from juniper_service_core import enforce_auth_posture
 from pydantic_core import PydanticSerializationError
 
 from api import provenance
-from api.lifecycle.manager import TrainingLifecycleManager
+from api.lifecycle.manager import _TRUNCATABLE_GENERATORS, TrainingLifecycleManager
 from api.middleware import RequestBodyLimitMiddleware, SecurityHeadersMiddleware, SecurityMiddleware
 from api.models.common import error_response
 from api.observability import MetricsAuthMiddleware, PrometheusMiddleware, RequestIdMiddleware, configure_logging, configure_sentry, get_prometheus_app, set_build_info
@@ -540,10 +540,26 @@ async def _auto_start_training(app: FastAPI, settings: Settings) -> None:
         # in ``JUNIPER_CASCOR_AUTO_DATASET_PARAMS`` wins, in either polarity, so
         # the operator's third option ("fail the data load completely", expressed
         # by sending ``false``) stays reachable on a flag-on deployment.
-        dataset_params, acceptance_source, wire_stance, caller_refused = TrainingLifecycleManager._resolve_truncation_stance(
+        #
+        # Which generators accept the opt-in is read from juniper-data's own
+        # ``GET /v1/generators`` (APD-CASCOR-008) -- and only if the resolver
+        # consults it (flag on, ``auto_dataset_params`` silent), through a short,
+        # retry-free client. The resolver runs in a worker thread because that
+        # read, when it happens, is blocking I/O.
+        #
+        # Do not read this as "no startup dependency": auto-start IS a boot-time
+        # request. It has already waited for the producer (``wait_for_ready``
+        # above), it runs once, and it swallows its failure. If the list cannot be
+        # read here the opt-in is WITHHELD for this one request (ruled
+        # 2026-09-22), and there is no later auto-start request to retry on --
+        # the failure recorded below says what to re-issue.
+        allow_truncated = bool(settings.allow_truncated_datasets)
+        dataset_params, acceptance_source, wire_stance, caller_refused, opt_in_skipped = await asyncio.to_thread(
+            TrainingLifecycleManager._resolve_truncation_stance,
             dataset_params,
             generator=settings.auto_dataset,
-            allow_truncated=bool(settings.allow_truncated_datasets),
+            allow_truncated=allow_truncated,
+            truncatable_generators=_TRUNCATABLE_GENERATORS.reader(JuniperDataClient, source=data_url, api_key=api_key),
         )
         logger.info(f"Auto-start: creating '{settings.auto_dataset}' dataset with params={dataset_params}")
         try:
@@ -569,7 +585,7 @@ async def _auto_start_training(app: FastAPI, settings: Settings) -> None:
             # service knob cannot override their own value). Logged at ERROR
             # because it is actionable, recorded because a log line is not a
             # surface, and then swallowed like every other auto-start failure.
-            fetch_failure = TrainingLifecycleManager._describe_dataset_fetch_failure(exc, allow_truncated=wire_stance, caller_refused=caller_refused)
+            fetch_failure = TrainingLifecycleManager._describe_dataset_fetch_failure(exc, allow_truncated=wire_stance, caller_refused=caller_refused, opt_in_skipped=opt_in_skipped, deployment_flag_on=allow_truncated)
             logger.error("Auto-start failed: %s", fetch_failure)
             _record_failure(fetch_failure)
             return
@@ -587,9 +603,17 @@ async def _auto_start_training(app: FastAPI, settings: Settings) -> None:
         # ``dataset_id`` rides along because the deployment default above can
         # change the params and therefore the content-addressed id; an annotation
         # that does not name its artifact is a claim about an unidentified one.
+        #
+        # BUILT here, BOUND by ``start_training`` together with the tensors it
+        # describes (APD-CASCOR-013: the annotation moves with the data). Written
+        # onto the manager before the start below, it would be replaced the moment
+        # that start binds this run's tensors -- which it is handed inline, like any
+        # caller's. It is also why a sequence that fails between here and the start
+        # (a refused or malformed artifact, a network that cannot be built) leaves
+        # no annotation behind: it binds no data, so there is nothing to describe.
         meta = result.get("meta") or {}
         lifecycle._log_dataset_shortfall(meta, acceptance_source=acceptance_source)
-        lifecycle._dataset_shortfall = TrainingLifecycleManager._build_dataset_shortfall(meta, dataset_id=dataset_id, acceptance_source=acceptance_source)
+        dataset_shortfall = TrainingLifecycleManager._build_dataset_shortfall(meta, dataset_id=dataset_id, acceptance_source=acceptance_source)
 
         # Reuse the manager's ingestion rather than re-reading the keys here. A
         # second, simpler reader is how the two paths drift: this one used to take
@@ -623,6 +647,9 @@ async def _auto_start_training(app: FastAPI, settings: Settings) -> None:
         # rows the final score comes from.
         # ``dataset_config`` names what was loaded, for ``current_dataset`` on the
         # status route: the generator and the params actually sent to the producer.
+        # ``dataset_shortfall`` is what that fetch could not deliver
+        # (APD-CASCOR-013): it travels with the tensors because the start binds
+        # the annotation together with the data it describes.
         train_result = lifecycle.start_training(
             X=x_train,
             y=y_train,
@@ -631,6 +658,7 @@ async def _auto_start_training(app: FastAPI, settings: Settings) -> None:
             X_test=x_test,
             y_test=y_test,
             dataset_config={"dataset_type": settings.auto_dataset, **dict(dataset_params)},
+            dataset_shortfall=dataset_shortfall,
         )
         logger.info(f"Auto-start: training initiated — {train_result}")
 
