@@ -1,0 +1,131 @@
+{
+  "about": "P0.4 (cascor#573) record-envelope golden. Written by src/tests/unit/test_log_record_envelope_contract.py under LOG_ENVELOPE_CAPTURE=1; see README.md in this directory before changing it.",
+  "path_a": {
+    "date_format": "%Y-%m-%d %H:%M:%S",
+    "field_names_console": [
+      "filename",
+      "lineno",
+      "asctime",
+      "levelname",
+      "message"
+    ],
+    "field_names_file": [
+      "filename",
+      "function",
+      "lineno",
+      "asctime",
+      "levelname",
+      "message"
+    ],
+    "formatter_string_console": "[%(filename)s: %(lineno)d] (%(asctime)s) [%(levelname)s] %(message)s",
+    "formatter_string_file": "[%(filename)s: %(function)s:%(lineno)d] (%(asctime)s) [%(levelname)s] %(message)s",
+    "log_file_name": "juniper_cascor.log"
+  },
+  "path_b_installed": {
+    "handlers": [
+      {
+        "class": "logging.StreamHandler",
+        "datefmt": "%y-%m-%d %H:%M:%S",
+        "format": "[%(filename)s:%(lineno)d] (%(asctime)s) [%(levelname)s] %(message)s",
+        "level": "ERROR",
+        "stream": "stdout"
+      },
+      {
+        "class": "logging.FileHandler",
+        "datefmt": "%Y-%m-%d %H:%M:%S",
+        "filename": "juniper_cascor.log",
+        "format": "[%(filename)s: %(funcName)s:%(lineno)d] (%(asctime)s) [%(levelname)s] %(message)s",
+        "level": "DEBUG"
+      }
+    ],
+    "level": "INFO",
+    "logger": "juniper",
+    "propagate": false
+  },
+  "path_b_yaml": {
+    "disable_existing_loggers": false,
+    "formatters": {
+      "formatter_console": {
+        "datefmt": "%y-%m-%d %H:%M:%S",
+        "format": "[%(filename)s:%(lineno)d] (%(asctime)s) [%(levelname)s] %(message)s"
+      },
+      "formatter_file": {
+        "datefmt": "%Y-%m-%d %H:%M:%S",
+        "format": "[%(filename)s: %(funcName)s:%(lineno)d] (%(asctime)s) [%(levelname)s] %(message)s"
+      }
+    },
+    "handlers": {
+      "handler_console": {
+        "class": "logging.StreamHandler",
+        "formatter": "formatter_console",
+        "level": "ERROR",
+        "stream": "ext://sys.stdout"
+      },
+      "handler_file": {
+        "class": "logging.FileHandler",
+        "encoding": "utf-8",
+        "filename": "juniper_cascor.log",
+        "formatter": "formatter_file",
+        "level": "DEBUG",
+        "mode": "a"
+      }
+    },
+    "loggers": {
+      "juniper": {
+        "handlers": [
+          "handler_console",
+          "handler_file"
+        ],
+        "level": "INFO",
+        "propagate": false
+      }
+    },
+    "root": {
+      "handlers": [
+        "handler_console",
+        "handler_file"
+      ],
+      "level": "ERROR"
+    },
+    "version": 1
+  },
+  "path_c_installed": {
+    "handlers": [
+      {
+        "class": "logging.StreamHandler",
+        "datefmt": null,
+        "format": "%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+        "level": "INFO",
+        "stream": "stderr"
+      },
+      {
+        "backupCount": 5,
+        "class": "logging.handlers.RotatingFileHandler",
+        "datefmt": null,
+        "filename": "juniper_cascor.log",
+        "format": "[%(filename)s: %(funcName)s:%(lineno)d] (%(asctime)s) [%(levelname)s] %(message)s",
+        "level": "DEBUG",
+        "maxBytes": 10485760
+      }
+    ],
+    "root_level": "INFO"
+  },
+  "reference_capture_shapes": {
+    "reference_cli_file_sink.txt": [
+      "A_FILE",
+      "STD_FILE_S"
+    ],
+    "reference_cli_stdout_sink.txt": [
+      "A_CONSOLE"
+    ],
+    "reference_service_file_sink.txt": [
+      "A_FILE",
+      "STD_FILE_MS",
+      "STD_FILE_S"
+    ],
+    "reference_service_stdout_sink.txt": [
+      "A_CONSOLE"
+    ]
+  },
+  "schema": 1
+}

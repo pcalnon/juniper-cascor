@@ -1,0 +1,42 @@
+INFO:     Started server process [2661537]
+INFO:     Waiting for application startup.
+2026-09-01 05:35:56,045 - juniper_cascor.api - WARNING - juniper-cascor is running OPEN — no API-key authentication is configured and require_auth is False, so protected routes will serve UNAUTHENTICATED. Set require_auth=True and populate the API-key secret to fail closed in a secured deployment.
+2026-09-01 05:35:56,045 - juniper_cascor.api - INFO - JuniperCascor API v0.9.0 starting
+2026-09-01 05:35:56,045 - juniper_cascor.api - INFO - Listening on 127.0.0.1:8230
+2026-09-01 05:35:56,045 - juniper_cascor.api.websocket - INFO - WebSocketManager initialized (max_connections=50, replay_buffer=1024, send_timeout=0.5s)
+2026-09-01 05:35:56,045 - juniper_cascor.api - INFO - WebSocket manager initialized
+2026-09-01 05:35:56,046 - api.lifecycle.monitor - INFO - TrainingMonitor initialized
+2026-09-01 05:35:56,047 - api.lifecycle.manager - INFO - TrainingLifecycleManager initialized
+2026-09-01 05:35:56,047 - api.lifecycle.manager - INFO - WebSocket broadcast callbacks registered
+2026-09-01 05:35:56,047 - juniper_cascor.api - INFO - Lifecycle manager initialized
+2026-09-01 05:35:56,047 - juniper_cascor.api.workers.registry - INFO - WorkerRegistry initialized (heartbeat_timeout=30.0s, max_workers=250)
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:8230 (Press CTRL+C to quit)
+INFO:     127.0.0.1:34346 - "GET /v1/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34360 - "GET /v1/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34364 - "POST /v1/training/dataset HTTP/1.1" 200 OK
++[cascade_correlation.py: 621] (2026-09-01 05:35:59) [INFO] CascadeCorrelationNetwork: __init__: Initialization completed
+INFO:     127.0.0.1:34372 - "POST /v1/training/start HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34388 - "GET /v1/training/status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34404 - "GET /metrics HTTP/1.1" 307 Temporary Redirect
+INFO:     127.0.0.1:34406 - "GET /metrics/ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:39950 - "GET /v1/training/status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:39954 - "GET /metrics HTTP/1.1" 307 Temporary Redirect
+INFO:     127.0.0.1:39968 - "GET /metrics/ HTTP/1.1" 200 OK
++[cascade_correlation.py: 3496] (2026-09-01 05:36:05) [INFO] CascadeCorrelationNetwork: train_candidate_worker: Starting training of Candidate Units in Pool.
++[candidate_unit.py: 189] (2026-09-01 05:36:05) [INFO] CandidateUnit: __init__: Initializing Candidate Unit with Logger class.
++[candidate_unit.py: 740] (2026-09-01 05:36:06) [INFO] CandidateUnit: train: Epoch 10 - Norm Output: shape=(320,) l2=3.863987, Norm Error: shape=(320,) l2=8.778728
++[candidate_unit.py: 689] (2026-09-01 05:36:07) [INFO] CandidateUnit: train: Final Correlation: UUID: 7e57eea8-a23c-4eaf-852d-4dcb5eb0f655, Final correlation value: 0.188662, Best Corr Index: 1
+
+
+
+2026-09-01 05:38:00,489 - api.lifecycle.monitor - INFO - Cascade unit 0 added (correlation=0.0000)
+2026-09-01 05:38:00,489 - api.lifecycle.monitor - INFO - Cascade unit 1 added (correlation=0.0000)
+2026-09-01 05:38:00,490 - api.lifecycle.monitor - INFO - Cascade unit 2 added (correlation=0.0000)
+2026-09-01 05:38:00,705 - api.lifecycle.monitor - INFO - Training ended
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+2026-09-01 05:38:07,258 - api.lifecycle.manager - INFO - TrainingLifecycleManager shut down (0.00s)
+2026-09-01 05:38:07,260 - juniper_cascor.api - INFO - JuniperCascor API shutting down
+INFO:     Application shutdown complete.
+INFO:     Finished server process [2661537]

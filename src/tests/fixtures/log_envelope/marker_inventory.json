@@ -1,0 +1,600 @@
+{
+  "generated_by": "juniper-ml/util/ad-hoc/2026-09-22_p04_log_marker_census.py",
+  "cascor_rev": "e052ef80b4dc486d2aeec60671c39ea9ed60f26a",
+  "envelope_consumers": {
+    "ENVELOPE_TIMESTAMP (seconds-only)": [
+      "juniper-ml/util/ad-hoc/2026-08-16_h2h_collect.py:56",
+      "juniper-ml/util/ad-hoc/2026-08-16_h2h_collect.py:57",
+      "juniper-ml/util/ad-hoc/2026-08-16_h2h_phase_split.py:47",
+      "juniper-ml/util/ad-hoc/2026-08-20_determinism_nrun.py:109"
+    ],
+    "ENVELOPE_FUNC_LINE": [
+      "juniper-ml/util/ad-hoc/2026-08-16_h2h_collect.py:56",
+      "juniper-ml/util/ad-hoc/2026-08-16_h2h_collect.py:57",
+      "juniper-ml/util/ad-hoc/2026-08-16_h2h_collect.py:58",
+      "juniper-ml/util/ad-hoc/2026-08-16_h2h_collect.py:59",
+      "juniper-ml/util/ad-hoc/2026-08-16_h2h_marker_sentinel.bash:59",
+      "juniper-ml/util/ad-hoc/2026-08-18_h2h_pair_compare.py:35",
+      "juniper-ml/util/ad-hoc/2026-08-18_h2h_pair_compare.py:36",
+      "juniper-ml/util/ad-hoc/2026-08-18_h2h_pair_compare.py:40"
+    ],
+    "ENVELOPE_TIMESTAMP": [
+      "juniper-ml/util/ad-hoc/2026-08-25_cascor_stop_during_training_repro.bash:291",
+      "juniper-ml/util/ad-hoc/2026-08-25_g4_overhead_decomposition.py:53",
+      "juniper-ml/util/ad-hoc/2026-08-26_t6_stop_evidence_scan.py:43"
+    ],
+    "ENVELOPE_SENTINEL": [
+      "juniper-ml/util/ad-hoc/2026-08-25_cascor_stop_during_training_repro.bash:309",
+      "juniper-ml/util/ad-hoc/2026-08-26_t6_stop_evidence_scan.py:103"
+    ]
+  },
+  "markers": [
+    {
+      "fragments": [
+        "Calculated accuracy: "
+      ],
+      "sites": [
+        {
+          "file": "src/cascade_correlation/cascade_correlation.py",
+          "method": "info"
+        }
+      ],
+      "consumers": [
+        "juniper-ml/util/ad-hoc/2026-08-16_h2h_collect.py:58",
+        "juniper-ml/util/ad-hoc/2026-08-18_h2h_pair_compare.py:36"
+      ],
+      "required_level": 20
+    },
+    {
+      "fragments": [
+        "CandidateUnit: train: Epoch ",
+        " - Norm Output:"
+      ],
+      "sites": [
+        {
+          "file": "src/candidate_unit/candidate_unit.py",
+          "method": "info"
+        }
+      ],
+      "consumers": [
+        "juniper-ml/util/ad-hoc/2026-08-20_determinism_nrun.py:121"
+      ],
+      "required_level": 20
+    },
+    {
+      "fragments": [
+        "CandidateUnit: train: Final Correlation: UUID: ",
+        ", Final correlation value: "
+      ],
+      "sites": [
+        {
+          "file": "src/candidate_unit/candidate_unit.py",
+          "method": "info"
+        }
+      ],
+      "consumers": [
+        "juniper-ml/util/ad-hoc/2026-08-20_determinism_localize.py:79",
+        "juniper-ml/util/ad-hoc/2026-08-20_determinism_nrun.py:122"
+      ],
+      "required_level": 20
+    },
+    {
+      "fragments": [
+        "CascadeHDF5Serializer: Saving network to"
+      ],
+      "sites": [
+        {
+          "file": "src/snapshots/snapshot_serializer.py",
+          "method": "info"
+        }
+      ],
+      "consumers": [
+        "juniper-ml/util/ad-hoc/2026-08-25_g4_overhead_decomposition.py:65"
+      ],
+      "required_level": 20
+    },
+    {
+      "fragments": [
+        "CascadeHDF5Serializer: Successfully saved network to"
+      ],
+      "sites": [
+        {
+          "file": "src/snapshots/snapshot_serializer.py",
+          "method": "info"
+        }
+      ],
+      "consumers": [
+        "juniper-ml/util/ad-hoc/2026-08-25_g4_overhead_decomposition.py:66"
+      ],
+      "required_level": 20
+    },
+    {
+      "fragments": [
+        "Completed solving SpiralProblem instance"
+      ],
+      "sites": [
+        {
+          "file": "src/main.py",
+          "method": "info"
+        }
+      ],
+      "consumers": [
+        "juniper-ml/util/ad-hoc/2026-08-14_fp13_control_tkagg.bash:104"
+      ],
+      "required_level": 20
+    },
+    {
+      "fragments": [
+        "Iteration ",
+        " - Train Loss: ",
+        ", Train Accuracy: "
+      ],
+      "sites": [
+        {
+          "file": "src/cascade_correlation/cascade_correlation.py",
+          "method": "info"
+        }
+      ],
+      "consumers": [
+        "juniper-ml/util/ad-hoc/2026-08-18_h2h_pair_compare.py:35"
+      ],
+      "required_level": 20
+    },
+    {
+      "fragments": [
+        "JuniperCascor API shutting down"
+      ],
+      "sites": [
+        {
+          "file": "src/api/app.py",
+          "method": "info"
+        }
+      ],
+      "consumers": [
+        "juniper-ml/util/ad-hoc/2026-08-26_t6_stop_evidence_scan.py:92"
+      ],
+      "required_level": 20
+    },
+    {
+      "fragments": [
+        "Number of hidden units: "
+      ],
+      "sites": [
+        {
+          "file": "src/cascade_correlation/cascade_correlation.py",
+          "method": "info"
+        }
+      ],
+      "consumers": [
+        "juniper-ml/util/ad-hoc/2026-08-16_h2h_collect.py:59"
+      ],
+      "required_level": 20
+    },
+    {
+      "fragments": [
+        "Starting main training loop with max_epochs: ",
+        ", max_iterations: ",
+        ", early stopping: "
+      ],
+      "sites": [
+        {
+          "file": "src/cascade_correlation/cascade_correlation.py",
+          "method": "info"
+        }
+      ],
+      "consumers": [
+        "juniper-ml/util/ad-hoc/2026-08-16_h2h_collect.py:56"
+      ],
+      "required_level": 20
+    },
+    {
+      "fragments": [
+        "TaskDistributor: Distributing"
+      ],
+      "sites": [
+        {
+          "file": "src/parallelism/task_distributor.py",
+          "method": "info"
+        }
+      ],
+      "consumers": [
+        "juniper-ml/util/ad-hoc/2026-08-25_cascor_stop_during_training_repro.bash:188",
+        "juniper-ml/util/ad-hoc/2026-08-25_cascor_stop_during_training_repro.bash:306"
+      ],
+      "required_level": 20
+    },
+    {
+      "fragments": [
+        "Training completed."
+      ],
+      "sites": [
+        {
+          "file": "src/cascade_correlation/cascade_correlation.py",
+          "method": "info"
+        }
+      ],
+      "consumers": [
+        "juniper-ml/util/ad-hoc/2026-08-16_h2h_collect.py:57",
+        "juniper-ml/util/ad-hoc/2026-08-18_h2h_pair_compare.py:40"
+      ],
+      "required_level": 20
+    },
+    {
+      "fragments": [
+        "Training ended"
+      ],
+      "sites": [
+        {
+          "file": "src/api/lifecycle/monitor.py",
+          "method": "info"
+        }
+      ],
+      "consumers": [
+        "juniper-ml/util/ad-hoc/2026-08-25_cascor_stop_during_training_repro.bash:304",
+        "juniper-ml/util/ad-hoc/2026-08-26_t6_stop_evidence_scan.py:88"
+      ],
+      "required_level": 20
+    },
+    {
+      "fragments": [
+        "TrainingLifecycleManager shut down"
+      ],
+      "sites": [
+        {
+          "file": "src/api/lifecycle/manager.py",
+          "method": "info"
+        },
+        {
+          "file": "src/api/lifecycle/manager.py",
+          "method": "warning"
+        }
+      ],
+      "consumers": [
+        "juniper-ml/util/ad-hoc/2026-08-25_cascor_stop_during_training_repro.bash:305"
+      ],
+      "required_level": 30
+    },
+    {
+      "fragments": [
+        "TrainingLifecycleManager shut down ("
+      ],
+      "sites": [
+        {
+          "file": "src/api/lifecycle/manager.py",
+          "method": "info"
+        }
+      ],
+      "consumers": [
+        "juniper-ml/util/ad-hoc/2026-08-26_t6_stop_evidence_scan.py:44"
+      ],
+      "required_level": 20
+    },
+    {
+      "fragments": [
+        "Using JuniperData service at"
+      ],
+      "sites": [
+        {
+          "file": "src/spiral_problem/spiral_problem.py",
+          "method": "info"
+        }
+      ],
+      "consumers": [
+        "juniper-ml/util/ad-hoc/2026-08-16_h2h_marker_sentinel.bash:59"
+      ],
+      "required_level": 20
+    },
+    {
+      "fragments": [
+        "Using JuniperData service at "
+      ],
+      "sites": [
+        {
+          "file": "src/spiral_problem/spiral_problem.py",
+          "method": "info"
+        }
+      ],
+      "consumers": [
+        "juniper-ml/util/ad-hoc/2026-08-16_h2h_collect.py:60"
+      ],
+      "required_level": 20
+    },
+    {
+      "fragments": [
+        "WS emission summary"
+      ],
+      "sites": [
+        {
+          "file": "src/api/websocket/manager.py",
+          "method": "info"
+        }
+      ],
+      "consumers": [
+        "juniper-ml/util/ad-hoc/2026-09-08_relay_repair_sequence.bash:40"
+      ],
+      "required_level": 20
+    },
+    {
+      "fragments": [
+        "_ensure_worker_pool: Persistent pool created with"
+      ],
+      "sites": [
+        {
+          "file": "src/cascade_correlation/cascade_correlation.py",
+          "method": "info"
+        }
+      ],
+      "consumers": [
+        "juniper-ml/util/ad-hoc/2026-08-25_g4_overhead_decomposition.py:61"
+      ],
+      "required_level": 20
+    },
+    {
+      "fragments": [
+        "calculate_accuracy: Calculated accuracy: "
+      ],
+      "sites": [
+        {
+          "file": "src/cascade_correlation/cascade_correlation.py",
+          "method": "info"
+        }
+      ],
+      "consumers": [
+        "juniper-ml/util/ad-hoc/2026-08-20_determinism_nrun.py:115"
+      ],
+      "required_level": 20
+    },
+    {
+      "fragments": [
+        "did not stop gra"
+      ],
+      "sites": [
+        {
+          "file": "src/cascade_correlation/cascade_correlation.py",
+          "method": "warning"
+        },
+        {
+          "file": "src/remote_client/remote_client.py",
+          "method": "warning"
+        }
+      ],
+      "consumers": [
+        "juniper-ml/util/ad-hoc/2026-08-26_g4_post_fix_analysis.py:90"
+      ],
+      "required_level": 30
+    },
+    {
+      "fragments": [
+        "did not unwind"
+      ],
+      "sites": [
+        {
+          "file": "src/api/lifecycle/manager.py",
+          "method": "warning"
+        }
+      ],
+      "consumers": [
+        "juniper-ml/util/ad-hoc/2026-08-25_cascor_stop_during_training_repro.bash:302",
+        "juniper-ml/util/ad-hoc/2026-08-26_t6_stop_evidence_scan.py:99"
+      ],
+      "required_level": 30
+    },
+    {
+      "fragments": [
+        "fit: Starting main training loop with max_epochs:"
+      ],
+      "sites": [
+        {
+          "file": "src/cascade_correlation/cascade_correlation.py",
+          "method": "info"
+        }
+      ],
+      "consumers": [
+        "juniper-ml/util/ad-hoc/2026-08-16_h2h_phase_split.py:66",
+        "juniper-ml/util/ad-hoc/2026-08-20_determinism_nrun.py:117",
+        "juniper-ml/util/ad-hoc/2026-08-25_g4_overhead_decomposition.py:57"
+      ],
+      "required_level": 20
+    },
+    {
+      "fragments": [
+        "fit: Training completed."
+      ],
+      "sites": [
+        {
+          "file": "src/cascade_correlation/cascade_correlation.py",
+          "method": "info"
+        }
+      ],
+      "consumers": [
+        "juniper-ml/util/ad-hoc/2026-08-16_h2h_phase_split.py:67",
+        "juniper-ml/util/ad-hoc/2026-08-20_determinism_nrun.py:116",
+        "juniper-ml/util/ad-hoc/2026-08-25_g4_overhead_decomposition.py:67"
+      ],
+      "required_level": 20
+    },
+    {
+      "fragments": [
+        "generate_n_spiral_dataset: Using JuniperData service at"
+      ],
+      "sites": [
+        {
+          "file": "src/spiral_problem/spiral_problem.py",
+          "method": "info"
+        }
+      ],
+      "consumers": [
+        "juniper-ml/util/ad-hoc/2026-08-25_g4_overhead_decomposition.py:55"
+      ],
+      "required_level": 20
+    },
+    {
+      "fragments": [
+        "grow_network: ",
+        " hidden units"
+      ],
+      "sites": [
+        {
+          "file": "src/cascade_correlation/cascade_correlation.py",
+          "method": "info"
+        },
+        {
+          "file": "src/cascade_correlation/cascade_correlation.py",
+          "method": "trace"
+        }
+      ],
+      "consumers": [
+        "juniper-ml/util/ad-hoc/2026-08-20_determinism_nrun.py:123"
+      ],
+      "required_level": 20
+    },
+    {
+      "fragments": [
+        "grow_network: Iteration ",
+        " - Train Loss: ",
+        ", Train Accuracy: "
+      ],
+      "sites": [
+        {
+          "file": "src/cascade_correlation/cascade_correlation.py",
+          "method": "info"
+        }
+      ],
+      "consumers": [
+        "juniper-ml/util/ad-hoc/2026-08-20_determinism_localize.py:80"
+      ],
+      "required_level": 20
+    },
+    {
+      "fragments": [
+        "grow_network: Iteration ",
+        " - Train Loss: ",
+        ", Train Accuracy: ",
+        ", Early stop: "
+      ],
+      "sites": [
+        {
+          "file": "src/cascade_correlation/cascade_correlation.py",
+          "method": "info"
+        }
+      ],
+      "consumers": [
+        "juniper-ml/util/ad-hoc/2026-08-20_determinism_nrun.py:110"
+      ],
+      "required_level": 20
+    },
+    {
+      "fragments": [
+        "solve_n_spiral_problem: Dataset x_full: Shape:"
+      ],
+      "sites": [
+        {
+          "file": "src/spiral_problem/spiral_problem.py",
+          "method": "debug"
+        },
+        {
+          "file": "src/spiral_problem/spiral_problem.py",
+          "method": "info"
+        },
+        {
+          "file": "src/spiral_problem/spiral_problem.py",
+          "method": "verbose"
+        }
+      ],
+      "consumers": [
+        "juniper-ml/util/ad-hoc/2026-08-25_g4_overhead_decomposition.py:56"
+      ],
+      "required_level": 20
+    },
+    {
+      "fragments": [
+        "stop_requested"
+      ],
+      "sites": [
+        {
+          "file": "src/api/lifecycle/manager.py",
+          "method": "UNKNOWN"
+        }
+      ],
+      "consumers": [
+        "juniper-ml/util/ad-hoc/2026-08-25_cascor_stop_during_training_repro.bash:303"
+      ],
+      "required_level": null
+    },
+    {
+      "fragments": [
+        "train_candidates: Executing candidate training with ",
+        " processes"
+      ],
+      "sites": [
+        {
+          "file": "src/cascade_correlation/cascade_correlation.py",
+          "method": "info"
+        }
+      ],
+      "consumers": [
+        "juniper-ml/util/ad-hoc/2026-08-16_h2h_phase_split.py:63",
+        "juniper-ml/util/ad-hoc/2026-08-20_determinism_diag.py:46",
+        "juniper-ml/util/ad-hoc/2026-08-20_determinism_localize.py:78",
+        "juniper-ml/util/ad-hoc/2026-08-20_determinism_nrun.py:118",
+        "juniper-ml/util/ad-hoc/2026-08-21_h2h_pool_balance.py:56",
+        "juniper-ml/util/ad-hoc/2026-08-25_g4_overhead_decomposition.py:62"
+      ],
+      "required_level": 20
+    },
+    {
+      "fragments": [
+        "train_output_layer: Final output layer training loss:"
+      ],
+      "sites": [
+        {
+          "file": "src/cascade_correlation/cascade_correlation.py",
+          "method": "info"
+        }
+      ],
+      "consumers": [
+        "juniper-ml/util/ad-hoc/2026-08-16_h2h_phase_split.py:65",
+        "juniper-ml/util/ad-hoc/2026-08-20_determinism_nrun.py:120",
+        "juniper-ml/util/ad-hoc/2026-08-25_g4_overhead_decomposition.py:64"
+      ],
+      "required_level": 20
+    },
+    {
+      "fragments": [
+        "train_output_layer: Output Layer Training - Epoch ",
+        ", Loss:"
+      ],
+      "sites": [
+        {
+          "file": "src/cascade_correlation/cascade_correlation.py",
+          "method": "debug"
+        },
+        {
+          "file": "src/cascade_correlation/cascade_correlation.py",
+          "method": "info"
+        }
+      ],
+      "consumers": [
+        "juniper-ml/util/ad-hoc/2026-08-16_h2h_phase_split.py:64",
+        "juniper-ml/util/ad-hoc/2026-08-20_determinism_nrun.py:119",
+        "juniper-ml/util/ad-hoc/2026-08-25_g4_overhead_decomposition.py:63"
+      ],
+      "required_level": 20
+    },
+    {
+      "fragments": [
+        "training thread still running"
+      ],
+      "sites": [
+        {
+          "file": "src/api/lifecycle/manager.py",
+          "method": "warning"
+        }
+      ],
+      "consumers": [
+        "juniper-ml/util/ad-hoc/2026-08-26_t6_stop_evidence_scan.py:99"
+      ],
+      "required_level": 30
+    }
+  ]
+}

@@ -1,0 +1,33 @@
+[auth_posture.py: enforce_auth_posture:121] (2026-09-01 05:35:56,045) [WARNING] juniper-cascor is running OPEN — no API-key authentication is configured and require_auth is False, so protected routes will serve UNAUTHENTICATED. Set require_auth=True and populate the API-key secret to fail closed in a secured deployment.
+[app.py: lifespan:340] (2026-09-01 05:35:56,045) [INFO] JuniperCascor API v0.9.0 starting
+[app.py: lifespan:341] (2026-09-01 05:35:56,045) [INFO] Listening on 127.0.0.1:8230
+[manager.py: __init__:199] (2026-09-01 05:35:56,045) [INFO] WebSocketManager initialized (max_connections=50, replay_buffer=1024, send_timeout=0.5s)
+[app.py: lifespan:358] (2026-09-01 05:35:56,045) [INFO] WebSocket manager initialized
+[monitor.py: __init__:210] (2026-09-01 05:35:56,046) [INFO] TrainingMonitor initialized
+[manager.py: __init__:1298] (2026-09-01 05:35:56,047) [INFO] TrainingLifecycleManager initialized
+[manager.py: _register_ws_callbacks:1447] (2026-09-01 05:35:56,047) [INFO] WebSocket broadcast callbacks registered
+[app.py: lifespan:367] (2026-09-01 05:35:56,047) [INFO] Lifecycle manager initialized
+[registry.py: __init__:169] (2026-09-01 05:35:56,047) [INFO] WorkerRegistry initialized (heartbeat_timeout=30.0s, max_workers=250)
+[coordinator.py: __init__:116] (2026-09-01 05:35:56,047) [INFO] WorkerCoordinator initialized (reassignment_timeout=120.0s, health_check=10.0s)
+[coordinator.py: start_monitor:133] (2026-09-01 05:35:56,047) [INFO] Health monitor thread started
+[log_config.py: __init__:175] (2026-09-01 05:35:58) [INFO] LogConfig: __init__: Created custom logger by instantiating Logger class
+[log_config.py: __init__:183] (2026-09-01 05:35:58) [INFO] LogConfig: __init__: Completed Initialization of LogConfig class
++[cascade_correlation.py: __init__:621] (2026-09-01 05:35:59) [INFO] CascadeCorrelationNetwork: __init__: Initialization completed
+[task_distributor.py: set_coordinator:45] (2026-09-01 05:35:59) [INFO] TaskDistributor: Remote worker coordinator set
+[cascade_correlation.py: train_output_layer:2181] (2026-09-01 05:36:01) [INFO] CascadeCorrelationNetwork: train_output_layer: Output Layer Training - Epoch 10, Loss: 0.339073
+[cascade_correlation.py: train_output_layer:2201] (2026-09-01 05:36:02) [INFO] CascadeCorrelationNetwork: train_output_layer: Final output layer training loss: 0.239909
+[snapshot_serializer.py: save_network:207] (2026-09-01 05:36:03) [INFO] CascadeHDF5Serializer: Saving network to ~/.local/state/juniper-experiments/20260901T103548Z-befc/snapshots/cascor_snapshot_20260901_053602_d9a15a7a-b8b5-40fe-963f-07871fe67980.h5
+[snapshot_serializer.py: save_network:224] (2026-09-01 05:36:03) [INFO] CascadeHDF5Serializer: Successfully saved network to ~/.local/state/juniper-experiments/20260901T103548Z-befc/snapshots/cascor_snapshot_20260901_053602_d9a15a7a-b8b5-40fe-963f-07871fe67980.h5
+[cascade_correlation.py: _accuracy:5937] (2026-09-01 05:36:03) [INFO] CascadeCorrelationNetwork: _accuracy: Calculated accuracy: 0.5312, Percentage: 53.1250%
+[cascade_correlation.py: calculate_accuracy:5870] (2026-09-01 05:36:03) [INFO] CascadeCorrelationNetwork: calculate_accuracy: Calculated accuracy: 0.5312, Percentage: 53.12%
+[cascade_correlation.py: fit:1988] (2026-09-01 05:36:03) [INFO] CascadeCorrelationNetwork: fit: Starting main training loop with max_epochs: 50, max_iterations: 10, early stopping: True
+[cascade_correlation.py: train_candidates:2247] (2026-09-01 05:36:03) [INFO] CascadeCorrelationNetwork: train_candidates: Executing candidate training with 3 processes.
+[task_distributor.py: distribute_and_collect:85] (2026-09-01 05:36:03) [INFO] TaskDistributor: Distributing 4 tasks — 4 local, 0 remote (local_capacity=3, remote_workers=0)
+[cascade_correlation.py: _ensure_worker_pool:3918] (2026-09-01 05:36:05) [INFO] CascadeCorrelationNetwork: _ensure_worker_pool: Persistent pool created with 3 workers
++[cascade_correlation.py: _train_candidate_worker_impl:3496] (2026-09-01 05:36:05) [INFO] CascadeCorrelationNetwork: train_candidate_worker: Starting training of Candidate Units in Pool.
++[cascade_correlation.py: _train_candidate_worker_impl:3496] (2026-09-01 05:36:05) [INFO] CascadeCorrelationNetwork: train_candidate_worker: Starting training of Candidate Units in Pool.
++[candidate_unit.py: _display_training_progress:740] (2026-09-01 05:36:06) [INFO] CandidateUnit: train: Epoch 10 - Norm Output: shape=(320,) l2=3.863987, Norm Error: shape=(320,) l2=8.778728
++[candidate_unit.py: train_detailed:689] (2026-09-01 05:36:07) [INFO] CandidateUnit: train: Final Correlation: UUID: 7e57eea8-a23c-4eaf-852d-4dcb5eb0f655, Final correlation value: 0.188662, Best Corr Index: 1
+[cascade_correlation.py: grow_network:4967] (2026-09-01 05:36:19) [INFO] CascadeCorrelationNetwork: grow_network: Iteration 0 - Train Loss: 0.211501, Train Accuracy: 0.5938, Early stop: False
+[cascade_correlation.py: grow_network:4983] (2026-09-01 05:38:00) [INFO] CascadeCorrelationNetwork: grow_network: Finished training after 9 iterations. Total hidden units: 10. Completion reason: early_stopped
+[cascade_correlation.py: fit:2006] (2026-09-01 05:38:00) [INFO] CascadeCorrelationNetwork: fit: Training completed.
