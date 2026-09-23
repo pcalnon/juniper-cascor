@@ -57,6 +57,9 @@ async def start_training(request: Request, body: TrainingStartRequest = None) ->
     y_val = None
     x_test = None
     y_test = None
+    # Which dataset ``x``/``y`` are, when this route knows (``current_dataset`` on
+    # the status route reports it). Raw inline tensors leave it None: unknown.
+    dataset_config = None
     # C5 (Q4 use-case 2 / U-1): start-fresh toggle (default off). Forwarded to
     # the lifecycle, which discards the model + retained metrics/history before
     # a fresh run (snapshots preserved). Omitted / False continues the current
@@ -101,6 +104,7 @@ async def start_training(request: Request, body: TrainingStartRequest = None) ->
             )
         if body.dataset is not None and body.dataset.generator == "spiral":
             x, y = _generate_spiral_data(body.dataset.params or {})
+            dataset_config = {"dataset_type": "spiral", **dict(body.dataset.params or {})}
 
         # Handle training params — typed TrainingParams model rejects
         # unknown keys via Pydantic; forward only explicitly-set fields.
@@ -111,7 +115,7 @@ async def start_training(request: Request, body: TrainingStartRequest = None) ->
             kwargs["max_epochs"] = body.epochs
 
     try:
-        result = lifecycle.start_training(X=x, y=y, X_val=x_val, y_val=y_val, X_test=x_test, y_test=y_test, start_fresh=start_fresh, **kwargs)
+        result = lifecycle.start_training(X=x, y=y, X_val=x_val, y_val=y_val, X_test=x_test, y_test=y_test, start_fresh=start_fresh, dataset_config=dataset_config, **kwargs)
         return success_response(result)
     except (RuntimeError, ValueError) as e:
         # Surface the specific reason (training already in progress / no dataset
