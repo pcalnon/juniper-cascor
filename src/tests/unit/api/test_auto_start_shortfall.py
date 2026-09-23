@@ -351,6 +351,9 @@ class TestAutoStartFailureIsQueryable:
         manager.training_state.get_state.return_value = {}
         manager.get_pending_dataset_config = lambda: None
         manager._metrics_undo_available = lambda: False
+        # ``current_dataset`` reads these two (nothing loaded -> None).
+        manager._train_x = None
+        manager._current_dataset_config = None
 
         assert manager.get_status()["auto_start_failure"] is None
         manager._auto_start_failure = "Auto-start failed: JuniperData not ready"

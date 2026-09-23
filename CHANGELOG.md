@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`current_dataset` on `GET /v1/training/status` — which dataset is loaded.** Additive.
+  `pending_dataset` answered "what changes at the next start" and nothing answered "what is there
+  now": `_current_dataset_config` has been tracked since the live-swap work but reached the API only
+  as a swap's `before_cfg`. It has three readings a client must keep apart — `null` (nothing
+  loaded), `{"dataset_type": null}` (data loaded, identity unknown: raw inline tensors), and the
+  config it was loaded from. juniper-canopy needs it to hydrate its dataset selector after a page
+  reload, which otherwise shows its layout default over whatever this service is training on
+  (juniper-ml `notes/JUNIPER_2026-09-02_JUNIPER-CANOPY_SELECTION-REACHABILITY-DESIGN.md` §4.10, G7).
+- **`start_training(dataset_config=...)`, so the record follows the data.** A start that binds
+  inline tensors used to leave `_current_dataset_config` naming the previously staged dataset — the
+  field above would then have reported a dataset the run was not training on. The in-process spiral
+  fallback on `POST /v1/training/start` and the auto-start path now name what they loaded; raw
+  inline tensors record *unknown*. A pending staged dataset still wins, as it does over the tensors.
+
 ### Fixed
 
 - **Three version surfaces restated `"0.6.0"` while the distribution was 0.11.0** (#668).
