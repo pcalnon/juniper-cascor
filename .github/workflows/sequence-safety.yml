@@ -57,7 +57,7 @@
 #      SHA-pinned checkout / setup-python / upload-artifact.
 #
 # References:
-#    - juniper-ci-tools (PyPI >=0.8.0,<0.9.0): juniper-symbol-loss-check /
+#    - juniper-ci-tools (PyPI >=0.9.0,<0.10.0): juniper-symbol-loss-check /
 #      juniper-docs-additions-check console scripts (canonical source; the inline
 #      util/sequence_safety/ copy was deleted in this PR -- ml canonical, consumers consume)
 #    - juniper-ml .github/workflows/ci.yml (the per-PR "Sequence Safety" advisory job this ports)
