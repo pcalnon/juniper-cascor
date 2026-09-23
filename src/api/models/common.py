@@ -1,11 +1,18 @@
 """Common API response models."""
 
+import importlib.metadata
 import time
 from typing import Any
 
 from pydantic import BaseModel, Field
 
-_API_VERSION: str = "0.6.0"
+# juniper-cascor#668: every ``ResponseEnvelope.meta.version`` defaults to this, so it reads the
+# installed distribution's metadata like ``api.app`` and ``/v1/health`` (BUG-CC-04). It was a
+# hardcoded "0.6.0" -- what every enveloped response reported while the package was at 0.11.0.
+try:
+    _API_VERSION: str = importlib.metadata.version("juniper-cascor")
+except importlib.metadata.PackageNotFoundError:  # pragma: no cover - source checkout only
+    _API_VERSION = "0.0.0-dev"
 
 
 def coerce_native_scalars(value: Any) -> Any:
@@ -57,7 +64,7 @@ class ResponseEnvelope(BaseModel):
     {
         "status": "success" | "error",
         "data": { ... },
-        "meta": { "timestamp": ..., "version": "0.6.0" }
+        "meta": { "timestamp": ..., "version": <installed juniper-cascor version> }
     }
     """
 

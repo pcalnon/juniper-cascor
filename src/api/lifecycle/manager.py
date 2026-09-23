@@ -2286,6 +2286,7 @@ class TrainingLifecycleManager:
         X_test: Optional[torch.Tensor] = None,
         y_test: Optional[torch.Tensor] = None,
         start_fresh: bool = False,
+        dataset_config: Optional[Dict[str, Any]] = None,
         **kwargs,
     ) -> Dict[str, Any]:
         """Start training asynchronously.
@@ -2312,6 +2313,14 @@ class TrainingLifecycleManager:
                 (default) the current model and its metrics/history are
                 RETAINED, so training continues the existing model — the
                 cross-dataset continual-training use case (Q4 use-case 1).
+            dataset_config: The identity of ``X``/``y`` when the caller knows it,
+                in the shape ``_current_dataset_config`` records for a staged
+                dataset (``{"dataset_type": ..., **params}``). Read only when
+                ``X`` is given. ``None`` records the bound data as UNKNOWN, which
+                is the honest reading of raw inline tensors; the previous value is
+                never carried over, because that would report the last STAGED
+                dataset as the one this run trains on. A pending staged config
+                still wins, exactly as it wins over ``X`` itself.
             **kwargs: TrainingParams body. Fields in ``_FIT_KWARGS`` are
                 forwarded to ``network.fit``; everything else is applied
                 in-place via ``update_params`` so the next fit pass sees
@@ -2329,6 +2338,12 @@ class TrainingLifecycleManager:
             if X is not None:
                 self._train_x = X
                 self._train_y = y
+                # The tensors just bound are the dataset now, so the record of WHICH
+                # dataset moves with them -- ``get_status()`` publishes it as
+                # ``current_dataset``. Leaving it untouched here is how a status
+                # route would name the previous staged dataset while training on
+                # inline data.
+                self._current_dataset_config = dict(dataset_config) if dataset_config else None
             if X_val is not None:
                 self._val_x = X_val
                 self._val_y = y_val
@@ -2842,7 +2857,35 @@ class TrainingLifecycleManager:
             # (cascor#633), so every give-up path in `_auto_start_training` sets
             # it -- producer never ready, dataset fetch refused, and anything else.
             "auto_start_failure": self._auto_start_failure,
+            # WHICH dataset is loaded -- the one the next start trains on unless a
+            # pending one replaces it. Additive field. ``pending_dataset`` above
+            # answers "what will change" and nothing answered "what is there":
+            # ``_current_dataset_config`` has been tracked since the live-swap work
+            # but reached the API only as a swap's ``before_cfg``. canopy needs it
+            # to hydrate its dataset selector after a page reload, which otherwise
+            # shows its layout default over whatever this service is actually
+            # training on. Three readings, see ``_current_dataset_view``.
+            "current_dataset": self._current_dataset_view(),
         }
+
+    def _current_dataset_view(self) -> Optional[Dict[str, Any]]:
+        """The identity of the loaded dataset, for ``get_status()``.
+
+        Three readings, and a consumer must be able to tell them apart:
+
+        * ``None`` -- nothing is loaded.
+        * ``{"dataset_type": None}`` -- something IS loaded and its identity is not
+          known (raw inline tensors). Folding this into ``None`` would tell a client
+          the service holds no data while it trains on some.
+        * ``{"dataset_type": <name>, **params}`` -- the config it was loaded from,
+          in the dialect ``_current_dataset_config`` stores (see ``_reload_dataset``).
+
+        A copy, so a caller mutating the result cannot rewrite the record.
+        """
+        if self._train_x is None:
+            return None
+        config = self._current_dataset_config
+        return dict(config) if config else {"dataset_type": None}
 
     def get_metrics(self) -> Dict[str, Any]:
         """Get current metrics snapshot."""

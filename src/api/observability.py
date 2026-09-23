@@ -562,6 +562,16 @@ def _ensure_ws_metrics() -> dict:
                 "Total broadcast send timeouts",
                 ["type"],
             ),
+            # F-CASCOR-004: messages refused before any send because they
+            # cannot be serialized to JSON -- a producer defect, counted once
+            # per message (not per subscriber). ``type`` is the message type,
+            # closed-set-by-convention as for ``broadcast_timeout_total``.
+            "unserializable_messages_total": _register_or_reuse(
+                Counter,
+                "cascor_ws_unserializable_messages_total",
+                "Total WebSocket messages skipped because they could not be serialized to JSON",
+                ["type"],
+            ),
             "broadcast_send_duration_seconds": _register_or_reuse(
                 Histogram,
                 "cascor_ws_broadcast_send_duration_seconds",
@@ -670,6 +680,17 @@ def ws_observe_resume_replayed(count: int) -> None:
 def ws_inc_broadcast_timeout(msg_type: str) -> None:
     """Increment the broadcast timeout counter."""
     _ensure_ws_metrics()["broadcast_timeout_total"].labels(type=msg_type).inc()
+
+
+def ws_inc_unserializable_messages(msg_type: str) -> None:
+    """Increment the unserializable-messages counter (F-CASCOR-004).
+
+    Wired in ``WebSocketManager._refuse_unserializable``: one increment per
+    message refused before any send, on the broadcast and personal-send paths
+    alike. The REST twin is ``unserializable_messages_total`` on
+    ``GET /v1/metrics/transport``.
+    """
+    _ensure_ws_metrics()["unserializable_messages_total"].labels(type=msg_type).inc()
 
 
 def ws_inc_state_throttle_coalesced() -> None:

@@ -621,7 +621,17 @@ async def _auto_start_training(app: FastAPI, settings: Settings) -> None:
         # Start training. The val pair is the in-loop signal and the test pair the
         # reported partition; passing both is what keeps early stopping off the
         # rows the final score comes from.
-        train_result = lifecycle.start_training(X=x_train, y=y_train, X_val=x_val, y_val=y_val, X_test=x_test, y_test=y_test)
+        # ``dataset_config`` names what was loaded, for ``current_dataset`` on the
+        # status route: the generator and the params actually sent to the producer.
+        train_result = lifecycle.start_training(
+            X=x_train,
+            y=y_train,
+            X_val=x_val,
+            y_val=y_val,
+            X_test=x_test,
+            y_test=y_test,
+            dataset_config={"dataset_type": settings.auto_dataset, **dict(dataset_params)},
+        )
         logger.info(f"Auto-start: training initiated — {train_result}")
 
     except Exception as exc:

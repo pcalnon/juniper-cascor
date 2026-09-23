@@ -428,6 +428,9 @@ class TestShortfallIsPollable:
         manager.get_pending_dataset_config = lambda: None
         manager._metrics_undo_available = lambda: False
         manager._auto_start_failure = None
+        # ``current_dataset`` reads these two (nothing loaded -> None).
+        manager._train_x = None
+        manager._current_dataset_config = None
 
         manager._dataset_shortfall = None
         assert manager.get_status()["dataset_shortfall"] is None

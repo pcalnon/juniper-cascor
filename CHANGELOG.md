@@ -7,8 +7,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`current_dataset` on `GET /v1/training/status` — which dataset is loaded.** Additive.
+  `pending_dataset` answered "what changes at the next start" and nothing answered "what is there
+  now": `_current_dataset_config` has been tracked since the live-swap work but reached the API only
+  as a swap's `before_cfg`. It has three readings a client must keep apart — `null` (nothing
+  loaded), `{"dataset_type": null}` (data loaded, identity unknown: raw inline tensors), and the
+  config it was loaded from. juniper-canopy needs it to hydrate its dataset selector after a page
+  reload, which otherwise shows its layout default over whatever this service is training on
+  (juniper-ml `notes/JUNIPER_2026-09-02_JUNIPER-CANOPY_SELECTION-REACHABILITY-DESIGN.md` §4.10, G7).
+- **`start_training(dataset_config=...)`, so the record follows the data.** A start that binds
+  inline tensors used to leave `_current_dataset_config` naming the previously staged dataset — the
+  field above would then have reported a dataset the run was not training on. The in-process spiral
+  fallback on `POST /v1/training/start` and the auto-start path now name what they loaded; raw
+  inline tensors record *unknown*. A pending staged dataset still wins, as it does over the tensors.
+
 ### Fixed
 
+- **`src/profiling/logging_utils.py` raised `TypeError` at every emit, and logged at levels cascor
+  does not have** (cascor#573, roadmap P1.4 — the "fix the levels" half of owner decision 8). All
+  five `logger.log(level, msg)` sites used the stdlib signature, but every cascor call site binds the
+  `Logger` CLASS, so the inherited instance method received `level` as `self` and raised
+  `TypeError: Logger.log() missing 1 required positional argument: 'msg'`. The module's tests never
+  saw it because they inject `MagicMock` loggers, which accept any call. `SampledLogger.trace` also
+  passed `5` (VERBOSE's number) and `.verbose` passed `15` (no cascor level) — the third level table
+  roadmap P1.4 said must not survive. Emission now dispatches by level NAME through the classmethods
+  the `Logger` exposes, falling back to `.log()` for a stdlib logger, and the levels come from the
+  one canonical table (`Logger.TRACE` / `Logger.VERBOSE`). New tests drive the real `Logger` class and
+  a real stdlib logger; 17 of them fail against the previous module. The fix was checkpointed on
+  `wip/logging-p14-adopt-logging-utils` (`1b918e6`, unsigned) on 2026-09-21 and is re-landed here
+  unchanged; decision 10 then left the helpers unwired, so no production call site changes.
+- **Three version surfaces restated `"0.6.0"` while the distribution was 0.11.0** (#668).
+  `juniper_cascor.__version__` was a hardcoded literal -- the value `publish.yml`'s TestPyPI check
+  prints on every release; `api.models.common._API_VERSION` was another, and it is the default
+  `meta.version` of **every enveloped API response**; `/v1/health`'s source-checkout fallback was
+  the third. BUG-CC-04 had moved `api.app` and `/v1/health`'s installed path onto
+  `importlib.metadata` and missed these. All three now read `importlib.metadata.version("juniper-cascor")`
+  and fall back to the same non-release `"0.0.0-dev"` sentinel `api.app` uses, so no version literal
+  is left to bump by hand. **Visible change**: enveloped responses now report the installed version
+  in `meta.version` instead of `0.6.0`; no Juniper consumer reads that field.
+  `src/tests/unit/test_package_version_single_source.py` pins each surface to the installed version
+  and fails if any of the four assigns a release-number literal -- mutation-checked: 5 of its 6
+  cases fail against the pre-fix tree.
 - **`lockfile-update.yml` regenerated `requirements.lock` alone, so every dependency bump drifted
   `requirements-cpu.lock`** -- the container image's lock, which is *derived* from the GPU lock via
   `--constraint requirements.lock`. Nothing reported it: the CI check asserts only that every image
@@ -27,6 +68,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   relative. **Comment-only: all 53 pins are unchanged**, verified by diffing the pin lines. Doing it
   here rather than leaving it to the first automated run keeps that run a no-op instead of an
   unreviewed 18-line rewrite.
+- **A broadcast that could not be serialized dropped every `/ws/training` subscriber, silently and
+  without closing a socket (F-CASCOR-004).** Starlette's `send_json` serializes with stdlib
+  `json.dumps` and no `default=`, so a NumPy scalar in a payload raised `TypeError` inside *every*
+  client's send; `_send_json` swallowed it with no log, and `broadcast` called `disconnect()` on each
+  subscriber in turn -- which forgets a socket but never closes it. On 2026-09-08 both canopy relays
+  were dropped 1-3 ms after `ResumeReady -> Started` by a `state` frame carrying the NumPy-typed
+  tunables of F-CASCOR-003, and sat half-open for the rest of the run while the heartbeat pings kept
+  them looking healthy. juniper-cascor#632 removed that trigger; this removes the mechanism.
+  `WebSocketManager` now attributes a failure to what caused it. An **unserializable message is the
+  message's fault**: it is detected once per broadcast, before seq assignment and the fan-out,
+  logged at ERROR (message type, exception, and on Python >= 3.14 the path to the offending value),
+  counted, and skipped -- no subscriber is dropped or closed, no seq is consumed, nothing enters the
+  replay buffer. There is deliberately no coercion: the producer must emit plain Python types.
+  `send_personal_message` refuses such a message the same way; it returns `False`, as it did before,
+  but now with the ERROR line and the counter instead of a silent send failure. **Behaviour change
+  for oversized messages:** because the check runs before chunking, a message over
+  `ws_max_message_size_bytes` (60,000) holding a NumPy scalar or a lone surrogate is now refused. The
+  chunker sizes with `json.dumps(default=str)`, so such a message used to be delivered, with the
+  NumPy value retyped (`np.int64(3)` arrived as the JSON string `"3"`) and the surrogate escaped. The
+  broadcast most likely to exceed the threshold, the topology snapshot, is built from native types
+  (`get_topology`). A **per-connection failure** (a send that raises or times out) drops only that subscriber,
+  and now **closes** its socket (code `1011`, errors suppressed) as well as forgetting it. The
+  broadcast waits at most the send timeout for that close, via `asyncio.wait`, which neither cancels
+  it (uvicorn's legacy `websockets` protocol swallows a cancellation mid-handshake) nor shields it (on
+  Python 3.14 a timed-out `wait_for(shield(...))` reports the close's later failure as an asyncio
+  ERROR, "... exception in shielded future"). `_send_json`'s generic failure branch logs a WARNING.
+  Once the server has closed the socket, the `/ws/training` receive loop drains until the ASGI server
+  reports the disconnect, rather than returning. uvicorn's sans-I/O protocol (what `ws="auto"`
+  selects at the pinned uvicorn 0.53.0 / websockets 17.1) holds the close frame while its write
+  buffer is full, and closes the transport as soon as the app returns. A handler that returned on
+  the peer's next frame therefore left a slow reader with an abnormal `1006` instead of the `1011`
+  frame. Draining also keeps a frame in flight from ending the handler with Starlette's
+  `RuntimeError`, and the handler's `finally` -> `disconnect()` stays idempotent. A peer that never
+  reads again still never receives the close frame: its close waits until the connection itself
+  ends, which is no worse than before, when such a peer was never closed at all.
+  New counter: `unserializable_messages_total` on `GET /v1/metrics/transport` and
+  `cascor_ws_unserializable_messages_total{type}` in Prometheus; such a message no longer adds to
+  `send_failures`, which is now per-connection failures only. Tests:
+  `src/tests/unit/api/test_ws_broadcast_fault_isolation.py`; wire check:
+  `util/ad-hoc/2026-09-22_f_cascor_004_live_ws_probe.py`. Ledger: juniper-ml
+  `notes/JUNIPER_2026-08-09_JUNIPER-CANOPY_E2E-VALIDATION-EVIDENCE.md`, entry F-CASCOR-004.
 
 ### Added
 

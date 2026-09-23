@@ -813,8 +813,8 @@ except importlib.metadata.PackageNotFoundError:
 `create_app()`, Sentry release tagging, and `set_build_info(...)` all consume
 `api.app._API_VERSION`. Health routes perform a parallel
 `importlib.metadata.version("juniper-cascor")` read in
-`src/api/routes/health.py` (fallback literal only when the package is not
-installed).
+`src/api/routes/health.py` (the same `"0.0.0-dev"` fallback, only when the
+package is not installed).
 
 ### Correct wiring assertions
 
@@ -844,21 +844,29 @@ with the wrong args.
 | Construct a synthetic `ReadinessResponse(version=...)` in a unit fixture | Yes | Fixture data, not product wiring |
 | Assert only that `meta.version` is a `str` / key present | Yes | Shape/compat tests |
 
-### Remaining version sources (do not assume one constant)
+### Every version surface reads the same metadata (juniper-cascor#668)
 
-Not every `version` field currently shares `api.app._API_VERSION`:
+Four modules expose a version, and since juniper-cascor#668 all four resolve
+`importlib.metadata.version("juniper-cascor")`, falling back to `"0.0.0-dev"`
+only in a never-installed source checkout:
 
-- `api.models.common._API_VERSION` is still a module-level literal used for
-  `ResponseEnvelope.meta.version`.
-- `juniper_cascor/__init__.py` `__version__` may lag `pyproject.toml` until
-  reconciled.
-- Example payloads in older API docs may show historic numbers (e.g. `0.4.0`);
-  treat those as illustrative, not as the live package version.
+| Surface | Consumed by |
+|---------|-------------|
+| `api.app._API_VERSION` | `create_app()`, Sentry, `set_build_info(...)` |
+| `api.routes.health._API_VERSION` | `/v1/health`, `/v1/health/ready` |
+| `api.models.common._API_VERSION` | every `ResponseEnvelope.meta.version` |
+| `juniper_cascor.__version__` | `publish.yml`'s TestPyPI import check |
 
-When writing new envelope assertions, either assert type/presence only, or
-compare against the constant that the code path actually uses — do not mix
-`api.app._API_VERSION` with `api.models.common._API_VERSION` unless you are
-explicitly testing that they match.
+Until #668 the last three restated `"0.6.0"` as a literal (the health one only
+as its fallback) while `pyproject.toml` read 0.11.0 — so every enveloped
+response reported 0.6.0. `src/tests/unit/test_package_version_single_source.py`
+pins both halves: each surface equals the installed version, and none of them
+assigns a release-number literal at all.
+
+Example payloads in older API docs may still show historic numbers (e.g.
+`0.4.0`); treat those as illustrative, not as the live package version. When
+writing new envelope assertions, assert type/presence only, or compare against
+the installed version — never a pinned `"x.y.z"`.
 
 ### Related suite coverage
 

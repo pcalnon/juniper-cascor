@@ -329,6 +329,7 @@ Three WebSocket channels provide real-time communication.
 - Connection lifecycle management with bounded limit (default: 50)
 - Automatic heartbeat/keepalive
 - `/ws/control` per-identity admission uses `ws_identity_key` (`src/api/websocket/manager.py`): a truncated (16-char) per-process HMAC-SHA256 of the **stripped** `X-API-Key`. Blank / whitespace-only keys return `None` (anonymous) so they cannot collapse onto one shared SEC-F19 D4b identity bucket -- those callers rely on the global and per-IP caps only.
+- Broadcast fault isolation (F-CASCOR-004): a message that cannot be serialized is refused once, before seq assignment and fan-out -- ERROR log, `unserializable_messages_total` +1, skipped, nobody dropped (`_refuse_unserializable`). A send that raises or times out drops only that subscriber and **closes** it with `1011` as well as forgetting it (`_close_dropped_subscriber`). The broadcast waits at most the send timeout for the close, via `asyncio.wait`, which neither cancels it nor shields it: a timed-out `wait_for(shield(...))` makes Python 3.14 report the close's later failure as an asyncio ERROR. `disconnect()` alone never closed a socket. After the server's close, the `/ws/training` receive loop drains until the disconnect (`_drain_until_disconnect`), because uvicorn's sans-I/O protocol drops a close frame that is still waiting on a full write buffer if the app returns first. Never "fix" a serialization failure with `default=str`: the producer must emit plain Python types.
 
 ### Defensive numeric settings (`_numeric_setting`)
 
