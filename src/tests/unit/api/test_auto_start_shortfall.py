@@ -31,23 +31,41 @@ import os
 import sys
 from contextlib import ExitStack, redirect_stdout
 from types import SimpleNamespace
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pytest
 
 from api.app import _auto_start_training
-from api.lifecycle.manager import TrainingLifecycleManager
+from api.lifecycle.manager import _TRUNCATABLE_GENERATORS, TrainingLifecycleManager
 from cascor_constants.constants_api.constants_api_defaults import _PROJECT_API_SHORTFALL_ACCEPTED_BY_DEPLOYMENT, _PROJECT_API_SHORTFALL_ACCEPTED_BY_PRODUCER, _PROJECT_API_SHORTFALL_ACCEPTED_BY_REQUEST, _PROJECT_API_SHORTFALL_REFUSAL_TOKEN
 
 pytestmark = pytest.mark.unit
 
 _PARTIAL_META: Dict[str, Any] = {"truncation": {"unit": "symbols", "cap": 14, "requested": 503, "imported": 14}}
 
+# juniper-data's ``GET /v1/generators``, reduced to what the stance resolver reads.
+# Since APD-CASCOR-008 the truncatable set is DERIVED from this -- a generator is
+# truncatable iff its param schema declares ``allow_truncation`` -- so the fake
+# producer has to answer it; one that cannot is an unreadable list, on which the
+# deployment default is withheld (ruled 2026-09-22).
+_GENERATOR_LISTING: List[Dict[str, Any]] = [
+    {"name": "equities", "schema": {"properties": {"allow_truncation": {"anyOf": [{"type": "boolean"}, {"type": "null"}]}}}},
+    {"name": "spiral", "schema": {"properties": {"n_spirals": {"type": "integer"}}}},
+]
+
+
+@pytest.fixture(autouse=True)
+def _fresh_truncatable_memo():
+    """The derived set is memoised per process; one test's success must not serve the next."""
+    _TRUNCATABLE_GENERATORS.reset()
+    yield
+    _TRUNCATABLE_GENERATORS.reset()
+
 
 class _StopAfterAnnotation(Exception):
-    """Raised in place of tensor conversion: everything after the annotation is plumbing."""
+    """Raised in place of tensor conversion: everything after the annotation is built is plumbing."""
 
 
 def _lifecycle() -> TrainingLifecycleManager:
@@ -89,19 +107,26 @@ async def _run_auto_start(
     create_error: Optional[Exception] = None,
     arrays: Optional[Dict[str, Any]] = None,
     lifecycle: Optional[TrainingLifecycleManager] = None,
+    listing: Any = None,
 ) -> Tuple[TrainingLifecycleManager, Dict[str, Any]]:
     """Drive ``_auto_start_training`` against a fake producer and report what it sent.
 
     ``arrays is None`` stops the run at tensor conversion, which is immediately
-    after the annotation is written -- the same device
+    after the annotation is BUILT -- the same device
     ``TestShortfallIsPollable._annotation_after_reload`` uses on the staged path.
-    Pass a real artifact to exercise the whole sequence through ``start_training``.
+    Since APD-CASCOR-013 an auto-start that stops there leaves NO annotation: it is
+    handed to ``start_training`` with the run's tensors, and that start never
+    happens. Pass a real artifact to exercise the whole sequence through
+    ``start_training`` (see ``_annotation_handed_to_the_run``).
+
+    ``listing`` is what the producer's ``GET /v1/generators`` returns --
+    ``_GENERATOR_LISTING`` when omitted; an exception instance makes it raise.
 
     Returns ``(lifecycle, sent)``. ``sent`` carries the generator and the params
     that reached ``create_dataset``, because for half of these arms the request
-    IS the assertion.
+    IS the assertion, plus ``listing_calls``.
     """
-    sent: Dict[str, Any] = {}
+    sent: Dict[str, Any] = {"listing_calls": 0}
     manager = lifecycle if lifecycle is not None else _lifecycle()
 
     class _FakeClient:
@@ -110,6 +135,13 @@ async def _run_auto_start(
 
         def wait_for_ready(self, timeout: Optional[float] = None) -> bool:
             return ready
+
+        def list_generators(self) -> Any:
+            sent["listing_calls"] += 1
+            answer = _GENERATOR_LISTING if listing is None else listing
+            if isinstance(answer, BaseException):
+                raise answer
+            return answer
 
         def create_dataset(self, *, generator: str, params: dict, persist: bool) -> dict:
             sent["generator"] = generator
@@ -138,6 +170,25 @@ async def _run_auto_start(
             stack.enter_context(patch.object(TrainingLifecycleManager, "_artifact_to_tensors", side_effect=_StopAfterAnnotation("stop")))
         await _auto_start_training(app, settings)
     return manager, sent
+
+
+async def _annotation_handed_to_the_run(caller_params: Dict[str, Any], *, deployment_flag: bool, meta: Dict[str, Any]) -> Tuple[TrainingLifecycleManager, Optional[Dict[str, Any]]]:
+    """Run the WHOLE sequence and return the annotation auto-start hands to ``start_training``.
+
+    APD-CASCOR-013 re-decides the annotation at the start of every run, so
+    auto-start no longer writes it onto the manager ahead of its own start (that
+    start would erase it); it passes it in with the tensors it fetched. The
+    annotation is therefore observed where it now travels: the start call.
+    ``start_training`` and ``create_network`` are doubles because what they do
+    with it is ``test_shortfall_lifecycle.py``'s subject, not this file's.
+    """
+    manager = _lifecycle()
+    manager.create_network = MagicMock(return_value={"input_size": 2, "output_size": 2})
+    manager.start_training = MagicMock(return_value={"status": "training_started"})
+    await _run_auto_start(caller_params, deployment_flag=deployment_flag, meta=meta, arrays=_artifact(), lifecycle=manager)
+    assert manager._auto_start_failure is None, manager._auto_start_failure
+    manager.start_training.assert_called_once()
+    return manager, manager.start_training.call_args.kwargs["dataset_shortfall"]
 
 
 def _flag_help() -> str:
@@ -205,23 +256,71 @@ class TestAutoStartForwardsTheStance:
         assert sent["params"]["incomplete_rows"] == "drop"
         assert sent["params"]["tickers"] == ["AAPL"]
 
+    async def test_the_truncatable_set_comes_from_the_producer(self) -> None:
+        """APD-CASCOR-008. A producer that lists ``equities`` WITHOUT the field is not sent the flag.
+
+        The deleted constant named ``equities`` unconditionally; only the
+        producer's own schema may say whether the parameter is accepted.
+        """
+        listing = [{"name": "equities", "schema": {"properties": {"tickers": {"type": "array"}}}}]
+        _, sent = await _run_auto_start({}, deployment_flag=True, listing=listing)
+        assert "allow_truncation" not in sent["params"]
+
+    async def test_an_unreadable_list_withholds_the_default(self) -> None:
+        """RULED 2026-09-22: the list cannot be read, so the opt-in is WITHHELD -- not guessed."""
+        _, sent = await _run_auto_start({}, deployment_flag=True, listing=ConnectionError("connection refused"))
+        assert sent["listing_calls"] == 1
+        assert "allow_truncation" not in sent["params"]
+
+    async def test_a_refusal_after_a_withheld_default_says_to_retry(self) -> None:
+        """The knob is ON; telling the operator to turn it on would be a remedy that changes nothing."""
+        manager, _ = await _run_auto_start({}, deployment_flag=True, listing=ConnectionError("connection refused"), create_error=RuntimeError("HTTP 422 allow_truncation"))
+        assert manager._auto_start_failure is not None
+        assert manager._auto_start_failure.startswith(_PROJECT_API_SHORTFALL_REFUSAL_TOKEN)
+        assert "WITHHELD" in manager._auto_start_failure
+        assert "--allow-truncated-datasets" not in manager._auto_start_failure
+
+    async def test_with_the_flag_off_the_list_is_never_read(self) -> None:
+        """Lazy: no default can apply, so there is nothing to look up.
+
+        Not a claim that auto-start has no startup dependency -- it is itself a
+        boot-time request that waits for the producer and runs once. The claim is
+        narrower: the list adds no read, and no failure mode, where it cannot
+        change the outcome.
+        """
+        _, sent = await _run_auto_start({}, deployment_flag=False)
+        assert sent["listing_calls"] == 0
+
+    @pytest.mark.parametrize("caller_value", [True, False])
+    async def test_a_caller_stance_is_never_worth_a_fetch(self, caller_value: bool) -> None:
+        """Flag ON, but ``JUNIPER_CASCOR_AUTO_DATASET_PARAMS`` decided: the set cannot change the outcome."""
+        _, sent = await _run_auto_start({"allow_truncation": caller_value}, deployment_flag=True)
+        assert sent["listing_calls"] == 0
+        assert sent["params"]["allow_truncation"] is caller_value
+
+    @pytest.mark.parametrize("caller_value", [True, False])
+    async def test_an_unreadable_list_never_touches_the_operators_value(self, caller_value: bool) -> None:
+        """Withholding drops only THIS service's default -- "a DEFAULT, never an OVERRIDE", both polarities."""
+        _, sent = await _run_auto_start({"allow_truncation": caller_value}, deployment_flag=True, listing=ConnectionError("connection refused"))
+        assert sent["params"]["allow_truncation"] is caller_value
+
 
 class TestAutoStartAnnotatesTheRun:
     """An auto-started run on a partial dataset must be distinguishable from a clean one."""
 
     async def test_a_caller_opt_in_is_recorded_as_the_request(self) -> None:
         """The opt-in came from ``JUNIPER_CASCOR_AUTO_DATASET_PARAMS``, with the service flag off."""
-        manager, _ = await _run_auto_start({"allow_truncation": True}, deployment_flag=False, meta=_PARTIAL_META)
-        assert manager._dataset_shortfall is not None
-        assert manager._dataset_shortfall["acceptance_source"] == _PROJECT_API_SHORTFALL_ACCEPTED_BY_REQUEST
-        assert manager._dataset_shortfall["accepted_by_this_run"] is True
-        assert manager._dataset_shortfall["accepted_via_allow_truncated_datasets"] is False
+        _, annotation = await _annotation_handed_to_the_run({"allow_truncation": True}, deployment_flag=False, meta=_PARTIAL_META)
+        assert annotation is not None
+        assert annotation["acceptance_source"] == _PROJECT_API_SHORTFALL_ACCEPTED_BY_REQUEST
+        assert annotation["accepted_by_this_run"] is True
+        assert annotation["accepted_via_allow_truncated_datasets"] is False
 
     async def test_the_service_setting_is_recorded_as_the_deployment(self) -> None:
-        manager, _ = await _run_auto_start({}, deployment_flag=True, meta=_PARTIAL_META)
-        assert manager._dataset_shortfall is not None
-        assert manager._dataset_shortfall["acceptance_source"] == _PROJECT_API_SHORTFALL_ACCEPTED_BY_DEPLOYMENT
-        assert manager._dataset_shortfall["accepted_via_allow_truncated_datasets"] is True
+        _, annotation = await _annotation_handed_to_the_run({}, deployment_flag=True, meta=_PARTIAL_META)
+        assert annotation is not None
+        assert annotation["acceptance_source"] == _PROJECT_API_SHORTFALL_ACCEPTED_BY_DEPLOYMENT
+        assert annotation["accepted_via_allow_truncated_datasets"] is True
 
     async def test_a_partial_dataset_nobody_here_asked_for_names_the_producer(self) -> None:
         """Flag off, params silent, and juniper-data delivered a partial dataset anyway.
@@ -232,10 +331,10 @@ class TestAutoStartAnnotatesTheRun:
         annotation must record that this run did not accept it -- not deny that
         anyone did.
         """
-        manager, _ = await _run_auto_start({}, deployment_flag=False, meta=_PARTIAL_META)
-        assert manager._dataset_shortfall is not None
-        assert manager._dataset_shortfall["acceptance_source"] == _PROJECT_API_SHORTFALL_ACCEPTED_BY_PRODUCER
-        assert manager._dataset_shortfall["accepted_by_this_run"] is False
+        _, annotation = await _annotation_handed_to_the_run({}, deployment_flag=False, meta=_PARTIAL_META)
+        assert annotation is not None
+        assert annotation["acceptance_source"] == _PROJECT_API_SHORTFALL_ACCEPTED_BY_PRODUCER
+        assert annotation["accepted_by_this_run"] is False
 
     async def test_the_annotation_names_the_dataset_it_describes(self) -> None:
         """auto-start issues its OWN create_dataset, and the default above changes the params.
@@ -244,14 +343,26 @@ class TestAutoStartAnnotatesTheRun:
         down, and an annotation that does not identify its artifact is a claim
         about an unidentified one.
         """
-        manager, _ = await _run_auto_start({}, deployment_flag=True, meta=_PARTIAL_META)
-        assert manager._dataset_shortfall is not None
-        assert manager._dataset_shortfall["dataset_id"] == "auto-1"
-        assert "14" in manager._dataset_shortfall["summary"] and "503" in manager._dataset_shortfall["summary"]
+        _, annotation = await _annotation_handed_to_the_run({}, deployment_flag=True, meta=_PARTIAL_META)
+        assert annotation is not None
+        assert annotation["dataset_id"] == "auto-1"
+        assert "14" in annotation["summary"] and "503" in annotation["summary"]
 
     async def test_a_clean_dataset_annotates_nothing(self) -> None:
         """None, not a dict of empties -- a consumer branches on presence alone."""
-        manager, _ = await _run_auto_start({}, deployment_flag=True, meta={})
+        _, annotation = await _annotation_handed_to_the_run({}, deployment_flag=True, meta={})
+        assert annotation is None
+
+    async def test_a_failure_after_the_fetch_leaves_no_annotation(self) -> None:
+        """APD-CASCOR-013. The sequence fails between the fetch and the start: there is no run.
+
+        It used to write the annotation onto the manager before converting the
+        artifact, so a refused or malformed artifact left ``dataset_shortfall``
+        describing a dataset no run was training on, beside an
+        ``auto_start_failure`` saying no run had started.
+        """
+        manager, _ = await _run_auto_start({}, deployment_flag=True, meta=_PARTIAL_META)
+        assert manager._auto_start_failure is not None and "_StopAfterAnnotation" in manager._auto_start_failure
         assert manager._dataset_shortfall is None
 
     async def test_the_shortfall_also_reaches_the_training_log(self) -> None:
@@ -265,13 +376,31 @@ class TestAutoStartAnnotatesTheRun:
 
     async def test_a_full_run_annotates_and_still_trains(self) -> None:
         """The annotation must not stand between the fetch and the training it annotates."""
-        manager = _lifecycle()
-        manager.create_network = MagicMock(return_value={"input_size": 2, "output_size": 2})
-        manager.start_training = MagicMock(return_value={"status": "training_started"})
-        await _run_auto_start({}, deployment_flag=True, meta=_PARTIAL_META, arrays=_artifact(), lifecycle=manager)
-        assert manager._dataset_shortfall is not None
+        manager, annotation = await _annotation_handed_to_the_run({}, deployment_flag=True, meta=_PARTIAL_META)
+        assert annotation is not None
         assert manager._auto_start_failure is None
-        manager.start_training.assert_called_once()
+        # The tensors and their annotation travel in ONE call, so they cannot be split.
+        kwargs = manager.start_training.call_args.kwargs
+        assert kwargs["X"] is not None and kwargs["X"].shape[0] == 20
+
+    async def test_the_annotation_survives_a_real_start(self) -> None:
+        """End to end through the REAL ``start_training``, whose start is where it now takes effect.
+
+        The failure mode this pins: writing the annotation onto the manager and
+        then starting the run on inline tensors -- which is what auto-start did --
+        is erased by the start's own clear. Only the fit is replaced.
+        """
+        manager = TrainingLifecycleManager()
+        try:
+            with patch.object(manager, "_run_training"):
+                await _run_auto_start({}, deployment_flag=True, meta=_PARTIAL_META, arrays=_artifact(), lifecycle=manager)
+                if manager._training_future is not None:
+                    manager._training_future.result(timeout=10)
+            assert manager._auto_start_failure is None, manager._auto_start_failure
+            status = manager.get_status()["dataset_shortfall"]
+            assert status is not None and status["dataset_id"] == "auto-1"
+        finally:
+            manager.shutdown()
 
 
 class TestAutoStartFailureIsQueryable:
@@ -315,7 +444,7 @@ class TestAutoStartFailureIsQueryable:
     async def test_a_producer_that_never_becomes_ready_is_recorded(self) -> None:
         """The other early return. It used to log and vanish."""
         manager, sent = await _run_auto_start({}, deployment_flag=False, ready=False)
-        assert sent == {}, "nothing may be requested from a producer that never became ready"
+        assert sent == {"listing_calls": 0}, "nothing may be requested from a producer that never became ready"
         assert manager._auto_start_failure is not None
         assert "not ready" in manager._auto_start_failure
 
