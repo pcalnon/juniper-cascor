@@ -553,11 +553,12 @@ async def _auto_start_training(app: FastAPI, settings: Settings) -> None:
         # read here the opt-in is WITHHELD for this one request (ruled
         # 2026-09-22), and there is no later auto-start request to retry on --
         # the failure recorded below says what to re-issue.
-        dataset_params, acceptance_source, wire_stance, caller_refused, opt_in_withheld = await asyncio.to_thread(
+        allow_truncated = bool(settings.allow_truncated_datasets)
+        dataset_params, acceptance_source, wire_stance, caller_refused, opt_in_skipped = await asyncio.to_thread(
             TrainingLifecycleManager._resolve_truncation_stance,
             dataset_params,
             generator=settings.auto_dataset,
-            allow_truncated=bool(settings.allow_truncated_datasets),
+            allow_truncated=allow_truncated,
             truncatable_generators=_TRUNCATABLE_GENERATORS.reader(JuniperDataClient, source=data_url, api_key=api_key),
         )
         logger.info(f"Auto-start: creating '{settings.auto_dataset}' dataset with params={dataset_params}")
@@ -584,7 +585,7 @@ async def _auto_start_training(app: FastAPI, settings: Settings) -> None:
             # service knob cannot override their own value). Logged at ERROR
             # because it is actionable, recorded because a log line is not a
             # surface, and then swallowed like every other auto-start failure.
-            fetch_failure = TrainingLifecycleManager._describe_dataset_fetch_failure(exc, allow_truncated=wire_stance, caller_refused=caller_refused, opt_in_withheld=opt_in_withheld)
+            fetch_failure = TrainingLifecycleManager._describe_dataset_fetch_failure(exc, allow_truncated=wire_stance, caller_refused=caller_refused, opt_in_skipped=opt_in_skipped, deployment_flag_on=allow_truncated)
             logger.error("Auto-start failed: %s", fetch_failure)
             _record_failure(fetch_failure)
             return

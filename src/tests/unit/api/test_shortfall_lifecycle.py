@@ -37,10 +37,13 @@ What each class proves, and against what:
 
 from __future__ import annotations
 
+import contextlib
 import types
-from typing import Any, Dict
+from types import SimpleNamespace
+from typing import Any, Dict, Iterator
 from unittest.mock import MagicMock, patch
 
+import numpy as np
 import pytest
 import torch
 
@@ -50,6 +53,42 @@ pytestmark = pytest.mark.unit
 
 _PRIOR: Dict[str, Any] = {"dataset_id": "an-earlier-run", "summary": "14 of 503 symbols imported (cap 14)"}
 _OWN: Dict[str, Any] = {"dataset_id": "this-run", "summary": "20 of 503 symbols imported (cap 20)"}
+_PARTIAL_META: Dict[str, Any] = {"truncation": {"unit": "symbols", "cap": 14, "requested": 503, "imported": 14}}
+_TRAIN_ONLY_ARTIFACT: Dict[str, Any] = {"X_train": np.zeros((5, 2), dtype=np.float32), "y_train": np.zeros((5, 2), dtype=np.float32)}
+
+
+def _three_partition_artifact() -> Dict[str, Any]:
+    rng = np.random.default_rng(20260923)
+    return {
+        "X_train": rng.standard_normal((20, 2)).astype("float32"),
+        "y_train": rng.standard_normal((20, 2)).astype("float32"),
+        "X_val": rng.standard_normal((6, 2)).astype("float32"),
+        "y_val": rng.standard_normal((6, 2)).astype("float32"),
+        "X_test": rng.standard_normal((4, 2)).astype("float32"),
+        "y_test": rng.standard_normal((4, 2)).astype("float32"),
+    }
+
+
+@contextlib.contextmanager
+def _producer(*, meta: Dict[str, Any], arrays: Dict[str, Any]) -> Iterator[None]:
+    """A juniper-data double at the client seam, so the REAL ``_reload_dataset`` runs.
+
+    The deployment flag is off, so the generator list is never read.
+    """
+
+    class _Client:
+        def __init__(self, **_kwargs: object) -> None:
+            pass
+
+        def create_dataset(self, *, generator: str, params: dict, persist: bool) -> dict:
+            return {"dataset_id": "partial-1", "meta": meta}
+
+        def download_artifact_npz(self, dataset_id: str) -> dict:
+            return arrays
+
+    settings = SimpleNamespace(juniper_data_url="http://juniper-data:8100", allow_truncated_datasets=False)
+    with patch("juniper_data_client.JuniperDataClient", _Client), patch("api.settings.Settings", lambda: settings), patch("api.secrets.get_secret", lambda _name: "key"):
+        yield
 
 
 @pytest.fixture
@@ -157,27 +196,47 @@ class TestTheAnnotationMovesWithTheData:
             _start(mgr, dataset_shortfall=dict(_OWN))
         assert mgr._dataset_shortfall == _PRIOR
 
-    def test_a_refused_staged_fetch_restores_the_previous_annotation(self, mgr):
-        """``_reload_dataset`` writes the annotation BEFORE it converts the artifact.
+    def test_a_refused_artifact_binds_neither_data_nor_annotation(self, mgr):
+        """The REAL fetch path: the producer answers with a partial dataset, then the artifact is refused.
 
-        A refusal after that write (here a val-less artifact under the section 6.1
-        rules) binds no tensors, so the data still loaded is the previous data --
-        and the annotation must still describe it, not the refused artifact.
+        A train-only artifact has nothing held out, so section 6.1 refuses it after
+        the producer has answered -- and after the annotation has been BUILT. Nothing
+        is bound: the previous data stays loaded, so the previous annotation must
+        still describe it, and the config stays staged for a retry.
         """
         x, y = _tensors()
         mgr._train_x, mgr._train_y = x, y
         mgr._dataset_shortfall = dict(_PRIOR)
         mgr._pending_dataset_config = {"dataset_type": "equities"}
-
-        def _write_then_refuse(**_cfg: Any) -> None:
-            mgr._dataset_shortfall = dict(_OWN)
-            raise ValueError("artifact carries neither X_val nor X_test")
-
-        with patch.object(mgr, "_reload_dataset", side_effect=_write_then_refuse), pytest.raises(ValueError):
+        with _producer(meta=_PARTIAL_META, arrays=_TRAIN_ONLY_ARTIFACT), pytest.raises(RuntimeError, match="NEITHER a validation split"):
             _start(mgr)
         assert mgr._dataset_shortfall == _PRIOR
-        # Still staged, so the user can fix the upstream issue and retry.
+        assert mgr._train_x is x
         assert mgr._pending_dataset_config == {"dataset_type": "equities"}
+
+    def test_no_status_poll_sees_the_annotation_before_its_data(self, mgr):
+        """Item 2 of the validation: the annotation is SET WHEN THE DATA IS BOUND, never before.
+
+        ``get_status()`` reads the field without the lock, so a poll during the
+        artifact's conversion used to show the new fetch's shortfall beside data
+        that was not loaded yet. Captured here at exactly that moment, through the
+        real ``_reload_dataset``.
+        """
+        mgr._dataset_shortfall = dict(_PRIOR)
+        mgr._pending_dataset_config = {"dataset_type": "equities"}
+        seen_during_conversion: Dict[str, Any] = {}
+        real_convert = TrainingLifecycleManager._artifact_to_tensors
+
+        def _convert_and_poll(arrays: Any) -> Any:
+            seen_during_conversion["shortfall"] = mgr.get_status()["dataset_shortfall"]
+            return real_convert(arrays)
+
+        with _producer(meta=_PARTIAL_META, arrays=_three_partition_artifact()), patch.object(TrainingLifecycleManager, "_artifact_to_tensors", side_effect=_convert_and_poll):
+            _start(mgr)
+        assert seen_during_conversion["shortfall"] == _PRIOR, "a poll mid-conversion saw the new annotation before its data was bound"
+        after = mgr.get_status()["dataset_shortfall"]
+        assert after is not None and after["dataset_id"] == "partial-1"
+        assert mgr._train_x.shape[0] == 20
 
 
 class TestWhatMustSurvive:

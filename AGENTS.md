@@ -179,6 +179,15 @@ pre-commit install                                   # Install hooks
 | `JUNIPER_DATA_URL` | JuniperData service URL | `http://localhost:8100` |
 | `JUNIPER_DATA_API_KEY` | API key for JuniperData authentication | (none) |
 
+> **`JUNIPER_CASCOR_ALLOW_TRUNCATED_DATASETS` depends on juniper-data's `GET /v1/generators`**
+> (APD-CASCOR-008). The opt-in goes only to generators whose param schema declares
+> `allow_truncation`. If the list cannot be read, or carries no schemas, the opt-in is
+> WITHHELD for that request, and the refusal says how to retry: a failed start stays staged
+> (start again), a live swap stages nothing (re-issue it), auto-start retries only on a
+> restart. It never tells you to set the flag while it is on. `dataset_shortfall` follows the
+> LOADED data (APD-CASCOR-013): kept on `reset()` and on a start that retains the data, `null`
+> for inline tensors, replaced by a new fetch.
+
 ### Key Entry Points
 
 | File | Purpose |

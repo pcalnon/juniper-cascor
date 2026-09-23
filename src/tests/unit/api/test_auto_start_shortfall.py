@@ -281,6 +281,21 @@ class TestAutoStartForwardsTheStance:
         assert "WITHHELD" in manager._auto_start_failure
         assert "--allow-truncated-datasets" not in manager._auto_start_failure
 
+    async def test_a_refusal_for_a_generator_the_list_does_not_declare_does_not_name_the_knob(self) -> None:
+        """Flag ON, list READ, ``equities`` not declared, and the producer refused anyway.
+
+        The opt-in was correctly not sent, so the old default remedy -- "set
+        JUNIPER_CASCOR_ALLOW_TRUNCATED_DATASETS=true" -- pointed at a knob that was
+        already on.
+        """
+        listing = [{"name": "equities", "schema": {"properties": {"tickers": {"type": "array"}}}}]
+        manager, _ = await _run_auto_start({}, deployment_flag=True, listing=listing, create_error=RuntimeError("HTTP 422 allow_truncation"))
+        assert manager._auto_start_failure is not None
+        assert manager._auto_start_failure.startswith(_PROJECT_API_SHORTFALL_REFUSAL_TOKEN)
+        assert "does not declare allow_truncation" in manager._auto_start_failure
+        assert "--allow-truncated-datasets" not in manager._auto_start_failure
+        assert "JUNIPER_CASCOR_ALLOW_TRUNCATED_DATASETS" not in manager._auto_start_failure
+
     async def test_with_the_flag_off_the_list_is_never_read(self) -> None:
         """Lazy: no default can apply, so there is nothing to look up.
 

@@ -107,21 +107,31 @@ class _TruncatableGenerators:
     def derive(listing: Any) -> FrozenSet[str]:
         """The names in a ``GET /v1/generators`` payload whose schema declares ``allow_truncation``.
 
-        Raises ``ValueError`` on a payload that is not a list of named entries. A
-        malformed listing must be a FAILED read, never an empty set: an empty set
-        would read as "nothing is truncatable" and be memoised for the life of the
-        process.
+        Raises ``ValueError`` on a payload that is not a list of named entries, and
+        on one in which NO entry carries a schema (an empty list included). Both
+        must be a FAILED read, never an empty set: an empty set reads as "nothing
+        is truncatable", is memoised for the life of the process, and then sends
+        no opt-in to a generator that would have taken one -- a listing without
+        schemas (an older producer, a test double that lists ``parameters``
+        instead) cannot say which generators accept the parameter, so it must not
+        be read as saying none do.
         """
         if not isinstance(listing, list):
             raise ValueError(f"expected a list of generators, got {type(listing).__name__}")
         names = set()
+        schemas_seen = 0
         for entry in listing:
             if not isinstance(entry, dict) or not isinstance(entry.get("name"), str):
                 raise ValueError(f"malformed generator entry: {entry!r}")
             schema = entry.get("schema")
-            properties = schema.get("properties") if isinstance(schema, dict) else None
+            if not isinstance(schema, dict):
+                continue
+            schemas_seen += 1
+            properties = schema.get("properties")
             if isinstance(properties, dict) and "allow_truncation" in properties:
                 names.add(entry["name"])
+        if not schemas_seen:
+            raise ValueError(f"none of the {len(listing)} generator entries carries a parameter schema, so which accept allow_truncation is unknown")
         return frozenset(names)
 
     def reader(self, client_class: Any, *, source: str, api_key: Optional[str]) -> Callable[[], Optional[FrozenSet[str]]]:
@@ -179,6 +189,13 @@ class _TruncatableGenerators:
 # One per process, shared by the two dataset-fetch paths (``_reload_dataset`` and
 # ``app.py``'s auto-start), which read the same juniper-data.
 _TRUNCATABLE_GENERATORS = _TruncatableGenerators()
+
+# Why ``_resolve_truncation_stance`` did NOT apply this service's deployment
+# default although the flag is on and the caller was silent. The fetch-failure
+# describer keys its remedy off these: the knob is ON in both cases, so a refusal
+# that followed must never be told to turn it on (the cascor#640 class).
+_OPT_IN_SKIPPED_LIST_UNREADABLE = "list_unreadable"
+_OPT_IN_SKIPPED_NOT_TRUNCATABLE = "not_truncatable"
 
 
 def _env_flag(name: str, *, default: bool) -> bool:
@@ -1390,9 +1407,10 @@ class TrainingLifecycleManager:
         # ``_reload_dataset`` (the staged and live-swap fetch), by
         # ``start_training`` for tensors passed in as ``X`` (``None``, or the
         # annotation ``app.py``'s auto-start hands in for the tensors it fetched
-        # itself) -- restored with the data by a refused staged fetch or a
-        # cancelled or refused live swap, and left alone wherever the data is
-        # retained (a plain restart, ``reset()``, a start-fresh). Before this it
+        # itself) -- never ahead of them (a fetch whose artifact is refused
+        # binds neither), rolled back with the data by a cancelled or refused
+        # live swap, and left alone wherever the data is retained (a plain
+        # restart, ``reset()``, a start-fresh). Before this it
         # was written at one line and never cleared, so a run started on inline
         # data kept the previous run's annotation and named a ``dataset_id`` it
         # was not training on. Read by ``get_status()`` / ``get_metrics()``. It
@@ -2556,7 +2574,8 @@ class TrainingLifecycleManager:
             # data (APD-CASCOR-013), replacing any a caller handed in with inline
             # tensors, because the staged data is what this run trains on.
             if self._pending_dataset_config:
-                self._consume_pending_dataset_locked()
+                self._reload_dataset(**self._pending_dataset_config)
+                self._pending_dataset_config = None
 
             if self._train_x is None or self._train_y is None:
                 raise ValueError("Training data not provided")
@@ -2681,33 +2700,6 @@ class TrainingLifecycleManager:
             self._training_future = self._executor.submit(self._run_training, self._train_x, self._train_y, self._val_x, self._val_y, **fit_kwargs)
 
         return {"status": "training_started", "timestamp": time.time()}
-
-    def _consume_pending_dataset_locked(self) -> None:
-        """Fetch the staged dataset for the run about to start, keeping data and annotation together.
-
-        Extracted from ``start_training`` so its locked section stays under the
-        repo's ``--max-complexity=15`` ceiling (C901 is enforced there, LOW-001).
-        Caller must hold ``self._lock``.
-
-        On success the staged config is consumed, and ``_reload_dataset`` has
-        bound the new tensors together with their annotation (APD-CASCOR-013). On
-        failure the config is LEFT staged, so the user can fix the upstream
-        juniper-data issue and retry without losing their selection -- and the
-        annotation is put back. ``_reload_dataset`` writes it as soon as the
-        producer answers, BEFORE the artifact is converted and its partitions
-        resolved; a refusal there (a val-less artifact under the section 6.1
-        rules, a malformed one) binds no tensors, so without the restore the
-        annotation would describe an artifact nobody is training on while the
-        previous data -- which a retained-data start would then train on -- stays
-        loaded.
-        """
-        prior_shortfall = self._dataset_shortfall
-        try:
-            self._reload_dataset(**self._pending_dataset_config)
-        except BaseException:
-            self._dataset_shortfall = prior_shortfall
-            raise
-        self._pending_dataset_config = None
 
     def _run_training(self, x, y, x_val, y_val, **kwargs) -> None:
         """Execute training in the background thread (submitted by ``start_training``).
@@ -3981,7 +3973,7 @@ class TrainingLifecycleManager:
         return test_x, test_y, warning
 
     @staticmethod
-    def _describe_dataset_fetch_failure(exc: Exception, *, allow_truncated: bool, caller_refused: bool = False, opt_in_withheld: bool = False) -> str:
+    def _describe_dataset_fetch_failure(exc: Exception, *, allow_truncated: bool, caller_refused: bool = False, opt_in_skipped: Optional[str] = None, deployment_flag_on: bool = False) -> str:
         """Turn a juniper-data fetch failure into something an operator can act on.
 
         A 422 from the producer is not a generic outage: it means the dataset
@@ -4004,14 +3996,25 @@ class TrainingLifecycleManager:
         because their remedies differ: a caller that sent ``false`` re-sends
         ``true``; a silent caller turns the knob on this side.
 
-        ``opt_in_withheld`` is the third no-opt-in case (APD-CASCOR-008): the knob
-        IS on, but juniper-data's generator list could not be read to confirm the
-        generator accepts the opt-in, so by ruling none was sent. Telling that
-        operator to turn the knob on would send them to a setting already set --
-        the wrong-remedy class cascor#640 removed. The remedy is to re-issue the
-        request once the list can be read. Nothing re-issues it automatically:
-        a staged request is re-sent by whoever staged it, and auto-start runs
-        once at boot, so there it is a restart.
+        The knob-on cases (APD-CASCOR-008). ``deployment_flag_on`` is the SETTING,
+        passed so this function never tells an operator to turn on a knob that
+        is already on -- the wrong-remedy class cascor#640 removed. With it on
+        and nothing on the wire, ``opt_in_skipped`` says why:
+
+        * ``_OPT_IN_SKIPPED_LIST_UNREADABLE`` -- juniper-data's generator list
+          could not be read to confirm the generator accepts the opt-in, so by
+          ruling none was sent. The remedy is to retry once the list can be read,
+          and HOW is path-specific: a failed start leaves its dataset staged, so
+          starting again retries it; a live swap stages nothing, so the swap is
+          re-issued; an auto-start run retries only on a service restart.
+        * ``_OPT_IN_SKIPPED_NOT_TRUNCATABLE`` -- the list was read and does not
+          declare ``allow_truncation`` for this generator, so the opt-in, which
+          goes only to generators that declare it, was not sent -- yet the
+          producer refused as if the generator could be partial. The remedy is
+          the request's own parameter, and the producer's schema is what to check.
+        * neither -- the caller's own request carried ``allow_truncation`` with no
+          value, which defers to the producer and keeps this service's default
+          off the request. The remedy is the request's own parameter.
 
         The message opens with a machine-readable token so a consumer can
         recognise the refusal class without matching prose; canopy's three-way
@@ -4024,9 +4027,16 @@ class TrainingLifecycleManager:
         if caller_refused:
             stance = "and this run explicitly refused a partial one (the dataset request sent allow_truncation=false)"
             remedy = "To accept it, re-send the dataset request with allow_truncation=true, plus incomplete_rows=accept to keep the affected rows or incomplete_rows=drop to remove them."
-        elif opt_in_withheld:
+        elif opt_in_skipped == _OPT_IN_SKIPPED_LIST_UNREADABLE:
             stance = "and this service's own opt-in was WITHHELD: allow_truncated_datasets is on, but juniper-data's generator list (GET /v1/generators) could not be read to confirm that this generator accepts allow_truncation, and an unconfirmed opt-in is not sent"
-            remedy = "Re-issue the dataset request once juniper-data answers GET /v1/generators (re-stage it, or restart the service for an auto-start run): the list is read again on every request until one read succeeds, and the opt-in is forwarded if the generator accepts it. To accept without waiting, send allow_truncation=true on the dataset request itself."
+            remedy = "Retry once juniper-data answers GET /v1/generators -- the list is read again on every request until one read succeeds, and the opt-in is forwarded if the generator accepts it: a failed start leaves its dataset staged, so starting training again retries it; a live dataset swap stages nothing, so re-issue the swap; an auto-start run is retried only by restarting the service. To accept without waiting, send allow_truncation=true on the dataset request itself."
+        elif deployment_flag_on:
+            if opt_in_skipped == _OPT_IN_SKIPPED_NOT_TRUNCATABLE:
+                stance = "and no opt-in was sent: allow_truncated_datasets is on, but juniper-data's generator list (GET /v1/generators) does not declare allow_truncation for this generator, and this service forwards its opt-in only to generators that do"
+                remedy = "To accept it, send allow_truncation=true on the dataset request itself, plus incomplete_rows=accept or incomplete_rows=drop -- the service setting cannot change this outcome. A producer that refuses for a shortfall on a generator whose schema does not declare allow_truncation is inconsistent; check that generator's schema in GET /v1/generators."
+            else:
+                stance = "and no opt-in was sent: allow_truncated_datasets is on, but the dataset request itself carried allow_truncation with no value, which defers to the producer and keeps this service's default off the request"
+                remedy = "To accept it, send allow_truncation=true on the dataset request itself, plus incomplete_rows=accept or incomplete_rows=drop -- the service setting cannot change this outcome."
         else:
             stance = "and this run did not accept a partial one"
             remedy = "To accept it, re-run with --allow-truncated-datasets (or set JUNIPER_CASCOR_ALLOW_TRUNCATED_DATASETS=true, or allow_truncated_datasets: true in the experiment YAML service: block), or send allow_truncation=true on the dataset request itself."
@@ -4143,7 +4153,7 @@ class TrainingLifecycleManager:
         return bool(value)
 
     @staticmethod
-    def _resolve_truncation_stance(params: Dict[str, Any], *, generator: str, allow_truncated: bool, truncatable_generators: Callable[[], Optional[FrozenSet[str]]]) -> Tuple[Dict[str, Any], Optional[str], bool, bool, bool]:
+    def _resolve_truncation_stance(params: Dict[str, Any], *, generator: str, allow_truncated: bool, truncatable_generators: Callable[[], Optional[FrozenSet[str]]]) -> Tuple[Dict[str, Any], Optional[str], bool, bool, Optional[str]]:
         """Resolve one dataset request's truncation stance: what to send, and who chose it.
 
         ONE implementation, because there are two live dataset-fetch paths --
@@ -4170,7 +4180,7 @@ class TrainingLifecycleManager:
         or not the list can be read: withholding drops only THIS service's
         default, never the caller's value.
 
-        Returns ``(params, acceptance_source, wire_stance, caller_refused, opt_in_withheld)``:
+        Returns ``(params, acceptance_source, wire_stance, caller_refused, opt_in_skipped)``:
 
         * ``params`` -- what to put on the wire. Never mutated in place; the
           caller's dict is returned unchanged when no default applies.
@@ -4188,13 +4198,17 @@ class TrainingLifecycleManager:
         * ``caller_refused`` -- the caller sent an explicit ``false``. Its remedy
           differs from a silent caller's: re-send the dataset request, rather
           than turn a service knob the caller's own value overrides.
-        * ``opt_in_withheld`` -- the deployment default WOULD have applied, but the
-          reader could not produce the set, so nothing was sent. Its remedy
-          differs again: the knob is already on, so the operator is told to
-          re-issue the request once the list can be read, not to turn it on.
+        * ``opt_in_skipped`` -- why the deployment default was NOT applied when the
+          flag is on and the caller was silent: ``_OPT_IN_SKIPPED_LIST_UNREADABLE``
+          (the reader could not produce the set, so the opt-in was withheld) or
+          ``_OPT_IN_SKIPPED_NOT_TRUNCATABLE`` (the set was read and does not
+          contain this generator). ``None`` when the default applied, or when it
+          never could (flag off, or the caller expressed a stance). The knob is
+          already on in both named cases, so the failure message must not tell
+          the operator to turn it on.
         """
         caller_stance = TrainingLifecycleManager._as_bool_stance(params.get("allow_truncation"))
-        opt_in_withheld = False
+        opt_in_skipped: Optional[str] = None
         if allow_truncated and "allow_truncation" not in params:
             truncatable = truncatable_generators()
             if truncatable is None:
@@ -4205,8 +4219,14 @@ class TrainingLifecycleManager:
                 # data -- and let the next request read the list again. Rejected:
                 # refusing to start without the list, a built-in fallback copy of
                 # the set, and a last-known set cached on disk.
-                opt_in_withheld = True
-            elif generator in truncatable:
+                opt_in_skipped = _OPT_IN_SKIPPED_LIST_UNREADABLE
+            elif generator not in truncatable:
+                # Read, and this generator does not declare the parameter: it
+                # synthesises its data and always delivers in full, so the flag is
+                # not sent (see below). Recorded, because if the producer refuses
+                # it anyway the remedy must not be "turn on a knob that is on".
+                opt_in_skipped = _OPT_IN_SKIPPED_NOT_TRUNCATABLE
+            else:
                 # Only the generators that can actually produce a partial dataset,
                 # which are exactly those whose param schema declares
                 # ``allow_truncation``. Every other generator synthesises its data
@@ -4243,7 +4263,7 @@ class TrainingLifecycleManager:
         else:
             acceptance_source = _PROJECT_API_SHORTFALL_ACCEPTED_BY_DEPLOYMENT if wire_stance else None
 
-        return params, acceptance_source, wire_stance, caller_stance is False, opt_in_withheld
+        return params, acceptance_source, wire_stance, caller_stance is False, opt_in_skipped
 
     def _log_dataset_shortfall(self, meta: Dict[str, Any], *, acceptance_source: Optional[str]) -> None:
         """Log what the producer could not deliver, when this run accepted it.
@@ -4488,14 +4508,15 @@ class TrainingLifecycleManager:
         # unreadable list withholds the opt-in (ruled 2026-09-22), and the memo
         # is keyed by ``data_url``, which is re-read from the environment above.
         truncatable_generators = _TRUNCATABLE_GENERATORS.reader(JuniperDataClient, source=data_url, api_key=api_key)
-        jd_params, acceptance_source, requested_truncation, caller_refused, opt_in_withheld = self._resolve_truncation_stance(jd_params, generator=generator, allow_truncated=bool(Settings().allow_truncated_datasets), truncatable_generators=truncatable_generators)
+        allow_truncated = bool(Settings().allow_truncated_datasets)
+        jd_params, acceptance_source, requested_truncation, caller_refused, opt_in_skipped = self._resolve_truncation_stance(jd_params, generator=generator, allow_truncated=allow_truncated, truncatable_generators=truncatable_generators)
 
         try:
             result = client.create_dataset(generator=generator, params=jd_params, persist=True)
             dataset_id = result["dataset_id"]
             arrays = client.download_artifact_npz(dataset_id)
         except Exception as exc:
-            raise RuntimeError(self._describe_dataset_fetch_failure(exc, allow_truncated=requested_truncation, caller_refused=caller_refused, opt_in_withheld=opt_in_withheld)) from exc
+            raise RuntimeError(self._describe_dataset_fetch_failure(exc, allow_truncated=requested_truncation, caller_refused=caller_refused, opt_in_skipped=opt_in_skipped, deployment_flag_on=allow_truncated)) from exc
 
         # The producer records what it could not deliver in DatasetMeta; surface
         # it here so an accepted shortfall is visible in THIS run's log and not
@@ -4520,7 +4541,16 @@ class TrainingLifecycleManager:
         # applied above changes the params and therefore the content-addressed id.
         # An annotation that does not name the dataset it describes is a claim
         # about an unidentified artifact.
-        self._dataset_shortfall = self._build_dataset_shortfall(meta, dataset_id=dataset_id, acceptance_source=acceptance_source)
+        #
+        # BUILT here, BOUND below with the tensors (APD-CASCOR-013: the
+        # annotation is set when the data is bound, never before). Built first so
+        # a malformed ``meta`` fails before anything is bound. Assigned only after
+        # the artifact is converted and its partitions resolved: this path can
+        # refuse an artifact after the producer answered (a val-less one under
+        # section 6.1, a malformed one), and ``get_status()`` reads the field
+        # without the lock -- an annotation written first was visible, for the
+        # whole conversion, beside data that was never loaded.
+        dataset_shortfall = self._build_dataset_shortfall(meta, dataset_id=dataset_id, acceptance_source=acceptance_source)
 
         new_train_x, new_train_y, new_val_x, new_val_y, new_test_x, new_test_y = self._artifact_to_tensors(arrays)
         # §6.1 rules 1-3: decide what an artifact WITHOUT a validation split means
@@ -4549,6 +4579,10 @@ class TrainingLifecycleManager:
         # cfg so ``swap_dataset_live`` can report it as ``before_cfg`` and so
         # the rollback path can restore it if a swap fails.
         self._current_dataset_config = {"dataset_type": dataset_type, **dict(cfg)} if dataset_type else None
+        # APD-CASCOR-013: bound with the data it describes, after every step that
+        # can refuse the artifact. Nothing between the first tensor binding above
+        # and this line can raise, so the two cannot be torn apart.
+        self._dataset_shortfall = dataset_shortfall
         self.logger.info("Reloaded dataset %r (%d train samples)", dataset_type, new_train_x.shape[0])
 
     def get_dataset(self) -> Dict[str, Any]:

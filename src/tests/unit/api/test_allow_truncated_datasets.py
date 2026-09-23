@@ -24,6 +24,7 @@ import sys
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
+import numpy as np
 import pytest
 
 from api.lifecycle.manager import _TRUNCATABLE_GENERATORS, TrainingLifecycleManager
@@ -362,11 +363,14 @@ class TestShortfallIsPollable:
 
     @staticmethod
     def _annotation_after_reload(caller_params: dict, *, deployment_flag: bool, meta: dict) -> dict:
-        """Run ``_reload_dataset`` up to the point the annotation is set, then stop.
+        """Run ``_reload_dataset`` to completion and return the annotation it bound.
 
-        The fake client delivers ``meta`` and a placeholder artifact; tensor
-        conversion is patched to raise, because the annotation is built BEFORE it
-        and everything after it is tensor plumbing this test has no opinion about.
+        The fake client delivers ``meta`` and a real three-partition artifact, and
+        the reload runs to the end. It used to stop at tensor conversion, because
+        the annotation was written BEFORE it -- which was itself the defect: a
+        status poll during conversion saw a shortfall for data never loaded.
+        Since APD-CASCOR-013 the annotation is set only when the data is bound, so
+        it can only be observed after a completed reload.
         """
 
         class _PartialClient:
@@ -380,10 +384,8 @@ class TestShortfallIsPollable:
                 return {"dataset_id": "partial-1", "meta": meta}
 
             def download_artifact_npz(self, dataset_id: str) -> dict:
-                return {}
-
-        class _StopAfterAnnotation(Exception):
-            pass
+                rng = np.random.default_rng(20260923)
+                return {key: rng.standard_normal((rows, 2)).astype("float32") for key, rows in (("X_train", 20), ("y_train", 20), ("X_val", 6), ("y_val", 6), ("X_test", 4), ("y_test", 4))}
 
         manager = TrainingLifecycleManager.__new__(TrainingLifecycleManager)
         manager.logger = logging.getLogger("test.annotation")
@@ -393,10 +395,9 @@ class TestShortfallIsPollable:
             patch("juniper_data_client.JuniperDataClient", _PartialClient),
             patch("api.settings.Settings", lambda: settings),
             patch("api.secrets.get_secret", lambda _name: "key"),
-            patch.object(TrainingLifecycleManager, "_artifact_to_tensors", side_effect=_StopAfterAnnotation("stop")),
-            pytest.raises(_StopAfterAnnotation),
         ):
             manager._reload_dataset(dataset_type="equities", params=dict(caller_params))
+        assert manager._train_x is not None, "the reload must have bound the data the annotation describes"
         assert manager._dataset_shortfall is not None
         return manager._dataset_shortfall
 

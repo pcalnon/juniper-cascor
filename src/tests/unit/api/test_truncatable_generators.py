@@ -38,14 +38,14 @@ from __future__ import annotations
 import logging
 import sys
 from types import SimpleNamespace
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 from unittest.mock import patch
 
 import pytest
 from pydantic import BaseModel
 
 import cascor_constants.constants_api as constants_api
-from api.lifecycle.manager import _TRUNCATABLE_GENERATORS, TrainingLifecycleManager, _TruncatableGenerators
+from api.lifecycle.manager import _OPT_IN_SKIPPED_LIST_UNREADABLE, _OPT_IN_SKIPPED_NOT_TRUNCATABLE, _TRUNCATABLE_GENERATORS, TrainingLifecycleManager, _TruncatableGenerators
 from cascor_constants.constants_api.constants_api_defaults import _PROJECT_API_SHORTFALL_ACCEPTED_BY_DEPLOYMENT, _PROJECT_API_SHORTFALL_ACCEPTED_BY_REQUEST, _PROJECT_API_SHORTFALL_REFUSAL_TOKEN
 
 pytestmark = pytest.mark.unit
@@ -123,12 +123,34 @@ class TestDerivation:
         assert _TruncatableGenerators.derive([_entry("new_synthetic", truncatable=False)]) == frozenset()
 
     def test_an_entry_with_no_usable_schema_is_not_truncatable(self) -> None:
-        assert _TruncatableGenerators.derive([{"name": "odd", "schema": None}, {"name": "odder"}]) == frozenset()
+        """Beside at least one entry that DOES carry a schema, a schema-less entry is simply excluded."""
+        listing = [{"name": "odd", "schema": None}, {"name": "odder"}, _entry("spiral", truncatable=False)]
+        assert _TruncatableGenerators.derive(listing) == frozenset()
 
     @pytest.mark.parametrize("listing", [{"generators": LISTING}, [{"schema": {}}], ["spiral"], None])
     def test_a_malformed_listing_is_a_failed_read_not_an_empty_set(self, listing: Any) -> None:
         """An empty set would read as "nothing is truncatable" and be memoised for the process."""
         with pytest.raises(ValueError):
+            _TruncatableGenerators.derive(listing)
+
+    @pytest.mark.parametrize(
+        "listing",
+        [
+            [{"name": "spiral", "parameters": ["n_spirals"]}, {"name": "equities", "parameters": ["tickers"]}],
+            [{"name": "odd", "schema": None}, {"name": "odder"}],
+            [],
+        ],
+        ids=["parameters-not-schema", "no-usable-schema", "empty"],
+    )
+    def test_a_listing_in_which_no_entry_carries_a_schema_is_a_failed_read(self, listing: Any) -> None:
+        """It cannot say which generators accept the parameter, so it must not be read as saying none do.
+
+        The first shape is ``juniper_data_client.testing``'s fake catalog, which
+        lists ``parameters`` rather than a ``schema``: read as a success, it
+        derived ``frozenset()``, was memoised, and sent no opt-in to ``equities``
+        for the life of the process.
+        """
+        with pytest.raises(ValueError, match="parameter schema"):
             _TruncatableGenerators.derive(listing)
 
 
@@ -155,6 +177,13 @@ class TestLazyResolution:
         client = _ListingClient({"detail": "not a list"}, LISTING)
         assert _TRUNCATABLE_GENERATORS.resolve(lambda: client, source="http://juniper-data:8100") is None
         assert _TRUNCATABLE_GENERATORS.resolve(lambda: client, source="http://juniper-data:8100") == frozenset({"csv_import", "equities", "equities_seq"})
+
+    def test_a_schemaless_listing_is_not_memoised_as_an_empty_set(self) -> None:
+        """The empty-set cache bug: a schema-less listing must stay UNKNOWN and be read again."""
+        client = _ListingClient([{"name": "equities", "parameters": ["tickers"]}], LISTING)
+        assert _TRUNCATABLE_GENERATORS.resolve(lambda: client, source="http://juniper-data:8100") is None
+        assert _TRUNCATABLE_GENERATORS.resolve(lambda: client, source="http://juniper-data:8100") == frozenset({"csv_import", "equities", "equities_seq"})
+        assert client.calls == 2
 
     def test_the_memo_is_keyed_by_the_juniper_data_it_was_read_from(self) -> None:
         a, b = _ListingClient(LISTING), _ListingClient([_entry("csv_import", truncatable=True)])
@@ -186,26 +215,33 @@ class TestTheResolverConsultsTheDerivedSet:
 
     _SET = frozenset({"csv_import", "equities", "equities_seq"})
 
-    def _resolve(self, params: Dict[str, Any], *, generator: str = "equities", allow_truncated: bool = True, answer: Optional[frozenset] = _SET) -> tuple:
+    def _resolve(self, params: Dict[str, Any], *, generator: str = "equities", allow_truncated: bool = True, answer: Optional[frozenset] = _SET) -> Tuple[tuple, int]:
+        """The resolver's own 5-tuple, and how many times it consulted the reader -- kept apart.
+
+        Returned as a PAIR rather than one flattened tuple: CodeQL's
+        ``py/mismatched-multiple-assignment`` cannot see through a starred
+        re-pack, and error-level alerts block this repo's merges.
+        """
         reader = _Reader(answer)
         result = TrainingLifecycleManager._resolve_truncation_stance(params, generator=generator, allow_truncated=allow_truncated, truncatable_generators=reader)
-        return (*result, reader.calls)
+        return result, reader.calls
 
     def test_a_truncatable_generator_gets_the_deployment_default(self) -> None:
-        params, source, wire, refused, withheld, reads = self._resolve({}, generator="equities_seq")
+        (params, source, wire, refused, skipped), reads = self._resolve({}, generator="equities_seq")
         assert params == {"allow_truncation": True}
-        assert (source, wire, refused, withheld, reads) == (_PROJECT_API_SHORTFALL_ACCEPTED_BY_DEPLOYMENT, True, False, False, 1)
+        assert (source, wire, refused, skipped, reads) == (_PROJECT_API_SHORTFALL_ACCEPTED_BY_DEPLOYMENT, True, False, None, 1)
 
-    def test_a_generator_outside_the_set_is_not_sent_the_flag(self) -> None:
-        params, source, wire, _, withheld, _ = self._resolve({}, generator="spiral")
+    def test_a_generator_outside_the_set_is_not_sent_the_flag_and_says_why(self) -> None:
+        """Not sent, and recorded as NOT_TRUNCATABLE so a later refusal is not told to turn on the knob."""
+        (params, source, wire, _, skipped), _ = self._resolve({}, generator="spiral")
         assert params == {}
-        assert (source, wire, withheld) == (None, False, False)
+        assert (source, wire, skipped) == (None, False, _OPT_IN_SKIPPED_NOT_TRUNCATABLE)
 
     def test_an_unknown_set_withholds_the_default(self) -> None:
         """THE 2026-09-22 RULING. Nothing is sent, and the result says so."""
-        params, source, wire, refused, withheld, _ = self._resolve({}, answer=None)
+        (params, source, wire, refused, skipped), _ = self._resolve({}, answer=None)
         assert params == {}
-        assert (source, wire, refused, withheld) == (None, False, False, True)
+        assert (source, wire, refused, skipped) == (None, False, False, _OPT_IN_SKIPPED_LIST_UNREADABLE)
 
     @pytest.mark.parametrize("caller_value", [True, False])
     def test_an_unknown_set_leaves_the_callers_own_value_alone(self, caller_value: bool) -> None:
@@ -214,15 +250,15 @@ class TestTheResolverConsultsTheDerivedSet:
         Withholding drops only this service's default. The caller's value never
         needed the set, so the reader is not even consulted.
         """
-        params, source, wire, refused, withheld, reads = self._resolve({"allow_truncation": caller_value}, answer=None)
+        (params, source, wire, refused, skipped), reads = self._resolve({"allow_truncation": caller_value}, answer=None)
         assert params == {"allow_truncation": caller_value}
-        assert (wire, refused, withheld, reads) == (caller_value, not caller_value, False, 0)
+        assert (wire, refused, skipped, reads) == (caller_value, not caller_value, None, 0)
         assert source == (_PROJECT_API_SHORTFALL_ACCEPTED_BY_REQUEST if caller_value else None)
 
     def test_with_the_flag_off_the_reader_is_never_called(self) -> None:
-        """CONSTRAINT 1 -- no default can apply, so nothing is fetched and nothing withheld."""
-        params, _, _, _, withheld, reads = self._resolve({}, allow_truncated=False, answer=None)
-        assert params == {} and withheld is False and reads == 0
+        """CONSTRAINT 1 -- no default can apply, so nothing is fetched and nothing skipped."""
+        (params, _, _, _, skipped), reads = self._resolve({}, allow_truncated=False, answer=None)
+        assert params == {} and skipped is None and reads == 0
 
 
 class _RecordingClientClass:
@@ -271,25 +307,48 @@ class TestTheReaderIsLazyAndBounded:
 class TestTheWithheldRemedy:
     """An operator whose knob is ON must not be told to turn it on."""
 
-    def test_a_withheld_opt_in_is_told_to_re_issue_the_request(self) -> None:
-        message = TrainingLifecycleManager._describe_dataset_fetch_failure(Exception("HTTP 422 allow_truncation"), allow_truncated=False, opt_in_withheld=True)
+    _EXC = Exception("HTTP 422 allow_truncation")
+
+    @staticmethod
+    def _names_the_knob(message: str) -> bool:
+        return "--allow-truncated-datasets" in message or "JUNIPER_CASCOR_ALLOW_TRUNCATED_DATASETS" in message
+
+    def test_a_withheld_opt_in_is_told_how_to_retry_on_each_path(self) -> None:
+        """Path-accurate: a failed start keeps its dataset staged; a swap stages nothing; auto-start runs once."""
+        message = TrainingLifecycleManager._describe_dataset_fetch_failure(self._EXC, allow_truncated=False, opt_in_skipped=_OPT_IN_SKIPPED_LIST_UNREADABLE, deployment_flag_on=True)
         assert message.startswith(_PROJECT_API_SHORTFALL_REFUSAL_TOKEN + " ")
-        assert "WITHHELD" in message and "GET /v1/generators" in message and "Re-issue" in message
-        # Auto-start runs once at boot; the message must not promise a retry that nothing performs.
-        assert "restart the service for an auto-start run" in message
-        assert "--allow-truncated-datasets" not in message and "JUNIPER_CASCOR_ALLOW_TRUNCATED_DATASETS" not in message
+        assert "WITHHELD" in message and "GET /v1/generators" in message
+        assert "starting training again retries it" in message
+        assert "re-issue the swap" in message
+        assert "retried only by restarting the service" in message
+        # The staged path does NOT need a re-stage: the failed start left the config staged.
+        assert "re-stage" not in message
+        assert not self._names_the_knob(message)
+
+    def test_a_generator_the_list_does_not_declare_is_not_told_to_turn_on_the_knob(self) -> None:
+        """Item 3's second half: flag ON, list READ, generator not truncatable, and the producer refused anyway."""
+        message = TrainingLifecycleManager._describe_dataset_fetch_failure(self._EXC, allow_truncated=False, opt_in_skipped=_OPT_IN_SKIPPED_NOT_TRUNCATABLE, deployment_flag_on=True)
+        assert message.startswith(_PROJECT_API_SHORTFALL_REFUSAL_TOKEN + " ")
+        assert "does not declare allow_truncation" in message and "allow_truncation=true" in message
+        assert not self._names_the_knob(message)
+
+    def test_a_request_that_deferred_with_a_null_is_not_told_to_turn_on_the_knob(self) -> None:
+        """The same invariant for the remaining flag-on case: the request itself carried allow_truncation: null."""
+        message = TrainingLifecycleManager._describe_dataset_fetch_failure(self._EXC, allow_truncated=False, deployment_flag_on=True)
+        assert "carried allow_truncation with no value" in message
+        assert not self._names_the_knob(message)
 
     def test_a_silent_caller_with_the_knob_off_still_gets_the_knob(self) -> None:
-        """Guard: the pre-existing remedy is unchanged when nothing was withheld."""
-        message = TrainingLifecycleManager._describe_dataset_fetch_failure(Exception("HTTP 422 allow_truncation"), allow_truncated=False)
-        assert "--allow-truncated-datasets" in message and "WITHHELD" not in message
+        """Guard: the pre-existing remedy is unchanged when the knob really is off."""
+        message = TrainingLifecycleManager._describe_dataset_fetch_failure(self._EXC, allow_truncated=False)
+        assert self._names_the_knob(message) and "WITHHELD" not in message
 
-    def test_the_two_remedies_differ(self) -> None:
+    def test_the_remedies_differ(self) -> None:
         """CONSTRAINT 5 -- the wrong-remedy class cascor#640 removed, stated as its own inequality."""
-        exc = Exception("HTTP 422 allow_truncation")
-        withheld = TrainingLifecycleManager._describe_dataset_fetch_failure(exc, allow_truncated=False, opt_in_withheld=True)
-        silent = TrainingLifecycleManager._describe_dataset_fetch_failure(exc, allow_truncated=False)
-        assert withheld != silent
+        withheld = TrainingLifecycleManager._describe_dataset_fetch_failure(self._EXC, allow_truncated=False, opt_in_skipped=_OPT_IN_SKIPPED_LIST_UNREADABLE, deployment_flag_on=True)
+        undeclared = TrainingLifecycleManager._describe_dataset_fetch_failure(self._EXC, allow_truncated=False, opt_in_skipped=_OPT_IN_SKIPPED_NOT_TRUNCATABLE, deployment_flag_on=True)
+        silent = TrainingLifecycleManager._describe_dataset_fetch_failure(self._EXC, allow_truncated=False)
+        assert len({withheld, undeclared, silent}) == 3
 
 
 class _StagedClient:
@@ -357,6 +416,29 @@ class TestTheStagedPathReadsTheList:
         assert "allow_truncation" not in _StagedClient.sent["params"]
         assert str(error).startswith(_PROJECT_API_SHORTFALL_REFUSAL_TOKEN)
         assert "WITHHELD" in str(error) and "--allow-truncated-datasets" not in str(error)
+
+    def test_a_schemaless_listing_withholds_instead_of_caching_an_empty_set(self) -> None:
+        """Item 3, on the live path: the listing answers, carries no schemas, and must count as UNREAD.
+
+        Read as a success it derived ``frozenset()``, so ``equities`` was sent no
+        opt-in and the 422 that followed told the operator to set a flag that was
+        already on. It must be withheld-and-retried instead, and say so.
+        """
+        client = _StagedClient([{"name": "equities", "parameters": ["tickers"]}], create_error=RuntimeError("HTTP 422 allow_truncation"))
+        error = _reload(client, deployment_flag=True)
+        assert "allow_truncation" not in _StagedClient.sent["params"]
+        assert "WITHHELD" in str(error) and "JUNIPER_CASCOR_ALLOW_TRUNCATED_DATASETS" not in str(error)
+        # Not memoised: the next request reads again.
+        _reload(client, deployment_flag=True)
+        assert client.listing_calls == 2
+
+    def test_a_refusal_for_a_generator_the_list_does_not_declare_does_not_name_the_knob(self) -> None:
+        """Item 3's second half, on the live path: flag ON, list read, generator not declared, producer 422s."""
+        client = _StagedClient([_entry("equities", truncatable=False)], create_error=RuntimeError("HTTP 422 allow_truncation"))
+        error = _reload(client, deployment_flag=True)
+        assert str(error).startswith(_PROJECT_API_SHORTFALL_REFUSAL_TOKEN)
+        assert "does not declare allow_truncation" in str(error)
+        assert "--allow-truncated-datasets" not in str(error) and "JUNIPER_CASCOR_ALLOW_TRUNCATED_DATASETS" not in str(error)
 
     def test_with_the_flag_off_the_list_is_never_read(self) -> None:
         """CONSTRAINT 1 -- the default deployment (flag off) never asks juniper-data for the list."""

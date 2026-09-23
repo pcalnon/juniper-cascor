@@ -52,11 +52,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   fetch's annotation to `start_training` with the tensors (new keyword-only `dataset_shortfall`);
   an auto-start that fails between fetch and start binds nothing and leaves no annotation. Two
   adjacent paths had the same defect and are fixed with it: a cancelled or refused live swap rolls
-  the annotation back with the data (a new `_PreSwapSnapshot` slot), and a staged fetch refused
-  after its annotation was written (a val-less or malformed artifact) restores the previous one.
-  Pinned by `src/tests/unit/api/test_shortfall_lifecycle.py` (13 arms, including the
-  over-correction guards: new inline data after a partial run still reports `null`, and so does a
-  retained start on that inline data).
+  the annotation back with the data (a new `_PreSwapSnapshot` slot), and the fetch itself now
+  assigns the annotation only AFTER the artifact is converted and its tensors bound -- it used to
+  write it first, so a status poll during conversion showed a shortfall for data never loaded,
+  and a refused artifact (a val-less or malformed one) left it describing data that was not.
+  Pinned by `src/tests/unit/api/test_shortfall_lifecycle.py` (14 arms, including a poll taken
+  mid-conversion through the real fetch path, and the over-correction guards: new inline data
+  after a partial run still reports `null`, and so does a retained start on that inline data).
 - **The truncatable-generator set is read from juniper-data, not restated in cascor**
   (APD-CASCOR-008). `_PROJECT_API_TRUNCATABLE_GENERATORS` is **removed** from both
   `cascor_constants` trees; the set is derived from juniper-data's `GET /v1/generators` -- a
@@ -68,10 +70,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   default governs, and only a successful read is memoised (rejected: refusing to start, a
   built-in fallback copy, a last-known set on disk). The list is read only when the resolver
   consults it (flag on, caller silent), through a dedicated client bounded to 5 s with no
-  retries (the staged path holds the manager lock), and memoised per juniper-data URL. A
-  refusal after a withheld opt-in names its own remedy instead of pointing at a setting that is
-  already on. On the staged path this removes any startup dependency; auto-start is itself a
-  boot-time request that runs once, so there the retry is the operator's. Pinned by
+  retries (the staged path holds the manager lock), and memoised per juniper-data URL; a listing
+  in which no entry carries a schema (an older producer, a test double listing `parameters`)
+  counts as UNREAD and is not memoised, where it used to be cached as "nothing is truncatable".
+  A refusal never tells the operator to set the flag while it is on: after a withheld opt-in it
+  says how to retry on each path (a failed start stays staged, a live swap is re-issued,
+  auto-start needs a restart), and for a generator the list does not declare it points at the
+  request's own `allow_truncation`. On the staged path this removes any startup dependency;
+  auto-start is itself a boot-time request that runs once, so there the retry is the operator's.
+  Operator docs: the flag's note in `AGENTS.md` and the `dataset_shortfall` entry in
+  `docs/api/JUNIPER_CASCOR_API_REFERENCE.md`. Pinned by
   `src/tests/unit/api/test_truncatable_generators.py` plus new arms in the two truncation suites.
 - **`lockfile-update.yml` regenerated `requirements.lock` alone, so every dependency bump drifted
   `requirements-cpu.lock`** -- the container image's lock, which is *derived* from the GPU lock via
