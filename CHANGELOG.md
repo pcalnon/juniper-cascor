@@ -43,6 +43,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Mutation-checked against 14 deliberate breaks (juniper-ml
   `util/ad-hoc/2026-09-22_p04_harness_mutation_check.py`): all fail it, while the unmutated tree
   and P2.1 implemented as prescribed both pass. Test-only; no runtime change.
+- **An ADVISORY exact-match check on the candidate micro-benchmark's `epochs_completed`** (owner
+  decision D6, ruled 2026-09-22, juniper-ml
+  `notes/JUNIPER_2026-09-11_JUNIPER-ECOSYSTEM_PERF-LANE-SIX-OWNER-DECISIONS-RULED.md` §5.4: build it
+  non-blocking, count how often it fires on real cascor PRs, then decide whether it blocks).
+  `src/tests/unit/test_candidate_epochs_completed_advisory.py` reproduces the construction of
+  `src/tests/performance/test_micro_candidate.py::TestCandidateEpochScaling::test_epoch_scaling`
+  verbatim at budgets 100 and 200 -- at 10 and 50 the count equals the request, so a check there is
+  a tautology -- against the reference `{100: 68, 200: 68}`, verified on `6276c45` under a 1-thread
+  torch pin (the micro tier's `BENCHMARK_THREAD_PIN`). It is a `unit` test because the
+  `performance` tier never runs in CI, where a check could never fire. A mismatch never fails the
+  build: it issues an `EpochsCompletedDriftWarning` (under a local `"always"` filter, so a future
+  `-W error` cannot turn it into a gate), appends one line to `$GITHUB_STEP_SUMMARY`, and emits a
+  `::warning title=D6 advisory - epochs_completed drift::` annotation, which is what gets counted. A
+  count that is not an `int`, one outside `1..budget`, or an exception from training still fails.
+  - **Writing the annotation to `sys.__stdout__` does not get it past pytest.** Under the default
+    `--capture=fd`, fd 1 is redirected while each test runs, so a flushed write is captured and
+    discarded with a passing test's output. The check suspends capture (`capsys.disabled`),
+    flushes inside the suspension, and writes a newline first: the runner parses a workflow
+    command only at the start of a line, and pytest has already written the test's node id or
+    progress dots without one.
+  - The job log renders the command as `##[warning]<message>` without its title, so every message
+    starts with the title string. The module docstring gives the `gh api` recipes for counting
+    firings per PR head and per matrix leg, and says what a firing on only some legs means.
+
+  Mutation-checked with `util/ad-hoc/2026-09-23_d6_advisory_mutation_check.py`: 21 deliberate
+  breaks, all caught, against a control that is clean on both of its detectors. Twenty are caught
+  by the module's own tests. The twenty-first -- the real check losing `capsys.disabled` -- is
+  invisible to them and is caught only by the harness's end-to-end detector, which forces a firing
+  under pytest's real capture and counts the annotation lines. Test-only; no runtime change.
 
 ### Fixed
 
