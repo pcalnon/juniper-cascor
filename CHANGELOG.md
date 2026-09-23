@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Three version surfaces restated `"0.6.0"` while the distribution was 0.11.0** (#668).
+  `juniper_cascor.__version__` was a hardcoded literal -- the value `publish.yml`'s TestPyPI check
+  prints on every release; `api.models.common._API_VERSION` was another, and it is the default
+  `meta.version` of **every enveloped API response**; `/v1/health`'s source-checkout fallback was
+  the third. BUG-CC-04 had moved `api.app` and `/v1/health`'s installed path onto
+  `importlib.metadata` and missed these. All three now read `importlib.metadata.version("juniper-cascor")`
+  and fall back to the same non-release `"0.0.0-dev"` sentinel `api.app` uses, so no version literal
+  is left to bump by hand. **Visible change**: enveloped responses now report the installed version
+  in `meta.version` instead of `0.6.0`; no Juniper consumer reads that field.
+  `src/tests/unit/test_package_version_single_source.py` pins each surface to the installed version
+  and fails if any of the four assigns a release-number literal -- mutation-checked: 5 of its 6
+  cases fail against the pre-fix tree.
 - **`lockfile-update.yml` regenerated `requirements.lock` alone, so every dependency bump drifted
   `requirements-cpu.lock`** -- the container image's lock, which is *derived* from the GPU lock via
   `--constraint requirements.lock`. Nothing reported it: the CI check asserts only that every image
