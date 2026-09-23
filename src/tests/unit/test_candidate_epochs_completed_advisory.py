@@ -29,7 +29,9 @@ Description:
     behind the reference is juniper-ml
     ``notes/JUNIPER_2026-09-22_JUNIPER-ECOSYSTEM_PERF-LANE-D6-EPOCHS-COMPLETED-SPREAD.md``: 10 / 50 /
     68 / 68 at budgets 10 / 50 / 100 / 200, with zero spread over 100 observations across torch
-    thread widths 1-16, and the same values at 1-minute host loads of 19.50, 32.26 and 54.49.
+    thread widths 1-16, and the same values at 1-minute host loads of 12.08, 19.50 and 32.26, each
+    with a spread.json on disk. (A 54.49 once quoted in that note was withdrawn as unsourced by
+    juniper-ml#2015; do not cite it.)
 
     WHY IT IS A UNIT TEST
     ``performance``-marked tests never run in CI. The unit lane runs
