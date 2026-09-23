@@ -7,8 +7,9 @@ inert -- the same failure mode that made the setting entry-point-dependent in th
 (juniper-cascor#531).
 
 The direct CLI applies the identical policy from the identical helper at the top of ``main.py``.
-Default is a no-op, which is what this tier has always done; ``JUNIPER_CASCOR_BLAS_THREADS`` opts
-into a cap on both paths at once.
+Since 2026-09-23 (owner decision D1) the default caps all three variables at 2 wherever they are
+unset; ``JUNIPER_CASCOR_BLAS_THREADS`` changes the width, or opts out with ``0`` / ``off`` /
+``none``, on both paths at once.
 """
 
 from parallelism.blas_threads import configure_blas_threads

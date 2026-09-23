@@ -49,21 +49,43 @@ class _EnvIsolated(unittest.TestCase):
 
 
 class ConfigureBlasThreadsTest(_EnvIsolated):
-    def test_default_is_a_no_op(self) -> None:
-        """Unset override MUST leave the runtime's own choice alone.
+    def test_default_caps_all_three_at_two(self) -> None:
+        """Unset override caps at 2 (owner decision D1, 2026-09-23).
 
-        This is the whole behavioural change: the service tier has always run this way, it is the
-        faster of the two measured behaviours, and keeping it as the default is what preserves every
-        service-tier result recorded before the fix.
+        Until 2026-09-23 this was a no-op, for #531's reason. The flip was gated on showing that the
+        cap does not move the epoch count, which wall time cannot see; see the module docstring.
         """
-        self.assertIsNone(blas_threads.configure_blas_threads())
+        self.assertEqual(blas_threads.DEFAULT_BLAS_THREADS, 2)
+        self.assertEqual(blas_threads.configure_blas_threads(), "2")
         for var in blas_threads.BLAS_THREAD_VARS:
-            self.assertNotIn(var, os.environ, f"{var} must not be set when the policy is a no-op")
+            self.assertEqual(os.environ[var], "2", f"{var} must carry the default cap")
 
-    def test_blank_override_is_a_no_op(self) -> None:
+    def test_blank_override_uses_the_default(self) -> None:
         os.environ[blas_threads.BLAS_THREADS_ENV] = "   "
-        self.assertIsNone(blas_threads.configure_blas_threads())
-        self.assertNotIn("OMP_NUM_THREADS", os.environ)
+        self.assertEqual(blas_threads.configure_blas_threads(), "2")
+        self.assertEqual(os.environ["OMP_NUM_THREADS"], "2")
+
+    def test_opt_out_leaves_the_runtime_default(self) -> None:
+        """``0`` / ``off`` / ``none`` restore the pre-D1 behaviour: set nothing at all."""
+        for opt_out in ("0", "off", "OFF", "none", " None "):
+            with self.subTest(value=opt_out):
+                os.environ[blas_threads.BLAS_THREADS_ENV] = opt_out
+                for var in blas_threads.BLAS_THREAD_VARS:
+                    os.environ.pop(var, None)
+                self.assertIsNone(blas_threads.configure_blas_threads())
+                for var in blas_threads.BLAS_THREAD_VARS:
+                    self.assertNotIn(var, os.environ, f"{var} must stay unset when the operator opts out")
+
+    def test_default_never_overrides_an_operator_value(self) -> None:
+        """setdefault holds for the default too: a width the launcher or operator exported wins.
+
+        juniper-ml's experiment launcher delivers `runtime.blas_threads` by exporting these variables,
+        so an unconditional default here would silently override every experiment's named width.
+        """
+        os.environ["OMP_NUM_THREADS"] = "9"
+        self.assertEqual(blas_threads.configure_blas_threads(), "2")
+        self.assertEqual(os.environ["OMP_NUM_THREADS"], "9")
+        self.assertEqual(os.environ["MKL_NUM_THREADS"], "2")
 
     def test_override_sets_all_three(self) -> None:
         os.environ[blas_threads.BLAS_THREADS_ENV] = "3"
@@ -80,14 +102,17 @@ class ConfigureBlasThreadsTest(_EnvIsolated):
         self.assertEqual(os.environ["MKL_NUM_THREADS"], "3")
 
     def test_malformed_override_is_ignored_not_raised(self) -> None:
-        """A mistyped tuning knob must not abort a training run before logging even exists."""
-        for bad in ("abc", "0", "-4", "2.5"):
+        """A mistyped tuning knob must not abort a training run before logging even exists.
+
+        It falls back to the documented default. ``0`` is NOT malformed any more: it is the opt-out.
+        """
+        for bad in ("abc", "-4", "2.5"):
             with self.subTest(value=bad):
                 os.environ[blas_threads.BLAS_THREADS_ENV] = bad
                 for var in blas_threads.BLAS_THREAD_VARS:
                     os.environ.pop(var, None)
-                self.assertIsNone(blas_threads.configure_blas_threads())
-                self.assertNotIn("OMP_NUM_THREADS", os.environ)
+                self.assertEqual(blas_threads.configure_blas_threads(), "2")
+                self.assertEqual(os.environ["OMP_NUM_THREADS"], "2")
 
     def test_module_is_import_cheap(self) -> None:
         """It must import without pulling in a BLAS-linked library.
