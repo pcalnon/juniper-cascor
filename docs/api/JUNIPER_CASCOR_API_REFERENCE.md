@@ -1075,6 +1075,8 @@ curl -s 'http://localhost:8201/v1/metrics/history?count=100'
 
 **Detailed description** — Surfaces counters maintained by the WebSocket manager: bytes/messages sent (overall and per-type), connection counts, replay-buffer state. Useful for diagnosing slow consumers. Implemented at `src/api/routes/metrics.py:36-49`.
 
+Two failure counters, deliberately kept apart (F-CASCOR-004): `send_failures` counts **per-connection** delivery failures (a send that raised or timed out -- on a broadcast, that subscriber is dropped and its socket closed with `1011`); `unserializable_messages_total` counts messages refused **before any send** because they could not be serialized to JSON (a producer defect -- counted once per message, not per subscriber, and no subscriber is dropped). The Prometheus twin of the second is `cascor_ws_unserializable_messages_total{type}`.
+
 **Syntax / example**:
 
 ```bash
@@ -1508,6 +1510,11 @@ All three sockets share these properties:
 - A client that sends nothing within the pong window is closed with code `1011`, reason `Heartbeat timeout: no pong or traffic within <N>s`, and a server-side WARNING log line. (Pre-C3 the close used `1006`, which RFC 6455 §7.4.1 forbids on the wire — the `websockets` server implementation rejects it, so the close frame never reached the peer and clients were left holding a silent half-open socket.)
 - `juniper-cascor-client >= 0.7.0` answers pings automatically on both streams (CL1) and exposes `is_alive(window)` / `last_frame_at` liveness surfaces for supervisors.
 - T5 observability: every heartbeat ping is recorded in the transport counters (`GET /v1/metrics/transport`, `messages_sent_by_type.ping`), and the WS manager logs a periodic INFO emission summary (`WS emission summary (last <N>s): metrics=…, ping=… (<K> active connections)`, interval `ws_emission_summary_interval_sec`, default `60`, env `JUNIPER_WS_EMISSION_SUMMARY_INTERVAL_SEC`, `<= 0` disables) so "connected but nothing flowing" is diagnosable server-side.
+
+`/ws/training` broadcast failures are attributed to their cause (F-CASCOR-004):
+
+- A message that cannot be serialized to JSON (a NumPy scalar in the payload, say -- Starlette's `send_json` uses stdlib `json.dumps` with no `default=`) is the **message's** fault. It is refused once, before seq assignment: an ERROR log line (`WebSocket broadcast skipped: the <type> message cannot be serialized to JSON (...)`), `unserializable_messages_total` +1, and no frame, no seq, no replay-buffer entry. Every subscriber stays connected. This includes a message over `ws_max_message_size_bytes` (default `60000`): the chunker used to coerce such a message with `default=str` and deliver it, with `np.int64(3)` arriving as the string `"3"`.
+- A send that raises or exceeds `ws_send_timeout_seconds` (default `0.5`, env `JUNIPER_WS_SEND_TIMEOUT_SECONDS`) is **that connection's** fault. Only that subscriber is dropped, and it is closed with `1011`, reason `Broadcast send failed or timed out` -- previously it was forgotten without a close and left half-open, with the heartbeat keeping it alive. A slow reader receives that close frame after the backlog it had not yet read. A peer that never reads again is never sent it: its connection ends when the ASGI server gives up on it. Reconnect, and resume from the last `seq` if it is still in the replay buffer.
 
 #### Defensive numeric settings (`_numeric_setting`)
 
