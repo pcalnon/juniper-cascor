@@ -1,0 +1,14 @@
+~/Development/python/Juniper/worktrees/juniper-cascor--p01--logging-corpus--20260922-0630--8065ca0f/src/main.py:208: DeprecationWarning: SENTRY_SDK_DSN is deprecated; set JUNIPER_CASCOR_SENTRY_DSN instead. SENTRY_SDK_DSN will be removed in a future release. Until then, the legacy variable continues to work but the prefixed form takes precedence whenever both are set.
+  _sentry_dsn = _resolve_sentry_dsn() if not _MP_CHILD_REIMPORT else None
++[main.py: 375] (2026-09-22 03:27:40) [INFO] Cascor: main: Starting the Cascade Correlation Neural Network project
++[main.py: 376] (2026-09-22 03:27:40) [INFO] Cascor: main: Project constants: Log Level: 20, Log Level Name: INFO
++[main.py: 377] (2026-09-22 03:27:40) [INFO] Cascor: main: Project constants: Log File Name: juniper_cascor.log, Log File Path: ~/.local/state/juniper-experiments/p01-logging-at8065ca0f-v3/cli-01/logs
++[cascade_correlation.py: 621] (2026-09-22 03:27:40) [INFO] CascadeCorrelationNetwork: __init__: Initialization completed
++[cascade_correlation.py: 3496] (2026-09-22 03:27:44) [INFO] CascadeCorrelationNetwork: train_candidate_worker: Starting training of Candidate Units in Pool.
++[candidate_unit.py: 189] (2026-09-22 03:27:44) [INFO] CandidateUnit: __init__: Initializing Candidate Unit with Logger class.
++[candidate_unit.py: 580] (2026-09-22 03:27:45) [INFO] CandidateUnit: train: Training candidate unit for 500 epochs with learning rate 0.1 and display frequency 10
++[candidate_unit.py: 606] (2026-09-22 03:27:45) [INFO] CandidateUnit: train: Forward pass: UUID: dce25202-fd12-4973-8f0a-48a616702277, epoch: 1
++[candidate_unit.py: 610] (2026-09-22 03:27:45) [INFO] CandidateUnit: train: Calculating correlation: UUID: dce25202-fd12-4973-8f0a-48a616702277, epoch: 1
++[candidate_unit.py: 1034] (2026-09-22 03:27:45) [INFO] CandidateUnit: _calculate_correlation: Final correlation effectiveness: 0.007663
++[candidate_unit.py: 762] (2026-09-22 03:27:45) [INFO] CandidateUnit: train: Epoch 10 - Norm Output: shape=(800,) l2=17.686398, Norm Error: shape=(800,) l2=14.032722
++[candidate_unit.py: 689] (2026-09-22 03:27:45) [INFO] CandidateUnit: train: Final Correlation: UUID: dce25202-fd12-4973-8f0a-48a616702277, Final correlation value: 0.032924, Best Corr Index: 1

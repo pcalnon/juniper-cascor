@@ -20,26 +20,104 @@ import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from profiling.logging_utils import BatchLogger, LogFrequencyTracker, SampledLogger
+from log_config.logger.logger import Logger  # pyright: ignore[reportMissingImports]
+from profiling.logging_utils import BatchLogger, LogFrequencyTracker, SampledLogger, log_if_enabled, log_timing
 
 pytestmark = pytest.mark.unit
+
+
+class TestAgainstRealLoggers:
+    """The tests that would have caught the defect the mocks hid.
+
+    Every other test in this file injects a ``MagicMock``, which accepts any call with any
+    signature. That is why this module could carry 100% line coverage while being unable to
+    survive contact with the logger it exists to serve: each helper called
+    ``logger.log(level, msg)``, the STDLIB signature, and cascor's ``Logger`` inherits that as an
+    INSTANCE method while every cascor call site binds the CLASS (``self.logger = Logger``). The
+    real call therefore raised::
+
+        TypeError: Logger.log() missing 1 required positional argument: 'msg'
+
+    No mock can show that. These use real objects on both sides of the dispatch.
+    """
+
+    def test_sampled_logger_works_with_the_cascor_logger_CLASS(self):
+        """The binding every cascor call site actually uses."""
+        sampled = SampledLogger(Logger, sample_rate=1, include_first=True)
+        # Must not raise. Before P1.4 this was a TypeError on the first emit.
+        sampled.trace("real-logger trace")
+        sampled.verbose("real-logger verbose")
+        sampled.debug("real-logger debug")
+
+    def test_log_if_enabled_works_with_the_cascor_logger_CLASS(self):
+        """Force the level ENABLED, or this test cannot see the defect.
+
+        An earlier version used ``Logger.INFO`` against whatever level happened to be configured.
+        When that level was disabled, ``log_if_enabled`` returned before emitting and the test
+        passed against the broken code -- verified by mutation: 3 of 5 tests in this class caught
+        the TypeError and this was one of the two that did not. Pinning the level makes the emit
+        path unavoidable.
+        """
+        saved = Logger.get_level()
+        try:
+            Logger.set_level("TRACE")
+            assert Logger.isEnabledFor(Logger.INFO), "setUp failed to enable the level under test"
+            calls = []
+            log_if_enabled(Logger, Logger.INFO, lambda: (calls.append(1), "real-logger info")[1])
+            assert calls, "the message lambda was never evaluated, so nothing was emitted"
+        finally:
+            Logger.set_level(saved)
+
+    def test_log_timing_works_with_the_cascor_logger_CLASS(self):
+        with log_timing(Logger, "real-logger-op"):
+            pass
+
+    def test_batch_logger_works_with_the_cascor_logger_CLASS(self):
+        with BatchLogger(Logger, "real-logger-batch") as batch:
+            batch.add("one")
+            batch.add("two")
+
+    def test_stdlib_logger_still_takes_the_log_fallback(self):
+        """A stdlib logger has no trace/verbose, so ``_emit`` must fall back to ``.log``.
+
+        A MagicMock can never exercise this branch -- ``getattr(mock, "trace")`` is callable for
+        any name, so a mock always takes the name-dispatch path. Only a real stdlib logger does.
+        """
+        stdlib = logging.getLogger("p14_fallback_probe")
+        stdlib.setLevel(logging.DEBUG)
+        seen = []
+        stdlib.addHandler(type("H", (logging.Handler,), {"emit": lambda self, r: seen.append(r)})())
+        try:
+            sampled = SampledLogger(stdlib, sample_rate=1, include_first=True)
+            sampled.debug("fallback message")
+            assert seen, "the stdlib fallback emitted nothing"
+            assert "fallback message" in seen[-1].getMessage()
+        finally:
+            stdlib.handlers.clear()
 
 
 class TestSampledLoggerTrace:
     """Tests for SampledLogger.trace() method (line 90)."""
 
-    def test_trace_logs_at_level_5(self):
-        """Test that trace() logs at level 5 with sampling."""
+    def test_trace_logs_at_the_canonical_trace_level(self):
+        """trace() must emit at TRACE, not at 5.
+
+        This test used to be ``test_trace_logs_at_level_5`` and asserted ``level == 5``. 5 is
+        **VERBOSE's** number; canonical TRACE is 1 (P1.2/P1.4, cascor#573). The test pinned the
+        defect, so fixing the module required fixing the test -- and the old name recorded the
+        wrong value in the one place a reader would trust.
+        """
         mock_logger = MagicMock()
         sampled = SampledLogger(mock_logger, sample_rate=1, include_first=True)
 
         sampled.trace("trace message")
 
-        mock_logger.log.assert_called_once()
-        call_args = mock_logger.log.call_args
-        assert call_args[0][0] == 5
-        assert "[sampled]" in call_args[0][1]
-        assert "trace message" in call_args[0][1]
+        # Dispatch is by level NAME now, so the level is carried by WHICH method was called.
+        mock_logger.trace.assert_called_once()
+        assert Logger.TRACE == 1, "canonical TRACE moved; this suite pins the old value"
+        msg = mock_logger.trace.call_args[0][0]
+        assert "[sampled]" in msg
+        assert "trace message" in msg
 
     def test_trace_respects_sample_rate(self):
         """Test that trace() respects the sample rate."""
@@ -49,7 +127,7 @@ class TestSampledLoggerTrace:
         for i in range(7):
             sampled.trace(f"message {i}", key="trace_key")
 
-        assert mock_logger.log.call_count == 3
+        assert mock_logger.trace.call_count == 3
 
     def test_trace_with_custom_key(self):
         """Test trace() with a custom sampling key."""
@@ -61,24 +139,29 @@ class TestSampledLoggerTrace:
         sampled.trace("msg3", key="key_a")
         sampled.trace("msg4", key="key_a")
 
-        assert mock_logger.log.call_count == 3
+        assert mock_logger.trace.call_count == 3
 
 
 class TestSampledLoggerVerbose:
     """Tests for SampledLogger.verbose() method (line 94)."""
 
-    def test_verbose_logs_at_level_15(self):
-        """Test that verbose() logs at level 15 with sampling."""
+    def test_verbose_logs_at_the_canonical_verbose_level(self):
+        """verbose() must emit at VERBOSE, not at 15.
+
+        This test used to be ``test_verbose_logs_at_level_15`` and asserted ``level == 15``.
+        **15 is not a level at all** -- the canonical table runs TRACE 1, VERBOSE 5, DEBUG 10,
+        INFO 20 (P1.2/P1.4, cascor#573).
+        """
         mock_logger = MagicMock()
         sampled = SampledLogger(mock_logger, sample_rate=1, include_first=True)
 
         sampled.verbose("verbose message")
 
-        mock_logger.log.assert_called_once()
-        call_args = mock_logger.log.call_args
-        assert call_args[0][0] == 15
-        assert "[sampled]" in call_args[0][1]
-        assert "verbose message" in call_args[0][1]
+        mock_logger.verbose.assert_called_once()
+        assert Logger.VERBOSE == 5, "canonical VERBOSE moved; this suite pins the old value"
+        msg = mock_logger.verbose.call_args[0][0]
+        assert "[sampled]" in msg
+        assert "verbose message" in msg
 
     def test_verbose_respects_sample_rate(self):
         """Test that verbose() respects the sample rate."""
@@ -88,7 +171,7 @@ class TestSampledLoggerVerbose:
         for i in range(12):
             sampled.verbose(f"msg {i}", key="verbose_key")
 
-        assert mock_logger.log.call_count == 3
+        assert mock_logger.verbose.call_count == 3
 
     def test_verbose_without_include_first(self):
         """Test verbose() without logging the first message."""
@@ -98,7 +181,7 @@ class TestSampledLoggerVerbose:
         for i in range(6):
             sampled.verbose(f"msg {i}", key="v_key")
 
-        assert mock_logger.log.call_count == 2
+        assert mock_logger.verbose.call_count == 2
 
 
 class TestBatchLoggerFlushInterval:
@@ -112,10 +195,10 @@ class TestBatchLoggerFlushInterval:
 
         batch.add("msg1")
         batch.add("msg2")
-        assert mock_logger.log.call_count == 0
+        assert mock_logger.debug.call_count == 0
 
         batch.add("msg3")
-        assert mock_logger.log.call_count > 0
+        assert mock_logger.debug.call_count > 0
         assert len(batch._buffer) == 0
 
     def test_add_multiple_interval_flushes(self):
@@ -127,7 +210,7 @@ class TestBatchLoggerFlushInterval:
         for i in range(6):
             batch.add(f"msg {i}")
 
-        assert mock_logger.log.call_count == 9
+        assert mock_logger.debug.call_count == 9
 
     def test_add_flush_interval_zero_no_auto_flush(self):
         """Test that flush_interval=0 disables auto-flush on interval."""
@@ -138,7 +221,7 @@ class TestBatchLoggerFlushInterval:
         for i in range(10):
             batch.add(f"msg {i}")
 
-        assert mock_logger.log.call_count == 0
+        assert mock_logger.debug.call_count == 0
         assert len(batch._buffer) == 10
 
 
@@ -153,7 +236,7 @@ class TestBatchLoggerEmptyFlush:
 
         batch.flush()
 
-        mock_logger.log.assert_not_called()
+        mock_logger.debug.assert_not_called()
 
     def test_flush_after_previous_flush(self):
         """Test that flush() after a previous flush does nothing."""
@@ -163,10 +246,10 @@ class TestBatchLoggerEmptyFlush:
 
         batch.add("message")
         batch.flush()
-        call_count_after_first = mock_logger.log.call_count
+        call_count_after_first = mock_logger.debug.call_count
 
         batch.flush()
-        assert mock_logger.log.call_count == call_count_after_first
+        assert mock_logger.debug.call_count == call_count_after_first
 
     def test_flush_empty_buffer_no_start_time(self):
         """Test flush() with empty buffer and no start time."""
@@ -175,7 +258,7 @@ class TestBatchLoggerEmptyFlush:
 
         batch.flush()
 
-        mock_logger.log.assert_not_called()
+        mock_logger.debug.assert_not_called()
 
 
 class TestLogFrequencyTrackerPrintStats:

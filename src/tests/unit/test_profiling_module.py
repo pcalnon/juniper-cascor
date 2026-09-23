@@ -121,7 +121,7 @@ class TestSampledLogger:
         for i in range(10):
             sampled.debug(f"Message {i}", key="test")
 
-        assert logger.log.call_count == 2
+        assert logger.debug.call_count == 2
 
     @pytest.mark.unit
     def test_sampled_logger_includes_first(self):
@@ -133,7 +133,7 @@ class TestSampledLogger:
 
         sampled.debug("First message", key="test_first")
 
-        assert logger.log.call_count == 1
+        assert logger.debug.call_count == 1
 
     @pytest.mark.unit
     def test_sampled_logger_reset(self):
@@ -186,7 +186,7 @@ class TestBatchLogger:
             batch.add("Message 1")
             batch.add("Message 2")
 
-        assert logger.log.called
+        assert logger.debug.called
 
     @pytest.mark.unit
     def test_batch_logger_auto_flush_on_max_buffer(self):
@@ -306,7 +306,7 @@ class TestLogIfEnabled:
 
         log_if_enabled(logger, logging.DEBUG, lambda: "Test message")
 
-        assert logger.log.called
+        assert logger.debug.called
 
     @pytest.mark.unit
     def test_log_if_enabled_skips_when_disabled(self):
@@ -340,6 +340,6 @@ class TestLogTiming:
         with log_timing(logger, "test_operation"):
             time.sleep(0.01)
 
-        assert logger.log.called
-        call_args = str(logger.log.call_args)
+        assert logger.debug.called
+        call_args = str(logger.debug.call_args)
         assert "test_operation" in call_args
