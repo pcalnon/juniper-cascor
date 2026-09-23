@@ -25,6 +25,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`dataset_shortfall` kept the previous run's annotation, naming a dataset the run was not
+  training on** (APD-CASCOR-013). It was written at one line and never cleared -- not on a new
+  run, not on reset -- so a run started on inline tensors reported the last staged run's
+  shortfall and its `dataset_id`. RULED: clear it at the **start of every run**; it describes
+  what THIS run fetched, or it is `null` ("a run that fetched nothing correctly reports
+  nothing"; rejected: clearing only on a new fetch, and documenting the old behaviour). It is
+  re-decided in `start_training` and applied only when the run is actually submitted, so a
+  refused or failed start leaves the running run's annotation alone. **A plain Stop -> Start on
+  retained data now reports `null`**, which is the ruling's own sentence and the consequence most
+  likely to surprise -- and since `current_dataset` (above) follows the LOADED data, the two fields
+  can disagree on such a start: `current_dataset` names a dataset whose shortfall is no longer
+  reported. auto-start hands its fetch's annotation to `start_training` (new
+  keyword-only `dataset_shortfall`) instead of writing it first, which the start would erase; an
+  auto-start that fails between fetch and start now leaves no annotation behind. Three adjacent
+  paths had the same defect and are fixed with it: `reset()` clears it; a cancelled or refused
+  live swap rolls it back with the data (a new `_PreSwapSnapshot` slot); and a staged fetch
+  refused after its annotation was written (a val-less or malformed artifact) restores the
+  previous one. Pinned by `src/tests/unit/api/test_shortfall_lifecycle.py` (11 arms; 7 fail
+  against the pre-fix manager, 4 are over-correction guards that pass both ways).
+- **The truncatable-generator set is read from juniper-data, not restated in cascor**
+  (APD-CASCOR-008). `_PROJECT_API_TRUNCATABLE_GENERATORS` is **removed** from both
+  `cascor_constants` trees; the set is derived from juniper-data's `GET /v1/generators` -- a
+  generator is truncatable iff its param schema declares `allow_truncation` (today exactly
+  `csv_import`, `equities`, `equities_seq`, measured through the real app). RULED 2026-09-09
+  (juniper-ml#1864; rejected: widening the `dataset_type` Literal, narrowing the constant). For
+  the case that ruling left open, RULED 2026-09-22: **withhold the opt-in and retry** -- if the
+  list cannot be read, no deployment opt-in is sent for that request, so juniper-data's own
+  default governs, and only a successful read is memoised (rejected: refusing to start, a
+  built-in fallback copy, a last-known set on disk). The list is read only when the resolver
+  consults it (flag on, caller silent), through a dedicated client bounded to 5 s with no
+  retries (the staged path holds the manager lock), and memoised per juniper-data URL. A
+  refusal after a withheld opt-in names its own remedy instead of pointing at a setting that is
+  already on. On the staged path this removes any startup dependency; auto-start is itself a
+  boot-time request that runs once, so there the retry is the operator's. Pinned by
+  `src/tests/unit/api/test_truncatable_generators.py` plus new arms in the two truncation suites.
 - **Three version surfaces restated `"0.6.0"` while the distribution was 0.11.0** (#668).
   `juniper_cascor.__version__` was a hardcoded literal -- the value `publish.yml`'s TestPyPI check
   prints on every release; `api.models.common._API_VERSION` was another, and it is the default
