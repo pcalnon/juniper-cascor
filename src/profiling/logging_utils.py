@@ -35,6 +35,54 @@ from contextlib import contextmanager
 # from typing import Any, Callable, List, Optional  # TODO: F401 - Any, Optional unused
 from typing import Callable, List
 
+from log_config.logger.logger import Logger  # pyright: ignore[reportMissingImports]
+
+#: Level number -> the name of the method that emits at it.
+#: Derived from the ONE canonical table (cascor_constants ``_PROJECT_LOG_LEVEL_NUMBER_*``, reaching
+#: this module via ``Logger``), never restated as literals -- that is the defect P1.2 removed.
+_LEVEL_METHOD = {
+    Logger.TRACE: "trace",
+    Logger.VERBOSE: "verbose",
+    Logger.DEBUG: "debug",
+    Logger.INFO: "info",
+    Logger.WARNING: "warning",
+    Logger.ERROR: "error",
+    Logger.CRITICAL: "critical",
+    Logger.FATAL: "fatal",
+}
+
+
+def _emit(logger, level: int, msg: str):
+    """Emit ``msg`` at ``level`` through whichever logger API the caller actually handed us.
+
+    P1.4 (cascor#573). Every helper here used to call ``logger.log(level, msg)``, which is the
+    STDLIB signature. cascor's ``Logger`` inherits that method from ``logging.Logger``, but as an
+    INSTANCE method -- while every cascor call site binds the CLASS (``self.logger = Logger``,
+    candidate_unit.py:187). So the inherited call arrives as ``Logger.log(10, msg)``, ``10`` binds
+    to ``self``, and it raises::
+
+        TypeError: Logger.log() missing 1 required positional argument: 'msg'
+
+    That was true of all five call sites in this module, and this module's 31 tests never caught
+    it because they inject ``MagicMock`` loggers, which accept any call. The mock WAS the defect's
+    hiding place: 100% line coverage over code that could not survive contact with the logger it
+    exists to serve.
+
+    So dispatch by level NAME -- cascor's ``Logger`` exposes ``trace``/``verbose``/``debug``/... as
+    classmethods, which work whether the class or an instance is bound -- and fall back to
+    ``.log(level, msg)`` for a stdlib logger, which has no such names.
+
+    Note for tests: a ``MagicMock`` satisfies ``callable(getattr(logger, name))`` for ANY name, so
+    it always takes the first branch and can never exercise the fallback. Both branches are covered
+    with real objects instead.
+    """
+    name = _LEVEL_METHOD.get(level)
+    if name is not None:
+        method = getattr(logger, name, None)
+        if callable(method):
+            return method(msg)
+    return logger.log(level, msg)
+
 
 class SampledLogger:
     """
@@ -79,19 +127,19 @@ class SampledLogger:
         """Log if sampling criteria met."""
         sample_key = key or msg[:50]  # Use first 50 chars as key if not provided
         if self._should_log(sample_key):
-            self.logger.log(level, f"[sampled] {msg}")
+            _emit(self.logger, level, f"[sampled] {msg}")
 
     def debug(self, msg: str, key: str = None):
         """Debug log with sampling."""
-        self._log_with_sample(logging.DEBUG, msg, key)
+        self._log_with_sample(Logger.DEBUG, msg, key)
 
     def trace(self, msg: str, key: str = None):
-        """Trace log with sampling (level 5)."""
-        self._log_with_sample(5, msg, key)
+        """Trace log with sampling."""
+        self._log_with_sample(Logger.TRACE, msg, key)
 
     def verbose(self, msg: str, key: str = None):
-        """Verbose log with sampling (level 15)."""
-        self._log_with_sample(15, msg, key)
+        """Verbose log with sampling."""
+        self._log_with_sample(Logger.VERBOSE, msg, key)
 
     def reset(self):
         """Reset all sample counters."""
@@ -155,10 +203,10 @@ class BatchLogger:
         elapsed = time.time() - self._start_time if self._start_time else 0
 
         header = f"[Batch: {self.prefix}] ({len(self._buffer)} messages, {elapsed:.2f}s)"
-        self.logger.log(self.level, header)
+        _emit(self.logger, self.level, header)
 
         for msg in self._buffer:
-            self.logger.log(self.level, f"  {msg}")
+            _emit(self.logger, self.level, f"  {msg}")
 
         self._buffer.clear()
 
@@ -178,7 +226,7 @@ def log_if_enabled(logger, level: int, msg_func: Callable[[], str]):
     (P1.2, cascor#573).
     """
     if logger.isEnabledFor(level):
-        logger.log(level, msg_func())
+        _emit(logger, level, msg_func())
 
 
 @contextmanager
@@ -196,7 +244,7 @@ def log_timing(logger, operation: str, level: int = logging.DEBUG):
         yield
     finally:
         elapsed = time.perf_counter() - start
-        logger.log(level, f"[Timing] {operation}: {elapsed:.4f}s")
+        _emit(logger, level, f"[Timing] {operation}: {elapsed:.4f}s")
 
 
 class LogFrequencyTracker:

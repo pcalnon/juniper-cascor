@@ -46,6 +46,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`src/profiling/logging_utils.py` raised `TypeError` at every emit, and logged at levels cascor
+  does not have** (cascor#573, roadmap P1.4 — the "fix the levels" half of owner decision 8). All
+  five `logger.log(level, msg)` sites used the stdlib signature, but every cascor call site binds the
+  `Logger` CLASS, so the inherited instance method received `level` as `self` and raised
+  `TypeError: Logger.log() missing 1 required positional argument: 'msg'`. The module's tests never
+  saw it because they inject `MagicMock` loggers, which accept any call. `SampledLogger.trace` also
+  passed `5` (VERBOSE's number) and `.verbose` passed `15` (no cascor level) — the third level table
+  roadmap P1.4 said must not survive. Emission now dispatches by level NAME through the classmethods
+  the `Logger` exposes, falling back to `.log()` for a stdlib logger, and the levels come from the
+  one canonical table (`Logger.TRACE` / `Logger.VERBOSE`). New tests drive the real `Logger` class and
+  a real stdlib logger; 17 of them fail against the previous module. The fix was checkpointed on
+  `wip/logging-p14-adopt-logging-utils` (`1b918e6`, unsigned) on 2026-09-21 and is re-landed here
+  unchanged; decision 10 then left the helpers unwired, so no production call site changes.
 - **Three version surfaces restated `"0.6.0"` while the distribution was 0.11.0** (#668).
   `juniper_cascor.__version__` was a hardcoded literal -- the value `publish.yml`'s TestPyPI check
   prints on every release; `api.models.common._API_VERSION` was another, and it is the default
