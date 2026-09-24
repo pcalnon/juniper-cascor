@@ -654,6 +654,12 @@ async def _auto_start_training(app: FastAPI, settings: Settings) -> None:
         # ``dataset_shortfall`` is what that fetch could not deliver
         # (APD-CASCOR-013): it travels with the tensors because the start binds
         # the annotation together with the data it describes.
+        # ``as_fetch`` because this IS a fetch: the start binds it wholesale, as
+        # ``_reload_dataset`` binds one, so a partition the artifact lacks is
+        # CLEARED rather than kept from whatever was loaded before. Handed in as
+        # inline tensors, a train+val artifact kept an earlier fetch's test -- and
+        # with it that fetch's record, so the status said ``dataset_shortfall:
+        # null`` while the log said this run was on a partial dataset.
         train_result = lifecycle.start_training(
             X=x_train,
             y=y_train,
@@ -663,6 +669,7 @@ async def _auto_start_training(app: FastAPI, settings: Settings) -> None:
             y_test=y_test,
             dataset_config={"dataset_type": settings.auto_dataset, **dict(dataset_params)},
             dataset_shortfall=dataset_shortfall,
+            as_fetch=True,
         )
         logger.info(f"Auto-start: training initiated — {train_result}")
 

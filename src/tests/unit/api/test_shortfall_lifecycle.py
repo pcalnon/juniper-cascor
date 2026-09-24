@@ -88,10 +88,12 @@ def _three_partition_artifact() -> Dict[str, Any]:
 
 
 @contextlib.contextmanager
-def _producer(*, meta: Dict[str, Any], arrays: Dict[str, Any], dataset_id: str = "partial-1") -> Iterator[None]:
+def _producer(*, meta: Dict[str, Any], arrays: Dict[str, Any], dataset_id: str = "partial-1", allow_missing_validation_split: bool = False) -> Iterator[None]:
     """A juniper-data double at the client seam, so the REAL ``_reload_dataset`` runs.
 
     The deployment flag is off, so the generator list is never read.
+    ``allow_missing_validation_split`` is section 6.1 rule 2's override: an artifact
+    with ``X_test`` but no ``X_val`` then has its test rows promoted to the val slot.
     """
 
     class _Client:
@@ -104,7 +106,7 @@ def _producer(*, meta: Dict[str, Any], arrays: Dict[str, Any], dataset_id: str =
         def download_artifact_npz(self, dataset_id: str) -> dict:
             return arrays
 
-    settings = SimpleNamespace(juniper_data_url="http://juniper-data:8100", allow_truncated_datasets=False)
+    settings = SimpleNamespace(juniper_data_url="http://juniper-data:8100", allow_truncated_datasets=False, allow_missing_validation_split=allow_missing_validation_split)
     with patch("juniper_data_client.JuniperDataClient", _Client), patch("api.settings.Settings", lambda: settings), patch("api.secrets.get_secret", lambda _name: "key"):
         yield
 
@@ -205,10 +207,10 @@ class TestTheAnnotationMovesWithTheData:
         assert status["dataset_shortfall"] is None
 
     def test_a_caller_that_fetched_its_own_tensors_hands_the_annotation_in(self, mgr):
-        """auto-start's shape: it fetches, then starts the run on those tensors inline."""
+        """auto-start's shape: it fetches, then hands the run those tensors AS A FETCH."""
         _start_on_a_staged_partial_fetch(mgr, _PRIOR)
         x, y = _tensors()
-        _start(mgr, X=x, y=y, dataset_shortfall=dict(_OWN))
+        _start(mgr, X=x, y=y, dataset_shortfall=dict(_OWN), as_fetch=True)
         assert mgr.get_status()["dataset_shortfall"] == _OWN
 
     def test_an_annotation_without_tensors_is_refused(self, mgr):
@@ -216,6 +218,25 @@ class TestTheAnnotationMovesWithTheData:
         mgr._dataset_shortfall = dict(_PRIOR)
         with pytest.raises(ValueError, match="dataset_shortfall"):
             _start(mgr, dataset_shortfall=dict(_OWN))
+        assert mgr._dataset_shortfall == _PRIOR
+
+    def test_an_annotation_on_inline_tensors_is_refused(self, mgr):
+        """An annotation describes a FETCH. On inline tensors it would describe data nobody fetched.
+
+        Refused before anything is bound, so the loaded data and its record stand.
+        """
+        _start_on_a_staged_partial_fetch(mgr, _PRIOR)
+        loaded = mgr._train_x
+        with pytest.raises(ValueError, match="as_fetch=True"):
+            _start(mgr, **_inline("train"), dataset_shortfall=dict(_OWN))
+        assert mgr._train_x is loaded
+        assert mgr._dataset_shortfall == _PRIOR
+
+    def test_a_fetch_without_tensors_is_refused(self, mgr):
+        """``as_fetch`` binds a whole dataset; with no ``X`` there is nothing to bind it from."""
+        _start_on_a_staged_partial_fetch(mgr, _PRIOR)
+        with pytest.raises(ValueError, match="as_fetch"):
+            _start(mgr, as_fetch=True)
         assert mgr._dataset_shortfall == _PRIOR
 
     def test_a_refused_artifact_binds_neither_data_nor_annotation(self, mgr):
@@ -381,17 +402,107 @@ class TestKeepWhileFetchedSplitsStay:
 
     @pytest.mark.parametrize("annotation", [_OWN, None], ids=["partial", "clean"])
     def test_tensors_a_caller_fetched_itself_follow_the_same_rule(self, mgr, annotation):
-        """auto-start's shape: it fetches, then hands ``start_training`` all three partitions with their record.
+        """auto-start's shape: it fetches, then hands ``start_training`` all three partitions ``as_fetch``.
 
         That is a fetch too, so a later train-only inline start leaves its val and
         test -- and its record -- in place.
         """
         config = {"dataset_type": "equities", "tickers": ["AAPL"]}
-        _start(mgr, **_inline("train", "val", "test"), dataset_config=dict(config), dataset_shortfall=dict(annotation) if annotation else None)
+        _start(mgr, **_inline("train", "val", "test"), dataset_config=dict(config), dataset_shortfall=dict(annotation) if annotation else None, as_fetch=True)
         _start(mgr, **_inline("train"))
         status = mgr.get_status()
         assert status["current_dataset"] == config
         assert status["dataset_shortfall"] == annotation
+
+    def test_a_named_inline_dataset_keeps_its_name_while_its_train_split_is_loaded(self, mgr):
+        """The same rule for inline tensors whose identity the caller knows -- the start route's in-process ``spiral``.
+
+        The route hands it in as ``X`` / ``y`` with a ``dataset_config``. Its record
+        stands on the train split it filled, so a start that replaces only val and
+        test leaves the name in place.
+        """
+        config = {"dataset_type": "spiral", "n_spirals": 2}
+        _start(mgr, **_inline("train"), dataset_config=dict(config))
+        assert mgr.get_status()["current_dataset"] == config
+        _start(mgr, **_inline("val", "test"))
+        assert mgr.get_status()["current_dataset"] == config
+
+    def test_a_fetch_handed_in_replaces_every_split_even_one_it_did_not_supply(self, mgr, caplog: pytest.LogCaptureFixture):
+        """A CLEAN staged fetch, then a caller's own PARTIAL fetch of train and val -- the post-merge validation's case.
+
+        A fetch is bound wholesale, as ``_reload_dataset`` binds one: the test split
+        this fetch lacks is CLEARED (cascor#582), not kept from the staged fetch.
+        Bound as inline tensors, the staged fetch's test stayed, so its record stood:
+        the status said ``dataset_shortfall: null`` and named the clean fetch, while
+        the log said the run was on a partial dataset. The fix must not merely adopt
+        the caller's annotation either: that would leave the clean fetch's test in
+        the run, undescribed.
+        """
+        mgr._pending_dataset_config = dict(_FETCHED_CONFIG)
+        with _producer(meta={}, arrays=_three_partition_artifact()):
+            _start(mgr)
+        assert mgr._test_x is not None and mgr.get_status()["dataset_shortfall"] is None
+        config = {"dataset_type": "equities", "tickers": ["AUTO"]}
+        # A real annotation, as auto-start builds one: it carries the producer's descriptors the log restates.
+        annotation = TrainingLifecycleManager._build_dataset_shortfall(_PARTIAL_META, dataset_id="auto-1", acceptance_source=None)
+        with caplog.at_level(logging.WARNING):
+            _start(mgr, **_inline("train", "val"), dataset_config=dict(config), dataset_shortfall=dict(annotation), as_fetch=True)
+        assert mgr._test_x is None and mgr._test_y is None, "the staged fetch's test split is still in the run"
+        status = mgr.get_status()
+        assert status["dataset_shortfall"] == annotation
+        assert status["current_dataset"] == config
+        assert "DATASET SHORTFALL" in caplog.text, "the log and the status disagree"
+        # ...and the record stands on the two partitions this fetch filled.
+        _start(mgr, **_inline("train"))
+        assert mgr.get_status()["dataset_shortfall"] == annotation
+
+    @pytest.mark.parametrize("inline", [(), ("train",)], ids=["retained", "inline-train"])
+    def test_a_start_fresh_keeps_the_record_and_what_it_stands_on(self, mgr, inline):
+        """A start-fresh replaces the MODEL, never the data: the record and its partitions stay.
+
+        After a train-only inline start the record stands on the fetch's val and
+        test. A start-fresh -- on retained data, or with inline train -- must keep
+        both the record and that set, so the next train-only start still keeps it.
+        """
+        fetched = _fetch_partial(mgr)
+        _start(mgr, **_inline("train"))
+        _start(mgr, start_fresh=True, **_inline(*inline))
+        assert mgr.get_status()["dataset_shortfall"] == fetched["annotation"], "the start-fresh cleared the record"
+        _start(mgr, **_inline("train"))
+        assert mgr.get_status()["dataset_shortfall"] == fetched["annotation"], "the start-fresh forgot which splits the record stands on"
+        assert mgr._val_x is fetched["val"] and mgr._test_x is fetched["test"]
+
+    def test_a_promoted_val_split_is_the_fetchs_own(self, mgr):
+        """A legacy train+test artifact under ``JUNIPER_CASCOR_ALLOW_MISSING_VALIDATION_SPLIT``: val holds the fetch's test rows.
+
+        The partitions the record stands on are the BOUND ones, not the artifact's
+        keys: the promoted val is this fetch's data, so an inline start that
+        replaces train and test still leaves the fetch in the run.
+        """
+        legacy = {key: value for key, value in _three_partition_artifact().items() if key not in ("X_val", "y_val")}
+        mgr._pending_dataset_config = dict(_FETCHED_CONFIG)
+        with _producer(meta=_PARTIAL_META, arrays=legacy, allow_missing_validation_split=True):
+            _start(mgr)
+        promoted = mgr._val_x
+        assert promoted is not None and promoted.shape[0] == 4, "X_test was not promoted to the in-loop slot"
+        _start(mgr, **_inline("train", "test"))
+        assert mgr._val_x is promoted
+        assert mgr.get_status()["dataset_shortfall"]["dataset_id"] == "partial-1"
+
+    def test_inline_train_beside_a_staged_fetch_is_replaced_by_the_fetch(self, mgr):
+        """Inline tensors bind BEFORE the pending staged fetch, which then replaces them and the record together.
+
+        So the record stands on all three of the fetch's partitions. Bound after
+        the fetch, the inline train would read as having replaced the fetch's own
+        train split, and a later val+test start would drop a record whose train
+        split is still loaded.
+        """
+        mgr._pending_dataset_config = dict(_FETCHED_CONFIG)
+        with _producer(meta=_PARTIAL_META, arrays=_three_partition_artifact()):
+            _start(mgr, **_inline("train"))
+        assert mgr._train_x.shape[0] == 20, "the staged fetch did not win over the inline train split"
+        _start(mgr, **_inline("val", "test"))
+        assert mgr.get_status()["dataset_shortfall"]["dataset_id"] == "partial-1"
 
     def test_replacing_all_three_clears_it(self, mgr):
         """Nothing of the fetch is left: raw inline tensors, so ``null`` and an unknown identity."""

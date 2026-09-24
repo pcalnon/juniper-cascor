@@ -211,11 +211,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     `dataset_shortfall` and `current_dataset` both said `null` -- the denial APD-CASCOR-007
     removed. The manager now records which partitions the loaded record describes
     (`_described_partitions`, rolled back with a live swap). The fetch's annotation and
-    `current_dataset` stay while ANY of its partitions is loaded and clear only once train, val
-    and test have all been replaced, in one start or across several. A new fetch replaces
-    everything; `reset()` and a start on retained data keep it. **Visible change**: after such
-    a start `current_dataset` names the fetch, where it read `{"dataset_type": null}` (or the
-    in-process spiral's config).
+    `current_dataset` stay while ANY of its partitions is loaded and clear only once all of the
+    fetch's partitions have been replaced, in one start or across several. A new fetch replaces
+    everything; `reset()`, a start-fresh and a start on retained data keep it. **Visible
+    change**: after such a start `current_dataset` names the fetch, where it read
+    `{"dataset_type": null}` (or the in-process spiral's config).
+  - **Auto-start's fetch is bound wholesale, as a staged fetch is.** It hands `start_training`
+    its tensors with the new `as_fetch=True`, so a partition its artifact lacks is CLEARED
+    (cascor#582) instead of kept from whatever was loaded before. Handed in as inline tensors, a
+    train+val artifact kept an earlier fetch's test, and with it that fetch's clean record: the
+    status said `dataset_shortfall: null` while the log said the run was on a partial dataset.
+    An annotation passed without `as_fetch` is now refused, because an annotation describes a
+    fetch.
   - **A withheld opt-in's refusal gives its own path's retry, and no other's.** A failed start
     stays staged (start again), a live swap stages nothing (re-issue it), and auto-start never
     runs again on its own (stage the dataset and start, or restart). The remedy listed all
@@ -226,11 +233,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **A caller's `allow_truncation: null` gets its own remedy whatever the flag.** With the flag
     off it was told to set `JUNIPER_CASCOR_ALLOW_TRUNCATED_DATASETS=true`, which cannot change
     the outcome: the deployment default never overrides a key the request carries.
-  - **A 422 for a generator the list does not declare is a plain
-    `juniper-data fetch failed: ...`**, with no refusal token. Such a generator cannot be
-    short, so an ordinary parameter error (`spiral` with `n_spirals=1`) no longer opens
-    canopy's partial-data prompt or calls the producer inconsistent. With the flag off the list
-    is never read, so that case is unchanged.
+  - **An ordinary 422 is a plain `juniper-data fetch failed: ...`, with no refusal token, flag
+    on or off.** A refusal is now recognised by its remedy, not its status code: both of
+    juniper-data's refusals (`InputTooLargeError`, `IncompleteDataError`) say "Re-submit with
+    allow_truncation=true", and a parameter error (`spiral` with `n_spirals=1`) says neither
+    that nor `incomplete_rows`. It used to open canopy's partial-data prompt, call the producer
+    inconsistent with the flag on, and name the flag with it off. With the flag on, a 422 for a
+    generator the list does not declare is plain as well, whatever its text.
   - **A listing in which ANY entry lacks a schema is a failed read.** Skipping the entry
     memoised a smaller set for the life of the process, and that generator was never sent the
     opt-in again.
@@ -238,12 +247,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     no longer leaves "this run is training on a partial dataset" in the log. A descriptor the
     log cannot format is reported rather than raised, because the data is already loaded.
 
-  Pinned under `src/tests/unit/api/`: `test_shortfall_lifecycle.py` (the ruling's full matrix
-  through the real fetch -- train-only, train+val, train+test, all three, across several
-  starts, then a new fetch -- and the swap rollback of the new slot), `test_truncatable_generators.py`,
-  `test_auto_start_shortfall.py` (including the listing client's URL, key, timeout and retries,
-  which nothing pinned) and `test_allow_truncated_datasets.py` (every refusal branch through a
-  verbatim copy of canopy's parser).
+  Pinned under `src/tests/unit/api/`. `test_shortfall_lifecycle.py` drives the real fetch: a
+  train-only, train+val, train+test or all-three inline start after a partial fetch; the three
+  splits replaced across several starts; a new fetch; `reset()` and a start-fresh; a promoted
+  val split; inline tensors beside a staged fetch; a caller's own fetch; and the swap rollback
+  of the new slot. `test_auto_start_shortfall.py` covers auto-start's wholesale bind and the
+  listing client's URL, key, timeout and retries, which nothing pinned.
+  `test_truncatable_generators.py` covers the stance and remedy arms, and
+  `test_allow_truncated_datasets.py` runs every refusal branch through a verbatim copy of
+  canopy's parser.
 - **`lockfile-update.yml` regenerated `requirements.lock` alone, so every dependency bump drifted
   `requirements-cpu.lock`** -- the container image's lock, which is *derived* from the GPU lock via
   `--constraint requirements.lock`. Nothing reported it: the CI check asserts only that every image

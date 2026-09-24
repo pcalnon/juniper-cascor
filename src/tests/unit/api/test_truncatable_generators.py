@@ -542,6 +542,21 @@ class TestTheStagedPathReadsTheList:
         assert client.listing_calls == 1, "the list was not read, so NOT_TRUNCATABLE was never the reason -- the arm proves nothing"
         assert str(error) == f"juniper-data fetch failed: {detail}"
 
+    def test_an_ordinary_422_with_the_flag_off_is_a_plain_fetch_failure(self) -> None:
+        """#686's validation, the other flag position: ``spiral`` with ``n_spirals=1``, flag OFF.
+
+        The list is never read with the flag off, so NOT_TRUNCATABLE can never be the
+        reason, and a bare 422 used to read as a shortfall: the token opened canopy's
+        prompt and the remedy named a knob that cannot fix a bad parameter. It is
+        recognised by the refusal's own remedy now, so this is a plain failure in
+        BOTH flag positions (the flag-on case is the ``spiral-param-error`` arm above).
+        """
+        detail = "Validation error (422): [{'loc': ['params', 'n_spirals'], 'msg': 'Input should be greater than or equal to 2', 'type': 'greater_than_equal'}]"
+        client = _StagedClient(LISTING, create_error=RuntimeError(detail))
+        error = _reload(client, deployment_flag=False, generator="spiral", params={"n_spirals": 1})
+        assert client.listing_calls == 0
+        assert str(error) == f"juniper-data fetch failed: {detail}"
+
     @pytest.mark.parametrize("deployment_flag", [True, False], ids=["flag-on", "flag-off"])
     def test_a_null_stance_reaches_the_producer_as_sent_and_its_refusal_names_no_knob(self, deployment_flag: bool) -> None:
         """cascor#678 follow-up, item 3, on the live path. The flag-on arm kills mutant M21.

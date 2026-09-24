@@ -433,6 +433,34 @@ class TestAutoStartAnnotatesTheRun:
         finally:
             manager.shutdown()
 
+    async def test_auto_starts_fetch_replaces_every_split_so_log_and_status_agree(self, caplog: pytest.LogCaptureFixture) -> None:
+        """Auto-start IS a fetch, so ``start_training`` binds it wholesale (``as_fetch``), as it binds a staged one.
+
+        The first fetch leaves all three splits loaded, clean. The second is partial
+        and has no test split. Handed in as inline tensors, it kept the first
+        fetch's test -- and with it the first fetch's record -- so the status said
+        ``dataset_shortfall: null`` while the log said this run was on a partial
+        dataset (#686's validation, ``probe_s9_log.py``). The test split this fetch
+        lacks is cleared instead (cascor#582), and the record is this fetch's.
+        """
+        manager = TrainingLifecycleManager()
+        try:
+            train_val = {key: value for key, value in _artifact().items() if key not in ("X_test", "y_test")}
+            with patch.object(manager, "_run_training"):
+                await _run_auto_start({}, deployment_flag=False, meta={}, arrays=_artifact(), lifecycle=manager)
+                assert manager._test_x is not None and manager.get_status()["dataset_shortfall"] is None
+                with caplog.at_level(logging.WARNING):
+                    await _run_auto_start({}, deployment_flag=False, meta=_PARTIAL_META, arrays=train_val, lifecycle=manager)
+                if manager._training_future is not None:
+                    manager._training_future.result(timeout=10)
+            assert manager._auto_start_failure is None, manager._auto_start_failure
+            assert manager._test_x is None, "the first fetch's test split is still in the run"
+            annotation = manager.get_status()["dataset_shortfall"]
+            assert annotation is not None and annotation["dataset_id"] == "auto-1"
+            assert "DATASET SHORTFALL" in caplog.text
+        finally:
+            manager.shutdown()
+
     async def test_a_refused_artifact_leaves_no_shortfall_in_the_log(self, caplog: pytest.LogCaptureFixture) -> None:
         """Item 8. The producer answered with a partial dataset, and section 6.1 then refused its artifact.
 

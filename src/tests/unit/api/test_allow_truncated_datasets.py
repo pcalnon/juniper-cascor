@@ -173,6 +173,40 @@ class TestRunFailureMessage:
         assert "incomplete_rows=accept" in message and "incomplete_rows=drop" in message
         assert "--allow-truncated-datasets" not in message
 
+    @pytest.mark.parametrize("deployment_flag_on", [True, False], ids=["flag-on", "flag-off"])
+    def test_an_ordinary_422_is_not_a_shortfall_refusal(self, deployment_flag_on: bool) -> None:
+        """#686's validation: any 422 used to read as a shortfall, so a parameter error got the token.
+
+        With the flag off it was also told to set JUNIPER_CASCOR_ALLOW_TRUNCATED_DATASETS,
+        which cannot fix a bad parameter, and canopy opened its partial-data prompt
+        on it. A refusal is recognised by its remedy now: juniper-data's two refusals
+        both say "Re-submit with allow_truncation=true", and an ordinary validation
+        422 names neither that nor ``incomplete_rows``.
+        """
+        detail = "Validation error (422): params.n_spirals: Input should be greater than or equal to 2"
+        message = TrainingLifecycleManager._describe_dataset_fetch_failure(Exception(detail), allow_truncated=False, deployment_flag_on=deployment_flag_on)
+        assert message == f"juniper-data fetch failed: {detail}"
+
+    @pytest.mark.parametrize(
+        "detail",
+        [
+            "Validation error (422): Source 'prices.csv' is 9.8 MB, over the 5.0 MB cap. Re-submit with allow_truncation=true (or set JUNIPER_DATA_CSV_IMPORT_ALLOW_TRUNCATION=true) to import the first 5.0 MB. The resulting dataset will be permanently annotated as truncated.",
+            "Validation error (422): Shares outstanding could not be resolved. Affected (3): STZ, BF.B, BRK.B. 1,510 row(s) would carry fabricated values. Re-submit with allow_truncation=true (or set JUNIPER_DATA_EQUITIES_ALLOW_TRUNCATION=true) to accept them, or with incomplete_rows='drop' to exclude them. Either choice is recorded permanently in the dataset's metadata.",
+        ],
+        ids=["InputTooLargeError", "IncompleteDataError"],
+    )
+    def test_both_of_the_producers_refusals_are_still_recognised(self, detail: str) -> None:
+        """The guard on the other side: dropping the bare "422" match must not lose a real refusal.
+
+        Worded as juniper-data's ``InputTooLargeError`` and ``IncompleteDataError``
+        render them (``juniper_data/core/limits.py``), after juniper-data-client
+        prefixes ``Validation error (422):``.
+        """
+        message = TrainingLifecycleManager._describe_dataset_fetch_failure(Exception(detail), allow_truncated=False)
+        assert message.startswith(_PROJECT_API_SHORTFALL_REFUSAL_TOKEN + " ")
+        assert "--allow-truncated-datasets" in message
+        assert f"Producer detail: {detail} To accept it," in message
+
     @pytest.mark.parametrize("branch", sorted(_EVERY_REFUSAL_BRANCH))
     def test_every_refusal_branch_leaves_canopy_the_producers_own_text(self, branch: str) -> None:
         """cascor#678 follow-up, item 2. canopy cuts juniper-data's sentence out at ``" To accept it,"``.
