@@ -20,6 +20,12 @@ These are the round-38 follow-ups filed in cascor#624's PR body, confirmed
 against source on 2026-09-08 and fixed 2026-09-09. The two paths now share one
 stance resolver (``TrainingLifecycleManager._resolve_truncation_stance``), so
 the arms below are also the guard that they cannot drift apart again.
+
+The cascor#678 follow-ups add three things here: the listing client auto-start
+builds is pinned (its URL, key, timeout and retries -- item 6); a withheld opt-in's
+refusal gives auto-start's own retry and no other path's (item 7); and the
+shortfall reaches the training log only once ``start_training`` binds its data, so a
+refused artifact leaves no line saying a run is training on it (item 8).
 """
 
 from __future__ import annotations
@@ -124,20 +130,24 @@ async def _run_auto_start(
 
     Returns ``(lifecycle, sent)``. ``sent`` carries the generator and the params
     that reached ``create_dataset``, because for half of these arms the request
-    IS the assertion, plus ``listing_calls``.
+    IS the assertion, plus ``listing_calls`` -- and, once the list is read,
+    ``listing_client``: the constructor kwargs of the client that read it. The
+    double used to ignore those kwargs, so nothing pinned the URL or the key the
+    listing client is built with (cascor#678 follow-up, item 6).
     """
     sent: Dict[str, Any] = {"listing_calls": 0}
     manager = lifecycle if lifecycle is not None else _lifecycle()
 
     class _FakeClient:
-        def __init__(self, **_kwargs: object) -> None:
-            pass
+        def __init__(self, **kwargs: object) -> None:
+            self._kwargs = dict(kwargs)
 
         def wait_for_ready(self, timeout: Optional[float] = None) -> bool:
             return ready
 
         def list_generators(self) -> Any:
             sent["listing_calls"] += 1
+            sent["listing_client"] = dict(self._kwargs)
             answer = _GENERATOR_LISTING if listing is None else listing
             if isinstance(answer, BaseException):
                 raise answer
@@ -274,27 +284,50 @@ class TestAutoStartForwardsTheStance:
         assert "allow_truncation" not in sent["params"]
 
     async def test_a_refusal_after_a_withheld_default_says_to_retry(self) -> None:
-        """The knob is ON; telling the operator to turn it on would be a remedy that changes nothing."""
+        """The knob is ON; telling the operator to turn it on would be a remedy that changes nothing.
+
+        And the retry is AUTO-START's (cascor#678 follow-up, item 7). It runs once
+        and never again on its own, so it is told both operator retries -- stage
+        the dataset and start, or restart -- and none of the other paths'. It used
+        to get one string for all three, including "a failed start leaves its
+        dataset staged", which is false here: auto-start stages nothing.
+        """
         manager, _ = await _run_auto_start({}, deployment_flag=True, listing=ConnectionError("connection refused"), create_error=RuntimeError("HTTP 422 allow_truncation"))
-        assert manager._auto_start_failure is not None
-        assert manager._auto_start_failure.startswith(_PROJECT_API_SHORTFALL_REFUSAL_TOKEN)
-        assert "WITHHELD" in manager._auto_start_failure
-        assert "--allow-truncated-datasets" not in manager._auto_start_failure
+        failure = manager._auto_start_failure
+        assert failure is not None
+        assert failure.startswith(_PROJECT_API_SHORTFALL_REFUSAL_TOKEN)
+        assert "WITHHELD" in failure
+        assert "--allow-truncated-datasets" not in failure
+        assert "stage the dataset and start training" in failure and "restart the service to run auto-start again" in failure
+        assert "starting training again retries it" not in failure and "re-issue the swap" not in failure
 
     async def test_a_refusal_for_a_generator_the_list_does_not_declare_does_not_name_the_knob(self) -> None:
-        """Flag ON, list READ, ``equities`` not declared, and the producer refused anyway.
+        """Flag ON, list READ, ``equities`` not declared, and the producer 422'd anyway.
 
         The opt-in was correctly not sent, so the old default remedy -- "set
         JUNIPER_CASCOR_ALLOW_TRUNCATED_DATASETS=true" -- pointed at a knob that was
-        already on.
+        already on. Since the cascor#678 follow-up (item 4) it is not dressed as a
+        shortfall refusal at all: a generator whose schema has no such parameter
+        cannot be short, so the token -- which opens canopy's partial-data prompt --
+        would offer options that re-send a request that fails the same way.
         """
         listing = [{"name": "equities", "schema": {"properties": {"tickers": {"type": "array"}}}}]
-        manager, _ = await _run_auto_start({}, deployment_flag=True, listing=listing, create_error=RuntimeError("HTTP 422 allow_truncation"))
-        assert manager._auto_start_failure is not None
-        assert manager._auto_start_failure.startswith(_PROJECT_API_SHORTFALL_REFUSAL_TOKEN)
-        assert "does not declare allow_truncation" in manager._auto_start_failure
-        assert "--allow-truncated-datasets" not in manager._auto_start_failure
-        assert "JUNIPER_CASCOR_ALLOW_TRUNCATED_DATASETS" not in manager._auto_start_failure
+        manager, sent = await _run_auto_start({}, deployment_flag=True, listing=listing, create_error=RuntimeError("HTTP 422 allow_truncation"))
+        assert sent["listing_calls"] == 1
+        assert manager._auto_start_failure == "juniper-data fetch failed: HTTP 422 allow_truncation"
+
+    async def test_the_listing_client_carries_the_auto_start_url_and_key(self) -> None:
+        """cascor#678 follow-up, item 6. Kills M22 (``api_key=None``) and M23 (a hard-coded URL).
+
+        juniper-data exempts only ``/v1/health*`` and ``/metrics`` from auth, so
+        ``GET /v1/generators`` needs the key wherever auth is configured. Without it
+        every such auto-start's read fails and its opt-in is silently withheld; a
+        hard-coded URL reads some other juniper-data's list. The code was right, but
+        the double ignored its constructor, so neither mutant failed a test.
+        """
+        _, sent = await _run_auto_start({}, deployment_flag=True)
+        assert sent["listing_calls"] == 1
+        assert sent["listing_client"] == {"base_url": "http://juniper-data:8100", "api_key": "key", "timeout": 5, "retries": 0}
 
     async def test_with_the_flag_off_the_list_is_never_read(self) -> None:
         """Lazy: no default can apply, so there is nothing to look up.
@@ -381,14 +414,66 @@ class TestAutoStartAnnotatesTheRun:
         assert manager._auto_start_failure is not None and "_StopAfterAnnotation" in manager._auto_start_failure
         assert manager._dataset_shortfall is None
 
-    async def test_the_shortfall_also_reaches_the_training_log(self) -> None:
-        """The pollable annotation and the log line say the same thing, from one source."""
-        manager = _lifecycle()
-        manager.logger = MagicMock()
-        await _run_auto_start({}, deployment_flag=True, meta=_PARTIAL_META, lifecycle=manager)
-        emitted = " ".join(str(arg) for call in manager.logger.warning.call_args_list for arg in call.args)
-        assert "DATASET SHORTFALL" in emitted
-        assert "allow_truncated_datasets setting" in emitted
+    async def test_the_shortfall_also_reaches_the_training_log(self, caplog: pytest.LogCaptureFixture) -> None:
+        """The pollable annotation and the log line say the same thing, from one source -- once the data is bound.
+
+        Through the REAL ``start_training``, which logs the annotation it is handed
+        when it binds the tensors (cascor#678 follow-up, item 8). auto-start used to
+        log it itself, before converting the artifact.
+        """
+        manager = TrainingLifecycleManager()
+        try:
+            with caplog.at_level(logging.WARNING), patch.object(manager, "_run_training"):
+                await _run_auto_start({}, deployment_flag=True, meta=_PARTIAL_META, arrays=_artifact(), lifecycle=manager)
+                if manager._training_future is not None:
+                    manager._training_future.result(timeout=10)
+            assert manager._auto_start_failure is None, manager._auto_start_failure
+            assert "DATASET SHORTFALL" in caplog.text
+            assert "allow_truncated_datasets setting" in caplog.text
+        finally:
+            manager.shutdown()
+
+    async def test_auto_starts_fetch_replaces_every_split_so_log_and_status_agree(self, caplog: pytest.LogCaptureFixture) -> None:
+        """Auto-start IS a fetch, so ``start_training`` binds it wholesale (``as_fetch``), as it binds a staged one.
+
+        The first fetch leaves all three splits loaded, clean. The second is partial
+        and has no test split. Handed in as inline tensors, it kept the first
+        fetch's test -- and with it the first fetch's record -- so the status said
+        ``dataset_shortfall: null`` while the log said this run was on a partial
+        dataset (#686's validation, ``probe_s9_log.py``). The test split this fetch
+        lacks is cleared instead (cascor#582), and the record is this fetch's.
+        """
+        manager = TrainingLifecycleManager()
+        try:
+            train_val = {key: value for key, value in _artifact().items() if key not in ("X_test", "y_test")}
+            with patch.object(manager, "_run_training"):
+                await _run_auto_start({}, deployment_flag=False, meta={}, arrays=_artifact(), lifecycle=manager)
+                assert manager._test_x is not None and manager.get_status()["dataset_shortfall"] is None
+                with caplog.at_level(logging.WARNING):
+                    await _run_auto_start({}, deployment_flag=False, meta=_PARTIAL_META, arrays=train_val, lifecycle=manager)
+                if manager._training_future is not None:
+                    manager._training_future.result(timeout=10)
+            assert manager._auto_start_failure is None, manager._auto_start_failure
+            assert manager._test_x is None, "the first fetch's test split is still in the run"
+            annotation = manager.get_status()["dataset_shortfall"]
+            assert annotation is not None and annotation["dataset_id"] == "auto-1"
+            assert "DATASET SHORTFALL" in caplog.text
+        finally:
+            manager.shutdown()
+
+    async def test_a_refused_artifact_leaves_no_shortfall_in_the_log(self, caplog: pytest.LogCaptureFixture) -> None:
+        """Item 8. The producer answered with a partial dataset, and section 6.1 then refused its artifact.
+
+        auto-start logged "this run is training on a partial dataset" before it
+        converted the artifact, so the line stayed in the log for data that was
+        never loaded, beside an ``auto_start_failure`` saying no run had started.
+        """
+        train_only = {key: value for key, value in _artifact().items() if key in ("X_train", "y_train")}
+        with caplog.at_level(logging.WARNING):
+            manager, _ = await _run_auto_start({}, deployment_flag=True, meta=_PARTIAL_META, arrays=train_only)
+        assert manager._auto_start_failure is not None and "NEITHER a validation split" in manager._auto_start_failure
+        assert "DATASET SHORTFALL" not in caplog.text
+        assert "DATASET IS PARTIAL" not in caplog.text
 
     async def test_a_full_run_annotates_and_still_trains(self) -> None:
         """The annotation must not stand between the fetch and the training it annotates."""

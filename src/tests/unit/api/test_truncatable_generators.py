@@ -31,21 +31,32 @@ The constant this replaces, ``_PROJECT_API_TRUNCATABLE_GENERATORS``, restated
 knowledge juniper-data owns; a generator that gained an input bound had to be
 added to it by hand, or every cascor run's shortfall on it was refused with no
 way to opt in.
+
+The cascor#678 follow-ups pinned here, from its post-merge validation: a listing in
+which ANY entry lacks a schema is a failed read, not a smaller set cached for life
+(item 5); a caller's ``allow_truncation: null`` is recorded as deferring whatever the
+flag, so its refusal never names a knob that cannot help (item 3); a 422 for a
+generator the list does not declare is a plain fetch failure, not a shortfall
+refusal (item 4); and a withheld opt-in's refusal gives the retry of the path it came
+from and no other (item 7).
 """
 
 from __future__ import annotations
 
 import logging
 import sys
+import types
 from types import SimpleNamespace
 from typing import Any, Dict, List, Optional, Tuple
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
+import torch
 from pydantic import BaseModel
 
 import cascor_constants.constants_api as constants_api
-from api.lifecycle.manager import _OPT_IN_SKIPPED_LIST_UNREADABLE, _OPT_IN_SKIPPED_NOT_TRUNCATABLE, _TRUNCATABLE_GENERATORS, TrainingLifecycleManager, _TruncatableGenerators
+from api.lifecycle.manager import _FETCH_PATH_AUTO_START, _FETCH_PATH_LIVE_SWAP, _FETCH_PATH_STAGED_START, _OPT_IN_SKIPPED_CALLER_DEFERRED, _OPT_IN_SKIPPED_LIST_UNREADABLE, _OPT_IN_SKIPPED_NOT_TRUNCATABLE, _TRUNCATABLE_GENERATORS, TrainingLifecycleManager, _TruncatableGenerators
+from api.models.training import StageDatasetRequest, SwapDatasetLiveRequest
 from cascor_constants.constants_api.constants_api_defaults import _PROJECT_API_SHORTFALL_ACCEPTED_BY_DEPLOYMENT, _PROJECT_API_SHORTFALL_ACCEPTED_BY_REQUEST, _PROJECT_API_SHORTFALL_REFUSAL_TOKEN
 
 pytestmark = pytest.mark.unit
@@ -122,10 +133,19 @@ class TestDerivation:
         """A synthetic generator that ignores the knob must not be sent it."""
         assert _TruncatableGenerators.derive([_entry("new_synthetic", truncatable=False)]) == frozenset()
 
-    def test_an_entry_with_no_usable_schema_is_not_truncatable(self) -> None:
-        """Beside at least one entry that DOES carry a schema, a schema-less entry is simply excluded."""
-        listing = [{"name": "odd", "schema": None}, {"name": "odder"}, _entry("spiral", truncatable=False)]
-        assert _TruncatableGenerators.derive(listing) == frozenset()
+    @pytest.mark.parametrize("schemaless", [{"name": "odd", "schema": None}, {"name": "odd"}], ids=["schema-null", "schema-absent"])
+    def test_any_entry_without_a_usable_schema_fails_the_read(self, schemaless: Dict[str, Any]) -> None:
+        """cascor#678 follow-up, item 5. Beside entries that DO carry a schema, a schema-less one is UNKNOWN.
+
+        It used to be skipped, so the listing derived a smaller set -- and a set is
+        memoised for the life of the process, so the skipped generator was never
+        sent the opt-in again, even after its producer listed it properly. An entry
+        that cannot say whether it accepts the parameter must not be read as saying
+        it does not.
+        """
+        listing = [schemaless, _entry("spiral", truncatable=False), _entry("equities", truncatable=True)]
+        with pytest.raises(ValueError, match="'odd' carries no parameter schema"):
+            _TruncatableGenerators.derive(listing)
 
     @pytest.mark.parametrize("listing", [{"generators": LISTING}, [{"schema": {}}], ["spiral"], None])
     def test_a_malformed_listing_is_a_failed_read_not_an_empty_set(self, listing: Any) -> None:
@@ -181,6 +201,22 @@ class TestLazyResolution:
     def test_a_schemaless_listing_is_not_memoised_as_an_empty_set(self) -> None:
         """The empty-set cache bug: a schema-less listing must stay UNKNOWN and be read again."""
         client = _ListingClient([{"name": "equities", "parameters": ["tickers"]}], LISTING)
+        assert _TRUNCATABLE_GENERATORS.resolve(lambda: client, source="http://juniper-data:8100") is None
+        assert _TRUNCATABLE_GENERATORS.resolve(lambda: client, source="http://juniper-data:8100") == frozenset({"csv_import", "equities", "equities_seq"})
+        assert client.calls == 2
+
+    def test_a_partly_schemad_listing_is_not_memoised_as_a_smaller_set(self) -> None:
+        """Item 5, as #678's post-merge validation measured it: ``equities`` lost its schema, the rest kept theirs.
+
+        The read derived ``{csv_import, equities_seq}``, memoised it, and still
+        answered that after the producer recovered -- one listing call for the life
+        of the process, and ``equities`` never sent the opt-in again.
+        """
+        partial = [dict(entry) for entry in LISTING]
+        for entry in partial:
+            if entry["name"] == "equities":
+                del entry["schema"]
+        client = _ListingClient(partial, LISTING)
         assert _TRUNCATABLE_GENERATORS.resolve(lambda: client, source="http://juniper-data:8100") is None
         assert _TRUNCATABLE_GENERATORS.resolve(lambda: client, source="http://juniper-data:8100") == frozenset({"csv_import", "equities", "equities_seq"})
         assert client.calls == 2
@@ -260,6 +296,22 @@ class TestTheResolverConsultsTheDerivedSet:
         (params, _, _, _, skipped), reads = self._resolve({}, allow_truncated=False, answer=None)
         assert params == {} and skipped is None and reads == 0
 
+    @pytest.mark.parametrize("allow_truncated", [True, False], ids=["flag-on", "flag-off"])
+    @pytest.mark.parametrize("no_value", [None, "", "  "], ids=["null", "empty", "blank"])
+    def test_a_caller_that_sent_no_value_deferred_whatever_the_flag(self, allow_truncated: bool, no_value: Any) -> None:
+        """cascor#678 follow-up, item 3 (register constraint 4). The KEY is present, so the default never applies.
+
+        The request carried ``allow_truncation`` with no value: it deferred to the
+        producer. This service never overrides a key the request carries -- the test
+        is the key's PRESENCE, not its value -- so the reader is not consulted and
+        the value goes on the wire untouched, flag on or off. That is recorded as
+        ``CALLER_DEFERRED`` in BOTH positions: with the flag off it used to be
+        ``None``, and the refusal then named a knob that cannot change the outcome.
+        """
+        (params, source, wire, refused, skipped), reads = self._resolve({"allow_truncation": no_value}, allow_truncated=allow_truncated)
+        assert params == {"allow_truncation": no_value}
+        assert (source, wire, refused, skipped, reads) == (None, False, False, _OPT_IN_SKIPPED_CALLER_DEFERRED, 0)
+
 
 class _RecordingClientClass:
     """Stands in for ``JuniperDataClient``: records every construction's kwargs."""
@@ -313,29 +365,64 @@ class TestTheWithheldRemedy:
     def _names_the_knob(message: str) -> bool:
         return "--allow-truncated-datasets" in message or "JUNIPER_CASCOR_ALLOW_TRUNCATED_DATASETS" in message
 
-    def test_a_withheld_opt_in_is_told_how_to_retry_on_each_path(self) -> None:
-        """Path-accurate: a failed start keeps its dataset staged; a swap stages nothing; auto-start runs once."""
-        message = TrainingLifecycleManager._describe_dataset_fetch_failure(self._EXC, allow_truncated=False, opt_in_skipped=_OPT_IN_SKIPPED_LIST_UNREADABLE, deployment_flag_on=True)
+    # Each path's retry, as its refusal words it (cascor#678 follow-up, item 7).
+    # Auto-start's names BOTH operator retries -- stage and start, or restart --
+    # because it never runs again on its own; "retried only by restarting" was
+    # the old wording, which contradicted ``_TruncatableGenerators``' docstring.
+    _RETRY_BY_PATH = {
+        _FETCH_PATH_STAGED_START: ("starting training again retries it",),
+        _FETCH_PATH_LIVE_SWAP: ("re-issue the swap to retry it",),
+        _FETCH_PATH_AUTO_START: ("stage the dataset and start training", "restart the service to run auto-start again"),
+    }
+
+    @pytest.mark.parametrize("fetch_path", [_FETCH_PATH_STAGED_START, _FETCH_PATH_LIVE_SWAP, _FETCH_PATH_AUTO_START])
+    def test_a_withheld_opt_in_is_told_how_to_retry_on_each_path(self, fetch_path: str) -> None:
+        """Path-accurate, and ONLY its own path: one string listing all three left the operator to pick.
+
+        A failed start keeps its dataset staged; a swap stages nothing; auto-start
+        runs once. Auto-start used to be told "a failed start leaves its dataset
+        staged", which is another path's retry.
+        """
+        message = TrainingLifecycleManager._describe_dataset_fetch_failure(self._EXC, allow_truncated=False, opt_in_skipped=_OPT_IN_SKIPPED_LIST_UNREADABLE, deployment_flag_on=True, fetch_path=fetch_path)
         assert message.startswith(_PROJECT_API_SHORTFALL_REFUSAL_TOKEN + " ")
         assert "WITHHELD" in message and "GET /v1/generators" in message
-        assert "starting training again retries it" in message
-        assert "re-issue the swap" in message
-        assert "retried only by restarting the service" in message
+        for path, phrases in self._RETRY_BY_PATH.items():
+            for phrase in phrases:
+                assert (phrase in message) is (path == fetch_path), f"{fetch_path}: {phrase!r}"
+        assert "retried only by restarting" not in message
         # The staged path does NOT need a re-stage: the failed start left the config staged.
         assert "re-stage" not in message
         assert not self._names_the_knob(message)
 
-    def test_a_generator_the_list_does_not_declare_is_not_told_to_turn_on_the_knob(self) -> None:
-        """Item 3's second half: flag ON, list READ, generator not truncatable, and the producer refused anyway."""
-        message = TrainingLifecycleManager._describe_dataset_fetch_failure(self._EXC, allow_truncated=False, opt_in_skipped=_OPT_IN_SKIPPED_NOT_TRUNCATABLE, deployment_flag_on=True)
-        assert message.startswith(_PROJECT_API_SHORTFALL_REFUSAL_TOKEN + " ")
-        assert "does not declare allow_truncation" in message and "allow_truncation=true" in message
-        assert not self._names_the_knob(message)
+    def test_a_withheld_opt_in_from_no_named_path_claims_no_path(self) -> None:
+        """A direct call names no path, so it gets the retry every path shares and no path's own."""
+        message = TrainingLifecycleManager._describe_dataset_fetch_failure(self._EXC, allow_truncated=False, opt_in_skipped=_OPT_IN_SKIPPED_LIST_UNREADABLE, deployment_flag_on=True)
+        assert "retry once juniper-data answers GET /v1/generators" in message
+        assert not any(phrase in message for phrases in self._RETRY_BY_PATH.values() for phrase in phrases)
 
-    def test_a_request_that_deferred_with_a_null_is_not_told_to_turn_on_the_knob(self) -> None:
-        """The same invariant for the remaining flag-on case: the request itself carried allow_truncation: null."""
-        message = TrainingLifecycleManager._describe_dataset_fetch_failure(self._EXC, allow_truncated=False, deployment_flag_on=True)
+    def test_a_generator_the_list_does_not_declare_is_not_told_to_turn_on_the_knob(self) -> None:
+        """cascor#678 follow-up, item 4: flag ON, list READ, generator not truncatable -- so not a shortfall at all.
+
+        Such a generator cannot be short by construction, so its 422 is an ordinary
+        parameter error. Dressed as a refusal it carried the token, which opens
+        canopy's three-way partial-data prompt -- every option of which re-sends a
+        request that fails the same way -- and called the producer inconsistent.
+        """
+        message = TrainingLifecycleManager._describe_dataset_fetch_failure(self._EXC, allow_truncated=False, opt_in_skipped=_OPT_IN_SKIPPED_NOT_TRUNCATABLE, deployment_flag_on=True)
+        assert message == "juniper-data fetch failed: HTTP 422 allow_truncation"
+
+    @pytest.mark.parametrize("deployment_flag_on", [True, False], ids=["flag-on", "flag-off"])
+    def test_a_request_that_deferred_with_a_null_is_not_told_to_turn_on_the_knob(self, deployment_flag_on: bool) -> None:
+        """Item 3: the request carried ``allow_truncation: null``, which no setting of this service overrides.
+
+        With the flag OFF this used to get the knob remedy -- set
+        JUNIPER_CASCOR_ALLOW_TRUNCATED_DATASETS=true -- which cannot help: the
+        default never applies to a request that carries the key.
+        """
+        message = TrainingLifecycleManager._describe_dataset_fetch_failure(self._EXC, allow_truncated=False, opt_in_skipped=_OPT_IN_SKIPPED_CALLER_DEFERRED, deployment_flag_on=deployment_flag_on)
+        assert message.startswith(_PROJECT_API_SHORTFALL_REFUSAL_TOKEN + " ")
         assert "carried allow_truncation with no value" in message
+        assert "cannot change this outcome, on or off" in message
         assert not self._names_the_knob(message)
 
     def test_a_silent_caller_with_the_knob_off_still_gets_the_knob(self) -> None:
@@ -347,8 +434,9 @@ class TestTheWithheldRemedy:
         """CONSTRAINT 5 -- the wrong-remedy class cascor#640 removed, stated as its own inequality."""
         withheld = TrainingLifecycleManager._describe_dataset_fetch_failure(self._EXC, allow_truncated=False, opt_in_skipped=_OPT_IN_SKIPPED_LIST_UNREADABLE, deployment_flag_on=True)
         undeclared = TrainingLifecycleManager._describe_dataset_fetch_failure(self._EXC, allow_truncated=False, opt_in_skipped=_OPT_IN_SKIPPED_NOT_TRUNCATABLE, deployment_flag_on=True)
+        deferred = TrainingLifecycleManager._describe_dataset_fetch_failure(self._EXC, allow_truncated=False, opt_in_skipped=_OPT_IN_SKIPPED_CALLER_DEFERRED)
         silent = TrainingLifecycleManager._describe_dataset_fetch_failure(self._EXC, allow_truncated=False)
-        assert len({withheld, undeclared, silent}) == 3
+        assert len({withheld, undeclared, deferred, silent}) == 4
 
 
 class _StagedClient:
@@ -432,13 +520,68 @@ class TestTheStagedPathReadsTheList:
         _reload(client, deployment_flag=True)
         assert client.listing_calls == 2
 
-    def test_a_refusal_for_a_generator_the_list_does_not_declare_does_not_name_the_knob(self) -> None:
-        """Item 3's second half, on the live path: flag ON, list read, generator not declared, producer 422s."""
-        client = _StagedClient([_entry("equities", truncatable=False)], create_error=RuntimeError("HTTP 422 allow_truncation"))
-        error = _reload(client, deployment_flag=True)
-        assert str(error).startswith(_PROJECT_API_SHORTFALL_REFUSAL_TOKEN)
-        assert "does not declare allow_truncation" in str(error)
-        assert "--allow-truncated-datasets" not in str(error) and "JUNIPER_CASCOR_ALLOW_TRUNCATED_DATASETS" not in str(error)
+    @pytest.mark.parametrize(
+        ("generator", "listing", "params", "detail"),
+        [
+            ("equities", [_entry("equities", truncatable=False)], None, "HTTP 422 allow_truncation"),
+            ("spiral", LISTING, {"n_spirals": 1}, "Validation error (422): [{'loc': ['params', 'n_spirals'], 'msg': 'Input should be greater than or equal to 2', 'type': 'greater_than_equal'}]"),
+        ],
+        ids=["equities-undeclared", "spiral-param-error"],
+    )
+    def test_a_refusal_for_a_generator_the_list_does_not_declare_does_not_name_the_knob(self, generator: str, listing: Any, params: Optional[Dict[str, Any]], detail: str) -> None:
+        """cascor#678 follow-up, item 4, on the live path: flag ON, list READ, generator not declared, producer 422s.
+
+        The second case is the one #678's post-merge validation reproduced: an
+        ordinary parameter error on ``spiral``. It used to carry the refusal token -- which
+        opens canopy's three-way partial-data prompt -- and a sentence calling the
+        producer inconsistent. The generator cannot be short, so it is a plain fetch
+        failure.
+        """
+        client = _StagedClient(listing, create_error=RuntimeError(detail))
+        error = _reload(client, deployment_flag=True, generator=generator, params=params)
+        assert client.listing_calls == 1, "the list was not read, so NOT_TRUNCATABLE was never the reason -- the arm proves nothing"
+        assert str(error) == f"juniper-data fetch failed: {detail}"
+
+    def test_an_ordinary_422_with_the_flag_off_is_a_plain_fetch_failure(self) -> None:
+        """#686's validation, the other flag position: ``spiral`` with ``n_spirals=1``, flag OFF.
+
+        The list is never read with the flag off, so NOT_TRUNCATABLE can never be the
+        reason, and a bare 422 used to read as a shortfall: the token opened canopy's
+        prompt and the remedy named a knob that cannot fix a bad parameter. It is
+        recognised by the refusal's own remedy now, so this is a plain failure in
+        BOTH flag positions (the flag-on case is the ``spiral-param-error`` arm above).
+        """
+        detail = "Validation error (422): [{'loc': ['params', 'n_spirals'], 'msg': 'Input should be greater than or equal to 2', 'type': 'greater_than_equal'}]"
+        client = _StagedClient(LISTING, create_error=RuntimeError(detail))
+        error = _reload(client, deployment_flag=False, generator="spiral", params={"n_spirals": 1})
+        assert client.listing_calls == 0
+        assert str(error) == f"juniper-data fetch failed: {detail}"
+
+    @pytest.mark.parametrize("deployment_flag", [True, False], ids=["flag-on", "flag-off"])
+    def test_a_null_stance_reaches_the_producer_as_sent_and_its_refusal_names_no_knob(self, deployment_flag: bool) -> None:
+        """cascor#678 follow-up, item 3, on the live path. The flag-on arm kills mutant M21.
+
+        M21 tested the VALUE (``params.get("allow_truncation") is None``) where the
+        resolver tests the key's ABSENCE. It survived every suite, because no test
+        sent a null down this path: with the flag on it overrides the caller's null
+        with this service's default -- ``True`` on the wire. With the flag off, the
+        refusal used to name JUNIPER_CASCOR_ALLOW_TRUNCATED_DATASETS, which cannot
+        change the outcome for a request that carries the key.
+        """
+        client = _StagedClient(LISTING, create_error=RuntimeError("HTTP 422: Shares outstanding could not be resolved for 3 symbols. Re-submit with allow_truncation=true"))
+        error = _reload(client, deployment_flag=deployment_flag, params={"allow_truncation": None})
+        assert _StagedClient.sent["params"] == {"allow_truncation": None}
+        assert client.listing_calls == 0
+        message = str(error)
+        assert message.startswith(_PROJECT_API_SHORTFALL_REFUSAL_TOKEN)
+        assert "carried allow_truncation with no value" in message
+        assert "--allow-truncated-datasets" not in message and "JUNIPER_CASCOR_ALLOW_TRUNCATED_DATASETS" not in message
+
+    @pytest.mark.parametrize("model", [StageDatasetRequest, SwapDatasetLiveRequest])
+    def test_a_null_stance_survives_both_routes_request_models(self, model: Any) -> None:
+        """Why item 3 is reachable at all: ``exclude_none`` drops a top-level ``None``, never one inside ``params``."""
+        body = model.model_validate({"dataset_type": "equities", "params": {"allow_truncation": None, "tickers": ["AAPL"]}})
+        assert body.model_dump(exclude_none=True)["params"] == {"allow_truncation": None, "tickers": ["AAPL"]}
 
     def test_with_the_flag_off_the_list_is_never_read(self) -> None:
         """CONSTRAINT 1 -- the default deployment (flag off) never asks juniper-data for the list."""
@@ -483,6 +626,91 @@ class TestTheStagedPathReadsTheList:
         assert "allow_truncation" not in _StagedClient.sent["params"]
         _reload(_StagedClient(LISTING), deployment_flag=True, url="http://second:8100")
         assert _StagedClient.sent["params"]["allow_truncation"] is True
+
+
+def _swap_network() -> types.SimpleNamespace:
+    """A live-swap-capable fake network (equal dims), built as ``test_shortfall_lifecycle.py`` builds it."""
+    net = types.SimpleNamespace(input_size=2, output_size=2, active_output_dim=2, output_weights=torch.zeros(2, 2), output_bias=torch.zeros(2), hidden_units=[{"weights": torch.zeros(3)}], candidate_pool_size=8)
+    net._resize_network_for_dataset = MagicMock(return_value={"hidden_preserved": 1, "input_delta": 0, "output_delta": 0})
+    net.record_dataset_swap_event = MagicMock(return_value={"event": "dataset_swap", "id": 1})
+    return net
+
+
+class TestEachPathNamesItsOwnRetry:
+    """Item 7's WIRING: each live path tells the describer which path it is, so the retry it prints is true.
+
+    The describer's texts are pinned in ``TestTheWithheldRemedy``; these arms prove
+    ``start_training`` and ``swap_dataset_live`` pass their own path, through the
+    REAL ``_reload_dataset``. Flag ON, the list unreadable (so the opt-in is
+    withheld), and the producer refuses. Each arm also checks that the retry it was
+    told is actually available -- a staged start stays staged; a swap stages nothing.
+    auto-start's arm is in ``test_auto_start_shortfall.py``.
+    """
+
+    _REFUSAL = "HTTP 422: Shares outstanding could not be resolved for 3 symbols. Re-submit with allow_truncation=true"
+
+    @classmethod
+    def _producer(cls) -> Any:
+        """Patches for a juniper-data whose list cannot be read and whose create refuses."""
+        refusal = cls._REFUSAL
+
+        class _Client:
+            def __init__(self, **_kwargs: Any) -> None:
+                pass
+
+            def list_generators(self) -> Any:
+                raise ConnectionError("connection refused")
+
+            def create_dataset(self, *, generator: str, params: dict, persist: bool) -> dict:
+                raise RuntimeError(refusal)
+
+        settings = SimpleNamespace(juniper_data_url="http://juniper-data:8100", allow_truncated_datasets=True)
+        return (patch("juniper_data_client.JuniperDataClient", _Client), patch("api.settings.Settings", lambda: settings), patch("api.secrets.get_secret", lambda _name: "key"))
+
+    @staticmethod
+    def _told(message: str) -> set:
+        """Which paths' retries ``message`` gives."""
+        return {path for path, phrases in TestTheWithheldRemedy._RETRY_BY_PATH.items() if any(phrase in message for phrase in phrases)}
+
+    def test_a_staged_start_is_told_to_start_again(self) -> None:
+        manager = TrainingLifecycleManager()
+        try:
+            manager.stage_dataset_config(dataset_type="equities")
+            client_patch, settings_patch, secret_patch = self._producer()
+            with client_patch, settings_patch, secret_patch, patch.object(manager, "_run_training"), pytest.raises(RuntimeError) as excinfo:
+                manager.start_training()
+            message = str(excinfo.value)
+            assert "WITHHELD" in message
+            assert self._told(message) == {_FETCH_PATH_STAGED_START}
+            # ...and it is true: the failed start left the dataset staged, so starting again retries it.
+            assert manager.get_pending_dataset_config() == {"dataset_type": "equities"}
+        finally:
+            manager.shutdown()
+
+    def test_a_live_swap_is_told_to_re_issue_the_swap(self) -> None:
+        manager = TrainingLifecycleManager()
+        try:
+            manager.model = types.SimpleNamespace(network=_swap_network())
+            manager._experimental_functions_enabled = True
+            manager._train_x, manager._train_y = torch.zeros(8, 2), torch.zeros(8, 2)
+            client_patch, settings_patch, secret_patch = self._producer()
+            with (
+                client_patch,
+                settings_patch,
+                secret_patch,
+                patch.object(manager.state_machine, "is_started", return_value=True),
+                patch.object(manager, "save_snapshot", return_value={"id": "snap"}),
+                patch.object(manager, "_run_training"),
+                pytest.raises(RuntimeError) as excinfo,
+            ):
+                manager.swap_dataset_live(dataset_type="equities")
+            message = str(excinfo.value)
+            assert "WITHHELD" in message
+            assert self._told(message) == {_FETCH_PATH_LIVE_SWAP}
+            # ...and it is true: a swap stages nothing, so re-issuing it is the only retry.
+            assert manager.get_pending_dataset_config() is None
+        finally:
+            manager.shutdown()
 
 
 class TestTheConstantIsGone:

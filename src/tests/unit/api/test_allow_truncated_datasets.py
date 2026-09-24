@@ -18,20 +18,59 @@ dataset reports a score for data nobody chose, and nothing downstream can tell.
 
 from __future__ import annotations
 
+import inspect
 import logging
 import os
 import sys
 from types import SimpleNamespace
+from typing import Any, Dict
 from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pytest
 
-from api.lifecycle.manager import _TRUNCATABLE_GENERATORS, TrainingLifecycleManager
+from api.lifecycle.manager import _FETCH_PATH_AUTO_START, _FETCH_PATH_LIVE_SWAP, _FETCH_PATH_STAGED_START, _OPT_IN_SKIPPED_CALLER_DEFERRED, _OPT_IN_SKIPPED_LIST_UNREADABLE, _TRUNCATABLE_GENERATORS, TrainingLifecycleManager
 from api.settings import Settings
 from cascor_constants.constants_api.constants_api_defaults import _PROJECT_API_ALLOW_TRUNCATED_DATASETS_DEFAULT, _PROJECT_API_SHORTFALL_ACCEPTED_BY_DEPLOYMENT, _PROJECT_API_SHORTFALL_ACCEPTED_BY_PRODUCER, _PROJECT_API_SHORTFALL_ACCEPTED_BY_REQUEST, _PROJECT_API_SHORTFALL_REFUSAL_TOKEN
 
 pytestmark = pytest.mark.unit
+
+
+def _canopy_producer_detail(detail: str) -> str:
+    """juniper-canopy's ``_producer_detail_from_refusal``, VERBATIM -- the other half of a cross-repo contract.
+
+    Copied from juniper-canopy ``src/frontend/dashboard_manager.py`` (origin/main
+    ``e9053227``, lines 8332-8341), because canopy is not installed where these
+    tests run. canopy shows the operator what this returns as juniper-data's own
+    words, so every cascor refusal must put ``" To accept it,"`` straight after the
+    producer's detail: text placed before it is shown as if the producer wrote it.
+    If canopy changes its cut, change this copy with it.
+    """
+    marker = "Producer detail: "
+    if marker not in detail:
+        return ""
+    tail = detail.split(marker, 1)[1]
+    for stop in (" To accept it,", " The resulting dataset"):
+        if stop in tail:
+            tail = tail.split(stop, 1)[0]
+    return tail.strip()
+
+
+# Every input combination that reaches a refusal branch of
+# ``_describe_dataset_fetch_failure``: one per ``stance``, and the withheld branch
+# once per fetch path, since each path appends its own retry to that remedy.
+_EVERY_REFUSAL_BRANCH: Dict[str, Dict[str, Any]] = {
+    "flag off, caller silent": {},
+    "caller refused": {"caller_refused": True},
+    "caller deferred, flag off": {"opt_in_skipped": _OPT_IN_SKIPPED_CALLER_DEFERRED},
+    "caller deferred, flag on": {"opt_in_skipped": _OPT_IN_SKIPPED_CALLER_DEFERRED, "deployment_flag_on": True},
+    "withheld, staged start": {"opt_in_skipped": _OPT_IN_SKIPPED_LIST_UNREADABLE, "deployment_flag_on": True, "fetch_path": _FETCH_PATH_STAGED_START},
+    "withheld, live swap": {"opt_in_skipped": _OPT_IN_SKIPPED_LIST_UNREADABLE, "deployment_flag_on": True, "fetch_path": _FETCH_PATH_LIVE_SWAP},
+    "withheld, auto-start": {"opt_in_skipped": _OPT_IN_SKIPPED_LIST_UNREADABLE, "deployment_flag_on": True, "fetch_path": _FETCH_PATH_AUTO_START},
+    "withheld, no path named": {"opt_in_skipped": _OPT_IN_SKIPPED_LIST_UNREADABLE, "deployment_flag_on": True},
+    "flag on, no reason given": {"deployment_flag_on": True},
+}
+_PRODUCER_DETAIL = "HTTP 422: Shares outstanding could not be resolved for 3 symbols. Re-submit with allow_truncation=true"
 
 # What juniper-data's ``GET /v1/generators`` says, reduced to the one fact the
 # stance resolver reads: whether the param schema declares ``allow_truncation``.
@@ -133,6 +172,68 @@ class TestRunFailureMessage:
         assert "allow_truncation=true" in message
         assert "incomplete_rows=accept" in message and "incomplete_rows=drop" in message
         assert "--allow-truncated-datasets" not in message
+
+    @pytest.mark.parametrize("deployment_flag_on", [True, False], ids=["flag-on", "flag-off"])
+    def test_an_ordinary_422_is_not_a_shortfall_refusal(self, deployment_flag_on: bool) -> None:
+        """#686's validation: any 422 used to read as a shortfall, so a parameter error got the token.
+
+        With the flag off it was also told to set JUNIPER_CASCOR_ALLOW_TRUNCATED_DATASETS,
+        which cannot fix a bad parameter, and canopy opened its partial-data prompt
+        on it. A refusal is recognised by its remedy now: juniper-data's two refusals
+        both say "Re-submit with allow_truncation=true", and an ordinary validation
+        422 names neither that nor ``incomplete_rows``.
+        """
+        detail = "Validation error (422): params.n_spirals: Input should be greater than or equal to 2"
+        message = TrainingLifecycleManager._describe_dataset_fetch_failure(Exception(detail), allow_truncated=False, deployment_flag_on=deployment_flag_on)
+        assert message == f"juniper-data fetch failed: {detail}"
+
+    @pytest.mark.parametrize(
+        "detail",
+        [
+            "Validation error (422): Source 'prices.csv' is 9.8 MB, over the 5.0 MB cap. Re-submit with allow_truncation=true (or set JUNIPER_DATA_CSV_IMPORT_ALLOW_TRUNCATION=true) to import the first 5.0 MB. The resulting dataset will be permanently annotated as truncated.",
+            "Validation error (422): Shares outstanding could not be resolved. Affected (3): STZ, BF.B, BRK.B. 1,510 row(s) would carry fabricated values. Re-submit with allow_truncation=true (or set JUNIPER_DATA_EQUITIES_ALLOW_TRUNCATION=true) to accept them, or with incomplete_rows='drop' to exclude them. Either choice is recorded permanently in the dataset's metadata.",
+        ],
+        ids=["InputTooLargeError", "IncompleteDataError"],
+    )
+    def test_both_of_the_producers_refusals_are_still_recognised(self, detail: str) -> None:
+        """The guard on the other side: dropping the bare "422" match must not lose a real refusal.
+
+        Worded as juniper-data's ``InputTooLargeError`` and ``IncompleteDataError``
+        render them (``juniper_data/core/limits.py``), after juniper-data-client
+        prefixes ``Validation error (422):``.
+        """
+        message = TrainingLifecycleManager._describe_dataset_fetch_failure(Exception(detail), allow_truncated=False)
+        assert message.startswith(_PROJECT_API_SHORTFALL_REFUSAL_TOKEN + " ")
+        assert "--allow-truncated-datasets" in message
+        assert f"Producer detail: {detail} To accept it," in message
+
+    @pytest.mark.parametrize("branch", sorted(_EVERY_REFUSAL_BRANCH))
+    def test_every_refusal_branch_leaves_canopy_the_producers_own_text(self, branch: str) -> None:
+        """cascor#678 follow-up, item 2. canopy cuts juniper-data's sentence out at ``" To accept it,"``.
+
+        #678's WITHHELD remedy opened with "Retry once ...", so canopy showed about
+        400 characters of cascor's retry advice as if juniper-data had written them
+        (measured in #678's post-merge validation by running canopy's function on
+        every branch). Every remedy now BEGINS with the phrase, so the cut leaves
+        exactly the producer's text on every branch.
+        """
+        message = TrainingLifecycleManager._describe_dataset_fetch_failure(Exception(_PRODUCER_DETAIL), allow_truncated=False, **_EVERY_REFUSAL_BRANCH[branch])
+        assert message.startswith(_PROJECT_API_SHORTFALL_REFUSAL_TOKEN + " ")
+        assert " To accept it," in message
+        assert _canopy_producer_detail(message) == _PRODUCER_DETAIL
+
+    def test_the_branch_table_above_covers_every_refusal_the_describer_can_emit(self) -> None:
+        """Enumerate the CALLER, not a declared set: a new ``stance`` branch must join ``_EVERY_REFUSAL_BRANCH``.
+
+        Counted from the describer's own source, so a branch added there and not
+        here fails this arm instead of shipping unchecked against canopy's cut.
+        """
+        stances = set()
+        for kwargs in _EVERY_REFUSAL_BRANCH.values():
+            message = TrainingLifecycleManager._describe_dataset_fetch_failure(Exception(_PRODUCER_DETAIL), allow_truncated=False, **kwargs)
+            stances.add(message.split(" in full, ", 1)[1].split(", so the run is FAILING", 1)[0])
+        source = inspect.getsource(TrainingLifecycleManager._describe_dataset_fetch_failure)
+        assert len(stances) == source.count("stance = ")
 
 
 class TestShortfallLogging:
