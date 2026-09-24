@@ -26,7 +26,19 @@ from api.lifecycle.state_machine import Command, TrainingPhase, TrainingStateMac
 from api.models.cascor_model import CascorModel
 from api.models.common import coerce_native_scalars as _common_coerce_native_scalars
 from api.observability import TRAINING_SESSION_STATUS_CANCELLED, TRAINING_SESSION_STATUS_FAILURE, TRAINING_SESSION_STATUS_SUCCESS, dec_training_sessions, inc_training_session_completed, inc_training_sessions, observe_training_step_duration, record_training_epoch, set_hidden_units, set_training_accuracy, set_training_loss
-from cascor_constants.constants_api import _PROJECT_API_DRAIN_THREAD_JOIN_TIMEOUT, _PROJECT_API_LIFECYCLE_DEFAULT_CANDIDATE_PATIENCE, _PROJECT_API_NETWORK_INPUT_SIZE_DEFAULT, _PROJECT_API_NETWORK_OUTPUT_SIZE_DEFAULT, _PROJECT_API_PROGRESS_QUEUE_GET_TIMEOUT, _PROJECT_API_PROGRESS_QUEUE_WAIT_TIMEOUT, _PROJECT_API_SHORTFALL_ACCEPTED_BY_DEPLOYMENT, _PROJECT_API_SHORTFALL_ACCEPTED_BY_PRODUCER, _PROJECT_API_SHORTFALL_ACCEPTED_BY_REQUEST, _PROJECT_API_SHORTFALL_REFUSAL_TOKEN
+from cascor_constants.constants_api import (
+    _PROJECT_API_DRAIN_THREAD_JOIN_TIMEOUT,
+    _PROJECT_API_LIFECYCLE_DEFAULT_CANDIDATE_PATIENCE,
+    _PROJECT_API_NETWORK_INPUT_SIZE_DEFAULT,
+    _PROJECT_API_NETWORK_OUTPUT_SIZE_DEFAULT,
+    _PROJECT_API_PROGRESS_QUEUE_GET_TIMEOUT,
+    _PROJECT_API_PROGRESS_QUEUE_WAIT_TIMEOUT,
+    _PROJECT_API_SHORTFALL_ACCEPTED_BY_DEPLOYMENT,
+    _PROJECT_API_SHORTFALL_ACCEPTED_BY_PRODUCER,
+    _PROJECT_API_SHORTFALL_ACCEPTED_BY_REQUEST,
+    _PROJECT_API_SHORTFALL_REFUSAL_TOKEN,
+    _PROJECT_API_START_FRESH_REQUIRED_MARKER,
+)
 from snapshots.snapshot_load_status import SnapshotLoadResult
 from snapshots.snapshot_load_status import absent as snapshot_absent
 
@@ -2576,8 +2588,16 @@ class TrainingLifecycleManager:
             # losing their selection. The fetch binds its own annotation with its
             # data (APD-CASCOR-013), replacing any a caller handed in with inline
             # tensors, because the staged data is what this run trains on.
+            #
+            # F1 (owner ruling 2026-09-24): a start that CONTINUES the current network
+            # cannot widen it (the pad below refuses a wider dataset, and only
+            # swap_dataset_live grows one). That refusal used to fire only AFTER this
+            # reload had bound the new data and cleared the staged slot, so every
+            # route then named the new dataset beside the previous run's network and
+            # results. The reload now refuses a too-wide dataset before binding
+            # anything, and the staged slot survives for a start-fresh to consume.
             if self._pending_dataset_config:
-                self._reload_dataset(**self._pending_dataset_config)
+                self._reload_dataset(refuse_wider_than=self._continued_network_dims_locked(start_fresh), **self._pending_dataset_config)
                 self._pending_dataset_config = None
 
             if self._train_x is None or self._train_y is None:
@@ -2637,7 +2657,10 @@ class TrainingLifecycleManager:
             # the network — only swap_dataset_live owns the grow path; if
             # the dataset exceeds network capacity here, the pad helper
             # raises ValueError and the user must recreate the network or
-            # use the live-swap path.
+            # use the live-swap path. A STAGED dataset never gets this far
+            # when it is too wide: the reload above refuses it before binding
+            # (F1). Inline ``X`` still binds first and is refused here -- the
+            # 2026-09-23 "follow the loaded data" ruling covers that path.
             if hasattr(self.network, "input_size") and hasattr(self.network, "output_size"):
                 (
                     self._train_x,
@@ -4467,7 +4490,36 @@ class TrainingLifecycleManager:
                 raise RuntimeError(f"juniper-data artifact {label} contains {non_finite} non-finite value(s) (NaN or Inf) out of {tensor.numel()}. " "Training on them yields a NaN loss with no indication of the cause. If this is an `equities` dataset, the " "producer's `fundamentals_fill` default is `nan`: request `fundamentals_fill=zero` or `drop`, or a " "`start_date` after the ticker's first SEC filing (~2009).")
         return new_train_x, new_train_y, new_val_x, new_val_y, new_test_x, new_test_y
 
-    def _reload_dataset(self, **cfg: Any) -> None:
+    def _continued_network_dims_locked(self, start_fresh: bool) -> Optional[Tuple[int, int]]:
+        """F1: the ``(input, output)`` dims a start would CONTINUE, or ``None`` if it builds anew.
+
+        ``None`` for a start-fresh (the network is discarded and rebuilt from the dataset's
+        dims) and when there is no network (create-on-start does the same), so neither
+        refuses a wide dataset. Mirrors the pad block's ``hasattr`` guard in
+        ``start_training``: a network without the two dims is never padded, so it is never
+        refused either.
+        """
+        network = self.network
+        if start_fresh or network is None or not (hasattr(network, "input_size") and hasattr(network, "output_size")):
+            return None
+        return int(network.input_size), int(network.output_size)
+
+    @staticmethod
+    def _refuse_dataset_wider_than_network(dataset_type: str, x: torch.Tensor, y: torch.Tensor, network_dims: Tuple[int, int]) -> None:
+        """F1: refuse, before anything is bound, a dataset the continued network cannot take.
+
+        The message opens with ``_PROJECT_API_START_FRESH_REQUIRED_MARKER`` so a consumer
+        (canopy) can point the operator at its Start fresh control without matching prose,
+        and it names both shapes, because "wider" alone does not say which dimension.
+        """
+        net_input, net_output = network_dims
+        data_input = int(x.shape[1])
+        data_output = int(y.shape[1]) if y.dim() > 1 else 1
+        if data_input <= net_input and data_output <= net_output:
+            return
+        raise ValueError(f"{_PROJECT_API_START_FRESH_REQUIRED_MARKER} The staged dataset {dataset_type!r} ({data_input} features, {data_output} outputs) is wider than the current network ({net_input} inputs, {net_output} outputs). A start continues the current network, and only a live dataset swap can widen one, so this start needs start_fresh, which builds a new network from the dataset. Nothing was loaded: the dataset is still staged, and the current network and its results are unchanged.")
+
+    def _reload_dataset(self, *, refuse_wider_than: Optional[Tuple[int, int]] = None, **cfg: Any) -> None:
         """Fetch a fresh dataset from juniper-data and replace the live tensors.
 
         Mirrors ``api/app.py::_auto_start_training``'s pattern: instantiate a
@@ -4484,6 +4536,12 @@ class TrainingLifecycleManager:
         Held under ``_lock`` by the caller (``start_training``);
         any I/O failure surfaces as ``RuntimeError`` so the caller can leave
         ``_pending_dataset_config`` in place for the user to retry.
+
+        ``refuse_wider_than`` (F1): the ``(input, output)`` dims of a network the
+        caller will CONTINUE. A dataset wider than it on either axis raises
+        ``ValueError`` after the fetch and before anything is bound, so the refused
+        start leaves the loaded data, its identity and the staged slot exactly as
+        they were. ``swap_dataset_live`` passes nothing: it grows the network instead.
         """
         try:
             from juniper_data_client import JuniperDataClient
@@ -4601,6 +4659,10 @@ class TrainingLifecycleManager:
         # before binding anything, so a run can never quietly proceed on the
         # X_test-as-validation promotion that this arc exists to remove.
         new_val_x, new_val_y, warning = self._resolve_validation_split(new_val_x, new_val_y, new_test_x, new_test_y)
+        # F1: the last refusal before binding. It reads the converted tensors, so a
+        # malformed or wrong-rank artifact has already been refused for what it is.
+        if refuse_wider_than is not None:
+            self._refuse_dataset_wider_than_network(dataset_type, new_train_x, new_train_y, refuse_wider_than)
         self._val_x = new_val_x
         self._val_y = new_val_y
         self._train_x = new_train_x

@@ -132,6 +132,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     preserved.
   - `src/tests/unit/api/test_start_fresh_carries_params.py` covers the manager and the
     `PATCH`-then-start-fresh route sequence canopy sends. It was mutation-checked at five sites.
+- **A Start that continued the current network bound a wider staged dataset, then refused it
+  (F1).** A plain Start continues the current network. `start_training` pads a narrower dataset
+  up to it but cannot widen it, because only a live swap grows a network, so the pad step refused
+  a wider dataset (409).
+  - That refusal fired only after `_reload_dataset` had bound the staged dataset and cleared the
+    staged slot. `current_dataset`, `/v1/dataset` and the status then named the new dataset beside
+    the previous run's network, status and metrics. A retried Start refused again, with nothing
+    left staged for a start-fresh to use.
+  - juniper-ml's A-N2 run hit this with `equities` (15 features) over the 2x2 network
+    `checkerboard` left behind.
+  - Following the owner's ruling of 2026-09-24, `_reload_dataset` takes a `refuse_wider_than`
+    bound, and `start_training` passes the continued network's dims. No bound is passed for a
+    start-fresh, or when there is no network. A dataset wider on either axis is refused after the
+    fetch and before anything is bound. The loaded data, its identity, its annotations and the
+    staged slot are left exactly as they were.
+  - The refusal opens with a new machine-readable token, `[start_fresh_required]`
+    (`_PROJECT_API_START_FRESH_REQUIRED_MARKER`). It names both shapes and says the remedy is
+    `start_fresh`. juniper-canopy matches the token to point the operator at its Start fresh
+    control.
+  - `mnist` (784 features, 10 outputs) and a dataset wider only in its outputs are covered.
+  - Inline `X` is unchanged: it still binds first and is refused by the pad step, under the
+    2026-09-23 "follow the loaded data" ruling.
+  - `src/tests/unit/api/test_start_refuses_wider_staged_dataset.py`, mutation-checked at five
+    sites.
 - **`src/profiling/logging_utils.py` raised `TypeError` at every emit, and logged at levels cascor
   does not have** (cascor#573, roadmap P1.4 — the "fix the levels" half of owner decision 8). All
   five `logger.log(level, msg)` sites used the stdlib signature, but every cascor call site binds the
