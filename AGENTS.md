@@ -185,9 +185,12 @@ pre-commit install                                   # Install hooks
 > WITHHELD for that request, and the refusal gives its own path's retry: a failed start stays
 > staged (start again), a live swap stages nothing (re-issue it), auto-start never runs again
 > on its own (stage the dataset and start, or restart). It never tells you to set the flag
-> while it is on, nor when the request itself sent `allow_truncation: null`. Only a 422 that
-> names `allow_truncation` or `incomplete_rows` -- juniper-data's two refusals both do -- is a
-> shortfall refusal; any other 422, and with the flag on one for a generator the list does
+> while it is on, nor when the request itself sent `allow_truncation: null` (a blank string is
+> not null: juniper-data rejects it with a 400). A shortfall refusal is recognised by
+> juniper-data's remedy sentence, "Re-submit with allow_truncation=true", and by its 422 when
+> the client reports a status. Anything else, including a 400 for a bad parameter (even one
+> naming `allow_truncation` or `incomplete_rows`), a 422 for a malformed request and, with the
+> flag on, a refusal for a generator the list does
 > not declare, is a plain fetch failure. `dataset_shortfall` and `current_dataset` follow the
 > LOADED data (APD-CASCOR-013): kept on `reset()`, a start-fresh and a start that retains the
 > data, replaced by a new fetch (auto-start's too), and kept while ANY fetched partition is

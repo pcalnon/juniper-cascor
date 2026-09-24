@@ -39,6 +39,11 @@ flag, so its refusal never names a knob that cannot help (item 3); a 422 for a
 generator the list does not declare is a plain fetch failure, not a shortfall
 refusal (item 4); and a withheld opt-in's refusal gives the retry of the path it came
 from and no other (item 7).
+
+From #688's validation, against a real juniper-data: a blank ``allow_truncation`` is
+not a deferral (juniper-data answers it 400), and a 400 that names a truncation field
+is a plain fetch failure on the live path, in both flag positions. The refusals and
+the 400s these arms use are juniper-data's own texts.
 """
 
 from __future__ import annotations
@@ -52,6 +57,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 import torch
+from juniper_data_client import JuniperDataValidationError
 from pydantic import BaseModel
 
 import cascor_constants.constants_api as constants_api
@@ -81,6 +87,23 @@ LISTING: List[Dict[str, Any]] = [
     _entry("equities_seq", truncatable=True),
     _entry("mnist", truncatable=False),
 ]
+
+# juniper-data's OWN words, as juniper-data-client 0.5.0 raises them, captured from a
+# juniper-data main server (0f0f7e0) by juniper-ml
+# ``util/ad-hoc/2026-09-24_cascor688_realjd_error_texts.py``. The refusal is an
+# ``InputTooLargeError``; the 400s are parameter errors that NAME a truncation field,
+# which the refusal check matched on until #688's validation. These replace the
+# stand-in "HTTP 422 allow_truncation": that string no longer reads as a refusal, so
+# an arm built on it would pass without reaching the branch it is about.
+_REFUSAL_TEXT = "Validation error (422): The requested universe is 3 symbols, over the 2 symbols cap. Re-submit with allow_truncation=true (or set JUNIPER_DATA_EQUITIES_ALLOW_TRUNCATION=true) to import the first 2 symbols. The resulting dataset will be permanently annotated as truncated."
+_INCOMPLETE_ROWS_400 = "Validation error (400): Invalid parameters: 1 validation error for EquitiesParams\nincomplete_rows\n  Input should be 'accept' or 'drop' [type=literal_error, input_value='keep', input_type=str]\n    For further information visit https://errors.pydantic.dev/2.12/v/literal_error"
+_BLANK_ALLOW_TRUNCATION_400 = "Validation error (400): Invalid parameters: 1 validation error for CsvImportParams\nallow_truncation\n  Input should be a valid boolean, unable to interpret input [type=bool_parsing, input_value='', input_type=str]\n    For further information visit https://errors.pydantic.dev/2.12/v/bool_parsing"
+_N_SPIRALS_400 = "Validation error (400): Invalid parameters: 1 validation error for SpiralParams\nn_spirals\n  Input should be greater than or equal to 2 [type=greater_than_equal, input_value=1, input_type=int]\n    For further information visit https://errors.pydantic.dev/2.12/v/greater_than_equal"
+
+
+def _refusal() -> JuniperDataValidationError:
+    """juniper-data's shortfall refusal, as the live path receives it."""
+    return JuniperDataValidationError(_REFUSAL_TEXT, status_code=422)
 
 
 class _ListingClient:
@@ -297,20 +320,35 @@ class TestTheResolverConsultsTheDerivedSet:
         assert params == {} and skipped is None and reads == 0
 
     @pytest.mark.parametrize("allow_truncated", [True, False], ids=["flag-on", "flag-off"])
-    @pytest.mark.parametrize("no_value", [None, "", "  "], ids=["null", "empty", "blank"])
-    def test_a_caller_that_sent_no_value_deferred_whatever_the_flag(self, allow_truncated: bool, no_value: Any) -> None:
+    def test_a_caller_that_sent_null_deferred_whatever_the_flag(self, allow_truncated: bool) -> None:
         """cascor#678 follow-up, item 3 (register constraint 4). The KEY is present, so the default never applies.
 
-        The request carried ``allow_truncation`` with no value: it deferred to the
-        producer. This service never overrides a key the request carries -- the test
-        is the key's PRESENCE, not its value -- so the reader is not consulted and
-        the value goes on the wire untouched, flag on or off. That is recorded as
+        The request carried ``allow_truncation: null``: it deferred to the producer.
+        This service never overrides a key the request carries -- the test is the
+        key's PRESENCE, not its value -- so the reader is not consulted and the value
+        goes on the wire untouched, flag on or off. That is recorded as
         ``CALLER_DEFERRED`` in BOTH positions: with the flag off it used to be
         ``None``, and the refusal then named a knob that cannot change the outcome.
         """
-        (params, source, wire, refused, skipped), reads = self._resolve({"allow_truncation": no_value}, allow_truncated=allow_truncated)
-        assert params == {"allow_truncation": no_value}
+        (params, source, wire, refused, skipped), reads = self._resolve({"allow_truncation": None}, allow_truncated=allow_truncated)
+        assert params == {"allow_truncation": None}
         assert (source, wire, refused, skipped, reads) == (None, False, False, _OPT_IN_SKIPPED_CALLER_DEFERRED, 0)
+
+    @pytest.mark.parametrize("allow_truncated", [True, False], ids=["flag-on", "flag-off"])
+    @pytest.mark.parametrize("blank", ["", "  "], ids=["empty", "spaces"])
+    def test_a_blank_string_is_not_a_deferral(self, allow_truncated: bool, blank: str) -> None:
+        """#688's validation: juniper-data does not defer on a blank string -- it answers 400.
+
+        ``_as_bool_stance`` reads a blank as no stance, and the resolver used to
+        record it as ``CALLER_DEFERRED``, so a remedy spoke of a request that
+        "deferred to the producer" -- for one the producer rejects as a bad
+        parameter ("Input should be a valid boolean"). The key is still present, so
+        the default still never applies and the value still goes on the wire
+        untouched; what changes is that no reason is recorded for it.
+        """
+        (params, source, wire, refused, skipped), reads = self._resolve({"allow_truncation": blank}, allow_truncated=allow_truncated)
+        assert params == {"allow_truncation": blank}
+        assert (source, wire, refused, skipped, reads) == (None, False, False, None, 0)
 
 
 class _RecordingClientClass:
@@ -359,7 +397,7 @@ class TestTheReaderIsLazyAndBounded:
 class TestTheWithheldRemedy:
     """An operator whose knob is ON must not be told to turn it on."""
 
-    _EXC = Exception("HTTP 422 allow_truncation")
+    _EXC = _refusal()
 
     @staticmethod
     def _names_the_knob(message: str) -> bool:
@@ -403,13 +441,15 @@ class TestTheWithheldRemedy:
     def test_a_generator_the_list_does_not_declare_is_not_told_to_turn_on_the_knob(self) -> None:
         """cascor#678 follow-up, item 4: flag ON, list READ, generator not truncatable -- so not a shortfall at all.
 
-        Such a generator cannot be short by construction, so its 422 is an ordinary
-        parameter error. Dressed as a refusal it carried the token, which opens
-        canopy's three-way partial-data prompt -- every option of which re-sends a
-        request that fails the same way -- and called the producer inconsistent.
+        Such a generator cannot be short by construction, so a refusal from it is
+        not one this service can act on. Dressed as a refusal it carried the token,
+        which opens canopy's three-way partial-data prompt -- every option of which
+        re-sends a request that fails the same way -- and called the producer
+        inconsistent. The text is a REAL refusal, so it is the NOT_TRUNCATABLE reason
+        that makes this plain, not the wording.
         """
         message = TrainingLifecycleManager._describe_dataset_fetch_failure(self._EXC, allow_truncated=False, opt_in_skipped=_OPT_IN_SKIPPED_NOT_TRUNCATABLE, deployment_flag_on=True)
-        assert message == "juniper-data fetch failed: HTTP 422 allow_truncation"
+        assert message == f"juniper-data fetch failed: {_REFUSAL_TEXT}"
 
     @pytest.mark.parametrize("deployment_flag_on", [True, False], ids=["flag-on", "flag-off"])
     def test_a_request_that_deferred_with_a_null_is_not_told_to_turn_on_the_knob(self, deployment_flag_on: bool) -> None:
@@ -499,7 +539,7 @@ class TestTheStagedPathReadsTheList:
         assert "allow_truncation" not in _StagedClient.sent["params"]
 
     def test_an_unreadable_list_withholds_and_the_refusal_says_why(self) -> None:
-        client = _StagedClient(ConnectionError("connection refused"), create_error=RuntimeError("HTTP 422 allow_truncation"))
+        client = _StagedClient(ConnectionError("connection refused"), create_error=_refusal())
         error = _reload(client, deployment_flag=True)
         assert "allow_truncation" not in _StagedClient.sent["params"]
         assert str(error).startswith(_PROJECT_API_SHORTFALL_REFUSAL_TOKEN)
@@ -512,7 +552,7 @@ class TestTheStagedPathReadsTheList:
         opt-in and the 422 that followed told the operator to set a flag that was
         already on. It must be withheld-and-retried instead, and say so.
         """
-        client = _StagedClient([{"name": "equities", "parameters": ["tickers"]}], create_error=RuntimeError("HTTP 422 allow_truncation"))
+        client = _StagedClient([{"name": "equities", "parameters": ["tickers"]}], create_error=_refusal())
         error = _reload(client, deployment_flag=True)
         assert "allow_truncation" not in _StagedClient.sent["params"]
         assert "WITHHELD" in str(error) and "JUNIPER_CASCOR_ALLOW_TRUNCATED_DATASETS" not in str(error)
@@ -521,40 +561,54 @@ class TestTheStagedPathReadsTheList:
         assert client.listing_calls == 2
 
     @pytest.mark.parametrize(
-        ("generator", "listing", "params", "detail"),
+        ("generator", "listing", "params", "detail", "status"),
         [
-            ("equities", [_entry("equities", truncatable=False)], None, "HTTP 422 allow_truncation"),
-            ("spiral", LISTING, {"n_spirals": 1}, "Validation error (422): [{'loc': ['params', 'n_spirals'], 'msg': 'Input should be greater than or equal to 2', 'type': 'greater_than_equal'}]"),
+            ("equities", [_entry("equities", truncatable=False)], None, _REFUSAL_TEXT, 422),
+            ("spiral", LISTING, {"n_spirals": 1}, _N_SPIRALS_400, 400),
         ],
         ids=["equities-undeclared", "spiral-param-error"],
     )
-    def test_a_refusal_for_a_generator_the_list_does_not_declare_does_not_name_the_knob(self, generator: str, listing: Any, params: Optional[Dict[str, Any]], detail: str) -> None:
-        """cascor#678 follow-up, item 4, on the live path: flag ON, list READ, generator not declared, producer 422s.
+    def test_a_refusal_for_a_generator_the_list_does_not_declare_does_not_name_the_knob(self, generator: str, listing: Any, params: Optional[Dict[str, Any]], detail: str, status: int) -> None:
+        """cascor#678 follow-up, item 4, on the live path: flag ON, list READ, generator not declared.
 
-        The second case is the one #678's post-merge validation reproduced: an
-        ordinary parameter error on ``spiral``. It used to carry the refusal token -- which
-        opens canopy's three-way partial-data prompt -- and a sentence calling the
-        producer inconsistent. The generator cannot be short, so it is a plain fetch
-        failure.
+        The first case is a REAL refusal from a generator the list does not declare,
+        so the NOT_TRUNCATABLE reason is what makes it plain. The second is the one
+        #678's post-merge validation reproduced, an ordinary parameter error on
+        ``spiral``: it used to carry the refusal token -- which opens canopy's
+        three-way partial-data prompt -- and a sentence calling the producer
+        inconsistent. It was written as a 422 until #688's validation; juniper-data
+        answers it 400, as here.
         """
-        client = _StagedClient(listing, create_error=RuntimeError(detail))
+        client = _StagedClient(listing, create_error=JuniperDataValidationError(detail, status_code=status))
         error = _reload(client, deployment_flag=True, generator=generator, params=params)
         assert client.listing_calls == 1, "the list was not read, so NOT_TRUNCATABLE was never the reason -- the arm proves nothing"
         assert str(error) == f"juniper-data fetch failed: {detail}"
 
-    def test_an_ordinary_422_with_the_flag_off_is_a_plain_fetch_failure(self) -> None:
-        """#686's validation, the other flag position: ``spiral`` with ``n_spirals=1``, flag OFF.
+    @pytest.mark.parametrize("deployment_flag", [True, False], ids=["flag-on", "flag-off"])
+    @pytest.mark.parametrize(
+        ("generator", "params", "detail"),
+        [
+            ("equities", {"incomplete_rows": "keep"}, _INCOMPLETE_ROWS_400),
+            ("csv_import", {"file_path": "big.csv", "allow_truncation": ""}, _BLANK_ALLOW_TRUNCATION_400),
+            ("spiral", {"n_spirals": 1}, _N_SPIRALS_400),
+        ],
+        ids=["incomplete-rows-keep", "blank-allow-truncation", "n-spirals-1"],
+    )
+    def test_a_parameter_error_is_a_plain_fetch_failure_on_the_live_path(self, generator: str, params: Dict[str, Any], detail: str, deployment_flag: bool) -> None:
+        """#688's validation, MEDIUM, end to end: a real 400 that NAMES a truncation field is not a refusal.
 
-        The list is never read with the flag off, so NOT_TRUNCATABLE can never be the
-        reason, and a bare 422 used to read as a shortfall: the token opened canopy's
-        prompt and the remedy named a knob that cannot fix a bad parameter. It is
-        recognised by the refusal's own remedy now, so this is a plain failure in
-        BOTH flag positions (the flag-on case is the ``spiral-param-error`` arm above).
+        juniper-data answers a parameter its generator rejects with 400 and names the
+        field. The check matched the names ``allow_truncation`` / ``incomplete_rows``,
+        so with the flag off ``incomplete_rows='keep'`` got the token and the knob
+        remedy, and a blank ``allow_truncation`` -- in EITHER position, because the
+        resolver also called it a deferral -- got the token and a remedy saying the
+        request "deferred to the producer". Both measured against a real juniper-data
+        main server. The caller's value still reaches the producer untouched.
         """
-        detail = "Validation error (422): [{'loc': ['params', 'n_spirals'], 'msg': 'Input should be greater than or equal to 2', 'type': 'greater_than_equal'}]"
-        client = _StagedClient(LISTING, create_error=RuntimeError(detail))
-        error = _reload(client, deployment_flag=False, generator="spiral", params={"n_spirals": 1})
-        assert client.listing_calls == 0
+        client = _StagedClient(LISTING, create_error=JuniperDataValidationError(detail, status_code=400))
+        error = _reload(client, deployment_flag=deployment_flag, generator=generator, params=params)
+        for key, value in params.items():
+            assert _StagedClient.sent["params"][key] == value
         assert str(error) == f"juniper-data fetch failed: {detail}"
 
     @pytest.mark.parametrize("deployment_flag", [True, False], ids=["flag-on", "flag-off"])
@@ -568,7 +622,7 @@ class TestTheStagedPathReadsTheList:
         refusal used to name JUNIPER_CASCOR_ALLOW_TRUNCATED_DATASETS, which cannot
         change the outcome for a request that carries the key.
         """
-        client = _StagedClient(LISTING, create_error=RuntimeError("HTTP 422: Shares outstanding could not be resolved for 3 symbols. Re-submit with allow_truncation=true"))
+        client = _StagedClient(LISTING, create_error=_refusal())
         error = _reload(client, deployment_flag=deployment_flag, params={"allow_truncation": None})
         assert _StagedClient.sent["params"] == {"allow_truncation": None}
         assert client.listing_calls == 0
@@ -647,12 +701,9 @@ class TestEachPathNamesItsOwnRetry:
     auto-start's arm is in ``test_auto_start_shortfall.py``.
     """
 
-    _REFUSAL = "HTTP 422: Shares outstanding could not be resolved for 3 symbols. Re-submit with allow_truncation=true"
-
     @classmethod
     def _producer(cls) -> Any:
         """Patches for a juniper-data whose list cannot be read and whose create refuses."""
-        refusal = cls._REFUSAL
 
         class _Client:
             def __init__(self, **_kwargs: Any) -> None:
@@ -662,7 +713,7 @@ class TestEachPathNamesItsOwnRetry:
                 raise ConnectionError("connection refused")
 
             def create_dataset(self, *, generator: str, params: dict, persist: bool) -> dict:
-                raise RuntimeError(refusal)
+                raise _refusal()
 
         settings = SimpleNamespace(juniper_data_url="http://juniper-data:8100", allow_truncated_datasets=True)
         return (patch("juniper_data_client.JuniperDataClient", _Client), patch("api.settings.Settings", lambda: settings), patch("api.secrets.get_secret", lambda _name: "key"))

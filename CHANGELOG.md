@@ -227,8 +227,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `src/tests/unit/api/test_truncatable_generators.py` plus new arms in the two truncation suites.
 - **#678's follow-ups: `dataset_shortfall` stays while any fetched split is loaded, and each
   refusal says what its own path can do** (APD-CASCOR-013, APD-CASCOR-008; from #678's
-  post-merge validation). Corrects two statements in the two entries above: auto-start's retry
-  is not "a restart" alone, and inline tensors no longer always make the annotation `null`.
+  post-merge validation). Corrects four statements in the two entries above: auto-start's retry
+  is not "a restart" alone; inline tensors no longer always make the annotation `null`; a
+  refusal for a generator the list does not declare no longer "points at the request's own
+  `allow_truncation`", because it is a plain fetch failure; and a listing counts as UNREAD when
+  ANY entry lacks a schema, not only when none carries one.
   - **OWNER RULING 2026-09-24, extending APD-CASCOR-013: "keep while fetched splits stay".**
     `X_val` / `X_test` are retain-on-omit (cascor#582), so an inline train-only start after a
     partial fetch early-stopped on that fetch's val and reported on its test, while
@@ -258,12 +261,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     off it was told to set `JUNIPER_CASCOR_ALLOW_TRUNCATED_DATASETS=true`, which cannot change
     the outcome: the deployment default never overrides a key the request carries.
   - **An ordinary 422 is a plain `juniper-data fetch failed: ...`, with no refusal token, flag
-    on or off.** A refusal is now recognised by its remedy, not its status code: both of
-    juniper-data's refusals (`InputTooLargeError`, `IncompleteDataError`) say "Re-submit with
-    allow_truncation=true", and a parameter error (`spiral` with `n_spirals=1`) says neither
-    that nor `incomplete_rows`. It used to open canopy's partial-data prompt, call the producer
-    inconsistent with the flag on, and name the flag with it off. With the flag on, a 422 for a
-    generator the list does not declare is plain as well, whatever its text.
+    on or off.** A bare `422` in the text used to read as a refusal: it opened canopy's
+    partial-data prompt, called the producer inconsistent with the flag on, and named the flag
+    with it off. juniper-data answers 422 both for a refusal (`InputTooLargeError`,
+    `IncompleteDataError`) and for a request that breaks its declared request schema, and only
+    the refusal says "Re-submit with allow_truncation=true". With the flag on, a refusal for a
+    generator the list does not declare is plain as well, whatever its text. (This entry first
+    gave `spiral` with `n_spirals=1` as the ordinary 422, but juniper-data answers that one 400.
+    It also said the check matched the remedy, while the check matched the field names. Both are
+    corrected in the next entry.)
   - **A listing in which ANY entry lacks a schema is a failed read.** Skipping the entry
     memoised a smaller set for the life of the process, and that generator was never sent the
     opt-in again.
@@ -280,6 +286,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `test_truncatable_generators.py` covers the stance and remedy arms, and
   `test_allow_truncated_datasets.py` runs every refusal branch through a verbatim copy of
   canopy's parser.
+- **#688's validation follow-ups: a juniper-data 400 is not a shortfall refusal, a blank
+  `allow_truncation` is not a deferral, and auto-start's shortfall is logged only for data its
+  start goes ahead on** (APD-CASCOR-008, APD-CASCOR-013; from #688's post-merge validation,
+  which ran against a real juniper-data main server).
+  - **A refusal is recognised by juniper-data's remedy sentence, "Re-submit with
+    allow_truncation=true", and by its 422 when the error carries a status.** The check matched
+    the field names `allow_truncation` and `incomplete_rows`, and juniper-data's 400s name the
+    field they reject. So a 400 for `incomplete_rows='keep'` or for a blank `allow_truncation`
+    carried the refusal token and opened canopy's partial-data prompt, and with the flag off it
+    told the operator to set the flag. juniper-data-client 0.5.0 puts the status on
+    `status_code`. An older client's error carries none, and the sentence alone decides. The
+    status matters because a 400 echoes the value it rejects, so a value that quotes the
+    sentence puts the sentence in a 400.
+  - **A blank `allow_truncation` is not a deferral.** Only `null` defers to the producer.
+    juniper-data rejects a blank string with a 400 ("Input should be a valid boolean"), so the
+    resolver no longer records it as the caller deferring. Its failure no longer says the
+    request "deferred to the producer".
+  - **Auto-start's shortfall is logged once a staged dataset has had its turn.** If an operator
+    staged a dataset during auto-start's boot window, `start_training` logged auto-start's
+    partial fetch as soon as it bound it. The staged fetch then either replaced it, so the log
+    and the status (`dataset_shortfall: null`) disagreed, or refused the start, so the log
+    described a run that never began. The annotation is now logged only if it is still the one
+    bound when the staged fetch is done. The staged fetch logs its own.
+  - **The F1 refusal says "The staged dataset was not loaded"** where it said "Nothing was
+    loaded". A start that also carried inline tensors has bound them by then.
+  - The entry above is corrected where it described the check and gave `n_spirals=1` as a 422,
+    and its list of corrected statements is now complete.
+
+  Pinned under `src/tests/unit/api/`. The refusal arms now use juniper-data's own texts,
+  captured from a real server. The stand-in "HTTP 422 allow_truncation" no longer reads as a
+  refusal, so an arm left on it would pass without reaching its branch. New arms cover the 400s
+  in both flag positions, with and without a status, and the blank string. They also cover a
+  staged fetch that replaces, or refuses, a fetch handed in, and a refusal after an inline train
+  start, which must leave alone the partitions the record stands on. Two more pin a clean
+  auto-start fetch after a partial one, and the route's `spiral` while a fetch's splits are
+  loaded. Mutation-checked at 64 sites, all killed, including the validation's NV1, NV2, NV3 and
+  NV5 verbatim and NV4 as the two clauses of the new check.
 - **`lockfile-update.yml` regenerated `requirements.lock` alone, so every dependency bump drifted
   `requirements-cpu.lock`** -- the container image's lock, which is *derived* from the GPU lock via
   `--constraint requirements.lock`. Nothing reported it: the CI check asserts only that every image
