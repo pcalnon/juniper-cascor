@@ -286,10 +286,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `test_truncatable_generators.py` covers the stance and remedy arms, and
   `test_allow_truncated_datasets.py` runs every refusal branch through a verbatim copy of
   canopy's parser.
-- **#688's validation follow-ups: a juniper-data 400 is not a shortfall refusal, a blank
-  `allow_truncation` is not a deferral, and auto-start's shortfall is logged only for data its
-  start goes ahead on** (APD-CASCOR-008, APD-CASCOR-013; from #688's post-merge validation,
-  which ran against a real juniper-data main server).
+- **#688's validation follow-ups: a juniper-data 400 is not a shortfall refusal, a caller's
+  `allow_truncation` means what juniper-data takes it to mean, and auto-start's shortfall is
+  logged only for data its start goes ahead on** (APD-CASCOR-008, APD-CASCOR-013; from #688's
+  post-merge validation, which ran against a real juniper-data main server).
   - **A refusal is recognised by juniper-data's remedy sentence, "Re-submit with
     allow_truncation=true", and by its 422 when the error carries a status.** The check matched
     the field names `allow_truncation` and `incomplete_rows`, and juniper-data's 400s name the
@@ -303,6 +303,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     juniper-data rejects a blank string with a 400 ("Input should be a valid boolean"), so the
     resolver no longer records it as the caller deferring. Its failure no longer says the
     request "deferred to the producer".
+  - **A caller's `allow_truncation` is read exactly as juniper-data reads it.** juniper-data
+    types the field `bool | None` under pydantic's lax coercion, in `EquitiesParams` (which
+    `EquitiesSeqParams` inherits) and `CsvImportParams`. That accepts twelve strings,
+    ASCII-case-insensitively and without stripping, plus the numbers 0 and 1, and rejects
+    everything else. This service fell back to truthiness and stripped whitespace. So `"f"` and
+    `"n"`, which juniper-data reads as `false`, read as an opt-in: a caller that refused a
+    partial dataset that way was recorded as accepting it, and the refusal came out as a plain
+    fetch failure with no remedy. A value juniper-data rejects (`"maybe"`, `2`, `" true"`) is
+    now no stance, as a blank string is.
   - **Auto-start's shortfall is logged once a staged dataset has had its turn.** If an operator
     staged a dataset during auto-start's boot window, `start_training` logged auto-start's
     partial fetch as soon as it bound it. The staged fetch then either replaced it, so the log
@@ -321,8 +330,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   staged fetch that replaces, or refuses, a fetch handed in, and a refusal after an inline train
   start, which must leave alone the partitions the record stands on. Two more pin a clean
   auto-start fetch after a partial one, and the route's `spiral` while a fetch's splits are
-  loaded. Mutation-checked at 64 sites, all killed, including the validation's NV1, NV2, NV3 and
-  NV5 verbatim and NV4 as the two clauses of the new check.
+  loaded. Every spelling of `allow_truncation` is checked, in both polarities, against a table
+  measured from juniper-data's own params classes, and against pydantic's lax `bool | None`.
+  Mutation-checked at 95 sites, all killed. They include the validation's NV1, NV2, NV3 and NV5
+  verbatim, NV4 as the two clauses of the new check, and each of the twelve spellings flipped
+  to the other polarity and dropped.
 - **`lockfile-update.yml` regenerated `requirements.lock` alone, so every dependency bump drifted
   `requirements-cpu.lock`** -- the container image's lock, which is *derived* from the GPU lock via
   `--constraint requirements.lock`. Nothing reported it: the CI check asserts only that every image

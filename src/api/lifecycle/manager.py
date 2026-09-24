@@ -218,10 +218,22 @@ _OPT_IN_SKIPPED_NOT_TRUNCATABLE = "not_truncatable"
 # ...and this one applies whatever the flag. The caller's own request carried
 # ``allow_truncation: null``: it deferred to the producer, and this service never
 # overrides a key the request carries, so the setting cannot change the outcome on
-# or off. Only ``null`` defers. A blank string is NOT a deferral: juniper-data
-# rejects it as a parameter error (400, "Input should be a valid boolean"), which
-# the describer reports as a plain fetch failure, so it records no reason here.
+# or off. Only ``null`` defers. A blank string -- like any value juniper-data
+# rejects -- is NOT a deferral: juniper-data answers it as a parameter error (400,
+# "Input should be a valid boolean"), which the describer reports as a plain fetch
+# failure, so it records no reason here.
 _OPT_IN_SKIPPED_CALLER_DEFERRED = "caller_deferred"
+
+# How juniper-data reads ``allow_truncation``, which is how ``_as_bool_stance`` must read
+# it. Every params class that declares the field types it ``bool | None`` with pydantic's
+# default LAX coercion, with no ``strict`` and no validator on the field:
+# ``EquitiesParams`` (``juniper_data/generators/equities/params.py:107``, inherited by
+# ``EquitiesSeqParams``) and ``CsvImportParams`` (``generators/csv_import/params.py:66``).
+# pydantic-core's ``str_as_bool`` (``src/input/shared.rs``) accepts exactly these twelve
+# strings, ASCII-case-insensitively and WITHOUT stripping whitespace. Its only other
+# non-bool spellings are the numbers 0 and 1, float or int. Anything else is a 400.
+_PRODUCER_BOOL_TRUE = frozenset({"1", "on", "t", "true", "y", "yes"})
+_PRODUCER_BOOL_FALSE = frozenset({"0", "off", "f", "false", "n", "no"})
 
 # How the describer recognises a shortfall refusal: the remedy sentence both of
 # juniper-data's refusals carry -- ``InputTooLargeError`` and ``IncompleteDataError``
@@ -4447,27 +4459,46 @@ class TrainingLifecycleManager:
 
     @staticmethod
     def _as_bool_stance(value: Any) -> Optional[bool]:
-        """Read a caller's ``allow_truncation`` as a tri-state: absent, refused, or opted in.
+        """Read a caller's ``allow_truncation`` EXACTLY as juniper-data reads it: opted in, refused, or no stance.
 
         The staged params are a free-form dict that has crossed at least one JSON
-        boundary and possibly a YAML one, so the value may arrive as a string.
-        ``bool("false")`` is ``True`` -- truthiness is not an "is it set" test --
-        so the string forms are read explicitly. Anything unrecognised falls back
-        to truthiness, which is what the producer's own coercion will make of it.
+        boundary and possibly a YAML one, so the value may arrive as a string or a
+        number. ``bool("false")`` is ``True`` -- truthiness is not an "is it set"
+        test -- and truthiness is not what the producer does either. juniper-data
+        validates the field as pydantic's lax ``bool | None`` (``_PRODUCER_BOOL_TRUE``
+        / ``_PRODUCER_BOOL_FALSE`` say where), so this mirrors that rule and nothing
+        looser:
+
+        * ``True`` / ``False`` for a bool, for the numbers ``1`` / ``0`` (int or float),
+          and for the twelve strings pydantic accepts, compared ASCII-case-insensitively
+          and NOT stripped (" true" is a 400 there).
+        * ``None`` -- no stance -- for ``null`` and for every value juniper-data
+          REJECTS: a blank string, "maybe", ``2``, ``0.5``, a padded " true", a list.
+          Such a request fails as a bad parameter (400) before any stance can matter,
+          so it is read as a blank string is: the key is present, so no default
+          applies, and it is not a deferral either (only ``null`` is).
+
+        Until #690's fixup this fell back to truthiness for anything it did not list
+        and stripped whitespace. "f" and "n", which juniper-data reads as False, read
+        as an opt-in, so a caller that refused a partial dataset that way was recorded
+        as accepting it, and the refusal that followed came out as a plain fetch
+        failure with no remedy.
         """
-        if value is None:
-            return None
-        if isinstance(value, bool):
+        if value is None or isinstance(value, bool):
             return value
         if isinstance(value, str):
-            lowered = value.strip().lower()
-            if lowered == "":
-                return None
-            if lowered in {"true", "1", "yes", "on"}:
+            # pydantic compares ASCII-case-insensitively. ``str.lower`` agrees on every string
+            # here: the one non-ASCII code point it folds into ASCII is U+212A KELVIN SIGN
+            # (to "k"), and no spelling has a "k".
+            folded = value.lower()
+            if folded in _PRODUCER_BOOL_TRUE:
                 return True
-            if lowered in {"false", "0", "no", "off"}:
+            if folded in _PRODUCER_BOOL_FALSE:
                 return False
-        return bool(value)
+            return None
+        if isinstance(value, (int, float)) and value in (0, 1):
+            return bool(value)
+        return None
 
     @staticmethod
     def _resolve_truncation_stance(params: Dict[str, Any], *, generator: str, allow_truncated: bool, truncatable_generators: Callable[[], Optional[FrozenSet[str]]]) -> Tuple[Dict[str, Any], Optional[str], bool, bool, Optional[str]]:
@@ -4526,8 +4557,8 @@ class TrainingLifecycleManager:
           carried ``allow_truncation: null`` -- a key the default never overrides,
           so the setting cannot change the outcome. ``None`` when the default
           applied, when the flag is off and the caller was silent, or when the
-          caller sent a value -- a blank string included, which juniper-data
-          rejects as a bad parameter (400) rather than reading as a deferral.
+          caller sent a value -- including one juniper-data rejects (a blank
+          string, "maybe"), which is a bad parameter (400), not a deferral.
         """
         caller_stance = TrainingLifecycleManager._as_bool_stance(params.get("allow_truncation"))
         opt_in_skipped: Optional[str] = None
@@ -4580,6 +4611,8 @@ class TrainingLifecycleManager:
             # defer on it: it answers 400, "Input should be a valid boolean". That
             # request fails as a bad parameter, never as a refusal, so calling it a
             # deferral described an outcome that cannot happen (#688's validation).
+            # The same holds for every other value juniper-data rejects, all of
+            # which ``_as_bool_stance`` also reads as no stance.
             opt_in_skipped = _OPT_IN_SKIPPED_CALLER_DEFERRED
 
         # What actually went on the wire, and who put it there. The setting alone

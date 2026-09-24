@@ -350,6 +350,33 @@ class TestTheResolverConsultsTheDerivedSet:
         assert params == {"allow_truncation": blank}
         assert (source, wire, refused, skipped, reads) == (None, False, False, None, 0)
 
+    @pytest.mark.parametrize("allow_truncated", [True, False], ids=["flag-on", "flag-off"])
+    @pytest.mark.parametrize("spelling", ["f", "F", "n", "N", "no", "off", "0", 0, 0.0], ids=repr)
+    def test_a_refusal_spelled_as_juniper_data_reads_it_is_a_refusal(self, allow_truncated: bool, spelling: Any) -> None:
+        """#690's fixup: juniper-data reads each of these as ``false``, so this service must as well.
+
+        ``bool("f")`` is ``True``, and the stance reader used to fall back to it. So a caller
+        that refused with "f" or "n" was recorded as opting in -- the request's own
+        acceptance, on the wire -- while the producer refused. The value still goes on the wire
+        untouched.
+        """
+        (params, source, wire, refused, skipped), reads = self._resolve({"allow_truncation": spelling}, allow_truncated=allow_truncated)
+        assert params == {"allow_truncation": spelling}
+        assert (source, wire, refused, skipped, reads) == (None, False, True, None, 0)
+
+    @pytest.mark.parametrize("allow_truncated", [True, False], ids=["flag-on", "flag-off"])
+    @pytest.mark.parametrize("rejected", ["maybe", " true", "yes!", 2, 0.5, []], ids=repr)
+    def test_a_value_juniper_data_rejects_is_read_as_a_blank_string_is(self, allow_truncated: bool, rejected: Any) -> None:
+        """No stance and no deferral: juniper-data answers each of these 400, before any stance matters.
+
+        They used to read as ``True`` by truthiness (``[]`` as ``False``), and ``" true"``
+        after a strip juniper-data does not do. So the resolver recorded an opt-in, or a
+        refusal, for a request the producer rejects outright.
+        """
+        (params, source, wire, refused, skipped), reads = self._resolve({"allow_truncation": rejected}, allow_truncated=allow_truncated)
+        assert params == {"allow_truncation": rejected}
+        assert (source, wire, refused, skipped, reads) == (None, False, False, None, 0)
+
 
 class _RecordingClientClass:
     """Stands in for ``JuniperDataClient``: records every construction's kwargs."""
@@ -630,6 +657,24 @@ class TestTheStagedPathReadsTheList:
         assert message.startswith(_PROJECT_API_SHORTFALL_REFUSAL_TOKEN)
         assert "carried allow_truncation with no value" in message
         assert "--allow-truncated-datasets" not in message and "JUNIPER_CASCOR_ALLOW_TRUNCATED_DATASETS" not in message
+
+    @pytest.mark.parametrize("deployment_flag", [True, False], ids=["flag-on", "flag-off"])
+    @pytest.mark.parametrize("spelling", ["f", "n"])
+    def test_a_refusal_spelled_f_or_n_gets_the_refusal_remedy_on_the_live_path(self, deployment_flag: bool, spelling: str) -> None:
+        """#690's fixup, end to end: "f" is juniper-data's ``false``, so its refusal is the caller's own refusal.
+
+        The stance reader made "f" and "n" an opt-in, so ``allow_truncated`` reached the
+        describer as ``True``. The refusal that followed came out as a plain ``juniper-data
+        fetch failed`` with no remedy at all, where the caller is owed "explicitly refused"
+        and how to re-send.
+        """
+        client = _StagedClient(LISTING, create_error=_refusal())
+        error = _reload(client, deployment_flag=deployment_flag, params={"allow_truncation": spelling})
+        assert _StagedClient.sent["params"] == {"allow_truncation": spelling}
+        message = str(error)
+        assert message.startswith(_PROJECT_API_SHORTFALL_REFUSAL_TOKEN)
+        assert "explicitly refused" in message
+        assert "--allow-truncated-datasets" not in message
 
     @pytest.mark.parametrize("model", [StageDatasetRequest, SwapDatasetLiveRequest])
     def test_a_null_stance_survives_both_routes_request_models(self, model: Any) -> None:

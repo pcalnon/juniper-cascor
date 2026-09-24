@@ -19,11 +19,12 @@ dataset reports a score for data nobody chose, and nothing downstream can tell.
 from __future__ import annotations
 
 import inspect
+import itertools
 import logging
 import os
 import sys
 from types import SimpleNamespace
-from typing import Any, Dict
+from typing import Any, Dict, List, Optional
 from unittest.mock import MagicMock, patch
 
 import numpy as np
@@ -474,6 +475,83 @@ class TestCallerStanceIsNotOverridden:
         message = str(excinfo.value)
         assert message.startswith(_PROJECT_API_SHORTFALL_REFUSAL_TOKEN)
         assert "explicitly refused" in message and "allow_truncation=true" in message
+
+
+# What juniper-data makes of a caller's ``allow_truncation``, MEASURED rather than restated.
+# Every value here was validated through the REAL ``EquitiesParams``, ``EquitiesSeqParams``
+# and ``CsvImportParams`` of juniper-data main (0f0f7e0, pydantic 2.12.5), which agree on
+# all of them, by juniper-ml
+# ``util/ad-hoc/2026-09-24_cascor690_bool_stance_producer_table.py``. Each class types the
+# field ``bool | None`` under pydantic's lax coercion. A REJECTED value is a 400:
+# juniper-data refuses the request as a bad parameter.
+_PRODUCER_READS_AS_TRUE: List[Any] = [True, 1, 1.0, "1", "ON", "On", "oN", "on", "T", "t", "TRUE", "True", "tRUE", "true", "Y", "y", "YES", "Yes", "yES", "yes"]
+_PRODUCER_READS_AS_FALSE: List[Any] = [False, 0, 0.0, -0.0, "0", "OFF", "Off", "oFF", "off", "F", "f", "FALSE", "False", "fALSE", "false", "N", "n", "NO", "No", "nO", "no"]
+_PRODUCER_REJECTS: List[Any] = [
+    *(2, -1, 10, 0.5, 1.5, 2.0, -1.0, float("nan"), float("inf"), float("-inf")),
+    *(" true", "true ", "\ttrue", "true\n", " 1", "0 ", " f", "no ", "", "  "),
+    *("maybe", "2", "-1", "1.0", "0.0", "tru", "truee", "yes!", "none", "null", "None", "nil", "enable", "disabled", "ok"),
+    *("ｔｒｕｅ", "ｆ", "trüe", "ＹＥＳ", [], [True], {}, {"a": 1}),
+]
+# pydantic-core's ``str_as_bool`` (``src/input/shared.rs``): the twelve strings, by polarity.
+_PYDANTIC_TRUE_STRINGS = {"1", "on", "t", "true", "y", "yes"}
+_PYDANTIC_FALSE_STRINGS = {"0", "off", "f", "false", "n", "no"}
+
+
+class TestTheStanceIsReadAsJuniperDataReadsIt:
+    """A caller's ``allow_truncation`` means here exactly what it means to juniper-data (#690's fixup).
+
+    ``_as_bool_stance`` used to fall back to truthiness for anything it did not list, and to
+    strip whitespace. So "f" and "n", which juniper-data reads as False, read as an opt-in.
+    A caller refusing a partial dataset that way was recorded as accepting it, and the
+    refusal that followed came out as a plain fetch failure with no remedy. Every value
+    juniper-data rejects ("maybe", ``2``, a padded " true") also read as a stance, for a
+    request that can only fail as a bad parameter. They are no stance now, as a blank string
+    is.
+    """
+
+    @pytest.mark.parametrize("value", _PRODUCER_READS_AS_TRUE, ids=repr)
+    def test_every_spelling_juniper_data_reads_as_true_is_an_opt_in(self, value: Any) -> None:
+        assert TrainingLifecycleManager._as_bool_stance(value) is True
+
+    @pytest.mark.parametrize("value", _PRODUCER_READS_AS_FALSE, ids=repr)
+    def test_every_spelling_juniper_data_reads_as_false_is_a_refusal(self, value: Any) -> None:
+        assert TrainingLifecycleManager._as_bool_stance(value) is False
+
+    @pytest.mark.parametrize("value", [None, *_PRODUCER_REJECTS], ids=repr)
+    def test_null_and_every_value_juniper_data_rejects_are_no_stance(self, value: Any) -> None:
+        assert TrainingLifecycleManager._as_bool_stance(value) is None
+
+    def test_the_table_holds_every_spelling_the_producer_accepts_in_its_own_polarity(self) -> None:
+        """Enumerate the producer's rule, not the table: a spelling missing from the table would go untested."""
+        assert {v.lower() for v in _PRODUCER_READS_AS_TRUE if isinstance(v, str)} == _PYDANTIC_TRUE_STRINGS
+        assert {v.lower() for v in _PRODUCER_READS_AS_FALSE if isinstance(v, str)} == _PYDANTIC_FALSE_STRINGS
+
+    def test_it_agrees_with_pydantics_own_lax_bool_on_every_casing_and_padding(self) -> None:
+        """The other direction, and more of it: never read a stance into a value pydantic rejects, nor miss one it accepts.
+
+        Differential against pydantic's own lax ``bool | None`` -- the producer's rule by
+        construction -- over every casing of every spelling, each spelling padded with each
+        whitespace character on either side, and every printable ASCII character. The table
+        above is the producer's measured answer. This is the breadth check it cannot be.
+        """
+        from pydantic import TypeAdapter, ValidationError
+
+        adapter = TypeAdapter(Optional[bool])
+        values: List[Any] = []
+        for word in sorted(_PYDANTIC_TRUE_STRINGS | _PYDANTIC_FALSE_STRINGS):
+            values += ["".join(cased) for cased in itertools.product(*[(ch.lower(), ch.upper()) for ch in word])]
+            values += [f"{pad}{word}" for pad in (" ", "\t", "\n", "\r", "\x0b", "\x0c", " ")]
+            values += [f"{word}{pad}" for pad in (" ", "\t", "\n", "\r", "\x0b", "\x0c", " ")]
+        values += [chr(code) for code in range(32, 127)]
+        mismatches = []
+        for value in values:
+            try:
+                expected = adapter.validate_python(value)
+            except ValidationError:
+                expected = None
+            if TrainingLifecycleManager._as_bool_stance(value) is not expected:
+                mismatches.append((value, expected))
+        assert mismatches == [], f"{len(mismatches)} of {len(values)} disagree with pydantic: {mismatches[:10]}"
 
 
 class TestShortfallIsPollable:
