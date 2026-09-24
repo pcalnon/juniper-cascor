@@ -5,7 +5,7 @@
 **Author**: Paul Calnon
 **License**: MIT License
 **Version**: 0.11.0
-**Last Updated**: 2026-09-23
+**Last Updated**: 2026-09-24
 
 ---
 
@@ -181,12 +181,16 @@ pre-commit install                                   # Install hooks
 
 > **`JUNIPER_CASCOR_ALLOW_TRUNCATED_DATASETS` depends on juniper-data's `GET /v1/generators`**
 > (APD-CASCOR-008). The opt-in goes only to generators whose param schema declares
-> `allow_truncation`. If the list cannot be read, or carries no schemas, the opt-in is
-> WITHHELD for that request, and the refusal says how to retry: a failed start stays staged
-> (start again), a live swap stages nothing (re-issue it), auto-start retries only on a
-> restart. It never tells you to set the flag while it is on. `dataset_shortfall` follows the
-> LOADED data (APD-CASCOR-013): kept on `reset()` and on a start that retains the data, `null`
-> for inline tensors, replaced by a new fetch.
+> `allow_truncation`. If the list cannot be read, or any entry lacks a schema, the opt-in is
+> WITHHELD for that request, and the refusal gives its own path's retry: a failed start stays
+> staged (start again), a live swap stages nothing (re-issue it), auto-start never runs again
+> on its own (stage the dataset and start, or restart). It never tells you to set the flag
+> while it is on, nor when the request itself sent `allow_truncation: null`. A 422 for a
+> generator the list does not declare is a plain fetch failure, not a shortfall refusal.
+> `dataset_shortfall` and `current_dataset` follow the LOADED data (APD-CASCOR-013): kept on
+> `reset()` and on a start that retains the data, replaced by a new fetch, and kept while ANY
+> fetched partition is still loaded (ruled 2026-09-24) -- inline tensors clear them only once
+> train, val and test have all been replaced.
 
 ### Key Entry Points
 

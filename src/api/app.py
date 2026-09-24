@@ -18,7 +18,7 @@ from juniper_service_core import enforce_auth_posture
 from pydantic_core import PydanticSerializationError
 
 from api import provenance
-from api.lifecycle.manager import _TRUNCATABLE_GENERATORS, TrainingLifecycleManager
+from api.lifecycle.manager import _FETCH_PATH_AUTO_START, _TRUNCATABLE_GENERATORS, TrainingLifecycleManager
 from api.middleware import RequestBodyLimitMiddleware, SecurityHeadersMiddleware, SecurityMiddleware
 from api.models.common import error_response
 from api.observability import MetricsAuthMiddleware, PrometheusMiddleware, RequestIdMiddleware, configure_logging, configure_sentry, get_prometheus_app, set_build_info
@@ -551,8 +551,9 @@ async def _auto_start_training(app: FastAPI, settings: Settings) -> None:
         # request. It has already waited for the producer (``wait_for_ready``
         # above), it runs once, and it swallows its failure. If the list cannot be
         # read here the opt-in is WITHHELD for this one request (ruled
-        # 2026-09-22), and there is no later auto-start request to retry on --
-        # the failure recorded below says what to re-issue.
+        # 2026-09-22), and auto-start never runs again on its own -- the failure
+        # recorded below gives auto-start's retry alone: stage the dataset and
+        # start training, or restart the service (``_FETCH_PATH_AUTO_START``).
         allow_truncated = bool(settings.allow_truncated_datasets)
         dataset_params, acceptance_source, wire_stance, caller_refused, opt_in_skipped = await asyncio.to_thread(
             TrainingLifecycleManager._resolve_truncation_stance,
@@ -585,7 +586,7 @@ async def _auto_start_training(app: FastAPI, settings: Settings) -> None:
             # service knob cannot override their own value). Logged at ERROR
             # because it is actionable, recorded because a log line is not a
             # surface, and then swallowed like every other auto-start failure.
-            fetch_failure = TrainingLifecycleManager._describe_dataset_fetch_failure(exc, allow_truncated=wire_stance, caller_refused=caller_refused, opt_in_skipped=opt_in_skipped, deployment_flag_on=allow_truncated)
+            fetch_failure = TrainingLifecycleManager._describe_dataset_fetch_failure(exc, allow_truncated=wire_stance, caller_refused=caller_refused, opt_in_skipped=opt_in_skipped, deployment_flag_on=allow_truncated, fetch_path=_FETCH_PATH_AUTO_START)
             logger.error("Auto-start failed: %s", fetch_failure)
             _record_failure(fetch_failure)
             return
@@ -598,7 +599,11 @@ async def _auto_start_training(app: FastAPI, settings: Settings) -> None:
         # run training on a partial dataset reported ``dataset_shortfall: null``
         # -- indistinguishable over the API from one that got everything it asked
         # for, so its score carried no mark of the data behind it. The log line
-        # and the pollable annotation are both emitted, with the same source.
+        # and the pollable annotation come from one source: ``start_training``
+        # logs this annotation when it binds the tensors below. It is NOT logged
+        # here: that said a run was training on a partial dataset before the
+        # artifact was even converted, and stayed in the log when the artifact
+        # was then refused (cascor#678 follow-up, item 8).
         #
         # ``dataset_id`` rides along because the deployment default above can
         # change the params and therefore the content-addressed id; an annotation
@@ -612,7 +617,6 @@ async def _auto_start_training(app: FastAPI, settings: Settings) -> None:
         # (a refused or malformed artifact, a network that cannot be built) leaves
         # no annotation behind: it binds no data, so there is nothing to describe.
         meta = result.get("meta") or {}
-        lifecycle._log_dataset_shortfall(meta, acceptance_source=acceptance_source)
         dataset_shortfall = TrainingLifecycleManager._build_dataset_shortfall(meta, dataset_id=dataset_id, acceptance_source=acceptance_source)
 
         # Reuse the manager's ingestion rather than re-reading the keys here. A

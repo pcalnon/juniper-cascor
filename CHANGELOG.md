@@ -183,6 +183,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Operator docs: the flag's note in `AGENTS.md` and the `dataset_shortfall` entry in
   `docs/api/JUNIPER_CASCOR_API_REFERENCE.md`. Pinned by
   `src/tests/unit/api/test_truncatable_generators.py` plus new arms in the two truncation suites.
+- **#678's follow-ups: `dataset_shortfall` stays while any fetched split is loaded, and each
+  refusal says what its own path can do** (APD-CASCOR-013, APD-CASCOR-008; from #678's
+  post-merge validation). Corrects two statements in the two entries above: auto-start's retry
+  is not "a restart" alone, and inline tensors no longer always make the annotation `null`.
+  - **OWNER RULING 2026-09-24, extending APD-CASCOR-013: "keep while fetched splits stay".**
+    `X_val` / `X_test` are retain-on-omit (cascor#582), so an inline train-only start after a
+    partial fetch early-stopped on that fetch's val and reported on its test, while
+    `dataset_shortfall` and `current_dataset` both said `null` -- the denial APD-CASCOR-007
+    removed. The manager now records which partitions the loaded record describes
+    (`_described_partitions`, rolled back with a live swap). The fetch's annotation and
+    `current_dataset` stay while ANY of its partitions is loaded and clear only once train, val
+    and test have all been replaced, in one start or across several. A new fetch replaces
+    everything; `reset()` and a start on retained data keep it. **Visible change**: after such
+    a start `current_dataset` names the fetch, where it read `{"dataset_type": null}` (or the
+    in-process spiral's config).
+  - **A withheld opt-in's refusal gives its own path's retry, and no other's.** A failed start
+    stays staged (start again), a live swap stages nothing (re-issue it), and auto-start never
+    runs again on its own (stage the dataset and start, or restart). The remedy listed all
+    three, so auto-start was told its dataset was still staged.
+  - **Every refusal remedy begins "To accept it,".** canopy's `_producer_detail_from_refusal`
+    cuts juniper-data's sentence out at that phrase. #678's WITHHELD remedy began "Retry once",
+    so canopy showed about 400 characters of cascor's advice as the producer's own words.
+  - **A caller's `allow_truncation: null` gets its own remedy whatever the flag.** With the flag
+    off it was told to set `JUNIPER_CASCOR_ALLOW_TRUNCATED_DATASETS=true`, which cannot change
+    the outcome: the deployment default never overrides a key the request carries.
+  - **A 422 for a generator the list does not declare is a plain
+    `juniper-data fetch failed: ...`**, with no refusal token. Such a generator cannot be
+    short, so an ordinary parameter error (`spiral` with `n_spirals=1`) no longer opens
+    canopy's partial-data prompt or calls the producer inconsistent. With the flag off the list
+    is never read, so that case is unchanged.
+  - **A listing in which ANY entry lacks a schema is a failed read.** Skipping the entry
+    memoised a smaller set for the life of the process, and that generator was never sent the
+    opt-in again.
+  - **The shortfall is logged once its data is bound, on both fetch paths.** A refused artifact
+    no longer leaves "this run is training on a partial dataset" in the log. A descriptor the
+    log cannot format is reported rather than raised, because the data is already loaded.
+
+  Pinned under `src/tests/unit/api/`: `test_shortfall_lifecycle.py` (the ruling's full matrix
+  through the real fetch -- train-only, train+val, train+test, all three, across several
+  starts, then a new fetch -- and the swap rollback of the new slot), `test_truncatable_generators.py`,
+  `test_auto_start_shortfall.py` (including the listing client's URL, key, timeout and retries,
+  which nothing pinned) and `test_allow_truncated_datasets.py` (every refusal branch through a
+  verbatim copy of canopy's parser).
 - **`lockfile-update.yml` regenerated `requirements.lock` alone, so every dependency bump drifted
   `requirements-cpu.lock`** -- the container image's lock, which is *derived* from the GPU lock via
   `--constraint requirements.lock`. Nothing reported it: the CI check asserts only that every image
