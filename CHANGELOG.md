@@ -114,6 +114,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A start-fresh replaced every applied training param with an engine default (F2).**
+  `_start_fresh_reset_locked` discards the model. Create-on-start then rebuilt the network from
+  `create_simple_config`'s defaults, so a param applied just before the start-fresh was silently
+  lost. juniper-canopy's restart modal applies the operator's edits and then restarts, so with
+  **Start fresh** on, every edit was dropped. juniper-ml's A-N2 run observed `max_iterations` /
+  `output_epochs` / `candidate_epochs` / `max_hidden_units` at 8 / 60 / 40 / 32 before the restart
+  and 1000000 / 10000 / 400 / 10 after it.
+  - Following the owner's ruling of 2026-09-24 ("apply the edits after the fresh rebuild"), the
+    reset now captures the discarded network's params: `get_training_params()` less the derived
+    `epochs_max` and the lifecycle's `auto_snap_*`.
+  - `start_training` re-applies them to the rebuilt network through `_apply_params_unlocked`, so
+    they get the same whitelist, nested setters and atomic rollback as a `PATCH`. The status
+    projection is re-synced.
+  - The start body's own params still land on top.
+  - The weights, topology, metrics and history are still discarded, and snapshots are still
+    preserved.
+  - `src/tests/unit/api/test_start_fresh_carries_params.py` covers the manager and the
+    `PATCH`-then-start-fresh route sequence canopy sends. It was mutation-checked at five sites.
 - **`src/profiling/logging_utils.py` raised `TypeError` at every emit, and logged at levels cascor
   does not have** (cascor#573, roadmap P1.4 — the "fix the levels" half of owner decision 8). All
   five `logger.log(level, msg)` sites used the stdlib signature, but every cascor call site binds the

@@ -2486,7 +2486,10 @@ class TrainingLifecycleManager:
                 (a clean-launch-equivalent reset via
                 :meth:`_start_fresh_reset_locked`) so training begins with a
                 vanilla, untrained network created from the dataset dims.
-                On-disk snapshot artifacts are never touched. When False
+                The discarded network's applied training params are carried
+                onto the rebuilt one (F2, owner ruling 2026-09-24), so an edit
+                applied just before a start-fresh survives it; body params
+                still apply on top. On-disk snapshot artifacts are never touched. When False
                 (default) the current model and its metrics/history are
                 RETAINED, so training continues the existing model — the
                 cross-dataset continual-training use case (Q4 use-case 1).
@@ -2587,8 +2590,11 @@ class TrainingLifecycleManager:
             # rebuilds a vanilla network from the (new) dataset dims. On-disk
             # snapshots are preserved. Default (start_fresh=False) leaves the
             # current model + metrics/history intact — continue-training.
+            # The discarded network's applied params come back from the reset,
+            # to be re-applied once the vanilla network exists (F2, below).
+            carried_params: Dict[str, Any] = {}
             if start_fresh:
-                self._start_fresh_reset_locked()
+                carried_params = self._start_fresh_reset_locked()
 
             # Training-start diagnosis 2026-07-09 (PR-B): with ``auto_start``
             # defaulting off, nothing creates a network before the first
@@ -2610,6 +2616,17 @@ class TrainingLifecycleManager:
                     create_cfg["output_size"],
                 )
                 self._create_network_locked(**create_cfg)
+
+            # F2 (owner ruling 2026-09-24): start-fresh discards the model, not the
+            # operator's params. create-on-start builds from ``create_simple_config``'s
+            # defaults, so without this every param applied before a start-fresh --
+            # the restart modal applies its edits, THEN restarts -- was silently
+            # replaced by an engine default (observed: max_hidden_units 32 -> 10,
+            # output_epochs 60 -> 10000). Re-applied through the same whitelist,
+            # nested setters and atomic rollback as a PATCH; the start body's own
+            # params (``network_kwargs`` below) still land on top.
+            if carried_params:
+                self._reapply_carried_params_locked(carried_params)
 
             # P2-1d: cold-swap parity with swap_dataset_live. If the dataset
             # is smaller than the network's input/output dims (e.g., after a
@@ -2985,7 +3002,12 @@ class TrainingLifecycleManager:
         self.logger.info("Metrics clear undone (%d rows restored)", count)
         return {"status": "restored", "restored_count": count, "undo_available": False}
 
-    def _start_fresh_reset_locked(self) -> None:
+    #: ``get_training_params()`` keys a start-fresh does NOT carry onto the rebuilt
+    #: network. ``epochs_max`` is derived and read-only (C2b), and the ``auto_snap_*``
+    #: flags live on the lifecycle, which the reset does not discard.
+    _START_FRESH_UNCARRIED_PARAMS = frozenset({"epochs_max", "auto_snap_best", "auto_snap_min_epochs"})
+
+    def _start_fresh_reset_locked(self) -> Dict[str, Any]:
         """C5 (Q4 use-case 2 / U-1): clean-launch reset for a start-fresh run.
 
         Discards the in-memory model and every piece of retained training data
@@ -2996,10 +3018,18 @@ class TrainingLifecycleManager:
         start-fresh discards the working model, not the operator's saved
         snapshots.
 
+        **F2 (owner ruling 2026-09-24): nor the operator's applied params.** The
+        discarded network's training params (``get_training_params()`` less
+        ``_START_FRESH_UNCARRIED_PARAMS``) are captured before the discard and
+        RETURNED, and ``start_training`` re-applies them to the rebuilt network.
+        The reset itself cannot re-apply them: the vanilla network does not exist
+        until create-on-start. Returns ``{}`` when there was no network to discard.
+
         Assumes ``self._lock`` is held (called inline from ``start_training``);
         combines ``delete_network`` + ``reset`` + ``restore_for_retrain``'s
         reset scope without re-entering the non-reentrant lock.
         """
+        carried = {k: v for k, v in self.get_training_params().items() if k not in self._START_FRESH_UNCARRIED_PARAMS}
         # Discard the working model (mirrors delete_network under the held lock).
         self.model = None
         self._params = None
@@ -3017,6 +3047,20 @@ class TrainingLifecycleManager:
         self.state_machine.handle_command(Command.RESET)
         self.training_state.update_state(status="Stopped", phase="Idle", current_epoch=0, current_step=0)
         self.logger.info("start_fresh: discarded model + cleared retained metrics/history (snapshots on disk preserved)")
+        return carried
+
+    def _reapply_carried_params_locked(self, carried_params: Dict[str, Any]) -> None:
+        """F2: apply the params ``_start_fresh_reset_locked`` carried onto the rebuilt network.
+
+        Assumes ``self._lock`` is held and the vanilla network exists (``start_training``
+        calls this right after create-on-start). A key the rebuilt network does not take
+        is logged, not raised: ``get_training_params`` is documented to return only
+        updatable keys, so a skip means the two lists have drifted apart.
+        """
+        carried = self._apply_params_unlocked(carried_params)
+        self.logger.info("start_fresh: re-applied %d params from the discarded network: %s", len(carried["applied"]), carried["applied"])
+        if carried["skipped"]:
+            self.logger.warning("start_fresh: params the rebuilt network did not take: %s", carried["skipped"])
 
     # ------------------------------------------------------------------
     # Status & metrics
