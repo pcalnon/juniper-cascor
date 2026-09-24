@@ -37,6 +37,13 @@
 #        CPU index serves `torch-2.14.0+cpu-cp314-cp314-manylinux_2_28_aarch64.whl`. The native
 #        extensions that matter: numpy, pydantic-core, h5py, the matplotlib chain (contourpy,
 #        kiwisolver, pillow, fonttools), uvloop, httptools, watchfiles, websockets, pyyaml.
+#      * SERVE AND VERSION (2026-09-23). ``util/check_image_serves.py`` starts the image as deployed
+#        and requires liveness on :8200 plus ONE version on every surface: installed metadata, the
+#        ``/v1/health`` body, and ``meta.version`` of an enveloped response (``/v1/workers``). The
+#        image ships no ``juniper_cascor`` package, so there is no ``__version__`` to read, and the
+#        envelope is the surface that went stale: 0.11.0 stamps ``meta.version: 0.6.0`` on every
+#        enveloped response (juniper-cascor#668, fixed by #672). On a release the version is the
+#        TAG's. Runs on the PR arm and against each pushed digest, before the digest is exported.
 #####################################################################################################################################################################################################
 
 name: Publish Container Image
@@ -55,6 +62,7 @@ on:
       - "src/**"
       - "util/check_image_cpu_only.py"
       - "util/check_image_no_secrets.py"
+      - "util/check_image_serves.py"
       - ".github/workflows/publish-image.yml"
   workflow_dispatch:
     inputs:
@@ -204,6 +212,21 @@ jobs:
           echo "--- service modules"
           docker run --rm "${img}" python -c 'import cascade_correlation, api, snapshots; print("modules importable")'
 
+      # Importing the service modules does not prove the service RUNS, or that it says what it is.
+      # This starts the image exactly as a deployment does -- its own CMD -- and requires liveness
+      # on :8200 plus one version everywhere: metadata, /v1/health, and the envelope's meta.version
+      # (/v1/workers answers without a backing service). The same script runs on the publish path
+      # below; running it here too means the PR that edits it exercises it, not the first release.
+      - name: Serve and version check (build-only runs)
+        if: github.event_name != 'release' && !inputs.push
+        env:
+          APP_VERSION: ${{ steps.prov.outputs.app_version }}
+        run: |
+          python3 util/check_image_serves.py \
+            --image 'cascor-smoke:${{ matrix.arch }}' \
+            --dist juniper-cascor --port 8200 --enveloped-path /v1/workers \
+            --expect-version "${APP_VERSION}"
+
       # The smoke test never runs on a publish, so the CPU-only contract is ALSO asserted on the
       # path that ships: pull the image just pushed -- by digest, on this same native arch. A
       # failure fails this arch's job, the merge job is skipped, and no tag is ever written.
@@ -236,6 +259,36 @@ jobs:
           # zero tests for six months.
           echo "--- the application imports"
           docker run --rm "${ref}" python -c 'import cascade_correlation; print("    cascade_correlation imports")'
+
+      # "It imports" is not "it serves", and neither is "it is the version it claims". The 0.11.0
+      # image imports, answers /v1/health with 0.11.0, and stamps meta.version 0.6.0 on every
+      # enveloped response -- every check above passed it. So the image just pushed must start as
+      # deployed, answer liveness, and report ONE version everywhere; on a release, the TAG's,
+      # because the merge job names the image after the tag. Before Export digest, so a failing
+      # arch never reaches the merge job and no tag is written.
+      - name: Verify pushed image serves and reports its version (publish runs)
+        if: github.event_name == 'release' || inputs.push
+        env:
+          APP_VERSION: ${{ steps.prov.outputs.app_version }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          digest='${{ steps.build.outputs.digest }}'
+          if [ -z "${digest}" ]; then
+            echo "::error::build produced no digest -- nothing to verify"
+            exit 1
+          fi
+          expect="${APP_VERSION}"
+          if [ "${GITHUB_EVENT_NAME}" = "release" ]; then
+            expect="${RELEASE_TAG#v}"
+            if [ "${expect}" != "${APP_VERSION}" ]; then
+              echo "::error::release ${RELEASE_TAG} names ${expect}, but pyproject.toml says ${APP_VERSION} -- the image would be tagged ${expect} and report ${APP_VERSION}"
+              exit 1
+            fi
+          fi
+          python3 util/check_image_serves.py \
+            --image "${REGISTRY}/${IMAGE_NAME}@${digest}" \
+            --dist juniper-cascor --port 8200 --enveloped-path /v1/workers \
+            --expect-version "${expect}"
 
       - name: Export digest
         if: github.event_name == 'release' || inputs.push

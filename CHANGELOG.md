@@ -34,6 +34,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **The publish path asserts that the image serves, and that it is the version it is tagged**
+  (`util/check_image_serves.py`, new; `publish-image.yml`). The published `juniper-cascor:0.11.0`
+  imports, answers `/v1/health` with `0.11.0`, and stamps `meta.version: "0.6.0"` on every
+  enveloped response (#668, fixed by #672), and every existing publish-path check passed it. The
+  script starts the image as deployed, with its own `CMD`. It requires liveness on :8200, plus one
+  version across the installed metadata, the `/v1/health` body and `/v1/workers`' `meta.version`.
+  On a release, that version is the one in the **tag**. The image ships no `juniper_cascor` package,
+  because the Dockerfile copies `src/`, so there is no `__version__` to read and the envelope
+  carries the in-image version check. The check runs on the PR arm against the image just built,
+  and on the publish path against each pushed digest before the digest is exported, so a failing
+  arch never reaches the merge job. Run against the published 0.11.0 image, it fails on exactly the
+  envelope: `/v1/workers meta.version 0.6.0 != metadata 0.11.0`. The script is the same one the
+  four other image repos carry. `src/tests/unit/test_check_image_serves.py` (new, 24 tests) needs
+  no Docker. This is item 5 of the juniper-ml container-registry rollout handoff.
 - **`current_dataset` on `GET /v1/training/status` — which dataset is loaded.** Additive.
   `pending_dataset` answered "what changes at the next start" and nothing answered "what is there
   now": `_current_dataset_config` has been tracked since the live-swap work but reached the API only
