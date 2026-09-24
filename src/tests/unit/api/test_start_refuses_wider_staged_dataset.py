@@ -28,7 +28,6 @@ from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pytest
-import torch
 from fastapi.testclient import TestClient
 
 from api.app import create_app
