@@ -26,6 +26,10 @@ builds is pinned (its URL, key, timeout and retries -- item 6); a withheld opt-i
 refusal gives auto-start's own retry and no other path's (item 7); and the
 shortfall reaches the training log only once ``start_training`` binds its data, so a
 refused artifact leaves no line saying a run is training on it (item 8).
+
+#688's validation adds the other fetch order -- a clean auto-start fetch after a
+partial one reports ``null`` -- and replaces the refusal stand-ins with juniper-data's
+own text.
 """
 
 from __future__ import annotations
@@ -42,6 +46,7 @@ from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pytest
+from juniper_data_client import JuniperDataValidationError
 
 from api.app import _auto_start_training
 from api.lifecycle.manager import _TRUNCATABLE_GENERATORS, TrainingLifecycleManager
@@ -50,6 +55,19 @@ from cascor_constants.constants_api.constants_api_defaults import _PROJECT_API_S
 pytestmark = pytest.mark.unit
 
 _PARTIAL_META: Dict[str, Any] = {"truncation": {"unit": "symbols", "cap": 14, "requested": 503, "imported": 14}}
+
+# juniper-data's own refusal, as juniper-data-client 0.5.0 raises it (captured from a
+# juniper-data main server by juniper-ml
+# ``util/ad-hoc/2026-09-24_cascor688_realjd_error_texts.py``). It replaces the stand-in
+# "HTTP 422 allow_truncation", which no longer reads as a refusal: the check keys on
+# juniper-data's remedy sentence since #688's validation, not on a field's name.
+_REFUSAL_TEXT = "Validation error (422): The requested universe is 3 symbols, over the 2 symbols cap. Re-submit with allow_truncation=true (or set JUNIPER_DATA_EQUITIES_ALLOW_TRUNCATION=true) to import the first 2 symbols. The resulting dataset will be permanently annotated as truncated."
+
+
+def _refusal() -> JuniperDataValidationError:
+    """juniper-data's shortfall refusal, as auto-start's ``create_dataset`` receives it."""
+    return JuniperDataValidationError(_REFUSAL_TEXT, status_code=422)
+
 
 # juniper-data's ``GET /v1/generators``, reduced to what the stance resolver reads.
 # Since APD-CASCOR-008 the truncatable set is DERIVED from this -- a generator is
@@ -292,7 +310,7 @@ class TestAutoStartForwardsTheStance:
         to get one string for all three, including "a failed start leaves its
         dataset staged", which is false here: auto-start stages nothing.
         """
-        manager, _ = await _run_auto_start({}, deployment_flag=True, listing=ConnectionError("connection refused"), create_error=RuntimeError("HTTP 422 allow_truncation"))
+        manager, _ = await _run_auto_start({}, deployment_flag=True, listing=ConnectionError("connection refused"), create_error=_refusal())
         failure = manager._auto_start_failure
         assert failure is not None
         assert failure.startswith(_PROJECT_API_SHORTFALL_REFUSAL_TOKEN)
@@ -309,12 +327,13 @@ class TestAutoStartForwardsTheStance:
         already on. Since the cascor#678 follow-up (item 4) it is not dressed as a
         shortfall refusal at all: a generator whose schema has no such parameter
         cannot be short, so the token -- which opens canopy's partial-data prompt --
-        would offer options that re-send a request that fails the same way.
+        would offer options that re-send a request that fails the same way. The text
+        is a REAL refusal, so it is the NOT_TRUNCATABLE reason that makes it plain.
         """
         listing = [{"name": "equities", "schema": {"properties": {"tickers": {"type": "array"}}}}]
-        manager, sent = await _run_auto_start({}, deployment_flag=True, listing=listing, create_error=RuntimeError("HTTP 422 allow_truncation"))
+        manager, sent = await _run_auto_start({}, deployment_flag=True, listing=listing, create_error=_refusal())
         assert sent["listing_calls"] == 1
-        assert manager._auto_start_failure == "juniper-data fetch failed: HTTP 422 allow_truncation"
+        assert manager._auto_start_failure == f"juniper-data fetch failed: {_REFUSAL_TEXT}"
 
     async def test_the_listing_client_carries_the_auto_start_url_and_key(self) -> None:
         """cascor#678 follow-up, item 6. Kills M22 (``api_key=None``) and M23 (a hard-coded URL).
@@ -418,8 +437,9 @@ class TestAutoStartAnnotatesTheRun:
         """The pollable annotation and the log line say the same thing, from one source -- once the data is bound.
 
         Through the REAL ``start_training``, which logs the annotation it is handed
-        when it binds the tensors (cascor#678 follow-up, item 8). auto-start used to
-        log it itself, before converting the artifact.
+        once it has bound the tensors and no staged dataset has replaced them
+        (cascor#678 follow-up, item 8; #688's validation). auto-start used to log it
+        itself, before converting the artifact.
         """
         manager = TrainingLifecycleManager()
         try:
@@ -458,6 +478,30 @@ class TestAutoStartAnnotatesTheRun:
             annotation = manager.get_status()["dataset_shortfall"]
             assert annotation is not None and annotation["dataset_id"] == "auto-1"
             assert "DATASET SHORTFALL" in caplog.text
+        finally:
+            manager.shutdown()
+
+    async def test_a_clean_auto_start_fetch_clears_the_annotation_a_partial_one_left(self) -> None:
+        """#688's validation (mutant NV3): the other order -- a PARTIAL fetch first, then a CLEAN one.
+
+        A fetch is bound wholesale, annotation included, so a clean fetch binds
+        ``dataset_shortfall: null``. A bind that wrote the annotation only when it
+        had one left the partial fetch's shortfall describing the clean fetch's
+        data, and nothing tested that order.
+        """
+        manager = TrainingLifecycleManager()
+        try:
+            with patch.object(manager, "_run_training"):
+                await _run_auto_start({}, deployment_flag=False, meta=_PARTIAL_META, arrays=_artifact(), lifecycle=manager)
+                if manager._training_future is not None:
+                    manager._training_future.result(timeout=10)
+                assert manager.get_status()["dataset_shortfall"] is not None, "the partial fetch left no annotation -- the arm proves nothing"
+                await _run_auto_start({}, deployment_flag=False, meta={}, arrays=_artifact(), lifecycle=manager)
+                if manager._training_future is not None:
+                    manager._training_future.result(timeout=10)
+            assert manager._auto_start_failure is None, manager._auto_start_failure
+            assert manager.get_status()["dataset_shortfall"] is None
+            assert manager.get_metrics()["dataset_shortfall"] is None
         finally:
             manager.shutdown()
 
@@ -510,11 +554,7 @@ class TestAutoStartFailureIsQueryable:
 
     async def test_a_shortfall_refusal_is_recorded_with_its_remedy(self) -> None:
         """The 422 case: logged at ERROR, recorded on the run, and still swallowed."""
-        manager, _ = await _run_auto_start(
-            {},
-            deployment_flag=False,
-            create_error=RuntimeError("HTTP 422: shares outstanding could not be resolved. Re-submit with allow_truncation=true"),
-        )
+        manager, _ = await _run_auto_start({}, deployment_flag=False, create_error=_refusal())
         assert manager._auto_start_failure is not None
         assert manager._auto_start_failure.startswith(_PROJECT_API_SHORTFALL_REFUSAL_TOKEN)
         assert "--allow-truncated-datasets" in manager._auto_start_failure
@@ -528,11 +568,7 @@ class TestAutoStartFailureIsQueryable:
         auto-start correctly withholds its default, so pointing the operator at
         the service knob would send them to one their own value overrides.
         """
-        manager, sent = await _run_auto_start(
-            {"allow_truncation": False},
-            deployment_flag=True,
-            create_error=RuntimeError("HTTP 422 allow_truncation"),
-        )
+        manager, sent = await _run_auto_start({"allow_truncation": False}, deployment_flag=True, create_error=_refusal())
         assert sent["params"]["allow_truncation"] is False
         assert manager._auto_start_failure is not None
         assert "explicitly refused" in manager._auto_start_failure

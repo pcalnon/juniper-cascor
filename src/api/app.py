@@ -600,10 +600,12 @@ async def _auto_start_training(app: FastAPI, settings: Settings) -> None:
         # -- indistinguishable over the API from one that got everything it asked
         # for, so its score carried no mark of the data behind it. The log line
         # and the pollable annotation come from one source: ``start_training``
-        # logs this annotation when it binds the tensors below. It is NOT logged
-        # here: that said a run was training on a partial dataset before the
-        # artifact was even converted, and stayed in the log when the artifact
-        # was then refused (cascor#678 follow-up, item 8).
+        # logs this annotation once it has bound the tensors below AND a dataset
+        # an operator staged meanwhile has had its turn: that staged fetch either
+        # replaces this one, and logs its own, or refuses the start. It is NOT
+        # logged here: that said a run was training on a partial dataset before
+        # the artifact was even converted, and stayed in the log when the
+        # artifact was then refused (cascor#678 follow-up, item 8).
         #
         # ``dataset_id`` rides along because the deployment default above can
         # change the params and therefore the content-addressed id; an annotation

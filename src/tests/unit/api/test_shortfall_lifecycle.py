@@ -47,7 +47,8 @@ What each class proves, and against what:
   (in one start or across several), and a new fetch replaces it outright.
 * ``TestTheShortfallIsLoggedOnceItsDataIsBound`` -- the training log says a run is on
   a partial dataset only once that data is bound, never for an artifact refused
-  after the producer answered.
+  after the producer answered -- and, for a fetch handed in, only if a staged fetch
+  in the same start neither replaced it nor refused the start (#688's validation).
 * ``TestTheLiveSwap`` -- a swap's rollback restores the annotation AND which
   partitions it stands on.
 """
@@ -427,6 +428,23 @@ class TestKeepWhileFetchedSplitsStay:
         _start(mgr, **_inline("val", "test"))
         assert mgr.get_status()["current_dataset"] == config
 
+    def test_the_routes_spiral_does_not_rename_a_fetch_whose_splits_are_still_loaded(self, mgr):
+        """#688's validation (mutant NV5): a NAMED train-only start while a fetch's val and test are loaded.
+
+        The start route's in-process ``spiral`` is exactly this: ``X`` / ``y`` with
+        ``dataset_config={"dataset_type": "spiral", ...}`` and no val or test. The run
+        still early-stops on, and reports from, the fetch's rows, so the record -- its
+        name as well as its annotation -- stays the fetch's. Adopting the caller's
+        name there would label the fetch's rows as spiral data; no arm passed a
+        ``dataset_config`` while splits were left, so nothing caught it.
+        """
+        fetched = _fetch_partial(mgr)
+        _start(mgr, **_inline("train"), dataset_config={"dataset_type": "spiral", "n_spirals": 2})
+        assert mgr._val_x is fetched["val"] and mgr._test_x is fetched["test"], "the fetch's val and test are no longer loaded -- the arm proves nothing"
+        status = mgr.get_status()
+        assert status["current_dataset"] == _FETCHED_CONFIG
+        assert status["dataset_shortfall"] == fetched["annotation"]
+
     def test_a_fetch_handed_in_replaces_every_split_even_one_it_did_not_supply(self, mgr, caplog: pytest.LogCaptureFixture):
         """A CLEAN staged fetch, then a caller's own PARTIAL fetch of train and val -- the post-merge validation's case.
 
@@ -578,6 +596,46 @@ class TestTheShortfallIsLoggedOnceItsDataIsBound:
         with patch.object(mgr, "_log_dataset_shortfall", side_effect=_log_and_look), _producer(meta=_PARTIAL_META, arrays=_three_partition_artifact()):
             _start(mgr)
         assert seen == {"train_rows": 20, "dataset_id": "partial-1"}
+
+    @pytest.mark.parametrize(("staged_meta", "lines", "reported"), [({}, 0, None), (_PARTIAL_META, 1, "staged-1")], ids=["clean-staged", "partial-staged"])
+    def test_a_fetch_handed_in_is_logged_only_if_no_staged_fetch_replaces_it(self, mgr, caplog: pytest.LogCaptureFixture, staged_meta, lines, reported):
+        """#688's validation, scenario P4a: a dataset is staged while auto-start fetches its own.
+
+        ``start_training`` binds auto-start's fetch (``as_fetch``) and then consumes
+        the staged dataset, which replaces every split and the record. The handed-in
+        annotation used to be logged as it was bound, so after a CLEAN staged fetch
+        the log said the run was on a partial dataset while the status said
+        ``dataset_shortfall: null``. Only the data the run goes ahead on is restated
+        now: nothing after a clean staged fetch, the staged fetch's own shortfall --
+        once -- after a partial one.
+        """
+        handed_in = TrainingLifecycleManager._build_dataset_shortfall(_PARTIAL_META, dataset_id="auto-1", acceptance_source=None)
+        mgr._pending_dataset_config = dict(_FETCHED_CONFIG)
+        with caplog.at_level(logging.WARNING), _producer(meta=staged_meta, arrays=_three_partition_artifact(), dataset_id="staged-1"):
+            _start(mgr, **_inline("train", "val", "test"), dataset_config={"dataset_type": "equities", "tickers": ["AUTO"]}, dataset_shortfall=dict(handed_in), as_fetch=True)
+        assert mgr._train_x.shape[0] == 20, "the staged fetch did not replace the fetch handed in -- the arm proves nothing"
+        assert (mgr.get_status()["dataset_shortfall"] or {}).get("dataset_id") == reported
+        assert caplog.text.count("DATASET SHORTFALL") == lines
+
+    def test_a_fetch_handed_in_is_not_logged_when_the_staged_fetch_refuses_the_start(self, mgr, caplog: pytest.LogCaptureFixture):
+        """#688's validation, scenario P4b: the dataset staged meanwhile is wider than the network.
+
+        auto-start builds its network from its own fetch, then starts; the staged
+        dataset is refused as too wide for that network (F1), after auto-start's
+        fetch was bound. The log used to say a run was training on that partial
+        fetch -- for a start that failed. Nothing is logged now. The status still
+        describes what is loaded, the handed-in fetch, and the staged dataset stays
+        staged for a start-fresh.
+        """
+        handed_in = TrainingLifecycleManager._build_dataset_shortfall(_PARTIAL_META, dataset_id="auto-1", acceptance_source=None)
+        mgr.create_network(input_size=2, output_size=2)
+        mgr._pending_dataset_config = dict(_FETCHED_CONFIG)
+        wide = {key: np.hstack([value, value[:, :1]]) if key.startswith("X_") else value for key, value in _three_partition_artifact().items()}
+        with caplog.at_level(logging.WARNING), _producer(meta={}, arrays=wide, dataset_id="staged-1"), pytest.raises(ValueError, match=r"^\[start_fresh_required\]"):
+            _start(mgr, **_inline("train", "val", "test"), dataset_config={"dataset_type": "equities", "tickers": ["AUTO"]}, dataset_shortfall=dict(handed_in), as_fetch=True)
+        assert "DATASET SHORTFALL" not in caplog.text
+        assert mgr.get_status()["dataset_shortfall"] == handed_in
+        assert mgr.get_status()["pending_dataset"] is not None
 
     def test_a_descriptor_the_log_cannot_format_does_not_undo_the_load(self, mgr, caplog: pytest.LogCaptureFixture):
         """The log runs after the data is bound, so it must not raise out of a completed load.

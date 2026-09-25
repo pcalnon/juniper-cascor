@@ -216,10 +216,34 @@ _TRUNCATABLE_GENERATORS = _TruncatableGenerators()
 _OPT_IN_SKIPPED_LIST_UNREADABLE = "list_unreadable"
 _OPT_IN_SKIPPED_NOT_TRUNCATABLE = "not_truncatable"
 # ...and this one applies whatever the flag. The caller's own request carried
-# ``allow_truncation`` with no value (``null``, or a blank string after a JSON or
-# YAML crossing): it deferred to the producer, and this service never overrides a
-# key the request carries, so the setting cannot change the outcome on or off.
+# ``allow_truncation: null``: it deferred to the producer, and this service never
+# overrides a key the request carries, so the setting cannot change the outcome on
+# or off. Only ``null`` defers. A blank string -- like any value juniper-data
+# rejects -- is NOT a deferral: juniper-data answers it as a parameter error (400,
+# "Input should be a valid boolean"), which the describer reports as a plain fetch
+# failure, so it records no reason here.
 _OPT_IN_SKIPPED_CALLER_DEFERRED = "caller_deferred"
+
+# How juniper-data reads ``allow_truncation``, which is how ``_as_bool_stance`` must read
+# it. Every params class that declares the field types it ``bool | None`` with pydantic's
+# default LAX coercion, with no ``strict`` and no validator on the field:
+# ``EquitiesParams`` (``juniper_data/generators/equities/params.py:107``, inherited by
+# ``EquitiesSeqParams``) and ``CsvImportParams`` (``generators/csv_import/params.py:66``).
+# pydantic-core's ``str_as_bool`` (``src/input/shared.rs``) accepts exactly these twelve
+# strings, ASCII-case-insensitively and WITHOUT stripping whitespace. Its only other
+# non-bool spellings are the numbers 0 and 1, float or int. Anything else is a 400.
+_PRODUCER_BOOL_TRUE = frozenset({"1", "on", "t", "true", "y", "yes"})
+_PRODUCER_BOOL_FALSE = frozenset({"0", "off", "f", "false", "n", "no"})
+
+# How the describer recognises a shortfall refusal: the remedy sentence both of
+# juniper-data's refusals carry -- ``InputTooLargeError`` and ``IncompleteDataError``
+# in ``juniper_data/core/limits.py`` -- and, when the error carries a status, the
+# 422 juniper-data answers them with. The field names are NOT enough: juniper-data
+# answers a parameter its generator rejects with a 400 that names the field
+# (``incomplete_rows='keep'``, a blank ``allow_truncation``), and matching on them
+# dressed those 400s as refusals (#688's validation, against a real juniper-data).
+_PRODUCER_REFUSAL_REMEDY = "Re-submit with allow_truncation=true"
+_PRODUCER_REFUSAL_STATUS = 422
 
 # Which dataset-fetch path a refusal came from. A withheld opt-in is retried
 # differently on each, so the describer is told which one it describes and gives
@@ -2559,14 +2583,9 @@ class TrainingLifecycleManager:
             self._current_dataset_config = dict(dataset_config) if dataset_config else None
             self._dataset_shortfall = dataset_shortfall
             self._described_partitions = filled if (self._current_dataset_config or dataset_shortfall is not None) else frozenset()
-            if dataset_shortfall is not None:
-                # Logged now that the tensors it describes are bound, never before
-                # (cascor#678 follow-up, item 8): auto-start used to log it before
-                # converting the artifact, so a refused artifact still left the log
-                # saying a run was training on it. Read from the annotation itself
-                # -- it carries the producer's ``truncation`` / ``data_quality`` under
-                # the keys the log reads -- so the log and the pollable field agree.
-                self._log_bound_dataset_shortfall(dataset_shortfall, acceptance_source=dataset_shortfall.get("acceptance_source"))
+            # NOT logged here: a pending staged fetch may still replace all of this,
+            # or refuse. ``start_training`` logs the annotation once that has had its
+            # turn and the annotation is still the one bound (#688's validation).
             return
         if X is not None:
             self._train_x, self._train_y = X, y
@@ -2683,7 +2702,9 @@ class TrainingLifecycleManager:
                 a typed ``TrainingParams`` body into ``**kwargs``. Passing it
                 without ``as_fetch`` raises ``ValueError``: an annotation describes
                 a fetch, and inline tensors are not one. Logged to the training log
-                when its tensors are bound, as ``_reload_dataset`` logs its own.
+                once a pending staged fetch has had its turn, and only if that fetch
+                neither replaced it nor refused the start; the staged fetch logs its
+                own.
                 The SAME lifecycle as ``dataset_config`` (owner rulings 2026-09-23,
                 "follow the loaded data", and 2026-09-24, "keep while fetched
                 splits stay"): both are bound with the fetch, both are replaced by a
@@ -2761,6 +2782,20 @@ class TrainingLifecycleManager:
             if self._pending_dataset_config:
                 self._reload_dataset(fetch_path=_FETCH_PATH_STAGED_START, refuse_wider_than=self._continued_network_dims_locked(start_fresh), **self._pending_dataset_config)
                 self._pending_dataset_config = None
+
+            # A caller's own fetch (``as_fetch``, auto-start's) is restated in the
+            # training log only now, and only if its annotation is still the one
+            # bound: the staged fetch above is the last step that can replace it or
+            # refuse. Logged when the tensors were bound, it said a run was training on
+            # a partial dataset that a clean staged fetch had just replaced -- the
+            # status said ``dataset_shortfall: null`` -- or beside a start the staged
+            # fetch then refused (#688's validation, scenarios P4a / P4b). The staged
+            # fetch logs its own. Read from the annotation itself: it carries the
+            # producer's ``truncation`` / ``data_quality`` under the keys the log
+            # reads, so the log and the pollable field agree (cascor#678 follow-up,
+            # item 8).
+            if dataset_shortfall is not None and self._dataset_shortfall is dataset_shortfall:
+                self._log_bound_dataset_shortfall(dataset_shortfall, acceptance_source=dataset_shortfall.get("acceptance_source"))
 
             if self._train_x is None or self._train_y is None:
                 raise ValueError("Training data not provided")
@@ -4241,14 +4276,25 @@ class TrainingLifecycleManager:
         say so -- the run is about to fail, and the only thing the operator has is
         this line.
 
-        A refusal is recognised by its REMEDY, not its status code: both of
-        juniper-data's refusals -- ``InputTooLargeError`` and ``IncompleteDataError``
-        in ``juniper_data/core/limits.py``, answered 422 with the message as the
-        detail -- say "Re-submit with allow_truncation=true", and the second also
-        names ``incomplete_rows``. A bare "422" is not enough: an ordinary
-        parameter error is a 422 too (``spiral`` with ``n_spirals=1``), and dressed
-        as a refusal it opened canopy's three-way prompt and, with the flag off,
-        told the operator to turn on a knob that cannot fix a bad parameter.
+        A refusal is recognised by juniper-data's own REMEDY SENTENCE
+        (``_PRODUCER_REFUSAL_REMEDY``), which both of its refusals carry --
+        ``InputTooLargeError`` and ``IncompleteDataError`` in
+        ``juniper_data/core/limits.py``, answered 422 with the message as the detail:
+        "Re-submit with allow_truncation=true". When the error also carries a
+        status (juniper-data-client 0.5.0 sets ``status_code``), it must be that
+        422: a 400 echoes the value it rejects, so a bad parameter whose value
+        quotes the sentence is still a bad parameter. An older client's error
+        carries no status, and the sentence alone decides.
+
+        A field name is not enough. juniper-data answers a parameter its generator
+        rejects with a 400 that NAMES the field (``spiral`` with ``n_spirals=1``;
+        ``incomplete_rows='keep'`` and a blank ``allow_truncation`` name truncation
+        fields). Matched on the names ``allow_truncation`` / ``incomplete_rows``, as
+        #688 did, those 400s were dressed as refusals: they opened canopy's
+        three-way prompt and, with the flag off, told the operator to turn on a
+        knob that cannot fix a bad parameter. A bare "422" is not enough either: a
+        request that breaks juniper-data's declared request schema is a 422 with
+        no such sentence.
 
         The refusal already names which symbols were affected, how many rows,
         and both remedies; it is quoted rather than replaced. What is added is
@@ -4268,11 +4314,11 @@ class TrainingLifecycleManager:
         ``opt_in_skipped`` from ``_resolve_truncation_stance``:
 
         * ``_OPT_IN_SKIPPED_CALLER_DEFERRED`` -- the caller's own request carried
-          ``allow_truncation`` with no value, which defers to the producer. This
-          service never overrides a key the request carries, so its setting
-          cannot change the outcome ON OR OFF, and the remedy is the request's
-          own parameter WHATEVER the flag. (With the flag off this used to fall
-          through to the knob remedy, which cannot help.)
+          ``allow_truncation: null``, which defers to the producer. This service
+          never overrides a key the request carries, so its setting cannot change
+          the outcome ON OR OFF, and the remedy is the request's own parameter
+          WHATEVER the flag. (With the flag off this used to fall through to the
+          knob remedy, which cannot help.)
         * ``_OPT_IN_SKIPPED_LIST_UNREADABLE`` (flag on, APD-CASCOR-008) --
           juniper-data's generator list could not be read to confirm the
           generator accepts the opt-in, so by ruling none was sent. The remedy is
@@ -4283,7 +4329,7 @@ class TrainingLifecycleManager:
           does not declare ``allow_truncation`` for this generator. The opt-in
           cannot cure anything there, so the failure is NOT a shortfall refusal:
           it gets the plain ``juniper-data fetch failed`` line, with no token, even
-          when its text mentions the parameter. Dressing it as a refusal opened
+          when its text carries the refusal sentence. Dressing it as a refusal opened
           canopy's three-way prompt, every option of which re-sends a request that
           fails the same way.
 
@@ -4302,7 +4348,7 @@ class TrainingLifecycleManager:
         to the operator as if the producer had written it.
         """
         detail = str(exc)
-        looks_like_shortfall = "allow_truncation" in detail or "incomplete_rows" in detail
+        looks_like_shortfall = _PRODUCER_REFUSAL_REMEDY in detail and getattr(exc, "status_code", None) in (None, _PRODUCER_REFUSAL_STATUS)
         if not looks_like_shortfall or allow_truncated or opt_in_skipped == _OPT_IN_SKIPPED_NOT_TRUNCATABLE:
             return f"juniper-data fetch failed: {detail}"
         if caller_refused:
@@ -4413,27 +4459,46 @@ class TrainingLifecycleManager:
 
     @staticmethod
     def _as_bool_stance(value: Any) -> Optional[bool]:
-        """Read a caller's ``allow_truncation`` as a tri-state: absent, refused, or opted in.
+        """Read a caller's ``allow_truncation`` EXACTLY as juniper-data reads it: opted in, refused, or no stance.
 
         The staged params are a free-form dict that has crossed at least one JSON
-        boundary and possibly a YAML one, so the value may arrive as a string.
-        ``bool("false")`` is ``True`` -- truthiness is not an "is it set" test --
-        so the string forms are read explicitly. Anything unrecognised falls back
-        to truthiness, which is what the producer's own coercion will make of it.
+        boundary and possibly a YAML one, so the value may arrive as a string or a
+        number. ``bool("false")`` is ``True`` -- truthiness is not an "is it set"
+        test -- and truthiness is not what the producer does either. juniper-data
+        validates the field as pydantic's lax ``bool | None`` (``_PRODUCER_BOOL_TRUE``
+        / ``_PRODUCER_BOOL_FALSE`` say where), so this mirrors that rule and nothing
+        looser:
+
+        * ``True`` / ``False`` for a bool, for the numbers ``1`` / ``0`` (int or float),
+          and for the twelve strings pydantic accepts, compared ASCII-case-insensitively
+          and NOT stripped (" true" is a 400 there).
+        * ``None`` -- no stance -- for ``null`` and for every value juniper-data
+          REJECTS: a blank string, "maybe", ``2``, ``0.5``, a padded " true", a list.
+          Such a request fails as a bad parameter (400) before any stance can matter,
+          so it is read as a blank string is: the key is present, so no default
+          applies, and it is not a deferral either (only ``null`` is).
+
+        Until #690's fixup this fell back to truthiness for anything it did not list
+        and stripped whitespace. "f" and "n", which juniper-data reads as False, read
+        as an opt-in, so a caller that refused a partial dataset that way was recorded
+        as accepting it, and the refusal that followed came out as a plain fetch
+        failure with no remedy.
         """
-        if value is None:
-            return None
-        if isinstance(value, bool):
+        if value is None or isinstance(value, bool):
             return value
         if isinstance(value, str):
-            lowered = value.strip().lower()
-            if lowered == "":
-                return None
-            if lowered in {"true", "1", "yes", "on"}:
+            # pydantic compares ASCII-case-insensitively. ``str.lower`` agrees on every string
+            # here: the one non-ASCII code point it folds into ASCII is U+212A KELVIN SIGN
+            # (to "k"), and no spelling has a "k".
+            folded = value.lower()
+            if folded in _PRODUCER_BOOL_TRUE:
                 return True
-            if lowered in {"false", "0", "no", "off"}:
+            if folded in _PRODUCER_BOOL_FALSE:
                 return False
-        return bool(value)
+            return None
+        if isinstance(value, (int, float)) and value in (0, 1):
+            return bool(value)
+        return None
 
     @staticmethod
     def _resolve_truncation_stance(params: Dict[str, Any], *, generator: str, allow_truncated: bool, truncatable_generators: Callable[[], Optional[FrozenSet[str]]]) -> Tuple[Dict[str, Any], Optional[str], bool, bool, Optional[str]]:
@@ -4489,10 +4554,11 @@ class TrainingLifecycleManager:
           contain this generator) -- the knob is already on in both, so the
           failure message must not tell the operator to turn it on. With the flag
           in EITHER position: ``_OPT_IN_SKIPPED_CALLER_DEFERRED`` when the request
-          carried ``allow_truncation`` with no value (``null``, or blank) -- a key
-          the default never overrides, so the setting cannot change the outcome.
-          ``None`` when the default applied, when the flag is off and the caller
-          was silent, or when the caller sent a value.
+          carried ``allow_truncation: null`` -- a key the default never overrides,
+          so the setting cannot change the outcome. ``None`` when the default
+          applied, when the flag is off and the caller was silent, or when the
+          caller sent a value -- including one juniper-data rejects (a blank
+          string, "maybe"), which is a bad parameter (400), not a deferral.
         """
         caller_stance = TrainingLifecycleManager._as_bool_stance(params.get("allow_truncation"))
         opt_in_skipped: Optional[str] = None
@@ -4531,15 +4597,22 @@ class TrainingLifecycleManager:
                 # "accept". The caller is the more specific authority here, so an
                 # explicit value of either polarity wins.
                 params = {**params, "allow_truncation": True}
-        elif "allow_truncation" in params and caller_stance is None:
-            # The request carried the key with NO value -- ``null``, or a blank
-            # string after a JSON or YAML crossing. That is the caller deferring to
-            # the producer, and the branch above never overrides a key the request
-            # carries, whatever its value: the test is the key's PRESENCE, so this
-            # service's setting cannot change the outcome on or off. Recorded so a
-            # refusal's remedy is the request's own parameter whatever the flag --
-            # with the flag off it used to get the knob remedy, which cannot help
-            # (cascor#678 follow-up, item 3).
+        elif "allow_truncation" in params and params["allow_truncation"] is None:
+            # The request carried ``allow_truncation: null``. That is the caller
+            # deferring to the producer, and the branch above never overrides a key
+            # the request carries, whatever its value: the test is the key's
+            # PRESENCE, so this service's setting cannot change the outcome on or
+            # off. Recorded so a refusal's remedy is the request's own parameter
+            # whatever the flag -- with the flag off it used to get the knob remedy,
+            # which cannot help (cascor#678 follow-up, item 3).
+            #
+            # ``null`` ONLY. A blank string used to count too, because
+            # ``_as_bool_stance`` reads it as no stance, but juniper-data does not
+            # defer on it: it answers 400, "Input should be a valid boolean". That
+            # request fails as a bad parameter, never as a refusal, so calling it a
+            # deferral described an outcome that cannot happen (#688's validation).
+            # The same holds for every other value juniper-data rejects, all of
+            # which ``_as_bool_stance`` also reads as no stance.
             opt_in_skipped = _OPT_IN_SKIPPED_CALLER_DEFERRED
 
         # What actually went on the wire, and who put it there. The setting alone
@@ -4615,11 +4688,13 @@ class TrainingLifecycleManager:
 
         Both callers -- ``_reload_dataset`` and ``start_training`` for tensors
         handed in with their annotation -- log only once the tensors and the
-        annotation are bound (cascor#678 follow-up, item 8), so an exception here
-        would fail a start whose data had already changed. ``_build_dataset_shortfall``
-        has already read the same descriptors, but it formats less of them; a
-        descriptor the log cannot format is reported rather than raised, and
-        ``dataset_shortfall`` on ``/v1/training/status`` still carries it.
+        annotation are bound (cascor#678 follow-up, item 8), and ``start_training``
+        only once a pending staged fetch has had its turn (#688's validation), so
+        an exception here would fail a start whose data had already changed.
+        ``_build_dataset_shortfall`` has already read the same descriptors, but it
+        formats less of them; a descriptor the log cannot format is reported
+        rather than raised, and ``dataset_shortfall`` on ``/v1/training/status``
+        still carries it.
         """
         try:
             self._log_dataset_shortfall(meta, acceptance_source=acceptance_source)
@@ -4763,7 +4838,7 @@ class TrainingLifecycleManager:
         data_output = int(y.shape[1]) if y.dim() > 1 else 1
         if data_input <= net_input and data_output <= net_output:
             return
-        raise ValueError(f"{_PROJECT_API_START_FRESH_REQUIRED_MARKER} The staged dataset {dataset_type!r} ({data_input} features, {data_output} outputs) is wider than the current network ({net_input} inputs, {net_output} outputs). A start continues the current network, and only a live dataset swap can widen one, so this start needs start_fresh, which builds a new network from the dataset. Nothing was loaded: the dataset is still staged, and the current network and its results are unchanged.")
+        raise ValueError(f"{_PROJECT_API_START_FRESH_REQUIRED_MARKER} The staged dataset {dataset_type!r} ({data_input} features, {data_output} outputs) is wider than the current network ({net_input} inputs, {net_output} outputs). A start continues the current network, and only a live dataset swap can widen one, so this start needs start_fresh, which builds a new network from the dataset. The staged dataset was not loaded: it is still staged, and the current network and its results are unchanged.")
 
     def _reload_dataset(self, *, fetch_path: Optional[str] = None, refuse_wider_than: Optional[Tuple[int, int]] = None, **cfg: Any) -> None:
         """Fetch a fresh dataset from juniper-data and replace the live tensors.
@@ -4796,8 +4871,11 @@ class TrainingLifecycleManager:
         ``refuse_wider_than`` (F1): the ``(input, output)`` dims of a network the
         caller will CONTINUE. A dataset wider than it on either axis raises
         ``ValueError`` after the fetch and before anything is bound, so the refused
-        start leaves the loaded data, its identity and the staged slot exactly as
-        they were. ``swap_dataset_live`` passes nothing: it grows the network instead.
+        reload leaves the loaded data, its identity, the partitions that identity
+        stands on and the staged slot exactly as it found them. Tensors the same
+        start was handed are bound BEFORE this reload and stay bound, which is why
+        the refusal says the STAGED dataset was not loaded, not that nothing was.
+        ``swap_dataset_live`` passes nothing: it grows the network instead.
         """
         try:
             from juniper_data_client import JuniperDataClient

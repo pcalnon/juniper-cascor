@@ -19,15 +19,17 @@ dataset reports a score for data nobody chose, and nothing downstream can tell.
 from __future__ import annotations
 
 import inspect
+import itertools
 import logging
 import os
 import sys
 from types import SimpleNamespace
-from typing import Any, Dict
+from typing import Any, Dict, List, Optional
 from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pytest
+from juniper_data_client import JuniperDataValidationError
 
 from api.lifecycle.manager import _FETCH_PATH_AUTO_START, _FETCH_PATH_LIVE_SWAP, _FETCH_PATH_STAGED_START, _OPT_IN_SKIPPED_CALLER_DEFERRED, _OPT_IN_SKIPPED_LIST_UNREADABLE, _TRUNCATABLE_GENERATORS, TrainingLifecycleManager
 from api.settings import Settings
@@ -40,8 +42,8 @@ def _canopy_producer_detail(detail: str) -> str:
     """juniper-canopy's ``_producer_detail_from_refusal``, VERBATIM -- the other half of a cross-repo contract.
 
     Copied from juniper-canopy ``src/frontend/dashboard_manager.py`` (origin/main
-    ``e9053227``, lines 8332-8341), because canopy is not installed where these
-    tests run. canopy shows the operator what this returns as juniper-data's own
+    ``7ab994e5``, lines 8404-8413; the body is unchanged since ``e9053227``, where it
+    sat at 8332-8341), because canopy is not installed where these tests run. canopy shows the operator what this returns as juniper-data's own
     words, so every cascor refusal must put ``" To accept it,"`` straight after the
     producer's detail: text placed before it is shown as if the producer wrote it.
     If canopy changes its cut, change this copy with it.
@@ -70,7 +72,39 @@ _EVERY_REFUSAL_BRANCH: Dict[str, Dict[str, Any]] = {
     "withheld, no path named": {"opt_in_skipped": _OPT_IN_SKIPPED_LIST_UNREADABLE, "deployment_flag_on": True},
     "flag on, no reason given": {"deployment_flag_on": True},
 }
-_PRODUCER_DETAIL = "HTTP 422: Shares outstanding could not be resolved for 3 symbols. Re-submit with allow_truncation=true"
+# juniper-data's OWN words, as juniper-data-client 0.5.0 renders them -- ``Validation
+# error (<status>): <detail>``, with the status on ``status_code``. #688's validation
+# found the refusal check passing on a stand-in that merely NAMED a truncation field,
+# while a real juniper-data 400 names the field it rejects too. So the refusal texts
+# below are real, and so are the 400s that must NOT read as refusals. Captured from a
+# juniper-data main server (0f0f7e0) by juniper-ml
+# ``util/ad-hoc/2026-09-24_cascor688_realjd_error_texts.py``, except the
+# ``IncompleteDataError`` one, which needs a symbol whose shares cannot be resolved:
+# that one is juniper-data's own class rendering the equities generator's detail.
+_REFUSAL_INPUT_TOO_LARGE = "Validation error (422): The requested universe is 3 symbols, over the 2 symbols cap. Re-submit with allow_truncation=true (or set JUNIPER_DATA_EQUITIES_ALLOW_TRUNCATION=true) to import the first 2 symbols. The resulting dataset will be permanently annotated as truncated."
+_REFUSAL_INCOMPLETE_DATA = "Validation error (422): Shares outstanding could not be resolved for part of the requested universe, so total_shares and market_cap would be fabricated for those rows. Affected (3): BF.B, BRK.B, STZ. 1,510 row(s) would carry fabricated values. Re-submit with allow_truncation=true (or set JUNIPER_DATA_EQUITIES_ALLOW_TRUNCATION=true) to accept them, or with incomplete_rows='drop' to exclude them. Either choice is recorded permanently in the dataset's metadata."
+_PARAMETER_ERRORS: Dict[str, str] = {
+    "n_spirals=1": "Validation error (400): Invalid parameters: 1 validation error for SpiralParams\nn_spirals\n  Input should be greater than or equal to 2 [type=greater_than_equal, input_value=1, input_type=int]\n    For further information visit https://errors.pydantic.dev/2.12/v/greater_than_equal",
+    "incomplete_rows='keep'": "Validation error (400): Invalid parameters: 1 validation error for EquitiesParams\nincomplete_rows\n  Input should be 'accept' or 'drop' [type=literal_error, input_value='keep', input_type=str]\n    For further information visit https://errors.pydantic.dev/2.12/v/literal_error",
+    "allow_truncation=''": "Validation error (400): Invalid parameters: 1 validation error for CsvImportParams\nallow_truncation\n  Input should be a valid boolean, unable to interpret input [type=bool_parsing, input_value='', input_type=str]\n    For further information visit https://errors.pydantic.dev/2.12/v/bool_parsing",
+    "allow_truncation='  '": "Validation error (400): Invalid parameters: 1 validation error for CsvImportParams\nallow_truncation\n  Input should be a valid boolean, unable to interpret input [type=bool_parsing, input_value='  ', input_type=str]\n    For further information visit https://errors.pydantic.dev/2.12/v/bool_parsing",
+    # A 400 ECHOES the value it rejects, so a value that quotes the remedy sentence puts
+    # the sentence in a 400. Only the status tells this one apart from a refusal.
+    "incomplete_rows quoting the remedy": "Validation error (400): Invalid parameters: 1 validation error for EquitiesParams\nincomplete_rows\n  Input should be 'accept' or 'drop' [type=literal_error, input_value='Re-submit with allow_truncation=true', input_type=str]\n    For further information visit https://errors.pydantic.dev/2.12/v/literal_error",
+}
+# Each 400 as juniper-data-client 0.5.0 raises it (with ``status_code``) and as an older
+# client does (none), except the one only a status can separate from a refusal.
+_PARAMETER_ERROR_CASES = [(case, status) for status in (True, False) for case in sorted(_PARAMETER_ERRORS) if status or "remedy" not in case]
+# The other kind of 422: a request that breaks juniper-data's DECLARED request schema,
+# rejected by FastAPI at the boundary. It carries no remedy sentence.
+_REQUEST_SCHEMA_422 = "Validation error (422): body.params: Input should be a valid dictionary"
+_PRODUCER_DETAIL = _REFUSAL_INCOMPLETE_DATA
+
+
+def _refusal(detail: str = _REFUSAL_INCOMPLETE_DATA) -> JuniperDataValidationError:
+    """A shortfall refusal exactly as the live path receives it: juniper-data-client's error for a 422."""
+    return JuniperDataValidationError(detail, status_code=422)
+
 
 # What juniper-data's ``GET /v1/generators`` says, reduced to the one fact the
 # stance resolver reads: whether the param schema declares ``allow_truncation``.
@@ -125,10 +159,7 @@ class TestRunFailureMessage:
 
     def test_a_shortfall_refusal_names_the_remedy(self) -> None:
         """The 422 case gets the actionable message, not a generic fetch error."""
-        message = TrainingLifecycleManager._describe_dataset_fetch_failure(
-            Exception("HTTP 422: ... Re-submit with allow_truncation=true ..."),
-            allow_truncated=False,
-        )
+        message = TrainingLifecycleManager._describe_dataset_fetch_failure(_refusal(), allow_truncated=False)
         assert "--allow-truncated-datasets" in message
         assert "JUNIPER_CASCOR_ALLOW_TRUNCATED_DATASETS" in message
         assert "allow_truncated_datasets:" in message
@@ -144,9 +175,14 @@ class TestRunFailureMessage:
         assert "allow-truncated" not in message
 
     def test_an_already_opted_in_run_gets_the_plain_message(self) -> None:
-        """If the flag is already set, the shortfall was not the reason -- do not misdirect."""
-        message = TrainingLifecycleManager._describe_dataset_fetch_failure(Exception("HTTP 422 allow_truncation"), allow_truncated=True)
-        assert message.startswith("juniper-data fetch failed:")
+        """If the flag is already set, the shortfall was not the reason -- do not misdirect.
+
+        A REAL refusal, so it is the opt-in that makes this plain. The stand-in this
+        used ("HTTP 422 allow_truncation") no longer reads as a refusal at all, so the
+        arm would have passed whatever the opt-in did.
+        """
+        message = TrainingLifecycleManager._describe_dataset_fetch_failure(_refusal(), allow_truncated=True)
+        assert message == f"juniper-data fetch failed: {_REFUSAL_INCOMPLETE_DATA}"
 
     def test_the_refusal_opens_with_a_machine_readable_token(self) -> None:
         """A consumer (canopy's three-way prompt) must recognise the class without matching prose.
@@ -154,7 +190,7 @@ class TestRunFailureMessage:
         The token is the contract; the sentence after it is free to change. An
         ordinary outage must NOT carry it, or the prompt fires on a dead service.
         """
-        refusal = TrainingLifecycleManager._describe_dataset_fetch_failure(Exception("HTTP 422 allow_truncation"), allow_truncated=False)
+        refusal = TrainingLifecycleManager._describe_dataset_fetch_failure(_refusal(), allow_truncated=False)
         assert refusal.startswith(_PROJECT_API_SHORTFALL_REFUSAL_TOKEN + " ")
         outage = TrainingLifecycleManager._describe_dataset_fetch_failure(Exception("connection refused"), allow_truncated=False)
         assert _PROJECT_API_SHORTFALL_REFUSAL_TOKEN not in outage
@@ -166,7 +202,7 @@ class TestRunFailureMessage:
         that cannot change the outcome. The remedy is the request's own two
         parameters, and the message must say which stance was actually taken.
         """
-        message = TrainingLifecycleManager._describe_dataset_fetch_failure(Exception("HTTP 422 allow_truncation"), allow_truncated=False, caller_refused=True)
+        message = TrainingLifecycleManager._describe_dataset_fetch_failure(_refusal(), allow_truncated=False, caller_refused=True)
         assert message.startswith(_PROJECT_API_SHORTFALL_REFUSAL_TOKEN)
         assert "explicitly refused" in message
         assert "allow_truncation=true" in message
@@ -175,34 +211,54 @@ class TestRunFailureMessage:
 
     @pytest.mark.parametrize("deployment_flag_on", [True, False], ids=["flag-on", "flag-off"])
     def test_an_ordinary_422_is_not_a_shortfall_refusal(self, deployment_flag_on: bool) -> None:
-        """#686's validation: any 422 used to read as a shortfall, so a parameter error got the token.
+        """#686's validation: any 422 used to read as a shortfall.
 
-        With the flag off it was also told to set JUNIPER_CASCOR_ALLOW_TRUNCATED_DATASETS,
-        which cannot fix a bad parameter, and canopy opened its partial-data prompt
-        on it. A refusal is recognised by its remedy now: juniper-data's two refusals
-        both say "Re-submit with allow_truncation=true", and an ordinary validation
-        422 names neither that nor ``incomplete_rows``.
+        juniper-data answers 422 for two things: a shortfall refusal, and a request
+        that breaks its DECLARED request schema -- here ``params`` not a mapping,
+        rejected by FastAPI at the boundary. The second carries no remedy sentence, so
+        it is a plain failure in both flag positions. This arm used a ``spiral``
+        ``n_spirals=1`` detail rendered as a 422 until #688's validation; juniper-data
+        answers that one 400, which is the next arm's subject.
         """
-        detail = "Validation error (422): params.n_spirals: Input should be greater than or equal to 2"
-        message = TrainingLifecycleManager._describe_dataset_fetch_failure(Exception(detail), allow_truncated=False, deployment_flag_on=deployment_flag_on)
+        message = TrainingLifecycleManager._describe_dataset_fetch_failure(JuniperDataValidationError(_REQUEST_SCHEMA_422, status_code=422), allow_truncated=False, deployment_flag_on=deployment_flag_on)
+        assert message == f"juniper-data fetch failed: {_REQUEST_SCHEMA_422}"
+
+    @pytest.mark.parametrize("deployment_flag_on", [True, False], ids=["flag-on", "flag-off"])
+    @pytest.mark.parametrize(("case", "carries_a_status"), _PARAMETER_ERROR_CASES, ids=[f"{case}-{'client-0.5.0' if status else 'older-client'}" for case, status in _PARAMETER_ERROR_CASES])
+    def test_a_parameter_error_is_not_a_refusal_even_when_it_names_a_truncation_field(self, case: str, carries_a_status: bool, deployment_flag_on: bool) -> None:
+        """#688's validation, MEDIUM: a REAL juniper-data 400 that names ``allow_truncation`` or ``incomplete_rows``.
+
+        juniper-data answers a parameter its generator rejects with 400, and names
+        the field. The check matched those names, so ``incomplete_rows='keep'`` and a
+        blank ``allow_truncation`` carried the refusal token -- which opens canopy's
+        partial-data prompt -- and, with the flag off, told the operator to set the
+        flag, which cannot fix a bad parameter. Measured against a real juniper-data
+        main server. Each is also raised as a juniper-data-client older than 0.5.0
+        raises it, with no status, where the remedy sentence alone must decide.
+
+        The last case puts the sentence itself in a 400, as the echoed input value.
+        Only the status tells that one apart from a refusal, so it has no
+        older-client form: without a status it is indistinguishable, and reads as one.
+        """
+        detail = _PARAMETER_ERRORS[case]
+        exc = JuniperDataValidationError(detail, status_code=400) if carries_a_status else Exception(detail)
+        message = TrainingLifecycleManager._describe_dataset_fetch_failure(exc, allow_truncated=False, deployment_flag_on=deployment_flag_on)
         assert message == f"juniper-data fetch failed: {detail}"
 
-    @pytest.mark.parametrize(
-        "detail",
-        [
-            "Validation error (422): Source 'prices.csv' is 9.8 MB, over the 5.0 MB cap. Re-submit with allow_truncation=true (or set JUNIPER_DATA_CSV_IMPORT_ALLOW_TRUNCATION=true) to import the first 5.0 MB. The resulting dataset will be permanently annotated as truncated.",
-            "Validation error (422): Shares outstanding could not be resolved. Affected (3): STZ, BF.B, BRK.B. 1,510 row(s) would carry fabricated values. Re-submit with allow_truncation=true (or set JUNIPER_DATA_EQUITIES_ALLOW_TRUNCATION=true) to accept them, or with incomplete_rows='drop' to exclude them. Either choice is recorded permanently in the dataset's metadata.",
-        ],
-        ids=["InputTooLargeError", "IncompleteDataError"],
-    )
-    def test_both_of_the_producers_refusals_are_still_recognised(self, detail: str) -> None:
-        """The guard on the other side: dropping the bare "422" match must not lose a real refusal.
+    @pytest.mark.parametrize("carries_a_status", [True, False], ids=["client-0.5.0", "older-client"])
+    @pytest.mark.parametrize("detail", [_REFUSAL_INPUT_TOO_LARGE, _REFUSAL_INCOMPLETE_DATA], ids=["InputTooLargeError", "IncompleteDataError"])
+    def test_both_of_the_producers_refusals_are_still_recognised(self, detail: str, carries_a_status: bool) -> None:
+        """The guard on the other side: a check that rejects the 400s must not lose a real refusal.
 
         Worded as juniper-data's ``InputTooLargeError`` and ``IncompleteDataError``
         render them (``juniper_data/core/limits.py``), after juniper-data-client
-        prefixes ``Validation error (422):``.
+        prefixes ``Validation error (422):``. juniper-data-client 0.5.0 also puts the
+        422 on ``status_code``; the releases before it -- this service floors the
+        dependency at 0.3.0 -- raise the same text with no status, and the remedy
+        sentence alone must still be enough.
         """
-        message = TrainingLifecycleManager._describe_dataset_fetch_failure(Exception(detail), allow_truncated=False)
+        exc = JuniperDataValidationError(detail, status_code=422) if carries_a_status else Exception(detail)
+        message = TrainingLifecycleManager._describe_dataset_fetch_failure(exc, allow_truncated=False)
         assert message.startswith(_PROJECT_API_SHORTFALL_REFUSAL_TOKEN + " ")
         assert "--allow-truncated-datasets" in message
         assert f"Producer detail: {detail} To accept it," in message
@@ -419,6 +475,83 @@ class TestCallerStanceIsNotOverridden:
         message = str(excinfo.value)
         assert message.startswith(_PROJECT_API_SHORTFALL_REFUSAL_TOKEN)
         assert "explicitly refused" in message and "allow_truncation=true" in message
+
+
+# What juniper-data makes of a caller's ``allow_truncation``, MEASURED rather than restated.
+# Every value here was validated through the REAL ``EquitiesParams``, ``EquitiesSeqParams``
+# and ``CsvImportParams`` of juniper-data main (0f0f7e0, pydantic 2.12.5), which agree on
+# all of them, by juniper-ml
+# ``util/ad-hoc/2026-09-24_cascor690_bool_stance_producer_table.py``. Each class types the
+# field ``bool | None`` under pydantic's lax coercion. A REJECTED value is a 400:
+# juniper-data refuses the request as a bad parameter.
+_PRODUCER_READS_AS_TRUE: List[Any] = [True, 1, 1.0, "1", "ON", "On", "oN", "on", "T", "t", "TRUE", "True", "tRUE", "true", "Y", "y", "YES", "Yes", "yES", "yes"]
+_PRODUCER_READS_AS_FALSE: List[Any] = [False, 0, 0.0, -0.0, "0", "OFF", "Off", "oFF", "off", "F", "f", "FALSE", "False", "fALSE", "false", "N", "n", "NO", "No", "nO", "no"]
+_PRODUCER_REJECTS: List[Any] = [
+    *(2, -1, 10, 0.5, 1.5, 2.0, -1.0, float("nan"), float("inf"), float("-inf")),
+    *(" true", "true ", "\ttrue", "true\n", " 1", "0 ", " f", "no ", "", "  "),
+    *("maybe", "2", "-1", "1.0", "0.0", "tru", "truee", "yes!", "none", "null", "None", "nil", "enable", "disabled", "ok"),
+    *("ｔｒｕｅ", "ｆ", "trüe", "ＹＥＳ", [], [True], {}, {"a": 1}),
+]
+# pydantic-core's ``str_as_bool`` (``src/input/shared.rs``): the twelve strings, by polarity.
+_PYDANTIC_TRUE_STRINGS = {"1", "on", "t", "true", "y", "yes"}
+_PYDANTIC_FALSE_STRINGS = {"0", "off", "f", "false", "n", "no"}
+
+
+class TestTheStanceIsReadAsJuniperDataReadsIt:
+    """A caller's ``allow_truncation`` means here exactly what it means to juniper-data (#690's fixup).
+
+    ``_as_bool_stance`` used to fall back to truthiness for anything it did not list, and to
+    strip whitespace. So "f" and "n", which juniper-data reads as False, read as an opt-in.
+    A caller refusing a partial dataset that way was recorded as accepting it, and the
+    refusal that followed came out as a plain fetch failure with no remedy. Every value
+    juniper-data rejects ("maybe", ``2``, a padded " true") also read as a stance, for a
+    request that can only fail as a bad parameter. They are no stance now, as a blank string
+    is.
+    """
+
+    @pytest.mark.parametrize("value", _PRODUCER_READS_AS_TRUE, ids=repr)
+    def test_every_spelling_juniper_data_reads_as_true_is_an_opt_in(self, value: Any) -> None:
+        assert TrainingLifecycleManager._as_bool_stance(value) is True
+
+    @pytest.mark.parametrize("value", _PRODUCER_READS_AS_FALSE, ids=repr)
+    def test_every_spelling_juniper_data_reads_as_false_is_a_refusal(self, value: Any) -> None:
+        assert TrainingLifecycleManager._as_bool_stance(value) is False
+
+    @pytest.mark.parametrize("value", [None, *_PRODUCER_REJECTS], ids=repr)
+    def test_null_and_every_value_juniper_data_rejects_are_no_stance(self, value: Any) -> None:
+        assert TrainingLifecycleManager._as_bool_stance(value) is None
+
+    def test_the_table_holds_every_spelling_the_producer_accepts_in_its_own_polarity(self) -> None:
+        """Enumerate the producer's rule, not the table: a spelling missing from the table would go untested."""
+        assert {v.lower() for v in _PRODUCER_READS_AS_TRUE if isinstance(v, str)} == _PYDANTIC_TRUE_STRINGS
+        assert {v.lower() for v in _PRODUCER_READS_AS_FALSE if isinstance(v, str)} == _PYDANTIC_FALSE_STRINGS
+
+    def test_it_agrees_with_pydantics_own_lax_bool_on_every_casing_and_padding(self) -> None:
+        """The other direction, and more of it: never read a stance into a value pydantic rejects, nor miss one it accepts.
+
+        Differential against pydantic's own lax ``bool | None`` -- the producer's rule by
+        construction -- over every casing of every spelling, each spelling padded with each
+        whitespace character on either side, and every printable ASCII character. The table
+        above is the producer's measured answer. This is the breadth check it cannot be.
+        """
+        from pydantic import TypeAdapter, ValidationError
+
+        adapter = TypeAdapter(Optional[bool])
+        values: List[Any] = []
+        for word in sorted(_PYDANTIC_TRUE_STRINGS | _PYDANTIC_FALSE_STRINGS):
+            values += ["".join(cased) for cased in itertools.product(*[(ch.lower(), ch.upper()) for ch in word])]
+            values += [f"{pad}{word}" for pad in (" ", "\t", "\n", "\r", "\x0b", "\x0c", " ")]
+            values += [f"{word}{pad}" for pad in (" ", "\t", "\n", "\r", "\x0b", "\x0c", " ")]
+        values += [chr(code) for code in range(32, 127)]
+        mismatches = []
+        for value in values:
+            try:
+                expected = adapter.validate_python(value)
+            except ValidationError:
+                expected = None
+            if TrainingLifecycleManager._as_bool_stance(value) is not expected:
+                mismatches.append((value, expected))
+        assert mismatches == [], f"{len(mismatches)} of {len(values)} disagree with pydantic: {mismatches[:10]}"
 
 
 class TestShortfallIsPollable:
