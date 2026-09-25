@@ -563,6 +563,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `__main__` cannot be called, and an untested warning is one that stops firing without anyone
   noticing. Round-38 follow-up 3.
 
+### Security
+
+- **A non-ASCII `X-API-Key` is a 401, not a 500 that hands Sentry the real key**
+  (`src/api/security.py`). `APIKeyAuth.validate` compared `str` with `hmac.compare_digest`, which
+  raises `TypeError` when either side holds a non-ASCII character. Starlette decodes header bytes
+  as latin-1, so any byte above 0x7f reaches `validate` as one. The validation of
+  juniper-canopy#683 (2026-09-24) sent an anonymous `X-API-Key: \xa0`, which both uvicorn parsers
+  pass. It had three consequences:
+  - The `TypeError` escaped `SecurityMiddleware`'s `except HTTPException`, so the caller got a
+    **500** instead of a 401. The `/ws/*` handshake calls the same `validate` from
+    `ws_authenticate`, and raised instead of closing 4001.
+  - Only a 401 records a failure, so a flood of such keys was **never throttled** by
+    `FailedAuthThrottle`.
+  - Under Sentry's default `include_local_variables=True`, the error event carried the loop's
+    `candidate`, the **real configured key**.
+
+  Both sides are now compared as UTF-8 bytes. The encoding uses `surrogatepass`, the one built-in
+  error handler that is both total and injective: a lone surrogate (from a JSON-decoded
+  `JUNIPER_CASCOR_API_KEYS`, say) encodes instead of raising, and no two distinct strings share
+  bytes. So `validate` matches exactly when the strings are equal. `surrogateescape` raises on
+  `"\ud800"` and maps `"\xe9"` and `"\udcc3\udca9"` to the same bytes. juniper-ml's
+  `tests/test_service_fork_drift.py` markers (`blank-api-key-filter`,
+  `nonshortcircuit-key-compare`) are unchanged. Owner ruling "Fix everywhere now" (2026-09-24),
+  landing the same compare in juniper-service-core and juniper-data.
+  Pinned by 62 new tests in `src/tests/unit/api/test_api_security.py`. They cover the non-ASCII
+  mismatch, a 7x7 equality matrix built to separate the candidate encodings, and the
+  `Request`-level 401. `TestNonAsciiApiKeyThroughTheApp` drives `create_app` with auth on and
+  checks three things: a raw-byte header is a 401, ten such failures earn a 429, and
+  `/ws/training` closes 4001. Reverting to the `str` compare fails 61 of them: the HTTP tests with
+  `assert 500 == 401`, the handshake and the unit tests with the `TypeError`. `surrogateescape`
+  fails 15 and strict UTF-8 fails 33.
+- **The CLI's own Sentry init no longer captures frame-local variables** (`src/main.py`). The
+  bootstrap `sentry_sdk.init` now passes `include_local_variables=False`, for the same reason: the
+  SDK's scrubber redacts locals by name, and `candidate` is not a name it knows. The service path
+  (`src/api/app.py` -> `api.observability.configure_sentry`) delegates to juniper-observability,
+  which carries the same setting from its next release. It reaches this service only when the
+  `juniper-observability>=0.4.0` floor is raised to that release. Pinned by
+  `src/tests/unit/test_main_sentry_no_local_variables.py`, an AST check of the call's keywords
+  with negative controls. Removing the keyword, or passing `True`, fails it. Mutation checks:
+  juniper-ml's `util/ad-hoc/2026-09-24_bytes_compare_sentry_locals_verify.py`.
+
 ## [0.11.0] - 2026-09-08
 
 ### Removed

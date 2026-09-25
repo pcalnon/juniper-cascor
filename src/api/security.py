@@ -52,7 +52,9 @@ class APIKeyAuth:
             api_key: The API key to validate.
 
         Returns:
-            True if auth is disabled or key is valid, False otherwise.
+            True if auth is disabled or key is valid, False otherwise. A key
+            holding non-ASCII characters is compared like any other -- it is
+            never an exception.
         """
         if not self._enabled:
             return True
@@ -65,9 +67,24 @@ class APIKeyAuth:
         # where a mismatching byte appears, so walking the whole key set preserves
         # that property per key while still accepting on a match. Mirrors
         # juniper-data's reference implementation (juniper_data/api/security.py).
+        #
+        # Compared as BYTES. ``hmac.compare_digest`` raises ``TypeError`` on a ``str``
+        # holding any non-ASCII character, and Starlette decodes header bytes as
+        # latin-1, so an anonymous ``X-API-Key: \xa0`` used to raise right here: a 500
+        # instead of a 401 (the ``/ws/*`` handshake calls this method too, and raised
+        # with it), a failed attempt ``FailedAuthThrottle`` never counted, and --
+        # under Sentry's default ``include_local_variables=True`` -- an error event
+        # carrying this frame's ``candidate``, the REAL configured key (found by the
+        # validation of juniper-canopy#683, 2026-09-24). ``surrogatepass`` rather than
+        # ``strict`` or ``surrogateescape``: it is the one built-in UTF-8 error handler
+        # that is both total (a lone surrogate, e.g. from a JSON-decoded config value,
+        # encodes instead of raising) and injective (``surrogateescape`` maps "\xe9"
+        # and "\udcc3\udca9" to the same bytes), so this matches exactly when the two
+        # strings are equal. Same change as juniper-service-core's canonical copy.
+        presented = api_key.encode("utf-8", "surrogatepass")
         matched = False
         for candidate in self._api_keys:
-            if hmac.compare_digest(api_key, candidate):
+            if hmac.compare_digest(presented, candidate.encode("utf-8", "surrogatepass")):
                 matched = True
         return matched
 

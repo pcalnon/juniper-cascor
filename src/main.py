@@ -234,6 +234,13 @@ if _sentry_dsn:
             # user identifiers). The before_send hook strips any sensitive
             # headers that other integrations may still attach to events.
             send_default_pii=False,
+            # Never snapshot frame locals into events (SDK default: on). A local can
+            # hold a secret under any name, which the SDK's name-based scrubber cannot
+            # catch: juniper-canopy#683's validation (2026-09-24) found an error event
+            # carrying the API-key loop's ``candidate`` -- the real configured key.
+            # The service path goes through juniper-observability's configure_sentry
+            # instead, which carries the same setting from its next release.
+            include_local_variables=False,
             enable_logs=True,
             traces_sample_rate=1.0,
             profile_session_sample_rate=1.0,

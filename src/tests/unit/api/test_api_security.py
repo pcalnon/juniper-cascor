@@ -5,8 +5,30 @@ from unittest.mock import MagicMock
 
 import pytest
 from fastapi import HTTPException
+from fastapi.testclient import TestClient
+from starlette.requests import Request
+from starlette.websockets import WebSocketDisconnect
 
 from api.security import APIKeyAuth, RateLimiter
+
+# ``hmac.compare_digest`` raises ``TypeError`` on a ``str`` holding any non-ASCII character.
+# Starlette decodes header bytes as latin-1, so every byte above 0x7f reaches ``validate`` as
+# one: an anonymous ``X-API-Key: \xa0`` was a 500 whose Sentry event carried the comparison
+# loop's ``candidate`` -- the real configured key (found by the validation of
+# juniper-canopy#683, 2026-09-24).
+
+#: Header values as ``validate`` receives them. U+00A0 and U+0085 are the two the validation
+#: drove through both uvicorn parsers; the rest vary position and byte.
+_NON_ASCII_PRESENTED = ["\xa0", "\x85", "\xff", "v\xe1lid-key", "valid-key\xa0"]
+
+#: Raw header bytes, as a client sends them.
+_NON_ASCII_RAW = [b"\xa0", b"\x85", b"valid-key\xa0"]
+
+#: Strings chosen to separate the candidate encodings. "\ud800" is a lone HIGH surrogate --
+#: ``strict`` and ``surrogateescape`` both raise on it; "\udcc3\udca9" is what
+#: ``surrogateescape`` encodes to the same bytes as "\xe9". Only an encoding that is both
+#: total and injective gives ``validate(x) == (x in keys)`` for every pair below.
+_ENCODING_PROBES = ["valid-key", "cl\xe9", "\xe9", "\udcc3\udca9", "\ud800-key", "\udcff", "\U0001f511"]
 
 
 @pytest.mark.unit
@@ -176,6 +198,71 @@ class TestAPIKeyAuth:
 
         result = await auth(request)
         assert result == "valid-key"
+
+    @pytest.mark.parametrize("presented", _NON_ASCII_PRESENTED)
+    def test_non_ascii_presented_key_is_a_mismatch_not_an_exception(self, presented) -> None:
+        assert APIKeyAuth(["valid-key"]).validate(presented) is False
+
+    @pytest.mark.parametrize("configured", _ENCODING_PROBES)
+    @pytest.mark.parametrize("presented", _ENCODING_PROBES)
+    def test_validate_matches_exactly_when_the_strings_are_equal(self, configured, presented) -> None:
+        """The bytes compare must accept what ``==`` accepts: no raise, no collision."""
+        assert APIKeyAuth([configured]).validate(presented) is (presented == configured)
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("raw", _NON_ASCII_RAW)
+    async def test_call_raises_401_on_a_non_ascii_header(self, raw) -> None:
+        """A real ``Request`` (not a mock) so the header takes Starlette's latin-1 decode."""
+        auth = APIKeyAuth(["valid-key"])
+        request = Request({"type": "http", "method": "GET", "path": "/", "headers": [(b"x-api-key", raw)], "client": ("testclient", 50000)})
+
+        with pytest.raises(HTTPException) as exc_info:
+            await auth(request)
+        assert exc_info.value.status_code == 401
+        assert "Invalid API key" in exc_info.value.detail
+
+
+@pytest.mark.unit
+class TestNonAsciiApiKeyThroughTheApp:
+    """The whole stack, from ``create_app`` with auth on, for a raw non-ASCII ``X-API-Key``.
+
+    ``raise_server_exceptions=False`` so that a regression reads as the 500 a caller would
+    see, not as the exception. Header values go in as ``bytes``, which httpx sends unencoded.
+    """
+
+    @pytest.fixture
+    def client(self):
+        from api.app import create_app
+        from api.settings import Settings
+
+        with TestClient(create_app(Settings(api_keys=["valid-key"], auto_start=False)), raise_server_exceptions=False) as test_client:
+            yield test_client
+
+    @pytest.mark.parametrize("raw", _NON_ASCII_RAW)
+    def test_http_request_is_401_not_500(self, client, raw) -> None:
+        response = client.get("/v1/network", headers={"X-API-Key": raw})
+        assert response.status_code == 401
+        assert response.json() == {"detail": "Invalid API key."}
+
+    def test_failed_attempts_reach_the_throttle(self, client) -> None:
+        """Only a 401 records a failure, so while this was a 500 a flood of it was never throttled.
+
+        The app's throttle runs at the library default budget: 10 failures per 60 s.
+        """
+        for _ in range(10):
+            assert client.get("/v1/network", headers={"X-API-Key": b"\xa0"}).status_code == 401
+        assert client.get("/v1/network", headers={"X-API-Key": b"\xa0"}).status_code == 429
+
+    def test_websocket_handshake_closes_4001(self, client) -> None:
+        """``ws_authenticate`` calls the same ``validate``, so the handshake raised with it.
+
+        ``/ws/training`` rather than ``/ws/control``: the control channel's rejection cooldown
+        is process-global, and a rejection recorded here would leak into other tests.
+        """
+        with pytest.raises(WebSocketDisconnect) as exc_info:
+            with client.websocket_connect("/ws/training", headers={"X-API-Key": b"\xa0"}) as ws:
+                ws.receive_json()
+        assert exc_info.value.code == 4001
 
 
 @pytest.mark.unit
