@@ -76,11 +76,11 @@ fastapi==0.141.1
     #   -c requirements.lock
     #   juniper-cascor (pyproject.toml)
     #   juniper-service-core
-filelock==4.0.1
+filelock==4.0.5
     # via
     #   -c requirements.lock
     #   torch
-fonttools==4.65.0
+fonttools==4.66.0
     # via
     #   -c requirements.lock
     #   matplotlib
@@ -113,7 +113,7 @@ juniper-cascor-protocol==0.2.0
     # via
     #   -c requirements.lock
     #   juniper-cascor (pyproject.toml)
-juniper-data==0.14.0
+juniper-data==0.16.0
     # via
     #   -c requirements.lock
     #   juniper-cascor (pyproject.toml)
@@ -220,7 +220,7 @@ requests==2.34.2
     # via
     #   -c requirements.lock
     #   juniper-data-client
-sentry-sdk==2.69.2
+sentry-sdk==2.70.0
     # via
     #   -c requirements.lock
     #   juniper-cascor (pyproject.toml)
@@ -232,7 +232,7 @@ six==1.17.0
     # via
     #   -c requirements.lock
     #   python-dateutil
-starlette==1.6.0
+starlette==1.7.0
     # via
     #   -c requirements.lock
     #   juniper-cascor (pyproject.toml)
@@ -263,7 +263,7 @@ urllib3==2.8.0
     #   juniper-data-client
     #   requests
     #   sentry-sdk
-uvicorn==0.53.0
+uvicorn==0.54.0
     # via
     #   -c requirements.lock
     #   juniper-cascor (pyproject.toml)
