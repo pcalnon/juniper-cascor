@@ -55,7 +55,7 @@ certifi==2026.7.22
     #   -c requirements.lock
     #   requests
     #   sentry-sdk
-charset-normalizer==3.5.1
+charset-normalizer==3.5.2
     # via
     #   -c requirements.lock
     #   requests
@@ -71,16 +71,16 @@ cycler==0.12.1
     # via
     #   -c requirements.lock
     #   matplotlib
-fastapi==0.141.1
+fastapi==0.142.2
     # via
     #   -c requirements.lock
     #   juniper-cascor (pyproject.toml)
     #   juniper-service-core
-filelock==4.0.5
+filelock==4.0.9
     # via
     #   -c requirements.lock
     #   torch
-fonttools==4.66.0
+fonttools==4.66.1
     # via
     #   -c requirements.lock
     #   matplotlib
@@ -138,7 +138,7 @@ kiwisolver==1.5.1
     # via
     #   -c requirements.lock
     #   matplotlib
-markupsafe==3.0.3
+markupsafe==3.0.4
     # via
     #   -c requirements.lock
     #   jinja2
@@ -165,6 +165,10 @@ numpy==2.5.3
     #   juniper-data-client
     #   juniper-service-core
     #   matplotlib
+opentelemetry-api==1.45.0
+    # via
+    #   -c requirements.lock
+    #   fastapi
 packaging==26.3
     # via
     #   -c requirements.lock
@@ -204,7 +208,7 @@ python-dateutil==2.9.0.post0
     # via
     #   -c requirements.lock
     #   matplotlib
-python-dotenv==1.2.3
+python-dotenv==1.2.4
     # via
     #   -c requirements.lock
     #   juniper-cascor (pyproject.toml)
@@ -220,7 +224,7 @@ requests==2.34.2
     # via
     #   -c requirements.lock
     #   juniper-data-client
-sentry-sdk==2.70.0
+sentry-sdk==2.71.0
     # via
     #   -c requirements.lock
     #   juniper-cascor (pyproject.toml)
@@ -247,6 +251,7 @@ typing-extensions==4.16.0
     #   -c requirements.lock
     #   anyio
     #   fastapi
+    #   opentelemetry-api
     #   pydantic
     #   pydantic-core
     #   torch
@@ -267,7 +272,7 @@ uvicorn==0.54.0
     # via
     #   -c requirements.lock
     #   juniper-cascor (pyproject.toml)
-uvloop==0.22.1
+uvloop==0.23.0
     # via
     #   -c requirements.lock
     #   uvicorn
