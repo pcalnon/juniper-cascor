@@ -3,7 +3,7 @@
 **Project**: juniper-cascor — Cascade Correlation Neural Network backend
 **Author**: Paul Calnon
 **License**: MIT License
-**Last Updated**: 2026-08-30
+**Last Updated**: 2026-10-05
 
 Reference material relocated **verbatim** out of `AGENTS.md` under the shared-session-memory plan
 (juniper-ml plan §P5 step e, Tier A). `AGENTS.md` is loaded into every session; this file is read on
@@ -87,7 +87,8 @@ juniper-cascor/
 │   │       └── cascade_correlation_exceptions.py  # Custom exceptions
 │   ├── candidate_unit/               # Candidate hidden unit training
 │   │   └── candidate_unit.py         #   CandidateUnit, ActivationWithDerivative
-│   ├── parallelism/                  # Distributed task scheduling
+│   ├── parallelism/                  # Distributed task scheduling and BLAS thread width
+│   │   ├── blas_threads.py           #   configure_blas_threads (default width 2; CLI and service)
 │   │   └── task_distributor.py       #   TaskDistributor (local-first policy)
 │   ├── spiral_problem/               # Two-spiral classification problem
 │   │   ├── spiral_problem.py         #   SpiralProblem orchestration

@@ -1,6 +1,6 @@
 # Developer Cheatsheet — juniper-cascor
 
-**Version**: 1.0.6  |  **Date**: 2026-08-24  |  **Project**: juniper-cascor
+**Version**: 1.0.10  |  **Date**: 2026-10-05  |  **Project**: juniper-cascor
 
 ---
 
@@ -119,6 +119,7 @@ Metrics nuance:
 | Variable                         | Default                 | Description                            |
 |----------------------------------|-------------------------|----------------------------------------|
 | `CASCOR_LOG_LEVEL`               | `INFO`                  | Log level override (set before import) |
+| `JUNIPER_CASCOR_BLAS_THREADS`    | unset (width `2`)       | Caps `OMP_NUM_THREADS` / `MKL_NUM_THREADS` / `OPENBLAS_NUM_THREADS` where still unset, before numpy/torch load, on the CLI and the service. `0` / `off` / `none` opts out. An already-exported variable wins. |
 | `JUNIPER_DATA_URL`               | `http://localhost:8100` | JuniperData service URL                |
 | `JUNIPER_DATA_API_KEY`           | --                      | API key for JuniperData                |
 | `JUNIPER_CASCOR_HOST`            | `127.0.0.1`             | Bind host for the service; non-loopback requires a bind attestation (see the two flags below) |
@@ -153,6 +154,8 @@ Metrics nuance:
 | `JUNIPER_CASCOR_AUTO_START_DATA_SERVICE` / `_CANOPY` | `false` | Local companion auto-start; a failed health probe terminates the subprocess and clears `_active_services` (see troubleshooting). |
 
 **Secrets tip:** Prefer a readable non-empty `*_FILE` in compose. If the mount exists but is unreadable, boot continues with the plain env var (or open auth when neither is set) — fix file permissions rather than assuming the env var was ignored.
+
+**BLAS width:** both entry points cap OMP/MKL/OpenBLAS at 2 wherever those three variables are unset (`JUNIPER_CASCOR_BLAS_THREADS`; `0` / `off` / `none` sets nothing). A value exported before start wins, including one variable at a time. Setting them after numpy or torch has loaded does nothing. WS-6 lanes export all three (plus VECLIB and NUMEXPR) as `1`, which beats this default. Detail: [BLAS thread width](install/REFERENCE.md#blas-thread-width).
 
 **Worker tip — the four immediate-requeue paths.** Nothing in-flight should wait for the 120s reassignment timeout; grep the coordinator log for the matching line to tell them apart:
 
@@ -301,6 +304,7 @@ Scheduled `security-scan.yml` is Bandit + `pip-audit --strict` only (no CodeQL, 
 |-----------------------------------------------------------------------|-------------------------------------------------------------|-----------------------------------------------------------------------------------------------------------|
 | Unit tests fail with `assert '0.7.0' == '0.6.0'` (or similar SemVer)   | Wiring test pins a literal package version                  | Assert against `api.app._API_VERSION` (BUG-CC-04); do not hard-code SemVer in health/app/build-info tests |
 | `CASCOR_LOG_LEVEL` no effect                                          | Set after import                                            | Set env var before any `import`                                                                           |
+| CLI and `server.py` disagree on candidate epoch counts, or a local run will not match a WS-6 golden | BLAS width: the default is 2, the golden lanes export 1, or `OMP` / `MKL` / `OPENBLAS` `_NUM_THREADS` was set after numpy/torch loaded | Set `JUNIPER_CASCOR_BLAS_THREADS` (or those three variables) before Python starts, the same way on both entry points. `0` / `off` / `none` leaves the runtime default. See [BLAS thread width](install/REFERENCE.md#blas-thread-width) |
 | Logger pickle error                                                   | Logger in `__getstate__`                                    | Exclude logger from pickle state                                                                          |
 | `Unrecognized activation function name during deserialization`        | Activation name missing from `ActivationWithDerivative` map | Add matching key to `src/utils/activation.py` `ACTIVATION_MAP` (function `__name__` or module class name) |
 | HDF5/pickle restore changed activation unexpectedly (legacy behavior) | Previous fallback-to-ReLU behavior no longer applies        | Use only supported activation names; unknown names now fail fast with `ValueError`                        |
