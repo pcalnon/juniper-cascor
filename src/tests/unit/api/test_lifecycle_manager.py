@@ -388,6 +388,37 @@ class TestLifecycleManagerTrainingControl:
         assert mgr.state_machine.is_replaying()
         mgr.shutdown()
 
+    def test_stop_training_while_resume_ready_keeps_the_loaded_resume(self):
+        """STOP while RESUME_READY is rejected by the FSM and must not rewrite state.
+
+        Only STARTED and PAUSED accept STOP. A loaded resume stays RESUME_READY,
+        with the resume-point epoch intact, so the next start continues that
+        snapshot. ``training_state`` is already Stopped/Idle in this mode (canopy
+        reads RESUME_READY from the FSM). Rewriting it on a rejected transition
+        still moves the timestamp, which is how an unconditional
+        ``update_state(status="Stopped", phase="Idle")`` shows up.
+        """
+        from unittest.mock import patch
+
+        import api.lifecycle.monitor as monitor_mod
+
+        mgr = TrainingLifecycleManager()
+        mgr.state_machine.mark_resume_ready()
+        mgr._resume_point_epoch = 17
+        mgr.training_state.update_state(status="Stopped", phase="Idle", current_epoch=17)
+        with patch.object(monitor_mod.time, "time", return_value=123456789.0):
+            result = mgr.stop_training()
+        assert result["status"] == "stop_requested"
+        assert mgr.state_machine.is_resume_ready()
+        assert mgr._resume_point_epoch == 17
+        state = mgr.training_state.get_state()
+        assert state["status"] == "Stopped"
+        assert state["phase"] == "Idle"
+        assert state["current_epoch"] == 17
+        assert state["timestamp"] != 123456789.0
+        assert mgr._stop_event.is_set()
+        mgr.shutdown()
+
     def test_pause_training_not_active(self):
         """Pause fails when training not active."""
         mgr = TrainingLifecycleManager()

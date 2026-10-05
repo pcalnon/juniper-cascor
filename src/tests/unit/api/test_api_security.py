@@ -134,6 +134,34 @@ class TestAPIKeyAuth:
             auth.validate("valid-key")
             mock_compare.assert_called()
 
+    def test_validate_compares_every_key_and_keeps_an_earlier_match(self) -> None:
+        """#659: a match must not stop the walk, and a later miss must not clear it.
+
+        ``any(hmac.compare_digest(...))`` returns the same bool as the matched-flag
+        loop for every input, so a value assertion cannot see the short-circuit.
+        The first comparison is forced to succeed and the rest to fail. Stopping
+        at the hit reports a single comparison; assigning ``matched`` from each
+        comparison reports a miss. The configured keys are a set, so which key
+        would have matched first is not a stable order to assert against.
+        """
+        import hmac
+        from unittest.mock import patch
+
+        keys = ["key-alpha", "key-bravo", "key-charlie"]
+        auth = APIKeyAuth(keys)
+        seen: list[bytes] = []
+
+        def compare(presented: bytes, candidate: bytes) -> bool:
+            assert presented == b"key-alpha"
+            seen.append(candidate)
+            return len(seen) == 1
+
+        with patch.object(hmac, "compare_digest", side_effect=compare):
+            assert auth.validate("key-alpha") is True
+
+        assert len(seen) == len(keys)
+        assert set(seen) == {key.encode("utf-8", "surrogatepass") for key in keys}
+
     def test_validate_with_multiple_keys(self) -> None:
         """Validate should work correctly with multiple configured keys."""
         auth = APIKeyAuth(["key1", "key2", "key3"])
