@@ -1,7 +1,7 @@
 # CI/CD Manual
 
 **Project**: Juniper Cascor  
-**Version**: 0.3.17  
+**Version**: 0.3.18  
 **Reference**: CASCOR-P1-007
 
 ---
@@ -441,6 +441,75 @@ The Bandit upload is **best-effort**: `if: always()` and `continue-on-error: tru
 
 ---
 
+## Claude Code Workflow
+
+**Workflow:** `.github/workflows/claude.yml`  
+**Enforcement:** Not a required status check. It never runs on `push` or `pull_request`, and it does not feed the Quality Gate.
+
+### Intent
+
+Let a person with write access summon the Claude Code assistant by writing `@claude` on an issue, a pull-request comment, or a submitted review. The workflow file is the fleet template. Its header names `juniper-ml/.github/workflows/claude.yml` as the copy origin and says the required secret `ANTHROPIC_API_KEY` is set at org level — confirm this repo can read that secret before relying on the job.
+
+### When it runs
+
+| Event | Types | Text that must contain `@claude` |
+|-------|-------|-----------------------------------|
+| `issue_comment` | `created` | Comment body |
+| `pull_request_review_comment` | `created` | Comment body |
+| `pull_request_review` | `submitted` | Review body |
+| `issues` | `opened`, `assigned` | Issue body or title |
+
+The `if` uses GitHub's `contains()`, which is a **case-sensitive substring**. `@Claude` does not start the job. `@claudette` does.
+
+There is no `workflow_dispatch`. Editing a comment or a review does not schedule a new run. A pull request title or body never schedules a run, because `pull_request` is absent from `on:`. Labeling an issue `claude` never schedules a run, because `labeled` is absent from `on:`.
+
+### What it does
+
+1. Checkout with SHA-pinned `actions/checkout` and `fetch-depth: 1`.
+2. Run `anthropics/claude-code-action` with one input: `anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}`.
+
+Job permissions: `contents: write`, `pull-requests: write`, `issues: write`, `id-token: write`, `actions: read`. No other action inputs are set, so trigger phrase, assignee trigger, allowed bots, and branch template stay at the action defaults (`@claude`, unset, empty, empty). `id-token: write` is unused by the current `with:` block; authentication for a real run is the API key.
+
+### Second gate
+
+Starting the job is the first gate. The action applies three more, in this order:
+
+1. **Write permission** must be `admin` or `write`. Otherwise the step throws `Actor does not have write permissions to the repository`.
+2. **Bounded phrase.** The action match is case-insensitive and requires whitespace (or the start of the text) before `@claude`, and whitespace, one of `.,!?;:`, or the end of the text after it. A miss logs `No trigger found, skipping remaining steps` and returns success. The job stays green.
+3. **Human actor**, only after the phrase matches. `allowed_bots` is empty, so a non-User throws `Workflow initiated by non-human actor:`.
+
+`issues: assigned` is the sharp edge. The workflow `if` reads the issue title and body for every `issues` event, including `assigned`. The action scans that title and body only when the action is `opened`, and `assignee_trigger` is unset. Assigning an issue whose body already contains `@claude` starts a job that skips green.
+
+### Where commits land
+
+On an open pull request the action checks out the PR head (a fork PR comes from `refs/pull/<number>/head`) and pushes there. Because the workflow checkout is shallow, that fetch uses depth `max(commit count, 20)`.
+
+On an issue, or on a closed or merged pull request, it creates a branch from the default branch:
+
+```text
+claude/issue-<number>-<YYYYMMDD-HHmm>
+claude/pr-<number>-<YYYYMMDD-HHmm>
+```
+
+The timestamp is the runner's local time (UTC on `ubuntu-latest`). The name is lowercased and cut at 50 characters.
+
+### Pins and the API key
+
+Record the action version only as the `# vX.Y.Z` comment on the `uses:` line. Dependabot's `github-actions` group is `github/codeql-action*` only, so this action (and this file's checkout pin) each get their own pull request. A SHA bump that does not change `on:`, the job `if`, `permissions`, or `with:` leaves this runbook in place.
+
+`ANTHROPIC_API_KEY` is validated only after a phrase match. A real trigger with a blank secret throws `Environment variable validation failed:` and names `ANTHROPIC_API_KEY` (or `CLAUDE_CODE_OAUTH_TOKEN`, or workload-identity federation). A phrase miss never reaches that check.
+
+### Operator pitfalls
+
+- `@claudette`, `foo@claude`, and `@claude)` start a green job that logs `No trigger found, skipping remaining steps`.
+- `@Claude` never starts the job, even though the action's own matcher is case-insensitive.
+- A bot that can satisfy the workflow `if` fails the job: the write check runs first, and a non-User that passes it fails the human check because `allowed_bots` is empty.
+- There is no **Run workflow** button on **Claude Code**.
+
+> Contract tables: [CI Reference — Claude Code Workflow](REFERENCE.md#claude-code-workflow)
+
+---
+
 ## Environment Setup
 
 ### Conda Environment
@@ -684,6 +753,10 @@ If environment setup fails:
 | `twine check` fails after merging a Twine major in `requirements_ci.txt` | The local/CI freeze Twine is not what publish uses; or the Metadata-Version is too old for Twine 7 | Rebuild with current setuptools; run `twine check` under Twine ≥ 7; do not expect the freeze pin to change the action's upload Twine |
 | CodeQL did not run on this PR | `codeql.yml` `pull_request` branches are `[main]` only | Retarget the PR at `main`, or push to `main`/`develop` |
 | Cannot click **Run workflow** on CodeQL Analysis | No `workflow_dispatch` on `codeql.yml` | Push / PR-against-`main` / wait for Monday 06:00 UTC |
+| `@claude` left a green **Claude Code** run and no reply | Substring `if` matched; the action wanted a bounded `@claude`, or the event was `issues` `assigned` | Use `@claude` as its own word in a new comment, a submitted review, or a newly opened issue |
+| **Claude Code** failed: `Actor does not have write permissions to the repository` | Actor is below `write` | Comment as a user with `admin` or `write` |
+| **Claude Code** failed: `Workflow initiated by non-human actor:` | `allowed_bots` is empty | A human has to send the triggering text |
+| **Claude Code** failed: `Environment variable validation failed:` mentioning `ANTHROPIC_API_KEY` | Secret missing on a real trigger | Confirm the repo can read `ANTHROPIC_API_KEY` |
 | Dependabot CodeQL PR touches `ci.yml` too | `upload-sarif` is in the same `codeql-action` group | Expected — review Bandit SARIF pin with the CodeQL pins |
 | Security tab missing Bandit but Security Scans is green | `upload-sarif` `continue-on-error: true` | Check the upload step log; the blocking Bandit CLI still ran |
 | `conda_environment_ci.yaml` still pins old Twine after a `requirements_ci.txt` bump | Generated freezes update on different cadences | Regenerate via the CI dependency-docs job (`juniper-generate-dep-docs`); publish jobs ignore both freezes |
@@ -698,3 +771,4 @@ If environment setup fails:
 - **juniper-ml#384 / #555**: TestPyPI verify policy and dual-trigger race
 - **JuniperCanopy CI/CD**: Base workflow pattern
 - **CodeQL soak**: `.github/workflows/codeql.yml` (not a required check)
+- **Claude Code assistant**: `.github/workflows/claude.yml` (comment / review / issue `@claude`; not a required check)

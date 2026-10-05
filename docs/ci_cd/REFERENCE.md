@@ -1,9 +1,9 @@
 # CI/CD Reference
 
 **Project**: Juniper Cascor  
-**Workflow Files**: `.github/workflows/ci.yml`, `codeql.yml`, `security-scan.yml`, `golden-regression.yml`, `conformance.yml`, `ci-protocol.yml`, `ci-cascor-model.yml`, `lockfile-update.yml`, `publish.yml`, `publish-protocol.yml`, `publish-cascor-model.yml`
+**Workflow Files**: `.github/workflows/ci.yml`, `codeql.yml`, `security-scan.yml`, `claude.yml`, `golden-regression.yml`, `conformance.yml`, `ci-protocol.yml`, `ci-cascor-model.yml`, `lockfile-update.yml`, `publish.yml`, `publish-protocol.yml`, `publish-cascor-model.yml`
 
-**Last Updated**: 2026-08-24
+**Last Updated**: 2026-10-05
 
 ---
 
@@ -104,6 +104,71 @@ Do not document a specific SHA or `v4.x.y` patch — Dependabot refreshes the pi
 | Scheduled | `security-scan.yml` | Bandit medium+ + `pip-audit --strict`; artifact `security-reports` | **None** (no CodeQL, no Gitleaks, no `upload-sarif`) |
 
 `security-scan.yml` has `workflow_dispatch`; `codeql.yml` does not.
+
+## Claude Code Workflow
+
+Interactive `@claude` assistant. Source of truth: `.github/workflows/claude.yml`. The file header names `juniper-ml/.github/workflows/claude.yml` as the copy origin and says `ANTHROPIC_API_KEY` is an org-level secret — confirm this repo can read that secret before relying on the job. Operator runbook: [CI Manual — Claude Code Workflow](MANUAL.md#claude-code-workflow).
+
+| Setting | Value |
+|---------|-------|
+| Workflow / job | **Claude Code** / `claude` on `ubuntu-latest` |
+| Required check | **No.** Comment, review, and issue events only. The job does not feed `ci.yml`'s Quality Gate. |
+| `workflow_dispatch` | **None** |
+| Checkout | SHA-pinned `actions/checkout`, `fetch-depth: 1` |
+| Action input | `anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}` only |
+| Permissions | `contents: write`, `pull-requests: write`, `issues: write`, `id-token: write`, `actions: read` |
+
+`id-token: write` is granted. This workflow sets no Bedrock, Vertex, Foundry, or workload-identity inputs, so a real run authenticates with `ANTHROPIC_API_KEY`.
+
+### Triggers
+
+The job `if` is a case-sensitive `contains(..., '@claude')`.
+
+| Event | Types | Text the `if` reads |
+|-------|-------|---------------------|
+| `issue_comment` | `created` | `github.event.comment.body` |
+| `pull_request_review_comment` | `created` | `github.event.comment.body` |
+| `pull_request_review` | `submitted` | `github.event.review.body` |
+| `issues` | `opened`, `assigned` | `github.event.issue.body` or `github.event.issue.title` |
+
+These events are absent from `on:`, so they never schedule the job: `pull_request` (title or body), `edited` on a comment or review, and `issues` `labeled`.
+
+### Second gate inside the action
+
+The workflow `if` only decides whether the job starts. The pinned `anthropics/claude-code-action` then applies its own checks. This workflow leaves the action defaults in place: `trigger_phrase` `@claude`, `assignee_trigger` unset, `allowed_bots` empty, `label_trigger` `claude` (unused here), `branch_prefix` `claude/`, `branch_name_template` empty.
+
+Order in the action entrypoint:
+
+1. **Write permission.** Collaborator permission must be `admin` or `write`. Otherwise the step throws `Actor does not have write permissions to the repository`.
+2. **Phrase match** (tag mode). A miss logs `No trigger found, skipping remaining steps` and the step returns success, so the job stays green.
+3. **Human actor**, only after a phrase match, inside tag-mode prepare. `allowed_bots` is empty, so a non-User throws `Workflow initiated by non-human actor:`.
+
+The action's phrase test is case-insensitive. It requires the start of the text or whitespace before `@claude`, and whitespace, one of `.,!?;:`, or the end of the text after it. The workflow `if` is a case-sensitive substring, so the two gates disagree:
+
+| Text | Job | Action |
+|------|-----|--------|
+| `@claude` as its own word in a new comment, a submitted review, or a newly opened issue title/body | Starts | Runs when the actor is a human with write access |
+| `@Claude` | Stays idle | Never reached (the `if` is case-sensitive) |
+| `@claudette`, `foo@claude`, or `@claude)` | Starts | Skips green (`No trigger found, skipping remaining steps`) |
+| Issue **assigned**, title or body already contains `@claude` | Starts | Skips green. Body and title are scanned on `opened` only, and `assignee_trigger` is unset |
+| Issue labeled `claude` | Stays idle | `labeled` is absent from `on:`. The default `label_trigger` never fires here |
+| `@claude` in a pull request title or body | Stays idle | `pull_request` is absent from `on:` |
+| Bot account whose comment contains `@claude` | Starts when the workflow `if` matches | Fails. The write check runs first; a non-User that passes it still fails the human check |
+
+### Where it writes
+
+| Event | Branch |
+|-------|--------|
+| Comment or review on an **open** pull request | Checks out that PR's head branch (a fork PR is fetched as `refs/pull/<number>/head`). The workflow's `fetch-depth: 1` is shallow, so the action fetches again at `max(commit count, 20)`. |
+| Issue, or a **closed / merged** pull request | Creates `claude/issue-<number>-<YYYYMMDD-HHmm>` or `claude/pr-<number>-<YYYYMMDD-HHmm>` from the default branch. Timestamp is the runner's local time (UTC on `ubuntu-latest`). The name is lowercased and truncated to 50 characters. |
+
+`contents: write` is what lets that checkout push. An empty `branch_name_template` is the fallback above; a template that collapses to an empty name uses the same fallback.
+
+### Pins
+
+Leave the action SHA and the `# vX.Y.Z` comment in the workflow file. Dependabot's `github-actions` group covers only `github/codeql-action*`, so `claude-code-action` and the `actions/checkout` pin in this file each move in their own PR. A pin bump that leaves `on:`, the job `if`, `permissions`, and `with:` unchanged leaves this contract in place.
+
+A missing `ANTHROPIC_API_KEY` is checked only after a phrase match. The step then throws `Environment variable validation failed:` and lists `Either ANTHROPIC_API_KEY, CLAUDE_CODE_OAUTH_TOKEN, or workload identity federation (ANTHROPIC_FEDERATION_RULE_ID and ANTHROPIC_ORGANIZATION_ID) is required when using direct Anthropic API.` A phrase miss stays green without the secret.
 
 ## Publish Workflows
 
@@ -474,6 +539,10 @@ Freshness recompiles with `--constraint requirements.lock` and diffs `pkg==versi
 | CodeQL action pins drifted across files | Partial merge of a `codeql-action` group PR | Keep `init` / `autobuild` / `analyze` / `ci.yml` `upload-sarif` on the same SHA |
 | Bandit findings missing from the Security tab | `upload-sarif` is `continue-on-error: true` | The blocking Bandit step still failed the **Security Scans** job; the SARIF upload is best-effort |
 | No way to re-run CodeQL from Actions | `codeql.yml` has no `workflow_dispatch` | Push an empty commit, open/sync a PR against `main`, or wait for Monday 06:00 UTC |
+| `@claude` comment, job green, no reply | Workflow `if` matched a substring; the action required a bounded phrase, or the event was `issues` `assigned` | Put `@claude` as its own word in a **new** comment, a **submitted** review, or a newly **opened** issue. See [Claude Code Workflow](#claude-code-workflow) |
+| Claude Code job red: `Actor does not have write permissions to the repository` | Commenter is below `write` | A user with `admin` or `write` has to be the actor. This workflow sets no `allowed_non_write_users` |
+| Claude Code job red: `Workflow initiated by non-human actor:` | `allowed_bots` is empty | A human has to comment. This workflow does not pass `allowed_bots` |
+| Claude Code job red: `Environment variable validation failed:` and `ANTHROPIC_API_KEY` | Secret missing or blank on a real trigger | Repository must be able to read `ANTHROPIC_API_KEY` (the workflow header calls it an org-level secret) |
 | Update Lockfile hard-fails on human PR | Actions PAT missing/expired | Restore Actions secret or commit lock manually |
 | Publish skipped for wrong package | Tag prefix does not match workflow guard | Use `v*` / `juniper-cascor-protocol-v*` / `juniper-cascor-model-v*` |
 | TestPyPI 400 already exists | Concurrent publish or retry of same version | Bump version; avoid dual `release`+`push: tags` triggers |
@@ -506,4 +575,5 @@ act -j test
 - [Installation Guide](../install/QUICK_START.md)
 - [API Reference](../api/API_REFERENCE.md)
 - [CodeQL Analysis](#codeql-analysis)
+- [Claude Code Workflow](#claude-code-workflow)
 - Test Runner Scripts (`src/tests/scripts/`)

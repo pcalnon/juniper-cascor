@@ -1,6 +1,6 @@
 # Developer Cheatsheet — juniper-cascor
 
-**Version**: 1.0.6  |  **Date**: 2026-08-24  |  **Project**: juniper-cascor
+**Version**: 1.0.7  |  **Date**: 2026-10-05  |  **Project**: juniper-cascor
 
 ---
 
@@ -286,12 +286,19 @@ Soak — not a required check; no `workflow_dispatch`.
 Dependabot group `codeql-action` bumps `init`/`autobuild`/`analyze` plus `ci.yml` Bandit `upload-sarif` together.
 Scheduled `security-scan.yml` is Bandit + `pip-audit --strict` only (no CodeQL, no Gitleaks).
 
+**Claude Code:** `.github/workflows/claude.yml` answers `@claude` on a new issue comment, a new PR review comment, a submitted review, or a newly opened issue (title or body).
+It is not a CI check and has no `workflow_dispatch`.
+The job `if` is a case-sensitive substring; the action then requires a bounded `@claude`, permission `write` or `admin`, and a human actor (`allowed_bots` is empty).
+`@claudette`, `foo@claude`, and an issue **assignment** start a green run that logs `No trigger found, skipping remaining steps`.
+Open PRs are pushed on the PR head; issues and closed or merged PRs get `claude/issue-<number>-<YYYYMMDD-HHmm>` or `claude/pr-<number>-<YYYYMMDD-HHmm>`.
+Secret: `ANTHROPIC_API_KEY`. The action SHA is outside the `codeql-action` Dependabot group.
+
 **PyPI publish:** cut a GitHub Release (not a bare tag). Tags: `v*` → `publish.yml` (`juniper-cascor`); `juniper-cascor-protocol-v*` / `juniper-cascor-model-v*` → matching sub-package workflows. TestPyPI verify uses `--no-deps` and TestPyPI index only. Keep `pypa/gh-action-pypi-publish` SHA-pinned (Dependabot bumps all three workflows together).
 
 **Twine pins:** `conf/requirements_ci.txt` (and the conda CI freeze) are not the publish uploader. Publish and package-CI jobs `pip install` Twine unpinned for `twine check`; uploads use the action-bundled Twine. Twine 7 rejects Metadata 2.0 and needs `packaging >= 26.1` — smoke `python -m build && twine check dist/*` after a major freeze bump.
 
-> See: [CI Quick Start](ci_cd/QUICK_START.md#dependabot-lockfile-updates) | [CI Quick Start — CodeQL](ci_cd/QUICK_START.md#codeql-and-github-actions-dependabot) | [CI Manual — Lockfile](ci_cd/MANUAL.md#lockfile-update-workflow) | [CI Manual — CodeQL](ci_cd/MANUAL.md#codeql-analysis)
-> See also: [CI Manual — PyPI Publishing](ci_cd/MANUAL.md#pypi-publishing) | [Twine Pin Surfaces](ci_cd/MANUAL.md#twine-pin-surfaces) | [CI Reference](ci_cd/REFERENCE.md#publish-workflows) | [CI Reference — CodeQL](ci_cd/REFERENCE.md#codeql-analysis) | [Dependency Update Workflow](../notes/DEPENDENCY_UPDATE_WORKFLOW.md) | [Environment Setup](install/ENVIRONMENT_SETUP.md)
+> See: [CI Quick Start](ci_cd/QUICK_START.md#dependabot-lockfile-updates) | [CI Quick Start — CodeQL](ci_cd/QUICK_START.md#codeql-and-github-actions-dependabot) | [CI Quick Start — Claude Code](ci_cd/QUICK_START.md#claude-code-workflow) | [CI Manual — Lockfile](ci_cd/MANUAL.md#lockfile-update-workflow) | [CI Manual — CodeQL](ci_cd/MANUAL.md#codeql-analysis) | [CI Manual — Claude Code](ci_cd/MANUAL.md#claude-code-workflow)
+> See also: [CI Manual — PyPI Publishing](ci_cd/MANUAL.md#pypi-publishing) | [Twine Pin Surfaces](ci_cd/MANUAL.md#twine-pin-surfaces) | [CI Reference](ci_cd/REFERENCE.md#publish-workflows) | [CI Reference — CodeQL](ci_cd/REFERENCE.md#codeql-analysis) | [CI Reference — Claude Code](ci_cd/REFERENCE.md#claude-code-workflow) | [Dependency Update Workflow](../notes/DEPENDENCY_UPDATE_WORKFLOW.md) | [Environment Setup](install/ENVIRONMENT_SETUP.md)
 
 ---
 
@@ -307,6 +314,7 @@ Scheduled `security-scan.yml` is Bandit + `pip-audit --strict` only (no CodeQL, 
 | GPU tests skipped                                                     | No CUDA or flag missing                                     | `pytest --gpu` on GPU machine                                                                             |
 | Long tests skipped                                                    | Flag not passed                                             | `pytest --run-long`                                                                                       |
 | CodeQL missing on a PR targeting `develop`                            | `codeql.yml` `pull_request` filter is `main` only           | Retarget at `main`, push to `develop`, or wait for the Monday 06:00 UTC cron                              |
+| `@claude` comment, green Claude Code run, no reply                    | Substring `if` matched; action wanted a bounded phrase, or the event was `issues` `assigned` | Put `@claude` alone in a new comment, a submitted review, or a newly opened issue. See [Claude Code workflow](ci_cd/MANUAL.md#claude-code-workflow) |
 | HDF5 load fails                                                       | Corrupted or version mismatch                               | `python -m snapshots.snapshot_cli verify snapshot.h5`                                                     |
 | NaN in training                                                       | LR too high or bad data                                     | Reduce `learning_rate`, check tensors                                                                     |
 | C7 `f1`/`roc_auc` always `null` on history rows                       | Within-pass `output_epoch` rows, or eval metrics disabled   | Read terminal `kind="training_step"` rows; ensure `JUNIPER_CASCOR_EVAL_METRICS_ENABLED` is not `0`/`false` |

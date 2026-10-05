@@ -80,6 +80,30 @@ The other two security lanes stay separate: `ci.yml` **Security Scans** (Gitleak
 
 > Details: [CI Manual — CodeQL](MANUAL.md#codeql-analysis) | [CI Reference — CodeQL](REFERENCE.md#codeql-analysis)
 
+## Claude Code Workflow
+
+`.github/workflows/claude.yml` is the `@claude` assistant. It is **not** part of the CI Quality Gate and it has no **Run workflow** button.
+
+Write `@claude` as its own word in:
+
+| Where | What schedules the job |
+|-------|------------------------|
+| Issue comment or PR review comment | A **new** comment (`created`) |
+| Pull request review | A review that is **submitted** |
+| Issue | The issue being **opened**, in the title or the body |
+
+The workflow `if` is a case-sensitive substring, and the action applies a stricter check after the job starts. `@Claude` never starts the job. `@claudette`, `foo@claude`, and `@claude)` start a job that stays **green** and logs `No trigger found, skipping remaining steps`. Assigning an issue whose body already contains `@claude` does the same: the action reads the title and body on `opened` only.
+
+The commenter needs repository permission `write` or `admin`. A bot fails the job: permission below `write` throws `Actor does not have write permissions to the repository`, and a non-User that passes that check throws `Workflow initiated by non-human actor:` because `allowed_bots` is empty.
+
+On an open PR the assistant pushes to that PR's branch. On an issue, or on a closed or merged PR, it opens `claude/issue-<number>-<YYYYMMDD-HHmm>` or `claude/pr-<number>-<YYYYMMDD-HHmm>` from the default branch.
+
+The only secret is `ANTHROPIC_API_KEY` (the workflow header says it is an org-level secret). A blank key fails only after a real phrase match, with `Environment variable validation failed:`.
+
+Dependabot does **not** group `anthropics/claude-code-action` with `github/codeql-action*`. This action's SHA pin moves in its own pull request. The version record is the `# vX.Y.Z` comment in the workflow.
+
+> Details: [CI Manual — Claude Code Workflow](MANUAL.md#claude-code-workflow) | [CI Reference — Claude Code Workflow](REFERENCE.md#claude-code-workflow)
+
 ## Checking Results
 
 ### Finding Workflow Runs
