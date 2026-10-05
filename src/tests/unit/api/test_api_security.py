@@ -134,6 +134,52 @@ class TestAPIKeyAuth:
             auth.validate("valid-key")
             mock_compare.assert_called()
 
+    def test_validate_walks_every_key_after_a_match(self) -> None:
+        """#659: a match must not stop the walk. ``any()`` would, and the number of comparisons would say which key matched.
+
+        The configured keys are a set, so iteration order is not the assertion. The first comparison is forced to match and the later ones to miss: a short-circuit returns after one call, and ``matched = compare_digest(...)`` (overwriting the flag) returns the last result, which is a miss.
+        """
+        import hmac
+        from unittest.mock import patch
+
+        auth = APIKeyAuth(["key-a", "key-b", "key-c"])
+        calls: list[tuple[bytes, bytes]] = []
+        outcomes = iter((True, False, False))
+
+        def _compare(presented: bytes, candidate: bytes) -> bool:
+            calls.append((presented, candidate))
+            return next(outcomes)
+
+        with patch.object(hmac, "compare_digest", side_effect=_compare):
+            assert auth.validate("key-a") is True
+
+        assert len(calls) == 3
+        assert {candidate for _, candidate in calls} == {b"key-a", b"key-b", b"key-c"}
+        assert {presented for presented, _ in calls} == {b"key-a"}
+
+    def test_validate_walks_every_key_on_a_total_miss(self) -> None:
+        """A miss is the same number of comparisons as a hit. Stopping early on a miss would also leak position."""
+        import hmac
+        from unittest.mock import patch
+
+        auth = APIKeyAuth(["key-a", "key-b", "key-c"])
+        with patch.object(hmac, "compare_digest", return_value=False) as mock_compare:
+            assert auth.validate("other-key") is False
+        assert mock_compare.call_count == 3
+
+    def test_non_ascii_presented_key_still_walks_every_candidate(self) -> None:
+        """Encoding happens once, before the walk. A non-ASCII key is a miss, not an exception that aborts mid-loop."""
+        import hmac
+        from unittest.mock import patch
+
+        auth = APIKeyAuth(["key-a", "key-b"])
+        with patch.object(hmac, "compare_digest", wraps=hmac.compare_digest) as mock_compare:
+            assert auth.validate("caf\u00e9") is False
+        assert mock_compare.call_count == 2
+        presented, candidate = mock_compare.call_args_list[0].args
+        assert isinstance(presented, bytes)
+        assert isinstance(candidate, bytes)
+
     def test_validate_with_multiple_keys(self) -> None:
         """Validate should work correctly with multiple configured keys."""
         auth = APIKeyAuth(["key1", "key2", "key3"])

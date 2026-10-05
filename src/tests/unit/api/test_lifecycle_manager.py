@@ -1261,6 +1261,51 @@ class TestResumeFromSnapshot:
         assert mgr._resume_point_epoch is None
         mgr.shutdown()
 
+    def test_stop_while_resume_ready_keeps_the_next_start_a_resume(self):
+        """Stop while RESUME_READY leaves the resume contract, and the next start is still a resume.
+
+        Investigating and Replaying reject stop with ``RuntimeError``. RESUME_READY does not: the FSM rejects the transition and ``training_state`` is updated only when the transition lands. A stop that instead moved the FSM to Stopped would make the following start a fresh run — the auto-snap ratchet would clear, metrics would be retained across the boundary, and the resume marker would be left unconsumed.
+        """
+        from unittest.mock import patch
+
+        import torch
+
+        mgr = TrainingLifecycleManager()
+        try:
+            mgr.create_network(input_size=2, output_size=2, candidate_pool_size=2, candidate_epochs=2, output_epochs=2, patience=1)
+            network = mgr.network
+            assert mgr.state_machine.mark_resume_ready() is True
+            mgr._resume_point_epoch = 5
+            with mgr._auto_snap_lock:
+                mgr._auto_snap_best_metric = 0.85
+            mgr.training_state.update_state(status="Stopped", phase="Idle", current_epoch=5)
+
+            result = mgr.stop_training()
+
+            assert result["status"] == "stop_requested"
+            assert mgr.state_machine.is_resume_ready()
+            assert mgr.network is network
+            assert mgr._resume_point_epoch == 5
+            assert mgr._auto_snap_best_metric == 0.85
+            state = mgr.training_state.get_state()
+            assert state["status"] == "Stopped"
+            assert state["current_epoch"] == 5
+
+            x = torch.randn(20, 2)
+            y = torch.zeros(20, 2)
+            y[:10, 0] = 1
+            y[10:, 1] = 1
+            with patch.object(mgr.network, "fit", return_value={"train_loss": [0.3]}):
+                mgr.start_training(X=x, y=y)
+                if mgr._training_future is not None:
+                    mgr._training_future.result(timeout=10)
+
+            assert mgr._retain_metrics_next_run is False
+            assert mgr._auto_snap_best_metric == 0.85
+            assert mgr._resume_point_epoch is None
+        finally:
+            mgr.shutdown()
+
     def test_start_training_from_stopped_resets_auto_snap_baseline(self, tmp_path):
         """Regression: a normal start_training (FSM = Stopped, not RESUME_READY)
         still resets the auto-snap ratchet."""
