@@ -1,7 +1,7 @@
 # Juniper Cascor - Source Code Manual
 
-**Version**: 0.3.21  
-**Last Updated**: 2026-01-29  
+**Version**: 0.3.22  
+**Last Updated**: 2026-10-05  
 **Purpose**: Comprehensive guide for understanding and modifying the source code
 
 ---
@@ -318,7 +318,10 @@ api/websocket/
 | Server process | `uvicorn.run(...)` from `src/server.py` |
 | Wire library | `websockets`, installed by `uvicorn[standard]` (`requirements.lock`: `# via uvicorn`) |
 
-Do not add direct `websockets` calls in handlers. Reserved close codes such as `1006` are rejected by the production `websockets` server; heartbeat timeouts use `1011` (documented in the API reference C3 contract). When Dependabot bumps `websockets`, prefer the WebSocket unit/integration suites listed under [ASGI WebSocket transport](../api/JUNIPER_CASCOR_API_REFERENCE.md#asgi-websocket-transport).
+Do not add direct `websockets` calls in handlers.
+Reserved close codes such as `1006` are rejected by the production `websockets` server; heartbeat timeouts use `1011` (documented in the API reference C3 contract).
+A lock regen can move the `websockets` pin even when Dependabot's table omits it ([#701](https://github.com/pcalnon/juniper-cascor/pull/701): both locks `17.2`, conf freezes stayed `17.1`).
+When that pin moves, prefer the WebSocket unit/integration suites listed under [ASGI WebSocket transport](../api/JUNIPER_CASCOR_API_REFERENCE.md#asgi-websocket-transport).
 
 Heartbeat and control-idle timeouts on `training_stream.py` / `control_stream.py` are read through the module-local `_numeric_setting(obj, name, fallback)` helper before they reach `asyncio.sleep` / `asyncio.wait_for`, so a missing / non-numeric / `MagicMock` `app.state.settings` attribute falls back (`30` / `10` / `Settings.ws_control_idle_timeout_sec`) instead of raising `TypeError` and tearing down the loop.
 

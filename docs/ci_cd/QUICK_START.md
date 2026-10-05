@@ -43,22 +43,23 @@ The workflow does not currently have `workflow_dispatch` enabled. To trigger man
 
 ## Dependabot Lockfile Updates
 
-`.github/workflows/lockfile-update.yml` regenerates `requirements.lock` on Dependabot `dependabot/pip/**` pushes (and on same-repo PRs that touch `pyproject.toml`).
+`.github/workflows/lockfile-update.yml` regenerates `requirements.lock` and derives `requirements-cpu.lock` on Dependabot `dependabot/pip/**` pushes (and on same-repo PRs that touch `pyproject.toml`). The compile reads `pyproject.toml` onto a fresh output path, so the skip commit can move pins Dependabot did not list. Conf freezes and `ARG TORCH_VERSION` are separate.
 
 | PAT (`CROSS_REPO_DISPATCH_TOKEN`) | Behavior |
 |-----------------------------------|----------|
-| Available to the run | Auto-regen + push (`[dependabot skip]`) so CI re-triggers |
-| Missing on Dependabot runs | **Green no-op** — regenerate locally or register the PAT under **Settings → Secrets → Dependabot** |
+| Available to the run | Auto-regen of both locks + one signed push (`[dependabot skip] Update requirements.lock and requirements-cpu.lock`) so CI re-triggers |
+| Missing on Dependabot runs | **Green no-op** — regenerate both locks locally or register the PAT under **Settings → Secrets → Dependabot** |
 | Missing on non-Dependabot runs | Hard fail (secret misconfiguration) |
 
-CI job **Lockfile Freshness** still blocks merge when the lock no longer satisfies `pyproject.toml`, even if auto-regen no-ops.
+CI job **Lockfile Freshness** still blocks merge when `requirements.lock` no longer satisfies `pyproject.toml`, even if auto-regen no-ops. It does not compare the two locks' versions.
 
 ```bash
-# Local regen (same extras as the workflow)
+# Both locks, matching the workflow (fresh output, then the CPU derivation).
+# Full script: notes/DEPENDENCY_UPDATE_WORKFLOW.md#regenerating-both-locks
 uv pip compile pyproject.toml \
   --extra ml --extra api --extra observability --extra juniper-data \
   --index-strategy unsafe-best-match --no-emit-package torch \
-  --upgrade -o requirements.lock
+  -o /tmp/requirements.lock.check
 ```
 
 > Details: [CI Manual — Lockfile Update](MANUAL.md#lockfile-update-workflow) | [Dependency Update Workflow](../../notes/DEPENDENCY_UPDATE_WORKFLOW.md)

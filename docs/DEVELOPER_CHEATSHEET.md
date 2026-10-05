@@ -1,6 +1,6 @@
 # Developer Cheatsheet — juniper-cascor
 
-**Version**: 1.0.6  |  **Date**: 2026-08-24  |  **Project**: juniper-cascor
+**Version**: 1.0.8  |  **Date**: 2026-10-05  |  **Project**: juniper-cascor
 
 ---
 
@@ -264,11 +264,9 @@ Levels: TRACE(5) -> VERBOSE(7) -> DEBUG(10) -> INFO(20) -> WARNING(30) -> ERROR(
 ## Dependencies and CI/CD
 
 ```bash
-# Add dep: edit pyproject.toml, then regenerate requirements.lock
-uv pip compile pyproject.toml \
-  --extra ml --extra api --extra observability --extra juniper-data \
-  --index-strategy unsafe-best-match --no-emit-package torch \
-  --upgrade -o requirements.lock
+# Add dep: edit pyproject.toml, then regenerate BOTH locks (GPU lock, then
+# requirements-cpu.lock). Recipe: notes/DEPENDENCY_UPDATE_WORKFLOW.md#regenerating-both-locks
+# A lone `--upgrade -o requirements.lock` leaves the image lock behind.
 # Conda env
 conda create --name JuniperCascor1 --file conf/conda_environment.yaml
 ```
@@ -279,7 +277,10 @@ Core: `torch`, `numpy`, `h5py`, `matplotlib`, `PyYAML`, `requests`
 
 **CI pipeline:** pre-commit -> unit-tests -> integration-tests -> build -> security -> lockfile-check -> required-checks. Separate serial gates: `golden-regression.yml` (OUT-12) and `conformance.yml` (OUT-13). Path-filtered package CI: `ci-protocol.yml`, `ci-cascor-model.yml`.
 
-**Dependabot lockfile:** `lockfile-update.yml` auto-regens when `CROSS_REPO_DISPATCH_TOKEN` is visible to the run. Dependabot uses a separate secret store — missing PAT there is a green no-op; **Lockfile Freshness** still blocks stale locks. Register the PAT under Dependabot secrets to restore auto-push.
+**Dependabot lockfile:** `lockfile-update.yml` recompiles `requirements.lock` from `pyproject.toml` (fresh output path) and derives `requirements-cpu.lock` in the same signed commit when `CROSS_REPO_DISPATCH_TOKEN` is visible to the run.
+That commit can move transitive pins past the conf freeze Dependabot just wrote, and it leaves `ARG TORCH_VERSION` unchanged.
+Dependabot uses a separate secret store — missing PAT there is a green no-op; **Lockfile Freshness** still blocks a stale `requirements.lock`.
+Register the PAT under Dependabot secrets to restore auto-push.
 
 **CodeQL:** `codeql.yml` runs Python CodeQL (`+security-and-quality`) on push to `main`/`develop`, PRs targeting **`main` only**, and Monday 06:00 UTC.
 Soak — not a required check; no `workflow_dispatch`.
@@ -343,10 +344,11 @@ Scheduled `security-scan.yml` is Bandit + `pip-audit --strict` only (no CodeQL, 
 | Auth open / keys missing despite a `_FILE` mount                      | Unreadable secret file fell through to an unset env var       | Fix mount permissions, or set the plain `JUNIPER_CASCOR_API_KEYS` env var as the fallback |
 | Dependabot bumps `websockets` but app code never imports it           | Transitive pin from `uvicorn[standard]`                     | Review as transport-only; confirm lock `# via uvicorn`, sync `conf/requirements-pip.txt` / `conf/requirements_ci.txt`, run WebSocket suites |
 | After a `websockets` major bump, clients see half-open sockets        | App closed with reserved code `1006` (rejected on the wire) | Close with `1011` (or another allowed code); see C3 heartbeat contract in `training_stream.py` / `control_stream.py` |
-| Lock says `websockets==17.x` but `conf/requirements_*.txt` still `16.x` | Freeze files updated on separate Dependabot paths           | Align conf freeze pins with `requirements.lock` before merge; check `conf/conda_environment_ci.yaml` separately |
+| Lock says `websockets==17.x` but `conf/requirements_*.txt` still lags | Skip commit re-resolves ranges; conf freezes are a separate edit (`#701`: locks `17.2`, conf stayed `17.1`) | Align conf pins with both locks when they must match; `conf/conda_environment_ci.yaml` is a third freeze |
+| Conf `torch` moved; container image did not | Image pin is `ARG TORCH_VERSION` + the CPU lock header; torch is omitted from both locks | Bump the Dockerfile ARG and the header together, then re-derive `requirements-cpu.lock` |
 | Golden / conformance tests collected but all skipped                  | Missing `--golden` / `--conformance` opt-in flags           | Pass the matching flag with `--slow --integration` (see `conftest.py`)                                                  |
 | Golden lane red locally after green unit CI                           | Wrong interpreter/torch or multi-thread / xdist             | Match CI pins (3.13 + torch 2.11.0, serial, `CASCOR_NUM_PROCESSES=1`, single-thread BLAS)                               |
-| Lockfile Freshness red; Update Lockfile green with no `[dependabot skip]` commit | `CROSS_REPO_DISPATCH_TOKEN` empty in Dependabot secret store | Register PAT under Dependabot secrets, or push a local `uv pip compile ... -o requirements.lock` |
+| Lockfile Freshness red; Update Lockfile green with no `[dependabot skip]` commit | `CROSS_REPO_DISPATCH_TOKEN` empty in Dependabot secret store | Register PAT under Dependabot secrets, or push a signed regen of both locks ([recipe](../notes/DEPENDENCY_UPDATE_WORKFLOW.md#regenerating-both-locks)) |
 | Update Lockfile hard-fails on a human `pyproject.toml` PR             | Actions PAT missing/expired                                 | Restore Actions `CROSS_REPO_DISPATCH_TOKEN` or commit the regen in the PR |
 | Publish workflow skipped / wrong package                              | Release tag prefix does not match workflow guard            | Use `v*`, `juniper-cascor-protocol-v*`, or `juniper-cascor-model-v*` — see [PyPI Publishing](ci_cd/MANUAL.md#pypi-publishing) |
 | TestPyPI `400 File already exists` on publish                         | Dual trigger or concurrent upload of same version           | Publish via Release only (no `push: tags`); bump version to re-upload |

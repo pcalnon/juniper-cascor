@@ -1478,7 +1478,10 @@ juniper-cascor does **not** import the `websockets` package. Handlers use FastAP
 1. **Python floor.** `websockets` 17.x requires Python ≥ 3.11. This repo already requires Python ≥ 3.12 (`requires-python` in `pyproject.toml`), so the floor is already satisfied.
 2. **No direct API surface.** Application code must not call `websockets.*` APIs. A major bump is a transport-layer change unless uvicorn's integration itself regresses.
 3. **Close-code validation.** The `websockets` server rejects reserved close codes such as `1006` (`ProtocolError`). Heartbeat timeouts therefore close with `1011` (C3 contract in `training_stream.py` / `control_stream.py`); Starlette's TestClient can hide wire-serialization failures, so production close-code choices matter.
-4. **Pin-file sync.** Dependabot may edit `conf/requirements-pip.txt` / `conf/requirements_ci.txt` while `requirements.lock` (and sometimes `conf/conda_environment_ci.yaml`) lag or lead. After a major bump, confirm the lock `# via uvicorn` pin and the conf freeze files agree before merge.
+4. **Pin-file sync.** `lockfile-update.yml` re-resolves `pyproject.toml` into `requirements.lock` and derives `requirements-cpu.lock` in the same commit.
+   That resolution can lead the conf freeze Dependabot wrote in the same PR (on [#701](https://github.com/pcalnon/juniper-cascor/pull/701), both locks moved to `websockets==17.2` while the conf freezes stayed at `17.1`).
+   `conf/conda_environment_ci.yaml` is a third freeze.
+   After a major bump, confirm the lock `# via uvicorn` pin in both locks, then align the conf freezes when they must match.
 5. **Smoke after major bumps.** Prefer the WebSocket-focused suites:
    ```bash
    cd src && python -m pytest \

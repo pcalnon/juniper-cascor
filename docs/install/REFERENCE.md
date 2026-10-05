@@ -100,10 +100,16 @@ python server.py
 
 **Worker anomaly history:** on `/ws/v1/workers` disconnect, session teardown clears that worker's `AnomalyDetector` history (`clear_worker`) so reconnect churn cannot grow `_worker_history` without bound or let a recycled `worker_id` inherit stale anomaly signals.
 
-**ASGI transport dependency:** the service does not declare `websockets` in `pyproject.toml`. It comes in through `uvicorn[standard]` (API extra) and is pinned in `requirements.lock` as `# via uvicorn`. Application handlers speak FastAPI/Starlette WebSockets only (`src/api/websocket/`). When Dependabot bumps `websockets` (including major lines such as 16 → 17):
+**ASGI transport dependency:** the service declares no `websockets` dependency in `pyproject.toml`.
+It comes in through `uvicorn[standard]` (API extra) and is pinned in `requirements.lock` as `# via uvicorn` (the same pin is copied into `requirements-cpu.lock`).
+Application handlers speak FastAPI/Starlette WebSockets only (`src/api/websocket/`).
+When `websockets` moves (including major lines such as 16 → 17, and including a lock regen that moves it without listing it in Dependabot's table):
 
 - Confirm Python ≥ 3.12 still holds (websockets 17 requires ≥ 3.11; this repo is already stricter).
-- Confirm `conf/requirements-pip.txt`, `conf/requirements_ci.txt`, and `requirements.lock` land on the same pin; `conf/conda_environment_ci.yaml` is a separate freeze and may need a follow-up.
+- Compare `requirements.lock` and `requirements-cpu.lock` (the regen derives the CPU lock with `--constraint`) with `conf/requirements-pip.txt` and `conf/requirements_ci.txt`.
+  Those conf files are a separate edit.
+  On [#701](https://github.com/pcalnon/juniper-cascor/pull/701) the skip commit set both locks to `websockets==17.2` while the conf freezes stayed at `17.1`.
+  `conf/conda_environment_ci.yaml` is a third freeze.
 - Treat the change as transport-only unless CI WebSocket suites fail — see [ASGI WebSocket transport](../api/JUNIPER_CASCOR_API_REFERENCE.md#asgi-websocket-transport).
 
 ### Lifecycle evaluation metrics (C7)

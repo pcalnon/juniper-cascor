@@ -3,7 +3,7 @@
 **Project**: Juniper Cascor  
 **Workflow Files**: `.github/workflows/ci.yml`, `codeql.yml`, `security-scan.yml`, `golden-regression.yml`, `conformance.yml`, `ci-protocol.yml`, `ci-cascor-model.yml`, `lockfile-update.yml`, `publish.yml`, `publish-protocol.yml`, `publish-cascor-model.yml`
 
-**Last Updated**: 2026-08-24
+**Last Updated**: 2026-10-05
 
 ---
 
@@ -433,22 +433,33 @@ Checkout/push uses `secrets.CROSS_REPO_DISPATCH_TOKEN` (not `GITHUB_TOKEN`) so t
 
 | Condition | Result |
 |-----------|--------|
-| PAT non-empty | Full regen + push (`[dependabot skip] Update requirements.lock`) |
+| PAT non-empty | Full regen of both locks + one signed push (`[dependabot skip] Update requirements.lock and requirements-cpu.lock`) |
 | PAT empty + Dependabot actor | Green no-op with `::notice::` — Lockfile Freshness still enforces |
 | PAT empty + other actor | Hard fail (`::error::`) — secret misconfiguration |
 
 Register the same PAT under **Settings → Secrets → Dependabot** to restore Dependabot auto-regen without editing the workflow (cascor #428; canopy #476).
 
-### Compile flags (regen and freshness)
+### Compile flags
+
+Regen (`.github/workflows/lockfile-update.yml`) compiles `pyproject.toml` to a fresh path, moves that file onto `requirements.lock`, then derives `requirements-cpu.lock` with `--constraint requirements.lock`.
+The fresh path is the upgrade: uv treats an existing `-o requirements.lock` as extra constraints and keeps the old pins.
+`--no-emit-package torch` leaves torch out of both locks.
+The CPU step refuses when `ARG TORCH_VERSION` disagrees with the CPU lock header, and it splices that header back after uv overwrites it.
+One `createCommitOnBranch` commit carries both files.
 
 ```bash
 uv pip compile pyproject.toml \
   --extra ml --extra api --extra observability --extra juniper-data \
   --index-strategy unsafe-best-match --no-emit-package torch \
-  --upgrade -o requirements.lock
+  -o /tmp/requirements.lock.check
 ```
 
-Freshness recompiles with `--constraint requirements.lock` and diffs `pkg==version` pin lines (ignores uv header / `-c` annotations). Newer PyPI versions alone do not fail the gate.
+Freshness (`ci.yml` `lockfile-check`) recompiles with `--constraint requirements.lock` and diffs `pkg==version` pin lines (ignores uv header / `-c` annotations). Newer PyPI versions alone do not fail that gate. The CPU half of the same job checks that every image dependency **name** is present in `requirements-cpu.lock`. It does not compare versions to `requirements.lock`, and neither half reads the conf freezes.
+
+The skip commit can therefore move transitive pins past the conf lines Dependabot just wrote, in the same PR.
+On [#701](https://github.com/pcalnon/juniper-cascor/pull/701), conf freezes landed `filelock==4.0.9` while both locks resolved `4.0.11`, and `websockets` stayed `17.1` in the conf freezes while both locks moved to `17.2`.
+`torch==2.14.1` in the conf freezes left `ARG TORCH_VERSION=2.14.0` in place.
+Full recipe and the three-row table: [Regenerating both locks](../../notes/DEPENDENCY_UPDATE_WORKFLOW.md#regenerating-both-locks).
 
 > Operator narrative: [Dependency Update Workflow](../../notes/DEPENDENCY_UPDATE_WORKFLOW.md)
 
@@ -469,7 +480,9 @@ Freshness recompiles with `--constraint requirements.lock` and diffs `pkg==versi
 | Golden float mismatches locally | Wrong Python/torch or multi-thread BLAS / xdist | Use 3.13 + torch 2.11.0, single-thread env, serial pytest |
 | Conformance fails after model-core bump | Interface drift in `CascorModel` adapter hooks | Fix production `CascorModel` / factory hooks — do not weaken the kit |
 | Package CI did not run | Path filter missed the change | Edit under `juniper-cascor-protocol/` or `juniper-cascor-model/`, or use `workflow_dispatch` |
-| Lockfile Freshness red on Dependabot PR | PAT gate green no-op (Dependabot secret store) | Register `CROSS_REPO_DISPATCH_TOKEN` under Dependabot secrets, or commit a local regen |
+| Lockfile Freshness red on Dependabot PR | PAT gate green no-op (Dependabot secret store) | Register `CROSS_REPO_DISPATCH_TOKEN` under Dependabot secrets, or commit a signed regen of both locks |
+| Lock moved a package Dependabot's table omitted | Regen re-resolves `pyproject.toml` onto a fresh file; conf freezes are a separate edit | Expected on a PAT-enabled run. Align conf freezes when they must match; conda yaml is a third freeze |
+| Conf `torch` pin moved; image still on the old version | Torch is omitted from both locks. Image pin is `ARG TORCH_VERSION` plus the CPU lock header | Bump the Dockerfile ARG and the header together, then re-derive `requirements-cpu.lock` |
 | CodeQL missing on a `develop` PR | `pull_request` filter is `main` only | Push the branch to `develop`, retarget the PR at `main`, or wait for the Monday cron on `main`/`develop` |
 | CodeQL action pins drifted across files | Partial merge of a `codeql-action` group PR | Keep `init` / `autobuild` / `analyze` / `ci.yml` `upload-sarif` on the same SHA |
 | Bandit findings missing from the Security tab | `upload-sarif` is `continue-on-error: true` | The blocking Bandit step still failed the **Security Scans** job; the SARIF upload is best-effort |

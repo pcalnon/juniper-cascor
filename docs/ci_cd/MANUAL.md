@@ -1,7 +1,7 @@
 # CI/CD Manual
 
 **Project**: Juniper Cascor  
-**Version**: 0.3.17  
+**Version**: 0.3.19  
 **Reference**: CASCOR-P1-007
 
 ---
@@ -348,7 +348,7 @@ python -m pytest src/tests/unit \
 
 ### Intent
 
-Keep Docker/CI pins (`requirements.lock`) aligned with `pyproject.toml` when Dependabot or a human bumps dependency ranges, without relying on `GITHUB_TOKEN` (which would not re-trigger CI on the lock commit).
+Keep `requirements.lock` and the derived image lock `requirements-cpu.lock` aligned with `pyproject.toml` when Dependabot or a human bumps dependency ranges. The regen commit uses `CROSS_REPO_DISPATCH_TOKEN` through `createCommitOnBranch` (GitHub-signed, and the push re-triggers CI). `GITHUB_TOKEN` would not re-trigger CI.
 
 ### When it runs
 
@@ -361,7 +361,7 @@ Secrets are not readable in job `if:` expressions, so the first step exports `HA
 
 | Actor / secret | Outcome |
 |----------------|---------|
-| PAT present | Checkout with PAT → `uv pip compile` → commit/push if dirty |
+| PAT present | Checkout with PAT → fresh compile of `requirements.lock` → derive `requirements-cpu.lock` → one signed commit if either file is dirty |
 | Dependabot + empty PAT | `::notice::` + skip remaining steps (exit 0) |
 | Anyone else + empty PAT | `::error::` + exit 1 |
 
@@ -369,15 +369,13 @@ Secrets are not readable in job `if:` expressions, so the first step exports `HA
 
 ### Operator recovery when auto-regen no-ops
 
-```bash
-uv pip compile pyproject.toml \
-  --extra ml --extra api --extra observability --extra juniper-data \
-  --index-strategy unsafe-best-match --no-emit-package torch \
-  --upgrade -o requirements.lock
-git add requirements.lock
-git commit -m "[dependabot skip] Update requirements.lock"
-git push
-```
+Regenerate **both** locks with the recipe in [Regenerating both locks](../../notes/DEPENDENCY_UPDATE_WORKFLOW.md#regenerating-both-locks). Commit `requirements.lock` and `requirements-cpu.lock` together. The workflow message is `[dependabot skip] Update requirements.lock and requirements-cpu.lock`.
+
+The freshness error text names only `uv pip compile ... --upgrade -o requirements.lock`. That leaves the image lock on the previous resolution. The CPU check in the same job only requires dependency names to be present, so version skew between the two locks stays green.
+
+A conf-file `torch` bump (Dependabot's `python-minor` group writes `conf/requirements*.txt`) leaves the image on `ARG TORCH_VERSION`. [#701](https://github.com/pcalnon/juniper-cascor/pull/701) moved those conf lines to `torch==2.14.1` while the Dockerfile and the CPU lock header stayed at `2.14.0`. The same skip commit moved `filelock` to `4.0.11` and `websockets` to `17.2` in both locks after Dependabot had written `filelock==4.0.9` and left `websockets==17.1` in the conf freezes.
+
+Sign the recovery commit. An unsigned commit on the branch blocks merge; squash does not remove it.
 
 > Narrative + troubleshooting matrix: [notes/DEPENDENCY_UPDATE_WORKFLOW.md](../../notes/DEPENDENCY_UPDATE_WORKFLOW.md)
 
@@ -670,7 +668,7 @@ If environment setup fails:
 |---------|-------|-----|
 | Lockfile Freshness red; Update Lockfile green with no commit | Dependabot PAT gate no-op | Register `CROSS_REPO_DISPATCH_TOKEN` under Dependabot secrets, or push a local regen |
 | Update Lockfile fails on a human `pyproject.toml` PR | Actions PAT missing | Restore Actions secret or commit the lock in the PR |
-| Freshness fails after a range bump | Lock cannot satisfy new mins | Regen with `--upgrade` (see compile command above) |
+| Freshness fails after a range bump | Lock cannot satisfy new mins | Regen both locks ([recipe](../../notes/DEPENDENCY_UPDATE_WORKFLOW.md#regenerating-both-locks)) |
 
 ### Publish Failures
 
