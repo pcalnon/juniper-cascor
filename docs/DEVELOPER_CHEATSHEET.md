@@ -1,6 +1,6 @@
 # Developer Cheatsheet — juniper-cascor
 
-**Version**: 1.0.6  |  **Date**: 2026-08-24  |  **Project**: juniper-cascor
+**Version**: 1.0.8  |  **Date**: 2026-10-05  |  **Project**: juniper-cascor
 
 ---
 
@@ -324,6 +324,8 @@ Scheduled `security-scan.yml` is Bandit + `pip-audit --strict` only (no CodeQL, 
 | `POST`/`DELETE` `/v1/network` returns 409 while paused or replaying   | Parked training thread, replay session, or snapshot investigation still owns the model | `stop` training, end replay (`replay/control` `action=stop`), or retrain/reset out of Investigating before create/delete |
 | `POST /v1/training/start` with `inline_data` returns `422` on lengths | `train_x`/`train_y` (or `val_*`) row counts differ, or only one of `val_x`/`val_y` | Align sample counts; send both val arrays or omit both — see [InlineDataset alignment](api/JUNIPER_CASCOR_API_REFERENCE.md#post-v1trainingstart) |
 | `POST /v1/training/start` → 409 mentioning Investigating / replaying  | FSM still in snapshot inspect or replay mode                | Retrain/resume out of Investigating, or `replay/control` `action=stop`, then start again |
+| `POST /v1/training/start` → 409 `[start_fresh_required]`; previous dataset label stays | Continue start (`start_fresh` false or omitted) staged a dataset wider than the current network; the reload refuses before bind | Retry refuses the same way. Send `start_fresh: true` (rebuilds from the dataset and keeps applied params) or use a live dataset swap to grow. See [start_fresh](api/JUNIPER_CASCOR_API_REFERENCE.md#post-v1trainingstart) |
+| Start fresh restores engine defaults (`output_epochs` 10000, `max_hidden_units` 10) | The rebuild did not re-apply `get_training_params()` (minus `epochs_max` and the `auto_snap_*` flags) after create-on-start; the start body still wins on overlap | Carry is `_reapply_carried_params_locked`. Pin with `src/tests/unit/api/test_start_fresh_carries_params.py` |
 | `POST /v1/training/stop` → 409                                        | Stop attempted while `Investigating` / `Replaying`          | Exit Investigating via snapshot retrain/resume; stop replay first — stop is not permissive in those states |
 | Snapshot restore/retrain/resume → 409 during replay                   | Route preflights `Started` / `Paused` / `Replaying`         | Stop replay via `replay/control` `action=stop` (or stop training) before restore/retrain/resume |
 | `PATCH /v1/training/params` → 404 on a bad candidate-pool triple      | Typed `InvalidCandidatePoolError` collapsed into bare `ValueError` | The route maps that subclass to **422** with the violation string; keep the `except InvalidCandidatePoolError` clause ahead of `except ValueError` |
