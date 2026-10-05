@@ -1,6 +1,6 @@
 # Developer Cheatsheet — juniper-cascor
 
-**Version**: 1.0.8  |  **Date**: 2026-10-05  |  **Project**: juniper-cascor
+**Version**: 1.0.9  |  **Date**: 2026-10-05  |  **Project**: juniper-cascor
 
 ---
 
