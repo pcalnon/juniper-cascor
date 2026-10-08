@@ -1,7 +1,7 @@
 # Juniper Cascor - Source Code Manual
 
-**Version**: 0.3.21  
-**Last Updated**: 2026-01-29  
+**Version**: 0.3.22  
+**Last Updated**: 2026-10-08  
 **Purpose**: Comprehensive guide for understanding and modifying the source code
 
 ---
@@ -274,6 +274,17 @@ profiling/
 - `--profile-output`: Custom output directory
 - `--profile-top-n`: Number of top items to show
 
+### parallelism/blas_threads.py
+
+**Location**: `src/parallelism/blas_threads.py`  
+**Purpose**: Process-wide BLAS thread width, applied once at process start
+
+`configure_blas_threads()` is called at the top of `src/main.py` and inside `src/api/__init__.py`, before either entry point imports numpy or torch. `api.app` imports torch at module level, so the service call has to stay in the package `__init__`. A call added later, in `api.app` or `server.py`, runs after that import and does not resize the pool already loaded in the parent.
+
+Do not assign `OMP_NUM_THREADS`, `MKL_NUM_THREADS`, or `OPENBLAS_NUM_THREADS` in any other module. `test_no_entry_point_hardcodes_blas_thread_vars` fails when another file under `src/` (outside `tests/` and `backups/`) does. The `torch.set_num_threads` pins in `cascade_correlation.py` (one per candidate worker, one on the parent) are a separate control and stay where they are.
+
+Operator contract — default width 2, opt-out, and `setdefault`: [BLAS thread width](../install/REFERENCE.md#blas-thread-width).
+
 ### remote_client/
 
 **Location**: `src/remote_client/`  
@@ -318,7 +329,10 @@ api/websocket/
 | Server process | `uvicorn.run(...)` from `src/server.py` |
 | Wire library | `websockets`, installed by `uvicorn[standard]` (`requirements.lock`: `# via uvicorn`) |
 
-Do not add direct `websockets` calls in handlers. Reserved close codes such as `1006` are rejected by the production `websockets` server; heartbeat timeouts use `1011` (documented in the API reference C3 contract). When Dependabot bumps `websockets`, prefer the WebSocket unit/integration suites listed under [ASGI WebSocket transport](../api/JUNIPER_CASCOR_API_REFERENCE.md#asgi-websocket-transport).
+Do not add direct `websockets` calls in handlers.
+Reserved close codes such as `1006` are rejected by the production `websockets` server; heartbeat timeouts use `1011` (documented in the API reference C3 contract).
+A lock regen can move the `websockets` pin even when Dependabot's table omits it ([#701](https://github.com/pcalnon/juniper-cascor/pull/701): both locks `17.2`, conf freezes stayed `17.1`).
+When that pin moves, prefer the WebSocket unit/integration suites listed under [ASGI WebSocket transport](../api/JUNIPER_CASCOR_API_REFERENCE.md#asgi-websocket-transport).
 
 Heartbeat and control-idle timeouts on `training_stream.py` / `control_stream.py` are read through the module-local `_numeric_setting(obj, name, fallback)` helper before they reach `asyncio.sleep` / `asyncio.wait_for`, so a missing / non-numeric / `MagicMock` `app.state.settings` attribute falls back (`30` / `10` / `Settings.ws_control_idle_timeout_sec`) instead of raising `TypeError` and tearing down the loop.
 
@@ -787,4 +801,4 @@ This prevents accidental parameter passing and makes intent explicit.
 ---
 
 **Document Version**: 0.3.21  
-**Last Updated**: 2026-01-29
+**Last Updated**: 2026-10-08

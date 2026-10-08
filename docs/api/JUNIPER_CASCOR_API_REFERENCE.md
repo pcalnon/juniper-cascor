@@ -688,12 +688,53 @@ Content-Type: application/json
 
 Failures surface as request-boundary **`422`** before `torch.tensor` / `fit`. The route also requires both `val_x` and `val_y` before building validation tensors (defense in depth).
 
-**`start_fresh` (C5 / Q4 use-case 2, default `false`)** — Retention posture for the run:
+**`start_fresh` (C5 / Q4 use-case 2, default `false`)** — Retention posture for the run. Two later rulings sit on the same flag (F1 and F2, 2026-09-24, `src/api/lifecycle/manager.py`).
 
-- **`false` (default) — continue the current model.** The existing network AND its retained metrics/history are kept, so the run continues training the model as-is (the cross-dataset continual-training use case, Q4 use-case 1). Metrics/history are now RETAINED across run boundaries by default (pre-C5 every run start emptied the metrics buffer); a continuing run appends only its new rows.
-- **`true` — clean-launch start.** The current model and all retained metrics/history are DISCARDED before the run, and a vanilla, untrained network is rebuilt from the dataset dims — functionally identical to a fresh stack launch, **EXCEPT that on-disk snapshot artifacts are preserved** (nothing on this path deletes a snapshot). Independent of the snapshot-driven `POST /v1/snapshots/{id}/retrain` and the FSM-level `POST /v1/training/reset`.
+- **`false` (default) — continue the current model.** The existing network and its retained metrics/history are kept, so the run continues training the model as-is (the cross-dataset continual-training use case, Q4 use-case 1). Metrics/history are RETAINED across run boundaries by default (pre-C5 every run start emptied the metrics buffer); a continuing run appends only its new metric rows.
 
-Backward compatible: pre-C5 callers omit `start_fresh` and get the retain (continue) path.
+  A staged dataset that is wider than that network on either axis (more input features, or more outputs) is refused **before** it is bound. `_refuse_dataset_wider_than_network` raises `ValueError` whose text starts with `[start_fresh_required]` (`_PROJECT_API_START_FRESH_REQUIRED_MARKER` in `src/cascor_constants/constants_api/constants_api_defaults.py`). The route maps that to HTTP **409**; `error.message` is `Training cannot be started: ` plus the lifecycle text, which names both shapes:
+
+  ```text
+  Training cannot be started: [start_fresh_required] The staged dataset 'equities' (15 features, 2 outputs) is wider than the current network (2 inputs, 2 outputs). A start continues the current network, and only a live dataset swap can widen one, so this start needs start_fresh, which builds a new network from the dataset. The staged dataset was not loaded: it is still staged, and the current network and its results are unchanged.
+  ```
+
+  Nothing about the loaded run moves. `pending_dataset` stays staged,
+  `current_dataset` still names the previous load, and the tensors,
+  `dataset_shortfall`, and the partition set that shortfall stands on are the
+  same objects. A retry of the same start refuses again. Send
+  `"start_fresh": true` to consume the staged dataset and build a network from
+  its dims, or call the live dataset swap, which is the path that grows an
+  existing network. A narrower or equal staged dataset is consumed and
+  zero-padded up to the network. A start with no network, and any
+  `start_fresh: true` start, skip this check.
+
+  Inline tensors on the same request bind **before** the staged reload. If those tensors are themselves wider than the continued network, the pad helper refuses later with `_pad_dataset_for_network: dataset (<in>, <out>) exceeds network capacity (<net_in>, <net_out>); resize the network first`. That is also a 409, and that text does not start with `[start_fresh_required]`. Canopy matches the staged refusal by the token alone.
+
+- **`true` — clean-launch start.** The in-memory model and retained
+  metrics/history are discarded, then a vanilla untrained network is rebuilt
+  from the dataset dims. On-disk snapshots are not deleted. The loaded
+  dataset, `current_dataset`, and `dataset_shortfall` stay: start-fresh
+  replaces the model, not the data. The discard runs only after training data
+  is present, so a start with no data does not throw the model away.
+  Independent of `POST /v1/snapshots/{id}/retrain` and `POST /v1/training/reset`.
+
+  **Applied params are carried (F2).** Before the discard, `get_training_params()`
+  is captured except `epochs_max`, `auto_snap_best`, and `auto_snap_min_epochs`
+  (`_START_FRESH_UNCARRIED_PARAMS`). After create-on-start,
+  `_reapply_carried_params_locked` writes them back through the same whitelist
+  and atomic rollback as `PATCH /v1/training/params`. The start body's own
+  `params` are applied after that carry, so a key set in the body wins and the
+  other carried keys stay. `epochs_max` is not copied; it is re-derived from
+  the carried granular limits. The two `auto_snap_*` flags live on the
+  lifecycle and are left as they were. A start-fresh with no prior network
+  builds at the create-on-start defaults, because there is nothing to carry.
+  A key the rebuilt network does not take is logged
+  (`start_fresh: params the rebuilt network did not take`) and does not fail
+  the start.
+
+  Without the carry, a client that patches and then starts fresh used to replace the operator's values with engine defaults. The observed set was `max_hidden_units` 32 → 10, `output_epochs` 60 → 10000, `candidate_epochs` 40 → 400, and `max_iterations` 8 → 1000000.
+
+Callers that omit `start_fresh` get the continue path. Pins: `src/tests/unit/api/test_start_refuses_wider_staged_dataset.py` and `src/tests/unit/api/test_start_fresh_carries_params.py`.
 
 **Example call**:
 
@@ -711,7 +752,7 @@ curl -s -X POST http://localhost:8201/v1/training/start \
 
 | Code | Trigger                                                                  |
 |------|--------------------------------------------------------------------------|
-| 409  | Cannot start in the current FSM state. The route maps the lifecycle `RuntimeError` / `ValueError` to `HTTPException(409, "Training cannot be started: {reason}")`. Common reasons: already running; **Investigating** a snapshot (exit via `/v1/snapshots/{id}/retrain` or `/resume`); **Replaying** a snapshot (stop via `/v1/snapshots/{id}/replay/control` with `action=stop`); missing training data (also the fall-through for an unsupported `dataset.generator` with nothing staged) |
+| 409  | Cannot start in the current FSM state. The route maps the lifecycle `RuntimeError` / `ValueError` to `HTTPException(409, "Training cannot be started: {reason}")`. Common reasons: already running; **Investigating** a snapshot (exit via `/v1/snapshots/{id}/retrain` or `/resume`); **Replaying** a snapshot (stop via `/v1/snapshots/{id}/replay/control` with `action=stop`); missing training data (also the fall-through for an unsupported `dataset.generator` with nothing staged); a staged dataset wider than the continued network (`[start_fresh_required]`, staged slot kept — see `start_fresh` above) |
 | 422  | Body validation, unknown `params` key, NaN/Inf in `inline_data`, or `InlineDataset` train/val alignment failures (length mismatch / half-specified val split) |
 | 503  | Lifecycle unbound                                                        |
 
@@ -1478,7 +1519,10 @@ juniper-cascor does **not** import the `websockets` package. Handlers use FastAP
 1. **Python floor.** `websockets` 17.x requires Python ≥ 3.11. This repo already requires Python ≥ 3.12 (`requires-python` in `pyproject.toml`), so the floor is already satisfied.
 2. **No direct API surface.** Application code must not call `websockets.*` APIs. A major bump is a transport-layer change unless uvicorn's integration itself regresses.
 3. **Close-code validation.** The `websockets` server rejects reserved close codes such as `1006` (`ProtocolError`). Heartbeat timeouts therefore close with `1011` (C3 contract in `training_stream.py` / `control_stream.py`); Starlette's TestClient can hide wire-serialization failures, so production close-code choices matter.
-4. **Pin-file sync.** Dependabot may edit `conf/requirements-pip.txt` / `conf/requirements_ci.txt` while `requirements.lock` (and sometimes `conf/conda_environment_ci.yaml`) lag or lead. After a major bump, confirm the lock `# via uvicorn` pin and the conf freeze files agree before merge.
+4. **Pin-file sync.** `lockfile-update.yml` re-resolves `pyproject.toml` into `requirements.lock` and derives `requirements-cpu.lock` in the same commit.
+   That resolution can lead the conf freeze Dependabot wrote in the same PR (on [#701](https://github.com/pcalnon/juniper-cascor/pull/701), both locks moved to `websockets==17.2` while the conf freezes stayed at `17.1`).
+   `conf/conda_environment_ci.yaml` is a third freeze.
+   After a major bump, confirm the lock `# via uvicorn` pin in both locks, then align the conf freezes when they must match.
 5. **Smoke after major bumps.** Prefer the WebSocket-focused suites:
    ```bash
    cd src && python -m pytest \

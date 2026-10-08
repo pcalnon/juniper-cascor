@@ -166,6 +166,17 @@ class TestTrainingStateMachine:
         assert result is True
         assert sm.is_stopped()
 
+    def test_stop_while_resume_ready_is_rejected(self):
+        """STOP is legal only from STARTED or PAUSED. RESUME_READY still owns the snapshotted run.
+
+        Accepting STOP here would drop the FSM to Stopped, and the next start would take the fresh-run path: the auto-snap ratchet would clear and the loaded history would be retained as if it were a new run.
+        """
+        sm = TrainingStateMachine()
+        assert sm.mark_resume_ready() is True
+        assert sm.handle_command(Command.STOP) is False
+        assert sm.is_resume_ready()
+        assert sm.phase == TrainingPhase.IDLE
+
     def test_mark_failed_from_paused(self):
         """Can mark failed from paused state."""
         sm = TrainingStateMachine()

@@ -1,7 +1,7 @@
 # CI/CD Manual
 
 **Project**: Juniper Cascor  
-**Version**: 0.3.17  
+**Version**: 0.3.18  
 **Reference**: CASCOR-P1-007
 
 ---
@@ -348,7 +348,7 @@ python -m pytest src/tests/unit \
 
 ### Intent
 
-Keep Docker/CI pins (`requirements.lock`) aligned with `pyproject.toml` when Dependabot or a human bumps dependency ranges, without relying on `GITHUB_TOKEN` (which would not re-trigger CI on the lock commit).
+Keep `requirements.lock` and the derived image lock `requirements-cpu.lock` aligned with `pyproject.toml` when Dependabot or a human bumps dependency ranges. The regen commit uses `CROSS_REPO_DISPATCH_TOKEN` through `createCommitOnBranch` (GitHub-signed, and the push re-triggers CI). `GITHUB_TOKEN` would not re-trigger CI.
 
 ### When it runs
 
@@ -361,7 +361,7 @@ Secrets are not readable in job `if:` expressions, so the first step exports `HA
 
 | Actor / secret | Outcome |
 |----------------|---------|
-| PAT present | Checkout with PAT → `uv pip compile` → commit/push if dirty |
+| PAT present | Checkout with PAT → fresh compile of `requirements.lock` → derive `requirements-cpu.lock` → one signed commit if either file is dirty |
 | Dependabot + empty PAT | `::notice::` + skip remaining steps (exit 0) |
 | Anyone else + empty PAT | `::error::` + exit 1 |
 
@@ -369,15 +369,13 @@ Secrets are not readable in job `if:` expressions, so the first step exports `HA
 
 ### Operator recovery when auto-regen no-ops
 
-```bash
-uv pip compile pyproject.toml \
-  --extra ml --extra api --extra observability --extra juniper-data \
-  --index-strategy unsafe-best-match --no-emit-package torch \
-  --upgrade -o requirements.lock
-git add requirements.lock
-git commit -m "[dependabot skip] Update requirements.lock"
-git push
-```
+Regenerate **both** locks with the recipe in [Regenerating both locks](../../notes/DEPENDENCY_UPDATE_WORKFLOW.md#regenerating-both-locks). Commit `requirements.lock` and `requirements-cpu.lock` together. The workflow message is `[dependabot skip] Update requirements.lock and requirements-cpu.lock`.
+
+The freshness error text names only `uv pip compile ... --upgrade -o requirements.lock`. That leaves the image lock on the previous resolution. The CPU check in the same job only requires dependency names to be present, so version skew between the two locks stays green.
+
+A conf-file `torch` bump (Dependabot's `python-minor` group writes `conf/requirements*.txt`) leaves the image on `ARG TORCH_VERSION`. [#701](https://github.com/pcalnon/juniper-cascor/pull/701) moved those conf lines to `torch==2.14.1` while the Dockerfile and the CPU lock header stayed at `2.14.0`. The same skip commit moved `filelock` to `4.0.11` and `websockets` to `17.2` in both locks after Dependabot had written `filelock==4.0.9` and left `websockets==17.1` in the conf freezes.
+
+Sign the recovery commit. An unsigned commit on the branch blocks merge; squash does not remove it.
 
 > Narrative + troubleshooting matrix: [notes/DEPENDENCY_UPDATE_WORKFLOW.md](../../notes/DEPENDENCY_UPDATE_WORKFLOW.md)
 
@@ -438,6 +436,76 @@ The Bandit upload is **best-effort**: `if: always()` and `continue-on-error: tru
 - Monday `pip-audit --strict` in `security-scan.yml` has **no** torch `--ignore-vuln` list. A red scheduled scan can be an advisory `ci.yml` already ignores — compare the two commands before treating it as a new CVE.
 
 > Contract tables: [CI Reference — CodeQL Analysis](REFERENCE.md#codeql-analysis)
+
+---
+
+## Claude Code Workflow
+
+**Workflow:** `.github/workflows/claude.yml`  
+**Enforcement:** Not a required status check. It never runs on `push` or `pull_request`, and it does not feed the Quality Gate.
+
+### Intent
+
+Let a person with write access summon the Claude Code assistant by writing `@claude` on an issue, a pull-request comment, or a submitted review. The workflow file is the fleet template. Its header names `juniper-ml/.github/workflows/claude.yml` as the copy origin and says the required secret `ANTHROPIC_API_KEY` is set at org level — confirm this repo can read that secret before relying on the job.
+
+### When it runs
+
+| Event | Types | Text that must contain `@claude` |
+|-------|-------|-----------------------------------|
+| `issue_comment` | `created` | Comment body |
+| `pull_request_review_comment` | `created` | Comment body |
+| `pull_request_review` | `submitted` | Review body |
+| `issues` | `opened`, `assigned` | Issue body or title |
+
+The `if` uses GitHub's `contains()`, which is a **case-insensitive substring** test. `@Claude` starts the job, and the action matches it like `@claude`. `@claudette` starts the job too.
+
+There is no `workflow_dispatch`. Editing a comment or a review does not schedule a new run. A pull request title or body never schedules a run, because `pull_request` is absent from `on:`. Labeling an issue `claude` never schedules a run, because `labeled` is absent from `on:`.
+
+### What it does
+
+1. Checkout with SHA-pinned `actions/checkout` and `fetch-depth: 1`.
+2. Run `anthropics/claude-code-action` with one input: `anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}`.
+
+Job permissions: `contents: write`, `pull-requests: write`, `issues: write`, `id-token: write`, `actions: read`. No other action inputs are set, so trigger phrase, assignee trigger, allowed bots, and branch template stay at the action defaults (`@claude`, unset, empty, empty). `id-token: write` is used on every run that starts: no `github_token` input is passed, so the action trades the job's OIDC token for a Claude GitHub App installation token, and that token makes the GitHub API calls and the pushes. The model itself authenticates with the API key.
+
+### Second gate
+
+Starting the job is the first gate. The action then runs these steps, in this order:
+
+1. **GitHub App token.** The OIDC exchange runs before any check. It fails red when the Claude GitHub App is not installed on the repo or `id-token: write` is missing. A workflow-validation rejection (expected while the workflow file itself is being changed) logs `Skipping action due to workflow validation:` and exits green.
+2. **Write permission** must be `admin` or `write`. Otherwise the step throws `Actor does not have write permissions to the repository`. A login ending in `[bot]` passes this check without a lookup.
+3. **Bounded phrase.** The action match is case-insensitive and requires whitespace (or the start of the text) before `@claude`, and whitespace, one of `.,!?;:`, or the end of the text after it. A miss logs `No trigger found, skipping remaining steps` and returns success. The job stays green.
+4. **Human actor**, only after the phrase matches. `allowed_bots` is empty, so a non-User throws `Workflow initiated by non-human actor:`.
+
+`issues: assigned` is the sharp edge. The workflow `if` reads the issue title and body for every `issues` event, including `assigned`. The action scans that title and body only when the action is `opened`, and `assignee_trigger` is unset. Assigning an issue whose body already contains `@claude` starts a job that skips green (red, at the write check, when the assigner lacks write access).
+
+### Where commits land
+
+On an open pull request the action checks out the PR head branch. Because the workflow checkout is shallow, that fetch uses depth `max(commit count, 20)`. On a same-repo PR Claude pushes to that head. A fork PR is fetched from `refs/pull/<number>/head`, but pushes go only to `origin` (this repo), so they land on a same-named branch here and never update the fork's PR.
+
+On an issue, or on a closed or merged pull request, it creates a local branch from the default branch, which reaches GitHub only if Claude pushes a commit:
+
+```text
+claude/issue-<number>-<YYYYMMDD-HHmm>
+claude/pr-<number>-<YYYYMMDD-HHmm>
+```
+
+The timestamp comes from the runner's local clock (the action uses local `Date` getters, not UTC ones). The name is lowercased and cut at 50 characters.
+
+### Pins and the API key
+
+Record the action version only as the `# vX.Y.Z` comment on the `uses:` line. Dependabot's `github-actions` group is `github/codeql-action*` only, so this action (and this file's checkout pin) each get their own pull request. The second gate lives in the action's source, not in this repo, so any SHA bump can change it (defaults, matcher, check order, messages, branch naming), even when `on:`, the job `if`, `permissions`, and `with:` stay the same. Re-check those at the new SHA before relying on this runbook. This text was verified at `v1.0.240`; `v1.0.237` behaves the same.
+
+`ANTHROPIC_API_KEY` is validated only after a phrase match. A real trigger with a blank secret throws `Environment variable validation failed:` and names `ANTHROPIC_API_KEY` (or `CLAUDE_CODE_OAUTH_TOKEN`, or workload-identity federation). A phrase miss never reaches that check.
+
+### Operator pitfalls
+
+- `@claudette`, `foo@claude`, and `@claude)` start a job that, for an actor with write access, stays green and logs `No trigger found, skipping remaining steps`. Anyone else's run fails at the write check first.
+- Case does not matter anywhere: `@Claude` starts the job and runs like `@claude`.
+- A login ending in `[bot]` passes the write check without a lookup. With a bounded `@claude` it then fails the human check (`Workflow initiated by non-human actor:`, because `allowed_bots` is empty); without one it skips green. An app account whose login lacks the `[bot]` suffix fails the write check.
+- There is no **Run workflow** button on **Claude Code**.
+
+> Contract tables: [CI Reference — Claude Code Workflow](REFERENCE.md#claude-code-workflow)
 
 ---
 
@@ -670,7 +738,7 @@ If environment setup fails:
 |---------|-------|-----|
 | Lockfile Freshness red; Update Lockfile green with no commit | Dependabot PAT gate no-op | Register `CROSS_REPO_DISPATCH_TOKEN` under Dependabot secrets, or push a local regen |
 | Update Lockfile fails on a human `pyproject.toml` PR | Actions PAT missing | Restore Actions secret or commit the lock in the PR |
-| Freshness fails after a range bump | Lock cannot satisfy new mins | Regen with `--upgrade` (see compile command above) |
+| Freshness fails after a range bump | Lock cannot satisfy new mins | Regen both locks ([recipe](../../notes/DEPENDENCY_UPDATE_WORKFLOW.md#regenerating-both-locks)) |
 
 ### Publish Failures
 
@@ -684,6 +752,10 @@ If environment setup fails:
 | `twine check` fails after merging a Twine major in `requirements_ci.txt` | The local/CI freeze Twine is not what publish uses; or the Metadata-Version is too old for Twine 7 | Rebuild with current setuptools; run `twine check` under Twine ≥ 7; do not expect the freeze pin to change the action's upload Twine |
 | CodeQL did not run on this PR | `codeql.yml` `pull_request` branches are `[main]` only | Retarget the PR at `main`, or push to `main`/`develop` |
 | Cannot click **Run workflow** on CodeQL Analysis | No `workflow_dispatch` on `codeql.yml` | Push / PR-against-`main` / wait for Monday 06:00 UTC |
+| `@claude` left a green **Claude Code** run and no reply | Substring `if` matched; the action wanted a bounded `@claude`, or the event was `issues` `assigned` | Use `@claude` as its own word in a new comment, a submitted review, or a newly opened issue |
+| **Claude Code** failed: `Actor does not have write permissions to the repository` | Actor is below `write`, or is an app account whose login lacks the `[bot]` suffix | Comment as a user with `admin` or `write` |
+| **Claude Code** failed: `Workflow initiated by non-human actor:` | `allowed_bots` is empty | A human has to send the triggering text |
+| **Claude Code** failed: `Environment variable validation failed:` mentioning `ANTHROPIC_API_KEY` | Secret missing on a real trigger | Confirm the repo can read `ANTHROPIC_API_KEY` |
 | Dependabot CodeQL PR touches `ci.yml` too | `upload-sarif` is in the same `codeql-action` group | Expected — review Bandit SARIF pin with the CodeQL pins |
 | Security tab missing Bandit but Security Scans is green | `upload-sarif` `continue-on-error: true` | Check the upload step log; the blocking Bandit CLI still ran |
 | `conda_environment_ci.yaml` still pins old Twine after a `requirements_ci.txt` bump | Generated freezes update on different cadences | Regenerate via the CI dependency-docs job (`juniper-generate-dep-docs`); publish jobs ignore both freezes |
@@ -698,3 +770,4 @@ If environment setup fails:
 - **juniper-ml#384 / #555**: TestPyPI verify policy and dual-trigger race
 - **JuniperCanopy CI/CD**: Base workflow pattern
 - **CodeQL soak**: `.github/workflows/codeql.yml` (not a required check)
+- **Claude Code assistant**: `.github/workflows/claude.yml` (comment / review / issue `@claude`; not a required check)

@@ -413,6 +413,35 @@ class TestStopTraining:
 
             lifecycle.state_machine.handle_command(Command.RESET)
 
+    def test_stop_while_resume_ready_returns_200_and_keeps_the_resume(self, client):
+        """Stop while resume-ready is not a 409. The snapshotted run stays resume-ready.
+
+        The route maps ``RuntimeError`` to 409, which is correct for Investigating and Replaying. RESUME_READY does not raise: the body is ``stop_requested`` and the resume point, the auto-snap ratchet, and the epoch on the status surface all survive, so a following start continues the restored run.
+        """
+        lifecycle = client.app.state.lifecycle
+        lifecycle.create_network(input_size=2, output_size=2)
+        assert lifecycle.state_machine.mark_resume_ready() is True
+        lifecycle._resume_point_epoch = 4
+        with lifecycle._auto_snap_lock:
+            lifecycle._auto_snap_best_metric = 0.7
+        lifecycle.training_state.update_state(status="Stopped", phase="Idle", current_epoch=4)
+        try:
+            response = client.post("/v1/training/stop")
+            assert response.status_code == 200
+            body = response.json()
+            assert body["status"] == "success"
+            assert body["data"]["status"] == "stop_requested"
+            assert lifecycle.state_machine.is_resume_ready()
+            assert lifecycle._resume_point_epoch == 4
+            assert lifecycle._auto_snap_best_metric == 0.7
+            state = lifecycle.training_state.get_state()
+            assert state["status"] == "Stopped"
+            assert state["current_epoch"] == 4
+        finally:
+            from api.lifecycle.state_machine import Command
+
+            lifecycle.state_machine.handle_command(Command.RESET)
+
 
 class TestPauseTraining:
     """Tests for POST /training/pause."""

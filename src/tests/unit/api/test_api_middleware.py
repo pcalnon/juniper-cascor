@@ -594,6 +594,25 @@ class TestFailedAuthThrottle:
             throttle.record_failure(f"10.0.0.{i % 255}")
         assert len(throttle._failures) <= FailedAuthThrottle._MAX_ENTRIES
 
+    def test_hard_cap_drops_the_oldest_source_ips(self):
+        """Fresh failures never expire, so the cap -- not the age prune -- bounds the dict.
+
+        ``window_seconds=0`` makes every entry eligible for the age prune, which
+        is why that test stays green if the hard cap is deleted. Cleanup runs
+        before the failure that trips the interval is stored, so the dict may
+        hold one entry past the cap until the next pass. The earliest address
+        must be the one dropped; the latest must still be over budget.
+        """
+        throttle = FailedAuthThrottle(max_failures=1, window_seconds=3600)
+        throttle._MAX_ENTRIES = 3
+        throttle._CLEANUP_INTERVAL = 4
+        for i in range(8):
+            throttle.record_failure(f"10.0.0.{i}")
+        assert len(throttle._failures) <= throttle._MAX_ENTRIES + 1
+        assert "10.0.0.0" not in throttle._failures
+        assert "10.0.0.7" in throttle._failures
+        assert throttle.check("10.0.0.7")[0] is True
+
     def test_build_factory_defaults_match_the_documented_budget(self):
         throttle = build_failed_auth_throttle()
         assert throttle.enabled is True
