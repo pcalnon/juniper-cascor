@@ -1,7 +1,7 @@
 # Branch Protection Rules - Juniper Cascor
 
-**Version**: 0.4.1
-**Last Updated**: 2026-08-24
+**Version**: 0.4.2
+**Last Updated**: 2026-10-08
 **Author**: Paul Calnon
 
 ---
@@ -37,6 +37,8 @@ The following GitHub Actions checks **MUST** pass before a pull request can be m
 | Integration Tests                    | `integration-tests`| ✅ Yes   |
 | Security Scans                       | `security`         | ✅ Yes   |
 | Quality Gate                         | `required-checks`  | ✅ Yes   |
+
+> **The live ruleset is authoritative, and it requires more than this table lists** — including `Sequence Safety` (`sequence-safety.yml`) and `Analyze (python)` (`codeql.yml`), standalone workflows whose jobs are not in the Quality Gate `needs:`, so a green Quality Gate does not mean mergeable. Read it: `gh api repos/pcalnon/juniper-cascor/rules/branches/main --jq '.[] | select(.type=="required_status_checks") | .parameters.required_status_checks[].context'`
 
 ### Status Check Configuration
 
@@ -129,9 +131,9 @@ The per-file rollout is tracked with `juniper-coverage-gap-map` from coverage JS
 | Gitleaks   | Secrets detection              | Hard fail (`ci.yml` Security Scans; skipped on `repository_dispatch`) |
 | Bandit     | Python SAST (security issues)  | Hard fail on medium+; SARIF upload is best-effort (`continue-on-error`) |
 | pip-audit  | Dependency vulnerabilities     | Both `ci.yml` and `security-scan.yml` use `--strict`. `ci.yml` also passes documented torch `--ignore-vuln` IDs; `security-scan.yml` does not. |
-| CodeQL     | Semantic SAST (Python)         | Advisory soak — **not** a required context |
+| CodeQL     | Semantic SAST (Python)         | **Required** context `Analyze (python)`; the ruleset's `code_scanning` rule also blocks on an `error` alert or a `high`+ security alert |
 
-CodeQL lives in `.github/workflows/codeql.yml` (push `main`/`develop`, PR `main`, Monday 06:00 UTC). It does not appear in the required-status-check list below. Findings go to **Security → Code scanning**, not the Quality Gate.
+CodeQL lives in `.github/workflows/codeql.yml` (push `main`/`develop`, PR `main`, Monday 06:00 UTC). The live ruleset requires its `Analyze (python)` context although the required-status-check table above omits it. Findings go to **Security → Code scanning**; the workflow is standalone, so it is not in the Quality Gate `needs:`.
 
 ### Secrets Management
 

@@ -319,7 +319,7 @@ class FailedAuthThrottle:
         self._max_failures = max_failures
         self._window = window_seconds
         self._enabled = enabled
-        self._failures: dict[str, tuple[int, float]] = defaultdict(lambda: (0, 0.0))
+        self._failures: dict[str, tuple[int, float]] = {}
         self._lock = Lock()
         self._records_since_cleanup = 0
 
@@ -357,6 +357,13 @@ class FailedAuthThrottle:
         This is a read-only probe -- it does not consume budget. Budget is consumed only by
         :meth:`record_failure`, so a caller presenting valid credentials is never counted.
 
+        It never allocates either: an unseen source IP reads as ``(0, 0.0)`` without being
+        inserted. This runs on every non-exempt request, before authentication, while pruning
+        (the age sweep and the ``_MAX_ENTRIES`` cap) runs only from :meth:`record_failure`. An
+        inserting lookup here -- ``_failures`` was once a ``defaultdict`` -- grew the table by
+        one entry per distinct client, forever, under open auth or valid-key traffic, where
+        nothing ever records a failure and so nothing ever prunes.
+
         Note this never fails open on error, because it is a security control rather than a
         fairness quota: a throttle that disables itself under stress hands an attacker a
         denial-of-protection primitive, where breaking the limiter is the cheapest first move.
@@ -372,7 +379,7 @@ class FailedAuthThrottle:
 
         now = time.time()
         with self._lock:
-            count, window_start = self._failures[client_ip]
+            count, window_start = self._failures.get(client_ip, (0, 0.0))
             if now - window_start >= self._window:
                 return (False, 0)  # Window rolled over; the old count no longer applies.
             if count >= self._max_failures:
@@ -395,7 +402,7 @@ class FailedAuthThrottle:
                 self._maybe_cleanup()
                 self._records_since_cleanup = 0
 
-            count, window_start = self._failures[client_ip]
+            count, window_start = self._failures.get(client_ip, (0, 0.0))
             if now - window_start >= self._window:
                 self._failures[client_ip] = (1, now)
             else:

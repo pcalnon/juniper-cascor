@@ -5,7 +5,7 @@
 **Author**: Paul Calnon
 **License**: MIT License
 **Version**: 0.11.0
-**Last Updated**: 2026-09-24
+**Last Updated**: 2026-10-08
 
 ---
 
@@ -589,9 +589,9 @@ Gate: 80% aggregate (override with `COVERAGE_FAIL_UNDER=<n>`). Coverage runs in 
 | Publish model | `.github/workflows/publish-cascor-model.yml` | Release (`juniper-cascor-model-v*`) + `workflow_dispatch` | PyPI publish for `juniper-cascor-model` |
 | Publish container image | `.github/workflows/publish-image.yml` | Release (`v*` only -- tag-guarded), PR touching image inputs (build-only), `workflow_dispatch` | GHCR multi-arch (amd64 + arm64) service image, CPU-only by pin (`requirements-cpu.lock`); never a required check |
 | Lockfile Update | `.github/workflows/lockfile-update.yml` | Push to dependabot/** branches | Dependency lockfile refresh |
-| CodeQL Analysis | `.github/workflows/codeql.yml` | Push `main`/`develop`, PR `main`, weekly Monday 06:00 UTC | Python CodeQL SAST (`+security-and-quality`; soak, not a required check) |
+| CodeQL Analysis | `.github/workflows/codeql.yml` | Push `main`/`develop`, PR `main`, weekly Monday 06:00 UTC | Python CodeQL SAST (`+security-and-quality`; its `Analyze (python)` context is a REQUIRED check) |
 | Security Scan | `.github/workflows/security-scan.yml` | Schedule/dispatch | Bandit + pip-audit `--strict` (no CodeQL, no Gitleaks) |
-| Sequence Safety (Advisory) | `.github/workflows/sequence-safety.yml` | PR (`main`/`develop`) | Per-PR symbol-loss + docs-deletion screens over base..HEAD (ADVISORY, standalone, never a required check) |
+| Sequence Safety | `.github/workflows/sequence-safety.yml` | PR (`main`/`develop`) | Per-PR symbol-loss + docs-deletion screens over base..HEAD (REQUIRED check; standalone, so outside the Quality Gate `needs:`) |
 | Post-Merge Main Verification | `.github/workflows/main-verify.yml` | Push `main`, dispatch | Bypass-proof post-merge compositional-loss net (catch-up base; stable-title tracking issue on failure) |
 
 ### Lockfile Update PAT Gate
@@ -610,7 +610,7 @@ Optional: register the same PAT under **Settings → Secrets → Dependabot** to
 
 `.github/workflows/codeql.yml` runs GitHub CodeQL on Python (`queries: +security-and-quality`).
 Push `main`/`develop`, PR **`main` only**, weekly Monday 06:00 UTC (same cron as `security-scan.yml`).
-No `workflow_dispatch`. Soak / not a required check — findings go to **Security → Code scanning**, not the Quality Gate.
+No `workflow_dispatch`. **Required, not a soak**: the `main` ruleset requires its `Analyze (python)` context, and the ruleset's `code_scanning` rule also blocks a merge on a CodeQL alert at `error` or a security alert at `high` or above. Findings go to **Security → Code scanning**; the workflow is standalone, so it is not in the Quality Gate `needs:`.
 Dependabot groups `github/codeql-action*` so `init` / `autobuild` / `analyze` and `ci.yml`'s Bandit `upload-sarif` bump together.
 Bandit SARIF upload is `continue-on-error: true`; the blocking Bandit step is the separate medium+ CLI invocation.
 Details: [`docs/ci_cd/MANUAL.md`](docs/ci_cd/MANUAL.md#codeql-analysis) / [`docs/ci_cd/REFERENCE.md`](docs/ci_cd/REFERENCE.md#codeql-analysis).
@@ -640,8 +640,9 @@ The two pure-stdlib git-diff screens are now **consumed from the published `juni
   cascor passes `--scope 'src/**/*.py'` explicitly because the package's built-in default scope is juniper-ml's (`tests/*.py` + `util/**`); the `@property`/`@x.setter` accessor-pair disambiguation (once a cascor-local adaptation) is now upstreamed into the package.
 - `juniper-docs-additions-check` — markdown deletion-magnitude screen over the package's universal default docs cluster (`AGENTS.md` + `docs/**` + `notes/**`, so no `--scope` is needed); FAIL on a deleted heading or a run of ≥ N consecutive deleted lines, WARN on small in-place swaps. Escape hatch: an `Allow-Docs-Rewrite: <path>` commit trailer.
 
-Everything is **ADVISORY** — neither workflow is a required status check and this makes **no branch-ruleset change**.
-`sequence-safety.yml` surfaces findings per-PR at review (with WARN-only `allow-symbol-loss` / `docs-rewrite` label hatches); `main-verify.yml` is the bypass-proof post-merge net that fires on every merge to `main` (catch-up base sweeps any `[skip ci]` window; a stable-title tracking issue is upserted on failure). Both `pip install "juniper-ci-tools>=0.9.0,<0.10.0"` then invoke the console scripts.
+**`Sequence Safety` is a REQUIRED status check** in the `main` ruleset (`juniper-cascor-rules`, id `15081045`), so a red run blocks the merge. `sequence-safety.yml` is standalone, so its job is not in `ci.yml`'s Quality Gate `needs:` (a `needs:` entry can only name a job in the same workflow): **a green Quality Gate does not mean mergeable**. Read the ruleset, not prose: `gh api repos/pcalnon/juniper-cascor/rules/branches/main --jq '.[] | select(.type=="required_status_checks") | .parameters.required_status_checks[].context'`.
+`sequence-safety.yml` fails the PR on an unwaived finding. The owner's `allow-symbol-loss` / `docs-rewrite` labels demote that screen to WARN-only (`--advisory`, exit 0), which can green the required context but not the post-merge net: there only the commit trailers above waive, so carry them into the squash message.
+`main-verify.yml` is that bypass-proof net, on every push to `main` — not a PR status check (catch-up base sweeps any `[skip ci]` window; a stable-title tracking issue is upserted on failure). Both `pip install "juniper-ci-tools>=0.9.0,<0.10.0"` then invoke the console scripts.
 v1 defers the post-merge regression battery (cascor's suite is heavy) and Slack notify (no webhook secret) — see the workflow header comments.
 The screens' canonical regression suite lives in the `juniper-ci-tools` package; `src/tests/unit/test_sequence_safety_retired.py` is cascor's local guard that the inline copy stays deleted and the workflow pins keep admitting the packaged version.
 

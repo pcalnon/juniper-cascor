@@ -12,7 +12,7 @@ This is the always-on guard that the migration is not silently reversed:
 
  * ``util/sequence_safety/`` must not carry a Python module again (a resurrected inline
    copy is exactly the drift that packaging was meant to kill).
- * both advisory workflows (``sequence-safety.yml`` + ``main-verify.yml``) must pin
+ * both screen workflows (``sequence-safety.yml`` + ``main-verify.yml``) must pin
    ``juniper-ci-tools`` with a range that still admits the packaged version this
    migration targets (>= 0.8.0 — the release that introduced the two console scripts and
    the ``--scope`` knob), so a stale ceiling (e.g. ``<0.8.0``) that would silently stop
@@ -48,7 +48,7 @@ INLINE_DIR = REPO_ROOT / "util" / "sequence_safety"
 # resolve to something older than this constant, and that is what is asserted now.
 _CI_TOOLS_MIN = (0, 8, 0)
 
-# The two advisory workflows that consume the packaged screens, and the console scripts
+# The two screen workflows that consume the packaged screens, and the console scripts
 # they must invoke.
 _SCREEN_WORKFLOWS = ("sequence-safety.yml", "main-verify.yml")
 _CONSOLE_SCRIPTS = ("juniper-symbol-loss-check", "juniper-docs-additions-check")
@@ -88,7 +88,7 @@ class TestSequenceSafetyRetired:
         assert not stray, "The inline sequence-safety copy has been resurrected under util/sequence_safety/: " + ", ".join(str(p.relative_to(REPO_ROOT)) for p in stray) + ". The screens are consumed from the juniper-ci-tools package now (juniper-symbol-loss-check / juniper-docs-additions-check) — do not re-add the inline copy. See this file's module docstring."
 
     def test_screen_workflow_pins_cannot_resolve_below_the_packaged_version(self):
-        """Each advisory workflow's juniper-ci-tools pin must be unable to resolve below 0.8.0.
+        """Each screen workflow's juniper-ci-tools pin must be unable to resolve below 0.8.0.
 
         A pin that can reach an older release silently stops the screens installing: the console
         scripts and the ``--scope`` knob cascor passes did not exist before then. A pin whose floor

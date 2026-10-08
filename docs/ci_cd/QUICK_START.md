@@ -68,7 +68,7 @@ mv /tmp/requirements.lock.check requirements.lock
 
 ## CodeQL and GitHub Actions Dependabot
 
-`.github/workflows/codeql.yml` is the Python CodeQL lane (`queries: +security-and-quality`). It is **not** a required check.
+`.github/workflows/codeql.yml` is the Python CodeQL lane (`queries: +security-and-quality`). Its `Analyze (python)` context is a **required** check in the `main` ruleset.
 
 | Trigger | When CodeQL runs |
 |---------|------------------|
