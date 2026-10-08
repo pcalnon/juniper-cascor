@@ -1,6 +1,6 @@
 # Developer Cheatsheet — juniper-cascor
 
-**Version**: 1.0.6  |  **Date**: 2026-08-24  |  **Project**: juniper-cascor
+**Version**: 1.0.7  |  **Date**: 2026-10-08  |  **Project**: juniper-cascor
 
 ---
 
@@ -119,6 +119,7 @@ Metrics nuance:
 | Variable                         | Default                 | Description                            |
 |----------------------------------|-------------------------|----------------------------------------|
 | `CASCOR_LOG_LEVEL`               | `INFO`                  | Log level override (set before import) |
+| `JUNIPER_CASCOR_BLAS_THREADS`    | unset (width `2`)       | Caps `OMP_NUM_THREADS` / `MKL_NUM_THREADS` / `OPENBLAS_NUM_THREADS` where still unset, before numpy/torch load, on the CLI and the service. `0` / `off` / `none` opts out. An already-exported variable wins. |
 | `JUNIPER_DATA_URL`               | `http://localhost:8100` | JuniperData service URL                |
 | `JUNIPER_DATA_API_KEY`           | --                      | API key for JuniperData                |
 | `JUNIPER_CASCOR_HOST`            | `127.0.0.1`             | Bind host for the service; non-loopback requires a bind attestation (see the two flags below) |
@@ -153,6 +154,8 @@ Metrics nuance:
 | `JUNIPER_CASCOR_AUTO_START_DATA_SERVICE` / `_CANOPY` | `false` | Local companion auto-start; a failed health probe terminates the subprocess and clears `_active_services` (see troubleshooting). |
 
 **Secrets tip:** Prefer a readable non-empty `*_FILE` in compose. If the mount exists but is unreadable, boot continues with the plain env var (or open auth when neither is set) — fix file permissions rather than assuming the env var was ignored.
+
+**BLAS width:** both entry points cap OMP/MKL/OpenBLAS at 2 wherever those three variables are unset (`JUNIPER_CASCOR_BLAS_THREADS`; `0` / `off` / `none` sets nothing). A value exported before start wins, including one variable at a time. Setting them after numpy or torch has loaded does nothing. WS-6 lanes export all three (plus VECLIB and NUMEXPR) as `1`, which beats this default. Detail: [BLAS thread width](install/REFERENCE.md#blas-thread-width).
 
 **Worker tip — the four immediate-requeue paths.** Nothing in-flight should wait for the 120s reassignment timeout; grep the coordinator log for the matching line to tell them apart:
 
@@ -264,11 +267,9 @@ Levels: TRACE(5) -> VERBOSE(7) -> DEBUG(10) -> INFO(20) -> WARNING(30) -> ERROR(
 ## Dependencies and CI/CD
 
 ```bash
-# Add dep: edit pyproject.toml, then regenerate requirements.lock
-uv pip compile pyproject.toml \
-  --extra ml --extra api --extra observability --extra juniper-data \
-  --index-strategy unsafe-best-match --no-emit-package torch \
-  --upgrade -o requirements.lock
+# Add dep: edit pyproject.toml, then regenerate BOTH locks (GPU lock, then
+# requirements-cpu.lock). Recipe: notes/DEPENDENCY_UPDATE_WORKFLOW.md#regenerating-both-locks
+# A lone `--upgrade -o requirements.lock` leaves the image lock behind.
 # Conda env
 conda create --name JuniperCascor1 --file conf/conda_environment.yaml
 ```
@@ -279,19 +280,29 @@ Core: `torch`, `numpy`, `h5py`, `matplotlib`, `PyYAML`, `requests`
 
 **CI pipeline:** pre-commit -> unit-tests -> integration-tests -> build -> security -> lockfile-check -> required-checks. Separate serial gates: `golden-regression.yml` (OUT-12) and `conformance.yml` (OUT-13). Path-filtered package CI: `ci-protocol.yml`, `ci-cascor-model.yml`.
 
-**Dependabot lockfile:** `lockfile-update.yml` auto-regens when `CROSS_REPO_DISPATCH_TOKEN` is visible to the run. Dependabot uses a separate secret store — missing PAT there is a green no-op; **Lockfile Freshness** still blocks stale locks. Register the PAT under Dependabot secrets to restore auto-push.
+**Dependabot lockfile:** `lockfile-update.yml` recompiles `requirements.lock` from `pyproject.toml` (fresh output path) and derives `requirements-cpu.lock` in the same signed commit when `CROSS_REPO_DISPATCH_TOKEN` is visible to the run.
+That commit can move transitive pins past the conf freeze Dependabot just wrote, and it leaves `ARG TORCH_VERSION` unchanged.
+Dependabot uses a separate secret store — missing PAT there is a green no-op; **Lockfile Freshness** still blocks a stale `requirements.lock`.
+Register the PAT under Dependabot secrets to restore auto-push.
 
 **CodeQL:** `codeql.yml` runs Python CodeQL (`+security-and-quality`) on push to `main`/`develop`, PRs targeting **`main` only**, and Monday 06:00 UTC.
 Soak — not a required check; no `workflow_dispatch`.
 Dependabot group `codeql-action` bumps `init`/`autobuild`/`analyze` plus `ci.yml` Bandit `upload-sarif` together.
 Scheduled `security-scan.yml` is Bandit + `pip-audit --strict` only (no CodeQL, no Gitleaks).
 
+**Claude Code:** `.github/workflows/claude.yml` answers `@claude` on a new issue comment, a new PR review comment, a submitted review, or a newly opened issue (title or body).
+It is not a CI check and has no `workflow_dispatch`.
+The job `if` is a case-insensitive substring test (`contains()` ignores case, so `@Claude` starts the job too); the action then requires permission `write` or `admin` (a `[bot]` login passes this check without a lookup), a bounded `@claude` (also case-insensitive), and, after a match, a human actor (`allowed_bots` is empty).
+For an actor with write access, `@claudette`, `foo@claude`, and an issue **assignment** start a green run that logs `No trigger found, skipping remaining steps`; anyone else's run fails at the write check.
+On an open same-repo PR Claude pushes to the PR head. Pushes only go to this repo (`origin`), so a fork PR's head is never updated. Issues and closed or merged PRs get `claude/issue-<number>-<YYYYMMDD-HHmm>` or `claude/pr-<number>-<YYYYMMDD-HHmm>` from the default branch.
+Secret: `ANTHROPIC_API_KEY` (model auth). `id-token: write` is used too: the action trades the job's OIDC token for a Claude GitHub App token, which makes the GitHub API calls and pushes (the App must be installed on the repo). The action SHA is outside the `codeql-action` Dependabot group.
+
 **PyPI publish:** cut a GitHub Release (not a bare tag). Tags: `v*` → `publish.yml` (`juniper-cascor`); `juniper-cascor-protocol-v*` / `juniper-cascor-model-v*` → matching sub-package workflows. TestPyPI verify uses `--no-deps` and TestPyPI index only. Keep `pypa/gh-action-pypi-publish` SHA-pinned (Dependabot bumps all three workflows together).
 
 **Twine pins:** `conf/requirements_ci.txt` (and the conda CI freeze) are not the publish uploader. Publish and package-CI jobs `pip install` Twine unpinned for `twine check`; uploads use the action-bundled Twine. Twine 7 rejects Metadata 2.0 and needs `packaging >= 26.1` — smoke `python -m build && twine check dist/*` after a major freeze bump.
 
-> See: [CI Quick Start](ci_cd/QUICK_START.md#dependabot-lockfile-updates) | [CI Quick Start — CodeQL](ci_cd/QUICK_START.md#codeql-and-github-actions-dependabot) | [CI Manual — Lockfile](ci_cd/MANUAL.md#lockfile-update-workflow) | [CI Manual — CodeQL](ci_cd/MANUAL.md#codeql-analysis)
-> See also: [CI Manual — PyPI Publishing](ci_cd/MANUAL.md#pypi-publishing) | [Twine Pin Surfaces](ci_cd/MANUAL.md#twine-pin-surfaces) | [CI Reference](ci_cd/REFERENCE.md#publish-workflows) | [CI Reference — CodeQL](ci_cd/REFERENCE.md#codeql-analysis) | [Dependency Update Workflow](../notes/DEPENDENCY_UPDATE_WORKFLOW.md) | [Environment Setup](install/ENVIRONMENT_SETUP.md)
+> See: [CI Quick Start](ci_cd/QUICK_START.md#dependabot-lockfile-updates) | [CI Quick Start — CodeQL](ci_cd/QUICK_START.md#codeql-and-github-actions-dependabot) | [CI Quick Start — Claude Code](ci_cd/QUICK_START.md#claude-code-workflow) | [CI Manual — Lockfile](ci_cd/MANUAL.md#lockfile-update-workflow) | [CI Manual — CodeQL](ci_cd/MANUAL.md#codeql-analysis) | [CI Manual — Claude Code](ci_cd/MANUAL.md#claude-code-workflow)
+> See also: [CI Manual — PyPI Publishing](ci_cd/MANUAL.md#pypi-publishing) | [Twine Pin Surfaces](ci_cd/MANUAL.md#twine-pin-surfaces) | [CI Reference](ci_cd/REFERENCE.md#publish-workflows) | [CI Reference — CodeQL](ci_cd/REFERENCE.md#codeql-analysis) | [CI Reference — Claude Code](ci_cd/REFERENCE.md#claude-code-workflow) | [Dependency Update Workflow](../notes/DEPENDENCY_UPDATE_WORKFLOW.md) | [Environment Setup](install/ENVIRONMENT_SETUP.md)
 
 ---
 
@@ -301,12 +312,14 @@ Scheduled `security-scan.yml` is Bandit + `pip-audit --strict` only (no CodeQL, 
 |-----------------------------------------------------------------------|-------------------------------------------------------------|-----------------------------------------------------------------------------------------------------------|
 | Unit tests fail with `assert '0.7.0' == '0.6.0'` (or similar SemVer)   | Wiring test pins a literal package version                  | Assert against `api.app._API_VERSION` (BUG-CC-04); do not hard-code SemVer in health/app/build-info tests |
 | `CASCOR_LOG_LEVEL` no effect                                          | Set after import                                            | Set env var before any `import`                                                                           |
+| CLI and `server.py` disagree on candidate epoch counts, or a local run will not match a WS-6 golden | BLAS width: the default is 2, the golden lanes export 1, or `OMP` / `MKL` / `OPENBLAS` `_NUM_THREADS` was set after numpy/torch loaded. For CLI-vs-service epoch drift, first check that `max_epochs` and `output_epochs` are both set (AGENTS.md Hazards) | Set `JUNIPER_CASCOR_BLAS_THREADS` (or those three variables) before Python starts, the same way on both entry points. `0` / `off` / `none` leaves the runtime default. See [BLAS thread width](install/REFERENCE.md#blas-thread-width) |
 | Logger pickle error                                                   | Logger in `__getstate__`                                    | Exclude logger from pickle state                                                                          |
 | `Unrecognized activation function name during deserialization`        | Activation name missing from `ActivationWithDerivative` map | Add matching key to `src/utils/activation.py` `ACTIVATION_MAP` (function `__name__` or module class name) |
 | HDF5/pickle restore changed activation unexpectedly (legacy behavior) | Previous fallback-to-ReLU behavior no longer applies        | Use only supported activation names; unknown names now fail fast with `ValueError`                        |
 | GPU tests skipped                                                     | No CUDA or flag missing                                     | `pytest --gpu` on GPU machine                                                                             |
 | Long tests skipped                                                    | Flag not passed                                             | `pytest --run-long`                                                                                       |
 | CodeQL missing on a PR targeting `develop`                            | `codeql.yml` `pull_request` filter is `main` only           | Retarget at `main`, push to `develop`, or wait for the Monday 06:00 UTC cron                              |
+| `@claude` comment, green Claude Code run, no reply                    | Substring `if` matched; action wanted a bounded phrase, or the event was `issues` `assigned` | Put `@claude` alone in a new comment, a submitted review, or a newly opened issue. See [Claude Code workflow](ci_cd/MANUAL.md#claude-code-workflow) |
 | HDF5 load fails                                                       | Corrupted or version mismatch                               | `python -m snapshots.snapshot_cli verify snapshot.h5`                                                     |
 | NaN in training                                                       | LR too high or bad data                                     | Reduce `learning_rate`, check tensors                                                                     |
 | C7 `f1`/`roc_auc` always `null` on history rows                       | Within-pass `output_epoch` rows, or eval metrics disabled   | Read terminal `kind="training_step"` rows; ensure `JUNIPER_CASCOR_EVAL_METRICS_ENABLED` is not `0`/`false` |
@@ -324,6 +337,8 @@ Scheduled `security-scan.yml` is Bandit + `pip-audit --strict` only (no CodeQL, 
 | `POST`/`DELETE` `/v1/network` returns 409 while paused or replaying   | Parked training thread, replay session, or snapshot investigation still owns the model | `stop` training, end replay (`replay/control` `action=stop`), or retrain/reset out of Investigating before create/delete |
 | `POST /v1/training/start` with `inline_data` returns `422` on lengths | `train_x`/`train_y` (or `val_*`) row counts differ, or only one of `val_x`/`val_y` | Align sample counts; send both val arrays or omit both — see [InlineDataset alignment](api/JUNIPER_CASCOR_API_REFERENCE.md#post-v1trainingstart) |
 | `POST /v1/training/start` → 409 mentioning Investigating / replaying  | FSM still in snapshot inspect or replay mode                | Retrain/resume out of Investigating, or `replay/control` `action=stop`, then start again |
+| `POST /v1/training/start` → 409 `[start_fresh_required]`; previous dataset label stays | Continue start (`start_fresh` false or omitted) staged a dataset wider than the current network; the reload refuses before bind | Retry refuses the same way. Send `start_fresh: true` (rebuilds from the dataset and keeps applied params) or use a live dataset swap to grow. See [start_fresh](api/JUNIPER_CASCOR_API_REFERENCE.md#post-v1trainingstart) |
+| Start fresh restores engine defaults (`output_epochs` 10000, `max_hidden_units` 10) | The rebuild did not re-apply `get_training_params()` (minus `epochs_max` and the `auto_snap_*` flags) after create-on-start; the start body still wins on overlap | Carry is `_reapply_carried_params_locked`. Pin with `src/tests/unit/api/test_start_fresh_carries_params.py` |
 | `POST /v1/training/stop` → 409                                        | Stop attempted while `Investigating` / `Replaying`          | Exit Investigating via snapshot retrain/resume; stop replay first — stop is not permissive in those states |
 | Snapshot restore/retrain/resume → 409 during replay                   | Route preflights `Started` / `Paused` / `Replaying`         | Stop replay via `replay/control` `action=stop` (or stop training) before restore/retrain/resume |
 | `PATCH /v1/training/params` → 404 on a bad candidate-pool triple      | Typed `InvalidCandidatePoolError` collapsed into bare `ValueError` | The route maps that subclass to **422** with the violation string; keep the `except InvalidCandidatePoolError` clause ahead of `except ValueError` |
@@ -343,10 +358,11 @@ Scheduled `security-scan.yml` is Bandit + `pip-audit --strict` only (no CodeQL, 
 | Auth open / keys missing despite a `_FILE` mount                      | Unreadable secret file fell through to an unset env var       | Fix mount permissions, or set the plain `JUNIPER_CASCOR_API_KEYS` env var as the fallback |
 | Dependabot bumps `websockets` but app code never imports it           | Transitive pin from `uvicorn[standard]`                     | Review as transport-only; confirm lock `# via uvicorn`, sync `conf/requirements-pip.txt` / `conf/requirements_ci.txt`, run WebSocket suites |
 | After a `websockets` major bump, clients see half-open sockets        | App closed with reserved code `1006` (rejected on the wire) | Close with `1011` (or another allowed code); see C3 heartbeat contract in `training_stream.py` / `control_stream.py` |
-| Lock says `websockets==17.x` but `conf/requirements_*.txt` still `16.x` | Freeze files updated on separate Dependabot paths           | Align conf freeze pins with `requirements.lock` before merge; check `conf/conda_environment_ci.yaml` separately |
+| Lock says `websockets==17.x` but `conf/requirements_*.txt` still lags | Skip commit re-resolves ranges; conf freezes are a separate edit (`#701`: locks `17.2`, conf stayed `17.1`) | Align conf pins with both locks when they must match; `conf/conda_environment_ci.yaml` is a third freeze |
+| Conf `torch` moved; container image did not | Image pin is `ARG TORCH_VERSION` + the CPU lock header; torch is omitted from both locks | Bump the Dockerfile ARG and the header together, then re-derive `requirements-cpu.lock` |
 | Golden / conformance tests collected but all skipped                  | Missing `--golden` / `--conformance` opt-in flags           | Pass the matching flag with `--slow --integration` (see `conftest.py`)                                                  |
 | Golden lane red locally after green unit CI                           | Wrong interpreter/torch or multi-thread / xdist             | Match CI pins (3.13 + torch 2.11.0, serial, `CASCOR_NUM_PROCESSES=1`, single-thread BLAS)                               |
-| Lockfile Freshness red; Update Lockfile green with no `[dependabot skip]` commit | `CROSS_REPO_DISPATCH_TOKEN` empty in Dependabot secret store | Register PAT under Dependabot secrets, or push a local `uv pip compile ... -o requirements.lock` |
+| Lockfile Freshness red; Update Lockfile green with no `[dependabot skip]` commit | `CROSS_REPO_DISPATCH_TOKEN` empty in Dependabot secret store | Register PAT under Dependabot secrets, or push a signed regen of both locks ([recipe](../notes/DEPENDENCY_UPDATE_WORKFLOW.md#regenerating-both-locks)) |
 | Update Lockfile hard-fails on a human `pyproject.toml` PR             | Actions PAT missing/expired                                 | Restore Actions `CROSS_REPO_DISPATCH_TOKEN` or commit the regen in the PR |
 | Publish workflow skipped / wrong package                              | Release tag prefix does not match workflow guard            | Use `v*`, `juniper-cascor-protocol-v*`, or `juniper-cascor-model-v*` — see [PyPI Publishing](ci_cd/MANUAL.md#pypi-publishing) |
 | TestPyPI `400 File already exists` on publish                         | Dual trigger or concurrent upload of same version           | Publish via Release only (no `push: tags`); bump version to re-upload |

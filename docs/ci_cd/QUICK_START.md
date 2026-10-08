@@ -43,22 +43,25 @@ The workflow does not currently have `workflow_dispatch` enabled. To trigger man
 
 ## Dependabot Lockfile Updates
 
-`.github/workflows/lockfile-update.yml` regenerates `requirements.lock` on Dependabot `dependabot/pip/**` pushes (and on same-repo PRs that touch `pyproject.toml`).
+`.github/workflows/lockfile-update.yml` regenerates `requirements.lock` and derives `requirements-cpu.lock` on Dependabot `dependabot/pip/**` pushes (and on same-repo PRs that touch `pyproject.toml`). The compile reads `pyproject.toml` onto a fresh output path, so the skip commit can move pins Dependabot did not list. Conf freezes and `ARG TORCH_VERSION` are separate.
 
 | PAT (`CROSS_REPO_DISPATCH_TOKEN`) | Behavior |
 |-----------------------------------|----------|
-| Available to the run | Auto-regen + push (`[dependabot skip]`) so CI re-triggers |
-| Missing on Dependabot runs | **Green no-op** — regenerate locally or register the PAT under **Settings → Secrets → Dependabot** |
+| Available to the run | Auto-regen of both locks + one signed push (`[dependabot skip] Update requirements.lock and requirements-cpu.lock`) so CI re-triggers |
+| Missing on Dependabot runs | **Green no-op** — regenerate both locks locally or register the PAT under **Settings → Secrets → Dependabot** |
 | Missing on non-Dependabot runs | Hard fail (secret misconfiguration) |
 
-CI job **Lockfile Freshness** still blocks merge when the lock no longer satisfies `pyproject.toml`, even if auto-regen no-ops.
+CI job **Lockfile Freshness** still blocks merge when `requirements.lock` no longer satisfies `pyproject.toml`, even if auto-regen no-ops. It does not compare the two locks' versions.
 
 ```bash
-# Local regen (same extras as the workflow)
+# GPU lock half, matching the workflow (fresh output, then move it into place).
+# requirements-cpu.lock must then be re-derived; full script for both locks:
+# notes/DEPENDENCY_UPDATE_WORKFLOW.md#regenerating-both-locks
 uv pip compile pyproject.toml \
   --extra ml --extra api --extra observability --extra juniper-data \
   --index-strategy unsafe-best-match --no-emit-package torch \
-  --upgrade -o requirements.lock
+  -o /tmp/requirements.lock.check
+mv /tmp/requirements.lock.check requirements.lock
 ```
 
 > Details: [CI Manual — Lockfile Update](MANUAL.md#lockfile-update-workflow) | [Dependency Update Workflow](../../notes/DEPENDENCY_UPDATE_WORKFLOW.md)
@@ -79,6 +82,30 @@ Dependabot groups `github/codeql-action*` so `init` / `autobuild` / `analyze` **
 The other two security lanes stay separate: `ci.yml` **Security Scans** (Gitleaks + blocking Bandit + pip-audit) and Monday `security-scan.yml` (Bandit + `pip-audit --strict`, no CodeQL).
 
 > Details: [CI Manual — CodeQL](MANUAL.md#codeql-analysis) | [CI Reference — CodeQL](REFERENCE.md#codeql-analysis)
+
+## Claude Code Workflow
+
+`.github/workflows/claude.yml` is the `@claude` assistant. It is **not** part of the CI Quality Gate and it has no **Run workflow** button.
+
+Write `@claude` as its own word in:
+
+| Where | What schedules the job |
+|-------|------------------------|
+| Issue comment or PR review comment | A **new** comment (`created`) |
+| Pull request review | A review that is **submitted** |
+| Issue | The issue being **opened**, in the title or the body |
+
+The workflow `if` is a case-insensitive substring test, and the action applies a stricter check after the job starts. Case does not matter in either: `@Claude` works like `@claude`. `@claudette`, `foo@claude`, and `@claude)` start a job that, for a commenter with write access, stays **green** and logs `No trigger found, skipping remaining steps`. Assigning an issue whose body already contains `@claude` does the same: the action reads the title and body on `opened` only.
+
+The commenter needs repository permission `write` or `admin`; anyone else's run fails with `Actor does not have write permissions to the repository`, even when the text would not have matched. A login ending in `[bot]` passes that check without a lookup, then throws `Workflow initiated by non-human actor:` on a real match because `allowed_bots` is empty.
+
+On an open same-repo PR the assistant pushes to that PR's branch. Pushes only go to this repo, so a fork PR's branch is never updated. On an issue, or on a closed or merged PR, it works on `claude/issue-<number>-<YYYYMMDD-HHmm>` or `claude/pr-<number>-<YYYYMMDD-HHmm>`, cut from the default branch and pushed only if Claude commits.
+
+The only secret is `ANTHROPIC_API_KEY` (the workflow header says it is an org-level secret). A blank key fails only after a real phrase match, with `Environment variable validation failed:`. GitHub access does not use a secret: `id-token: write` lets the action trade the job's OIDC token for a Claude GitHub App token, so the App must be installed on the repo.
+
+Dependabot does **not** group `anthropics/claude-code-action` with `github/codeql-action*`. This action's SHA pin moves in its own pull request. The version record is the `# vX.Y.Z` comment in the workflow.
+
+> Details: [CI Manual — Claude Code Workflow](MANUAL.md#claude-code-workflow) | [CI Reference — Claude Code Workflow](REFERENCE.md#claude-code-workflow)
 
 ## Checking Results
 

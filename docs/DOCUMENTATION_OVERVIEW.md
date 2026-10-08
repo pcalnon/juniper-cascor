@@ -2,8 +2,8 @@
 
 ## Complete Navigation Guide to Juniper Cascor Documentation
 
-**Version:** 0.6.4  
-**Last Updated:** August 24, 2026  
+**Version:** 0.6.5  
+**Last Updated:** October 8, 2026  
 **Project:** Juniper Cascor - Cascade Correlation Neural Network Implementation
 
 ---
@@ -478,6 +478,7 @@ The juniper-cascor-client library provides a Python API for interacting with the
 - WS-6 golden / conformance gates (serial local reproduce)
 - Path-filtered package CI (`ci-protocol`, `ci-cascor-model`)
 - CodeQL soak lane + `codeql-action` Dependabot group
+- Claude Code workflow (`@claude` gates, branch target, API key)
 - Quick fixes for common failures
 - Publishing packages to PyPI (Release tags + Trusted Publishing)
 - Twine pin surfaces (CI freeze vs unpinned `twine check` vs action upload)
@@ -498,6 +499,7 @@ The juniper-cascor-client library provides a Python API for interacting with the
 - Environment variables
 - Local reproduction
 - Troubleshooting
+- Claude Code workflow secret (`ANTHROPIC_API_KEY`; separate from the conda CI jobs)
 
 **When to Read:** Modifying CI, debugging environment issues
 
@@ -516,6 +518,7 @@ The juniper-cascor-client library provides a Python API for interacting with the
 - Slow test handling (CASCOR-TIMEOUT-001)
 - WS-6 gates runbook (golden + conformance determinism contract)
 - CodeQL Analysis (triggers, soak posture, Dependabot group, contrast with Bandit/pip-audit)
+- Claude Code workflow (events, second gate, where commits land)
 - Modifying the pipeline
 - PyPI publishing (OIDC Trusted Publishing, tag guards, TestPyPI verify)
 - Twine pin surfaces and Twine 7.0.0 review constraints
@@ -535,6 +538,7 @@ The juniper-cascor-client library provides a Python API for interacting with the
 - WS-6 gate workflow pins and artifacts
 - Package CI path filters / coverage
 - CodeQL Analysis (`codeql.yml` triggers, query pack, `codeql-action` group, contrast with `ci.yml` / `security-scan.yml`)
+- Claude Code workflow (`claude.yml` triggers, phrase/write/human gates, branch target)
 - Coverage gates (80% aggregate on main unit lane)
 - Publish workflows (tag guards, OIDC, verify contract, Twine pin surfaces)
 - Coverage gates (80% aggregate)
@@ -804,8 +808,8 @@ Contains historical development documentation, implementation notes, and researc
 ```markdown
 # Document Title
 
-**Version**: 0.4.1  
-**Last Updated**: 2026-01-29  
+**Version**: 0.6.5  
+**Last Updated**: 2026-10-08  
 **Purpose**: Brief description
 
 ---
@@ -954,8 +958,8 @@ docs/overview/CONSTANTS_GUIDE.md # Constants reference
 
 ---
 
-**Last Updated:** January 29, 2026
-**Version:** 0.4.1
+**Last Updated:** October 8, 2026
+**Version:** 0.6.5
 **Maintainer:** Paul Calnon
 
 > See the [Juniper Ecosystem Guide](https://github.com/pcalnon/juniper-ml/blob/main/CLAUDE.md) for the full project map and dependency graph.

@@ -100,10 +100,16 @@ python server.py
 
 **Worker anomaly history:** on `/ws/v1/workers` disconnect, session teardown clears that worker's `AnomalyDetector` history (`clear_worker`) so reconnect churn cannot grow `_worker_history` without bound or let a recycled `worker_id` inherit stale anomaly signals.
 
-**ASGI transport dependency:** the service does not declare `websockets` in `pyproject.toml`. It comes in through `uvicorn[standard]` (API extra) and is pinned in `requirements.lock` as `# via uvicorn`. Application handlers speak FastAPI/Starlette WebSockets only (`src/api/websocket/`). When Dependabot bumps `websockets` (including major lines such as 16 → 17):
+**ASGI transport dependency:** the service declares no `websockets` dependency in `pyproject.toml`.
+It comes in through `uvicorn[standard]` (API extra) and is pinned in `requirements.lock` as `# via uvicorn` (the same pin is copied into `requirements-cpu.lock`).
+Application handlers speak FastAPI/Starlette WebSockets only (`src/api/websocket/`).
+When `websockets` moves (including major lines such as 16 → 17, and including a lock regen that moves it without listing it in Dependabot's table):
 
 - Confirm Python ≥ 3.12 still holds (websockets 17 requires ≥ 3.11; this repo is already stricter).
-- Confirm `conf/requirements-pip.txt`, `conf/requirements_ci.txt`, and `requirements.lock` land on the same pin; `conf/conda_environment_ci.yaml` is a separate freeze and may need a follow-up.
+- Compare `requirements.lock` and `requirements-cpu.lock` (the regen derives the CPU lock with `--constraint`) with `conf/requirements-pip.txt` and `conf/requirements_ci.txt`.
+  Those conf files are a separate edit.
+  On [#701](https://github.com/pcalnon/juniper-cascor/pull/701) the skip commit set both locks to `websockets==17.2` while the conf freezes stayed at `17.1`.
+  `conf/conda_environment_ci.yaml` is a third freeze.
 - Treat the change as transport-only unless CI WebSocket suites fail — see [ASGI WebSocket transport](../api/JUNIPER_CASCOR_API_REFERENCE.md#asgi-websocket-transport).
 
 ### Lifecycle evaluation metrics (C7)
@@ -135,6 +141,48 @@ python server.py
 ```
 
 **Empty `_FILE` pitfall:** if `JUNIPER_CASCOR_API_KEYS_FILE` points at an existing but empty/whitespace-only file, `get_secret()` returns `""` and never reads `JUNIPER_CASCOR_API_KEYS`. Settings only injects a truthy secret, so compose stacks that set `_FILE` alone end up with unset keys. With `REQUIRE_AUTH=false` the service starts open behind a healthy `/v1/health`; with `REQUIRE_AUTH=true` boot fails. Fill the secret file (or unset `_FILE`).
+
+## BLAS thread width
+
+`OMP_NUM_THREADS`, `MKL_NUM_THREADS`, and `OPENBLAS_NUM_THREADS` are read once, when that BLAS library first loads. Candidate workers are `forkserver` processes, so they inherit the pool and cannot resize it later.
+
+`configure_blas_threads()` in `src/parallelism/blas_threads.py` is the only production module that assigns those three names (the test conftests pin them separately, for xdist workers and benchmarks). It runs at the top of `src/main.py` (CLI) and in `src/api/__init__.py` (service), before `api.app` imports torch. `python server.py` and `uvicorn api.app:create_app` reach it by importing the `api` package.
+
+| Variable | Type | Default | Purpose |
+|----------|------|---------|---------|
+| `JUNIPER_CASCOR_BLAS_THREADS` | Integer, or `off` / `none` | unset → width **2** | Width written into whichever of the three variables is still unset. |
+
+Rules the helper actually applies (`src/tests/unit/test_blas_thread_policy.py`):
+
+- Unset or blank (after strip) applies `2` with `os.environ.setdefault`. A value already exported for one of the three stays, including a width the juniper-ml experiment launcher exports from `runtime.blas_threads`. The return value is still the intended width; read the variable to see what won.
+- `0`, `off`, and `none` (ASCII case-insensitive, surrounding whitespace stripped) set nothing and return `None`. That is the pre-2026-09-23 behaviour: the runtime's own default.
+- Any other non-integer (`abc`, `2.5`) or integer below 1 (`-4`) is ignored. The process prints one line on stderr and uses 2. It does not raise. This runs before logging is configured.
+- The helper does not set `VECLIB_MAXIMUM_THREADS` or `NUMEXPR_NUM_THREADS`.
+
+**Why the default is 2.** Until 2026-09-23 the helper did nothing unless this variable was set. An earlier measurement (juniper-cascor#531) had found a capped candidate phase cost more wall time and ran more epochs, so the no-op matched the service, which had never capped at all. That wall-time penalty did not reproduce on current code.
+
+The epoch-count channel is real. A training thread left at the runtime default (16 on a 16-core host) for the whole run moved a late `epochs_completed`. A cap of 2 reproduced the previous default's per-candidate counts, the winning candidate of every phase, and the final loss.
+
+Owner decision D1 (2026-09-23) put that cap on both entry points so the width is no longer an accident of which file started the process. The constructor's `torch.set_num_threads` pin binds only the constructing thread; the service trains on another thread.
+
+This is separate from the per-worker oversubscription pin. Each candidate worker still calls `torch.set_num_threads(max(1, worker_thread_count))` (`worker_thread_count` default 1). The parent calls `torch.set_num_threads(max(2, worker_thread_count * 2))` in `cascade_correlation.py`. Those run on both paths and do not read these environment variables.
+
+**Golden and conformance lanes** export `OMP_NUM_THREADS`, `MKL_NUM_THREADS`, `OPENBLAS_NUM_THREADS`, `VECLIB_MAXIMUM_THREADS`, and `NUMEXPR_NUM_THREADS` as `1` before Python starts. An already-exported value wins, so those lanes stay at 1.
+
+A local process that leaves the knob unset is width 2 and is not bit-comparable to them. Export the same three — and the two extras, when you use those backends — to `1` before the interpreter starts. See [WS-6 determinism contract](../ci_cd/MANUAL.md#determinism-contract-both-lanes).
+
+```bash
+# Default on both entry points. The variable must be set before Python starts.
+JUNIPER_CASCOR_BLAS_THREADS=2 python main.py
+
+# Leave the runtime's own width (pre-D1).
+JUNIPER_CASCOR_BLAS_THREADS=off python server.py
+
+# One variable already decided; the other two still receive the knob.
+OMP_NUM_THREADS=1 JUNIPER_CASCOR_BLAS_THREADS=4 python server.py
+```
+
+Setting any of the three after numpy, torch, or scipy has loaded does not resize the pool already in this process. Forkserver children inherit whatever was in the environment at pool creation, so a late export misses them too.
 
 ## CLI Arguments
 

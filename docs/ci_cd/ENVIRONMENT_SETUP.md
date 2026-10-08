@@ -487,6 +487,22 @@ Solutions:
 
 ---
 
+## Claude Code Workflow
+
+The `@claude` assistant is a separate workflow, `.github/workflows/claude.yml`. It does not use the conda environment, Python 3.14, or the `ci.yml` jobs above.
+
+| Setting | Value |
+|---------|-------|
+| Runner | `ubuntu-latest` |
+| Secret | `ANTHROPIC_API_KEY`, passed as the action input `anthropic_api_key`. The workflow header says this secret is org-level and that the repo must be able to read it. |
+| When a missing key fails | After a real `@claude` phrase match. The step throws `Environment variable validation failed:` and names `ANTHROPIC_API_KEY`. A comment from a writer that fails the action's phrase check stays green without the secret. |
+| Model provider | None besides the API key. The workflow sets no Bedrock, Vertex, Foundry, or workload-identity inputs, so Claude authenticates with `ANTHROPIC_API_KEY`. |
+| `id-token: write` | **Used on every run that starts.** No `github_token` input is passed, so the action trades the job's OIDC token for a Claude GitHub App installation token, which makes the GitHub API calls and pushes. The Claude GitHub App must be installed on this repo; without the permission the step fails with `Could not fetch an OIDC token`. |
+
+> Contract: [CI Reference — Claude Code Workflow](REFERENCE.md#claude-code-workflow) | Runbook: [CI Manual — Claude Code Workflow](MANUAL.md#claude-code-workflow)
+
+---
+
 ## Related Documentation
 
 - [Environment Setup Guide](../install/ENVIRONMENT_SETUP.md) - Local development setup
