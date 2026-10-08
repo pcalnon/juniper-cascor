@@ -3,7 +3,7 @@
 **Project**: Juniper Cascor  
 **Workflow Files**: `.github/workflows/ci.yml`, `codeql.yml`, `security-scan.yml`, `claude.yml`, `golden-regression.yml`, `conformance.yml`, `ci-protocol.yml`, `ci-cascor-model.yml`, `lockfile-update.yml`, `publish.yml`, `publish-protocol.yml`, `publish-cascor-model.yml`
 
-**Last Updated**: 2026-08-24
+**Last Updated**: 2026-10-08
 
 ---
 
@@ -71,7 +71,7 @@ Semantic SAST for Python. Source of truth: `.github/workflows/codeql.yml` (fleet
 | Queries | `+security-and-quality` (default security pack **plus** quality queries) |
 | Steps | `codeql-action/init` → `autobuild` → `analyze` (`category: /language:python`) |
 | Permissions | `actions: read`, `contents: read`, `security-events: write` |
-| Required check | **No** — soak / advisory (same convention `sequence-safety.yml` cites). Do not treat a red CodeQL run as a merge blocker unless a ruleset later adds the context. |
+| Required check | **Yes** — the `main` ruleset (`juniper-cascor-rules`, id `15081045`) requires `Analyze (python)`, so a red CodeQL run blocks the merge. Its `code_scanning` rule also blocks on a CodeQL alert at `error` or a security alert at `high` or above. Standalone workflow, so not in the Quality Gate `needs:`. |
 | `workflow_dispatch` | **None** — push, PR, or wait for the Monday cron |
 
 ### Triggers

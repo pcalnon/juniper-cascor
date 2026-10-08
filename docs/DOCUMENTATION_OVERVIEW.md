@@ -2,7 +2,7 @@
 
 ## Complete Navigation Guide to Juniper Cascor Documentation
 
-**Version:** 0.6.5  
+**Version:** 0.6.6  
 **Last Updated:** October 8, 2026  
 **Project:** Juniper Cascor - Cascade Correlation Neural Network Implementation
 
@@ -477,7 +477,7 @@ The juniper-cascor-client library provides a Python API for interacting with the
 - Reproducing CI locally
 - WS-6 golden / conformance gates (serial local reproduce)
 - Path-filtered package CI (`ci-protocol`, `ci-cascor-model`)
-- CodeQL soak lane + `codeql-action` Dependabot group
+- CodeQL lane (required check) + `codeql-action` Dependabot group
 - Claude Code workflow (`@claude` gates, branch target, API key)
 - Quick fixes for common failures
 - Publishing packages to PyPI (Release tags + Trusted Publishing)
@@ -517,7 +517,7 @@ The juniper-cascor-client library provides a Python API for interacting with the
 - Coverage handling
 - Slow test handling (CASCOR-TIMEOUT-001)
 - WS-6 gates runbook (golden + conformance determinism contract)
-- CodeQL Analysis (triggers, soak posture, Dependabot group, contrast with Bandit/pip-audit)
+- CodeQL Analysis (triggers, required-check posture, Dependabot group, contrast with Bandit/pip-audit)
 - Claude Code workflow (events, second gate, where commits land)
 - Modifying the pipeline
 - PyPI publishing (OIDC Trusted Publishing, tag guards, TestPyPI verify)

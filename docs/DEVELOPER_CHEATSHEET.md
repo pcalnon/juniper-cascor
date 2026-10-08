@@ -1,6 +1,6 @@
 # Developer Cheatsheet — juniper-cascor
 
-**Version**: 1.0.7  |  **Date**: 2026-10-08  |  **Project**: juniper-cascor
+**Version**: 1.0.8  |  **Date**: 2026-10-08  |  **Project**: juniper-cascor
 
 ---
 
@@ -286,7 +286,7 @@ Dependabot uses a separate secret store — missing PAT there is a green no-op; 
 Register the PAT under Dependabot secrets to restore auto-push.
 
 **CodeQL:** `codeql.yml` runs Python CodeQL (`+security-and-quality`) on push to `main`/`develop`, PRs targeting **`main` only**, and Monday 06:00 UTC.
-Soak — not a required check; no `workflow_dispatch`.
+Required check (`Analyze (python)` in the `main` ruleset); no `workflow_dispatch`.
 Dependabot group `codeql-action` bumps `init`/`autobuild`/`analyze` plus `ci.yml` Bandit `upload-sarif` together.
 Scheduled `security-scan.yml` is Bandit + `pip-audit --strict` only (no CodeQL, no Gitleaks).
 

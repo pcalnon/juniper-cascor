@@ -114,6 +114,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`FailedAuthThrottle.check()` inserted every unseen source IP, so its table grew without
+  bound** (`src/api/security.py`). `_failures` was a `defaultdict(lambda: (0, 0.0))`, so the
+  lookup in the documented read-only `check()` added an entry for each source IP it had not seen.
+  `SecurityMiddleware` calls `check()` on every non-exempt request, before authentication, while
+  both prunes (the age sweep and the 10,000-entry `_MAX_ENTRIES` cap) run only from
+  `record_failure()`. Under open auth or valid-key traffic nothing records a failure, so the table
+  grew by one entry per distinct client, forever. `_failures` is now a plain `dict`, and `check()`
+  and `record_failure()` both read it with `.get(client_ip, (0, 0.0))`, so only
+  `record_failure()` writes. The juniper-service-core and juniper-data copies get the same fix in
+  their own repos, each pinned by its own test. Found in the 2026-10-08 flood-3 disposition (juniper-ml
+  `notes/JUNIPER_2026-10-08_JUNIPER-ECOSYSTEM_CURSOR-FLOOD-3-DISPOSITION.md` §4). Pinned by
+  `TestFailedAuthThrottle::test_check_never_inserts_an_unseen_source_ip`
+  (`src/tests/unit/api/test_api_middleware.py`): 1,000 distinct IPs through `check()` leave the
+  table empty, and one `record_failure()` still makes exactly one entry. With the fix reverted it
+  fails with `assert 1000 == 0`.
 - **A start-fresh replaced every applied training param with an engine default (F2).**
   `_start_fresh_reset_locked` discards the model. Create-on-start then rebuilt the network from
   `create_simple_config`'s defaults, so a param applied just before the start-fresh was silently
@@ -603,6 +618,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `src/tests/unit/test_main_sentry_no_local_variables.py`, an AST check of the call's keywords
   with negative controls. Removing the keyword, or passing `True`, fails it. Mutation checks:
   juniper-ml's `util/ad-hoc/2026-09-24_bytes_compare_sentry_locals_verify.py`.
+
+### Documentation
+
+- **`Sequence Safety` and CodeQL's `Analyze (python)` are REQUIRED checks; the docs called both
+  advisory.** The `main` ruleset (`juniper-cascor-rules`, id `15081045`) has required
+  `Sequence Safety` since 2026-08-19, and `Analyze (python)` was already required when cascor#583
+  documented CodeQL as a soak (2026-08-29). The ruleset's `code_scanning` rule also blocks a merge
+  on a CodeQL alert at `error` or a security alert at `high` or above. cascor#643 corrected only
+  `sequence-safety.yml`'s header block. Now corrected:
+  - `AGENTS.md`: the workflow-table rows for both checks, the CodeQL section, and the Sequence
+    Safety section's "Everything is **ADVISORY**". That section now says a green Quality Gate does
+    not mean mergeable (`sequence-safety.yml` is standalone, and a `needs:` entry can only name a
+    job in the same workflow), gives the ruleset query, and says the owner labels green the
+    required context while only an `Allow-Symbol-Loss:` / `Allow-Docs-Rewrite:` trailer waives a
+    finding in the post-merge `main-verify.yml`.
+  - `docs/ci_cd/MANUAL.md` and `docs/ci_cd/REFERENCE.md`, which cited a Sequence Safety
+    "convention" as the precedent for an advisory CodeQL; `docs/ci_cd/QUICK_START.md`;
+    `docs/ci_cd/BRANCH_PROTECTION.md`, which also gains a pointer that the live ruleset requires
+    more than its table lists; `docs/DEVELOPER_CHEATSHEET.md`; the tree comments in
+    `docs/REFERENCE.md`; and the CodeQL "soak" labels in `docs/INDEX.md` and
+    `docs/DOCUMENTATION_OVERVIEW.md`.
+  - Comments only: `sequence-safety.yml` (its juniper-ml reference and concurrency note),
+    `main-verify.yml` (now says it is not a PR status check, and how a finding is waived there),
+    and the "advisory workflows" wording in `src/tests/unit/test_sequence_safety_retired.py`. No
+    trigger, step, pin or job name changed.
 
 ## [0.11.0] - 2026-09-08
 

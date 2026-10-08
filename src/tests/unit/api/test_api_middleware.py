@@ -613,6 +613,25 @@ class TestFailedAuthThrottle:
         assert "10.0.0.7" in throttle._failures
         assert throttle.check("10.0.0.7")[0] is True
 
+    def test_check_never_inserts_an_unseen_source_ip(self):
+        """``check()`` runs on every non-exempt request, before auth, so it must not allocate.
+
+        Both prunes -- the age sweep and the ``_MAX_ENTRIES`` cap -- run only from
+        ``record_failure()``. When ``_failures`` was a ``defaultdict``, the lookup in ``check()``
+        inserted every unseen source IP, so under open auth or valid-key traffic, where nothing
+        ever records a failure, the table grew by one entry per distinct client, forever. Neither
+        prune test above can see that: both drive ``record_failure()``, which runs the prune.
+        """
+        throttle = FailedAuthThrottle(max_failures=1, window_seconds=60)
+        for i in range(1000):
+            assert throttle.check(f"10.1.{i // 256}.{i % 256}") == (False, 0)
+        assert len(throttle._failures) == 0
+
+        # The counting path still works: one recorded failure is exactly one entry.
+        throttle.record_failure("10.1.0.1")
+        assert len(throttle._failures) == 1
+        assert throttle.check("10.1.0.1")[0] is True
+
     def test_build_factory_defaults_match_the_documented_budget(self):
         throttle = build_failed_auth_throttle()
         assert throttle.enabled is True

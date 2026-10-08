@@ -183,9 +183,9 @@ juniper-cascor/
 │   │   ├── publish-protocol.yml      #   PyPI publish (juniper-cascor-protocol)
 │   │   ├── publish-cascor-model.yml  #   PyPI publish (juniper-cascor-model)
 │   │   ├── lockfile-update.yml       #   Dependency lockfile updates
-│   │   ├── codeql.yml                #   CodeQL semantic SAST (Python; soak)
+│   │   ├── codeql.yml                #   CodeQL semantic SAST (Python; REQUIRED check)
 │   │   ├── security-scan.yml         #   Scheduled Bandit + pip-audit
-│   │   ├── sequence-safety.yml       #   Per-PR compositional-loss screens (ADVISORY, standalone)
+│   │   ├── sequence-safety.yml       #   Per-PR compositional-loss screens (REQUIRED check, standalone)
 │   │   └── main-verify.yml           #   Post-merge compositional-loss net (catch-up base + stable-title issue)
 │   ├── CODEOWNERS                    #   Code ownership rules
 │   └── dependabot.yml                #   Dependency update automation

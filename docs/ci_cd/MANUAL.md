@@ -1,7 +1,7 @@
 # CI/CD Manual
 
 **Project**: Juniper Cascor  
-**Version**: 0.3.18  
+**Version**: 0.3.19  
 **Reference**: CASCOR-P1-007
 
 ---
@@ -384,11 +384,11 @@ Sign the recovery commit. An unsigned commit on the branch blocks merge; squash 
 ## CodeQL Analysis
 
 **Workflow:** `.github/workflows/codeql.yml`  
-**Enforcement:** Soak / advisory — **not** a required status check (the same convention `sequence-safety.yml` documents). Findings land in the repository **Security → Code scanning** tab.
+**Enforcement:** **Required.** The `main` ruleset (`juniper-cascor-rules`, id `15081045`) requires the `Analyze (python)` context, and its `code_scanning` rule also blocks a merge on a CodeQL alert at `error` or a security alert at `high` or above. Findings land in the repository **Security → Code scanning** tab. The workflow is standalone, so it is not in `ci.yml`'s Quality Gate `needs:`. Check the live ruleset rather than this page: `gh api repos/pcalnon/juniper-cascor/rules/branches/main`.
 
 ### Intent
 
-Run GitHub CodeQL semantic SAST on the Python tree so query-pack findings (security **and** quality: `queries: +security-and-quality`) sit beside Bandit/Gitleaks/pip-audit rather than replacing them. The workflow file is the fleet Python template; its header names `juniper-data/.github/workflows/codeql.yml` as the copy origin. First-run comment in the YAML: treat the initial cycle as a shakedown, then an owner may promote it to a required context — this repo has **not** done that.
+Run GitHub CodeQL semantic SAST on the Python tree so query-pack findings (security **and** quality: `queries: +security-and-quality`) sit beside Bandit/Gitleaks/pip-audit rather than replacing them. The workflow file is the fleet Python template; its header names `juniper-data/.github/workflows/codeql.yml` as the copy origin. First-run comment in the YAML: treat the initial cycle as a shakedown, then an owner may promote it to a required context — this repo **has** done that (see **Enforcement** above).
 
 ### When it runs
 
@@ -769,5 +769,5 @@ If environment setup fails:
 - **P2-NEW-002**: Coverage Thresholds in CI
 - **juniper-ml#384 / #555**: TestPyPI verify policy and dual-trigger race
 - **JuniperCanopy CI/CD**: Base workflow pattern
-- **CodeQL soak**: `.github/workflows/codeql.yml` (not a required check)
+- **CodeQL**: `.github/workflows/codeql.yml` (required check `Analyze (python)`)
 - **Claude Code assistant**: `.github/workflows/claude.yml` (comment / review / issue `@claude`; not a required check)
