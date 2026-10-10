@@ -42,7 +42,7 @@ namespaces = false
 
 [project]
 name = "juniper-cascor"
-version = "0.11.0"
+version = "0.12.0"
 description = "Cascade Correlation Neural Network implementation for the Juniper project"
 readme = "README.md"
 license = { text = "MIT" }
@@ -76,8 +76,11 @@ dependencies = [
     # so the warning is preserved post-migration. 0.4.0 added optional
     # ``git_sha`` / ``build_date`` passthrough on ``set_build_info`` +
     # the shared ``ReadinessResponse`` model for build provenance
-    # (juniper-ml notes/BUILD_PROVENANCE_DESIGN_2026-06-14.md).
-    "juniper-observability>=0.4.0",
+    # (juniper-ml notes/BUILD_PROVENANCE_DESIGN_2026-06-14.md). 0.4.1
+    # (2026-10-10) is the security patch: the shared ``configure_sentry``,
+    # which src/api/observability.py delegates to, no longer sends
+    # frame-local variables, which could hold the real API key.
+    "juniper-observability>=0.4.1",
     # METRICS-MON R2.2.2 / seed-05: WebSocket frame schemas (envelope
     # Pydantic models for /ws/training and /ws/control + WorkerMessageType
     # StrEnum + BinaryFrame numpy codec for /ws/v1/workers). The cascor
@@ -102,7 +105,11 @@ dependencies = [
     # disables APIKeyAuth and serves protected routes open behind a healthy
     # health check) is loud at boot. Stdlib-only import surface; 0.5.0 is the
     # release that ships the check. Pin mirrors the model-core floor+cap style.
-    "juniper-service-core>=0.5.0,<0.8.0",
+    # Floor 0.7.1 (2026-10-10), the security patch (non-ASCII X-API-Key is a
+    # 401; bounded FailedAuthThrottle.check()). cascor's own APIKeyAuth and
+    # FailedAuthThrottle are its copies in src/api/security.py, fixed by #689
+    # and #710, so this floor is consistency with the lock and the siblings.
+    "juniper-service-core>=0.7.1,<0.8.0",
 ]
 
 [project.optional-dependencies]

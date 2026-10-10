@@ -4,8 +4,8 @@
 **Repository**: pcalnon/juniper-cascor
 **Author**: Paul Calnon
 **License**: MIT License
-**Version**: 0.11.0
-**Last Updated**: 2026-10-08
+**Version**: 0.12.0
+**Last Updated**: 2026-10-10
 
 ---
 
