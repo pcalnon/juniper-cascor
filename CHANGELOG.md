@@ -7,8 +7,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-10-10
+
 ### Changed
 
+- **Logging costs less on the training hot path; log output is unchanged** (cascor#573; #648,
+  #652, #667, #670, #675).
+  - **One level table** (#648). `Logger._level_numbers` is now a copy of the canonical
+    `_LOGGER_LOG_LEVEL_NUMBERS_DICT` instead of a second hardcoded table, and
+    `profiling.logging_utils`'s `TRACE = 5` / `VERBOSE = 15`, which nothing referenced, are
+    deleted.
+  - **Symbolic guards** (#652). The 8 guard sites in `candidate_unit.py` name levels by constant
+    instead of as numeric literals.
+  - **A cheaper guard** (#667). `isEnabledFor` resolves the level through the emit filter's memo:
+    about 1,270 ns -> 341 ns per call at a disabled level.
+  - **Per-epoch progress** (#670). `_display_training_progress` evaluates its guard once and passes
+    `%`-args.
+  - **`%`-args** (#675). 220 f-string log calls in `candidate_unit.py` and `cascade_correlation.py`
+    become `%`-args, so the message is formatted only after the level filter passes. The converter
+    refused 40 further sites that may hold a 0-dim tensor, because `"%s" % torch.tensor(1.5)`
+    renders `tensor(1.5000)` where the f-string rendered `1.5`.
+- **A partial dataset the producer accepted now tells the operator how to refuse it** (#671).
+  juniper-data#418 made `allow_truncation` a tri-state. The producer clause of
+  `dataset_shortfall.summary`, and of the `DATASET SHORTFALL` WARNING, read "this run sent no
+  opt-in, and a client cannot opt out of the producer's choice"; it now reads "this run sent no
+  opt-in; send allow_truncation=false to refuse it".
+- **The published image no longer carries the test suite** (#660). `COPY src/` copied whole
+  directories, so `juniper-cascor:0.11.0` shipped 268 test files. `.dockerignore` now excludes
+  `**/tests/` and `**/reports/`.
+- **The image's dependency lock moved** (`requirements-cpu.lock`, through the Dependabot groups
+  merged since 0.11.0 and #711). The notable runtime pins: `juniper-data-client` 0.4.2 -> 0.5.0,
+  `juniper-data` 0.13.0 -> 0.16.0, `juniper-model-core` 0.3.1 -> 0.3.2, `juniper-observability`
+  0.4.0 -> 0.4.1, `juniper-service-core` 0.7.0 -> 0.7.1, `fastapi` 0.141.1 -> 0.142.2 (which adds
+  `opentelemetry-api` 1.45.0), `starlette` 1.6.0 -> 1.7.0, `uvicorn` 0.52.4 -> 0.54.0, `sentry-sdk`
+  2.68.1 -> 2.71.0, `websockets` 17.1 -> 17.2 and `filelock` 3.32.5 -> 4.0.11, plus 14 smaller
+  moves. The wheel's declared requirements are unchanged apart from this release's two floors.
 - **The BLAS thread policy now caps at 2 by default: owner decision D1, ruled 2026-09-23**
   (`src/parallelism/blas_threads.py`). `configure_blas_threads()` used to do nothing unless
   `JUNIPER_CASCOR_BLAS_THREADS` was set. It now sets `OMP_NUM_THREADS` / `MKL_NUM_THREADS` /
@@ -114,6 +147,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`Logger.set_level()` did not change what was emitted** (#644; cascor#573 P1.1). It wrote
+  `_log_level`, which only the `isEnabledFor` guards read, while `_log_at_level` filtered on
+  `_level_logger_name`, which was assigned once in the class body and never written again. So a
+  guard could open while its record was still discarded. The emit path now reads
+  `cls._log_level`. `is_valid_level` passed the boolean `level == level` to the level check, so it
+  returned `True` for every input, `"BANANA"` and `None` included; it now checks `level` itself.
+  Every live `set_level` call passes `INFO`, so default output is unchanged.
 - **`FailedAuthThrottle.check()` inserted every unseen source IP, so its table grew without
   bound** (`src/api/security.py`). `_failures` was a `defaultdict(lambda: (0, 0.0))`, so the
   lookup in the documented read-only `check()` added an entry for each source IP it had not seen.
@@ -396,7 +436,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ERROR, "... exception in shielded future"). `_send_json`'s generic failure branch logs a WARNING.
   Once the server has closed the socket, the `/ws/training` receive loop drains until the ASGI server
   reports the disconnect, rather than returning. uvicorn's sans-I/O protocol (what `ws="auto"`
-  selects at the pinned uvicorn 0.53.0 / websockets 17.1) holds the close frame while its write
+  selected at uvicorn 0.53.0 / websockets 17.1, the pins when this was measured) holds the close frame while its write
   buffer is full, and closes the transport as soon as the app returns. A handler that returned on
   the peer's next frame therefore left a slow reader with an abnormal `1006` instead of the `1011`
   frame. Draining also keeps a frame in flight from ending the handler with Starlette's
@@ -412,16 +452,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **`publish-image.yml` -- the service container image is published to GHCR on every `v*`
-  release** as a multi-arch manifest (`linux/amd64` + `linux/arm64`, each built on a native runner,
-  no QEMU), tagged `X.Y.Z` / `X.Y` / `latest`, pushed by digest with tags written exactly once by
-  the merge job. Wave 2 of the container-registry rollout (juniper-ml
-  `notes/JUNIPER_2026-09-05_JUNIPER-ECOSYSTEM_CONTAINER-REGISTRY-PUBLISHING-PLAN.md`); template
-  `juniper-cascor-worker/.github/workflows/publish-image.yml`. Both jobs are guarded to the `v` tag
-  family, because `juniper-cascor-protocol-v*` / `juniper-cascor-model-v*` releases fire the same
-  event and would otherwise republish `juniper-cascor:latest` from the wrong release. The PR arm
-  builds both arches and pushes nothing; a `workflow_dispatch` with `push: true` publishes
-  `dispatch-<sha>` as a rehearsal. Not a required status check (it is `paths:`-filtered).
 - **Micro-tier timing reference (juniper-ml perf lane P2 item 2.4 / PF-4).** `tests/performance/`
   now records what it measures. `save_baseline` entries carry pytest-benchmark's timing summary
   (`mean_ms` / `median_ms` / `stddev_ms` / `min_ms` / `max_ms` / `rounds` / `iterations`) for the
@@ -465,8 +495,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   service's own setting. Two live paths made it read `false` on a run training on partial data:
   the caller supplying `allow_truncation: true` in the staged params (the path canopy's options 1
   and 2 use, with the service flag off), and juniper-data accepting on its **own** deployment
-  opt-in — which it ORs with the request and a client cannot refuse — while nothing was sent from
-  here. The annotation is additive: `accepted_by_this_run` (an opt-in went on the wire from this
+  opt-in when the request is silent (since juniper-data#418 a client can refuse it with
+  `allow_truncation=false`) — while nothing was sent from here. The annotation is additive: `accepted_by_this_run` (an opt-in went on the wire from this
   side), `acceptance_source` (`request_params` | `allow_truncated_datasets` | `producer`), and the
   original field kept with its literal meaning — true only when THIS service's setting supplied
   the opt-in. The `summary` sentence and the training-log line carry the same clause.
@@ -491,7 +521,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `detail` because that is the one channel every transport carries — the WS control path
   forwards `error` as a bare string. An ordinary outage does not carry it.
 
-- **Correction to the `dataset_shortfall` entry below: it does NOT ride the WS training
+- **Correction to the 0.11.0 `dataset_shortfall` entry: it does NOT ride the WS training
   stream.** `get_status()` is read by the stream only in the one-shot `initial_status` frame at
   connect; the broadcast set has no status frame. A client already connected when
   `_reload_dataset` sets the field never sees it over WS — it polls `/v1/training/status`
@@ -509,20 +539,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Follow-up 6a of juniper-ml
 
   `prompts/thread-handoff_automated-prompts/HANDOFF_2026-09-08_container-registry-rollout-wave-2-opened-and-the-cuda-class-in-three-shapes.md`.
-- **The container image installed the entire CUDA stack -- ~3 GB of `nvidia-*`, `triton` and
-  `cuda-toolkit` wheels -- on an image that is CPU-only by design.** `requirements.lock` was
-  resolved against the CUDA torch on PyPI, so it pins those packages *outright*, and `Dockerfile`
-  installed the lock wholesale; torch itself came from the CPU index but *unpinned*. New
-  `requirements-cpu.lock` is `requirements.lock` minus the CUDA stack (shared pins identical by
-  construction: `--constraint requirements.lock`), the Dockerfile installs it with torch pinned to
-  `ARG TORCH_VERSION`+cpu (2.14.0, what the unpinned install resolved to) in **both** installs and
-  the CPU index as an extra index on the lock install, and `pip check` gates the builder.
-  `util/check_image_cpu_only.py` asserts the contract *inside* the image (pinned `+cpu` version,
-  `torch.version.cuda is None`, **no** `nvidia-*` / `triton` distribution) on the PR arm and on the
-  publish path; `Lockfile Freshness` asserts every dependency the image needs (base + the four
-  image extras) is pinned in the CPU lock; `src/tests/unit/test_dockerfile_cpu_torch_pin.py` pins
-  Dockerfile ↔ lock ↔ workflow. `requirements.lock` is unchanged and remains the GPU dev lock.
-
 - **`CI — juniper-cascor-model` was RED on `main`, and the fix that broke it did not work
   either.** The four `_PROJECT_API_SHORTFALL_*` constants added on 2026-09-09 were never listed in
   `cascor_constants/constants_api/constants_api_defaults.py`'s `__all__`, so CodeQL reported them as
@@ -590,7 +606,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   non-ASCII entry below, and the `FailedAuthThrottle.check()` entry under Fixed), so that pin is
   consistency with the sibling services. Both locks were regenerated with `--upgrade-package` for
   the two packages only: 73 pins in the GPU lock, which its freshness gate reproduces, and the CPU
-  lock, derived under `--constraint requirements.lock` with its header restored.
+  lock, derived under `--constraint requirements.lock` with its header restored. The wheel's
+  floors follow in this release: `juniper-observability>=0.4.1` and
+  `juniper-service-core>=0.7.1,<0.8.0`, so a pip install over an older environment upgrades both.
+  (The locks moved in #711; the floors ride in the release proposal, because a `pyproject.toml`
+  change on any branch but `release/` triggers `lockfile-update.yml`'s full `--upgrade` regen.)
+- **`.dockerignore` exclusions now hold below the build-context root** (#661). Its patterns were
+  root-anchored, so `cascor_snapshots/` never excluded `src/cascor_snapshots/`, which sits under
+  the `COPY src/` that ships. That directory held 766 local `.h5` snapshots, each carrying a
+  plaintext multiprocessing authkey, and a local `docker compose build` would have baked them in.
+  No published image was affected: `juniper-cascor:0.11.0` was pulled and inspected, and holds no
+  `.h5`. Every pattern now has a `**/` twin, keys (`*.key`, `*.pem`), `secrets/` and `.env*`
+  (except `.env.example`) are excluded, and `publish-image.yml` runs the new
+  `util/check_image_no_secrets.py`.
+- **`APIKeyAuth.validate` checks every configured key instead of stopping at the first match**
+  (#659; APD-CASCOR-005). Each compare was already constant-time; only the walk short-circuited, so
+  the time taken depended on where the matching key sat. The result is identical for every input.
 - **A non-ASCII `X-API-Key` is a 401, not a 500 that hands Sentry the real key**
   (`src/api/security.py`). `APIKeyAuth.validate` compared `str` with `hmac.compare_digest`, which
   raises `TypeError` when either side holds a non-ASCII character. Starlette decodes header bytes
@@ -624,8 +655,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   bootstrap `sentry_sdk.init` now passes `include_local_variables=False`, for the same reason: the
   SDK's scrubber redacts locals by name, and `candidate` is not a name it knows. The service path
   (`src/api/app.py` -> `api.observability.configure_sentry`) delegates to juniper-observability,
-  which carries the same setting from its next release. It reaches this service only when the
-  `juniper-observability>=0.4.0` floor is raised to that release. Pinned by
+  which carries the same setting from 0.4.1. This release delivers it: both locks pin 0.4.1 (#711)
+  and the floor is `juniper-observability>=0.4.1`. Pinned by
   `src/tests/unit/test_main_sentry_no_local_variables.py`, an AST check of the call's keywords
   with negative controls. Removing the keyword, or passing `True`, fails it. Mutation checks:
   juniper-ml's `util/ad-hoc/2026-09-24_bytes_compare_sentry_locals_verify.py`.
@@ -686,6 +717,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The container image installed the entire CUDA stack -- ~3 GB of `nvidia-*`, `triton` and
+  `cuda-toolkit` wheels -- on an image that is CPU-only by design.** `requirements.lock` was
+  resolved against the CUDA torch on PyPI, so it pins those packages *outright*, and `Dockerfile`
+  installed the lock wholesale; torch itself came from the CPU index but *unpinned*. New
+  `requirements-cpu.lock` is `requirements.lock` minus the CUDA stack (shared pins identical by
+  construction: `--constraint requirements.lock`), the Dockerfile installs it with torch pinned to
+  `ARG TORCH_VERSION`+cpu (2.14.0, what the unpinned install resolved to) in **both** installs and
+  the CPU index as an extra index on the lock install, and `pip check` gates the builder.
+  `util/check_image_cpu_only.py` asserts the contract *inside* the image (pinned `+cpu` version,
+  `torch.version.cuda is None`, **no** `nvidia-*` / `triton` distribution) on the PR arm and on the
+  publish path; `Lockfile Freshness` asserts every dependency the image needs (base + the four
+  image extras) is pinned in the CPU lock; `src/tests/unit/test_dockerfile_cpu_torch_pin.py` pins
+  Dockerfile ↔ lock ↔ workflow. `requirements.lock` is unchanged and remains the GPU dev lock.
+  (#634. Moved here from `[Unreleased]` on 2026-10-10, for the same reason as its `Added` entry.)
 - **The direct CLI was broken by #620 for the four days between it and #622.** Widening
   `SpiralDatasetTuple` to four pairs inserted `val` between train and test while
   `SpiralProblem.solve_n_spiral_problem` kept unpacking three, so every run against a live
@@ -731,6 +776,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`publish-image.yml` -- the service container image is published to GHCR on every `v*`
+  release** as a multi-arch manifest (`linux/amd64` + `linux/arm64`, each built on a native runner,
+  no QEMU), tagged `X.Y.Z` / `X.Y` / `latest`, pushed by digest with tags written exactly once by
+  the merge job. Wave 2 of the container-registry rollout (juniper-ml
+  `notes/JUNIPER_2026-09-05_JUNIPER-ECOSYSTEM_CONTAINER-REGISTRY-PUBLISHING-PLAN.md`); template
+  `juniper-cascor-worker/.github/workflows/publish-image.yml`. Both jobs are guarded to the `v` tag
+  family, because `juniper-cascor-protocol-v*` / `juniper-cascor-model-v*` releases fire the same
+  event and would otherwise republish `juniper-cascor:latest` from the wrong release. The PR arm
+  builds both arches and pushes nothing; a `workflow_dispatch` with `push: true` publishes
+  `dispatch-<sha>` as a rehearsal. Not a required status check (it is `paths:`-filtered).
+  (#634. Moved here from `[Unreleased]` on 2026-10-10: #634 merged after the 0.11.0 CHANGELOG move
+  (#635) but before the `v0.11.0` tag, so it shipped in 0.11.0.)
 - **`InlineDataset` accepts an explicit held-out partition (`test_x` / `test_y`) — and now rejects
   unknown keys with a 422** (cascor#616; the inline half of juniper-ml
   `notes/JUNIPER_2026-08-31_JUNIPER-CASCOR_TEST-PARTITION-SLOT-INVESTIGATION.md` §3). Three silent
