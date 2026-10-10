@@ -126,11 +126,11 @@ juniper-model-core==0.3.2
     #   -c requirements.lock
     #   juniper-cascor (pyproject.toml)
     #   juniper-service-core
-juniper-observability==0.4.0
+juniper-observability==0.4.1
     # via
     #   -c requirements.lock
     #   juniper-cascor (pyproject.toml)
-juniper-service-core==0.7.0
+juniper-service-core==0.7.1
     # via
     #   -c requirements.lock
     #   juniper-cascor (pyproject.toml)
