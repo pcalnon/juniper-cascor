@@ -580,6 +580,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **cascor picks up the two shared security patches**: `requirements.lock` and the image's
+  `requirements-cpu.lock` each move `juniper-observability` 0.4.0 -> 0.4.1 and
+  `juniper-service-core` 0.7.0 -> 0.7.1, and nothing else. observability 0.4.1's shared
+  `configure_sentry`, which `src/api/observability.py` delegates to, no longer sends frame-local
+  variables to Sentry, and they could hold the real API key. (The CLI's own `sentry_sdk.init` in
+  `src/main.py` is covered by its own entry below.) service-core 0.7.1 fixes `APIKeyAuth` and
+  `FailedAuthThrottle`; cascor's own copies in `src/api/security.py` carry the same fixes (the
+  non-ASCII entry below, and the `FailedAuthThrottle.check()` entry under Fixed), so that pin is
+  consistency with the sibling services. Both locks were regenerated with `--upgrade-package` for
+  the two packages only: 73 pins in the GPU lock, which its freshness gate reproduces, and the CPU
+  lock, derived under `--constraint requirements.lock` with its header restored.
 - **A non-ASCII `X-API-Key` is a 401, not a 500 that hands Sentry the real key**
   (`src/api/security.py`). `APIKeyAuth.validate` compared `str` with `hmac.compare_digest`, which
   raises `TypeError` when either side holds a non-ASCII character. Starlette decodes header bytes
