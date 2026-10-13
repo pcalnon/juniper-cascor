@@ -46,7 +46,7 @@ anyio==4.15.1
     #   -c requirements.lock
     #   starlette
     #   watchfiles
-cachetools==7.2.0
+cachetools==7.2.1
     # via
     #   -c requirements.lock
     #   juniper-data
@@ -71,12 +71,12 @@ cycler==0.12.1
     # via
     #   -c requirements.lock
     #   matplotlib
-fastapi==0.142.2
+fastapi==0.143.0
     # via
     #   -c requirements.lock
     #   juniper-cascor (pyproject.toml)
     #   juniper-service-core
-filelock==4.0.11
+filelock==4.1.1
     # via
     #   -c requirements.lock
     #   torch
@@ -96,7 +96,7 @@ h5py==3.16.0
     # via
     #   -c requirements.lock
     #   juniper-cascor (pyproject.toml)
-httptools==0.8.0
+httptools==0.9.0
     # via
     #   -c requirements.lock
     #   uvicorn
@@ -113,7 +113,7 @@ juniper-cascor-protocol==0.2.0
     # via
     #   -c requirements.lock
     #   juniper-cascor (pyproject.toml)
-juniper-data==0.16.0
+juniper-data==0.17.0
     # via
     #   -c requirements.lock
     #   juniper-cascor (pyproject.toml)
@@ -154,7 +154,7 @@ networkx==3.7
     # via
     #   -c requirements.lock
     #   torch
-numpy==2.5.3
+numpy==2.5.4
     # via
     #   -c requirements.lock
     #   juniper-cascor (pyproject.toml)
@@ -165,7 +165,7 @@ numpy==2.5.3
     #   juniper-data-client
     #   juniper-service-core
     #   matplotlib
-opentelemetry-api==1.45.0
+opentelemetry-api==1.45.1
     # via
     #   -c requirements.lock
     #   fastapi
@@ -181,7 +181,7 @@ prometheus-client==0.26.0
     # via
     #   -c requirements.lock
     #   juniper-cascor (pyproject.toml)
-pydantic==2.13.5
+pydantic==2.14.1
     # via
     #   -c requirements.lock
     #   juniper-cascor (pyproject.toml)
@@ -191,7 +191,7 @@ pydantic==2.13.5
     #   juniper-observability
     #   juniper-service-core
     #   pydantic-settings
-pydantic-core==2.46.5
+pydantic-core==2.50.1
     # via
     #   -c requirements.lock
     #   pydantic
@@ -224,7 +224,7 @@ requests==2.34.2
     # via
     #   -c requirements.lock
     #   juniper-data-client
-sentry-sdk==2.71.0
+sentry-sdk==2.72.0
     # via
     #   -c requirements.lock
     #   juniper-cascor (pyproject.toml)
@@ -236,7 +236,7 @@ six==1.17.0
     # via
     #   -c requirements.lock
     #   python-dateutil
-starlette==1.7.0
+starlette==1.8.0
     # via
     #   -c requirements.lock
     #   juniper-cascor (pyproject.toml)
