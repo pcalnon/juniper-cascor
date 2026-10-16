@@ -58,7 +58,7 @@ MarkupSafe==3.0.3
 matplotlib==3.11.2
 mpmath==1.4.1
 multiprocess @ git+https://github.com/uqfoundation/multiprocess.git@02ea4bd36cac5013d70847815c92e1a736ef4a05
-munkres==1.1.4
+munkres==2.0.0
 networkx==3.7
 numpy==2.5.3
 nvidia-cublas-cu12==12.9.2.10
