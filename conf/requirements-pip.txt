@@ -45,7 +45,7 @@ matplotlib==3.11.2
 mdurl==0.1.2
 mpmath==1.4.1
 multiprocess==0.70.19
-munkres==1.1.4
+munkres==2.0.0
 narwhals==2.27.1
 nest_asyncio==1.6.0
 networkx==3.7
