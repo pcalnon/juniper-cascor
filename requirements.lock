@@ -8,9 +8,9 @@ anyio==4.15.1
     # via
     #   starlette
     #   watchfiles
-cachetools==7.2.1
+cachetools==7.2.3
     # via juniper-data
-certifi==2026.7.22
+certifi==2026.10.18
     # via
     #   requests
     #   sentry-sdk
@@ -20,7 +20,7 @@ click==8.5.0
     # via uvicorn
 contourpy==1.4.0
     # via matplotlib
-cuda-bindings==13.4.3
+cuda-bindings==13.4.4
     # via torch
 cuda-pathfinder==1.8.3
     # via cuda-bindings
@@ -28,13 +28,13 @@ cuda-toolkit==13.0.3.0
     # via torch
 cycler==0.12.1
     # via matplotlib
-fastapi==0.143.0
+fastapi==0.148.0
     # via
     #   juniper-cascor (pyproject.toml)
     #   juniper-service-core
-filelock==4.1.1
+filelock==4.2.4
     # via torch
-fonttools==4.66.1
+fonttools==4.67.0
     # via matplotlib
 fsspec==2026.9.0
     # via torch
@@ -54,7 +54,7 @@ juniper-cascor-protocol==0.2.0
     # via juniper-cascor (pyproject.toml)
 juniper-data==0.17.0
     # via juniper-cascor (pyproject.toml)
-juniper-data-client==0.5.0
+juniper-data-client==0.6.0
     # via juniper-cascor (pyproject.toml)
 juniper-model-core==0.3.2
     # via
@@ -129,7 +129,7 @@ opentelemetry-api==1.45.1
     # via fastapi
 packaging==26.3
     # via matplotlib
-pillow==12.3.0
+pillow==13.0.0
     # via matplotlib
 prometheus-client==0.26.0
     # via juniper-cascor (pyproject.toml)
@@ -144,7 +144,7 @@ pydantic==2.14.1
     #   pydantic-settings
 pydantic-core==2.50.1
     # via pydantic
-pydantic-settings==2.15.0
+pydantic-settings==2.16.0
     # via
     #   juniper-cascor (pyproject.toml)
     #   juniper-service-core
@@ -170,7 +170,7 @@ setuptools==84.0.0
     # via torch
 six==1.17.0
     # via python-dateutil
-starlette==1.8.0
+starlette==1.9.0
     # via
     #   juniper-cascor (pyproject.toml)
     #   fastapi
@@ -186,6 +186,7 @@ typing-extensions==4.16.0
     #   opentelemetry-api
     #   pydantic
     #   pydantic-core
+    #   pydantic-settings
     #   torch
     #   typing-inspection
 typing-inspection==0.4.4
