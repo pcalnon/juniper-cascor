@@ -46,11 +46,11 @@ anyio==4.15.1
     #   -c requirements.lock
     #   starlette
     #   watchfiles
-cachetools==7.2.1
+cachetools==7.2.3
     # via
     #   -c requirements.lock
     #   juniper-data
-certifi==2026.7.22
+certifi==2026.10.18
     # via
     #   -c requirements.lock
     #   requests
@@ -71,16 +71,16 @@ cycler==0.12.1
     # via
     #   -c requirements.lock
     #   matplotlib
-fastapi==0.143.0
+fastapi==0.148.0
     # via
     #   -c requirements.lock
     #   juniper-cascor (pyproject.toml)
     #   juniper-service-core
-filelock==4.1.1
+filelock==4.2.4
     # via
     #   -c requirements.lock
     #   torch
-fonttools==4.66.1
+fonttools==4.67.0
     # via
     #   -c requirements.lock
     #   matplotlib
@@ -117,7 +117,7 @@ juniper-data==0.17.0
     # via
     #   -c requirements.lock
     #   juniper-cascor (pyproject.toml)
-juniper-data-client==0.5.0
+juniper-data-client==0.6.0
     # via
     #   -c requirements.lock
     #   juniper-cascor (pyproject.toml)
@@ -173,7 +173,7 @@ packaging==26.3
     # via
     #   -c requirements.lock
     #   matplotlib
-pillow==12.3.0
+pillow==13.0.0
     # via
     #   -c requirements.lock
     #   matplotlib
@@ -195,7 +195,7 @@ pydantic-core==2.50.1
     # via
     #   -c requirements.lock
     #   pydantic
-pydantic-settings==2.15.0
+pydantic-settings==2.16.0
     # via
     #   -c requirements.lock
     #   juniper-cascor (pyproject.toml)
@@ -236,7 +236,7 @@ six==1.17.0
     # via
     #   -c requirements.lock
     #   python-dateutil
-starlette==1.8.0
+starlette==1.9.0
     # via
     #   -c requirements.lock
     #   juniper-cascor (pyproject.toml)
@@ -254,6 +254,7 @@ typing-extensions==4.16.0
     #   opentelemetry-api
     #   pydantic
     #   pydantic-core
+    #   pydantic-settings
     #   torch
     #   typing-inspection
 typing-inspection==0.4.4
