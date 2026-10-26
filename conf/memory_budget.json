@@ -33,9 +33,10 @@
     "Allow-Budget-Overrun, because an overrun borrows against a ceiling that still stands",
     "while a raise moves it and erases the debt for everyone.",
     "",
-    "NOTE FOR THE CUT (P5 step e): this repo has NO docs/REFERENCE.md. The relocation",
-    "destination must be created before anything can be moved into it, and G3 (the",
-    "relocation-completeness check) cannot be wired until it exists."
+    "THE CUT (P5 step e) IS DONE: juniper-cascor#600 (2026-08-30) created docs/REFERENCE.md",
+    "and relocated seven AGENTS.md sections into it byte-for-byte; the top-level _note",
+    "records the ceiling it set. G3 (the relocation-completeness check) ran LOCALLY for that",
+    "cut and is not wired into this repo's CI."
   ],
   "files": {
     "AGENTS.md": {

@@ -7,6 +7,52 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **The lockfile regen could commit empty lockfiles** (`.github/workflows/lockfile-update.yml`,
+  latent). The signed-commit step built its payload with
+  `--arg contents "$(base64 -w0 requirements.lock)"`, and the same for `requirements-cpu.lock`. A
+  failure inside a command substitution used as an argument does not trip `set -e`, so a failing
+  `base64` would have sent `createCommitOnBranch` an empty `contents` for both files, and the
+  step would have succeeded. Both locks are now encoded on their own lines, where a failure stops
+  the step, and an empty encoding fails it with
+  `base64 produced an empty payload -- lockfile NOT committed`. Checked by running the step
+  extracted from the workflow with `base64`, `git` and `gh` stubbed: before the fix, a failing or
+  silent `base64` exits 0 and sends both files empty; after it, both exit 1 and send nothing, and
+  a working `base64` still sends both locks byte-identical. The same pattern is in five other
+  Juniper repos' copies of this workflow, and each gets the same fix in its own repo. Found in the
+  2026-10-08 flood-3 disposition (juniper-ml
+  `notes/JUNIPER_2026-10-08_JUNIPER-ECOSYSTEM_CURSOR-FLOOD-3-DISPOSITION.md` §4), as were the four
+  documentation fixes below.
+
+### Documentation
+
+- **`docs/ci_cd/BRANCH_PROTECTION.md` now records the live rulesets, and how to re-read them.**
+  It listed six required checks, two under names no context has (`Unit Tests + Coverage`,
+  `Integration Tests`), where the `main` ruleset (`juniper-cascor-rules`, id `15081045`) requires
+  24, and it said one approving review and a code-owner review are required, where both rulesets
+  require 0 and `false`. Read again on 2026-10-26, the page now gives all 24 contexts with the
+  workflow and job that post each, and the eight that sit outside the Quality Gate's `needs:`;
+  every `pull_request` parameter of both rulesets (`juniper-no-direct-push`, id `21019063`, is the
+  second); the bypass lists (an admin bypasses `juniper-cascor-rules`, nobody bypasses
+  `juniper-no-direct-push`); and the fact that there is no `develop` branch. The classic
+  `PUT .../branches/main/protection` recipe, which would have layered the old review requirements
+  on top of the rulesets, is replaced by read-only `gh api` commands, and the page states the date
+  it was read and the commands that re-derive it.
+- **`ci.yml` and `conf/memory_budget.json` said cascor has no `docs/REFERENCE.md`.** The P5 cut
+  (juniper-cascor#600, 2026-08-30) created it. Both now say so, and that G3 (the
+  relocation-completeness check) ran locally for that cut and is not wired into CI. A comment and
+  the `_README` prose only: no ceiling, step or job changed, and `util/memory_budget_check.py` reads
+  only `files.*.ceiling_chars`.
+- **`docs/DOCUMENTATION_OVERVIEW.md`'s template example carried the document's own stamp.**
+  juniper-cascor#709 bumped the example's `**Version**` / `**Last Updated**` to `0.6.5` /
+  `2026-10-08` along with the header. The example shows placeholders again (`X.Y.Z`,
+  `YYYY-MM-DD`), and the header and footer stamps, which had drifted apart (`0.6.6` against
+  `0.6.5`), both read `0.6.7`, October 26, 2026.
+- **`claude.yml`'s header said `ANTHROPIC_API_KEY` is set at the organization level.** Juniper
+  repositories are user-owned, so no organization secret can reach them; the key is a repository
+  secret.
+
 ## [0.12.0] - 2026-10-10
 
 ### Changed
