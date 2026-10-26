@@ -4202,8 +4202,13 @@ class TrainingLifecycleManager:
             params.pop("rotations", None)
             params.pop("n_spirals", None)
         else:
-            # circles / moon / mnist / equities take ``n_samples`` directly; drop
-            # every generator-specific typed field they do not declare.
+            # circles / moon / mnist take ``n_samples`` directly (circles and moon take
+            # ``noise`` too; mnist does not). Flat ``equities`` declares NEITHER: its
+            # juniper-data ``EquitiesParams`` (0.17.x) has no ``n_samples`` or
+            # ``noise`` and ignores unknown keys, so a staged value for either passes
+            # through here and is silently dropped by juniper-data (the F-C3 class;
+            # juniper-canopy#736). Drop every generator-specific typed field they do
+            # not declare.
             params.pop("rotations", None)
             params.pop("n_spirals", None)
             params.pop("n_squares", None)
