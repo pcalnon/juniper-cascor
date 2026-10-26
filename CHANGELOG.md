@@ -6,9 +6,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
-
 ### Changed
-
 - **Temporary files go in the repo's gitignored `tmp/`, never `/tmp` (owner directive, 2026-10-26), and the
   owner's rulings on it are applied.** `/tmp/` is ignored, the lock-regeneration recipes use `tmp/`, and
   `AGENTS.md` § Temporary files carries the rule and the rulings, retention included. `juniper-check-doc-links`
