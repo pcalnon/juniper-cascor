@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Temporary files go in the repo's gitignored `tmp/`, never `/tmp` (owner directive, 2026-10-26), and the
+  owner's rulings on it are applied.** `/tmp/` is ignored, the lock-regeneration recipes use `tmp/`, and
+  `AGENTS.md` § Temporary files carries the rule and the rulings, retention included. `juniper-check-doc-links`
+  passes `--exclude tmp` in the pre-commit hook and in CI, and `.dockerignore` lists `tmp/`; nothing keeps pytest
+  or a `grep`/`find` match count out of it.
+
 ## [0.12.0] - 2026-10-10
 
 ### Changed
