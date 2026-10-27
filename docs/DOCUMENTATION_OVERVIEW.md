@@ -2,8 +2,8 @@
 
 ## Complete Navigation Guide to Juniper Cascor Documentation
 
-**Version:** 0.6.6  
-**Last Updated:** October 8, 2026  
+**Version:** 0.6.7  
+**Last Updated:** October 26, 2026  
 **Project:** Juniper Cascor - Cascade Correlation Neural Network Implementation
 
 ---
@@ -808,8 +808,8 @@ Contains historical development documentation, implementation notes, and researc
 ```markdown
 # Document Title
 
-**Version**: 0.6.5  
-**Last Updated**: 2026-10-08  
+**Version**: X.Y.Z  
+**Last Updated**: YYYY-MM-DD  
 **Purpose**: Brief description
 
 ---
@@ -958,8 +958,8 @@ docs/overview/CONSTANTS_GUIDE.md # Constants reference
 
 ---
 
-**Last Updated:** October 8, 2026
-**Version:** 0.6.5
+**Last Updated:** October 26, 2026
+**Version:** 0.6.7
 **Maintainer:** Paul Calnon
 
 > See the [Juniper Ecosystem Guide](https://github.com/pcalnon/juniper-ml/blob/main/CLAUDE.md) for the full project map and dependency graph.
