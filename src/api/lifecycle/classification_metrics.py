@@ -44,6 +44,16 @@ Within an otherwise-defined macro/weighted average, a per-class zero denominator
 per-class artifact, not a whole-metric degradation, and is NOT flagged in
 ``undefined``.
 
+Accuracy (final evaluation only). :func:`compute_classification_accuracy` is a
+separate entry point, called only by the manager's once-only final evaluation
+(``eval_metrics.final``). It is deliberately NOT one of :data:`METRIC_KEYS`, so
+the live per-step block and the metrics-history rows keep exactly the four
+scalars above. It uses the network's own ``_accuracy`` definition, the one
+behind the training history's ``train_accuracy`` / ``value_accuracy``, so the
+final number and those two are directly comparable. Degradation follows the
+guards above, except that a single-class target is still scored: accuracy needs
+no positive/negative contrast.
+
 Phase-2 seam (deliberately NOT built here). The curve / explainability artifacts
 in U-4 — confusion matrix, SHAP, permutation / feature importance, PDP, and the
 calibration / ROC / PR / lift / gain curves — are a later unit (C7 phase 2 +
@@ -282,3 +292,78 @@ def compute_scalar_classification_metrics(
     if is_binary:
         return _binary_metrics(output, target, average=average, n_samples=n_samples)
     return _multiclass_metrics(output, target, average=average, n_samples=n_samples, n_classes=n_classes)
+
+
+def compute_classification_accuracy(output: torch.Tensor, target: torch.Tensor) -> Tuple[Optional[float], Optional[str]]:
+    """Plain accuracy for one evaluation batch: correctly decoded rows / rows.
+
+    The definition is ``CascadeCorrelationNetwork._accuracy``
+    (``cascade_correlation/cascade_correlation.py``). That method produces the
+    training history's ``train_accuracy`` / ``value_accuracy``, which
+    ``/v1/metrics`` serves as ``train_accuracy`` / ``val_accuracy``:
+
+    - one output column: prediction ``output > 0.5`` against target
+      ``target > 0.5`` (strictly greater on both sides);
+    - two or more columns: ``argmax(output, dim=1)`` against
+      ``argmax(target, dim=1)`` (a one-hot target);
+    - accuracy is the number of matching rows divided by the number of rows.
+
+    So a final ``accuracy`` and the history's two accuracies are the same
+    quantity measured on different rows.
+
+    Degradation mirrors :func:`compute_scalar_classification_metrics`, which
+    scores the same tensors in the same block. This never raises for a
+    degenerate batch; it returns ``None`` with a reason instead:
+
+    - ``empty_batch``: zero samples. ``_accuracy`` returns NaN here; this reports
+      ``None`` with the reason instead, as the siblings do. ``/v1/metrics`` would
+      serve a NaN as ``null`` anyway, so the reason in ``undefined`` is the only
+      thing that tells a reader why the value is missing.
+    - ``invalid_output``: the output or target contains NaN / Inf.
+
+    A single-class target is NOT degraded. F1 / precision / recall / ROC-AUC
+    need a positive/negative contrast, but accuracy does not, and ``_accuracy``
+    scores such a batch normally. Returning ``None`` here would make the final
+    number disagree with the history's definition for no reason.
+
+    There is no task-type branch, as there is none for the sibling metrics.
+    Neither this module nor the manager sees a task type (``CascorModel.task_type``
+    is the constant ``"classification"``), so a continuous single-column target is
+    decoded at 0.5 exactly as ``_accuracy`` decodes it for the history.
+
+    Args:
+        output: Raw network output, shape ``(N, C)``, ``(N,)`` or ``(N, 1)``.
+        target: Target tensor, one-hot ``(N, C)`` for multi-class, or
+            ``(N,)`` / ``(N, 1)`` for a single output column.
+
+    Returns:
+        ``(accuracy, None)`` with ``accuracy`` in ``[0.0, 1.0]``, or
+        ``(None, reason)`` when accuracy is undefined for the batch.
+
+    Raises:
+        TypeError: if ``output`` / ``target`` are not tensors.
+    """
+    if not isinstance(output, torch.Tensor) or not isinstance(target, torch.Tensor):
+        raise TypeError("output and target must be torch.Tensor")
+
+    output = output.detach()
+    target = target.detach()
+    if output.ndim == 1:
+        output = output.unsqueeze(1)
+    if target.ndim == 1:
+        target = target.unsqueeze(1)
+
+    n_samples = int(output.shape[0])
+    if n_samples == 0:
+        return None, "empty_batch"
+    if not (bool(torch.isfinite(output).all()) and bool(torch.isfinite(target).all())):
+        return None, "invalid_output"
+
+    if int(output.shape[1]) == 1:
+        y_pred = (output.reshape(-1) > 0.5).to(torch.int64)
+        y_true = (target.reshape(-1) > 0.5).to(torch.int64)
+    else:
+        y_pred = torch.argmax(output, dim=1)
+        y_true = torch.argmax(target, dim=1)
+    correct = int((y_pred == y_true).sum())
+    return correct / n_samples, None
