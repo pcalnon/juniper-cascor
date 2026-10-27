@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **The final evaluation reports accuracy** (`eval_metrics.final.accuracy`; juniper-ml APD-ML-002,
+  owner ruling 2026-10-26). `eval_metrics.final` (cascor#582) scored the finished model with F1,
+  precision, recall and ROC-AUC but no accuracy, so juniper-ml's experiment reader asked for a
+  `test_accuracy` that cascor never computed. The block now carries `accuracy`, computed from the
+  same forward pass and on the same rows as its siblings: the rows `final.split` names, `test` when
+  a test split is loaded and `validation` otherwise. The definition is the network's own
+  `_accuracy`, the one behind the history's `train_accuracy` / `val_accuracy`, so the three numbers
+  are comparable. One output column is thresholded at `> 0.5` on both output and target; two or
+  more columns are argmax-decoded against the one-hot target; the score is matching rows over rows.
+  An empty or non-finite split gives `null` with its reason in `undefined` (`empty_batch` /
+  `invalid_output`), as the sibling metrics do. A single-class split is still scored, because
+  accuracy needs no positive/negative contrast. The live per-step fields, the metrics-history rows
+  and the WebSocket frames are unchanged. The new function is `compute_classification_accuracy` in
+  `src/api/lifecycle/classification_metrics.py`. Tests are in
+  `src/tests/unit/api/test_final_eval_accuracy.py` (new) and
+  `src/tests/unit/api/test_classification_metrics.py`, including a differential pin against
+  `_accuracy`. `util/ad-hoc/2026-10-26_final_eval_accuracy_mutation_check.py` shows that all 14
+  deliberate breaks are caught. The golden `metrics_post_train.json` is unchanged: that run has no
+  reportable split, so its `final` stays `null`.
+
 ### Fixed
 
 - **The lockfile regen could commit empty lockfiles** (`.github/workflows/lockfile-update.yml`,
