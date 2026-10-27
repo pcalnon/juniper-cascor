@@ -364,14 +364,33 @@ Entries in `GET /v1/metrics/history` and `WS /ws/training` `metrics` messages:
 {
     "enabled": bool,                    # JUNIPER_CASCOR_EVAL_METRICS_ENABLED
     "average": str,                     # "macro" | "weighted" | "binary"
-    "split": Optional[str],             # "validation" | "training" | null
+    "split": Optional[str],             # "validation" | null (no validation split: the live scalars are not computed)
     "n_samples": Optional[int],
     "n_classes": Optional[int],
     "undefined": dict,                  # metric_key -> reason (empty when all defined)
+    "final": Optional[dict],            # the finished model's once-only score (below); null until a run completes
 }
 ```
 
 Whole-metric undefined reasons: `empty_batch`, `single_class`, `invalid_output`.
+
+`eval_metrics.final` (cascor#582) scores the finished model once, after the last weight update of a run that completes successfully, on the **reported** partition: the test split when one is loaded, else the validation split. It is cleared when the next run starts, so it stays `null` after a stopped or failed run. It is also `null` when eval metrics are disabled or no reportable split is loaded. Unlike the live fields above it carries `accuracy`, using the same definition as `train_accuracy` / `val_accuracy`:
+
+```python
+{
+    "f1": Optional[float],
+    "precision": Optional[float],
+    "recall": Optional[float],
+    "roc_auc": Optional[float],
+    "accuracy": Optional[float],        # final block only; null only for empty_batch / invalid_output, never single_class
+    "average": str,                     # "macro" | "weighted" | "binary"
+    "n_samples": int,
+    "n_classes": int,
+    "undefined": dict,                  # metric_key -> reason, accuracy included
+    "split": str,                       # "test" | "validation" -- the rows every number above was scored on
+    "final": True,
+}
+```
 
 ### Callback-Driven Emission Granularity
 

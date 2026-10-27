@@ -20,7 +20,7 @@ from typing import Any, Callable, Dict, FrozenSet, List, Optional, Tuple
 import numpy as np
 import torch
 
-from api.lifecycle.classification_metrics import compute_scalar_classification_metrics
+from api.lifecycle.classification_metrics import compute_classification_accuracy, compute_scalar_classification_metrics
 from api.lifecycle.monitor import TrainingMonitor, TrainingState
 from api.lifecycle.state_machine import Command, TrainingPhase, TrainingStateMachine
 from api.models.cascor_model import CascorModel
@@ -2269,6 +2269,14 @@ class TrainingLifecycleManager:
         score. This runs after the last weight update, exactly once, on the success path
         only: a stopped or failed run has no final model to report.
 
+        The block also carries ``accuracy``, which the live block does not (juniper-ml
+        APD-ML-002: the experiment reader wants a test accuracy and cascor computed
+        none). It comes from the same forward pass and the same rows that ``split``
+        names. It uses the definition behind the history's ``train_accuracy`` /
+        ``value_accuracy`` (``CascadeCorrelationNetwork._accuracy``), so the three
+        numbers are comparable. An undefined accuracy is ``None``, with its reason in
+        ``undefined`` like its siblings. The live block is deliberately unchanged.
+
         Never raises. A diagnostic must not be the thing that fails a completed run.
         """
         if not self._eval_metrics_enabled:
@@ -2281,11 +2289,17 @@ class TrainingLifecycleManager:
             with torch.no_grad():
                 output = network.forward(x)
             metrics = compute_scalar_classification_metrics(output, y, average=self._eval_metrics_average)
+            accuracy, accuracy_undefined = compute_classification_accuracy(output, y)
         except Exception:
             self.logger.debug("cascor#582: final eval-metrics computation failed", exc_info=True)
             return None
         if isinstance(metrics, dict):
             metrics = dict(metrics)
+            metrics["accuracy"] = accuracy
+            undefined = dict(metrics.get("undefined") or {})
+            if accuracy_undefined is not None:
+                undefined["accuracy"] = accuracy_undefined
+            metrics["undefined"] = undefined
             metrics["split"] = self._reported_split_name()
             metrics["final"] = True
         return metrics
@@ -4202,8 +4216,13 @@ class TrainingLifecycleManager:
             params.pop("rotations", None)
             params.pop("n_spirals", None)
         else:
-            # circles / moon / mnist / equities take ``n_samples`` directly; drop
-            # every generator-specific typed field they do not declare.
+            # circles / moon / mnist take ``n_samples`` directly (circles and moon take
+            # ``noise`` too; mnist does not). Flat ``equities`` declares NEITHER: its
+            # juniper-data ``EquitiesParams`` (0.17.x) has no ``n_samples`` or
+            # ``noise`` and ignores unknown keys, so a staged value for either passes
+            # through here and is silently dropped by juniper-data (the F-C3 class;
+            # juniper-canopy#736). Drop every generator-specific typed field they do
+            # not declare.
             params.pop("rotations", None)
             params.pop("n_spirals", None)
             params.pop("n_squares", None)
