@@ -15,6 +15,7 @@ import torch
 
 from api.lifecycle.classification_metrics import (
     METRIC_KEYS,
+    compute_classification_accuracy,
     compute_scalar_classification_metrics,
 )
 
@@ -286,3 +287,136 @@ class TestContract:
         compute_scalar_classification_metrics(output, target)
         assert torch.equal(output, out_clone)
         assert torch.equal(target, tgt_clone)
+
+
+@pytest.mark.unit
+class TestClassificationAccuracy:
+    """``compute_classification_accuracy``, the final evaluation's accuracy (juniper-ml APD-ML-002).
+
+    Pinned to hand-counted cases, plus the guards its sibling metrics apply to the
+    same tensors in the same ``eval_metrics.final`` block.
+    """
+
+    def test_binary_exact(self):
+        """scores [.9,.4,.2,.6,.8] -> y_pred [1,0,0,1,1]; y_true [1,1,0,0,1]; rows 0, 2, 4 match."""
+        output = torch.tensor([[0.9], [0.4], [0.2], [0.6], [0.8]])
+        target = torch.tensor([[1.0], [1.0], [0.0], [0.0], [1.0]])
+        accuracy, reason = compute_classification_accuracy(output, target)
+        assert reason is None
+        assert accuracy == 3 / 5
+
+    def test_binary_threshold_is_strictly_greater_on_both_sides(self):
+        """An output or a target of exactly 0.5 decodes to class 0, as in the network's ``_accuracy``.
+
+        y_pred = [0, 1, 1, 1, 0] (0.5 is not > 0.5); y_true = [0, 0, 0, 1, 0] (nor is
+        a 0.5 target); rows 0, 3 and 4 match. The rows are chosen so every ``>=``
+        variant moves the count: on the output side 2/5, on the target side 5/5,
+        on both 4/5.
+        """
+        output = torch.tensor([[0.5], [0.51], [0.9], [0.51], [0.2]])
+        target = torch.tensor([[0.0], [0.5], [0.5], [1.0], [0.0]])
+        accuracy, reason = compute_classification_accuracy(output, target)
+        assert reason is None
+        assert accuracy == 3 / 5
+
+    def test_multiclass_exact(self):
+        """y_pred = [0,1,2,0,1,2], y_true = [0,1,2,1,1,2]: 5 of 6 rows match."""
+        accuracy, reason = compute_classification_accuracy(TestMulticlassScalarMetrics._OUTPUT, TestMulticlassScalarMetrics._TARGET)
+        assert reason is None
+        assert accuracy == 5 / 6
+
+    def test_two_column_head_is_argmax_decoded_not_thresholded(self):
+        """Every output is below 0.5, yet argmax gets both rows right.
+
+        A single-column threshold applied to the first column would mark row 0
+        wrong (0.4 is not > 0.5 while its target 1.0 is) and score 0.5.
+        """
+        output = torch.tensor([[0.4, 0.1], [0.2, 0.3]])
+        target = torch.tensor([[1.0, 0.0], [0.0, 1.0]])
+        accuracy, reason = compute_classification_accuracy(output, target)
+        assert reason is None
+        assert accuracy == 1.0
+
+    def test_single_class_binary_target_is_still_scored(self):
+        """Unlike F1 / precision / recall / ROC-AUC, accuracy needs no positive/negative contrast."""
+        output = torch.tensor([[0.9], [0.2], [0.8], [0.7]])
+        target = torch.tensor([[1.0], [1.0], [1.0], [1.0]])
+        accuracy, reason = compute_classification_accuracy(output, target)
+        assert reason is None
+        assert accuracy == 3 / 4
+        assert compute_scalar_classification_metrics(output, target)["undefined"]["f1"] == "single_class", "the siblings degrade on this batch; accuracy does not"
+
+    def test_single_class_multiclass_target_is_still_scored(self):
+        output = torch.tensor([[3.0, 1.0, 0.0], [0.0, 2.0, 1.0]])
+        target = torch.tensor([[1.0, 0.0, 0.0], [1.0, 0.0, 0.0]])
+        accuracy, reason = compute_classification_accuracy(output, target)
+        assert reason is None
+        assert accuracy == 1 / 2
+
+    @pytest.mark.parametrize("n_cols", [1, 3])
+    def test_empty_batch(self, n_cols):
+        """``_accuracy`` returns NaN here; the final block gets None plus a reason, as the siblings do."""
+        accuracy, reason = compute_classification_accuracy(torch.empty(0, n_cols), torch.empty(0, n_cols))
+        assert accuracy is None
+        assert reason == "empty_batch"
+
+    def test_nan_output(self):
+        accuracy, reason = compute_classification_accuracy(torch.tensor([[float("nan")], [0.2]]), torch.tensor([[1.0], [0.0]]))
+        assert accuracy is None
+        assert reason == "invalid_output"
+
+    def test_inf_in_target(self):
+        accuracy, reason = compute_classification_accuracy(torch.tensor([[0.9, 0.1], [0.2, 0.8]]), torch.tensor([[float("inf"), 0.0], [0.0, 1.0]]))
+        assert accuracy is None
+        assert reason == "invalid_output"
+
+    def test_one_d_shapes_accepted(self):
+        accuracy, reason = compute_classification_accuracy(torch.tensor([0.9, 0.4, 0.2, 0.6, 0.8]), torch.tensor([1.0, 1.0, 0.0, 0.0, 1.0]))
+        assert reason is None
+        assert accuracy == 3 / 5
+
+    def test_non_tensor_raises(self):
+        with pytest.raises(TypeError):
+            compute_classification_accuracy([[0.9]], torch.tensor([[1.0]]))
+
+    def test_input_tensors_not_mutated(self):
+        output = torch.tensor([[0.9], [0.4], [0.2]])
+        target = torch.tensor([[1.0], [1.0], [0.0]])
+        out_clone, tgt_clone = output.clone(), target.clone()
+        compute_classification_accuracy(output, target)
+        assert torch.equal(output, out_clone)
+        assert torch.equal(target, tgt_clone)
+
+    def test_live_metric_set_is_unchanged(self):
+        """Accuracy is final-evaluation only: the live per-step block keeps exactly its four scalars."""
+        assert METRIC_KEYS == ("f1", "precision", "recall", "roc_auc")
+        result = compute_scalar_classification_metrics(torch.tensor([[0.9], [0.1]]), torch.tensor([[1.0], [0.0]]))
+        assert "accuracy" not in result
+
+
+@pytest.mark.unit
+class TestAccuracyMatchesTrainingHistoryDefinition:
+    """Differential pin against ``CascadeCorrelationNetwork._accuracy``.
+
+    That method produces the history's ``train_accuracy`` / ``value_accuracy``, which
+    ``/v1/metrics`` serves as ``train_accuracy`` / ``val_accuracy``. The final accuracy
+    must be the same quantity, or the three numbers stop being comparable. The inputs
+    are quantized so exact-0.5 values (binary) and argmax ties (multi-class) occur.
+    """
+
+    @pytest.mark.parametrize("seed", range(5))
+    @pytest.mark.parametrize("n_cols", [1, 2, 3])
+    def test_agrees_with_the_network_accuracy(self, simple_network, seed, n_cols):
+        generator = torch.Generator().manual_seed(seed)
+        n_rows = 37
+        if n_cols == 1:
+            output = torch.round(torch.rand(n_rows, 1, generator=generator) * 10) / 10
+            target = torch.round(torch.rand(n_rows, 1, generator=generator) * 2) / 2
+        else:
+            output = torch.round(torch.rand(n_rows, n_cols, generator=generator) * 3) / 3
+            labels = torch.randint(0, n_cols, (n_rows,), generator=generator)
+            target = torch.nn.functional.one_hot(labels, n_cols).to(torch.float32)
+        expected = simple_network._accuracy(y=target, output=output)
+        accuracy, reason = compute_classification_accuracy(output, target)
+        assert reason is None
+        assert accuracy == expected
