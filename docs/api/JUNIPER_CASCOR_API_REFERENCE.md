@@ -1033,8 +1033,9 @@ Router in `src/api/routes/metrics.py`, prefix `/v1/metrics`.
 **Cadence & split**
 
 - Computed once per completed **training step** (initial output pass + one per growth iteration), not per inner output epoch.
-- Eval split is validation (`_val_x`/`_val_y`) when present, otherwise training.
+- Eval split is validation (`_val_x`/`_val_y`). With no validation split the live scalars are not computed and `eval_metrics.split` is `null`; the training rows never stand in for it.
 - On each metrics drain, scalars attach to the **terminal** `kind="training_step"` row only; older backfilled rows and `kind="output_epoch"` rows keep `f1`/`precision`/`recall`/`roc_auc` as `null` (one forward pass reflects current network state).
+- **Final score** (`eval_metrics.final`, cascor#582): the finished model is scored once, after the last weight update of a run that completes successfully. It uses the reported partition, the test split when one is loaded and otherwise validation, and `final.split` names it. Besides the four scalars it carries `accuracy` (juniper-ml APD-ML-002), which the live fields do not. It is `null` until a run completes, after a stopped or failed run, when eval metrics are disabled, and when no reportable split is loaded. Shape: [`API_SCHEMAS.md`](API_SCHEMAS.md#metricshistory-entry-schema).
 
 **Config** — `JUNIPER_CASCOR_EVAL_METRICS_ENABLED` (default on). Parsed by `_env_flag` in the lifecycle manager (not `api.settings.Settings`). Disable with `0` / `false` / `no` / `off`. Multi-class averaging is fixed to `macro` in the manager today (`_eval_metrics_average`).
 
@@ -1042,13 +1043,13 @@ Router in `src/api/routes/metrics.py`, prefix `/v1/metrics`.
 
 | Surface | What you get |
 |---------|----------------|
-| `GET /v1/metrics` | Flat `f1`/`precision`/`recall`/`roc_auc` plus self-describing `eval_metrics` (`enabled`, `average`, `split`, `n_samples`, `n_classes`, `undefined`) |
+| `GET /v1/metrics` | Flat `f1`/`precision`/`recall`/`roc_auc` plus self-describing `eval_metrics` (`enabled`, `average`, `split`, `n_samples`, `n_classes`, `undefined`, `final`); `final` adds `accuracy` |
 | `GET /v1/metrics/history` | Same flat keys on each history row (nullable; populated on terminal training-step rows) |
 | `WS /ws/training` `metrics` / `initial_metrics` | Same row dict as history (additive keys; protocol envelopes allow extras) |
 
 **Not on** `/v1/training/status` (per-epoch loss/accuracy live on the metrics surfaces only).
 
-**Decode & degradation** — Binary (single output column): threshold 0.5, positive-class scores, `average` reported as `"binary"`. Multi-class: argmax vs one-hot, macro-average by default. Whole-metric `null` with `undefined` reasons: `empty_batch`, `single_class`, `invalid_output`. Failures never raise into the training thread.
+**Decode & degradation** — Binary (single output column): threshold 0.5, positive-class scores, `average` reported as `"binary"`. Multi-class: argmax vs one-hot, macro-average by default. Whole-metric `null` with `undefined` reasons: `empty_batch`, `single_class`, `invalid_output`. Failures never raise into the training thread. `final.accuracy` uses the same decode, which is also the definition behind `train_accuracy` / `val_accuracy` (`CascadeCorrelationNetwork._accuracy`). It is `null` only for `empty_batch` / `invalid_output`, because a single-class split still has a well-defined accuracy.
 
 **Disable example**:
 
