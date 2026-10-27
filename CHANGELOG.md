@@ -53,6 +53,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   2026-10-08 flood-3 disposition (juniper-ml
   `notes/JUNIPER_2026-10-08_JUNIPER-ECOSYSTEM_CURSOR-FLOOD-3-DISPOSITION.md` §4), as were the four
   documentation fixes below.
+- **`test_benchmark_fixture_resolvable` failed on pytest 9.2.0**
+  (`src/tests/unit/test_pytest_benchmark_available.py`). It read `FixtureManager._arg2fixturedefs`, a
+  private pytest attribute that pytest 9.2.0 replaced (on PyPI from 2026-10-27 21:30Z). From the first
+  CI run that installed it, every unit-test leg failed on `main`. The test now uses public API: it asks the
+  plugin manager's `get_plugins()` whether `pytest_benchmark.plugin` is loaded and defines the
+  `benchmark` fixture, which covers autoload and an explicit `-p pytest_benchmark.plugin` alike. It passes
+  on pytest 9.0.3 and 9.2.0. It still fails when the plugin is blocked (`-p no:benchmark`) or autoload is
+  disabled.
 
 ### Documentation
 
