@@ -514,11 +514,12 @@ The CPU step refuses when `ARG TORCH_VERSION` disagrees with the CPU lock header
 One `createCommitOnBranch` commit carries both files.
 
 ```bash
+# Locally, from the repo root: the fresh path lives in the gitignored tmp/, never /tmp.
 uv pip compile pyproject.toml \
   --extra ml --extra api --extra observability --extra juniper-data \
   --index-strategy unsafe-best-match --no-emit-package torch \
-  -o /tmp/requirements.lock.check
-mv /tmp/requirements.lock.check requirements.lock
+  -o tmp/requirements.lock.check
+mv tmp/requirements.lock.check requirements.lock
 ```
 
 Freshness (`ci.yml` `lockfile-check`) recompiles with `--constraint requirements.lock` and diffs `pkg==version` pin lines (ignores uv header / `-c` annotations). Newer PyPI versions alone do not fail that gate. The CPU half of the same job checks that every image dependency **name** is present in `requirements-cpu.lock`. It does not compare versions to `requirements.lock`, and neither half reads the conf freezes.

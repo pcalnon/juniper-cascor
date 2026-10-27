@@ -54,14 +54,15 @@ The workflow does not currently have `workflow_dispatch` enabled. To trigger man
 CI job **Lockfile Freshness** still blocks merge when `requirements.lock` no longer satisfies `pyproject.toml`, even if auto-regen no-ops. It does not compare the two locks' versions.
 
 ```bash
-# GPU lock half, matching the workflow (fresh output, then move it into place).
+# GPU lock half, matching the workflow (fresh output in the repo's gitignored tmp/, never /tmp,
+# then move it into place). Run from the repo root.
 # requirements-cpu.lock must then be re-derived; full script for both locks:
 # notes/DEPENDENCY_UPDATE_WORKFLOW.md#regenerating-both-locks
 uv pip compile pyproject.toml \
   --extra ml --extra api --extra observability --extra juniper-data \
   --index-strategy unsafe-best-match --no-emit-package torch \
-  -o /tmp/requirements.lock.check
-mv /tmp/requirements.lock.check requirements.lock
+  -o tmp/requirements.lock.check
+mv tmp/requirements.lock.check requirements.lock
 ```
 
 > Details: [CI Manual — Lockfile Update](MANUAL.md#lockfile-update-workflow) | [Dependency Update Workflow](../../notes/DEPENDENCY_UPDATE_WORKFLOW.md)
