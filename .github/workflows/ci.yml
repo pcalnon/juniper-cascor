@@ -985,9 +985,11 @@ jobs:
   # touching AGENTS.md -- 10 grew it, ZERO shrank it, median growing commit 1,266, one at 9,609.
   # canopy over the same window grew 81/day. Order this rollout by RATE, never by size.
   #
-  # This job carries NO relocation (G3) check, for a reason specific to this repo: cascor has no
-  # docs/REFERENCE.md at all. The relocation destination has to be created before anything can
-  # move into it, so G3 arrives with the cut, not with the ratchet.
+  # This job carries NO relocation (G3) check. cascor HAS a docs/REFERENCE.md: the P5 cut
+  # (juniper-cascor#600, 2026-08-30) created it, relocated seven AGENTS.md sections into it
+  # byte-for-byte, and ran G3 (juniper-ml's util/relocation_check.py --expect-removals) LOCALLY as
+  # its content-loss control. G3 was never wired into this repo's CI, so a relocation is checked
+  # for lost prose only when its author runs G3 by hand.
   #
   # STANDALONE, and deliberately ABSENT from the `required-checks` Quality Gate `needs:` (plan
   # correction C9). A `needs:` entry is the wrong promotion mechanism: it makes a skip on a
