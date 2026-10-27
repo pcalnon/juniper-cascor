@@ -11,7 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   owner's rulings on it are applied.** `/tmp/` is ignored, the lock-regeneration recipes use `tmp/`, and
   `AGENTS.md` § Temporary files carries the rule and the rulings, retention included. `juniper-check-doc-links`
   passes `--exclude tmp` in the pre-commit hook and in CI, and `.dockerignore` lists `tmp/`; nothing keeps pytest
-  or a `grep`/`find` match count out of it.
+  out of it, and counting scripts are to choose their scope as to `tmp/` deliberately (the owner's revised
+  ruling).
 
 ## [0.12.0] - 2026-10-10
 
