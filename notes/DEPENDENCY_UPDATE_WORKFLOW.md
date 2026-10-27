@@ -60,13 +60,16 @@ Same-repo PRs that touch `pyproject.toml` also trigger `lockfile-update.yml` (su
 Verify freshness the way `ci.yml` does (constraint mode, pin lines only):
 
 ```bash
+# From the repo root. Scratch goes in the gitignored tmp/, never /tmp; it persists there, so clear
+# the old output first (uv reads an existing -o file as pin preferences).
+rm -f tmp/check.lock
 uv pip compile pyproject.toml \
   --extra ml --extra api --extra observability --extra juniper-data \
   --index-strategy unsafe-best-match --no-emit-package torch \
   --constraint requirements.lock \
-  -o /tmp/check.lock
+  -o tmp/check.lock
 diff <(grep '^[^[:space:]#]' requirements.lock | sort) \
-     <(grep '^[^[:space:]#]' /tmp/check.lock | sort)
+     <(grep '^[^[:space:]#]' tmp/check.lock | sort)
 ```
 
 ## Regenerating both locks
@@ -74,6 +77,7 @@ diff <(grep '^[^[:space:]#]' requirements.lock | sort) \
 Source of truth: `.github/workflows/lockfile-update.yml` (the two compile steps). The compile input is `pyproject.toml`. `conf/requirements.txt`, `conf/requirements-pip.txt`, `conf/requirements_ci.txt`, and `conf/conda_environment_ci.yaml` stay as Dependabot and the conda export left them.
 
 ```bash
+# Run from the repo root. Scratch files go in the repo's gitignored tmp/, never /tmp.
 # GPU / dev lock. A fresh -o path is required: uv treats an existing -o file
 # as extra constraints and keeps the old pins (workflow comment on the CPU step).
 uv pip compile pyproject.toml \
@@ -83,8 +87,8 @@ uv pip compile pyproject.toml \
   --extra juniper-data \
   --index-strategy unsafe-best-match \
   --no-emit-package torch \
-  -o /tmp/requirements.lock.check
-mv /tmp/requirements.lock.check requirements.lock
+  -o tmp/requirements.lock.check
+mv tmp/requirements.lock.check requirements.lock
 
 # CPU / image lock, derived from the GPU lock. Refuse when the header torch
 # pin disagrees with the Dockerfile, then splice the hand-written header back
@@ -92,8 +96,10 @@ mv /tmp/requirements.lock.check requirements.lock
 TORCH_VERSION="$(sed -n 's/^ARG TORCH_VERSION=//p' Dockerfile)"
 HEADER_VERSION="$(sed -n 's/.*torch==\([0-9][0-9.]*\)+cpu.*/\1/p' requirements-cpu.lock | head -1)"
 test -n "${TORCH_VERSION}" && test "${TORCH_VERSION}" = "${HEADER_VERSION}"
-echo "torch==${TORCH_VERSION}+cpu" > /tmp/torch-cpu-override
-awk '/^[^[:space:]#]/{exit} {print}' requirements-cpu.lock > /tmp/cpu-lock-header
+echo "torch==${TORCH_VERSION}+cpu" > tmp/torch-cpu-override
+awk '/^[^[:space:]#]/{exit} {print}' requirements-cpu.lock > tmp/cpu-lock-header
+# tmp/ persists between runs (/tmp aged it out), so clear the previous output: the -o path must be fresh.
+rm -f tmp/requirements-cpu.lock.check
 uv pip compile pyproject.toml \
   --extra ml \
   --extra api \
@@ -102,12 +108,12 @@ uv pip compile pyproject.toml \
   --index-strategy unsafe-best-match \
   --extra-index-url https://download.pytorch.org/whl/cpu \
   --no-emit-package torch \
-  --override /tmp/torch-cpu-override \
+  --override tmp/torch-cpu-override \
   --constraint requirements.lock \
   --python-version 3.14 \
-  -o /tmp/requirements-cpu.lock.check
-awk 'f || /^[^[:space:]#]/{f = 1; print}' /tmp/requirements-cpu.lock.check > /tmp/cpu-lock-body
-cat /tmp/cpu-lock-header /tmp/cpu-lock-body > requirements-cpu.lock
+  -o tmp/requirements-cpu.lock.check
+awk 'f || /^[^[:space:]#]/{f = 1; print}' tmp/requirements-cpu.lock.check > tmp/cpu-lock-body
+cat tmp/cpu-lock-header tmp/cpu-lock-body > requirements-cpu.lock
 ```
 
 | Flag | Purpose |
@@ -115,9 +121,9 @@ cat /tmp/cpu-lock-header /tmp/cpu-lock-body > requirements-cpu.lock
 | `--extra ml` / `api` / `observability` / `juniper-data` | The four extras both locks and the image freshness check include |
 | `--index-strategy unsafe-best-match` | Allow the PyTorch index alongside PyPI |
 | `--no-emit-package torch` | Leave torch out of both locks. The image installs it from `ARG TORCH_VERSION` |
-| Fresh `-o /tmp/requirements.lock.check` | Resolve current versions that satisfy `pyproject.toml`. An existing `requirements.lock` as `-o` freezes the previous pins |
+| Fresh `-o tmp/requirements.lock.check` | Resolve current versions that satisfy `pyproject.toml`. An existing `requirements.lock` as `-o` freezes the previous pins |
 | `--constraint requirements.lock` (CPU step only) | Shared pins stay identical to the GPU lock |
-| `--override /tmp/torch-cpu-override` | `torch==${TORCH_VERSION}+cpu` so the CPU index resolves the CPU wheel |
+| `--override tmp/torch-cpu-override` | `torch==${TORCH_VERSION}+cpu` so the CPU index resolves the CPU wheel |
 | `--extra-index-url https://download.pytorch.org/whl/cpu` | CPU wheel index for the image lock |
 | `--python-version 3.14` | Match the image interpreter (`python:3.14-slim`) |
 
