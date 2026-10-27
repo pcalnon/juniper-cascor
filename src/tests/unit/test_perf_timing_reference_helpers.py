@@ -96,7 +96,11 @@ class TestHostIdentityAndCondition:
         assert env["loadavg_1m"] is None or isinstance(env["loadavg_1m"], float)
         assert env["git_sha"] == tr.UNKNOWN or (len(env["git_sha"]) == 40 and all(c in "0123456789abcdef" for c in env["git_sha"]))
 
-    def test_git_sha_outside_a_repository_is_unknown_not_an_exception(self, tmp_path):
+    def test_git_sha_outside_a_repository_is_unknown_not_an_exception(self, tmp_path, monkeypatch):
+        # tmp_path follows TMPDIR, and the Juniper convention puts TMPDIR in the repo's gitignored
+        # tmp/ -- INSIDE a work tree, where `git rev-parse` walks up and finds the repo. Stop git's
+        # search at tmp_path so the directory really is outside any repository, wherever TMPDIR is.
+        monkeypatch.setenv("GIT_CEILING_DIRECTORIES", str(tmp_path.resolve().parent))
         assert tr.git_sha(cwd=tmp_path) == tr.UNKNOWN
 
     def test_git_sha_survives_a_missing_git_binary(self, monkeypatch):

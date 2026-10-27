@@ -5,7 +5,7 @@
 **Author**: Paul Calnon
 **License**: MIT License
 **Version**: 0.12.0
-**Last Updated**: 2026-10-10
+**Last Updated**: 2026-10-26
 
 ---
 
@@ -31,9 +31,9 @@ reference section in the same PR rather than waiving the budget gate.
   `BaseHTTPMiddleware`, so the body-limit and security middlewares never run for them; WebSocket
   auth and message validation are the only controls there. A guard added to the HTTP stack does
   **not** cover the WebSocket surface, and nothing will tell you so.
-- **`/tmp/` is prohibited** as the home for any script that produces, modifies or analyzes
-  repository content — it is reaped when sessions/containers end and the scripts are irrecoverable.
-  Scratch *data* there is fine; source files are not. Full rule and the motivating incident:
+- **Nothing is ever written under `/tmp`** — no script and, since 2026-10-26, no scratch data
+  either: it is an aged tmpfs that deletes files still in use, and scripts left there are
+  irrecoverable. Temp files go in the gitignored `tmp/`. Full rule and the motivating incidents:
   § Script Placement.
 - **`max_epochs` alone silently diverges the service from the CLI, and a non-positive
   `output_epochs` silently no-ops training.** `fit()` applies `max_epochs` to the **initial** output
@@ -841,9 +841,38 @@ The saved JSON carries host identity in `machine_info.juniper` (compared, warns 
 
 **Permanent utilities** live in `util/`. **Single-use / temporary / unfinished scripts** go in `util/ad-hoc/` (create on first use). See [`util/ad-hoc/README.md`](util/ad-hoc/README.md) for the per-script header / lifecycle conventions.
 
-`/tmp/` is **prohibited** as the home for any script that produces, modifies, or analyzes repository content. `/tmp/` is reaped when sessions / sandboxes / containers end, and scripts placed there are lost (irrecoverable). `/tmp/` remains fine as a scratch *workspace* for intermediate artifacts the script itself creates and reads — the prohibition is on script *source files*.
+`/tmp/` is **prohibited** as the home for any script that produces, modifies, or analyzes repository content. `/tmp/` is reaped when sessions / sandboxes / containers end, and scripts placed there are lost (irrecoverable). Since 2026-10-26 it is no scratch *workspace* either: nothing is written there at all (next section).
 
 This is an ecosystem-wide rule restated in the parent `Juniper/AGENTS.md` "Cross-Project Conventions" section. Motivating incident: irrecoverable loss of `phase4_consolidate.py` and `v2_citation_validate.py` from the juniper-ml requirements-snapshot effort.
+
+### Temporary files: `tmp/`, never `/tmp` (mandatory)
+
+**No file is ever written under `/tmp`** (nor `/var/tmp`) by this repo's scripts, tests, tools, services, sessions
+or agents (owner directive, 2026-10-26). On the Linux host `/tmp` is a tmpfs that `systemd-tmpfiles-clean` ages
+daily (`q /tmp 1777 root root 10d`): a file untouched for ten days is deleted while still in use, and a reboot
+erases the rest. In the week to 2026-10-26 it emptied a live test stack's pid files and venv three times. macOS
+ages `/tmp` too.
+
+- This repo's temp root is its gitignored `tmp/`. `TMPDIR` points at the **primary** checkout's (it outlives any
+  worktree); a worktree-isolated session writes its own scratch files into its worktree's `tmp/`.
+- Sessions get `TMPDIR` from the juniper-ml launcher and a user-level SessionStart hook, so `tempfile`, `mktemp` and
+  pytest's `tmp_path` follow it.
+- In code: never a `/tmp/...` literal and never `${TMPDIR:-/tmp}`; tests use `tmp_path`; state another process must
+  find (pid files, run directories) lives at a fixed path under the primary's `tmp/` or `~/.local/state/`, never one
+  derived from `TMPDIR`.
+- Out of scope: GitHub-hosted CI runners and a container's own `/tmp`.
+- Ecosystem rule and rationale: `juniper-ml/notes/JUNIPER_2026-10-26_JUNIPER-ECOSYSTEM_REPO-TMP-DIRECTORY-CONVENTION.md`.
+- **Owner rulings, 2026-10-26** (canonical: juniper-ml `notes/JUNIPER_2026-10-26_JUNIPER-ECOSYSTEM_REPO-TMP-DIRECTORY-CONVENTION.md`):
+  - `juniper-check-doc-links` ignores `tmp/`: every invocation passes `--exclude tmp`.
+  - pytest does not ignore `tmp/`: no `norecursedirs`, `--ignore` or `collect_ignore` entry names it.
+  - A local Docker build ignores `tmp/`: the build context's `.dockerignore` lists it.
+  - A script that counts matches with `grep` or `find` chooses its scope deliberately: the repo with its `tmp/`
+    excluded, or `tmp/` alone; it searches both only for a stated edge case that needs both. Existing counting
+    scripts are to be modified to make that choice explicit, not left to `.gitignore` or a tool's defaults.
+  - Full-tree copies of the repo, and copies of log files, may live in `tmp/`.
+  - **Retention.** A file a work arc writes to `tmp/` is kept until it is no longer needed, no work arc (its own
+    included) uses it, and it is no longer needed for documentation or reference, and, where needed, until it has
+    been archived in an appropriate non-temporary directory. Only then may it be deleted.
 
 ---
 

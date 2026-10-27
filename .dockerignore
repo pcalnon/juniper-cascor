@@ -54,6 +54,9 @@ dist/
 .coverage
 coverage.xml
 
+# The repo's gitignored temp root (owner ruling, 2026-10-26): scratch, never build context.
+tmp/
+
 # Snapshot artifacts and logs. Nothing COPYs them (the Dockerfile takes only
 # requirements.lock, pyproject.toml/README/LICENSE, and src/), but every
 # `docker compose build` still walks and stats them as build context: 1.8 GB /
