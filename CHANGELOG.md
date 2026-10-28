@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **The memory-budget gate's own 40 tests now run in the required unit legs; they had never run in CI.**
+  - **Where #585 put them.** juniper-cascor#585 (2026-08-25) ported `util/memory_budget_check.py` and its suite from juniper-ml. The suite went to `src/tests/test_memory_budget_check.py` with no marker, where no CI lane selects it:
+    - the unit job collects only `src/tests/unit`, under `-m "unit and not slow"` (`ci.yml`);
+    - nothing in `src/tests/conftest.py` adds `unit` by directory;
+    - the one nightly lane that walks all of `src/tests` selects only `long`.
+  - **What never ran.** So the negative controls that keep the `Memory Budget` check honest had never run against this repo's copy of the checker. Each of these raises `BudgetError` (exit 2): a missing governed file, and a missing, unreadable or empty budget. So does a non-positive ceiling. A waiver leaves the ceiling where it was, and a ceiling may only move down.
+  - **The move.** The suite moves to `src/tests/unit/test_memory_budget_check.py` with `pytestmark = pytest.mark.unit`, and its repo root goes from `parents[2]` to `parents[3]`. No test body changed.
+  - **The docstring.** The checker's docstring now names the suite's real path; it named juniper-ml's `tests/`.
+  - **The effect.** The unit lane now selects 5,836 of 5,851 collected tests, up from 5,796 of 5,811. The 40 added are this suite, and all 40 pass locally on Python 3.12, 3.13 and 3.14. No workflow changed.
+  - **Left alone.** The same census found two other sets that no lane runs:
+    - the 153 `performance`-marked tests in `src/tests/performance/`;
+    - five unmarked tests in `src/tests/integration/test_comprehensive_serialization.py`.
+  - **Where it was found.** Found on 2026-10-26 in the 2026-10-08 flood-3 disposition (juniper-ml `notes/JUNIPER_2026-10-08_JUNIPER-ECOSYSTEM_CURSOR-FLOOD-3-DISPOSITION.md` §4).
+
 ## [0.13.0] - 2026-10-28
 
 ### Changed
