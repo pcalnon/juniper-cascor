@@ -16,6 +16,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   passes `--exclude tmp` in the pre-commit hook and in CI, and `.dockerignore` lists `tmp/`; nothing keeps pytest
   out of it, and counting scripts are to choose their scope as to `tmp/` deliberately (the owner's revised
   ruling).
+- **The dependency locks moved** (`requirements.lock`, and `requirements-cpu.lock`, which the image installs),
+  through the Dependabot groups merged since 0.12.0 (#717, #720, #726). The notable runtime pins:
+  `juniper-data-client` 0.5.0 -> 0.6.0, `juniper-data` 0.16.0 -> 0.17.1, `fastapi` 0.142.2 -> 0.162.0 with
+  `starlette` 1.7.0 -> 1.10.0, `pydantic` 2.13.5 -> 2.14.1, `python-dateutil` 2.9.0.post0 -> 3.0.0 (which
+  brings in `tzdata`), `pillow` 12.3.0 -> 13.0.0, `sentry-sdk` 2.71.0 -> 2.73.0 and `websockets`
+  17.2 -> 17.3, plus ten smaller moves. data-client 0.6.0's stricter W1.4 checks live in
+  `validate_npz_contract`. cascor's fetch path calls `download_artifact_npz`, which does not run that check,
+  so those checks are not on the service's fetch path. The wheel's declared requirements are unchanged.
 
 ### Added
 
