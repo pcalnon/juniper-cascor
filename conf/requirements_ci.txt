@@ -145,7 +145,7 @@ pytest-cov==7.1.0
 pytest-repeat==0.9.4
 pytest-timeout==2.4.0
 pytest-xdist==3.8.0
-python-dateutil==2.9.0.post0
+python-dateutil==3.0.0
 python-dotenv==1.2.4
 PyYAML==6.0.3
 readme_renderer==46.0
