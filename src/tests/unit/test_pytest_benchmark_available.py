@@ -9,7 +9,7 @@ File Path:     src/tests/unit/
 Author:        Paul Calnon
 
 Date Created:  2026-05-06
-Last Modified: 2026-05-06
+Last Modified: 2026-10-27
 
 License:       MIT License
 Copyright:     Copyright (c) 2024-2026 Paul Calnon
@@ -51,6 +51,11 @@ class TestPytestBenchmarkAvailable:
         assert "benchmark" in names, "pytest-benchmark plugin entry point 'benchmark' is not registered " "in the active env. Reinstall the test extra: pip install -e .[test]. " f"Discovered pytest11 entry points: {sorted(names)}"
 
     def test_benchmark_fixture_resolvable(self, request):
+        # Public API only. This used to read FixtureManager._arg2fixturedefs, a private attribute
+        # that pytest 9.2.0 replaced, and that failed every CI leg on 2026-10-27. A loaded plugin's
+        # fixtures are registered when the plugin is, so the question is whether the plugin
+        # module is loaded and defines the fixture. Matching by module name covers autoload
+        # (registered as "benchmark") and an explicit `-p pytest_benchmark.plugin` alike.
         fixture_names = request.fixturenames if hasattr(request, "fixturenames") else []
-        registered = request.session._fixturemanager._arg2fixturedefs  # noqa: SLF001
-        assert "benchmark" in registered, "Pytest fixture 'benchmark' is not registered. pytest-benchmark " "appears installed but its plugin did not load — check that " "PYTEST_DISABLE_PLUGIN_AUTOLOAD is unset and that no addopts entry " "blocks the plugin (e.g. '-p no:benchmark'). Currently visible " f"fixturenames sample: {sorted(fixture_names)[:10]}"
+        loaded = [plugin for plugin in request.config.pluginmanager.get_plugins() if getattr(plugin, "__name__", None) == "pytest_benchmark.plugin"]
+        assert loaded and hasattr(loaded[0], "benchmark"), "Pytest fixture 'benchmark' is not registered. pytest-benchmark " "appears installed but its plugin did not load — check that " "PYTEST_DISABLE_PLUGIN_AUTOLOAD is unset and that no addopts entry " "blocks the plugin (e.g. '-p no:benchmark'). Currently visible " f"fixturenames sample: {sorted(fixture_names)[:10]}"

@@ -18,6 +18,14 @@ Tests for ``util/memory_budget_check.py`` (P2 of the shared-session-memory plan)
 ``scripts/`` + ``tests/``), so this suite IS the gate -- the same gap that left
 ``tests/test_assert_release_tag.py`` unwired and its vacuous-pass guard unrun.
 
+WHERE THIS FILE LIVES, AND WHY IT IS MARKED. #585 (2026-08-25) ported this suite to
+``src/tests/test_memory_budget_check.py`` with no marker, and there it ran in NO CI job,
+because no lane relies on ``testpaths``. ``ci.yml``'s unit job collects only
+``src/tests/unit`` under ``-m "unit and not slow"``, and nothing in ``conftest.py`` adds
+``unit`` by directory. The nightly lane that walks all of ``src/tests`` selects only ``long``.
+It runs in the required Unit Tests + Coverage legs only because it is under
+``src/tests/unit/`` AND carries ``pytestmark`` below. Drop either and it silently stops running.
+
 The load-bearing cases are the ones a well-meaning refactor silently breaks:
 
 * the **no-worsening rule** -- over-ceiling alone must NOT fail; it must also have
@@ -41,10 +49,15 @@ import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-# canopy keeps tests in src/tests/ (pyproject: testpaths = ["src/tests"]),
-# so the repo root is TWO levels up, not one. juniper-ml's copy of this file
-# uses parents[1] because its tests live at the top level.
-REPO_ROOT = Path(__file__).resolve().parents[2]
+import pytest
+
+pytestmark = pytest.mark.unit
+
+# cascor keeps this file in src/tests/unit/, so the repo root is THREE levels
+# up. juniper-ml's copy uses parents[1] because its tests live at the top level.
+# A wrong depth is loud: MODULE_PATH then names a missing file, and exec_module
+# below raises FileNotFoundError, which is a collection error.
+REPO_ROOT = Path(__file__).resolve().parents[3]
 MODULE_PATH = REPO_ROOT / "util" / "memory_budget_check.py"
 
 _spec = importlib.util.spec_from_file_location("memory_budget_check", MODULE_PATH)
