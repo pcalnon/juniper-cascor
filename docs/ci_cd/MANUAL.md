@@ -1,7 +1,7 @@
 # CI/CD Manual
 
 **Project**: Juniper Cascor  
-**Version**: 0.3.19  
+**Version**: 0.3.20  
 **Reference**: CASCOR-P1-007
 
 ---
@@ -418,7 +418,7 @@ Dependabot's `github-actions` ecosystem groups `github/codeql-action*` (`.github
 
 Keep those four SHAs aligned. Do not pin a patch version in docs — the group PR updates the SHA and the `# vX.Y.Z` comment.
 
-The Bandit upload is **best-effort**: `if: always()` and `continue-on-error: true`. A failed SARIF upload does not fail Security Scans; the separate Bandit invocation with `--confidence-level medium --severity-level medium` is the blocking check.
+The Bandit upload runs with `if: always()` and `continue-on-error: ${{ github.event_name != 'pull_request' }}`. On a push or a dispatch it is **best-effort**: a failed SARIF upload does not fail Security Scans. On a PR a failed upload fails Security Scans, with the cause in the upload step's log, because the required `Bandit` context is the check run code scanning creates from that upload: without it the PR would wait forever for a context that never posts. The separate Bandit invocation with `--confidence-level medium --severity-level medium` is the blocking check on findings.
 
 ### Contrast
 
@@ -757,7 +757,8 @@ If environment setup fails:
 | **Claude Code** failed: `Workflow initiated by non-human actor:` | `allowed_bots` is empty | A human has to send the triggering text |
 | **Claude Code** failed: `Environment variable validation failed:` mentioning `ANTHROPIC_API_KEY` | Secret missing on a real trigger | Confirm the repo can read `ANTHROPIC_API_KEY` |
 | Dependabot CodeQL PR touches `ci.yml` too | `upload-sarif` is in the same `codeql-action` group | Expected — review Bandit SARIF pin with the CodeQL pins |
-| Security tab missing Bandit but Security Scans is green | `upload-sarif` `continue-on-error: true` | Check the upload step log; the blocking Bandit CLI still ran |
+| Security tab missing Bandit but Security Scans is green (push or dispatch) | `upload-sarif` is `continue-on-error` except on PRs | Check the upload step log; the blocking Bandit CLI still ran |
+| Security Scans red on a PR at **Upload Bandit SARIF to GitHub Security** | The upload failed; on a PR that fails the job, since the required `Bandit` context would otherwise never post | Read the upload step log, fix the cause, re-run the job |
 | `conda_environment_ci.yaml` still pins old Twine after a `requirements_ci.txt` bump | Generated freezes update on different cadences | Regenerate via the CI dependency-docs job (`juniper-generate-dep-docs`); publish jobs ignore both freezes |
 
 ---

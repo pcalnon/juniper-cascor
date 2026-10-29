@@ -656,7 +656,12 @@ jobs:
         if: always()
         with:
           sarif_file: reports/security/bandit.sarif
-        continue-on-error: true
+        # The required `Bandit` check run is created by code scanning from this upload. On a PR, a
+        # failed upload turns Security Scans red with the cause in this step's log, instead of leaving
+        # the PR waiting forever for a `Bandit` context that never posts. Pushes and dispatches still
+        # tolerate it. 165 of 165 uploads succeeded over 200 runs
+        # (util/ad-hoc/2026-10-27_bandit_sarif_upload_survey.py).
+        continue-on-error: ${{ github.event_name != 'pull_request' }}
 
       - name: Run pip-audit (Dependency Vulnerabilities)
         run: |

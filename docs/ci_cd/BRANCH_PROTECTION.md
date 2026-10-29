@@ -1,7 +1,7 @@
 # Branch Protection Rules - Juniper Cascor
 
-**Version**: 0.4.3
-**Last Updated**: 2026-10-26
+**Version**: 0.4.4
+**Last Updated**: 2026-10-29
 **Author**: Paul Calnon
 
 ---
@@ -173,7 +173,7 @@ The per-file rollout is tracked with `juniper-coverage-gap-map` from coverage JS
 | Tool       | Purpose                        | Enforcement     |
 | ---------- | ------------------------------ | --------------- |
 | Gitleaks   | Secrets detection              | Hard fail (`ci.yml` Security Scans; skipped on `repository_dispatch`) |
-| Bandit     | Python SAST (security issues)  | Hard fail on medium+; SARIF upload is best-effort (`continue-on-error`). Its code-scanning result is the **required** `Bandit` context, and the ruleset's `code_scanning` rule blocks on a Bandit `error` alert or a `high`+ security alert |
+| Bandit     | Python SAST (security issues)  | Hard fail on medium+; SARIF upload is best-effort (`continue-on-error`) except on a PR, where a failed upload fails Security Scans. Its code-scanning result is the **required** `Bandit` context, and the ruleset's `code_scanning` rule blocks on a Bandit `error` alert or a `high`+ security alert |
 | pip-audit  | Dependency vulnerabilities     | Both `ci.yml` and `security-scan.yml` use `--strict`. `ci.yml` also passes documented torch `--ignore-vuln` IDs; `security-scan.yml` does not. |
 | CodeQL     | Semantic SAST (Python)         | **Required** context `Analyze (python)`; the ruleset's `code_scanning` rule also blocks on an `error` alert or a `high`+ security alert |
 
