@@ -4,7 +4,7 @@ Project:     Juniper
 Sub-Project: juniper-cascor
 Application: util
 Author:      Paul Calnon
-Version:     0.1.0
+Version:     0.1.1
 License:     MIT License
 
 Fail a test lane whose JUnit report shows that it executed no test, or that a test failed or
@@ -25,11 +25,12 @@ item.keywords``, which holds the ``src/tests/integration`` directory's name). Jo
 is collected. A lane whose every pick is skipped exits 0, so its exit status cannot see this, and
 only the report can.
 
-The report is also the more reliable record of a failure. ``src/tests/conftest.py``'s
-``pytest_unconfigure`` ends the process with ``os._exit(0)`` whenever a non-daemon thread outlives
-the session, so that such a thread cannot hang the job. It runs after the report is written, but
-it exits 0 whatever the session's outcome, so a lane with a failing test can still exit 0. The
-report records the failure either way.
+The report also records a failure independently of the exit status. Until juniper-cascor#736,
+``src/tests/conftest.py``'s ``pytest_unconfigure`` ended the process with ``os._exit(0)`` whenever
+a non-daemon thread outlived the session, after the report was written but whatever the session's
+outcome, so a lane with a failing test could exit 0. Since #736 that forced exit keeps pytest's
+status. The report records failures, and an empty lane, either way. Failing an empty lane stays
+this check's main job, because no exit status can show that a lane's every pick was skipped.
 
 What counts as executed
 -----------------------
