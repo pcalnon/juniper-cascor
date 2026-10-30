@@ -286,12 +286,13 @@ Modify the `-m` flag in the pytest command:
 -m "unit and not slow and not gpu"
 ```
 
-**Available markers** (from `src/tests/pytest.ini`):
+**Available markers** (the `markers` list in the repo-root `pyproject.toml`'s `[tool.pytest.ini_options]`):
 
-- `unit`, `integration`, `performance`, `slow`
+- `unit`, `integration`, `performance`, `slow`, `long`
 - `gpu`, `multiprocessing`, `spiral`
 - `correlation`, `network_growth`, `candidate_training`
 - `validation`, `accuracy`, `early_stopping`
+- `requires_juniper_data`, `critical`, `golden`, `conformance`
 
 ### Adjusting Timeouts
 

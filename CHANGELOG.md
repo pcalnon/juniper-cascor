@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Five documents no longer name the nonexistent `src/tests/pytest.ini`.** pytest's configuration is `[tool.pytest.ini_options]` in the repo-root `pyproject.toml` (`AGENTS.md` said so from juniper-cascor#735).
+  - The directory trees in `docs/REFERENCE.md`, `docs/testing/MANUAL.md` and `src/tests/README.md` drop the file. `src/tests/README.md`'s configuration section now describes `pyproject.toml`, and `docs/DOCUMENTATION_OVERVIEW.md` names it.
+  - `docs/ci_cd/MANUAL.md`'s marker list was a copy of the old file's: it now names all 18 markers in `pyproject.toml`, adding `long`, `requires_juniper_data`, `critical`, `golden` and `conformance`.
+  - `src/tests/README.md` said every slow test had its own 300-second timeout. The default is 60 seconds, and the per-test `@pytest.mark.timeout(...)` values run from 10 to 300.
+  - **Where it was found.** juniper-cascor#735's body, from the 2026-10-08 flood-3 disposition (juniper-ml `notes/JUNIPER_2026-10-08_JUNIPER-ECOSYSTEM_CURSOR-FLOOD-3-DISPOSITION.md` §4).
+
 - **The memory-budget gate's own 40 tests now run in the required unit legs; they had never run in CI.**
   - **Where #585 put them.** juniper-cascor#585 (2026-08-25) ported `util/memory_budget_check.py` and its suite from juniper-ml. The suite went to `src/tests/test_memory_budget_check.py` with no marker, where no CI lane selects it:
     - the unit job collects only `src/tests/unit`, under `-m "unit and not slow"` (`ci.yml`);

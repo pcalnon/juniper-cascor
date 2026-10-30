@@ -395,7 +395,7 @@ The juniper-cascor-client library provides a Python API for interacting with the
 **Key Sections:**
 
 - Test dependencies (pytest, pytest-cov, pytest-timeout)
-- Test configuration (pytest.ini, conftest.py)
+- Test configuration (`[tool.pytest.ini_options]` in `pyproject.toml`, `conftest.py`)
 - GPU testing setup
 - Coverage configuration
 - Multiprocessing considerations
