@@ -15,8 +15,7 @@ The test suite is designed with the following principles:
 
 ```bash
 tests/
-├── conftest.py                 # Pytest configuration and shared fixtures
-├── pytest.ini                 # Pytest settings and markers
+├── conftest.py                 # Pytest hooks and shared fixtures (settings and markers: repo-root pyproject.toml)
 ├── README.md                   # This file
 │
 ├── fixtures/                   # Test fixtures and data setup
@@ -130,7 +129,7 @@ The test suite uses pytest markers to categorize tests:
 
 ## Slow Test Handling
 
-Training-intensive tests are marked with `@pytest.mark.slow` and have individual 300-second timeouts (see `CASCOR-TIMEOUT-001` in pytest.ini).
+Training-intensive tests are marked with `@pytest.mark.slow`. The default timeout is 60 seconds (`timeout = 60` in the repo-root `pyproject.toml`'s `[tool.pytest.ini_options]`); a test that needs another sets its own with `@pytest.mark.timeout(...)`, from 10 to 300 seconds. The `CASCOR-TIMEOUT-001` comments in the test files mark where slow markers and timeouts were added.
 
 ### Running Slow Tests
 
@@ -265,14 +264,16 @@ class TestNewAlgorithm:
 
 ## Configuration Files
 
-### pytest.ini
+### pyproject.toml
 
-Contains pytest configuration including:
+There is no `pytest.ini`. pytest's configuration is `[tool.pytest.ini_options]` in the repo-root `pyproject.toml`, including:
 
 - Test discovery patterns
-- Coverage settings
-- Marker definitions
-- Output formatting
+- Marker definitions (with `--strict-markers`, an undeclared marker is a collection error)
+- Output formatting and the other `addopts`
+- The default 60-second timeout (`timeout_method = "thread"`)
+
+Coverage settings sit beside it, under `[tool.coverage.*]`.
 
 ### conftest.py
 

@@ -122,8 +122,7 @@ juniper-cascor/
 │   ├── utils/                        # General utilities
 │   │   └── utils.py
 │   └── tests/                        # Test suite
-│       ├── conftest.py               #   Fixtures and configuration
-│       ├── pytest.ini                #   pytest settings
+│       ├── conftest.py               #   Fixtures and configuration (pytest settings: pyproject.toml)
 │       ├── scripts/
 │       │   ├── run_tests.bash        #   Test runner
 │       │   └── run_benchmarks.bash   #   Benchmark runner
