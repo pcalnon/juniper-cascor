@@ -10,9 +10,9 @@ executed or anything failed.
 The synthetic reports drive each verdict. Two real pytest runs pin the encoding the script relies
 on: pytest writes an XFAIL as ``<skipped type="pytest.xfail">``, so a naive "tests minus skipped"
 would call a lane whose one test XFAILs empty, and an all-skipped lane exits 0. The workflow tests
-pin the wiring in ``scheduled-tests.yml``: the long lane lifts all three skips, the untimed
-performance smoke runs the whole of ``src/tests/performance``, each is followed by the check, and
-the smoke can fail the nightly.
+pin the wiring in ``scheduled-tests.yml``: the long and slow-integration lanes lift their picks'
+skips, the untimed performance smoke runs the whole of ``src/tests/performance``, each guarded lane
+is followed by the check, and the smoke can fail the nightly.
 """
 
 from __future__ import annotations
@@ -34,7 +34,7 @@ REPO = Path(__file__).resolve().parents[3]
 SCRIPT = REPO / "util" / "check_junit_executed.py"
 SCRIPT_REL = "util/check_junit_executed.py"
 WORKFLOW = REPO / ".github" / "workflows" / "scheduled-tests.yml"
-GUARDED_JOBS = ("long-running-tests", "performance-smoke")
+GUARDED_JOBS = ("slow-integration-tests", "long-running-tests", "performance-smoke")
 
 
 def _load():
@@ -272,6 +272,18 @@ class TestScheduledLaneWiring:
         _, argv = _pytest_step(_workflow()["jobs"]["long-running-tests"])
         assert argv[argv.index("-m") + 1] == "long"
         assert "--run-long" in argv
+        assert "--slow" in argv
+        assert "--integration" in argv
+
+    def test_the_slow_integration_lane_lifts_the_directory_skip(self):
+        """Every test under ``src/tests/integration`` carries the ``integration`` skip, marked or not.
+
+        Without ``--integration`` this lane skipped all 20 of its picks and passed (main's nightly run
+        40809669816: ``20 skipped, 178 deselected``).
+        """
+        _, argv = _pytest_step(_workflow()["jobs"]["slow-integration-tests"])
+        assert argv[argv.index("-m") + 1] == "integration and slow"
+        assert "src/tests/integration" in argv
         assert "--slow" in argv
         assert "--integration" in argv
 

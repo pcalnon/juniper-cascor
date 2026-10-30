@@ -19,8 +19,8 @@
 #    - Executes slow tests excluded from regular CI
 #    - Runs long-running correctness tests (--run-long --slow --integration)
 #    - Runs src/tests/performance/ once, untimed (--run-performance --benchmark-disable)
-#    - util/check_junit_executed.py fails the long and performance lanes when their
-#      JUnit report shows no executed test, or a failed one
+#    - util/check_junit_executed.py fails the slow-integration, long and performance
+#      lanes when their JUnit report shows no executed test, or a failed one
 #    - Can be manually triggered via workflow_dispatch
 #    - Migrated from conda to pip for CI portability (polyrepo Phase 5)
 #
@@ -163,15 +163,25 @@ jobs:
           echo "║       Juniper Cascor - Slow Integration Tests              ║"
           echo "╚════════════════════════════════════════════════════════════╝"
 
-          # Run integration tests marked as slow
+          # Run integration tests marked as slow. --integration is needed as well:
+          # src/tests/conftest.py skips every test under src/tests/integration
+          # without it (it tests "integration" in item.keywords, which holds the
+          # directory's name). Without it this job ran zero tests and passed (main's
+          # nightly run 40809669816: "20 skipped, 178 deselected"). The golden picks
+          # stay skipped here: they need --golden, and golden-regression.yml runs
+          # them. The next step fails a lane that executes nothing.
           python -m pytest \
             -m "integration and slow" \
             src/tests/integration \
             --slow \
+            --integration \
             --verbose \
             --timeout=300 \
             --maxfail=3 \
             --junitxml=reports/junit/junit-slow-integration.xml
+
+      - name: Check the lane executed its tests
+        run: python util/check_junit_executed.py reports/junit/junit-slow-integration.xml --lane "Slow Integration Tests"
 
       - name: Upload Integration Test Results
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
@@ -276,6 +286,13 @@ jobs:
           python -m pip install --upgrade "pip>=26.1.1"
           pip install torch --index-url https://download.pytorch.org/whl/cpu
           pip install -e ".[all]"
+          # Cap pytest in this job only. pytest 9.2.0 (2026-10-27) breaks pytest-benchmark
+          # 5.3.0, the latest release, at fixture setup: "AttributeError: 'Function' object
+          # has no attribute '_nodeid'" (pytest_benchmark/fixture.py:88), so every benchmark
+          # test errored (run 40970853599). "<9.2" resolves to 9.1.1. Drop the cap once a
+          # pytest-benchmark release supports pytest 9.2; the required lanes keep 9.2.
+          pip install "pytest<9.2"
+          python -c "import importlib.metadata as m; print('pytest', m.version('pytest'), '| pytest-benchmark', m.version('pytest-benchmark'))"
 
       - name: Create required directories
         run: |
