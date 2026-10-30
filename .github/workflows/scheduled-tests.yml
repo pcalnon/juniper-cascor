@@ -288,7 +288,7 @@ jobs:
           pip install -e ".[all]"
           # Cap pytest in this job only. pytest 9.2.0 (2026-10-27) breaks pytest-benchmark
           # 5.3.0, the latest release, at fixture setup: "AttributeError: 'Function' object
-          # has no attribute '_nodeid'" (pytest_benchmark/fixture.py:88), so every benchmark
+          # has no attribute '_nodeid'" (line 88 of the plugin's fixture.py), so every benchmark
           # test errored (run 40970853599). "<9.2" resolves to 9.1.1. Drop the cap once a
           # pytest-benchmark release supports pytest 9.2; the required lanes keep 9.2.
           pip install "pytest<9.2"
