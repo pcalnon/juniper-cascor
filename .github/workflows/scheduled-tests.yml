@@ -5,10 +5,10 @@
 # Application:   juniper_cascor
 # File Name:     scheduled-tests.yml
 # Author:        Paul Calnon
-# Version:       0.2.0
+# Version:       0.3.0
 #
 # Date Created:  2026-02-04
-# Last Modified: 2026-02-22
+# Last Modified: 2026-10-29
 #
 # License:       MIT License
 # Copyright:     Copyright (c) 2024-2026 Paul Calnon
@@ -17,7 +17,10 @@
 #    Scheduled GitHub Actions workflow for slow and long-running tests
 #    - Runs nightly at 3 AM UTC
 #    - Executes slow tests excluded from regular CI
-#    - Runs long-running correctness tests (--run-long)
+#    - Runs long-running correctness tests (--run-long --slow --integration)
+#    - Runs src/tests/performance/ once, untimed (--run-performance --benchmark-disable)
+#    - util/check_junit_executed.py fails the slow-integration, long and performance
+#      lanes when their JUnit report shows no executed test, or a failed one
 #    - Can be manually triggered via workflow_dispatch
 #    - Migrated from conda to pip for CI portability (polyrepo Phase 5)
 #
@@ -160,15 +163,25 @@ jobs:
           echo "║       Juniper Cascor - Slow Integration Tests              ║"
           echo "╚════════════════════════════════════════════════════════════╝"
 
-          # Run integration tests marked as slow
+          # Run integration tests marked as slow. --integration is needed as well:
+          # src/tests/conftest.py skips every test under src/tests/integration
+          # without it (it tests "integration" in item.keywords, which holds the
+          # directory's name). Without it this job ran zero tests and passed (main's
+          # nightly run 40809669816: "20 skipped, 178 deselected"). The golden picks
+          # stay skipped here: they need --golden, and golden-regression.yml runs
+          # them. The next step fails a lane that executes nothing.
           python -m pytest \
             -m "integration and slow" \
             src/tests/integration \
             --slow \
+            --integration \
             --verbose \
             --timeout=300 \
             --maxfail=3 \
             --junitxml=reports/junit/junit-slow-integration.xml
+
+      - name: Check the lane executed its tests
+        run: python util/check_junit_executed.py reports/junit/junit-slow-integration.xml --lane "Slow Integration Tests"
 
       - name: Upload Integration Test Results
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
@@ -216,22 +229,111 @@ jobs:
           echo "║       Juniper Cascor - Long-Running Correctness Tests      ║"
           echo "╚════════════════════════════════════════════════════════════╝"
 
-          # Run tests marked as 'long' with extended timeout (10 minutes per test)
-          # Uses --run-long flag to enable long-running test execution
+          # Run tests marked as 'long' with extended timeout (10 minutes per test).
+          # src/tests/conftest.py adds three skips to the lane's one pick,
+          # test_deterministic_training_resume, and each flag lifts one:
+          # --run-long ('long'), --slow (it is also marked 'slow'), and
+          # --integration (the conftest tests "integration" in item.keywords,
+          # which holds the src/tests/integration directory's name). Without the
+          # last two this job ran zero tests and passed (job 121983548401:
+          # "1 skipped, 6214 deselected"); the next step fails a lane that
+          # executes nothing.
           python -m pytest \
             -m "long" \
             src/tests \
             --run-long \
+            --slow \
+            --integration \
             --verbose \
             --timeout=600 \
             --maxfail=2 \
             --junitxml=reports/junit/junit-long.xml
+
+      - name: Check the lane executed its tests
+        run: python util/check_junit_executed.py reports/junit/junit-long.xml --lane "Long-Running Correctness Tests"
 
       - name: Upload Long Test Results
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         if: always()
         with:
           name: long-test-results
+          path: reports/junit/
+          retention-days: 30
+
+  # ═══════════════════════════════════════════════════════════════════════════════════════════════
+  # Performance Smoke: run src/tests/performance/ once, untimed (owner ruling 2026-10-29,
+  # "Nightly smoke, no timing"). A failure here fails the nightly, unlike the informational
+  # performance-benchmarks job below.
+  # ═══════════════════════════════════════════════════════════════════════════════════════════════
+  performance-smoke:
+    name: Performance Smoke (untimed)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          fetch-depth: 1
+
+      - name: Set up Python ${{ env.PYTHON_TEST_VERSION }}
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+        with:
+          python-version: ${{ env.PYTHON_TEST_VERSION }}
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade "pip>=26.1.1"
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
+          pip install -e ".[all]"
+          # Cap pytest in this job only. pytest 9.2.0 (2026-10-27) breaks pytest-benchmark
+          # 5.3.0, the latest release, at fixture setup: "AttributeError: 'Function' object
+          # has no attribute '_nodeid'" (line 88 of the plugin's fixture.py), so every benchmark
+          # test errored (run 40970853599). "<9.2" resolves to 9.1.1. Drop the cap once a
+          # pytest-benchmark release supports pytest 9.2; the required lanes keep 9.2.
+          pip install "pytest<9.2"
+          python -c "import importlib.metadata as m; print('pytest', m.version('pytest'), '| pytest-benchmark', m.version('pytest-benchmark'))"
+
+      - name: Create required directories
+        run: |
+          mkdir -p logs src/logs reports/junit
+
+      - name: Run Performance Suite (smoke, untimed)
+        # A hang fails the step here, instead of running to the 6-hour job default.
+        timeout-minutes: 30
+        run: |
+          echo "╔════════════════════════════════════════════════════════════╗"
+          echo "║       Juniper Cascor - Performance Smoke (untimed)         ║"
+          echo "╚════════════════════════════════════════════════════════════╝"
+
+          # The 153 tests in src/tests/performance/ run in no other lane: ci.yml
+          # collects src/tests/unit and src/tests/integration only, and
+          # src/tests/conftest.py skips the 'performance' marker without
+          # --run-performance. --benchmark-disable makes pytest-benchmark run each
+          # benchmark body once without timing it. No --benchmark-compare(-fail):
+          # timing is report-only (juniper-ml perf lane P2 item 2.5); the timed
+          # reference is the host perf lane's (AGENTS.md, Performance Considerations).
+          # --benchmark-disable does not reach the eight assertions that time their
+          # own code against a ceiling or each other (test_baselines,
+          # test_concurrency_scaling, test_endtoend_profiling, test_shared_memory);
+          # they run as written.
+          python -m pytest \
+            src/tests/performance \
+            --run-performance \
+            --benchmark-disable \
+            --verbose \
+            --timeout=300 \
+            --maxfail=5 \
+            --junitxml=reports/junit/junit-performance-smoke.xml
+
+      - name: Check the lane executed its tests
+        run: python util/check_junit_executed.py reports/junit/junit-performance-smoke.xml --lane "Performance Smoke"
+
+      - name: Upload Performance Smoke Results
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
+        if: always()
+        with:
+          name: performance-smoke-results
           path: reports/junit/
           retention-days: 30
 
@@ -298,7 +400,7 @@ jobs:
     name: Test Summary
     runs-on: ubuntu-latest
     if: always()
-    needs: [slow-unit-tests, slow-integration-tests, long-running-tests, performance-benchmarks]
+    needs: [slow-unit-tests, slow-integration-tests, long-running-tests, performance-smoke, performance-benchmarks]
 
     steps:
       - name: Scheduled Tests Summary
@@ -310,6 +412,7 @@ jobs:
           echo "Slow Unit Tests:       ${{ needs.slow-unit-tests.result }}"
           echo "Slow Integration:      ${{ needs.slow-integration-tests.result }}"
           echo "Long-Running Tests:    ${{ needs.long-running-tests.result }}"
+          echo "Performance Smoke:     ${{ needs.performance-smoke.result }}"
           echo "Performance Benchmarks: ${{ needs.performance-benchmarks.result }}"
           echo ""
           echo "Workflow: ${{ github.workflow }}"
@@ -317,10 +420,12 @@ jobs:
           echo "Run ID:   ${{ github.run_id }}"
           echo ""
 
-          # Report overall status (benchmarks are informational, don't fail on them)
+          # Report overall status. The untimed performance smoke is a correctness
+          # lane and fails the run; the timed benchmarks are informational.
           if [[ "${{ needs.slow-unit-tests.result }}" == "failure" ]] || \
              [[ "${{ needs.slow-integration-tests.result }}" == "failure" ]] || \
-             [[ "${{ needs.long-running-tests.result }}" == "failure" ]]; then
+             [[ "${{ needs.long-running-tests.result }}" == "failure" ]] || \
+             [[ "${{ needs.performance-smoke.result }}" == "failure" ]]; then
             echo "::error::One or more scheduled test jobs failed"
             exit 1
           fi
