@@ -7,7 +7,7 @@
 # Author:        Paul Calnon
 #
 # Date Created:  2026-01-24
-# Last Modified: 2026-01-24
+# Last Modified: 2026-11-01
 #
 # License:       MIT License
 # Copyright:     Copyright (c) 2024-2026 Paul Calnon
@@ -228,6 +228,13 @@ def benchmark_serialization(iterations: int = 5) -> dict:
                 "activation_fn": network.activation_fn,
             })
 
+        # Resize output_weights to (input_size + n_hidden, output_size), as add_unit() does and as
+        # benchmark_forward_pass() does. Without it the snapshot's shapes disagree with its declared
+        # dimensions, the serializer's integrity gate refuses the load, and the load benchmark
+        # timed that refusal for 10 and 50 units.
+        if hidden_units > 0:
+            network.output_weights = torch.randn(network.input_size + hidden_units, network.output_size) * 0.1
+
         with tempfile.NamedTemporaryFile(suffix=".h5", delete=False) as f:
             filepath = f.name
 
@@ -238,6 +245,11 @@ def benchmark_serialization(iterations: int = 5) -> dict:
 
             mean, std, min_t = time_function(save_network, iterations)
             results["save"][f"{hidden_units}_units"] = {"mean": mean, "std": std, "min": min_t}
+
+            # load_from_hdf5 returns None when it refuses a file instead of raising, so check once
+            # that this snapshot loads before timing the load.
+            if CascadeCorrelationNetwork.load_from_hdf5(filepath) is None:
+                raise RuntimeError(f"load_from_hdf5 refused the {hidden_units}-unit snapshot; the load benchmark would time the refusal")
 
             # Benchmark load
             def load_network():
@@ -415,10 +427,14 @@ else
     [[ "${RUN_FORWARD}" == "true" ]] && CMD="${CMD} -f"
 fi
 
-# Run benchmarks
+# Run benchmarks. Without pipefail a pipeline exits with its last command's status, so through tee
+# alone a benchmark that raised still ended this script with 0. PIPESTATUS keeps the harness's
+# failure; under set -e, eval reports any failure as 1.
+HARNESS_STATUS=0
 if [[ -n "${OUTPUT_FILE}" ]]; then
     print_color "${CYAN}" "Output will be saved to: ${OUTPUT_FILE}"
     eval "${CMD}" | tee "${OUTPUT_FILE}"
+    HARNESS_STATUS=${PIPESTATUS[0]}
 else
     eval "${CMD}"
 fi
@@ -426,4 +442,8 @@ fi
 # Cleanup
 rm -f "${BENCHMARK_FILE}"
 
+if [[ "${HARNESS_STATUS}" -ne 0 ]]; then
+    print_color "${RED}" "✗ Benchmark harness failed (exit ${HARNESS_STATUS})"
+    exit "${HARNESS_STATUS}"
+fi
 print_color "${GREEN}" "✓ Benchmark harness complete"

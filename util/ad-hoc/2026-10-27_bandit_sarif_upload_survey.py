@@ -10,11 +10,22 @@ Retire when: that lead is closed in juniper-ml notes/JUNIPER_2026-10-08_JUNIPER-
 Related: .github/workflows/ci.yml job ``security`` ("Security Scans"), step "Upload Bandit SARIF to GitHub Security";
          ruleset 15081045, whose required context ``Bandit`` carries integration_id 57789 (the github-advanced-security app)
 
-Why the job result cannot answer this. The upload step carries ``continue-on-error: true``, so a failed
-upload leaves "Security Scans" green. The step's own conclusion still records ``failure``. And the
+Why the job result cannot answer this. The upload step carried ``continue-on-error: true`` (since
+juniper-cascor#735, on pushes and dispatches only), so a failed upload left "Security Scans" green. The
 required ``Bandit`` context is not an Actions job at all: it is a check run that GitHub Advanced Security
-creates when it processes an uploaded Bandit analysis. A failed upload therefore shows up twice, as a
-``failure`` step inside a green job and as a PR head with no ``Bandit`` check run.
+creates when it processes an uploaded Bandit analysis. So a failed upload on a PR leaves its head with no
+``Bandit`` check run.
+
+The step half is blind to a masked failure (found 2026-10-30; juniper-ml
+notes/JUNIPER_2026-10-08_JUNIPER-ECOSYSTEM_CURSOR-FLOOD-3-DISPOSITION.md §6). The jobs API reports a step's
+``conclusion``, which GitHub takes after ``continue-on-error``, and not its ``outcome``, taken before it.
+So a failed upload under ``continue-on-error`` reads ``success``: juniper-canopy job 123689681187 logged
+``Path does not exist`` and its upload step reads ``success``. The failed-step count below, and the "no
+upload step failed" in the RESULT line, cannot see such a failure, so the 2026-10-27 reading of 165
+successful upload steps in 200 runs does not establish that every upload succeeded. The ``Bandit`` half
+does see one on a PR, since a masked failure leaves the head without the check: 101 of 101 PR heads whose
+upload ran carried it. Push and dispatch runs have no such half here. A count of masked failures would
+read the job check run's ``failure`` annotations instead.
 
 For each of the newest ``--limit`` completed runs of ci.yml this reads the Security Scans job's step
 conclusion and, for ``pull_request`` runs, the check runs named ``Bandit`` on the run's head SHA.
@@ -22,7 +33,8 @@ Read-only: ``gh api`` GETs only.
 
 Usage:
     python3 util/ad-hoc/2026-10-27_bandit_sarif_upload_survey.py [--limit 200] [--repo pcalnon/juniper-cascor]
-Exit: 0 when no upload step failed and every PR head whose upload succeeded carries a Bandit check run;
+Exit: 0 when no upload step's conclusion reads ``failure`` (blind to a masked failure; see above) and
+      every PR head whose upload step reads ``success`` carries a Bandit check run;
       1 when either is violated; 2 when the survey could not run or examined no upload at all
       (a survey that saw nothing is not a clean result).
 """
