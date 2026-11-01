@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The nightly performance smoke runs on pytest 9.2 again: its `pytest<9.2` cap is gone.** pytest-benchmark 5.3.1 (PyPI 2026-11-01) reads pytest's public `nodeid` instead of the private `_nodeid` that pytest 9.2.0 removed, and its changelog calls that pytest 9.2 support. So `scheduled-tests.yml`'s `performance-smoke` job no longer downgrades pytest after installing the project. It still prints the pytest and pytest-benchmark versions it got.
+  - **Measured locally** on Python 3.14.7, in fresh venvs, with a one-test file that takes the `benchmark` fixture. Under pytest 9.2.0, pytest-benchmark 5.3.0 errors at setup with the `AttributeError` that run 40970853599 logged, and 5.3.1 passes, both timed and under `--benchmark-disable`.
+  - **No floor.** `pyproject.toml` keeps `pytest-benchmark>=4.0.0`, so a fresh install resolves 5.3.1. If the lane ever pairs pytest 9.2 with 5.3.0 again, every benchmark test errors at setup and the lane fails; it cannot pass quietly.
+  - **Where it came from.** The cap is juniper-cascor#735's (its entry is below), which said to drop it once a pytest-benchmark release supported pytest 9.2. juniper-ml's flood-3 handoffs carried that as a watch item.
+
 - **Five documents no longer name the nonexistent `src/tests/pytest.ini`.** pytest's configuration is `[tool.pytest.ini_options]` in the repo-root `pyproject.toml` (`AGENTS.md` said so from juniper-cascor#735).
   - The directory trees in `docs/REFERENCE.md`, `docs/testing/MANUAL.md` and `src/tests/README.md` drop the file. `src/tests/README.md`'s configuration section now describes `pyproject.toml`, and `docs/DOCUMENTATION_OVERVIEW.md` names it.
   - `docs/ci_cd/MANUAL.md`'s marker list was a copy of the old file's: it now names all 18 markers in `pyproject.toml`, adding `long`, `requires_juniper_data`, `critical`, `golden` and `conformance`.

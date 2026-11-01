@@ -5,10 +5,10 @@
 # Application:   juniper_cascor
 # File Name:     scheduled-tests.yml
 # Author:        Paul Calnon
-# Version:       0.3.0
+# Version:       0.3.1
 #
 # Date Created:  2026-02-04
-# Last Modified: 2026-10-29
+# Last Modified: 2026-11-01
 #
 # License:       MIT License
 # Copyright:     Copyright (c) 2024-2026 Paul Calnon
@@ -286,12 +286,10 @@ jobs:
           python -m pip install --upgrade "pip>=26.1.1"
           pip install torch --index-url https://download.pytorch.org/whl/cpu
           pip install -e ".[all]"
-          # Cap pytest in this job only. pytest 9.2.0 (2026-10-27) breaks pytest-benchmark
-          # 5.3.0, the latest release, at fixture setup: "AttributeError: 'Function' object
-          # has no attribute '_nodeid'" (line 88 of the plugin's fixture.py), so every benchmark
-          # test errored (run 40970853599). "<9.2" resolves to 9.1.1. Drop the cap once a
-          # pytest-benchmark release supports pytest 9.2; the required lanes keep 9.2.
-          pip install "pytest<9.2"
+          # pytest 9.2.0 (2026-10-27) broke pytest-benchmark 5.3.0 at fixture setup ("'Function'
+          # object has no attribute '_nodeid'", run 40970853599), so this job capped pytest below
+          # 9.2 until pytest-benchmark 5.3.1 (2026-11-01) added pytest 9.2 support. Print the pair
+          # the lane got: pytest 9.2 with pytest-benchmark 5.3.0 errors every benchmark test.
           python -c "import importlib.metadata as m; print('pytest', m.version('pytest'), '| pytest-benchmark', m.version('pytest-benchmark'))"
 
       - name: Create required directories
