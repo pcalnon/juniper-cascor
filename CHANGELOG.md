@@ -9,6 +9,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The `Load from HDF5` benchmark times real loads. For 10 and 50 hidden units it timed the integrity gate's refusal.**
+  - **The defect.** `src/tests/scripts/run_benchmarks.bash`'s serialization benchmark appended hidden units to `network.hidden_units` without resizing `output_weights`, which stayed `(2, 2)`. `85634ee` (2026-05-01) fixed the same omission in the forward-pass benchmark, which crashed on it; the serialization benchmark did not crash.
+    - Its 10- and 50-unit snapshots declared 12 and 52 output-weight rows, so the serializer's integrity gate refused every load (`Output weights shape mismatch: torch.Size([2, 2]) != (12, 2)`).
+    - `load_from_hdf5` returns `None` on a refusal rather than raising, so the benchmark timed the refusal and reported it as a load. `main`'s nightly run 41267421888 logged the refusals.
+  - **The fix.** The benchmark resizes `output_weights` as the forward-pass benchmark does. It also loads each snapshot once before timing it, and raises if the load is refused.
+  - **The exit status.** The harness ran as `eval … | tee` under `set -e` without `pipefail`, so a benchmark that raised still ended the script, and the `Performance Benchmarks` job, with 0. The script now takes the harness's failure from `PIPESTATUS` and exits non-zero. The job stays informational: the nightly's summary warns when it fails.
+  - **Measured locally** on Python 3.14.7, running the harness's serialization benchmark with two iterations:
+    - before the fix, 6 refused loads and a full load table;
+    - after it, no refusals, 12 successful loads and a full load table;
+    - a mutant without the resize raises at the 10-unit snapshot and exits 1.
+
+    Run against a failing stub, the new exit-status lines exit 1, and the old two lines exit 0.
+  - **Where it was found.** Reading that nightly for juniper-cascor#738. Owner ruling of 2026-11-01.
+- **The Bandit SARIF upload's comment and its survey's docstring no longer claim that every upload succeeded.**
+  - **The claims.** `ci.yml`'s upload comment said "165 of 165 uploads succeeded over 200 runs". `util/ad-hoc/2026-10-27_bandit_sarif_upload_survey.py`'s docstring said a failed upload's step "conclusion still records `failure`".
+  - **Why they fail.** GitHub's jobs API reports a step's `conclusion` after `continue-on-error`, so a masked failure reads `success`. juniper-canopy job 123689681187 logged `Path does not exist`, and its upload step reads `success`.
+  - **The new wording.** The comment cites the survey's `Bandit` half, which can see a masked failure on a PR: 101 of 101 PR heads whose upload ran carry the check. It says the step count proves less. The docstring says the same, including that its RESULT line's "no upload step failed" is blind to a masked failure. No code changed.
+  - **History.** The 2026-10-29 entry below keeps its "165 of 165" as written.
+  - **Where it was found.** juniper-ml's flood-3 record, `notes/JUNIPER_2026-10-08_JUNIPER-ECOSYSTEM_CURSOR-FLOOD-3-DISPOSITION.md`, §4 and §6. Owner ruling of 2026-11-01.
+
 - **The nightly performance smoke runs on pytest 9.2 again: its `pytest<9.2` cap is gone.** pytest-benchmark 5.3.1 (PyPI 2026-11-01) reads pytest's public `nodeid` instead of the private `_nodeid` that pytest 9.2.0 removed, and its changelog calls that pytest 9.2 support. So `scheduled-tests.yml`'s `performance-smoke` job no longer downgrades pytest after installing the project. It still prints the pytest and pytest-benchmark versions it got.
   - **Measured locally** on Python 3.14.7, in fresh venvs, with a one-test file that takes the `benchmark` fixture. Under pytest 9.2.0, pytest-benchmark 5.3.0 errors at setup with the `AttributeError` that run 40970853599 logged, and 5.3.1 passes, both timed and under `--benchmark-disable`.
   - **No floor.** `pyproject.toml` keeps `pytest-benchmark>=4.0.0`, so a fresh install resolves 5.3.1. If the lane ever pairs pytest 9.2 with 5.3.0 again, every benchmark test errors at setup and the lane fails; it cannot pass quietly.
