@@ -5,7 +5,7 @@
 **Author**: Paul Calnon
 **License**: MIT License
 **Version**: 0.13.0
-**Last Updated**: 2026-10-28
+**Last Updated**: 2026-10-29
 
 ---
 
@@ -498,10 +498,11 @@ Tests touching these collectors should use `juniper_observability.testing.reset_
 
 ### Test Directory Structure
 
+pytest's configuration (markers, `addopts`, the default `timeout`) is `[tool.pytest.ini_options]` in the repo-root `pyproject.toml`; there is no `pytest.ini`.
+
 ```text
 src/tests/
 ├── conftest.py                  # Global fixtures
-├── pytest.ini                   # pytest configuration
 ├── scripts/
 │   ├── run_tests.bash           # Test runner
 │   └── run_benchmarks.bash      # Benchmark runner
@@ -612,7 +613,7 @@ Optional: register the same PAT under **Settings → Secrets → Dependabot** to
 Push `main`/`develop`, PR **`main` only**, weekly Monday 06:00 UTC (same cron as `security-scan.yml`).
 No `workflow_dispatch`. **Required, not a soak**: the `main` ruleset requires its `Analyze (python)` context, and the ruleset's `code_scanning` rule also blocks a merge on a CodeQL alert at `error` or a security alert at `high` or above. Findings go to **Security → Code scanning**; the workflow is standalone, so it is not in the Quality Gate `needs:`.
 Dependabot groups `github/codeql-action*` so `init` / `autobuild` / `analyze` and `ci.yml`'s Bandit `upload-sarif` bump together.
-Bandit SARIF upload is `continue-on-error: true`; the blocking Bandit step is the separate medium+ CLI invocation.
+Bandit SARIF upload is `continue-on-error` except on a PR, where a failed upload fails Security Scans instead of leaving the required `Bandit` context unposted; the blocking Bandit step is the separate medium+ CLI invocation.
 Details: [`docs/ci_cd/MANUAL.md`](docs/ci_cd/MANUAL.md#codeql-analysis) / [`docs/ci_cd/REFERENCE.md`](docs/ci_cd/REFERENCE.md#codeql-analysis).
 
 ### CI Pipeline Jobs (ci.yml)

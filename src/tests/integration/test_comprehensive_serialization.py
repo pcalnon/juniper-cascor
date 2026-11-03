@@ -107,6 +107,7 @@ class TestDeterministicTrainingResume(unittest.TestCase):
                 os.unlink(temp_file)
 
 
+@pytest.mark.integration
 class TestHiddenUnitsPreservation(unittest.TestCase):
     """Test that all hidden units are correctly saved and loaded."""
 
@@ -176,6 +177,7 @@ class TestHiddenUnitsPreservation(unittest.TestCase):
         print(f"✓ Hidden units preservation test passed ({len(network.hidden_units)} units)")
 
 
+@pytest.mark.integration
 class TestConfigRoundtrip(unittest.TestCase):
     """Test that configuration is correctly saved and loaded."""
 
@@ -249,6 +251,7 @@ class TestConfigRoundtrip(unittest.TestCase):
         print(f"✓ Config roundtrip test passed ({len(config_checks)} parameters verified)")
 
 
+@pytest.mark.integration
 class TestActivationFunctionRestoration(unittest.TestCase):
     """Test that activation functions are correctly restored."""
 
@@ -298,6 +301,7 @@ class TestActivationFunctionRestoration(unittest.TestCase):
                         os.unlink(temp_file)
 
 
+@pytest.mark.integration
 class TestTorchRandomStateRestoration(unittest.TestCase):
     """Test that PyTorch RNG state is preserved across save/load."""
 
@@ -344,6 +348,7 @@ class TestTorchRandomStateRestoration(unittest.TestCase):
         return [torch.rand(1).item() for _ in range(5)]
 
 
+@pytest.mark.integration
 class TestHistoryPreservation(unittest.TestCase):
     """Test that training history is correctly preserved."""
 

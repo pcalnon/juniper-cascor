@@ -7,7 +7,7 @@ File Path:     src/tests/performance/
 Author:        Paul Calnon
 
 Date Created:  2026-04-01
-Last Modified: 2026-04-01
+Last Modified: 2026-10-29
 
 License:       MIT License
 Copyright:     Copyright (c) 2024-2026 Paul Calnon
@@ -260,15 +260,13 @@ class TestQueueThroughput:
         put_summary = timer.summary()
 
         drain_timer = BenchmarkTimer()
-        # Items are still in the queue from the last burst iteration
-        # Drain all remaining items
-        from queue import Empty
-
-        while True:
-            try:
-                q.get_nowait()
-            except Empty:
-                break
+        # Drain exactly what the five bursts put. Looping on get_nowait() until Empty is
+        # not a drain: Empty can arrive while the queue's feeder thread is still flushing,
+        # and the items left behind fill the pipe, so the feeder blocks for good and the
+        # interpreter hangs at exit joining it. Run alone, this test hung that way in 6 of 6
+        # runs before the change.
+        for _ in range(5 * len(payloads)):
+            q.get(timeout=5.0)
 
         # Re-burst and drain for clean measurement
         for p in payloads:
