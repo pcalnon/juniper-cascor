@@ -7,7 +7,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **`agents-md-touch-up.yml` pins `actions/checkout` to a commit SHA (owner ruling 2026-11-03).** It checked out with
+  the `v7.0.1` tag, the only tag-only `actions/checkout` in `.github/workflows/`. It now uses
+  `3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1`, the commit that tag resolves to and the pin every other
+  workflow here uses, so behaviour is unchanged. A census of the nine Juniper repositories' `main` on 2026-11-01 found
+  249 `actions/checkout` uses, 242 pinned to that SHA; the seven tag-only ones were this workflow's copies, one per
+  repository. juniper-data#503 pinned juniper-data's, and this change is one of the seven that pin the rest.
+
 ### Fixed
+
+- **The `Load from HDF5` benchmark times real loads. For 10 and 50 hidden units it timed the integrity gate's refusal.**
+  - **The defect.** `src/tests/scripts/run_benchmarks.bash`'s serialization benchmark appended hidden units to `network.hidden_units` without resizing `output_weights`, which stayed `(2, 2)`. `85634ee` (2026-05-01) fixed the same omission in the forward-pass benchmark, which crashed on it; the serialization benchmark did not crash.
+    - Its 10- and 50-unit snapshots declared 12 and 52 output-weight rows, so the serializer's integrity gate refused every load (`Output weights shape mismatch: torch.Size([2, 2]) != (12, 2)`).
+    - `load_from_hdf5` returns `None` on a refusal rather than raising, so the benchmark timed the refusal and reported it as a load. `main`'s nightly run 41267421888 logged the refusals.
+  - **The fix.** The benchmark resizes `output_weights` as the forward-pass benchmark does. It also loads each snapshot once before timing it, and raises if the load is refused.
+  - **The exit status.** The harness ran as `eval … | tee` under `set -e` without `pipefail`, so a benchmark that raised still ended the script, and the `Performance Benchmarks` job, with 0. The script now takes the harness's failure from `PIPESTATUS` and exits non-zero. The job stays informational: the nightly's summary warns when it fails.
+  - **Measured locally** on Python 3.14.7, running the harness's serialization benchmark with two iterations:
+    - before the fix, 6 refused loads and a full load table;
+    - after it, no refusals, 12 successful loads and a full load table;
+    - a mutant without the resize raises at the 10-unit snapshot and exits 1.
+
+    Run against a failing stub, the new exit-status lines exit 1, and the old two lines exit 0.
+  - **Where it was found.** Reading that nightly for juniper-cascor#738. Owner ruling of 2026-11-01.
+- **The Bandit SARIF upload's comment and its survey's docstring no longer claim that every upload succeeded.**
+  - **The claims.** `ci.yml`'s upload comment said "165 of 165 uploads succeeded over 200 runs". `util/ad-hoc/2026-10-27_bandit_sarif_upload_survey.py`'s docstring said a failed upload's step "conclusion still records `failure`".
+  - **Why they fail.** GitHub's jobs API reports a step's `conclusion` after `continue-on-error`, so a masked failure reads `success`. juniper-canopy job 123689681187 logged `Path does not exist`, and its upload step reads `success`.
+  - **The new wording.** The comment cites the survey's `Bandit` half, which can see a masked failure on a PR: 101 of 101 PR heads whose upload ran carry the check. It says the step count proves less. The docstring says the same, including that its RESULT line's "no upload step failed" is blind to a masked failure. No code changed.
+  - **History.** The 2026-10-29 entry below keeps its "165 of 165" as written.
+  - **Where it was found.** juniper-ml's flood-3 record, `notes/JUNIPER_2026-10-08_JUNIPER-ECOSYSTEM_CURSOR-FLOOD-3-DISPOSITION.md`, §4 and §6. Owner ruling of 2026-11-01.
+
+- **The nightly performance smoke runs on pytest 9.2 again: its `pytest<9.2` cap is gone.** pytest-benchmark 5.3.1 (PyPI 2026-11-01) reads pytest's public `nodeid` instead of the private `_nodeid` that pytest 9.2.0 removed, and its changelog calls that pytest 9.2 support. So `scheduled-tests.yml`'s `performance-smoke` job no longer downgrades pytest after installing the project. It still prints the pytest and pytest-benchmark versions it got.
+  - **Measured locally** on Python 3.14.7, in fresh venvs, with a one-test file that takes the `benchmark` fixture. Under pytest 9.2.0, pytest-benchmark 5.3.0 errors at setup with the `AttributeError` that run 40970853599 logged, and 5.3.1 passes, both timed and under `--benchmark-disable`.
+  - **No floor.** `pyproject.toml` keeps `pytest-benchmark>=4.0.0`, so a fresh install resolves 5.3.1. If the lane ever pairs pytest 9.2 with 5.3.0 again, every benchmark test errors at setup and the lane fails; it cannot pass quietly.
+  - **Where it came from.** The cap is juniper-cascor#735's (its entry is below), which said to drop it once a pytest-benchmark release supported pytest 9.2. juniper-ml's flood-3 handoffs carried that as a watch item.
+
+- **Five documents no longer name the nonexistent `src/tests/pytest.ini`.** pytest's configuration is `[tool.pytest.ini_options]` in the repo-root `pyproject.toml` (`AGENTS.md` said so from juniper-cascor#735).
+  - The directory trees in `docs/REFERENCE.md`, `docs/testing/MANUAL.md` and `src/tests/README.md` drop the file. `src/tests/README.md`'s configuration section now describes `pyproject.toml`, and `docs/DOCUMENTATION_OVERVIEW.md` names it.
+  - `docs/ci_cd/MANUAL.md`'s marker list was a copy of the old file's: it now names all 18 markers in `pyproject.toml`, adding `long`, `requires_juniper_data`, `critical`, `golden` and `conformance`.
+  - `src/tests/README.md` said every slow test had its own 300-second timeout. The default is 60 seconds, and the per-test `@pytest.mark.timeout(...)` values run from 10 to 300.
+  - **Where it was found.** juniper-cascor#735's body, from the 2026-10-08 flood-3 disposition (juniper-ml `notes/JUNIPER_2026-10-08_JUNIPER-ECOSYSTEM_CURSOR-FLOOD-3-DISPOSITION.md` §4).
 
 - **The memory-budget gate's own 40 tests now run in the required unit legs; they had never run in CI.**
   - **Where #585 put them.** juniper-cascor#585 (2026-08-25) ported `util/memory_budget_check.py` and its suite from juniper-ml. The suite went to `src/tests/test_memory_budget_check.py` with no marker, where no CI lane selects it:
@@ -22,6 +62,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - the 153 `performance`-marked tests in `src/tests/performance/`;
     - five unmarked tests in `src/tests/integration/test_comprehensive_serialization.py`.
   - **Where it was found.** Found on 2026-10-26 in the 2026-10-08 flood-3 disposition (juniper-ml `notes/JUNIPER_2026-10-08_JUNIPER-ECOSYSTEM_CURSOR-FLOOD-3-DISPOSITION.md` §4).
+- **The nightly long and slow-integration lanes run their tests, `src/tests/performance/` gets an untimed nightly smoke and loses an exit hang, five integration tests that no lane selected now run in the required integration jobs, and a failed Bandit SARIF upload fails a PR.**
+  - **The long lane ran nothing.** `scheduled-tests.yml`'s `long-running-tests` passed only `--run-long`, so job 121983548401 logged `1 skipped, 6214 deselected` and passed. `src/tests/conftest.py` gives the lane's one pick, `test_deterministic_training_resume`, two more skips:
+    - it is also marked `slow`;
+    - the conftest tests `"integration" in item.keywords`, and the keywords hold the `src/tests/integration` directory's name, so every test there needs `--integration`, marked or not.
+  - **The long lane's fix.** The job now also passes `--slow --integration`. Locally the test runs and XFAILs (`1 xfailed, 6236 deselected`); its `xfail` stays.
+  - **The slow-integration lane ran nothing as well (owner ruling 2026-10-29, "Fix in #735").** `slow-integration-tests` passed `--slow` without `--integration`. main's nightly run 40809669816 (job 123236747466) logged `20 skipped, 178 deselected` and passed. The job now also passes `--integration`. Locally it runs 15 tests, all passing, and skips the 5 golden picks: they need `--golden`, and `golden-regression.yml` runs them.
+  - **A lane that executes nothing now fails.** New `util/check_junit_executed.py` reads a lane's `--junitxml` report and fails when no test executed, or when one failed or errored.
+    - An XFAIL counts as executed, although pytest writes it as `<skipped type="pytest.xfail">`.
+    - It also catches a failure the exit status hides. `src/tests/conftest.py`'s `pytest_unconfigure` calls `os._exit(0)` whenever a non-daemon thread outlives the session, so a failing lane can exit 0 (measured: `1 failed`, exit status 0).
+    - It runs after the slow-integration and long lanes and after the new performance smoke. Its 24 tests (`src/tests/unit/test_check_junit_executed.py`) include two real pytest runs and pin the `scheduled-tests.yml` wiring. The unit lane selects 5,860 of 5,875 tests, up from 5,836 of 5,851.
+  - **The performance smoke (owner ruling 2026-10-29, "Nightly smoke, no timing").** The new `performance-smoke` job runs all 153 tests in `src/tests/performance/` with `--run-performance --benchmark-disable`. A failure fails the nightly through the `summary` job; `performance-benchmarks` stays informational. The pytest step's `timeout-minutes: 30` turns a hang into a failure instead of a 6-hour run. Locally all 153 pass in about 23 s.
+  - **The job caps pytest below 9.2 (owner ruling 2026-10-29).** pytest 9.2.0 (PyPI 2026-10-27) broke pytest-benchmark 5.3.0, the latest release, at fixture setup: `AttributeError: 'Function' object has no attribute '_nodeid'` (`pytest_benchmark/fixture.py:88`). Every benchmark test errored, and run 40970853599 logged `5 errors` and stopped at `--maxfail=5`. The job therefore installs `pytest<9.2` (9.1.1) after the project and prints the versions it got. 9.1.1 and 9.0.3 pass, and the cap goes once a pytest-benchmark release supports 9.2. The required lanes keep pytest 9.2. Locally, on 9.1.1 with pytest-benchmark 5.3.0, all 153 pass.
+  - **The exit hang, fixed.** `TestQueueThroughput::test_burst_throughput` drained its queue with `get_nowait()` until `Empty`, which can stop while the queue's feeder thread is still flushing. The leftovers fill the pipe, the feeder blocks, and the interpreter's exit-time join never returns. Run alone, the test hung in 6 of 6 runs, and the full smoke in 1 of 2. It now drains exactly the 320 items its five bursts put. Afterwards 12 of 12 runs alone and 6 of 6 full-smoke runs exited cleanly. The measured drain is unchanged.
+  - **Not fixed here.** `--benchmark-disable` reaches only the pytest-benchmark fixture. Eight assertions time their own code against a ceiling or against each other: `test_baselines.py:464` and `:467`, `test_concurrency_scaling.py:551` and `:582`, `test_endtoend_profiling.py:251`, and `test_shared_memory.py:523`, `:525` and `:576`.
+  - **Five unmarked integration tests.** `TestHiddenUnitsPreservation`, `TestConfigRoundtrip`, `TestActivationFunctionRestoration`, `TestTorchRandomStateRestoration` and `TestHistoryPreservation` in `src/tests/integration/test_comprehensive_serialization.py` get the class-level `@pytest.mark.integration` the other modules use. The required integration jobs now select 177 of 198 tests, up from 172 of 198, and all 177 pass locally.
+  - **The Bandit SARIF upload (owner ruling 2026-10-29).** `ci.yml`'s upload step is now `continue-on-error: ${{ github.event_name != 'pull_request' }}`. On a PR a failed upload fails Security Scans, with the cause in the step log, instead of leaving the required `Bandit` context unposted. Pushes and dispatches still tolerate it. 165 of 165 uploads had succeeded over 200 runs (`util/ad-hoc/2026-10-27_bandit_sarif_upload_survey.py`). `AGENTS.md`, `docs/ci_cd/MANUAL.md`, `docs/ci_cd/REFERENCE.md` and `docs/ci_cd/BRANCH_PROTECTION.md` called the upload best-effort everywhere, and now say so for pushes and dispatches only.
+  - **`AGENTS.md`** listed a `src/tests/pytest.ini`, which does not exist: pytest's configuration is `[tool.pytest.ini_options]` in the repo-root `pyproject.toml`. Five other live documents still name the file (`docs/REFERENCE.md`, `docs/testing/MANUAL.md`, `docs/ci_cd/MANUAL.md`, `docs/DOCUMENTATION_OVERVIEW.md` and `src/tests/README.md`); they are left for a later pass.
+  - **Where it was found.** The 2026-10-08 flood-3 disposition (juniper-ml `notes/JUNIPER_2026-10-08_JUNIPER-ECOSYSTEM_CURSOR-FLOOD-3-DISPOSITION.md` §4), in rows found on 2026-10-27.
+- **A failing test session no longer exits 0 when a thread outlives it.**
+  - **The defect.** `src/tests/conftest.py`'s `pytest_unconfigure` ends the process with `os._exit` whenever a non-daemon thread is still alive, so that the thread cannot hang the job. It called `os._exit(0)`, which replaced pytest's exit status. A session with a failing test and a surviving thread exited 0, and the lane passed. juniper-cascor#735's probe measured it on 2026-10-29: `1 failed`, exit status 0.
+  - **The fix.** A `trylast` `pytest_sessionfinish` hook records `session.exitstatus` in `config.stash`, and the forced exit passes it on. A session that never reached `pytest_sessionfinish` recorded no status, so it exits with pytest's internal-error code (3) rather than 0. The output flush and the child reaping are unchanged.
+  - **The test.** `src/tests/unit/test_conftest_exit_status.py` runs a real pytest in a subprocess, over a one-test tree whose conftest loads only this conftest's two exit hooks. A failing session with a surviving non-daemon thread must exit 1, and a passing one 0. A failing one without a survivor must exit 1, as a control. Against the old conftest the first case fails (`1 failed`, exit status 0) and the other two pass.
+  - **What it removes.** It removes the mask that juniper-cascor#735's `util/check_junit_executed.py` worked around, by failing a lane whose report shows a failure even when the exit status reads 0. That script's docstring now records the mask as history (0.1.1). Failing an empty lane stays its main job. Two `src/tests/conftest.py` comments that called the forced exit `os._exit(0)` now say `os._exit`.
+  - **Why it found nothing broken.** `main`'s latest `ci.yml` run before this change (40768508350, `e8e8bf4d`) recorded 0 failures and 0 errors in all five JUnit reports, so no required lane depended on the mask.
+  - **Owner ruling** of 2026-10-29: "Fix now, own PR".
 
 ## [0.13.0] - 2026-10-28
 

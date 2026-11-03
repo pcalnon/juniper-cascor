@@ -3,7 +3,7 @@
 **Project**: Juniper Cascor  
 **Workflow Files**: `.github/workflows/ci.yml`, `codeql.yml`, `security-scan.yml`, `claude.yml`, `golden-regression.yml`, `conformance.yml`, `ci-protocol.yml`, `ci-cascor-model.yml`, `lockfile-update.yml`, `publish.yml`, `publish-protocol.yml`, `publish-cascor-model.yml`
 
-**Last Updated**: 2026-10-08
+**Last Updated**: 2026-10-29
 
 ---
 
@@ -100,7 +100,7 @@ Do not document a specific SHA or `v4.x.y` patch — Dependabot refreshes the pi
 | Lane | Workflow | What it runs | GitHub code scanning |
 |------|----------|--------------|----------------------|
 | CodeQL | `codeql.yml` | CodeQL Python query pack | Native CodeQL upload from `analyze` |
-| PR / push CI | `ci.yml` job `security` | Gitleaks (skip `repository_dispatch`), Bandit medium+ (blocking) + SARIF (`--exit-zero` then upload), pip-audit | Bandit SARIF via `upload-sarif` (`if: always()`, `continue-on-error: true`) |
+| PR / push CI | `ci.yml` job `security` | Gitleaks (skip `repository_dispatch`), Bandit medium+ (blocking) + SARIF (`--exit-zero` then upload), pip-audit | Bandit SARIF via `upload-sarif` (`if: always()`, `continue-on-error: ${{ github.event_name != 'pull_request' }}`: a failed upload fails Security Scans on a PR only) |
 | Scheduled | `security-scan.yml` | Bandit medium+ + `pip-audit --strict`; artifact `security-reports` | **None** (no CodeQL, no Gitleaks, no `upload-sarif`) |
 
 `security-scan.yml` has `workflow_dispatch`; `codeql.yml` does not.
@@ -553,7 +553,7 @@ Full recipe and the three-row table: [Regenerating both locks](../../notes/DEPEN
 | Conf `torch` pin moved; image still on the old version | Torch is omitted from both locks. Image pin is `ARG TORCH_VERSION` plus the CPU lock header | Bump the Dockerfile ARG and the header together, then re-derive `requirements-cpu.lock` |
 | CodeQL missing on a `develop` PR | `pull_request` filter is `main` only | Push the branch to `develop`, retarget the PR at `main`, or wait for the Monday cron on `main`/`develop` |
 | CodeQL action pins drifted across files | Partial merge of a `codeql-action` group PR | Keep `init` / `autobuild` / `analyze` / `ci.yml` `upload-sarif` on the same SHA |
-| Bandit findings missing from the Security tab | `upload-sarif` is `continue-on-error: true` | The blocking Bandit step still failed the **Security Scans** job; the SARIF upload is best-effort |
+| Bandit findings missing from the Security tab | The `upload-sarif` step failed. It is `continue-on-error` on a push or dispatch, so **Security Scans** stayed green; on a PR it fails the job, since the required `Bandit` context would otherwise never post | Read the upload step log. The blocking Bandit step still judged the findings |
 | No way to re-run CodeQL from Actions | `codeql.yml` has no `workflow_dispatch` | Push an empty commit, open/sync a PR against `main`, or wait for Monday 06:00 UTC |
 | `@claude` comment, job green, no reply | Workflow `if` matched a substring; the action required a bounded phrase, or the event was `issues` `assigned` | Put `@claude` as its own word in a **new** comment, a **submitted** review, or a newly **opened** issue. See [Claude Code Workflow](#claude-code-workflow) |
 | Claude Code job red: `Actor does not have write permissions to the repository` | Commenter is below `write`, or is an app account whose login lacks the `[bot]` suffix | A user with `admin` or `write` has to be the actor. This workflow sets no `allowed_non_write_users` |

@@ -967,7 +967,7 @@ def _cache_logging_system():
 # multiprocessing) can leave forkserver / worker children behind if the
 # test crashes, the network is garbage-collected without an explicit
 # ``_shutdown_worker_pool`` call, or the session terminates via
-# ``os._exit(0)`` (which bypasses every atexit / Finalize handler that
+# ``os._exit`` (which bypasses every atexit / Finalize handler that
 # would otherwise reap them). The forkserver's parent-death detection
 # uses a pipe heartbeat that can take many minutes to fire, so the
 # children survive across pytest sessions and accumulate to multi-GB
@@ -1129,6 +1129,22 @@ def _reap_test_spawned_children():
                 pass
 
 
+# The session's exit status, recorded for pytest_unconfigure's forced exit below.
+_SESSION_EXITSTATUS = pytest.StashKey[int]()
+
+
+@pytest.hookimpl(trylast=True)
+def pytest_sessionfinish(session):
+    """Record the session's exit status for ``pytest_unconfigure``'s forced exit.
+
+    ``os._exit`` replaces the status pytest would have returned, so the forced exit
+    passes this one instead. ``trylast`` reads ``session.exitstatus`` after the
+    other plugins' ``pytest_sessionfinish`` hooks, so a status one of them set is
+    kept too.
+    """
+    session.config.stash[_SESSION_EXITSTATUS] = int(session.exitstatus)
+
+
 @pytest.hookimpl(trylast=True)
 def pytest_unconfigure(config):
     """Force process exit after pytest finalize to prevent hangs from orphaned threads.
@@ -1154,12 +1170,19 @@ def pytest_unconfigure(config):
     ``pytest_sessionfinish`` / ``pytest_terminal_summary`` have already
     fired), so all reports land on disk before we force-exit.
 
-    Issue 3 step 3: ``os._exit(0)`` skips ``atexit`` handlers and
+    Issue 3 step 3: ``os._exit`` skips ``atexit`` handlers and
     multiprocessing's ``Finalize`` callbacks, so any surviving
     forkserver / worker children would be orphaned and live for many
     minutes after the parent exits (the forkserver's parent-death
     detection is heartbeat-based). Reap them explicitly here, *before*
     forcing the exit.
+
+    The forced exit keeps the session's exit status, recorded by
+    ``pytest_sessionfinish`` above. Until 2026-10-29 it was ``os._exit(0)``,
+    which replaced the status: a session with a failing test and a surviving
+    non-daemon thread exited 0, and every lane read that as a pass (measured:
+    ``1 failed``, exit status 0). Pinned by
+    ``tests/unit/test_conftest_exit_status.py``.
     """
     import atexit
     import concurrent.futures.thread as _thread_mod
@@ -1193,7 +1216,10 @@ def pytest_unconfigure(config):
         except Exception:  # nosec B110 — never let cleanup raise here
             pass
 
-        os._exit(0)
+        # Exit with the session's own status, never a hard-coded 0. A session
+        # that never reached pytest_sessionfinish recorded no status; it exits
+        # with pytest's internal-error code rather than read as a pass.
+        os._exit(config.stash.get(_SESSION_EXITSTATUS, int(pytest.ExitCode.INTERNAL_ERROR)))
 
 
 @pytest.fixture(autouse=True)

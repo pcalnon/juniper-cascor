@@ -26,8 +26,7 @@
 
 ```
 src/tests/
-├── conftest.py              # Shared fixtures and configuration
-├── pytest.ini               # Pytest settings
+├── conftest.py              # Shared fixtures and configuration (pytest settings: repo-root pyproject.toml)
 ├── unit/                    # Unit tests (isolated, fast)
 │   ├── test_forward_pass.py
 │   ├── test_accuracy.py
