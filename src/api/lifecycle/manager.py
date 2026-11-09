@@ -1375,6 +1375,11 @@ class TrainingLifecycleManager:
         self._stop_event = threading.Event()
         self._pause_event = threading.Event()
         self._pause_event.set()  # Not paused initially
+        # The run that owns the lifecycle: ``_run_training`` puts a fresh token here as it
+        # enters, before it issues ``Command.START``, and settles the FSM, the training state,
+        # the final score, the terminal counter and the monitor session only while its token is
+        # still the one here. See ``_owns_lifecycle``.
+        self._lifecycle_owner: Optional[object] = None
         self._last_emitted_history_len = 0
 
         # C5 (Q4/U-1 retention semantics):
@@ -2966,7 +2971,37 @@ class TrainingLifecycleManager:
         Exceptions propagate to the training future: a clean stop raises
         ``TrainingInterrupted`` (swallowed here as a successful cancellation, returning None);
         any other error transitions to Failed and re-raises so ``future.result()`` surfaces it.
+
+        A fit that returns while its run is PAUSED settles COMPLETED, exactly as an unpaused run
+        does. Pause is honoured only at an interrupt checkpoint (``_check_for_interrupt``), which
+        ``_handle_event`` runs on ``epoch_end`` and ``phase_change`` alone. A pause that lands after
+        the fit's last checkpoint -- the rest of the final output pass after its last-epoch
+        callback, ``CascorModel.fit``'s post-hoc ``unit_added`` / ``training_end``, or the metrics
+        drain, terminal weight capture and final evaluation below -- holds nothing, and the fit
+        returns anyway. ``mark_completed`` takes STARTED or PAUSED to COMPLETED in one transition,
+        and the pause gate is reopened after it. While ``mark_completed`` accepted STARTED only, and
+        its refusal was ignored, such a run stayed PAUSED with no thread behind it and every start
+        was refused until a stop or reset: the "paused-fit wedge", which juniper-ml's flood-4
+        record (``notes/JUNIPER_2026-11-06_JUNIPER-ECOSYSTEM_CURSOR-FLOOD-4-DISPOSITION.md``) lists
+        under §8 ruling 11. Releasing the pause through RESUME before ``mark_completed`` is not
+        enough: neither this settle nor ``pause_training`` takes a lock, so a second pause could
+        land on the STARTED step between the two transitions and leave the run PAUSED again. The
+        state machine makes each transition under its own lock, so a pause or resume that races
+        this one transition cannot split it either.
+
+        Only the run that owns the lifecycle settles it. A run takes ownership as it enters here,
+        before it issues ``Command.START``, so a fit that returns, is interrupted or fails after a
+        newer run has entered leaves the FSM, the training state, the final score, the terminal
+        counter and the monitor session to that run (see :meth:`_owns_lifecycle`). Its own
+        resources (the drain thread, the active-session gauge) are still released. Its post-fit
+        metrics drain, terminal weight capture and final evaluation run before that check, so
+        they still act on the shared monitor, weight history and network; only the final score
+        is then discarded.
         """
+        # This run now owns the lifecycle: the START below and every settle that follows act
+        # for it, until a newer run enters here and takes the lifecycle in turn.
+        run_token = object()
+        self._lifecycle_owner = run_token
         monitor = self.monitor
         state = self.training_state
         sm = self.state_machine
@@ -3045,32 +3080,45 @@ class TrainingLifecycleManager:
                 self._weight_history_recorder.capture_terminal()
 
             if stop_event.is_set():
-                sm.handle_command(Command.STOP)
-                state.update_state(status="Stopped", phase="Idle")
-                self._broadcast_training_state(force=True)
-                inc_training_session_completed(TRAINING_SESSION_STATUS_CANCELLED)
+                if self._owns_lifecycle(run_token, "returned with a stop requested"):
+                    sm.handle_command(Command.STOP)
+                    state.update_state(status="Stopped", phase="Idle")
+                    self._broadcast_training_state(force=True)
+                    inc_training_session_completed(TRAINING_SESSION_STATUS_CANCELLED)
             else:
                 # cascor#582: the final score is computed HERE -- after the last weight
                 # update, before the terminal transition, and on the success path only.
                 # A stopped or failed run has no finished model to report on, which is
-                # why this is not in the ``finally`` below.
-                self._final_scalar_metrics = self._compute_final_eval_metrics()
-                sm.mark_completed()
-                state.update_state(status="Completed", phase="Idle")
-                self._broadcast_training_state(force=True)
-                inc_training_session_completed(TRAINING_SESSION_STATUS_SUCCESS)
+                # why this is not in the ``finally`` below. It is kept only by the run that
+                # still owns the lifecycle; the check sits right before the writes it guards.
+                final_scalar_metrics = self._compute_final_eval_metrics()
+                if self._owns_lifecycle(run_token, "returned"):
+                    self._final_scalar_metrics = final_scalar_metrics
+                    # One transition, from STARTED or from a PAUSED the fit outlived (see the
+                    # docstring), made under the state machine's own lock. A pause or resume
+                    # that races this settle either lands wholly first, and is settled with the
+                    # run, or finds COMPLETED and is refused.
+                    sm.mark_completed()
+                    # Reopen the gate a pause cleared. After the transition, not before: a pause
+                    # accepted in between would clear it again and leave it closed.
+                    self._pause_event.set()
+                    state.update_state(status="Completed", phase="Idle")
+                    self._broadcast_training_state(force=True)
+                    inc_training_session_completed(TRAINING_SESSION_STATUS_SUCCESS)
         except TrainingInterrupted:
             # Clean cancellation: _handle_event raised on a stop request from inside a CCN
             # callback. Same terminal transitions as the post-fit stop path; not an error.
-            sm.handle_command(Command.STOP)
-            state.update_state(status="Stopped", phase="Idle")
-            self._broadcast_training_state(force=True)
-            inc_training_session_completed(TRAINING_SESSION_STATUS_CANCELLED)
+            if self._owns_lifecycle(run_token, "was interrupted"):
+                sm.handle_command(Command.STOP)
+                state.update_state(status="Stopped", phase="Idle")
+                self._broadcast_training_state(force=True)
+                inc_training_session_completed(TRAINING_SESSION_STATUS_CANCELLED)
         except Exception as e:
-            sm.mark_failed(str(e))
-            state.update_state(status="Failed", phase="Idle")
-            self._broadcast_training_state(force=True)
-            inc_training_session_completed(TRAINING_SESSION_STATUS_FAILURE)
+            if self._owns_lifecycle(run_token, "failed"):
+                sm.mark_failed(str(e))
+                state.update_state(status="Failed", phase="Idle")
+                self._broadcast_training_state(force=True)
+                inc_training_session_completed(TRAINING_SESSION_STATUS_FAILURE)
             raise
         finally:
             drain_stop.set()
@@ -3079,7 +3127,40 @@ class TrainingLifecycleManager:
                 dec_training_sessions()
             except Exception:
                 self.logger.debug("dec_training_sessions emission failed", exc_info=True)
-            monitor.on_training_end()
+            # ``on_training_end`` clears the monitor's single ``is_training`` flag and fires its
+            # ``training_end`` callbacks (the WebSocket ``training_complete`` event), so a run
+            # that no longer owns the lifecycle would end the newer run's session.
+            if self._lifecycle_owner is run_token:
+                monitor.on_training_end()
+
+    def _owns_lifecycle(self, run_token: object, outcome: str) -> bool:
+        """Whether the run holding ``run_token`` still owns the lifecycle, so it may settle it.
+
+        ``_run_training`` takes the lifecycle as it enters, before it issues ``Command.START``,
+        so a newer run that has entered since owns the FSM, the training state, the final score,
+        the terminal counter and the monitor session. A fit that returns, is interrupted or
+        fails after that must leave them alone: settling them would act on the newer run, which
+        may be paused or still training. A stale completion would mark the newer run COMPLETED
+        while its fit runs -- the failure juniper-service-core's own paused-fit fix showed under
+        validation -- and a stale STOP or ``mark_failed`` would leave it training under a
+        terminal FSM.
+
+        Ownership is a per-run token claimed in ``_run_training``, because that is where cascor
+        issues START: ``start_training`` creates no thread and issues no START, it submits
+        ``_run_training`` to the executor.
+
+        On the single-worker executor runs are serialized, so this is ``False`` only when two
+        fits overlap: a run was started after ``shutdown()`` dropped the executor while an older
+        fit was still alive (its bounded join timed out). The service never does that -- it calls
+        ``shutdown()`` only as it exits -- so only an in-process caller can, and that is worth a
+        WARNING. The check takes no lock, so it narrows that overlap's race without closing it: a
+        newer run that enters between a stale run's check and the writes the check guards still
+        has those writes applied to it.
+        """
+        if self._lifecycle_owner is run_token:
+            return True
+        self.logger.warning("A training run %s after a newer run took over the lifecycle; leaving the FSM, the training state and the final score to that run", outcome)
+        return False
 
     def stop_training(self) -> Dict[str, Any]:
         """Request training stop.
