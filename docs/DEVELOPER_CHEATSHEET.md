@@ -1,6 +1,6 @@
 # Developer Cheatsheet — juniper-cascor
 
-**Version**: 1.0.8  |  **Date**: 2026-10-08  |  **Project**: juniper-cascor
+**Version**: 1.0.9  |  **Date**: 2026-11-09  |  **Project**: juniper-cascor
 
 ---
 
@@ -340,6 +340,8 @@ Secret: `ANTHROPIC_API_KEY` (model auth). `id-token: write` is used too: the act
 | `POST /v1/training/start` → 409 `[start_fresh_required]`; previous dataset label stays | Continue start (`start_fresh` false or omitted) staged a dataset wider than the current network; the reload refuses before bind | Retry refuses the same way. Send `start_fresh: true` (rebuilds from the dataset and keeps applied params) or use a live dataset swap to grow. See [start_fresh](api/JUNIPER_CASCOR_API_REFERENCE.md#post-v1trainingstart) |
 | Start fresh restores engine defaults (`output_epochs` 10000, `max_hidden_units` 10) | The rebuild did not re-apply `get_training_params()` (minus `epochs_max` and the `auto_snap_*` flags) after create-on-start; the start body still wins on overlap | Carry is `_reapply_carried_params_locked`. Pin with `src/tests/unit/api/test_start_fresh_carries_params.py` |
 | `POST /v1/training/stop` → 409                                        | Stop attempted while `Investigating` / `Replaying`          | Exit Investigating via snapshot retrain/resume; stop replay first — stop is not permissive in those states |
+| `state_machine.status` stays `PAUSED` beside `training_state` `Completed`; start → 409 "while paused", then resume and start → 409 "already in progress" (juniper-cascor 0.10.0 to 0.13.0) | The pause landed after the fit's last interrupt checkpoint; the fit returned and `mark_completed` refused `PAUSED` | `stop` or `reset`, then start. Current code settles such a run `COMPLETED` (`mark_completed` accepts `PAUSED`), and a resume then answers 409. Pin: `src/tests/unit/api/test_lifecycle_paused_fit_return.py` |
+| `WARNING` "A training run … after a newer run took over the lifecycle"   | Two fits overlapped: a run was started after `shutdown()` dropped the executor while an older fit was alive (its join timed out). The service calls `shutdown()` only as it exits, so only in-process callers (tests) see this | Expected and handled: the stale fit leaves the FSM, `training_state`, the final score, the terminal session counter and the monitor session to the newer run. See [API_SCHEMAS.md](api/API_SCHEMAS.md#training-failure-propagation-and-ownership) |
 | Snapshot restore/retrain/resume → 409 during replay                   | Route preflights `Started` / `Paused` / `Replaying`         | Stop replay via `replay/control` `action=stop` (or stop training) before restore/retrain/resume |
 | `PATCH /v1/training/params` → 404 on a bad candidate-pool triple      | Typed `InvalidCandidatePoolError` collapsed into bare `ValueError` | The route maps that subclass to **422** with the violation string; keep the `except InvalidCandidatePoolError` clause ahead of `except ValueError` |
 | Live dataset swap / staged reload fails with train sample mismatch    | juniper-data artifact arrays not 2-D or X/y counts differ   | Fix the upstream artifact; `_reload_dataset` rejects partial `X_test`/`y_test` and non-2-D trains |
