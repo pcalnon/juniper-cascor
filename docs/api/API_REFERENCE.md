@@ -1,7 +1,7 @@
 # Juniper Cascor - API Reference
 
 **Version**: 0.3.21
-**Last Updated**: 2026-04-05
+**Last Updated**: 2026-11-09
 **Purpose**: Complete API documentation for developers and integrators
 
 ---
@@ -1007,15 +1007,7 @@ Heartbeat / idle knobs on `/ws/training` and `/ws/control` are read through `_nu
 
 ### Lifecycle Failure Handling Path
 
-Training exceptions are handled at the monitored `fit()` wrapper layer in the lifecycle manager.
-
-- `TrainingLifecycleManager._run_training()` executes `network.fit(...)` and allows exceptions to propagate.
-- `TrainingLifecycleManager._install_monitoring_hooks()` wraps `network.fit` with `monitored_fit(...)`, which owns:
-- state transitions (`START`, `FAILED`, `COMPLETED`, `STOPPED`)
-- `training_state` updates (`status`, `phase`)
-- WebSocket/REST-visible broadcast updates
-
-This keeps error handling centralized and avoids duplicate failure transitions in multiple call paths.
+`TrainingLifecycleManager._run_training()`, the training thread's entry point, drives `CascorModel.fit(...)` with `_handle_event` as its event sink. It owns the `START` transition and the terminal ones (`STOPPED`, `FAILED`, `COMPLETED`), the `training_state` updates (`status`, `phase`) and their broadcasts. The `monitored_fit` wrapper that `_install_monitoring_hooks()` used to install was removed when monitoring moved onto that sink. The settle rules, including a fit that returns while paused and which run may settle the lifecycle, are in [API_SCHEMAS.md](API_SCHEMAS.md#training-failure-propagation-and-ownership).
 
 ### `candidate_progress` Message Payload
 
@@ -1293,4 +1285,4 @@ The `CascadeCorrelationNetwork` class is **NOT thread-safe**. Do not share netwo
 ---
 
 **Document Version**: 0.3.21
-**Last Updated**: 2026-04-05
+**Last Updated**: 2026-11-09
