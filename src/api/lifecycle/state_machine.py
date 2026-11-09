@@ -4,9 +4,34 @@ Ported from juniper-canopy backend/training_state_machine.py.
 Ensures deterministic state transitions and prevents invalid operations.
 """
 
+import functools
 import logging
+import threading
 from enum import Enum, auto
-from typing import Optional
+from typing import Any, Callable, Optional, TypeVar, cast
+
+_Method = TypeVar("_Method", bound=Callable[..., Any])
+
+
+def _atomic(method: _Method) -> _Method:
+    """Run a state-machine method under the machine's lock, so its check and its write are one step.
+
+    The lifecycle manager drives the machine from the training thread (START, phase changes, the
+    terminal settle) and from request threads (pause, resume, stop, reset), and those paths share
+    no lock of the manager's. Without this, one transition could run between another's check and
+    its write. ``_handle_resume`` checks PAUSED and then calls ``_restore_from_paused`` to
+    write STARTED, so a thread switch at that call let the settle's ``mark_completed`` complete the
+    run in between, and the resume then wrote STARTED over COMPLETED with no training thread
+    behind it: every later start was refused. The lock is the machine's own and is never held
+    while calling out of it (only its logger), so it cannot be part of a lock-order cycle.
+    """
+
+    @functools.wraps(method)
+    def locked(self: "TrainingStateMachine", *args: Any, **kwargs: Any) -> Any:
+        with self._lock:
+            return method(self, *args, **kwargs)
+
+    return cast(_Method, locked)
 
 
 class TrainingPhase(Enum):
@@ -76,11 +101,17 @@ class TrainingStateMachine:
     - Paused -> Started (on resume or start command, restore sub-state)
     - Started -> Stopped (on stop command)
     - Any -> Stopped (on reset command)
+    - Started or Paused -> Completed (``mark_completed``) or Failed (``mark_failed``)
+
+    Every transition, and every read of more than one field, holds the machine's own lock
+    (:func:`_atomic`), so transitions made from different threads never interleave. The ``is_*``
+    checks and the properties read one field and take no lock.
     """
 
     def __init__(self):
         """Initialize state machine in Stopped state."""
         self.logger = logging.getLogger(__name__)
+        self._lock = threading.RLock()
         self._status = TrainingStatus.STOPPED
         self._phase = TrainingPhase.IDLE
         self._paused_phase: Optional[TrainingPhase] = None
@@ -134,6 +165,7 @@ class TrainingStateMachine:
         replay-control commands are permitted."""
         return self._status == TrainingStatus.REPLAYING
 
+    @_atomic
     def handle_command(self, command: Command) -> bool:
         """Handle control command and perform state transition.
 
@@ -242,6 +274,7 @@ class TrainingStateMachine:
         self._paused_phase = None
         self._candidate_sub_state = None
 
+    @_atomic
     def set_phase(self, phase: TrainingPhase) -> None:
         """Set current training phase (only when Started)."""
         if self._status != TrainingStatus.STARTED:
@@ -251,25 +284,38 @@ class TrainingStateMachine:
         self._phase = phase
         self.logger.debug(f"Phase change: {prev.name} -> {phase.name}")
 
+    @_atomic
     def save_candidate_state(self, state: dict) -> None:
         """Save candidate phase sub-state for resume."""
         self._candidate_sub_state = state.copy()
 
+    @_atomic
     def get_candidate_state(self) -> Optional[dict]:
         """Get saved candidate phase sub-state."""
         return self._candidate_sub_state
 
+    @_atomic
     def mark_completed(self) -> bool:
-        """Mark training as completed (terminal state)."""
-        if self._status == TrainingStatus.STARTED:
+        """Mark training as completed (terminal state), from STARTED or PAUSED.
+
+        PAUSED is accepted, as ``mark_failed`` accepts it, because a fit can return while its run
+        is paused: pause is honoured only at the fit's interrupt checkpoints, and one that lands
+        after the last of them holds nothing. ``TrainingLifecycleManager._run_training`` settles
+        such a run here in one transition. Accepting STARTED only left that run PAUSED with no
+        training thread behind it, and releasing the pause through RESUME first left a STARTED
+        step on which a second pause could land.
+        """
+        if self._status in (TrainingStatus.STARTED, TrainingStatus.PAUSED):
+            prev = "Paused" if self._status == TrainingStatus.PAUSED else "Started"
             self._status = TrainingStatus.COMPLETED
             self._paused_phase = None
             self._candidate_sub_state = None
-            self.logger.info("State transition: Started -> Completed")
+            self.logger.info(f"State transition: {prev} -> Completed")
             return True
         self.logger.warning(f"Invalid transition: mark_completed while {self._status.name}")
         return False
 
+    @_atomic
     def mark_failed(self, reason: str = "Unknown error") -> bool:
         """Mark training as failed (terminal state)."""
         if self._status in (TrainingStatus.STARTED, TrainingStatus.PAUSED):
@@ -282,6 +328,7 @@ class TrainingStateMachine:
         self.logger.warning(f"Invalid transition: mark_failed while {self._status.name}")
         return False
 
+    @_atomic
     def mark_resume_ready(self) -> bool:
         """CAN-015b (Phase 6E Sprint B B-2): mark the FSM as ready to
         resume from a loaded snapshot. Call from
@@ -306,6 +353,7 @@ class TrainingStateMachine:
         self.logger.warning(f"Invalid transition: mark_resume_ready while {self._status.name}")
         return False
 
+    @_atomic
     def mark_investigating(self) -> bool:
         """CAN-015d (Phase 6E Sprint B B-4): mark the FSM as inspecting
         a loaded snapshot. Call from ``lifecycle.load_snapshot`` after
@@ -331,6 +379,7 @@ class TrainingStateMachine:
         self.logger.warning(f"Invalid transition: mark_investigating while {self._status.name}")
         return False
 
+    @_atomic
     def mark_replaying(self) -> bool:
         """CAN-015c (Phase 6E Sprint B B-3): mark the FSM as replaying
         a snapshot's training history. Call from
@@ -354,6 +403,7 @@ class TrainingStateMachine:
         self.logger.warning(f"Invalid transition: mark_replaying while {self._status.name}")
         return False
 
+    @_atomic
     def get_state_summary(self) -> dict:
         """Get current state as dictionary.
 
