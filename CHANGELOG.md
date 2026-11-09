@@ -88,6 +88,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **Why it found nothing broken.** `main`'s latest `ci.yml` run before this change (40768508350, `e8e8bf4d`) recorded 0 failures and 0 errors in all five JUnit reports, so no required lane depended on the mask.
   - **Owner ruling** of 2026-10-29: "Fix now, own PR".
 
+### Security
+
+- **The image picks up R-OBS-SC-2's two security patches.** Both locks move `juniper-observability` 0.4.1 -> 0.4.2
+  and `juniper-service-core` 0.7.1 -> 0.7.2, and nothing else: `requirements.lock` holds 73 pins and
+  `requirements-cpu.lock` 54, and each reproduces under its constraint-mode freshness resolution. The image installs
+  `requirements-cpu.lock` (`Dockerfile:42`).
+  - **observability 0.4.2** fixes `configure_sentry`, which `src/api/app.py:335` calls through
+    `src/api/observability.py`'s wrapper. Under 0.4.1, once `JUNIPER_CASCOR_SENTRY_DSN` was set, a request's
+    `Sec-WebSocket-Protocol`, `X-CSRF-Token` and `X-XSRF-Token` headers reached Sentry in every error event and
+    transaction, and the wrapper samples every transaction (`_LOGGER_SENTRY_TRACES_SAMPLE_RATE` is 1.0). 0.4.2 runs its
+    scrubbing hook on transactions too (`before_send_transaction`), redacts the parsed cookies, and filters those three
+    headers and `Proxy-Authorization`. The wrapper leaves `send_pii` off, so the `X-API-Key` and cookie leaks that 0.4.2
+    also closes were not reachable here.
+  - **service-core 0.7.2** rounds `FailedAuthThrottle`'s `Retry-After` up instead of truncating it. juniper-cascor
+    imports only `enforce_auth_posture` from service-core, so the change does not reach its own throttle in
+    `src/api/security.py`, and the pin is consistency with the sibling services.
+  - Regenerated with `--upgrade-package` for the two packages only, compiled onto a copy of each lock so every other pin
+    is held: `requirements.lock` first, then `requirements-cpu.lock` by its header's command, with that header kept
+    (juniper-ml `util/ad-hoc/2026-10-10_targeted_lock_refresh.py`). The `pyproject.toml` floors move in the next release
+    PR.
+
 ## [0.13.0] - 2026-10-28
 
 ### Changed
