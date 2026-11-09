@@ -46,7 +46,7 @@ anyio==4.16.0
     #   -c requirements.lock
     #   starlette
     #   watchfiles
-cachetools==7.2.8
+cachetools==8.0.0
     # via
     #   -c requirements.lock
     #   juniper-data
@@ -59,7 +59,7 @@ charset-normalizer==3.5.2
     # via
     #   -c requirements.lock
     #   requests
-click==8.5.0
+click==8.5.1
     # via
     #   -c requirements.lock
     #   uvicorn
@@ -71,12 +71,12 @@ cycler==0.12.1
     # via
     #   -c requirements.lock
     #   matplotlib
-fastapi==0.162.0
+fastapi==0.162.2
     # via
     #   -c requirements.lock
     #   juniper-cascor (pyproject.toml)
     #   juniper-service-core
-filelock==4.2.7
+filelock==4.2.9
     # via
     #   -c requirements.lock
     #   torch
@@ -181,7 +181,7 @@ prometheus-client==0.26.0
     # via
     #   -c requirements.lock
     #   juniper-cascor (pyproject.toml)
-pydantic==2.14.2
+pydantic==2.14.3
     # via
     #   -c requirements.lock
     #   juniper-cascor (pyproject.toml)
@@ -191,7 +191,7 @@ pydantic==2.14.2
     #   juniper-observability
     #   juniper-service-core
     #   pydantic-settings
-pydantic-core==2.50.2
+pydantic-core==2.50.4
     # via
     #   -c requirements.lock
     #   pydantic
@@ -224,7 +224,7 @@ requests==2.34.2
     # via
     #   -c requirements.lock
     #   juniper-data-client
-sentry-sdk==2.73.0
+sentry-sdk==2.74.0
     # via
     #   -c requirements.lock
     #   juniper-cascor (pyproject.toml)
@@ -253,7 +253,7 @@ typing-extensions==4.16.0
     #   pydantic-settings
     #   torch
     #   typing-inspection
-typing-inspection==0.4.4
+typing-inspection==0.4.5
     # via
     #   -c requirements.lock
     #   fastapi
