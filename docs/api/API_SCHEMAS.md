@@ -1,7 +1,7 @@
 # Juniper Cascor - API Schemas
 
 **Version**: 0.3.21
-**Last Updated**: 2026-04-05
+**Last Updated**: 2026-11-09
 **Purpose**: Data schema documentation for serialization and data structures
 
 ---
@@ -324,10 +324,13 @@ For control operations that ultimately invoke `Command.START`:
 
 ### Training Failure Propagation and Ownership
 
-Failure state updates are owned by the monitored lifecycle wrapper around `network.fit(...)`:
+Terminal state updates are owned by `TrainingLifecycleManager._run_training(...)`, the training thread's entry point, which drives `CascorModel.fit(...)` with `_handle_event` as its event sink. The `monitored_fit` wrapper this section used to describe was removed when monitoring moved onto that sink.
 
-- `_run_training(...)` acts as a thread entrypoint and does not perform duplicate exception handling.
-- `monitored_fit(...)` (installed by `TrainingLifecycleManager._install_monitoring_hooks`) marks FSM/training state as failed and triggers state broadcasts when exceptions occur.
+- **A clean stop** settles `STOPPED`. That is a `TrainingInterrupted` raised at an interrupt checkpoint, or a stop still requested when the fit returns.
+- **Any other exception** settles `FAILED`, from `STARTED` or `PAUSED`, and is re-raised so the training future surfaces it.
+- **A normal return** settles `COMPLETED`, including a fit that returns while `PAUSED`: that pause landed after the fit's last interrupt checkpoint and held nothing. `mark_completed` takes `STARTED` or `PAUSED` to `COMPLETED` in one transition, the state machine makes each transition under its own lock, and the pause gate is reopened after it. A `pause` or `resume` that races the settle therefore cannot leave `state_machine.status` `PAUSED` or `STARTED`: it lands before the transition and is settled with the run, or finds `COMPLETED`. Its own answer can still be `200` with `training_state.status` out of step until the next `start` (see `POST /v1/training/pause`). juniper-cascor 0.10.0 to 0.13.0 left such a run `PAUSED` with no training thread behind it, and refused every `start` until a `stop` or `reset`; 0.3.17 to 0.9.0 left it `PAUSED` too, but accepted a `start` from `PAUSED` (see `POST /v1/training/pause` in [JUNIPER_CASCOR_API_REFERENCE.md](JUNIPER_CASCOR_API_REFERENCE.md#post-v1trainingpause)).
+- **Only the run that owns the lifecycle settles it.** A run takes ownership as it enters `_run_training`, before it issues `Command.START`. A fit that returns, is interrupted or fails after a newer run has entered therefore leaves `state_machine`, `training_state`, the final score, the terminal session counter and the monitor session to that run, and logs a WARNING. On the single-worker executor runs are serialized, so this arises only when a run is started after `shutdown()` has dropped the executor while an older fit was still alive (its bounded join timed out). The service calls `shutdown()` only as it exits, so only an in-process caller, such as a test, can reach it.
+- **Known defect, not fixed here:** a `start` sent after a `stop`, before the fit's next interrupt checkpoint, clears the stop signal. The old fit trains on to its end, `mark_completed` is refused from `STOPPED`, and `training_state.status` becomes `Completed` beside `state_machine.status` `STOPPED`. It is to be fixed in a separate change. The same pair follows without a `start`: the settle writes `Completed` whatever `mark_completed` answers, so a `stop` that lands after its stop check, while it computes the final score, leaves `STOPPED` beside `Completed`, keeps that score and counts a successful session, and a `reset` that lands between `mark_completed` and that write leaves the same pair. Neither is a wedge: the next `start` runs.
 
 Consumers should treat the lifecycle status fields (`state_machine.status`, `training_state.status`) as authoritative for failure outcomes instead of inferring from thread implementation details.
 
@@ -890,4 +893,4 @@ If verification fails:
 ---
 
 **Document Version**: 0.3.21
-**Last Updated**: 2026-04-05
+**Last Updated**: 2026-11-09

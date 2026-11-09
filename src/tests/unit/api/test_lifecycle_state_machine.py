@@ -1,5 +1,7 @@
 """Tests for training state machine."""
 
+import threading
+
 import pytest
 
 from api.lifecycle.state_machine import Command, TrainingPhase, TrainingStateMachine, TrainingStatus
@@ -185,6 +187,113 @@ class TestTrainingStateMachine:
         result = sm.mark_failed("error during pause")
         assert result is True
         assert sm.is_failed()
+
+    def test_mark_completed_from_paused(self):
+        """A fit can return while its run is paused, so Paused -> Completed is one transition.
+
+        The lifecycle manager settles such a run with ``mark_completed`` alone. Accepting STARTED
+        only left the run PAUSED with no training thread behind it (the paused-fit wedge).
+        """
+        sm = TrainingStateMachine()
+        sm.handle_command(Command.START)
+        sm.set_phase(TrainingPhase.CANDIDATE)
+        sm.save_candidate_state({"epoch": 5})
+        sm.handle_command(Command.PAUSE)
+        result = sm.mark_completed()
+        assert result is True
+        assert sm.is_completed()
+        assert sm.paused_phase is None
+        assert sm.get_candidate_state() is None
+        assert sm.get_state_summary() == {"status": "COMPLETED", "phase": "CANDIDATE", "paused_phase": None, "has_candidate_state": False}
+
+    @pytest.mark.parametrize(
+        "enter",
+        [
+            pytest.param(lambda sm: None, id="stopped"),
+            pytest.param(lambda sm: (sm.handle_command(Command.START), sm.mark_completed()), id="completed"),
+            pytest.param(lambda sm: (sm.handle_command(Command.START), sm.mark_failed("x")), id="failed"),
+            pytest.param(lambda sm: sm.mark_resume_ready(), id="resume_ready"),
+            pytest.param(lambda sm: sm.mark_investigating(), id="investigating"),
+            pytest.param(lambda sm: sm.mark_replaying(), id="replaying"),
+        ],
+    )
+    def test_mark_completed_accepts_only_started_or_paused(self, enter):
+        """``mark_completed`` refuses every state but STARTED and PAUSED, and leaves it as it was."""
+        sm = TrainingStateMachine()
+        enter(sm)
+        before = sm.get_state_summary()
+        assert sm.mark_completed() is False
+        assert sm.get_state_summary() == before
+
+    def test_a_transition_is_not_split_by_another_threads_transition(self):
+        """A transition holds the machine's lock from its check to its write.
+
+        ``_handle_resume`` checks PAUSED and then calls ``_restore_from_paused``, which writes
+        STARTED. A ``mark_completed`` sent from another thread while a resume sits at that call
+        must wait for the resume and then complete the run from STARTED. Run in between, it would
+        complete the run and the resume would then write STARTED over COMPLETED.
+        """
+        sm = TrainingStateMachine()
+        sm.handle_command(Command.START)
+        sm.handle_command(Command.PAUSE)
+        restore = sm._restore_from_paused
+        in_gap, release = threading.Event(), threading.Event()
+
+        def _held_restore() -> bool:
+            in_gap.set()
+            release.wait(timeout=5.0)
+            return restore()
+
+        sm._restore_from_paused = _held_restore
+        resumed: list = []
+        completed: list = []
+        resumer = threading.Thread(target=lambda: resumed.append(sm.handle_command(Command.RESUME)), daemon=True)
+        completer = threading.Thread(target=lambda: completed.append(sm.mark_completed()), daemon=True)
+        try:
+            resumer.start()
+            assert in_gap.wait(timeout=5.0), "the resume never reached its STARTED write"
+            completer.start()
+            completer.join(timeout=0.5)
+            assert completed == [], "mark_completed ran inside the resume's transition"
+        finally:
+            release.set()
+            resumer.join(timeout=5.0)
+            completer.join(timeout=5.0)
+        assert resumed == [True]
+        assert completed == [True]
+        assert sm.is_completed()
+
+    @pytest.mark.parametrize(
+        "call",
+        [
+            pytest.param(lambda sm: sm.handle_command(Command.PAUSE), id="handle_command"),
+            pytest.param(lambda sm: sm.set_phase(TrainingPhase.CANDIDATE), id="set_phase"),
+            pytest.param(lambda sm: sm.save_candidate_state({"epoch": 1}), id="save_candidate_state"),
+            pytest.param(lambda sm: sm.get_candidate_state(), id="get_candidate_state"),
+            pytest.param(lambda sm: sm.mark_completed(), id="mark_completed"),
+            pytest.param(lambda sm: sm.mark_failed("x"), id="mark_failed"),
+            pytest.param(lambda sm: sm.mark_resume_ready(), id="mark_resume_ready"),
+            pytest.param(lambda sm: sm.mark_investigating(), id="mark_investigating"),
+            pytest.param(lambda sm: sm.mark_replaying(), id="mark_replaying"),
+            pytest.param(lambda sm: sm.get_state_summary(), id="get_state_summary"),
+        ],
+    )
+    def test_every_transition_and_multi_field_read_waits_for_the_lock(self, call):
+        """Every ``@_atomic`` method waits while another thread holds the machine's lock.
+
+        ``mark_failed`` matters as much as ``mark_completed``: a fit that raises while its run is
+        paused settles through it, and a resume held between its PAUSED check and its STARTED write
+        would otherwise strand the run STARTED with no training thread behind it.
+        """
+        sm = TrainingStateMachine()
+        sm.handle_command(Command.START)
+        finished = threading.Event()
+        worker = threading.Thread(target=lambda: (call(sm), finished.set()), daemon=True)
+        with sm._lock:
+            worker.start()
+            assert not finished.wait(timeout=0.2), "ran while another thread held the machine's lock"
+        assert finished.wait(timeout=5.0)
+        worker.join(timeout=5.0)
 
     def test_reset_clears_candidate_state(self):
         """Reset clears saved candidate state."""

@@ -744,7 +744,7 @@ curl -s -X POST http://localhost:8201/v1/training/start \
   -d '{"dataset":{"source":"generator","generator":"spiral","params":{"n":200}},"params":{"learning_rate":0.01}}'
 ```
 
-**State changes** — Transitions the FSM into `Training` and spins up the training loop. Begins emitting `epoch_end` and `state` events to all `/ws/training` subscribers.
+**State changes** — Transitions the FSM into `STARTED` and spins up the training loop. Begins emitting `epoch_end` and `state` events to all `/ws/training` subscribers.
 
 **Returns** — Envelope with the lifecycle's training-start result dict (training id, dataset summary, effective params).
 
@@ -778,7 +778,7 @@ Canopy and other clients should treat Investigating/Replaying 409 bodies as acti
 curl -s -X POST http://localhost:8201/v1/training/stop
 ```
 
-**State changes** — On a successful FSM transition: sets the stop event, moves out of `Training`/`Paused` toward idle, and force-broadcasts training state. When the FSM rejects the stop (`Investigating` / `Replaying`), no `training_state` mutation occurs.
+**State changes** — On a successful FSM transition: sets the stop event, moves the FSM from `STARTED` or `PAUSED` to `STOPPED`, and force-broadcasts training state. When the FSM rejects the stop (`Investigating` / `Replaying`), no `training_state` mutation occurs.
 
 **Returns** — Envelope wrapping `{"status": "stop_requested", "timestamp": <float>}` from lifecycle on success.
 
@@ -786,7 +786,7 @@ curl -s -X POST http://localhost:8201/v1/training/stop
 
 | Code | Trigger |
 |------|---------|
-| 409  | FSM is `Investigating` or `Replaying` (`detail`: `Training cannot be stopped in the current state`) |
+| 409  | FSM is `Investigating` or `Replaying` (`error.message`: `Training cannot be stopped in the current state`) |
 | 503  | Lifecycle unbound |
 
 ---
@@ -795,7 +795,7 @@ curl -s -X POST http://localhost:8201/v1/training/stop
 
 **Summary** — Pause an active training loop.
 
-**Detailed description** — Implemented at `src/api/routes/training.py:83-92`.
+**Detailed description** — Implemented at `src/api/routes/training.py:145-154` → `lifecycle.pause_training()`.
 
 **Syntax / example**:
 
@@ -803,11 +803,15 @@ curl -s -X POST http://localhost:8201/v1/training/stop
 curl -s -X POST http://localhost:8201/v1/training/pause
 ```
 
-**State changes** — FSM transitions `Training → Paused`. Loop coroutine awaits a resume signal; metrics history is preserved.
+**State changes** — FSM transitions `STARTED → PAUSED` (the `state_machine.status` values), and `training_state.status` becomes `Paused`. The pause is cooperative: the training thread waits at its next interrupt checkpoint, which an output-pass `epoch_end` or a grow-iteration `phase_change` event reaches. Metrics history is preserved.
+
+A pause that lands after the fit's last checkpoint cannot hold it. That window covers the rest of the final output pass after its last-epoch callback, the fit's closing `unit_added` / `training_end` events, and the service's post-fit metrics drain, terminal weight capture and final evaluation. The fit returns and the run settles `COMPLETED`, exactly as an unpaused run does: `training_active` is `false`, a following `resume` answers `409`, and a `start` begins a new run. A `pause` sent while the run settles is either settled with it or answered `409`. One whose check passed just before the settle can still answer `200` and leave `training_state.status` reading `Paused` beside a `COMPLETED` FSM until the next `start`; `state_machine.status` is authoritative.
+
+In juniper-cascor 0.10.0 through 0.13.0 such a run stayed `PAUSED` beside a `training_state` of `Completed`, with no training thread behind it. A `start` then answered `409` ("Cannot start training while paused"), a `resume` moved it to `STARTED` (still with no thread), and every later `start` answered `409` ("Training already in progress") until a `stop` or `reset`. Releases 0.3.17 through 0.9.0 also left it `PAUSED`, but accepted a `start` from `PAUSED`, which recovered it; a `resume` there moved it to `STARTED` with no thread, after which every `start` was refused until a `stop` or `reset`.
 
 **Returns** — Envelope with lifecycle pause result.
 
-**Error handling** — `409` if not currently `Training`; `503` if lifecycle unbound.
+**Error handling** — `409` if not currently `STARTED` (`error.message`: `Training cannot be paused in the current state`); `503` if lifecycle unbound.
 
 ---
 
@@ -815,7 +819,7 @@ curl -s -X POST http://localhost:8201/v1/training/pause
 
 **Summary** — Resume from `Paused`.
 
-**Detailed description** — Implemented at `src/api/routes/training.py:95-104`.
+**Detailed description** — Implemented at `src/api/routes/training.py:157-166` → `lifecycle.resume_training()`.
 
 **Syntax / example**:
 
@@ -823,11 +827,11 @@ curl -s -X POST http://localhost:8201/v1/training/pause
 curl -s -X POST http://localhost:8201/v1/training/resume
 ```
 
-**State changes** — FSM `Paused → Training`; loop coroutine continues.
+**State changes** — FSM `PAUSED → STARTED`, restoring the paused phase; the training thread continues from the checkpoint it waited at. A `resume` whose check passed just before a paused run's returned fit settled can still answer `200` and leave `training_state.status` reading `Started` beside a `COMPLETED` FSM, with `training_active` `false`, until the next `start`.
 
 **Returns** — Envelope with lifecycle resume result.
 
-**Error handling** — `409` if not currently `Paused`; `503` if lifecycle unbound.
+**Error handling** — `409` if not currently `PAUSED` (`error.message`: `Training cannot be resumed in the current state`), including after a paused run whose fit had already returned has settled `COMPLETED` (see `POST /v1/training/pause` above); `503` if lifecycle unbound.
 
 ---
 
