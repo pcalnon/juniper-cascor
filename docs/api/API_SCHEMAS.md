@@ -1,7 +1,7 @@
 # Juniper Cascor - API Schemas
 
-**Version**: 0.3.21
-**Last Updated**: 2026-11-09
+**Version**: 0.3.22
+**Last Updated**: 2026-11-12
 **Purpose**: Data schema documentation for serialization and data structures
 
 ---
@@ -486,6 +486,16 @@ carry broadcast `seq` fields.
 
 The server replays buffered broadcast messages with `seq > last_seq` only after
 `resume_ok`. A failed or absent resume falls back to the fresh-connect flow.
+After the replay it sends any broadcast made while the replay was being sent, and
+only then adds the socket to the live stream, so no `seq > last_seq` is skipped;
+`replayed_count` counts the replay snapshot only. A resume that cannot be completed
+that way once `resume_ok` is sent (that send or a later one fails or times out, or the
+replay buffer evicts a message the client still needs) is closed with code `1011`,
+reason `Resume replay incomplete`, rather than continued with a gap; the client should
+reconnect and resume again. A `last_seq` that is not a plain integer (`NaN`,
+`Infinity`, a fraction, a boolean, a string) is answered `malformed_resume`, as is a
+frame whose `data` is not an object, and a `last_seq` above the last `seq` numbered is
+answered `out_of_range`. A negative `last_seq` is read as `0`: the client holds nothing.
 
 ### WebSocket Metrics Back-fill Schema
 
@@ -892,5 +902,5 @@ If verification fails:
 
 ---
 
-**Document Version**: 0.3.21
-**Last Updated**: 2026-11-09
+**Document Version**: 0.3.22
+**Last Updated**: 2026-11-12

@@ -1,6 +1,6 @@
 # Developer Cheatsheet — juniper-cascor
 
-**Version**: 1.0.9  |  **Date**: 2026-11-09  |  **Project**: juniper-cascor
+**Version**: 1.0.10  |  **Date**: 2026-11-12  |  **Project**: juniper-cascor
 
 ---
 
@@ -87,7 +87,7 @@ Metrics nuance:
 - `accuracy` can be `null` for those output-phase callback emissions.
 - **C7:** rows always include nullable `f1`/`precision`/`recall`/`roc_auc` (populated on the terminal `training_step` row per drain). `GET /v1/metrics` also returns an `eval_metrics` metadata block. Toggle with `JUNIPER_CASCOR_EVAL_METRICS_ENABLED` (default on; not Prometheus).
 - `/ws/training` can also emit `candidate_progress` messages (epoch 1, every 50 epochs, final epoch per candidate).
-- Fresh `/ws/training` connects receive `initial_status`, `state`, and `initial_metrics`; resume requests use `{"type":"resume","data":{"last_seq":...,"server_instance_id":...}}` and replay only buffered broadcasts with higher `seq`.
+- Fresh `/ws/training` connects receive `initial_status`, `state`, and `initial_metrics`; resume requests use `{"type":"resume","data":{"last_seq":...,"server_instance_id":...}}` and replay only buffered broadcasts with higher `seq`. Every broadcast is numbered and (unless replay is disabled) buffered, even with no client connected; anything broadcast during the replay follows it before the live stream; a resume that cannot stay gap-free from `resume_ok` on is closed `1011` `Resume replay incomplete`; a `last_seq` that is not a plain integer, or a frame whose `data` is not an object, is answered `malformed_resume`; a `last_seq` above the last `seq` numbered is answered `out_of_range`; a negative one is read as `0`.
 - `/ws/control` rate limiting returns an in-band `command_response` with `status:"rate_limited"` and keeps the socket open; it does not close on normal command throttling.
 - REST `SecurityMiddleware`: auth before rate limit (a 401 does not burn budget); with auth on, budgets are per API key (`key:…`); with auth off + rate limiting on, per IP (`ip:…`); 429 keeps `Retry-After` / `X-RateLimit-*`; health, docs/OpenAPI/ReDoc, and `/metrics` are exempt.
 - `POST /v1/training/start` while the FSM is `Investigating` or `Replaying` returns **409** with the lifecycle reason (not a 500). Exit Investigating via `/v1/snapshots/{id}/retrain` or `/resume`; stop replay via `/v1/snapshots/{id}/replay/control` with `action=stop`.

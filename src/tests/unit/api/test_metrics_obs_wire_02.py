@@ -145,7 +145,7 @@ class TestResumeRequestsAndReplayedEmission:
     def test_helper_increments_each_closed_set_outcome(self):
         from api.observability import ws_inc_resume_requests
 
-        for outcome in ("success", "out_of_range", "malformed_resume", "server_restarted"):
+        for outcome in ("success", "out_of_range", "malformed_resume", "server_restarted", "replay_incomplete"):
             before = self._outcome_value(outcome)
             ws_inc_resume_requests(outcome)
             after = self._outcome_value(outcome)

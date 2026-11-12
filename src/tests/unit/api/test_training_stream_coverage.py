@@ -44,6 +44,8 @@ def _resume_manager(server_instance_id: str = "sid-1") -> MagicMock:
     mgr.server_instance_id = server_instance_id
     mgr.current_seq = 0
     mgr.send_personal_message = AsyncMock(return_value=True)
+    # A successful resume promotes the socket itself, through the catch-up.
+    mgr.promote_to_active = AsyncMock(return_value=True)
     return mgr
 
 
@@ -271,6 +273,8 @@ class TestHandleResumeArms:
         first = ws_manager.send_personal_message.await_args_list[0][0][1]
         assert first["type"] == "resume_ok"
         assert first["data"]["replayed_count"] == len(events)
+        # Then the socket is promoted through the catch-up from the last replayed seq.
+        ws_manager.promote_to_active.assert_awaited_once_with(websocket, replayed_through=7)
 
     @pytest.mark.asyncio
     async def test_success_arm_survives_metric_emission_failure(self):

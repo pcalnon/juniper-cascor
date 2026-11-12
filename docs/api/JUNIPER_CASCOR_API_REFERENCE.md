@@ -173,7 +173,7 @@ The global handlers in `src/api/app.py:480-494` produce:
 | Code | Meaning                                                                                                                                                                                             |
 |------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | 1000 | Normal closure                                                                                                                                                                                      |
-| 1011 | Heartbeat timeout — the client sent no pong (nor any other frame) within the pong window. Reason text: `Heartbeat timeout: no pong or traffic within <N>s`                                          |
+| 1011 | Server-side error close; the reason names the cause. On `/ws/training` and `/ws/control`, heartbeat timeout — the client sent no pong (nor any other frame) within the pong window, reason `Heartbeat timeout: no pong or traffic within <N>s`. On `/ws/training` also `Broadcast send failed or timed out` and `Resume replay incomplete` |
 | 1006 | Abnormal closure — reported client-side only when the connection dies without a close frame (RFC 6455 §7.4.1 forbids sending 1006 on the wire; pre-C3 heartbeat closes attempted it and never delivered a close frame) |
 | 1013 | WebSocket admission cap exceeded                                                                                                                                                                    |
 | 4001 | Authentication required / `X-API-Key` invalid                                                                                                                                                       |
@@ -1617,13 +1617,32 @@ Resume responses:
 
 | Type | Data | Meaning |
 |------|------|---------|
-| `resume_ok` | `{"replayed_count": <int>}` | Replay succeeded; buffered events follow as personal messages. |
-| `resume_failed` | `{"reason": "malformed_resume"}` | Frame omitted `data.last_seq` or `data.server_instance_id`. |
+| `resume_ok` | `{"replayed_count": <int>}` | Replay accepted. The `replayed_count` buffered events follow as personal messages, then any broadcast made while they were being sent, and only then does the socket join the live stream: no `seq` after `last_seq` is skipped. If that cannot be kept, the socket is closed with `1011` instead (see below). |
+| `resume_failed` | `{"reason": "malformed_resume"}` | `data` is missing or not an object, it omits `last_seq` or `server_instance_id`, or `last_seq` is not a plain integer (`NaN`, `Infinity`, a fraction, a boolean, a string). |
 | `resume_failed` | `{"reason": "server_restarted"}` | Client's `server_instance_id` did not match this process. |
-| `resume_failed` | `{"reason": "out_of_range"}` | `last_seq` is older than the retained replay buffer or replay is disabled. |
+| `resume_failed` | `{"reason": "out_of_range"}` | `last_seq` is older than the retained replay buffer, above the last `seq` numbered, or replay is disabled. A negative `last_seq` is read as `0` (the client holds nothing) before this check. |
 
 If no resume frame arrives within the handshake timeout, or a non-resume/non-JSON
-frame arrives during that window, the connection proceeds as a fresh connect.
+frame arrives during that window, the connection proceeds as a fresh connect. A frame
+the server's JSON parser refuses counts as non-JSON; that includes one holding an
+integer longer than CPython's default limit of 4,300 digits.
+
+What a `resume_ok` guarantees: every buffered `seq` after `last_seq` is sent once,
+in `seq` order -- the `replayed_count` snapshot, then whatever was broadcast while it
+was being sent -- before the socket joins the live stream. After that it receives
+broadcasts as any other connected client does. `replayed_count` counts the snapshot
+only. If the server cannot keep that from `resume_ok` on -- a send fails or times
+out, `resume_ok`'s own included, or the replay buffer evicts a message the client
+still needs before it can be sent -- it closes the socket with `1011`, reason
+`Resume replay incomplete`, instead of carrying on with a gap. Reconnect and resume
+again (a `resume_failed` `out_of_range` then means the gap has left the buffer: start
+from a fresh snapshot). Such a resume is counted as `replay_incomplete` in
+`cascor_ws_resume_requests_total{outcome}`, not as `success`. (Before this was fixed,
+a broadcast made while no client was active was never numbered, so a resumed stream
+could miss it with no sign at all, and one made during the replay was numbered but
+never sent to the resuming socket, which saw only a hole in `seq`. juniper-ml's
+`notes/JUNIPER_2026-11-06_JUNIPER-ECOSYSTEM_CURSOR-FLOOD-4-DISPOSITION.md`, §8,
+ruling 11, records both.)
 
 **Other client→server messages**:
 
@@ -1658,7 +1677,10 @@ initial burst is disabled).
 | `ping`                   | Heartbeat ping every 30 s by default      |
 
 Broadcast messages get a monotonic `seq` and `emitted_at_monotonic` before
-fan-out and replay buffering. Personal messages (`connection_established`,
+fan-out and replay buffering. Every broadcast is numbered, and buffered unless replay is disabled, including
+one made while no client is connected or while the only client is still in its
+resume handshake, so a resume replays it (or answers `out_of_range` once it has
+left the buffer). Personal messages (`connection_established`,
 `initial_status`, `initial_metrics`, `resume_ok`, `resume_failed`) do not get a
 `seq`; `initial_metrics.data.current_seq` tells the client which broadcast
 sequence is current at the time of the back-fill.
@@ -1699,7 +1721,8 @@ websocat -H "X-API-Key: $API_KEY" ws://localhost:8201/ws/training
 | 1013 | Manager, stack-global, or per-IP cap hit  |
 | 4001 | Auth failure                              |
 | 1013 | Global or per-IP connection cap reached  |
-| 1006 | Heartbeat pong timeout, message too large |
+| 1006 | Abnormal closure, reported client-side only: the connection died without a close frame (the server never sends 1006; see the common close codes) |
+| 1011 | Server-side close; the reason names the cause: `Resume replay incomplete` (a resume could not be completed without a gap once `resume_ok` was sent or attempted: reconnect and resume again), `Heartbeat timeout: no pong or traffic within <N>s`, or `Broadcast send failed or timed out` |
 | 1000 | Normal close                              |
 
 ---

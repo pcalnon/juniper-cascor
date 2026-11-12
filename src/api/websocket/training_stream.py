@@ -3,8 +3,15 @@
 Server-to-client streaming endpoint with optional resume support. On connect:
 1. connection_established message (from manager.connect_pending)
 2. Optional resume handshake: client sends ``resume`` frame within timeout
-3. If resume succeeds: replayed events + promote to active
-4. If fresh connect: initial_status + state + promote to active
+3. If resume succeeds: ``resume_ok``, the replayed events, then whatever was
+   broadcast while they were being sent, then promote to active -- no seq
+   after the client's ``last_seq`` is skipped. A resume that cannot be kept
+   gap-free from ``resume_ok`` on (a send fails, ``resume_ok``'s own
+   included, or the replay buffer evicts a message the client still needs)
+   is closed with 1011 ``"Resume replay incomplete"`` instead; the client
+   should reconnect and resume again.
+4. If fresh connect (or a failed resume): promote to active, then
+   initial_status + state + initial_metrics
 5. Ongoing metrics/state/topology broadcasts during training
 
 Phase F / C3: Application-level heartbeat — the explicit contract:
@@ -35,6 +42,7 @@ import asyncio
 import json
 import logging
 import time
+from typing import NoReturn
 
 from fastapi import WebSocket, WebSocketDisconnect
 from fastapi.websockets import WebSocketState
@@ -43,6 +51,16 @@ from api.websocket.manager import ReplayOutOfRange, ws_authenticate
 from api.websocket.messages import create_initial_metrics_message, create_state_message
 
 logger = logging.getLogger("juniper_cascor.api.websocket.training")
+
+# The close for a resume whose continuity could not be kept once ``resume_ok``
+# was sent or attempted: a send failed (``resume_ok``'s own included), or the
+# replay buffer evicted a message the client still needed before it could be
+# sent. 1011, as for this endpoint's heartbeat-timeout and dropped-subscriber
+# closes; only the reason tells them apart. The client should reconnect and
+# resume again; if the gap has left the buffer by then, it is answered
+# ``resume_failed`` ``out_of_range`` and should start from a fresh snapshot.
+RESUME_INCOMPLETE_CLOSE_CODE = 1011
+RESUME_INCOMPLETE_CLOSE_REASON = "Resume replay incomplete"
 
 
 def _numeric_setting(obj, name: str, fallback):
@@ -258,10 +276,13 @@ async def training_stream_handler(websocket: WebSocket) -> None:
     1. Authenticate via API key header
     2. Accept as pending (connect_pending — not broadcast-eligible)
     3. Wait for optional 'resume' frame within handshake timeout
-    4. On resume: validate server_instance_id, replay buffered events
-    5. On fresh connect / failed resume: send initial_status + state
-    6. Promote to active (now receives broadcasts)
-    7. Keep-alive recv loop
+    4. On resume: validate server_instance_id, replay buffered events, send
+       whatever was broadcast meanwhile, and promote to active
+       (``_handle_resume``) -- or close 1011 and return when that cannot be
+       kept gap-free
+    5. On fresh connect / failed resume: promote to active (now receives
+       broadcasts), then send initial_status + state
+    6. Keep-alive recv loop
     """
     if not await ws_authenticate(websocket):
         return
@@ -286,8 +307,11 @@ async def training_stream_handler(websocket: WebSocket) -> None:
         if disconnected:
             return
 
-        # Promote to active (now eligible for broadcasts)
-        await ws_manager.promote_to_active(websocket)
+        if not resumed:
+            # Promote to active (now eligible for broadcasts). A resumed
+            # socket is active already: _handle_resume promoted it once its
+            # replay, and anything broadcast meanwhile, had been sent.
+            await ws_manager.promote_to_active(websocket)
         # OBS-WIRE-02 (Q3): record this connection in the per-endpoint
         # bookkeeping bucket and re-emit
         # ``cascor_ws_connections_active{endpoint="training"}``. The
@@ -336,19 +360,82 @@ async def training_stream_handler(websocket: WebSocket) -> None:
         await ws_manager.disconnect(websocket)
 
 
+def _is_seq_cursor(value: object) -> bool:
+    """True for a plain ``int`` -- the only type a ``seq`` this server sends has (``bool`` excluded)."""
+    return isinstance(value, int) and not isinstance(value, bool)
+
+
+def _resume_cursor(msg: dict) -> tuple:
+    """``(last_seq, server_instance_id)`` as a resume frame gives them; ``(None, None)`` when it gives neither.
+
+    A ``data`` that is missing, null, or a list, string or number holds no
+    cursor. Read as it came, a ``data`` that is not an object raises at
+    ``data.get``, and the handshake's broad ``except`` reads that as "no
+    resume frame": a fresh connect, no ``resume_failed``, nothing counted.
+    """
+    data = msg.get("data")
+    if not isinstance(data, dict):
+        return None, None
+    return data.get("last_seq"), data.get("server_instance_id")
+
+
+async def _abort_resume(websocket: WebSocket, why: str) -> NoReturn:
+    """End a resume whose continuity can no longer be kept: close the socket, report a disconnect.
+
+    ``resume_ok`` has already been sent (or its send failed), so a
+    ``resume_failed`` would contradict it; the close is the signal left. The
+    close is awaited before the handler returns, rather than left running, so
+    the handler does not return while the close frame may still be waiting to
+    go out. Raising ``WebSocketDisconnect`` takes the handler down its
+    disconnected path (``_await_resume_frame`` returns ``disconnected``), so
+    the socket is never promoted and the handler's ``finally`` releases its
+    connection slots.
+    """
+    logger.warning(
+        "Training WS: resume aborted at or after resume_ok (%s); closing with %d so the client can reconnect",
+        why,
+        RESUME_INCOMPLETE_CLOSE_CODE,
+    )
+    try:
+        await websocket.close(code=RESUME_INCOMPLETE_CLOSE_CODE, reason=RESUME_INCOMPLETE_CLOSE_REASON)
+    except Exception:
+        logger.debug("Training WS: close after an incomplete resume failed", exc_info=True)
+    raise WebSocketDisconnect(code=RESUME_INCOMPLETE_CLOSE_CODE, reason=RESUME_INCOMPLETE_CLOSE_REASON)
+
+
 async def _handle_resume(
     websocket: WebSocket,
     ws_manager,
     msg: dict,
 ) -> bool:
-    """Handle a resume request. Returns True if resume succeeded."""
-    data = msg.get("data", {})
-    last_seq = data.get("last_seq")
-    client_server_id = data.get("server_instance_id")
+    """Handle a resume request. Returns True if resume succeeded.
+
+    On success the socket is already active. Every buffered seq after the
+    client's ``last_seq`` has been sent to it once, in seq order: first the
+    snapshot that ``resume_ok``'s ``replayed_count`` counts, then whatever was
+    broadcast while that was being sent (``promote_to_active``'s catch-up).
+    Later broadcasts reach it through the normal fan-out. If that cannot be
+    kept from ``resume_ok`` on -- a send fails, ``resume_ok``'s own included,
+    or the replay buffer evicts a message the client still needs -- the
+    socket is closed with :data:`RESUME_INCOMPLETE_CLOSE_CODE` and
+    ``WebSocketDisconnect`` is raised instead (:func:`_abort_resume`).
+
+    A ``last_seq`` that is not a plain integer (``NaN``, ``Infinity``, a
+    fraction, a boolean, a string) is answered ``resume_failed``
+    ``malformed_resume``, and one above the last seq numbered
+    ``out_of_range`` (:meth:`WebSocketManager.replay_since`): no seq this
+    server sent can be either, so a ``resume_ok`` would vouch for nothing.
+    A frame whose ``data`` is not an object carries no cursor at all and is
+    ``malformed_resume`` too. A negative ``last_seq`` is read as ``0``: seqs
+    start at 1, so it holds no more than ``0`` does, and the answer then
+    depends on the value, not on what the buffer happens to hold.
+    """
+    last_seq, client_server_id = _resume_cursor(msg)
 
     # OBS-WIRE-02 (3.4, 3.5): the four return arms of this function
-    # populate ``cascor_ws_resume_requests_total{outcome=...}``; the
-    # success arm additionally observes
+    # populate ``cascor_ws_resume_requests_total{outcome=...}``, and a
+    # resume aborted after ``resume_ok`` counts as ``replay_incomplete``;
+    # the success arm additionally observes
     # ``cascor_ws_resume_replayed_events`` with the count replayed.
     # All emissions are wrapped in defensive try/except per OBS-WIRE-01.
     def _emit_outcome(outcome: str) -> None:
@@ -359,7 +446,14 @@ async def _handle_resume(
         except Exception:
             logger.debug("ws_inc_resume_requests emission failed for outcome=%s", outcome, exc_info=True)
 
-    if last_seq is None or client_server_id is None:
+    async def _abort(why: str) -> NoReturn:
+        _emit_outcome("replay_incomplete")
+        await _abort_resume(websocket, why)
+
+    # ``json.loads`` accepts ``NaN`` and ``Infinity``, and Python counts a bool
+    # as an int: a cursor that is not a plain integer is malformed, as a
+    # missing one is.
+    if client_server_id is None or not _is_seq_cursor(last_seq):
         await ws_manager.send_personal_message(
             websocket,
             {
@@ -368,7 +462,7 @@ async def _handle_resume(
                 "data": {"reason": "malformed_resume"},
             },
         )
-        logger.debug("Resume failed: malformed resume frame (missing last_seq or server_instance_id)")
+        logger.debug("Resume failed: malformed resume frame (data is not an object, server_instance_id is missing, or last_seq is missing or not an integer)")
         _emit_outcome("malformed_resume")
         return False
 
@@ -387,7 +481,11 @@ async def _handle_resume(
         return False
 
     try:
-        events = ws_manager.replay_since(last_seq)
+        # A cursor below 0 holds no more than 0 does (seqs start at 1), so it
+        # is read as 0, as promote_to_active's catch-up reads it. Unclamped,
+        # replay_since answers it by buffer state: [] on an empty buffer, out
+        # of range once anything is buffered, seq 1 included.
+        events = ws_manager.replay_since(max(last_seq, 0))
     except ReplayOutOfRange as e:
         await ws_manager.send_personal_message(
             websocket,
@@ -402,18 +500,30 @@ async def _handle_resume(
         return False
 
     # Resume succeeded
-    await ws_manager.send_personal_message(
+    if not await ws_manager.send_personal_message(
         websocket,
         {
             "type": "resume_ok",
             "timestamp": time.time(),
             "data": {"replayed_count": len(events)},
         },
-    )
+    ):
+        await _abort("resume_ok was not delivered")
 
-    # Replay buffered events
+    # Replay buffered events. A frame that fails to send would leave a hole
+    # the client cannot see, so the resume ends there instead of skipping it.
+    # ``replayed_through`` is the last seq the client now holds.
+    replayed_through = last_seq
     for event in events:
-        await ws_manager.send_personal_message(websocket, event)
+        if not await ws_manager.send_personal_message(websocket, event):
+            await _abort(f"replayed seq {event.get('seq')} was not delivered")
+        replayed_through = event["seq"]
+
+    # A broadcast made while the replay was being sent is numbered and
+    # buffered, but its fan-out reached only the sockets already active. The
+    # manager sends those, then activates the socket with no gap.
+    if not await ws_manager.promote_to_active(websocket, replayed_through=replayed_through):
+        await _abort("the catch-up after the replay did not complete")
 
     logger.info("Resume succeeded: replayed %d events from seq %d", len(events), last_seq)
     _emit_outcome("success")

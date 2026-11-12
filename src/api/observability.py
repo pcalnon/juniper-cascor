@@ -451,17 +451,24 @@ _WS_ENDPOINTS: frozenset[str] = frozenset(
 # OBS-WIRE-02 (3.4): closed-set outcome values for the
 # ``cascor_ws_resume_requests_total{outcome}`` counter. Mirrors the four
 # return arms of ``training_stream._handle_resume`` — see
-# state-analysis doc ``A9_AND_3_2_STATE_ANALYSIS_2026-05-03.md`` §3.4.
+# state-analysis doc ``A9_AND_3_2_STATE_ANALYSIS_2026-05-03.md`` §3.4 —
+# plus ``replay_incomplete``: a resume that could not be completed gap-free
+# once ``resume_ok`` was sent or attempted, so the socket was closed 1011
+# instead of being promoted. juniper-ml's
+# ``notes/JUNIPER_2026-11-06_JUNIPER-ECOSYSTEM_CURSOR-FLOOD-4-DISPOSITION.md``,
+# §8, ruling 11, records the resume losses this closes.
 WS_RESUME_OUTCOME_SUCCESS: str = "success"
 WS_RESUME_OUTCOME_OUT_OF_RANGE: str = "out_of_range"
 WS_RESUME_OUTCOME_MALFORMED: str = "malformed_resume"
 WS_RESUME_OUTCOME_SERVER_RESTARTED: str = "server_restarted"
+WS_RESUME_OUTCOME_REPLAY_INCOMPLETE: str = "replay_incomplete"
 _WS_RESUME_OUTCOMES: frozenset[str] = frozenset(
     {
         WS_RESUME_OUTCOME_SUCCESS,
         WS_RESUME_OUTCOME_OUT_OF_RANGE,
         WS_RESUME_OUTCOME_MALFORMED,
         WS_RESUME_OUTCOME_SERVER_RESTARTED,
+        WS_RESUME_OUTCOME_REPLAY_INCOMPLETE,
     }
 )
 
@@ -663,7 +670,7 @@ def ws_inc_resume_requests(outcome: str) -> None:
 
     OBS-WIRE-02 (3.4): ``outcome`` is closed-set — one of
     ``success`` / ``out_of_range`` / ``malformed_resume`` /
-    ``server_restarted``. Drift is rejected at the helper boundary so
+    ``server_restarted`` / ``replay_incomplete``. Drift is rejected at the helper boundary so
     instrumentation regressions surface as test failures rather than
     high-cardinality silent drift (R1.1).
     """
