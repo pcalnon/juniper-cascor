@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **API addition: `WebSocketManager.promote_to_active(websocket, *, replayed_through=None) -> bool`.** The
+  keyword-only `replayed_through` argument and the `bool` return value are new (the method returned `None`).
+  - **Without `replayed_through`** the promotion is unconditional, as it always was, and returns `True`. Existing
+    callers, including the fresh-connect path, are unaffected.
+  - **With it** (the `/ws/training` resume path passes the last seq the client now holds), a pending socket is
+    first sent every buffered message numbered after that seq, in seq order, repeating until a check under the
+    manager's lock finds none, and is activated with no `await` between that check and the activation. It returns
+    `False`, and leaves the socket out of the broadcast set, when continuity cannot be kept: the replay buffer
+    evicted a message the socket still needed, replay is disabled, `replayed_through` is above the last seq
+    numbered, a send failed, or the socket was disconnected meanwhile. The caller should then close the socket. A
+    socket that is already active is left alone: nothing is sent, and it returns `True`.
+- **`api.websocket.training_stream.RESUME_INCOMPLETE_CLOSE_CODE` (`1011`) and `RESUME_INCOMPLETE_CLOSE_REASON`
+  (`"Resume replay incomplete"`)**, the close a `/ws/training` client now receives when a resume cannot be completed
+  without a gap once `resume_ok` was sent or attempted (see Fixed).
+- **`replay_incomplete`, a fifth `outcome` of `cascor_ws_resume_requests_total`**
+  (`api.observability.WS_RESUME_OUTCOME_REPLAY_INCOMPLETE`), counting those closes. `success` is now counted only
+  once the resumed socket is active; such a resume used to count as `success`. `cascor_ws_resume_replayed_events`
+  is likewise observed only for a completed resume, and still counts the replay snapshot only.
+
 ### Changed
 
 - **`agents-md-touch-up.yml` pins `actions/checkout` to a commit SHA (owner ruling 2026-11-03).** It checked out with
@@ -80,6 +101,70 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **The new wording.** The comment cites the survey's `Bandit` half, which can see a masked failure on a PR: 101 of 101 PR heads whose upload ran carry the check. It says the step count proves less. The docstring says the same, including that its RESULT line's "no upload step failed" is blind to a masked failure. No code changed.
   - **History.** The 2026-10-29 entry below keeps its "165 of 165" as written.
   - **Where it was found.** juniper-ml's flood-3 record, `notes/JUNIPER_2026-10-08_JUNIPER-ECOSYSTEM_CURSOR-FLOOD-3-DISPOSITION.md`, §4 and §6. Owner ruling of 2026-11-01.
+
+- **A `/ws/training` client that resumes no longer misses broadcasts behind a `resume_ok`.** These are cascor's own
+  copies of two defects that juniper-ml's shared `juniper-service-core` also had: juniper-ml#2534 fixed them on
+  juniper-ml's `main` on 2026-11-09. juniper-service-core 0.7.2, the latest on PyPI on 2026-11-12, was published
+  before that fix and still has both.
+  - **Broadcasts made while no client was active were never numbered.** `WebSocketManager.broadcast` returned before
+    assigning a seq when no socket was active (`src/api/websocket/manager.py:829-830` before this change). So a
+    broadcast made while nobody was connected, or while the only client was still in its resume handshake, got no
+    seq and no replay-buffer slot. A client resuming from its last seq was answered `resume_ok` with nothing
+    replayed, over a gap it could not see. Every broadcast is now numbered, and buffered unless replay is disabled;
+    with no client active the fan-out is simply empty.
+  - **Broadcasts made during the replay were lost.** `_handle_resume` sent its replay snapshot
+    (`src/api/websocket/training_stream.py:390-416` before this change), and the handler promoted the socket only
+    afterwards (`:290`). A broadcast made while the replay was going out was numbered and buffered, but its fan-out
+    reached only the sockets already active, so it reached the resuming socket by neither path: a client resuming
+    from seq 2 received 3, 4, 5 and 7, never 6, and saw only that hole in `seq`. `_handle_resume` now promotes the
+    socket itself, through `promote_to_active(websocket, replayed_through=<last replayed seq>)` (see Added), which
+    sends what was broadcast meanwhile before the socket joins the broadcast set.
+  - **A resume that cannot be kept gap-free is closed.** From `resume_ok` on, a send that fails or times out
+    (`resume_ok`'s own included), or a replay buffer that evicts a message the client still needs before it can be
+    sent, ends the resume: the socket is closed with `1011`, reason `Resume replay incomplete`, and never promoted.
+    The client should reconnect and resume again, and is then replayed the rest, or answered `resume_failed`
+    `out_of_range` and starts from a fresh snapshot. Such a resume used to carry on past the hole.
+  - **A cursor that matches no seq this server sent is refused.** `json.loads` accepts `NaN` and `Infinity`, and
+    Python counts a bool as an int, so a `last_seq` of `NaN`, `Infinity`, `2.5` or `true` was answered `resume_ok`,
+    as was one above the last seq numbered; for `NaN`, `Infinity` and a cursor above the last seq nothing was
+    replayed, yet the client was told its resume had succeeded. A `last_seq` that is not a plain integer is now
+    answered `resume_failed` `malformed_resume`, and `WebSocketManager.replay_since` refuses a cursor above the last
+    seq numbered with `ReplayOutOfRange`, which the resume answers `out_of_range`.
+  - **Two more resume frames are answered by what they say.** A frame whose `data` is not an object (`null`, a
+    list, a string, a number) got no resume reply at all: reading it raised inside the handshake, which went on as a
+    fresh connect, with no `resume_failed` and no outcome counted. It is now answered `malformed_resume`. A negative
+    `last_seq` was answered by the state of the buffer: `resume_ok` with nothing buffered, `out_of_range` once
+    anything was, even with seq 1 still buffered, where a `last_seq` of `0` got a full replay. It is now read as `0`,
+    the cursor of a client that holds nothing, in the handshake and in the catch-up alike.
+  - **What a `resume_ok` now guarantees, and what it does not.** Every buffered seq after the client's `last_seq`
+    is sent once, in seq order, before the socket joins the live fan-out; after that it receives broadcasts as any
+    other active socket does. `replayed_count` still counts the replay snapshot only, not the catch-up. The catch-up
+    has no bound of its own: while broadcasts keep pace with its sends it keeps sending, in order, and the socket
+    stays pending, with no heartbeat or receive loop, until it catches up.
+  - **Side effects.** With no client connected, each broadcast now pays the serialization check, the chunking size
+    check and a replay-buffer slot. The buffer holds at most `ws_replay_buffer_size` messages (default 1,024), each
+    about `ws_max_message_size_bytes` (default 60,000) or less, since a larger message is buffered as chunks; that
+    is the bound it already had while any client was connected.
+    An unserializable message is now refused, logged at ERROR and counted (the F-CASCOR-004 refusal) with no client
+    connected too; the early return used to drop it silently. A broadcast send that fails still drops and closes
+    that subscriber (F-CASCOR-004), unchanged.
+  - **Measured locally** on Python 3.14.7, against `main` at `9f632ea`, with at most 4 xdist workers on a host shared
+    with other test runs.
+    - Of the 96 tests in the new `src/tests/unit/api/test_websocket_resume_continuity.py`, 87 fail against `main`'s
+      sources, and all 96 pass with the fix.
+    - Fourteen mutants, each breaking one guard, are all caught, each by a test written for it. Among them: activating
+      the socket in a second lock section after the final check, a range check on the first catch-up pass only, no
+      catch-up when nothing was replayed, a cursor check that lets `NaN` or a bool through, and a handler that promotes
+      a resumed socket a second time.
+    - A 20,000-seed sweep of random resume interleavings on in-memory sockets, with injected send failures, found no
+      hole, duplicate or reordering. Against `main`'s code the same sweep finds a violation in 1,282 of 2,000 seeds.
+    - The 96 tests ran 300 times each over 4 xdist workers: 28,800 passed, none failed. They set send and handshake
+      timeouts far above any wait, except the two that test the send timeout, which block a send forever.
+    - CI's unit selection passes 5,991 tests, 96 more than on `main`. Both runs share one failure, an
+      environment-only version check (this host's editable install reports 0.11.0).
+  - **Where it was found.** While juniper-service-core's copies were being fixed (juniper-ml#2534). juniper-ml's
+    flood-4 record, `notes/JUNIPER_2026-11-06_JUNIPER-ECOSYSTEM_CURSOR-FLOOD-4-DISPOSITION.md`, §8, ruling 11, records
+    it, with the owner's ruling: "Fix all four now".
 
 - **The nightly performance smoke runs on pytest 9.2 again: its `pytest<9.2` cap is gone.** pytest-benchmark 5.3.1 (PyPI 2026-11-01) reads pytest's public `nodeid` instead of the private `_nodeid` that pytest 9.2.0 removed, and its changelog calls that pytest 9.2 support. So `scheduled-tests.yml`'s `performance-smoke` job no longer downgrades pytest after installing the project. It still prints the pytest and pytest-benchmark versions it got.
   - **Measured locally** on Python 3.14.7, in fresh venvs, with a one-test file that takes the `benchmark` fixture. Under pytest 9.2.0, pytest-benchmark 5.3.0 errors at setup with the `AttributeError` that run 40970853599 logged, and 5.3.1 passes, both timed and under `--benchmark-disable`.

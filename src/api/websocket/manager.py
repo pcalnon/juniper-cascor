@@ -2,8 +2,13 @@
 
 Thread-safe manager that handles:
 - Connection lifecycle (connect/disconnect/pending)
-- Monotonically increasing sequence numbers on broadcasts
-- Replay buffer for client reconnection
+- Monotonically increasing sequence numbers on every broadcast, whether or
+  not a client is connected, so a broadcast a client missed leaves a gap in
+  the numbering it sees
+- Replay buffer for client reconnection, and a resume promotion
+  (``promote_to_active(..., replayed_through=...)``) that sends what was
+  broadcast while the replay was going out before the socket joins the
+  broadcast set
 - Thread-safe bridge for broadcasting from training threads
 - Configurable send timeout to prevent slow-client fan-out blocking
 - Bounded connection limit
@@ -464,7 +469,9 @@ class WebSocketManager:
 
         Used during the resume handshake window (D-14). The connection
         receives connection_established but does NOT receive broadcasts
-        until promote_to_active() is called.
+        until promote_to_active() is called. Broadcasts made meanwhile are
+        still numbered (and buffered, unless replay is disabled), so a resume
+        can replay them.
 
         Returns:
             True if accepted, False if connection limit reached.
@@ -507,21 +514,116 @@ class WebSocketManager:
         await self._send_json(websocket, self._build_connection_established())
         return True
 
-    async def promote_to_active(self, websocket: WebSocket) -> None:
+    async def promote_to_active(self, websocket: WebSocket, *, replayed_through: Optional[int] = None) -> bool:
         """Move a pending connection to active (broadcast-eligible).
 
         Must be called after the resume handshake completes (D-14).
+
+        Without ``replayed_through`` the promotion is unconditional, as it
+        always was; the fresh-connect path uses that form.
+
+        A socket that resumed passes ``replayed_through``: the last seq it
+        now holds (the last replayed seq, or its own ``last_seq`` when
+        nothing was replayed). A broadcast made while the replay was being
+        sent is numbered and buffered, but its fan-out reaches only the
+        sockets already active. So this first sends every buffered message
+        numbered above ``replayed_through``, in seq order and through
+        :meth:`send_personal_message` (the replay's own send path), and
+        repeats until a check under ``self._lock`` finds none left. That
+        final check and the activation run with no ``await`` between them,
+        and :meth:`broadcast` copies the active set with no ``await`` after
+        numbering a message, so a broadcast numbered after the check has the
+        socket in its fan-out. No seq above ``replayed_through`` is skipped,
+        and every message sent here goes out before the socket joins the
+        broadcast set. From then on it receives broadcasts as any other
+        active socket does.
+
+        Args:
+            websocket: The pending connection to promote.
+            replayed_through: Keyword-only. The last seq the resuming client
+                holds. ``None`` (the default) promotes unconditionally.
+
+        Returns:
+            ``True`` once the socket is active. ``False`` when
+            ``replayed_through`` was given and continuity cannot be kept:
+            the replay buffer evicted a message the socket still needed
+            before it could be sent, replay is disabled, ``replayed_through``
+            is above the last seq numbered, a send failed, or the socket was
+            disconnected meanwhile. The socket is then left out of the
+            broadcast set, and the caller should close it so the client can
+            reconnect. Before ``replayed_through`` was added this method
+            returned ``None``.
         """
-        async with self._lock:
-            self._pending_connections.discard(websocket)
-            self._active_connections.add(websocket)
-            meta = self._connection_meta.get(websocket, {})
-            meta.pop("pending", None)
-            logger.info(
-                "WebSocket promoted to active (%d active, %d pending)",
-                self.connection_count,
-                len(self._pending_connections),
-            )
+        if replayed_through is None:
+            async with self._lock:
+                self._activate(websocket)
+            return True
+        return await self._catch_up_and_activate(websocket, replayed_through)
+
+    def _activate(self, websocket: WebSocket) -> None:
+        """Move ``websocket`` from pending to active. Call with ``self._lock`` held.
+
+        Synchronous on purpose: :meth:`_catch_up_and_activate` relies on
+        nothing else running on the event loop between its final check and
+        this.
+        """
+        self._pending_connections.discard(websocket)
+        self._active_connections.add(websocket)
+        meta = self._connection_meta.get(websocket, {})
+        meta.pop("pending", None)
+        logger.info(
+            "WebSocket promoted to active (%d active, %d pending)",
+            self.connection_count,
+            len(self._pending_connections),
+        )
+
+    async def _catch_up_and_activate(self, websocket: WebSocket, replayed_through: int) -> bool:
+        """Send every buffered message above ``replayed_through``, then activate.
+
+        See :meth:`promote_to_active`. Each pass reads :meth:`replay_since`
+        under ``self._lock``: a non-empty answer is sent outside the lock and
+        the check repeats; an empty one is acted on -- the socket activated
+        -- before anything else can run on the loop. Every pass, its first
+        included, runs :meth:`replay_since`'s range check, so an eviction
+        during any pass's sends is caught by the next one.
+
+        The loop ends when a pass finds nothing left to send, a send fails,
+        the socket leaves the pending set, or the buffer has evicted a seq
+        not yet sent. It has no other bound. Every pass that does not return
+        sends at least one message, so the cursor advances, but the newest
+        seq can advance as fast: while broadcasts keep pace with the sends
+        (each pass sending what was numbered during the one before), the
+        loop keeps sending, in order and without loss, and the socket stays
+        pending meanwhile -- outside the broadcast set and
+        ``connection_count`` -- with no heartbeat or receive loop running
+        for it.
+        """
+        # Seqs start at 1, so a cursor below 0 holds no more than 0 does;
+        # replay_since would read a negative one as older than the buffer
+        # and refuse a continuous resume.
+        cursor = max(replayed_through, 0)
+        while True:
+            async with self._lock:
+                if websocket not in self._pending_connections:
+                    # Already active: it receives every broadcast, nothing to
+                    # catch up. Neither pending nor active: disconnected or
+                    # closed meanwhile -- never resurrect it.
+                    return websocket in self._active_connections
+                try:
+                    missed = self.replay_since(cursor)
+                except ReplayOutOfRange as exc:
+                    logger.warning("Resume catch-up from seq %s failed: %s; the socket is not promoted", cursor, exc)
+                    return False
+                if not missed:
+                    # No await between this check and the activation: a
+                    # broadcast numbered after the check fans out to the socket.
+                    self._activate(websocket)
+                    return True
+            for event in missed:
+                if not await self.send_personal_message(websocket, event):
+                    logger.warning("Resume catch-up failed: seq %s was not sent; the socket is not promoted", event.get("seq"))
+                    return False
+                cursor = event["seq"]
 
     async def disconnect(self, websocket: WebSocket) -> None:
         """Remove a WebSocket connection (from active or pending)."""
@@ -646,7 +748,9 @@ class WebSocketManager:
 
         Raises:
             ReplayOutOfRange: If last_seq is older than the oldest buffered
-                message, or if the replay buffer is disabled (size 0).
+                message, if it is above the last seq numbered (no client can
+                hold such a seq, so nothing can vouch for its continuity), or
+                if the replay buffer is disabled (size 0).
         """
         with self._seq_lock:
             if self._replay_buffer_max_size <= 0:
@@ -658,6 +762,9 @@ class WebSocketManager:
             oldest_seq = self._replay_buffer[0].get("seq", 0)
             if last_seq < oldest_seq - 1:
                 raise ReplayOutOfRange(f"Requested seq {last_seq} older than oldest buffered seq {oldest_seq}")
+            newest_seq = self._next_seq - 1
+            if last_seq > newest_seq:
+                raise ReplayOutOfRange(f"Requested seq {last_seq} is above the last seq numbered, {newest_seq}")
             # PERF-CC-02: replay buffer seqs are monotonically increasing
             # (assigned by _assign_seq_and_buffer under _seq_lock), so a
             # bisect_right gets us O(log n) instead of an O(n) linear scan.
@@ -810,7 +917,22 @@ class WebSocketManager:
     # ------------------------------------------------------------------
 
     async def broadcast(self, message: dict) -> None:
-        """Assign seq and send a message to all active (non-pending) clients.
+        """Assign seq, buffer for replay, and send a message to all active (non-pending) clients.
+
+        Every broadcast is numbered, and buffered unless replay is disabled,
+        whether or not any client is active; with none, the fan-out is simply
+        empty. A client that resumes from its last seq is then replayed what
+        was broadcast while it was away or still pending its handshake -- or
+        answered ``resume_failed`` ``out_of_range`` once that has left the
+        buffer -- rather than ``resume_ok`` over a gap it cannot see. (This
+        method used to return before numbering when no client was active;
+        juniper-ml's
+        ``notes/JUNIPER_2026-11-06_JUNIPER-ECOSYSTEM_CURSOR-FLOOD-4-DISPOSITION.md``,
+        §8, ruling 11, records the defect.)
+
+        No ``await`` separates numbering a message from copying the active
+        set, so the sockets a seq is sent to are exactly those active when it
+        was numbered. :meth:`promote_to_active` relies on that.
 
         GAP-WS-18: oversized messages are split into chunked_message envelopes
         before seq assignment so each chunk gets its own seq and replay slot.
@@ -825,14 +947,17 @@ class WebSocketManager:
           that subscriber is dropped, and it is closed as well as forgotten
           (:meth:`_close_dropped_subscriber`), so the connection ends instead
           of being held open for a peer the manager no longer serves.
+
+        The refusal of an unserializable message runs with no client active
+        too, so such a message is logged and counted whenever it is made.
         """
-        if not self._active_connections:
-            return
         if self._refuse_unserializable(message, "broadcast"):
             return
         for sub_message in self._maybe_chunk_message(message):
             enriched = self._assign_seq_and_buffer(sub_message)
             disconnected = []
+            # No await between numbering the message and copying the active
+            # set (see the docstring): promote_to_active's catch-up relies on it.
             for ws in self._active_connections.copy():
                 if not await self._send_json(ws, enriched):
                     disconnected.append(ws)

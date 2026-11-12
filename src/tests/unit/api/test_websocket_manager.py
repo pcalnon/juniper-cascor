@@ -107,7 +107,7 @@ class TestWebSocketManager:
 
     @pytest.mark.asyncio
     async def test_broadcast_empty(self):
-        """Broadcast with no connections does nothing."""
+        """Broadcast with no connections does not raise (it is still numbered and buffered)."""
         mgr = WebSocketManager()
         await mgr.broadcast({"type": "test"})  # Should not raise
 
