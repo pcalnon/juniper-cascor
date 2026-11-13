@@ -36,6 +36,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   workflow here uses, so behaviour is unchanged. A census of the nine Juniper repositories' `main` on 2026-11-01 found
   249 `actions/checkout` uses, 242 pinned to that SHA; the seven tag-only ones were this workflow's copies, one per
   repository. juniper-data#503 pinned juniper-data's, and this change is one of the seven that pin the rest.
+- **`create_app` opts out of FastAPI's native telemetry (owner ruling 2026-11-09).** FastAPI 0.142 added OpenTelemetry
+  instrumentation of its own, with tracing, metrics, logs and operation spans on by default, and both locks pin FastAPI
+  0.162.2. `create_app` now passes `telemetry=` with those four switches and `auto_configure` set to `False`, as
+  juniper-data does (juniper-data#454), so FastAPI's instrumentation cannot overlap the service's configured
+  observability (Sentry, Prometheus, structured logging). This is hardening, not a fix for a live leak: the
+  instrumentation stays idle until an OpenTelemetry provider is configured, and the locks hold `opentelemetry-api`
+  1.45.2 and no OpenTelemetry SDK. FastAPI can also set up export by itself, when `FASTAPI_OTEL_AUTO_CONFIGURE` is `true`
+  and the environment names an OTLP endpoint; without the SDK that attempt only logs a startup warning, and the
+  explicit `auto_configure: False` now rules it out. On FastAPI < 0.142, which `pyproject.toml` still admits, the
+  keyword lands in `app.extra` and does nothing; the new test in `src/tests/unit/api/test_api_app.py` pins all five
+  switches off and skips there.
 
 ### Fixed
 
