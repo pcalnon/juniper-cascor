@@ -50,6 +50,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A 429 never says `Retry-After: 0`, and the wait it names is rounded up (APD-ECO-016; owner ruling 2026-11-09).**
+  `RateLimiter.check` reported `int(window - elapsed)`, which truncates. A rejection in a window's last second
+  therefore carried `Retry-After: 0` and `X-RateLimit-Reset: 0`, telling a client to retry at once into a limiter that
+  rejects again, and every other fractional remainder was a second short (9.4s left said 9). The allowed path, which
+  feeds `X-RateLimit-Reset`, truncated the same way. `FailedAuthThrottle.check` reported
+  `max(1, int(window - elapsed))`: never 0, but still short by the fraction. All three now report
+  `max(1, ceil(window - elapsed))`, as juniper-service-core's copies do (`APD-SVCCORE-004`, and its 0.7.2 for the
+  throttle). juniper-cascor keeps its own copy of the limiter and the throttle (its service code imports only
+  `enforce_auth_posture` from juniper-service-core), so those fixes never reached it.
+  `src/tests/unit/api/test_retry_after_rounds_up.py` (44 tests, frozen clock) pins the rounding on both limiter paths,
+  in the throttle, and in the headers and the message a caller receives. `test_api_security.py`'s 429 test now asserts
+  `Retry-After >= 1` where it allowed 0; its 60-second window never produced a 0, so it states the contract and the
+  new module is what fails on the old code. `docs/api/JUNIPER_CASCOR_API_REFERENCE.md` states the rounding. A
+  robustness fix, not a leak.
 - **The `Load from HDF5` benchmark times real loads. For 10 and 50 hidden units it timed the integrity gate's refusal.**
   - **The defect.** `src/tests/scripts/run_benchmarks.bash`'s serialization benchmark appended hidden units to `network.hidden_units` without resizing `output_weights`, which stayed `(2, 2)`. `85634ee` (2026-05-01) fixed the same omission in the forward-pass benchmark, which crashed on it; the serialization benchmark did not crash.
     - Its 10- and 50-unit snapshots declared 12 and 52 output-weight rows, so the serializer's integrity gate refused every load (`Output weights shape mismatch: torch.Size([2, 2]) != (12, 2)`).

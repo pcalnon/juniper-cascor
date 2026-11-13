@@ -2,6 +2,7 @@
 
 import hmac
 import logging
+import math
 import time
 from collections import defaultdict
 from threading import Lock
@@ -198,6 +199,26 @@ class RateLimiter:
         client_ip = request.client.host if request.client else "unknown"
         return f"ip:{client_ip}"
 
+    def _seconds_until_reset(self, now: float, window_start: float) -> int:
+        """Whole seconds until the window rolls over, rounded UP and never below 1.
+
+        APD-ECO-016. This was ``int(...)``, which truncates toward zero, so a rejection in a
+        window's last second went out with ``Retry-After: 0``: an instruction to retry
+        immediately, into a limiter that rejects again. A client obeying the header spins
+        for the tail of every window. Truncation also under-reports every other fractional
+        remainder (9.4s left said 9), waking the caller while the window is still closed.
+
+        Rounding up is the only safe direction: waiting a fraction of a second too long
+        costs the caller nothing, while waking a fraction too early reproduces the defect.
+        The floor of 1 covers the exact boundary, where ``ceil`` returns 0; ``check`` rolls
+        the window over at that instant, so the floor is a guard, not a path taken today.
+        juniper-service-core's copy has rounded this way since ``APD-SVCCORE-004``.
+
+        Applied to the allowed path too, which feeds ``X-RateLimit-Reset``: the two headers
+        describe the same instant and must not disagree by a second.
+        """
+        return max(1, math.ceil(self._window - (now - window_start)))
+
     def check(self, key: str) -> tuple[bool, int, int]:
         """Check if a request is allowed under rate limit.
 
@@ -226,11 +247,10 @@ class RateLimiter:
                 return (True, self._limit - 1, self._window)
 
             if count >= self._limit:
-                reset_in = int(self._window - (now - window_start))
-                return (False, 0, reset_in)
+                return (False, 0, self._seconds_until_reset(now, window_start))
 
             self._counters[key] = (count + 1, window_start)
-            return (True, self._limit - count - 1, int(self._window - (now - window_start)))
+            return (True, self._limit - count - 1, self._seconds_until_reset(now, window_start))
 
     async def __call__(self, request: Request, api_key: str | None = None) -> None:
         """FastAPI dependency for rate limit checking.
@@ -383,7 +403,13 @@ class FailedAuthThrottle:
             if now - window_start >= self._window:
                 return (False, 0)  # Window rolled over; the old count no longer applies.
             if count >= self._max_failures:
-                return (True, max(1, int(self._window - (now - window_start))))
+                # Rounded up, as RateLimiter._seconds_until_reset does (APD-ECO-016). int()
+                # truncates, so 9.4s left said 9 and a client obeying Retry-After woke while
+                # this window was still closed. ``remaining`` is positive here (the roll-over
+                # check above returned for anything else), so ceil is already at least 1; the
+                # floor of 1 only keeps the two methods' formulas the same.
+                remaining = self._window - (now - window_start)
+                return (True, max(1, math.ceil(remaining)))
             return (False, 0)
 
     def record_failure(self, client_ip: str) -> None:
