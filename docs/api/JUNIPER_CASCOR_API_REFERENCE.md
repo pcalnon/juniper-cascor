@@ -744,7 +744,7 @@ curl -s -X POST http://localhost:8201/v1/training/start \
   -d '{"dataset":{"source":"generator","generator":"spiral","params":{"n":200}},"params":{"learning_rate":0.01}}'
 ```
 
-**State changes** — Transitions the FSM into `STARTED` and spins up the training loop. Begins emitting `epoch_end` and `state` events to all `/ws/training` subscribers.
+**State changes** — Transitions the FSM into `STARTED` and spins up the training loop. Begins emitting `epoch_end` and `state` events to all `/ws/training` subscribers. A `start` accepted while a stopped run's fit is still unwinding queues behind it: the FSM stays `STOPPED` until that fit has settled and the new run begins (see `POST /v1/training/stop`).
 
 **Returns** — Envelope with the lifecycle's training-start result dict (training id, dataset summary, effective params).
 
@@ -779,6 +779,8 @@ curl -s -X POST http://localhost:8201/v1/training/stop
 ```
 
 **State changes** — On a successful FSM transition: sets the stop event, moves the FSM from `STARTED` or `PAUSED` to `STOPPED`, and force-broadcasts training state. When the FSM rejects the stop (`Investigating` / `Replaying`), no `training_state` mutation occurs.
+
+The stop is cooperative. The fit stops at its next interrupt checkpoint (an output-pass `epoch_end`, sent at most 25 output epochs apart, or a grow-iteration `phase_change`), or as it returns if it has passed its last one, and its run settles `STOPPED` and counts as a cancelled session. The FSM reads `STOPPED`, and `training_active` `false`, at once, so a `start` sent in the meantime is accepted (`200`) and its run waits until the stopped fit has unwound. The stop still holds: each run watches the stop signal it was accepted with, and a `start` never clears a raised one, whether that `start` is accepted or refused. A `stop` sent while that run is queued reaches it too. In juniper-cascor 0.5.0 through 0.13.0 the `start` cleared the stop: the old fit trained on to its natural end, then wrote `training_state.status` `Completed` beside a `STOPPED` FSM and counted a successful session, while the new run waited behind it. What a stopped fit that is still running leaves open (requests admitted while it unwinds, and a fit that reaches no further checkpoint) is listed in [`API_SCHEMAS.md`](API_SCHEMAS.md#training-failure-propagation-and-ownership).
 
 **Returns** — Envelope wrapping `{"status": "stop_requested", "timestamp": <float>}` from lifecycle on success.
 

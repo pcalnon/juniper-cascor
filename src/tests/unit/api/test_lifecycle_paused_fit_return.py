@@ -500,6 +500,13 @@ def _leave_a_stale_fit_alive(mgr: TrainingLifecycleManager, fit: _GatedFit, monk
     the executor, so the next start gets a new executor and a new thread. Returns run 0's gate,
     its future, and the list the terminal session counter (``inc_training_session_completed``)
     now records into, so a test can tell which run counted a terminal status.
+
+    Run 0's stop signal stays raised: since the stop-then-start fix a later start gives its own
+    run a fresh signal and never clears this one. So a stale fit that returns here takes the
+    post-fit STOP branch, and it is that branch's ownership check these tests exercise. The
+    COMPLETION branch's check needs a stale run already past its stop check when the stop comes:
+    ``test_lifecycle_stop_then_start.py``'s
+    ``test_a_stale_run_past_its_stop_check_leaves_the_newer_paused_run_alone`` builds that.
     """
     counted: List[str] = []
     monkeypatch.setattr(manager_module, "inc_training_session_completed", counted.append)
@@ -543,7 +550,11 @@ def _assert_newer_run_untouched(mgr: TrainingLifecycleManager, counted: List[str
 
 @pytest.mark.unit
 def test_a_stale_fit_that_returns_leaves_the_newer_paused_run_alone(lifecycle, monkeypatch):
-    """The stale fit must not release the newer run's pause or settle it COMPLETED."""
+    """The stale fit must not release the newer run's pause or settle it.
+
+    Its stop is still raised (see ``_leave_a_stale_fit_alive``), so the settle it must not make is
+    the stop's: STOPPED and a cancelled session for the newer, paused run.
+    """
     mgr, fit = lifecycle()
     stale, stale_future, counted = _overlap(mgr, fit, monkeypatch, pause_newer=True)
     stale.release.set()
@@ -611,7 +622,8 @@ def test_a_stale_fit_that_returns_as_the_newer_run_starts_leaves_it_alone(lifecy
     The newer run is held just after its ``Command.START``, inside the ``monitor.on_phase_change``
     call ``_run_training`` makes next, and the stale fit returns there. Were the lifecycle claimed
     any later, at the fit for instance, the stale run would still own it and would settle the
-    newer run: COMPLETED and a success counted while its fit runs, and its monitor session ended.
+    newer run: STOPPED and a cancelled session counted while its fit runs (the stale fit returns
+    with its stop still raised, see ``_leave_a_stale_fit_alive``), and its monitor session ended.
     """
     mgr, fit = lifecycle()
     stale, stale_future, counted = _leave_a_stale_fit_alive(mgr, fit, monkeypatch)

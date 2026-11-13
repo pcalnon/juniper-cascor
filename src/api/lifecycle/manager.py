@@ -1372,6 +1372,10 @@ class TrainingLifecycleManager:
         self._last_state_broadcast_time: float = 0.0
         self._executor: Optional[ThreadPoolExecutor] = None
         self._training_future: Optional[Future] = None
+        # The stop signal of the newest accepted run, which every run accepted since the last stop
+        # shares. Stop, reset, a live swap and ``shutdown()`` set it. A start never clears it: once
+        # it is set, the next start puts a fresh one here for its own run, and each older run keeps
+        # watching the one it was accepted with (see ``_stop_event_for_new_run_locked``).
         self._stop_event = threading.Event()
         self._pause_event = threading.Event()
         self._pause_event.set()  # Not paused initially
@@ -1994,8 +1998,13 @@ class TrainingLifecycleManager:
     # Monitoring hooks (monkey-patch approach from CascorIntegration)
     # ------------------------------------------------------------------
 
-    def _check_for_interrupt(self) -> None:
+    def _check_for_interrupt(self, stop_event: Optional[threading.Event] = None) -> None:
         """Raise ``TrainingInterrupted`` on stop request; block on pause.
+
+        ``stop_event`` is the stop signal of the run whose fit reached this checkpoint, the one
+        ``_run_training`` was submitted with. ``None`` (a direct call) reads the newest run's,
+        ``self._stop_event``. Reading the newest run's from a fit would let a start accepted after
+        a stop -- which gives its own run a fresh signal -- release the stopped fit.
 
         Called from ``_handle_event`` on every ``epoch_end`` / ``phase_change``
         event ``CascorModel.fit`` emits during training (the output-epoch and
@@ -2015,14 +2024,15 @@ class TrainingLifecycleManager:
         native hooks (WS-6 PR-B3.3) now that the fit/grow monkey-patches are gone.
         Kept an instance method so tests can invoke ``mgr._check_for_interrupt()``.
         """
-        if self._stop_event.is_set():
+        stop = self._stop_event if stop_event is None else stop_event
+        if stop.is_set():
             raise TrainingInterrupted("stop_requested")
         while not self._pause_event.is_set():
             self._pause_event.wait(timeout=0.5)
-            if self._stop_event.is_set():
+            if stop.is_set():
                 raise TrainingInterrupted("stop_requested_during_pause")
 
-    def _handle_event(self, event) -> None:
+    def _handle_event(self, event, stop_event: Optional[threading.Event] = None) -> None:
         """``on_event`` sink for :meth:`CascorModel.fit` (WS-6 PR-B3.3).
 
         Translates the model-core coarse events the model emits *live* during fit
@@ -2038,13 +2048,15 @@ class TrainingLifecycleManager:
         callback sites), so raising ``TrainingInterrupted`` here aborts ``fit`` cleanly — this
         is how stop/pause continues to ride CCN's native hooks now that the fit/grow wrappers
         are gone. The event-type vocabulary is CascorModel.fit's contract (WS-6 PR-B3.2).
+        ``stop_event`` is the fit's own run's stop signal, which ``_run_training`` binds into the
+        sink it hands the fit; both checkpoints read it (see :meth:`_check_for_interrupt`).
         """
         etype = getattr(event, "type", None)
         payload = getattr(event, "payload", None) or {}
 
         if etype == "epoch_end":
             # Was _output_training_callback (bound to network._output_epoch_callback).
-            self._check_for_interrupt()
+            self._check_for_interrupt(stop_event)
             metrics = payload.get("metrics", {}) or {}
             epoch = int(payload.get("epoch", 0))
             # C2b counter semantics (I-1c / S12): ``epoch`` here is the INNER
@@ -2087,7 +2099,7 @@ class TrainingLifecycleManager:
             # Was _grow_iteration_callback (bound to network._grow_iteration_callback): per
             # grow-iteration live candidate-pool state. The ``detail`` dict carries the fields
             # CCN's coarse event types would otherwise drop (plan §3.3 — extend the payload).
-            self._check_for_interrupt()
+            self._check_for_interrupt(stop_event)
             detail = payload.get("detail", {}) or {}
             if not self._grow_phase_entered:
                 # First grow iteration: enter the Candidate phase once (monitored_grow set
@@ -2549,6 +2561,33 @@ class TrainingLifecycleManager:
         if self.state_machine.is_replaying():
             raise RuntimeError("Cannot start training while replaying a snapshot — invoke /v1/snapshots/{id}/replay/control with action='stop' first")
 
+    def _stop_event_for_new_run_locked(self) -> threading.Event:
+        """Return the stop signal for the run being accepted now. A stop already raised stays raised.
+
+        A stop is a request to every run accepted before it, and the fit sees it only at its next
+        interrupt checkpoint. ``stop_training`` moves the FSM to STOPPED at once, so a start is
+        accepted while the stopped fit is still running, and the new run queues behind it on the
+        single-worker executor. Clearing the one shared event here, as every release from 0.5.0
+        to 0.13.0 did, cancelled that stop: the stopped fit trained on to its natural end, then
+        wrote ``training_state`` Completed beside a STOPPED FSM and counted a successful session,
+        while the new run waited (the "stop-then-start race"). ``swap_dataset_live`` cleared it
+        the same way once its join on the old fit had timed out.
+
+        So a raised signal is never cleared. When it is raised, the new run gets a fresh one,
+        stored as the newest run's (``self._stop_event``) for the next stop to raise, and every
+        older run keeps the raised one it was accepted with. When it is not raised, the new run
+        shares it: every run accepted since the last stop shares the newest signal, so one stop
+        reaches all of them, a running fit and any runs queued behind it alike, and a stop never
+        reaches a run accepted after it. A fresh signal for every start would let a stop miss a
+        run still queued behind another.
+
+        Caller holds ``self._lock`` and passes the result to ``_run_training`` as its
+        ``stop_event``.
+        """
+        if self._stop_event.is_set():
+            self._stop_event = threading.Event()
+        return self._stop_event
+
     def _bind_start_tensors_locked(
         self,
         X: Optional[torch.Tensor],
@@ -2893,7 +2932,8 @@ class TrainingLifecycleManager:
                 if hasattr(self.network, "active_output_dim"):
                     self.network.active_output_dim = active_output_dim
 
-            self._stop_event.clear()
+            # The stop signal is NOT cleared here: a stopped fit may still be running, and its stop
+            # must hold. The new run gets its own signal at the submit below.
             self._pause_event.set()
 
             # CAS-006 (A-4) + CAN-015b (B-2): each training run normally
@@ -2953,11 +2993,14 @@ class TrainingLifecycleManager:
             with self._metrics_undo_lock:
                 self._metrics_undo_buffer = None
 
-            self._training_future = self._executor.submit(self._run_training, self._train_x, self._train_y, self._val_x, self._val_y, **fit_kwargs)
+            # The run watches the stop signal it is accepted with, never one a stop has raised for
+            # an older run (``_stop_event_for_new_run_locked``).
+            stop_event = self._stop_event_for_new_run_locked()
+            self._training_future = self._executor.submit(self._run_training, self._train_x, self._train_y, self._val_x, self._val_y, stop_event=stop_event, **fit_kwargs)
 
         return {"status": "training_started", "timestamp": time.time()}
 
-    def _run_training(self, x, y, x_val, y_val, **kwargs) -> None:
+    def _run_training(self, x, y, x_val, y_val, *, stop_event: Optional[threading.Event] = None, **kwargs) -> None:
         """Execute training in the background thread (submitted by ``start_training``).
 
         WS-6 PR-B3.3: drives the model-core ``CascorModel.fit`` with the ``on_event`` sink
@@ -2997,6 +3040,13 @@ class TrainingLifecycleManager:
         metrics drain, terminal weight capture and final evaluation run before that check, so
         they still act on the shared monitor, weight history and network; only the final score
         is then discarded.
+
+        The run watches ``stop_event``, the stop signal it was accepted with, at its interrupt
+        checkpoints and after its fit; ``None`` (a direct call) reads ``self._stop_event`` as the
+        run enters. A start that arrives while this run's fit is still unwinding from a stop
+        therefore leaves that stop in force: the fit stops at its next checkpoint, or takes the
+        stop path if it has passed its last one, and settles STOPPED before the new run, queued
+        behind it, enters (see :meth:`_stop_event_for_new_run_locked`).
         """
         # This run now owns the lifecycle: the START below and every settle that follows act
         # for it, until a newer run enters here and takes the lifecycle in turn.
@@ -3005,7 +3055,9 @@ class TrainingLifecycleManager:
         monitor = self.monitor
         state = self.training_state
         sm = self.state_machine
-        stop_event = self._stop_event
+        # Not the newest run's signal read now: a start accepted while this run was queued may
+        # already have replaced it with its own.
+        stop_event = self._stop_event if stop_event is None else stop_event
 
         # cascor#582: clear the previous run's final score BEFORE this one starts. Without
         # this a stopped or failed run would keep serving the prior run's ``final`` block,
@@ -3071,7 +3123,8 @@ class TrainingLifecycleManager:
             # pass early_stopping, or CascorModel.fit's default be aligned to CCN's, so the
             # generic manager inherits this behavior.)
             kwargs.setdefault("early_stopping", True)
-            self.model.fit(x, y, X_val=x_val, y_val=y_val, on_event=self._handle_event, **kwargs)
+            # The sink's interrupt checkpoints watch this run's own stop signal.
+            self.model.fit(x, y, X_val=x_val, y_val=y_val, on_event=lambda event: self._handle_event(event, stop_event), **kwargs)
 
             # Catch any remaining metrics + capture terminal weights (was monitored_fit's
             # post-original_fit block).
@@ -3170,6 +3223,13 @@ class TrainingLifecycleManager:
         with ``RuntimeError`` while Investigating or Replaying so
         ``training_state`` cannot report Stopped while the FSM still
         blocks ``start_training``.
+
+        The stop signal it raises is the one every run accepted since the last stop shares, so it
+        reaches the running fit and any run queued behind it, and no run accepted later. It is
+        raised BEFORE the FSM transition: a start is accepted only once the FSM reads STOPPED, so
+        that start always finds it raised and gives its own run a fresh one
+        (``_stop_event_for_new_run_locked``). Raised after the transition, a start could slip in
+        between, share the signal, and be stopped by this request.
         """
         if self.state_machine.is_investigating() or self.state_machine.is_replaying():
             raise RuntimeError(f"Cannot stop training while {self.state_machine.status.name}")
@@ -3248,7 +3308,10 @@ class TrainingLifecycleManager:
 
         Post-condition: ``_stop_event`` is set (signals any in-flight
         training thread to stop) and ``_pause_event`` is set (no synthetic
-        pause inherited by the next ``start_training`` call).
+        pause inherited by the next ``start_training`` call). Every run
+        accepted since the last stop shares that signal, and older runs'
+        are raised already, so all of them stop; the next start gives its
+        own run a fresh one (``_stop_event_for_new_run_locked``).
         """
         self._stop_event.set()
         self._pause_event.set()
@@ -3909,8 +3972,10 @@ class TrainingLifecycleManager:
                 # Step 12: submit new training future. _run_training performs
                 # the FSM STOPPED → STARTED transition at the start of the new
                 # invocation; we just need the underlying tensors to be the
-                # new ones (which they are, post-_reload_dataset).
-                self._stop_event.clear()
+                # new ones (which they are, post-_reload_dataset). The new run
+                # gets its own stop signal: clearing the one step 5 raised
+                # would release the old fit when the join above timed out.
+                stop_event = self._stop_event_for_new_run_locked()
                 self._pause_event.set()
                 if self._executor is None:
                     self._executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="cascor-train")
@@ -3920,6 +3985,7 @@ class TrainingLifecycleManager:
                     self._train_y,
                     self._val_x,
                     self._val_y,
+                    stop_event=stop_event,
                 )
 
                 # Step 14: topology rebroadcast (no-op equal-dim, but the path
@@ -6403,9 +6469,9 @@ class TrainingLifecycleManager:
                         history[key] = []
 
         # Reset lifecycle-level training state. Mirrors ``reset()`` (line ~840)
-        # but without the ``_stop_event.set()`` since no training is
-        # currently running — Retrain is invoked from a stopped state and
-        # ``start_training`` will clear the event itself.
+        # but without the ``_stop_event.set()``: a fit still unwinding from a
+        # stop has its signal raised already, and ``start_training`` gives the
+        # next run a fresh one when the current signal is raised.
         self._last_emitted_history_len = 0
         self.state_machine.handle_command(Command.RESET)
         self.monitor.clear_metrics()
