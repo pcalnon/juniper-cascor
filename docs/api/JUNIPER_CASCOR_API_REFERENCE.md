@@ -109,7 +109,7 @@ Rate limiting is also optional (`JUNIPER_CASCOR_RATE_LIMIT_ENABLED`, default off
 | Auth-first | A missing/invalid `X-API-Key` returns **401** before `RateLimiter.check` runs — forged keys cannot burn IP/key budgets. |
 | Keying (auth on) | Successful auth keys the window as `key:<api_key>`; distinct keys have independent counters. |
 | Keying (auth off) | With `api_keys` unset/`[]`, rate limiting (when enabled) keys as `ip:<client_host>`. |
-| 429 headers | `RateLimiter` raises 429 with `Retry-After` plus `X-RateLimit-Limit` / `-Remaining` / `-Reset`; the middleware rebuild preserves those headers on the wire. |
+| 429 headers | `RateLimiter` raises 429 with `Retry-After` plus `X-RateLimit-Limit` / `-Remaining` / `-Reset`; the middleware rebuild preserves those headers on the wire. `Retry-After` and `X-RateLimit-Reset` are whole seconds until the window ends, rounded up and never below 1, so neither is ever `0`; the failed-auth throttle's `Retry-After` is rounded the same way. |
 | Exempt paths | `EXEMPT_PATHS` skip both checks: `/v1/health`, `/v1/health/live`, `/v1/health/ready`, `/docs`, `/openapi.json`, `/redoc`, `/metrics`, `/metrics/`. Health stays reachable after a saturated non-exempt 429. |
 
 Regression pin: `src/tests/unit/api/test_api_middleware.py` — `TestSecurityMiddlewareAuthRateLimitInterplay`.

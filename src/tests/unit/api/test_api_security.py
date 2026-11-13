@@ -434,7 +434,8 @@ class TestRateLimiter:
         assert headers["X-RateLimit-Remaining"] == "0"
         assert "X-RateLimit-Reset" in headers
         assert headers["Retry-After"] == headers["X-RateLimit-Reset"]
-        assert int(headers["Retry-After"]) >= 0
+        # Never 0 (APD-ECO-016): ``Retry-After: 0`` tells the caller to retry at once.
+        assert int(headers["Retry-After"]) >= 1
         assert int(headers["Retry-After"]) <= 60
 
     @pytest.mark.asyncio
