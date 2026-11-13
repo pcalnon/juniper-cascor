@@ -28,7 +28,11 @@ the change claims:
   removes the lock altogether; M22-M31 each remove it from one of the ten methods that take it).
 
 The detector is the new test module plus the state-machine suite, selected as CI selects them
-(``-m "unit and not slow"``). Red = caught.
+(``-m "unit and not slow"``), and, since the stop-then-start fix, that fix's module
+(``test_lifecycle_stop_then_start.py``) too. A start no longer clears the stop ``shutdown()``
+raised, so the stale fit in the paused-fit module's overlap takes the stop path, and M05, M06,
+M15 and M17 (the completion's ownership guard) are caught only by the stop-then-start module's
+stale-run test, which parks the stale run past its stop check. Red = caught.
 
 Hermetic, after ``2026-10-26_final_eval_accuracy_mutation_check.py``: each run copies ``src/``,
 ``conf/`` and ``pyproject.toml`` into a TemporaryDirectory (under ``$TMPDIR``) and mutates the
@@ -58,7 +62,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 MANAGER = "src/api/lifecycle/manager.py"
 STATE_MACHINE = "src/api/lifecycle/state_machine.py"
-TESTS = ("src/tests/unit/api/test_lifecycle_paused_fit_return.py", "src/tests/unit/api/test_lifecycle_state_machine.py")
+TESTS = ("src/tests/unit/api/test_lifecycle_paused_fit_return.py", "src/tests/unit/api/test_lifecycle_state_machine.py", "src/tests/unit/api/test_lifecycle_stop_then_start.py")
 COPIED = ("src", "conf")
 IGNORED = shutil.ignore_patterns("__pycache__", "*.pyc", ".pytest_cache", "logs", "reports")
 PLUGIN = "_paused_fit_provenance"
