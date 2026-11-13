@@ -771,6 +771,17 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # Disable interactive API docs when authentication is enabled (production).
     docs_enabled = not settings.api_keys
     app = FastAPI(
+        # FastAPI 0.142 added native OpenTelemetry instrumentation (tracing, metrics, logs and
+        # operation spans), on by default. This service's observability is Sentry, Prometheus
+        # and its own structured logging, so every switch is off, as in juniper-data
+        # (juniper-data#454). Before 0.142 the keyword is not a parameter and lands in ``app.extra``.
+        telemetry={
+            "tracing": False,
+            "metrics": False,
+            "logs": False,
+            "operation_spans": False,
+            "auto_configure": False,
+        },
         title="JuniperCascor API",
         description="Cascade Correlation Neural Network training service",
         version=_API_VERSION,

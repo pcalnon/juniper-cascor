@@ -37,6 +37,18 @@ class TestAppFactory:
         # literal — a release version bump must not break this wiring test.
         assert app.version == _API_VERSION
 
+    def test_create_app_disables_fastapi_native_telemetry(self):
+        """FastAPI's native telemetry must not overlap the service's configured observability."""
+        # FastAPI added native telemetry (and ``app._telemetry``) in 0.142; ``pyproject.toml`` still
+        # admits older releases, where the keyword lands in ``app.extra`` and there is nothing to pin.
+        pytest.importorskip("fastapi.telemetry", reason="FastAPI < 0.142 has no native telemetry to opt out of")
+        app = create_app(Settings(auto_start=False))
+        assert app._telemetry["tracing"] is False
+        assert app._telemetry["metrics"] is False
+        assert app._telemetry["logs"] is False
+        assert app._telemetry["operation_spans"] is False
+        assert app._telemetry["auto_configure"] is False
+
     def test_cors_middleware_skipped_with_empty_origins(self):
         """Test that CORS middleware is not applied when origins is empty."""
         app = create_app(Settings(auto_start=False))
