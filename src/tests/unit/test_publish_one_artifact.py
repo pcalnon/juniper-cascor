@@ -54,6 +54,12 @@ PUBLISHERS = {
     "publish-cascor-model.yml": ("juniper-cascor-model", "juniper-cascor-model/dist", "publish-testpypi", "publish-pypi"),
     "publish-protocol.yml": ("juniper-cascor-protocol", "juniper-cascor-protocol/dist", "publish-testpypi", "publish-pypi"),
 }
+#: workflow -> (top-level permissions, the PyPI job's). The build, TestPyPI and republish jobs hold the same in all three.
+PERMISSIONS = {
+    "publish.yml": ({}, {"id-token": "write"}),
+    "publish-cascor-model.yml": ({"contents": "read"}, {"contents": "read", "id-token": "write"}),
+    "publish-protocol.yml": ({"contents": "read"}, {"contents": "read", "id-token": "write"}),
+}
 REPUBLISH = "republish"
 REPUBLISH_NAME = "Republish the tested files (dispatch only)"
 REPUBLISH_IF = "github.event_name == 'workflow_dispatch' && inputs.republish_from_testpypi"
@@ -275,12 +281,14 @@ class TestWiring:
     def test_only_the_jobs_that_upload_hold_id_token_write(self, workflow):
         wf = _workflow(workflow)
         jobs = wf["jobs"]
-        assert "id-token" not in (wf.get("permissions") or {})
+        top, prod = PERMISSIONS[workflow]
+        assert wf["permissions"] == top
         uploading = sorted(job_id for job_id, job in jobs.items() if _uploads(job))
         minting = sorted(job_id for job_id, job in jobs.items() if (job.get("permissions") or {}).get("id-token") == "write")
         assert uploading == minting == sorted(PUBLISHERS[workflow][2:] + (REPUBLISH,))
         assert jobs["build"]["permissions"] == {"contents": "read", "actions": "read"}
         assert jobs[PUBLISHERS[workflow][2]]["permissions"] == {"contents": "read", "id-token": "write"}
+        assert jobs[PUBLISHERS[workflow][3]]["permissions"] == prod
         assert jobs[REPUBLISH]["permissions"] == {"actions": "read", "id-token": "write"}
 
     def test_a_re_run_reuses_the_first_attempts_artifact_instead_of_building(self, workflow):
@@ -373,29 +381,27 @@ class TestWiring:
 
 
 class TestUnchanged:
-    def test_publish_yml_still_publishes_on_a_published_release_alone_and_keeps_its_tag_guard(self):
+    # The permissions are not here: they changed, and TestWiring pins them per job.
+    def test_publish_yml_still_builds_on_a_published_release_alone_and_keeps_its_tag_guard(self):
         wf = _workflow("publish.yml")
         assert set(wf["on"]) == {"release", "workflow_dispatch"}
         assert wf["on"]["release"] == {"types": ["published"]}
-        assert wf["permissions"] == {}
         assert "concurrency" not in wf
+        # The new dispatch builds nothing: this guard reads a release's tag, and a dispatch has none.
         assert wf["jobs"]["build"]["if"] == "startsWith(github.event.release.tag_name, 'v')"
         assert "if" not in wf["jobs"]["testpypi"]
         assert "if" not in wf["jobs"]["pypi"]
-        assert wf["jobs"]["pypi"]["permissions"] == {"id-token": "write"}
 
     def test_publish_yml_builds_with_the_commands_it_used_before(self):
         runs = [str(s.get("run") or "").strip() for s in _workflow("publish.yml")["jobs"]["build"]["steps"]]
         assert runs.index("pip install build twine") < runs.index("python -m build") < runs.index("twine check dist/*")
 
     @pytest.mark.parametrize("workflow", ["publish-cascor-model.yml", "publish-protocol.yml"])
-    def test_the_sub_package_publishers_keep_their_triggers_concurrency_and_guard(self, workflow):
+    def test_the_sub_package_publishers_keep_their_triggers_and_concurrency_and_build_on_their_release_or_a_plain_dispatch(self, workflow):
         package = PUBLISHERS[workflow][0]
         wf = _workflow(workflow)
         assert set(wf["on"]) == {"release", "workflow_dispatch"}
         assert wf["on"]["release"] == {"types": ["published"]}
-        assert wf["permissions"] == {"contents": "read"}
-        assert wf["jobs"]["publish-pypi"]["permissions"] == {"contents": "read", "id-token": "write"}
         assert wf["concurrency"]["cancel-in-progress"] is False
         # A plain dispatch still re-fires the whole publish; the republish dispatch runs the republish job alone.
         assert wf["jobs"]["build"]["if"] == f"(github.event_name == 'release' && startsWith(github.event.release.tag_name, '{package}-v')) || (github.event_name == 'workflow_dispatch' && !inputs.republish_from_testpypi)"
