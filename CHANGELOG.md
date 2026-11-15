@@ -49,6 +49,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   explicit `auto_configure: False` now rules it out. On FastAPI < 0.142, which `pyproject.toml` still admits, the
   keyword lands in `app.extra` and does nothing; the new test in `src/tests/unit/api/test_api_app.py` pins all five
   switches off and skips there.
+- **The dependency locks moved** (`requirements.lock`, and `requirements-cpu.lock`, which the image installs),
+  through the Dependabot updates merged since 0.13.0 (#744, #751) and #748's two security pins (Security, below).
+  The notable runtime pins in `requirements-cpu.lock`: `fastapi` 0.162.0 -> 0.162.2, `pydantic` 2.14.1 -> 2.14.3
+  (with `pydantic-core` 2.50.4 and `pydantic-settings` 2.16.2), `python-dateutil` 3.0.0 -> 4.0.0, `sentry-sdk`
+  2.73.0 -> 2.74.0, `websockets` 17.3 -> 17.4, `anyio` 4.15.1 -> 4.16.0 and `cachetools` 7.2.5 -> 8.0.0, plus six
+  smaller moves, and `six` leaves both locks. `requirements.lock` also moves the CUDA 13 wheels (`cuda-toolkit`
+  13.0.3.0 -> 13.2.2, `triton` 3.8.0 -> 3.9.0 and the `nvidia-*` set). Apart from the two security floors
+  (Security, below), the wheel's declared requirements are unchanged.
 
 ### Fixed
 
