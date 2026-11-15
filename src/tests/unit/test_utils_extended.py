@@ -185,6 +185,28 @@ class TestCheckObjectPickleabilityFalsePath:
         result = check_object_pickleability(obj)
         assert result is True
 
+    @pytest.mark.skipif(not HAS_DILL, reason="Requires dill package")
+    def test_pickling_error_outside_dills_default_list_reads_false(self):
+        """An attribute whose pickling raises reads as not pickleable; the check does not crash.
+
+        Without ``safe=True``, ``dill.pickles`` catches only TypeError, AssertionError,
+        NotImplementedError and the pickling errors, so the RuntimeError below escaped the
+        check on every Python version. On Python 3.15, dill 0.4.1 raises AttributeError
+        (``co_lnotab``) for any code object, which crashed the check on a lambda attribute.
+        """
+        from utils.utils import check_object_pickleability
+
+        class RaisesOnReduce:
+            def __reduce__(self):
+                raise RuntimeError("cannot reduce")
+
+        class Holder:
+            def __init__(self):
+                self.fine = 1
+                self.raises = RaisesOnReduce()
+
+        assert check_object_pickleability(Holder()) is False
+
 
 class TestDisplayObjectAttributesVariousObjects:
     """Tests for display_object_attributes with various objects."""
