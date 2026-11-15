@@ -1,7 +1,7 @@
 # CI/CD Manual
 
 **Project**: Juniper Cascor  
-**Version**: 0.3.20  
+**Version**: 0.3.21  
 **Reference**: CASCOR-P1-007
 
 ---
@@ -608,11 +608,16 @@ with `cancel-in-progress: true`. Permissions: `contents: read` only.
 
 | Workflow | Working directory | Matrix | Notes |
 |----------|-------------------|--------|-------|
-| `ci-protocol.yml` | `juniper-cascor-protocol/` | Python 3.12, 3.13 | 95% package coverage + `juniper-coverage-gap-map --enforce`; then build/`twine check` |
-| `ci-cascor-model.yml` | `juniper-cascor-model/` | Python 3.12 | CPU torch + `[test,full]`; coverage includes drift-guard; per-file gate via `juniper-ci-tools` |
+| `ci-protocol.yml` | `juniper-cascor-protocol/` | Python 3.12, 3.13; 3.15 informational (never blocks) | 95% package coverage + `juniper-coverage-gap-map --enforce`; then build/`twine check` |
+| `ci-cascor-model.yml` | `juniper-cascor-model/` | Python 3.12; 3.15 informational (never blocks) | CPU torch + `[test,full]`; coverage includes drift-guard; per-file gate via `juniper-ci-tools` |
 
 Both trigger on `paths:` for their package tree (and their workflow file) plus
 `workflow_dispatch`. They do **not** replace server `ci.yml`.
+
+The Python 3.15 legs are informational (phase 1 of the Python 3.15 migration):
+each `test` job's `include` entry sets `experimental: true`, and the job-level
+`continue-on-error: ${{ matrix.experimental == true }}` lets that leg fail
+without failing the job or skipping `build`.
 
 ## PyPI Publishing
 
