@@ -1,7 +1,7 @@
 # Juniper Cascor - API Schemas
 
-**Version**: 0.3.23
-**Last Updated**: 2026-11-13
+**Version**: 0.3.24
+**Last Updated**: 2026-11-15
 **Purpose**: Data schema documentation for serialization and data structures
 
 ---
@@ -337,6 +337,7 @@ Terminal state updates are owned by `TrainingLifecycleManager._run_training(...)
   - The snapshot `restore`, `retrain`, `resume` and `replay` verbs load their model under that fit. Its settle then still writes `training_state.status` `Stopped`, counts a cancelled session and ends the monitor session (`state_machine.status` keeps the verb's state: the settle's `STOP` is refused from it), and a fit that returns without meeting another checkpoint first drains the loaded model's history rows into the live metrics buffer.
   - A run that is already queued when one of those verbs lands still enters once the stopped fit has unwound, whatever `state_machine.status` then reads. After a `restore` it trains the restored model while the FSM reads `INVESTIGATING`: its `START` is refused and ignored, `training_active` stays `false`, `stop` and `pause` are refused (`409`), and it ends `training_state.status` `Completed` beside `state_machine.status` `INVESTIGATING` with a successful session counted. `reset` stops it at its next checkpoint.
   - A fit that reaches no further checkpoint and does not return keeps the single training worker: each later `start` answers `200` and its run never begins, and `reset` does not free it.
+- **Known, not fixed: a `pause` that overlaps a `stop` and a `start` can hold the new run at its first checkpoint.** `pause_training` checks that `state_machine.status` is `STARTED`, then closes the pause gate, with no lock between the two. When a `stop` and a `start` both land in between, the `pause` closes the gate the `start` has just reopened, and still reports success (`/ws/control` acknowledges it with `status` `success` and `paused`) although its own transition is refused: `state_machine.status` reads `STOPPED` beside `training_state.status` `Paused`. The stopped fit still stops at its next checkpoint and counts a cancelled session. The new run then enters and is held at its first checkpoint, where `state_machine.status` reads `STARTED`, `training_state.status` `Started` and `training_active` `true`, and it does not move. `resume` (`Training cannot be resumed in the current state`) and `start` (`Training already in progress`) answer `409` and leave it held. A `pause` then a `resume`, both `200`, free it, and it trains on; a `stop` or a `reset` (`200`) ends it at that checkpoint, and it settles `STOPPED` and counts a cancelled session. It takes three overlapping requests: the `pause` first, then a `stop` and a `start` both handled between the `pause`'s check and its gate (under a microsecond on 99% of uncontended calls). Over REST alone they cannot overlap: the REST routes call the lifecycle on the service's event loop, so a `stop` sent while a REST `pause` is between the two is served only after the `pause` returns. `/ws/control` runs each command on a worker thread, and a `pause` sent there overlaps a `stop` and a `start` sent over REST.
 
 Consumers should treat the lifecycle status fields (`state_machine.status`, `training_state.status`) as authoritative for failure outcomes instead of inferring from thread implementation details.
 
@@ -908,5 +909,5 @@ If verification fails:
 
 ---
 
-**Document Version**: 0.3.23
-**Last Updated**: 2026-11-13
+**Document Version**: 0.3.24
+**Last Updated**: 2026-11-15
