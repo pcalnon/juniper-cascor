@@ -16,7 +16,7 @@ This guide covers setting up the development environment for the Juniper Cascor 
 
 - **Required**: Python 3.11 or higher
 - **Supported**: 3.11, 3.12, 3.13, 3.14
-- **CI Uses**: Python 3.14
+- **CI Uses**: Python 3.14, plus an informational Python 3.15 unit-test leg that reports but blocks nothing (phase 1 of the Python 3.15 migration; 3.15 is not yet a supported version)
 
 ### Hardware Requirements
 

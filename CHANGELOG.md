@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **CI runs the tests on Python 3.15 as well, as informational legs that block nothing.** Phase 1 of the ecosystem's
+  Python 3.15 migration (the owner's request of 2026-11-14): 3.15 results are reported, and no merge, commit or
+  deployment waits on them.
+  - `ci.yml`'s `unit-tests` gains `Unit Tests + Coverage (Python 3.15 on ubuntu-latest)`, an `include` entry with
+    `experimental: true`. The job's existing `continue-on-error: ${{ matrix.experimental == true }}` applies to that
+    leg alone, so a red 3.15 leg leaves `needs.unit-tests.result`, the Quality Gate and the jobs that
+    `needs: [unit-tests]` (`quick-integration-tests`, `integration-tests`, `build`) unchanged. The context is not in
+    ruleset 15081045. The comment above `continue-on-error` no longer says the macOS leg is in its soak, which #168
+    ended on 2026-05-01.
+  - The `test` jobs of `ci-protocol.yml` (3.12, 3.13) and `ci-cascor-model.yml` (3.12) gain the same informational
+    `Test (Python 3.15)` leg and the job-level expression, so a red 3.15 leg does not stop their `build` jobs. No
+    ruleset requires either workflow's contexts.
+  - The pattern was measured on juniper-data#538 (run 43655144734): with the 3.15 leg failed on purpose, the leg's
+    check read `failure`, that repository's Quality Gate printed `Unit Tests: success` and passed, and every job that
+    `needs: [unit-tests]` ran.
+  - Unchanged on purpose: `pre-commit` (3.12-3.14; the owner ruled out a 3.15 pre-commit in phase 1), the
+    single-version `scheduled-tests.yml`, `golden-regression.yml` and `conformance.yml` lanes, `requires-python`, the
+    classifiers, the black, mypy and ruff targets, and the Docker base.
+  - `docs/ci_cd/BRANCH_PROTECTION.md` (0.4.5), `docs/ci_cd/MANUAL.md` (0.3.21), `docs/ci_cd/REFERENCE.md` and
+    `docs/install/ENVIRONMENT_SETUP.md` describe the legs.
+
 ## [0.14.0] - 2026-11-15
 
 ### Added

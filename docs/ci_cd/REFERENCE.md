@@ -3,7 +3,7 @@
 **Project**: Juniper Cascor  
 **Workflow Files**: `.github/workflows/ci.yml`, `codeql.yml`, `security-scan.yml`, `claude.yml`, `golden-regression.yml`, `conformance.yml`, `ci-protocol.yml`, `ci-cascor-model.yml`, `lockfile-update.yml`, `publish.yml`, `publish-protocol.yml`, `publish-cascor-model.yml`
 
-**Last Updated**: 2026-10-29
+**Last Updated**: 2026-11-14
 
 ---
 
@@ -57,8 +57,8 @@ Fixtures: `src/tests/fixtures/golden/`. Capture rewrite: `GOLDEN_CAPTURE=1`.
 
 | Workflow | Paths filter | Python matrix | Coverage |
 |----------|--------------|---------------|----------|
-| `ci-protocol.yml` | `juniper-cascor-protocol/**` | 3.12, 3.13 | `--cov-fail-under=95` + `juniper-coverage-gap-map --enforce` |
-| `ci-cascor-model.yml` | `juniper-cascor-model/**` | 3.12 | package + candidate/utils/log_config/constants; per-file enforce |
+| `ci-protocol.yml` | `juniper-cascor-protocol/**` | 3.12, 3.13; 3.15 informational (never blocks) | `--cov-fail-under=95` + `juniper-coverage-gap-map --enforce` |
+| `ci-cascor-model.yml` | `juniper-cascor-model/**` | 3.12; 3.15 informational (never blocks) | package + candidate/utils/log_config/constants; per-file enforce |
 
 ## CodeQL Analysis
 
@@ -463,7 +463,7 @@ Add to the top of `README.md`:
 ### Python Version
 
 - **CI Version**: Python 3.14
-- **Matrix Testing**: Single version (expandable)
+- **Matrix Testing**: `unit-tests` runs Python 3.12, 3.13 and 3.14 on Ubuntu and 3.12 on macOS (all four required), plus an informational Python 3.15 leg on Ubuntu that reports but never blocks; `pre-commit` runs 3.12, 3.13 and 3.14
 
 ### Conda Environment
 

@@ -1,7 +1,7 @@
 # Branch Protection Rules - Juniper Cascor
 
-**Version**: 0.4.4
-**Last Updated**: 2026-10-29
+**Version**: 0.4.5
+**Last Updated**: 2026-11-14
 **Author**: Paul Calnon
 
 ---
@@ -73,6 +73,8 @@ There is no `develop` branch (`gh api repos/pcalnon/juniper-cascor/branches/deve
 | `Sequence Safety`                                      | `sequence-safety.yml`      | `sequence-safety`         | No                       |
 | `Guard PR base branch`                                 | `pr-base-branch-guard.yml` | `guard-base-branch`       | No                       |
 | `Bandit`                                               | code scanning (see below)  | —                         | No                       |
+
+`Unit Tests + Coverage (Python 3.15 on ubuntu-latest)` is deliberately not among the 24. Python 3.15 is informational until the owner makes it a required version (phase 1 of the Python 3.15 migration, 2026-11-14): the leg's `include` entry sets `experimental: true`, so the job's `continue-on-error: ${{ matrix.experimental == true }}` keeps a failure there from failing `unit-tests`, and so from failing the Quality Gate, which reads `needs.unit-tests.result`. The `Test (Python 3.15)` legs of `ci-protocol.yml` and `ci-cascor-model.yml` work the same way; no context of either workflow is required.
 
 **A green Quality Gate does not mean mergeable.** Eight of the 24 are outside its `needs:`: two standalone `ci.yml` jobs, five jobs in other workflows (a `needs:` entry can only name a job in the same workflow), and `Bandit`. Each context is also pinned to the app that must post it (`integration_id`): GitHub Actions (`15368`) for 23 of them, and GitHub Advanced Security (`57789`) for `Bandit`, which is the code-scanning result of the Bandit SARIF that `ci.yml`'s `security` job uploads. Re-derive the list:
 
