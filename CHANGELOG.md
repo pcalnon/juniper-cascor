@@ -51,6 +51,54 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Applied by juniper-ml's `util/ad-hoc/2026-11-15_py315_informational_green_legs.py` (juniper-ml#2578), a textual
     edit checked by re-parsing the workflow: the same steps in the same order plus the report step, and no other job
     changed.
+- **A pull request's Gitleaks scan now covers every commit in its `base..head` range, and what its merge commits
+  changed themselves; gitleaks-action dropped what merges brought in, and stopped at the 30th commit (ruling 10 in
+  section 8 of juniper-ml's `notes/JUNIPER_2026-11-06_JUNIPER-ECOSYSTEM_CURSOR-FLOOD-4-DISPOSITION.md`: the port of
+  juniper-data#530, as juniper-data-client#260 ported it there).** gitleaks-action v3.0.0 lists a pull request's
+  commits with one unpaginated `GET /repos/{owner}/{repo}/pulls/{pull_number}/commits` (30 per page, oldest first)
+  and scans `--no-merges --first-parent <page[0]>^..<page[-1]>` (`src/gitleaks.js` at `e0c47f4f…`). Commit 31
+  onwards is never scanned, and on a pull request of any length `--first-parent` from the page's last commit drops
+  every commit a merge brought into the branch. **The second loss happened here**: of the 734 pull requests before
+  this change (#1 to #760, read on 2026-11-15) none had more than 30 commits (the largest had 14), but a simulation of
+  the action's window over each one's commit listing finds six whose own non-merge commits its scan never reached
+  (#94, #178, #179, #302, #308 and #633). The run of #633 (9 commits, 4 of them merges) logged `2 commits scanned.`
+  and never reached 3 of its 5 non-merge commits. Because the action passes `--no-merges`, no pull-request scan here
+  saw what a merge commit changed itself, such as a conflict resolution, either.
+  - **The fix**, in the `security` job (`Security Scans`) of `.github/workflows/ci.yml`. The action skips
+    `pull_request` as well as `repository_dispatch`; `push` and `workflow_dispatch` still run it.
+    `Install Gitleaks (pull request)` downloads the same 8.24.3 release tarball and checks it with
+    `sha256sum --check --strict` against `GITLEAKS_SHA256` (`9991e0b2…`, the release's `linux_x64` checksum) before
+    unpacking it. `Run Gitleaks over the pull request` is juniper-data's step with its shell unchanged: it scans
+    `<base>..<head>` from the event payload with the action's detect flags and `--remerge-diff`, refuses a base or
+    head the checkout does not hold and a range that holds an octopus merge, reads `git log` through a filter that
+    deletes git's `remerge ...` notes, and fails the way the action does (a leak with 1, any other gitleaks failure
+    with its own code). It loads the same `.gitleaks.toml` as the action. The redacted report is `gitleaks.sarif` in
+    the `security-reports` artifact; on a pull request the action's own `gitleaks-results.sarif` artifact is no
+    longer produced.
+  - **The action step now states its engine**, `GITLEAKS_VERSION: "8.24.3"`: the action's default at the pinned SHA
+    and the version its log named here (pull request #759's run), so no engine changes. Unset, a bump of the action
+    SHA could move the engine on `push` while pull requests stayed on the installed one. Its stale v2.3.9 comments
+    now describe v3.0.0; `FORCE_JAVASCRIPT_ACTIONS_TO_NODE24` stays.
+  - **Pins**, in the new `src/tests/unit/test_gitleaks_pr_scan.py` (25 cases, juniper-data-client's file adapted to
+    this repository's job, unit lane, events and `.gitleaks.toml`): six read the workflow, eleven run the scan step's
+    own shell under `bash -e` with a stand-in engine, and eight run it with the real engine in scratch repositories
+    that carry this repository's `.gitleaks.toml` (a token in the 1st and the 35th commit of a 35-commit range, one a
+    merge brought in, one that only a merge commit's own changes hold, a finding's commit and path under a conflict
+    note that says `commit`, a clean range, and a clean merge of a base branch that holds a token). The six also pin
+    what makes a leak fail the required check: the job keeps its name and has no `if` and no `continue-on-error`, the
+    install, the scan, the self-test and its tools carry no `continue-on-error`, and the report upload runs after a
+    failed scan. The `unit-tests` job's `-m "unit and not slow" src/tests/unit` selects the file by its module-level
+    `unit` mark, and the real-engine cases skip there without a binary. Two new `Security Scans` steps, after
+    pip-audit, install pytest, pytest-asyncio, pytest-timeout and PyYAML and run the file with
+    `GITLEAKS_PARITY_REQUIRED=1` and `--noconftest`, which turns a missing binary into a failure, on every event but
+    `repository_dispatch`, where neither path installs one.
+    `util/ad-hoc/2026-11-14_verify_gitleaks_pr_scan_tests_are_not_vacuous.py` makes 72 edits, one at a time, each
+    undoing one property (two of them weaken `.gitleaks.toml`), and the tests catch each. The action's window is
+    reproduced by juniper-data's and juniper-data-client's own scripts, which this change does not copy.
+  - Not covered on a pull request, as before: a commit a force-push removed before any run scanned it
+    (juniper-data#536 tracks that gap), and whatever a `.gitleaks.toml` or `.gitleaksignore` changed by the pull
+    request itself allows.
+  - Docs: `docs/ci_cd/REFERENCE.md` § Secret Scan (Gitleaks), new, and its security-lanes row.
 
 ## [0.14.0] - 2026-11-15
 
