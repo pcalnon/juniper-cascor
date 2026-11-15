@@ -47,6 +47,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Drop the step once h5py ships a cp315 wheel. Applied by juniper-ml's
     `util/ad-hoc/2026-11-15_py315_h5py_hdf5_headers.py`.
 
+- **`check_object_pickleability` no longer crashes on Python 3.15: an attribute whose pickling raises now reads as
+  not pickleable.** Phase 2 of the ecosystem's Python 3.15 migration, the second item (the owner's ruling of
+  2026-11-15). dill 0.4.1, the newest release on PyPI when re-probed on 2026-11-15 (its classifiers stop at 3.14),
+  reads `code.co_lnotab`, which Python 3.15 removed, so `dill.pickles` raised `AttributeError` for any object that
+  holds a code object, such as a lambda. Unless it is called with `safe=True`, `dill.pickles` returns False only for
+  TypeError, AssertionError, NotImplementedError and the pickling errors, so the error escaped the check. On #762's
+  3.15 leg it failed `test_utils_coverage.py::TestCheckObjectPickleabilityExtended::test_check_object_pickleability_with_unpickleable_attr`
+  and `test_utils_extended.py::TestCheckObjectPickleabilityFalsePath::test_pickleability_returns_false_for_problematic_attr`,
+  and `ci-cascor-model.yml`'s `Test (Python 3.15)` failed the same two tests in its copy.
+  - `src/utils/utils.py` and its drift-checked copy `juniper-cascor-model/utils/utils.py` pass `safe=True` to all
+    three `dill.pickles` calls. Two of them sit inside debug f-strings, which are evaluated whatever the log level.
+    `safe=True` only widens what dill catches, to `Exception`, so an input that used to return gives the same answer,
+    and one that used to raise now reads False. On 3.15 with dill 0.4.1, a lambda attribute reads False.
+  - The helper is a debugging aid with no caller outside the tests. cascor's own multiprocessing pickles with the
+    standard library, not dill.
+  - `test_pickling_error_outside_dills_default_list_reads_false`, in both test copies, pins it on every version: an
+    attribute whose `__reduce__` raises RuntimeError. It fails without `safe=True` (measured on 3.14.7).
+  - Raise the dill floor once a release handles 3.15. dill's `master` has done so since 2026-05-23, unreleased.
+
 - **The informational Python 3.15 legs no longer show as failed checks** (the owner's report of 2026-11-15: they
   "are supposed to produce an informational message without affecting the ability of code to commit, push, PR, or
   merge"). The job-level `continue-on-error` that came with the legs (#759) kept `needs.unit-tests.result` and the

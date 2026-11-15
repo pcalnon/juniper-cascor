@@ -255,6 +255,13 @@ def check_object_pickleability(instance: object = None) -> bool:
         Iterates the instance's ``__dict__`` and uses ``dill.pickles`` to
         test each attribute. Requires the optional ``dill`` dependency
         (``pip install juniper-cascor[debug]``).
+
+        Each call passes ``safe=True``, so an attribute whose pickling raises
+        any exception reads as not pickleable instead of crashing the check.
+        Without it ``dill.pickles`` catches only TypeError, AssertionError,
+        NotImplementedError and the pickling errors: on Python 3.15, dill
+        0.4.1 raises AttributeError (``co_lnotab``) for every code object, so
+        an attribute holding a lambda crashed this function there.
     Args:
         instance: The object instance to check (default is None)
     Returns:
@@ -276,8 +283,8 @@ def check_object_pickleability(instance: object = None) -> bool:
     logger.debug(f"Utils: check_object_pickleability: Candidate Training Manager instance attributes dict: {instance.__dict__}")
     for i in instance.__dict__.keys():
         logger.debug(f"Utils: _create_multiprocessing_manager: Candidate Training Manager instance attribute: {i}: \t\t{instance.__dict__[i]}")
-        logger.debug(f"Utils: _create_multiprocessing_manager: Checking instance attribute for Pickleability: {i}, \t\t{dill.pickles(instance.__dict__[i])}")
-        if not dill.pickles(instance.__dict__[i]):
+        logger.debug(f"Utils: _create_multiprocessing_manager: Checking instance attribute for Pickleability: {i}, \t\t{dill.pickles(instance.__dict__[i], safe=True)}")
+        if not dill.pickles(instance.__dict__[i], safe=True):
             is_a_pickle = False
-            logger.debug(f"Utils: _create_multiprocessing_manager: Instance attribute NOT Pickleable: {i}, \t\t{dill.pickles(instance.__dict__[i])}")
+            logger.debug(f"Utils: _create_multiprocessing_manager: Instance attribute NOT Pickleable: {i}, \t\t{dill.pickles(instance.__dict__[i], safe=True)}")
     return is_a_pickle

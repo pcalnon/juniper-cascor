@@ -29,6 +29,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `juniper-cascor/src`. The CI test job now installs the `[full]` extra so the `utils`
   debug-helper paths are measured. No source files changed; existing tests untouched.
 
+### Fixed
+
+- **`utils.check_object_pickleability` no longer crashes on Python 3.15.** dill 0.4.1, the
+  newest release when re-probed on 2026-11-15, reads `code.co_lnotab`, which Python 3.15
+  removed, so `dill.pickles` raised `AttributeError` on any attribute holding a code object,
+  such as a lambda, and two tests failed on `ci-cascor-model.yml`'s `Test (Python 3.15)`.
+  All three `dill.pickles` calls now pass `safe=True`, so an attribute whose pickling raises
+  reads as not pickleable. An input that used to return gives the same answer. The module stays
+  drift-identical to `juniper-cascor/src/utils/utils.py`, and
+  `test_pickling_error_outside_dills_default_list_reads_false` pins the change on every
+  version.
+
 ### Security
 
 - **Raised the `torch` floor to `>=2.10.0`** (was `>=2.0`) — the minimal pin that clears
