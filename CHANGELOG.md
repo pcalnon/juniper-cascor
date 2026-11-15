@@ -306,8 +306,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     `src/api/security.py`, and the pin is consistency with the sibling services.
   - Regenerated with `--upgrade-package` for the two packages only, compiled onto a copy of each lock so every other pin
     is held: `requirements.lock` first, then `requirements-cpu.lock` by its header's command, with that header kept
-    (juniper-ml `util/ad-hoc/2026-10-10_targeted_lock_refresh.py`). The `pyproject.toml` floors move in the next release
-    PR.
+    (juniper-ml `util/ad-hoc/2026-10-10_targeted_lock_refresh.py`). The wheel's floors follow in this release:
+    `juniper-observability>=0.4.2` and `juniper-service-core>=0.7.2,<0.8.0`, so a pip install over an older environment
+    upgrades both. The locks moved in #748; the floors ride in the release proposal, because a `pyproject.toml` change on
+    any branch but `release/` triggers `lockfile-update.yml`'s full `--upgrade` regen.
 
 ## [0.13.0] - 2026-10-28
 

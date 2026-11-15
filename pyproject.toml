@@ -79,8 +79,12 @@ dependencies = [
     # (juniper-ml notes/BUILD_PROVENANCE_DESIGN_2026-06-14.md). 0.4.1
     # (2026-10-10) is the security patch: the shared ``configure_sentry``,
     # which src/api/observability.py delegates to, no longer sends
-    # frame-local variables, which could hold the real API key.
-    "juniper-observability>=0.4.1",
+    # frame-local variables, which could hold the real API key. 0.4.2
+    # (PyPI, 2026-11-09) is the second (R-OBS-SC-2): ``configure_sentry``
+    # scrubs transactions as well as error events, redacts the parsed
+    # cookies, and filters Sec-WebSocket-Protocol, X-CSRF-Token,
+    # X-XSRF-Token and Proxy-Authorization. The locks moved in #748.
+    "juniper-observability>=0.4.2",
     # METRICS-MON R2.2.2 / seed-05: WebSocket frame schemas (envelope
     # Pydantic models for /ws/training and /ws/control + WorkerMessageType
     # StrEnum + BinaryFrame numpy codec for /ws/v1/workers). The cascor
@@ -106,10 +110,12 @@ dependencies = [
     # health check) is loud at boot. Stdlib-only import surface; 0.5.0 is the
     # release that ships the check. Pin mirrors the model-core floor+cap style.
     # Floor 0.7.1 (2026-10-10), the security patch (non-ASCII X-API-Key is a
-    # 401; bounded FailedAuthThrottle.check()). cascor's own APIKeyAuth and
-    # FailedAuthThrottle are its copies in src/api/security.py, fixed by #689
-    # and #710, so this floor is consistency with the lock and the siblings.
-    "juniper-service-core>=0.7.1,<0.8.0",
+    # 401; bounded FailedAuthThrottle.check()). Floor 0.7.2 (PyPI,
+    # 2026-11-09): FailedAuthThrottle's Retry-After rounds up instead of
+    # truncating. cascor's own APIKeyAuth and FailedAuthThrottle are its
+    # copies in src/api/security.py, fixed by #689, #710 and #757, so this
+    # floor is consistency with the lock and the siblings.
+    "juniper-service-core>=0.7.2,<0.8.0",
 ]
 
 [project.optional-dependencies]
