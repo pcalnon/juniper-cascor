@@ -1,3 +1,27 @@
+---
+#####################################################################################################################################################################################################
+# Project:       Juniper
+# Application:   juniper-cascor
+# File Name:     publish.yml
+# Author:        Paul Calnon
+#
+# Date Created:  2026-02-25
+#
+# License:       MIT License
+# Copyright:     Copyright (c) 2024-2026 Paul Calnon
+#
+# Description:
+#    GitHub Actions publish pipeline for juniper-cascor, triggered by a published `v*` Release.
+#    Builds the sdist and wheel ONCE, records their sha256 in SHA256SUMS and hands both jobs the
+#    same artifact: TestPyPI takes it first and must then serve exactly those sha256, and PyPI takes
+#    it only after TestPyPI is checked again. Uses OIDC trusted publishing (no API tokens).
+#
+#    The steps marked "one-artifact publish template" read nothing from this repository but the two
+#    `env` values below, so another publish workflow can copy them verbatim (docs/ci_cd/MANUAL.md
+#    § One Artifact, Checked Against TestPyPI).
+#
+#####################################################################################################################################################################################################
+
 name: Publish to PyPI
 
 on:
@@ -7,14 +31,20 @@ on:
 permissions:
   id-token: write
 
+env:
+  # The one-artifact publish template's two parameters: the distribution's name on PyPI and TestPyPI,
+  # and the directory the build writes the sdist and wheel to, relative to the workspace.
+  PUBLISH_PACKAGE: juniper-cascor
+  PUBLISH_DIST_DIR: dist
+
 jobs:
-  testpypi:
-    name: Publish to TestPyPI
+  build:
+    name: Build and Validate
     # Release-convention guard: publish juniper-cascor only for the main `v*` release, NOT for a
     # sub-package `juniper-cascor-<pkg>-v*` release (which also fires this release-triggered workflow).
+    # Both publish jobs depend on this one, so this guard gates the whole pipeline.
     if: startsWith(github.event.release.tag_name, 'v')
     runs-on: ubuntu-latest
-    environment: testpypi
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
 
@@ -31,10 +61,181 @@ jobs:
       - name: Check package
         run: twine check dist/*
 
+      # One-artifact publish template, step 1: record what was built.
+      - name: Record SHA256SUMS
+        shell: python3 {0}
+        run: |
+          # One-artifact publish template (juniper-cascor publish.yml): copy verbatim; it reads only PUBLISH_DIST_DIR.
+          # Hash every file the build wrote into SHA256SUMS, in the format `sha256sum --check` reads. The publish step
+          # uploads every file in the directory, so anything in it but a wheel or an sdist is refused here.
+          import hashlib
+          import os
+          import pathlib
+          import sys
+
+          workspace = pathlib.Path(os.environ["GITHUB_WORKSPACE"])
+          dist = workspace / os.environ["PUBLISH_DIST_DIR"]
+          names = sorted(p.name for p in dist.iterdir() if not p.name.startswith(".")) if dist.is_dir() else []
+          strays = [n for n in names if not ((dist / n).is_file() and n.endswith((".whl", ".tar.gz")))]
+          if not names or strays:
+              print(f"::error::{dist} must hold the wheel and sdist the build wrote, and nothing else; it holds {names or 'nothing'}")
+              sys.exit(1)
+          sums = "".join(f"{hashlib.sha256((dist / n).read_bytes()).hexdigest()}  {n}\n" for n in names)
+          (workspace / "SHA256SUMS").write_text(sums, encoding="utf-8")
+          print(sums, end="")
+
+      # One-artifact publish template, step 2: the dist directory and SHA256SUMS travel as ONE artifact.
+      - name: Upload dist artifacts
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
+        with:
+          name: ${{ env.PUBLISH_PACKAGE }}-dist
+          path: |
+            ${{ env.PUBLISH_DIST_DIR }}/
+            SHA256SUMS
+          if-no-files-found: error
+          # The PyPI job downloads this only once the owner approves the `pypi` gate, which may wait 30 days, and a
+          # run can be re-run for 30 days after it started. An artifact that expired first would strand the release,
+          # because a rebuild cannot reproduce the files TestPyPI already holds.
+          retention-days: 90
+
+  testpypi:
+    name: Publish to TestPyPI
+    needs: build
+    runs-on: ubuntu-latest
+    environment: testpypi
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
+        with:
+          python-version: "3.12"
+
+      # One-artifact publish template, step 3. A checkout empties the workspace: none may run between this step and the
+      # job's last template step.
+      - name: Download dist artifacts
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
+        with:
+          name: ${{ env.PUBLISH_PACKAGE }}-dist
+          path: ${{ github.workspace }}
+
+      # One-artifact publish template, step 4: before every upload.
+      - name: Verify the dist against SHA256SUMS
+        shell: python3 {0}
+        run: |
+          # One-artifact publish template (juniper-cascor publish.yml): copy verbatim; it reads only PUBLISH_DIST_DIR.
+          # The downloaded directory must hold exactly the files SHA256SUMS lists, each with its recorded sha256: the
+          # publish step uploads every file in it, so an extra file would be published too.
+          import hashlib
+          import os
+          import pathlib
+          import re
+          import sys
+
+          workspace = pathlib.Path(os.environ["GITHUB_WORKSPACE"])
+          dist = workspace / os.environ["PUBLISH_DIST_DIR"]
+          recorded = {}
+          for line in (workspace / "SHA256SUMS").read_text(encoding="utf-8").splitlines():
+              digest, sep, name = line.partition("  ")
+              if not sep or not re.fullmatch(r"[0-9a-f]{64}", digest) or not name or name in recorded:
+                  print(f"::error::SHA256SUMS holds a line this check cannot read: {line!r}")
+                  sys.exit(1)
+              recorded[name] = digest
+          present = {}
+          if dist.is_dir():
+              for p in sorted(dist.iterdir()):
+                  if not p.name.startswith("."):
+                      present[p.name] = hashlib.sha256(p.read_bytes()).hexdigest() if p.is_file() else "not a file"
+          if not recorded or present != recorded:
+              print(f"::error::{dist} does not hold exactly the files SHA256SUMS lists, with their sha256")
+              for name in sorted(set(recorded) | set(present)):
+                  print(f"  {name}: recorded {recorded.get(name, '-')}, found {present.get(name, '-')}")
+              sys.exit(1)
+          for name, digest in sorted(recorded.items()):
+              print(f"OK {digest}  {name}")
+
       - name: Publish to TestPyPI
         uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086  # v1.14.3
         with:
           repository-url: https://test.pypi.org/legacy/
+          packages-dir: ${{ env.PUBLISH_DIST_DIR }}/
+
+      # One-artifact publish template, step 5: after the TestPyPI upload, before the install check.
+      - name: Verify TestPyPI serves exactly these files
+        shell: python3 {0}
+        env:
+          INDEX_URL: https://test.pypi.org
+        run: |
+          # One-artifact publish template (juniper-cascor publish.yml): copy verbatim; it reads PUBLISH_PACKAGE and the
+          # step's INDEX_URL. The index's JSON for this version must list exactly the files SHA256SUMS lists, with their
+          # sha256. A file it does not list yet is CDN lag, polled for a bounded number of times; a file it lists with
+          # another sha256, or one this run did not build, fails at once, because neither goes away by waiting.
+          import http.client
+          import json
+          import os
+          import pathlib
+          import re
+          import sys
+          import time
+          import urllib.request
+
+          workspace = pathlib.Path(os.environ["GITHUB_WORKSPACE"])
+          package = os.environ["PUBLISH_PACKAGE"]
+          index = os.environ["INDEX_URL"].rstrip("/")
+          attempts = int(os.environ.get("HASH_CHECK_ATTEMPTS", "20"))
+          interval = float(os.environ.get("HASH_CHECK_INTERVAL", "15"))
+
+
+          def normalized(name):
+              return re.sub(r"[-_.]+", "-", name).lower()
+
+
+          expected = {}
+          versions = set()
+          for line in (workspace / "SHA256SUMS").read_text(encoding="utf-8").splitlines():
+              digest, _, name = line.partition("  ")
+              if name.endswith(".whl"):
+                  project, version = (name[: -len(".whl")].split("-") + [""])[:2]
+              elif name.endswith(".tar.gz"):
+                  project, _, version = name[: -len(".tar.gz")].rpartition("-")
+              else:
+                  project, version = "", ""
+              if normalized(project) != normalized(package) or not version or not re.fullmatch(r"[0-9a-f]{64}", digest):
+                  print(f"::error::SHA256SUMS line {line!r} is not a {package} distribution with its sha256")
+                  sys.exit(1)
+              expected[name] = digest
+              versions.add(version)
+          if len(versions) != 1:
+              print(f"::error::SHA256SUMS must name one version of {package}; it names {sorted(versions) or 'none'}")
+              sys.exit(1)
+          url = f"{index}/pypi/{package}/{versions.pop()}/json"
+          print(f"{url} must list exactly:")
+          for name, digest in sorted(expected.items()):
+              print(f"  {digest}  {name}")
+          state = "was not read"
+          for attempt in range(1, attempts + 1):
+              request = urllib.request.Request(url, headers={"Accept": "application/json", "User-Agent": "juniper-publish-hash-check"})
+              try:
+                  with urllib.request.urlopen(request, timeout=30) as response:
+                      served = {f["filename"]: f["digests"]["sha256"] for f in json.load(response)["urls"]}
+              except (OSError, ValueError, KeyError, TypeError, http.client.HTTPException) as exc:  # HTTPError and URLError are OSErrors
+                  state = f"was not readable ({exc})"
+              else:
+                  wrong = sorted(name for name, digest in served.items() if expected.get(name) != digest)
+                  if wrong:
+                      print(f"::error::{url} lists a file this run did not build, or with another sha256: {wrong}")
+                      for name in sorted(set(expected) | set(served)):
+                          print(f"  {name}: built {expected.get(name, '-')}, served {served.get(name, '-')}")
+                      sys.exit(1)
+                  missing = sorted(set(expected) - set(served))
+                  if not missing:
+                      print(f"OK: {url} lists exactly these files, with these sha256 (attempt {attempt}/{attempts})")
+                      sys.exit(0)
+                  state = f"did not list {missing} yet"
+              print(f"attempt {attempt}/{attempts}: {url} {state}")
+              if attempt < attempts:
+                  time.sleep(interval)
+          print(f"::error::{url} {state} after {attempts} attempts")
+          sys.exit(1)
 
       - name: Verify TestPyPI install
         run: |
@@ -56,20 +257,207 @@ jobs:
     runs-on: ubuntu-latest
     environment: pypi
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
-
-      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
+      # One-artifact publish template, step 3. A checkout empties the workspace: none may run between this step and the
+      # job's last template step.
+      - name: Download dist artifacts
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
         with:
-          python-version: "3.12"
+          name: ${{ env.PUBLISH_PACKAGE }}-dist
+          path: ${{ github.workspace }}
 
-      - name: Install build tools
-        run: pip install build twine
+      # One-artifact publish template, step 4: before every upload.
+      - name: Verify the dist against SHA256SUMS
+        shell: python3 {0}
+        run: |
+          # One-artifact publish template (juniper-cascor publish.yml): copy verbatim; it reads only PUBLISH_DIST_DIR.
+          # The downloaded directory must hold exactly the files SHA256SUMS lists, each with its recorded sha256: the
+          # publish step uploads every file in it, so an extra file would be published too.
+          import hashlib
+          import os
+          import pathlib
+          import re
+          import sys
 
-      - name: Build package
-        run: python -m build
+          workspace = pathlib.Path(os.environ["GITHUB_WORKSPACE"])
+          dist = workspace / os.environ["PUBLISH_DIST_DIR"]
+          recorded = {}
+          for line in (workspace / "SHA256SUMS").read_text(encoding="utf-8").splitlines():
+              digest, sep, name = line.partition("  ")
+              if not sep or not re.fullmatch(r"[0-9a-f]{64}", digest) or not name or name in recorded:
+                  print(f"::error::SHA256SUMS holds a line this check cannot read: {line!r}")
+                  sys.exit(1)
+              recorded[name] = digest
+          present = {}
+          if dist.is_dir():
+              for p in sorted(dist.iterdir()):
+                  if not p.name.startswith("."):
+                      present[p.name] = hashlib.sha256(p.read_bytes()).hexdigest() if p.is_file() else "not a file"
+          if not recorded or present != recorded:
+              print(f"::error::{dist} does not hold exactly the files SHA256SUMS lists, with their sha256")
+              for name in sorted(set(recorded) | set(present)):
+                  print(f"  {name}: recorded {recorded.get(name, '-')}, found {present.get(name, '-')}")
+              sys.exit(1)
+          for name, digest in sorted(recorded.items()):
+              print(f"OK {digest}  {name}")
 
-      - name: Check package
-        run: twine check dist/*
+      # One-artifact publish template, step 5, before the PyPI upload: TestPyPI's record of what it took cannot change
+      # (a file name can never be uploaded twice), so it stands as the witness to what the TestPyPI job tested.
+      - name: Verify TestPyPI still serves exactly these files
+        shell: python3 {0}
+        env:
+          INDEX_URL: https://test.pypi.org
+        run: |
+          # One-artifact publish template (juniper-cascor publish.yml): copy verbatim; it reads PUBLISH_PACKAGE and the
+          # step's INDEX_URL. The index's JSON for this version must list exactly the files SHA256SUMS lists, with their
+          # sha256. A file it does not list yet is CDN lag, polled for a bounded number of times; a file it lists with
+          # another sha256, or one this run did not build, fails at once, because neither goes away by waiting.
+          import http.client
+          import json
+          import os
+          import pathlib
+          import re
+          import sys
+          import time
+          import urllib.request
+
+          workspace = pathlib.Path(os.environ["GITHUB_WORKSPACE"])
+          package = os.environ["PUBLISH_PACKAGE"]
+          index = os.environ["INDEX_URL"].rstrip("/")
+          attempts = int(os.environ.get("HASH_CHECK_ATTEMPTS", "20"))
+          interval = float(os.environ.get("HASH_CHECK_INTERVAL", "15"))
+
+
+          def normalized(name):
+              return re.sub(r"[-_.]+", "-", name).lower()
+
+
+          expected = {}
+          versions = set()
+          for line in (workspace / "SHA256SUMS").read_text(encoding="utf-8").splitlines():
+              digest, _, name = line.partition("  ")
+              if name.endswith(".whl"):
+                  project, version = (name[: -len(".whl")].split("-") + [""])[:2]
+              elif name.endswith(".tar.gz"):
+                  project, _, version = name[: -len(".tar.gz")].rpartition("-")
+              else:
+                  project, version = "", ""
+              if normalized(project) != normalized(package) or not version or not re.fullmatch(r"[0-9a-f]{64}", digest):
+                  print(f"::error::SHA256SUMS line {line!r} is not a {package} distribution with its sha256")
+                  sys.exit(1)
+              expected[name] = digest
+              versions.add(version)
+          if len(versions) != 1:
+              print(f"::error::SHA256SUMS must name one version of {package}; it names {sorted(versions) or 'none'}")
+              sys.exit(1)
+          url = f"{index}/pypi/{package}/{versions.pop()}/json"
+          print(f"{url} must list exactly:")
+          for name, digest in sorted(expected.items()):
+              print(f"  {digest}  {name}")
+          state = "was not read"
+          for attempt in range(1, attempts + 1):
+              request = urllib.request.Request(url, headers={"Accept": "application/json", "User-Agent": "juniper-publish-hash-check"})
+              try:
+                  with urllib.request.urlopen(request, timeout=30) as response:
+                      served = {f["filename"]: f["digests"]["sha256"] for f in json.load(response)["urls"]}
+              except (OSError, ValueError, KeyError, TypeError, http.client.HTTPException) as exc:  # HTTPError and URLError are OSErrors
+                  state = f"was not readable ({exc})"
+              else:
+                  wrong = sorted(name for name, digest in served.items() if expected.get(name) != digest)
+                  if wrong:
+                      print(f"::error::{url} lists a file this run did not build, or with another sha256: {wrong}")
+                      for name in sorted(set(expected) | set(served)):
+                          print(f"  {name}: built {expected.get(name, '-')}, served {served.get(name, '-')}")
+                      sys.exit(1)
+                  missing = sorted(set(expected) - set(served))
+                  if not missing:
+                      print(f"OK: {url} lists exactly these files, with these sha256 (attempt {attempt}/{attempts})")
+                      sys.exit(0)
+                  state = f"did not list {missing} yet"
+              print(f"attempt {attempt}/{attempts}: {url} {state}")
+              if attempt < attempts:
+                  time.sleep(interval)
+          print(f"::error::{url} {state} after {attempts} attempts")
+          sys.exit(1)
 
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086  # v1.14.3
+        with:
+          packages-dir: ${{ env.PUBLISH_DIST_DIR }}/
+
+      # One-artifact publish template, step 5, after the PyPI upload: PyPI must serve the same sha256.
+      - name: Verify PyPI serves exactly these files
+        shell: python3 {0}
+        env:
+          INDEX_URL: https://pypi.org
+        run: |
+          # One-artifact publish template (juniper-cascor publish.yml): copy verbatim; it reads PUBLISH_PACKAGE and the
+          # step's INDEX_URL. The index's JSON for this version must list exactly the files SHA256SUMS lists, with their
+          # sha256. A file it does not list yet is CDN lag, polled for a bounded number of times; a file it lists with
+          # another sha256, or one this run did not build, fails at once, because neither goes away by waiting.
+          import http.client
+          import json
+          import os
+          import pathlib
+          import re
+          import sys
+          import time
+          import urllib.request
+
+          workspace = pathlib.Path(os.environ["GITHUB_WORKSPACE"])
+          package = os.environ["PUBLISH_PACKAGE"]
+          index = os.environ["INDEX_URL"].rstrip("/")
+          attempts = int(os.environ.get("HASH_CHECK_ATTEMPTS", "20"))
+          interval = float(os.environ.get("HASH_CHECK_INTERVAL", "15"))
+
+
+          def normalized(name):
+              return re.sub(r"[-_.]+", "-", name).lower()
+
+
+          expected = {}
+          versions = set()
+          for line in (workspace / "SHA256SUMS").read_text(encoding="utf-8").splitlines():
+              digest, _, name = line.partition("  ")
+              if name.endswith(".whl"):
+                  project, version = (name[: -len(".whl")].split("-") + [""])[:2]
+              elif name.endswith(".tar.gz"):
+                  project, _, version = name[: -len(".tar.gz")].rpartition("-")
+              else:
+                  project, version = "", ""
+              if normalized(project) != normalized(package) or not version or not re.fullmatch(r"[0-9a-f]{64}", digest):
+                  print(f"::error::SHA256SUMS line {line!r} is not a {package} distribution with its sha256")
+                  sys.exit(1)
+              expected[name] = digest
+              versions.add(version)
+          if len(versions) != 1:
+              print(f"::error::SHA256SUMS must name one version of {package}; it names {sorted(versions) or 'none'}")
+              sys.exit(1)
+          url = f"{index}/pypi/{package}/{versions.pop()}/json"
+          print(f"{url} must list exactly:")
+          for name, digest in sorted(expected.items()):
+              print(f"  {digest}  {name}")
+          state = "was not read"
+          for attempt in range(1, attempts + 1):
+              request = urllib.request.Request(url, headers={"Accept": "application/json", "User-Agent": "juniper-publish-hash-check"})
+              try:
+                  with urllib.request.urlopen(request, timeout=30) as response:
+                      served = {f["filename"]: f["digests"]["sha256"] for f in json.load(response)["urls"]}
+              except (OSError, ValueError, KeyError, TypeError, http.client.HTTPException) as exc:  # HTTPError and URLError are OSErrors
+                  state = f"was not readable ({exc})"
+              else:
+                  wrong = sorted(name for name, digest in served.items() if expected.get(name) != digest)
+                  if wrong:
+                      print(f"::error::{url} lists a file this run did not build, or with another sha256: {wrong}")
+                      for name in sorted(set(expected) | set(served)):
+                          print(f"  {name}: built {expected.get(name, '-')}, served {served.get(name, '-')}")
+                      sys.exit(1)
+                  missing = sorted(set(expected) - set(served))
+                  if not missing:
+                      print(f"OK: {url} lists exactly these files, with these sha256 (attempt {attempt}/{attempts})")
+                      sys.exit(0)
+                  state = f"did not list {missing} yet"
+              print(f"attempt {attempt}/{attempts}: {url} {state}")
+              if attempt < attempts:
+                  time.sleep(interval)
+          print(f"::error::{url} {state} after {attempts} attempts")
+          sys.exit(1)

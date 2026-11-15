@@ -585,9 +585,9 @@ Gate: 80% aggregate (override with `COVERAGE_FAIL_UNDER=<n>`). Coverage runs in 
 | CI — protocol | `.github/workflows/ci-protocol.yml` | Path-filtered on `juniper-cascor-protocol/**`, dispatch | Package tests + build/`twine check` |
 | CI — cascor-model | `.github/workflows/ci-cascor-model.yml` | Path-filtered on `juniper-cascor-model/**`, dispatch | Package tests (incl. drift-guard) + build/`twine check` |
 | Scheduled Long Tests | `.github/workflows/scheduled-tests.yml` | Cron schedule (nightly), dispatch | Slow and long-running correctness tests |
-| Publish | `.github/workflows/publish.yml` | Release (`v*`) | PyPI publish for `juniper-cascor` (TestPyPI → verify → PyPI) |
-| Publish protocol | `.github/workflows/publish-protocol.yml` | Release (`juniper-cascor-protocol-v*`) + `workflow_dispatch` | PyPI publish for `juniper-cascor-protocol` |
-| Publish model | `.github/workflows/publish-cascor-model.yml` | Release (`juniper-cascor-model-v*`) + `workflow_dispatch` | PyPI publish for `juniper-cascor-model` |
+| Publish | `.github/workflows/publish.yml` | Release (`v*`) | PyPI publish for `juniper-cascor`: built once; TestPyPI → sha256 check against TestPyPI's JSON → install verify → PyPI, after TestPyPI's sha256 are checked again (one-artifact template, `docs/ci_cd/MANUAL.md`) |
+| Publish protocol | `.github/workflows/publish-protocol.yml` | Release (`juniper-cascor-protocol-v*`) + `workflow_dispatch` | PyPI publish for `juniper-cascor-protocol` (the same one-artifact template) |
+| Publish model | `.github/workflows/publish-cascor-model.yml` | Release (`juniper-cascor-model-v*`) + `workflow_dispatch` | PyPI publish for `juniper-cascor-model` (the same one-artifact template) |
 | Publish container image | `.github/workflows/publish-image.yml` | Release (`v*` only -- tag-guarded), PR touching image inputs (build-only), `workflow_dispatch` | GHCR multi-arch (amd64 + arm64) service image, CPU-only by pin (`requirements-cpu.lock`); never a required check |
 | Lockfile Update | `.github/workflows/lockfile-update.yml` | Push to dependabot/** branches | Dependency lockfile refresh |
 | CodeQL Analysis | `.github/workflows/codeql.yml` | Push `main`/`develop`, PR `main`, weekly Monday 06:00 UTC | Python CodeQL SAST (`+security-and-quality`; its `Analyze (python)` context is a REQUIRED check) |

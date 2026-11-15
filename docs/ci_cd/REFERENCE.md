@@ -237,6 +237,22 @@ Trusted Publishing (OIDC) pipelines. Source of truth: the workflow YAML files un
 | `publish-protocol.yml` | `juniper-cascor-protocol` | `release` + `workflow_dispatch` | `juniper-cascor-protocol-v*` | `testpypi` → `pypi` | same pin |
 | `publish-cascor-model.yml` | `juniper-cascor-model` | `release` + `workflow_dispatch` | `juniper-cascor-model-v*` | `testpypi` → `pypi` | same pin |
 
+### One-Artifact Contract
+
+All three publishers build once and hand both publish jobs one artifact, `<PUBLISH_PACKAGE>-dist`: the dist directory and `SHA256SUMS`, kept 90 days so it outlives the `pypi` gate. The steps that carry it are a template: they read only the workflow `env` values `PUBLISH_PACKAGE` and `PUBLISH_DIST_DIR`, and a JSON check's `INDEX_URL` ([`MANUAL.md` § One Artifact, Checked Against TestPyPI](MANUAL.md#one-artifact-checked-against-testpypi)).
+
+| Step | Job | What it checks |
+|------|-----|----------------|
+| `Record SHA256SUMS` | build | The dist directory holds only wheels and sdists; writes `<sha256>  <file>` lines, the format `sha256sum --check` reads |
+| `Upload dist artifacts` | build | Uploads the dist directory and `SHA256SUMS` as one artifact (`if-no-files-found: error`, `retention-days: 90`) |
+| `Download dist artifacts` | both publish jobs | Restores both into the workspace; no checkout may run after it before the job's last template step |
+| `Verify the dist against SHA256SUMS` | both publish jobs, before the upload | The directory holds exactly the listed files, with their sha256 |
+| `Verify TestPyPI serves exactly these files` | TestPyPI job, after the upload | `https://test.pypi.org/pypi/<package>/<version>/json` lists exactly those files and sha256 |
+| `Verify TestPyPI still serves exactly these files` | PyPI job, before the upload | The same, again |
+| `Verify PyPI serves exactly these files` | PyPI job, after the upload | The same, on `https://pypi.org` |
+
+The JSON checks poll up to 20 times, 15 s apart (`HASH_CHECK_ATTEMPTS`, `HASH_CHECK_INTERVAL`), while the version is not served yet or a file is missing (CDN lag). A file listed with another sha256, or one the run did not build, fails at once. The version comes from the file names in `SHA256SUMS`, not from the tag. Pinned by `src/tests/unit/test_publish_one_artifact.py`.
+
 ### Permissions and Concurrency
 
 | Setting | Value | Why |
@@ -258,6 +274,7 @@ Constraints:
 
 - No `--extra-index-url https://pypi.org/simple/` on the verify step (anti-target-squatting; juniper-ml#384).
 - Do not add `push: tags` next to `release: published` (double-fire race; juniper-ml#555).
+- No `skip-existing` on a TestPyPI upload: an earlier file under the same name would be kept silently and the install check would test it. The sha256 check after the upload would fail the run instead.
 - Dependabot bumps the `gh-action-pypi-publish` SHA and `# vX.Y.Z` comment in all three files together; keep them aligned.
 
 ### Twine Pin Surfaces
