@@ -144,6 +144,14 @@ _PROJECT_API_ALLOW_TRUNCATED_DATASETS_DEFAULT: bool = False
 # control path forwards ``error`` as a bare string.
 _PROJECT_API_SHORTFALL_REFUSAL_TOKEN: str = "[dataset_shortfall_refused]"
 
+# Machine-readable prefix on the Start refusal raised when a staged dataset is WIDER
+# than the network a plain Start would continue (F1, owner ruling 2026-09-24). Such a
+# start cannot proceed -- only a live swap grows a network -- and the remedy is a
+# start-fresh, which builds a new network from the dataset's dims. Same channel and
+# same reason as the shortfall token above: canopy has to recognise the refusal class
+# to point the operator at its Start fresh control, without pattern-matching English.
+_PROJECT_API_START_FRESH_REQUIRED_MARKER: str = "[start_fresh_required]"
+
 # Who put the opt-in on the wire when a partial dataset was accepted. Recorded on
 # the ``dataset_shortfall`` annotation as ``acceptance_source`` so the annotation
 # says WHO accepted, not merely that something was. The third value exists
@@ -279,5 +287,6 @@ __all__ = [
     "_PROJECT_API_SHORTFALL_ACCEPTED_BY_PRODUCER",
     "_PROJECT_API_SHORTFALL_ACCEPTED_BY_REQUEST",
     "_PROJECT_API_SHORTFALL_REFUSAL_TOKEN",
+    "_PROJECT_API_START_FRESH_REQUIRED_MARKER",
     "_PROJECT_API_TLS_MIN_VERSION_DEFAULT",
 ]
