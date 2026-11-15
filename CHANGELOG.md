@@ -30,6 +30,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `docs/ci_cd/BRANCH_PROTECTION.md` (0.4.5), `docs/ci_cd/MANUAL.md` (0.3.21), `docs/ci_cd/REFERENCE.md` and
     `docs/install/ENVIRONMENT_SETUP.md` describe the legs.
 
+### Fixed
+
+- **The informational Python 3.15 legs no longer show as failed checks** (the owner's report of 2026-11-15: they
+  "are supposed to produce an informational message without affecting the ability of code to commit, push, PR, or
+  merge"). The job-level `continue-on-error` that came with the legs (#759) kept `needs.unit-tests.result` and the
+  Quality Gate green, but each leg's own check still concluded `failure`. `Unit Tests + Coverage (Python 3.15 on
+  ubuntu-latest)` fails at `Install dependencies` (h5py 3.16.0 has no CPython 3.15 wheel, and its sdist build finds
+  no `libhdf5.so`), and `ci-cascor-model.yml`'s `Test (Python 3.15)` fails three tests; both were red on #759 and on
+  `main`. So every pull request would show a red X and "Some checks were not successful", read `UNSTABLE`, and fail
+  `gh pr checks` and any tool that reads every check.
+  - Every step of `ci.yml`'s `unit-tests` and of the `test` jobs of `ci-protocol.yml` and `ci-cascor-model.yml` now
+    carries an `id` and `continue-on-error: ${{ matrix.experimental == true }}`, so on the 3.15 leg a failing step
+    neither stops the job nor turns its check red. A last step, `Report the informational Python 3.15 result`
+    (`if: always() && matrix.experimental == true`), reports each failed step as a `::warning` annotation and as a
+    table in the job summary, and emits a `::notice` when every step passed. The blocking legs are unchanged: the
+    expression is false on them, so `ci-cascor-model.yml`'s drift-guard failure still fails its 3.12 leg.
+  - The same change was measured on juniper-ml#2578 (head `91591864`): its `Regression Tests (Python 3.15)` check
+    concluded `success` while two of its steps failed, and carried the warning annotation naming them.
+  - Applied by juniper-ml's `util/ad-hoc/2026-11-15_py315_informational_green_legs.py` (juniper-ml#2578), a textual
+    edit checked by re-parsing the workflow: the same steps in the same order plus the report step, and no other job
+    changed.
+
 ## [0.14.0] - 2026-11-15
 
 ### Added
