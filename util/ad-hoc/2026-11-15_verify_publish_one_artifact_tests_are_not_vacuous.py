@@ -8,7 +8,7 @@ Created: 2026-11-15
 Status: ad-hoc — investigation (negative control for the one-artifact publish change, the owner's directive of 2026-11-15)
 Retire when: the one-artifact template steps in the three publish workflows are replaced or removed.
 Related: .github/workflows/publish.yml, publish-cascor-model.yml and publish-protocol.yml (the steps marked "one-artifact
-         publish template"); src/tests/unit/test_publish_one_artifact.py
+         publish template", and the republish job); src/tests/unit/test_publish_one_artifact.py
 
 WHY THIS EXISTS
 ---------------
@@ -16,7 +16,9 @@ A test that passes against both the fixed and the broken workflow pins nothing. 
 workflows, the test file and pyproject.toml into a scratch directory, checks that the copy passes, then applies each
 mutation below: one exact-match edit, to one file, or to every copy of a template step (so that the byte-identity case
 cannot be what catches it). It runs the test file under pytest after each, restores the files, and reports any mutation
-the tests still pass. The repository itself is never written.
+the tests still pass. The repository itself is never written. Four of the mutations came from the review of the pull
+request that added this file (an index answering with zero files, a dropped request timeout, a dist check that counts
+dotfiles, a JSON check that skips the name and version check).
 
 The test file needs only pytest and PyYAML, so it runs with ``--noconftest`` (src/tests/conftest.py imports torch and
 the service's modules, which no case here uses).
@@ -45,19 +47,20 @@ PROTOCOL = ".github/workflows/publish-protocol.yml"
 WORKFLOWS = (PUBLISH, MODEL, PROTOCOL)
 TEST = "src/tests/unit/test_publish_one_artifact.py"
 COPIED = (*WORKFLOWS, TEST, "pyproject.toml")
+REUSE_IF = "        if: steps.reuse.outputs.reuse != 'true'\n"
 
 #: (label, files, old, new, mode): mode "one" requires exactly one match in each file; "all" replaces every match (at
-#: least one in each file); "last" replaces the last match only.
+#: least one in each file); "last" replaces the last match only; an int N replaces the Nth match (0-based) only.
 MUTATIONS = (
     ("TestPyPI upload skips an existing file", (PUBLISH,), "          repository-url: https://test.pypi.org/legacy/\n          packages-dir: ${{ env.PUBLISH_DIST_DIR }}/\n", "          repository-url: https://test.pypi.org/legacy/\n          packages-dir: ${{ env.PUBLISH_DIST_DIR }}/\n          skip-existing: true\n", "one"),
-    ("the PyPI job builds its own files again", (PUBLISH,), "      - name: Publish to PyPI\n", "      - name: Build package\n        run: python -m build\n\n      - name: Publish to PyPI\n", "one"),
+    ("the PyPI job builds its own files again", (PUBLISH,), "      - name: Publish to PyPI\n", "      - name: Build package\n        run: python -m build\n\n      - name: Publish to PyPI\n", 0),
     ("one copy of the JSON check drifts", (PUBLISH,), '"HASH_CHECK_ATTEMPTS", "20"', '"HASH_CHECK_ATTEMPTS", "21"', "last"),
     ("a file with another sha256 is not refused", WORKFLOWS, "                  if wrong:\n", "                  if wrong and False:\n", "all"),
     ("a file the run did not build is ignored", WORKFLOWS, "if expected.get(name) != digest)", "if name in expected and expected.get(name) != digest)", "all"),
     ("the dist check ignores an extra file", WORKFLOWS, "if not recorded or present != recorded:", "if not recorded or {k: present.get(k) for k in recorded} != recorded:", "all"),
     ("the record step takes any file", WORKFLOWS, "          if not names or strays:\n", "          if not names:\n", "all"),
     ("the artifact expires before the gate", (PUBLISH,), "          retention-days: 90\n", "          retention-days: 7\n", "one"),
-    ("the PyPI check reads TestPyPI", (PUBLISH,), "          INDEX_URL: https://pypi.org\n", "          INDEX_URL: https://test.pypi.org\n", "one"),
+    ("the PyPI check reads TestPyPI", (PUBLISH,), "          INDEX_URL: https://pypi.org\n", "          INDEX_URL: https://test.pypi.org\n", 0),
     ("no TestPyPI check before the PyPI upload", (PUBLISH,), "      - name: Verify TestPyPI still serves exactly these files\n", "      - name: Verify TestPyPI still serves these files\n", "one"),
     ("no TestPyPI check after a sub-package's TestPyPI upload", (MODEL,), "      - name: Verify TestPyPI serves exactly these files\n", "      - name: Verify TestPyPI serves these files\n", "one"),
     ("the PyPI job no longer waits for TestPyPI", (PUBLISH,), "    needs: testpypi\n", "    needs: build\n", "one"),
@@ -66,13 +69,35 @@ MUTATIONS = (
     ("a template step reads a workflow expression", WORKFLOWS, "          # Hash every file the build wrote", "          # ${{ github.repository }}: hash every file the build wrote", "all"),
     ("another package's file is accepted", WORKFLOWS, "if normalized(project) != normalized(package) or not version", "if not version", "all"),
     ("publish.yml also fires on a tag push", (PUBLISH,), "on:\n  release:\n    types: [published]\n", "on:\n  release:\n    types: [published]\n  push:\n    tags: ['v*']\n", "one"),
-    ("publish.yml's permissions change", (PUBLISH,), "permissions:\n  id-token: write\n", "permissions:\n  id-token: write\n  contents: read\n", "one"),
+    ("the build job gains id-token: write", (PUBLISH,), "      actions: read  # the reuse step lists this run's artifacts\n", "      actions: read  # the reuse step lists this run's artifacts\n      id-token: write\n", "one"),
+    ("id-token: write goes back to the workflow level", (PUBLISH,), "permissions: {}\n", "permissions:\n  id-token: write\n", "one"),
     ("the TestPyPI job is renamed", (PUBLISH,), "    name: Publish to TestPyPI\n", "    name: Publish to Test PyPI\n", "one"),
     ("the build runs inside the testpypi environment", (PUBLISH,), "    if: startsWith(github.event.release.tag_name, 'v')\n    runs-on: ubuntu-latest\n", "    if: startsWith(github.event.release.tag_name, 'v')\n    runs-on: ubuntu-latest\n    environment: testpypi\n", "one"),
     ("the TestPyPI upload reads another directory", (PUBLISH,), "          repository-url: https://test.pypi.org/legacy/\n          packages-dir: ${{ env.PUBLISH_DIST_DIR }}/\n", "          repository-url: https://test.pypi.org/legacy/\n          packages-dir: dist-other/\n", "one"),
-    ("a checkout runs after the PyPI job's download", (PUBLISH,), "      # One-artifact publish template, step 4: before every upload.\n      - name: Verify the dist against SHA256SUMS\n", "      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1\n\n      # One-artifact publish template, step 4: before every upload.\n      - name: Verify the dist against SHA256SUMS\n", "last"),
+    ("a checkout runs after the PyPI job's download", (PUBLISH,), "      # One-artifact publish template, step 4: before every upload.\n      - name: Verify the dist against SHA256SUMS\n", "      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1\n\n      # One-artifact publish template, step 4: before every upload.\n      - name: Verify the dist against SHA256SUMS\n", 1),
     ("the tag guard leaves the build job", (PUBLISH,), "    if: startsWith(github.event.release.tag_name, 'v')\n", "", "one"),
     ("the install check runs before the sha256 check", (PUBLISH,), "      # One-artifact publish template, step 5: after the TestPyPI upload, before the install check.\n", "      - name: Verify TestPyPI install early\n        run: pip install --no-deps --index-url https://test.pypi.org/simple/ juniper-cascor\n\n      # One-artifact publish template, step 5: after the TestPyPI upload, before the install check.\n", "one"),
+    # The review's four.
+    ("an index answering with zero files passes", WORKFLOWS, "                  if not missing:\n", "                  if not missing or not served:\n", "all"),
+    ("the JSON check's request timeout is dropped", WORKFLOWS, "urllib.request.urlopen(request, timeout=30)", "urllib.request.urlopen(request)", "all"),
+    ("the dist check counts dotfiles too", WORKFLOWS, "                  if not p.name.startswith(\".\"):\n                      present[p.name]", "                  if True:\n                      present[p.name]", "all"),
+    ("the JSON check skips the name and version check", WORKFLOWS, "if normalized(project) != normalized(package) or not version or not re.fullmatch", "if not re.fullmatch", "all"),
+    # The reuse step.
+    ("the upload runs although the artifact is reused", (PUBLISH,), "      - name: Upload dist artifacts\n" + REUSE_IF, "      - name: Upload dist artifacts\n", "one"),
+    ("the build runs although the artifact is reused", (MODEL,), "      - name: Build sdist + wheel\n" + REUSE_IF, "      - name: Build sdist + wheel\n", "one"),
+    ("the reuse step runs only on the first attempt", (PUBLISH,), "        if: github.run_attempt != '1'\n", "        if: github.run_attempt == '1'\n", "one"),
+    ("the reuse step runs in a directory no checkout has made yet", (MODEL,), "        working-directory: ${{ github.workspace }}\n", "", "one"),
+    ("the reuse step reuses an expired artifact", WORKFLOWS, ' if a["name"] == name and not a["expired"]]', ' if a["name"] == name]', "all"),
+    ("the reuse step takes any artifact of the run", WORKFLOWS, ' if a["name"] == name and not a["expired"]]', ' if not a["expired"]]', "all"),
+    # The republish job.
+    ("the republish job's name says PyPI", WORKFLOWS, "    name: Republish the tested files (dispatch only)\n", "    name: Republish TestPyPI's files to PyPI\n", "all"),
+    ("the republish job runs on a release too", WORKFLOWS, "    if: github.event_name == 'workflow_dispatch' && inputs.republish_from_testpypi\n", "    if: inputs.republish_from_testpypi || github.event_name == 'release'\n", "all"),
+    ("the republish job uploads bytes it did not check", WORKFLOWS, "              if actual != digest:\n", "              if False:\n", "all"),
+    ("the republish job ignores the release run's SHA256SUMS", WORKFLOWS, "              if recorded != digests:\n", "              if False:\n", "all"),
+    ("the republish job accepts a branch named like a tag", WORKFLOWS, 'if os.environ.get("GITHUB_REF_TYPE") == "tag" and tag.startswith("v"):', 'if tag.startswith("v"):', "all"),
+    ("the republish job takes a foreign file from TestPyPI", WORKFLOWS, "if normalized(project) != normalized(package) or file_version != version:", "if False:", "all"),
+    ("the republish job skips the dist check", WORKFLOWS, "      # One-artifact publish template, step 4: before every upload.\n      - name: Verify the dist against SHA256SUMS\n", "      # One-artifact publish template, step 4: before every upload.\n      - name: Verify the dist\n", "last"),
+    ("a sub-package's build runs on a republish dispatch", (PROTOCOL,), " || (github.event_name == 'workflow_dispatch' && !inputs.republish_from_testpypi)\n", " || github.event_name == 'workflow_dispatch'\n", "one"),
 )
 
 
@@ -81,17 +106,20 @@ def run_tests(python: str, scratch: Path) -> int:
     return proc.returncode
 
 
-def mutate(text: str, old: str, new: str, mode: str) -> "str | None":
+def mutate(text: str, old: str, new: str, mode: "str | int") -> "str | None":
     """Return the mutated text, or None when the edit does not apply as its mode requires."""
     count = text.count(old)
     if mode == "one":
         return text.replace(old, new) if count == 1 else None
     if mode == "all":
         return text.replace(old, new) if count >= 1 else None
-    if count < 1:
+    nth = count - 1 if mode == "last" else int(mode)
+    if not 0 <= nth < count:
         return None
-    head, _, tail = text.rpartition(old)
-    return head + new + tail
+    at = -1
+    for _ in range(nth + 1):
+        at = text.find(old, at + 1)
+    return text[:at] + new + text[at + len(old) :]
 
 
 def main(argv: "list[str] | None" = None) -> int:

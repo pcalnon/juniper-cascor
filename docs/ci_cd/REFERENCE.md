@@ -233,32 +233,38 @@ Trusted Publishing (OIDC) pipelines. Source of truth: the workflow YAML files un
 
 | Workflow | Package | Trigger | Tag guard | Environments | Publish action |
 |----------|---------|---------|-----------|--------------|----------------|
-| `publish.yml` | `juniper-cascor` | `release: published` | `startsWith(tag, 'v')` | `testpypi` → `pypi` | `pypa/gh-action-pypi-publish` (SHA-pinned) |
+| `publish.yml` | `juniper-cascor` | `release: published` + `workflow_dispatch` (republish only) | `startsWith(tag, 'v')` | `testpypi` → `pypi` | `pypa/gh-action-pypi-publish` (SHA-pinned) |
 | `publish-protocol.yml` | `juniper-cascor-protocol` | `release` + `workflow_dispatch` | `juniper-cascor-protocol-v*` | `testpypi` → `pypi` | same pin |
 | `publish-cascor-model.yml` | `juniper-cascor-model` | `release` + `workflow_dispatch` | `juniper-cascor-model-v*` | `testpypi` → `pypi` | same pin |
 
 ### One-Artifact Contract
 
-All three publishers build once and hand both publish jobs one artifact, `<PUBLISH_PACKAGE>-dist`: the dist directory and `SHA256SUMS`, kept 90 days so it outlives the `pypi` gate. The steps that carry it are a template: they read only the workflow `env` values `PUBLISH_PACKAGE` and `PUBLISH_DIST_DIR`, and a JSON check's `INDEX_URL` ([`MANUAL.md` § One Artifact, Checked Against TestPyPI](MANUAL.md#one-artifact-checked-against-testpypi)).
+All three publishers build once and hand both publish jobs one artifact, `<PUBLISH_PACKAGE>-dist`: the dist directory and `SHA256SUMS`, kept 90 days so it outlives the `pypi` gate. The steps that carry it are a template: they read only the workflow `env` values `PUBLISH_PACKAGE` and `PUBLISH_DIST_DIR`, a JSON check's `INDEX_URL`, and the runner's own variables ([`MANUAL.md` § One Artifact, Checked Against TestPyPI](MANUAL.md#one-artifact-checked-against-testpypi)).
 
 | Step | Job | What it checks |
 |------|-----|----------------|
-| `Record SHA256SUMS` | build | The dist directory holds only wheels and sdists; writes `<sha256>  <file>` lines, the format `sha256sum --check` reads |
+| `Reuse an earlier attempt's artifact` | build, first; runs on attempt 2 and later | Lists the run's artifacts; when an unexpired `<PUBLISH_PACKAGE>-dist` is there, every later build step is skipped (`if: steps.reuse.outputs.reuse != 'true'`), so a re-run cannot make a rebuild the newest artifact. An API failure fails the job |
+| `Record SHA256SUMS` | build | The dist directory holds only wheels and sdists; writes `<sha256>  <file>` lines (check by hand: `cd dist && sha256sum -c ../SHA256SUMS`) |
 | `Upload dist artifacts` | build | Uploads the dist directory and `SHA256SUMS` as one artifact (`if-no-files-found: error`, `retention-days: 90`) |
 | `Download dist artifacts` | both publish jobs | Restores both into the workspace; no checkout may run after it before the job's last template step |
-| `Verify the dist against SHA256SUMS` | both publish jobs, before the upload | The directory holds exactly the listed files, with their sha256 |
+| `Verify the dist against SHA256SUMS` | before every upload | The directory holds exactly the listed files, with their sha256 |
 | `Verify TestPyPI serves exactly these files` | TestPyPI job, after the upload | `https://test.pypi.org/pypi/<package>/<version>/json` lists exactly those files and sha256 |
 | `Verify TestPyPI still serves exactly these files` | PyPI job, before the upload | The same, again |
-| `Verify PyPI serves exactly these files` | PyPI job, after the upload | The same, on `https://pypi.org` |
+| `Verify PyPI serves exactly these files` | PyPI and republish jobs, after the upload | The same, on `https://pypi.org` |
+| `Find the release run's artifact` | republish (dispatch only), first | The version from the tag (`v<version>` or `<package>-v<version>`; anything else is refused); the newest release run for that tag still holding `<PUBLISH_PACKAGE>-dist` |
+| `Download TestPyPI's files and verify them` | republish | Every file TestPyPI's JSON lists for the version: each file's bytes against the JSON's sha256, only this package and version, and the release run's `SHA256SUMS` while it exists; writes `SHA256SUMS`. Nothing is built |
 
-The JSON checks poll up to 20 times, 15 s apart (`HASH_CHECK_ATTEMPTS`, `HASH_CHECK_INTERVAL`), while the version is not served yet or a file is missing (CDN lag). A file listed with another sha256, or one the run did not build, fails at once. The version comes from the file names in `SHA256SUMS`, not from the tag. Pinned by `src/tests/unit/test_publish_one_artifact.py`.
+The JSON checks poll up to 20 times, 15 s apart (`HASH_CHECK_ATTEMPTS`, `HASH_CHECK_INTERVAL`), while the version is not served yet or a file is missing (CDN lag): 285 s of sleep, plus up to 20 request timeouts of 30 s. A file listed with another sha256, or one the run did not build, fails at once. The version comes from the file names in `SHA256SUMS`, not from the tag. The republish job is step 1 of the recovery ladder: [`MANUAL.md` § Recovering a Release That Did Not Reach PyPI](MANUAL.md#recovering-a-release-that-did-not-reach-pypi). Pinned by `src/tests/unit/test_publish_one_artifact.py`.
 
 ### Permissions and Concurrency
 
 | Setting | Value | Why |
 |---------|-------|-----|
-| `permissions.id-token` | `write` | OIDC token for Trusted Publishing |
-| `permissions.contents` | `read` (protocol/model) | Checkout / sparse-checkout for version verify |
+| workflow `permissions` | `{}` (`publish.yml`); `contents: read` (protocol/model) | No job inherits `id-token: write` |
+| build job | `contents: read`, `actions: read` | Checkout; the reuse step lists the run's artifacts. No `id-token`, so the build backend cannot mint a token |
+| TestPyPI job | `contents: read`, `id-token: write` | Checkout / sparse-checkout for the install check; OIDC token for Trusted Publishing |
+| PyPI job | `id-token: write` (`publish.yml`); plus `contents: read` (protocol/model) | OIDC token for Trusted Publishing |
+| republish job | `actions: read`, `id-token: write` | Find and download the release run's artifact; OIDC token for Trusted Publishing |
 | `concurrency.group` | `publish-<pkg>-${{ github.ref_name }}` (protocol/model) | Serialize re-fires against immutable TestPyPI |
 | `cancel-in-progress` | `false` | Never cancel a mid-upload publish |
 
@@ -275,6 +281,7 @@ Constraints:
 - No `--extra-index-url https://pypi.org/simple/` on the verify step (anti-target-squatting; juniper-ml#384).
 - Do not add `push: tags` next to `release: published` (double-fire race; juniper-ml#555).
 - No `skip-existing` on a TestPyPI upload: an earlier file under the same name would be kept silently and the install check would test it. The sha256 check after the upload would fail the run instead.
+- A release that did not reach PyPI: the republish dispatch, then (within 30 days) **Re-run failed jobs**, then a new patch version ([`MANUAL.md`](MANUAL.md#recovering-a-release-that-did-not-reach-pypi)). Never "Re-run all jobs", nor `gh run rerun <id>` without `--failed`.
 - Dependabot bumps the `gh-action-pypi-publish` SHA and `# vX.Y.Z` comment in all three files together; keep them aligned.
 
 ### Twine Pin Surfaces

@@ -629,9 +629,9 @@ Release packages from this monorepo via Trusted Publishing (OIDC) — no long-li
 
 | Workflow | Package / working dir | Runs when release tag… | Manual re-fire |
 |----------|----------------------|------------------------|----------------|
-| `publish.yml` | `juniper-cascor` (repo root) | `startsWith(..., 'v')` — e.g. `v0.7.0` | No (`release` only) |
-| `publish-protocol.yml` | `juniper-cascor-protocol/` | `juniper-cascor-protocol-v*` | Yes (`workflow_dispatch`) |
-| `publish-cascor-model.yml` | `juniper-cascor-model/` | `juniper-cascor-model-v*` | Yes (`workflow_dispatch`) |
+| `publish.yml` | `juniper-cascor` (repo root) | `startsWith(..., 'v')` — e.g. `v0.7.0` | Republish only (`workflow_dispatch` from the tag with `republish_from_testpypi`) |
+| `publish-protocol.yml` | `juniper-cascor-protocol/` | `juniper-cascor-protocol-v*` | Yes (`workflow_dispatch` from the tag: a full re-fire, or `republish_from_testpypi`) |
+| `publish-cascor-model.yml` | `juniper-cascor-model/` | `juniper-cascor-model-v*` | Yes (`workflow_dispatch` from the tag: a full re-fire, or `republish_from_testpypi`) |
 
 All three listen to `release: types: [published]`. A single Release fires every workflow file; the `if:` tag-prefix guards skip jobs that are not for that package. Sub-package workflows also set `concurrency.group: publish-<pkg>-${{ github.ref_name }}` with `cancel-in-progress: false` so a manual dispatch cannot race a live release onto immutable TestPyPI.
 
@@ -641,7 +641,7 @@ All three listen to `release: types: [published]`. A single Release fires every 
 Release published (matching tag)
         │
         ▼
-   Build and Validate: build + twine check, ONCE
+   Build and Validate: build + twine check, ONCE (a re-run reuses it)
    SHA256SUMS recorded; dist + SHA256SUMS uploaded as ONE artifact
         │
         ▼
@@ -656,7 +656,7 @@ Release published (matching tag)
    (--no-deps, --index-url https://test.pypi.org/simple/)
         │
         ▼
-   Publish to PyPI      (environment: pypi, needs: testpypi)
+   Publish to PyPI      (environment: pypi, id-token: write, needs: testpypi)
    download → check against SHA256SUMS → TestPyPI's JSON again → upload
         │
         ▼
@@ -669,18 +669,38 @@ Release published (matching tag)
 
 **Intent:** PyPI receives exactly the files TestPyPI took and the install check tested, and the run proves it. Until 2026-11-15 `publish.yml` ran `python -m build` in each publish job, so PyPI served a second build of every release: the 0.13.0 wheel is `eda26e26…` on PyPI and `f5dbc1b6…` on TestPyPI, and the 0.14.0 wheel `b70f3d39…` against `c5c9a5dc…` (their sdists differ too). Each job also ran an unpinned `pip install build twine`, so a long `pypi` gate could change the build backend between the two builds.
 
-Now the `build` job writes the sdist and wheel once, records their sha256 in `SHA256SUMS`, and uploads both as one artifact. Each publish job downloads it and checks the files against `SHA256SUMS` before it uploads them. After the TestPyPI upload, TestPyPI's JSON for the version must list exactly those files with those sha256. The PyPI job checks TestPyPI's JSON again before its own upload, and PyPI's after it. An index never takes a second file under a name it already holds, so TestPyPI's record cannot change once the TestPyPI job has run: it witnesses what the install check tested. The step-by-step contract is in [`REFERENCE.md` § One-Artifact Contract](REFERENCE.md#one-artifact-contract).
+Now the `build` job writes the sdist and wheel once, records their sha256 in `SHA256SUMS`, and uploads both as one artifact; on a re-run attempt it reuses that artifact instead of building again. Each publish job downloads it and checks the files against `SHA256SUMS` before it uploads them. After the TestPyPI upload, TestPyPI's JSON for the version must list exactly those files with those sha256. The PyPI job checks TestPyPI's JSON again before its own upload, and PyPI's after it. An index never takes a second file under a name it already holds, so TestPyPI's record cannot change once the TestPyPI job has run: it witnesses what the install check tested. Only the jobs that upload hold `id-token: write`, so the build cannot mint a credential. The step-by-step contract is in [`REFERENCE.md` § One-Artifact Contract](REFERENCE.md#one-artifact-contract).
 
-**Copying the template into another publish workflow.** The steps marked `One-artifact publish template` read nothing but the workflow `env` values `PUBLISH_PACKAGE` (the distribution's name on the index) and `PUBLISH_DIST_DIR` (where the build writes, relative to the workspace), and each JSON check's `INDEX_URL`. Copy them verbatim, set the two values, and point every upload's `packages-dir` at `${{ env.PUBLISH_DIST_DIR }}/`. Keep the order:
+**Copying the template into another publish workflow.** The steps marked `One-artifact publish template`, and the whole `republish` job, read nothing but the workflow `env` values `PUBLISH_PACKAGE` (the distribution's name on the index) and `PUBLISH_DIST_DIR` (where the build writes, relative to the workspace), each JSON check's `INDEX_URL`, and the runner's own variables. Copy them verbatim, set the two values, and point every upload's `packages-dir` at `${{ env.PUBLISH_DIST_DIR }}/`. Keep the order:
 
-1. after the build: `Record SHA256SUMS`, then `Upload dist artifacts`;
-2. in each publish job: `Download dist artifacts`, then `Verify the dist against SHA256SUMS`, before the upload;
-3. TestPyPI's JSON after the TestPyPI upload and before the install check, and again before the PyPI upload;
-4. PyPI's JSON after the PyPI upload.
+1. first in the build job, `Reuse an earlier attempt's artifact`, and `if: steps.reuse.outputs.reuse != 'true'` on every later step of that job;
+2. after the build: `Record SHA256SUMS`, then `Upload dist artifacts`;
+3. in each publish job: `Download dist artifacts`, then `Verify the dist against SHA256SUMS`, before the upload;
+4. TestPyPI's JSON after the TestPyPI upload and before the install check, and again before the PyPI upload;
+5. PyPI's JSON after the PyPI upload;
+6. the `republish` job and the `workflow_dispatch` input `republish_from_testpypi`, in the same workflow file: PyPI's trusted publisher names that file and the `pypi` environment.
 
-A checkout empties the workspace, so none may run between a job's download and its last template step. Never set `skip-existing` on the TestPyPI upload: an earlier file under the same name would be kept silently, and the install check would test that file.
+Give the workflow `permissions: {}` (or `contents: read`) and each job its own: the build `contents: read` and `actions: read`; each uploading job `id-token: write`, plus `contents: read` where it checks out; the republish job `actions: read` and `id-token: write`. If the build job already runs on a dispatch, exclude the republish dispatch from its `if:`, as the sub-package publishers do. A checkout empties the workspace, so none may run between a job's download and its last template step. Never set `skip-existing` on the TestPyPI upload: an earlier file under the same name would be kept silently, and the install check would test that file.
 
-**Recovering a failed run.** Re-run the run's *failed* jobs. They reuse its artifact; an index accepts a re-upload of a file it already holds byte for byte; and the checks run again. A new run (a new Release, or a dispatch of a sub-package publisher) builds new files, which an index that already holds the version refuses (`400 File already exists`): that version then needs a new number. The artifact is kept 90 days, longer than the `pypi` gate can wait.
+### Recovering a Release That Did Not Reach PyPI
+
+The owner's ladder (ruling of 2026-11-15), in this order. Every rung publishes the files TestPyPI took, or nothing.
+
+1. **Republish TestPyPI's files.** Dispatch the release's own workflow from its tag:
+
+   ```bash
+   gh workflow run publish.yml --repo pcalnon/juniper-cascor --ref v<version> -f republish_from_testpypi=true
+   # sub-packages: publish-cascor-model.yml --ref juniper-cascor-model-v<version>,
+   #               publish-protocol.yml --ref juniper-cascor-protocol-v<version>
+   ```
+
+   Only `Republish the tested files (dispatch only)` runs. It waits at the `pypi` gate like the release run (a fresh approval, then the 5-minute timer), builds nothing, downloads the version's files from TestPyPI, checks each file's bytes against TestPyPI's JSON and, while the release run's artifact exists (90 days), against its `SHA256SUMS`, uploads them, and checks PyPI's JSON. It does not depend on the release run's age, only on TestPyPI still holding the files, and it works only from a tag whose workflow carries the job: tags cut before this change merged do not.
+2. **If that fails, within 30 days of the release run: "Re-run failed jobs"** on the release run. The re-run reuses the run's artifact and waits at the gate again (a fresh approval, then the 5-minute timer). GitHub refuses a re-run after 30 days.
+3. **Otherwise, cut a new patch version.**
+
+The usual case is a PyPI job that failed after waiting 30 days for approval, GitHub's cap on a deployment's wait: the run is then past its 30-day re-run window, and rung 1 is the way back. While the artifact exists, `gh run download <run-id> --repo pcalnon/juniper-cascor -n juniper-cascor-dist` fetches the exact files that run built, for inspection.
+
+**Never "Re-run all jobs"** on a publish run, nor `gh run rerun <id>` without `--failed`: use **Re-run failed jobs**. download-artifact takes the newest artifact of a name, so a re-run build became the file every later job uploaded. juniper-ml's run 38045867684 published a rebuild of juniper-ci-tools 0.9.1 that way: PyPI serves `1dc8e01e…`, TestPyPI `ade363e8…`. The build job's `Reuse an earlier attempt's artifact` step now skips such a rebuild, but a tag cut before it lacks the step.
 
 ### Operator Constraints
 
@@ -717,15 +737,15 @@ A checkout empties the workspace, so none may run between a job's download and i
 ### Re-firing a Failed Sub-Package Publish
 
 ```bash
-# After fixing a transient TestPyPI/PyPI failure for protocol or model:
-gh workflow run publish-protocol.yml
+# A full re-fire builds again: only for a failure BEFORE TestPyPI took the version. Always from the release tag.
+gh workflow run publish-protocol.yml --repo pcalnon/juniper-cascor --ref juniper-cascor-protocol-vX.Y.Z
 # or
-gh workflow run publish-cascor-model.yml
+gh workflow run publish-cascor-model.yml --repo pcalnon/juniper-cascor --ref juniper-cascor-model-vX.Y.Z
 ```
 
-A dispatch is a new run, so it builds new files: it can recover a publish only while TestPyPI does not hold the version yet. Once TestPyPI took it, re-run the original run's failed jobs, which reuse its artifact ([One Artifact, Checked Against TestPyPI](#one-artifact-checked-against-testpypi)).
+Dispatch from the release tag: both publish environments admit tag refs only, so a dispatch from a branch fails at `Publish to TestPyPI`. A full re-fire builds new files, so it works only while TestPyPI does not hold the version yet. Once TestPyPI took it, follow [Recovering a Release That Did Not Reach PyPI](#recovering-a-release-that-did-not-reach-pypi), which `-f republish_from_testpypi=true` starts.
 
-`publish.yml` (main package) has no `workflow_dispatch` — re-run the failed jobs from the Actions UI for that release run. A new Release is a new run, which TestPyPI refuses for a version it already holds.
+`publish.yml` (main package) has a `workflow_dispatch` for the republish job only; a dispatch without the input runs nothing. Otherwise use **Re-run failed jobs** on the release run, never "Re-run all jobs". A new Release is a new run, which TestPyPI refuses for a version it already holds.
 
 ---
 
@@ -781,10 +801,13 @@ If environment setup fails:
 | TestPyPI `400 File already exists` on a fresh Release | Dual trigger (`release` + `push: tags`) or concurrent `workflow_dispatch` | Keep a single `release: published` trigger; rely on concurrency groups; bump version for a new upload |
 | OIDC / trusted publisher errors | Missing PyPI pending publisher or wrong workflow/env name | Register the workflow + environment on TestPyPI/PyPI; ensure `id-token: write` |
 | TestPyPI verify can't find the version | Index lag | Protocol/model retry 5× with 10s sleep; main package sleeps 30s once — re-run the verify step if lag exceeds that |
-| `Verify … serves exactly these files` fails: the index lists a file this run did not build, or with another sha256 | The index already held other files for this version (an earlier run's build), or the artifact is not what the build recorded | Do not publish this version from this run; find which upload put the other file there. The run failed closed, before the PyPI upload when the TestPyPI check failed |
-| `Verify … serves exactly these files` gives up after 20 attempts | The index never listed the version or a file (an outage, or CDN lag beyond 5 minutes) | Re-run the failed job: it re-uploads the same files, which the index accepts, and checks again |
-| `Verify the dist against SHA256SUMS` fails | The downloaded directory holds a file the build did not record, or misses or alters one | Re-run the failed job; if it fails again, the artifact is wrong: do not publish it |
-| `Download dist artifacts` finds no artifact in the PyPI job | The artifact expired (90 days) or the build job never uploaded it | The version cannot be published from this run; a new run rebuilds, which TestPyPI refuses under the same names, so cut a new version |
+| `Verify TestPyPI serves exactly these files` or `Verify PyPI serves exactly these files` fails: the index lists a file this run did not build, or with another sha256 | The index already held other files for this version (an earlier run's build), or the artifact is not what the build recorded | Do not publish this version from this run; find which upload put the other file there. When the TestPyPI check failed, the run stopped before the PyPI upload |
+| `Verify TestPyPI still serves exactly these files` fails in the PyPI job, before its upload | TestPyPI did not answer within the bound, or its JSON no longer matches the artifact | Nothing reached PyPI. A TestPyPI outage has no override: once TestPyPI answers, use Re-run failed jobs (a fresh approval, then the 5-minute timer). A mismatch means the artifact is not what TestPyPI took: do not publish it |
+| A JSON check gives up after 20 attempts | The index never listed the version or a file within the bound: 19 sleeps of 15 s (285 s) plus up to 20 request timeouts of 30 s, about 15 minutes at worst | Re-run failed jobs: the index accepts a re-upload of identical files, and the check runs again. Re-running the PyPI job needs a fresh approval and waits the 5-minute timer again |
+| `Verify the dist against SHA256SUMS` fails | The downloaded directory holds a file the build did not record, or misses or alters one | Re-run failed jobs; if it fails again, the artifact is wrong: do not publish it |
+| PyPI's files differ from TestPyPI's after a re-run | "Re-run all jobs" (or `gh run rerun <id>` without `--failed`) on a tag cut before the reuse step: the rebuild became the newest `<pkg>-dist` | Use Re-run failed jobs. The reuse step in `Build and Validate` skips such a rebuild |
+| The PyPI job failed after waiting 30 days for approval, or `Download dist artifacts` finds no artifact | The gate's 30-day cap passed, which also puts the run past GitHub's 30-day re-run window; or the artifact expired (90 days) | Follow [the recovery ladder](#recovering-a-release-that-did-not-reach-pypi): the republish dispatch copies TestPyPI's files without the artifact |
+| `Republish the tested files` fails at `Download TestPyPI's files and verify them` | A file's bytes do not hash to TestPyPI's JSON, the JSON lists a file that is not this package and version, or the release run's `SHA256SUMS` disagrees with TestPyPI | Do not publish TestPyPI's files: within 30 days of the release run, use Re-run failed jobs on it; otherwise cut a new patch version |
 | Protocol verify import fails under `--no-deps` | Expecting `import juniper_cascor_protocol` | Use `importlib.metadata` version check (workflow already does) |
 | Wrong package published / skipped | Tag prefix mismatch | Use `v*` for the app, `juniper-cascor-<pkg>-v*` for sub-packages |
 | `twine check` fails after merging a Twine major in `requirements_ci.txt` | The local/CI freeze Twine is not what publish uses; or the Metadata-Version is too old for Twine 7 | Rebuild with current setuptools; run `twine check` under Twine ≥ 7; do not expect the freeze pin to change the action's upload Twine |

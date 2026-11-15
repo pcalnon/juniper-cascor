@@ -157,8 +157,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     `python -m build`, `twine check dist/*`). Its `Record SHA256SUMS` step hashes the files, and
     `Upload dist artifacts` uploads `dist/` and `SHA256SUMS` as one artifact, `juniper-cascor-dist`, kept 90 days so
     it outlives the `pypi` gate (at most 30 days) and the 30-day re-run window. The `v*` tag guard moved to this job;
-    both publish jobs depend on it, so a sub-package Release still skips all three. The build no longer runs in a job
-    that holds the `testpypi` environment.
+    both publish jobs depend on it, so a sub-package Release still skips all three.
+  - **A re-run reuses the first build.** download-artifact takes the newest artifact of a name, so "Re-run all jobs"
+    would make a rebuild the file every later job uploads. juniper-ml's run 38045867684 did exactly that to
+    juniper-ci-tools 0.9.1, whose PyPI files (`1dc8e01e…`) are not TestPyPI's (`ade363e8…`). On any attempt after the
+    first, the build job's new first step, `Reuse an earlier attempt's artifact`, lists the run's artifacts and, when
+    `juniper-cascor-dist` is there, skips every later step of the job; the jobs after it download that artifact.
   - **TestPyPI.** `Publish to TestPyPI` downloads the artifact and checks the files against `SHA256SUMS` before it
     uploads them. `Verify TestPyPI serves exactly these files` then requires TestPyPI's JSON for the version to list
     exactly those files with those sha256. It polls up to 20 times, 15 s apart, while the version or a file is
@@ -168,27 +172,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     It downloads the same artifact, checks it against `SHA256SUMS`, checks TestPyPI's JSON again before it uploads,
     and checks PyPI's JSON after. An index never takes a second file under a name it already holds, so TestPyPI's
     record cannot change after the TestPyPI job: it witnesses what the install check tested.
+  - **Only the jobs that upload hold `id-token: write`**, as the pypa action's README at the pinned SHA asks. The
+    workflow's `permissions` is now `{}`: `Build and Validate` gets `contents: read` and `actions: read`,
+    `Publish to TestPyPI` `contents: read` and `id-token: write`, and `Publish to PyPI` `id-token: write`. So the
+    build, which runs the package's build backend, can mint no OIDC token and holds no environment.
+  - **Recovery, in the owner's order (ruling of 2026-11-15).** A `workflow_dispatch` from the release tag with
+    `republish_from_testpypi` runs only the new job `Republish the tested files (dispatch only)`, behind the same
+    `pypi` gate. It builds nothing: it downloads the version's files from TestPyPI, checks each file's bytes against
+    TestPyPI's JSON and, while the release run's artifact exists, against its `SHA256SUMS`, uploads them, and checks
+    PyPI's JSON. If that fails, within 30 days of the release run, "Re-run failed jobs" on it; after that, cut a new
+    patch version. The job's name carries no "pypi", so juniper-ml's release-train ceremony, which tells the publish
+    jobs apart by that substring and reads release-event runs only, never counts it.
   - `publish-cascor-model.yml` and `publish-protocol.yml` already handed both jobs one artifact. They gain the same
-    checks, and their artifact's retention rises from 7 days to 90: a `pypi` gate approved after day 7 would have
-    found it expired, and a new run builds new files, which TestPyPI refuses under names it already holds.
-  - **A template.** The five steps read only the workflow `env` values `PUBLISH_PACKAGE` and `PUBLISH_DIST_DIR` and
-    a JSON check's `INDEX_URL`, so the other Juniper publishers can copy them verbatim. The version comes from the
-    file names in `SHA256SUMS`, not from the tag.
-  - Unchanged: the `release: published` trigger (no `push: tags`), the workflow `permissions`, the `testpypi` and
-    `pypi` environments, the job names `Publish to TestPyPI` and `Publish to PyPI` (juniper-ml's release-train
-    ceremony finds the two jobs by them), the sub-package publishers' `workflow_dispatch` and `concurrency`, and
-    `publish-image.yml`. A build failure now fails `Build and Validate` rather than `Publish to TestPyPI`, so the
-    ceremony reports it as `HALT_PUBLISH` rather than `HALT_TESTPYPI`; both stop the train.
-  - **Pins**, in the new `src/tests/unit/test_publish_one_artifact.py` (55 cases). The static ones read the three
-    workflows: one build, in a job with no environment; the job chain and names; each upload after the dist check;
-    TestPyPI's JSON checked after the TestPyPI upload, before the install check and before the PyPI upload, and
-    PyPI's after; no `skip-existing`; the artifact's name, paths and retention; the triggers, permissions and tag
-    guards; and every copy of a template step byte-identical. The rehearsals run each template step's own Python,
-    extracted from `publish.yml`, in a scratch workspace, and the JSON check against a stand-in index on 127.0.0.1.
-    `util/ad-hoc/2026-11-15_verify_publish_one_artifact_tests_are_not_vacuous.py` makes 24 edits to a copy of
-    the workflows, one at a time, each undoing one property, and the tests catch each.
-  - Docs: `docs/ci_cd/MANUAL.md` (0.3.22) § One Artifact, Checked Against TestPyPI, `docs/ci_cd/REFERENCE.md`
-    § One-Artifact Contract, `docs/ci_cd/QUICK_START.md`, `docs/DEVELOPER_CHEATSHEET.md` (1.0.12) and `AGENTS.md`.
+    checks, the reuse step, per-job permissions (`contents: read` at the top) and the republish job, and their
+    artifact's retention rises from 7 days to 90: juniper-ci-tools 0.9.1's PyPI job, approved on day 11, failed at its
+    download because its 7-day artifact had expired. A dispatch without the new input still re-fires the whole
+    publish, as before.
+  - **A template.** Every new step reads only the workflow `env` values `PUBLISH_PACKAGE` and `PUBLISH_DIST_DIR`, a
+    step's `INDEX_URL`, and the runner's own variables, so the other Juniper publishers can copy them verbatim, the
+    republish job whole. The version comes from the file names in `SHA256SUMS`, or, in the republish job, from the
+    tag.
+  - Unchanged: the `release: published` trigger (no `push: tags`), the `testpypi` and `pypi` environments, the job
+    names `Publish to TestPyPI` and `Publish to PyPI` (juniper-ml's release-train ceremony finds the two jobs by
+    them), the sub-package publishers' `concurrency`, and `publish-image.yml`. A build failure now fails
+    `Build and Validate` rather than `Publish to TestPyPI`, so the ceremony reports it as `HALT_PUBLISH` rather than
+    `HALT_TESTPYPI`; both stop the train.
+  - **Pins**, in the new `src/tests/unit/test_publish_one_artifact.py` (87 cases). The static ones read the three
+    workflows: one build, in a job without an environment or `id-token`; the job chain, names and per-job
+    permissions; the reuse step first in the build job and guarding every later step; each upload after the dist
+    check; TestPyPI's JSON checked after the TestPyPI upload, before the install check and before the PyPI upload,
+    and PyPI's after; no `skip-existing`; the artifact's name, paths and retention; the republish job's trigger, gate,
+    steps and name; the triggers and tag guards; and every copy of a template step byte-identical. The rehearsals run
+    each template step's own Python, extracted from `publish.yml`, in a scratch workspace, against a stand-in index and
+    a stand-in GitHub API on 127.0.0.1. `util/ad-hoc/2026-11-15_verify_publish_one_artifact_tests_are_not_vacuous.py`
+    makes 43 edits to a copy of the workflows, one at a time, each undoing one property, and the tests catch
+    each.
+  - Docs: `docs/ci_cd/MANUAL.md` (0.3.22) § One Artifact, Checked Against TestPyPI and § Recovering a Release That
+    Did Not Reach PyPI, `docs/ci_cd/REFERENCE.md` § One-Artifact Contract, `docs/ci_cd/QUICK_START.md`,
+    `docs/DEVELOPER_CHEATSHEET.md` (1.0.12) and `AGENTS.md`.
 
 ### Documentation
 
