@@ -325,7 +325,7 @@ Three Trusted Publishing (OIDC) workflows publish packages from this repo. Cut a
 | `juniper-cascor-protocol` | `.github/workflows/publish-protocol.yml` | `juniper-cascor-protocol-v*` |
 | `juniper-cascor-model` | `.github/workflows/publish-cascor-model.yml` | `juniper-cascor-model-v*` |
 
-Pipeline shape for every package: build/`twine check` → TestPyPI → install verify (`--no-deps`, TestPyPI index only) → PyPI.
+Pipeline shape for every package: build/`twine check` once, with `SHA256SUMS` → TestPyPI → TestPyPI's JSON must list exactly those sha256 → install verify (`--no-deps`, TestPyPI index only) → TestPyPI's JSON checked again → PyPI → PyPI's JSON checked. Both publish jobs upload the build job's one artifact ([`MANUAL.md` § One Artifact, Checked Against TestPyPI](MANUAL.md#one-artifact-checked-against-testpypi)).
 
 ```bash
 # Example: publish the main package
