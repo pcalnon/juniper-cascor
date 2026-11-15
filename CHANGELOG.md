@@ -32,6 +32,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **h5py installs on the informational Python 3.15 leg.** Phase 2 of the ecosystem's Python 3.15 migration (approved
+  by the owner on 2026-11-15) works through what the 3.15 legs found, and this is the first item: h5py publishes no
+  CPython 3.15 wheel (3.16.0, 2026-03-06, the newest release on PyPI when re-probed on 2026-11-15, ships
+  cp310-cp314), so pip builds it from the sdist there, and the runner image lacks the libhdf5 headers and
+  pkg-config that build needs. On `main`'s 3.15 leg (run 43678353051) h5py's wheel build stopped at `Unable to load dependency
+  HDF5`, which failed `pip install -e ".[all]"` (h5py is in the `ml` extra), so pytest and coverage were never
+  installed and the leg ran no test.
+  - `ci.yml`'s `unit-tests` gains `Install the HDF5 headers h5py builds against (Python 3.15 only)`, which installs
+    `libhdf5-dev` and `pkg-config` before `Install dependencies`, on the 3.15 leg alone
+    (`if: matrix.experimental == true && runner.os == 'Linux'`). Like the job's other steps it carries an `id` and
+    the leg's `continue-on-error` expression, so the 3.15 report step lists it.
+  - The blocking legs skip the step and still install h5py's wheel. The 3.15 leg stays informational.
+  - Drop the step once h5py ships a cp315 wheel. Applied by juniper-ml's
+    `util/ad-hoc/2026-11-15_py315_h5py_hdf5_headers.py`.
+
 - **The informational Python 3.15 legs no longer show as failed checks** (the owner's report of 2026-11-15: they
   "are supposed to produce an informational message without affecting the ability of code to commit, push, PR, or
   merge"). The job-level `continue-on-error` that came with the legs (#759) kept `needs.unit-tests.result` and the
