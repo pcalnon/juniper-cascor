@@ -32,6 +32,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`CI — juniper-cascor-model` can pass on `main` again: the extracted `constants_api` carries
+  `_PROJECT_API_START_FRESH_REQUIRED_MARKER`.** #687 (merged 2026-09-24 as `ec8b5bdb`) added that marker, the
+  machine-readable prefix on the Start refusal for a staged dataset wider than the network, to
+  `src/cascor_constants/constants_api/constants_api_defaults.py` and `__init__.py`, but not to their
+  `juniper-cascor-model/` copies. `juniper-cascor-model/tests/test_drift.py` requires the extracted trees to be
+  byte-identical to `src/`. So `ci-cascor-model.yml`'s `Test (Python 3.12)` failed on #687 itself, and on every run on
+  `main` since `ec8b5bdb`. That context is in no ruleset, so nothing held the merge.
+  - The two files are re-extracted from `src/`. The copies gain the marker's definition, its import and its two
+    `__all__` entries (11 lines), and lose nothing.
+  - juniper-cascor-model's next release exports the marker as well. Its `[Unreleased]` section records the change.
+
 - **h5py installs on the informational Python 3.15 leg.** Phase 2 of the ecosystem's Python 3.15 migration (approved
   by the owner on 2026-11-15) works through what the 3.15 legs found, and this is the first item: h5py publishes no
   CPython 3.15 wheel (3.16.0, 2026-03-06, the newest release on PyPI when re-probed on 2026-11-15, ships

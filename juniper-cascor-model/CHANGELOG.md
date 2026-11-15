@@ -31,6 +31,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`cascor_constants.constants_api` exports `_PROJECT_API_START_FRESH_REQUIRED_MARKER`, as
+  `juniper-cascor/src` has since 2026-09-24.** juniper-cascor#687 added the marker
+  (`"[start_fresh_required]"`, the machine-readable prefix on the Start refusal for a staged
+  dataset wider than the network) to `src/` only, so `tests/test_drift.py` failed.
+  `constants_api/__init__.py` and `constants_api_defaults.py` are re-extracted from `src/`:
+  they gain the marker's definition, its import and its two `__all__` entries, and nothing
+  else changes.
 - **`utils.check_object_pickleability` no longer crashes on Python 3.15.** dill 0.4.1, the
   newest release when re-probed on 2026-11-15, reads `code.co_lnotab`, which Python 3.15
   removed, so `dill.pickles` raised `AttributeError` on any attribute holding a code object,
