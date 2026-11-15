@@ -179,6 +179,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Docs: `docs/ci_cd/MANUAL.md` (0.3.22) § One Artifact, Checked Against TestPyPI, `docs/ci_cd/REFERENCE.md`
     § One-Artifact Contract, `docs/ci_cd/QUICK_START.md`, `docs/DEVELOPER_CHEATSHEET.md` (1.0.12) and `AGENTS.md`.
 
+### Documentation
+
+- **`docs/api/API_SCHEMAS.md` lists a `pause` that overlaps a `stop` and a `start` as known, not fixed.**
+  `pause_training` checks `state_machine.status`, then closes the pause gate, with no lock between the two, so a
+  `stop` and a `start` that land in between leave the gate closed under the new run. That run is held at its first
+  checkpoint while `state_machine.status` reads `STARTED` and `training_active` `true`: `resume` and `start` answer
+  `409`, a `pause` then a `resume` frees it, and a `stop` or a `reset` ends it there. The `pause` itself reports
+  success. Measured on `main` (`a1b0409d`) with the `pause` sent over `/ws/control` and the `stop` and the `start`
+  over REST; over REST alone the three cannot overlap. The same entry lists the same hold after a live swap whose
+  join on the old fit timed out: a `pause` sent then, over REST too, is accepted, and the swapped run is held at its
+  first checkpoint. The entry follows the first "Known, not fixed" entry under "Training Failure Propagation and
+  Ownership", and the document's stamp is 0.3.24.
+
 ## [0.14.0] - 2026-11-15
 
 ### Added
