@@ -168,8 +168,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   checkpoint while `state_machine.status` reads `STARTED` and `training_active` `true`: `resume` and `start` answer
   `409`, a `pause` then a `resume` frees it, and a `stop` or a `reset` ends it there. The `pause` itself reports
   success. Measured on `main` (`a1b0409d`) with the `pause` sent over `/ws/control` and the `stop` and the `start`
-  over REST; over REST alone the three cannot overlap. The entry follows the first "Known, not fixed" entry under
-  "Training Failure Propagation and Ownership", and the document's stamp is 0.3.24.
+  over REST; over REST alone the three cannot overlap. The same entry lists the same hold after a live swap whose
+  join on the old fit timed out: a `pause` sent then, over REST too, is accepted, and the swapped run is held at its
+  first checkpoint. The entry follows the first "Known, not fixed" entry under "Training Failure Propagation and
+  Ownership", and the document's stamp is 0.3.24.
 
 ## [0.14.0] - 2026-11-15
 
