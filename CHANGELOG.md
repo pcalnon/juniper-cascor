@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.14.0] - 2026-11-15
+
 ### Added
 
 - **API addition: `WebSocketManager.promote_to_active(websocket, *, replayed_through=None) -> bool`.** The
@@ -47,6 +49,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   explicit `auto_configure: False` now rules it out. On FastAPI < 0.142, which `pyproject.toml` still admits, the
   keyword lands in `app.extra` and does nothing; the new test in `src/tests/unit/api/test_api_app.py` pins all five
   switches off and skips there.
+- **The dependency locks moved** (`requirements.lock`, and `requirements-cpu.lock`, which the image installs),
+  through the Dependabot updates merged since 0.13.0 (#744, #751) and #748's two security pins (Security, below).
+  The notable runtime pins in `requirements-cpu.lock`: `fastapi` 0.162.0 -> 0.162.2, `pydantic` 2.14.1 -> 2.14.3
+  (with `pydantic-core` 2.50.4 and `pydantic-settings` 2.16.2), `python-dateutil` 3.0.0 -> 4.0.0, `sentry-sdk`
+  2.73.0 -> 2.74.0, `websockets` 17.3 -> 17.4, `anyio` 4.15.1 -> 4.16.0 and `cachetools` 7.2.5 -> 8.0.0, plus six
+  smaller moves, and `six` leaves both locks. `requirements.lock` also moves the CUDA 13 wheels (`cuda-toolkit`
+  13.0.3.0 -> 13.2.2, `triton` 3.8.0 -> 3.9.0 and the `nvidia-*` set). Apart from the two security floors
+  (Security, below), the wheel's declared requirements are unchanged.
 
 ### Fixed
 
@@ -109,11 +119,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - **Races.** Under a client that re-sends pause until the run settles, with the service's logging, 0 of 200 runs wedged (a `RESUME`-first settle wedged 178 of 200), and 0 of 200 at a 1 µs switch interval. A pause or resume forced into the settle leaves the run `COMPLETED`.
     - **Determinism.** 500 runs of the new module passed every test: 250 at the default switch interval, and 250 pinned to one CPU with a 10 µs GIL switch interval, under a load average of 13 to 40. The 33 new tests, run 60 times each, passed all 1980 at the default switch interval and all 1980 at a 1 µs one.
     - **With the real model.** A real `CascorModel.fit` on a small growing network, paused from the manager's own event sink as it handled `training_end`, settled `COMPLETED`, and the next start ran.
-  - **Not fixed here: the stop-then-start race.** A start sent after a stop, before the old fit reaches its next checkpoint, clears the shared `_stop_event`, so the old fit is never interrupted.
-    - **What happens.** The old fit trains on to its natural end while the FSM reads `STOPPED` and the new run waits queued behind it. Every further start in that window is accepted and queues another run. When the old fit returns it still owns the lifecycle, because the new run has not entered `_run_training`. So it writes `training_state` `Completed` and counts a successful session for a run the operator stopped (`mark_completed` is refused from `STOPPED`).
-    - **A variant.** `swap_dataset_live` clears `_stop_event` the same way after its 10 s join on the old future times out.
-    - **Why the ownership check does not help.** Unlike juniper-service-core, where the new run starts at once on its own thread and already owns the lifecycle when the old fit returns, cascor's queue keeps the new run from starting until the old fit returns, so the old fit is still the owner when it settles.
-    - **Evidence and next step.** `util/ad-hoc/2026-11-08_stop_then_start_race_repro.py` reproduces it, with the same ordered trail on `main` and with this change (exit 1 on both). The owner's ruling 17 (2026-11-09, recorded in the record-update PR), "cascor: stop-then-start", gives it its own fix, in its own PR. Candidate fixes, which no ruling chose: a per-run stop signal, or a start that refuses or fences a live fit.
+  - **Reported here, fixed later in this release: the stop-then-start race.** A start sent after a stop, before the old fit reached its next checkpoint, cleared the shared `_stop_event`, so the old fit was never interrupted: it trained on to its natural end while the FSM read `STOPPED` and, still owning the lifecycle, wrote `training_state` `Completed` and counted a successful session for a run the operator had stopped. `swap_dataset_live` cleared the event the same way after its 10 s join timed out. The ownership check above could not help, because cascor's queue keeps the new run from starting until the old fit returns. This change shipped `util/ad-hoc/2026-11-08_stop_then_start_race_repro.py`, which reproduced it (exit 1). The owner's ruling 17 (2026-11-09), "cascor: stop-then-start", gave it a fix of its own: see "A start sent after a stop no longer cancels it" below, whose per-run stop signal the owner ruled on 2026-11-12 to keep, and with which the reproducer exits 0.
   - **Docs.**
     - `docs/api/JUNIPER_CASCOR_API_REFERENCE.md`: the pause and resume sections describe the checkpoint, the paused completion, a pause or resume that races the settle, and the behaviour of earlier releases; their stale route line numbers are corrected. The start and stop sections name the FSM's states instead of a `Training` state it does not have, and the stop, pause and resume 409s name `error.message`, which carries their text.
     - `docs/api/API_SCHEMAS.md`: "Training Failure Propagation and Ownership" describes `_run_training`'s terminal settles, the ownership rule, the stop-then-start race, and the same `STOPPED` / `Completed` pair from a stop or reset that lands inside the settle. It used to describe the removed `monitored_fit` wrapper.
@@ -124,7 +130,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **The claims.** `ci.yml`'s upload comment said "165 of 165 uploads succeeded over 200 runs". `util/ad-hoc/2026-10-27_bandit_sarif_upload_survey.py`'s docstring said a failed upload's step "conclusion still records `failure`".
   - **Why they fail.** GitHub's jobs API reports a step's `conclusion` after `continue-on-error`, so a masked failure reads `success`. juniper-canopy job 123689681187 logged `Path does not exist`, and its upload step reads `success`.
   - **The new wording.** The comment cites the survey's `Bandit` half, which can see a masked failure on a PR: 101 of 101 PR heads whose upload ran carry the check. It says the step count proves less. The docstring says the same, including that its RESULT line's "no upload step failed" is blind to a masked failure. No code changed.
-  - **History.** The 2026-10-29 entry below keeps its "165 of 165" as written.
+  - **History.** The nightly-lanes entry below (juniper-cascor#735) qualifies its "165 of 165" accordingly.
   - **Where it was found.** juniper-ml's flood-3 record, `notes/JUNIPER_2026-10-08_JUNIPER-ECOSYSTEM_CURSOR-FLOOD-3-DISPOSITION.md`, §4 and §6. Owner ruling of 2026-11-01.
 
 - **A `/ws/training` client that resumes no longer misses broadcasts behind a `resume_ok`.** These are cascor's own
@@ -235,7 +241,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - `docs/api/JUNIPER_CASCOR_API_REFERENCE.md`: the stop section describes the cooperative stop and a start sent while the stopped fit unwinds; the start section says such a start queues.
     - `docs/api/API_SCHEMAS.md`: "Training Failure Propagation and Ownership" describes the fix in place of the known defect it listed, and lists what a stopped fit that is still running leaves open.
     - `docs/DEVELOPER_CHEATSHEET.md`: two troubleshooting rows.
-  - **Where it was found.** juniper-cascor#753 reported the race ("Reported, not fixed here: the stop-then-start race") and shipped the reproducer. The owner's ruling 17 (2026-11-09), "cascor: stop-then-start", gives the race a fix of its own, in its own PR. That ruling named no design: the per-run stop signal is this change's, and the owner ruled on 2026-11-12 to keep it. juniper-ml's flood-4 record (`notes/JUNIPER_2026-11-06_JUNIPER-ECOSYSTEM_CURSOR-FLOOD-4-DISPOSITION.md`) adds the ruling to its §8 in its next update.
+  - **Where it was found.** juniper-cascor#753 reported the race (the stop-then-start item of the paused-fit entry above) and shipped the reproducer. The owner's ruling 17 (2026-11-09), "cascor: stop-then-start", gives the race a fix of its own, in its own PR. That ruling named no design: the per-run stop signal is this change's, and the owner ruled on 2026-11-12 to keep it. As of this release, juniper-ml's flood-4 record (`notes/JUNIPER_2026-11-06_JUNIPER-ECOSYSTEM_CURSOR-FLOOD-4-DISPOSITION.md`) lists rulings 1 to 14 in its §8 and not this one.
 - **The nightly performance smoke runs on pytest 9.2 again: its `pytest<9.2` cap is gone.** pytest-benchmark 5.3.1 (PyPI 2026-11-01) reads pytest's public `nodeid` instead of the private `_nodeid` that pytest 9.2.0 removed, and its changelog calls that pytest 9.2 support. So `scheduled-tests.yml`'s `performance-smoke` job no longer downgrades pytest after installing the project. It still prints the pytest and pytest-benchmark versions it got.
   - **Measured locally** on Python 3.14.7, in fresh venvs, with a one-test file that takes the `benchmark` fixture. Under pytest 9.2.0, pytest-benchmark 5.3.0 errors at setup with the `AttributeError` that run 40970853599 logged, and 5.3.1 passes, both timed and under `--benchmark-disable`.
   - **No floor.** `pyproject.toml` keeps `pytest-benchmark>=4.0.0`, so a fresh install resolves 5.3.1. If the lane ever pairs pytest 9.2 with 5.3.0 again, every benchmark test errors at setup and the lane fails; it cannot pass quietly.
@@ -255,10 +261,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **What never ran.** So the negative controls that keep the `Memory Budget` check honest had never run against this repo's copy of the checker. Each of these raises `BudgetError` (exit 2): a missing governed file, and a missing, unreadable or empty budget. So does a non-positive ceiling. A waiver leaves the ceiling where it was, and a ceiling may only move down.
   - **The move.** The suite moves to `src/tests/unit/test_memory_budget_check.py` with `pytestmark = pytest.mark.unit`, and its repo root goes from `parents[2]` to `parents[3]`. No test body changed.
   - **The docstring.** The checker's docstring now names the suite's real path; it named juniper-ml's `tests/`.
-  - **The effect.** The unit lane now selects 5,836 of 5,851 collected tests, up from 5,796 of 5,811. The 40 added are this suite, and all 40 pass locally on Python 3.12, 3.13 and 3.14. No workflow changed.
-  - **Left alone.** The same census found two other sets that no lane runs:
-    - the 153 `performance`-marked tests in `src/tests/performance/`;
-    - five unmarked tests in `src/tests/integration/test_comprehensive_serialization.py`.
+  - **The effect.** At this change the unit lane selected 5,836 of 5,851 collected tests, up from 5,796 of 5,811. The 40 added are this suite, and all 40 pass locally on Python 3.12, 3.13 and 3.14. No workflow changed.
+  - **Left alone here, and given a lane later in this release** (the nightly-lanes entry below). The same census found two other sets that no lane ran:
+    - the 153 `performance`-marked tests in `src/tests/performance/`, which the new nightly `performance-smoke` job runs;
+    - five unmarked tests in `src/tests/integration/test_comprehensive_serialization.py`, now marked `integration` and run in the required integration jobs.
   - **Where it was found.** Found on 2026-10-26 in the 2026-10-08 flood-3 disposition (juniper-ml `notes/JUNIPER_2026-10-08_JUNIPER-ECOSYSTEM_CURSOR-FLOOD-3-DISPOSITION.md` §4).
 - **The nightly long and slow-integration lanes run their tests, `src/tests/performance/` gets an untimed nightly smoke and loses an exit hang, five integration tests that no lane selected now run in the required integration jobs, and a failed Bandit SARIF upload fails a PR.**
   - **The long lane ran nothing.** `scheduled-tests.yml`'s `long-running-tests` passed only `--run-long`, so job 121983548401 logged `1 skipped, 6214 deselected` and passed. `src/tests/conftest.py` gives the lane's one pick, `test_deterministic_training_resume`, two more skips:
@@ -268,15 +274,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **The slow-integration lane ran nothing as well (owner ruling 2026-10-29, "Fix in #735").** `slow-integration-tests` passed `--slow` without `--integration`. main's nightly run 40809669816 (job 123236747466) logged `20 skipped, 178 deselected` and passed. The job now also passes `--integration`. Locally it runs 15 tests, all passing, and skips the 5 golden picks: they need `--golden`, and `golden-regression.yml` runs them.
   - **A lane that executes nothing now fails.** New `util/check_junit_executed.py` reads a lane's `--junitxml` report and fails when no test executed, or when one failed or errored.
     - An XFAIL counts as executed, although pytest writes it as `<skipped type="pytest.xfail">`.
-    - It also catches a failure the exit status hides. `src/tests/conftest.py`'s `pytest_unconfigure` calls `os._exit(0)` whenever a non-daemon thread outlives the session, so a failing lane can exit 0 (measured: `1 failed`, exit status 0).
-    - It runs after the slow-integration and long lanes and after the new performance smoke. Its 24 tests (`src/tests/unit/test_check_junit_executed.py`) include two real pytest runs and pin the `scheduled-tests.yml` wiring. The unit lane selects 5,860 of 5,875 tests, up from 5,836 of 5,851.
+    - It also catches a failure the exit status hid: `src/tests/conftest.py`'s `pytest_unconfigure` called `os._exit(0)` whenever a non-daemon thread outlived the session, so a failing lane could exit 0 (measured: `1 failed`, exit status 0). "A failing test session no longer exits 0 when a thread outlives it" below removes that mask in this release.
+    - It runs after the slow-integration and long lanes and after the new performance smoke. Its 24 tests (`src/tests/unit/test_check_junit_executed.py`) include two real pytest runs and pin the `scheduled-tests.yml` wiring. At this change the unit lane selected 5,860 of 5,875 tests, up from 5,836 of 5,851.
   - **The performance smoke (owner ruling 2026-10-29, "Nightly smoke, no timing").** The new `performance-smoke` job runs all 153 tests in `src/tests/performance/` with `--run-performance --benchmark-disable`. A failure fails the nightly through the `summary` job; `performance-benchmarks` stays informational. The pytest step's `timeout-minutes: 30` turns a hang into a failure instead of a 6-hour run. Locally all 153 pass in about 23 s.
-  - **The job caps pytest below 9.2 (owner ruling 2026-10-29).** pytest 9.2.0 (PyPI 2026-10-27) broke pytest-benchmark 5.3.0, the latest release, at fixture setup: `AttributeError: 'Function' object has no attribute '_nodeid'` (`pytest_benchmark/fixture.py:88`). Every benchmark test errored, and run 40970853599 logged `5 errors` and stopped at `--maxfail=5`. The job therefore installs `pytest<9.2` (9.1.1) after the project and prints the versions it got. 9.1.1 and 9.0.3 pass, and the cap goes once a pytest-benchmark release supports 9.2. The required lanes keep pytest 9.2. Locally, on 9.1.1 with pytest-benchmark 5.3.0, all 153 pass.
+  - **The job capped pytest below 9.2 (owner ruling 2026-10-29); the cap is gone in this release** (the pytest 9.2 entry above). pytest 9.2.0 (PyPI 2026-10-27) broke pytest-benchmark 5.3.0, then the latest release, at fixture setup: `AttributeError: 'Function' object has no attribute '_nodeid'` (`pytest_benchmark/fixture.py:88`). Every benchmark test errored, and run 40970853599 logged `5 errors` and stopped at `--maxfail=5`. The job therefore installed `pytest<9.2` (9.1.1) after the project until pytest-benchmark 5.3.1 supported 9.2. The required lanes kept pytest 9.2. Locally, on 9.1.1 with pytest-benchmark 5.3.0, all 153 passed.
   - **The exit hang, fixed.** `TestQueueThroughput::test_burst_throughput` drained its queue with `get_nowait()` until `Empty`, which can stop while the queue's feeder thread is still flushing. The leftovers fill the pipe, the feeder blocks, and the interpreter's exit-time join never returns. Run alone, the test hung in 6 of 6 runs, and the full smoke in 1 of 2. It now drains exactly the 320 items its five bursts put. Afterwards 12 of 12 runs alone and 6 of 6 full-smoke runs exited cleanly. The measured drain is unchanged.
   - **Not fixed here.** `--benchmark-disable` reaches only the pytest-benchmark fixture. Eight assertions time their own code against a ceiling or against each other: `test_baselines.py:464` and `:467`, `test_concurrency_scaling.py:551` and `:582`, `test_endtoend_profiling.py:251`, and `test_shared_memory.py:523`, `:525` and `:576`.
   - **Five unmarked integration tests.** `TestHiddenUnitsPreservation`, `TestConfigRoundtrip`, `TestActivationFunctionRestoration`, `TestTorchRandomStateRestoration` and `TestHistoryPreservation` in `src/tests/integration/test_comprehensive_serialization.py` get the class-level `@pytest.mark.integration` the other modules use. The required integration jobs now select 177 of 198 tests, up from 172 of 198, and all 177 pass locally.
-  - **The Bandit SARIF upload (owner ruling 2026-10-29).** `ci.yml`'s upload step is now `continue-on-error: ${{ github.event_name != 'pull_request' }}`. On a PR a failed upload fails Security Scans, with the cause in the step log, instead of leaving the required `Bandit` context unposted. Pushes and dispatches still tolerate it. 165 of 165 uploads had succeeded over 200 runs (`util/ad-hoc/2026-10-27_bandit_sarif_upload_survey.py`). `AGENTS.md`, `docs/ci_cd/MANUAL.md`, `docs/ci_cd/REFERENCE.md` and `docs/ci_cd/BRANCH_PROTECTION.md` called the upload best-effort everywhere, and now say so for pushes and dispatches only.
-  - **`AGENTS.md`** listed a `src/tests/pytest.ini`, which does not exist: pytest's configuration is `[tool.pytest.ini_options]` in the repo-root `pyproject.toml`. Five other live documents still name the file (`docs/REFERENCE.md`, `docs/testing/MANUAL.md`, `docs/ci_cd/MANUAL.md`, `docs/DOCUMENTATION_OVERVIEW.md` and `src/tests/README.md`); they are left for a later pass.
+  - **The Bandit SARIF upload (owner ruling 2026-10-29).** `ci.yml`'s upload step is now `continue-on-error: ${{ github.event_name != 'pull_request' }}`. On a PR a failed upload fails Security Scans, with the cause in the step log, instead of leaving the required `Bandit` context unposted. Pushes and dispatches still tolerate it. The survey (`util/ad-hoc/2026-10-27_bandit_sarif_upload_survey.py`) counted 165 of 165 upload steps succeeding over 200 runs; a step masked by `continue-on-error` reads `success` there, so the count does not show that every upload succeeded (the Bandit SARIF comment entry above). `AGENTS.md`, `docs/ci_cd/MANUAL.md`, `docs/ci_cd/REFERENCE.md` and `docs/ci_cd/BRANCH_PROTECTION.md` called the upload best-effort everywhere, and now say so for pushes and dispatches only.
+  - **`AGENTS.md`** listed a `src/tests/pytest.ini`, which does not exist: pytest's configuration is `[tool.pytest.ini_options]` in the repo-root `pyproject.toml`. Five other live documents named the file too (`docs/REFERENCE.md`, `docs/testing/MANUAL.md`, `docs/ci_cd/MANUAL.md`, `docs/DOCUMENTATION_OVERVIEW.md` and `src/tests/README.md`); "Five documents no longer name the nonexistent `src/tests/pytest.ini`" above corrects them in this release.
   - **Where it was found.** The 2026-10-08 flood-3 disposition (juniper-ml `notes/JUNIPER_2026-10-08_JUNIPER-ECOSYSTEM_CURSOR-FLOOD-3-DISPOSITION.md` §4), in rows found on 2026-10-27.
 - **A failing test session no longer exits 0 when a thread outlives it.**
   - **The defect.** `src/tests/conftest.py`'s `pytest_unconfigure` ends the process with `os._exit` whenever a non-daemon thread is still alive, so that the thread cannot hang the job. It called `os._exit(0)`, which replaced pytest's exit status. A session with a failing test and a surviving thread exited 0, and the lane passed. juniper-cascor#735's probe measured it on 2026-10-29: `1 failed`, exit status 0.
@@ -288,9 +294,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
-- **The image picks up R-OBS-SC-2's two security patches.** Both locks move `juniper-observability` 0.4.1 -> 0.4.2
-  and `juniper-service-core` 0.7.1 -> 0.7.2, and nothing else: `requirements.lock` holds 73 pins and
-  `requirements-cpu.lock` 54, and each reproduces under its constraint-mode freshness resolution. The image installs
+- **The image picks up juniper-observability 0.4.2, the security patch, and juniper-service-core 0.7.2, a plain patch released with it.** #748 moved both locks from 0.4.1 and 0.7.1 to them, and nothing else (the release's other lock moves are under Changed): `requirements.lock` holds 73 pins and `requirements-cpu.lock` 54, and each reproduces under its constraint-mode freshness resolution. The image installs
   `requirements-cpu.lock` (`Dockerfile:42`).
   - **observability 0.4.2** fixes `configure_sentry`, which `src/api/app.py:335` calls through
     `src/api/observability.py`'s wrapper. Under 0.4.1, once `JUNIPER_CASCOR_SENTRY_DSN` was set, a request's
@@ -304,8 +308,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     `src/api/security.py`, and the pin is consistency with the sibling services.
   - Regenerated with `--upgrade-package` for the two packages only, compiled onto a copy of each lock so every other pin
     is held: `requirements.lock` first, then `requirements-cpu.lock` by its header's command, with that header kept
-    (juniper-ml `util/ad-hoc/2026-10-10_targeted_lock_refresh.py`). The `pyproject.toml` floors move in the next release
-    PR.
+    (juniper-ml `util/ad-hoc/2026-10-10_targeted_lock_refresh.py`). The wheel's floors follow in this release:
+    `juniper-observability>=0.4.2` and `juniper-service-core>=0.7.2,<0.8.0`, so a pip install over an older environment
+    upgrades both. The locks moved in #748; the floors ride in the release proposal, because a `pyproject.toml` change on
+    any branch but `release/` triggers `lockfile-update.yml`'s full `--upgrade` regen.
 
 ## [0.13.0] - 2026-10-28
 
