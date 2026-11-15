@@ -7,8 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.14.0] - 2026-11-15
-
 ### Added
 
 - **CI runs the tests on Python 3.15 as well, as informational legs that block nothing.** Phase 1 of the ecosystem's
@@ -31,6 +29,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     classifiers, the black, mypy and ruff targets, and the Docker base.
   - `docs/ci_cd/BRANCH_PROTECTION.md` (0.4.5), `docs/ci_cd/MANUAL.md` (0.3.21), `docs/ci_cd/REFERENCE.md` and
     `docs/install/ENVIRONMENT_SETUP.md` describe the legs.
+
+## [0.14.0] - 2026-11-15
+
+### Added
+
 - **API addition: `WebSocketManager.promote_to_active(websocket, *, replayed_through=None) -> bool`.** The
   keyword-only `replayed_through` argument and the `bool` return value are new (the method returned `None`).
   - **Without `replayed_through`** the promotion is unconditional, as it always was, and returns `True`. Existing
