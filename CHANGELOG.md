@@ -30,6 +30,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `docs/ci_cd/BRANCH_PROTECTION.md` (0.4.5), `docs/ci_cd/MANUAL.md` (0.3.21), `docs/ci_cd/REFERENCE.md` and
     `docs/install/ENVIRONMENT_SETUP.md` describe the legs.
 
+### Changed
+
+- **`CI — juniper-cascor-model` runs on every PR, and its new `Model required checks` is a required context.** Owner
+  ruling of 2026-11-16. `Test (Python 3.12)` caught #687's drift on 2026-09-24, but no ruleset required it, so the PR
+  merged and `main` stayed red for seven weeks. Requiring `Test (Python 3.12)` itself would have stalled every other
+  PR: the workflow's `pull_request` trigger was path-filtered, and a required context from a workflow that did not
+  run never reports.
+  - `pull_request` is unfiltered. A new `changes` job, `Detect cascor-model changes`, diffs the PR against its base,
+    and `test` and `build` run only when the PR touches `juniper-cascor-model/**`, `src/candidate_unit/**`,
+    `src/utils/**`, `src/log_config/**`, `src/cascor_constants/**` or the workflow: the paths `on.push` still filters
+    on.
+  - A new `required-checks` job, `Model required checks` (`if: always()`), fails when change detection did not
+    succeed, passes when `test` and `build` succeeded, and passes on `skipped` only when the PR touched none of those
+    paths.
+  - The detector captures the diff before `grep` reads it. The piped form, `git diff … | grep -q` under `pipefail`,
+    can fail open: grep exits at its first match, a `git` still writing a long file list dies of SIGPIPE, and the PR
+    reads as unchanged. Measured with a 200,000-line list.
+  - The design follows juniper-recurrence's package workflows (2026-08-12). The 3.15 leg stays informational:
+    `Model required checks` reads `needs.test.result`, which a red 3.15 leg leaves at `success`.
+  - Ruleset 15081045 gains the context, from 24 to 25, once this merges. `docs/ci_cd/BRANCH_PROTECTION.md` (0.4.6),
+    `docs/ci_cd/MANUAL.md` (0.3.23), `docs/ci_cd/REFERENCE.md`, `docs/ci_cd/QUICK_START.md`, `docs/REFERENCE.md` and
+    `AGENTS.md` describe it.
+
 ### Fixed
 
 - **`CI — juniper-cascor-model` can pass on `main` again: the extracted `constants_api` carries

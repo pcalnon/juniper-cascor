@@ -12,12 +12,15 @@
 #
 # Description:
 #    CI pipeline for the juniper-cascor-model package (CW-05 candidate-core,
-#    relocated from juniper-ml per the package placement plan). Runs on PRs
-#    and pushes that touch the package or this workflow. Installs CPU torch
-#    (the candidate core needs torch) and runs the package's own tests,
-#    including the src drift-guard (tests/test_drift.py). The juniper-cascor
-#    application's own ci.yml continues to gate the server; this workflow
-#    handles the package lifecycle independently (mirrors ci-protocol.yml).
+#    relocated from juniper-ml per the package placement plan). Runs on every
+#    PR, and on pushes that touch the package, the src/ trees it is extracted
+#    from, or this workflow; on a PR the `changes` job decides whether the
+#    package jobs run. Installs CPU torch (the candidate core needs torch) and
+#    runs the package's own tests, including the src drift-guard
+#    (tests/test_drift.py). `Model required checks` reports on every PR and is
+#    the context ruleset 15081045 requires. The juniper-cascor application's
+#    own ci.yml continues to gate the server; this workflow handles the
+#    package lifecycle independently.
 #
 #####################################################################################################################################################################################################
 
@@ -39,34 +42,71 @@ on:
       - "src/cascor_constants/**"
       - ".github/workflows/ci-cascor-model.yml"
   pull_request:
+    # Deliberately UNFILTERED (2026-11-16, owner ruling). The `paths:` filter this trigger had
+    # meant the whole workflow never ran on a PR that touched none of those paths, so none of
+    # its contexts could be a required status check: a required context from a workflow that
+    # did not run never reports, and every other PR would wait on it forever. With nothing
+    # required, #687's drift failure (`Test (Python 3.12)`, 2026-09-24) merged, and `main`
+    # stayed red for seven weeks. Path scoping now lives at the JOB level, in the `changes`
+    # job, so CI cost is unchanged and `Model required checks` reports on every PR. `on.push`
+    # keeps its filter: a push has no base ref to diff against. Same design as
+    # juniper-recurrence's package workflows (since 2026-08-12).
     branches: [main]
-    paths:
-      - "juniper-cascor-model/**"
-      # The drift guard (juniper-cascor-model/tests/test_drift.py) compares the extracted
-      # trees against their src/ counterparts, so a change on the SRC side must trigger this
-      # workflow too. Filtering on juniper-cascor-model/** alone meant the gate never ran for
-      # the very edits that cause drift -- which is how the W-6 JUNIPER_CASCOR_SNAPSHOTS_DIR
-      # override reached the published package missing entirely.
-      - "src/candidate_unit/**"
-      - "src/utils/**"
-      - "src/log_config/**"
-      - "src/cascor_constants/**"
-      - ".github/workflows/ci-cascor-model.yml"
   workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
+  changes:
+    name: Detect cascor-model changes
+    runs-on: ubuntu-latest
+    outputs:
+      model: ${{ steps.filter.outputs.model }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Detect whether this PR touches the package or the src trees it is extracted from
+        id: filter
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          set -euo pipefail
+          # push / workflow_dispatch keep the historical behaviour: `on.push` already
+          # path-filters, and a push has no base ref to diff against.
+          # The pattern below must name exactly the `on.push` paths.
+          # The diff is captured BEFORE grep reads it. Piping `git diff` into `grep -q` under
+          # `pipefail` can fail open: grep exits at its first match, a git still writing a long
+          # file list dies of SIGPIPE (141), the pipeline is non-zero, and the PR reads as
+          # unchanged. A failed `git diff` fails this step, and the gate then fails closed.
+          if [[ "${EVENT_NAME}" != "pull_request" ]]; then
+            changed=true
+          else
+            files="$(git diff --name-only "origin/${BASE_REF}...HEAD")"
+            if grep -qE '^(juniper-cascor-model/|src/(candidate_unit|utils|log_config|cascor_constants)/|\.github/workflows/ci-cascor-model\.yml$)' <<<"${files}"; then
+              changed=true
+            else
+              changed=false
+            fi
+          fi
+          echo "model=${changed}" >> "$GITHUB_OUTPUT"
+          echo "cascor-model package changed: ${changed}"
+
   test:
     name: Test (Python ${{ matrix.python-version }})
     runs-on: ubuntu-latest
+    needs: [changes]
+    if: needs.changes.outputs.model == 'true'
     # The Python 3.15 leg is INFORMATIONAL: phase 1 of the ecosystem's 3.15
     # migration (owner request, 2026-11-14) runs it so its results show,
     # but it must block nothing. It is the only leg with
     # ``experimental: true``, so this expression is true on it alone: a
     # failure there leaves this job's result at success, so `build`
-    # (`needs: test`) still runs, and no ruleset requires its context.
+    # (`needs: test`) still runs and `Model required checks`, which reads
+    # `needs.test.result`, still passes. `Test (Python 3.15)` is in no ruleset.
     # Same pattern as ci.yml's unit-tests job, measured on
     # juniper-data#538 (run 43655144734). Keep it until the owner makes
     # 3.15 a required version (phase 3 of the migration).
@@ -163,3 +203,48 @@ jobs:
 
       - name: Validate distribution metadata
         run: twine check dist/*
+
+  required-checks:
+    # The context ruleset 15081045 requires (owner ruling, 2026-11-16). It runs on every PR
+    # (`if: always()`). It fails closed when change detection did not succeed, passes when the
+    # package jobs succeeded, and passes on `skipped` only when the PR touched none of the
+    # package's paths. Named like juniper-recurrence's per-package gates; no other workflow
+    # in this repository emits the name.
+    name: Model required checks
+    runs-on: ubuntu-latest
+    if: always()
+    needs: [changes, test, build]
+    steps:
+      - name: Verify required jobs succeeded
+        env:
+          CHANGES: ${{ needs.changes.result }}
+          MODEL: ${{ needs.changes.outputs.model }}
+          TEST: ${{ needs.test.result }}
+          BUILD: ${{ needs.build.result }}
+        run: |
+          set -euo pipefail
+          echo "Changes: ${CHANGES} (model changed: ${MODEL})"
+          echo "Test:    ${TEST}"
+          echo "Build:   ${BUILD}"
+
+          # The detector must succeed. If it did not, we do NOT know whether the package
+          # was touched, so reporting success would be exactly the hole this gate closes.
+          if [[ "${CHANGES}" != "success" ]]; then
+            echo "::error::change detection did not succeed — refusing to report a pass"
+            exit 1
+          fi
+
+          # 'skipped' is a PASS only when this PR did not touch the package: then the package
+          # jobs correctly did not run, which is what lets this gate report on EVERY PR. When
+          # the package WAS touched, only 'success' passes.
+          for result in "${TEST}" "${BUILD}"; do
+            if [[ "${result}" == "success" ]]; then
+              continue
+            fi
+            if [[ "${result}" == "skipped" && "${MODEL}" != "true" ]]; then
+              continue
+            fi
+            echo "::error::one or more required jobs did not succeed (model changed: ${MODEL})"
+            exit 1
+          done
+          echo "All required checks passed."
