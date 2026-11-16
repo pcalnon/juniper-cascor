@@ -33,7 +33,7 @@
 # CI: `Lockfile Freshness` asserts every name-form dependency of pyproject.toml (base +
 # the four extras above, torch excepted) is pinned here, so a dependency added to
 # pyproject but not re-locked here fails the build rather than the container at import.
-annotated-doc==0.0.5
+annotated-doc==0.0.6
     # via
     #   -c requirements.lock
     #   fastapi
@@ -44,6 +44,7 @@ annotated-types==0.8.0
 anyio==4.16.0
     # via
     #   -c requirements.lock
+    #   fastapi
     #   starlette
     #   watchfiles
 cachetools==8.0.0
@@ -71,12 +72,12 @@ cycler==0.12.1
     # via
     #   -c requirements.lock
     #   matplotlib
-fastapi==0.162.2
+fastapi==0.163.1
     # via
     #   -c requirements.lock
     #   juniper-cascor (pyproject.toml)
     #   juniper-service-core
-filelock==4.2.9
+filelock==4.2.10
     # via
     #   -c requirements.lock
     #   torch
@@ -154,7 +155,7 @@ networkx==3.7
     # via
     #   -c requirements.lock
     #   torch
-numpy==2.5.4
+numpy==2.5.5
     # via
     #   -c requirements.lock
     #   juniper-cascor (pyproject.toml)
@@ -195,7 +196,7 @@ pydantic-core==2.50.4
     # via
     #   -c requirements.lock
     #   pydantic
-pydantic-settings==2.16.2
+pydantic-settings==2.16.3
     # via
     #   -c requirements.lock
     #   juniper-cascor (pyproject.toml)
@@ -224,7 +225,7 @@ requests==2.34.2
     # via
     #   -c requirements.lock
     #   juniper-data-client
-sentry-sdk==2.74.0
+sentry-sdk==2.75.0
     # via
     #   -c requirements.lock
     #   juniper-cascor (pyproject.toml)
