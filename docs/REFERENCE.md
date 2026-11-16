@@ -3,7 +3,7 @@
 **Project**: juniper-cascor — Cascade Correlation Neural Network backend
 **Author**: Paul Calnon
 **License**: MIT License
-**Last Updated**: 2026-10-08
+**Last Updated**: 2026-11-16
 
 Reference material relocated **verbatim** out of `AGENTS.md` under the shared-session-memory plan
 (juniper-ml plan §P5 step e, Tier A). `AGENTS.md` is loaded into every session; this file is read on
@@ -176,7 +176,7 @@ juniper-cascor/
 │   │   ├── golden-regression.yml     #   WS-6 OUT-12 golden / snapshot gate (serial)
 │   │   ├── conformance.yml           #   WS-6 OUT-13 model-core conformance gate (serial)
 │   │   ├── ci-protocol.yml           #   Path-filtered CI for juniper-cascor-protocol
-│   │   ├── ci-cascor-model.yml       #   Path-filtered CI for juniper-cascor-model
+│   │   ├── ci-cascor-model.yml       #   CI for juniper-cascor-model (every PR; job-level path scoping; required gate)
 │   │   ├── scheduled-tests.yml       #   Scheduled test runs
 │   │   ├── publish.yml               #   PyPI publish (juniper-cascor, tag v*)
 │   │   ├── publish-protocol.yml      #   PyPI publish (juniper-cascor-protocol)

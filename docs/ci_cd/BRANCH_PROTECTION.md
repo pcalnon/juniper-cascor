@@ -1,7 +1,7 @@
 # Branch Protection Rules - Juniper Cascor
 
-**Version**: 0.4.5
-**Last Updated**: 2026-11-14
+**Version**: 0.4.6
+**Last Updated**: 2026-11-16
 **Author**: Paul Calnon
 
 ---
@@ -45,7 +45,7 @@ There is no `develop` branch (`gh api repos/pcalnon/juniper-cascor/branches/deve
 
 ### Must Pass Before Merge
 
-`juniper-cascor-rules` requires these **24** contexts (read 2026-10-26). A context is matched by its exact check-run name, so renaming a job, or a matrix leg, silently stops it satisfying the requirement and leaves every PR waiting on a check that will never report:
+`juniper-cascor-rules` requires these **25** contexts (24 read 2026-10-26 and re-read unchanged 2026-11-16; `Model required checks` added 2026-11-16). A context is matched by its exact check-run name, so renaming a job, or a matrix leg, silently stops it satisfying the requirement and leaves every PR waiting on a check that will never report:
 
 | Context (exact name)                                   | Workflow                   | Job id                    | In Quality Gate `needs:` |
 | ------------------------------------------------------ | -------------------------- | ------------------------- | ------------------------ |
@@ -69,14 +69,17 @@ There is no `develop` branch (`gh api repos/pcalnon/juniper-cascor/branches/deve
 | `Memory Budget`                                        | `ci.yml`                   | `memory-budget`           | No                       |
 | `Golden / Snapshot Regression`                         | `golden-regression.yml`    | `golden-regression`       | No                       |
 | `model-core Conformance`                               | `conformance.yml`          | `conformance`             | No                       |
+| `Model required checks`                                | `ci-cascor-model.yml`      | `required-checks`         | No                       |
 | `Analyze (python)`                                     | `codeql.yml`               | `analyze`                 | No                       |
 | `Sequence Safety`                                      | `sequence-safety.yml`      | `sequence-safety`         | No                       |
 | `Guard PR base branch`                                 | `pr-base-branch-guard.yml` | `guard-base-branch`       | No                       |
 | `Bandit`                                               | code scanning (see below)  | —                         | No                       |
 
-`Unit Tests + Coverage (Python 3.15 on ubuntu-latest)` is deliberately not among the 24. Python 3.15 is informational until the owner makes it a required version (phase 1 of the Python 3.15 migration, 2026-11-14): the leg's `include` entry sets `experimental: true`, so the job's `continue-on-error: ${{ matrix.experimental == true }}` keeps a failure there from failing `unit-tests`, and so from failing the Quality Gate, which reads `needs.unit-tests.result`. The `Test (Python 3.15)` legs of `ci-protocol.yml` and `ci-cascor-model.yml` work the same way; no context of either workflow is required.
+`Unit Tests + Coverage (Python 3.15 on ubuntu-latest)` is deliberately not among the 25. Python 3.15 is informational until the owner makes it a required version (phase 1 of the Python 3.15 migration, 2026-11-14): the leg's `include` entry sets `experimental: true`, so the job's `continue-on-error: ${{ matrix.experimental == true }}` keeps a failure there from failing `unit-tests`, and so from failing the Quality Gate, which reads `needs.unit-tests.result`. The `Test (Python 3.15)` legs of `ci-protocol.yml` and `ci-cascor-model.yml` work the same way. No context of `ci-protocol.yml` is required.
 
-**A green Quality Gate does not mean mergeable.** Eight of the 24 are outside its `needs:`: two standalone `ci.yml` jobs, five jobs in other workflows (a `needs:` entry can only name a job in the same workflow), and `Bandit`. Each context is also pinned to the app that must post it (`integration_id`): GitHub Actions (`15368`) for 23 of them, and GitHub Advanced Security (`57789`) for `Bandit`, which is the code-scanning result of the Bandit SARIF that `ci.yml`'s `security` job uploads. Re-derive the list:
+**`Model required checks`, not `Test (Python 3.12)`, is the required `ci-cascor-model.yml` context** (owner ruling, 2026-11-16). That workflow's `Test (Python 3.12)` caught #687's drift on 2026-09-24, but no ruleset required it, so the PR merged and `main` stayed red for seven weeks. The workflow's `pull_request` trigger was path-filtered, and a required context from a workflow that did not run never reports, so requiring the test leg would have left every other PR waiting forever. The trigger is now unfiltered: a `changes` job decides whether the package jobs run, and `Model required checks` (`if: always()`) reports on every PR. It fails when change detection fails, passes when `test` and `build` succeeded, and passes on `skipped` only when the PR touched none of the package's paths. The design follows juniper-recurrence's package workflows.
+
+**A green Quality Gate does not mean mergeable.** Nine of the 25 are outside its `needs:`: two standalone `ci.yml` jobs, six jobs in other workflows (a `needs:` entry can only name a job in the same workflow), and `Bandit`. Each context is also pinned to the app that must post it (`integration_id`): GitHub Actions (`15368`) for 24 of them, and GitHub Advanced Security (`57789`) for `Bandit`, which is the code-scanning result of the Bandit SARIF that `ci.yml`'s `security` job uploads. Re-derive the list:
 
 ```bash
 gh api repos/pcalnon/juniper-cascor/rules/branches/main --jq '.[] | select(.type=="required_status_checks") | .parameters.required_status_checks[] | "\(.context) \(.integration_id)"'
@@ -88,7 +91,7 @@ The `required_status_checks` rule's other parameters (read 2026-10-26):
 
 | Setting                                          | Value                                    | API parameter                          |
 | ------------------------------------------------ | ---------------------------------------- | -------------------------------------- |
-| Require status checks to pass before merging     | ✅ Yes (the 24 contexts above)           | `required_status_checks`               |
+| Require status checks to pass before merging     | ✅ Yes (the 25 contexts above)           | `required_status_checks`               |
 | Require branches to be up to date before merging | ✅ Yes                                   | `strict_required_status_checks_policy` |
 | Skip the status checks when creating the branch  | ✅ Yes                                   | `do_not_enforce_on_create`             |
 

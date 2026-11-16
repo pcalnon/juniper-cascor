@@ -310,7 +310,7 @@ operator runbook: [CI/CD Manual § WS-6 Gates](MANUAL.md#ws-6-gates-golden--conf
 | Workflow | Package dir | When it runs |
 |----------|-------------|--------------|
 | `ci-protocol.yml` | `juniper-cascor-protocol/` | Changes under that tree (or the workflow file) |
-| `ci-cascor-model.yml` | `juniper-cascor-model/` | Changes under that tree (or the workflow file) |
+| `ci-cascor-model.yml` | `juniper-cascor-model/` | Every PR; its package jobs run only when the PR changes that tree, the `src/` trees it is extracted from, or the workflow file. `Model required checks` reports on every PR and is required |
 
 These gate the extractable packages independently of the server `ci.yml` lane
 (build + `twine check` after tests). Touching only `src/` does not fire them.
