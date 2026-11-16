@@ -1379,11 +1379,27 @@ class TrainingLifecycleManager:
         self._stop_event = threading.Event()
         self._pause_event = threading.Event()
         self._pause_event.set()  # Not paused initially
+        # Makes each pause's and resume's check, transition and gate write one step, and orders a
+        # start's or a live swap's gate open against them. ``pause_training`` and ``resume_training``
+        # hold it across their check, their transition and their gate write; a start or a live swap
+        # holds it around the gate open that precedes its submit, so a pause in progress finishes
+        # before that open and no pause whose check preceded it can close the gate after it (see
+        # ``pause_training``). Those opens read no lifecycle state under it: they are ordered against
+        # a pause, not joined to the FSM. It is held for one FSM check and transition, at most two
+        # Event operations and one ``training_state`` write, never across a fetch, a join, a snapshot
+        # write or a wait (the state machine logs its transition under its own lock). Lock order:
+        # ``_lock``, then this, then the state machine's and the training state's own locks, which
+        # never call out.
+        self._pause_lock = threading.Lock()
         # The run that owns the lifecycle: ``_run_training`` puts a fresh token here as it
         # enters, before it issues ``Command.START``, and settles the FSM, the training state,
         # the final score, the terminal counter and the monitor session only while its token is
         # still the one here. See ``_owns_lifecycle``.
         self._lifecycle_owner: Optional[object] = None
+        # The stop signal of that run, which ``_run_training`` records here as it enters, before its
+        # START. ``pause_training`` refuses a pause while it is raised: the run is stopping, so a
+        # pause accepted for it would end with it and never apply to the run that trains next.
+        self._lifecycle_stop_event = self._stop_event
         self._last_emitted_history_len = 0
 
         # C5 (Q4/U-1 retention semantics):
@@ -2933,8 +2949,11 @@ class TrainingLifecycleManager:
                     self.network.active_output_dim = active_output_dim
 
             # The stop signal is NOT cleared here: a stopped fit may still be running, and its stop
-            # must hold. The new run gets its own signal at the submit below.
-            self._pause_event.set()
+            # must hold. The new run gets its own signal at the submit below. The gate opens under
+            # ``_pause_lock``, so a pause in progress finishes first, and no pause whose check
+            # preceded this open can close the gate after it.
+            with self._pause_lock:
+                self._pause_event.set()
 
             # CAS-006 (A-4) + CAN-015b (B-2): each training run normally
             # starts fresh — we don't want a snapshot from a previous run's
@@ -3027,7 +3046,7 @@ class TrainingLifecycleManager:
         was refused until a stop or reset: the "paused-fit wedge", which juniper-ml's flood-4
         record (``notes/JUNIPER_2026-11-06_JUNIPER-ECOSYSTEM_CURSOR-FLOOD-4-DISPOSITION.md``) lists
         under §8 ruling 11. Releasing the pause through RESUME before ``mark_completed`` is not
-        enough: neither this settle nor ``pause_training`` takes a lock, so a second pause could
+        enough: this settle does not take ``_pause_lock``, which ``pause_training`` holds, so a second pause could
         land on the STARTED step between the two transitions and leave the run PAUSED again. The
         state machine makes each transition under its own lock, so a pause or resume that races
         this one transition cannot split it either.
@@ -3047,6 +3066,15 @@ class TrainingLifecycleManager:
         therefore leaves that stop in force: the fit stops at its next checkpoint, or takes the
         stop path if it has passed its last one, and settles STOPPED before the new run, queued
         behind it, enters (see :meth:`_stop_event_for_new_run_locked`).
+
+        Every settle that this run owns -- completed, stopped, interrupted or failed -- reopens the
+        pause gate after its FSM transition. A pause accepted for this run ends with it, so the run
+        that enters next meets an open gate. Before, only the completion reopened it: after a live swap
+        whose join on the old fit timed out, the FSM still read STARTED, a pause sent then was
+        accepted for the old fit, and once that fit stopped the closed gate held the swapped run at its
+        first checkpoint while the FSM read STARTED and ``resume`` was refused. Such a pause is now
+        refused (see :meth:`pause_training`): the run records its stop signal as
+        ``_lifecycle_stop_event`` as it enters, and a pause is refused while that signal is raised.
         """
         # This run now owns the lifecycle: the START below and every settle that follows act
         # for it, until a newer run enters here and takes the lifecycle in turn.
@@ -3058,6 +3086,8 @@ class TrainingLifecycleManager:
         # Not the newest run's signal read now: a start accepted while this run was queued may
         # already have replaced it with its own.
         stop_event = self._stop_event if stop_event is None else stop_event
+        # Recorded before the START below, so a pause that finds this run STARTED reads its signal.
+        self._lifecycle_stop_event = stop_event
 
         # cascor#582: clear the previous run's final score BEFORE this one starts. Without
         # this a stopped or failed run would keep serving the prior run's ``final`` block,
@@ -3135,6 +3165,8 @@ class TrainingLifecycleManager:
             if stop_event.is_set():
                 if self._owns_lifecycle(run_token, "returned with a stop requested"):
                     sm.handle_command(Command.STOP)
+                    # Every settle reopens the gate after its transition (see the docstring).
+                    self._pause_event.set()
                     state.update_state(status="Stopped", phase="Idle")
                     self._broadcast_training_state(force=True)
                     inc_training_session_completed(TRAINING_SESSION_STATUS_CANCELLED)
@@ -3163,12 +3195,14 @@ class TrainingLifecycleManager:
             # callback. Same terminal transitions as the post-fit stop path; not an error.
             if self._owns_lifecycle(run_token, "was interrupted"):
                 sm.handle_command(Command.STOP)
+                self._pause_event.set()
                 state.update_state(status="Stopped", phase="Idle")
                 self._broadcast_training_state(force=True)
                 inc_training_session_completed(TRAINING_SESSION_STATUS_CANCELLED)
         except Exception as e:
             if self._owns_lifecycle(run_token, "failed"):
                 sm.mark_failed(str(e))
+                self._pause_event.set()
                 state.update_state(status="Failed", phase="Idle")
                 self._broadcast_training_state(force=True)
                 inc_training_session_completed(TRAINING_SESSION_STATUS_FAILURE)
@@ -3241,22 +3275,63 @@ class TrainingLifecycleManager:
         return {"status": "stop_requested", "timestamp": time.time()}
 
     def pause_training(self) -> Dict[str, Any]:
-        """Pause training."""
-        if not self.state_machine.is_started():
-            raise RuntimeError("Training is not active")
-        self._pause_event.clear()
-        self.state_machine.handle_command(Command.PAUSE)
-        self.training_state.update_state(status="Paused")
+        """Pause training: the running fit waits at its next interrupt checkpoint.
+
+        The check, the gate's clear and the FSM's PAUSE are one step under ``_pause_lock``. A start
+        and a live swap open the gate under the same lock before they submit their run, so a pause in
+        progress finishes before that open, which reopens anything it closed, and a pause that checks
+        after it reads the FSM that open left. A ``stop``, a ``reset`` or the run's own settle takes no
+        part in the lock and can still move the FSM between the check and PAUSE: PAUSE is then
+        refused, the gate is reopened as the pause found it, and the pause is refused as one sent a
+        moment later would be.
+
+        A pause is also refused, as one sent after a ``stop`` is, while the run that owns the
+        lifecycle has its stop signal raised (``_lifecycle_stop_event``): that run is stopping, and a
+        pause accepted for it would end with it. The FSM still reads STARTED for such a run after a
+        live swap has raised the old fit's stop, which it does without a transition, until that fit
+        settles: while the swap joins it, and after a join that timed out, when the swapped run is
+        already queued behind it. A pause sent after a timed-out join used to be accepted for the old
+        fit, and once that fit stopped, the closed gate held the swapped run at its first checkpoint.
+
+        Before this, the pause took no lock, ignored PAUSE's answer and answered ``paused``. A ``stop``
+        and a ``start`` landing between its check and its clear left the gate closed after the start
+        had reopened it: the stopped fit still stopped, and the new run was held at its first
+        checkpoint while the FSM read STARTED, ``resume`` and ``start`` were refused, and only a
+        ``pause`` then a ``resume`` freed it (juniper-cascor#756's description, "What this does not
+        close").
+        """
+        with self._pause_lock:
+            if not self.state_machine.is_started() or self._lifecycle_stop_event.is_set():
+                raise RuntimeError("Training is not active")
+            self._pause_event.clear()
+            if not self.state_machine.handle_command(Command.PAUSE):
+                self._pause_event.set()
+                raise RuntimeError("Training is not active")
+            self.training_state.update_state(status="Paused")
         self._broadcast_training_state(force=True)
         return {"status": "paused", "timestamp": time.time()}
 
     def resume_training(self) -> Dict[str, Any]:
-        """Resume paused training."""
-        if not self.state_machine.is_paused():
-            raise RuntimeError("Training is not paused")
-        self._pause_event.set()
-        self.state_machine.handle_command(Command.RESUME)
-        self.training_state.update_state(status="Started")
+        """Resume paused training.
+
+        Under ``_pause_lock``, like ``pause_training``, so a resume cannot land between a pause's
+        transition and its ``Paused`` write and leave ``training_state`` reading ``Paused`` beside a
+        run that trains.
+
+        A ``stop``, a ``reset`` or the paused run's own settle takes no part in the lock and can still
+        move the FSM off PAUSED between the check and RESUME. RESUME is then refused, and so is the
+        resume, as one sent a moment later would be; it writes nothing. The gate it opened stays open:
+        the run it held is stopping or has returned, so the open only lets a stopping fit see its stop
+        sooner. Before this, such a resume ignored RESUME's answer, answered ``resumed`` and left
+        ``training_state`` reading ``Started`` beside the FSM's STOPPED or COMPLETED.
+        """
+        with self._pause_lock:
+            if not self.state_machine.is_paused():
+                raise RuntimeError("Training is not paused")
+            self._pause_event.set()
+            if not self.state_machine.handle_command(Command.RESUME):
+                raise RuntimeError("Training is not paused")
+            self.training_state.update_state(status="Started")
         self._broadcast_training_state(force=True)
         return {"status": "resumed", "timestamp": time.time()}
 
@@ -3976,7 +4051,11 @@ class TrainingLifecycleManager:
                 # gets its own stop signal: clearing the one step 5 raised
                 # would release the old fit when the join above timed out.
                 stop_event = self._stop_event_for_new_run_locked()
-                self._pause_event.set()
+                # Under ``_pause_lock``, as in ``start_training``: a pause in progress finishes first.
+                # A pause that checks after step 5 is refused while the old fit owns the lifecycle:
+                # its stop is raised (``_lifecycle_stop_event``).
+                with self._pause_lock:
+                    self._pause_event.set()
                 if self._executor is None:
                     self._executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="cascor-train")
                 self._training_future = self._executor.submit(

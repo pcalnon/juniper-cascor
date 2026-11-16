@@ -211,18 +211,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     Did Not Reach PyPI, `docs/ci_cd/REFERENCE.md` § One-Artifact Contract, `docs/ci_cd/QUICK_START.md`,
     `docs/DEVELOPER_CHEATSHEET.md` (1.0.12) and `AGENTS.md`.
 
-### Documentation
-
-- **`docs/api/API_SCHEMAS.md` lists a `pause` that overlaps a `stop` and a `start` as known, not fixed.**
-  `pause_training` checks `state_machine.status`, then closes the pause gate, with no lock between the two, so a
-  `stop` and a `start` that land in between leave the gate closed under the new run. That run is held at its first
-  checkpoint while `state_machine.status` reads `STARTED` and `training_active` `true`: `resume` and `start` answer
-  `409`, a `pause` then a `resume` frees it, and a `stop` or a `reset` ends it there. The `pause` itself reports
-  success. Measured on `main` (`a1b0409d`) with the `pause` sent over `/ws/control` and the `stop` and the `start`
-  over REST; over REST alone the three cannot overlap. The same entry lists the same hold after a live swap whose
-  join on the old fit timed out: a `pause` sent then, over REST too, is accepted, and the swapped run is held at its
-  first checkpoint. The entry follows the first "Known, not fixed" entry under "Training Failure Propagation and
-  Ownership", and the document's stamp is 0.3.24.
+- **A pause holds only the run it was accepted for, and a pause or resume that loses its race is refused.** Two
+  routes left the pause gate closed under a run the pause was never meant for, and that run was held at its first
+  checkpoint while `state_machine.status` read `STARTED`: `resume` and `start` answered `409`, and only a `pause` then
+  a `resume` freed it.
+  - `pause_training` checked the FSM, then closed the gate, then issued PAUSE and ignored its answer, with no lock. A
+    `stop` and a `start` landing between its check and its close left the gate closed after the `start` had reopened
+    it, and the `pause` still answered `paused`. Over REST alone the three cannot overlap, because the routes run the
+    lifecycle on the event loop; a `pause` sent over `/ws/control`, which runs each command on a worker thread, can.
+    Now the check, the transition and the gate write are one step under `_pause_lock`, which `resume_training` and
+    the gate open before a `start`'s or a live swap's submit also take, and a `pause` whose transition is refused
+    reopens the gate and is refused.
+  - Only the completion settle reopened the gate. After a live swap whose join on the old fit timed out, the FSM still
+    read `STARTED`, so a `pause` sent then, over REST too, was accepted for the old fit, and once that fit stopped the
+    closed gate held the swapped run. Now a `pause` is refused while the run that owns the lifecycle has its stop
+    raised, and the stop, interrupted and failure settles reopen the gate too, after their transition and inside
+    their ownership check.
+  - Three answers change from `200` to `409`:
+    - a `pause` whose FSM check passed but whose transition a `stop`, a `reset` or the run's own settle beat answers
+      `409` "Training cannot be paused in the current state" (on `/ws/control` an `error` ack, "Command execution failed"),
+      as one sent a moment later does; it answered `200` `paused`, with nothing paused;
+    - a `pause` sent after a live swap has stopped the old fit and before that fit settles (over REST, after a swap
+      whose join on the old fit timed out; over `/ws/control`, also while the swap joins it) answers the same `409`, as
+      one sent after a `stop` does, and the swapped run trains on; it answered `200` `paused`, and after a timed-out
+      join the swapped run was then held at its first checkpoint;
+    - a `resume` whose FSM check passed but whose transition a `stop`, a `reset` or the paused run's own settle beat
+      answers `409` "Training cannot be resumed in the current state" (on `/ws/control` an `error` ack,
+      "Command execution failed") and writes nothing; it answered `200` `resumed` and left `training_state.status`
+      `Started` beside `STOPPED` or `COMPLETED`.
+  - `docs/api/API_SCHEMAS.md` (0.3.25) describes the fixed behaviour in place of the "Known, not fixed" entry
+    that listed it, and `docs/api/JUNIPER_CASCOR_API_REFERENCE.md`'s `POST /v1/training/pause` and
+    `POST /v1/training/resume` say what a refused `pause` or `resume` answers. The new
+    `src/tests/unit/api/test_lifecycle_pause_check_then_act.py` (29 tests) pins both routes and the three answers: 25
+    of them fail on the code before this change, and four guards pass on it.
 
 ## [0.14.0] - 2026-11-15
 
