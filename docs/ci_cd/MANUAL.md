@@ -1,7 +1,7 @@
 # CI/CD Manual
 
 **Project**: Juniper Cascor  
-**Version**: 0.3.22  
+**Version**: 0.3.23  
 **Reference**: CASCOR-P1-007
 
 ---
@@ -609,7 +609,7 @@ with `cancel-in-progress: true`. Permissions: `contents: read` only.
 | Workflow | Working directory | Matrix | Notes |
 |----------|-------------------|--------|-------|
 | `ci-protocol.yml` | `juniper-cascor-protocol/` | Python 3.12, 3.13; 3.15 informational (never blocks) | 95% package coverage + `juniper-coverage-gap-map --enforce`; then build/`twine check` |
-| `ci-cascor-model.yml` | `juniper-cascor-model/` | Python 3.12; 3.15 informational (never blocks) | CPU torch + `[test,full]`; coverage includes drift-guard; per-file gate via `juniper-ci-tools` |
+| `ci-cascor-model.yml` | `juniper-cascor-model/` | Python 3.12; 3.15 informational (never blocks) | CPU torch + `[test,full]`; coverage includes drift-guard; per-file gate via `juniper-ci-tools`. Runs on every PR: a `changes` job skips the package jobs when the PR touches neither the package, the `src/` trees it is extracted from, nor the workflow, and `Model required checks` (required in ruleset 15081045) reports either way |
 
 Both trigger on `paths:` for their package tree (and their workflow file) plus
 `workflow_dispatch`. They do **not** replace server `ci.yml`.

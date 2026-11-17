@@ -3,7 +3,7 @@
 **Project**: Juniper Cascor  
 **Workflow Files**: `.github/workflows/ci.yml`, `codeql.yml`, `security-scan.yml`, `claude.yml`, `golden-regression.yml`, `conformance.yml`, `ci-protocol.yml`, `ci-cascor-model.yml`, `lockfile-update.yml`, `publish.yml`, `publish-protocol.yml`, `publish-cascor-model.yml`
 
-**Last Updated**: 2026-11-15
+**Last Updated**: 2026-11-16
 
 ---
 
@@ -58,7 +58,7 @@ Fixtures: `src/tests/fixtures/golden/`. Capture rewrite: `GOLDEN_CAPTURE=1`.
 | Workflow | Paths filter | Python matrix | Coverage |
 |----------|--------------|---------------|----------|
 | `ci-protocol.yml` | `juniper-cascor-protocol/**` | 3.12, 3.13; 3.15 informational (never blocks) | `--cov-fail-under=95` + `juniper-coverage-gap-map --enforce` |
-| `ci-cascor-model.yml` | `juniper-cascor-model/**` | 3.12; 3.15 informational (never blocks) | package + candidate/utils/log_config/constants; per-file enforce |
+| `ci-cascor-model.yml` | every PR (a `changes` job runs the package jobs only for `juniper-cascor-model/**`, `src/{candidate_unit,utils,log_config,cascor_constants}/**` or the workflow); push: those paths | 3.12; 3.15 informational (never blocks) | package + candidate/utils/log_config/constants; per-file enforce. `Model required checks` is required (ruleset 15081045) |
 
 ## CodeQL Analysis
 

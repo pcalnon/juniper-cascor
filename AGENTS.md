@@ -5,7 +5,7 @@
 **Author**: Paul Calnon
 **License**: MIT License
 **Version**: 0.14.0
-**Last Updated**: 2026-11-15
+**Last Updated**: 2026-11-16
 
 ---
 
@@ -583,7 +583,7 @@ Gate: 80% aggregate (override with `COVERAGE_FAIL_UNDER=<n>`). Coverage runs in 
 | Golden Regression (WS-6) | `.github/workflows/golden-regression.yml` | Push `main`, PR `main`/`develop`, dispatch | Serial OUT-12 golden / snapshot regression (Python 3.13 + torch 2.11.0) |
 | Conformance (WS-6) | `.github/workflows/conformance.yml` | Push `main`, PR `main`/`develop`, dispatch | Serial OUT-13 model-core GrowableModel conformance |
 | CI — protocol | `.github/workflows/ci-protocol.yml` | Path-filtered on `juniper-cascor-protocol/**`, dispatch | Package tests + build/`twine check` |
-| CI — cascor-model | `.github/workflows/ci-cascor-model.yml` | Path-filtered on `juniper-cascor-model/**`, dispatch | Package tests (incl. drift-guard) + build/`twine check` |
+| CI — cascor-model | `.github/workflows/ci-cascor-model.yml` | Every PR to `main` (a `changes` job scopes the package jobs to `juniper-cascor-model/**`, the `src/` trees it is extracted from and the workflow), push `main` (path-filtered), dispatch | Package tests (incl. drift-guard) + build/`twine check`; `Model required checks` is required (ruleset 15081045) |
 | Scheduled Long Tests | `.github/workflows/scheduled-tests.yml` | Cron schedule (nightly), dispatch | Slow and long-running correctness tests |
 | Publish | `.github/workflows/publish.yml` | Release (`v*`) + `workflow_dispatch` (republish only, from the tag) | PyPI publish for `juniper-cascor`: built once; TestPyPI → sha256 check against TestPyPI's JSON → install verify → PyPI, after TestPyPI's sha256 are checked again → sha256 check against PyPI's JSON. The dispatch republishes TestPyPI's files (one-artifact template and recovery ladder, `docs/ci_cd/MANUAL.md`) |
 | Publish protocol | `.github/workflows/publish-protocol.yml` | Release (`juniper-cascor-protocol-v*`) + `workflow_dispatch` | PyPI publish for `juniper-cascor-protocol` (the same one-artifact template and republish job) |
