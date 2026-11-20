@@ -32,7 +32,7 @@ Description:
         difference WARNS), the load condition goes beside it (recorded, never compared -- putting a
         load average into ``machine_info`` would make every comparison warn).
 
-    REPORT-ONLY BY DECISION. The owner ruled 2026-09-07 (P2 item 2.5) that PF-4 stays report-only
+    REPORT-ONLY BY DECISION. The Overtoad ruled 2026-09-07 (P2 item 2.5) that PF-4 stays report-only
     on timing: the quiet-host noise band on the reference workstation is 20.5% and six competing
     processes cost +19.9%, so any percentage tolerance is either blind to regressions or fires on
     an ordinary loaded host. Nothing here asserts on a timing; the memory gate in

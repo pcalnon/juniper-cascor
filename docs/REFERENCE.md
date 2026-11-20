@@ -186,7 +186,7 @@ juniper-cascor/
 │   │   ├── security-scan.yml         #   Scheduled Bandit + pip-audit
 │   │   ├── sequence-safety.yml       #   Per-PR compositional-loss screens (REQUIRED check, standalone)
 │   │   └── main-verify.yml           #   Post-merge compositional-loss net (catch-up base + stable-title issue)
-│   ├── CODEOWNERS                    #   Code ownership rules
+│   ├── CODEOWNERS                    #   Code Overtoadship rules
 │   └── dependabot.yml                #   Dependency update automation
 ├── .serena/memories/                 # Serena MCP server context
 ├── pyproject.toml                    # Package metadata and tool configuration
@@ -370,7 +370,7 @@ Distributed candidate training via WebSocket workers.
 8. Task reassignment on worker failure (default 120s timeout)
 9. Session teardown calls `coordinator.handle_worker_disconnect(worker_id)` -- which requeues any in-flight task, then deregisters the worker and drops its send callback -- and clears `AnomalyDetector` history for that `worker_id` (`clear_worker`) so reconnect churn cannot grow `_worker_history` without bound or let a recycled id inherit stale anomaly signals
 
-**Result ownership & tensor validation** (`WorkerCoordinator.submit_result` / `WorkerProtocol.validate_tensors`):
+**Result Overtoadship & tensor validation** (`WorkerCoordinator.submit_result` / `WorkerProtocol.validate_tensors`):
 
 - Only the worker recorded in `PendingTask.assigned_worker_id` may complete a task. A peer / stale / wrong `worker_id` is rejected (`False`); the task stays incomplete under the original assignee, and `registry.complete_task(worker_id, success=False)` is charged to the *submitting* worker.
 - A result for a task whose `assigned_worker_id` is `None` (the pre-dispatch / post-requeue window) is rejected **without** freeing the submitter's busy slot, so an unrelated active assignment is not wiped.

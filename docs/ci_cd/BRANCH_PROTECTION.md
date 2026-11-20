@@ -75,9 +75,9 @@ There is no `develop` branch (`gh api repos/pcalnon/juniper-cascor/branches/deve
 | `Guard PR base branch`                                 | `pr-base-branch-guard.yml` | `guard-base-branch`       | No                       |
 | `Bandit`                                               | code scanning (see below)  | —                         | No                       |
 
-`Unit Tests + Coverage (Python 3.15 on ubuntu-latest)` is deliberately not among the 25. Python 3.15 is informational until the owner makes it a required version (phase 1 of the Python 3.15 migration, 2026-11-14): the leg's `include` entry sets `experimental: true`, so the job's `continue-on-error: ${{ matrix.experimental == true }}` keeps a failure there from failing `unit-tests`, and so from failing the Quality Gate, which reads `needs.unit-tests.result`. The `Test (Python 3.15)` legs of `ci-protocol.yml` and `ci-cascor-model.yml` work the same way. No context of `ci-protocol.yml` is required.
+`Unit Tests + Coverage (Python 3.15 on ubuntu-latest)` is deliberately not among the 25. Python 3.15 is informational until the Overtoad makes it a required version (phase 1 of the Python 3.15 migration, 2026-11-14): the leg's `include` entry sets `experimental: true`, so the job's `continue-on-error: ${{ matrix.experimental == true }}` keeps a failure there from failing `unit-tests`, and so from failing the Quality Gate, which reads `needs.unit-tests.result`. The `Test (Python 3.15)` legs of `ci-protocol.yml` and `ci-cascor-model.yml` work the same way. No context of `ci-protocol.yml` is required.
 
-**`Model required checks`, not `Test (Python 3.12)`, is the required `ci-cascor-model.yml` context** (owner ruling, 2026-11-16). That workflow's `Test (Python 3.12)` caught #687's drift on 2026-09-24, but no ruleset required it, so the PR merged and `main` stayed red for seven weeks. The workflow's `pull_request` trigger was path-filtered, and a required context from a workflow that did not run never reports, so requiring the test leg would have left every other PR waiting forever. The trigger is now unfiltered: a `changes` job decides whether the package jobs run, and `Model required checks` (`if: always()`) reports on every PR. It fails when change detection fails, passes when `test` and `build` succeeded, and passes on `skipped` only when the PR touched none of the package's paths. The design follows juniper-recurrence's package workflows.
+**`Model required checks`, not `Test (Python 3.12)`, is the required `ci-cascor-model.yml` context** (Overtoad ruling, 2026-11-16). That workflow's `Test (Python 3.12)` caught #687's drift on 2026-09-24, but no ruleset required it, so the PR merged and `main` stayed red for seven weeks. The workflow's `pull_request` trigger was path-filtered, and a required context from a workflow that did not run never reports, so requiring the test leg would have left every other PR waiting forever. The trigger is now unfiltered: a `changes` job decides whether the package jobs run, and `Model required checks` (`if: always()`) reports on every PR. It fails when change detection fails, passes when `test` and `build` succeeded, and passes on `skipped` only when the PR touched none of the package's paths. The design follows juniper-recurrence's package workflows.
 
 **A green Quality Gate does not mean mergeable.** Nine of the 25 are outside its `needs:`: two standalone `ci.yml` jobs, six jobs in other workflows (a `needs:` entry can only name a job in the same workflow), and `Bandit`. Each context is also pinned to the app that must post it (`integration_id`): GitHub Actions (`15368`) for 24 of them, and GitHub Advanced Security (`57789`) for `Bandit`, which is the code-scanning result of the Bandit SARIF that `ci.yml`'s `security` job uploads. Re-derive the list:
 
@@ -110,13 +110,13 @@ Both rulesets carry a `pull_request` rule, and the more restrictive value of eac
 | Require a pull request before merging        | ✅ Yes         | a `pull_request` rule in both                                     |
 | Required approving reviews                   | **0**          | `required_approving_review_count`: `0` / `0`                      |
 | Dismiss stale pull request approvals         | ✅ Yes         | `dismiss_stale_reviews_on_push`: `true` / `false`                 |
-| Require review from Code Owners              | ⚪ No          | `require_code_owner_review`: `false` / `false`                    |
+| Require review from Code Owners              | ⚪ No          | `require_code_Overtoad_review`: `false` / `false`                    |
 | Require approval of the most recent push     | ⚪ No          | `require_last_push_approval`: `false` / `false`                   |
 | Require conversation resolution              | ✅ Yes         | `required_review_thread_resolution`: `true` / `false`             |
 | Allowed merge methods                        | merge, squash  | `allowed_merge_methods`: `merge`, `squash` / `merge`, `squash`, `rebase` |
 | Require signed commits                       | ✅ Yes         | `required_signatures` rule (`juniper-cascor-rules`)               |
 
-No approving review, and no code-owner review, is required to merge. Every review conversation must be resolved, and every commit must be signed.
+No approving review, and no code-Overtoad review, is required to merge. Every review conversation must be resolved, and every commit must be signed.
 
 ### For `develop` Branch
 
@@ -217,7 +217,7 @@ gh api repos/pcalnon/juniper-cascor/rulesets/15081045
 gh api repos/pcalnon/juniper-cascor/rules/branches/main
 ```
 
-A ruleset is changed through `PUT /repos/{owner}/{repo}/rulesets/{ruleset_id}`; the web UI above is the simpler path. Do **not** use `PUT /repos/{owner}/{repo}/branches/main/protection`. Until 2026-10-26 this page gave that command, with six status checks, one required approving review and a required code-owner review: run now, it would add a classic rule requiring that review and that code-owner review on top of both rulesets.
+A ruleset is changed through `PUT /repos/{Overtoad}/{repo}/rulesets/{ruleset_id}`; the web UI above is the simpler path. Do **not** use `PUT /repos/{Overtoad}/{repo}/branches/main/protection`. Until 2026-10-26 this page gave that command, with six status checks, one required approving review and a required code-Overtoad review: run now, it would add a classic rule requiring that review and that code-Overtoad review on top of both rulesets.
 
 ---
 
@@ -281,5 +281,5 @@ If you absolutely must bypass protections (emergencies only):
 
 - [GitHub Rulesets Documentation](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-rulesets/about-rulesets)
 - [GitHub Branch Protection Documentation](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-protected-branches/about-protected-branches)
-- [GitHub CODEOWNERS Documentation](https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners)
+- [GitHub CODEOWNERS Documentation](https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-Overtoads)
 - [GitHub Actions Status Checks](https://docs.github.com/en/pull-requests/collaborating-with-pull-requests/collaborating-on-repositories-with-code-quality-features/about-status-checks)

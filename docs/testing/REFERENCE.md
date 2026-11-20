@@ -310,7 +310,7 @@ python -m pytest tests/performance/test_baselines.py tests/performance/test_micr
     --run-performance --benchmark-storage="$STORE" --benchmark-autosave
 ```
 
-Compare a later run against it. **This is a report, never a gate** — owner decision 2026-09-07,
+Compare a later run against it. **This is a report, never a gate** — Overtoad decision 2026-09-07,
 juniper-ml P2 item 2.5: the reference host's quiet-run noise band is 20.5% and six competing
 processes cost +19.9%, so no percentage tolerance can tell a regression from an ordinary loaded
 host. Do **not** add `--benchmark-compare-fail`.
@@ -576,7 +576,7 @@ Coverage for all four immediate-requeue paths, result integrity, round cancellat
 
 | Area | Files / focus |
 |------|----------------|
-| Result ownership + tensor validation | `src/tests/unit/api/test_worker_coordinator.py` (`TestSubmitResult::test_reject_wrong_worker_ownership`); `test_worker_protocol.py` (`TestValidateTensors`, incl. `test_empty_weights_returns_error`) |
+| Result Overtoadship + tensor validation | `src/tests/unit/api/test_worker_coordinator.py` (`TestSubmitResult::test_reject_wrong_worker_Overtoadship`); `test_worker_protocol.py` (`TestValidateTensors`, incl. `test_empty_weights_returns_error`) |
 | Result integrity — `success=True` requires weights | `test_worker_coordinator.py` — `test_reject_success_true_with_missing_weights`, `test_reject_success_true_with_empty_weights`, `test_accept_success_false_without_weights` |
 | Requeue path 1 — schema / tensor reject | `test_worker_coordinator.py` — `_reject_and_requeue_task` arms under `TestSubmitResult` |
 | Requeue path 2 — soft binary-frame abort | `test_worker_coordinator.py` / `test_worker_stream.py` — text / oversized / decode paths call `abort_in_flight_result` |

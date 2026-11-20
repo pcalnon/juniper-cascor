@@ -23,9 +23,9 @@ FSM and (for one) HTTP routes, with a gated stub ``model.fit``: events and gates
 
 juniper-ml's flood-4 record, ``notes/JUNIPER_2026-11-06_JUNIPER-ECOSYSTEM_CURSOR-FLOOD-4-DISPOSITION.md``,
 lists the paused-fit wedge under §8 ruling 11; the PR that fixed it (juniper-cascor#753) reported
-this race, and the owner's ruling 17 (2026-11-09; the record's next update adds it to its §8),
+this race, and the Overtoad's ruling 17 (2026-11-09; the record's next update adds it to its §8),
 "cascor: stop-then-start", gave it a fix of its own, in its own PR. That ruling named no design;
-the one above is this change's, and the owner ruled on 2026-11-12 to keep it.
+the one above is this change's, and the Overtoad ruled on 2026-11-12 to keep it.
 """
 
 import threading
@@ -518,9 +518,9 @@ def test_a_stale_run_past_its_stop_check_leaves_the_newer_paused_run_alone(lifec
     """A stale run in the shutdown overlap that has already passed its stop check settles nothing.
 
     ``shutdown()`` raises the stop signal before its bounded join, and a start no longer clears it,
-    so in the overlap juniper-cascor#753's ownership tests build, a stale fit now takes the stop
+    so in the overlap juniper-cascor#753's Overtoadship tests build, a stale fit now takes the stop
     path. A stale run takes the completion path only if it was past its stop check -- in its final
-    evaluation here -- when the stop came. The completion's ownership guard must still hold it: no
+    evaluation here -- when the stop came. The completion's Overtoadship guard must still hold it: no
     final score, no COMPLETED, no pause gate reopened, no session counted for the newer run.
     """
     mgr, fit, counted = lifecycle()

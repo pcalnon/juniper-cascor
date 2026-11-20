@@ -24,7 +24,7 @@ merely slow each epoch down, it caused *more epochs to be run*.
 
 WHAT THE POLICY IS
 ------------------
-Default: **cap all three at 2**, and only where the variable is unset (owner decision D1, ruled
+Default: **cap all three at 2**, and only where the variable is unset (Overtoad decision D1, ruled
 2026-09-23). Opt out with ``JUNIPER_CASCOR_BLAS_THREADS=0`` (or ``off`` / ``none``) to leave the
 runtime's own choice, or set it to ``<n>`` to cap at ``n``. An operator who exports
 ``OMP_NUM_THREADS`` or its siblings directly still wins, so a deployment that has already decided is
@@ -70,7 +70,7 @@ BLAS_THREAD_VARS = ("OMP_NUM_THREADS", "MKL_NUM_THREADS", "OPENBLAS_NUM_THREADS"
 #: Override. Unset (or blank) means DEFAULT_BLAS_THREADS; an OPT_OUT_VALUES entry means "do nothing".
 BLAS_THREADS_ENV = "JUNIPER_CASCOR_BLAS_THREADS"
 
-#: The width applied when the override is unset (owner decision D1, 2026-09-23).
+#: The width applied when the override is unset (Overtoad decision D1, 2026-09-23).
 DEFAULT_BLAS_THREADS = 2
 
 #: Override values that leave the runtime's own choice alone -- the pre-2026-09-23 default.

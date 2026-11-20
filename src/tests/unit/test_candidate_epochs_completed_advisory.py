@@ -214,7 +214,7 @@ def drift_message(budget, expected, observed):
     """The one-line message used by the warning, the step-summary line and the annotation."""
     reference = f"Reference: cascor {REFERENCE_CASCOR_SHA[:7]}, {REFERENCE_DATE}, {REFERENCE_PLATFORM}."
     this_run = f"This run: {platform.system()} {platform.machine()}, Python {platform.python_version()}, torch {torch.__version__}"
-    instruction = f"advisory only (owner decision D6, 2026-09-22); if a change to candidate numerics is intended, update the reference in {_THIS_FILE}"
+    instruction = f"advisory only (Overtoad decision D6, 2026-09-22); if a change to candidate numerics is intended, update the reference in {_THIS_FILE}"
     return f"{ANNOTATION_TITLE} at budget {budget}: expected {expected}, observed {observed} (torch thread pin {REFERENCE_THREAD_PIN}). {reference} {this_run} -- {instruction}"
 
 
@@ -405,7 +405,7 @@ class TestAdvisoryMechanism:
         assert f"torch thread pin {REFERENCE_THREAD_PIN}" in message
         assert f"cascor {REFERENCE_CASCOR_SHA[:7]}, {REFERENCE_DATE}" in message
         assert f"torch {torch.__version__}" in message
-        assert message.endswith("advisory only (owner decision D6, 2026-09-22); if a change to candidate numerics is intended, update the reference in src/tests/unit/test_candidate_epochs_completed_advisory.py")
+        assert message.endswith("advisory only (Overtoad decision D6, 2026-09-22); if a change to candidate numerics is intended, update the reference in src/tests/unit/test_candidate_epochs_completed_advisory.py")
         assert "\n" not in message and "\r" not in message
 
     @pytest.mark.parametrize(

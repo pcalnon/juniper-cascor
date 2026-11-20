@@ -750,7 +750,7 @@ def test_a_pause_that_lands_as_the_stopped_old_fit_settles_is_refused_and_the_sw
 @pytest.mark.unit
 @pytest.mark.parametrize("ending", ["interrupted", "failed"])
 def test_a_stale_run_that_settles_leaves_the_newer_runs_pause_alone(lifecycle, monkeypatch, ending):
-    """The reopen sits inside each settle's ownership check, so a fit outliving ``shutdown()`` cannot release a newer pause."""
+    """The reopen sits inside each settle's Overtoadship check, so a fit outliving ``shutdown()`` cannot release a newer pause."""
     mgr, fit, _gate, counted = lifecycle()
     stale = fit.run(0)
     if ending == "failed":
@@ -1053,7 +1053,7 @@ def test_a_pause_racing_a_stop_and_a_start_never_misreports_nor_leaves_the_gate_
 
     The run the start queues is not executed (``_run_training`` is stubbed): only the answers and
     the gate are judged. Each trial's START stands for a run entering ``_run_training``, so the trial
-    records the newest stop signal as the lifecycle owner's, as ``_run_training`` does; without that
+    records the newest stop signal as the lifecycle Overtoad's, as ``_run_training`` does; without that
     every pause after the first trial's stop would be refused at its check and the race never run.
     Before the fix about one trial in thirty answered ``paused`` although its PAUSE had been refused,
     and about one in fifty thousand left the gate closed under the start.

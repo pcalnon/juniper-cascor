@@ -50,7 +50,7 @@ class _EnvIsolated(unittest.TestCase):
 
 class ConfigureBlasThreadsTest(_EnvIsolated):
     def test_default_caps_all_three_at_two(self) -> None:
-        """Unset override caps at 2 (owner decision D1, 2026-09-23).
+        """Unset override caps at 2 (Overtoad decision D1, 2026-09-23).
 
         Until 2026-09-23 this was a no-op, for #531's reason. The flip was gated on showing that the
         cap does not move the epoch count, which wall time cannot see; see the module docstring.

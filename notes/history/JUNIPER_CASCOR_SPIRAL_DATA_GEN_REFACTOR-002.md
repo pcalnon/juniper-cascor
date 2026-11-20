@@ -2278,7 +2278,7 @@ class KaggleSource(RemoteWebSource):
 
     def get_dataset(
         self,
-        identifier: str,  # "owner/dataset-name"
+        identifier: str,  # "Overtoad/dataset-name"
         params: Optional[Dict[str, Any]] = None
     ) -> Dict[str, np.ndarray]:
         """Download dataset from Kaggle."""

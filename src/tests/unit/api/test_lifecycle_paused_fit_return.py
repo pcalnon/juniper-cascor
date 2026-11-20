@@ -15,7 +15,7 @@ thread behind it. A start answered 409 ("Cannot start training while paused"), a
 the FSM to STARTED (still no thread), and every later start answered 409 ("Training already in
 progress") until a stop or reset. This is the "paused-fit wedge". juniper-ml's flood-4 record,
 ``notes/JUNIPER_2026-11-06_JUNIPER-ECOSYSTEM_CURSOR-FLOOD-4-DISPOSITION.md``, lists this cascor
-copy under §8 ruling 11 (owner ruling "Fix all four now", 2026-11-08); its §4 records the same
+copy under §8 ruling 11 (Overtoad ruling "Fix all four now", 2026-11-08); its §4 records the same
 wedge in juniper-service-core, whose lifecycle mirrors this one.
 
 The run now settles COMPLETED exactly as an unpaused run does: ``mark_completed`` accepts PAUSED
@@ -29,14 +29,14 @@ forced-pause and forced-resume tests pin that neither can happen now. A stop tha
 the fit returns still settles STOPPED, a resume that lands before it still completes the same
 run, and a fit that raises while paused still settles FAILED.
 
-Only the run that owns the lifecycle settles it. A run takes ownership as it enters
+Only the run that owns the lifecycle settles it. A run takes Overtoadship as it enters
 ``_run_training``, before it issues ``Command.START``, so a fit that returns, is interrupted or
 fails after a newer run has entered leaves the FSM, the training state, the final score, the
 terminal counter and the monitor session to that newer run. juniper-service-core's own fix for
 the same wedge first released the pause without such a check, and its validation showed a stale
 fit then resuming or completing a newer paused run. cascor's single-worker executor serializes
 runs, so a newer run can enter while an older fit is still alive only once a run is started
-after ``shutdown()`` dropped the executor, its bounded join having timed out. The ownership tests
+after ``shutdown()`` dropped the executor, its bounded join having timed out. The Overtoadship tests
 build the overlap that way.
 """
 
@@ -503,7 +503,7 @@ def _leave_a_stale_fit_alive(mgr: TrainingLifecycleManager, fit: _GatedFit, monk
 
     Run 0's stop signal stays raised: since the stop-then-start fix a later start gives its own
     run a fresh signal and never clears this one. So a stale fit that returns here takes the
-    post-fit STOP branch, and it is that branch's ownership check these tests exercise. The
+    post-fit STOP branch, and it is that branch's Overtoadship check these tests exercise. The
     COMPLETION branch's check needs a stale run already past its stop check when the stop comes:
     ``test_lifecycle_stop_then_start.py``'s
     ``test_a_stale_run_past_its_stop_check_leaves_the_newer_paused_run_alone`` builds that.

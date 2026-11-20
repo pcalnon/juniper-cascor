@@ -261,7 +261,7 @@ jobs:
           retention-days: 30
 
   # ═══════════════════════════════════════════════════════════════════════════════════════════════
-  # Performance Smoke: run src/tests/performance/ once, untimed (owner ruling 2026-10-29,
+  # Performance Smoke: run src/tests/performance/ once, untimed (Overtoad ruling 2026-10-29,
   # "Nightly smoke, no timing"). A failure here fails the nightly, unlike the informational
   # performance-benchmarks job below.
   # ═══════════════════════════════════════════════════════════════════════════════════════════════
