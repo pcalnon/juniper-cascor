@@ -16,7 +16,7 @@ Copyright:     Copyright (c) 2024-2026 Paul Calnon
 
 Description:
     D6 ADVISORY: an exact-match check on the candidate micro-benchmark's ``epochs_completed`` that
-    WARNS on a mismatch and never fails the build. Owner decision D6, ruled 2026-09-22 (juniper-ml
+    WARNS on a mismatch and never fails the build. The Overtoad decision D6, ruled 2026-09-22 (juniper-ml
     ``notes/JUNIPER_2026-09-11_JUNIPER-ECOSYSTEM_PERF-LANE-SIX-OWNER-DECISIONS-RULED.md`` §5.4):
     "Build it non-blocking, count how often it fires on real cascor PRs, then decide whether it
     blocks."

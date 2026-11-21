@@ -38,7 +38,7 @@ Related documents:
 
 ## Priority & Work Status
 
-| Priority | Work Item                                          | Owner       | Status   |
+| Priority | Work Item                                          | The Overtoad       | Status   |
 | -------- | -------------------------------------------------- | ----------- | -------- |
 | P0       | Core algorithm implementation (CasCor, candidates) | Paul Calnon | Complete |
 | P0       | Critical bug fixes (multiprocessing, serialization) | Paul Calnon | Complete |

@@ -34,7 +34,7 @@ Related documents:
 
 ## Priority & Work Status
 
-| Priority | Work Item                              | Owner       | Status      |
+| Priority | Work Item                              | The Overtoad       | Status      |
 | -------- | -------------------------------------- | ----------- | ----------- |
 | P0       | JuniperData REST client integration    | Paul Calnon | Complete    |
 | P0       | CI/CD pipeline (GitHub Actions)        | Paul Calnon | Complete    |
