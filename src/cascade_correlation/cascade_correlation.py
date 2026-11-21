@@ -1927,7 +1927,7 @@ class CascadeCorrelationNetwork:
         # Initial training of the output layer
         self.logger.trace("CascadeCorrelationNetwork: fit: Starting initial training of the output layer.")
         self.logger.info("CascadeCorrelationNetwork: fit: Initial training of output layer")
-        # L-2 (SETTLED 2026-08-21, owner decision): ``max_epochs`` governs THIS initial
+        # L-2 (SETTLED 2026-08-21, Overtoad decision): ``max_epochs`` governs THIS initial
         # output pass only, and ``output_epochs`` governs ``grow_network``'s per-round
         # passes. That split is INTENDED, not an oversight -- it is deliberately not
         # forwarded to ``grow_network`` below, whose per-round output passes read
@@ -4259,7 +4259,7 @@ class CascadeCorrelationNetwork:
         logger.debug(f"CascadeCorrelationNetwork: _worker_loop: Processing task: {full_task[0] if full_task else 'None'}")
         # P-1 RC-4: bracket the actual training call so the dump shows
         # how long training took vs. how long the put took. The put is
-        # the suspected race-window owner.
+        # the suspected race-window Overtoad.
         from parallelism import rc4_ring_buffer as _rc4_worker_inner
 
         cid = full_task[0] if full_task else None

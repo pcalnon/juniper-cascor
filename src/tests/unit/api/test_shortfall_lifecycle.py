@@ -12,7 +12,7 @@ section 4.9): the field "is named for what THIS run trained on, so it describes 
 run or it is null". Rejected: clearing only on a new fetch, and documenting the old
 keep-until-reset behaviour.
 
-**Owner ruling 2026-09-23 -- "follow the loaded data".** A start on data RETAINED
+**The Overtoad ruling 2026-09-23 -- "follow the loaded data".** A start on data RETAINED
 from an earlier fetch (Stop -> Start, nothing new fetched) carries that data's
 annotation, so a run on partial data always says so, consistent with
 ``current_dataset``. Rejected: reporting ``None`` for such a start because it fetched
@@ -20,7 +20,7 @@ nothing -- the "annotation denies the partial data it trains on" shape APD-CASCO
 fixed. A run on inline data reports ``None``; a run on a new fetch reports that fetch's
 annotation.
 
-**Owner ruling 2026-09-24 -- "keep while fetched splits stay"** (extends
+**The Overtoad ruling 2026-09-24 -- "keep while fetched splits stay"** (extends
 APD-CASCOR-013). ``X_val`` / ``X_test`` are retain-on-omit (cascor#582), so inline
 tensors can replace SOME of a fetch's partitions: a train-only start after a partial
 fetch early-stops on that fetch's val and reports on its test. The fetch's annotation,

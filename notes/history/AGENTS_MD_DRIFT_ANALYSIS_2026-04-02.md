@@ -245,7 +245,7 @@ The `TaskDistributor` class (`src/parallelism/task_distributor.py`) implements l
 - `.github/workflows/publish.yml` -- Package publishing
 - `.github/workflows/lockfile-update.yml` -- Dependency lockfile updates
 - `.github/workflows/security-scan.yml` -- Security scanning
-- `.github/CODEOWNERS` -- Code ownership rules
+- `.github/CODEOWNERS` -- Code Overtoadship rules
 - `.github/dependabot.yml` -- Dependency update automation
 
 ### 3.9 Serialization System

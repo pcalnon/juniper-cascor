@@ -7,7 +7,7 @@ Author: Paul Calnon
 Created: 2026-10-26
 Status: ad-hoc — investigation (verifies the tests added with ``compute_classification_accuracy``)
 Retire when: the PR that adds ``eval_metrics.final.accuracy`` has merged and nobody needs to re-run the evidence
-Related: juniper-ml notes/JUNIPER_2026-08-14_JUNIPER-ECOSYSTEM_DEFECT-REGISTER.md row APD-ML-002 (owner ruling
+Related: juniper-ml notes/JUNIPER_2026-08-14_JUNIPER-ECOSYSTEM_DEFECT-REGISTER.md row APD-ML-002 (Overtoad ruling
          2026-10-26: "Keep test_accuracy via cascor"); juniper-ml#2064;
          src/tests/unit/api/test_classification_metrics.py and src/tests/unit/api/test_final_eval_accuracy.py
 

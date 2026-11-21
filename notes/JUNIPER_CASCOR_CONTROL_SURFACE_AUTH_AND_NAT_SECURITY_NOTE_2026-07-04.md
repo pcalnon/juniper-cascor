@@ -14,7 +14,7 @@ counterpart to the canopy remediation, and the invariants they enforce. It is
 the local companion to the ecosystem design of record: juniper-ml
 `notes/JUNIPER_CANOPY_CONTROL_SURFACE_AUTH_AND_NAT_DESIGN_2026-07-03.md`
 (§4 Option A / §5 Option B / §7 Phases 1–2 / §8 D2+D4). Both findings are an
-authorized defensive audit of the platform owner's own containerized stack.
+authorized defensive audit of the platform Overtoad's own containerized stack.
 
 ## Threat model in one paragraph
 
@@ -67,14 +67,14 @@ This converts the auth design's load-bearing precondition ("do not ship the
 un-fronted control surface on a public interface") from prose into an enforced
 invariant, and closes the silent `JUNIPER_CASCOR_HOST=0.0.0.0` footgun.
 
-**Deploy roll-out is owner-gated (Phase 1).** In `juniper-deploy` the container
+**Deploy roll-out is Overtoad-gated (Phase 1).** In `juniper-deploy` the container
 binds `JUNIPER_CASCOR_HOST=0.0.0.0` behind a **loopback host-publish**
 (`${BIND_HOST:-127.0.0.1}:…:8200`). Because the guard keys on `settings.host`
 (`0.0.0.0`), enabling it in the deploy requires setting
 `JUNIPER_CASCOR_LOOPBACK_PUBLISH_ATTESTED=true` there — the operator attesting
 that the loopback host-publish fronts the port (a fronting proxy later would
 instead attest `JUNIPER_CASCOR_AUTH_PROXY_ATTESTED=true`). That env/deploy change
-is approved separately by the platform owner and is **not** part of the code PR
+is approved separately by the platform Overtoad and is **not** part of the code PR
 that adds the guard.
 
 ## D4 — WebSocket connection caps (SEC-F19)
@@ -113,7 +113,7 @@ worker minimum (design §8 OQ-2). Worker fleet size is additionally bounded by
 the existing registry capacity cap and the optional per-IP connection rate
 limiter. Worker per-identity keying is a documented follow-up.
 
-## Explicitly deferred (Phase 4, owner-gated)
+## Explicitly deferred (Phase 4, Overtoad-gated)
 
 The fronting authenticating reverse proxy and trusted-`X-Forwarded-For`
 client-IP resolution (design §5 Option A / §6 / §8 D6) are **not** built here.

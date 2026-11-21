@@ -306,7 +306,7 @@ class HDF5Utils:
         That root is a project ASSET store: it holds tens of thousands of models that
         outlive every stack, is shared by the direct CLI, the service and the container
         alike, and is captured by the whole-tree offline backup. Age-based retention over
-        it is a policy decision the owner has explicitly reserved -- see the snapshot
+        it is a policy decision the Overtoad has explicitly reserved -- see the snapshot
         lifecycle design's Phase 4, which writes no retention policy until the archive can
         say what each file IS. Deleting the 27,886 oldest of 27,896 files because a CLI
         default said ``--keep 10`` is not that policy.

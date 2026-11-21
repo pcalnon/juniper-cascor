@@ -7,7 +7,7 @@ File Name:     test_truncatable_generators.py
 Author:        Paul Calnon
 License:       MIT License
 
-Two owner rulings (juniper-ml
+Two Overtoad rulings (juniper-ml
 ``notes/JUNIPER_2026-08-14_JUNIPER-ECOSYSTEM_DEFECT-REGISTER.md`` section 4.9):
 
 * **2026-09-09** (juniper-ml#1864) -- derive the set from juniper-data's

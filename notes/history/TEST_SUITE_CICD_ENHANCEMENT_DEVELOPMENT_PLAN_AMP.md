@@ -145,7 +145,7 @@ All findings from both audit reports were independently verified against the cur
 **Duration**: 1 day  
 **Total Effort**: Small (2-4 hours)
 
-| Task | Issue ID | Description                                               | Effort | Owner |
+| Task | Issue ID | Description                                               | Effort | The Overtoad |
 | ---- | -------- | --------------------------------------------------------- | ------ | ----- |
 | 0.1  | CI-001   | Update Python version from 3.14 to 3.13 in all configs    | S      | TBD   |
 | 0.2  | TST-007  | Add `dill` to test dependencies in conda spec / CI        | S      | TBD   |
@@ -165,7 +165,7 @@ All findings from both audit reports were independently verified against the cur
 **Duration**: 1-2 days  
 **Total Effort**: Medium (6-10 hours)
 
-| Task | Issue ID | Description                                               | Effort | Owner |
+| Task | Issue ID | Description                                               | Effort | The Overtoad |
 | ---- | -------- | --------------------------------------------------------- | ------ | ----- |
 | 1.1  | TST-001  | Fix always-passing tests in `test_training_workflow.py`   | S      | TBD   |
 | 1.2  | TST-005  | Convert `test_quick.py` to proper pytest format or delete | S      | TBD   |
@@ -189,7 +189,7 @@ All findings from both audit reports were independently verified against the cur
 **Duration**: 2-4 days  
 **Total Effort**: Medium-Large (12-24 hours)
 
-| Task | Issue ID | Description                                                  | Effort | Owner |
+| Task | Issue ID | Description                                                  | Effort | The Overtoad |
 | ---- | -------- | ------------------------------------------------------------ | ------ | ----- |
 | 2.1  | TST-002  | Refactor `test_log_config_coverage.py` to use real LogConfig | M      | TBD   |
 | 2.2  | COV-001  | Expand coverage sources to include all src directories       | M      | TBD   |
@@ -211,7 +211,7 @@ All findings from both audit reports were independently verified against the cur
 **Duration**: 3-5 days (can be incremental)  
 **Total Effort**: Large (24-40 hours)
 
-| Task | Issue ID | Description                                                  | Effort | Owner |
+| Task | Issue ID | Description                                                  | Effort | The Overtoad |
 | ---- | -------- | ------------------------------------------------------------ | ------ | ----- |
 | 3.1  | COV-002  | Remove `-p no:warnings`, add targeted filterwarnings         | S-M    | TBD   |
 | 3.2  | LINT-004 | Include test files in flake8/mypy with relaxed initial rules | M      | TBD   |

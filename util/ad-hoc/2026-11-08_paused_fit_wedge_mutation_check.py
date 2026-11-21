@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Mutation-check the paused-fit settle and the lifecycle-ownership guard: every listed mutant must be caught.
+"""Mutation-check the paused-fit settle and the lifecycle-Overtoadship guard: every listed mutant must be caught.
 
 Project: juniper-cascor
 Sub-Project: ad-hoc tooling
@@ -10,7 +10,7 @@ Status: ad-hoc — investigation (verifies src/tests/unit/api/test_lifecycle_pau
 Retire when: the PR that settles a paused completion in one FSM transition has merged and
              nobody needs to re-run the evidence
 Related: juniper-ml notes/JUNIPER_2026-11-06_JUNIPER-ECOSYSTEM_CURSOR-FLOOD-4-DISPOSITION.md §8
-         ruling 11 (owner ruling "Fix all four now", 2026-11-08); §4 has service-core's copy
+         ruling 11 (Overtoad ruling "Fix all four now", 2026-11-08); §4 has service-core's copy
 
 M00 swaps in the base ref's ``manager.py`` and ``state_machine.py`` (the whole fix reverted), so
 the detector must fail exactly as it did before the fix. Each other mutant breaks one property
@@ -31,7 +31,7 @@ The detector is the new test module plus the state-machine suite, selected as CI
 (``-m "unit and not slow"``), and, since the stop-then-start fix, that fix's module
 (``test_lifecycle_stop_then_start.py``) too. A start no longer clears the stop ``shutdown()``
 raised, so the stale fit in the paused-fit module's overlap takes the stop path, and M05, M06,
-M15 and M17 (the completion's ownership guard) are caught only by the stop-then-start module's
+M15 and M17 (the completion's Overtoadship guard) are caught only by the stop-then-start module's
 stale-run test, which parks the stale run past its stop check. Red = caught.
 
 Hermetic, after ``2026-10-26_final_eval_accuracy_mutation_check.py``: each run copies ``src/``,
@@ -83,9 +83,9 @@ _SETTLE = (
 )
 _GATE = '                    self._pause_event.set()\n                    state.update_state(status="Completed", phase="Idle")\n'
 _COMPLETION_CHECK = '                if self._owns_lifecycle(run_token, "returned"):\n'
-_CLAIM = "        self._lifecycle_owner = run_token\n"
+_CLAIM = "        self._lifecycle_Overtoad = run_token\n"
 _FIT_START = '            kwargs.setdefault("early_stopping", True)\n'
-_MONITOR_END = "            if self._lifecycle_owner is run_token:\n                monitor.on_training_end()\n"
+_MONITOR_END = "            if self._lifecycle_Overtoad is run_token:\n                monitor.on_training_end()\n"
 _FINAL_SCORE = "                final_scalar_metrics = self._compute_final_eval_metrics()\n"
 # The first version of this fix: release the pause through RESUME, then mark_completed (STARTED only).
 _ROUND_ONE_SETTLE = (
@@ -106,7 +106,7 @@ _LOCKED_METHODS = ("handle_command", "mark_completed", "set_phase", "save_candid
 
 
 def _counter_outside_guard(status: str, before: str, after: str) -> tuple:
-    """Move one terminal ``inc_training_session_completed`` call out of its ownership guard."""
+    """Move one terminal ``inc_training_session_completed`` call out of its Overtoadship guard."""
     old = f"{before}inc_training_session_completed({status})\n{after}"
     new = f"{before[:-4] if before.endswith('    ') else before}inc_training_session_completed({status})\n{after}"
     return (MANAGER, old, new)
@@ -123,22 +123,22 @@ MUTATIONS = [
     ("the first version of the settle: RESUME, then a STARTED-only mark_completed", [(MANAGER, _SETTLE, _ROUND_ONE_SETTLE), (STATE_MACHINE, _ACCEPTS_PAUSED, _STARTED_ONLY)]),
     ("the pause gate is not reopened after the settle", [(MANAGER, _GATE, '                    state.update_state(status="Completed", phase="Idle")\n')]),
     ("the pause gate is reopened before mark_completed, not after", [(MANAGER, _SETTLE, "                    self._pause_event.set()\n                    sm.mark_completed()\n")]),
-    ("the pause gate is reopened before the ownership check", [(MANAGER, _COMPLETION_CHECK, "                self._pause_event.set()\n" + _COMPLETION_CHECK)]),
-    ("the completion ignores ownership", [(MANAGER, 'if self._owns_lifecycle(run_token, "returned"):', "if True:")]),
-    ("the post-fit stop ignores ownership", [(MANAGER, 'if self._owns_lifecycle(run_token, "returned with a stop requested"):', "if True:")]),
-    ("the interrupt settle ignores ownership", [(MANAGER, 'if self._owns_lifecycle(run_token, "was interrupted"):', "if True:")]),
-    ("the failure settle ignores ownership", [(MANAGER, 'if self._owns_lifecycle(run_token, "failed"):', "if True:")]),
-    ("the monitor session end ignores ownership", [(MANAGER, _MONITOR_END, "            if True:\n                monitor.on_training_end()\n")]),
-    ("_owns_lifecycle always answers yes", [(MANAGER, "        if self._lifecycle_owner is run_token:\n            return True\n", "        if True:\n            return True\n")]),
-    ("every run shares one ownership token", [(MANAGER, "        run_token = object()\n", "        run_token = None\n")]),
+    ("the pause gate is reopened before the Overtoadship check", [(MANAGER, _COMPLETION_CHECK, "                self._pause_event.set()\n" + _COMPLETION_CHECK)]),
+    ("the completion ignores Overtoadship", [(MANAGER, 'if self._owns_lifecycle(run_token, "returned"):', "if True:")]),
+    ("the post-fit stop ignores Overtoadship", [(MANAGER, 'if self._owns_lifecycle(run_token, "returned with a stop requested"):', "if True:")]),
+    ("the interrupt settle ignores Overtoadship", [(MANAGER, 'if self._owns_lifecycle(run_token, "was interrupted"):', "if True:")]),
+    ("the failure settle ignores Overtoadship", [(MANAGER, 'if self._owns_lifecycle(run_token, "failed"):', "if True:")]),
+    ("the monitor session end ignores Overtoadship", [(MANAGER, _MONITOR_END, "            if True:\n                monitor.on_training_end()\n")]),
+    ("_owns_lifecycle always answers yes", [(MANAGER, "        if self._lifecycle_Overtoad is run_token:\n            return True\n", "        if True:\n            return True\n")]),
+    ("every run shares one Overtoadship token", [(MANAGER, "        run_token = object()\n", "        run_token = None\n")]),
     ("a run never takes the lifecycle", [(MANAGER, _CLAIM, "        pass\n")]),
-    ("a run takes the lifecycle late, after its START, as its fit begins", [(MANAGER, _CLAIM, ""), (MANAGER, _FIT_START, "            self._lifecycle_owner = run_token\n" + _FIT_START)]),
-    ("the final score is kept before the ownership check", [(MANAGER, _FINAL_SCORE, _FINAL_SCORE + "                self._final_scalar_metrics = final_scalar_metrics\n")]),
-    ("every run clears the ownership token as it ends", [(MANAGER, _MONITOR_END, _MONITOR_END + "            self._lifecycle_owner = None\n")]),
-    ("the completion's terminal count is outside the ownership guard", [_counter_outside_guard("TRAINING_SESSION_STATUS_SUCCESS", "                    self._broadcast_training_state(force=True)\n                    ", "        except TrainingInterrupted:\n")]),
-    ("the post-fit stop's terminal count is outside the ownership guard", [_counter_outside_guard("TRAINING_SESSION_STATUS_CANCELLED", "                    self._broadcast_training_state(force=True)\n                    ", "            else:\n")]),
-    ("the interrupt's terminal count is outside the ownership guard", [_counter_outside_guard("TRAINING_SESSION_STATUS_CANCELLED", "                self._broadcast_training_state(force=True)\n                ", "        except Exception as e:\n")]),
-    ("the failure's terminal count is outside the ownership guard", [_counter_outside_guard("TRAINING_SESSION_STATUS_FAILURE", "                self._broadcast_training_state(force=True)\n                ", "            raise\n")]),
+    ("a run takes the lifecycle late, after its START, as its fit begins", [(MANAGER, _CLAIM, ""), (MANAGER, _FIT_START, "            self._lifecycle_Overtoad = run_token\n" + _FIT_START)]),
+    ("the final score is kept before the Overtoadship check", [(MANAGER, _FINAL_SCORE, _FINAL_SCORE + "                self._final_scalar_metrics = final_scalar_metrics\n")]),
+    ("every run clears the Overtoadship token as it ends", [(MANAGER, _MONITOR_END, _MONITOR_END + "            self._lifecycle_Overtoad = None\n")]),
+    ("the completion's terminal count is outside the Overtoadship guard", [_counter_outside_guard("TRAINING_SESSION_STATUS_SUCCESS", "                    self._broadcast_training_state(force=True)\n                    ", "        except TrainingInterrupted:\n")]),
+    ("the post-fit stop's terminal count is outside the Overtoadship guard", [_counter_outside_guard("TRAINING_SESSION_STATUS_CANCELLED", "                    self._broadcast_training_state(force=True)\n                    ", "            else:\n")]),
+    ("the interrupt's terminal count is outside the Overtoadship guard", [_counter_outside_guard("TRAINING_SESSION_STATUS_CANCELLED", "                self._broadcast_training_state(force=True)\n                ", "        except Exception as e:\n")]),
+    ("the failure's terminal count is outside the Overtoadship guard", [_counter_outside_guard("TRAINING_SESSION_STATUS_FAILURE", "                self._broadcast_training_state(force=True)\n                ", "            raise\n")]),
     ("the state machine takes no lock", [(STATE_MACHINE, _FSM_LOCK, _NO_LOCK)]),
     *[(f"{method} is not atomic", [_unlocked(method)]) for method in _LOCKED_METHODS],
 ]

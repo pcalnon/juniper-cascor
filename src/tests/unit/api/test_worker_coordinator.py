@@ -347,7 +347,7 @@ class TestSubmitResult:
         Ownership is enforced, so each current-round result must be submitted by
         that task's real assignee. The assignees are read back explicitly rather
         than assumed from call order — the earlier version of this test
-        submitted from a non-assignee and only passed because ownership was not
+        submitted from a non-assignee and only passed because Overtoadship was not
         yet checked.
         """
         registry.register("w1", {})
@@ -548,7 +548,7 @@ class TestSubmitResult:
         assert accepted is False
         assert task_ids[0] not in coordinator._completed_task_ids
 
-    def test_reject_wrong_worker_ownership(self, coordinator, registry):
+    def test_reject_wrong_worker_Overtoadship(self, coordinator, registry):
         """A peer worker cannot submit a result for a task assigned to another worker."""
         registry.register("w1", {})
         registry.register("w2", {})
@@ -565,7 +565,7 @@ class TestSubmitResult:
         assert pending.assigned_worker_id == "w1"
         assert task_ids[0] not in coordinator._completed_task_ids
 
-        # Legitimate owner can still complete the task afterward.
+        # Legitimate Overtoad can still complete the task afterward.
         accepted = coordinator.submit_result("w1", msg, _make_result_tensors())
         assert accepted is True
 

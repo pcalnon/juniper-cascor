@@ -219,7 +219,7 @@ This avoids designing a full RPC API immediately and keeps backward compatibilit
 - default: current embedded mode,
 - optional: “subprocess training” mode behind config flag.
 
-Caveat: you cannot easily share the full PyTorch model object across processes; you’d treat the subprocess as the “owner” of the model and communicate via snapshots/checkpoints (even if just file-based for now).
+Caveat: you cannot easily share the full PyTorch model object across processes; you’d treat the subprocess as the “Overtoad” of the model and communicate via snapshots/checkpoints (even if just file-based for now).
 
 ## 5. Risks & guardrails (important for Phase C overall)
 

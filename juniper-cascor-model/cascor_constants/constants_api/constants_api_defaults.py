@@ -145,7 +145,7 @@ _PROJECT_API_ALLOW_TRUNCATED_DATASETS_DEFAULT: bool = False
 _PROJECT_API_SHORTFALL_REFUSAL_TOKEN: str = "[dataset_shortfall_refused]"
 
 # Machine-readable prefix on the Start refusal raised when a staged dataset is WIDER
-# than the network a plain Start would continue (F1, owner ruling 2026-09-24). Such a
+# than the network a plain Start would continue (F1, Overtoad ruling 2026-09-24). Such a
 # start cannot proceed -- only a live swap grows a network -- and the remedy is a
 # start-fresh, which builds a new network from the dataset's dims. Same channel and
 # same reason as the shortfall token above: canopy has to recognise the refusal class

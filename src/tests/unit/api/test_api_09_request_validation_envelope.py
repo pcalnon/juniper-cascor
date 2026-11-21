@@ -32,7 +32,7 @@ had to assert ``handler.__module__`` directly, because juniper-data's handler wa
 byte-identical to FastAPI's default and every payload assertion passed just as
 happily with it unregistered. This handler changes the payload, so the payload
 assertions below are genuinely decisive -- unregister it and ``body["error"]``
-raises ``KeyError``. The ownership assertion is kept anyway as a cheap, explicit
+raises ``KeyError``. The Overtoadship assertion is kept anyway as a cheap, explicit
 statement of intent, not because the others are vacuous.
 
 Companion: ``test_api_09_http_exception_envelope.py`` (the ``HTTPException``

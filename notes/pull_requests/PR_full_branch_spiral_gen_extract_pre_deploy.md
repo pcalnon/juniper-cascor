@@ -38,7 +38,7 @@ Related documents:
 
 ## Priority & Work Status
 
-| Priority | Work Item                                          | Owner       | Status   |
+| Priority | Work Item                                          | The Overtoad       | Status   |
 | -------- | -------------------------------------------------- | ----------- | -------- |
 | P0       | Core algorithm implementation (CasCor, candidates) | Paul Calnon | Complete |
 | P0       | Critical bug fixes (multiprocessing, serialization) | Paul Calnon | Complete |
@@ -378,7 +378,7 @@ Related documents:
 - `src/snapshots/` - HDF5 serialization system (serializer, utils, CLI, common)
 - `.github/workflows/ci.yml` - GitHub Actions CI/CD pipeline
 - `.github/workflows/scheduled-tests.yml` - Scheduled nightly test workflow
-- `.github/CODEOWNERS` - Code ownership for review routing
+- `.github/CODEOWNERS` - Code Overtoadship for review routing
 - `.pre-commit-config.yaml` - Pre-commit hook configuration
 - `pyproject.toml` - Unified Python tooling configuration
 - `util/profile_training.bash` - py-spy sampling profiler script

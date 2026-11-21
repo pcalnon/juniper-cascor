@@ -273,7 +273,7 @@ def __init__(
 
 This provides:
 
-- Clear class ownership of parameters
+- Clear class Overtoadship of parameters
 - Explicit parameter binding
 - IDE autocomplete support
 
