@@ -466,7 +466,7 @@ class WorkerCoordinator:
                 # grabs. Here the task is still validly assigned to a different,
                 # live worker: requeueing would let any peer that merely knows
                 # ``task_id`` yank an in-flight assignment away from its real
-                # owner. Only the bogus submitter's own busy slot is released.
+                # Overtoad. Only the bogus submitter's own busy slot is released.
                 self._registry.complete_task(worker_id, success=False)
                 return False
 

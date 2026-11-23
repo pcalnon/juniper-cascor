@@ -7,7 +7,7 @@ inert -- the same failure mode that made the setting entry-point-dependent in th
 (juniper-cascor#531).
 
 The direct CLI applies the identical policy from the identical helper at the top of ``main.py``.
-Since 2026-09-23 (owner decision D1) the default caps all three variables at 2 wherever they are
+Since 2026-09-23 (Overtoad decision D1) the default caps all three variables at 2 wherever they are
 unset; ``JUNIPER_CASCOR_BLAS_THREADS`` changes the width, or opts out with ``0`` / ``off`` /
 ``none``, on both paths at once.
 """

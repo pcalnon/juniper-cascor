@@ -13,7 +13,7 @@ reports a plausible loss, and can be re-snapshotted, propagating the corruption.
 
 Design of record:
 ``juniper-ml/notes/JUNIPER_2026-08-20_JUNIPER-CASCOR_SNAPSHOT-INTEGRITY-GATES-DESIGN.md``.
-Owner decisions (2026-08-21): all gates fail-closed including checksums; the forensic
+The Overtoad decisions (2026-08-21): all gates fail-closed including checksums; the forensic
 escape hatch is a serializer parameter only (no API surface); an arch disagreement gets
 its own reason code at the same 422; existing archive files are rejected rather than
 grandfathered.

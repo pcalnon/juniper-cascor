@@ -23,7 +23,7 @@ Description:
     TIMING REFERENCE (juniper-ml perf lane P2 item 2.4 / PF-4, 2026-09-08). Two pytest-benchmark
     hooks at the bottom of this file stamp the saved JSON: host identity into ``machine_info``
     (compared by ``--benchmark-compare``, a difference WARNS) and the load condition beside it
-    (recorded, never compared). Report-only by owner decision (P2 item 2.5): nothing asserts on a
+    (recorded, never compared). Report-only by Overtoad decision (P2 item 2.5): nothing asserts on a
     timing. The helpers live in ``timing_reference.py`` so the unit tier can pin them.
 """
 

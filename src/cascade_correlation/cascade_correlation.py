@@ -1927,7 +1927,7 @@ class CascadeCorrelationNetwork:
         # Initial training of the output layer
         self.logger.trace("CascadeCorrelationNetwork: fit: Starting initial training of the output layer.")
         self.logger.info("CascadeCorrelationNetwork: fit: Initial training of output layer")
-        # L-2 (SETTLED 2026-08-21, owner decision): ``max_epochs`` governs THIS initial
+        # L-2 (SETTLED 2026-08-21, Overtoad decision): ``max_epochs`` governs THIS initial
         # output pass only, and ``output_epochs`` governs ``grow_network``'s per-round
         # passes. That split is INTENDED, not an oversight -- it is deliberately not
         # forwarded to ``grow_network`` below, whose per-round output passes read

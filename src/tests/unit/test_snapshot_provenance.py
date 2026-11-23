@@ -6,7 +6,7 @@ but never where it came from -- ``meta.uuid`` identifies the file, not the work.
 "find the model from the E-I cap-128 cell" was unanswerable across ~27.9k files, and
 identity has to precede retention: a deletion rule over anonymous artifacts is guesswork.
 
-Owner decisions (2026-08-21): transport is process env (mirroring
+The Overtoad decisions (2026-08-21): transport is process env (mirroring
 ``JUNIPER_CASCOR_SNAPSHOTS_DIR``); the data lives in its own top-level ``provenance``
 group; existing snapshots are left alone with absence meaning *unknown*; the field set is
 run_id + experiment + cell_id + dataset_id + git_sha.

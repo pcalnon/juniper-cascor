@@ -5,7 +5,7 @@
 **Author**: Paul Calnon
 **License**: MIT License
 **Version**: 0.14.0
-**Last Updated**: 2026-11-16
+**Last Updated**: 2026-11-23
 
 ---
 
@@ -642,7 +642,7 @@ The two pure-stdlib git-diff screens are now **consumed from the published `juni
 - `juniper-docs-additions-check` — markdown deletion-magnitude screen over the package's universal default docs cluster (`AGENTS.md` + `docs/**` + `notes/**`, so no `--scope` is needed); FAIL on a deleted heading or a run of ≥ N consecutive deleted lines, WARN on small in-place swaps. Escape hatch: an `Allow-Docs-Rewrite: <path>` commit trailer.
 
 **`Sequence Safety` is a REQUIRED status check** in the `main` ruleset (`juniper-cascor-rules`, id `15081045`), so a red run blocks the merge. `sequence-safety.yml` is standalone, so its job is not in `ci.yml`'s Quality Gate `needs:` (a `needs:` entry can only name a job in the same workflow): **a green Quality Gate does not mean mergeable**. Read the ruleset, not prose: `gh api repos/pcalnon/juniper-cascor/rules/branches/main --jq '.[] | select(.type=="required_status_checks") | .parameters.required_status_checks[].context'`.
-`sequence-safety.yml` fails the PR on an unwaived finding. The owner's `allow-symbol-loss` / `docs-rewrite` labels demote that screen to WARN-only (`--advisory`, exit 0), which can green the required context but not the post-merge net: there only the commit trailers above waive, so carry them into the squash message.
+`sequence-safety.yml` fails the PR on an unwaived finding. The Overtoad's `allow-symbol-loss` / `docs-rewrite` labels demote that screen to WARN-only (`--advisory`, exit 0), which can green the required context but not the post-merge net: there only the commit trailers above waive, so carry them into the squash message.
 `main-verify.yml` is that bypass-proof net, on every push to `main` — not a PR status check (catch-up base sweeps any `[skip ci]` window; a stable-title tracking issue is upserted on failure). Both `pip install "juniper-ci-tools>=0.9.0,<0.10.0"` then invoke the console scripts.
 v1 defers the post-merge regression battery (cascor's suite is heavy) and Slack notify (no webhook secret) — see the workflow header comments.
 The screens' canonical regression suite lives in the `juniper-ci-tools` package; `src/tests/unit/test_sequence_safety_retired.py` is cascor's local guard that the inline copy stays deleted and the workflow pins keep admitting the packaged version.
@@ -820,7 +820,7 @@ Performance micro-benchmarks in `src/tests/performance/` cover:
 - End-to-end profiling
 
 **Timing reference (PF-4, report-only)**:
-cut with `--run-performance --benchmark-storage=file://$HOME/.local/state/juniper-experiments/baselines/cascor-micro --benchmark-autosave` (storage **outside** every checkout — `.benchmarks/` is gitignored and dies with a worktree), compare with `--benchmark-compare=NNNN`, and never add `--benchmark-compare-fail`: the owner ruled timing report-only (juniper-ml P2 item 2.5, 2026-09-07) because the reference host's quiet noise band is 20.5%.
+cut with `--run-performance --benchmark-storage=file://$HOME/.local/state/juniper-experiments/baselines/cascor-micro --benchmark-autosave` (storage **outside** every checkout — `.benchmarks/` is gitignored and dies with a worktree), compare with `--benchmark-compare=NNNN`, and never add `--benchmark-compare-fail`: the Overtoad ruled timing report-only (juniper-ml P2 item 2.5, 2026-09-07) because the reference host's quiet noise band is 20.5%.
 The saved JSON carries host identity in `machine_info.juniper` (compared, warns on change) and the load average at save time in `juniper_run` (recorded, never compared). Procedure: `docs/testing/REFERENCE.md` § Micro timing reference.
 
 ---
@@ -849,7 +849,7 @@ This is an ecosystem-wide rule restated in the parent `Juniper/AGENTS.md` "Cross
 ### Temporary files: `tmp/`, never `/tmp` (mandatory)
 
 **No file is ever written under `/tmp`** (nor `/var/tmp`) by this repo's scripts, tests, tools, services, sessions
-or agents (owner directive, 2026-10-26). On the Linux host `/tmp` is a tmpfs that `systemd-tmpfiles-clean` ages
+or agents (Overtoad directive, 2026-10-26). On the Linux host `/tmp` is a tmpfs that `systemd-tmpfiles-clean` ages
 daily (`q /tmp 1777 root root 10d`): a file untouched for ten days is deleted while still in use, and a reboot
 erases the rest. In the week to 2026-10-26 it emptied a live test stack's pid files and venv three times. macOS
 ages `/tmp` too.
@@ -863,7 +863,7 @@ ages `/tmp` too.
   derived from `TMPDIR`.
 - Out of scope: GitHub-hosted CI runners and a container's own `/tmp`.
 - Ecosystem rule and rationale: `juniper-ml/notes/JUNIPER_2026-10-26_JUNIPER-ECOSYSTEM_REPO-TMP-DIRECTORY-CONVENTION.md`.
-- **Owner rulings, 2026-10-26** (canonical: juniper-ml `notes/JUNIPER_2026-10-26_JUNIPER-ECOSYSTEM_REPO-TMP-DIRECTORY-CONVENTION.md`):
+- **The Overtoad rulings, 2026-10-26** (canonical: juniper-ml `notes/JUNIPER_2026-10-26_JUNIPER-ECOSYSTEM_REPO-TMP-DIRECTORY-CONVENTION.md`):
   - `juniper-check-doc-links` ignores `tmp/`: every invocation passes `--exclude tmp`.
   - pytest does not ignore `tmp/`: no `norecursedirs`, `--ignore` or `collect_ignore` entry names it.
   - A local Docker build ignores `tmp/`: the build context's `.dockerignore` lists it.

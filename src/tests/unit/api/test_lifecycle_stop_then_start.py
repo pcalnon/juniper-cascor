@@ -23,9 +23,9 @@ FSM and (for one) HTTP routes, with a gated stub ``model.fit``: events and gates
 
 juniper-ml's flood-4 record, ``notes/JUNIPER_2026-11-06_JUNIPER-ECOSYSTEM_CURSOR-FLOOD-4-DISPOSITION.md``,
 lists the paused-fit wedge under §8 ruling 11; the PR that fixed it (juniper-cascor#753) reported
-this race, and the owner's ruling 17 (2026-11-09; the record's next update adds it to its §8),
+this race, and the Overtoad's ruling 17 (2026-11-09; the record's next update adds it to its §8),
 "cascor: stop-then-start", gave it a fix of its own, in its own PR. That ruling named no design;
-the one above is this change's, and the owner ruled on 2026-11-12 to keep it.
+the one above is this change's, and the Overtoad ruled on 2026-11-12 to keep it.
 """
 
 import threading

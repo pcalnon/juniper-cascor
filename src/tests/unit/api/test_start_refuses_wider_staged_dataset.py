@@ -11,7 +11,7 @@ the staged slot. juniper-ml's A-N2 run observed the result (juniper-ml
 Every route then said ``current_dataset: equities`` beside checkerboard's network, status and
 metrics, and a retried Start refused identically, because nothing was staged any more.
 
-The owner ruled on 2026-09-24 (juniper-ml
+The Overtoad ruled on 2026-09-24 (juniper-ml
 ``notes/JUNIPER_2026-09-02_JUNIPER-CANOPY_SELECTION-REACHABILITY-DESIGN.md`` §12.4). Detect
 the mismatch before the Start commits anything, refuse with a message that points at Start
 fresh, stop serving the previous run's results under the new label, and cover ``mnist`` (784
@@ -86,7 +86,7 @@ def _snapshot(m):
         "tensors": (m._train_x, m._train_y, m._val_x, m._val_y, m._test_x, m._test_y),
         "current": m.get_status()["current_dataset"],
         "shortfall": m._dataset_shortfall,
-        # Which partitions the record stands on (owner ruling 2026-09-24). #688's
+        # Which partitions the record stands on (Overtoad ruling 2026-09-24). #688's
         # validation: a refusal that rewrote this set to the REFUSED artifact's
         # partitions (mutant NV1) left every other field here unchanged.
         "described": m._described_partitions,
@@ -159,7 +159,7 @@ class TestAStartThatContinuesRefusesAWiderStagedDataset:
         """#688's validation, MEDIUM: nothing tested that the refusal leaves ``_described_partitions`` alone.
 
         After an inline train-only start, the fetch's record stands on the fetch's
-        val and test alone (owner ruling 2026-09-24, "keep while fetched splits
+        val and test alone (Overtoad ruling 2026-09-24, "keep while fetched splits
         stay"). The refused dataset has all three partitions, so a refusal that
         recorded ITS partitions -- mutant NV1 moves that assignment above the
         refusal -- changed nothing else any arm looked at. The next inline val+test
