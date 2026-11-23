@@ -1,7 +1,7 @@
 # Juniper Cascor - API Schemas
 
-**Version**: 0.3.25
-**Last Updated**: 2026-11-16
+**Version**: 0.3.26
+**Last Updated**: 2026-11-23
 **Purpose**: Data schema documentation for serialization and data structures
 
 ---
@@ -503,6 +503,12 @@ reconnect and resume again. A `last_seq` that is not a plain integer (`NaN`,
 `Infinity`, a fraction, a boolean, a string) is answered `malformed_resume`, as is a
 frame whose `data` is not an object, and a `last_seq` above the last `seq` numbered is
 answered `out_of_range`. A negative `last_seq` is read as `0`: the client holds nothing.
+These answers, for 60 resume frames in four server states, are the table
+`src/tests/fixtures/ws_resume_answers.json`, which
+`src/tests/unit/api/test_websocket_resume_answer_table.py` drives against this app over a
+real WebSocket, and which is byte-identical to juniper-ml's
+`juniper-service-core/tests/fixtures/ws_resume_answers.json`, the copy juniper-service-core's
+handler is tested against.
 
 ### WebSocket Metrics Back-fill Schema
 
@@ -909,5 +915,5 @@ If verification fails:
 
 ---
 
-**Document Version**: 0.3.25
-**Last Updated**: 2026-11-16
+**Document Version**: 0.3.26
+**Last Updated**: 2026-11-23
