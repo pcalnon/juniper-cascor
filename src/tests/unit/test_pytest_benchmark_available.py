@@ -42,7 +42,7 @@ class TestPytestBenchmarkAvailable:
         try:
             import pytest_benchmark
         except ImportError as exc:
-            pytest.fail("pytest-benchmark is not installed in the active env. " "Performance tests will fail with 'fixture benchmark not found'. " "Add it to the [project.optional-dependencies] test extra in " f"pyproject.toml and reinstall (pip install -e .[test]). Underlying error: {exc}")
+            pytest.fail(f"pytest-benchmark is not installed in the active env. Performance tests will fail with 'fixture benchmark not found'. Add it to the [project.optional-dependencies] test extra in pyproject.toml and reinstall (pip install -e .[test]). Underlying error: {exc}")
 
         assert pytest_benchmark.__version__, "pytest-benchmark exposes no __version__"
 

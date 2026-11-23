@@ -129,5 +129,5 @@ class TestWorkflowCoverageGate:
                 if _COV_FAIL_UNDER.search(invocation):
                     continue
                 rel = wf.relative_to(REPO_ROOT)
-                violations.append(f"  - {rel}:{lineno}\n" f"      partial marker (slow/long/performance) + --cov= without " f"--cov-fail-under=0 / --no-cov-fail-under / --no-cov\n" f"      invocation: {invocation[:200]}{'…' if len(invocation) > 200 else ''}")
+                violations.append(f"  - {rel}:{lineno}\n      partial marker (slow/long/performance) + --cov= without --cov-fail-under=0 / --no-cov-fail-under / --no-cov\n      invocation: {invocation[:200]}{'…' if len(invocation) > 200 else ''}")
         assert not violations, "Workflow lint failure: combining --cov=src with a partial-test marker filter trips " "pyproject's fail_under=80 gate because only a small subset of tests run. Either drop " "--cov=src from the partial-marker step or pass --cov-fail-under=0. See " "src/tests/unit/test_workflow_coverage_gate.py for context.\n\n" "Offending invocations:\n" + "\n".join(violations)

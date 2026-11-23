@@ -231,7 +231,7 @@ class WorkerRegistry:
                     client_name or "<none>",
                     worker_id,
                 )
-                raise WorkerRegistryFullError(f"WorkerRegistry at capacity ({self._max_workers}); " f"reject new worker {worker_id!r}")
+                raise WorkerRegistryFullError(f"WorkerRegistry at capacity ({self._max_workers}); reject new worker {worker_id!r}")
             reg = WorkerRegistration(worker_id=worker_id, capabilities=capabilities, client_name=client_name)
             self._workers[worker_id] = reg
             logger.info(

@@ -166,7 +166,7 @@ def load_two_spiral():
     import torch
 
     if not TWO_SPIRAL_NPZ.exists():
-        raise FileNotFoundError(f"{TWO_SPIRAL_NPZ} is missing. Freeze it first: " f"run the golden suite with GOLDEN_CAPTURE=1, or call " f"golden_support.freeze_two_spiral().")
+        raise FileNotFoundError(f"{TWO_SPIRAL_NPZ} is missing. Freeze it first: run the golden suite with GOLDEN_CAPTURE=1, or call golden_support.freeze_two_spiral().")
     data = np.load(TWO_SPIRAL_NPZ)
     x = torch.from_numpy(data["x"]).float()
     y = torch.from_numpy(data["y"]).float()
@@ -361,7 +361,7 @@ def assert_or_capture(name, actual, *, rtol=RTOL, atol=ATOL, extra_scrub_keys=()
         return
 
     if not target.exists():
-        raise AssertionError(f"Golden file missing: {target}\n" f"Run the golden suite with GOLDEN_CAPTURE=1 to create it.")
+        raise AssertionError(f"Golden file missing: {target}\nRun the golden suite with GOLDEN_CAPTURE=1 to create it.")
     golden_json = json.loads(target.read_text())
     mismatches = compare(golden_json, actual_json, rtol=rtol, atol=atol)
     assert not mismatches, "Golden mismatch for {} ({} difference(s)):\n  {}".format(name, len(mismatches), "\n  ".join(mismatches[:40]))

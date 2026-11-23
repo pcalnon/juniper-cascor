@@ -281,7 +281,7 @@ class SharedTrainingMemory:
             if dtype_code is None:
                 raise ValueError(f"Unsupported tensor dtype: {ct.dtype}")
             if ct.ndim > 2:
-                raise ValueError(f"SharedTrainingMemory only supports tensors up to 2 dimensions, " f"got tensor with {ct.ndim} dimensions (shape: {tuple(ct.shape)}). " f"Higher-dimensional tensor support is planned for a future release.")
+                raise ValueError(f"SharedTrainingMemory only supports tensors up to 2 dimensions, got tensor with {ct.ndim} dimensions (shape: {tuple(ct.shape)}). Higher-dimensional tensor support is planned for a future release.")
             self._tensors_info.append(
                 {
                     "nbytes": ct.nbytes,
@@ -1330,7 +1330,7 @@ class CascadeCorrelationNetwork:
             tr_round_id = getattr(tr, "round_id", None)
             if tr_round_id is not None and tr_round_id != round_id:
                 self.logger.warning(
-                    "CascadeCorrelationNetwork: _dispatch_to_remote_workers: " "Discarding remote result for candidate_id=%s from stale round %s (current round %s)",
+                    "CascadeCorrelationNetwork: _dispatch_to_remote_workers: Discarding remote result for candidate_id=%s from stale round %s (current round %s)",
                     tr.candidate_id,
                     tr_round_id,
                     round_id,
@@ -1341,7 +1341,7 @@ class CascadeCorrelationNetwork:
             spec = spec_by_candidate_id.get(tr.candidate_id)
             if spec is None:
                 self.logger.warning(
-                    "CascadeCorrelationNetwork: _dispatch_to_remote_workers: " "Discarding remote result with unknown candidate_id=%s " "(not among this round's %d dispatched task(s))",
+                    "CascadeCorrelationNetwork: _dispatch_to_remote_workers: Discarding remote result with unknown candidate_id=%s (not among this round's %d dispatched task(s))",
                     tr.candidate_id,
                     len(task_specs),
                 )
@@ -2538,7 +2538,7 @@ class CascadeCorrelationNetwork:
                 # the network with meaningless candidate data while hiding the underlying
                 # failure. Raise an explicit error instead so the caller can abort training.
                 self.logger.error(f"CascadeCorrelationNetwork: _execute_candidate_training: Sequential training also failed: {seq_error}")
-                raise CandidateTrainingError("Both parallel and sequential candidate training failed. " "Training cannot continue — network integrity would be compromised.") from seq_error
+                raise CandidateTrainingError("Both parallel and sequential candidate training failed. Training cannot continue — network integrity would be compromised.") from seq_error
         self.logger.debug(f"CascadeCorrelationNetwork: _execute_candidate_training: Obtained {len(results)} results")
 
         # BUG-CC-18 / ROBUST-01: Empty results after a non-exception return means every
@@ -2546,7 +2546,7 @@ class CascadeCorrelationNetwork:
         # surface the failure so the training loop can stop rather than corrupt the model.
         if not results:
             self.logger.error("CascadeCorrelationNetwork: _execute_candidate_training: No results obtained from either parallel or sequential processing")
-            raise CandidateTrainingError("Candidate training produced no results after both parallel and sequential paths. " "Refusing to install zero-correlation dummy candidates — network integrity would be compromised.")
+            raise CandidateTrainingError("Candidate training produced no results after both parallel and sequential paths. Refusing to install zero-correlation dummy candidates — network integrity would be compromised.")
         return results
 
     def _drain_stale_results(self, result_queue) -> int:
@@ -2568,11 +2568,11 @@ class CascadeCorrelationNetwork:
                 stale_result = result_queue.get_nowait()
                 drained_count += 1
                 _rc4.emit("parent.drain.stale", candidate_id=getattr(stale_result, "candidate_id", None), round_id=getattr(stale_result, "round_id", None))
-                self.logger.warning(f"CascadeCorrelationNetwork: _drain_stale_results: " f"Drained stale result from previous round: " f"candidate_id={getattr(stale_result, 'candidate_id', '?')}, " f"correlation={getattr(stale_result, 'correlation', '?')}")
+                self.logger.warning(f"CascadeCorrelationNetwork: _drain_stale_results: Drained stale result from previous round: candidate_id={getattr(stale_result, 'candidate_id', '?')}, correlation={getattr(stale_result, 'correlation', '?')}")
             except _QueueEmpty:
                 break
         if drained_count:
-            self.logger.warning(f"CascadeCorrelationNetwork: _drain_stale_results: " f"Drained {drained_count} stale result(s) from persistent result queue")
+            self.logger.warning(f"CascadeCorrelationNetwork: _drain_stale_results: Drained {drained_count} stale result(s) from persistent result queue")
         return drained_count
 
     def _cleanup_pending_shared_memory(self) -> None:
@@ -2876,12 +2876,12 @@ class CascadeCorrelationNetwork:
             # Early-exit: no live worker remains to deliver the outstanding
             # results and the queue is already drained — waiting is pointless.
             if workers is not None and not any(w.is_alive() for w in workers) and result_queue.empty():
-                self.logger.warning(f"CascadeCorrelationNetwork: _collect_training_results: All workers exited with " f"{collected_results}/{num_tasks} results collected and the result queue drained; stopping.")
+                self.logger.warning(f"CascadeCorrelationNetwork: _collect_training_results: All workers exited with {collected_results}/{num_tasks} results collected and the result queue drained; stopping.")
                 break
             # Inactivity guard: give up only after a full ``queue_timeout`` gap
             # with no new result (a genuinely stalled or hung pool).
             if time.time() > inactivity_deadline:
-                self.logger.warning(f"CascadeCorrelationNetwork: _collect_training_results: No new result for {queue_timeout:.0f}s " f"(inactivity timeout) with {collected_results}/{num_tasks} collected; stopping.")
+                self.logger.warning(f"CascadeCorrelationNetwork: _collect_training_results: No new result for {queue_timeout:.0f}s (inactivity timeout) with {collected_results}/{num_tasks} collected; stopping.")
                 break
             try:
                 get_attempts += 1
@@ -2895,7 +2895,7 @@ class CascadeCorrelationNetwork:
                 result_round = getattr(result, "round_id", None)
                 if round_id is not None and result_round is not None and result_round != round_id:
                     stale_discarded += 1
-                    self.logger.warning(f"CascadeCorrelationNetwork: _collect_training_results: " f"Discarding stale result from round {result_round} " f"(current round: {round_id}, candidate_id={result.candidate_id})")
+                    self.logger.warning(f"CascadeCorrelationNetwork: _collect_training_results: Discarding stale result from round {result_round} (current round: {round_id}, candidate_id={result.candidate_id})")
                     _rc4.emit("parent.collect.stale", expected=round_id, got=result_round, candidate_id=getattr(result, "candidate_id", None))
                     continue
                 results.append(result)
@@ -2918,7 +2918,7 @@ class CascadeCorrelationNetwork:
                 break
         _rc4.emit("parent.collect.done", collected=collected_results, expected=num_tasks, empty_count=empty_count, stale_discarded=stale_discarded, get_attempts=get_attempts)
         if stale_discarded:
-            self.logger.warning(f"CascadeCorrelationNetwork: _collect_training_results: " f"Discarded {stale_discarded} stale result(s) from previous training rounds")
+            self.logger.warning(f"CascadeCorrelationNetwork: _collect_training_results: Discarded {stale_discarded} stale result(s) from previous training rounds")
         self.logger.debug("CascadeCorrelationNetwork: _collect_training_results: Collected %s results", collected_results)
         return results
 
@@ -4564,7 +4564,7 @@ class CascadeCorrelationNetwork:
         expected_weight_size = candidate_input.shape[1]
         actual_weight_size = candidate.weights.shape[0]
         if expected_weight_size != actual_weight_size:
-            raise ValidationError(f"Candidate weight dimension mismatch in add_unit: " f"candidate_input has {expected_weight_size} features " f"(original_input={x.shape[1]}, hidden_units={len(self.hidden_units)}), " f"but candidate weights have {actual_weight_size} elements. " f"This indicates a stale candidate from a previous training round.")
+            raise ValidationError(f"Candidate weight dimension mismatch in add_unit: candidate_input has {expected_weight_size} features (original_input={x.shape[1]}, hidden_units={len(self.hidden_units)}), but candidate weights have {actual_weight_size} elements. This indicates a stale candidate from a previous training round.")
 
         # CAN-015h-0: install the unit via the shared helper. The helper
         # appends to ``hidden_units`` and ``history``; we still need to
@@ -4740,7 +4740,7 @@ class CascadeCorrelationNetwork:
                 expected_size = candidate_input.shape[1]
                 actual_size = candidate.weights.shape[0]
                 if expected_size != actual_size:
-                    self.logger.warning(f"CascadeCorrelationNetwork: add_units_as_layer: " f"Skipping candidate with mismatched weights: expected {expected_size}, got {actual_size}")
+                    self.logger.warning(f"CascadeCorrelationNetwork: add_units_as_layer: Skipping candidate with mismatched weights: expected {expected_size}, got {actual_size}")
                     continue
                 self._install_hidden_unit(
                     weights=candidate.weights,
@@ -5582,7 +5582,7 @@ class CascadeCorrelationNetwork:
             # Calculate validation accuracy
             value_accuracy = self.calculate_accuracy(x_val, y_val)
             self.history["value_accuracy"].append(value_accuracy)
-            self.logger.info("CascadeCorrelationNetwork: validate_training: " f"Iteration {iteration} - Train Loss: {train_loss:.6f}, Val Loss: {value_loss:.6f}, " f"Train Acc: {train_accuracy:.4f}, Val Acc: {value_accuracy:.4f}, " f"Units: {len(self.hidden_units)}")
+            self.logger.info(f"CascadeCorrelationNetwork: validate_training: Iteration {iteration} - Train Loss: {train_loss:.6f}, Val Loss: {value_loss:.6f}, Train Acc: {train_accuracy:.4f}, Val Acc: {value_accuracy:.4f}, Units: {len(self.hidden_units)}")
 
             # Check for early stopping conditions
             # TODO: Consider using named tuple or dataclass for return values
@@ -5621,7 +5621,7 @@ class CascadeCorrelationNetwork:
                     accuracy_target=self.target_accuracy,
                 )
                 early_stop_flag = patience_exhausted or max_units_reached or train_accuracy_reached
-                self.logger.info(f"CascadeCorrelationNetwork: validate_training: " f"Iteration {iteration} (no val data) - Train Loss: {train_loss:.6f}, " f"Train Acc: {train_accuracy:.4f}, Patience: {patience_counter}/{self.patience}, " f"Early Stop: {early_stop_flag}")
+                self.logger.info(f"CascadeCorrelationNetwork: validate_training: Iteration {iteration} (no val data) - Train Loss: {train_loss:.6f}, Train Acc: {train_accuracy:.4f}, Patience: {patience_counter}/{self.patience}, Early Stop: {early_stop_flag}")
         self.logger.verbose(f"CascadeCorrelationNetwork: validate_training: Iteration {iteration}, Early Stop: {early_stop_flag}, Patience Counter: {patience_counter}, Best Value Loss: {best_value_loss:.6f}, Value Output: {value_output}, Value Loss: {value_loss:.6f}, Value Accuracy: {value_accuracy:.4f}")
         self.logger.trace("CascadeCorrelationNetwork: validate_training: Completed validation of the training process.")
 
@@ -5692,7 +5692,7 @@ class CascadeCorrelationNetwork:
             if patience_exhausted:
                 self.logger.info("CascadeCorrelationNetwork: evaluate_early_stopping: Patience Exhausted: %s, Early stopping triggered after %s iterations", patience_exhausted, iteration)
             else:
-                self.logger.info(f"CascadeCorrelationNetwork: evaluate_early_stopping: Iteration {iteration} - Train Loss: {train_loss:.6f}, " f"Train Acc: {train_accuracy:.4f}, Units: {len(self.hidden_units)}")
+                self.logger.info(f"CascadeCorrelationNetwork: evaluate_early_stopping: Iteration {iteration} - Train Loss: {train_loss:.6f}, Train Acc: {train_accuracy:.4f}, Units: {len(self.hidden_units)}")
 
             # Check if we've reached the maximum number of hidden units
             if max_units_reached := self.check_hidden_units_max():

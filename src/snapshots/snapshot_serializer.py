@@ -2071,7 +2071,7 @@ class CascadeHDF5Serializer:
                 serializer_major_version = int(self.format_version.split(".")[0])
 
                 if file_major_version > serializer_major_version:
-                    return self._reject_format(f"Incompatible format version: file={format_version}, " f"serializer={self.format_version}")
+                    return self._reject_format(f"Incompatible format version: file={format_version}, serializer={self.format_version}")
             except (ValueError, IndexError):
                 self.logger.warning(f"Could not parse format version: {format_version}")
 
@@ -2100,7 +2100,7 @@ class CascadeHDF5Serializer:
                 actual_units = len([k for k in hidden_group.keys() if k.startswith("unit_")])
 
                 if num_units_attr != actual_units:
-                    return self._reject_format(f"Hidden units count mismatch: num_units={num_units_attr}, " f"actual groups={actual_units}")
+                    return self._reject_format(f"Hidden units count mismatch: num_units={num_units_attr}, actual groups={actual_units}")
 
                 # Verify each hidden unit has required datasets
                 for i in range(num_units_attr):
