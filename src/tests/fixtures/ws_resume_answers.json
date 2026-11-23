@@ -1,0 +1,666 @@
+{
+  "about": [
+    "One table of /ws/training resume frames and the answers a client reads off the wire, per server state.",
+    "Two byte-identical copies: juniper-ml juniper-service-core/tests/fixtures/ws_resume_answers.json and juniper-cascor src/tests/fixtures/ws_resume_answers.json. A change to one is made to the other in the same pair of pull requests.",
+    "Each repository drives its own handler against every row over a real WebSocket: juniper-ml juniper-service-core/tests/test_websocket_resume_answer_table.py, juniper-cascor src/tests/unit/api/test_websocket_resume_answer_table.py.",
+    "juniper-ml tests/test_ws_resume_answer_table_drift.py fails when the two copies differ (in the weekly docs-full-check job, which clones the siblings, or locally with JUNIPER_DRIFT_TEST_FORCE_LOCAL=1).",
+    "Seeded on 2026-11-15 from juniper-cascor's main (a1b0409d), served by uvicorn on 127.0.0.1 and driven with the websockets client."
+  ],
+  "flow": [
+    "A fresh WebSocketManager with the state's replay_buffer_capacity is put on app.state.ws_manager, and the state's broadcasts are made, each {\"type\": \"metrics\"}.",
+    "The client connects (connection_established, whose replay_buffer_capacity is the state's), sends the frame (nothing for no-frame), then {\"type\":\"subscribe_metrics\",\"data\":{\"max_count\":1}}.",
+    "handshake: every frame received before the initial_metrics that answers that request. The server answers it only from its receive loop, which starts after the handshake and any snapshot.",
+    "Then one live broadcast, {\"type\": \"metrics\"}, and a second subscribe_metrics: live is every frame received before its answer.",
+    "The handshake timeout is 30 s when a frame is sent and 0.25 s for no-frame, where the client sends nothing until the snapshot has arrived."
+  ],
+  "labels": {
+    "resume_ok(replayed_count=N)": "resume_ok and its data.replayed_count",
+    "resume_failed(REASON)": "resume_failed and its data.reason",
+    "initial_status": "the fresh-connect snapshot's first frame",
+    "state": "the snapshot's second frame",
+    "initial_metrics(current_seq=N)": "the snapshot's third frame and its data.current_seq",
+    "TYPE#SEQ": "a numbered broadcast (replayed, caught up or live) by its type and seq",
+    "close(CODE)": "the server closed the socket with CODE; no row expects one"
+  },
+  "not_compared": [
+    "timestamp, on every frame: the time it was sent",
+    "connection_established.data.server_instance_id, server_start_time and connections: per process and per moment",
+    "initial_status.data and state.data: the service's own lifecycle status and monitor state",
+    "initial_metrics.data.count and data.metrics: the service's own metrics history",
+    "a broadcast's payload beyond its type and seq (each service adds its own fields, such as emitted_at_monotonic)"
+  ],
+  "states": {
+    "fresh": {
+      "replay_buffer_capacity": 1024,
+      "broadcasts_before": 0,
+      "buffered_seqs": []
+    },
+    "buffered5": {
+      "replay_buffer_capacity": 1024,
+      "broadcasts_before": 5,
+      "buffered_seqs": [
+        1,
+        2,
+        3,
+        4,
+        5
+      ]
+    },
+    "evicted": {
+      "replay_buffer_capacity": 3,
+      "broadcasts_before": 5,
+      "buffered_seqs": [
+        3,
+        4,
+        5
+      ]
+    },
+    "disabled": {
+      "replay_buffer_capacity": 0,
+      "broadcasts_before": 5,
+      "buffered_seqs": []
+    }
+  },
+  "frames": [
+    {
+      "id": "last_seq=0",
+      "sent": "{\"type\":\"resume\",\"data\":{\"last_seq\":0,\"server_instance_id\":\"@ID@\"}}",
+      "answers": {
+        "fresh": {"handshake": ["resume_ok(replayed_count=0)"], "live": ["metrics#1"]},
+        "buffered5": {"handshake": ["resume_ok(replayed_count=5)", "metrics#1", "metrics#2", "metrics#3", "metrics#4", "metrics#5"], "live": ["metrics#6"]},
+        "evicted": {"handshake": ["resume_failed(out_of_range)", "initial_status", "state", "initial_metrics(current_seq=5)"], "live": ["metrics#6"]},
+        "disabled": {"handshake": ["resume_failed(out_of_range)", "initial_status", "state", "initial_metrics(current_seq=5)"], "live": ["metrics#6"]}
+      }
+    },
+    {
+      "id": "last_seq=1",
+      "sent": "{\"type\":\"resume\",\"data\":{\"last_seq\":1,\"server_instance_id\":\"@ID@\"}}",
+      "answers": {
+        "fresh": {"handshake": ["resume_failed(out_of_range)", "initial_status", "state", "initial_metrics(current_seq=0)"], "live": ["metrics#1"]},
+        "buffered5": {"handshake": ["resume_ok(replayed_count=4)", "metrics#2", "metrics#3", "metrics#4", "metrics#5"], "live": ["metrics#6"]},
+        "evicted": {"handshake": ["resume_failed(out_of_range)", "initial_status", "state", "initial_metrics(current_seq=5)"], "live": ["metrics#6"]},
+        "disabled": {"handshake": ["resume_failed(out_of_range)", "initial_status", "state", "initial_metrics(current_seq=5)"], "live": ["metrics#6"]}
+      }
+    },
+    {
+      "id": "last_seq=2",
+      "sent": "{\"type\":\"resume\",\"data\":{\"last_seq\":2,\"server_instance_id\":\"@ID@\"}}",
+      "answers": {
+        "fresh": {"handshake": ["resume_failed(out_of_range)", "initial_status", "state", "initial_metrics(current_seq=0)"], "live": ["metrics#1"]},
+        "buffered5": {"handshake": ["resume_ok(replayed_count=3)", "metrics#3", "metrics#4", "metrics#5"], "live": ["metrics#6"]},
+        "evicted": {"handshake": ["resume_ok(replayed_count=3)", "metrics#3", "metrics#4", "metrics#5"], "live": ["metrics#6"]},
+        "disabled": {"handshake": ["resume_failed(out_of_range)", "initial_status", "state", "initial_metrics(current_seq=5)"], "live": ["metrics#6"]}
+      }
+    },
+    {
+      "id": "last_seq=3",
+      "sent": "{\"type\":\"resume\",\"data\":{\"last_seq\":3,\"server_instance_id\":\"@ID@\"}}",
+      "answers": {
+        "fresh": {"handshake": ["resume_failed(out_of_range)", "initial_status", "state", "initial_metrics(current_seq=0)"], "live": ["metrics#1"]},
+        "buffered5": {"handshake": ["resume_ok(replayed_count=2)", "metrics#4", "metrics#5"], "live": ["metrics#6"]},
+        "evicted": {"handshake": ["resume_ok(replayed_count=2)", "metrics#4", "metrics#5"], "live": ["metrics#6"]},
+        "disabled": {"handshake": ["resume_failed(out_of_range)", "initial_status", "state", "initial_metrics(current_seq=5)"], "live": ["metrics#6"]}
+      }
+    },
+    {
+      "id": "last_seq=5",
+      "sent": "{\"type\":\"resume\",\"data\":{\"last_seq\":5,\"server_instance_id\":\"@ID@\"}}",
+      "answers": {
+        "fresh": {"handshake": ["resume_failed(out_of_range)", "initial_status", "state", "initial_metrics(current_seq=0)"], "live": ["metrics#1"]},
+        "buffered5": {"handshake": ["resume_ok(replayed_count=0)"], "live": ["metrics#6"]},
+        "evicted": {"handshake": ["resume_ok(replayed_count=0)"], "live": ["metrics#6"]},
+        "disabled": {"handshake": ["resume_failed(out_of_range)", "initial_status", "state", "initial_metrics(current_seq=5)"], "live": ["metrics#6"]}
+      }
+    },
+    {
+      "id": "last_seq=6",
+      "sent": "{\"type\":\"resume\",\"data\":{\"last_seq\":6,\"server_instance_id\":\"@ID@\"}}",
+      "answers": {
+        "fresh": {"handshake": ["resume_failed(out_of_range)", "initial_status", "state", "initial_metrics(current_seq=0)"], "live": ["metrics#1"]},
+        "buffered5": {"handshake": ["resume_failed(out_of_range)", "initial_status", "state", "initial_metrics(current_seq=5)"], "live": ["metrics#6"]},
+        "evicted": {"handshake": ["resume_failed(out_of_range)", "initial_status", "state", "initial_metrics(current_seq=5)"], "live": ["metrics#6"]},
+        "disabled": {"handshake": ["resume_failed(out_of_range)", "initial_status", "state", "initial_metrics(current_seq=5)"], "live": ["metrics#6"]}
+      }
+    },
+    {
+      "id": "last_seq=1000",
+      "sent": "{\"type\":\"resume\",\"data\":{\"last_seq\":1000,\"server_instance_id\":\"@ID@\"}}",
+      "answers": {
+        "fresh": {"handshake": ["resume_failed(out_of_range)", "initial_status", "state", "initial_metrics(current_seq=0)"], "live": ["metrics#1"]},
+        "buffered5": {"handshake": ["resume_failed(out_of_range)", "initial_status", "state", "initial_metrics(current_seq=5)"], "live": ["metrics#6"]},
+        "evicted": {"handshake": ["resume_failed(out_of_range)", "initial_status", "state", "initial_metrics(current_seq=5)"], "live": ["metrics#6"]},
+        "disabled": {"handshake": ["resume_failed(out_of_range)", "initial_status", "state", "initial_metrics(current_seq=5)"], "live": ["metrics#6"]}
+      }
+    },
+    {
+      "id": "last_seq=-1",
+      "sent": "{\"type\":\"resume\",\"data\":{\"last_seq\":-1,\"server_instance_id\":\"@ID@\"}}",
+      "answers": {
+        "fresh": {"handshake": ["resume_ok(replayed_count=0)"], "live": ["metrics#1"]},
+        "buffered5": {"handshake": ["resume_ok(replayed_count=5)", "metrics#1", "metrics#2", "metrics#3", "metrics#4", "metrics#5"], "live": ["metrics#6"]},
+        "evicted": {"handshake": ["resume_failed(out_of_range)", "initial_status", "state", "initial_metrics(current_seq=5)"], "live": ["metrics#6"]},
+        "disabled": {"handshake": ["resume_failed(out_of_range)", "initial_status", "state", "initial_metrics(current_seq=5)"], "live": ["metrics#6"]}
+      }
+    },
+    {
+      "id": "last_seq=-5",
+      "sent": "{\"type\":\"resume\",\"data\":{\"last_seq\":-5,\"server_instance_id\":\"@ID@\"}}",
+      "answers": {
+        "fresh": {"handshake": ["resume_ok(replayed_count=0)"], "live": ["metrics#1"]},
+        "buffered5": {"handshake": ["resume_ok(replayed_count=5)", "metrics#1", "metrics#2", "metrics#3", "metrics#4", "metrics#5"], "live": ["metrics#6"]},
+        "evicted": {"handshake": ["resume_failed(out_of_range)", "initial_status", "state", "initial_metrics(current_seq=5)"], "live": ["metrics#6"]},
+        "disabled": {"handshake": ["resume_failed(out_of_range)", "initial_status", "state", "initial_metrics(current_seq=5)"], "live": ["metrics#6"]}
+      }
+    },
+    {
+      "id": "last_seq=-1000000000000000000000000000000",
+      "sent": "{\"type\":\"resume\",\"data\":{\"last_seq\":-1000000000000000000000000000000,\"server_instance_id\":\"@ID@\"}}",
+      "answers": {
+        "fresh": {"handshake": ["resume_ok(replayed_count=0)"], "live": ["metrics#1"]},
+        "buffered5": {"handshake": ["resume_ok(replayed_count=5)", "metrics#1", "metrics#2", "metrics#3", "metrics#4", "metrics#5"], "live": ["metrics#6"]},
+        "evicted": {"handshake": ["resume_failed(out_of_range)", "initial_status", "state", "initial_metrics(current_seq=5)"], "live": ["metrics#6"]},
+        "disabled": {"handshake": ["resume_failed(out_of_range)", "initial_status", "state", "initial_metrics(current_seq=5)"], "live": ["metrics#6"]}
+      }
+    },
+    {
+      "id": "last_seq=-0",
+      "sent": "{\"type\":\"resume\",\"data\":{\"last_seq\":-0,\"server_instance_id\":\"@ID@\"}}",
+      "answers": {
+        "fresh": {"handshake": ["resume_ok(replayed_count=0)"], "live": ["metrics#1"]},
+        "buffered5": {"handshake": ["resume_ok(replayed_count=5)", "metrics#1", "metrics#2", "metrics#3", "metrics#4", "metrics#5"], "live": ["metrics#6"]},
+        "evicted": {"handshake": ["resume_failed(out_of_range)", "initial_status", "state", "initial_metrics(current_seq=5)"], "live": ["metrics#6"]},
+        "disabled": {"handshake": ["resume_failed(out_of_range)", "initial_status", "state", "initial_metrics(current_seq=5)"], "live": ["metrics#6"]}
+      }
+    },
+    {
+      "id": "last_seq=3.0",
+      "sent": "{\"type\":\"resume\",\"data\":{\"last_seq\":3.0,\"server_instance_id\":\"@ID@\"}}",
+      "answers": {
+        "fresh": {"handshake": ["resume_failed(malformed_resume)", "initial_status", "state", "initial_metrics(current_seq=0)"], "live": ["metrics#1"]},
+        "buffered5": {"handshake": ["resume_failed(malformed_resume)", "initial_status", "state", "initial_metrics(current_seq=5)"], "live": ["metrics#6"]},
+        "evicted": {"handshake": ["resume_failed(malformed_resume)", "initial_status", "state", "initial_metrics(current_seq=5)"], "live": ["metrics#6"]},
+        "disabled": {"handshake": ["resume_failed(malformed_resume)", "initial_status", "state", "initial_metrics(current_seq=5)"], "live": ["metrics#6"]}
+      }
+    },
+    {
+      "id": "last_seq=2.5",
+      "sent": "{\"type\":\"resume\",\"data\":{\"last_seq\":2.5,\"server_instance_id\":\"@ID@\"}}",
+      "answers": {
+        "fresh": {"handshake": ["resume_failed(malformed_resume)", "initial_status", "state", "initial_metrics(current_seq=0)"], "live": ["metrics#1"]},
+        "buffered5": {"handshake": ["resume_failed(malformed_resume)", "initial_status", "state", "initial_metrics(current_seq=5)"], "live": ["metrics#6"]},
+        "evicted": {"handshake": ["resume_failed(malformed_resume)", "initial_status", "state", "initial_metrics(current_seq=5)"], "live": ["metrics#6"]},
+        "disabled": {"handshake": ["resume_failed(malformed_resume)", "initial_status", "state", "initial_metrics(current_seq=5)"], "live": ["metrics#6"]}
+      }
+    },
+    {
+      "id": "last_seq=-1.0",
+      "sent": "{\"type\":\"resume\",\"data\":{\"last_seq\":-1.0,\"server_instance_id\":\"@ID@\"}}",
+      "answers": {
+        "fresh": {"handshake": ["resume_failed(malformed_resume)", "initial_status", "state", "initial_metrics(current_seq=0)"], "live": ["metrics#1"]},
+        "buffered5": {"handshake": ["resume_failed(malformed_resume)", "initial_status", "state", "initial_metrics(current_seq=5)"], "live": ["metrics#6"]},
+        "evicted": {"handshake": ["resume_failed(malformed_resume)", "initial_status", "state", "initial_metrics(current_seq=5)"], "live": ["metrics#6"]},
+        "disabled": {"handshake": ["resume_failed(malformed_resume)", "initial_status", "state", "initial_metrics(current_seq=5)"], "live": ["metrics#6"]}
+      }
+    },
+    {
+      "id": "last_seq=-0.0",
+      "sent": "{\"type\":\"resume\",\"data\":{\"last_seq\":-0.0,\"server_instance_id\":\"@ID@\"}}",
+      "answers": {
+        "fresh": {"handshake": ["resume_failed(malformed_resume)", "initial_status", "state", "initial_metrics(current_seq=0)"], "live": ["metrics#1"]},
+        "buffered5": {"handshake": ["resume_failed(malformed_resume)", "initial_status", "state", "initial_metrics(current_seq=5)"], "live": ["metrics#6"]},
+        "evicted": {"handshake": ["resume_failed(malformed_resume)", "initial_status", "state", "initial_metrics(current_seq=5)"], "live": ["metrics#6"]},
+        "disabled": {"handshake": ["resume_failed(malformed_resume)", "initial_status", "state", "initial_metrics(current_seq=5)"], "live": ["metrics#6"]}
+      }
+    },
+    {
+      "id": "last_seq=1e2",
+      "sent": "{\"type\":\"resume\",\"data\":{\"last_seq\":1e2,\"server_instance_id\":\"@ID@\"}}",
+      "answers": {
+        "fresh": {"handshake": ["resume_failed(malformed_resume)", "initial_status", "state", "initial_metrics(current_seq=0)"], "live": ["metrics#1"]},
+        "buffered5": {"handshake": ["resume_failed(malformed_resume)", "initial_status", "state", "initial_metrics(current_seq=5)"], "live": ["metrics#6"]},
+        "evicted": {"handshake": ["resume_failed(malformed_resume)", "initial_status", "state", "initial_metrics(current_seq=5)"], "live": ["metrics#6"]},
+        "disabled": {"handshake": ["resume_failed(malformed_resume)", "initial_status", "state", "initial_metrics(current_seq=5)"], "live": ["metrics#6"]}
+      }
+    },
+    {
+      "id": "last_seq=1e400",
+      "sent": "{\"type\":\"resume\",\"data\":{\"last_seq\":1e400,\"server_instance_id\":\"@ID@\"}}",
+      "answers": {
+        "fresh": {"handshake": ["resume_failed(malformed_resume)", "initial_status", "state", "initial_metrics(current_seq=0)"], "live": ["metrics#1"]},
+        "buffered5": {"handshake": ["resume_failed(malformed_resume)", "initial_status", "state", "initial_metrics(current_seq=5)"], "live": ["metrics#6"]},
+        "evicted": {"handshake": ["resume_failed(malformed_resume)", "initial_status", "state", "initial_metrics(current_seq=5)"], "live": ["metrics#6"]},
+        "disabled": {"handshake": ["resume_failed(malformed_resume)", "initial_status", "state", "initial_metrics(current_seq=5)"], "live": ["metrics#6"]}
+      }
+    },
+    {
+      "id": "last_seq=true",
+      "sent": "{\"type\":\"resume\",\"data\":{\"last_seq\":true,\"server_instance_id\":\"@ID@\"}}",
+      "answers": {
+        "fresh": {"handshake": ["resume_failed(malformed_resume)", "initial_status", "state", "initial_metrics(current_seq=0)"], "live": ["metrics#1"]},
+        "buffered5": {"handshake": ["resume_failed(malformed_resume)", "initial_status", "state", "initial_metrics(current_seq=5)"], "live": ["metrics#6"]},
+        "evicted": {"handshake": ["resume_failed(malformed_resume)", "initial_status", "state", "initial_metrics(current_seq=5)"], "live": ["metrics#6"]},
+        "disabled": {"handshake": ["resume_failed(malformed_resume)", "initial_status", "state", "initial_metrics(current_seq=5)"], "live": ["metrics#6"]}
+      }
+    },
+    {
+      "id": "last_seq=false",
+      "sent": "{\"type\":\"resume\",\"data\":{\"last_seq\":false,\"server_instance_id\":\"@ID@\"}}",
+      "answers": {
+        "fresh": {"handshake": ["resume_failed(malformed_resume)", "initial_status", "state", "initial_metrics(current_seq=0)"], "live": ["metrics#1"]},
+        "buffered5": {"handshake": ["resume_failed(malformed_resume)", "initial_status", "state", "initial_metrics(current_seq=5)"], "live": ["metrics#6"]},
+        "evicted": {"handshake": ["resume_failed(malformed_resume)", "initial_status", "state", "initial_metrics(current_seq=5)"], "live": ["metrics#6"]},
+        "disabled": {"handshake": ["resume_failed(malformed_resume)", "initial_status", "state", "initial_metrics(current_seq=5)"], "live": ["metrics#6"]}
+      }
+    },
+    {
+      "id": "last_seq=null",
+      "sent": "{\"type\":\"resume\",\"data\":{\"last_seq\":null,\"server_instance_id\":\"@ID@\"}}",
+      "answers": {
+        "fresh": {"handshake": ["resume_failed(malformed_resume)", "initial_status", "state", "initial_metrics(current_seq=0)"], "live": ["metrics#1"]},
+        "buffered5": {"handshake": ["resume_failed(malformed_resume)", "initial_status", "state", "initial_metrics(current_seq=5)"], "live": ["metrics#6"]},
+        "evicted": {"handshake": ["resume_failed(malformed_resume)", "initial_status", "state", "initial_metrics(current_seq=5)"], "live": ["metrics#6"]},
+        "disabled": {"handshake": ["resume_failed(malformed_resume)", "initial_status", "state", "initial_metrics(current_seq=5)"], "live": ["metrics#6"]}
+      }
+    },
+    {
+      "id": "last_seq=NaN",
+      "sent": "{\"type\":\"resume\",\"data\":{\"last_seq\":NaN,\"server_instance_id\":\"@ID@\"}}",
+      "answers": {
+        "fresh": {"handshake": ["resume_failed(malformed_resume)", "initial_status", "state", "initial_metrics(current_seq=0)"], "live": ["metrics#1"]},
+        "buffered5": {"handshake": ["resume_failed(malformed_resume)", "initial_status", "state", "initial_metrics(current_seq=5)"], "live": ["metrics#6"]},
+        "evicted": {"handshake": ["resume_failed(malformed_resume)", "initial_status", "state", "initial_metrics(current_seq=5)"], "live": ["metrics#6"]},
+        "disabled": {"handshake": ["resume_failed(malformed_resume)", "initial_status", "state", "initial_metrics(current_seq=5)"], "live": ["metrics#6"]}
+      }
+    },
+    {
+      "id": "last_seq=Infinity",
+      "sent": "{\"type\":\"resume\",\"data\":{\"last_seq\":Infinity,\"server_instance_id\":\"@ID@\"}}",
+      "answers": {
+        "fresh": {"handshake": ["resume_failed(malformed_resume)", "initial_status", "state", "initial_metrics(current_seq=0)"], "live": ["metrics#1"]},
+        "buffered5": {"handshake": ["resume_failed(malformed_resume)", "initial_status", "state", "initial_metrics(current_seq=5)"], "live": ["metrics#6"]},
+        "evicted": {"handshake": ["resume_failed(malformed_resume)", "initial_status", "state", "initial_metrics(current_seq=5)"], "live": ["metrics#6"]},
+        "disabled": {"handshake": ["resume_failed(malformed_resume)", "initial_status", "state", "initial_metrics(current_seq=5)"], "live": ["metrics#6"]}
+      }
+    },
+    {
+      "id": "last_seq=-Infinity",
+      "sent": "{\"type\":\"resume\",\"data\":{\"last_seq\":-Infinity,\"server_instance_id\":\"@ID@\"}}",
+      "answers": {
+        "fresh": {"handshake": ["resume_failed(malformed_resume)", "initial_status", "state", "initial_metrics(current_seq=0)"], "live": ["metrics#1"]},
+        "buffered5": {"handshake": ["resume_failed(malformed_resume)", "initial_status", "state", "initial_metrics(current_seq=5)"], "live": ["metrics#6"]},
+        "evicted": {"handshake": ["resume_failed(malformed_resume)", "initial_status", "state", "initial_metrics(current_seq=5)"], "live": ["metrics#6"]},
+        "disabled": {"handshake": ["resume_failed(malformed_resume)", "initial_status", "state", "initial_metrics(current_seq=5)"], "live": ["metrics#6"]}
+      }
+    },
+    {
+      "id": "last_seq=\"3\"",
+      "sent": "{\"type\":\"resume\",\"data\":{\"last_seq\":\"3\",\"server_instance_id\":\"@ID@\"}}",
+      "answers": {
+        "fresh": {"handshake": ["resume_failed(malformed_resume)", "initial_status", "state", "initial_metrics(current_seq=0)"], "live": ["metrics#1"]},
+        "buffered5": {"handshake": ["resume_failed(malformed_resume)", "initial_status", "state", "initial_metrics(current_seq=5)"], "live": ["metrics#6"]},
+        "evicted": {"handshake": ["resume_failed(malformed_resume)", "initial_status", "state", "initial_metrics(current_seq=5)"], "live": ["metrics#6"]},
+        "disabled": {"handshake": ["resume_failed(malformed_resume)", "initial_status", "state", "initial_metrics(current_seq=5)"], "live": ["metrics#6"]}
+      }
+    },
+    {
+      "id": "last_seq=\"abc\"",
+      "sent": "{\"type\":\"resume\",\"data\":{\"last_seq\":\"abc\",\"server_instance_id\":\"@ID@\"}}",
+      "answers": {
+        "fresh": {"handshake": ["resume_failed(malformed_resume)", "initial_status", "state", "initial_metrics(current_seq=0)"], "live": ["metrics#1"]},
+        "buffered5": {"handshake": ["resume_failed(malformed_resume)", "initial_status", "state", "initial_metrics(current_seq=5)"], "live": ["metrics#6"]},
+        "evicted": {"handshake": ["resume_failed(malformed_resume)", "initial_status", "state", "initial_metrics(current_seq=5)"], "live": ["metrics#6"]},
+        "disabled": {"handshake": ["resume_failed(malformed_resume)", "initial_status", "state", "initial_metrics(current_seq=5)"], "live": ["metrics#6"]}
+      }
+    },
+    {
+      "id": "last_seq=\"\"",
+      "sent": "{\"type\":\"resume\",\"data\":{\"last_seq\":\"\",\"server_instance_id\":\"@ID@\"}}",
+      "answers": {
+        "fresh": {"handshake": ["resume_failed(malformed_resume)", "initial_status", "state", "initial_metrics(current_seq=0)"], "live": ["metrics#1"]},
+        "buffered5": {"handshake": ["resume_failed(malformed_resume)", "initial_status", "state", "initial_metrics(current_seq=5)"], "live": ["metrics#6"]},
+        "evicted": {"handshake": ["resume_failed(malformed_resume)", "initial_status", "state", "initial_metrics(current_seq=5)"], "live": ["metrics#6"]},
+        "disabled": {"handshake": ["resume_failed(malformed_resume)", "initial_status", "state", "initial_metrics(current_seq=5)"], "live": ["metrics#6"]}
+      }
+    },
+    {
+      "id": "last_seq=\"-1\"",
+      "sent": "{\"type\":\"resume\",\"data\":{\"last_seq\":\"-1\",\"server_instance_id\":\"@ID@\"}}",
+      "answers": {
+        "fresh": {"handshake": ["resume_failed(malformed_resume)", "initial_status", "state", "initial_metrics(current_seq=0)"], "live": ["metrics#1"]},
+        "buffered5": {"handshake": ["resume_failed(malformed_resume)", "initial_status", "state", "initial_metrics(current_seq=5)"], "live": ["metrics#6"]},
+        "evicted": {"handshake": ["resume_failed(malformed_resume)", "initial_status", "state", "initial_metrics(current_seq=5)"], "live": ["metrics#6"]},
+        "disabled": {"handshake": ["resume_failed(malformed_resume)", "initial_status", "state", "initial_metrics(current_seq=5)"], "live": ["metrics#6"]}
+      }
+    },
+    {
+      "id": "last_seq=[3]",
+      "sent": "{\"type\":\"resume\",\"data\":{\"last_seq\":[3],\"server_instance_id\":\"@ID@\"}}",
+      "answers": {
+        "fresh": {"handshake": ["resume_failed(malformed_resume)", "initial_status", "state", "initial_metrics(current_seq=0)"], "live": ["metrics#1"]},
+        "buffered5": {"handshake": ["resume_failed(malformed_resume)", "initial_status", "state", "initial_metrics(current_seq=5)"], "live": ["metrics#6"]},
+        "evicted": {"handshake": ["resume_failed(malformed_resume)", "initial_status", "state", "initial_metrics(current_seq=5)"], "live": ["metrics#6"]},
+        "disabled": {"handshake": ["resume_failed(malformed_resume)", "initial_status", "state", "initial_metrics(current_seq=5)"], "live": ["metrics#6"]}
+      }
+    },
+    {
+      "id": "last_seq=[]",
+      "sent": "{\"type\":\"resume\",\"data\":{\"last_seq\":[],\"server_instance_id\":\"@ID@\"}}",
+      "answers": {
+        "fresh": {"handshake": ["resume_failed(malformed_resume)", "initial_status", "state", "initial_metrics(current_seq=0)"], "live": ["metrics#1"]},
+        "buffered5": {"handshake": ["resume_failed(malformed_resume)", "initial_status", "state", "initial_metrics(current_seq=5)"], "live": ["metrics#6"]},
+        "evicted": {"handshake": ["resume_failed(malformed_resume)", "initial_status", "state", "initial_metrics(current_seq=5)"], "live": ["metrics#6"]},
+        "disabled": {"handshake": ["resume_failed(malformed_resume)", "initial_status", "state", "initial_metrics(current_seq=5)"], "live": ["metrics#6"]}
+      }
+    },
+    {
+      "id": "last_seq={}",
+      "sent": "{\"type\":\"resume\",\"data\":{\"last_seq\":{},\"server_instance_id\":\"@ID@\"}}",
+      "answers": {
+        "fresh": {"handshake": ["resume_failed(malformed_resume)", "initial_status", "state", "initial_metrics(current_seq=0)"], "live": ["metrics#1"]},
+        "buffered5": {"handshake": ["resume_failed(malformed_resume)", "initial_status", "state", "initial_metrics(current_seq=5)"], "live": ["metrics#6"]},
+        "evicted": {"handshake": ["resume_failed(malformed_resume)", "initial_status", "state", "initial_metrics(current_seq=5)"], "live": ["metrics#6"]},
+        "disabled": {"handshake": ["resume_failed(malformed_resume)", "initial_status", "state", "initial_metrics(current_seq=5)"], "live": ["metrics#6"]}
+      }
+    },
+    {
+      "id": "last_seq={\"seq\":3}",
+      "sent": "{\"type\":\"resume\",\"data\":{\"last_seq\":{\"seq\":3},\"server_instance_id\":\"@ID@\"}}",
+      "answers": {
+        "fresh": {"handshake": ["resume_failed(malformed_resume)", "initial_status", "state", "initial_metrics(current_seq=0)"], "live": ["metrics#1"]},
+        "buffered5": {"handshake": ["resume_failed(malformed_resume)", "initial_status", "state", "initial_metrics(current_seq=5)"], "live": ["metrics#6"]},
+        "evicted": {"handshake": ["resume_failed(malformed_resume)", "initial_status", "state", "initial_metrics(current_seq=5)"], "live": ["metrics#6"]},
+        "disabled": {"handshake": ["resume_failed(malformed_resume)", "initial_status", "state", "initial_metrics(current_seq=5)"], "live": ["metrics#6"]}
+      }
+    },
+    {
+      "id": "no-frame",
+      "sent": null,
+      "answers": {
+        "fresh": {"handshake": ["initial_status", "state", "initial_metrics(current_seq=0)"], "live": ["metrics#1"]},
+        "buffered5": {"handshake": ["initial_status", "state", "initial_metrics(current_seq=5)"], "live": ["metrics#6"]},
+        "evicted": {"handshake": ["initial_status", "state", "initial_metrics(current_seq=5)"], "live": ["metrics#6"]},
+        "disabled": {"handshake": ["initial_status", "state", "initial_metrics(current_seq=5)"], "live": ["metrics#6"]}
+      }
+    },
+    {
+      "id": "data-absent",
+      "sent": "{\"type\":\"resume\"}",
+      "answers": {
+        "fresh": {"handshake": ["resume_failed(malformed_resume)", "initial_status", "state", "initial_metrics(current_seq=0)"], "live": ["metrics#1"]},
+        "buffered5": {"handshake": ["resume_failed(malformed_resume)", "initial_status", "state", "initial_metrics(current_seq=5)"], "live": ["metrics#6"]},
+        "evicted": {"handshake": ["resume_failed(malformed_resume)", "initial_status", "state", "initial_metrics(current_seq=5)"], "live": ["metrics#6"]},
+        "disabled": {"handshake": ["resume_failed(malformed_resume)", "initial_status", "state", "initial_metrics(current_seq=5)"], "live": ["metrics#6"]}
+      }
+    },
+    {
+      "id": "data-null",
+      "sent": "{\"type\":\"resume\",\"data\":null}",
+      "answers": {
+        "fresh": {"handshake": ["resume_failed(malformed_resume)", "initial_status", "state", "initial_metrics(current_seq=0)"], "live": ["metrics#1"]},
+        "buffered5": {"handshake": ["resume_failed(malformed_resume)", "initial_status", "state", "initial_metrics(current_seq=5)"], "live": ["metrics#6"]},
+        "evicted": {"handshake": ["resume_failed(malformed_resume)", "initial_status", "state", "initial_metrics(current_seq=5)"], "live": ["metrics#6"]},
+        "disabled": {"handshake": ["resume_failed(malformed_resume)", "initial_status", "state", "initial_metrics(current_seq=5)"], "live": ["metrics#6"]}
+      }
+    },
+    {
+      "id": "data-empty-object",
+      "sent": "{\"type\":\"resume\",\"data\":{}}",
+      "answers": {
+        "fresh": {"handshake": ["resume_failed(malformed_resume)", "initial_status", "state", "initial_metrics(current_seq=0)"], "live": ["metrics#1"]},
+        "buffered5": {"handshake": ["resume_failed(malformed_resume)", "initial_status", "state", "initial_metrics(current_seq=5)"], "live": ["metrics#6"]},
+        "evicted": {"handshake": ["resume_failed(malformed_resume)", "initial_status", "state", "initial_metrics(current_seq=5)"], "live": ["metrics#6"]},
+        "disabled": {"handshake": ["resume_failed(malformed_resume)", "initial_status", "state", "initial_metrics(current_seq=5)"], "live": ["metrics#6"]}
+      }
+    },
+    {
+      "id": "data-empty-list",
+      "sent": "{\"type\":\"resume\",\"data\":[]}",
+      "answers": {
+        "fresh": {"handshake": ["resume_failed(malformed_resume)", "initial_status", "state", "initial_metrics(current_seq=0)"], "live": ["metrics#1"]},
+        "buffered5": {"handshake": ["resume_failed(malformed_resume)", "initial_status", "state", "initial_metrics(current_seq=5)"], "live": ["metrics#6"]},
+        "evicted": {"handshake": ["resume_failed(malformed_resume)", "initial_status", "state", "initial_metrics(current_seq=5)"], "live": ["metrics#6"]},
+        "disabled": {"handshake": ["resume_failed(malformed_resume)", "initial_status", "state", "initial_metrics(current_seq=5)"], "live": ["metrics#6"]}
+      }
+    },
+    {
+      "id": "data-list-holding-a-cursor",
+      "sent": "{\"type\":\"resume\",\"data\":[{\"last_seq\":3,\"server_instance_id\":\"@ID@\"}]}",
+      "answers": {
+        "fresh": {"handshake": ["resume_failed(malformed_resume)", "initial_status", "state", "initial_metrics(current_seq=0)"], "live": ["metrics#1"]},
+        "buffered5": {"handshake": ["resume_failed(malformed_resume)", "initial_status", "state", "initial_metrics(current_seq=5)"], "live": ["metrics#6"]},
+        "evicted": {"handshake": ["resume_failed(malformed_resume)", "initial_status", "state", "initial_metrics(current_seq=5)"], "live": ["metrics#6"]},
+        "disabled": {"handshake": ["resume_failed(malformed_resume)", "initial_status", "state", "initial_metrics(current_seq=5)"], "live": ["metrics#6"]}
+      }
+    },
+    {
+      "id": "data-string",
+      "sent": "{\"type\":\"resume\",\"data\":\"last_seq\"}",
+      "answers": {
+        "fresh": {"handshake": ["resume_failed(malformed_resume)", "initial_status", "state", "initial_metrics(current_seq=0)"], "live": ["metrics#1"]},
+        "buffered5": {"handshake": ["resume_failed(malformed_resume)", "initial_status", "state", "initial_metrics(current_seq=5)"], "live": ["metrics#6"]},
+        "evicted": {"handshake": ["resume_failed(malformed_resume)", "initial_status", "state", "initial_metrics(current_seq=5)"], "live": ["metrics#6"]},
+        "disabled": {"handshake": ["resume_failed(malformed_resume)", "initial_status", "state", "initial_metrics(current_seq=5)"], "live": ["metrics#6"]}
+      }
+    },
+    {
+      "id": "data-empty-string",
+      "sent": "{\"type\":\"resume\",\"data\":\"\"}",
+      "answers": {
+        "fresh": {"handshake": ["resume_failed(malformed_resume)", "initial_status", "state", "initial_metrics(current_seq=0)"], "live": ["metrics#1"]},
+        "buffered5": {"handshake": ["resume_failed(malformed_resume)", "initial_status", "state", "initial_metrics(current_seq=5)"], "live": ["metrics#6"]},
+        "evicted": {"handshake": ["resume_failed(malformed_resume)", "initial_status", "state", "initial_metrics(current_seq=5)"], "live": ["metrics#6"]},
+        "disabled": {"handshake": ["resume_failed(malformed_resume)", "initial_status", "state", "initial_metrics(current_seq=5)"], "live": ["metrics#6"]}
+      }
+    },
+    {
+      "id": "data-int",
+      "sent": "{\"type\":\"resume\",\"data\":7}",
+      "answers": {
+        "fresh": {"handshake": ["resume_failed(malformed_resume)", "initial_status", "state", "initial_metrics(current_seq=0)"], "live": ["metrics#1"]},
+        "buffered5": {"handshake": ["resume_failed(malformed_resume)", "initial_status", "state", "initial_metrics(current_seq=5)"], "live": ["metrics#6"]},
+        "evicted": {"handshake": ["resume_failed(malformed_resume)", "initial_status", "state", "initial_metrics(current_seq=5)"], "live": ["metrics#6"]},
+        "disabled": {"handshake": ["resume_failed(malformed_resume)", "initial_status", "state", "initial_metrics(current_seq=5)"], "live": ["metrics#6"]}
+      }
+    },
+    {
+      "id": "data-zero",
+      "sent": "{\"type\":\"resume\",\"data\":0}",
+      "answers": {
+        "fresh": {"handshake": ["resume_failed(malformed_resume)", "initial_status", "state", "initial_metrics(current_seq=0)"], "live": ["metrics#1"]},
+        "buffered5": {"handshake": ["resume_failed(malformed_resume)", "initial_status", "state", "initial_metrics(current_seq=5)"], "live": ["metrics#6"]},
+        "evicted": {"handshake": ["resume_failed(malformed_resume)", "initial_status", "state", "initial_metrics(current_seq=5)"], "live": ["metrics#6"]},
+        "disabled": {"handshake": ["resume_failed(malformed_resume)", "initial_status", "state", "initial_metrics(current_seq=5)"], "live": ["metrics#6"]}
+      }
+    },
+    {
+      "id": "data-float",
+      "sent": "{\"type\":\"resume\",\"data\":1.5}",
+      "answers": {
+        "fresh": {"handshake": ["resume_failed(malformed_resume)", "initial_status", "state", "initial_metrics(current_seq=0)"], "live": ["metrics#1"]},
+        "buffered5": {"handshake": ["resume_failed(malformed_resume)", "initial_status", "state", "initial_metrics(current_seq=5)"], "live": ["metrics#6"]},
+        "evicted": {"handshake": ["resume_failed(malformed_resume)", "initial_status", "state", "initial_metrics(current_seq=5)"], "live": ["metrics#6"]},
+        "disabled": {"handshake": ["resume_failed(malformed_resume)", "initial_status", "state", "initial_metrics(current_seq=5)"], "live": ["metrics#6"]}
+      }
+    },
+    {
+      "id": "data-true",
+      "sent": "{\"type\":\"resume\",\"data\":true}",
+      "answers": {
+        "fresh": {"handshake": ["resume_failed(malformed_resume)", "initial_status", "state", "initial_metrics(current_seq=0)"], "live": ["metrics#1"]},
+        "buffered5": {"handshake": ["resume_failed(malformed_resume)", "initial_status", "state", "initial_metrics(current_seq=5)"], "live": ["metrics#6"]},
+        "evicted": {"handshake": ["resume_failed(malformed_resume)", "initial_status", "state", "initial_metrics(current_seq=5)"], "live": ["metrics#6"]},
+        "disabled": {"handshake": ["resume_failed(malformed_resume)", "initial_status", "state", "initial_metrics(current_seq=5)"], "live": ["metrics#6"]}
+      }
+    },
+    {
+      "id": "data-false",
+      "sent": "{\"type\":\"resume\",\"data\":false}",
+      "answers": {
+        "fresh": {"handshake": ["resume_failed(malformed_resume)", "initial_status", "state", "initial_metrics(current_seq=0)"], "live": ["metrics#1"]},
+        "buffered5": {"handshake": ["resume_failed(malformed_resume)", "initial_status", "state", "initial_metrics(current_seq=5)"], "live": ["metrics#6"]},
+        "evicted": {"handshake": ["resume_failed(malformed_resume)", "initial_status", "state", "initial_metrics(current_seq=5)"], "live": ["metrics#6"]},
+        "disabled": {"handshake": ["resume_failed(malformed_resume)", "initial_status", "state", "initial_metrics(current_seq=5)"], "live": ["metrics#6"]}
+      }
+    },
+    {
+      "id": "last_seq-absent",
+      "sent": "{\"type\":\"resume\",\"data\":{\"server_instance_id\":\"@ID@\"}}",
+      "answers": {
+        "fresh": {"handshake": ["resume_failed(malformed_resume)", "initial_status", "state", "initial_metrics(current_seq=0)"], "live": ["metrics#1"]},
+        "buffered5": {"handshake": ["resume_failed(malformed_resume)", "initial_status", "state", "initial_metrics(current_seq=5)"], "live": ["metrics#6"]},
+        "evicted": {"handshake": ["resume_failed(malformed_resume)", "initial_status", "state", "initial_metrics(current_seq=5)"], "live": ["metrics#6"]},
+        "disabled": {"handshake": ["resume_failed(malformed_resume)", "initial_status", "state", "initial_metrics(current_seq=5)"], "live": ["metrics#6"]}
+      }
+    },
+    {
+      "id": "id-absent",
+      "sent": "{\"type\":\"resume\",\"data\":{\"last_seq\":3}}",
+      "answers": {
+        "fresh": {"handshake": ["resume_failed(malformed_resume)", "initial_status", "state", "initial_metrics(current_seq=0)"], "live": ["metrics#1"]},
+        "buffered5": {"handshake": ["resume_failed(malformed_resume)", "initial_status", "state", "initial_metrics(current_seq=5)"], "live": ["metrics#6"]},
+        "evicted": {"handshake": ["resume_failed(malformed_resume)", "initial_status", "state", "initial_metrics(current_seq=5)"], "live": ["metrics#6"]},
+        "disabled": {"handshake": ["resume_failed(malformed_resume)", "initial_status", "state", "initial_metrics(current_seq=5)"], "live": ["metrics#6"]}
+      }
+    },
+    {
+      "id": "id-null",
+      "sent": "{\"type\":\"resume\",\"data\":{\"last_seq\":3,\"server_instance_id\":null}}",
+      "answers": {
+        "fresh": {"handshake": ["resume_failed(malformed_resume)", "initial_status", "state", "initial_metrics(current_seq=0)"], "live": ["metrics#1"]},
+        "buffered5": {"handshake": ["resume_failed(malformed_resume)", "initial_status", "state", "initial_metrics(current_seq=5)"], "live": ["metrics#6"]},
+        "evicted": {"handshake": ["resume_failed(malformed_resume)", "initial_status", "state", "initial_metrics(current_seq=5)"], "live": ["metrics#6"]},
+        "disabled": {"handshake": ["resume_failed(malformed_resume)", "initial_status", "state", "initial_metrics(current_seq=5)"], "live": ["metrics#6"]}
+      }
+    },
+    {
+      "id": "id-stale",
+      "sent": "{\"type\":\"resume\",\"data\":{\"last_seq\":3,\"server_instance_id\":\"stale-id\"}}",
+      "answers": {
+        "fresh": {"handshake": ["resume_failed(server_restarted)", "initial_status", "state", "initial_metrics(current_seq=0)"], "live": ["metrics#1"]},
+        "buffered5": {"handshake": ["resume_failed(server_restarted)", "initial_status", "state", "initial_metrics(current_seq=5)"], "live": ["metrics#6"]},
+        "evicted": {"handshake": ["resume_failed(server_restarted)", "initial_status", "state", "initial_metrics(current_seq=5)"], "live": ["metrics#6"]},
+        "disabled": {"handshake": ["resume_failed(server_restarted)", "initial_status", "state", "initial_metrics(current_seq=5)"], "live": ["metrics#6"]}
+      }
+    },
+    {
+      "id": "id-stale+last_seq-negative",
+      "sent": "{\"type\":\"resume\",\"data\":{\"last_seq\":-1,\"server_instance_id\":\"stale-id\"}}",
+      "answers": {
+        "fresh": {"handshake": ["resume_failed(server_restarted)", "initial_status", "state", "initial_metrics(current_seq=0)"], "live": ["metrics#1"]},
+        "buffered5": {"handshake": ["resume_failed(server_restarted)", "initial_status", "state", "initial_metrics(current_seq=5)"], "live": ["metrics#6"]},
+        "evicted": {"handshake": ["resume_failed(server_restarted)", "initial_status", "state", "initial_metrics(current_seq=5)"], "live": ["metrics#6"]},
+        "disabled": {"handshake": ["resume_failed(server_restarted)", "initial_status", "state", "initial_metrics(current_seq=5)"], "live": ["metrics#6"]}
+      }
+    },
+    {
+      "id": "id-stale+last_seq-string",
+      "sent": "{\"type\":\"resume\",\"data\":{\"last_seq\":\"3\",\"server_instance_id\":\"stale-id\"}}",
+      "answers": {
+        "fresh": {"handshake": ["resume_failed(malformed_resume)", "initial_status", "state", "initial_metrics(current_seq=0)"], "live": ["metrics#1"]},
+        "buffered5": {"handshake": ["resume_failed(malformed_resume)", "initial_status", "state", "initial_metrics(current_seq=5)"], "live": ["metrics#6"]},
+        "evicted": {"handshake": ["resume_failed(malformed_resume)", "initial_status", "state", "initial_metrics(current_seq=5)"], "live": ["metrics#6"]},
+        "disabled": {"handshake": ["resume_failed(malformed_resume)", "initial_status", "state", "initial_metrics(current_seq=5)"], "live": ["metrics#6"]}
+      }
+    },
+    {
+      "id": "id-stale+last_seq-fraction",
+      "sent": "{\"type\":\"resume\",\"data\":{\"last_seq\":2.5,\"server_instance_id\":\"stale-id\"}}",
+      "answers": {
+        "fresh": {"handshake": ["resume_failed(malformed_resume)", "initial_status", "state", "initial_metrics(current_seq=0)"], "live": ["metrics#1"]},
+        "buffered5": {"handshake": ["resume_failed(malformed_resume)", "initial_status", "state", "initial_metrics(current_seq=5)"], "live": ["metrics#6"]},
+        "evicted": {"handshake": ["resume_failed(malformed_resume)", "initial_status", "state", "initial_metrics(current_seq=5)"], "live": ["metrics#6"]},
+        "disabled": {"handshake": ["resume_failed(malformed_resume)", "initial_status", "state", "initial_metrics(current_seq=5)"], "live": ["metrics#6"]}
+      }
+    },
+    {
+      "id": "id-number",
+      "sent": "{\"type\":\"resume\",\"data\":{\"last_seq\":3,\"server_instance_id\":5}}",
+      "answers": {
+        "fresh": {"handshake": ["resume_failed(server_restarted)", "initial_status", "state", "initial_metrics(current_seq=0)"], "live": ["metrics#1"]},
+        "buffered5": {"handshake": ["resume_failed(server_restarted)", "initial_status", "state", "initial_metrics(current_seq=5)"], "live": ["metrics#6"]},
+        "evicted": {"handshake": ["resume_failed(server_restarted)", "initial_status", "state", "initial_metrics(current_seq=5)"], "live": ["metrics#6"]},
+        "disabled": {"handshake": ["resume_failed(server_restarted)", "initial_status", "state", "initial_metrics(current_seq=5)"], "live": ["metrics#6"]}
+      }
+    },
+    {
+      "id": "flat-cursor-no-data",
+      "sent": "{\"type\":\"resume\",\"last_seq\":3,\"server_instance_id\":\"@ID@\"}",
+      "answers": {
+        "fresh": {"handshake": ["resume_failed(malformed_resume)", "initial_status", "state", "initial_metrics(current_seq=0)"], "live": ["metrics#1"]},
+        "buffered5": {"handshake": ["resume_failed(malformed_resume)", "initial_status", "state", "initial_metrics(current_seq=5)"], "live": ["metrics#6"]},
+        "evicted": {"handshake": ["resume_failed(malformed_resume)", "initial_status", "state", "initial_metrics(current_seq=5)"], "live": ["metrics#6"]},
+        "disabled": {"handshake": ["resume_failed(malformed_resume)", "initial_status", "state", "initial_metrics(current_seq=5)"], "live": ["metrics#6"]}
+      }
+    },
+    {
+      "id": "frame-list",
+      "sent": "[1,2]",
+      "answers": {
+        "fresh": {"handshake": ["initial_status", "state", "initial_metrics(current_seq=0)"], "live": ["metrics#1"]},
+        "buffered5": {"handshake": ["initial_status", "state", "initial_metrics(current_seq=5)"], "live": ["metrics#6"]},
+        "evicted": {"handshake": ["initial_status", "state", "initial_metrics(current_seq=5)"], "live": ["metrics#6"]},
+        "disabled": {"handshake": ["initial_status", "state", "initial_metrics(current_seq=5)"], "live": ["metrics#6"]}
+      }
+    },
+    {
+      "id": "frame-string",
+      "sent": "\"resume\"",
+      "answers": {
+        "fresh": {"handshake": ["initial_status", "state", "initial_metrics(current_seq=0)"], "live": ["metrics#1"]},
+        "buffered5": {"handshake": ["initial_status", "state", "initial_metrics(current_seq=5)"], "live": ["metrics#6"]},
+        "evicted": {"handshake": ["initial_status", "state", "initial_metrics(current_seq=5)"], "live": ["metrics#6"]},
+        "disabled": {"handshake": ["initial_status", "state", "initial_metrics(current_seq=5)"], "live": ["metrics#6"]}
+      }
+    },
+    {
+      "id": "frame-number",
+      "sent": "5",
+      "answers": {
+        "fresh": {"handshake": ["initial_status", "state", "initial_metrics(current_seq=0)"], "live": ["metrics#1"]},
+        "buffered5": {"handshake": ["initial_status", "state", "initial_metrics(current_seq=5)"], "live": ["metrics#6"]},
+        "evicted": {"handshake": ["initial_status", "state", "initial_metrics(current_seq=5)"], "live": ["metrics#6"]},
+        "disabled": {"handshake": ["initial_status", "state", "initial_metrics(current_seq=5)"], "live": ["metrics#6"]}
+      }
+    },
+    {
+      "id": "frame-null",
+      "sent": "null",
+      "answers": {
+        "fresh": {"handshake": ["initial_status", "state", "initial_metrics(current_seq=0)"], "live": ["metrics#1"]},
+        "buffered5": {"handshake": ["initial_status", "state", "initial_metrics(current_seq=5)"], "live": ["metrics#6"]},
+        "evicted": {"handshake": ["initial_status", "state", "initial_metrics(current_seq=5)"], "live": ["metrics#6"]},
+        "disabled": {"handshake": ["initial_status", "state", "initial_metrics(current_seq=5)"], "live": ["metrics#6"]}
+      }
+    },
+    {
+      "id": "frame-not-json",
+      "sent": "resume",
+      "answers": {
+        "fresh": {"handshake": ["initial_status", "state", "initial_metrics(current_seq=0)"], "live": ["metrics#1"]},
+        "buffered5": {"handshake": ["initial_status", "state", "initial_metrics(current_seq=5)"], "live": ["metrics#6"]},
+        "evicted": {"handshake": ["initial_status", "state", "initial_metrics(current_seq=5)"], "live": ["metrics#6"]},
+        "disabled": {"handshake": ["initial_status", "state", "initial_metrics(current_seq=5)"], "live": ["metrics#6"]}
+      }
+    },
+    {
+      "id": "frame-other-type",
+      "sent": "{\"type\":\"noop\"}",
+      "answers": {
+        "fresh": {"handshake": ["initial_status", "state", "initial_metrics(current_seq=0)"], "live": ["metrics#1"]},
+        "buffered5": {"handshake": ["initial_status", "state", "initial_metrics(current_seq=5)"], "live": ["metrics#6"]},
+        "evicted": {"handshake": ["initial_status", "state", "initial_metrics(current_seq=5)"], "live": ["metrics#6"]},
+        "disabled": {"handshake": ["initial_status", "state", "initial_metrics(current_seq=5)"], "live": ["metrics#6"]}
+      }
+    },
+    {
+      "id": "frame-type-absent",
+      "sent": "{\"data\":{\"last_seq\":3,\"server_instance_id\":\"@ID@\"}}",
+      "answers": {
+        "fresh": {"handshake": ["initial_status", "state", "initial_metrics(current_seq=0)"], "live": ["metrics#1"]},
+        "buffered5": {"handshake": ["initial_status", "state", "initial_metrics(current_seq=5)"], "live": ["metrics#6"]},
+        "evicted": {"handshake": ["initial_status", "state", "initial_metrics(current_seq=5)"], "live": ["metrics#6"]},
+        "disabled": {"handshake": ["initial_status", "state", "initial_metrics(current_seq=5)"], "live": ["metrics#6"]}
+      }
+    }
+  ]
+}

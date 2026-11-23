@@ -30,6 +30,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `docs/ci_cd/BRANCH_PROTECTION.md` (0.4.5), `docs/ci_cd/MANUAL.md` (0.3.21), `docs/ci_cd/REFERENCE.md` and
     `docs/install/ENVIRONMENT_SETUP.md` describe the legs.
 
+- **One table of `/ws/training` resume frames and answers, shared with juniper-service-core and tested on the
+  wire** (the Overtoad's ruling of 2026-11-13, "Four rules + shared table"). `src/tests/fixtures/ws_resume_answers.json`
+  holds 60 resume frames (31 `last_seq` values and 29 whole frames) and the reply frames a client reads in four
+  server states (`fresh`, `buffered5`, `evicted`, `disabled`). It was seeded from this repository's `main`
+  (`a1b0409d`), so it records the answers #754 gave: no handler code changes.
+  - `src/tests/unit/api/test_websocket_resume_answer_table.py` serves the app (`create_app` with its own lifespan)
+    with uvicorn on a loopback port and drives all 240 cases with the `websockets` client: a handler whose answer
+    to any row changes, or a row edited without its handler, fails the unit lane.
+  - juniper-ml holds the same bytes at `juniper-service-core/tests/fixtures/ws_resume_answers.json`, which
+    juniper-service-core's own handler is tested against, and its `tests/test_ws_resume_answer_table_drift.py`
+    compares the two copies (weekly, where juniper-cascor is cloned). Change both copies in the same pair of pull
+    requests.
+  - `docs/api/API_SCHEMAS.md` (0.3.26) names the table in its resume section.
+
 ### Changed
 
 - **`CI — juniper-cascor-model` runs on every PR, and its new `Model required checks` is a required context.** Owner
