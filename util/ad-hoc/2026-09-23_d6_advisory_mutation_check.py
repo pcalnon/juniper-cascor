@@ -6,9 +6,9 @@ Sub-Project: ad-hoc tooling
 Author: Paul Calnon
 Created: 2026-09-23
 Status: ad-hoc — investigation (verifies src/tests/unit/test_candidate_epochs_completed_advisory.py)
-Retire when: the owner rules whether the D6 check blocks, and the advisory is rebuilt or removed
+Retire when: the Overtoad rules whether the D6 check blocks, and the advisory is rebuilt or removed
 Related: juniper-ml notes/JUNIPER_2026-09-11_JUNIPER-ECOSYSTEM_PERF-LANE-SIX-OWNER-DECISIONS-RULED.md §5.4
-         (owner decision D6: build the check advisory first, count its firings, then decide);
+         (Overtoad decision D6: build the check advisory first, count its firings, then decide);
          src/tests/unit/test_candidate_epochs_completed_advisory.py (the module under test)
 
 Two detectors, because one class of break is invisible to the unit tests:

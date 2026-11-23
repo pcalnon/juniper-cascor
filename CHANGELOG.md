@@ -10,7 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - **CI runs the tests on Python 3.15 as well, as informational legs that block nothing.** Phase 1 of the ecosystem's
-  Python 3.15 migration (the owner's request of 2026-11-14): 3.15 results are reported, and no merge, commit or
+  Python 3.15 migration (the Overtoad's request of 2026-11-14): 3.15 results are reported, and no merge, commit or
   deployment waits on them.
   - `ci.yml`'s `unit-tests` gains `Unit Tests + Coverage (Python 3.15 on ubuntu-latest)`, an `include` entry with
     `experimental: true`. The job's existing `continue-on-error: ${{ matrix.experimental == true }}` applies to that
@@ -24,7 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - The pattern was measured on juniper-data#538 (run 43655144734): with the 3.15 leg failed on purpose, the leg's
     check read `failure`, that repository's Quality Gate printed `Unit Tests: success` and passed, and every job that
     `needs: [unit-tests]` ran.
-  - Unchanged on purpose: `pre-commit` (3.12-3.14; the owner ruled out a 3.15 pre-commit in phase 1), the
+  - Unchanged on purpose: `pre-commit` (3.12-3.14; the Overtoad ruled out a 3.15 pre-commit in phase 1), the
     single-version `scheduled-tests.yml`, `golden-regression.yml` and `conformance.yml` lanes, `requires-python`, the
     classifiers, the black, mypy and ruff targets, and the Docker base.
   - `docs/ci_cd/BRANCH_PROTECTION.md` (0.4.5), `docs/ci_cd/MANUAL.md` (0.3.21), `docs/ci_cd/REFERENCE.md` and
@@ -67,7 +67,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - juniper-cascor-model's next release exports the marker as well. Its `[Unreleased]` section records the change.
 
 - **h5py installs on the informational Python 3.15 leg.** Phase 2 of the ecosystem's Python 3.15 migration (approved
-  by the owner on 2026-11-15) works through what the 3.15 legs found, and this is the first item: h5py publishes no
+  by the Overtoad on 2026-11-15) works through what the 3.15 legs found, and this is the first item: h5py publishes no
   CPython 3.15 wheel (3.16.0, 2026-03-06, the newest release on PyPI when re-probed on 2026-11-15, ships
   cp310-cp314), so pip builds it from the sdist there, and the runner image lacks the libhdf5 headers and
   pkg-config that build needs. On `main`'s 3.15 leg (run 43678353051) h5py's wheel build stopped at `Unable to load dependency
@@ -82,7 +82,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     `util/ad-hoc/2026-11-15_py315_h5py_hdf5_headers.py`.
 
 - **`check_object_pickleability` no longer crashes on Python 3.15: an attribute whose pickling raises now reads as
-  not pickleable.** Phase 2 of the ecosystem's Python 3.15 migration, the second item (the owner's ruling of
+  not pickleable.** Phase 2 of the ecosystem's Python 3.15 migration, the second item (the Overtoad's ruling of
   2026-11-15). dill 0.4.1, the newest release on PyPI when re-probed on 2026-11-15 (its classifiers stop at 3.14),
   reads `code.co_lnotab`, which Python 3.15 removed, so `dill.pickles` raised `AttributeError` for any object that
   holds a code object, such as a lambda. Unless it is called with `safe=True`, `dill.pickles` returns False only for
@@ -100,7 +100,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     attribute whose `__reduce__` raises RuntimeError. It fails without `safe=True` (measured on 3.14.7).
   - Raise the dill floor once a release handles 3.15. dill's `master` has done so since 2026-05-23, unreleased.
 
-- **The informational Python 3.15 legs no longer show as failed checks** (the owner's report of 2026-11-15: they
+- **The informational Python 3.15 legs no longer show as failed checks** (the Overtoad's report of 2026-11-15: they
   "are supposed to produce an informational message without affecting the ability of code to commit, push, PR, or
   merge"). The job-level `continue-on-error` that came with the legs (#759) kept `needs.unit-tests.result` and the
   Quality Gate green, but each leg's own check still concluded `failure`. `Unit Tests + Coverage (Python 3.15 on
@@ -168,7 +168,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     request itself allows.
   - Docs: `docs/ci_cd/REFERENCE.md` § Secret Scan (Gitleaks), new, and its security-lanes row.
 - **PyPI now receives the files TestPyPI took: `publish.yml` builds once, and the run checks every upload by sha256
-  against TestPyPI** (the owner's directive of 2026-11-15: "deploy to pypi should send the same artifact that was
+  against TestPyPI** (the Overtoad's directive of 2026-11-15: "deploy to pypi should send the same artifact that was
   already sent to testpypi. an identical hash check, of the artifacts after testpypi deploy and prior to pypi deploy,
   might also be helpful here to prevent this from slipping through the cracks again."). `publish.yml` ran
   `python -m build` in its TestPyPI job and again in its PyPI job, so PyPI served a second build of each release. For
@@ -199,7 +199,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     workflow's `permissions` is now `{}`: `Build and Validate` gets `contents: read` and `actions: read`,
     `Publish to TestPyPI` `contents: read` and `id-token: write`, and `Publish to PyPI` `id-token: write`. So the
     build, which runs the package's build backend, can mint no OIDC token and holds no environment.
-  - **Recovery, in the owner's order (ruling of 2026-11-15).** A `workflow_dispatch` from the release tag with
+  - **Recovery, in the Overtoad's order (ruling of 2026-11-15).** A `workflow_dispatch` from the release tag with
     `republish_from_testpypi` runs only the new job `Republish the tested files (dispatch only)`, behind the same
     `pypi` gate. It builds nothing: it downloads the version's files from TestPyPI, checks each file's bytes against
     TestPyPI's JSON and, while the release run's artifact exists, against its `SHA256SUMS`, uploads them, and checks
@@ -293,13 +293,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- **`agents-md-touch-up.yml` pins `actions/checkout` to a commit SHA (owner ruling 2026-11-03).** It checked out with
+- **`agents-md-touch-up.yml` pins `actions/checkout` to a commit SHA (Overtoad ruling 2026-11-03).** It checked out with
   the `v7.0.1` tag, the only tag-only `actions/checkout` in `.github/workflows/`. It now uses
   `3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1`, the commit that tag resolves to and the pin every other
   workflow here uses, so behaviour is unchanged. A census of the nine Juniper repositories' `main` on 2026-11-01 found
   249 `actions/checkout` uses, 242 pinned to that SHA; the seven tag-only ones were this workflow's copies, one per
   repository. juniper-data#503 pinned juniper-data's, and this change is one of the seven that pin the rest.
-- **`create_app` opts out of FastAPI's native telemetry (owner ruling 2026-11-09).** FastAPI 0.142 added OpenTelemetry
+- **`create_app` opts out of FastAPI's native telemetry (Overtoad ruling 2026-11-09).** FastAPI 0.142 added OpenTelemetry
   instrumentation of its own, with tracing, metrics, logs and operation spans on by default, and both locks pin FastAPI
   0.162.2. `create_app` now passes `telemetry=` with those four switches and `auto_configure` set to `False`, as
   juniper-data does (juniper-data#454), so FastAPI's instrumentation cannot overlap the service's configured
@@ -321,7 +321,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- **A 429 never says `Retry-After: 0`, and the wait it names is rounded up (APD-ECO-016; owner ruling 2026-11-09).**
+- **A 429 never says `Retry-After: 0`, and the wait it names is rounded up (APD-ECO-016; Overtoad ruling 2026-11-09).**
   `RateLimiter.check` reported `int(window - elapsed)`, which truncates. A rejection in a window's last second
   therefore carried `Retry-After: 0` and `X-RateLimit-Reset: 0`, telling a client to retry at once into a limiter that
   rejects again, and every other fractional remainder was a second short (9.4s left said 9). The allowed path, which
@@ -347,7 +347,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - a mutant without the resize raises at the 10-unit snapshot and exits 1.
 
     Run against a failing stub, the new exit-status lines exit 1, and the old two lines exit 0.
-  - **Where it was found.** Reading that nightly for juniper-cascor#738. Owner ruling of 2026-11-01.
+  - **Where it was found.** Reading that nightly for juniper-cascor#738. The Overtoad ruling of 2026-11-01.
 - **A fit that returns while its run is paused now settles `COMPLETED`. The lifecycle no longer wedges in `PAUSED` with no training thread behind it.**
   - **The defect.** Pause is honoured only at an interrupt checkpoint, which `_handle_event` runs on `epoch_end` and `phase_change` alone. A pause that landed after the fit's last checkpoint could not hold the fit, so the fit returned while the FSM was `PAUSED`. The window after the last checkpoint includes:
     - the rest of the final output pass after its last-epoch callback;
@@ -380,19 +380,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - **Races.** Under a client that re-sends pause until the run settles, with the service's logging, 0 of 200 runs wedged (a `RESUME`-first settle wedged 178 of 200), and 0 of 200 at a 1 µs switch interval. A pause or resume forced into the settle leaves the run `COMPLETED`.
     - **Determinism.** 500 runs of the new module passed every test: 250 at the default switch interval, and 250 pinned to one CPU with a 10 µs GIL switch interval, under a load average of 13 to 40. The 33 new tests, run 60 times each, passed all 1980 at the default switch interval and all 1980 at a 1 µs one.
     - **With the real model.** A real `CascorModel.fit` on a small growing network, paused from the manager's own event sink as it handled `training_end`, settled `COMPLETED`, and the next start ran.
-  - **Reported here, fixed later in this release: the stop-then-start race.** A start sent after a stop, before the old fit reached its next checkpoint, cleared the shared `_stop_event`, so the old fit was never interrupted: it trained on to its natural end while the FSM read `STOPPED` and, still owning the lifecycle, wrote `training_state` `Completed` and counted a successful session for a run the operator had stopped. `swap_dataset_live` cleared the event the same way after its 10 s join timed out. The ownership check above could not help, because cascor's queue keeps the new run from starting until the old fit returns. This change shipped `util/ad-hoc/2026-11-08_stop_then_start_race_repro.py`, which reproduced it (exit 1). The owner's ruling 17 (2026-11-09), "cascor: stop-then-start", gave it a fix of its own: see "A start sent after a stop no longer cancels it" below, whose per-run stop signal the owner ruled on 2026-11-12 to keep, and with which the reproducer exits 0.
+  - **Reported here, fixed later in this release: the stop-then-start race.** A start sent after a stop, before the old fit reached its next checkpoint, cleared the shared `_stop_event`, so the old fit was never interrupted: it trained on to its natural end while the FSM read `STOPPED` and, still owning the lifecycle, wrote `training_state` `Completed` and counted a successful session for a run the operator had stopped. `swap_dataset_live` cleared the event the same way after its 10 s join timed out. The ownership check above could not help, because cascor's queue keeps the new run from starting until the old fit returns. This change shipped `util/ad-hoc/2026-11-08_stop_then_start_race_repro.py`, which reproduced it (exit 1). The Overtoad's ruling 17 (2026-11-09), "cascor: stop-then-start", gave it a fix of its own: see "A start sent after a stop no longer cancels it" below, whose per-run stop signal the Overtoad ruled on 2026-11-12 to keep, and with which the reproducer exits 0.
   - **Docs.**
     - `docs/api/JUNIPER_CASCOR_API_REFERENCE.md`: the pause and resume sections describe the checkpoint, the paused completion, a pause or resume that races the settle, and the behaviour of earlier releases; their stale route line numbers are corrected. The start and stop sections name the FSM's states instead of a `Training` state it does not have, and the stop, pause and resume 409s name `error.message`, which carries their text.
     - `docs/api/API_SCHEMAS.md`: "Training Failure Propagation and Ownership" describes `_run_training`'s terminal settles, the ownership rule, the stop-then-start race, and the same `STOPPED` / `Completed` pair from a stop or reset that lands inside the settle. It used to describe the removed `monitored_fit` wrapper.
     - `docs/api/API_REFERENCE.md`: "Lifecycle Failure Handling Path" no longer describes `monitored_fit`; it points at `API_SCHEMAS.md`'s settle rules.
     - `docs/DEVELOPER_CHEATSHEET.md` 1.0.9: two troubleshooting rows.
-  - **Where it was found.** juniper-ml's flood-4 record, `notes/JUNIPER_2026-11-06_JUNIPER-ECOSYSTEM_CURSOR-FLOOD-4-DISPOSITION.md`. Its §8 ruling 11 lists this defect (owner ruling of 2026-11-08, "Fix all four now"); §4 records the same wedge in juniper-service-core, whose lifecycle mirrors this one.
+  - **Where it was found.** juniper-ml's flood-4 record, `notes/JUNIPER_2026-11-06_JUNIPER-ECOSYSTEM_CURSOR-FLOOD-4-DISPOSITION.md`. Its §8 ruling 11 lists this defect (Overtoad ruling of 2026-11-08, "Fix all four now"); §4 records the same wedge in juniper-service-core, whose lifecycle mirrors this one.
 - **The Bandit SARIF upload's comment and its survey's docstring no longer claim that every upload succeeded.**
   - **The claims.** `ci.yml`'s upload comment said "165 of 165 uploads succeeded over 200 runs". `util/ad-hoc/2026-10-27_bandit_sarif_upload_survey.py`'s docstring said a failed upload's step "conclusion still records `failure`".
   - **Why they fail.** GitHub's jobs API reports a step's `conclusion` after `continue-on-error`, so a masked failure reads `success`. juniper-canopy job 123689681187 logged `Path does not exist`, and its upload step reads `success`.
   - **The new wording.** The comment cites the survey's `Bandit` half, which can see a masked failure on a PR: 101 of 101 PR heads whose upload ran carry the check. It says the step count proves less. The docstring says the same, including that its RESULT line's "no upload step failed" is blind to a masked failure. No code changed.
   - **History.** The nightly-lanes entry below (juniper-cascor#735) qualifies its "165 of 165" accordingly.
-  - **Where it was found.** juniper-ml's flood-3 record, `notes/JUNIPER_2026-10-08_JUNIPER-ECOSYSTEM_CURSOR-FLOOD-3-DISPOSITION.md`, §4 and §6. Owner ruling of 2026-11-01.
+  - **Where it was found.** juniper-ml's flood-3 record, `notes/JUNIPER_2026-10-08_JUNIPER-ECOSYSTEM_CURSOR-FLOOD-3-DISPOSITION.md`, §4 and §6. The Overtoad ruling of 2026-11-01.
 
 - **A `/ws/training` client that resumes no longer misses broadcasts behind a `resume_ok`.** These are cascor's own
   copies of two defects that juniper-ml's shared `juniper-service-core` also had: juniper-ml#2534 fixed them on
@@ -456,7 +456,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
       environment-only version check (this host's editable install reports 0.11.0).
   - **Where it was found.** While juniper-service-core's copies were being fixed (juniper-ml#2534). juniper-ml's
     flood-4 record, `notes/JUNIPER_2026-11-06_JUNIPER-ECOSYSTEM_CURSOR-FLOOD-4-DISPOSITION.md`, §8, ruling 11, records
-    it, with the owner's ruling: "Fix all four now".
+    it, with the Overtoad's ruling: "Fix all four now".
 
 - **A start sent after a stop no longer cancels it: the stopped fit stops, and the new run waits for it (the stop-then-start race).**
   - **The defect.** A stop is cooperative. `stop_training` raised the one stop event every run shared and moved the FSM to `STOPPED` at once, but the fit sees the event only at its next interrupt checkpoint, or as it returns. `start_training` accepts a start from `STOPPED`, and it cleared that event, so a start sent in between cancelled the stop:
@@ -502,7 +502,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - `docs/api/JUNIPER_CASCOR_API_REFERENCE.md`: the stop section describes the cooperative stop and a start sent while the stopped fit unwinds; the start section says such a start queues.
     - `docs/api/API_SCHEMAS.md`: "Training Failure Propagation and Ownership" describes the fix in place of the known defect it listed, and lists what a stopped fit that is still running leaves open.
     - `docs/DEVELOPER_CHEATSHEET.md`: two troubleshooting rows.
-  - **Where it was found.** juniper-cascor#753 reported the race (the stop-then-start item of the paused-fit entry above) and shipped the reproducer. The owner's ruling 17 (2026-11-09), "cascor: stop-then-start", gives the race a fix of its own, in its own PR. That ruling named no design: the per-run stop signal is this change's, and the owner ruled on 2026-11-12 to keep it. As of this release, juniper-ml's flood-4 record (`notes/JUNIPER_2026-11-06_JUNIPER-ECOSYSTEM_CURSOR-FLOOD-4-DISPOSITION.md`) lists rulings 1 to 14 in its §8 and not this one.
+  - **Where it was found.** juniper-cascor#753 reported the race (the stop-then-start item of the paused-fit entry above) and shipped the reproducer. The Overtoad's ruling 17 (2026-11-09), "cascor: stop-then-start", gives the race a fix of its own, in its own PR. That ruling named no design: the per-run stop signal is this change's, and the Overtoad ruled on 2026-11-12 to keep it. As of this release, juniper-ml's flood-4 record (`notes/JUNIPER_2026-11-06_JUNIPER-ECOSYSTEM_CURSOR-FLOOD-4-DISPOSITION.md`) lists rulings 1 to 14 in its §8 and not this one.
 - **The nightly performance smoke runs on pytest 9.2 again: its `pytest<9.2` cap is gone.** pytest-benchmark 5.3.1 (PyPI 2026-11-01) reads pytest's public `nodeid` instead of the private `_nodeid` that pytest 9.2.0 removed, and its changelog calls that pytest 9.2 support. So `scheduled-tests.yml`'s `performance-smoke` job no longer downgrades pytest after installing the project. It still prints the pytest and pytest-benchmark versions it got.
   - **Measured locally** on Python 3.14.7, in fresh venvs, with a one-test file that takes the `benchmark` fixture. Under pytest 9.2.0, pytest-benchmark 5.3.0 errors at setup with the `AttributeError` that run 40970853599 logged, and 5.3.1 passes, both timed and under `--benchmark-disable`.
   - **No floor.** `pyproject.toml` keeps `pytest-benchmark>=4.0.0`, so a fresh install resolves 5.3.1. If the lane ever pairs pytest 9.2 with 5.3.0 again, every benchmark test errors at setup and the lane fails; it cannot pass quietly.
@@ -532,17 +532,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - it is also marked `slow`;
     - the conftest tests `"integration" in item.keywords`, and the keywords hold the `src/tests/integration` directory's name, so every test there needs `--integration`, marked or not.
   - **The long lane's fix.** The job now also passes `--slow --integration`. Locally the test runs and XFAILs (`1 xfailed, 6236 deselected`); its `xfail` stays.
-  - **The slow-integration lane ran nothing as well (owner ruling 2026-10-29, "Fix in #735").** `slow-integration-tests` passed `--slow` without `--integration`. main's nightly run 40809669816 (job 123236747466) logged `20 skipped, 178 deselected` and passed. The job now also passes `--integration`. Locally it runs 15 tests, all passing, and skips the 5 golden picks: they need `--golden`, and `golden-regression.yml` runs them.
+  - **The slow-integration lane ran nothing as well (Overtoad ruling 2026-10-29, "Fix in #735").** `slow-integration-tests` passed `--slow` without `--integration`. main's nightly run 40809669816 (job 123236747466) logged `20 skipped, 178 deselected` and passed. The job now also passes `--integration`. Locally it runs 15 tests, all passing, and skips the 5 golden picks: they need `--golden`, and `golden-regression.yml` runs them.
   - **A lane that executes nothing now fails.** New `util/check_junit_executed.py` reads a lane's `--junitxml` report and fails when no test executed, or when one failed or errored.
     - An XFAIL counts as executed, although pytest writes it as `<skipped type="pytest.xfail">`.
     - It also catches a failure the exit status hid: `src/tests/conftest.py`'s `pytest_unconfigure` called `os._exit(0)` whenever a non-daemon thread outlived the session, so a failing lane could exit 0 (measured: `1 failed`, exit status 0). "A failing test session no longer exits 0 when a thread outlives it" below removes that mask in this release.
     - It runs after the slow-integration and long lanes and after the new performance smoke. Its 24 tests (`src/tests/unit/test_check_junit_executed.py`) include two real pytest runs and pin the `scheduled-tests.yml` wiring. At this change the unit lane selected 5,860 of 5,875 tests, up from 5,836 of 5,851.
-  - **The performance smoke (owner ruling 2026-10-29, "Nightly smoke, no timing").** The new `performance-smoke` job runs all 153 tests in `src/tests/performance/` with `--run-performance --benchmark-disable`. A failure fails the nightly through the `summary` job; `performance-benchmarks` stays informational. The pytest step's `timeout-minutes: 30` turns a hang into a failure instead of a 6-hour run. Locally all 153 pass in about 23 s.
-  - **The job capped pytest below 9.2 (owner ruling 2026-10-29); the cap is gone in this release** (the pytest 9.2 entry above). pytest 9.2.0 (PyPI 2026-10-27) broke pytest-benchmark 5.3.0, then the latest release, at fixture setup: `AttributeError: 'Function' object has no attribute '_nodeid'` (`pytest_benchmark/fixture.py:88`). Every benchmark test errored, and run 40970853599 logged `5 errors` and stopped at `--maxfail=5`. The job therefore installed `pytest<9.2` (9.1.1) after the project until pytest-benchmark 5.3.1 supported 9.2. The required lanes kept pytest 9.2. Locally, on 9.1.1 with pytest-benchmark 5.3.0, all 153 passed.
+  - **The performance smoke (Overtoad ruling 2026-10-29, "Nightly smoke, no timing").** The new `performance-smoke` job runs all 153 tests in `src/tests/performance/` with `--run-performance --benchmark-disable`. A failure fails the nightly through the `summary` job; `performance-benchmarks` stays informational. The pytest step's `timeout-minutes: 30` turns a hang into a failure instead of a 6-hour run. Locally all 153 pass in about 23 s.
+  - **The job capped pytest below 9.2 (Overtoad ruling 2026-10-29); the cap is gone in this release** (the pytest 9.2 entry above). pytest 9.2.0 (PyPI 2026-10-27) broke pytest-benchmark 5.3.0, then the latest release, at fixture setup: `AttributeError: 'Function' object has no attribute '_nodeid'` (`pytest_benchmark/fixture.py:88`). Every benchmark test errored, and run 40970853599 logged `5 errors` and stopped at `--maxfail=5`. The job therefore installed `pytest<9.2` (9.1.1) after the project until pytest-benchmark 5.3.1 supported 9.2. The required lanes kept pytest 9.2. Locally, on 9.1.1 with pytest-benchmark 5.3.0, all 153 passed.
   - **The exit hang, fixed.** `TestQueueThroughput::test_burst_throughput` drained its queue with `get_nowait()` until `Empty`, which can stop while the queue's feeder thread is still flushing. The leftovers fill the pipe, the feeder blocks, and the interpreter's exit-time join never returns. Run alone, the test hung in 6 of 6 runs, and the full smoke in 1 of 2. It now drains exactly the 320 items its five bursts put. Afterwards 12 of 12 runs alone and 6 of 6 full-smoke runs exited cleanly. The measured drain is unchanged.
   - **Not fixed here.** `--benchmark-disable` reaches only the pytest-benchmark fixture. Eight assertions time their own code against a ceiling or against each other: `test_baselines.py:464` and `:467`, `test_concurrency_scaling.py:551` and `:582`, `test_endtoend_profiling.py:251`, and `test_shared_memory.py:523`, `:525` and `:576`.
   - **Five unmarked integration tests.** `TestHiddenUnitsPreservation`, `TestConfigRoundtrip`, `TestActivationFunctionRestoration`, `TestTorchRandomStateRestoration` and `TestHistoryPreservation` in `src/tests/integration/test_comprehensive_serialization.py` get the class-level `@pytest.mark.integration` the other modules use. The required integration jobs now select 177 of 198 tests, up from 172 of 198, and all 177 pass locally.
-  - **The Bandit SARIF upload (owner ruling 2026-10-29).** `ci.yml`'s upload step is now `continue-on-error: ${{ github.event_name != 'pull_request' }}`. On a PR a failed upload fails Security Scans, with the cause in the step log, instead of leaving the required `Bandit` context unposted. Pushes and dispatches still tolerate it. The survey (`util/ad-hoc/2026-10-27_bandit_sarif_upload_survey.py`) counted 165 of 165 upload steps succeeding over 200 runs; a step masked by `continue-on-error` reads `success` there, so the count does not show that every upload succeeded (the Bandit SARIF comment entry above). `AGENTS.md`, `docs/ci_cd/MANUAL.md`, `docs/ci_cd/REFERENCE.md` and `docs/ci_cd/BRANCH_PROTECTION.md` called the upload best-effort everywhere, and now say so for pushes and dispatches only.
+  - **The Bandit SARIF upload (Overtoad ruling 2026-10-29).** `ci.yml`'s upload step is now `continue-on-error: ${{ github.event_name != 'pull_request' }}`. On a PR a failed upload fails Security Scans, with the cause in the step log, instead of leaving the required `Bandit` context unposted. Pushes and dispatches still tolerate it. The survey (`util/ad-hoc/2026-10-27_bandit_sarif_upload_survey.py`) counted 165 of 165 upload steps succeeding over 200 runs; a step masked by `continue-on-error` reads `success` there, so the count does not show that every upload succeeded (the Bandit SARIF comment entry above). `AGENTS.md`, `docs/ci_cd/MANUAL.md`, `docs/ci_cd/REFERENCE.md` and `docs/ci_cd/BRANCH_PROTECTION.md` called the upload best-effort everywhere, and now say so for pushes and dispatches only.
   - **`AGENTS.md`** listed a `src/tests/pytest.ini`, which does not exist: pytest's configuration is `[tool.pytest.ini_options]` in the repo-root `pyproject.toml`. Five other live documents named the file too (`docs/REFERENCE.md`, `docs/testing/MANUAL.md`, `docs/ci_cd/MANUAL.md`, `docs/DOCUMENTATION_OVERVIEW.md` and `src/tests/README.md`); "Five documents no longer name the nonexistent `src/tests/pytest.ini`" above corrects them in this release.
   - **Where it was found.** The 2026-10-08 flood-3 disposition (juniper-ml `notes/JUNIPER_2026-10-08_JUNIPER-ECOSYSTEM_CURSOR-FLOOD-3-DISPOSITION.md` §4), in rows found on 2026-10-27.
 - **A failing test session no longer exits 0 when a thread outlives it.**
@@ -551,7 +551,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **The test.** `src/tests/unit/test_conftest_exit_status.py` runs a real pytest in a subprocess, over a one-test tree whose conftest loads only this conftest's two exit hooks. A failing session with a surviving non-daemon thread must exit 1, and a passing one 0. A failing one without a survivor must exit 1, as a control. Against the old conftest the first case fails (`1 failed`, exit status 0) and the other two pass.
   - **What it removes.** It removes the mask that juniper-cascor#735's `util/check_junit_executed.py` worked around, by failing a lane whose report shows a failure even when the exit status reads 0. That script's docstring now records the mask as history (0.1.1). Failing an empty lane stays its main job. Two `src/tests/conftest.py` comments that called the forced exit `os._exit(0)` now say `os._exit`.
   - **Why it found nothing broken.** `main`'s latest `ci.yml` run before this change (40768508350, `e8e8bf4d`) recorded 0 failures and 0 errors in all five JUnit reports, so no required lane depended on the mask.
-  - **Owner ruling** of 2026-10-29: "Fix now, own PR".
+  - **The Overtoad ruling** of 2026-10-29: "Fix now, own PR".
 
 ### Security
 
@@ -577,11 +577,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.13.0] - 2026-10-28
 
 ### Changed
-- **Temporary files go in the repo's gitignored `tmp/`, never `/tmp` (owner directive, 2026-10-26), and the
-  owner's rulings on it are applied.** `/tmp/` is ignored, the lock-regeneration recipes use `tmp/`, and
+- **Temporary files go in the repo's gitignored `tmp/`, never `/tmp` (Overtoad directive, 2026-10-26), and the
+  Overtoad's rulings on it are applied.** `/tmp/` is ignored, the lock-regeneration recipes use `tmp/`, and
   `AGENTS.md` § Temporary files carries the rule and the rulings, retention included. `juniper-check-doc-links`
   passes `--exclude tmp` in the pre-commit hook and in CI, and `.dockerignore` lists `tmp/`; nothing keeps pytest
-  out of it, and counting scripts are to choose their scope as to `tmp/` deliberately (the owner's revised
+  out of it, and counting scripts are to choose their scope as to `tmp/` deliberately (the Overtoad's revised
   ruling).
 - **The dependency locks moved** (`requirements.lock`, and `requirements-cpu.lock`, which the image installs),
   through the Dependabot groups merged since 0.12.0 (#717, #720, #726). The notable runtime pins:
@@ -595,7 +595,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - **The final evaluation reports accuracy** (`eval_metrics.final.accuracy`; juniper-ml APD-ML-002,
-  owner ruling 2026-10-26). `eval_metrics.final` (cascor#582) scored the finished model with F1,
+  Overtoad ruling 2026-10-26). `eval_metrics.final` (cascor#582) scored the finished model with F1,
   precision, recall and ROC-AUC but no accuracy, so juniper-ml's experiment reader asked for a
   `test_accuracy` that cascor never computed. The block now carries `accuracy`, computed from the
   same forward pass and on the same rows as its siblings: the rows `final.split` names, `test` when
@@ -703,7 +703,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `opentelemetry-api` 1.45.0), `starlette` 1.6.0 -> 1.7.0, `uvicorn` 0.52.4 -> 0.54.0, `sentry-sdk`
   2.68.1 -> 2.71.0, `websockets` 17.1 -> 17.2 and `filelock` 3.32.5 -> 4.0.11, plus 14 smaller
   moves. The wheel's declared requirements are unchanged apart from this release's two floors.
-- **The BLAS thread policy now caps at 2 by default: owner decision D1, ruled 2026-09-23**
+- **The BLAS thread policy now caps at 2 by default: Overtoad decision D1, ruled 2026-09-23**
   (`src/parallelism/blas_threads.py`). `configure_blas_threads()` used to do nothing unless
   `JUNIPER_CASCOR_BLAS_THREADS` was set. It now sets `OMP_NUM_THREADS` / `MKL_NUM_THREADS` /
   `OPENBLAS_NUM_THREADS` to **2** wherever they are unset, on both entry points.
@@ -776,7 +776,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Mutation-checked against 14 deliberate breaks (juniper-ml
   `util/ad-hoc/2026-09-22_p04_harness_mutation_check.py`): all fail it, while the unmutated tree
   and P2.1 implemented as prescribed both pass. Test-only; no runtime change.
-- **An ADVISORY exact-match check on the candidate micro-benchmark's `epochs_completed`** (owner
+- **An ADVISORY exact-match check on the candidate micro-benchmark's `epochs_completed`** (Overtoad
   decision D6, ruled 2026-09-22, juniper-ml
   `notes/JUNIPER_2026-09-11_JUNIPER-ECOSYSTEM_PERF-LANE-SIX-OWNER-DECISIONS-RULED.md` §5.4: build it
   non-blocking, count how often it fires on real cascor PRs, then decide whether it blocks).
@@ -837,7 +837,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   **Start fresh** on, every edit was dropped. juniper-ml's A-N2 run observed `max_iterations` /
   `output_epochs` / `candidate_epochs` / `max_hidden_units` at 8 / 60 / 40 / 32 before the restart
   and 1000000 / 10000 / 400 / 10 after it.
-  - Following the owner's ruling of 2026-09-24 ("apply the edits after the fresh rebuild"), the
+  - Following the Overtoad's ruling of 2026-09-24 ("apply the edits after the fresh rebuild"), the
     reset now captures the discarded network's params: `get_training_params()` less the derived
     `epochs_max` and the lifecycle's `auto_snap_*`.
   - `start_training` re-applies them to the rebuilt network through `_apply_params_unlocked`, so
@@ -858,7 +858,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     left staged for a start-fresh to use.
   - juniper-ml's A-N2 run hit this with `equities` (15 features) over the 2x2 network
     `checkerboard` left behind.
-  - Following the owner's ruling of 2026-09-24, `_reload_dataset` takes a `refuse_wider_than`
+  - Following the Overtoad's ruling of 2026-09-24, `_reload_dataset` takes a `refuse_wider_than`
     bound, and `start_training` passes the continued network's dims. No bound is passed for a
     start-fresh, or when there is no network. A dataset wider on either axis is refused after the
     fetch and before anything is bound. The loaded data, its identity, its annotations and the
@@ -873,7 +873,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `src/tests/unit/api/test_start_refuses_wider_staged_dataset.py`, mutation-checked at five
     sites.
 - **`src/profiling/logging_utils.py` raised `TypeError` at every emit, and logged at levels cascor
-  does not have** (cascor#573, roadmap P1.4 — the "fix the levels" half of owner decision 8). All
+  does not have** (cascor#573, roadmap P1.4 — the "fix the levels" half of Overtoad decision 8). All
   five `logger.log(level, msg)` sites used the stdlib signature, but every cascor call site binds the
   `Logger` CLASS, so the inherited instance method received `level` as `self` and raised
   `TypeError: Logger.log() missing 1 required positional argument: 'msg'`. The module's tests never
@@ -901,7 +901,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   training on** (APD-CASCOR-013). It was written at one line and never cleared -- not on a new
   run, not on reset -- so a run started on inline tensors reported the last staged run's
   shortfall and its `dataset_id`. RULED: the field is named for what THIS run trains on; the
-  owner settled how on 2026-09-23 -- **it follows the loaded data**. The annotation is bound
+  Overtoad settled how on 2026-09-23 -- **it follows the loaded data**. The annotation is bound
   together with the tensors it describes (in `start_training` for tensors passed as `X`, in
   `_reload_dataset` for a fetch), so a run on inline data reports `null`, a run on a new fetch
   reports that fetch's, and a run on data RETAINED from an earlier fetch -- a plain Stop -> Start,
@@ -1123,7 +1123,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   no cascor baseline file had ever held a timing figure: all 22 `baseline_*.json` files that ever
   existed (21 tracked until commit `971d35a` deleted them, plus the live gitignored one; 312
   entries) carry parameters and memory keys only, while `save_baseline`'s docstring promised
-  `mean_ms` from the start. **Report-only by owner decision** (P2 item 2.5, 2026-09-07): nothing
+  `mean_ms` from the start. **Report-only by Overtoad decision** (P2 item 2.5, 2026-09-07): nothing
   asserts on a timing, and the memory gate and the two fixed `*_TIME_THRESHOLD_S` ceilings are
   unchanged. `.benchmarks/` is now gitignored — the reference is cut with `--benchmark-storage`
   pointed outside every checkout, because a `git worktree remove` deletes ignored files. Helpers in
@@ -1303,7 +1303,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   bytes. So `validate` matches exactly when the strings are equal. `surrogateescape` raises on
   `"\ud800"` and maps `"\xe9"` and `"\udcc3\udca9"` to the same bytes. juniper-ml's
   `tests/test_service_fork_drift.py` markers (`blank-api-key-filter`,
-  `nonshortcircuit-key-compare`) are unchanged. Owner ruling "Fix everywhere now" (2026-09-24),
+  `nonshortcircuit-key-compare`) are unchanged. The Overtoad ruling "Fix everywhere now" (2026-09-24),
   landing the same compare in juniper-service-core and juniper-data.
   Pinned by 62 new tests in `src/tests/unit/api/test_api_security.py`. They cover the non-ASCII
   mismatch, a 7x7 equality matrix built to separate the candidate encodings, and the
@@ -1333,7 +1333,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `AGENTS.md`: the workflow-table rows for both checks, the CodeQL section, and the Sequence
     Safety section's "Everything is **ADVISORY**". That section now says a green Quality Gate does
     not mean mergeable (`sequence-safety.yml` is standalone, and a `needs:` entry can only name a
-    job in the same workflow), gives the ruleset query, and says the owner labels green the
+    job in the same workflow), gives the ruleset query, and says the Overtoad labels green the
     required context while only an `Allow-Symbol-Loss:` / `Allow-Docs-Rewrite:` trailer waives a
     finding in the post-merge `main-verify.yml`.
   - `docs/ci_cd/MANUAL.md` and `docs/ci_cd/REFERENCE.md`, which cited a Sequence Safety
@@ -1883,7 +1883,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
-- **SEC-F22 / D2 — startup bind-guard (`enforce_bind_attestation_guard`), two-flag attestation.** At application startup (in the `lifespan`, before uvicorn binds the socket or any background thread is spawned), cascor **refuses to start** — fail-closed, with a CRITICAL log, **no warning-only mode** — when `JUNIPER_CASCOR_HOST` names a **non-loopback** interface (e.g. `0.0.0.0`) unless **at least one** of two new boolean settings (both default **false**) is true: `loopback_publish_attested` (env `JUNIPER_CASCOR_LOOPBACK_PUBLISH_ATTESTED` — the port is reachable only via a loopback-only host publish, the containerized default) or `auth_proxy_attested` (env `JUNIPER_CASCOR_AUTH_PROXY_ATTESTED` — a fronting authenticating reverse proxy terminates access). The allow path logs a WARNING naming which attestation permitted the bind. Loopback binds (`127.0.0.0/8`, `::1`, `localhost`, IPv4-mapped-IPv6 loopback) always start. cascor's control/worker WebSocket surface has **no app-layer authentication of its own** — its only effective control in the containerized stack is the loopback network boundary — so this turns that load-bearing precondition into an enforced invariant and closes the silent `JUNIPER_CASCOR_HOST=0.0.0.0` footgun. The scheme is **identical across canopy / cascor / juniper-deploy** and replaces the earlier single-flag bind attestation (which never shipped in a release). **Deploy roll-out is owner-gated (Phase 1):** the container binds `0.0.0.0` behind a loopback host-publish, so enabling this in `juniper-deploy` requires setting `JUNIPER_CASCOR_LOOPBACK_PUBLISH_ATTESTED=true` there. Design of record: juniper-ml [`notes/JUNIPER_CANOPY_CONTROL_SURFACE_AUTH_AND_NAT_DESIGN_2026-07-03.md`](https://github.com/pcalnon/juniper-ml/blob/main/notes/JUNIPER_CANOPY_CONTROL_SURFACE_AUTH_AND_NAT_DESIGN_2026-07-03.md) §4 Option A / §8 D2; local note `notes/JUNIPER_CASCOR_CONTROL_SURFACE_AUTH_AND_NAT_SECURITY_NOTE_2026-07-04.md`. Tests: `src/tests/unit/api/test_bind_guard.py`.
+- **SEC-F22 / D2 — startup bind-guard (`enforce_bind_attestation_guard`), two-flag attestation.** At application startup (in the `lifespan`, before uvicorn binds the socket or any background thread is spawned), cascor **refuses to start** — fail-closed, with a CRITICAL log, **no warning-only mode** — when `JUNIPER_CASCOR_HOST` names a **non-loopback** interface (e.g. `0.0.0.0`) unless **at least one** of two new boolean settings (both default **false**) is true: `loopback_publish_attested` (env `JUNIPER_CASCOR_LOOPBACK_PUBLISH_ATTESTED` — the port is reachable only via a loopback-only host publish, the containerized default) or `auth_proxy_attested` (env `JUNIPER_CASCOR_AUTH_PROXY_ATTESTED` — a fronting authenticating reverse proxy terminates access). The allow path logs a WARNING naming which attestation permitted the bind. Loopback binds (`127.0.0.0/8`, `::1`, `localhost`, IPv4-mapped-IPv6 loopback) always start. cascor's control/worker WebSocket surface has **no app-layer authentication of its own** — its only effective control in the containerized stack is the loopback network boundary — so this turns that load-bearing precondition into an enforced invariant and closes the silent `JUNIPER_CASCOR_HOST=0.0.0.0` footgun. The scheme is **identical across canopy / cascor / juniper-deploy** and replaces the earlier single-flag bind attestation (which never shipped in a release). **Deploy roll-out is Overtoad-gated (Phase 1):** the container binds `0.0.0.0` behind a loopback host-publish, so enabling this in `juniper-deploy` requires setting `JUNIPER_CASCOR_LOOPBACK_PUBLISH_ATTESTED=true` there. Design of record: juniper-ml [`notes/JUNIPER_CANOPY_CONTROL_SURFACE_AUTH_AND_NAT_DESIGN_2026-07-03.md`](https://github.com/pcalnon/juniper-ml/blob/main/notes/JUNIPER_CANOPY_CONTROL_SURFACE_AUTH_AND_NAT_DESIGN_2026-07-03.md) §4 Option A / §8 D2; local note `notes/JUNIPER_CASCOR_CONTROL_SURFACE_AUTH_AND_NAT_SECURITY_NOTE_2026-07-04.md`. Tests: `src/tests/unit/api/test_bind_guard.py`.
 
 - **SEC-F19 / D4 — WebSocket connection caps (stack-global + per-identity).** The `WebSocketManager` gains a stack-absolute **GLOBAL** connection cap (`ws_max_connections_global`, env `JUNIPER_CASCOR_WS_MAX_CONNECTIONS_GLOBAL`, default 200) spanning **all** WS endpoints — `/ws/training` (via `connect`/`connect_pending`) and `/ws/control` + `/ws/v1/workers` (via the new `try_admit`/`release_admission` admission gate) draw from one counter — plus a **per-identity** cap (`ws_max_connections_per_identity`, env `JUNIPER_CASCOR_WS_MAX_CONNECTIONS_PER_IDENTITY`, default 5) enforced on `/ws/control`, keyed on a non-reversible SHA-256 digest of the caller's `X-API-Key` token (`ws_identity_key`). Over-cap connections are rejected/closed with the existing `1013` close code. These are the DoS-dampening controls that **survive Docker NAT**, where the existing per-IP cap (`ws_max_connections_per_ip`, unchanged) collapses to one shared bridge-gateway bucket (HO-3 self-DoS); the per-IP cap is now documented **inert-behind-NAT** (DoS-dampening, not authentication). Per-identity keying on `/ws/v1/workers` is intentionally **global-only** (a worker fleet shares one token and the unique worker_id is only known post-registration — design §8 OQ-2; a documented follow-up). Design of record §5 Option B / §8 D4. Tests: `src/tests/unit/api/test_ws_connection_caps.py`.
 

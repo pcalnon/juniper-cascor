@@ -49,7 +49,7 @@ import sys
 # different thread pools by accident of which file started the process. Measured cost: the capped
 # path's candidate phase ran 1.52x the uncapped path's on identical data and initialisation, with
 # 1.30x attributable to the cap (juniper-cascor#531). The default then became a no-op, matching the
-# service. Since 2026-09-23 (owner decision D1) both paths cap at 2 wherever the variables are unset:
+# service. Since 2026-09-23 (Overtoad decision D1) both paths cap at 2 wherever the variables are unset:
 # #531's penalty did not reproduce on current code and the cap was measured not to move the epoch
 # count. `JUNIPER_CASCOR_BLAS_THREADS` sets another width or opts out (0 / off / none).
 #

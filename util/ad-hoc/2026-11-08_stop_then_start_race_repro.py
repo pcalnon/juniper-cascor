@@ -6,7 +6,7 @@ Sub-Project: ad-hoc tooling
 Author: Paul Calnon
 Created: 2026-11-08
 Status: ad-hoc — investigation: evidence for a reported race, which gets its own fix in its own
-        PR by the owner's ruling 17 (2026-11-09, recorded in the record-update PR), "cascor:
+        PR by the Overtoad's ruling 17 (2026-11-09, recorded in the record-update PR), "cascor:
         stop-then-start"
 Retire when: that PR has merged
 Related: juniper-ml notes/JUNIPER_2026-11-06_JUNIPER-ECOSYSTEM_CURSOR-FLOOD-4-DISPOSITION.md §8
@@ -28,7 +28,7 @@ Unlike juniper-service-core, where the new run starts on its own thread at once 
 owns the lifecycle when the old fit returns (juniper-ml#2531's thread check; the published 0.7.2
 predates it, and there the old fit's return still marks the new run COMPLETED while it trains),
 cascor's queue keeps the new run from starting until the old fit returns. The lifecycle-ownership
-guard therefore does not change this race: the stale fit is still the owner when it settles.
+guard therefore does not change this race: the stale fit is still the Overtoad when it settles.
 ``swap_dataset_live`` has a variant: when its 10 s join on the old future times out, it clears
 ``_stop_event`` before submitting the swapped run, which un-stops the old fit the same way.
 

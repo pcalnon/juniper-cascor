@@ -444,7 +444,7 @@ class _PreSwapSnapshot:  # noqa: D101 - frozen container, not part of the public
         # ``dataset_shortfall`` naming the ABANDONED dataset while the restored one
         # is loaded.
         self.dataset_shortfall = dataset_shortfall
-        # ...and so does which partitions that record describes (owner ruling
+        # ...and so does which partitions that record describes (Overtoad ruling
         # 2026-09-24). The swap's fetch rewrites the set too; left un-restored, a
         # later inline start would decide what to keep from the abandoned fetch's
         # partitions while the restored dataset's are loaded.
@@ -1958,7 +1958,7 @@ class TrainingLifecycleManager:
         and no code path consults it), while the limits that actually gate training are the
         granular meta-parameters — ``output_epochs`` (per output-training pass),
         ``candidate_epochs`` (per candidate-pool pass), ``max_iterations`` (cascade growth
-        iterations) and ``max_hidden_units`` (growth capacity). Per the owner decision
+        iterations) and ``max_hidden_units`` (growth capacity). Per the Overtoad decision
         (training-runtime-defects plan §12 Q1), ``epochs_max`` is now DERIVED from those
         limits instead of being an independently settable value that can contradict or
         shadow them:
@@ -2636,7 +2636,7 @@ class TrainingLifecycleManager:
         * otherwise -- INLINE tensors. Each supplied partition replaces its slot, an
           omitted ``X_val`` / ``X_test`` is retain-on-omit (cascor#582), and the
           record moves partition by partition (``_rebind_dataset_record_locked``,
-          owner ruling 2026-09-24). Inline tensors carry no annotation, so
+          Overtoad ruling 2026-09-24). Inline tensors carry no annotation, so
           ``dataset_shortfall`` without ``as_fetch`` raises ``ValueError``: an
           annotation describes a fetch, and anywhere else it would be a claim about
           data nobody fetched.
@@ -2752,7 +2752,7 @@ class TrainingLifecycleManager:
                 :meth:`_start_fresh_reset_locked`) so training begins with a
                 vanilla, untrained network created from the dataset dims.
                 The discarded network's applied training params are carried
-                onto the rebuilt one (F2, owner ruling 2026-09-24), so an edit
+                onto the rebuilt one (F2, Overtoad ruling 2026-09-24), so an edit
                 applied just before a start-fresh survives it; body params
                 still apply on top. On-disk snapshot artifacts are never touched. When False
                 (default) the current model and its metrics/history are
@@ -2765,7 +2765,7 @@ class TrainingLifecycleManager:
                 UNKNOWN, which is the honest reading of raw inline tensors. For
                 inline tensors it is adopted only once no partition of the dataset
                 loaded before is left: while a fetch's val or test is still loaded
-                -- they are retain-on-omit -- that fetch's record stands (owner
+                -- they are retain-on-omit -- that fetch's record stands (Overtoad
                 ruling 2026-09-24, see ``_rebind_dataset_record_locked``). With
                 ``as_fetch`` it is adopted outright. A pending staged config still
                 wins, exactly as it wins over ``X`` itself.
@@ -2779,7 +2779,7 @@ class TrainingLifecycleManager:
                 once a pending staged fetch has had its turn, and only if that fetch
                 neither replaced it nor refused the start; the staged fetch logs its
                 own.
-                The SAME lifecycle as ``dataset_config`` (owner rulings 2026-09-23,
+                The SAME lifecycle as ``dataset_config`` (Overtoad rulings 2026-09-23,
                 "follow the loaded data", and 2026-09-24, "keep while fetched
                 splits stay"): both are bound with the fetch, both are replaced by a
                 staged fetch, and both survive a start that retains the data.
@@ -2806,7 +2806,7 @@ class TrainingLifecycleManager:
             self._reject_start_for_state_locked()
 
             # APD-CASCOR-013. The ruling: the field "is named for what THIS run
-            # trained on". The owner settled how, 2026-09-23: FOLLOW THE LOADED
+            # trained on". The Overtoad settled how, 2026-09-23: FOLLOW THE LOADED
             # DATA. The annotation is bound together with the tensors it describes
             # -- here for tensors passed in as ``X``, in ``_reload_dataset`` for a
             # fetch -- and left alone when a start retains the data, so a run on
@@ -2846,7 +2846,7 @@ class TrainingLifecycleManager:
             # data (APD-CASCOR-013), replacing any a caller handed in with inline
             # tensors, because the staged data is what this run trains on.
             #
-            # F1 (owner ruling 2026-09-24): a start that CONTINUES the current network
+            # F1 (Overtoad ruling 2026-09-24): a start that CONTINUES the current network
             # cannot widen it (the pad below refuses a wider dataset, and only
             # swap_dataset_live grows one). That refusal used to fire only AFTER this
             # reload had bound the new data and cleared the staged slot, so every
@@ -2908,7 +2908,7 @@ class TrainingLifecycleManager:
                 )
                 self._create_network_locked(**create_cfg)
 
-            # F2 (owner ruling 2026-09-24): start-fresh discards the model, not the
+            # F2 (Overtoad ruling 2026-09-24): start-fresh discards the model, not the
             # operator's params. create-on-start builds from ``create_simple_config``'s
             # defaults, so without this every param applied before a start-fresh --
             # the restart modal applies its edits, THEN restarts -- was silently
@@ -3362,13 +3362,13 @@ class TrainingLifecycleManager:
         self.state_machine.handle_command(Command.RESET)
         self.monitor.clear_metrics()
         # APD-CASCOR-013: reset does NOT clear ``_dataset_shortfall``, and that is
-        # deliberate (owner ruling 2026-09-23, "follow the loaded data"). Reset
+        # deliberate (Overtoad ruling 2026-09-23, "follow the loaded data"). Reset
         # discards the run's metrics and counters, never its data: ``_train_x``
         # stays bound, ``current_dataset`` keeps naming it, and the next plain
         # start trains on it. The annotation describes that data, so clearing it
         # here would make that run report a partial dataset as complete. For the
         # same reason ``_described_partitions`` is left alone: every partition
-        # the record describes is still loaded (owner ruling 2026-09-24).
+        # the record describes is still loaded (Overtoad ruling 2026-09-24).
         self.training_state.update_state(
             status="Stopped",
             phase="Idle",
@@ -3473,7 +3473,7 @@ class TrainingLifecycleManager:
         start-fresh discards the working model, not the operator's saved
         snapshots.
 
-        **F2 (owner ruling 2026-09-24): nor the operator's applied params.** The
+        **F2 (Overtoad ruling 2026-09-24): nor the operator's applied params.** The
         discarded network's training params (``get_training_params()`` less
         ``_START_FRESH_UNCARRIED_PARAMS``) are captured before the discard and
         RETURNED, and ``start_training`` re-applies them to the rebuilt network.
@@ -3505,7 +3505,7 @@ class TrainingLifecycleManager:
         # ``_test_x``, ``_current_dataset_config``, ``_dataset_shortfall`` and
         # ``_described_partitions`` are left exactly as they are. A start-fresh
         # replaces the model, never the data, and the run it starts trains on --
-        # and must still be annotated for -- whatever is loaded (owner rulings
+        # and must still be annotated for -- whatever is loaded (Overtoad rulings
         # 2026-09-23 "follow the loaded data" and 2026-09-24 "keep while fetched
         # splits stay"). Clearing the record here would report a partial dataset
         # as complete; forgetting ``_described_partitions`` would let the next
@@ -3566,10 +3566,10 @@ class TrainingLifecycleManager:
             # -- the one this run trains on, whether it fetched it or retained it
             # -- or None when that dataset was delivered in full or never came from
             # juniper-data (inline tensors). It moves with the data, exactly as
-            # ``current_dataset`` below does (APD-CASCOR-013; owner ruling
+            # ``current_dataset`` below does (APD-CASCOR-013; Overtoad ruling
             # 2026-09-23), and stays while ANY partition of that data is still
             # loaded -- inline tensors that replace only the train split leave a
-            # fetch's val and test, and its annotation, in place (owner ruling
+            # fetch's val and test, and its annotation, in place (Overtoad ruling
             # 2026-09-24). Additive field.
             #
             # Canopy needs this to annotate progress, metrics and results, which
@@ -4377,7 +4377,7 @@ class TrainingLifecycleManager:
         # APD-CASCOR-013: the swap's fetch rewrote the annotation before the step
         # that refused it; restore the one describing the data restored above...
         self._dataset_shortfall = pre.dataset_shortfall
-        # ...and which of the restored partitions it describes (owner ruling
+        # ...and which of the restored partitions it describes (Overtoad ruling
         # 2026-09-24), which that fetch rewrote too.
         self._described_partitions = pre.described_partitions
 
@@ -4834,7 +4834,7 @@ class TrainingLifecycleManager:
                 # unconditional ``{**params, "allow_truncation": True}`` -- the
                 # literal key LAST in the merge, so it silently replaced a
                 # caller-supplied ``allow_truncation: False``. That made the
-                # owner's third option ("fail the data load completely",
+                # Overtoad's third option ("fail the data load completely",
                 # expressed by sending neither parameter) UNREACHABLE on any
                 # deployment where the flag was on: "send neither" became
                 # "accept". The caller is the more specific authority here, so an
@@ -5267,7 +5267,7 @@ class TrainingLifecycleManager:
         # and this line can raise, so the two cannot be torn apart.
         self._dataset_shortfall = dataset_shortfall
         # A fetch replaces every partition, so the record describes exactly the
-        # ones this artifact filled (owner ruling 2026-09-24): an inline start that
+        # ones this artifact filled (Overtoad ruling 2026-09-24): an inline start that
         # later replaces some of them leaves the record standing on the rest. Under
         # §6.1 rule 2 the val slot holds the promoted X_test, which is this fetch's
         # data too.
