@@ -10,7 +10,7 @@ Status: ad-hoc — investigation (verifies src/tests/unit/api/test_lifecycle_pau
 Retire when: the PR that settles a paused completion in one FSM transition has merged and
              nobody needs to re-run the evidence
 Related: juniper-ml notes/JUNIPER_2026-11-06_JUNIPER-ECOSYSTEM_CURSOR-FLOOD-4-DISPOSITION.md §8
-         ruling 11 (owner ruling "Fix all four now", 2026-11-08); §4 has service-core's copy
+         ruling 11 (Overtoad ruling "Fix all four now", 2026-11-08); §4 has service-core's copy
 
 M00 swaps in the base ref's ``manager.py`` and ``state_machine.py`` (the whole fix reverted), so
 the detector must fail exactly as it did before the fix. Each other mutant breaks one property

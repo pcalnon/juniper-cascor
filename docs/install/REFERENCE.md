@@ -163,7 +163,7 @@ Rules the helper actually applies (`src/tests/unit/test_blas_thread_policy.py`):
 
 The epoch-count channel is real. A training thread left at the runtime default (16 on a 16-core host) for the whole run moved a late `epochs_completed`. A cap of 2 reproduced the previous default's per-candidate counts, the winning candidate of every phase, and the final loss.
 
-Owner decision D1 (2026-09-23) put that cap on both entry points so the width is no longer an accident of which file started the process. The constructor's `torch.set_num_threads` pin binds only the constructing thread; the service trains on another thread.
+The Overtoad decision D1 (2026-09-23) put that cap on both entry points so the width is no longer an accident of which file started the process. The constructor's `torch.set_num_threads` pin binds only the constructing thread; the service trains on another thread.
 
 This is separate from the per-worker oversubscription pin. Each candidate worker still calls `torch.set_num_threads(max(1, worker_thread_count))` (`worker_thread_count` default 1). The parent calls `torch.set_num_threads(max(2, worker_thread_count * 2))` in `cascade_correlation.py`. Those run on both paths and do not read these environment variables.
 

@@ -28,7 +28,7 @@ training:
     # `max_epochs -> output_epochs`, so without both keys the two paths silently diverge and the
     # service arm runs ~50x the work this file asks for.
     #
-    # Set to 200/200 on 2026-09-07 (owner decision, juniper-ml P2 item 0.5). This file describes
+    # Set to 200/200 on 2026-09-07 (Overtoad decision, juniper-ml P2 item 0.5). This file describes
     # itself as "small budgets"; the split contradicted that, and unlike `spiral-baseline.yaml`
     # -- whose split is a documented service-only reference budget -- there was no rationale for
     # it here. The same defect survived a month in `spiral-smoke.yaml` before cascor#618.

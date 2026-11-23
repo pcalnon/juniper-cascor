@@ -15,7 +15,7 @@ thread behind it. A start answered 409 ("Cannot start training while paused"), a
 the FSM to STARTED (still no thread), and every later start answered 409 ("Training already in
 progress") until a stop or reset. This is the "paused-fit wedge". juniper-ml's flood-4 record,
 ``notes/JUNIPER_2026-11-06_JUNIPER-ECOSYSTEM_CURSOR-FLOOD-4-DISPOSITION.md``, lists this cascor
-copy under §8 ruling 11 (owner ruling "Fix all four now", 2026-11-08); its §4 records the same
+copy under §8 ruling 11 (Overtoad ruling "Fix all four now", 2026-11-08); its §4 records the same
 wedge in juniper-service-core, whose lifecycle mirrors this one.
 
 The run now settles COMPLETED exactly as an unpaused run does: ``mark_completed`` accepts PAUSED

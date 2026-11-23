@@ -310,7 +310,7 @@ python -m pytest tests/performance/test_baselines.py tests/performance/test_micr
     --run-performance --benchmark-storage="$STORE" --benchmark-autosave
 ```
 
-Compare a later run against it. **This is a report, never a gate** — owner decision 2026-09-07,
+Compare a later run against it. **This is a report, never a gate** — Overtoad decision 2026-09-07,
 juniper-ml P2 item 2.5: the reference host's quiet-run noise band is 20.5% and six competing
 processes cost +19.9%, so no percentage tolerance can tell a regression from an ordinary loaded
 host. Do **not** add `--benchmark-compare-fail`.
