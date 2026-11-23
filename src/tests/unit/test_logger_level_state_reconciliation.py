@@ -122,7 +122,7 @@ class TestSetLevelMovesBothPaths(unittest.TestCase):
                     self.assertEqual(
                         guard,
                         emit,
-                        f"configured={configured}: guard says {guard} for {name} but the emit " f"filter says {emit}. The two configured-level states have diverged again.",
+                        f"configured={configured}: guard says {guard} for {name} but the emit filter says {emit}. The two configured-level states have diverged again.",
                     )
 
     def test_set_level_actually_changes_the_decision(self):
@@ -170,7 +170,7 @@ class TestEmitPathReadsLogLevel(unittest.TestCase):
                     self.assertEqual(
                         guard,
                         emitted,
-                        f"configured={configured}: isEnabledFor({name})={guard} but the real emit " f"path {'emitted' if emitted else 'discarded'} the record. set_level is a " f"no-op for emission again.",
+                        f"configured={configured}: isEnabledFor({name})={guard} but the real emit path {'emitted' if emitted else 'discarded'} the record. set_level is a no-op for emission again.",
                     )
 
     def test_the_private_module_is_not_stubbed(self):
@@ -183,7 +183,7 @@ class TestEmitPathReadsLogLevel(unittest.TestCase):
         self.assertIn(
             "__p11_liveness__",
             buf.getvalue(),
-            "The privately-imported logger emitted nothing at TRACE. The emit path is stubbed or " "broken, so TestEmitPathReadsLogLevel proves nothing.",
+            "The privately-imported logger emitted nothing at TRACE. The emit path is stubbed or broken, so TestEmitPathReadsLogLevel proves nothing.",
         )
 
 
@@ -204,7 +204,7 @@ class TestRetiredLevelStateIsInert(unittest.TestCase):
                 self.assertEqual(
                     before,
                     after,
-                    "Mutating _level_logger_name / _level_logger_config moved an emission decision. " "They have been wired back into the filter -- that is the two-state split P1.1 " "removed.",
+                    "Mutating _level_logger_name / _level_logger_config moved an emission decision. They have been wired back into the filter -- that is the two-state split P1.1 removed.",
                 )
 
                 buf = io.StringIO()
@@ -213,7 +213,7 @@ class TestRetiredLevelStateIsInert(unittest.TestCase):
                 self.assertNotIn(
                     "__p11_retired__",
                     buf.getvalue(),
-                    "A TRACE record emitted while _log_level is INFO, because the retired state was " "consulted. The emit path must read _log_level and nothing else.",
+                    "A TRACE record emitted while _log_level is INFO, because the retired state was consulted. The emit path must read _log_level and nothing else.",
                 )
             finally:
                 log._level_logger_name, log._level_logger_config = saved_name, saved_config
@@ -226,7 +226,7 @@ class TestIsValidLevel(unittest.TestCase):
         for bad in ("BANANA", None, "", 8, 999, -1, object()):
             self.assertFalse(
                 Logger.is_valid_level(bad),
-                f"is_valid_level({bad!r}) should be False; the repo's only validity predicate " f"cannot say no, and P4-G4 (fail loudly on an unknown level) needs it to.",
+                f"is_valid_level({bad!r}) should be False; the repo's only validity predicate cannot say no, and P4-G4 (fail loudly on an unknown level) needs it to.",
             )
 
     def test_accepts_valid(self):
@@ -285,7 +285,7 @@ class TestGuardResolvesThroughTheSharedMemo(unittest.TestCase):
             self.assertIn(
                 logger_cls.get_level(),
                 logger_cls._level_number_cache,
-                "isEnabledFor must resolve the configured level through _resolve_level_number -- " "the same memo _filter_by_level uses. An empty cache here means the guard is back " "on the unmemoised getLevelNumber path, where every guarded call site in the repo " "pays ~4x to re-derive a constant. Nothing else in the suite detects that.",
+                "isEnabledFor must resolve the configured level through _resolve_level_number -- the same memo _filter_by_level uses. An empty cache here means the guard is back on the unmemoised getLevelNumber path, where every guarded call site in the repo pays ~4x to re-derive a constant. Nothing else in the suite detects that.",
             )
 
     def test_guard_and_filter_share_one_cache(self):
@@ -326,7 +326,7 @@ class TestGuardResolvesThroughTheSharedMemo(unittest.TestCase):
                     self.assertEqual(
                         answer,
                         expected,
-                        f"isEnabledFor({probe_num}) with configured={configured_name} " f"({configured_num}) should be {expected}",
+                        f"isEnabledFor({probe_num}) with configured={configured_name} ({configured_num}) should be {expected}",
                     )
                     seen.add(answer)
         self.assertEqual(seen, {True, False}, "vacuous: the sweep produced only one answer")

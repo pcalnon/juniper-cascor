@@ -644,7 +644,7 @@ def _resolve_log_level_env() -> str:
         import warnings as _cfg_05_warnings
 
         _cfg_05_warnings.warn(
-            "CASCOR_LOG_LEVEL is deprecated; set JUNIPER_CASCOR_LOG_LEVEL " "instead. CASCOR_LOG_LEVEL will be removed in a future release. " "Until then, the legacy variable continues to work but the " "prefixed form takes precedence whenever both are set.",
+            "CASCOR_LOG_LEVEL is deprecated; set JUNIPER_CASCOR_LOG_LEVEL instead. CASCOR_LOG_LEVEL will be removed in a future release. Until then, the legacy variable continues to work but the prefixed form takes precedence whenever both are set.",
             DeprecationWarning,
             stacklevel=2,
         )
@@ -656,7 +656,7 @@ def _resolve_log_level_env() -> str:
         import sys as _cfg_05_sys
 
         print(
-            "[juniper-cascor] CFG-05 WARNING: both JUNIPER_CASCOR_LOG_LEVEL " "and CASCOR_LOG_LEVEL are set to different values; " "JUNIPER_CASCOR_LOG_LEVEL takes precedence. " "Unset CASCOR_LOG_LEVEL to silence this message.",
+            "[juniper-cascor] CFG-05 WARNING: both JUNIPER_CASCOR_LOG_LEVEL and CASCOR_LOG_LEVEL are set to different values; JUNIPER_CASCOR_LOG_LEVEL takes precedence. Unset CASCOR_LOG_LEVEL to silence this message.",
             file=_cfg_05_sys.stderr,
         )
     return prefixed
