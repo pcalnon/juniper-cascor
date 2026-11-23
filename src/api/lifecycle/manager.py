@@ -4494,9 +4494,7 @@ class TrainingLifecycleManager:
         from api.settings import Settings
 
         if not Settings().allow_missing_validation_split:
-            raise RuntimeError(
-                "juniper-data artifact has no validation split (X_val/y_val); only X_test is present. Proceeding would promote X_test to the in-loop signal, so early stopping would select on the same rows the final score is reported from. Refusing by default (design §6.4: a headless run must never take this silently). Either regenerate the dataset with a juniper-data version that emits X_val, or set JUNIPER_CASCOR_ALLOW_MISSING_VALIDATION_SPLIT=true to proceed with a recorded warning."
-            )
+            raise RuntimeError("juniper-data artifact has no validation split (X_val/y_val); only X_test is present. Proceeding would promote X_test to the in-loop signal, so early stopping would select on the same rows the final score is reported from. Refusing by default (design §6.4: a headless run must never take this silently). Either regenerate the dataset with a juniper-data version that emits X_val, or set JUNIPER_CASCOR_ALLOW_MISSING_VALIDATION_SPLIT=true to proceed with a recorded warning.")
 
         warning = "No validation split in the dataset artifact: X_test was promoted to the in-loop signal, so early " "stopping selected on the same rows the reported metrics come from. Those metrics are SELECTED-ON, " "not held-out, and are not comparable to a run with a real X_val."
         logging.getLogger(__name__).warning("§6.1 rule 2 override taken — %s", warning)
