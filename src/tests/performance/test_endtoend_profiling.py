@@ -636,7 +636,7 @@ class TestConvergenceVsPerformanceTradeoffs:
         print(f"  {'Config':<12} {'Pool':>5} {'CEp':>5} {'OEp':>5} {'Pat':>5} {'Time(ms)':>10} {'Acc':>8} {'Units':>6}")
         print(f"  {'-'*12} {'-'*5} {'-'*5} {'-'*5} {'-'*5} {'-'*10} {'-'*8} {'-'*6}")
         for r in results:
-            print(f"  {r['label']:<12} {r['pool_size']:>5} {r['cand_epochs']:>5} " f"{r['out_epochs']:>5} {r['patience']:>5} {r['elapsed_ms']:>10.1f} " f"{r['accuracy']:>8.4f} {r['hidden_units']:>6}")
+            print(f"  {r['label']:<12} {r['pool_size']:>5} {r['cand_epochs']:>5} {r['out_epochs']:>5} {r['patience']:>5} {r['elapsed_ms']:>10.1f} {r['accuracy']:>8.4f} {r['hidden_units']:>6}")
 
         # Verify all configs produced valid results
         for r in results:

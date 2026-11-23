@@ -198,12 +198,12 @@ class ExperimentYamlSettingsSource(PydanticBaseSettingsSource):
 
         forbidden = sorted(set(service) & _EXPERIMENT_SERVICE_FORBIDDEN_KEYS)
         if forbidden:
-            raise ExperimentConfigError(f"experiment config {self._yaml_file!r}: service key(s) {', '.join(forbidden)} rejected (SS5.6 rule 6) -- " "host/port/juniper_data_url are launcher-owned (CLI flags / process env), and eval_metrics_enabled belongs in runtime: (process env), not service:")
+            raise ExperimentConfigError(f"experiment config {self._yaml_file!r}: service key(s) {', '.join(forbidden)} rejected (SS5.6 rule 6) -- host/port/juniper_data_url are launcher-owned (CLI flags / process env), and eval_metrics_enabled belongs in runtime: (process env), not service:")
 
         known_fields = set(self.settings_cls.model_fields)
         unknown = sorted(key for key in service if key not in known_fields)
         if unknown:
-            raise ExperimentConfigError(f"experiment config {self._yaml_file!r}: unknown service key(s) {', '.join(unknown)} -- " "Settings is extra='ignore', so an unvalidated key would be dropped silently; fix the YAML (fields include e.g. log_level, metrics_enabled, auto_start, auto_start_data_service)")
+            raise ExperimentConfigError(f"experiment config {self._yaml_file!r}: unknown service key(s) {', '.join(unknown)} -- Settings is extra='ignore', so an unvalidated key would be dropped silently; fix the YAML (fields include e.g. log_level, metrics_enabled, auto_start, auto_start_data_service)")
 
         if service:
             _experiment_config_logger.info("experiment config %s: projecting service keys %s (YAML > env, SS5.1)", self._yaml_file, sorted(service))

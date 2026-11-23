@@ -4486,7 +4486,7 @@ class TrainingLifecycleManager:
             return val_x, val_y, None
 
         if test_x is None or test_y is None:
-            raise RuntimeError("juniper-data artifact carries NEITHER a validation split (X_val/y_val) nor a test split " "(X_test/y_test), so there is no held-out data to early-stop on or report from. Refusing the " "run: training against the training split produces a number that looks like validation and is " "not. Regenerate the dataset with a juniper-data version that emits the three-way partition.")
+            raise RuntimeError("juniper-data artifact carries NEITHER a validation split (X_val/y_val) nor a test split (X_test/y_test), so there is no held-out data to early-stop on or report from. Refusing the run: training against the training split produces a number that looks like validation and is not. Regenerate the dataset with a juniper-data version that emits the three-way partition.")
 
         # Local import and a FRESH Settings(), matching ``_reload_dataset``'s idiom:
         # the override is a runtime decision and must see env changes made since
@@ -4494,9 +4494,7 @@ class TrainingLifecycleManager:
         from api.settings import Settings
 
         if not Settings().allow_missing_validation_split:
-            raise RuntimeError(
-                "juniper-data artifact has no validation split (X_val/y_val); only X_test is present. Proceeding " "would promote X_test to the in-loop signal, so early stopping would select on the same rows the " "final score is reported from. Refusing by default (design §6.4: a headless run must never take " "this silently). Either regenerate the dataset with a juniper-data version that emits X_val, or " "set JUNIPER_CASCOR_ALLOW_MISSING_VALIDATION_SPLIT=true to proceed with a recorded warning."
-            )
+            raise RuntimeError("juniper-data artifact has no validation split (X_val/y_val); only X_test is present. Proceeding would promote X_test to the in-loop signal, so early stopping would select on the same rows the final score is reported from. Refusing by default (design §6.4: a headless run must never take this silently). Either regenerate the dataset with a juniper-data version that emits X_val, or set JUNIPER_CASCOR_ALLOW_MISSING_VALIDATION_SPLIT=true to proceed with a recorded warning.")
 
         warning = "No validation split in the dataset artifact: X_test was promoted to the in-loop signal, so early " "stopping selected on the same rows the reported metrics come from. Those metrics are SELECTED-ON, " "not held-out, and are not comparable to a run with a real X_val."
         logging.getLogger(__name__).warning("§6.1 rule 2 override taken — %s", warning)
@@ -4987,7 +4985,7 @@ class TrainingLifecycleManager:
             raise RuntimeError(f"juniper-data artifact {label} arrays are malformed: {exc}") from exc
 
         if x.ndim != 2 or y.ndim != 2:
-            raise RuntimeError(f"juniper-data artifact {label} arrays must be 2-D; got {x_key}.ndim={x.ndim}, {y_key}.ndim={y.ndim} " "-- 3-D sequence artifacts belong to the juniper-recurrence tier, not cascade-correlation (W-2 tier boundary)")
+            raise RuntimeError(f"juniper-data artifact {label} arrays must be 2-D; got {x_key}.ndim={x.ndim}, {y_key}.ndim={y.ndim} -- 3-D sequence artifacts belong to the juniper-recurrence tier, not cascade-correlation (W-2 tier boundary)")
         if x.shape[0] != y.shape[0]:
             raise RuntimeError(f"juniper-data artifact {label} sample count mismatch: {x_key}={x.shape[0]} {y_key}={y.shape[0]}")
         if x.shape[1] != n_features:
@@ -5024,7 +5022,7 @@ class TrainingLifecycleManager:
             raise RuntimeError(f"juniper-data artifact train arrays are malformed: {exc}") from exc
 
         if new_train_x.ndim != 2 or new_train_y.ndim != 2:
-            raise RuntimeError(f"juniper-data artifact train arrays must be 2-D; got X_train.ndim={new_train_x.ndim}, y_train.ndim={new_train_y.ndim} " "-- 3-D sequence artifacts belong to the juniper-recurrence tier, not cascade-correlation (W-2 tier boundary; " "see the OQ-4 3-D ingestion-gate design in juniper-ml notes/)")
+            raise RuntimeError(f"juniper-data artifact train arrays must be 2-D; got X_train.ndim={new_train_x.ndim}, y_train.ndim={new_train_y.ndim} -- 3-D sequence artifacts belong to the juniper-recurrence tier, not cascade-correlation (W-2 tier boundary; see the OQ-4 3-D ingestion-gate design in juniper-ml notes/)")
         if new_train_x.shape[0] != new_train_y.shape[0]:
             raise RuntimeError(f"juniper-data artifact train sample count mismatch: X_train={new_train_x.shape[0]} y_train={new_train_y.shape[0]}")
 
@@ -5053,7 +5051,7 @@ class TrainingLifecycleManager:
                 continue
             if not torch.isfinite(tensor).all():
                 non_finite = int((~torch.isfinite(tensor)).sum().item())
-                raise RuntimeError(f"juniper-data artifact {label} contains {non_finite} non-finite value(s) (NaN or Inf) out of {tensor.numel()}. " "Training on them yields a NaN loss with no indication of the cause. If this is an `equities` dataset, the " "producer's `fundamentals_fill` default is `nan`: request `fundamentals_fill=zero` or `drop`, or a " "`start_date` after the ticker's first SEC filing (~2009).")
+                raise RuntimeError(f"juniper-data artifact {label} contains {non_finite} non-finite value(s) (NaN or Inf) out of {tensor.numel()}. Training on them yields a NaN loss with no indication of the cause. If this is an `equities` dataset, the producer's `fundamentals_fill` default is `nan`: request `fundamentals_fill=zero` or `drop`, or a `start_date` after the ticker's first SEC filing (~2009).")
         return new_train_x, new_train_y, new_val_x, new_val_y, new_test_x, new_test_y
 
     def _continued_network_dims_locked(self, start_fresh: bool) -> Optional[Tuple[int, int]]:

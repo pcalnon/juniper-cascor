@@ -155,7 +155,7 @@ def _hdf5_resolve_snapshots_dir(override: str) -> pathlib.Path:
     if _hdf5_module_is_installed():
         fallback = pathlib.Path.cwd().joinpath(_HDF5_PROJECT_SNAPSHOTS_DIR_NAME)
         warnings.warn(
-            "JUNIPER_CASCOR_SNAPSHOTS_DIR is not set and cascor_constants was imported from an " "installed package, so there is no project root to derive a snapshot directory from. " f"Falling back to {fallback}. Set JUNIPER_CASCOR_SNAPSHOTS_DIR to the shared snapshot " "root for this host.",
+            f"JUNIPER_CASCOR_SNAPSHOTS_DIR is not set and cascor_constants was imported from an installed package, so there is no project root to derive a snapshot directory from. Falling back to {fallback}. Set JUNIPER_CASCOR_SNAPSHOTS_DIR to the shared snapshot root for this host.",
             RuntimeWarning,
             stacklevel=2,
         )

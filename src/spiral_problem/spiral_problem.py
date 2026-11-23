@@ -586,7 +586,7 @@ class SpiralProblem(object):
         if not juniper_data_url:
             from cascade_correlation.cascade_correlation_exceptions.cascade_correlation_exceptions import ConfigurationError
 
-            raise ConfigurationError("JUNIPER_DATA_URL environment variable is required. " "Set it to the JuniperData service URL (e.g., 'http://localhost:8100'). " "See AGENTS.md for configuration details.")
+            raise ConfigurationError("JUNIPER_DATA_URL environment variable is required. Set it to the JuniperData service URL (e.g., 'http://localhost:8100'). See AGENTS.md for configuration details.")
 
         self.logger.info(f"SpiralProblem: generate_n_spiral_dataset: Using JuniperData service at {juniper_data_url}")
         from spiral_problem.data_provider import SpiralDataProvider
@@ -688,7 +688,7 @@ class SpiralProblem(object):
             Tuple[np.ndarray, np.ndarray]: x and y coordinates for the spirals.
         """
         warnings.warn(
-            f"{type(self).__name__}._generate_spiral_coordinates() is deprecated and will be removed in a future release. " "Dataset generation is now handled by JuniperData service.",
+            f"{type(self).__name__}._generate_spiral_coordinates() is deprecated and will be removed in a future release. Dataset generation is now handled by JuniperData service.",
             DeprecationWarning,
             stacklevel=2,
         )
@@ -724,7 +724,7 @@ class SpiralProblem(object):
             float: Base radial distance for the spiral.
         """
         warnings.warn(
-            f"{type(self).__name__}._generate_base_radial_distance() is deprecated and will be removed in a future release. " "Dataset generation is now handled by JuniperData service.",
+            f"{type(self).__name__}._generate_base_radial_distance() is deprecated and will be removed in a future release. Dataset generation is now handled by JuniperData service.",
             DeprecationWarning,
             stacklevel=2,
         )
@@ -754,7 +754,7 @@ class SpiralProblem(object):
             float: Angular offset for the spiral.
         """
         warnings.warn(
-            f"{type(self).__name__}._generate_angular_offset() is deprecated and will be removed in a future release. " "Dataset generation is now handled by JuniperData service.",
+            f"{type(self).__name__}._generate_angular_offset() is deprecated and will be removed in a future release. Dataset generation is now handled by JuniperData service.",
             DeprecationWarning,
             stacklevel=2,
         )
@@ -773,7 +773,7 @@ class SpiralProblem(object):
         angular_offset: float = 0.0,
     ) -> Tuple[list, list]:
         warnings.warn(
-            f"{type(self).__name__}._generate_raw_spiral_coordinates() is deprecated and will be removed in a future release. " "Dataset generation is now handled by JuniperData service.",
+            f"{type(self).__name__}._generate_raw_spiral_coordinates() is deprecated and will be removed in a future release. Dataset generation is now handled by JuniperData service.",
             DeprecationWarning,
             stacklevel=2,
         )
@@ -827,7 +827,7 @@ class SpiralProblem(object):
             Tuple[np.ndarray, np.ndarray]: x and y coordinates of the spiral.
         """
         warnings.warn(
-            f"{type(self).__name__}._generate_xy_coordinates() is deprecated and will be removed in a future release. " "Dataset generation is now handled by JuniperData service.",
+            f"{type(self).__name__}._generate_xy_coordinates() is deprecated and will be removed in a future release. Dataset generation is now handled by JuniperData service.",
             DeprecationWarning,
             stacklevel=2,
         )
@@ -853,7 +853,7 @@ class SpiralProblem(object):
         trig_function: Callable[..., Any] = None,
     ) -> np.ndarray:
         warnings.warn(
-            f"{type(self).__name__}._make_coords() is deprecated and will be removed in a future release. " "Dataset generation is now handled by JuniperData service.",
+            f"{type(self).__name__}._make_coords() is deprecated and will be removed in a future release. Dataset generation is now handled by JuniperData service.",
             DeprecationWarning,
             stacklevel=2,
         )
@@ -888,7 +888,7 @@ class SpiralProblem(object):
             np.ndarray: Array of random noise values.
         """
         warnings.warn(
-            f"{type(self).__name__}._make_noise() is deprecated and will be removed in a future release. " "Dataset generation is now handled by JuniperData service.",
+            f"{type(self).__name__}._make_noise() is deprecated and will be removed in a future release. Dataset generation is now handled by JuniperData service.",
             DeprecationWarning,
             stacklevel=2,
         )
@@ -909,7 +909,7 @@ class SpiralProblem(object):
             np.ndarray: Input features as a 2D numpy array.
         """
         warnings.warn(
-            f"{type(self).__name__}._create_input_features() is deprecated and will be removed in a future release. " "Dataset generation is now handled by JuniperData service.",
+            f"{type(self).__name__}._create_input_features() is deprecated and will be removed in a future release. Dataset generation is now handled by JuniperData service.",
             DeprecationWarning,
             stacklevel=2,
         )
@@ -938,7 +938,7 @@ class SpiralProblem(object):
             The one-hot encoding is done by setting the corresponding column to 1 for the points belonging to that spiral.
         """
         warnings.warn(
-            f"{type(self).__name__}._create_one_hot_targets() is deprecated and will be removed in a future release. " "Dataset generation is now handled by JuniperData service.",
+            f"{type(self).__name__}._create_one_hot_targets() is deprecated and will be removed in a future release. Dataset generation is now handled by JuniperData service.",
             DeprecationWarning,
             stacklevel=2,
         )
@@ -981,7 +981,7 @@ class SpiralProblem(object):
             tuple: A tuple containing the input features and one-hot encoded targets.
         """
         warnings.warn(
-            f"{type(self).__name__}._create_spiral_dataset() is deprecated and will be removed in a future release. " "Dataset generation is now handled by JuniperData service.",
+            f"{type(self).__name__}._create_spiral_dataset() is deprecated and will be removed in a future release. Dataset generation is now handled by JuniperData service.",
             DeprecationWarning,
             stacklevel=2,
         )
@@ -1014,7 +1014,7 @@ class SpiralProblem(object):
             Tuple[torch.Tensor, torch.Tensor]: A tuple containing the input features and target labels as PyTorch tensors.
         """
         warnings.warn(
-            f"{type(self).__name__}._convert_to_tensors() is deprecated and will be removed in a future release. " "Dataset generation is now handled by JuniperData service.",
+            f"{type(self).__name__}._convert_to_tensors() is deprecated and will be removed in a future release. Dataset generation is now handled by JuniperData service.",
             DeprecationWarning,
             stacklevel=2,
         )
@@ -1041,7 +1041,7 @@ class SpiralProblem(object):
             Tuple[torch.Tensor, torch.Tensor]: Shuffled input features and targets tensors.
         """
         warnings.warn(
-            f"{type(self).__name__}._shuffle_dataset() is deprecated and will be removed in a future release. " "Dataset generation is now handled by JuniperData service.",
+            f"{type(self).__name__}._shuffle_dataset() is deprecated and will be removed in a future release. Dataset generation is now handled by JuniperData service.",
             DeprecationWarning,
             stacklevel=2,
         )
@@ -1090,7 +1090,7 @@ class SpiralProblem(object):
             - The function returns the training and test sets as tuples of PyTorch tensors.
         """
         warnings.warn(
-            f"{type(self).__name__}._partition_dataset() is deprecated and will be removed in a future release. " "Dataset generation is now handled by JuniperData service.",
+            f"{type(self).__name__}._partition_dataset() is deprecated and will be removed in a future release. Dataset generation is now handled by JuniperData service.",
             DeprecationWarning,
             stacklevel=2,
         )
@@ -1135,7 +1135,7 @@ class SpiralProblem(object):
             ValueError: If total_points or partitions are None, if x and y are not provided, or if partitions do not sum to 1.0.
         """
         warnings.warn(
-            f"{type(self).__name__}._split_dataset() is deprecated and will be removed in a future release. " "Dataset generation is now handled by JuniperData service.",
+            f"{type(self).__name__}._split_dataset() is deprecated and will be removed in a future release. Dataset generation is now handled by JuniperData service.",
             DeprecationWarning,
             stacklevel=2,
         )
@@ -1206,7 +1206,7 @@ class SpiralProblem(object):
             int: Index end for the partition.
         """
         warnings.warn(
-            f"{type(self).__name__}._find_partition_index_end() is deprecated and will be removed in a future release. " "Dataset generation is now handled by JuniperData service.",
+            f"{type(self).__name__}._find_partition_index_end() is deprecated and will be removed in a future release. Dataset generation is now handled by JuniperData service.",
             DeprecationWarning,
             stacklevel=2,
         )
@@ -1237,7 +1237,7 @@ class SpiralProblem(object):
             ValueError: If the calculated index end is not within the valid range.
         """
         warnings.warn(
-            f"{type(self).__name__}._dataset_split_index_end() is deprecated and will be removed in a future release. " "Dataset generation is now handled by JuniperData service.",
+            f"{type(self).__name__}._dataset_split_index_end() is deprecated and will be removed in a future release. Dataset generation is now handled by JuniperData service.",
             DeprecationWarning,
             stacklevel=2,
         )

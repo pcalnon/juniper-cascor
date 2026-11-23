@@ -95,12 +95,12 @@ def _check_memory_regression(test_name: str, current_value_mb: float, metric_key
     if baseline_value < 1.0:
         absolute_tolerance_mb = 10.0
         if current_value_mb > baseline_value + absolute_tolerance_mb:
-            pytest.fail(f"Memory regression detected in {test_name}: " f"current {metric_key}={current_value_mb:.2f} MB exceeds " f"baseline {baseline_value:.2f} MB by more than " f"{absolute_tolerance_mb:.0f} MB absolute tolerance")
+            pytest.fail(f"Memory regression detected in {test_name}: current {metric_key}={current_value_mb:.2f} MB exceeds baseline {baseline_value:.2f} MB by more than {absolute_tolerance_mb:.0f} MB absolute tolerance")
     else:
         allowed = baseline_value * (1.0 + MEMORY_REGRESSION_TOLERANCE_PCT / 100.0)
         if current_value_mb > allowed:
             pct_increase = ((current_value_mb - baseline_value) / baseline_value) * 100.0
-            pytest.fail(f"Memory regression detected in {test_name}: " f"current {metric_key}={current_value_mb:.2f} MB exceeds " f"baseline {baseline_value:.2f} MB by {pct_increase:.1f}% " f"(tolerance: {MEMORY_REGRESSION_TOLERANCE_PCT:.0f}%)")
+            pytest.fail(f"Memory regression detected in {test_name}: current {metric_key}={current_value_mb:.2f} MB exceeds baseline {baseline_value:.2f} MB by {pct_increase:.1f}% (tolerance: {MEMORY_REGRESSION_TOLERANCE_PCT:.0f}%)")
 
 
 # ===================================================================

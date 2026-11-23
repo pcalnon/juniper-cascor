@@ -391,7 +391,7 @@ class TestSpiralProblemComparison:
         print("Config\t\tInitial\tFinal\tImprovement\tUnits\tTime")
         for result in results:  # sourcery skip: no-loop-in-tests
             config = result["config"]
-            print(f"{config['n_spirals']}-spiral, noise={config['noise']}\t" f"{result['initial_accuracy']:.3f}\t" f"{result['final_accuracy']:.3f}\t" f"{result['improvement']:.3f}\t\t" f"{result['hidden_units']}\t" f"{result['time']:.2f}s")
+            print(f"{config['n_spirals']}-spiral, noise={config['noise']}\t{result['initial_accuracy']:.3f}\t{result['final_accuracy']:.3f}\t{result['improvement']:.3f}\t\t{result['hidden_units']}\t{result['time']:.2f}s")
 
         # All configurations should achieve reasonable results
         for result in results:  # sourcery skip: no-loop-in-tests
