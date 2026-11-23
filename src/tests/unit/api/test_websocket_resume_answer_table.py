@@ -133,8 +133,8 @@ class _Client:
         """The next frame, or ``None`` once the server has closed; a frame that never comes fails the case."""
         try:
             raw = self._socket.recv(timeout=RECV_TIMEOUT_S)
-        except TimeoutError:
-            pytest.fail(f"nothing received within {RECV_TIMEOUT_S} s")
+        except TimeoutError as timed_out:
+            raise AssertionError(f"nothing received within {RECV_TIMEOUT_S} s") from timed_out
         except ConnectionClosed as closed:
             self._record_close(closed)
             return None
