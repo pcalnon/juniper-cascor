@@ -331,7 +331,7 @@ WebSocket upgrade requests are **not** intercepted by `BaseHTTPMiddleware`, so `
 - Keying: `key:<api_key>` when REST API-key auth succeeds; `ip:<client>` when auth is disabled (`API_KEYS` unset / `[]`)
 - Ordering: `SecurityMiddleware` authenticates **before** rate limiting -- a 401 never burns a budget slot
 - 429 responses carry `Retry-After` plus `X-RateLimit-Limit` / `-Remaining` / `-Reset`, preserved through the middleware's `JSONResponse` rebuild
-- Exempt paths (`EXEMPT_PATHS`): `/v1/health`, `/v1/health/live`, `/v1/health/ready`, `/docs`, `/openapi.json`, `/redoc`, `/metrics`, `/metrics/`
+- Exempt paths (`EXEMPT_PATHS`): `/v1/health`, `/v1/health/live`, `/v1/health/ready`, `/metrics`, `/metrics/` (`/metrics` is gated by `MetricsAuthMiddleware`'s trusted-IP allowlist instead). `/docs`, `/openapi.json` and `/redoc` are deliberately not exempt (#599, APD-DATA-024); `test_exempt_paths_set` pins their absence
 
 ### Request Body Limits (CR-024)
 

@@ -110,7 +110,7 @@ Rate limiting is also optional (`JUNIPER_CASCOR_RATE_LIMIT_ENABLED`, default off
 | Keying (auth on) | Successful auth keys the window as `key:<api_key>`; distinct keys have independent counters. |
 | Keying (auth off) | With `api_keys` unset/`[]`, rate limiting (when enabled) keys as `ip:<client_host>`. |
 | 429 headers | `RateLimiter` raises 429 with `Retry-After` plus `X-RateLimit-Limit` / `-Remaining` / `-Reset`; the middleware rebuild preserves those headers on the wire. `Retry-After` and `X-RateLimit-Reset` are whole seconds until the window ends, rounded up and never below 1, so neither is ever `0`; the failed-auth throttle's `Retry-After` is rounded the same way. |
-| Exempt paths | `EXEMPT_PATHS` skip both checks: `/v1/health`, `/v1/health/live`, `/v1/health/ready`, `/docs`, `/openapi.json`, `/redoc`, `/metrics`, `/metrics/`. Health stays reachable after a saturated non-exempt 429. |
+| Exempt paths | `EXEMPT_PATHS` skip both checks: `/v1/health`, `/v1/health/live`, `/v1/health/ready`, `/metrics`, `/metrics/`. `/metrics` is gated instead by `MetricsAuthMiddleware`'s trusted-IP allowlist. The documentation surface (`/docs`, `/openapi.json`, `/redoc`) is deliberately **not** exempt (#599, as juniper-data's APD-DATA-024 and juniper-service-core 0.6.0 do): `_is_exempt()` ignores whether a key is configured, so an exempt docs surface would make "docs enabled" and "docs public" one switch. `create_app` mounts it only while no API key is configured (`docs_enabled = not settings.api_keys`, `src/api/app.py`). Health stays reachable after a saturated non-exempt 429. |
 
 Regression pin: `src/tests/unit/api/test_api_middleware.py` — `TestSecurityMiddlewareAuthRateLimitInterplay`.
 

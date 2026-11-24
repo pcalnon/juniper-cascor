@@ -355,6 +355,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     `src/tests/unit/api/test_lifecycle_pause_check_then_act.py` (29 tests) pins both routes and the three answers: 25
     of them fail on the code before this change, and four guards pass on it.
 
+- **The documentation no longer lists `/docs`, `/openapi.json` and `/redoc` as auth-exempt.** #599 took them out of
+  `EXEMPT_PATHS` on 2026-08-30 (APD-DATA-024): `_is_exempt()` ignores whether a key is configured, so an exempt docs
+  surface made "docs enabled" and "docs public" one switch. Three texts still listed them, the "Exempt paths" row of
+  `docs/api/JUNIPER_CASCOR_API_REFERENCE.md`'s REST auth and rate-limit contract, `AGENTS.md` § Rate Limiting and
+  `docs/testing/REFERENCE.md`'s auth and rate-limit scenario. Each now names the set `src/api/middleware.py` holds
+  (the three health paths, `/metrics` and `/metrics/`) and says why the docs surface is not in it. Documentation only:
+  no code or test changes (finding B-10 of the R-OBS-SC-2 follow-ups' validation fix pass).
+
 ## [0.14.0] - 2026-11-15
 
 ### Added
