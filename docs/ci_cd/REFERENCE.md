@@ -3,7 +3,7 @@
 **Project**: Juniper Cascor  
 **Workflow Files**: `.github/workflows/ci.yml`, `codeql.yml`, `security-scan.yml`, `claude.yml`, `golden-regression.yml`, `conformance.yml`, `ci-protocol.yml`, `ci-cascor-model.yml`, `lockfile-update.yml`, `publish.yml`, `publish-protocol.yml`, `publish-cascor-model.yml`
 
-**Last Updated**: 2026-11-16
+**Last Updated**: 2026-11-23
 
 ---
 
@@ -239,7 +239,7 @@ Trusted Publishing (OIDC) pipelines. Source of truth: the workflow YAML files un
 
 ### One-Artifact Contract
 
-All three publishers build once and hand both publish jobs one artifact, `<PUBLISH_PACKAGE>-dist`: the dist directory and `SHA256SUMS`, kept 90 days so it outlives the `pypi` gate. The steps that carry it are a template: they read only the workflow `env` values `PUBLISH_PACKAGE` and `PUBLISH_DIST_DIR`, a JSON check's `INDEX_URL`, and the runner's own variables ([`MANUAL.md` § One Artifact, Checked Against TestPyPI](MANUAL.md#one-artifact-checked-against-testpypi)).
+All three publishers build once and hand both publish jobs one artifact, `<PUBLISH_PACKAGE>-dist`: the dist directory and `SHA256SUMS`, kept 90 days so it outlives the `pypi` gate. The steps that carry it are a template: they read only the workflow `env` values `PUBLISH_PACKAGE`, `PUBLISH_DIST_DIR` and `PUBLISH_TAG_PREFIX`, a JSON check's `INDEX_URL`, and the runner's own variables ([`MANUAL.md` § One Artifact, Checked Against TestPyPI](MANUAL.md#one-artifact-checked-against-testpypi)).
 
 | Step | Job | What it checks |
 |------|-----|----------------|
@@ -248,22 +248,24 @@ All three publishers build once and hand both publish jobs one artifact, `<PUBLI
 | `Upload dist artifacts` | build | Uploads the dist directory and `SHA256SUMS` as one artifact (`if-no-files-found: error`, `retention-days: 90`) |
 | `Download dist artifacts` | both publish jobs | Restores both into the workspace; no checkout may run after it before the job's last template step |
 | `Verify the dist against SHA256SUMS` | before every upload | The directory holds exactly the listed files, with their sha256 |
-| `Verify TestPyPI serves exactly these files` | TestPyPI job, after the upload | `https://test.pypi.org/pypi/<package>/<version>/json` lists exactly those files and sha256 |
+| `Verify TestPyPI serves exactly these files` | TestPyPI job, after the upload, its last step | `https://test.pypi.org/pypi/<package>/<version>/json` lists exactly those files and sha256 |
+| `Verify the TestPyPI install` (a job, not a template step) | after the TestPyPI job; the PyPI job needs both | The repository's own install check, run from `$RUNNER_TEMP`, outside any checkout, with `contents: read` alone: no environment, no `id-token` (ruling 2 of 2026-11-16) |
 | `Verify TestPyPI still serves exactly these files` | PyPI job, before the upload | The same, again |
 | `Verify PyPI serves exactly these files` | PyPI and republish jobs, after the upload | The same, on `https://pypi.org` |
-| `Find the release run's artifact` | republish (dispatch only), first | The version from the tag (`v<version>` or `<package>-v<version>`; anything else is refused); the newest release run for that tag still holding `<PUBLISH_PACKAGE>-dist` |
+| `Find the release run's artifact` | republish (dispatch only), first | The version from the tag, `PUBLISH_TAG_PREFIX` and the version; anything else is refused before any request. The tag's newest release run of this workflow must exist, and each of its jobs whose name holds `TestPyPI` must have concluded success in its latest attempt (`GET actions/runs/{id}/jobs?filter=all`, each job's record with the highest `(run_attempt, id)`; ruling 1 of 2026-11-16). That run's `<PUBLISH_PACKAGE>-dist`, while unexpired, gives the next step its `run-id` |
 | `Download TestPyPI's files and verify them` | republish | Every file TestPyPI's JSON lists for the version: each file's bytes against the JSON's sha256, only this package and version, and the release run's `SHA256SUMS` while it exists; writes `SHA256SUMS`. Nothing is built |
 
-The JSON checks poll up to 20 times, 15 s apart (`HASH_CHECK_ATTEMPTS`, `HASH_CHECK_INTERVAL`), while the version is not served yet or a file is missing (CDN lag): 285 s of sleep, plus up to 20 request timeouts of 30 s. A file listed with another sha256, or one the run did not build, fails at once. The version comes from the file names in `SHA256SUMS`, not from the tag. The republish job is step 1 of the recovery ladder: [`MANUAL.md` § Recovering a Release That Did Not Reach PyPI](MANUAL.md#recovering-a-release-that-did-not-reach-pypi). Pinned by `src/tests/unit/test_publish_one_artifact.py`.
+The JSON checks poll up to 20 times, 15 s apart (`HASH_CHECK_ATTEMPTS`, `HASH_CHECK_INTERVAL`), while the version is not served yet or a file is missing (CDN lag): 285 s of sleep, plus up to 20 request timeouts of 30 s. A file listed with another sha256, or one the run did not build, fails at once. The version comes from the file names in `SHA256SUMS`, not from the tag. The republish job is step 1 of the recovery ladder: [`MANUAL.md` § Recovering a Release That Did Not Reach PyPI](MANUAL.md#recovering-a-release-that-did-not-reach-pypi). Pinned by `src/tests/unit/test_publish_one_artifact.py`, and the numbers in this paragraph by `src/tests/unit/test_publish_docs_bounds.py`.
 
 ### Permissions and Concurrency
 
 | Setting | Value | Why |
 |---------|-------|-----|
-| workflow `permissions` | `{}` (`publish.yml`); `contents: read` (protocol/model) | No job inherits `id-token: write` |
+| workflow `permissions` | `{}` (`publish.yml`); `contents: read` (protocol/model) | No job inherits `id-token: write`; a job's own block replaces this one rather than adding to it |
 | build job | `contents: read`, `actions: read` | Checkout; the reuse step lists the run's artifacts. No `id-token`, so the build backend cannot mint a token |
-| TestPyPI job | `contents: read`, `id-token: write` | Checkout / sparse-checkout for the install check; OIDC token for Trusted Publishing |
-| PyPI job | `id-token: write` (`publish.yml`); plus `contents: read` (protocol/model) | OIDC token for Trusted Publishing |
+| TestPyPI job | `id-token: write` | OIDC token for Trusted Publishing. It checks out nothing and runs no install check: the job that can mint runs only the template steps and the upload |
+| install-check job (`Verify the TestPyPI install`) | `contents: read` | The sparse checkout a sub-package reads its version from, which keeps no credential (`persist-credentials: false`). No environment and no `id-token`: it runs the package TestPyPI serves |
+| PyPI job | `id-token: write` | OIDC token for Trusted Publishing. It checks out nothing |
 | republish job | `actions: read`, `id-token: write` | Find and download the release run's artifact; OIDC token for Trusted Publishing |
 | `concurrency.group` | `publish-<pkg>-${{ github.ref_name }}` (protocol/model) | Serialize re-fires against immutable TestPyPI |
 | `cancel-in-progress` | `false` | Never cancel a mid-upload publish |
@@ -272,16 +274,19 @@ The JSON checks poll up to 20 times, 15 s apart (`HASH_CHECK_ATTEMPTS`, `HASH_CH
 
 | Package | Install flags | Success assertion |
 |---------|---------------|-------------------|
-| `juniper-cascor` | `--no-deps --index-url https://test.pypi.org/simple/` + 30s sleep | `from juniper_cascor import __version__` |
-| `juniper-cascor-model` | same + 5×10s retry | `import juniper_cascor_model` + `__version__` |
-| `juniper-cascor-protocol` | same + 5×10s retry | `importlib.metadata.version(...)` (no package import) |
+| `juniper-cascor` | `--no-deps --index-url https://test.pypi.org/simple/`, after a 30 s wait; 5 tries, 10 s apart | `from juniper_cascor import __version__` |
+| `juniper-cascor-model` | `--no-deps --index-url https://test.pypi.org/simple/`; 5 tries, 10 s apart | `import juniper_cascor_model` + `__version__` |
+| `juniper-cascor-protocol` | `--no-deps --index-url https://test.pypi.org/simple/`; 5 tries, 10 s apart | `importlib.metadata.version(...)`, and `importlib.util.find_spec(...)` for the package (no package import) |
+
+Each runs in the job `Verify the TestPyPI install`, after `Publish to TestPyPI`, from `$RUNNER_TEMP` (`cd "${RUNNER_TEMP}"` first, outside any checkout), and `Publish to PyPI` needs it. After the fifth failed try it fails with `::error::<package> <version> is not installable from TestPyPI after 5 tries (index lag?): Re-run failed jobs; a real failure repeats`, rather than fall through to the import. `publish.yml`'s reads the release's tag through the step's `env` (`RELEASE_TAG`), never pasted into the script.
 
 Constraints:
 
 - No `--extra-index-url https://pypi.org/simple/` on the verify step (anti-target-squatting; juniper-ml#384).
 - Do not add `push: tags` next to `release: published` (double-fire race; juniper-ml#555).
 - No `skip-existing` on a TestPyPI upload: an earlier file under the same name would be kept silently and the install check would test it. The sha256 check after the upload would fail the run instead.
-- A release that did not reach PyPI: the republish dispatch, then (within 30 days) **Re-run failed jobs**, then a new patch version ([`MANUAL.md`](MANUAL.md#recovering-a-release-that-did-not-reach-pypi)). Never "Re-run all jobs", nor `gh run rerun <id>` without `--failed`.
+- No `|| true`, `set +e`, `exit 0`, `trap`, `continue-on-error` or `if:` on the install check, and no `PIP_*` variable in any `env`: each would switch it off or send it to another index.
+- A release that did not reach PyPI: the republish dispatch, which refuses unless the tag's newest release run passed its TestPyPI jobs, then (within 30 days) **Re-run failed jobs**, then a new patch version ([`MANUAL.md`](MANUAL.md#recovering-a-release-that-did-not-reach-pypi)). Never "Re-run all jobs", nor `gh run rerun <id>` without `--failed`.
 - Dependabot bumps the `gh-action-pypi-publish` SHA and `# vX.Y.Z` comment in all three files together; keep them aligned.
 
 ### Twine Pin Surfaces

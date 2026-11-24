@@ -1,6 +1,6 @@
 # Developer Cheatsheet — juniper-cascor
 
-**Version**: 1.0.12  |  **Date**: 2026-11-15  |  **Project**: juniper-cascor
+**Version**: 1.0.13  |  **Date**: 2026-11-23  |  **Project**: juniper-cascor
 
 ---
 
@@ -297,7 +297,7 @@ For an actor with write access, `@claudette`, `foo@claude`, and an issue **assig
 On an open same-repo PR Claude pushes to the PR head. Pushes only go to this repo (`origin`), so a fork PR's head is never updated. Issues and closed or merged PRs get `claude/issue-<number>-<YYYYMMDD-HHmm>` or `claude/pr-<number>-<YYYYMMDD-HHmm>` from the default branch.
 Secret: `ANTHROPIC_API_KEY` (model auth). `id-token: write` is used too: the action trades the job's OIDC token for a Claude GitHub App token, which makes the GitHub API calls and pushes (the App must be installed on the repo). The action SHA is outside the `codeql-action` Dependabot group.
 
-**PyPI publish:** cut a GitHub Release (not a bare tag). Tags: `v*` → `publish.yml` (`juniper-cascor`); `juniper-cascor-protocol-v*` / `juniper-cascor-model-v*` → matching sub-package workflows. TestPyPI verify uses `--no-deps` and TestPyPI index only. Every publisher builds once: both publish jobs upload the build job's artifact (the dist directory and `SHA256SUMS`), TestPyPI's JSON must list exactly those sha256 after the TestPyPI upload and again before the PyPI one, and PyPI's after; only the uploading jobs hold `id-token: write`. A release that did not reach PyPI: dispatch its workflow from the tag with `-f republish_from_testpypi=true` (copies TestPyPI's files, builds nothing); if that fails, within 30 days use **Re-run failed jobs** (never "Re-run all jobs", nor `gh run rerun` without `--failed`); otherwise cut a new patch version. Keep `pypa/gh-action-pypi-publish` SHA-pinned (Dependabot bumps all three workflows together).
+**PyPI publish:** cut a GitHub Release (not a bare tag). Tags: `v*` → `publish.yml` (`juniper-cascor`); `juniper-cascor-protocol-v*` / `juniper-cascor-model-v*` → matching sub-package workflows. TestPyPI verify runs in a job of its own, `Verify the TestPyPI install`, which cannot mint a credential and imports from outside any checkout; it uses `--no-deps` and TestPyPI index only, and `Publish to PyPI` needs it. Every publisher builds once: both publish jobs upload the build job's artifact (the dist directory and `SHA256SUMS`), TestPyPI's JSON must list exactly those sha256 after the TestPyPI upload and again before the PyPI one, and PyPI's after; only the uploading jobs hold `id-token: write`. A release that did not reach PyPI: dispatch its workflow from the tag with `-f republish_from_testpypi=true` (copies TestPyPI's files, builds nothing, and refuses unless the tag's newest release run passed its TestPyPI jobs); if that fails, within 30 days use **Re-run failed jobs** (never "Re-run all jobs", nor `gh run rerun` without `--failed`); otherwise cut a new patch version. Keep `pypa/gh-action-pypi-publish` SHA-pinned (Dependabot bumps all three workflows together).
 
 **Twine pins:** `conf/requirements_ci.txt` (and the conda CI freeze) are not the publish uploader. Publish and package-CI jobs `pip install` Twine unpinned for `twine check`; uploads use the action-bundled Twine. Twine 7 rejects Metadata 2.0 and needs `packaging >= 26.1` — smoke `python -m build && twine check dist/*` after a major freeze bump.
 
