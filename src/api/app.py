@@ -155,11 +155,11 @@ def enforce_bind_attestation_guard(settings: Settings) -> None:
     Called from the application ``lifespan`` startup, before uvicorn binds the
     socket, so a mis-configured bring-up never begins accepting connections.
 
-    Note (deploy roll-out is owner-gated): the container binds
+    Note (deploy roll-out is Overtoad-gated): the container binds
     ``JUNIPER_CASCOR_HOST=0.0.0.0`` behind a loopback host-publish, so enabling
     this guard in the deploy requires setting
     ``JUNIPER_CASCOR_LOOPBACK_PUBLISH_ATTESTED=true`` there — a Phase-1 deploy
-    change the platform owner approves separately (design §7 Phase 1).
+    change the platform Overtoad approves separately (design §7 Phase 1).
     """
     host = settings.host
     if _is_loopback_host(host):

@@ -133,7 +133,7 @@ class PerLevelExercise(unittest.TestCase):
                 self.assertEqual(
                     leaked,
                     [],
-                    f"configured={configured}: records emitted BELOW the configured level: {leaked}. " f"A guard opened a block whose call then emitted when the filter should have " f"discarded it -- the guard and the emit filter have diverged again.",
+                    f"configured={configured}: records emitted BELOW the configured level: {leaked}. A guard opened a block whose call then emitted when the filter should have discarded it -- the guard and the emit filter have diverged again.",
                 )
 
     def test_trace_actually_emits_at_trace(self):
@@ -143,7 +143,7 @@ class PerLevelExercise(unittest.TestCase):
         self.assertIn(
             "TRACE",
             seen,
-            "configured=TRACE emitted no TRACE record. Either the guard is closed when it should be " "open, or the emit path is stubbed -- in which case the other tests in this file prove " f"nothing. Levels seen: {sorted(seen)}",
+            f"configured=TRACE emitted no TRACE record. Either the guard is closed when it should be open, or the emit path is stubbed -- in which case the other tests in this file prove nothing. Levels seen: {sorted(seen)}",
         )
 
     def test_raising_the_level_strictly_narrows_what_is_emitted(self):
@@ -152,12 +152,12 @@ class PerLevelExercise(unittest.TestCase):
         at_info = set(RECORD_LEVEL.findall(self._emit_at("INFO")))
         self.assertTrue(
             at_info <= at_trace,
-            f"raising the configured level ADDED levels: at INFO {sorted(at_info)} is not a subset " f"of at TRACE {sorted(at_trace)}",
+            f"raising the configured level ADDED levels: at INFO {sorted(at_info)} is not a subset of at TRACE {sorted(at_trace)}",
         )
         self.assertNotEqual(
             at_trace,
             at_info,
-            "TRACE and INFO emitted the same set of levels, so the configured level is not moving " "the emit decision at all -- the P1.1 defect has returned.",
+            "TRACE and INFO emitted the same set of levels, so the configured level is not moving the emit decision at all -- the P1.1 defect has returned.",
         )
 
 

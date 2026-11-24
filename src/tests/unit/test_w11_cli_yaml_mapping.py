@@ -21,7 +21,7 @@ class TestLoadExperimentBlocks:
     def test_blocks_extracted(self, tmp_path, monkeypatch):
         path = tmp_path / "experiment.yaml"
         path.write_text(
-            "schema_version: 1\n" "experiment: {name: t, seed: 7}\n" "dataset:\n  generator: spiral\n  params: {n_spirals: 3, seed: 7}\n" "training:\n  params: {max_hidden_units: 2}\n",
+            "schema_version: 1\nexperiment: {name: t, seed: 7}\ndataset:\n  generator: spiral\n  params: {n_spirals: 3, seed: 7}\ntraining:\n  params: {max_hidden_units: 2}\n",
             encoding="utf-8",
         )
         monkeypatch.setenv("JUNIPER_CASCOR_CONFIG_FILE", str(path))

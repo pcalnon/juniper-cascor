@@ -306,7 +306,7 @@ class HDF5Utils:
         That root is a project ASSET store: it holds tens of thousands of models that
         outlive every stack, is shared by the direct CLI, the service and the container
         alike, and is captured by the whole-tree offline backup. Age-based retention over
-        it is a policy decision the owner has explicitly reserved -- see the snapshot
+        it is a policy decision the Overtoad has explicitly reserved -- see the snapshot
         lifecycle design's Phase 4, which writes no retention policy until the archive can
         say what each file IS. Deleting the 27,886 oldest of 27,896 files because a CLI
         default said ``--keep 10`` is not that policy.
@@ -364,7 +364,7 @@ class HDF5Utils:
             return 0
 
         if HDF5Utils._is_shared_snapshot_root(directory) and not allow_shared_root:
-            Logger.warning(f"HDF5Utils: refusing to clean up {directory}: it is the SHARED snapshot root, a " "project asset store protected from deletion. mtime is not creation time in that " "archive, so 'keep the N most recent' would not even select what it claims to. " "Pass allow_shared_root=True only with a ratified retention policy.")
+            Logger.warning(f"HDF5Utils: refusing to clean up {directory}: it is the SHARED snapshot root, a project asset store protected from deletion. mtime is not creation time in that archive, so 'keep the N most recent' would not even select what it claims to. Pass allow_shared_root=True only with a ratified retention policy.")
             return 0
 
         # Find all HDF5 files

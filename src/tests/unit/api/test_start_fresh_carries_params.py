@@ -10,7 +10,7 @@ edit was silently replaced by an engine default. Observed through canopy's own r
 ``max_iterations`` / ``output_epochs`` / ``candidate_epochs`` / ``max_hidden_units`` read
 8 / 60 / 40 / 32 before the restart and 1000000 / 10000 / 400 / 10 after it.
 
-The owner ruled on 2026-09-24 that the edits are applied AFTER the fresh rebuild, so they
+The Overtoad ruled on 2026-09-24 that the edits are applied AFTER the fresh rebuild, so they
 survive (juniper-ml ``notes/JUNIPER_2026-09-02_JUNIPER-CANOPY_SELECTION-REACHABILITY-DESIGN.md``
 §12.4). The reset now captures the discarded network's params and ``start_training``
 re-applies them to the vanilla network, through the same whitelist, nested setters and

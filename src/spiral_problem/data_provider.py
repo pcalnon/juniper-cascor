@@ -219,7 +219,7 @@ class SpiralDataProvider:
         required_keys = {"X_train", "y_train", "X_test", "y_test"}
         missing_keys = required_keys - set(arrays.keys())
         if missing_keys:
-            raise SpiralDataProviderError(f"NPZ artifact missing required keys: {sorted(missing_keys)}. " f"Expected: {sorted(required_keys)}, got: {sorted(arrays.keys())}")
+            raise SpiralDataProviderError(f"NPZ artifact missing required keys: {sorted(missing_keys)}. Expected: {sorted(required_keys)}, got: {sorted(arrays.keys())}")
 
         # `X_val` / `y_val` are deliberately NOT in `required_keys`. Design §6a:
         # a validation split that is PRESENT is validated like any other, and one
@@ -240,7 +240,7 @@ class SpiralDataProvider:
 
         for key in ["X_train", "X_test"] + (["X_val"] if has_val else []):
             if arrays[key].shape[1] != 2:
-                raise SpiralDataProviderError(f"Feature array '{key}' has {arrays[key].shape[1]} columns, expected 2 (x, y coordinates). " f"Shape: {arrays[key].shape}")
+                raise SpiralDataProviderError(f"Feature array '{key}' has {arrays[key].shape[1]} columns, expected 2 (x, y coordinates). Shape: {arrays[key].shape}")
 
         if has_val and arrays["X_val"].shape[0] != arrays["y_val"].shape[0]:
             raise SpiralDataProviderError(f"NPZ validation sample count mismatch: X_val={arrays['X_val'].shape[0]} y_val={arrays['y_val'].shape[0]}")

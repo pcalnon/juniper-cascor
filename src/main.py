@@ -49,7 +49,7 @@ import sys
 # different thread pools by accident of which file started the process. Measured cost: the capped
 # path's candidate phase ran 1.52x the uncapped path's on identical data and initialisation, with
 # 1.30x attributable to the cap (juniper-cascor#531). The default then became a no-op, matching the
-# service. Since 2026-09-23 (owner decision D1) both paths cap at 2 wherever the variables are unset:
+# service. Since 2026-09-23 (Overtoad decision D1) both paths cap at 2 wherever the variables are unset:
 # #531's penalty did not reproduce on current code and the cap was measured not to move the epoch
 # count. `JUNIPER_CASCOR_BLAS_THREADS` sets another width or opts out (0 / off / none).
 #
@@ -186,7 +186,7 @@ def _resolve_sentry_dsn() -> str | None:
         import warnings as _cfg_03_warnings
 
         _cfg_03_warnings.warn(
-            "SENTRY_SDK_DSN is deprecated; set JUNIPER_CASCOR_SENTRY_DSN instead. " "SENTRY_SDK_DSN will be removed in a future release. Until then, the " "legacy variable continues to work but the prefixed form takes " "precedence whenever both are set.",
+            "SENTRY_SDK_DSN is deprecated; set JUNIPER_CASCOR_SENTRY_DSN instead. SENTRY_SDK_DSN will be removed in a future release. Until then, the legacy variable continues to work but the prefixed form takes precedence whenever both are set.",
             DeprecationWarning,
             stacklevel=2,
         )
@@ -196,7 +196,7 @@ def _resolve_sentry_dsn() -> str | None:
         # the operator on stderr so split-config drift is visible at
         # startup.
         print(
-            "[juniper-cascor] CFG-03 WARNING: both JUNIPER_CASCOR_SENTRY_DSN and SENTRY_SDK_DSN are set " "to different values; JUNIPER_CASCOR_SENTRY_DSN takes precedence. " "Unset SENTRY_SDK_DSN to silence this message.",
+            "[juniper-cascor] CFG-03 WARNING: both JUNIPER_CASCOR_SENTRY_DSN and SENTRY_SDK_DSN are set to different values; JUNIPER_CASCOR_SENTRY_DSN takes precedence. Unset SENTRY_SDK_DSN to silence this message.",
             file=sys.stderr,
         )
     return prefixed
@@ -219,7 +219,7 @@ if _sentry_dsn:
         import sentry_sdk
     except ImportError:
         print(
-            "[juniper-cascor] CFG-02 WARNING: JUNIPER_CASCOR_SENTRY_DSN " "(or legacy SENTRY_SDK_DSN) is set but the ``sentry-sdk`` package " "is not installed. Bootstrap-time Sentry init skipped. Install " "with ``pip install juniper-cascor[observability]`` (or " "``pip install sentry-sdk``) to enable error reporting.",
+            "[juniper-cascor] CFG-02 WARNING: JUNIPER_CASCOR_SENTRY_DSN (or legacy SENTRY_SDK_DSN) is set but the ``sentry-sdk`` package is not installed. Bootstrap-time Sentry init skipped. Install with ``pip install juniper-cascor[observability]`` (or ``pip install sentry-sdk``) to enable error reporting.",
             file=sys.stderr,
         )
     else:
@@ -481,7 +481,7 @@ def main(generate_plots: bool = _CASCOR_GENERATE_PLOTS_DEFAULT):
 
     juniper_data_url = _CfgSettings().juniper_data_url
     if not juniper_data_url:
-        logger.error("Cascor: main: JUNIPER_DATA_URL environment variable is not set. " "Set it to the JuniperData service URL (e.g., 'http://localhost:8100'). " "See AGENTS.md for configuration details.")
+        logger.error("Cascor: main: JUNIPER_DATA_URL environment variable is not set. Set it to the JuniperData service URL (e.g., 'http://localhost:8100'). See AGENTS.md for configuration details.")
         sys.exit(3)
 
     logger.info(f"Cascor: main: Pre-flight check: Verifying JuniperData service at {juniper_data_url}")
@@ -493,7 +493,7 @@ def main(generate_plots: bool = _CASCOR_GENERATE_PLOTS_DEFAULT):
         with urllib.request.urlopen(req, timeout=5) as resp:  # nosec B310 - internal health check URL from env var
             logger.info(f"Cascor: main: Pre-flight check: JuniperData service is healthy (HTTP {resp.status})")
     except Exception as e:
-        logger.error(f"Cascor: main: Pre-flight check FAILED: JuniperData service at {juniper_data_url} is not reachable. " f"Error: {e}\n" f"    Please start the JuniperData service before running JuniperCascor:\n" f"        cd juniper-data && conda activate JuniperData && ./try\n" f"    Or:  conda activate JuniperData && python -m juniper_data")
+        logger.error(f"Cascor: main: Pre-flight check FAILED: JuniperData service at {juniper_data_url} is not reachable. Error: {e}\n    Please start the JuniperData service before running JuniperCascor:\n        cd juniper-data && conda activate JuniperData && ./try\n    Or:  conda activate JuniperData && python -m juniper_data")
         sys.exit(4)
 
     # W-11: resolve experiment-YAML overrides (constants are the fallback tier).

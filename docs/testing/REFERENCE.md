@@ -47,7 +47,7 @@ Operator-facing middleware, admission, and secrets contracts pinned in the API u
 Key scenarios:
 
 - **Body limit:** an oversized declared `Content-Length` → early **413**; an invalid header → **400**; chunked/streaming bodies over the cap → **413** with an early abort (not full buffering); an under-declared `Content-Length` (`N <= max`, stream larger than max) → **413** (CR-024; the stream-read must not be gated on `content_length is None`); a truthful under-limit `Content-Length` caches the body on `request._body` for downstream handlers (BUG-CC-15).
-- **Auth ↔ rate limit:** a missing/invalid `X-API-Key` returns 401 **before** `RateLimiter.check` (forged keys cannot burn budgets); distinct authenticated keys have independent fixed-window counters, while open auth (`api_keys=None`/`[]`) keys as `ip:…`; 429 responses preserve `Retry-After` and `X-RateLimit-*` after `SecurityMiddleware` rebuilds the `JSONResponse`; exempt paths (health/docs/`/metrics`) remain reachable after a saturated non-exempt client.
+- **Auth ↔ rate limit:** a missing/invalid `X-API-Key` returns 401 **before** `RateLimiter.check` (forged keys cannot burn budgets); distinct authenticated keys have independent fixed-window counters, while open auth (`api_keys=None`/`[]`) keys as `ip:…`; 429 responses preserve `Retry-After` and `X-RateLimit-*` after `SecurityMiddleware` rebuilds the `JSONResponse`; exempt paths (health and `/metrics`; the docs surface is not exempt, APD-DATA-024) remain reachable after a saturated non-exempt client.
 - **Identity key:** an empty / whitespace-only `X-API-Key` → `None` (anonymous); real keys hash to a 16-char digest.
 
 ```bash
@@ -310,7 +310,7 @@ python -m pytest tests/performance/test_baselines.py tests/performance/test_micr
     --run-performance --benchmark-storage="$STORE" --benchmark-autosave
 ```
 
-Compare a later run against it. **This is a report, never a gate** — owner decision 2026-09-07,
+Compare a later run against it. **This is a report, never a gate** — Overtoad decision 2026-09-07,
 juniper-ml P2 item 2.5: the reference host's quiet-run noise band is 20.5% and six competing
 processes cost +19.9%, so no percentage tolerance can tell a regression from an ordinary loaded
 host. Do **not** add `--benchmark-compare-fail`.

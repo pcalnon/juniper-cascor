@@ -6,7 +6,7 @@ Sub-Project: ad-hoc tooling
 Author: Paul Calnon
 Created: 2026-11-08
 Status: ad-hoc — investigation: evidence for a reported race, which gets its own fix in its own
-        PR by the owner's ruling 17 (2026-11-09, recorded in the record-update PR), "cascor:
+        PR by the Overtoad's ruling 17 (2026-11-09, recorded in the record-update PR), "cascor:
         stop-then-start"
 Retire when: that PR has merged
 Related: juniper-ml notes/JUNIPER_2026-11-06_JUNIPER-ECOSYSTEM_CURSOR-FLOOD-4-DISPOSITION.md §8

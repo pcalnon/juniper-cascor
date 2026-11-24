@@ -759,7 +759,7 @@ class CandidateUnit:
 
         # Display progress if epoch matches frequency
         if self._candidate_display_progress(epoch):
-            self.logger.info(f"CandidateUnit: train: Epoch {epoch + 1} - " f"Norm Output: {self._tensor_brief(candidate_parameters_update.norm_output)}, " f"Norm Error: {self._tensor_brief(candidate_parameters_update.norm_error)}")
+            self.logger.info(f"CandidateUnit: train: Epoch {epoch + 1} - Norm Output: {self._tensor_brief(candidate_parameters_update.norm_output)}, Norm Error: {self._tensor_brief(candidate_parameters_update.norm_error)}")
 
         if _log_verbose:
             self.logger.verbose("CandidateUnit: train: Epoch %d - Residual Error: Shape: %s, Dtype: %s", epoch + 1, residual_error.shape, residual_error.dtype)

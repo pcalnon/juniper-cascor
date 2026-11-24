@@ -73,7 +73,7 @@ class TestSettingsEnvFileIsolation:
         """
         env_file = tmp_path / ".env"
         env_file.write_text(
-            "JUNIPER_DATA_URL=http://leaked-from-dot-env:8100\n" "JUNIPER_CASCOR_HOST=192.0.2.123\n",
+            "JUNIPER_DATA_URL=http://leaked-from-dot-env:8100\nJUNIPER_CASCOR_HOST=192.0.2.123\n",
             encoding="utf-8",
         )
 

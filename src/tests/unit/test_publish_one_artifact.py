@@ -1,6 +1,6 @@
 """Pin the one-artifact publish: PyPI takes exactly the files TestPyPI took, and the run checks it by sha256.
 
-The owner's directive of 2026-11-15: "deploy to pypi should send the same artifact that was already sent to testpypi.
+The Overtoad's directive of 2026-11-15: "deploy to pypi should send the same artifact that was already sent to testpypi.
 an identical hash check, of the artifacts after testpypi deploy and prior to pypi deploy, might also be helpful here to
 prevent this from slipping through the cracks again." ``publish.yml`` ran ``python -m build`` in its TestPyPI job and
 again in its PyPI job, so PyPI served a second build of each release: the juniper-cascor 0.13.0 wheel is
@@ -9,17 +9,25 @@ again in its PyPI job, so PyPI served a second build of each release: the junipe
 All three publishers now build once and hand both publish jobs one artifact, the dist directory plus ``SHA256SUMS``. A
 re-run attempt reuses that artifact rather than build again, because download-artifact takes the newest artifact of a
 name. Only the jobs that upload hold ``id-token: write``. A dispatch from the release tag runs the republish job, the
-first step of the owner's recovery ladder (2026-11-15): it copies TestPyPI's files for the version to PyPI and builds
-nothing. The steps are a template other Juniper publishers copy verbatim: they read only ``PUBLISH_PACKAGE`` and
-``PUBLISH_DIST_DIR`` from the workflow ``env``, a step's ``INDEX_URL``, and the runner's own variables.
+first step of the Overtoad's recovery ladder (2026-11-15): it copies TestPyPI's files for the version to PyPI and builds
+nothing. The steps are a template other Juniper publishers copy verbatim: they read only ``PUBLISH_PACKAGE``,
+``PUBLISH_DIST_DIR`` and ``PUBLISH_TAG_PREFIX`` from the workflow ``env``, a step's ``INDEX_URL``, and the runner's own
+variables.
 
-The static cases pin the wiring: one build, in a job without an environment or ``id-token``; the job chain and the two
-job names juniper-ml's release-train ceremony reads; per-job permissions; the reuse step first in the build job and
-guarding every later step; each upload preceded by the dist check; TestPyPI's JSON checked after the TestPyPI upload
-and again before the PyPI one, and PyPI's after; no ``skip-existing``; an artifact that outlives the 30-day ``pypi``
-gate; the republish job's trigger, gate, steps and name; the triggers and tag guards; and every copy of a template step
-byte-identical. The rehearsals run each template step's own Python, extracted from ``publish.yml``, in a scratch
-workspace, against a stand-in index and a stand-in GitHub API on 127.0.0.1.
+The static cases pin the wiring: one build, in a job without an environment or ``id-token``; the job chain and the
+job names juniper-ml's release-train ceremony reads; per-job permissions; each job's keys, runner and exact steps, with
+no ``if:`` but the listed ones and no ``continue-on-error``; each build step's commands; the reuse step first in the
+build job and guarding every later step; each upload preceded by the dist check; TestPyPI's JSON checked after the
+TestPyPI upload and again before the PyPI one, and PyPI's after; no ``skip-existing`` and no ``attestations: false``;
+an artifact kept 90 days, past the 30-day ``pypi`` gate; the install check in a job of its own, which cannot mint a
+credential, runs exactly its commands from outside any checkout, and is needed by the PyPI job (ruling 2 of
+2026-11-16); the republish job's trigger, gate, steps and name; the triggers, tag guards and tag prefixes; and every
+copy of a template step byte-identical, and each action pinned to one ref. (The bounds the docs state are pinned in
+``test_publish_docs_bounds.py``: this module reads the workflows alone.) The rehearsals run each template step's own
+Python, extracted from ``publish.yml``, in a scratch workspace, against a stand-in index
+and a stand-in GitHub API on 127.0.0.1, the republish job's refusal among them: it publishes nothing unless the tag's
+newest release run passed its TestPyPI jobs in their latest attempt (ruling 1 of 2026-11-16). Each install check's own
+shell runs too, against stand-in ``pip``, ``python`` and ``sleep`` commands.
 
 Project: juniper-cascor
 Author: Paul Calnon
@@ -48,18 +56,34 @@ pytestmark = pytest.mark.unit
 
 REPO = Path(__file__).resolve().parents[3]
 WORKFLOWS = REPO / ".github" / "workflows"
-#: workflow -> (PUBLISH_PACKAGE, PUBLISH_DIST_DIR, TestPyPI job, PyPI job); each also has a ``build`` and a ``republish`` job.
+#: workflow -> (PUBLISH_PACKAGE, PUBLISH_DIST_DIR, TestPyPI job, PyPI job); each also has a ``build``, an install check and a ``republish`` job.
 PUBLISHERS = {
     "publish.yml": ("juniper-cascor", "dist", "testpypi", "pypi"),
     "publish-cascor-model.yml": ("juniper-cascor-model", "juniper-cascor-model/dist", "publish-testpypi", "publish-pypi"),
     "publish-protocol.yml": ("juniper-cascor-protocol", "juniper-cascor-protocol/dist", "publish-testpypi", "publish-pypi"),
 }
-#: workflow -> (top-level permissions, the PyPI job's). The build, TestPyPI and republish jobs hold the same in all three.
+#: workflow -> (top-level permissions, the PyPI job's). The PyPI job checks nothing out, so it holds ``id-token: write``
+#: alone in all three. The build, TestPyPI, install-check and republish jobs hold the same in all three.
 PERMISSIONS = {
     "publish.yml": ({}, {"id-token": "write"}),
-    "publish-cascor-model.yml": ({"contents": "read"}, {"contents": "read", "id-token": "write"}),
-    "publish-protocol.yml": ({"contents": "read"}, {"contents": "read", "id-token": "write"}),
+    "publish-cascor-model.yml": ({"contents": "read"}, {"id-token": "write"}),
+    "publish-protocol.yml": ({"contents": "read"}, {"id-token": "write"}),
 }
+#: workflow -> PUBLISH_TAG_PREFIX, what the package's release tags start with (the version is the rest): ``v`` for the
+#: app, ``<package>-v`` for a sub-package.
+TAG_PREFIXES = {"publish.yml": "v", "publish-cascor-model.yml": "juniper-cascor-model-v", "publish-protocol.yml": "juniper-cascor-protocol-v"}
+#: workflow -> its ``name:``. juniper-ml's release-train monitor drops every run of a workflow whose name does not end in
+#: "to PyPI" (``PYPI_PUBLISHER_NAME_SUFFIX`` in ``util/release_train/ceremony.py``), so a renamed publisher fails quietly.
+WORKFLOW_NAMES = {"publish.yml": "Publish to PyPI", "publish-cascor-model.yml": "Publish juniper-cascor-model to PyPI", "publish-protocol.yml": "Publish juniper-cascor-protocol to PyPI"}
+#: Ruling 2 of 2026-11-16: the install check runs in a job of its own, which holds no ``id-token``. Its name holds
+#: "TestPyPI", so the release-train ceremony counts it with the TestPyPI job and reads its failure as HALT_TESTPYPI.
+INSTALL = "verify-testpypi-install"
+INSTALL_NAME = "Verify the TestPyPI install"
+#: workflow -> the install check's step name, kept from the TestPyPI job it moved out of.
+INSTALL_STEPS = {"publish.yml": "Verify TestPyPI install", "publish-cascor-model.yml": "Verify install from TestPyPI (no-deps, version-only import)", "publish-protocol.yml": "Verify install from TestPyPI"}
+#: The sub-package build jobs' release-convention gate. It runs on ``push`` alone, an event no publisher subscribes to, so
+#: it never runs: it is the one build step exempt from the reuse condition, and it is exempt by its name.
+RELEASE_GATE = "Require a GitHub Release for this tag"
 REPUBLISH = "republish"
 REPUBLISH_NAME = "Republish the tested files (dispatch only)"
 REPUBLISH_IF = "github.event_name == 'workflow_dispatch' && inputs.republish_from_testpypi"
@@ -80,6 +104,7 @@ INDEX_CHECKS = {TESTPYPI_AFTER: "https://test.pypi.org", TESTPYPI_BEFORE: "https
 TEMPLATE_ENV = {
     "PUBLISH_PACKAGE",
     "PUBLISH_DIST_DIR",
+    "PUBLISH_TAG_PREFIX",
     "INDEX_URL",
     "HASH_CHECK_ATTEMPTS",
     "HASH_CHECK_INTERVAL",
@@ -101,6 +126,8 @@ PUBLISH_ACTION = "pypa/gh-action-pypi-publish@"
 BUILD_COMMAND = re.compile(r"\bpython3?\s+-m\s+build\b|\bpip3?\s+wheel\b|\buv\s+build\b|\bsetup\.py\s+(?:sdist|bdist_wheel)\b")
 #: GitHub lets a deployment wait this many days for its reviewer: the PyPI job may start that late, and needs the artifact.
 GATE_APPROVAL_DAYS = 30
+#: The artifact's retention, as the docs state it: past the gate's 30 days and the 30-day re-run window.
+RETENTION_DAYS = 90
 ARTIFACT = "${{ env.PUBLISH_PACKAGE }}-dist"
 DIST_INPUT = "${{ env.PUBLISH_DIST_DIR }}/"
 WHEEL = "juniper_cascor-9.9.9-py3-none-any.whl"
@@ -113,6 +140,116 @@ REPOSITORY = "pcalnon/juniper-cascor"
 API_CREDENTIAL_ENV = "GH_TOKEN"
 RUNNER_CREDENTIAL = "${{ github.token }}"
 FAKE_API_CREDENTIAL = "stand-in-credential"
+#: The actions the publishers use, by name: a step is compared with its ``@ref`` dropped, so a Dependabot bump of a pin
+#: changes nothing here.
+CHECKOUT = "actions/checkout"
+SETUP_PYTHON = "actions/setup-python"
+UPLOAD_ACTION = "actions/upload-artifact"
+DOWNLOAD_ACTION = "actions/download-artifact"
+PYPI_PUBLISH = "pypa/gh-action-pypi-publish"
+#: Each job's steps, in order, as (name, action). Nothing may be added, dropped or moved unnoticed: neither a rebuild
+#: slipped into a publish job nor a step that writes into the dist directory before ``Record SHA256SUMS``.
+TESTPYPI_STEPS = [(DOWNLOAD, DOWNLOAD_ACTION), (VERIFY_DIST, None), ("Publish to TestPyPI", PYPI_PUBLISH), (TESTPYPI_AFTER, None)]
+PYPI_STEPS = [(DOWNLOAD, DOWNLOAD_ACTION), (VERIFY_DIST, None), (TESTPYPI_BEFORE, None), ("Publish to PyPI", PYPI_PUBLISH), (PYPI_AFTER, None)]
+REPUBLISH_STEPS = [(FIND, None), (FETCH_ORIGINAL, DOWNLOAD_ACTION), (FETCH, None), (VERIFY_DIST, None), ("Publish to PyPI", PYPI_PUBLISH), (PYPI_AFTER, None)]
+SUB_PACKAGE_BUILD_STEPS = [(REUSE, None), (None, CHECKOUT), (RELEASE_GATE, None), (None, SETUP_PYTHON), ("Install build tools", None), ("Build sdist + wheel", None), ("Validate distribution metadata", None), (RECORD, None), (UPLOAD, UPLOAD_ACTION)]
+BUILD_STEPS = {
+    "publish.yml": [(REUSE, None), (None, CHECKOUT), (None, SETUP_PYTHON), ("Install build tools", None), ("Build package", None), ("Check package", None), (RECORD, None), (UPLOAD, UPLOAD_ACTION)],
+    "publish-cascor-model.yml": SUB_PACKAGE_BUILD_STEPS,
+    "publish-protocol.yml": SUB_PACKAGE_BUILD_STEPS,
+}
+#: The install-check job: setup-python, or the sparse checkout a sub-package reads its version from, then the check.
+INSTALL_JOB_STEPS = {
+    "publish.yml": [(None, SETUP_PYTHON), (INSTALL_STEPS["publish.yml"], None)],
+    "publish-cascor-model.yml": [(None, CHECKOUT), (INSTALL_STEPS["publish-cascor-model.yml"], None)],
+    "publish-protocol.yml": [(None, CHECKOUT), (INSTALL_STEPS["publish-protocol.yml"], None)],
+}
+#: workflow -> the exact inputs of its TestPyPI and its PyPI upload: no ``skip-existing`` (nor the action's older spelling
+#: ``skip_existing``), no ``attestations: false``, and the downloaded dist directory as the only source.
+TESTPYPI_INPUTS = {"repository-url": "https://test.pypi.org/legacy/", "packages-dir": DIST_INPUT}
+UPLOAD_INPUTS = {
+    "publish.yml": (TESTPYPI_INPUTS, {"packages-dir": DIST_INPUT}),
+    "publish-cascor-model.yml": ({**TESTPYPI_INPUTS, "verbose": True}, {"packages-dir": DIST_INPUT, "verbose": True}),
+    "publish-protocol.yml": ({**TESTPYPI_INPUTS, "verbose": True}, {"packages-dir": DIST_INPUT, "verbose": True}),
+}
+#: Every key the workflow and each of its jobs carries. An ``env`` on a job (``PIP_EXTRA_INDEX_URL``,
+#: ``HASH_CHECK_ATTEMPTS``), a container, a matrix or another runner would change what a check runs, or against what.
+WORKFLOW_KEYS = {"name", "on", "permissions", "env", "jobs"}
+BUILD_JOB_KEYS = {"name", "if", "runs-on", "permissions", "steps"}
+PUBLISH_JOB_KEYS = {"name", "needs", "runs-on", "environment", "permissions", "steps"}
+INSTALL_JOB_KEYS = {"name", "needs", "runs-on", "permissions", "steps"}
+REPUBLISH_JOB_KEYS = {"name", "if", "runs-on", "environment", "permissions", "steps"}
+#: The keys a repository may add, none of which changes what a check runs. The workflow's: ``run-name``, which names the
+#: run, and a ``concurrency`` group that never cancels a run in progress (the run it holds pending, and cancels when a
+#: newer one queues, has run nothing yet). A job's: ``timeout-minutes``, which stops it sooner, and a job stopped so
+#: fails, so nothing after it runs; the republish job takes one only in all three files at once, since it stays
+#: identical in every publisher. No job takes a ``concurrency`` group: by default (``queue: single``) GitHub keeps one
+#: pending job per group and cancels the older one when another queues, so a group on the PyPI job could stop a run
+#: between its two uploads.
+OPTIONAL_WORKFLOW_KEYS = {"run-name", "concurrency"}
+OPTIONAL_JOB_KEYS = {"timeout-minutes"}
+#: workflow -> each build step's command: the build, and the check of what it built.
+SUB_PACKAGE_BUILD_RUNS = {"Install build tools": "pip install --upgrade build twine", "Build sdist + wheel": "python -m build --sdist --wheel", "Validate distribution metadata": "twine check dist/*"}
+BUILD_RUNS = {
+    "publish.yml": {"Install build tools": "pip install build twine", "Build package": "python -m build", "Check package": "twine check dist/*"},
+    "publish-cascor-model.yml": SUB_PACKAGE_BUILD_RUNS,
+    "publish-protocol.yml": SUB_PACKAGE_BUILD_RUNS,
+}
+#: The install checks' bounded retry: this many tries, this many seconds apart; publish.yml waits once before the first.
+INSTALL_TRIES = 5
+INSTALL_RETRY_SECONDS = 10
+INSTALL_FIRST_WAIT_SECONDS = 30
+LAG_ERROR = "is not installable from TestPyPI after 5 tries (index lag?): Re-run failed jobs; a real failure repeats"
+
+
+def _retried_install(package: str, version: str) -> list[str]:
+    """The install every check runs: five tries, 10 s apart, and after the fifth failure an error that names index lag,
+    rather than an import that fails as if the package were broken."""
+    return [
+        "for attempt in 1 2 3 4 5; do",
+        "if pip install \\",
+        "--no-deps \\",
+        "--index-url https://test.pypi.org/simple/ \\",
+        f'"{package}==${{{version}}}"; then',
+        "break",
+        "fi",
+        'if [ "${attempt}" -eq 5 ]; then',
+        f'echo "::error::{package} ${{{version}}} {LAG_ERROR}"',
+        "exit 1",
+        "fi",
+        'echo "TestPyPI index lag — retrying in 10s (attempt ${attempt}/5)"',
+        "sleep 10",
+        "done",
+    ]
+
+
+def _version_from_pyproject(package: str) -> str:
+    return f"""version=$(grep '^version' "${{GITHUB_WORKSPACE}}/{package}/pyproject.toml" | head -1 | sed -E 's/version = "(.+)"/\\1/')"""
+
+
+#: workflow -> its install step's commands, exactly, comment and blank lines dropped: no ``exit 0``, ``trap``, earlier
+#: install or second VERSION can be added and none dropped, while a comment may change freely. The protocol check reads
+#: the metadata and finds the package without importing it (the import loads the numpy codec, absent under --no-deps).
+INSTALL_COMMANDS = {
+    "publish.yml": ['cd "${RUNNER_TEMP}"', 'VERSION="${RELEASE_TAG#v}"', "sleep 30", *_retried_install("juniper-cascor", "VERSION"), """python -c "from juniper_cascor import __version__; print(f'TestPyPI OK: v{__version__}')\""""],
+    "publish-cascor-model.yml": [
+        "set -euo pipefail",
+        'cd "${RUNNER_TEMP}"',
+        _version_from_pyproject("juniper-cascor-model"),
+        *_retried_install("juniper-cascor-model", "version"),
+        """python -c "import juniper_cascor_model; print('TestPyPI install OK', juniper_cascor_model.__version__)\"""",
+    ],
+    "publish-protocol.yml": [
+        "set -euo pipefail",
+        'cd "${RUNNER_TEMP}"',
+        _version_from_pyproject("juniper-cascor-protocol"),
+        *_retried_install("juniper-cascor-protocol", "version"),
+        """python -c "import importlib.metadata as m, importlib.util as u; spec = u.find_spec('juniper_cascor_protocol'); origin = spec.origin if spec else None; print('TestPyPI install', m.version('juniper-cascor-protocol'), 'package at', origin); raise SystemExit(0 if origin else 'the installed wheel holds no juniper_cascor_protocol package')\"""",
+    ],
+}
+#: workflow -> the install step's keys beyond its name and script: publish.yml's reads the release's tag through ``env``,
+#: so no expression is pasted into the script's text.
+INSTALL_STEP_EXTRA = {"publish.yml": {"env": {"RELEASE_TAG": "${{ github.event.release.tag_name }}"}}, "publish-cascor-model.yml": {}, "publish-protocol.yml": {}}
 
 
 def _workflow(name: str) -> dict:
@@ -145,10 +282,44 @@ def _environment(job: dict) -> str:
     return str(env.get("name") if isinstance(env, dict) else env)
 
 
+def _cancels(group) -> bool:
+    """Whether a workflow's ``concurrency`` value cancels a run in progress. A group named alone, or one without
+    ``cancel-in-progress``, never does: it holds a newer run pending, and cancels only an older pending run, which has
+    run nothing yet."""
+    return isinstance(group, dict) and group.get("cancel-in-progress", False) is not False
+
+
 def _assert_no_checkout_between(job: dict, start: int, end: int) -> None:
     """A checkout empties the workspace, so one between the download and the last template step would lose the files."""
     between = [str(s.get("uses") or "") for s in job["steps"][start:end]]
     assert not [u for u in between if u.startswith("actions/checkout@")], f"a checkout runs between steps {start} and {end}: {between}"
+
+
+def _steps(job: dict) -> list[tuple[str | None, str | None]]:
+    """Each step as (its name, the action it uses with the ``@ref`` dropped)."""
+    return [(s.get("name"), str(s["uses"]).split("@", 1)[0] if s.get("uses") else None) for s in job.get("steps") or []]
+
+
+def _by_action(value):
+    """VALUE with every ``uses:`` reduced to the action's name, the ``@ref`` dropped."""
+    if isinstance(value, dict):
+        return {k: (str(v).split("@", 1)[0] if k == "uses" else _by_action(v)) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_by_action(v) for v in value]
+    return value
+
+
+def _allowed_if(job_id: str, index: int, step: dict) -> str | None:
+    """The one ``if:`` a step may carry: the reuse step's own, the reuse condition on every later build step but the
+    push-only release gate (exempt by its name), and the republish job's download of the release run's artifact. Any
+    other ``if:`` could skip a check."""
+    if job_id == "build":
+        if index == 0:
+            return "github.run_attempt != '1'"
+        return "github.event_name == 'push'" if step.get("name") == RELEASE_GATE else REUSE_IF
+    if job_id == REPUBLISH and step.get("name") == FETCH_ORIGINAL:
+        return "steps.original.outputs.run-id != ''"
+    return None
 
 
 def _template_scripts() -> dict[str, str]:
@@ -176,7 +347,7 @@ def _script(kind: str, tmp_path: Path) -> Path:
 
 def _run(script: Path, workspace: Path, cwd: Path | None = None, **env: str) -> subprocess.CompletedProcess[str]:
     """Run an extracted step as the runner does (``python3 {0}``), with a minimal environment rather than a copy of ours."""
-    child = {"PATH": os.environ.get("PATH", ""), "GITHUB_WORKSPACE": str(workspace), "PUBLISH_PACKAGE": "juniper-cascor", "PUBLISH_DIST_DIR": "dist"}
+    child = {"PATH": os.environ.get("PATH", ""), "GITHUB_WORKSPACE": str(workspace), "PUBLISH_PACKAGE": "juniper-cascor", "PUBLISH_DIST_DIR": "dist", "PUBLISH_TAG_PREFIX": "v"}
     child.update(env)
     return subprocess.run([sys.executable, "-I", str(script)], cwd=cwd or workspace, env=child, capture_output=True, text=True, timeout=120, check=False)  # nosec B603 - fixed argv: this interpreter and an extracted step
 
@@ -256,7 +427,17 @@ SERVED = {name: _sha(data) for name, data in BUILT.items()}
 class TestWiring:
     def test_the_template_parameters_name_this_package(self, workflow):
         package, dist_dir, _, _ = PUBLISHERS[workflow]
-        assert _workflow(workflow)["env"] == {"PUBLISH_PACKAGE": package, "PUBLISH_DIST_DIR": dist_dir}
+        wf = _workflow(workflow)
+        assert wf["env"] == {"PUBLISH_PACKAGE": package, "PUBLISH_DIST_DIR": dist_dir, "PUBLISH_TAG_PREFIX": TAG_PREFIXES[workflow]}
+        # A single-package publisher's tags are v<version>; a sub-package publisher's are <package>-v<version>.
+        assert TAG_PREFIXES[workflow] == ("v" if workflow == "publish.yml" else f"{package}-v")
+        # A job-level if: cannot read env, so the build job's tag guard repeats the prefix: the two must agree.
+        assert f"startsWith(github.event.release.tag_name, '{TAG_PREFIXES[workflow]}')" in wf["jobs"]["build"]["if"]
+
+    def test_the_workflow_name_ends_in_to_pypi_as_the_release_train_monitor_requires(self, workflow):
+        name = _workflow(workflow)["name"]
+        assert name == WORKFLOW_NAMES[workflow]
+        assert name.lower().endswith("to pypi")
 
     def test_only_the_build_job_builds_and_it_holds_no_environment(self, workflow):
         jobs = _workflow(workflow)["jobs"]
@@ -269,11 +450,14 @@ class TestWiring:
     def test_the_publish_jobs_chain_on_the_build_under_the_names_the_release_train_reads(self, workflow):
         _, _, test_id, prod_id = PUBLISHERS[workflow]
         jobs = _workflow(workflow)["jobs"]
-        assert sorted(jobs) == sorted(["build", test_id, prod_id, REPUBLISH])
+        assert sorted(jobs) == sorted(["build", test_id, INSTALL, prod_id, REPUBLISH])
         assert jobs[test_id]["needs"] == "build"
-        assert jobs[prod_id]["needs"] == test_id
-        # juniper-ml's util/release_train/ceremony.py tells the two jobs apart by name ("testpypi" / "pypi").
+        assert jobs[INSTALL]["needs"] == test_id
+        # PyPI waits for both TestPyPI jobs: the upload with its checks, and the install check.
+        assert jobs[prod_id]["needs"] == [test_id, INSTALL]
+        # juniper-ml's util/release_train/ceremony.py tells the jobs apart by name: "testpypi" (both TestPyPI jobs) and "pypi".
         assert jobs[test_id]["name"] == "Publish to TestPyPI"
+        assert jobs[INSTALL]["name"] == INSTALL_NAME
         assert jobs[prod_id]["name"] == "Publish to PyPI"
         assert _environment(jobs[test_id]) == "testpypi"
         assert _environment(jobs[prod_id]) == "pypi"
@@ -287,7 +471,10 @@ class TestWiring:
         minting = sorted(job_id for job_id, job in jobs.items() if (job.get("permissions") or {}).get("id-token") == "write")
         assert uploading == minting == sorted(PUBLISHERS[workflow][2:] + (REPUBLISH,))
         assert jobs["build"]["permissions"] == {"contents": "read", "actions": "read"}
-        assert jobs[PUBLISHERS[workflow][2]]["permissions"] == {"contents": "read", "id-token": "write"}
+        # The job that can mint runs the template steps and the upload alone: it checks out nothing and installs nothing.
+        assert jobs[PUBLISHERS[workflow][2]]["permissions"] == {"id-token": "write"}
+        # The install check runs the package TestPyPI serves: it may read the repository, and nothing more.
+        assert jobs[INSTALL]["permissions"] == {"contents": "read"}
         assert jobs[PUBLISHERS[workflow][3]]["permissions"] == prod
         assert jobs[REPUBLISH]["permissions"] == {"actions": "read", "id-token": "write"}
 
@@ -302,9 +489,11 @@ class TestWiring:
         assert reuse.get("shell") == "python3 {0}"
         assert reuse.get("env") == {API_CREDENTIAL_ENV: RUNNER_CREDENTIAL}
         # Every later step is skipped once the reuse step finds the artifact, except the release-convention gate, which
-        # runs on `push` alone, an event no publisher subscribes to.
+        # runs on `push` alone, an event no publisher subscribes to. It is exempt by its name: an exemption by its `if:`
+        # text would let any build step trade the reuse condition for the push condition.
         for step in build["steps"][1:]:
-            if step.get("if") == "github.event_name == 'push'":
+            if step.get("name") == RELEASE_GATE:
+                assert step.get("if") == "github.event_name == 'push'"
                 continue
             assert step.get("if") == REUSE_IF, f"{step.get('name') or step.get('uses')} would run on a re-run that reuses the artifact"
         for name in (RECORD, UPLOAD):
@@ -312,15 +501,19 @@ class TestWiring:
 
     def test_the_testpypi_job_checks_the_dist_uploads_then_checks_testpypi_before_the_install_check(self, workflow):
         _, _, test_id, _ = PUBLISHERS[workflow]
-        job = _workflow(workflow)["jobs"][test_id]
+        jobs = _workflow(workflow)["jobs"]
+        job = jobs[test_id]
         uploads = _uploads(job)
         assert len(uploads) == 1
         assert job["steps"][uploads[0]]["with"]["repository-url"] == "https://test.pypi.org/legacy/"
         assert _index(job, DOWNLOAD) < _index(job, VERIFY_DIST) < uploads[0] < _index(job, TESTPYPI_AFTER)
-        installs = [i for i, s in enumerate(job["steps"]) if "pip install" in str(s.get("run") or "")]
+        # The job ends at the sha256 check that vouches for what the install check installs, in the job that needs it.
+        assert _index(job, TESTPYPI_AFTER) == len(job["steps"]) - 1
+        assert not [s for s in job["steps"] if "pip install" in str(s.get("run") or "")], "the job that can mint runs an install check"
+        installs = [s for s in jobs[INSTALL]["steps"] if "pip install" in str(s.get("run") or "")]
         assert installs, "the TestPyPI install check is gone"
-        assert min(installs) > _index(job, TESTPYPI_AFTER), "the install check must come after the sha256 check that vouches for what it installs"
-        _assert_no_checkout_between(job, _index(job, DOWNLOAD), _index(job, TESTPYPI_AFTER))
+        assert jobs[INSTALL]["needs"] == test_id, "the install check must come after the sha256 check that vouches for what it installs"
+        _assert_no_checkout_between(job, 0, len(job["steps"]))
 
     def test_the_pypi_job_rechecks_testpypi_before_its_upload_and_pypi_after(self, workflow):
         _, _, _, prod_id = PUBLISHERS[workflow]
@@ -354,12 +547,20 @@ class TestWiring:
         assert _step(job, PYPI_AFTER)["env"] == {"INDEX_URL": "https://pypi.org"}
 
     def test_every_upload_takes_the_downloaded_dist_and_none_skips_an_existing_file(self, workflow):
-        for job in _workflow(workflow)["jobs"].values():
+        _, _, test_id, prod_id = PUBLISHERS[workflow]
+        jobs = _workflow(workflow)["jobs"]
+        for job in jobs.values():
             for i in _uploads(job):
                 inputs = job["steps"][i].get("with") or {}
                 assert inputs.get("packages-dir") == DIST_INPUT
-                # skip-existing would keep an earlier file under the same name, and the install check would test it.
+                # skip-existing would keep an earlier file under the same name, and the install check would test it. The
+                # action still reads its older spelling too.
                 assert "skip-existing" not in inputs
+                assert "skip_existing" not in inputs
+                # Attestations stay on, the action's default.
+                assert inputs.get("attestations", True) is True
+        for job_id, inputs in zip((test_id, prod_id), UPLOAD_INPUTS[workflow]):
+            assert [jobs[job_id]["steps"][i].get("with") for i in _uploads(jobs[job_id])] == [inputs]
 
     def test_one_artifact_carries_the_dist_and_sha256sums_and_outlives_the_pypi_gate(self, workflow):
         _, _, test_id, prod_id = PUBLISHERS[workflow]
@@ -368,7 +569,9 @@ class TestWiring:
         assert upload["name"] == ARTIFACT
         assert [p.strip() for p in upload["path"].splitlines() if p.strip()] == [DIST_INPUT, "SHA256SUMS"]
         assert upload["if-no-files-found"] == "error"
-        assert int(upload["retention-days"]) > GATE_APPROVAL_DAYS
+        # Exactly the documented 90 days, which outlive the gate's 30 days and the 30-day re-run window.
+        assert upload["retention-days"] == RETENTION_DAYS
+        assert RETENTION_DAYS > GATE_APPROVAL_DAYS
         assert _index(jobs["build"], RECORD) < _index(jobs["build"], UPLOAD)
         for job_id in (test_id, prod_id):
             assert _step(jobs[job_id], DOWNLOAD)["with"] == {"name": ARTIFACT, "path": "${{ github.workspace }}"}
@@ -379,6 +582,190 @@ class TestWiring:
         for job_id, name in ((test_id, TESTPYPI_AFTER), (prod_id, TESTPYPI_BEFORE), (prod_id, PYPI_AFTER)):
             assert _step(jobs[job_id], name)["env"] == {"INDEX_URL": INDEX_CHECKS[name]}
 
+    def test_each_job_runs_exactly_its_listed_steps_in_order(self, workflow):
+        _, _, test_id, prod_id = PUBLISHERS[workflow]
+        jobs = _workflow(workflow)["jobs"]
+        want = {"build": BUILD_STEPS[workflow], test_id: TESTPYPI_STEPS, INSTALL: INSTALL_JOB_STEPS[workflow], prod_id: PYPI_STEPS, REPUBLISH: REPUBLISH_STEPS}
+        assert {job_id: _steps(job) for job_id, job in jobs.items()} == want
+
+    def test_no_step_or_job_can_switch_a_check_off(self, workflow):
+        for job_id, job in _workflow(workflow)["jobs"].items():
+            # A job or step that continues on error is a check that no longer blocks, and an if: can skip one. The build
+            # and republish jobs' own if: are pinned to their exact text elsewhere; no other job may carry one (`always()`
+            # on the PyPI job would publish after a failed install check).
+            assert "continue-on-error" not in job, f"{job_id} would not fail the run"
+            if job_id not in ("build", REPUBLISH):
+                assert "if" not in job, f"{job_id} carries if: {job.get('if')!r}"
+            for index, step in enumerate(job.get("steps") or []):
+                label = f"{job_id}: {step.get('name') or step.get('uses')}"
+                assert "continue-on-error" not in step, f"{label} would not fail its job"
+                assert step.get("if") == _allowed_if(job_id, index, step), f"{label} carries if: {step.get('if')!r}"
+
+    def test_every_job_carries_only_its_listed_keys_and_runs_on_a_hosted_runner(self, workflow):
+        # A job-level env (PIP_EXTRA_INDEX_URL, or HASH_CHECK_ATTEMPTS over a JSON check's bounds), a container, a matrix
+        # or a self-hosted runner would change what a check runs, or against what. The workflow's run-name and a
+        # workflow concurrency group that never cancels, and a job's timeout-minutes, change no check, so a repository
+        # may add them (OPTIONAL_*_KEYS); the republish job takes a timeout only in all three files, since it stays
+        # identical in every publisher. A job's own concurrency group is refused: by default (queue: single) it cancels
+        # the group's pending job when another queues.
+        wf = _workflow(workflow)
+        sub = workflow != "publish.yml"
+        _, _, test_id, prod_id = PUBLISHERS[workflow]
+        required = WORKFLOW_KEYS | ({"concurrency"} if sub else set())
+        assert required <= set(wf) <= required | OPTIONAL_WORKFLOW_KEYS, f"workflow keys {sorted(wf)}"
+        want = {"build": BUILD_JOB_KEYS | ({"defaults"} if sub else set()), test_id: PUBLISH_JOB_KEYS, INSTALL: INSTALL_JOB_KEYS, prod_id: PUBLISH_JOB_KEYS, REPUBLISH: REPUBLISH_JOB_KEYS}
+        assert {job_id: set(job) - OPTIONAL_JOB_KEYS for job_id, job in wf["jobs"].items()} == want
+        assert {job_id: job["runs-on"] for job_id, job in wf["jobs"].items()} == dict.fromkeys(want, "ubuntu-latest")
+        if sub:
+            assert wf["jobs"]["build"]["defaults"] == {"run": {"working-directory": PUBLISHERS[workflow][0]}}
+
+    def test_no_env_points_pip_elsewhere(self, workflow):
+        # PIP_INDEX_URL or PIP_EXTRA_INDEX_URL in any env would send the install check, or the build tools, to another index.
+        wf = _workflow(workflow)
+        envs = [wf.get("env") or {}] + [job.get("env") or {} for job in wf["jobs"].values()] + [step.get("env") or {} for job in wf["jobs"].values() for step in job.get("steps") or []]
+        assert not [key for env in envs for key in env if str(key).upper().startswith("PIP_")]
+
+    def test_the_build_steps_run_exactly_their_commands(self, workflow):
+        # `|| true` after twine check, or a build without its sdist, would ship what the build job no longer checks.
+        build = _workflow(workflow)["jobs"]["build"]
+        assert {name: str(_step(build, name)["run"]).strip() for name in BUILD_RUNS[workflow]} == BUILD_RUNS[workflow]
+
+
+# ─────────────────────────────────────────────────────────────────────────────────────────────
+# Ruling 2 of 2026-11-16: the install check runs in a job of its own, which cannot mint a credential
+# ─────────────────────────────────────────────────────────────────────────────────────────────
+@pytest.mark.parametrize("workflow", sorted(PUBLISHERS))
+class TestInstallCheckJob:
+    def test_it_runs_after_the_testpypi_job_with_contents_read_alone_and_pypi_needs_it(self, workflow):
+        _, _, test_id, prod_id = PUBLISHERS[workflow]
+        jobs = _workflow(workflow)["jobs"]
+        job = jobs[INSTALL]
+        assert job["name"] == INSTALL_NAME
+        # juniper-ml's release-train ceremony counts every job whose name holds "testpypi" as a TestPyPI job: a failure
+        # here reads HALT_TESTPYPI, and the train stops.
+        assert "testpypi" in job["name"].lower()
+        assert job["needs"] == test_id
+        assert job["runs-on"] == "ubuntu-latest"
+        assert job["permissions"] == {"contents": "read"}
+        assert "environment" not in job
+        assert "if" not in job
+        assert not _uploads(job)
+        assert jobs[prod_id]["needs"] == [test_id, INSTALL]
+
+    def test_the_testpypi_job_keeps_only_the_template_steps_and_the_upload(self, workflow):
+        _, _, test_id, _ = PUBLISHERS[workflow]
+        job = _workflow(workflow)["jobs"][test_id]
+        assert job["permissions"] == {"id-token": "write"}
+        assert _steps(job) == TESTPYPI_STEPS
+        assert not [s for s in job["steps"] if str(s.get("uses") or "").startswith(f"{CHECKOUT}@")]
+
+    def test_it_installs_and_imports_from_outside_any_checkout(self, workflow):
+        package = PUBLISHERS[workflow][0]
+        job = _workflow(workflow)["jobs"][INSTALL]
+        assert "defaults" not in job
+        step = _step(job, INSTALL_STEPS[workflow])
+        assert "working-directory" not in step
+        commands = [line.strip() for line in step["run"].splitlines() if line.strip() and not line.strip().startswith("#")]
+        if commands[0] == "set -euo pipefail":
+            commands = commands[1:]
+        # `python -c` puts its working directory first on sys.path, and this repository's root holds juniper_cascor/: an
+        # import run inside a checkout could pass without the wheel. So the first command leaves for the runner's
+        # temporary directory, and no command moves elsewhere.
+        assert commands[0] == 'cd "${RUNNER_TEMP}"'
+        assert [c for c in commands if c.split()[0] in ("cd", "pushd", "popd")] == ['cd "${RUNNER_TEMP}"']
+        assert [c for c in commands if "pip install" in c]
+        assert [c for c in commands if c.startswith("python -c ")]
+        # A sub-package reads its version from a sparse checkout, and nothing runs from it. It keeps no credential in the
+        # workspace while the package TestPyPI serves runs.
+        checkouts = [s.get("with") for s in job["steps"] if str(s.get("uses") or "").startswith(f"{CHECKOUT}@")]
+        assert checkouts == ([] if workflow == "publish.yml" else [{"sparse-checkout": f"{package}/pyproject.toml\n", "persist-credentials": False}])
+
+    def test_the_install_step_runs_exactly_its_commands(self, workflow):
+        # Exactly these commands, in this order, comment and blank lines dropped: no `exit 0`, trap, earlier install or
+        # second VERSION can be added, and none dropped, while a comment may change freely. The step carries its name and
+        # script, and publish.yml's the release's tag, through env: no expression is pasted into the script.
+        step = _step(_workflow(workflow)["jobs"][INSTALL], INSTALL_STEPS[workflow])
+        assert [line.strip() for line in step["run"].splitlines() if line.strip() and not line.strip().startswith("#")] == INSTALL_COMMANDS[workflow]
+        assert {key: value for key, value in step.items() if key not in ("name", "run")} == INSTALL_STEP_EXTRA[workflow]
+        assert "${{" not in step["run"]
+
+    def test_the_install_check_cannot_be_switched_off(self, workflow):
+        step = _step(_workflow(workflow)["jobs"][INSTALL], INSTALL_STEPS[workflow])
+        commands = "\n".join(line for line in step["run"].splitlines() if not line.strip().startswith("#"))
+        # A failed install or import must fail the job: no `|| true` (nor any `||`), no `set +e`, the runner's default
+        # shell, and neither continue-on-error nor if:.
+        assert "||" not in commands
+        assert "set +e" not in commands
+        assert "shell" not in step
+        assert "continue-on-error" not in step
+        assert "if" not in step
+        # TestPyPI alone, with no pypi.org fallback that a same-name squatter could answer (juniper-ml#384).
+        assert "--index-url https://test.pypi.org/simple/" in commands
+        assert "--extra-index-url" not in commands
+
+
+def _run_install(workflow: str, tmp_path: Path, pip_failures: int, python_status: int = 0, tag: str = "v1.2.3") -> tuple[subprocess.CompletedProcess[str], list[list[str]]]:
+    """Run WORKFLOW's install step as the runner runs a ``run:`` without a ``shell:`` (``bash -e {0}``), against stand-in
+    ``pip``, ``python`` and ``sleep`` commands that log each call (the command, its directory, its arguments): ``pip``
+    fails its first PIP_FAILURES calls, and ``python`` exits with PYTHON_STATUS. A sub-package's version is 1.2.3."""
+    package = PUBLISHERS[workflow][0]
+    bin_dir, runner_temp, workspace = tmp_path / "bin", tmp_path / "runner-temp", tmp_path / "workspace"
+    for directory in (bin_dir, runner_temp, workspace / package):
+        directory.mkdir(parents=True)
+    (workspace / package / "pyproject.toml").write_text('[project]\nname = "stand-in"\nversion = "1.2.3"\n', encoding="utf-8")
+    log = tmp_path / "calls.log"
+    stubs = {"pip": 'test "$(grep -c "^pip" "$STUB_LOG")" -gt "$STUB_PIP_FAILURES"\n', "python": 'exit "$STUB_PYTHON_STATUS"\n', "sleep": ""}
+    for name, body in stubs.items():
+        stub = bin_dir / name
+        stub.write_text(f'#!/bin/sh\nprintf "%s\\t%s\\t%s\\n" "{name}" "$(pwd -P)" "$*" >> "$STUB_LOG"\n{body}', encoding="utf-8")
+        stub.chmod(0o700)
+    script = tmp_path / "install.sh"
+    script.write_text(_step(_workflow(workflow)["jobs"][INSTALL], INSTALL_STEPS[workflow])["run"], encoding="utf-8")
+    bash = shutil.which("bash")
+    assert bash, "the install checks run under bash"
+    env = {"PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}", "RUNNER_TEMP": str(runner_temp), "GITHUB_WORKSPACE": str(workspace), "RELEASE_TAG": tag, "STUB_LOG": str(log), "STUB_PIP_FAILURES": str(pip_failures), "STUB_PYTHON_STATUS": str(python_status)}
+    proc = subprocess.run([bash, "-e", str(script)], cwd=workspace, env=env, capture_output=True, encoding="utf-8", timeout=60, check=False)  # nosec B603 - fixed argv: bash and the workflow's own extracted step
+    calls = [line.split("\t", 2) for line in log.read_text(encoding="utf-8").splitlines()] if log.exists() else []
+    return proc, calls
+
+
+class TestInstallCheckScript:
+    """Each install step's own shell, run as the runner runs it, against stand-in ``pip``, ``python`` and ``sleep``."""
+
+    @pytest.mark.parametrize("workflow", sorted(PUBLISHERS))
+    def test_index_lag_that_outlasts_every_try_fails_naming_the_lag_and_never_imports(self, workflow, tmp_path):
+        proc, calls = _run_install(workflow, tmp_path, pip_failures=INSTALL_TRIES)
+        assert proc.returncode == 1
+        assert f"::error::{PUBLISHERS[workflow][0]} 1.2.3 {LAG_ERROR}" in proc.stdout
+        assert [call[0] for call in calls if call[0] != "sleep"] == ["pip"] * INSTALL_TRIES
+        # A wait between tries and none after the last; publish.yml waits once before the first.
+        first = [str(INSTALL_FIRST_WAIT_SECONDS)] if workflow == "publish.yml" else []
+        assert [call[2] for call in calls if call[0] == "sleep"] == first + [str(INSTALL_RETRY_SECONDS)] * (INSTALL_TRIES - 1)
+
+    @pytest.mark.parametrize("workflow", sorted(PUBLISHERS))
+    def test_a_try_that_installs_ends_the_retries_and_the_check_runs_from_runner_temp(self, workflow, tmp_path):
+        package = PUBLISHERS[workflow][0]
+        proc, calls = _run_install(workflow, tmp_path, pip_failures=2)
+        assert proc.returncode == 0, proc.stdout + proc.stderr
+        assert [call[2] for call in calls if call[0] == "pip"] == [f"install --no-deps --index-url https://test.pypi.org/simple/ {package}==1.2.3"] * 3
+        assert [call[0] for call in calls][-1] == "python"
+        assert {call[1] for call in calls} == {str((tmp_path / "runner-temp").resolve())}
+        assert "::error::" not in proc.stdout
+
+    @pytest.mark.parametrize("workflow", sorted(PUBLISHERS))
+    def test_a_check_that_fails_after_the_install_fails_the_step(self, workflow, tmp_path):
+        proc, calls = _run_install(workflow, tmp_path, pip_failures=0, python_status=1)
+        assert proc.returncode != 0
+        assert [call[0] for call in calls if call[0] != "sleep"] == ["pip", "python"]
+
+    def test_the_release_tag_is_read_as_data_never_run_as_script(self, tmp_path):
+        # The tag reaches publish.yml's check through env: text in it that a shell would run, if pasted into the script,
+        # is only a version that does not install.
+        proc, calls = _run_install("publish.yml", tmp_path, pip_failures=0, tag="v1.2.3$(touch pasted)")
+        assert proc.returncode == 0, proc.stdout + proc.stderr
+        assert [call[2] for call in calls if call[0] == "pip"] == ["install --no-deps --index-url https://test.pypi.org/simple/ juniper-cascor==1.2.3$(touch pasted)"]
+        assert not list(tmp_path.rglob("pasted"))
+
 
 class TestUnchanged:
     # The permissions are not here: they changed, and TestWiring pins them per job.
@@ -386,10 +773,12 @@ class TestUnchanged:
         wf = _workflow("publish.yml")
         assert set(wf["on"]) == {"release", "workflow_dispatch"}
         assert wf["on"]["release"] == {"types": ["published"]}
-        assert "concurrency" not in wf
+        # A concurrency group may queue its runs, never cancel one in progress: that could stop it between two uploads.
+        assert not _cancels(wf.get("concurrency"))
         # The new dispatch builds nothing: this guard reads a release's tag, and a dispatch has none.
         assert wf["jobs"]["build"]["if"] == "startsWith(github.event.release.tag_name, 'v')"
         assert "if" not in wf["jobs"]["testpypi"]
+        assert "if" not in wf["jobs"][INSTALL]
         assert "if" not in wf["jobs"]["pypi"]
 
     def test_publish_yml_builds_with_the_commands_it_used_before(self):
@@ -403,8 +792,9 @@ class TestUnchanged:
         assert set(wf["on"]) == {"release", "workflow_dispatch"}
         assert wf["on"]["release"] == {"types": ["published"]}
         assert wf["concurrency"]["cancel-in-progress"] is False
-        # A plain dispatch still re-fires the whole publish; the republish dispatch runs the republish job alone.
-        assert wf["jobs"]["build"]["if"] == f"(github.event_name == 'release' && startsWith(github.event.release.tag_name, '{package}-v')) || (github.event_name == 'workflow_dispatch' && !inputs.republish_from_testpypi)"
+        # A plain dispatch still re-fires the whole publish, from the package's own tag alone (a `v` tag's would publish
+        # this package's files under the app's tag); the republish dispatch runs the republish job alone.
+        assert wf["jobs"]["build"]["if"] == f"(github.event_name == 'release' && startsWith(github.event.release.tag_name, '{package}-v')) || (github.event_name == 'workflow_dispatch' && !inputs.republish_from_testpypi && startsWith(github.ref_name, '{package}-v'))"
 
 
 class TestTemplate:
@@ -423,8 +813,21 @@ class TestTemplate:
         assert {kind: len(set(runs)) for kind, runs in copies.items()} == {REUSE: 1, RECORD: 1, VERIFY_DIST: 1, "index": 1, FIND: 1, FETCH: 1}
 
     def test_the_republish_job_is_byte_identical_in_every_publisher(self):
-        jobs = [_workflow(workflow)["jobs"][REPUBLISH] for workflow in PUBLISHERS]
+        # Compared with each action's @ref dropped: the next case pins each action to one ref in every publisher, so a
+        # partial bump fails there, once, rather than here as a template difference.
+        jobs = [_by_action(_workflow(workflow)["jobs"][REPUBLISH]) for workflow in PUBLISHERS]
         assert all(job == jobs[0] for job in jobs)
+
+    def test_each_action_is_pinned_to_one_ref_in_every_publisher(self):
+        # Dependabot bumps an action in all three files at once; a hand edit that bumps one copy fails here, wherever it is.
+        refs: dict[str, set[str]] = {}
+        for workflow in PUBLISHERS:
+            for job in _workflow(workflow)["jobs"].values():
+                for step in job.get("steps") or []:
+                    if step.get("uses"):
+                        name, _, ref = str(step["uses"]).partition("@")
+                        refs.setdefault(name, set()).add(ref)
+        assert {name: len(found) for name, found in refs.items()} == dict.fromkeys(refs, 1), refs
 
     def test_the_template_reads_nothing_but_its_parameters(self):
         for kind, run in _template_scripts().items():
@@ -665,34 +1068,200 @@ def _artifacts_path(run_id: int, package: str = "juniper-cascor") -> str:
     return f"/repos/{REPOSITORY}/actions/runs/{run_id}/artifacts?name={package}-dist&per_page=100"
 
 
+def _jobs_path(run_id: int, page: int = 1) -> str:
+    return f"/repos/{REPOSITORY}/actions/runs/{run_id}/jobs?filter=all&per_page=100&page={page}"
+
+
+def _job(job_id: int, name: str, conclusion: str | None, attempt: int = 1) -> dict:
+    """A job record as ``GET actions/runs/{id}/jobs?filter=all`` lists it: each attempt that ran a job has its own."""
+    return {"id": job_id, "name": name, "run_attempt": attempt, "status": "completed" if conclusion else "in_progress", "conclusion": conclusion}
+
+
+def _attempt(attempt: int, first_id: int, testpypi: str | None = "success", install: str | None = "success", pypi: str | None = "failure") -> list[dict]:
+    """One attempt of a release run: the build, both TestPyPI jobs, the PyPI job, and the republish job, which every
+    release run skips. The PyPI job fails by default, as when its gate's 30 days ran out: the case rung 1 is for."""
+    jobs = (("Build and Validate", "success"), ("Publish to TestPyPI", testpypi), (INSTALL_NAME, install), ("Publish to PyPI", pypi), (REPUBLISH_NAME, "skipped"))
+    return [_job(first_id + i, name, conclusion, attempt) for i, (name, conclusion) in enumerate(jobs)]
+
+
+def _listing(*records: dict, total: int | None = None) -> tuple[int, dict]:
+    return (200, {"total_count": len(records) if total is None else total, "jobs": list(records)})
+
+
+LIVE_ARTIFACT = [{"id": 7, "name": "juniper-cascor-dist", "expired": False}]
+
+
 class TestFindReleaseRun:
     @staticmethod
     def _env(tmp_path: Path, server: _Stand, tag: str = "v9.9.9", ref_type: str = "tag", workflow: str = "publish.yml") -> dict[str, str]:
         return _github_env(tmp_path, server, GITHUB_REF_NAME=tag, GITHUB_REF_TYPE=ref_type, GITHUB_REF=f"refs/{'tags' if ref_type == 'tag' else 'heads'}/{tag}", GITHUB_WORKFLOW_REF=f"{REPOSITORY}/.github/workflows/{workflow}@refs/tags/{tag}")
 
-    def test_the_newest_release_run_that_still_holds_the_artifact_is_found(self, workspace, tmp_path, stand):
+    @staticmethod
+    def _serve(stand, jobs: list[dict], artifacts: list[dict] | None = None, tag: str = "v9.9.9", workflow: str = "publish.yml", package: str = "juniper-cascor") -> _Stand:
+        """The stand-in GitHub API for TAG's one release run, 4242: its job records and its artifacts."""
+        return stand(
+            {
+                _runs_path(tag, workflow): [(200, {"workflow_runs": [{"id": 4242, "head_branch": tag}]})],
+                _jobs_path(4242): [_listing(*jobs)],
+                _artifacts_path(4242, package): [(200, {"artifacts": LIVE_ARTIFACT if artifacts is None else artifacts})],
+            }
+        )
+
+    def test_the_newest_release_run_is_the_one_checked_and_its_artifact_is_found(self, workspace, tmp_path, stand):
+        runs = [{"id": 111, "head_branch": "v9.9.9"}, {"id": 333, "head_branch": "v9.9.9"}, {"id": 222, "head_branch": "v9.9.9"}, {"id": 444, "head_branch": "v9.9.99"}]
+        server = stand({_runs_path("v9.9.9"): [(200, {"workflow_runs": runs})], _jobs_path(333): [_listing(*_attempt(1, 100))], _artifacts_path(333): [(200, {"artifacts": LIVE_ARTIFACT})]})
+        proc = _run(_script(FIND, tmp_path), workspace, **self._env(tmp_path, server))
+        assert proc.returncode == 0, proc.stdout + proc.stderr
+        assert _outputs(tmp_path) == {"version": "9.9.9", "run-id": "333"}
+        # The newest run of THIS tag, whether or not it still holds its artifact: never an older run, nor another tag's.
+        assert server.paths() == [_runs_path("v9.9.9"), _jobs_path(333), _artifacts_path(333)]
+        assert all(headers.get("Authorization") == f"Bearer {FAKE_API_CREDENTIAL}" for _, headers in server.requests)
+
+    def test_a_release_run_whose_artifact_expired_is_still_checked_and_testpypi_is_the_only_record(self, workspace, tmp_path, stand):
+        server = self._serve(stand, _attempt(1, 100), artifacts=[{"id": 7, "name": "juniper-cascor-dist", "expired": True}])
+        proc = _run(_script(FIND, tmp_path), workspace, **self._env(tmp_path, server))
+        assert proc.returncode == 0, proc.stdout + proc.stderr
+        assert _outputs(tmp_path) == {"version": "9.9.9", "run-id": ""}
+        assert "::warning::" in proc.stdout
+
+    def test_without_a_release_run_for_the_tag_nothing_is_republished(self, workspace, tmp_path, stand):
+        server = stand({_runs_path("v9.9.9"): [(200, {"workflow_runs": [{"id": 5, "head_branch": "v9.9.99"}]})]})
+        proc = _run(_script(FIND, tmp_path), workspace, **self._env(tmp_path, server))
+        assert proc.returncode == 1
+        assert "::error::" in proc.stdout
+        assert "no release run for v9.9.9" in proc.stdout
+        assert server.paths() == [_runs_path("v9.9.9")]
+        assert _outputs(tmp_path) == {}
+
+    @pytest.mark.parametrize(
+        ("testpypi", "install"),
+        [("failure", "skipped"), ("success", "failure"), ("cancelled", "skipped"), ("success", None)],
+        ids=["the-upload-failed", "the-install-check-failed", "the-upload-was-cancelled", "the-install-check-still-runs"],
+    )
+    def test_a_release_run_whose_testpypi_jobs_did_not_both_pass_is_refused(self, workspace, tmp_path, stand, testpypi, install):
+        server = self._serve(stand, _attempt(1, 100, testpypi=testpypi, install=install))
+        proc = _run(_script(FIND, tmp_path), workspace, **self._env(tmp_path, server))
+        assert proc.returncode == 1
+        assert "::error::" in proc.stdout
+        # Each TestPyPI job is named with its conclusion, or with its status while it has none.
+        assert f"  Publish to TestPyPI: {testpypi} (attempt 1)" in proc.stdout
+        assert f"  {INSTALL_NAME}: {install or 'in_progress'} (attempt 1)" in proc.stdout
+        assert _artifacts_path(4242) not in server.paths()
+        assert _outputs(tmp_path) == {}
+
+    def test_a_job_that_re_run_failed_jobs_carried_over_counts_with_its_earlier_success(self, workspace, tmp_path, stand):
+        # Attempt 1 passed both TestPyPI jobs and failed at PyPI; "Re-run failed jobs" ran the PyPI job alone again. This
+        # listing leaves out the copies GitHub makes of the jobs it carries over (the next case has them): neither TestPyPI
+        # job has a record of attempt 2, and each still counts with its earlier success.
+        server = self._serve(stand, _attempt(1, 100) + [_job(203, "Publish to PyPI", "failure", attempt=2)])
+        proc = _run(_script(FIND, tmp_path), workspace, **self._env(tmp_path, server))
+        assert proc.returncode == 0, proc.stdout + proc.stderr
+        assert _outputs(tmp_path) == {"version": "9.9.9", "run-id": "4242"}
+
+    @pytest.mark.parametrize(("install", "passes"), [("success", True), ("failure", False)], ids=["the-re-run-install-check-passed", "it-failed-again"])
+    def test_re_run_failed_jobs_copies_the_jobs_it_carries_over_into_the_new_attempt(self, workspace, tmp_path, stand, install, passes):
+        # As GitHub lists it (juniper-canopy run 43135960676): attempt 1's install check failed on lag, and "Re-run failed
+        # jobs" gave EVERY job a record in attempt 2, the build and the upload as copies (a new id, run_attempt 2, attempt
+        # 1's conclusion), the install check and the PyPI job as new runs.
+        first = _attempt(1, 100, install="failure", pypi="skipped")
+        second = _attempt(2, 200, install=install, pypi="failure" if passes else "skipped")
+        server = self._serve(stand, first + second)
+        proc = _run(_script(FIND, tmp_path), workspace, **self._env(tmp_path, server))
+        if passes:
+            assert proc.returncode == 0, proc.stdout + proc.stderr
+            assert _outputs(tmp_path) == {"version": "9.9.9", "run-id": "4242"}
+            assert "release run 4242: Publish to TestPyPI concluded success in the latest attempt (2)" in proc.stdout
+            assert f"release run 4242: {INSTALL_NAME} concluded success in the latest attempt (2)" in proc.stdout
+        else:
+            assert proc.returncode == 1
+            assert f"  {INSTALL_NAME}: failure (attempt 2)" in proc.stdout
+            assert _outputs(tmp_path) == {}
+
+    @pytest.mark.parametrize("newest_first", [False, True], ids=["oldest-first", "newest-first"])
+    @pytest.mark.parametrize(("first", "second", "passes"), [("success", "failure", False), ("failure", "success", True)], ids=["the-second-attempt-failed", "the-second-attempt-passed"])
+    def test_the_highest_attempt_wins_in_whatever_order_the_listing_gives(self, workspace, tmp_path, stand, newest_first, first, second, passes):
+        # GitHub does not document the order of filter=all: the step takes each job's record with the highest
+        # (run_attempt, id), not the first or the last one listed.
+        records = _attempt(1, 100, testpypi=first, install="success" if first == "success" else "skipped", pypi="skipped") + _attempt(2, 200, testpypi=second, install="success" if second == "success" else "skipped", pypi="skipped")
+        server = self._serve(stand, list(reversed(records)) if newest_first else records)
+        proc = _run(_script(FIND, tmp_path), workspace, **self._env(tmp_path, server))
+        assert (proc.returncode == 0) is passes, proc.stdout + proc.stderr
+        if not passes:
+            assert "  Publish to TestPyPI: failure (attempt 2)" in proc.stdout
+
+    def test_a_release_run_whose_build_failed_so_both_testpypi_jobs_were_skipped_is_refused(self, workspace, tmp_path, stand):
+        # A skipped TestPyPI job never ran its check. GitHub records it as completed, with the conclusion "skipped".
+        records = [_job(100, "Build and Validate", "failure"), _job(101, "Publish to TestPyPI", "skipped"), _job(102, INSTALL_NAME, "skipped"), _job(103, "Publish to PyPI", "skipped"), _job(104, REPUBLISH_NAME, "skipped")]
+        server = self._serve(stand, records)
+        proc = _run(_script(FIND, tmp_path), workspace, **self._env(tmp_path, server))
+        assert proc.returncode == 1
+        assert "  Publish to TestPyPI: skipped (attempt 1)" in proc.stdout
+        assert f"  {INSTALL_NAME}: skipped (attempt 1)" in proc.stdout
+        assert _outputs(tmp_path) == {}
+
+    def test_an_older_release_run_that_passed_does_not_vouch_for_a_newer_one_that_failed(self, workspace, tmp_path, stand):
+        # Ruling 1 reads the tag's NEWEST release run: a Release published again starts another run, which TestPyPI then
+        # refuses, and from then on the tag has no run that vouches for its files.
+        runs = [{"id": 4243, "head_branch": "v9.9.9"}, {"id": 4242, "head_branch": "v9.9.9"}]
         server = stand(
             {
-                _runs_path("v9.9.9"): [(200, {"workflow_runs": [{"id": 111, "head_branch": "v9.9.9"}, {"id": 333, "head_branch": "v9.9.9"}, {"id": 222, "head_branch": "v9.9.9"}]})],
-                _artifacts_path(333): [(200, {"artifacts": [{"id": 1, "name": "juniper-cascor-dist", "expired": True}]})],
-                _artifacts_path(222): [(200, {"artifacts": [{"id": 2, "name": "juniper-cascor-dist", "expired": False}]})],
-                _artifacts_path(111): [(200, {"artifacts": [{"id": 3, "name": "juniper-cascor-dist", "expired": False}]})],
+                _runs_path("v9.9.9"): [(200, {"workflow_runs": runs})],
+                _jobs_path(4243): [_listing(*_attempt(1, 300, testpypi="failure", install="skipped", pypi="skipped"))],
+                _jobs_path(4242): [_listing(*_attempt(1, 100))],
+                _artifacts_path(4242): [(200, {"artifacts": LIVE_ARTIFACT})],
             }
         )
         proc = _run(_script(FIND, tmp_path), workspace, **self._env(tmp_path, server))
+        assert proc.returncode == 1
+        assert "  Publish to TestPyPI: failure (attempt 1)" in proc.stdout
+        assert _jobs_path(4242) not in server.paths()
+        assert _outputs(tmp_path) == {}
+
+    def test_a_testpypi_job_that_failed_and_then_passed_on_a_re_run_counts_as_passed(self, workspace, tmp_path, stand):
+        rerun = [_job(201, "Publish to TestPyPI", "success", attempt=2), _job(202, INSTALL_NAME, "success", attempt=2), _job(203, "Publish to PyPI", "failure", attempt=2)]
+        server = self._serve(stand, _attempt(1, 100, testpypi="failure", install="skipped", pypi="skipped") + rerun)
+        proc = _run(_script(FIND, tmp_path), workspace, **self._env(tmp_path, server))
         assert proc.returncode == 0, proc.stdout + proc.stderr
-        assert _outputs(tmp_path) == {"version": "9.9.9", "run-id": "222"}
-        assert _artifacts_path(111) not in server.paths()
+        assert _outputs(tmp_path) == {"version": "9.9.9", "run-id": "4242"}
+
+    def test_re_run_all_jobs_whose_second_attempt_failed_is_refused_although_the_first_passed(self, workspace, tmp_path, stand):
+        server = self._serve(stand, _attempt(1, 100) + _attempt(2, 200, testpypi="failure", install="skipped", pypi="skipped"))
+        proc = _run(_script(FIND, tmp_path), workspace, **self._env(tmp_path, server))
+        assert proc.returncode == 1
+        assert "  Publish to TestPyPI: failure (attempt 2)" in proc.stdout
+        assert _outputs(tmp_path) == {}
+
+    def test_the_latest_attempt_is_read_across_every_page_of_the_listing(self, workspace, tmp_path, stand):
+        # 105 records: 95 other jobs and attempt 1, whose upload failed, on page 1; attempt 2, all green, on page 2.
+        page_1 = [_job(1000 + i, f"Unrelated job {i}", "success") for i in range(95)] + _attempt(1, 100, testpypi="failure", install="skipped", pypi="skipped")
+        server = self._serve(stand, [])
+        server.routes[_jobs_path(4242, 1)] = [_listing(*page_1, total=105)]
+        server.routes[_jobs_path(4242, 2)] = [_listing(*_attempt(2, 200), total=105)]
+        proc = _run(_script(FIND, tmp_path), workspace, **self._env(tmp_path, server))
+        assert proc.returncode == 0, proc.stdout + proc.stderr
+        assert _jobs_path(4242, 2) in server.paths()
+        assert _outputs(tmp_path) == {"version": "9.9.9", "run-id": "4242"}
+
+    def test_a_release_run_without_a_testpypi_job_is_refused(self, workspace, tmp_path, stand):
+        server = self._serve(stand, [_job(100, "Build and Validate", "success"), _job(101, "Publish to PyPI", "failure")])
+        proc = _run(_script(FIND, tmp_path), workspace, **self._env(tmp_path, server))
+        assert proc.returncode == 1
+        assert "the run has no such job" in proc.stdout
+        assert _outputs(tmp_path) == {}
 
     def test_a_sub_package_tag_names_its_version(self, workspace, tmp_path, stand):
         tag = "juniper-cascor-model-v1.2.3"
-        server = stand({_runs_path(tag, "publish-cascor-model.yml"): [(200, {"workflow_runs": []})]})
-        proc = _run(_script(FIND, tmp_path), workspace, PUBLISH_PACKAGE="juniper-cascor-model", **self._env(tmp_path, server, tag=tag, workflow="publish-cascor-model.yml"))
+        server = self._serve(stand, _attempt(1, 100), artifacts=[], tag=tag, workflow="publish-cascor-model.yml", package="juniper-cascor-model")
+        proc = _run(_script(FIND, tmp_path), workspace, PUBLISH_PACKAGE="juniper-cascor-model", PUBLISH_TAG_PREFIX="juniper-cascor-model-v", **self._env(tmp_path, server, tag=tag, workflow="publish-cascor-model.yml"))
         assert proc.returncode == 0, proc.stdout + proc.stderr
         assert _outputs(tmp_path) == {"version": "1.2.3", "run-id": ""}
         assert "::warning::" in proc.stdout
 
-    @pytest.mark.parametrize(("tag", "ref_type"), [("v9.9.9", "branch"), ("main", "branch"), ("juniper-cascor-model-v1.2.3", "tag")], ids=["branch-named-like-a-tag", "branch", "another-packages-tag"])
+    @pytest.mark.parametrize(
+        ("tag", "ref_type"),
+        [("v9.9.9", "branch"), ("main", "branch"), ("juniper-cascor-model-v1.2.3", "tag"), ("juniper-cascor-v9.9.9", "tag"), ("v", "tag")],
+        ids=["branch-named-like-a-tag", "branch", "another-packages-tag", "a-package-named-tag-in-a-single-package-publisher", "a-prefix-without-a-version"],
+    )
     def test_it_refuses_anything_but_a_release_tag_of_this_package(self, workspace, tmp_path, stand, tag, ref_type):
         server = stand({})
         proc = _run(_script(FIND, tmp_path), workspace, **self._env(tmp_path, server, tag=tag, ref_type=ref_type))
@@ -701,8 +1270,20 @@ class TestFindReleaseRun:
         assert server.requests == []
         assert _outputs(tmp_path) == {}
 
-    def test_an_api_failure_fails_the_job_rather_than_skip_the_check(self, workspace, tmp_path, stand):
-        server = stand({_runs_path("v9.9.9"): [(502, {"message": "bad gateway"})]})
+    @pytest.mark.parametrize("tag", ["v1.2.3", "juniper-cascor-protocol-v1.2.3", "juniper-cascor-model-1.2.3"], ids=["the-meta-packages-v-tag", "a-sibling-sub-packages-tag", "a-tag-without-the-v"])
+    def test_a_sub_package_publisher_refuses_every_tag_but_its_own_prefix(self, workspace, tmp_path, stand, tag):
+        server = stand({})
+        proc = _run(_script(FIND, tmp_path), workspace, PUBLISH_PACKAGE="juniper-cascor-model", PUBLISH_TAG_PREFIX="juniper-cascor-model-v", **self._env(tmp_path, server, tag=tag, workflow="publish-cascor-model.yml"))
+        assert proc.returncode == 1
+        assert "::error::" in proc.stdout
+        # Refused before any request: a sub-package's republish never reads the release run of another package's tag.
+        assert server.requests == []
+        assert _outputs(tmp_path) == {}
+
+    @pytest.mark.parametrize("failing", ["runs", "jobs", "artifacts"])
+    def test_an_api_failure_fails_the_job_rather_than_skip_the_check(self, workspace, tmp_path, stand, failing):
+        server = self._serve(stand, _attempt(1, 100))
+        server.routes[{"runs": _runs_path("v9.9.9"), "jobs": _jobs_path(4242), "artifacts": _artifacts_path(4242)}[failing]] = [(502, {"message": "bad gateway"})]
         proc = _run(_script(FIND, tmp_path), workspace, **self._env(tmp_path, server))
         assert proc.returncode != 0
         assert _outputs(tmp_path) == {}
@@ -763,6 +1344,23 @@ class TestFetchTestPyPIFiles:
         sums.parent.mkdir()
         sums.write_text(f"{_sha(b'the first build')}  {WHEEL}\n{_sha(BUILT[SDIST])}  {SDIST}\n", encoding="utf-8")
         server = self._serve(stand, BUILT)
+        proc = _run(_script(FETCH, tmp_path), root, **self._env(server, sums))
+        assert proc.returncode == 1
+        assert "disagree" in proc.stdout
+        assert not [p for p, _ in server.requests if p.startswith("/files/")]
+
+    @pytest.mark.parametrize("which", ["the-release-run-lists-more", "testpypi-lists-more"])
+    def test_testpypi_and_the_release_runs_sha256sums_must_name_the_same_files(self, tmp_path, stand, which):
+        # A file one of them names and the other does not is refused, in either direction, before any file is fetched.
+        root = tmp_path / "workspace"
+        root.mkdir()
+        extra = "juniper_cascor-9.9.9-py2.py3-none-any.whl"
+        recorded = dict(SERVED) | ({extra: _sha(b"another wheel")} if which == "the-release-run-lists-more" else {})
+        served = dict(BUILT) | ({extra: b"another wheel"} if which == "testpypi-lists-more" else {})
+        sums = tmp_path / "release-run" / "SHA256SUMS"
+        sums.parent.mkdir()
+        sums.write_text("".join(f"{digest}  {name}\n" for name, digest in sorted(recorded.items())), encoding="utf-8")
+        server = self._serve(stand, served)
         proc = _run(_script(FETCH, tmp_path), root, **self._env(server, sums))
         assert proc.returncode == 1
         assert "disagree" in proc.stdout
