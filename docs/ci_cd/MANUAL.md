@@ -389,7 +389,7 @@ Sign the recovery commit. An unsigned commit on the branch blocks merge; squash 
 
 ### Intent
 
-Run GitHub CodeQL semantic SAST on the Python tree so query-pack findings (security **and** quality: `queries: +security-and-quality`) sit beside Bandit/Gitleaks/pip-audit rather than replacing them. The workflow file is the fleet Python template; its header names `juniper-data/.github/workflows/codeql.yml` as the copy origin. First-run comment in the YAML: treat the initial cycle as a shakedown, then an Overtoad may promote it to a required context — this repo **has** done that (see **Enforcement** above).
+Run GitHub CodeQL semantic SAST on the Python tree so query-pack findings (security **and** quality: `queries: +security-and-quality`) sit beside Bandit/Gitleaks/pip-audit rather than replacing them. The workflow file is the fleet Python template; its header names `juniper-data/.github/workflows/codeql.yml` as the copy origin. First-run comment in the YAML: treat the initial cycle as a shakedown, then an owner may promote it to a required context — this repo **has** done that (see **Enforcement** above).
 
 ### When it runs
 
