@@ -28,7 +28,7 @@ Unlike juniper-service-core, where the new run starts on its own thread at once 
 owns the lifecycle when the old fit returns (juniper-ml#2531's thread check; the published 0.7.2
 predates it, and there the old fit's return still marks the new run COMPLETED while it trains),
 cascor's queue keeps the new run from starting until the old fit returns. The lifecycle-ownership
-guard therefore does not change this race: the stale fit is still the Overtoad when it settles.
+guard therefore does not change this race: the stale fit is still the owner when it settles.
 ``swap_dataset_live`` has a variant: when its 10 s join on the old future times out, it clears
 ``_stop_event`` before submitting the swapped run, which un-stops the old fit the same way.
 
