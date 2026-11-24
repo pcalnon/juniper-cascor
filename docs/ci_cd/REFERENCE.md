@@ -3,7 +3,7 @@
 **Project**: Juniper Cascor  
 **Workflow Files**: `.github/workflows/ci.yml`, `codeql.yml`, `security-scan.yml`, `claude.yml`, `golden-regression.yml`, `conformance.yml`, `ci-protocol.yml`, `ci-cascor-model.yml`, `lockfile-update.yml`, `publish.yml`, `publish-protocol.yml`, `publish-cascor-model.yml`
 
-**Last Updated**: 2026-11-23
+**Last Updated**: 2026-11-24
 
 ---
 
