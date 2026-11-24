@@ -44,6 +44,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     requests.
   - `docs/api/API_SCHEMAS.md` (0.3.26) names the table in its resume section.
 
+- **A telemetry test that runs on every FastAPI the floor admits.** In `src/tests/unit/api/test_api_app.py`, the
+  port of juniper-data#454's test, `test_create_app_disables_fastapi_native_telemetry`, reads `app._telemetry` and
+  skips below FastAPI 0.142. There `telemetry=` is not a parameter, and FastAPI keeps it, as given, in `app.extra`.
+  The new `test_create_app_passes_the_telemetry_opt_out_on_every_fastapi` reads whichever the installed FastAPI has,
+  so it runs there too. It sets `FASTAPI_OTEL_AUTO_CONFIGURE=true` before building the app: from 0.143 an omitted
+  `auto_configure` takes its default from that variable, so a dropped `auto_configure` reads `True`; the other four
+  switches default to `True` anyway.
+  - Measured against 11 mutants of `create_app`'s `telemetry=` (the keyword removed, each switch dropped, each turned
+    on), under `JuniperCascor1`'s FastAPI 0.137.0 and under 0.163.1, the lock's. The new test fails on all 22 runs
+    and passes on the unmutated source. The ported test skips on 0.137.0 and passes on 0.163.1 with
+    `auto_configure` dropped.
+
 ### Changed
 
 - **`CI — juniper-cascor-model` runs on every PR, and its new `Model required checks` is a required context.** Owner

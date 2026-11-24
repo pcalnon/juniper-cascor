@@ -49,6 +49,23 @@ class TestAppFactory:
         assert app._telemetry["operation_spans"] is False
         assert app._telemetry["auto_configure"] is False
 
+    def test_create_app_passes_the_telemetry_opt_out_on_every_fastapi(self, monkeypatch):
+        """The opt-out reaches FastAPI on every version ``pyproject.toml`` admits, so this test never skips.
+
+        The test above reads ``app._telemetry`` and skips below FastAPI 0.142, where ``telemetry=`` is not a
+        parameter and FastAPI keeps it, as given, in ``app.extra``. This one reads whichever the installed FastAPI
+        has. From 0.143 an omitted ``auto_configure`` takes its default from ``FASTAPI_OTEL_AUTO_CONFIGURE`` when the
+        app is built, so the variable is set to ``true`` first: an ``auto_configure`` dropped from the factory's
+        ``telemetry=`` then reads ``True``, as the other four switches do by default.
+        """
+        monkeypatch.setenv("FASTAPI_OTEL_AUTO_CONFIGURE", "true")
+        app = create_app(Settings(auto_start=False))
+        config = getattr(app, "_telemetry", None)
+        if config is None:
+            config = app.extra.get("telemetry", {})
+        for switch in ("tracing", "metrics", "logs", "operation_spans", "auto_configure"):
+            assert config.get(switch) is False, switch
+
     def test_cors_middleware_skipped_with_empty_origins(self):
         """Test that CORS middleware is not applied when origins is empty."""
         app = create_app(Settings(auto_start=False))
